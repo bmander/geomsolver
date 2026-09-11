@@ -139,38 +139,23 @@ pub fn weld(pieces: &[Piece]) -> Vec<Piece> {
     // is a cost trade and nothing else, since the answer comes from the distance test inside.
     // Sized at `tol` an edge would walk its own length in cells — hundreds of millions of them
     // on a part forty across — so it is sized to the object instead.
-    let grid = (scale / 128.0).max(tol);
-    // a hash on the coordinate grid: a vertex is looked for in its own cell and the twenty-six
+    // a grid on the coordinates: a vertex is looked for in its own cell and the twenty-six
     // around it, so two within `tol` are found however the rounding fell
-    let key = |p: [f64; 3]| {
-        [
-            (p[0] / grid).floor() as i64,
-            (p[1] / grid).floor() as i64,
-            (p[2] / grid).floor() as i64,
-        ]
-    };
-    let mut cells: BTreeMap<[i64; 3], Vec<usize>> = BTreeMap::new();
+    let mut cells = crate::space::Grid::new((scale / 128.0).max(tol));
     let mut verts: Vec<[f64; 3]> = Vec::new();
-    let canon = |p: [f64; 3], cells: &mut BTreeMap<[i64; 3], Vec<usize>>,
-                     verts: &mut Vec<[f64; 3]>| -> usize {
-        let k = key(p);
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                for dz in -1..=1 {
-                    let c = [k[0] + dx, k[1] + dy, k[2] + dz];
-                    if let Some(v) = cells.get(&c) {
-                        for &i in v {
-                            let q = verts[i];
-                            if plane::norm([p[0] - q[0], p[1] - q[1], p[2] - q[2]]) <= tol {
-                                return i;
-                            }
-                        }
-                    }
-                }
+    let canon = |p: [f64; 3], cells: &mut crate::space::Grid, verts: &mut Vec<[f64; 3]>| -> usize {
+        let mut found = None;
+        cells.around(p, |i| {
+            let q = verts[i as usize];
+            if found.is_none() && plane::norm([p[0] - q[0], p[1] - q[1], p[2] - q[2]]) <= tol {
+                found = Some(i as usize);
             }
+        });
+        if let Some(i) = found {
+            return i;
         }
         verts.push(p);
-        cells.entry(k).or_default().push(verts.len() - 1);
+        cells.insert(p, (verts.len() - 1) as u32);
         verts.len() - 1
     };
     // -- weld: every piece, as indices into one vertex table
@@ -194,34 +179,23 @@ pub fn weld(pieces: &[Piece]) -> Vec<Piece> {
             // the cells the edge's own box covers, each looked at once — a thin box for the
             // thin thing an edge is, and no set to remember what has been seen
             let mut on: Vec<(f64, [f64; 3])> = Vec::new();
-            let (ka, kb) = (key(a), key(b));
-            for cx in ka[0].min(kb[0]) - 1..=ka[0].max(kb[0]) + 1 {
-                for cy in ka[1].min(kb[1]) - 1..=ka[1].max(kb[1]) + 1 {
-                    for cz in ka[2].min(kb[2]) - 1..=ka[2].max(kb[2]) + 1 {
-                            let c = [cx, cy, cz];
-                            let Some(v) = cells.get(&c) else { continue };
-                            for &vi in v {
-                                let q = verts[vi];
-                                let w = [q[0] - a[0], q[1] - a[1], q[2] - a[2]];
-                                let u = plane::dot(w, d) / (len * len);
-                                if u <= 0.0 || u >= 1.0 {
-                                    continue;
-                                }
-                                let foot =
-                                    [a[0] + u * d[0], a[1] + u * d[1], a[2] + u * d[2]];
-                                let off = plane::norm([
-                                    q[0] - foot[0],
-                                    q[1] - foot[1],
-                                    q[2] - foot[2],
-                                ]);
-                                // strictly *on* the edge and strictly between its ends
-                                if off <= tol && u * len > tol && (1.0 - u) * len > tol {
-                                    on.push((u, q));
-                                }
-                            }
-                    }
+            let (ka, kb) = (cells.key(a), cells.key(b));
+            let lo = [ka[0].min(kb[0]) - 1, ka[1].min(kb[1]) - 1, ka[2].min(kb[2]) - 1];
+            let hi = [ka[0].max(kb[0]) + 1, ka[1].max(kb[1]) + 1, ka[2].max(kb[2]) + 1];
+            cells.in_keys(lo, hi, |vi| {
+                let q = verts[vi as usize];
+                let w = [q[0] - a[0], q[1] - a[1], q[2] - a[2]];
+                let u = plane::dot(w, d) / (len * len);
+                if u <= 0.0 || u >= 1.0 {
+                    return;
                 }
-            }
+                let foot = [a[0] + u * d[0], a[1] + u * d[1], a[2] + u * d[2]];
+                let off = plane::norm([q[0] - foot[0], q[1] - foot[1], q[2] - foot[2]]);
+                // strictly *on* the edge and strictly between its ends
+                if off <= tol && u * len > tol && (1.0 - u) * len > tol {
+                    on.push((u, q));
+                }
+            });
             on.sort_by(|x, y| x.0.partial_cmp(&y.0).expect("a finite mesh"));
             pts.extend(on.into_iter().map(|(_, q)| q));
         }

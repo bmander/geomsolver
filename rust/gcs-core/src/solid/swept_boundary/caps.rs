@@ -25,37 +25,7 @@ type V3 = [f64;3];
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum End { From, To }
 
-fn sub(a: V3,b: V3) -> V3 { [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
-fn add(a: V3,b: V3) -> V3 { [a[0]+b[0],a[1]+b[1],a[2]+b[2]] }
-fn scale(a: V3,s: f64) -> V3 { a.map(|x| x*s) }
-fn dot(a: V3,b: V3) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
-fn cross(a: V3,b: V3) -> V3 { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
-fn norm(a: V3) -> f64 { dot(a,a).sqrt() }
-fn normalised(a: V3) -> Option<V3> { let l = norm(a); (l > 0.).then(|| a.map(|x| x/l)) }
-
-/// Which feature of a triangle its nearest point to a query lies on.
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Region { Vertex, Edge, Face }
-
-/// The nearest point of a triangle to `p` and the feature it lies on
-/// (Ericson's Voronoi-region walk).
-pub fn closest_on_triangle(p: V3,a: V3,b: V3,c: V3) -> (V3,Region) {
-    let (ab,ac,ap) = (sub(b,a),sub(c,a),sub(p,a));
-    let (d1,d2) = (dot(ab,ap),dot(ac,ap));
-    if d1 <= 0. && d2 <= 0. { return (a,Region::Vertex); }
-    let bp = sub(p,b); let (d3,d4) = (dot(ab,bp),dot(ac,bp));
-    if d3 >= 0. && d4 <= d3 { return (b,Region::Vertex); }
-    let vc = d1*d4-d3*d2;
-    if vc <= 0. && d1 >= 0. && d3 <= 0. { let v = d1/(d1-d3); return (add(a,scale(ab,v)),Region::Edge); }
-    let cp = sub(p,c); let (d5,d6) = (dot(ab,cp),dot(ac,cp));
-    if d6 >= 0. && d5 <= d6 { return (c,Region::Vertex); }
-    let vb = d5*d2-d1*d6;
-    if vb <= 0. && d2 >= 0. && d6 <= 0. { let w = d2/(d2-d6); return (add(a,scale(ac,w)),Region::Edge); }
-    let va = d3*d6-d5*d4;
-    if va <= 0. && d4-d3 >= 0. && d5-d6 >= 0. { let w = (d4-d3)/((d4-d3)+(d5-d6)); return (add(b,scale(sub(c,b),w)),Region::Edge); }
-    let denom = 1./(va+vb+vc); let (v,w) = (vb*denom,vc*denom);
-    (add(a,add(scale(ab,v),scale(ac,w))),Region::Face)
-}
+use crate::space::{Grid,Region,add,closest_on_triangle,cross,dot,norm,normalised,scale,sub};
 
 /// A triangle mesh being cut along polylines on it.
 pub struct CutMesh {
@@ -71,18 +41,72 @@ pub struct CutMesh {
     pub vertex_tolerance: f64,
     /// How far off a facet's plane a point on the surface may lie.
     pub sagitta: f64,
+    /// The facets on each vertex, each once, in index order.
+    incident: Vec<Vec<u32>>,
+    /// The facets filed under every cell their boxes (grown by `locate`'s reach) meet, made at
+    /// the first cut.
+    index: Option<Grid>,
 }
+
+/// Put `t` in an ascending list of distinct facets.
+fn attach(list: &mut Vec<u32>,t: usize) { let t = t as u32; if let Err(k) = list.binary_search(&t) { list.insert(k,t); } }
+fn detach(list: &mut Vec<u32>,t: usize) { if let Ok(k) = list.binary_search(&(t as u32)) { list.remove(k); } }
 
 #[derive(Clone,Copy,Debug)]
 enum Place { Vertex(u32),Edge(u32,u32),Face(usize) }
 
 impl CutMesh {
+    pub fn new(vertices: Vec<V3>,triangles: Vec<[u32;3]>,faces: Vec<u32>,vertex_tolerance: f64,sagitta: f64) -> CutMesh {
+        let mut incident = vec![Vec::new();vertices.len()];
+        for (t,tri) in triangles.iter().enumerate() { for &v in tri { attach(&mut incident[v as usize],t); } }
+        CutMesh {vertices,triangles,faces,cuts:Default::default(),vertex_tolerance,sagitta,incident,index:None}
+    }
+
+    /// How far from a facet `locate` looks for a point.
+    fn reach(&self) -> f64 { 2.*self.sagitta }
+
+    fn file(&mut self,t: usize) {
+        let reach = self.reach();
+        let [a,b,c] = self.triangles[t].map(|v| self.vertices[v as usize]);
+        let lo: V3 = std::array::from_fn(|k| a[k].min(b[k]).min(c[k])-reach);
+        let hi: V3 = std::array::from_fn(|k| a[k].max(b[k]).max(c[k])+reach);
+        if let Some(grid) = &mut self.index { grid.insert_box(lo,hi,t as u32); }
+    }
+
+    /// File every facet by place, in cells the size of a facet's box on average.
+    fn build_index(&mut self) {
+        let n = self.triangles.len().max(1) as f64;
+        let size = self.triangles.iter().map(|t| {
+            let [a,b,c] = t.map(|v| self.vertices[v as usize]);
+            (0..3).map(|k| a[k].max(b[k]).max(c[k])-a[k].min(b[k]).min(c[k])).fold(0.,f64::max)
+        }).sum::<f64>()/n+2.*self.reach();
+        self.index = Some(Grid::new(size.max(f64::MIN_POSITIVE)));
+        for t in 0..self.triangles.len() { self.file(t); }
+    }
+
+    fn push_vertex(&mut self,p: V3) -> u32 { self.vertices.push(p); self.incident.push(Vec::new()); (self.vertices.len()-1) as u32 }
+
+    /// A facet's corners changed to `now`: the lists of the vertices it left and joined follow.
+    fn set_triangle(&mut self,t: usize,now: [u32;3]) {
+        let before = self.triangles[t];
+        self.triangles[t] = now;
+        for v in before { if !now.contains(&v) { detach(&mut self.incident[v as usize],t); } }
+        for v in now { attach(&mut self.incident[v as usize],t); }
+    }
+
+    fn push_triangle(&mut self,tri: [u32;3],face: u32) {
+        let t = self.triangles.len();
+        self.triangles.push(tri); self.faces.push(face);
+        for v in tri { attach(&mut self.incident[v as usize],t); }
+        self.file(t);
+    }
+
     fn facet_normal(&self,t: usize) -> Option<V3> { let [a,b,c] = self.triangles[t].map(|v| self.vertices[v as usize]); normalised(cross(sub(b,a),sub(c,a))) }
 
     /// The summed normal of the facets at a vertex.
     fn vertex_normal(&self,v: u32) -> V3 {
         let mut n = [0.;3];
-        for t in 0..self.triangles.len() { if self.triangles[t].contains(&v) { if let Some(f) = self.facet_normal(t) { n = add(n,f); } } }
+        for &t in &self.incident[v as usize] { if let Some(f) = self.facet_normal(t as usize) { n = add(n,f); } }
         n
     }
 
@@ -93,7 +117,15 @@ impl CutMesh {
     /// short of both facets), so nearness, not containment, decides.
     fn locate(&self,p: V3) -> Option<Place> {
         let mut best: Option<(f64,Place)> = None;
-        for (t,tri) in self.triangles.iter().enumerate() {
+        // the facets filed under p's cell, in index order (a facet whose vertex moved is filed
+        // again, so twice)
+        let mut candidates: Vec<u32> = match &self.index {
+            Some(grid) => grid.at(grid.key(p)).to_vec(),
+            None => (0..self.triangles.len() as u32).collect(),
+        };
+        candidates.sort_unstable(); candidates.dedup();
+        for t in candidates.into_iter().map(|t| t as usize) {
+            let tri = &self.triangles[t];
             let [a,b,c] = tri.map(|v| self.vertices[v as usize]);
             let lo: V3 = std::array::from_fn(|k| a[k].min(b[k]).min(c[k])-2.*self.sagitta);
             let hi: V3 = std::array::from_fn(|k| a[k].max(b[k]).max(c[k])+2.*self.sagitta);
@@ -101,8 +133,10 @@ impl CutMesh {
             let (q,region) = closest_on_triangle(p,a,b,c);
             let dist = norm(sub(p,q));
             if dist > 2.*self.sagitta || best.is_some_and(|(x,_)| dist >= x) { continue; }
-            let near = |x: V3| norm(sub(q,x)) <= self.vertex_tolerance;
-            let place = if near(a) { Place::Vertex(tri[0]) } else if near(b) { Place::Vertex(tri[1]) } else if near(c) { Place::Vertex(tri[2]) }
+            // the nearest corner within the snap: the first found would be decided by which of
+            // the facets on a shared edge the point happened to land nearest
+            let corner = [a,b,c].iter().enumerate().map(|(k,x)| (norm(sub(q,*x)),k)).filter(|(d,_)| *d <= self.vertex_tolerance).min_by(|x,y| x.0.total_cmp(&y.0));
+            let place = if let Some((_,k)) = corner { Place::Vertex(tri[k]) }
                 else {
                     // on an edge when the nearest point is, or lies within the
                     // vertex tolerance of one
@@ -119,30 +153,27 @@ impl CutMesh {
 
     /// A new vertex at `p` on the edge `a`-`b`, both facets on it split.
     fn split_edge(&mut self,a: u32,b: u32,p: V3) -> u32 {
-        let v = self.vertices.len() as u32;
-        self.vertices.push(p);
+        let v = self.push_vertex(p);
         let mut fresh = Vec::new();
-        for t in 0..self.triangles.len() {
+        for t in self.incident[a as usize].clone().into_iter().map(|t| t as usize) {
             let tri = self.triangles[t];
             let Some(k) = (0..3).find(|&k| (tri[k] == a && tri[(k+1)%3] == b) || (tri[k] == b && tri[(k+1)%3] == a)) else { continue };
             let (x,y,c) = (tri[k],tri[(k+1)%3],tri[(k+2)%3]);
-            self.triangles[t] = [x,v,c];
+            self.set_triangle(t,[x,v,c]);
             fresh.push(([v,y,c],self.faces[t]));
         }
-        for (tri,face) in fresh { self.triangles.push(tri); self.faces.push(face); }
+        for (tri,face) in fresh { self.push_triangle(tri,face); }
         v
     }
 
     /// A new vertex at `p` inside facet `t`, the facet split in three.
     fn split_face(&mut self,t: usize,p: V3) -> u32 {
-        let v = self.vertices.len() as u32;
-        self.vertices.push(p);
+        let v = self.push_vertex(p);
         let [a,b,c] = self.triangles[t];
-        self.triangles[t] = [a,b,v];
-        self.triangles.push([b,c,v]);
-        self.triangles.push([c,a,v]);
+        self.set_triangle(t,[a,b,v]);
         let face = self.faces[t];
-        self.faces.push(face); self.faces.push(face);
+        self.push_triangle([b,c,v],face);
+        self.push_triangle([c,a,v],face);
         v
     }
 
@@ -150,13 +181,18 @@ impl CutMesh {
     /// of it moves onto it, so the seam is the sheet's own point exactly.
     fn insert(&mut self,p: V3) -> Result<u32,String> {
         match self.locate(p).ok_or_else(|| format!("column point {p:?} is off the tool's mesh"))? {
-            Place::Vertex(v) => { self.vertices[v as usize] = p; Ok(v) }
+            Place::Vertex(v) => {
+                self.vertices[v as usize] = p;
+                // its facets moved with it: filed again where they now reach
+                for t in self.incident[v as usize].clone() { self.file(t as usize); }
+                Ok(v)
+            }
             Place::Edge(a,b) => Ok(self.split_edge(a,b,p)),
             Place::Face(t) => Ok(self.split_face(t,p)),
         }
     }
 
-    fn share_facet(&self,u: u32,w: u32) -> bool { self.triangles.iter().any(|t| t.contains(&u) && t.contains(&w)) }
+    fn share_facet(&self,u: u32,w: u32) -> bool { self.incident[u as usize].iter().any(|&t| self.triangles[t as usize].contains(&w)) }
 
     /// Join two vertices by a chain of edges along the chord between them,
     /// walked facet by facet: from the vertex reached so far, the facet on it
@@ -182,10 +218,14 @@ impl CutMesh {
         let mut along = 0_f64;
         for _ in 0..self.triangles.len()+1 {
             // the facets on the current vertex, the one holding the far end first
-            let here: Vec<usize> = (0..self.triangles.len()).filter(|&t| self.triangles[t].contains(&current)).collect();
+            let here: Vec<usize> = self.incident[current as usize].iter().map(|&t| t as usize).collect();
             if here.iter().any(|&t| self.triangles[t].contains(&w)) { chain.push(w); break; }
             let mut step: Option<(f64,u32,u32,f64)> = None; // t along the chord, edge, s along it
             for &t in &here {
+                // a facet the projection sees edge-on (a face square to the ends' normals, its
+                // edge along the chord) offers no crossing: its far edge projects onto the
+                // chord's own line, where a crossing is decided by rounding
+                if self.facet_normal(t).is_none_or(|m| dot(m,n).abs() <= 1e-6) { continue; }
                 let tri = self.triangles[t];
                 let k = (0..3).find(|&k| tri[k] == current).unwrap();
                 let (a,b) = (tri[(k+1)%3],tri[(k+2)%3]);
@@ -199,7 +239,10 @@ impl CutMesh {
                 if t <= along+1e-9 { continue; }
                 if step.map_or(true,|(t0,_,_,_)| t < t0) { step = Some((t,a,b,s.clamp(0.,1.))); }
             }
-            let Some((t,a,b,s)) = step else { return Err(format!("the cut from {pu:?} to {pw:?} leaves the tool's mesh at {:?}",self.vertices[current as usize])) };
+            let Some((t,a,b,s)) = step else {
+                let facets: Vec<_> = here.iter().map(|&t| self.triangles[t].map(|v| { let p = self.vertices[v as usize]; (p,to2(p)) })).collect();
+                return Err(format!("the cut from {pu:?} to {pw:?} leaves the tool's mesh at {:?}; normals {nu:?} {nw:?} plane {n:?}; walked {:?}; facets here {facets:?}",self.vertices[current as usize],chain.iter().map(|&v| self.vertices[v as usize]).collect::<Vec<_>>()))
+            };
             let (pa,pb) = (self.vertices[a as usize],self.vertices[b as usize]);
             let p = add(pa,scale(sub(pb,pa),s));
             // the nearer end within the snap, or a new vertex: taking the
@@ -238,6 +281,7 @@ impl CutMesh {
 
     /// Cut along a polyline on the surface.
     pub fn cut_along(&mut self,line: &[(V3,V3)],closed: bool) -> Result<(),String> {
+        if self.index.is_none() { self.build_index(); }
         let ids: Vec<u32> = line.iter().map(|(p,_)| self.insert(*p)).collect::<Result<_,_>>()?;
         let mut normals: Vec<V3> = line.iter().map(|(_,n)| *n).collect();
         // a point given no normal takes the mesh's
@@ -251,11 +295,18 @@ impl CutMesh {
     pub fn components(&self) -> Vec<usize> {
         let mut parent: Vec<usize> = (0..self.triangles.len()).collect();
         fn find(parent: &mut Vec<usize>,i: usize) -> usize { let mut r = i; while parent[r] != r { r = parent[r]; } let mut j = i; while parent[j] != r { let next = parent[j]; parent[j] = r; j = next; } r }
-        let mut by_edge: std::collections::BTreeMap<(u32,u32),Vec<usize>> = Default::default();
-        for (i,t) in self.triangles.iter().enumerate() { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); by_edge.entry((a.min(b),a.max(b))).or_default().push(i); } }
-        for (e,ts) in &by_edge {
-            if self.cuts.contains(e) { continue; }
-            for w in ts.windows(2) { let (ri,rj) = (find(&mut parent,w[0]),find(&mut parent,w[1])); if ri != rj { parent[ri] = rj; } }
+        // every edge's facets, the edges in order and each edge's facets in index order
+        let mut by_edge: Vec<((u32,u32),u32)> = Vec::with_capacity(3*self.triangles.len());
+        for (i,t) in self.triangles.iter().enumerate() { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); by_edge.push(((a.min(b),a.max(b)),i as u32)); } }
+        by_edge.sort_unstable();
+        let mut start = 0;
+        while start < by_edge.len() {
+            let e = by_edge[start].0;
+            let end = start+by_edge[start..].partition_point(|x| x.0 == e);
+            if !self.cuts.contains(&e) {
+                for w in by_edge[start..end].windows(2) { let (ri,rj) = (find(&mut parent,w[0].1 as usize),find(&mut parent,w[1].1 as usize)); if ri != rj { parent[ri] = rj; } }
+            }
+            start = end;
         }
         (0..self.triangles.len()).map(|i| find(&mut parent,i)).collect()
     }
@@ -266,6 +317,20 @@ impl CutMesh {
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct CapComponent { pub facets: usize,pub extreme: f64,pub kept: bool }
 
+/// The tool's boundary at one end of the roll, cut along the sheets' end columns and reduced
+/// to what bounds the sweep there.
+#[derive(Clone,Debug)]
+pub struct Cap {
+    pub end: End,
+    /// The kept facets, their vertices with the tool's summed facet normals.
+    pub patch: SweepPatch,
+    /// Every component the cut left, kept or not.
+    pub components: Vec<CapComponent>,
+    /// Per vertex of `patch`: whether it lies on an edge of the tool (its facets lie on more
+    /// than one of the tool's faces), where its own label cannot say which face it speaks for.
+    pub tool_edges: Vec<bool>,
+}
+
 /// The tool's boundary at each end pose, cut along the end columns of
 /// `sheets` and reduced to the components that recede from the sweep (at
 /// the start) or advance into it (at the end), plus every grazing
@@ -275,11 +340,9 @@ pub struct CapComponent { pub facets: usize,pub extreme: f64,pub kept: bool }
 /// well within the certificate's probe, and no sliver thinner than it is
 /// left for the stitch); no facet edge is left longer than `longest` (the
 /// column spacing serves), so the labels at a cap's corners see what the
-/// labels at a sheet's corners see. With each cap come its vertices that lie
-/// on an edge of the tool (their facets lie on more than one of the tool's
-/// faces), where a vertex's own label cannot say which face it speaks for.
+/// labels at a sheet's corners see. The caps are the start's, then the end's.
 pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f64,longest: f64)
-    -> Result<([SweepPatch;2],[Vec<CapComponent>;2],[Vec<bool>;2]),String> {
+    -> Result<[Cap;2],String> {
     let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else { return Err("not a continuous sweep".into()) };
     let unit = sagitta/crate::curve::FLATNESS_PX;
     let tool = static_solid_at_unit(sk,*source as usize,unit,0)?;
@@ -287,11 +350,9 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
     let family = Family::read(sk,*motion as usize)?;
     let time_tolerance = 1e-9*(to.value-from.value).abs().max(1.);
     let mut out = Vec::with_capacity(2);
-    let mut reports = Vec::with_capacity(2);
-    let mut edges = Vec::with_capacity(2);
     for (end,t) in [(End::From,from.value),(End::To,to.value)] {
         let pose = family.at(t).map_err(|e| format!("{e:?}"))?;
-        let mut mesh = CutMesh {vertices:vertices.iter().map(|p| pose.point(*p)).collect(),triangles:triangles.clone(),faces:faces.clone(),cuts:Default::default(),vertex_tolerance:snap,sagitta};
+        let mut mesh = CutMesh::new(vertices.iter().map(|p| pose.point(*p)).collect(),triangles.clone(),faces.clone(),snap,sagitta);
         mesh.refine(longest);
         // the contact curves on the tool at this instant
         for s in sheets {
@@ -322,7 +383,7 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
             let entry = report.entry(component[i]).or_insert(CapComponent {facets:0,extreme:e,kept:e.abs() < decisive || e.signum() == wanted});
             entry.facets += 1;
         }
-        reports.push(report.into_values().collect::<Vec<_>>());
+        let components = report.into_values().collect::<Vec<_>>();
         let mut patch = SweepPatch {points:Vec::new(),normals:Vec::new(),triangles:Vec::new(),column:Vec::new(),times:vec![t],closed:false};
         // a vertex on a tool edge: its facets lie on more than one face
         let mut first = vec![u32::MAX;mesh.vertices.len()];
@@ -357,8 +418,7 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
                 remap[v as usize]
             }));
         }
-        out.push(patch);
-        edges.push(edge);
+        out.push(Cap {end,patch,components,tool_edges:edge});
     }
-    Ok(([out.remove(0),out.remove(0)],[reports.remove(0),reports.remove(0)],[edges.remove(0),edges.remove(0)]))
+    Ok([out.remove(0),out.remove(0)])
 }

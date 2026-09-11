@@ -1,6 +1,6 @@
 //! The field as judge: strict signs, brackets and the projection of a point
 //! onto the boundary along a direction, every query counted and timed.
-use crate::interval::{Interval as I,minimum::Options};
+use crate::interval::{Interval as I,minimum::{Options,Stop}};
 use crate::solid::{MaterialEvaluator,MaterialField};
 use std::time::{Duration,Instant};
 
@@ -44,6 +44,11 @@ pub enum JudgeError {
     Unresolved { point: V3, radius: f64, enclosure: [f64;2] },
     Field(String),
 }
+
+/// What a query asks of the field: the strict sign, resolved as finely as a near query may; the
+/// strict sign of a point expected beyond a band; or whether a point is deeper than a band.
+#[derive(Clone,Copy)]
+enum Ask { Sign, Beyond(f64), Deep(f64) }
 
 /// Counts and times of what the judge asked the field.
 #[derive(Clone,Copy,Debug,Default)]
@@ -97,13 +102,19 @@ impl FieldJudge {
         }
     }
 
-    fn query(&mut self,p: V3,band: f64,options: Options,near: bool,decide: bool) -> Result<(Sign,[f64;2]),JudgeError> {
+    fn query(&mut self,p: V3,ask: Ask) -> Result<(Sign,[f64;2]),JudgeError> {
         let started = Instant::now();
         let point = p.map(|x| I::point(x).map_err(|e| JudgeError::Field(format!("{e:?}")))).into_iter().collect::<Result<Vec<_>,_>>()?;
         let point: [I;3] = [point[0],point[1],point[2]];
-        let band = I::new(-band,band).map_err(|e| JudgeError::Field(format!("{e:?}")))?;
-        let bounds = if decide { self.evaluator.bounds_deciding(point,band,options) } else { self.evaluator.bounds_outside(point,band,options) }
-            .map_err(|e| JudgeError::Field(format!("{e:?}")))?;
+        let band = |b: f64| I::new(-b,b).map_err(|e| JudgeError::Field(format!("{e:?}")));
+        let (options,near,stop) = match ask {
+            // refined until the enclosure clears the tolerance or converges, so one within it
+            // is read as near (below) whichever side of zero it fell
+            Ask::Sign => (self.near,true,Stop::Outside(band(self.near.value_tolerance)?)),
+            Ask::Beyond(b) => (self.far,false,Stop::Outside(band(b)?)),
+            Ask::Deep(d) => (self.far,false,Stop::Decided(band(d)?)),
+        };
+        let bounds = self.evaluator.bounds_stopping(point,stop,options).map_err(|e| JudgeError::Field(format!("{e:?}")))?;
         let elapsed = started.elapsed();
         self.stats.roll_evaluations += bounds.sweeps.iter().map(|q| q.minimum.evaluations).sum::<usize>();
         if near {
@@ -111,7 +122,13 @@ impl FieldJudge {
             if elapsed > self.stats.near_slowest { self.stats.near_slowest = elapsed; }
         } else { self.stats.far += 1; self.stats.far_time += elapsed; }
         let [lo,hi] = bounds.value.bounds();
-        let sign = if hi < 0. { Sign::Material } else if lo > 0. { Sign::Exterior } else {
+        // A near query's enclosure lying wholly within its tolerance of zero says what one
+        // containing zero says, the boundary within that width: read strictly, a point on an
+        // exactly computed face (a plane, a grazing end face) took its sign from which side of
+        // the face rounding put it
+        let within_tolerance = near && lo >= -options.value_tolerance && hi <= options.value_tolerance;
+        let sign = if within_tolerance && (hi < 0. || lo > 0.) { self.stats.near_hits += 1; Sign::Near {within:lo.abs().max(hi.abs())} }
+            else if hi < 0. { Sign::Material } else if lo > 0. { Sign::Exterior } else {
             use crate::interval::minimum::Status;
             let exhausted = bounds.sweeps.iter().any(|q| q.minimum.status == Status::BudgetExhausted);
             let limited = bounds.sweeps.iter().any(|q| q.minimum.status == Status::ResolutionLimit);
@@ -126,14 +143,14 @@ impl FieldJudge {
     }
 
     /// The strict sign at a point, resolved as finely as a near query may.
-    pub fn sign(&mut self,p: V3) -> Result<(Sign,[f64;2]),JudgeError> { self.query(p,0.,self.near,true,false) }
+    pub fn sign(&mut self,p: V3) -> Result<(Sign,[f64;2]),JudgeError> { self.query(p,Ask::Sign) }
 
     /// The strict sign at a point expected at least `band` from the boundary:
     /// the search stops as soon as the enclosure clears the band.
     pub fn sign_beyond(&mut self,p: V3,band: f64) -> Result<(Sign,[f64;2]),JudgeError> {
         let key = (p.map(f64::to_bits),band.to_bits());
         if let Some(&answer) = self.beyond.get(&key) { return Ok(answer); }
-        let answer = self.query(p,band,self.far,false,false)?;
+        let answer = self.query(p,Ask::Beyond(band))?;
         self.beyond.insert(key,answer);
         Ok(answer)
     }
@@ -144,7 +161,7 @@ impl FieldJudge {
     /// soon as that is decided, inside the band as well as outside it: a
     /// point on the boundary no longer refines to the full value tolerance.
     pub fn deep_sign(&mut self,p: V3,depth: f64) -> Result<(Sign,[f64;2]),JudgeError> {
-        let (sign,[lo,hi]) = self.query(p,depth,self.far,false,true)?;
+        let (sign,[lo,hi]) = self.query(p,Ask::Deep(depth))?;
         Ok(match sign {
             Sign::Material if hi >= -depth => (Sign::Near {within:lo.abs().max(hi.abs())},[lo,hi]),
             Sign::Exterior if lo <= depth => (Sign::Near {within:lo.abs().max(hi.abs())},[lo,hi]),

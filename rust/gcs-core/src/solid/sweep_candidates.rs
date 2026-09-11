@@ -14,11 +14,7 @@ use super::{SweepContacts,ToolFace,ToolEdge,tool_faces::Crease};
 use crate::{envelope::{self,Motion},plane};
 
 type V3 = [f64;3];
-fn sub(a: V3,b: V3) -> V3 { std::array::from_fn(|k| a[k]-b[k]) }
-fn norm(a: V3) -> f64 { plane::dot(a,a).sqrt() }
-fn distance(a: V3,b: V3) -> f64 { norm(sub(a,b)) }
-fn add(a: V3,b: V3) -> V3 { std::array::from_fn(|k| a[k]+b[k]) }
-fn scale(a: V3,s: f64) -> V3 { a.map(|x| x*s) }
+use crate::space::{distance,norm,sub};
 
 /// A polyline of contact positions with outward tool normals, in the tool's
 /// own frame. `closed` means the last point joins the first. `joints` are
@@ -609,7 +605,7 @@ impl SweepContacts {
             let (h_lo,h_hi) = (speed_lo-threshold,speed_hi-threshold);
             let t = if h_hi == 0. { hi } else if h_lo == 0. { lo } else {
                 let (mut off,mut failed) = (false,None);
-                let t = super::tool_faces::bracketed_root(|t| match at(t) {
+                let t = crate::roots::bracketed_root(|t| match at(t) {
                     Ok(Some(p)) => Some(p.speeds[k]-threshold),
                     Ok(None) => { off = true; None },
                     Err(e) => { failed = Some(e); None },
@@ -635,18 +631,6 @@ impl SweepContacts {
         };
         let samples = super::tool_faces::EDGE_SAMPLES;
         let points: Vec<Option<Point>> = signs.edge_points[index].iter().map(|g| g.map(moving)).collect();
-        if std::env::var("SOLVENT_FAN_DEBUG").is_ok() {
-            let [a,b] = edge.faces();
-            let mut last: Option<(i32,i32,bool)> = None;
-            for (i,p) in points.iter().enumerate() {
-                let state = p.as_ref().map(|p| (class(p.speeds[0]),class(p.speeds[1]),in_fan(p)));
-                if state != last.map(Some).unwrap_or(None) || i == 0 || i == samples {
-                    match p { Some(p) => eprintln!("edge [{a}, {b}] sample {i}: speeds {:.3e} {:.3e} classes {:?} fan {} at {:?}",p.speeds[0],p.speeds[1],(class(p.speeds[0]),class(p.speeds[1])),in_fan(p),p.position.map(|x| (x*1e4).round()/1e4)),
-                        None => eprintln!("edge [{a}, {b}] sample {i}: off") }
-                }
-                last = state;
-            }
-        }
         let mut strands = Vec::new();
         let mut current: Option<Strand> = None;
         // A fan of no length (a smooth junction, where both faces' strands
@@ -867,22 +851,16 @@ impl SweepContacts {
                 // the zip's triangles, posed, in buckets a column spacing wide
                 let point = |x: (bool,u32)| if x.0 { pb.point(next.points[x.1 as usize]) } else { pa.point(last.points[x.1 as usize]) };
                 let triangles: Vec<[V3;3]> = zip_pieces(last,next).into_iter().map(|t| t.map(point)).collect();
-                let cell = spacing.max(1e-9);
-                let key = |p: V3| p.map(|x| (x/cell).floor() as i64);
-                let mut buckets: std::collections::BTreeMap<[i64;3],Vec<usize>> = Default::default();
+                let mut buckets = crate::space::Grid::new(spacing.max(1e-9));
                 for (i,t) in triangles.iter().enumerate() {
-                    let (lo,hi) = (key(std::array::from_fn(|k| t.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min))),
-                        key(std::array::from_fn(|k| t.iter().map(|q| q[k]).fold(f64::NEG_INFINITY,f64::max))));
-                    for x in lo[0]..=hi[0] { for y in lo[1]..=hi[1] { for z in lo[2]..=hi[2] { buckets.entry([x,y,z]).or_default().push(i); } } }
+                    buckets.insert_box(std::array::from_fn(|k| t.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min)),
+                        std::array::from_fn(|k| t.iter().map(|q| q[k]).fold(f64::NEG_INFINITY,f64::max)),i as u32);
                 }
                 for p in &mid.1[k].points {
                     let p = pm.point(*p);
                     if let Some(reach) = reach { if !reach(p) { continue; } }
-                    let c = key(p);
                     let mut d = f64::INFINITY;
-                    for x in c[0]-1..=c[0]+1 { for y in c[1]-1..=c[1]+1 { for z in c[2]-1..=c[2]+1 {
-                        if let Some(ts) = buckets.get(&[x,y,z]) { for &i in ts { d = d.min(triangle_distance(p,triangles[i])); } }
-                    } } }
+                    buckets.around(p,|i| d = d.min(triangle_distance(p,triangles[i as usize])));
                     if d > sagitta { return Ok(false); }
                 }
             }
@@ -1040,26 +1018,7 @@ fn resample(c: &Characteristic,rows: usize) -> (Vec<V3>,Vec<V3>) {
 
 
 /// The distance from a point to a triangle (Ericson's closest point).
-fn triangle_distance(p: V3,[a,b,c]: [V3;3]) -> f64 {
-    let (ab,ac,ap) = (sub(b,a),sub(c,a),sub(p,a));
-    let (d1,d2) = (plane::dot(ab,ap),plane::dot(ac,ap));
-    if d1 <= 0. && d2 <= 0. { return distance(p,a); }
-    let bp = sub(p,b);
-    let (d3,d4) = (plane::dot(ab,bp),plane::dot(ac,bp));
-    if d3 >= 0. && d4 <= d3 { return distance(p,b); }
-    let vc = d1*d4-d3*d2;
-    if vc <= 0. && d1 >= 0. && d3 <= 0. { let v = d1/(d1-d3); return distance(p,add(a,scale(ab,v))); }
-    let cp = sub(p,c);
-    let (d5,d6) = (plane::dot(ab,cp),plane::dot(ac,cp));
-    if d6 >= 0. && d5 <= d6 { return distance(p,c); }
-    let vb = d5*d2-d1*d6;
-    if vb <= 0. && d2 >= 0. && d6 <= 0. { let w = d2/(d2-d6); return distance(p,add(a,scale(ac,w))); }
-    let va = d3*d6-d5*d4;
-    if va <= 0. && d4-d3 >= 0. && d5-d6 >= 0. { let w = (d4-d3)/((d4-d3)+(d5-d6)); return distance(p,add(b,scale(sub(c,b),w))); }
-    let denom = 1./(va+vb+vc);
-    let (v,w) = (vb*denom,vc*denom);
-    distance(p,add(a,add(scale(ab,v),scale(ac,w))))
-}
+fn triangle_distance(p: V3,[a,b,c]: [V3;3]) -> f64 { distance(p,crate::space::closest_on_triangle(p,a,b,c).0) }
 
 fn segment_distance(p: V3,a: V3,b: V3) -> f64 {
     let ab = sub(b,a); let ap = sub(p,a);
@@ -1085,8 +1044,13 @@ fn zip(a: &Characteristic,b: &Characteristic) -> Vec<[(bool,u32);3]> {
 pub fn zip_polylines(a: &[V3],b: &[V3],closed: bool) -> Vec<[(bool,u32);3]> {
     let (na,nb) = (a.len(),b.len());
     if na < 2 || nb < 2 { return Vec::new(); }
+    // Two choices within this of each other are a tie, taken the same way every time: equal
+    // rungs (a plane's grid, a symmetric pair of curves) differ by rounding alone, and a strict
+    // comparison let that pick the diagonal
+    let margin = 1e-9*a.iter().chain(b).flatten().fold(1e-3_f64,|m,x| m.max(x.abs()));
     let offset = if closed {
-        (0..nb).min_by(|&i,&j| distance(b[i],a[0]).total_cmp(&distance(b[j],a[0]))).unwrap()
+        let least = (0..nb).map(|i| distance(b[i],a[0])).fold(f64::INFINITY,f64::min);
+        (0..nb).find(|&i| distance(b[i],a[0]) <= least+margin).unwrap()
     } else { 0 };
     // the walks: an open pair over every vertex, a closed pair once round and
     // back to the start
@@ -1103,7 +1067,7 @@ pub fn zip_polylines(a: &[V3],b: &[V3],closed: bool) -> Vec<[(bool,u32);3]> {
         let rung = distance(pa(i),pb(j));
         let (mut best,mut via) = (f64::INFINITY,0);
         if i > 0 && cost[at(i-1,j)]+rung < best { best = cost[at(i-1,j)]+rung; via = 1; }
-        if j > 0 && cost[at(i,j-1)]+rung < best { best = cost[at(i,j-1)]+rung; via = 2; }
+        if j > 0 && cost[at(i,j-1)]+rung < best-(if via == 1 { margin } else { 0. }) { best = cost[at(i,j-1)]+rung; via = 2; }
         cost[at(i,j)] = best; from[at(i,j)] = via;
     } }
     // walk back from the far corner, emitting a triangle per step

@@ -222,3 +222,116 @@ fn stl(vertices: &[V3],triangles: &[[u32;3]],name: &str) -> (Vec<u8>,usize) {
     }
     (out,collapsed)
 }
+
+/// The certified cases do not stand on knife edges: every seed point moved by about 1e-12 (far
+/// below every tolerance the construction uses) leaves the mesh as it was, triangle for
+/// triangle.
+#[test]
+fn seeds_moved_below_every_tolerance_leave_the_mesh_as_it_was() {
+    use gcs_core::solid::swept_boundary::{SweptBoundaryOptions,construct_from,seeds};
+    for source in [turning_prism(),turned_lens()] {
+        let e = harness::read(&source);
+        let swept = harness::solid(&e,"swept");
+        let options = SweptBoundaryOptions {sagitta:SAGITTA,spacing:0.5,..Default::default()};
+        let (_,sheets) = seeds(&e.sketch,swept,options.spacing,options.sagitta,&|_| {}).unwrap();
+        let mut moved = sheets.clone();
+        let mut k = 0_f64;
+        for s in &mut moved { for p in &mut s.points { k += 1.; *p = [p[0]+1e-12*(1.7*k).sin(),p[1]+1e-12*(2.3*k).cos(),p[2]+1e-12*(3.1*k+1.).sin()]; } }
+        let build = |sheets| construct_from(&e.sketch,swept,&options,sheets,&mut |_,_| {}).unwrap().mesh;
+        let (a,b) = (build(sheets),build(moved));
+        assert_eq!(a.triangles,b.triangles);
+        assert_eq!(a.sheet,b.sheet);
+        let worst = a.vertices.iter().zip(&b.vertices).map(|(p,q)| (0..3).map(|k| (p[k]-q[k]).abs()).fold(0.,f64::max)).fold(0.,f64::max);
+        assert!(a.vertices.len() == b.vertices.len() && worst <= 1e-9,"{} vertices against {}, one moved {worst:e}",a.vertices.len(),b.vertices.len());
+    }
+}
+
+/// The same of all five milestone-4 cases, the three deferred ones included: every stage's
+/// labels, keep flags, triangles and vertices as they were. About a minute (the dumbbell); prints
+/// a line per case.
+#[test]
+#[ignore]
+fn seeds_moved_below_every_tolerance_leave_every_milestone_4_case_as_it_was() {
+    use gcs_core::solid::swept_boundary::{KeptMesh,Stage,SweptBoundaryOptions,construct_from,seeds};
+    #[derive(Clone)]
+    enum Print { Codes(Vec<u64>),Mesh(Vec<[u32;3]>,Vec<u32>,Vec<V3>) }
+    let print = |stage: &Stage<'_>| -> (&'static str,Print) {
+        let mesh = |m: &KeptMesh| Print::Mesh(m.triangles.clone(),m.sheet.clone(),m.vertices.clone());
+        match stage {
+            Stage::Seeded {..} => ("seeded",Print::Codes(vec![])),
+            Stage::Capped {caps} => ("capped",Print::Mesh(caps.iter().flat_map(|c| c.patch.triangles.clone()).collect(),vec![],caps.iter().flat_map(|c| c.patch.points.clone()).collect())),
+            Stage::Labelled {labelled,..} => ("labelled",Print::Codes(labelled.iter().flat_map(|l| l.labels.iter().map(|x| *x as u64)).collect())),
+            Stage::Clipped {mesh:m,..} => ("clipped",mesh(m)),
+            Stage::Merged {mesh:m,..} => ("merged",mesh(m)),
+            Stage::Kept {keep,..} => ("kept",Print::Codes(keep.iter().map(|k| *k as u64).collect())),
+            Stage::Unioned {mesh:m,..} => ("unioned",mesh(m)),
+            Stage::Uncovered {mesh:m,..} => ("uncovered",mesh(m)),
+            Stage::Welded {mesh:m,..} => ("welded",mesh(m)),
+            Stage::Split {mesh:m} => ("split",mesh(m)),
+            Stage::Zipped {mesh:m,..} => ("zipped",mesh(m)),
+            Stage::Certified {mesh:m,..} => ("certified",mesh(m)),
+        }
+    };
+    // None when the two agree: the same codes, or the same triangles on vertices within 1e-9
+    let differ = |a: &Print,b: &Print| -> Option<String> {
+        match (a,b) {
+            (Print::Codes(x),Print::Codes(y)) => (x != y).then(|| format!("{} of {} decisions",x.iter().zip(y).filter(|(p,q)| p != q).count()+x.len().abs_diff(y.len()),x.len())),
+            (Print::Mesh(ta,sa,va),Print::Mesh(tb,sb,vb)) => {
+                // within the construction's coincidence (the weld's 1e-7): an intersection of two
+                // nearly parallel lines turns a 1e-12 move into a larger, still negligible one
+                let moved = va.len() != vb.len() || va.iter().zip(vb).any(|(p,q)| (0..3).any(|k| (p[k]-q[k]).abs() > 1e-7));
+                if ta == tb && sa == sb && !moved { return None; }
+                // the triangles by sheet and centroid, each matched within 1e-9 of one in the other
+                let cs = |t: &Vec<[u32;3]>,s: &Vec<u32>,v: &Vec<V3>| -> Vec<(u32,V3)> { t.iter().enumerate().map(|(i,tri)| (s.get(i).copied().unwrap_or(0),std::array::from_fn(|k| tri.iter().map(|&x| v[x as usize][k]).sum::<f64>()/3.))).collect() };
+                let (ca,cb) = (cs(ta,sa,va),cs(tb,sb,vb));
+                let unmatched = |p: &Vec<(u32,V3)>,q: &Vec<(u32,V3)>| -> Vec<(u32,V3)> {
+                    let mut grid: std::collections::BTreeMap<[i64;3],Vec<usize>> = Default::default();
+                    for (j,(_,c)) in q.iter().enumerate() { grid.entry(c.map(|x| (x*1e4).floor() as i64)).or_default().push(j); }
+                    p.iter().filter(|(s,c)| {
+                        let k = c.map(|x| (x*1e4).floor() as i64);
+                        !(-1..=1).any(|dx| (-1..=1).any(|dy| (-1..=1).any(|dz| grid.get(&[k[0]+dx,k[1]+dy,k[2]+dz]).is_some_and(|l| l.iter().any(|&j| q[j].0 == *s && (0..3).all(|d| (q[j].1[d]-c[d]).abs() <= 1e-7))))))
+                    }).copied().collect()
+                };
+                let (oa,ob) = (unmatched(&ca,&cb),unmatched(&cb,&ca));
+                Some(if oa.is_empty() && ob.is_empty() {
+                    let at = (0..ta.len().min(tb.len())).find(|&i| ta[i] != tb[i] || sa.get(i) != sb.get(i));
+                    let show = |t: [u32;3],v: &Vec<V3>| t.map(|x| (x,v[x as usize].map(|y| (y*1e4).round()/1e4)));
+                    match at {
+                        Some(i) => {
+                            let kind = { let (mut x,mut y) = (ta[i],tb[i]); x.sort(); y.sort(); if x != y { "other corners" } else if (0..3).any(|r| (0..3).all(|k| ta[i][k] == tb[i][(k+r)%3])) { "rotated" } else { "reversed" } };
+                            format!("the same {} triangles, ordered otherwise: first at {i} ({kind}) {:?} against {:?}",ta.len(),show(ta[i],va),show(tb[i],vb))
+                        }
+                        None => format!("the same {} triangles and indices, vertices moved",ta.len()),
+                    }
+                }
+                    else { format!("{} against {} triangles; traced only {} e.g. {:?}; moved only {} e.g. {:?}",ta.len(),tb.len(),oa.len(),&oa[..oa.len().min(3)],ob.len(),&ob[..ob.len().min(3)]) })
+            }
+            _ => Some("different kinds".into()),
+        }
+    };
+    let mut failed = Vec::new();
+    for (name,source) in [("turning_prism",turning_prism()),("turned_lens",turned_lens()),("turned_box",turned_box()),("tumbling_cylinder",tumbling_cylinder()),("sliding_dumbbell",sliding_dumbbell())] {
+        let e = harness::read(&source);
+        let swept = harness::solid(&e,"swept");
+        let options = SweptBoundaryOptions {sagitta:SAGITTA,spacing:0.5,..Default::default()};
+        let (_,sheets) = seeds(&e.sketch,swept,options.spacing,options.sagitta,&|_| {}).unwrap();
+        let run = |sheets| -> Result<Vec<(&'static str,Print)>,String> {
+            let mut prints = Vec::new();
+            construct_from(&e.sketch,swept,&options,sheets,&mut |s,_| prints.push(print(&s))).map_err(|e| format!("{e:?}"))?;
+            Ok(prints)
+        };
+        let traced = run(sheets.clone());
+        for phase in [0.,1.] {
+            let mut moved = sheets.clone();
+            let mut k = 0_f64;
+            for s in &mut moved { for p in &mut s.points { k += 1.; *p = [p[0]+1e-12*(1.7*k+phase).sin(),p[1]+1e-12*(2.3*k+phase).cos(),p[2]+1e-12*(3.1*k+1.+phase).sin()]; } }
+            let verdict = match (&traced,run(moved)) {
+                (Ok(a),Ok(b)) => a.iter().zip(&b).find_map(|((stage,x),(_,y))| differ(x,y).map(|d| format!("first differs at {stage}: {d}"))),
+                (a,b) => Some(format!("refused: traced {:?}, moved {:?}",a.as_ref().err(),b.err())),
+            };
+            eprintln!("{name} (phase {phase}): {}",verdict.as_deref().unwrap_or("as it was"));
+            if let Some(v) = verdict { failed.push(format!("{name}: {v}")); }
+        }
+    }
+    assert!(failed.is_empty(),"{failed:?}");
+}

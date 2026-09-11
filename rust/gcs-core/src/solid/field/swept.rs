@@ -1,6 +1,6 @@
 //! Continuous volume sweeps of explicit one-Lipschitz material fields.
 use super::{SpatialField,Error,I,V};
-use crate::{interval::minimum::{self,Minimum,Options},motion::{Family,MotionBounds}};
+use crate::{interval::minimum::{self,Minimum,Options,Stop},motion::{Family,MotionBounds}};
 use std::collections::BTreeMap;
 
 pub type SweepError = minimum::Error<Error>;
@@ -54,7 +54,7 @@ impl SweepEvaluator {
     /// field-value band. `Separated` retains bounds and an attained witness;
     /// it does not claim convergence to the value-width tolerance.
     pub fn bounds_outside(&mut self,p: V,band: I,options: Options) -> Result<Minimum,SweepError> {
-        self.evaluate(p,options,Some(band),false,|_,_| {})
+        self.evaluate(p,options,Stop::Outside(band),|_,_| {})
     }
 
     /// Observe raw interval-oracle enclosures, e.g. to extract independently
@@ -62,12 +62,11 @@ impl SweepEvaluator {
     /// or pruning decisions; it cannot change the oracle's mathematical result.
     pub fn bounds_with_observer(&mut self,p: V,options: Options,observe: impl FnMut(I,I))
         -> Result<Minimum,SweepError> {
-        self.evaluate(p,options,None,false,observe)
+        self.evaluate(p,options,Stop::Converged,observe)
     }
 
-    /// With `contain`, the search also stops once the enclosure lies strictly
-    /// inside `band` (`Status::Contained`).
-    pub(super) fn evaluate(&mut self,p: V,options: Options,band: Option<I>,contain: bool,mut observe: impl FnMut(I,I))
+    /// The search stops as `stop` allows (see `minimum::Stop`).
+    pub(super) fn evaluate(&mut self,p: V,options: Options,stop: Stop,mut observe: impl FnMut(I,I))
         -> Result<Minimum,SweepError> {
         // The motion's speed bound over the whole input box.
         let speed = self.field.motion.inverse_point_speed_bound_over(p,self.field.domain)
@@ -76,7 +75,7 @@ impl SweepEvaluator {
         // and both are the source at the pose of that one midpoint: the last
         // midpoint's value is kept, and only the travel differs.
         let mut last: Option<(u64,I)> = None;
-        minimum::search(self.field.domain,|t| {
+        minimum::refine(self.field.domain,|t| {
             let [lo,hi] = t.bounds(); let mid = lo*0.5+hi*0.5;
             let key = mid.to_bits();
             let value = match last {
@@ -99,6 +98,6 @@ impl SweepEvaluator {
             let bound = value.add(I::new(-travel,travel)?)?;
             observe(t,bound);
             Ok::<_,Error>(bound)
-        },options,band,contain)
+        },options,stop)
     }
 }

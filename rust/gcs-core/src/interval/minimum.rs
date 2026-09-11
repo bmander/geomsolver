@@ -31,6 +31,34 @@ pub enum Status {
     ResolutionLimit,
 }
 
+/// When a search may stop short of the value tolerance.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum Stop {
+    /// Only at the value tolerance, the budget or the resolution limit.
+    Converged,
+    /// Also once the enclosure lies strictly outside the band (`Status::Separated`).
+    Outside(Interval),
+    /// Also once it lies strictly outside the band or strictly inside it
+    /// (`Status::Contained`): which side of the band the value lies on is then decided.
+    Decided(Interval),
+}
+
+impl Stop {
+    /// The band the search is asked about, if any.
+    pub fn band(self) -> Option<Interval> {
+        match self { Stop::Converged => None, Stop::Outside(b) | Stop::Decided(b) => Some(b) }
+    }
+    /// The stop for an operand of a Boolean: containment of one operand's value decides
+    /// nothing about the composite, so there only separation may stop it.
+    pub(crate) fn operand(self) -> Stop {
+        match self { Stop::Decided(b) => Stop::Outside(b), s => s }
+    }
+    /// The stop for a subtracted operand, whose value enters negated.
+    pub(crate) fn negated(self) -> Stop {
+        match self { Stop::Converged => Stop::Converged, Stop::Outside(b) => Stop::Outside(b.neg()), Stop::Decided(b) => Stop::Decided(b.neg()) }
+    }
+}
+
 #[derive(Clone,Copy,Debug)]
 pub struct Minimum {
     pub value: Interval,
@@ -78,7 +106,7 @@ fn overlap<E>(a: Interval,b: Interval) -> Result<Interval,Error<E>> {
 /// inconsistent or incorrect oracles cannot in general be detected by this routine.
 pub fn enclose<E>(domain: Interval,bound: impl FnMut(Interval) -> Result<Interval,E>,
     options: Options) -> Result<Minimum,Error<E>> {
-    refine(domain,bound,options,None)
+    refine(domain,bound,options,Stop::Converged)
 }
 
 /// Refine until the value-width tolerance is reached, the entire minimum
@@ -87,21 +115,17 @@ pub fn enclose<E>(domain: Interval,bound: impl FnMut(Interval) -> Result<Interva
 /// bound, never sampled signs alone. The retained enclosure remains valid.
 pub fn enclose_outside<E>(domain: Interval,bound: impl FnMut(Interval) -> Result<Interval,E>,
     options: Options,band: Interval) -> Result<Minimum,Error<E>> {
-    refine(domain,bound,options,Some(band))
+    refine(domain,bound,options,Stop::Outside(band))
 }
 
-pub(crate) fn refine<E>(domain: Interval,bound: impl FnMut(Interval) -> Result<Interval,E>,
-    options: Options,band: Option<Interval>) -> Result<Minimum,Error<E>> {
-    search(domain,bound,options,band,false)
-}
-
-/// `refine`, and with `contain` also stopping as soon as the enclosure lies
-/// strictly inside `band`. The enclosures a search reports are nested (a
-/// cell's value is intersected with its parent's, and the attained upper
-/// bound only falls), so a contained enclosure is where the value stays.
-pub(crate) fn search<E>(domain: Interval,mut bound: impl FnMut(Interval) -> Result<Interval,E>,
-    options: Options,band: Option<Interval>,contain: bool) -> Result<Minimum,Error<E>> {
+/// With `Stop::Decided`, the search also stops as soon as the enclosure lies strictly inside
+/// the band. The enclosures a search reports are nested (a cell's value is intersected with its
+/// parent's, and the attained upper bound only falls), so a contained enclosure is where the
+/// value stays.
+pub(crate) fn refine<E>(domain: Interval,mut bound: impl FnMut(Interval) -> Result<Interval,E>,
+    options: Options,stop: Stop) -> Result<Minimum,Error<E>> {
     if !options.valid() { return Err(Error::InvalidOptions); }
+    let (band,contain) = (stop.band(),matches!(stop,Stop::Decided(_)));
     let root = bound(domain).map_err(Error::Oracle)?;
     let mut evaluations = 1;
     let mut best = (f64::INFINITY,domain.bounds()[0]);

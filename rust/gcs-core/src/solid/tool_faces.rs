@@ -8,8 +8,7 @@ use super::{RevolvedSurface,surface::contact::sinusoid_roots};
 use crate::{envelope::{self,Error,Motion,SurfacePoint},plane::{cross,dot,scaled}};
 
 type V3 = [f64;3];
-fn add(a: V3,b: V3) -> V3 { std::array::from_fn(|k| a[k]+b[k]) }
-fn sub(a: V3,b: V3) -> V3 { std::array::from_fn(|k| a[k]-b[k]) }
+use crate::space::{add,sub};
 
 /// A straight or circular edge of a planar loop, in the plane's own
 /// coordinates: what a prism's profile is made of.
@@ -469,7 +468,7 @@ impl Crease {
         let mut best = (u,v);
         if let (Some(gm),Some(gp)) = (g(-h),g(h)) {
             if (gm < 0.) != (gp < 0.) {
-                let s = bracketed_root(g,-h,gm,h,gp,2.*h*1e-15);
+                let s = crate::roots::bracketed_root(g,-h,gm,h,gp,2.*h*1e-15);
                 best = (u+s*perp.0,wrap(v+s*perp.1));
             }
         }
@@ -485,33 +484,6 @@ impl Crease {
         let k = (x.floor() as usize).min(n-2);
         sub(self.samples[k+1].0,self.samples[k].0)
     }
-}
-
-/// A root of `f` in the bracket `[a, b]` (`fa`, `fb` of strictly opposite
-/// signs), to within `width`: regula falsi with the Illinois fix, which keeps
-/// a bracket like bisection but converges superlinearly, a handful of steps
-/// where bisection takes one per bit. A step that leaves the domain (`f`
-/// gives none) ends the search at the bracket's middle, as bisection did.
-pub(crate) fn bracketed_root(mut f: impl FnMut(f64) -> Option<f64>,mut a: f64,mut fa: f64,mut b: f64,mut fb: f64,width: f64) -> f64 {
-    let mut side = 0;
-    for _ in 0..64 {
-        if (b-a).abs() <= width { break; }
-        let mut c = (a*fb-b*fa)/(fb-fa);
-        // a secant step outside the bracket (a flat or huge difference) bisects
-        if !(c > a.min(b) && c < a.max(b)) { c = 0.5*(a+b); }
-        let Some(fc) = f(c) else { break };
-        if fc == 0. { return c; }
-        if (fc < 0.) == (fb < 0.) {
-            b = c; fb = fc;
-            if side == -1 { fa *= 0.5; }
-            side = -1;
-        } else {
-            a = c; fa = fc;
-            if side == 1 { fb *= 0.5; }
-            side = 1;
-        }
-    }
-    0.5*(a+b)
 }
 
 /// The creases of face `b`'s carrier over face `a`: marching squares over

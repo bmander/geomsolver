@@ -15,11 +15,7 @@ use super::trim::KeptMesh;
 type V3 = [f64;3];
 pub(super) type P2 = (Option<u32>,f64,f64);
 
-fn sub(a: V3,b: V3) -> V3 { [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
-fn dot(a: V3,b: V3) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
-fn cross(a: V3,b: V3) -> V3 { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
-fn norm(a: V3) -> f64 { dot(a,a).sqrt() }
-fn add(a: V3,b: V3) -> V3 { [a[0]+b[0],a[1]+b[1],a[2]+b[2]] }
+use crate::space::{add,cross,dot,norm,sub};
 
 pub(super) fn area2(p: &[P2]) -> f64 {
     let n = p.len();
@@ -94,8 +90,7 @@ pub fn planar_union(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
 fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
     let normal = |t: &[u32;3]| -> Option<(V3,f64)> {
         let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
-        let n = cross(sub(b,a),sub(c,a)); let l = norm(n);
-        (l > 0.).then(|| { let n = n.map(|x| x/l); (n,dot(n,a)) })
+        crate::space::stable_normal(a,b,c).map(|n| (n,dot(n,a)))
     };
     // groups by unsigned plane; the side a group faces is its members'
     // area-weighted majority, so one sliver wound by a garbage normal
@@ -108,9 +103,7 @@ fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
     // normal or to its reverse. Of the groups found there, the first made is
     // taken, as a scan of every group would: a curved sheet is a group per
     // triangle, and that scan was quadratic.
-    let cell = 2e-3;
-    let key = |n: V3| n.map(|x| (x/cell).floor() as i64);
-    let mut index: std::collections::HashMap<[i64;3],Vec<usize>> = Default::default();
+    let mut index = crate::space::Grid::new(2e-3);
     for (i,t) in mesh.triangles.iter().enumerate() {
         let Some((n,d)) = normal(t) else { loose.push(i); continue };
         let corners = t.map(|v| mesh.vertices[v as usize]);
@@ -118,15 +111,11 @@ fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
         let matches = |(gn,gd,_,_): &(V3,f64,Vec<usize>,V3)| dot(n,*gn).abs() >= 1.-1e-6 && corners.iter().all(|p| (dot(*gn,*p)-gd).abs() <= tolerance) && (d*dot(n,*gn).signum()-gd).abs() <= tolerance;
         let mut g: Option<usize> = None;
         for sign in [1.,-1.] {
-            let k = key(n.map(|x| sign*x));
-            for dx in -1..=1 { for dy in -1..=1 { for dz in -1..=1 {
-                let Some(list) = index.get(&[k[0]+dx,k[1]+dy,k[2]+dz]) else { continue };
-                for &c in list { if g.is_none_or(|g| c < g) && matches(&groups[c]) { g = Some(c); } }
-            } } }
+            index.around(n.map(|x| sign*x),|c| { let c = c as usize; if g.is_none_or(|g| c < g) && matches(&groups[c]) { g = Some(c); } });
         }
         match g {
             Some(g) => { groups[g].2.push(i); groups[g].3 = add(groups[g].3,weighted); },
-            None => { index.entry(key(n)).or_default().push(groups.len()); groups.push((n,d,vec![i],weighted)); }
+            None => { index.insert(n,groups.len() as u32); groups.push((n,d,vec![i],weighted)); }
         }
     }
     // the side each triangle faces: its group's majority where it has one
@@ -147,8 +136,8 @@ fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
         (std::array::from_fn(|k| c[0][k].min(c[1][k]).min(c[2][k])),std::array::from_fn(|k| c[0][k].max(c[1][k]).max(c[2][k])))
     }).collect();
     let (lo,hi) = boxes.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),(a,b)| (std::array::from_fn(|k| lo[k].min(a[k])),std::array::from_fn(|k| hi[k].max(b[k]))));
-    // One flat table, cells about a triangle's size (widened while there would be more cells
-    // than a few per triangle): a cell's triangles are a run of `listed` from `starts`.
+    // Cells about a triangle's size, widened while the mesh's box would hold more cells than a
+    // few per triangle; a query reaching more of those cells than there are triangles reads them all.
     let count = mesh.triangles.len();
     let size = boxes.iter().map(|(a,b)| (0..3).map(|k| b[k]-a[k]).fold(0.,f64::max)).sum::<f64>()/count.max(1) as f64;
     let mut cell = if size.is_finite() && size > 0. { size } else { 1. };
@@ -156,22 +145,11 @@ fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
     while { let d = dims(cell); d[0].saturating_mul(d[1]).saturating_mul(d[2]) > 8*count+64 } { cell *= 1.5; }
     let d = dims(cell);
     let at = |p: V3| -> [usize;3] { std::array::from_fn(|k| (((p[k]-lo[k])/cell).floor().max(0.) as usize).min(d[k]-1)) };
-    let index = |c: [usize;3]| (c[0]*d[1]+c[1])*d[2]+c[2];
-    let mut starts = vec![0usize;d[0]*d[1]*d[2]+1];
-    let mut listed: Vec<usize> = Vec::new();
-    if trim {
-        for (a,b) in &boxes {
-            let (ka,kb) = (at(*a),at(*b));
-            for x in ka[0]..=kb[0] { for y in ka[1]..=kb[1] { for z in ka[2]..=kb[2] { starts[index([x,y,z])+1] += 1; } } }
-        }
-        for c in 1..starts.len() { starts[c] += starts[c-1]; }
-        let mut fill = starts.clone();
-        listed = vec![0;starts[starts.len()-1]];
-        for (i,(a,b)) in boxes.iter().enumerate() {
-            let (ka,kb) = (at(*a),at(*b));
-            for x in ka[0]..=kb[0] { for y in ka[1]..=kb[1] { for z in ka[2]..=kb[2] { let c = index([x,y,z]); listed[fill[c]] = i; fill[c] += 1; } } }
-        }
-    }
+    let feet_grid = {
+        let mut grid = crate::space::Grid::new(cell);
+        if trim { for (i,(a,b)) in boxes.iter().enumerate() { grid.insert_box(*a,*b,i as u32); } }
+        grid.pack()
+    };
     // the last group each triangle was gathered for, so one reached through several cells is
     // taken once
     let mut stamp = vec![u32::MAX;count];
@@ -239,15 +217,13 @@ fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
                 near.extend(0..count);
             } else {
                 query += 1;
-                for x in ka[0]..=kb[0] { for y in ka[1]..=kb[1] { for z in ka[2]..=kb[2] {
-                    let c = index([x,y,z]);
-                    for &i in &listed[starts[c]..starts[c+1]] {
-                        if stamp[i] == query { continue; }
-                        stamp[i] = query;
-                        let (a,b) = boxes[i];
-                        if (0..3).all(|k| a[k] <= qb[k] && b[k] >= qa[k]) { near.push(i); }
-                    }
-                } } }
+                feet_grid.in_box(qa,qb,|i| {
+                    let i = i as usize;
+                    if stamp[i] == query { return; }
+                    stamp[i] = query;
+                    let (a,b) = boxes[i];
+                    if (0..3).all(|k| a[k] <= qb[k] && b[k] >= qa[k]) { near.push(i); }
+                });
                 near.sort_unstable();
             }
         }
@@ -309,17 +285,27 @@ fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
             }
             fragments = trimmed;
         }
-        // fragments to triangles, new corners shared where they coincide
-        let mut fresh: std::collections::BTreeMap<(i64,i64),u32> = Default::default();
-        let quantum = eps;
+        // fragments to triangles, a new corner shared with the nearest one made before it within
+        // `eps` (rounding to a grid instead split two coincident corners either side of a cell's
+        // edge, so a move far below `eps` changed which corners were one)
+        let mut fresh = crate::space::Grid::new(eps.max(f64::MIN_POSITIVE));
+        let mut made: Vec<(f64,f64,u32)> = Vec::new();
         for (poly,sheet,_) in fragments {
             let idx: Vec<u32> = poly.iter().map(|p| match p.0 {
                 Some(i) => i,
                 None => {
-                    let key = ((p.1/quantum).round() as i64,(p.2/quantum).round() as i64);
-                    *fresh.entry(key).or_insert_with(|| {
+                    let at = [p.1,p.2,0.];
+                    let mut nearest: Option<(f64,u32)> = None;
+                    fresh.around(at,|m| {
+                        let (x,y,i) = made[m as usize];
+                        let d = ((x-p.1).powi(2)+(y-p.2).powi(2)).sqrt();
+                        if d <= eps && nearest.is_none_or(|(e,_)| d < e) { nearest = Some((d,i)); }
+                    });
+                    nearest.map(|(_,i)| i).unwrap_or_else(|| {
                         out.vertices.push(std::array::from_fn(|k| origin[k]+p.1*u[k]+p.2*v[k]));
-                        (out.vertices.len()-1) as u32
+                        let i = (out.vertices.len()-1) as u32;
+                        fresh.insert(at,made.len() as u32); made.push((p.1,p.2,i));
+                        i
                     })
                 }
             }).collect();

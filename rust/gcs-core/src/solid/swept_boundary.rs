@@ -10,6 +10,7 @@
 //! which needs no gradient. And the contract gives no gradient, so no distance
 //! is ever read off a value's magnitude, and an enclosure containing zero is
 //! never a sign. See `docs/swept-boundary.md`.
+pub mod adjacency;
 pub mod judge;
 pub mod seeds;
 pub mod project;
@@ -19,15 +20,18 @@ pub mod caps;
 pub mod stitch;
 pub mod planar;
 pub mod crease;
+pub mod construct;
 
-pub use caps::{CapComponent,CutMesh,End,Region,caps,closest_on_triangle};
+pub use caps::{Cap,CapComponent,CutMesh,End,caps};
+pub use construct::{ConstructError,Stage,SweptBoundary,construct,construct_from};
+pub use crate::space::{Region,altitude,closest_on_triangle};
 pub use certify::{Certificate,Failure,certify,triangle_normal};
 pub use crease::{Rim,chains,clip_sheets,merge_creases};
 pub use planar::planar_union;
 pub use stitch::{collapse_short_edges,dedupe,drop_doubled_slivers,rim_zip,split_at_vertices,split_where,weld,zip_loops};
 pub use judge::{FieldJudge,JudgeError,Projection,QueryStats,Sign};
-pub use project::{Label,Labelled,directions,label_patch,label_sheets,label_sheets_from,orientation};
-pub use seeds::seeds;
+pub use project::{Label,Labelled,directions,label_patch,label_seeds,label_sheets,orientation};
+pub use seeds::{Seed,seeds};
 pub use trim::{KeptMesh,boundary_loops,centroid_kept,clip_overlaps,covered_by,kept_triangles,retained,uncovered,without_overlaps};
 
 /// Controls of the construction. Lengths are in the model's own units.
@@ -57,7 +61,35 @@ impl Default for SweptBoundaryOptions {
     }
 }
 
+/// Every tolerance of the construction, derived here and only here.
 impl SweptBoundaryOptions {
+    /// How far a judged vertex may be from the boundary.
     pub fn vertex_tolerance(&self) -> f64 { self.vertex_tolerance.unwrap_or(self.sagitta/4.) }
+    /// How far inside and outside every triangle the certificate asks the field to agree.
     pub fn probe_distance(&self) -> f64 { self.probe_distance.unwrap_or(2.*self.sagitta) }
+    /// The least distance the certificate halves its probe to, for thin material: twice the
+    /// vertex tolerance. A triangle with no altitude above it is a sliver.
+    pub fn least_probe(&self) -> f64 { 2.*self.vertex_tolerance() }
+    /// How far along its direction a vertex is searched for the boundary before it is judged
+    /// inner or off the material.
+    pub fn reach(&self) -> f64 { self.sagitta }
+    /// The value width a near query resolves to: half the vertex tolerance, so a point that far
+    /// from the boundary reads strictly.
+    pub fn judge_tolerance(&self) -> f64 { self.vertex_tolerance()/2. }
+    /// How near a column point or a crossing must come to a vertex of the tool's mesh to be it.
+    pub fn snap(&self) -> f64 { self.vertex_tolerance() }
+    /// How far apart two rims' vertices on one crease may be to be merged, and how near a rim
+    /// vertex must come to another rim's edge to split it.
+    pub fn crease_merge(&self) -> (f64,f64) { (1.5*self.sagitta,4.*self.vertex_tolerance()) }
+    /// How near a covering sheet must pass to a triangle to cover it.
+    pub fn coverage(&self) -> f64 { 2.*self.sagitta }
+    /// How near two points are to be one (a weld, a plane's membership).
+    pub fn coincidence(&self) -> f64 { 1e-7 }
+    /// Vertices nearer than this are merged.
+    pub fn shortest_edge(&self) -> f64 { self.vertex_tolerance()/2. }
+    /// How far off an edge a vertex may lie and still split it as a T-junction, and the zip's
+    /// split tolerance.
+    pub fn junction(&self) -> f64 { 2.*self.sagitta }
+    /// The axis tolerance the sweep's solved geometry is read with.
+    pub fn axis_tolerance(&self) -> f64 { 1e-10 }
 }

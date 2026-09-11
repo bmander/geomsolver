@@ -52,13 +52,7 @@ impl Certificate {
     pub fn is_complete(&self) -> bool { self.failures.is_empty() }
 }
 
-/// The unit normal of a triangle by its winding, or none.
-pub fn triangle_normal(a: V3,b: V3,c: V3) -> Option<V3> {
-    let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
-    let n = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
-    let len = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
-    (len > 0.).then(|| n.map(|x| x/len))
-}
+pub use crate::space::triangle_normal;
 
 /// Certify every triangle of an indexed mesh whose winding faces outward, at
 /// probe distance `d`, halving the distance down to `least` for a triangle
@@ -68,16 +62,12 @@ pub fn triangle_normal(a: V3,b: V3,c: V3) -> Option<V3> {
 /// the field reads the boundary within `least` of its centroid.
 pub fn certify(judge: &mut FieldJudge,vertices: &[V3],triangles: &[[u32;3]],d: f64,least: f64) -> Result<Certificate,JudgeError> {
     let mut out = Certificate {probe_distance:d,least_used:d,..Default::default()};
-    let distance = |p: V3,q: V3| (0..3).map(|k| (p[k]-q[k]).powi(2)).sum::<f64>().sqrt();
     for (i,t) in triangles.iter().enumerate() {
         let [a,b,c] = t.map(|v| vertices[v as usize]);
         let centroid: V3 = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
-        let Some(n) = triangle_normal(a,b,c) else { out.failures.push((i,centroid,Failure::Degenerate)); continue };
-        let altitude = {
-            let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
-            let cr = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
-            (cr[0]*cr[0]+cr[1]*cr[1]+cr[2]*cr[2]).sqrt()/distance(a,b).max(distance(b,c)).max(distance(c,a))
-        };
+        // a triangle with no area is the flattest sliver: no normal, and within `least` of the
+        // segment its corners span all the same
+        let altitude = crate::space::altitude(a,b,c);
         if altitude < least {
             match judge.sign(centroid)?.0 {
                 Sign::Near {within} if within <= least => { out.certified += 1; out.slivers += 1; }
@@ -85,6 +75,7 @@ pub fn certify(judge: &mut FieldJudge,vertices: &[V3],triangles: &[[u32;3]],d: f
             }
             continue;
         }
+        let Some(n) = triangle_normal(a,b,c) else { out.failures.push((i,centroid,Failure::Degenerate)); continue };
         let mut probe = d;
         loop {
             let (inside,outside) = judge.sides(centroid,n,probe)?;

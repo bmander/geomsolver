@@ -4,28 +4,26 @@
 //! column to the column born beside it). A zip joins two loops of judged
 //! boundary points, so its band lies along the boundary between them; the
 //! certificate still probes every one of its triangles.
-use super::trim::{KeptMesh,boundary_loops};
+use super::adjacency::Live;
+use super::trim::{KeptMesh,boundary_loops,walk_loops};
+use crate::space::Grid;
 use crate::solid::zip_polylines;
 
 type V3 = [f64;3];
 
-fn distance(a: V3,b: V3) -> f64 { ((a[0]-b[0]).powi(2)+(a[1]-b[1]).powi(2)+(a[2]-b[2]).powi(2)).sqrt() }
+use crate::space::distance;
 
 /// Identify vertices within `tolerance` of one another and drop the
 /// triangles that collapse. The first vertex of a group keeps its position.
 pub fn weld(mesh: &mut KeptMesh,tolerance: f64) {
-    let cell = tolerance.max(f64::MIN_POSITIVE)*4.;
-    let key = |p: V3| p.map(|x| (x/cell).floor() as i64);
-    let mut cells: std::collections::BTreeMap<[i64;3],Vec<u32>> = Default::default();
+    let mut grid = Grid::new(tolerance.max(f64::MIN_POSITIVE)*4.);
     let mut remap: Vec<u32> = Vec::with_capacity(mesh.vertices.len());
     let mut kept: Vec<V3> = Vec::new();
     for p in &mesh.vertices {
-        let k = key(*p);
+        // the first vertex kept within the tolerance, cell by cell
         let mut found = None;
-        'search: for x in k[0]-1..=k[0]+1 { for y in k[1]-1..=k[1]+1 { for z in k[2]-1..=k[2]+1 {
-            if let Some(list) = cells.get(&[x,y,z]) { for &i in list { if distance(kept[i as usize],*p) <= tolerance { found = Some(i); break 'search; } } }
-        } } }
-        let i = match found { Some(i) => i,None => { kept.push(*p); let i = (kept.len()-1) as u32; cells.entry(k).or_default().push(i); i } };
+        grid.around(*p,|i| if found.is_none() && distance(kept[i as usize],*p) <= tolerance { found = Some(i); });
+        let i = match found { Some(i) => i,None => { kept.push(*p); let i = (kept.len()-1) as u32; grid.insert(*p,i); i } };
         remap.push(i);
     }
     mesh.vertices = kept;
@@ -39,7 +37,7 @@ pub fn weld(mesh: &mut KeptMesh,tolerance: f64) {
     mesh.triangles = triangles; mesh.sheet = sheet;
 }
 
-/// Merge every pair of vertices closer than `shortest`, nearest first,
+/// Merge every pair of vertices closer than `shortest`, in the order of their indices,
 /// each into the one of the two with more triangles on it, refusing a merge that would
 /// turn any triangle round either over or flatten one that does not vanish
 /// with the pair. Two samplings of one crease, a
@@ -49,30 +47,28 @@ pub fn weld(mesh: &mut KeptMesh,tolerance: f64) {
 /// nothing thinner than a sagitta is a feature of the boundary. Returns
 /// how many pairs were merged.
 pub fn collapse_short_edges(mesh: &mut KeptMesh,shortest: f64) -> usize {
-    use super::certify::triangle_normal;
+    use crate::space::stable_normal;
     let mut collapsed = 0;
-    let cell = shortest.max(f64::MIN_POSITIVE);
-    let key = |p: V3| p.map(|x| (x/cell).floor() as i64);
     loop {
         // the vertices in use, and every pair of them within the distance
         let mut used = vec![false;mesh.vertices.len()];
         for t in &mesh.triangles { for &v in t { used[v as usize] = true; } }
-        let mut cells: std::collections::BTreeMap<[i64;3],Vec<u32>> = Default::default();
-        for (v,p) in mesh.vertices.iter().enumerate() { if used[v] { cells.entry(key(*p)).or_default().push(v as u32); } }
+        let mut grid = Grid::new(shortest.max(f64::MIN_POSITIVE));
+        for (v,p) in mesh.vertices.iter().enumerate() { if used[v] { grid.insert(*p,v as u32); } }
         let mut pairs: Vec<(f64,u32,u32)> = Vec::new();
-        for (k,list) in &cells {
-            for x in k[0]-1..=k[0]+1 { for y in k[1]-1..=k[1]+1 { for z in k[2]-1..=k[2]+1 {
-                let Some(other) = cells.get(&[x,y,z]) else { continue };
-                for &a in list { for &b in other {
-                    if b <= a { continue; }
-                    let l = distance(mesh.vertices[a as usize],mesh.vertices[b as usize]);
-                    if l < shortest { pairs.push((l,a,b)); }
-                } }
-            } } }
+        for (k,list) in grid.cells() {
+            grid.in_keys(k.map(|x| x-1),k.map(|x| x+1),|b| for &a in list {
+                if b <= a { continue; }
+                let l = distance(mesh.vertices[a as usize],mesh.vertices[b as usize]);
+                if l < shortest { pairs.push((l,a,b)); }
+            });
         }
         if pairs.is_empty() { break; }
-        pairs.sort_by(|p,q| p.0.total_cmp(&q.0).then(p.1.cmp(&q.1)).then(p.2.cmp(&q.2)));
-        pairs.dedup();
+        // by the pair's vertices: ordered by length, pairs made equal by symmetry (a plane's
+        // grid, a fixed point's fan) took the order rounding gave their lengths, and which merges
+        // a round made with them
+        pairs.sort_by(|p,q| p.1.cmp(&q.1).then(p.2.cmp(&q.2)));
+        pairs.dedup_by(|p,q| p.1 == q.1 && p.2 == q.2);
         // Which triangles each vertex is on, at the round's start. A merge relabels only its
         // absorbed vertex's triangles, and a vertex a merge has touched takes no further part
         // in the round, so an untouched vertex's triangles are still these (the degenerate
@@ -99,7 +95,7 @@ pub fn collapse_short_edges(mesh: &mut KeptMesh,shortest: f64) -> usize {
                 if !(on_a || on_b) || (on_a && on_b) { continue; }
                 let before = t.map(|v| mesh.vertices[v as usize]);
                 let after = t.map(|v| if v == a || v == b { mid } else { mesh.vertices[v as usize] });
-                match (triangle_normal(before[0],before[1],before[2]),triangle_normal(after[0],after[1],after[2])) {
+                match (stable_normal(before[0],before[1],before[2]),stable_normal(after[0],after[1],after[2])) {
                     (Some(n0),Some(n1)) if n0[0]*n1[0]+n0[1]*n1[1]+n0[2]*n1[2] > 0.5 => {}
                     _ => { ok = false; break; }
                 }
@@ -149,6 +145,9 @@ pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64) -> (usize,Vec<Vec<u32
     let mut boundary: std::collections::BTreeSet<(u32,u32)> = Default::default();
     for l in &loops { for k in 0..l.len() { boundary.insert((l[k],l[(k+1)%l.len()])); } }
     let points: Vec<Vec<V3>> = loops.iter().map(|l| l.iter().map(|&v| mesh.vertices[v as usize]).collect()).collect();
+    // each loop's box: two loops whose boxes are farther apart than `within` are, too
+    let boxes: Vec<(V3,V3)> = points.iter().map(|p| p.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),q| (std::array::from_fn(|k| lo[k].min(q[k])),std::array::from_fn(|k| hi[k].max(q[k]))))).collect();
+    let gap = |i: usize,j: usize| -> f64 { let ((a0,a1),(b0,b1)) = (boxes[i],boxes[j]); (0..3).map(|k| (b0[k]-a1[k]).max(a0[k]-b1[k]).max(0.).powi(2)).sum::<f64>().sqrt() };
     let mut paired = vec![false;loops.len()];
     let mut pairs = 0;
     let lay = |mesh: &mut KeptMesh,_on_a: &[u32],band: Vec<[u32;3]>| {
@@ -165,9 +164,7 @@ pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64) -> (usize,Vec<Vec<u32
             // a zero-area triangle (rim vertices collinear with the column
             // along a straight edge) closes nothing
             let [p,q,r] = tri.map(|v| mesh.vertices[v as usize]);
-            let (u,w) = ([q[0]-p[0],q[1]-p[1],q[2]-p[2]],[r[0]-p[0],r[1]-p[1],r[2]-p[2]]);
-            let area2 = { let c = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]]; (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt() };
-            if area2 <= 1e-12*(distance(p,q)*distance(p,r)).max(f64::MIN_POSITIVE) { continue; }
+            if crate::space::degenerate(p,q,r) { continue; }
             mesh.triangles.push(tri); mesh.sheet.push(u32::MAX);
         }
     };
@@ -182,8 +179,11 @@ pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64) -> (usize,Vec<Vec<u32
     }
     for i in 0..loops.len() {
         if paired[i] || loops[i].len() < 2 { continue; }
-        let best = (0..loops.len()).filter(|&j| j != i && !paired[j] && loops[j].len() >= 2)
-            .map(|j| (apart(&points[i],&points[j]),j)).filter(|(d,_)| *d <= within).min_by(|a,b| a.0.total_cmp(&b.0));
+        let candidates: Vec<(f64,usize)> = (0..loops.len()).filter(|&j| j != i && !paired[j] && loops[j].len() >= 2 && gap(i,j) <= within*(1.+1e-9))
+            .map(|j| (apart(&points[i],&points[j]),j)).filter(|(d,_)| *d <= within).collect();
+        // the nearest, a loop within rounding of it and before it taken instead
+        let least = candidates.iter().map(|c| c.0).fold(f64::INFINITY,f64::min);
+        let best = candidates.into_iter().find(|c| c.0 <= least+1e-9*within.max(1.));
         let Some((_,j)) = best else { continue };
         paired[i] = true; paired[j] = true; pairs += 1;
         let band = zip_loops(&loops[i],&loops[j],&mesh.vertices);
@@ -241,7 +241,7 @@ pub fn zip_loops(a: &[u32],b: &[u32],vertices: &[V3]) -> Vec<[u32;3]> {
         };
         let reversed: Vec<u32> = b.iter().rev().copied().collect();
         let (forward,backward) = (rungs(b),rungs(&reversed));
-        return if backward.0 <= forward.0 { backward.1 } else { forward.1 };
+        return if backward.0 <= forward.0+1e-9*forward.0.max(1.) { backward.1 } else { forward.1 };
     }
     // a from its first shared vertex, cut at every shared vertex; each arc
     // is paired with whichever of b's two arcs between the same vertices
@@ -269,7 +269,8 @@ pub fn zip_loops(a: &[u32],b: &[u32],vertices: &[V3]) -> Vec<[u32;3]> {
         let (i0,i1) = (b.iter().position(|&x| x == start).unwrap(),b.iter().position(|&x| x == end).unwrap());
         let (forward,backward) = (along(i0,i1,true),along(i0,i1,false));
         let pa = pts(&arc_a);
-        let arc_b = if apart(&pa,&pts(&forward)) <= apart(&pa,&pts(&backward)) { forward } else { backward };
+        let (af,ab) = (apart(&pa,&pts(&forward)),apart(&pa,&pts(&backward)));
+        let arc_b = if af <= ab+1e-9*ab.max(1.) { forward } else { backward };
         for t in zip_polylines(&pa,&pts(&arc_b),false) {
             out.push(t.map(|(on_b,k)| if on_b { arc_b[k as usize] } else { arc_a[k as usize] }));
         }
@@ -292,19 +293,25 @@ pub fn split_at_vertices(mesh: &mut KeptMesh,tolerance: f64) { split_where(mesh,
 /// boundary vertices `vertex_ok` admits. Returns how many splits were made.
 pub fn split_where(mesh: &mut KeptMesh,tolerance: f64,edge_ok: &dyn Fn(u32,u32) -> bool,vertex_ok: &dyn Fn(u32) -> bool) -> usize {
     let mut made = 0;
+    // the mesh's edges and fans, kept as the rounds split its triangles
+    let mut live = Live::new(mesh.vertices.len(),&mesh.triangles);
     for _ in 0..64 {
-        let loops = boundary_loops(&mesh.triangles);
-        let mut owner: std::collections::BTreeMap<(u32,u32),usize> = Default::default();
-        for (i,t) in mesh.triangles.iter().enumerate() { for k in 0..3 { owner.insert((t[k],t[(k+1)%3]),i); } }
+        let loops = walk_loops(&mesh.triangles,live.boundary().clone(),|a,b| live.uses(a,b) == 1,|a,b| live.owner(a,b));
         let boundary_vertices: Vec<u32> = loops.iter().flatten().copied().filter(|&v| vertex_ok(v)).collect();
-        let mut incident: std::collections::BTreeMap<u32,Vec<usize>> = Default::default();
-        for (i,t) in mesh.triangles.iter().enumerate() { for &v in t { incident.entry(v).or_default().push(i); } }
+        // the boundary vertices by position, filed by their place in `boundary_vertices` so an
+        // edge reads those beside it in that order; cells the size of a boundary edge
+        let (mut length,mut count) = (0.,0);
+        for l in &loops { for k in 0..l.len() { length += distance(mesh.vertices[l[k] as usize],mesh.vertices[l[(k+1)%l.len()] as usize]); count += 1; } }
+        let mut grid = Grid::new((length/count.max(1) as f64).max(tolerance).max(f64::MIN_POSITIVE));
+        for (i,&v) in boundary_vertices.iter().enumerate() { grid.insert(mesh.vertices[v as usize],i as u32); }
+        let pad = tolerance*(1.+1e-6)+1e-12;
+        let mut near: Vec<u32> = Vec::new();
         let mut split: Vec<(usize,u32,u32,u32)> = Vec::new(); // triangle, edge a, edge b, vertex
         let mut used: std::collections::BTreeSet<usize> = Default::default();
         for l in &loops { for k in 0..l.len() {
             let (a,b) = (l[k],l[(k+1)%l.len()]);
             if !edge_ok(a,b) { continue; }
-            let Some(&t) = owner.get(&(a,b)) else { continue };
+            let Some(t) = live.owner(a,b) else { continue };
             if used.contains(&t) { continue; }
             let own = mesh.triangles[t];
             let (pa,pb) = (mesh.vertices[a as usize],mesh.vertices[b as usize]);
@@ -322,7 +329,11 @@ pub fn split_where(mesh: &mut KeptMesh,tolerance: f64,edge_ok: &dyn Fn(u32,u32) 
             };
             // the vertex nearest the middle of the edge, of another loop
             let mut best: Option<(f64,u32)> = None;
-            for &v in &boundary_vertices {
+            // only a vertex within the tolerance of the edge can split it
+            near.clear();
+            grid.in_box(std::array::from_fn(|k| pa[k].min(pb[k])-pad),std::array::from_fn(|k| pa[k].max(pb[k])+pad),|i| near.push(i));
+            near.sort_unstable();
+            for &v in near.iter().map(|&i| &boundary_vertices[i as usize]) {
                 if own.contains(&v) { continue; }
                 let p = mesh.vertices[v as usize];
                 let w = [p[0]-pa[0],p[1]-pa[1],p[2]-pa[2]];
@@ -336,12 +347,13 @@ pub fn split_where(mesh: &mut KeptMesh,tolerance: f64,edge_ok: &dyn Fn(u32,u32) 
                 // vertex a whisker from the edge's start but as far from
                 // its line folds the split's first triangle
                 let along = f.min(1.-f)*l2.sqrt();
-                if off <= tolerance && off <= height/4. && off <= along/4. && best.map_or(true,|(g,_)| (f-0.5).abs() < (g-0.5).abs()) { best = Some((f,v)); }
+                // nearer the middle by more than rounding, or the first found
+                if off <= tolerance && off <= height/4. && off <= along/4. && best.map_or(true,|(g,_)| (f-0.5).abs() < (g-0.5).abs()-1e-9) { best = Some((f,v)); }
             }
             // the split must leave two triangles facing the way the one did,
             // along edges no triangle already walks that way
             if let Some((_,v)) = best {
-                if owner.contains_key(&(a,v)) || owner.contains_key(&(v,b)) { continue; }
+                if live.walks(a,v) || live.walks(v,b) { continue; }
                 let c = own.iter().copied().find(|&x| x != a && x != b).unwrap_or(a);
                 let (pc,pv) = (mesh.vertices[c as usize],mesh.vertices[v as usize]);
                 let normal = |p: V3,q: V3,r: V3| -> V3 { let (u,w) = ([q[0]-p[0],q[1]-p[1],q[2]-p[2]],[r[0]-p[0],r[1]-p[1],r[2]-p[2]]); [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]] };
@@ -354,7 +366,7 @@ pub fn split_where(mesh: &mut KeptMesh,tolerance: f64,edge_ok: &dyn Fn(u32,u32) 
                 // would lay a new triangle over that one (two sources'
                 // fragments of one plane, a vertex of one a whisker past
                 // the other's edge, whose own sliver reaches back to it)
-                if lies_over(mesh,&incident,v,[a,v,c],[v,b,c],n0) { continue; }
+                if lies_over(mesh,live.on(v),v,[a,v,c],[v,b,c],n0) { continue; }
                 split.push((t,a,b,v)); used.insert(t);
             }
         } }
@@ -367,9 +379,13 @@ pub fn split_where(mesh: &mut KeptMesh,tolerance: f64,edge_ok: &dyn Fn(u32,u32) 
             mesh.triangles[t] = [a,v,c];
             mesh.triangles.push([v,b,c]);
             let s = mesh.sheet[t]; mesh.sheet.push(s);
+            live.replace(t,tri,[a,v,c]);
+            live.push(mesh.triangles.len()-1,[v,b,c]);
         }
+        live.settle();
         // two splits of one round can make one triangle twice
-        dedupe(mesh);
+        // a dropped repeat renumbers the triangles after it: the index is made again
+        if dedupe(mesh) > 0 { live = Live::new(mesh.vertices.len(),&mesh.triangles); }
     }
     made
 }
@@ -377,7 +393,7 @@ pub fn split_where(mesh: &mut KeptMesh,tolerance: f64,edge_ok: &dyn Fn(u32,u32) 
 /// Whether either of two triangles to be made at `v` overlaps, in area, a
 /// triangle already on `v` that lies in their plane (normal `n`, not unit)
 /// facing their way.
-fn lies_over(mesh: &KeptMesh,incident: &std::collections::BTreeMap<u32,Vec<usize>>,v: u32,first: [u32;3],second: [u32;3],n: V3) -> bool {
+fn lies_over(mesh: &KeptMesh,on: &[u32],v: u32,first: [u32;3],second: [u32;3],n: V3) -> bool {
     use super::planar::{P2,area2,overlap};
     let len = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
     if !(len > 0.) { return false; }
@@ -392,11 +408,10 @@ fn lies_over(mesh: &KeptMesh,incident: &std::collections::BTreeMap<u32,Vec<usize
     let scale = [first,second].iter().flatten().map(|&x| distance(mesh.vertices[x as usize],origin)).fold(0_f64,f64::max).max(f64::MIN_POSITIVE);
     let eps = 1e-9*scale;
     let news = [polygon(first),polygon(second)];
-    let Some(list) = incident.get(&v) else { return false };
-    for &i in list {
-        let t = mesh.triangles[i];
+    for &i in on {
+        let t = mesh.triangles[i as usize];
         let [p,q,r] = t.map(|x| mesh.vertices[x as usize]);
-        let Some(m) = super::certify::triangle_normal(p,q,r) else { continue };
+        let Some(m) = crate::space::stable_normal(p,q,r) else { continue };
         if m[0]*n[0]+m[1]*n[1]+m[2]*n[2] < 0.999 { continue; }
         if [p,q,r].iter().any(|x| ((x[0]-origin[0])*n[0]+(x[1]-origin[1])*n[1]+(x[2]-origin[2])*n[2]).abs() > 1e-6*scale) { continue; }
         let old = polygon(t);
@@ -410,18 +425,9 @@ fn lies_over(mesh: &KeptMesh,incident: &std::collections::BTreeMap<u32,Vec<usize
 /// tool edge over another source's region, which the merge of their
 /// vertices has laid on the same edges. Returns how many went.
 pub fn drop_doubled_slivers(mesh: &mut KeptMesh,thin: f64) -> usize {
-    use super::certify::triangle_normal;
     let mut owners: std::collections::BTreeMap<(u32,u32),Vec<usize>> = Default::default();
     for (i,t) in mesh.triangles.iter().enumerate() { for k in 0..3 { owners.entry((t[k],t[(k+1)%3])).or_default().push(i); } }
-    let altitude = |t: &[u32;3]| -> f64 {
-        let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
-        let Some(_) = triangle_normal(a,b,c) else { return 0. };
-        let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
-        let cr = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
-        let area2 = (cr[0]*cr[0]+cr[1]*cr[1]+cr[2]*cr[2]).sqrt();
-        let longest = distance(a,b).max(distance(b,c)).max(distance(c,a));
-        if longest > 0. { area2/longest } else { 0. }
-    };
+    let altitude = |t: &[u32;3]| -> f64 { let [a,b,c] = t.map(|v| mesh.vertices[v as usize]); crate::space::altitude(a,b,c) };
     let doomed: std::collections::BTreeSet<usize> = owners.values().filter(|v| v.len() > 1).flatten().copied().filter(|&i| altitude(&mesh.triangles[i]) < thin).collect();
     let mut triangles = Vec::with_capacity(mesh.triangles.len());
     let mut sheet = Vec::with_capacity(mesh.sheet.len());
@@ -432,14 +438,16 @@ pub fn drop_doubled_slivers(mesh: &mut KeptMesh,thin: f64) -> usize {
 
 /// Drop every triangle that repeats another's three vertices.
 pub fn dedupe(mesh: &mut KeptMesh) -> usize {
-    let mut seen: std::collections::BTreeSet<[u32;3]> = Default::default();
-    let mut triangles = Vec::with_capacity(mesh.triangles.len());
-    let mut sheet = Vec::with_capacity(mesh.sheet.len());
+    // each triangle's sorted corners with its index, sorted: a repeat follows the first of its kind
+    let mut keys: Vec<([u32;3],u32)> = mesh.triangles.iter().enumerate().map(|(i,t)| { let mut k = *t; k.sort(); (k,i as u32) }).collect();
+    keys.sort_unstable();
+    let mut repeat = vec![false;mesh.triangles.len()];
     let mut dropped = 0;
-    for (t,s) in mesh.triangles.iter().zip(&mesh.sheet) {
-        let mut key = *t; key.sort();
-        if seen.insert(key) { triangles.push(*t); sheet.push(*s); } else { dropped += 1; }
-    }
+    for w in keys.windows(2) { if w[0].0 == w[1].0 { repeat[w[1].1 as usize] = true; dropped += 1; } }
+    if dropped == 0 { return 0; }
+    let mut triangles = Vec::with_capacity(mesh.triangles.len()-dropped);
+    let mut sheet = Vec::with_capacity(mesh.sheet.len()-dropped);
+    for ((t,s),r) in mesh.triangles.iter().zip(&mesh.sheet).zip(repeat) { if !r { triangles.push(*t); sheet.push(*s); } }
     mesh.triangles = triangles; mesh.sheet = sheet;
     dropped
 }

@@ -10,14 +10,10 @@
 use super::judge::{FieldJudge,JudgeError,Projection};
 use super::project::{Label,Labelled};
 use super::trim::KeptMesh;
-use crate::solid::SweepPatch;
 
 type V3 = [f64;3];
 
-fn sub(a: V3,b: V3) -> V3 { [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
-fn dot(a: V3,b: V3) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
-fn norm(a: V3) -> f64 { dot(a,a).sqrt() }
-fn lerp(a: V3,b: V3,t: f64) -> V3 { [a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1]),a[2]+t*(b[2]-a[2])] }
+use crate::space::{dot,lerp,norm,sub};
 
 /// One clipped rim: the sheet it lies on and its vertices in order.
 #[derive(Clone,Debug)]
@@ -26,19 +22,18 @@ pub struct Rim { pub sheet: usize,pub vertices: Vec<u32>,pub closed: bool }
 /// The kept triangles of every sheet, each triangle with an inner corner
 /// clipped at the crease points bisected on its mixed edges (the last
 /// boundary point found along the edge, within `epsilon`), wound outward.
-/// `corners` is per sheet: empty for a sheet whose vertex labels decide
-/// (a traced sheet), and for a cap the vertices on an edge of the tool (see
-/// `caps`), whose labels do not. Returns the mesh and the rims the clipping
-/// made, chained per sheet.
-pub fn clip_sheets(judge: &mut FieldJudge,sheets: &[SweepPatch],labelled: &[Labelled],epsilon: f64,reach: f64,corners: &[Vec<bool>]) -> Result<(KeptMesh,Vec<Rim>),JudgeError> {
-    use super::certify::triangle_normal;
+/// A traced sheet's vertex labels decide; a cap's do not at the vertices on an edge of the
+/// tool (`Cap::tool_edges`). Returns the mesh and the rims the clipping made, chained per sheet.
+pub fn clip_sheets(judge: &mut FieldJudge,seeds: &[super::Seed],labelled: &[Labelled],epsilon: f64,reach: f64) -> Result<(KeptMesh,Vec<Rim>),JudgeError> {
+    use crate::space::stable_normal;
     let mut out = KeptMesh::default();
     let mut rims = Vec::new();
-    for (s,(sheet,l)) in sheets.iter().zip(labelled).enumerate() {
+    for (s,(seed,l)) in seeds.iter().zip(labelled).enumerate() {
+        let sheet = seed.patch();
         let base = out.vertices.len() as u32;
         out.vertices.extend_from_slice(&l.points);
-        let edge = corners.get(s).map_or(&[][..],|c| &c[..]);
-        let per_corner = !edge.is_empty();
+        let edge = seed.tool_edges().unwrap_or(&[]);
+        let per_corner = seed.tool_edges().is_some();
         // A cap's vertex on a tool edge is on the boundary by one face or
         // the other, and its label says nothing about which: the face beside
         // a crease that crosses the edge reads on at both ends of the
@@ -59,7 +54,7 @@ pub fn clip_sheets(judge: &mut FieldJudge,sheets: &[SweepPatch],labelled: &[Labe
                     continue;
                 }
                 let [a,b,c] = t.map(|v| l.points[v as usize]);
-                let Some(mut n) = triangle_normal(a,b,c) else { continue };
+                let Some(mut n) = stable_normal(a,b,c) else { continue };
                 if !faces[i] { n = n.map(|x| -x); }
                 let centroid: V3 = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
                 for (k,p) in [a,b,c].into_iter().enumerate() {
@@ -140,7 +135,7 @@ pub fn clip_sheets(judge: &mut FieldJudge,sheets: &[SweepPatch],labelled: &[Labe
             let count = ons.iter().filter(|x| **x).count();
             if count == 0 { continue; }
             let [a,b,c] = t.map(|v| l.points[v as usize]);
-            let Some(n) = triangle_normal(a,b,c) else { continue };
+            let Some(n) = stable_normal(a,b,c) else { continue };
             let agree = faces[i];
             let n_out = if agree { n } else { n.map(|x| -x) };
             let centroid: V3 = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);

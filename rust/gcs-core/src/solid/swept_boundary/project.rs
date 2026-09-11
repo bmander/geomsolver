@@ -56,10 +56,7 @@ pub fn orientation(sheet: &SweepPatch) -> Vec<bool> {
     for (i,t) in sheet.triangles.iter().enumerate() { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); owner.entry((a.min(b),a.max(b))).or_default().push((i,a < b)); } }
     let normal = |i: usize| -> Option<V3> {
         let [a,b,c] = sheet.triangles[i].map(|v| sheet.points[v as usize]);
-        let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
-        let n = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
-        let len = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
-        (len > 0.).then(|| n.map(|x| x/len))
+        crate::space::stable_normal(a,b,c)
     };
     let mut flip: Vec<Option<bool>> = vec![None;n];
     for start in 0..n {
@@ -115,22 +112,22 @@ pub fn orientation(sheet: &SweepPatch) -> Vec<bool> {
 /// face's own normal runs along the other face. Positions are identified
 /// within `weld`.
 pub fn directions(sheets: &[SweepPatch],weld: f64) -> Vec<Vec<V3>> {
-    let cell = weld.max(f64::MIN_POSITIVE)*4.;
-    let key = |p: V3| p.map(|x| (x/cell).floor() as i64);
-    // every (sheet, vertex) by position cell
-    let mut cells: std::collections::BTreeMap<[i64;3],Vec<(usize,usize)>> = Default::default();
-    for (s,sheet) in sheets.iter().enumerate() { for (v,p) in sheet.points.iter().enumerate() { cells.entry(key(*p)).or_default().push((s,v)); } }
+    directions_of(&sheets.iter().collect::<Vec<_>>(),weld)
+}
+
+fn directions_of(sheets: &[&SweepPatch],weld: f64) -> Vec<Vec<V3>> {
+    // every (sheet, vertex) by position, filed by its place in `owners`
+    let mut grid = crate::space::Grid::new(weld.max(f64::MIN_POSITIVE)*4.);
+    let mut owners: Vec<(usize,usize)> = Vec::new();
+    for (s,sheet) in sheets.iter().enumerate() { for (v,p) in sheet.points.iter().enumerate() { grid.insert(*p,owners.len() as u32); owners.push((s,v)); } }
+    let grid = grid.pack();
     // the summed triangle normals per (sheet, vertex)
     let mut sums: Vec<Vec<V3>> = sheets.iter().map(|s| vec![[0.;3];s.points.len()]).collect();
     for (s,sheet) in sheets.iter().enumerate() {
         let faces = orientation(sheet);
         for (i,t) in sheet.triangles.iter().enumerate() {
             let [a,b,c] = t.map(|v| sheet.points[v as usize]);
-            let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
-            let mut n = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
-            let len = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
-            if !(len > 0.) { continue; }
-            n = n.map(|x| x/len);
+            let Some(mut n) = crate::space::stable_normal(a,b,c) else { continue };
             // the sheet says which side is out; the winding alone does not
             if !faces[i] { n = n.map(|x| -x); }
             for k in 0..3 {
@@ -146,14 +143,12 @@ pub fn directions(sheets: &[SweepPatch],weld: f64) -> Vec<Vec<V3>> {
     let mut out: Vec<Vec<V3>> = sheets.iter().map(|s| s.normals.clone()).collect();
     for (s,sheet) in sheets.iter().enumerate() {
         for (v,p) in sheet.points.iter().enumerate() {
-            let k = key(*p);
             let mut total = [0.;3];
-            for x in k[0]-1..=k[0]+1 { for y in k[1]-1..=k[1]+1 { for z in k[2]-1..=k[2]+1 {
-                if let Some(list) = cells.get(&[x,y,z]) { for &(s2,v2) in list {
-                    let q = sheets[s2].points[v2];
-                    if (0..3).map(|k| (p[k]-q[k]).powi(2)).sum::<f64>().sqrt() <= weld { for k in 0..3 { total[k] += sums[s2][v2][k]; } }
-                } }
-            } } }
+            grid.around(*p,|i| {
+                let (s2,v2) = owners[i as usize];
+                let q = sheets[s2].points[v2];
+                if (0..3).map(|k| (p[k]-q[k]).powi(2)).sum::<f64>().sqrt() <= weld { for k in 0..3 { total[k] += sums[s2][v2][k]; } }
+            });
             let len = (total[0]*total[0]+total[1]*total[1]+total[2]*total[2]).sqrt();
             if len > 0. { out[s][v] = total.map(|x| x/len); }
         }
@@ -165,17 +160,20 @@ pub fn directions(sheets: &[SweepPatch],weld: f64) -> Vec<Vec<V3>> {
 /// `epsilon` is the vertex tolerance, `reach` how far along the direction the
 /// boundary is looked for before a vertex is labelled inner or positive.
 pub fn label_sheets(judge: &mut FieldJudge,sheets: &[SweepPatch],epsilon: f64,reach: f64) -> Result<Vec<Labelled>,JudgeError> {
-    label_sheets_from(judge,sheets,epsilon,reach,sheets.len())
+    let directions = directions(sheets,1e-9*epsilon.max(1.));
+    sheets.iter().zip(&directions).map(|(sheet,m)| label_patch(judge,sheet,m,epsilon,reach)).collect()
 }
 
-/// `label_sheets` with the patches from `own_normals_from` on judged along
-/// their own stored normals instead: a cap's normals come from the whole
-/// tool's mesh, dropped facets included, and are its outward directions
-/// everywhere, where the sum over the kept facets and the sheets meeting
-/// there can be outvoted at a tool edge by a sliver's neighbours.
-pub fn label_sheets_from(judge: &mut FieldJudge,sheets: &[SweepPatch],epsilon: f64,reach: f64,own_normals_from: usize) -> Result<Vec<Labelled>,JudgeError> {
-    let directions = directions(sheets,1e-9*epsilon.max(1.));
-    sheets.iter().zip(&directions).enumerate().map(|(i,(sheet,m))| label_patch(judge,sheet,if i >= own_normals_from { &sheet.normals } else { m },epsilon,reach)).collect()
+/// Every vertex of every seed of a construction judged: a cap's along the tool's own normals
+/// (its summed normal across the seeds can run along one face at a tool edge while the vertex
+/// lies on another), a traced sheet's along `directions`.
+pub fn label_seeds(judge: &mut FieldJudge,seeds: &[super::Seed],epsilon: f64,reach: f64) -> Result<Vec<Labelled>,JudgeError> {
+    let patches: Vec<&SweepPatch> = seeds.iter().map(super::Seed::patch).collect();
+    let directions = directions_of(&patches,1e-9*epsilon.max(1.));
+    seeds.iter().zip(&directions).map(|(seed,m)| {
+        let sheet = seed.patch();
+        label_patch(judge,sheet,if matches!(seed,super::Seed::Cap(_)) { &sheet.normals } else { m },epsilon,reach)
+    }).collect()
 }
 
 /// Judge every vertex of one sheet along the given directions.

@@ -341,8 +341,19 @@ down a chain with bounding spheres (`Balls`, `build_spine`, `clip_spine`), about
 it was quadratic; a roll cell's midpoint value serves its sample; `deep_sign` stops once its
 enclosure is inside the band (`Status::Contained`, never across a Boolean); cap corners are
 judged in from the corner only at tool-edge vertices; the kept stage asks the certificate's
-probes, which the judge remembers. The tracer's crease points and events are regula falsi; the
-stitch turns their 2e-12 moves into different valid meshes, a fragility for milestone 5.
+probes, which the judge remembers. The tracer's crease points and events are regula falsi.
+**Its structure (issue #57):** `construct`/`construct_from` run the pipeline in the library,
+every tolerance a method of `SweptBoundaryOptions`, each stage shown to an observer (`Stage`) —
+the harness's one `Diagnostics` reads the environment, the core never does. `Cap` and `Seed` are
+typed; `space.rs` holds the vector helpers, triangle measures and closest point, `roots.rs` the
+Illinois root; `minimum::Stop` and the judge's `Ask` replace flag arguments. `adjacency.rs`
+(`Edges`, `Incident`, `Live`) and `CutMesh`'s own incidence and facet grid replaced the full
+scans; `space::Grid`/`PackedGrid` is the one spatial index. Verify such changes by the
+byte-identical export. **No decision may stand where exact geometry sits:** a sign enclosure
+within the judge's tolerance of zero is near, flatness is `space::degenerate` (never exactly
+zero area), and choices within 1e-9 of the coordinates are ties taken the same way; every
+milestone-4 case built from seeds moved by 1e-12 is the same mesh
+(`seeds_moved_below_every_tolerance_leave_the_mesh_as_it_was`, and the ignored all-case test).
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

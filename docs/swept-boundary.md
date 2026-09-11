@@ -384,14 +384,91 @@ The dumbbell, 35 000 triangles, went from 52 s to 10 s. What changed, by what it
   where bisection took 50 and 32. This moves traced points by at most 2e-12, and the stitch
   amplifies that into different valid meshes: the turning prism still closes and certifies with
   its volume unchanged, while the two open cases' failures moved (the tumbling cylinder from 28
-  to 40, the turned box from 1 to 4). That sensitivity belongs to the end-game, for milestone 5.
+  to 40, the turned box from 1 to 4). The knife edges that did it are below (Structure).
 
 What is left on the lens is two thirds field queries: linear in the elements, a logarithm of
 roll cells each, about 1.6 µs a roll evaluation in outward-rounded interval arithmetic. A
 gradient-based roll bound would make the cells per query logarithmic in the tolerance where the
 Lipschitz bound's grow as its inverse square root, but at today's tolerance it would about halve
-the evaluations at twice the cost each. The dumbbell's planar union (2.5 s) and the T-junction
-split (every boundary vertex against every boundary edge, per round) still hold quadratic parts.
+the evaluations at twice the cost each. The dumbbell's planar union (2.5 s) is its clipping.
+
+## Structure (2026-09-11, issue #57)
+
+**The pipeline is the library's.** `construct(sk, swept, options, progress, observe)` traces the
+seeds, and `construct_from` runs the rest from seeds a caller hands it (a test's own, moved or
+thinned). Every tolerance is a method of `SweptBoundaryOptions`, derived in one place from the
+sagitta, the spacing and the vertex tolerance: `reach`, `least_probe`, `judge_tolerance`, `snap`,
+`crease_merge`, `coverage`, `coincidence`, `shortest_edge`, `junction`, `axis_tolerance`. The
+kept stage takes the certificate's own probe and least distances, where it had hard-coded half a
+sagitta to match them. Each finished stage is shown to an observer (`Stage`, with the judge's
+counts so far), and that is the whole of how the harness prints and times: its `Diagnostics`
+reads `SOLVENT_SHEETS`, `SOLVENT_COLUMNS` and `SOLVENT_DUMP` once, and nothing in the core reads
+the environment. A cap is typed (`Cap`: its end, its patch, its components, its tool-edge
+vertices) and a seed is a traced sheet or a cap (`Seed`), so `label_seeds` and `clip_sheets` ask a
+seed what it is where they took parallel flags. The vector helpers, the triangle measures and
+Ericson's closest point are written once in `space.rs`, the Illinois root in `roots.rs`; the
+interval refiner's stopping rule is `minimum::Stop` and the judge's query kind `Ask`, where
+booleans were.
+
+**Adjacency** (`adjacency.rs`). `Edges` sorts a mesh's directed edges once and answers by binary
+search (the boundary by one more sort), `Incident` builds the fans in one counting pass, and
+`Live` keeps edges, fans and boundary up to date as the T-junction split changes triangles, so a
+round costs its splits and not a rebuild of three trees. `CutMesh` keeps each vertex's facets as
+it cuts and files the facets on a grid for `locate`. On the dumbbell the caps' cutting (the
+tool's tessellation aside) went from 163 ms to about 70 and the split from 489 ms (eight rounds)
+to about 60. Every candidate is still read in the order the scans read it, so no output changed.
+
+**One spatial index** (`space::Grid`: ids filed under cubic cells, visited in x, y, z order and a
+cell's ids in the order filed; `PackedGrid`, the same packed once for reading, dense where the
+occupied box is small). It replaces the grids of the weld, the collapse, `directions`,
+`clip_overlaps`, the planar union's normal index and feet table, the tracer's buckets and
+`mesh::weld`, each keeping its own cell size.
+
+**Knife edges.** A decision that turns on rounding makes different valid meshes from inputs no
+tolerance can tell apart, which was the 2e-12 move of the regula falsi above (the prism changed
+by 372 triangles). Two tests hold it: `seeds_moved_below_every_tolerance_leave_the_mesh_as_it_was`
+(the prism and the lens, in the suite, 3.5 s) and
+`seeds_moved_below_every_tolerance_leave_every_milestone_4_case_as_it_was` (all five cases,
+`#[ignore]`d, a minute): every seed point moved by about 1e-12, every stage's labels, keep flags
+and triangles are the same and every vertex is within the weld's 1e-7. Moving the seeds and
+diffing the stages found the knife edges one behind another, and every one was a threshold
+standing where exact geometry sits:
+
+- **The judge's sign.** A sign query stopped as soon as its enclosure left zero, so a point on an
+  exactly computed face (a plane, or an end face square to a turn's axis, which is a boundary of
+  the swept solid) took its sign from the side rounding put it on; the turned box's rim labels
+  flipped. A sign query now refines until its enclosure clears the tolerance or converges, and
+  one lying within the tolerance of zero is near, as one containing zero already was: the
+  decision moved from zero, where exact geometry sits, to the tolerance, where nothing in
+  particular does.
+- **Flatness.** Exactly zero area was the test of a flat triangle, and three points at a fixed
+  point of the motion are flat exactly when traced and flat to 1e-12 when moved (the tumbling
+  cylinder's clip). `space::degenerate` (least height within 1e-10 of the coordinates' size)
+  gives every construction decision its normal (`stable_normal`), and the certificate takes a
+  flat triangle as the sliver it is.
+- **Ties.** Equal rungs in the zip's dynamic programme and its closed start, the split's vertex
+  nearest an edge's middle, the zip's nearest loop and its forward or backward arc, and the
+  vertex merge's order by length: a plane's grid and a symmetric pair of curves make them equal,
+  and a strict comparison let rounding choose. A choice within 1e-9 of the coordinates' size is
+  a tie, taken the same way every time; the merge goes by the vertices' indices.
+- **Sharing and snapping.** The cap cut walked onto a face its projection sees edge-on (its far
+  edges project onto the chord's own line; the turned box's cap refused); such a facet offers
+  no crossing. A column point within the snap of two mesh vertices took the first corner of
+  whichever facet it landed nearest; it takes the nearest corner. The planar union shared new
+  corners by rounding them to a grid, splitting two coincident corners either side of a cell's
+  edge; it shares them within `eps`. And `uncovered` cut at a billionth of the triangle's size,
+  below the tracer's noise where two sheets' edges coincide; it cuts at a billionth of the
+  coordinates.
+
+These change the meshes, and for the better; the certificates now read:
+
+| case | triangles | certified | thin | failed (before) |
+|---|---|---|---|---|
+| turning prism | 1436 | 1421 | 15 | 0 (0) |
+| lens | 2786 | 2757 | 29 | 0 (0) |
+| turned box | 3356 | 3352 | 3 | 1 (4) |
+| tumbling cylinder | 3335 | 2568 | 739 | 28 (40) |
+| dumbbell | 35 410 | 28 138 | 7264 | 8 (22) |
 
 ## Refusals
 

@@ -2,7 +2,8 @@
 //! vertices the field kept or moved, wound outward, and the boundary loops
 //! of that mesh, which the closure audit reads. (Bisecting mixed edges to
 //! rim points and building creases comes with milestone 4.)
-use super::certify::triangle_normal;
+use crate::space::Grid;
+use crate::space::stable_normal;
 use super::project::{Label,Labelled};
 use crate::solid::SweepPatch;
 
@@ -28,7 +29,7 @@ pub fn kept_triangles(sheets: &[SweepPatch],labelled: &[Labelled]) -> KeptMesh {
         for t in &sheet.triangles {
             if !t.iter().all(|&v| matches!(l.labels[v as usize],Label::Kept | Label::Moved)) { continue; }
             let [a,b,c] = t.map(|v| l.points[v as usize]);
-            let Some(n) = triangle_normal(a,b,c) else { continue };
+            let Some(n) = stable_normal(a,b,c) else { continue };
             let outward: V3 = std::array::from_fn(|k| t.iter().map(|&v| l.directions[v as usize][k]).sum());
             let agree = n[0]*outward[0]+n[1]*outward[1]+n[2]*outward[2] >= 0.;
             out.triangles.push(if agree { [base+t[0],base+t[1],base+t[2]] } else { [base+t[0],base+t[2],base+t[1]] });
@@ -45,27 +46,24 @@ pub fn kept_triangles(sheets: &[SweepPatch],labelled: &[Labelled]) -> KeptMesh {
 /// start of its translation has its corners on the sweep's side faces and
 /// its interior millimetres inside the sweep. Returns, per triangle, whether
 /// it stays, and how many were dropped inside and outside.
-pub fn centroid_kept(judge: &mut super::judge::FieldJudge,mesh: &KeptMesh,sagitta: f64) -> Result<(Vec<bool>,usize,usize),super::judge::JudgeError> {
+/// `probe` and `least` are the certificate's probe distance and least distance.
+pub fn centroid_kept(judge: &mut super::judge::FieldJudge,mesh: &KeptMesh,probe: f64,least: f64) -> Result<(Vec<bool>,usize,usize),super::judge::JudgeError> {
     use super::judge::Sign;
     let mut keep = vec![true;mesh.triangles.len()];
     let (mut inside,mut outside) = (0,0);
     for (i,t) in mesh.triangles.iter().enumerate() {
         let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
         let centroid: V3 = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
-        // Material two sagittas inside and exterior as far outside, along the triangle's own
+        // Material a probe distance inside and exterior as far outside, along the triangle's own
         // outward normal (the certificate's first probes, which the judge keeps for it): the
         // field being one-Lipschitz, the centroid is then neither material nor exterior deeper
         // than that, which is all the deep sign could have said against the triangle. Asked
         // only of a triangle the certificate will probe so: one with an altitude of at least
-        // its least probe distance, half a sagitta (a sliver it judges at the centroid).
-        if let Some(n) = super::certify::triangle_normal(a,b,c) {
-            let length = |p: V3,q: V3| ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt();
-            let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
-            let area2 = length([u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]],[0.;3]);
-            let longest = length(a,b).max(length(b,c)).max(length(c,a));
-            if area2/longest >= sagitta/2. && judge.sides(centroid,n,2.*sagitta)? == (Sign::Material,Sign::Exterior) { continue; }
+        // its least distance (a sliver it judges at the centroid).
+        if let Some(n) = stable_normal(a,b,c) {
+            if crate::space::altitude(a,b,c) >= least && judge.sides(centroid,n,probe)? == (Sign::Material,Sign::Exterior) { continue; }
         }
-        match judge.deep_sign(centroid,2.*sagitta)?.0 {
+        match judge.deep_sign(centroid,probe)?.0 {
             Sign::Material => { keep[i] = false; inside += 1; }
             Sign::Exterior => { keep[i] = false; outside += 1; }
             _ => {}
@@ -91,9 +89,9 @@ pub fn centroid_kept(judge: &mut super::judge::FieldJudge,mesh: &KeptMesh,sagitt
 /// them), so the seam is the covering sheet's own edges, for the stitch's
 /// split to share; no tile is grown and nothing is cut where no edge runs.
 pub fn uncovered(t: [V3;3],tiles: &[[V3;3]],outline: &[([V3;3],V3,V3)],tolerance: f64) -> Option<Vec<[V3;3]>> {
-    use super::certify::triangle_normal;
+    use crate::space::stable_normal;
     use super::planar::{P2,area2,cut};
-    let Some(n) = triangle_normal(t[0],t[1],t[2]) else { return Some(Vec::new()) };
+    let Some(n) = stable_normal(t[0],t[1],t[2]) else { return Some(Vec::new()) };
     let least = (0..3).min_by(|&a,&b| n[a].abs().total_cmp(&n[b].abs())).unwrap();
     let mut axis = [0.;3]; axis[least] = 1.;
     let u = { let c = [n[1]*axis[2]-n[2]*axis[1],n[2]*axis[0]-n[0]*axis[2],n[0]*axis[1]-n[1]*axis[0]]; let l = (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt(); c.map(|x| x/l) };
@@ -103,9 +101,15 @@ pub fn uncovered(t: [V3;3],tiles: &[[V3;3]],outline: &[([V3;3],V3,V3)],tolerance
     let mut own: Vec<P2> = t.iter().enumerate().map(|(k,p)| { let q = to2(*p); (Some(k as u32),q.1,q.2) }).collect();
     if area2(&own) < 0. { own.reverse(); }
     let scale = own.iter().map(|p| p.1.abs().max(p.2.abs())).fold(0_f64,f64::max).max(f64::MIN_POSITIVE);
-    let (eps,area_eps) = (1e-9*scale,1e-14*scale*scale);
+    // Where two sheets' edges coincide they do so to the tracer's noise, about 1e-12 at unit
+    // coordinates, whatever the triangle's size: a width decided below that (a millionth of a
+    // millionth of a sliver) is decided by rounding. A billionth of the coordinates is well
+    // above it, and an area is that width along the triangle.
+    let magnitude = t.iter().flatten().fold(0_f64,|m,x| m.max(x.abs()));
+    let eps = 1e-9*scale.max(magnitude);
+    let area_eps = eps*scale;
     let tangent = |tile: &[V3;3]| -> bool {
-        let Some(m) = triangle_normal(tile[0],tile[1],tile[2]) else { return false };
+        let Some(m) = stable_normal(tile[0],tile[1],tile[2]) else { return false };
         if m[0]*n[0]+m[1]*n[1]+m[2]*n[2] < 0.9 { return false; }
         // the tile's footprint on this plane, clipped to the triangle
         let mut f: Vec<P2> = tile.iter().map(|p| to2(*p)).collect();
@@ -203,7 +207,7 @@ pub fn uncovered(t: [V3;3],tiles: &[[V3;3]],outline: &[([V3;3],V3,V3)],tolerance
             // a piece turned over or stood up by the snap was a sliver
             // thinner than the snap, and goes; the hole it leaves is a
             // triangle's, filled later
-            let Some(m) = triangle_normal(a,b,c) else { continue };
+            let Some(m) = stable_normal(a,b,c) else { continue };
             if m[0]*n[0]+m[1]*n[1]+m[2]*n[2] < 0.5 { continue; }
             out.push([a,b,c]);
         }
@@ -233,26 +237,30 @@ pub fn covered_by(t: [V3;3],tiles: &[[V3;3]],outline: &[([V3;3],V3,V3)],toleranc
 /// Returns the mesh and how many triangles were clipped or dropped.
 pub fn clip_overlaps(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
     let cell = (tolerance*8.).max(f64::MIN_POSITIVE);
-    let key = |p: V3| p.map(|x| (x/cell).floor() as i64);
-    let box_of = |corners: &[V3]| -> ([i64;3],[i64;3]) {
-        (key(std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min))),
-            key(std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::NEG_INFINITY,f64::max))))
+    let box_of = |corners: &[V3]| -> (V3,V3) {
+        (std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min)),
+            std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::NEG_INFINITY,f64::max)))
     };
-    // each sheet's triangles and boundary edges, bucketed by their boxes
-    let mut tile_buckets: std::collections::BTreeMap<(u32,[i64;3]),Vec<usize>> = Default::default();
-    let mut edge_buckets: std::collections::BTreeMap<(u32,[i64;3]),Vec<(usize,u32,u32)>> = Default::default();
+    // each sheet's triangles and boundary edges, filed by their boxes (an edge by its place in
+    // `edges`)
+    let mut tile_grids: std::collections::BTreeMap<u32,Grid> = Default::default();
+    let mut edge_grids: std::collections::BTreeMap<u32,Grid> = Default::default();
+    let mut edges: Vec<(usize,u32,u32)> = Vec::new();
     let mut uses: std::collections::BTreeMap<(u32,u32,u32),(usize,usize)> = Default::default(); // (sheet, a, b) -> (count, a triangle)
     for (i,t) in mesh.triangles.iter().enumerate() {
         let corners = t.map(|v| mesh.vertices[v as usize]);
         let (lo,hi) = box_of(&corners);
-        for x in lo[0]..=hi[0] { for y in lo[1]..=hi[1] { for z in lo[2]..=hi[2] { tile_buckets.entry((mesh.sheet[i],[x,y,z])).or_default().push(i); } } }
+        tile_grids.entry(mesh.sheet[i]).or_insert_with(|| Grid::new(cell)).insert_box(lo,hi,i as u32);
         for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); let e = uses.entry((mesh.sheet[i],a.min(b),a.max(b))).or_insert((0,i)); e.0 += 1; }
     }
     for (&(s,a,b),&(count,i)) in &uses {
         if count != 1 { continue; }
         let (lo,hi) = box_of(&[mesh.vertices[a as usize],mesh.vertices[b as usize]]);
-        for x in lo[0]..=hi[0] { for y in lo[1]..=hi[1] { for z in lo[2]..=hi[2] { edge_buckets.entry((s,[x,y,z])).or_default().push((i,a,b)); } } }
+        edge_grids.entry(s).or_insert_with(|| Grid::new(cell)).insert_box(lo,hi,edges.len() as u32);
+        edges.push((i,a,b));
     }
+    let pack = |grids: std::collections::BTreeMap<u32,Grid>| -> std::collections::BTreeMap<u32,crate::space::PackedGrid> { grids.into_iter().map(|(s,g)| (s,g.pack())).collect() };
+    let (tile_grids,edge_grids) = (pack(tile_grids),pack(edge_grids));
     let sheets: std::collections::BTreeSet<u32> = mesh.sheet.iter().copied().collect();
     let mut out = KeptMesh {vertices:mesh.vertices.clone(),triangles:Vec::new(),sheet:Vec::new()};
     let mut changed = 0;
@@ -266,14 +274,20 @@ pub fn clip_overlaps(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
             let mut next = Vec::new();
             for piece in pieces {
                 let (lo,hi) = box_of(&piece);
-                let mut seen: std::collections::BTreeSet<usize> = Default::default();
+                let mut seen: std::collections::BTreeSet<u32> = Default::default();
                 let mut tiles: Vec<[V3;3]> = Vec::new();
                 let mut outline: Vec<([V3;3],V3,V3)> = Vec::new();
                 let mut seen_edges: std::collections::BTreeSet<(u32,u32)> = Default::default();
-                for x in lo[0]-1..=hi[0]+1 { for y in lo[1]-1..=hi[1]+1 { for z in lo[2]-1..=hi[2]+1 {
-                    if let Some(list) = tile_buckets.get(&(earlier,[x,y,z])) { for &j in list { if seen.insert(j) { tiles.push(mesh.triangles[j].map(|w| mesh.vertices[w as usize])); } } }
-                    if let Some(list) = edge_buckets.get(&(earlier,[x,y,z])) { for &(j,a,b) in list { if seen_edges.insert((a,b)) { outline.push((mesh.triangles[j].map(|w| mesh.vertices[w as usize]),mesh.vertices[a as usize],mesh.vertices[b as usize])); } } }
-                } } }
+                // the cells of the piece's box and one more round it
+                if let Some(grid) = tile_grids.get(&earlier) {
+                    grid.in_keys(grid.key(lo).map(|x| x-1),grid.key(hi).map(|x| x+1),|j| if seen.insert(j) { tiles.push(mesh.triangles[j as usize].map(|w| mesh.vertices[w as usize])); });
+                }
+                if let Some(grid) = edge_grids.get(&earlier) {
+                    grid.in_keys(grid.key(lo).map(|x| x-1),grid.key(hi).map(|x| x+1),|e| {
+                        let (j,a,b) = edges[e as usize];
+                        if seen_edges.insert((a,b)) { outline.push((mesh.triangles[j].map(|w| mesh.vertices[w as usize]),mesh.vertices[a as usize],mesh.vertices[b as usize])); }
+                    });
+                }
                 match if tiles.is_empty() { None } else { uncovered(piece,&tiles,&outline,tolerance) } {
                     None => next.push(piece),
                     Some(left) => { touched = true; next.extend(left); }
@@ -328,29 +342,27 @@ pub fn retained(mesh: &KeptMesh,keep: &[bool]) -> KeptMesh {
 /// crossing over at it. An edge used more than twice is returned as a loop
 /// of two, so the audit sees it.
 pub fn boundary_loops(triangles: &[[u32;3]]) -> Vec<Vec<u32>> {
-    let mut uses: std::collections::BTreeMap<(u32,u32),usize> = Default::default();
-    let mut owner: std::collections::BTreeMap<(u32,u32),usize> = Default::default();
-    for (i,t) in triangles.iter().enumerate() { for k in 0..3 {
-        let (a,b) = (t[k],t[(k+1)%3]);
-        *uses.entry((a.min(b),a.max(b))).or_default() += 1;
-        owner.insert((a,b),i);
-    } }
-    let boundary = |a: u32,b: u32| uses.get(&(a.min(b),a.max(b))).copied() == Some(1);
+    let edges = super::adjacency::Edges::new(triangles);
+    walk_loops(triangles,edges.boundary(),|a,b| edges.uses(a,b) == 1,|a,b| edges.owner(a,b))
+}
+
+/// The loops of `boundary_loops` walked from the boundary's directed edges (`pending`), with
+/// whether an edge is boundary and which triangle (the last by index) walks a directed edge.
+pub(crate) fn walk_loops(triangles: &[[u32;3]],mut pending: std::collections::BTreeSet<(u32,u32)>,boundary: impl Fn(u32,u32) -> bool,owner: impl Fn(u32,u32) -> Option<usize>) -> Vec<Vec<u32>> {
     // the boundary edge leaving b after arriving along a -> b: rotate round
     // b's fan from the triangle on a -> b until an edge out of b is boundary
     let next_after = |a: u32,b: u32| -> Option<u32> {
-        let mut t = *owner.get(&(a,b))?;
+        let mut t = owner(a,b)?;
         for _ in 0..triangles.len()+1 {
             let tri = triangles[t];
             let k = (0..3).find(|&k| tri[k] == b)?;
             let c = tri[(k+1)%3];
             if boundary(b,c) { return Some(c); }
             // across edge b -> c to the triangle that walks c -> b
-            t = *owner.get(&(c,b))?;
+            t = owner(c,b)?;
         }
         None
     };
-    let mut pending: std::collections::BTreeSet<(u32,u32)> = owner.keys().copied().filter(|&(a,b)| boundary(a,b)).collect();
     let mut loops = Vec::new();
     while let Some(&(start_a,start_b)) = pending.iter().next() {
         let mut walk = vec![start_a];
