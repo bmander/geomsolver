@@ -48,8 +48,13 @@ fn prune(term: Term,omitted: &mut usize) -> Term {
 /// extent. `expected_sweeps` is the number of swept cut operands the caller
 /// knows about; a mismatch means some other operand failed to build.
 pub fn static_solid(sk: &Sketch,root: usize,expected_sweeps: usize) -> Result<StaticSolid,String> {
+    static_solid_at_unit(sk,root,mesh_unit(sk,root),expected_sweeps)
+}
+
+/// The same at a caller's mesh unit (the world length its facets are cut to
+/// within `curve::FLATNESS_PX` of), for a boundary meshed to a stated sagitta.
+pub fn static_solid_at_unit(sk: &Sketch,root: usize,unit: f64,expected_sweeps: usize) -> Result<StaticSolid,String> {
     let name = sk.solid_name(root);
-    let unit = mesh_unit(sk,root);
     let origin = frame_origin(sk,root,unit);
     let mut csg = resolve_at(sk,root,unit,origin);
     let mut omitted = 0;

@@ -10,13 +10,13 @@ use gcs_core::{model::SolidDef,motion::Family,program::Elaborated};
 /// The tool's own field sampled over the roll at a world point, in plain
 /// floats: the least value and the parameter attaining it. A diagnostic of
 /// what the sweep does at a point the judge could not resolve.
-struct Sampler { field: SpatialField, family: Family, domain: [f64;2] }
+pub(super) struct Sampler { pub(super) field: SpatialField, pub(super) family: Family, pub(super) domain: [f64;2] }
 impl Sampler {
-    fn new(e: &Elaborated,swept: usize) -> Self {
+    pub(super) fn new(e: &Elaborated,swept: usize) -> Self {
         let SolidDef::Swept {source,motion,from,to} = &e.sketch.solids[swept].def else { panic!("not a sweep") };
         Self {field:SpatialField::read(&e.sketch,*source as usize,1e-10).unwrap(),family:Family::read(&e.sketch,*motion as usize).unwrap(),domain:[from.value,to.value]}
     }
-    fn least(&self,p: V3) -> (f64,f64) {
+    pub(super) fn least(&self,p: V3) -> (f64,f64) {
         (0..=400).map(|k| { let t = self.domain[0]+(self.domain[1]-self.domain[0])*k as f64/400.;
             (self.field.value(self.family.at(t).unwrap().inverse().point(p)),t) }).fold((f64::INFINITY,0.),|m,x| if x.0 < m.0 { x } else { m })
     }

@@ -8,3 +8,4 @@ mod tools;
 mod motions;
 mod labels;
 mod certificate;
+mod closed;

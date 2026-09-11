@@ -114,6 +114,49 @@ wall leave a scissor-thin exterior under 10 µm wide; its 65 loops are the inner
 labels cut out, which milestone 4 trims and seams. A far query (band half the probe wide)
 costs 0.5 ms on these cases.
 
+## Milestone 3: caps, stitch, closed shells
+
+`caps` (`caps.rs`) tessellates the tool to the construction's sagitta through the core's
+welded indexed mesh (`static_solid_at_unit`, `indexed`), poses it at each end of the roll,
+and keeps each facet by the sign of its normal velocity at its centroid: receding at the
+start, advancing at the end. The cap's rim is therefore ragged to a facet about the contact
+curve; the field judges its vertices like any sheet's. This is a shortcut past the plan's
+slab decomposition, which can replace it if exactness at the rim ever demands.
+
+`without_overlaps` (`trim.rs`) drops a later sheet's kept triangles lying on an earlier
+sheet's kept surface: a tool's leading and trailing edges sweep the same face of the sweep,
+a plunged cylinder's two rims sweep one wall, and the field rightly keeps both.
+
+The stitch (`stitch.rs`): `weld` identifies coincident vertices; `split_at_vertices`
+resolves T-junctions at exact coincidence (a thousandth of the vertex tolerance: two runs
+along one tool edge walked out on one sheet and back on the other); `rim_zip` pairs each
+boundary loop with the nearest loop within four column spacings and zips them
+(`zip_loops`): two loops of a seam between outward pieces run opposite ways, so the second
+loop's direction is chosen by total rung length (crossed rungs are longer), loops sharing
+vertices (a tessellation vertex on the contact curve, the sphere's poles) are zipped arc by
+arc between the shared vertices with each arc of the second loop chosen by proximity, and
+the band is flipped as a whole by whether its first loop edge runs with the mesh's. Two
+loops within twice the sagitta are one curve sampled twice (a cap's rim on the tool's sharp
+edge against the sheet's column): the sparser loop's own band is peeled from its sheet and
+the next column zipped instead, since a band between coincident loops doubles the surface.
+`boundary_loops` walks each loop round the vertex fan, so loops sharing a vertex stay two.
+
+Evidence (`tests/sweep_mesh/closed.rs`, same tolerances, `d = 40 µm`): each case a closed
+shell (`ClosedShell::from_triangles`), every triangle certified, none thin, the volume
+against a closed form the construction never sees. An inscribed mesh's columns are
+inscribed polygons (about 1.3 sagittas per unit of the smallest radius) and its seams
+chamfer a column's width, so a round case is allowed three sagittas per unit radius below
+its closed form and never above it; a polyhedral case must match to 1e-9.
+
+| case | triangles | volume | closed form | run |
+|---|---|---|---|---|
+| sphere turned ±60°: torus segment with spherical ends | 4640 | 23.399 | 23.928 (−2.2%) | 2.0 s |
+| cylinder plunged 6 along its axis | 766 | 24.541 | 25.133 (−2.4%) | 3.0 s |
+| box translated 10 along x | 1260 | 72.000000 | 72 | 9.7 s |
+
+The box's time is its 2100 near queries at 1.3 ms: a translation of a face parallel to
+itself is the flat-minimum case for the roll refinement.
+
 ## Refusals
 
 Every refusal names its element. So far: `ReversedNormal { point, direction }` (material
