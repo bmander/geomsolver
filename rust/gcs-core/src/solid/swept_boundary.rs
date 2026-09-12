@@ -31,14 +31,14 @@ pub use crate::space::{Region,altitude,closest_on_triangle};
 pub use certify::{Certificate,Failure,certify,triangle_normal};
 pub use crease::{Rim,chains,clip_sheets,merge_creases};
 pub use planar::planar_union;
-pub use stitch::{collapse_short_edges,dedupe,drop_doubled_slivers,rim_zip,split_at_vertices,split_where,unpinch,weld,zip_loops};
+pub use stitch::{collapse_needles,collapse_short_edges,dedupe,drop_doubled_slivers,rim_zip,split_at_vertices,split_where,unpinch,weld,weld_boundary_ends,zip_loops};
 pub use judge::{FieldJudge,JudgeError,Projection,QueryStats,Sign};
 pub use project::{Label,Labelled,directions,label_patch,label_seeds,label_sheets,orientation};
 pub use seeds::{Grazing,Seed,grazing_seeds,seeds};
 pub use grazing::{GrazingFace,PlaneMotion,grazing_faces,swept_region};
 pub use hygiene::{Hygiene,hygiene};
 pub use window::{Near,Window,window};
-pub use trim::{KeptMesh,boundary_loops,centroid_kept,clip_overlaps,covered_by,kept_triangles,retained,uncovered,without_overlaps};
+pub use trim::{KeptMesh,Span,boundary_loops,centroid_kept,clip_overlaps,covered_by,kept_triangles,loop_span,retained,uncovered,without_overlaps};
 
 /// Controls of the construction. Lengths are in the model's own units.
 #[derive(Clone,Copy,Debug)]

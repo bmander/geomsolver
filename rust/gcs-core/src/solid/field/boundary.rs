@@ -23,6 +23,14 @@ pub struct BoundaryOptions {
     /// field width proportional to cell size. Corner queries refine toward this
     /// tolerance only if their sign is unresolved; signs always require bounds.
     pub sweep: Options,
+    /// The box to extract within, or `None` to derive it from the material's own
+    /// support as before. A given box is taken as it stands — padded by the
+    /// spatial tolerance like a derived one, and sized by the same depth rule —
+    /// so a caller may extract one neighbourhood rather than the whole field.
+    /// Nothing outside it is looked at, and no claim is made about what lies
+    /// there: the result is the boundary *within* the box, and its shell is
+    /// closed only if the box holds the whole of a component.
+    pub domain: Option<V>,
 }
 
 #[derive(Clone,Debug,PartialEq)]
@@ -178,7 +186,11 @@ impl MaterialEvaluator {
         if !tol.is_finite() || tol <= 0. || options.max_depth > 24 || options.max_cells == 0
             || !options.sweep.value_tolerance.is_finite() || options.sweep.value_tolerance <= 0.
             || options.sweep.max_evaluations < 4 { return Err(BoundaryError::InvalidOptions); }
-        let mut domain = self.support_bounds()?.ok_or(BoundaryError::NoFiniteSupport)?;
+        // the caller's box where one is given, else the material's own support as before
+        let mut domain = match options.domain {
+            Some(domain) => domain,
+            None => self.support_bounds()?.ok_or(BoundaryError::NoFiniteSupport)?,
+        };
         for p in &mut domain { *p = p.add(I::new(-tol,tol)?)?; }
         let target = I::point(tol)?.div(I::point(4.)?)?.bounds()[0];
         let span = diameter(domain)?;

@@ -6,6 +6,8 @@
 mod harness;
 mod tools;
 mod motions;
+mod forms;
+mod cases;
 mod labels;
 mod certificate;
 mod closed;
@@ -13,3 +15,4 @@ mod overlaps;
 mod pieces;
 mod creases;
 mod grazing;
+mod reference;

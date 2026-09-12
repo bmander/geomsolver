@@ -47,6 +47,62 @@ pub fn kept_triangles(sheets: &[SweepPatch],labelled: &[Labelled]) -> KeptMesh {
 /// its interior millimetres inside the sweep. Returns, per triangle, whether
 /// it stays, and how many were dropped inside and outside.
 /// `probe` and `least` are the certificate's probe distance and least distance.
+/// Whether the boundary passes through the span a loop would be closed across.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum Span {
+    /// Every part of the span has the boundary running through it: the loop is a hole in the
+    /// mesh, and filling it adds triangles the certificate will find on the boundary.
+    Spanned,
+    /// Somewhere across the span there is no boundary at all — material or exterior both ways as
+    /// far as the judge looked. A band laid there would be uncertified surface invented to close
+    /// a seam, which is the one thing the construction must not do.
+    Open { at: V3 },
+    /// The field gave no sign there at the full budget. Never rounded either way.
+    Unresolved { at: V3 },
+}
+
+/// Ask the field whether a boundary loop is a hole worth filling. The loop is fanned from its own
+/// centroid and each fan triangle's centre projected along the outward normal of the mesh triangle
+/// that owns the loop edge it stands on: where the field brackets the boundary about that point
+/// the surface really does run there, and where it reads material or exterior both ways it does
+/// not. Every part must span, because every triangle the fill lays is certified afterwards and one
+/// laid across open air fails — so a loop is closeable only if the whole of it is `Spanned`.
+///
+/// Takes the loop's points and per-edge normals rather than the mesh, so the caller may hold the
+/// mesh mutably while asking.
+pub fn loop_span(judge: &mut super::judge::FieldJudge,points: &[V3],normals: &[V3],epsilon: f64,reach: f64)
+    -> Result<Span,super::judge::JudgeError> {
+    use super::judge::Projection;
+    let n = points.len();
+    if n < 3 { return Ok(Span::Open {at:points.first().copied().unwrap_or([0.;3])}); }
+    let centroid: V3 = std::array::from_fn(|k| points.iter().map(|p| p[k]).sum::<f64>()/n as f64);
+    let mut unresolved: Option<V3> = None;
+    for k in 0..n {
+        let (a,b) = (points[k],points[(k+1)%n]);
+        let at: V3 = std::array::from_fn(|j| (centroid[j]+a[j]+b[j])/3.);
+        let m = normals.get(k).copied().unwrap_or([0.;3]);
+        // an edge whose owner gave no stable normal says nothing either way
+        if !(crate::space::norm(m) > 0.) { continue; }
+        // Judging instead along the fan triangle's **own** normal — what `certify` probes a laid
+        // triangle along, the owner's serving only to orient it outward — was tried and
+        // **refused**. It looked compelling: measured on the finished mesh, loops 2, 5 and 10
+        // bracket 7 of 7, 5 of 6 and 5 of 6 of their fan centres along their own normals and *none*
+        // along their owners', the owner's normal at a rim running along the boundary rather than
+        // across it. It closed nothing: the tumbling cylinder kept all 13 loops, lost nine
+        // triangles (3255 to 3246) and moved its volume 6.6563 to 6.6522, its export moving while
+        // the other four cases stayed byte-identical. The reason the measurement mispredicted is
+        // worth keeping: those per-loop diagnostics read the **finished** mesh, while this runs on
+        // the intermediate loops of each `rim_zip` round, so they cannot forecast a change that
+        // acts during the rounds.
+        match judge.project(at,m,epsilon,reach)? {
+            Projection::Kept {..} | Projection::Moved {..} => {}
+            Projection::Inner | Projection::Positive => return Ok(Span::Open {at}),
+            Projection::Unresolved {..} => { unresolved.get_or_insert(at); }
+        }
+    }
+    Ok(match unresolved { Some(at) => Span::Unresolved {at},None => Span::Spanned })
+}
+
 pub fn centroid_kept(judge: &mut super::judge::FieldJudge,mesh: &KeptMesh,probe: f64,least: f64) -> Result<(Vec<bool>,usize,usize),super::judge::JudgeError> {
     use super::judge::Sign;
     let mut keep = vec![true;mesh.triangles.len()];

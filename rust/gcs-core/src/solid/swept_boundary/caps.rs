@@ -408,6 +408,20 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
             if line.len() < 2 { continue; }
             mesh.cut_along(&line,s.closed)?;
         }
+        // Every edge between facets of two different tool faces, as a cut. Across a sharp edge the
+        // normal jumps, so `n·v` changes sign discontinuously and a component's most decisive facet
+        // cannot speak for both sides of it. Measured on the tumbling cylinder: the wall's quadrants
+        // reached through the rim into a disc, whose sign there is the other way, so the disc's
+        // facet was the most decisive one and the whole quadrant was dropped with it — 364 of the
+        // 370 cap facets beside the z = 0 band were advancing inside a dropped component, which is
+        // the surface that band was missing. This is the rule the grazing block below already
+        // states, applied to the tool's own edges and not only to a grazing face's boundary.
+        {
+            let mut by_edge: std::collections::BTreeMap<(u32,u32),Vec<usize>> = Default::default();
+            for (i,t) in mesh.triangles.iter().enumerate() { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); by_edge.entry((a.min(b),a.max(b))).or_default().push(i); } }
+            let edges: Vec<(u32,u32)> = by_edge.into_iter().filter(|(_,f)| f.len() == 2 && mesh.faces[f[0]] != mesh.faces[f[1]]).map(|(e,_)| e).collect();
+            for e in edges { mesh.cuts.insert(e); }
+        }
         // The facets of a grazing face, and the edges between them and the rest as cuts: the
         // region that face sweeps holds them at both ends of the roll, and a component must not
         // reach through them to be judged by a normal velocity that is not its own.

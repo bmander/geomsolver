@@ -272,6 +272,15 @@ fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
                 // beyond the foot's line, on the side away from the region
                 let d: Vec<f64> = poly.iter().map(|p| (p.1-a.1)*away.0+(p.2-a.2)*away.1).collect();
                 let (beyond,within) = cut(&poly,&d,eps);
+                // `cut` puts a point within `eps` of the line on both sides, so a fragment lying
+                // along the foot comes back whole in each half. Kept, that doubles the fragment,
+                // and over many feet one region of two triangles became thousands of fragments
+                // with hundreds of repeated triangles among them. A foot the fragment lies along
+                // does not divide it, so it is kept once and the foot passed over.
+                let whole = area2(&poly).abs();
+                if area2(&within).abs()+area2(&beyond).abs() > whole*(1.+1e-9)+area_eps {
+                    let bb = bbox(&poly); trimmed.push((poly,sheet,bb)); continue;
+                }
                 if within.len() >= 3 && area2(&within) > area_eps { let bb = bbox(&within); trimmed.push((within,sheet,bb)); }
                 if beyond.len() < 3 || area2(&beyond) <= area_eps { continue; }
                 // of that, only the part alongside the edge itself goes

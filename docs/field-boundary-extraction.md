@@ -21,9 +21,19 @@ propagate boxes through interval poses, and a swept support uses the entire decl
 interval. Shared spatial/material nodes are memoized during support derivation.
 
 This matters for completeness: exterior signs on the faces of an arbitrary crop do not rule
-out a separate component beyond that crop. Extraction supplies no arbitrary crop. Unknown
+out a separate component beyond that crop. Extraction chooses no crop of its own. Unknown
 supports and unsupported interval evaluations fail explicitly. The derived support is padded
 by the requested spatial tolerance to form the search domain.
+
+`BoundaryOptions::domain` lets a **caller** give the box instead, for extracting one
+neighbourhood rather than the whole field — which is what a gap fill needs, since contouring
+the material about one boundary loop is licensed by the field where inventing surface there is
+not. A given box is taken as it stands, padded by the same tolerance and sized by the same
+depth rule, and left unset the derivation above is unchanged. But a given box **is** an
+arbitrary crop, and the paragraph above applies to it in full: exterior signs on its faces
+prove nothing about a component beyond it, so the returned shell is closed only where the box
+holds the whole of one. That judgement moves to the caller, and the extractor makes no claim
+about anything outside the box it was handed.
 
 ## Complete spatial partition
 

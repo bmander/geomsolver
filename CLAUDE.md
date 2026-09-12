@@ -353,7 +353,12 @@ byte-identical export. **No decision may stand where exact geometry sits:** a si
 within the judge's tolerance of zero is near, flatness is `space::degenerate` (never exactly
 zero area), and choices within 1e-9 of the coordinates are ties taken the same way; every
 milestone-4 case built from seeds moved by 1e-12 is the same mesh
-(`seeds_moved_below_every_tolerance_leave_the_mesh_as_it_was`, and the ignored all-case test).
+(`seeds_moved_below_every_tolerance_leave_the_mesh_as_it_was`, and the ignored all-case test — which the
+**tumbling cylinder alone fails**, and did so before the 2026-09-12 stitch fixes as well as after,
+so it is no regression from them: measured both ways, the prism, lens, turned box and dumbbell all
+read "as it was" in both phases and only the case still refusing thirteen loops differs, its zip
+outcome being knife-edge while its boundary is open.  With the fixes one of its two phases improves
+to the same 3255 triangles in another order, where before it gave a different mesh).
 **Milestone 5 (2026-09-12):** a planar face the motion carries within its own plane is swept
 exactly as a 2D region (`grazing.rs`), not traced: `Family::in_plane` reads the motion's own steps,
 `leave_faces` stops the tracer emitting its edges, `swept_region` builds the region in rows, and
@@ -366,16 +371,64 @@ two triangles walking one edge the same way, a degenerate triangle, a repeated t
 the first few at fault with their midpoints — an edge used *once* is no fault, and a near pair is
 reported only between the weld's coincidence and the snap; `window` gives what stands in a ball of
 any stage, keyed by **position**, the only handle that survives renumbering between stages; and
-`Origin` says how each cut-mesh vertex came to be. They showed that **every unpaired loop fails one
-of `rim_zip`'s two gates and none fails for want of a partner**: a loop repeating a vertex is
-pinched, and `simple` is the first thing the fill, the pairing and the slit pass each ask. A walk
-that returns to a vertex is two walks, and `unpinch` cuts it into them on identity and no
-tolerance. Where the pinches come from: a cap cut along a sheet's end column is left touching
-itself where that chain crosses the tool's own rim. Still refusing, with evidence in
-`docs/swept-boundary.md`: the tilted cylinders at 30° and 85°, the thin plate, the tumbling
-cylinder; 5c is not begun. Recorded and **off** the path: `planar_union`'s foot trimming takes one
-region from 2 fragments to 2434 and leaves 744 duplicate triangles, which `dedupe` clears with no
-change to any outcome — work, not correctness.
+`Origin` says how each cut-mesh vertex came to be. They showed first that no unpaired loop fails
+for want of a partner: a loop repeating a vertex is pinched, and `simple` is the first thing the
+fill, the pairing and the slit pass each ask.  A walk that returns to a vertex is two walks, and
+`unpinch` cuts it into them on identity and no tolerance; the pinches came from a cap cut along a
+sheet's end column, left touching itself where that chain crosses the tool's own rim.
+**The stitch is then manifold by one rule — no triangle may walk an edge some triangle already
+walks** — kept by `split_where` (each split claims the four directed edges it will make, since the
+round's batch is applied after its candidates are chosen) and by `rim_zip`'s `lay`.  Between them
+every edge used more than twice is gone from every case, the 360° box's eleven used four times
+included.  `rim_zip` re-walks the boundary and runs its passes to a fixpoint — a pass's own fill
+leaves loops the others never see — and reports what is open off the **finished** mesh, never the
+opening walk: several cases had read as certified while their shells were open, the stale walk
+naming nothing unpaired.  A loop nothing pairs is filled only where `loop_span` says the field
+brackets the boundary across it, fanned from a new centroid vertex (the triangulation the field
+judged, and the only one whose chords cannot already be edges); `Open` is refused and `Unresolved`
+never rounded.  **A loop must first *reach* that pass, and two defects stopped it** (2026-09-12,
+each measured before it was fixed): the pairing and the slit pass marked their loops paired
+**before** laying the band, so a band `lay` declined whole consumed them for every later pass and,
+the pairing being decided the same way each round, for every later round too — 29 of the tumbling
+cylinder's 33 loops were claimed by a pass that laid **nothing**, and only its two wide seams ever
+reached the field pass; and `lay` admitted a facet the mesh already carried wound the other way,
+which `dedupe` then dropped, so the loop came back each round and only the cap on rounds ended it.
+Both passes now commit only on a band that laid something, `lay` refuses a corner set the mesh
+already has, and the cap is no longer what ends the loop.  The tumbling cylinder goes **33 to 13**
+loops (volume 6.6509 to 6.6563) with the prism, lens, turned box and dumbbell byte-identical; of
+the 13, **none** is `Spanned`, twelve are `Open` and one the judge refuses with `ReversedNormal`,
+so every survivor is surface for the tracer to generate.  The gate is the property and not a
+count: `creases::no_loop_the_field_calls_a_hole_is_left_unfilled`, no loop the field itself calls a
+hole may be left open.  `planar_union`'s foot trim keeps a fragment once where it lies along a foot, since
+`cut` places a point within `eps` on **both** sides and it came back whole in each half: 744
+repeated triangles became 0 and the union's hygiene came clean, though no refusal moved, the later
+stages having cleared them anyway.  `tests/sweep_mesh/cases.rs` and `forms.rs` are the case table —
+a row is one struct literal, `sweep_cases!` makes a `#[test]` of it, `Exact` and `Inscribed` are
+the two volume tiers said once, and a case that does not close yet is not a row.
+`weld_boundary_ends` merges two samplings of one boundary junction — a vertex past an edge's end
+lies within the junction tolerance of that endpoint, where no split can reach it — and **every
+merge is tried and kept only if no directed edge is walked more than once**, so one that would
+break the manifold is refused and nothing changes; that guard is what welding by proximity alone
+lacked. With `collapse_needles` beside it — a triangle owning a boundary edge whose height over it
+is under the certificate's own least probe distance (already its definition of a sliver, so no new
+tolerance) has its apex merged into the nearer end, under that same guard — it took the slid
+cylinder from eleven unpaired loops to one, the thin plate from ten to two and the tumbling
+cylinder from 47 to 33, leaving prism, lens and turned box byte-identical. A
+merge that would flatten a triangle — distinct corners gone collinear — is **refused whole** rather
+than dropping it: a certified boundary may not quietly shed surface, and an open loop is the honest
+refusal. Refusing costs almost no reach and keeps the material (tumbling's volume 6.6457, above the
+6.6390 the dropping version began from). What still
+refuses does so for **coverage, not stitching**: sliver loops no triangle can span with area, false
+boundaries (every declined band is blocked on an interior edge already used twice, by a triangle on
+the band's own three vertices wound the other way — the facet is already there, and the loop reads
+as boundary only because two samplings of one surface met at different vertices and their edges
+never paired), and wide seams the field reads `Open` where no surface was ever laid.  Still refusing, with evidence in `docs/swept-boundary.md`: the tumbling cylinder,
+the thin plate, the slid cylinder and the tilted cylinders at 30° and 85°; 5c is not begun.  Four
+further stitching fixes were refuted by measurement and reverted (a multi-slit pass, a boundary
+weld, a winding flip, and fanning a quad across its other diagonal — which closed the 30° case
+outright and was still wrong, the certificate reading two laid facets `Reversed`) and are recorded
+with their numbers so they are not tried again.  **A case that closes on a refused certificate is a
+failure, never a warning**, and a fan is laid only where the mesh can take the whole of it.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted
@@ -386,6 +439,11 @@ unresolved. This is a core snapshot capability, not yet an editable solid/export
 `MaterialField::support_bounds` derives a conservative finite box for all material, or an
 explicit unknown. `MaterialEvaluator::boundary` uses that support, complete spatial cells,
 strict corner signs and two-sided spatial distance evidence before returning `FieldBoundary`.
+`BoundaryOptions::domain` lets a caller hand it one box instead — for extracting a single
+neighbourhood, as a gap fill needs — padded and gridded the same way, and unset it derives the
+support as before; but a given box **is** an arbitrary crop, so its faces' exterior signs prove
+nothing about a component beyond it and the shell comes back closed only where the box holds a
+whole one.  That judgement is then the caller's, and the extractor claims nothing outside the box.
 Never substitute an arbitrary crop, residual magnitude or same-sign corners for coverage.
 Ambiguous vertices, missing nearby mesh evidence, work limits and failed topology refuse
 extraction. The independent sphere checker audits the partition and both distance directions

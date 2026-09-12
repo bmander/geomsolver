@@ -180,7 +180,7 @@ fn export_boundary(material: &mut Member,path: std::path::PathBuf) {
     let start = std::time::Instant::now();
     let mut previous = None; let mut last = start;
     let result = material.field.boundary_with_observer(BoundaryOptions {spatial_tolerance:tolerance,max_depth:16,max_cells,
-        sweep:Options {value_tolerance:0.0002,max_evaluations:20000}},|stage,completed| {
+        sweep:Options {value_tolerance:0.0002,max_evaluations:20000},domain:None},|stage,completed| {
             if previous != Some(stage) || last.elapsed().as_secs() >= 5 {
                 eprintln!("pinion {stage:?}: {completed} cells, {:.1}s",start.elapsed().as_secs_f64());
                 previous = Some(stage); last = std::time::Instant::now();

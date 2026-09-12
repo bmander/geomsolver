@@ -113,7 +113,11 @@ pub fn construct_from(sk: &Sketch,swept: usize,options: &SweptBoundaryOptions,sh
     observe(Stage::Welded {mesh:&mesh,collapsed,doubled},&judge.stats);
     super::split_at_vertices(&mut mesh,options.junction());
     observe(Stage::Split {mesh:&mesh},&judge.stats);
-    let (pairs,unpaired) = super::rim_zip(&mut mesh,options.spacing,options.junction());
+    // a loop nothing could pair is filled only where the field says the boundary spans it
+    let mut closeable = |points: &[[f64;3]],normals: &[[f64;3]]| -> bool {
+        matches!(super::loop_span(&mut judge,points,normals,epsilon,reach),Ok(super::Span::Spanned))
+    };
+    let (pairs,unpaired) = super::rim_zip(&mut mesh,options.spacing,options.junction(),least,&mut closeable);
     observe(Stage::Zipped {mesh:&mesh,pairs,unpaired:&unpaired},&judge.stats);
     if !unpaired.is_empty() { return Err(ConstructError::UnpairedRim {loops:unpaired.iter().map(Vec::len).collect()}); }
     let certificate = super::certify(&mut judge,&mesh.vertices,&mesh.triangles,probe,least)?;

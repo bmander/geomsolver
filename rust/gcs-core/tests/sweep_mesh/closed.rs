@@ -151,6 +151,30 @@ impl Report<'_> {
                         eprintln!("    column {c} at t {:.3}: {:?}",s.times[c],vs.iter().map(|&v| (rounded(s.points[v as usize],1e2),rounded(s.normals[v as usize],1e2))).collect::<Vec<_>>());
                     } }
                 } }
+                // How near two sheets come to one another, which decides what kind of defect an
+                // unpaired loop between them is. Two sheets that abut share a seam, and the weld
+                // makes one vertex of two positions within the coincidence (1e-7): so a nearest
+                // approach under that is already shared and the loop is something else, one a
+                // little above it is two traces of one seam and wants identity at the source, and
+                // one at a thousandth or more means the sheets genuinely end apart and it is the
+                // traced geometry, not the bookkeeping. Point against point, since for two grids
+                // that abut the nearest approach is the seam however the boundary rows run.
+                if d.sheets {
+                    let mut pairs: Vec<(f64,usize,usize,usize)> = Vec::new();
+                    for i in 0..sheets.len() { for j in i+1..sheets.len() {
+                        let (mut least,mut near) = (f64::INFINITY,0);
+                        for q in &sheets[j].points {
+                            let e = sheets[i].points.iter().map(|p| harness::distance(*p,*q)).fold(f64::INFINITY,f64::min);
+                            least = least.min(e);
+                            if e <= 1e-7 { near += 1; }
+                        }
+                        if least.is_finite() { pairs.push((least,i,j,near)); }
+                    } }
+                    pairs.sort_by(|a,b| a.0.total_cmp(&b.0));
+                    for (least,i,j,near) in pairs.iter().take(8) {
+                        eprintln!("    sheets {i} and {j}: nearest {least:.9}, {near} of the second's points already coincident (within 1e-7)",);
+                    }
+                }
             }
             Stage::Grazed {regions} => {
                 self.clock.lap("grazing");
@@ -179,13 +203,43 @@ impl Report<'_> {
                     (s.patch().triangles.len(),text)
                 }).collect(); }
             }
-            Stage::Clipped {mesh,..} => {
+            Stage::Clipped {mesh,rims} => {
                 self.clock.judged("clip",stats);
                 // the earliest stage holding a mesh: what the seeds and the caps handed over
                 d.stage(mesh,"clipped");
                 for (i,(triangles,text)) in self.labels.iter().enumerate() {
                     let kept = mesh.sheet.iter().filter(|x| **x == i as u32).count();
                     eprintln!("  sheet {i}: {kept} of {triangles} triangles kept; {text}");
+                }
+                // How near the rims of different sheets come to one another, which is the whole of
+                // what `merge_creases` can act on: it welds a vertex of one rim onto a vertex of
+                // another within the snap, and splits a rim edge only at a rim vertex. A pair that
+                // never comes that close cannot be merged at all, and the two sheets keep separate
+                // boundaries however the crease runs between them — so this says whether a crease
+                // went unmerged because the gate refused it or because the rims never met.
+                if d.sheets {
+                    let pts: Vec<Vec<V3>> = rims.iter().map(|r| r.vertices.iter().map(|&v| mesh.vertices[v as usize]).collect()).collect();
+                    // per pair: the nearest approach, and how many of the second's vertices lie
+                    // within the snap of one of the first's
+                    let mut pairs: Vec<(f64,usize,usize,usize)> = Vec::new();
+                    for i in 0..rims.len() { for j in i+1..rims.len() {
+                        if rims[i].sheet == rims[j].sheet { continue; }
+                        let (mut least,mut near) = (f64::INFINITY,0);
+                        for q in &pts[j] {
+                            let e = pts[i].iter().map(|p| harness::distance(*p,*q)).fold(f64::INFINITY,f64::min);
+                            least = least.min(e);
+                            if e <= 0.02 { near += 1; }
+                        }
+                        if least.is_finite() { pairs.push((least,i,j,near)); }
+                    } }
+                    pairs.sort_by(|a,b| a.0.total_cmp(&b.0));
+                    let count = |t: f64| pairs.iter().filter(|p| p.0 <= t).count();
+                    eprintln!("  rim pairs of different sheets: {}; nearest within 0.005: {}, within 0.02 (the snap): {}, within 0.03: {}, within 0.08: {}",
+                        pairs.len(),count(0.005),count(0.02),count(0.03),count(0.08));
+                    for (least,i,j,near) in pairs.iter().take(8) {
+                        eprintln!("    rim {i} (sheet {}, {} vertices) and rim {j} (sheet {}, {} vertices): nearest {least:.6}, {near} of the second's within the snap",
+                            rims[*i].sheet,rims[*i].vertices.len(),rims[*j].sheet,rims[*j].vertices.len());
+                    }
                 }
             }
             Stage::Merged {mesh,rims,welded,split} => {
@@ -252,6 +306,19 @@ impl Report<'_> {
                 self.clock.lap("zip");
                 d.stage(mesh,"zipped");
                 eprintln!("welded: {} vertices, {} triangles, {} boundary loops; {pairs} rims zipped, {} loops left",mesh.vertices.len(),mesh.triangles.len(),self.loops,unpaired.len());
+                // How many boundary edges meet at each vertex. Where several sheets meet at one
+                // point — which `chain` leaves separate on purpose, threading them would carry a
+                // sheet through itself — each contributes two boundary edges there, so three
+                // sheets make six. The loop walk rotates round a vertex fan until it finds a
+                // boundary edge, so with several to choose from it pairs them as it meets them,
+                // and a walk closed through such a vertex need not bound a hole at all.
+                let boundary_degree: BTreeMap<u32,usize> = {
+                    let mut uses: BTreeMap<(u32,u32),usize> = Default::default();
+                    for t in &mesh.triangles { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); *uses.entry((a.min(b),a.max(b))).or_insert(0) += 1; } }
+                    let mut degree: BTreeMap<u32,usize> = Default::default();
+                    for ((a,b),n) in &uses { if *n == 1 { *degree.entry(*a).or_insert(0) += 1; *degree.entry(*b).or_insert(0) += 1; } }
+                    degree
+                };
                 for (k,l) in unpaired.iter().enumerate() {
                     let pts: Vec<V3> = l.iter().map(|&v| mesh.vertices[v as usize]).collect();
                     let (lo,hi) = bounds(pts.iter().copied());
@@ -269,6 +336,70 @@ impl Report<'_> {
                     }).count();
                     eprintln!("  unpaired loop {k}: {} vertices ({} distinct, {corners} reflex corners), box {:?}..{:?}, bordered by sheets {:?}",
                         l.len(),distinct.len(),rounded(lo,1e3),rounded(hi,1e3),bordering(mesh,l));
+                    // How thin the loop is: a loop whose least side is far under the sagitta is a
+                    // sliver, and no triangle laid across it has area to take a normal from, so
+                    // the fill declines it and it can never be closed by adding a triangle. Its
+                    // two sides have to be identified instead. The least side is the tolerance
+                    // such a weld would need, so it is printed for every loop that survives.
+                    {
+                        let mut ext = [hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2]];
+                        ext.sort_by(f64::total_cmp);
+                        eprintln!("    sides: least {:.6}, middle {:.6}, longest {:.6}",ext[0],ext[1],ext[2]);
+                    }
+                    // Whether the loop folds back on itself, which is what decides the treatment:
+                    // a slit, or a bundle of them, has a counterpart close to nearly every vertex
+                    // and can be zipped arc against arc; a seam running across surface that was
+                    // never laid has none, and no band may be invented there. Measured as the
+                    // nearest other vertex of this loop four or more steps away along the walk, so
+                    // a vertex's own neighbours cannot answer for it, and counted at three
+                    // distances since what the zip admits is a whole arc pair lying together.
+                    if n >= 9 {
+                        let dist = |a: V3,b: V3| ((a[0]-b[0]).powi(2)+(a[1]-b[1]).powi(2)+(a[2]-b[2]).powi(2)).sqrt();
+                        let far = |i: usize,j: usize| { let d = (i as isize-j as isize).unsigned_abs(); d.min(n-d) >= 4 };
+                        let counterpart: Vec<f64> = (0..n).map(|i| (0..n).filter(|&j| far(i,j))
+                            .map(|j| dist(pts[i],pts[j])).fold(f64::INFINITY,f64::min)).collect();
+                        let near = |t: f64| counterpart.iter().filter(|&&d| d <= t).count();
+                        let worst = counterpart.iter().copied().fold(0_f64,f64::max);
+                        eprintln!("    folds back: of {n} vertices, {} have a counterpart 4+ steps away within 0.05, {} within 0.2, {} within 0.5; farthest {:.4}",
+                            near(0.05),near(0.2),near(0.5),worst);
+                    }
+                    // Whether this walk runs through a vertex where several boundary edges meet: a
+                    // loop closed through one of those may be an artefact of how the walk paired
+                    // them rather than a hole. Two is the ordinary count for a boundary vertex.
+                    {
+                        let crowded: Vec<(u32,usize)> = l.iter().map(|&v| (v,boundary_degree.get(&v).copied().unwrap_or(0)))
+                            .filter(|(_,deg)| *deg > 2).collect();
+                        eprintln!("    boundary degree: {} of {} vertices carry more than two boundary edges {:?}",crowded.len(),l.len(),crowded);
+                    }
+                    // Whether the surface about the loop is laid twice. Triangles of different
+                    // sheets whose centroids all but coincide and whose normals agree are two
+                    // coverings of one patch, which the coverage clip should have taken to one —
+                    // and a loop bounded by doubled surface is no hole, which is what the zip's
+                    // declined bands (each duplicating a facet already there) suggest. Only the
+                    // triangles about the loop are walked: that is where the question is, and the
+                    // whole mesh would be quadratic for nothing. Measured: the surface about these
+                    // loops is **not** doubled — the 30° cylinder reports none at all, and the
+                    // tumbling cylinder a few pairs in a neighbourhood of hundreds, which is
+                    // coincidence between sheets rather than a second covering.
+                    if d.sheets {
+                        let centroid = |t: &[u32;3]| -> V3 { let [a,b,c] = t.map(|v| mesh.vertices[v as usize]); std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.) };
+                        let about: Vec<usize> = (0..mesh.triangles.len()).filter(|&i| {
+                            let c = centroid(&mesh.triangles[i]);
+                            (0..3).all(|k| c[k] >= lo[k]-0.05 && c[k] <= hi[k]+0.05)
+                        }).collect();
+                        let normal = |t: &[u32;3]| { let [a,b,c] = t.map(|v| mesh.vertices[v as usize]); gcs_core::solid::swept_boundary::triangle_normal(a,b,c) };
+                        let whose: BTreeSet<u32> = about.iter().map(|&i| mesh.sheet[i]).collect();
+                        let mut doubled = 0;
+                        for (x,&i) in about.iter().enumerate() { for &j in &about[x+1..] {
+                            if mesh.sheet[i] == mesh.sheet[j] { continue; }
+                            let (ci,cj) = (centroid(&mesh.triangles[i]),centroid(&mesh.triangles[j]));
+                            if (0..3).map(|k| (ci[k]-cj[k]).powi(2)).sum::<f64>().sqrt() > 0.01 { continue; }
+                            if let (Some(u),Some(w)) = (normal(&mesh.triangles[i]),normal(&mesh.triangles[j])) {
+                                if u[0]*w[0]+u[1]*w[1]+u[2]*w[2] > 0.99 { doubled += 1; }
+                            }
+                        } }
+                        eprintln!("    about it: {} triangles from sheets {:?}; {doubled} pairs of different sheets doubled (centroids within 0.01, normals agreeing)",about.len(),whose);
+                    }
                     if d.sheets {
                         // the walk itself, each vertex with the seeds whose triangles use it: a
                         // loop bounded by one seed is a hole in it, one alternating between two
@@ -288,6 +419,37 @@ impl Report<'_> {
                             for (i,t) in mesh.triangles.iter().enumerate() { if t.contains(&a) && t.contains(&b) { eprintln!("      edge {k} on triangle {i} (sheet {}) {:?}",mesh.sheet[i],t.map(|v| rounded(mesh.vertices[v as usize],1e4))); } }
                         }
                     }
+                }
+                // Which boundary vertices no boundary edge could ever be split at. `split_where`
+                // visits every boundary edge, so a vertex past one edge's end is normally picked
+                // up by the next edge along the same line; the span skip can only bite for a
+                // vertex that **no** boundary edge contains, and then the edge that does contain
+                // it is interior, which no tolerance reaches. This counts the two apart.
+                {
+                    let tol = 0.04_f64; // the junction tolerance the split works to
+                    let mut uses: BTreeMap<(u32,u32),usize> = Default::default();
+                    for t in &mesh.triangles { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); *uses.entry((a.min(b),a.max(b))).or_insert(0) += 1; } }
+                    let edges: Vec<(u32,u32)> = uses.iter().filter(|(_,n)| **n == 1).map(|(e,_)| *e).collect();
+                    let verts: BTreeSet<u32> = edges.iter().flat_map(|&(a,b)| [a,b]).collect();
+                    let (mut contained,mut orphan) = (0,0);
+                    for &v in &verts {
+                        let p = mesh.vertices[v as usize];
+                        let (mut inside,mut on_line) = (false,false);
+                        for &(a,b) in &edges {
+                            if v == a || v == b { continue; }
+                            let (pa,pb) = (mesh.vertices[a as usize],mesh.vertices[b as usize]);
+                            let e = [pb[0]-pa[0],pb[1]-pa[1],pb[2]-pa[2]];
+                            let l2 = e[0]*e[0]+e[1]*e[1]+e[2]*e[2];
+                            if l2 <= 0. { continue; }
+                            let w = [p[0]-pa[0],p[1]-pa[1],p[2]-pa[2]];
+                            let f = (w[0]*e[0]+w[1]*e[1]+w[2]*e[2])/l2;
+                            let foot = [pa[0]+f*e[0],pa[1]+f*e[1],pa[2]+f*e[2]];
+                            if harness::distance(p,foot) > tol { continue; }
+                            if f > 0. && f < 1. { inside = true; } else { on_line = true; }
+                        }
+                        if inside { contained += 1; } else if on_line { orphan += 1; }
+                    }
+                    eprintln!("boundary vertices: {} in all; {contained} lie inside some boundary edge's span (the split can take them), {orphan} only on a line past an end (no boundary edge can)",verts.len());
                 }
                 if let Some(path) = &d.dump { dump(mesh,path); }
             }
@@ -378,18 +540,6 @@ fn a_cylinder_plunged_along_its_axis_sweeps_a_longer_cylinder() {
     let expected = PI*8.;
     let v = volume(&mesh);
     assert!(v <= expected*(1.+1e-3) && v >= expected*(1.-3.*SAGITTA/1.),"volume {v} against {expected}");
-}
-
-#[test]
-fn a_box_translated_along_x_sweeps_a_longer_box() {
-    // 2 x 3 x 2 box advanced 10 along x: 12 + 6 * 10
-    let source = format!("{}{}{}",tools::BOX,motions::slide_x(10.),motions::swept("feed",0.,360.));
-    let (mesh,certificate) = closed_shell(&source);
-    assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
-    closed(&mesh).unwrap();
-    let expected = 72.;
-    let v = volume(&mesh);
-    assert!((v-expected).abs() <= 1e-9*expected,"volume {v} against {expected}");
 }
 
 #[test]

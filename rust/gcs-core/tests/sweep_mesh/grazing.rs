@@ -259,6 +259,75 @@ fn the_turned_boxs_own_end_face_sweeps_a_sound_region() {
 
 // --- milestone 5b: the cases the tracer's closedness and stationing are judged by ---
 
+/// Whether the field itself can supply the surface an unpaired loop wants: for each loop the
+/// construction refused, the material's boundary is extracted **within that loop's own box**
+/// (`BoundaryOptions::domain`, grown by a sagitta so a patch would overlap the mesh it must be
+/// stitched to) and what comes back is reported — nothing is laid, nothing is deleted.
+///
+/// This is the viability question for a gap fill, and it is the only licensed way to get surface
+/// where the field calls a loop `Open`: a contour of the field is the field's own boundary, where
+/// anything the stitch invents there is refused by the certificate. The refusal matters as much
+/// as the success: `CellBudget` or `ResolutionLimit` says the extraction wants more room to work,
+/// while `AmbiguousPoint`, `UnresolvedCell` or `Topology` says the field cannot resolve that
+/// neighbourhood at all — and those want opposite answers.
+#[test]
+#[ignore]
+fn what_the_field_yields_in_an_unpaired_loops_own_box() {
+    use gcs_core::interval::{Interval as I,minimum::Options};
+    use gcs_core::solid::{BoundaryOptions,MaterialField};
+    use gcs_core::solid::swept_boundary::{Stage,SweptBoundaryOptions,construct};
+    const SAGITTA: f64 = 0.02;
+    for (name,source) in [
+        ("tilted cylinder 30",format!("{}{}{}",tools::tilted_cylinder(30.),motions::TURN_SPINDLE,motions::swept("turn",-60.,60.))),
+        ("thin plate under a roll",format!("{}{}{}",tools::thin_plate(0.1),motions::roll(1.05),motions::swept("turn",0.,120.))),
+    ] {
+        let e = harness::read(&source);
+        let swept = harness::solid(&e,"swept");
+        let options = SweptBoundaryOptions {sagitta:SAGITTA,spacing:0.5,..Default::default()};
+        // the loops as the zip left them, with the points they stand on
+        let mut boxes: Vec<(usize,[f64;3],[f64;3])> = Vec::new();
+        let _ = construct(&e.sketch,swept,&options,&|_| {},&mut |stage,_| {
+            if let Stage::Zipped {mesh,unpaired,..} = stage {
+                for l in unpaired {
+                    let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+                    for &v in l { let p = mesh.vertices[v as usize];
+                        for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); } }
+                    boxes.push((l.len(),lo,hi));
+                }
+            }
+        });
+        eprintln!("== {name}: {} unpaired loops",boxes.len());
+        for (n,lo,hi) in boxes.iter().take(2) {
+            let began = std::time::Instant::now();
+            let Ok(field) = MaterialField::read(&e.sketch,swept,1e-10) else { continue };
+            // the loop's box, grown so a patch would overlap the mesh around it
+            let domain: [I;3] = std::array::from_fn(|k| I::new(lo[k]-SAGITTA,hi[k]+SAGITTA).unwrap());
+            // Coarse on purpose: this asks only whether the field yields anything here and what
+            // it refuses with, and the depth rule (span/2^depth <= tolerance/4) makes a fine
+            // tolerance ruinous — 0.02 over a box this size wants depth 7, some two million
+            // cells, each costing a field query. A tolerance of a tenth keeps it to a few
+            // thousand, and a small cell budget makes a runaway refuse in seconds.
+            //
+            // **The answer is no, and these settings are not a recommendation.** Three of the
+            // four loops come back `AmbiguousPoint` — enclosures straddling zero, e.g. -0.00047
+            // to 0.00050 — which is the extractor keeping its own guarantee that an interval
+            // containing zero is never a sign: it cannot resolve those neighbourhoods, so a gap
+            // fill cannot get licensed surface there. The fourth spent 40 seconds to reach
+            // `CellBudget` at this deliberately coarse tenth, so a tolerance fine enough to
+            // stitch would cost orders of magnitude more, across dozens of loops. Neither route
+            // through the field is open; the missing surface is the tracer's to generate.
+            let settings = BoundaryOptions {spatial_tolerance:0.1,max_depth:8,max_cells:20000,
+                sweep:Options {value_tolerance:1e-3,max_evaluations:2000},domain:Some(domain)};
+            match field.evaluator(0).boundary(settings) {
+                Ok(b) => eprintln!("   loop of {n}: {} triangles, shell {}, spatial error {:.6} ({:?})",
+                    b.triangles().len(),if b.shell().faces().is_empty() { "empty" } else { "built" },
+                    b.spatial_error_bound(),began.elapsed()),
+                Err(err) => eprintln!("   loop of {n}: refused {err:?} ({:?})",began.elapsed()),
+            }
+        }
+    }
+}
+
 /// What a case's construction comes to, for a case that does not close yet.
 fn outcome(source: &str) -> String {
     match super::closed::shell_at(source,0.02) {

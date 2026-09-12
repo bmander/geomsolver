@@ -6,7 +6,7 @@ fn ball(center: [f64;3],radius: f64) -> MaterialField {
     SpatialField::from(RevolvedField::new(F::disk([0.;2],radius).unwrap(),center,[0.,0.,1.]).unwrap()).into()
 }
 fn settings(tolerance: f64) -> BoundaryOptions {
-    BoundaryOptions {spatial_tolerance:tolerance,max_depth:12,max_cells:200000,sweep:options()}
+    BoundaryOptions {spatial_tolerance:tolerance,max_depth:12,max_cells:200000,sweep:options(),domain:None}
 }
 fn inside(b: [I;3],p: [f64;3]) { assert!((0..3).all(|k| b[k].contains(p[k])),"{b:?} excludes {p:?}"); }
 
