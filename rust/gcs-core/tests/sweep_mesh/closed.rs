@@ -22,18 +22,36 @@ pub(super) fn volume(mesh: &KeptMesh) -> f64 {
 
 /// What a case prints beyond its summary, read from the environment once:
 /// `SOLVENT_SHEETS` every stage's detail, `SOLVENT_COLUMNS` the points of
-/// columns and rims as well, `SOLVENT_DUMP=path` each stage's mesh as text.
-struct Diagnostics { sheets: bool,columns: bool,dump: Option<String> }
+/// columns and rims as well, `SOLVENT_DUMP=path` each stage's mesh as text,
+/// `SOLVENT_WINDOW=x,y,z,r` what stands in that ball at every stage, which is
+/// how a defect is watched forming rather than inferred backwards from the
+/// stage that refused over it.
+/// A stage whose mesh is not clean says so whatever the environment says.
+struct Diagnostics { sheets: bool,columns: bool,dump: Option<String>,window: Option<(V3,f64)>,coincidence: f64,snap: f64 }
 
 impl Diagnostics {
-    fn from_env() -> Diagnostics {
-        Diagnostics {sheets:std::env::var("SOLVENT_SHEETS").is_ok(),columns:std::env::var("SOLVENT_COLUMNS").is_ok(),dump:std::env::var("SOLVENT_DUMP").ok()}
+    fn from_env(coincidence: f64,snap: f64) -> Diagnostics {
+        let window = std::env::var("SOLVENT_WINDOW").ok().and_then(|s| {
+            let n: Vec<f64> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            (n.len() == 4).then(|| ([n[0],n[1],n[2]],n[3]))
+        });
+        Diagnostics {sheets:std::env::var("SOLVENT_SHEETS").is_ok(),columns:std::env::var("SOLVENT_COLUMNS").is_ok(),dump:std::env::var("SOLVENT_DUMP").ok(),window,coincidence,snap}
     }
 
     /// How many edges two triangles walk the same way (an orientation flip)
     /// and how many are used once or more than twice, printed at a stage.
     fn stage(&self,mesh: &KeptMesh,label: &str) {
         if let Some(path) = &self.dump { dump(mesh,&format!("{path}.{label}")); }
+        // The checks every stage's output should pass, said whenever one fails: the stage that
+        // first reports a defect is the stage that made it, where the stage that refuses over it
+        // may be many stages later.
+        let h = gcs_core::solid::swept_boundary::hygiene(mesh,self.coincidence,self.snap);
+        if !h.clean() || self.sheets { eprintln!("  {label} hygiene: {}",h.report(self.snap)); }
+        // the same ball at every stage, so a defect is watched forming
+        if let Some((at,r)) = self.window {
+            let w = gcs_core::solid::swept_boundary::window(mesh,at,r);
+            if !w.vertices.is_empty() || self.sheets { eprintln!("  {label} {}",w.report()); }
+        }
         if !self.sheets { return; }
         let mut uses: BTreeMap<(u32,u32),(usize,usize)> = Default::default();
         for t in &mesh.triangles { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); let e = uses.entry((a.min(b),a.max(b))).or_default(); if a < b { e.0 += 1; } else { e.1 += 1; } } }
@@ -156,6 +174,8 @@ impl Report<'_> {
             }
             Stage::Clipped {mesh,..} => {
                 self.clock.judged("clip",stats);
+                // the earliest stage holding a mesh: what the seeds and the caps handed over
+                d.stage(mesh,"clipped");
                 for (i,(triangles,text)) in self.labels.iter().enumerate() {
                     let kept = mesh.sheet.iter().filter(|x| **x == i as u32).count();
                     eprintln!("  sheet {i}: {kept} of {triangles} triangles kept; {text}");
@@ -164,6 +184,7 @@ impl Report<'_> {
             Stage::Merged {mesh,rims,welded,split} => {
                 self.clock.lap("merge");
                 eprintln!("{} rims clipped; {welded} rim vertices welded, {split} rim edges split",rims.len());
+                d.stage(mesh,"merged");
                 if d.sheets { for r in rims {
                     let p: Vec<V3> = r.vertices.iter().map(|&v| mesh.vertices[v as usize]).collect();
                     let (lo,hi) = bounds(p.iter().copied());
@@ -264,12 +285,12 @@ pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,Certificat
 /// The shell, or the construction's refusal with the mesh as the zip left it (empty when it
 /// refused before the zip), for a case that does not close yet.
 pub(super) fn shell_at(source: &str,sagitta: f64) -> (KeptMesh,Result<Certificate,ConstructError>) {
-    let diagnostics = Diagnostics::from_env();
     let mut clock = Clock::new();
     let e = harness::read(source);
     let swept = harness::solid(&e,"swept");
     clock.lap("read");
     let options = SweptBoundaryOptions {sagitta,spacing:SPACING,..Default::default()};
+    let diagnostics = Diagnostics::from_env(options.coincidence(),options.vertex_tolerance());
     let mut report = Report {diagnostics:&diagnostics,clock,started:Instant::now(),sheets:0,points:0,labels:Vec::new(),dropped:[0;4],loops:0};
     let mut zipped: Option<KeptMesh> = None;
     let built = construct(&e.sketch,swept,&options,&|_| {},&mut |stage,stats| {

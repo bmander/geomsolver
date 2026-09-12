@@ -131,6 +131,102 @@ fn every_cut_is_an_edge_a_triangle_still_walks() {
     }
 }
 
+/// A mesh of the given triangles over the given points, every triangle from one sheet.
+fn mesh_of(vertices: Vec<V3>,triangles: Vec<[u32;3]>) -> KeptMesh {
+    let sheet = vec![0;triangles.len()];
+    KeptMesh {vertices,triangles,sheet}
+}
+
+/// A square as two triangles wound the same way round.
+fn square() -> KeptMesh {
+    mesh_of(vec![[0.,0.,0.],[1.,0.,0.],[1.,1.,0.],[0.,1.,0.]],vec![[0,1,2],[0,2,3]])
+}
+
+const COINCIDENCE: f64 = 1e-7;
+const SNAP: f64 = 5e-3;
+
+#[test]
+fn an_open_sheet_wound_one_way_is_clean() {
+    let h = gcs_core::solid::swept_boundary::hygiene(&square(),COINCIDENCE,SNAP);
+    assert!(h.clean(),"{}",h.report(SNAP));
+    // the shared diagonal is walked once each way; the four sides once each
+    assert_eq!(h.boundary_edges,4,"an open sheet's rim is no fault");
+    assert_eq!((h.crowded_edges,h.same_way,h.degenerate),(0,0,0));
+    assert_eq!((h.vertices,h.used,h.triangles),(4,4,2));
+}
+
+#[test]
+fn hygiene_names_a_fold_a_crowded_edge_and_a_flat_triangle() {
+    // the second triangle wound the other way: both walk the diagonal 2 -> 0
+    let folded = mesh_of(vec![[0.,0.,0.],[1.,0.,0.],[1.,1.,0.],[0.,1.,0.]],vec![[0,1,2],[0,3,2]]);
+    let h = gcs_core::solid::swept_boundary::hygiene(&folded,COINCIDENCE,SNAP);
+    assert_eq!(h.same_way,1,"{}",h.report(SNAP));
+    assert!(!h.clean());
+    // a third triangle on the diagonal: three walk one edge
+    let crowded = mesh_of(vec![[0.,0.,0.],[1.,0.,0.],[1.,1.,0.],[0.,1.,0.],[2.,2.,0.]],
+        vec![[0,1,2],[0,2,3],[0,2,4]]);
+    let h = gcs_core::solid::swept_boundary::hygiene(&crowded,COINCIDENCE,SNAP);
+    assert_eq!(h.crowded_edges,1,"{}",h.report(SNAP));
+    assert!(!h.clean());
+    // three points on one line bound nothing
+    let flat = mesh_of(vec![[0.,0.,0.],[1.,0.,0.],[2.,0.,0.]],vec![[0,1,2]]);
+    let h = gcs_core::solid::swept_boundary::hygiene(&flat,COINCIDENCE,SNAP);
+    assert_eq!(h.degenerate,1,"{}",h.report(SNAP));
+    assert!(!h.clean());
+}
+
+#[test]
+fn hygiene_reports_only_near_pairs_of_vertices_in_use() {
+    // two vertices at one point are what every seed contributes and the weld joins: not a pair
+    let mut doubled = square();
+    doubled.vertices.push([0.,0.,0.]);
+    doubled.triangles.push([4,1,2]); doubled.sheet.push(0);
+    let h = gcs_core::solid::swept_boundary::hygiene(&doubled,COINCIDENCE,SNAP);
+    assert_eq!(h.closest,None,"an exact duplicate is the weld's to join, not a whisker");
+    // a pair between the coincidence and the snap is one nothing downstream closes
+    let mut near = square();
+    near.vertices.push([2e-3,0.,0.]);
+    near.triangles.push([4,1,2]); near.sheet.push(0);
+    let h = gcs_core::solid::swept_boundary::hygiene(&near,COINCIDENCE,SNAP);
+    let (d,_,_) = h.closest.expect("the near pair is reported");
+    assert!((d-2e-3).abs() < 1e-12,"{}",h.report(SNAP));
+    // but a vertex no triangle uses is not in the mesh at all
+    let mut spare = square();
+    spare.vertices.push([2e-3,0.,0.]);
+    let h = gcs_core::solid::swept_boundary::hygiene(&spare,COINCIDENCE,SNAP);
+    assert_eq!(h.closest,None,"an unused point says nothing about the mesh");
+    assert_eq!((h.vertices,h.used),(5,4));
+}
+
+#[test]
+fn a_window_names_what_stands_in_a_ball_and_whose_it_is() {
+    use gcs_core::solid::swept_boundary::window;
+    let mut m = square();
+    m.vertices.push([1e-3,0.,0.]);          // v4, a whisker off the corner, another sheet's
+    m.vertices.push([5.,5.,0.]);            // v5 and v6, far away
+    m.vertices.push([6.,5.,0.]);
+    m.triangles.push([4,1,2]); m.sheet.push(7);
+    m.triangles.push([5,6,1]); m.sheet.push(9);
+    let w = window(&m,[0.,0.,0.],0.01);
+    // only what is in the ball, nearest first
+    assert_eq!(w.vertices.iter().map(|n| n.vertex).collect::<Vec<_>>(),vec![0,4]);
+    assert_eq!(w.vertices[0].distance,0.);
+    // whose each one is, which is what an index alone never says
+    assert_eq!(w.vertices[0].sheets,vec![0]);
+    assert_eq!(w.vertices[1].sheets,vec![7],"the whisker is the other sheet's");
+    assert!(w.vertices[0].boundary,"the square's corner stands on its rim");
+    // the pair, its distance, and that nothing joins them: a whisker's signature
+    assert_eq!(w.pairs.len(),1);
+    let (a,b,d,uses) = w.pairs[0];
+    assert_eq!((a,b),(0,4));
+    assert!((d-1e-3).abs() < 1e-12,"{d}");
+    assert_eq!(uses,0,"no edge joins them, which is what makes it a whisker and not an edge");
+    // every triangle with a corner in the ball, whosever it is, and no other
+    assert_eq!(w.triangles.iter().map(|(i,_,_)| *i).collect::<Vec<_>>(),vec![0,1,2]);
+    // a ball with nothing in it says so rather than printing a heading
+    assert!(window(&m,[9.,9.,9.],0.5).vertices.is_empty());
+}
+
 /// How many vertices of the mesh stand exactly at `p`.
 fn at(mesh: &CutMesh,p: V3) -> usize { mesh.vertices.iter().filter(|v| **v == p).count() }
 
