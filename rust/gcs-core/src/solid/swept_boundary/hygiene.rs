@@ -26,6 +26,11 @@ use super::adjacency::Edges;
 use super::trim::KeptMesh;
 use crate::space::{Grid,degenerate,distance};
 
+type V3 = [f64;3];
+
+/// The most edges at fault worth naming: enough to point a window at, not enough to bury the line.
+const FAULTS: usize = 4;
+
 /// The measurements of one stage's mesh.
 #[derive(Clone,Debug,Default,PartialEq)]
 pub struct Hygiene {
@@ -43,6 +48,13 @@ pub struct Hygiene {
     /// Edges two triangles walk the same way round.
     pub same_way: usize,
     pub degenerate: usize,
+    /// Triangles repeating another's three vertices. Always a fault: the second covers nothing
+    /// the first does not, and it is what `dedupe` exists to drop.
+    pub duplicates: usize,
+    /// The first few edges at fault: the two vertices, where the edge's middle stands, and how
+    /// many triangles walk it each way round. A count alone says a stage went wrong; this says
+    /// where, which is what a window wants to be pointed at.
+    pub faults: Vec<((u32,u32),V3,(usize,usize))>,
 }
 
 impl Hygiene {
@@ -50,7 +62,7 @@ impl Hygiene {
     /// and neither is a near pair: a case that certifies may carry one, so it is
     /// reported whenever a line is printed but never the reason to print.
     pub fn clean(&self) -> bool {
-        self.crowded_edges == 0 && self.same_way == 0 && self.degenerate == 0
+        self.crowded_edges == 0 && self.same_way == 0 && self.degenerate == 0 && self.duplicates == 0
     }
 
     /// One line, naming only what is amiss beyond the counts.
@@ -61,6 +73,10 @@ impl Hygiene {
         if self.crowded_edges > 0 { out += &format!("; {} edges used more than twice",self.crowded_edges); }
         if self.same_way > 0 { out += &format!("; {} edges walked twice the same way",self.same_way); }
         if self.degenerate > 0 { out += &format!("; {} degenerate triangles",self.degenerate); }
+        if self.duplicates > 0 { out += &format!("; {} triangles repeat another's corners",self.duplicates); }
+        for ((a,b),at,(f,r)) in &self.faults {
+            out += &format!("\n      at fault: v{a}-v{b}, middle {at:?}, walked {f} one way and {r} the other");
+        }
         out
     }
 }
@@ -93,11 +109,21 @@ pub fn hygiene(mesh: &KeptMesh,coincidence: f64,snap: f64) -> Hygiene {
         }
         grid.insert(*p,v as u32);
     }
-    for (_,(f,b)) in Edges::new(&mesh.triangles).counts() {
-        if f+b == 1 { out.boundary_edges += 1; }
-        if f+b > 2 { out.crowded_edges += 1; }
-        if f >= 2 || b >= 2 { out.same_way += 1; }
+    for ((a,b),(f,r)) in Edges::new(&mesh.triangles).counts() {
+        if f+r == 1 { out.boundary_edges += 1; }
+        let crowded = f+r > 2;
+        let folded = f >= 2 || r >= 2;
+        if crowded { out.crowded_edges += 1; }
+        if folded { out.same_way += 1; }
+        if (crowded || folded) && out.faults.len() < FAULTS {
+            let (p,q) = (mesh.vertices[a as usize],mesh.vertices[b as usize]);
+            out.faults.push(((a,b),std::array::from_fn(|k| 0.5*(p[k]+q[k])),(f,r)));
+        }
     }
+    // triangles repeating another's three corners, by the same walk `dedupe` drops them with
+    let mut keys: Vec<[u32;3]> = mesh.triangles.iter().map(|t| { let mut k = *t; k.sort(); k }).collect();
+    keys.sort_unstable();
+    out.duplicates = keys.windows(2).filter(|w| w[0] == w[1]).count();
     out.degenerate = mesh.triangles.iter().filter(|t| {
         let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
         degenerate(a,b,c)
