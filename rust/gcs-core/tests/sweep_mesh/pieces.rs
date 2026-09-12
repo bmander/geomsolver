@@ -100,6 +100,57 @@ fn a_column_point_off_the_mesh_is_refused_by_name() {
     assert!(err.contains("off the tool's mesh"),"{err}");
 }
 
+/// A cube belted at z = 0.5 and again at x = 0.3. The second belt crosses the
+/// first on the faces y = 0 and y = 1 away from any vertex, so each crossing
+/// splits an edge the first cut runs along.
+fn crossed_belts() -> CutMesh {
+    let (vertices,triangles) = cube();
+    let mut mesh = CutMesh::new(vertices,triangles.clone(),vec![0;triangles.len()],1e-3,1e-2);
+    let belt = |pts: [V3;4]| -> Vec<(V3,V3)> { pts.into_iter().map(|p| (p,[0.;3])).collect() };
+    mesh.cut_along(&belt([[0.,0.,0.5],[1.,0.,0.5],[1.,1.,0.5],[0.,1.,0.5]]),true).unwrap();
+    mesh.cut_along(&belt([[0.3,0.,0.],[0.3,0.,1.],[0.3,1.,1.],[0.3,1.,0.]]),true).unwrap();
+    mesh
+}
+
+#[test]
+fn a_second_belt_crossing_the_first_parts_a_cube_in_four() {
+    let mesh = crossed_belts();
+    let distinct: std::collections::BTreeSet<usize> = mesh.components().into_iter().collect();
+    assert_eq!(distinct.len(),4,"two belts crossing twice part the surface in four");
+    for (_,n) in edge_uses(&mesh.triangles) { assert_eq!(n,2); }
+}
+
+#[test]
+fn every_cut_is_an_edge_a_triangle_still_walks() {
+    let mesh = crossed_belts();
+    // a cut the second belt split in two is two cuts: named after the edge that
+    // is gone it separates nothing, and the components flood through the seam
+    for &(a,b) in &mesh.cuts {
+        assert!(mesh.triangles.iter().any(|t| t.contains(&a) && t.contains(&b)),
+            "the cut {a}-{b} ({:?} to {:?}) is no edge of the mesh",mesh.vertices[a as usize],mesh.vertices[b as usize]);
+    }
+}
+
+/// How many vertices of the mesh stand exactly at `p`.
+fn at(mesh: &CutMesh,p: V3) -> usize { mesh.vertices.iter().filter(|v| **v == p).count() }
+
+#[test]
+fn a_cut_point_beside_a_vertex_a_cut_uses_leaves_it_where_it_is() {
+    let (vertices,triangles) = cube();
+    let mut mesh = CutMesh::new(vertices,triangles.clone(),vec![0;triangles.len()],1e-3,1e-2);
+    // the chain crosses the face's diagonal at its middle, and uses the vertex made there
+    mesh.cut_along(&[([0.25,0.,0.5],[0.;3]),([0.75,0.,0.5],[0.;3])],false).unwrap();
+    assert_eq!(at(&mesh,[0.5,0.,0.5]),1,"the crossing of the diagonal is a vertex");
+    // a later point within the snap of it takes it where it stands
+    mesh.cut_along(&[([0.5+2e-4,0.,0.5],[0.;3])],false).unwrap();
+    assert_eq!(at(&mesh,[0.5,0.,0.5]),1,"the vertex the first cut runs through did not move");
+    assert_eq!(at(&mesh,[0.5+2e-4,0.,0.5]),0,"and the later point did not put one of its own there");
+    // a vertex no cut uses still moves onto the point, so the seam is the sheet's own
+    mesh.cut_along(&[([0.9998,0.,0.],[0.;3])],false).unwrap();
+    assert_eq!(at(&mesh,[0.9998,0.,0.]),1,"an unpinned corner moves onto the point");
+    assert_eq!(at(&mesh,[1.,0.,0.]),0);
+}
+
 /// Two strips meeting along y = 0, the lower one sampled twice as finely
 /// there, each a boundary loop of its own until the junctions are split.
 fn strips(offset: f64) -> KeptMesh {

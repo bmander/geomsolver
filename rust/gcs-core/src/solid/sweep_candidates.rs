@@ -14,7 +14,7 @@ use super::{SweepContacts,ToolFace,ToolEdge,tool_faces::Crease};
 use crate::{envelope::{self,Motion},plane};
 
 type V3 = [f64;3];
-use crate::space::{distance,norm,sub};
+use crate::space::{distance,norm,segment_distance,sub};
 
 /// A polyline of contact positions with outward tool normals, in the tool's
 /// own frame. `closed` means the last point joins the first. `joints` are
@@ -280,6 +280,7 @@ impl SweepContacts {
         let signs = self.signs(scale)?;
         self.characteristics_at(self.motion.at(t)?,&signs,tolerance,scale)
     }
+
 
     /// The contact curves of every face and edge under one instantaneous
     /// motion, trimmed and chained, in the tool's frame.
@@ -1045,13 +1046,6 @@ fn resample(c: &Characteristic,rows: usize) -> (Vec<V3>,Vec<V3>) {
 
 /// The distance from a point to a triangle (Ericson's closest point).
 fn triangle_distance(p: V3,[a,b,c]: [V3;3]) -> f64 { distance(p,crate::space::closest_on_triangle(p,a,b,c).0) }
-
-fn segment_distance(p: V3,a: V3,b: V3) -> f64 {
-    let ab = sub(b,a); let ap = sub(p,a);
-    let l = plane::dot(ab,ab);
-    let t = if l > 0. { (plane::dot(ap,ab)/l).clamp(0.,1.) } else { 0. };
-    distance(p,std::array::from_fn(|k| a[k]+t*ab[k]))
-}
 
 
 /// The triangles between two consecutive curves of a strip: the monotone

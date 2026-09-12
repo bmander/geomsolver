@@ -35,6 +35,12 @@ pub struct CutMesh {
     pub faces: Vec<u32>,
     /// Vertex pairs the cuts run along.
     pub cuts: std::collections::BTreeSet<(u32,u32)>,
+    /// The vertices a cut runs through. A later point within the snap of one
+    /// takes it where it stands: moved onto that point, it would drag the
+    /// chain already walking through it off the curve that chain was cut
+    /// along. The point is then at most a snap away, which is well inside the
+    /// tolerance the stitch splits an edge at.
+    pinned: std::collections::BTreeSet<u32>,
     /// Snap: a point this close to a vertex is that vertex (which moves to
     /// it), and a crossing this close to an edge's end takes the end, so no
     /// sliver thinner than this is ever made.
@@ -59,7 +65,7 @@ impl CutMesh {
     pub fn new(vertices: Vec<V3>,triangles: Vec<[u32;3]>,faces: Vec<u32>,vertex_tolerance: f64,sagitta: f64) -> CutMesh {
         let mut incident = vec![Vec::new();vertices.len()];
         for (t,tri) in triangles.iter().enumerate() { for &v in tri { attach(&mut incident[v as usize],t); } }
-        CutMesh {vertices,triangles,faces,cuts:Default::default(),vertex_tolerance,sagitta,incident,index:None}
+        CutMesh {vertices,triangles,faces,cuts:Default::default(),pinned:Default::default(),vertex_tolerance,sagitta,incident,index:None}
     }
 
     /// How far from a facet `locate` looks for a point.
@@ -154,6 +160,14 @@ impl CutMesh {
     /// A new vertex at `p` on the edge `a`-`b`, both facets on it split.
     fn split_edge(&mut self,a: u32,b: u32,p: V3) -> u32 {
         let v = self.push_vertex(p);
+        // a cut running along this edge runs along its two halves now. Left
+        // naming the edge that is gone, it separates nothing and `components`
+        // floods straight through the seam.
+        if self.cuts.remove(&(a.min(b),a.max(b))) {
+            self.cuts.insert((a.min(v),a.max(v)));
+            self.cuts.insert((b.min(v),b.max(v)));
+            self.pinned.insert(v);
+        }
         let mut fresh = Vec::new();
         for t in self.incident[a as usize].clone().into_iter().map(|t| t as usize) {
             let tri = self.triangles[t];
@@ -180,16 +194,20 @@ impl CutMesh {
     /// The vertex a surface point is or becomes: a vertex within the snap
     /// of it moves onto it, so the seam is the sheet's own point exactly.
     fn insert(&mut self,p: V3) -> Result<u32,String> {
-        match self.locate(p).ok_or_else(|| format!("column point {p:?} is off the tool's mesh"))? {
+        let v = match self.locate(p).ok_or_else(|| format!("column point {p:?} is off the tool's mesh"))? {
             Place::Vertex(v) => {
-                self.vertices[v as usize] = p;
-                // its facets moved with it: filed again where they now reach
-                for t in self.incident[v as usize].clone() { self.file(t as usize); }
-                Ok(v)
+                if !self.pinned.contains(&v) {
+                    self.vertices[v as usize] = p;
+                    // its facets moved with it: filed again where they now reach
+                    for t in self.incident[v as usize].clone() { self.file(t as usize); }
+                }
+                v
             }
-            Place::Edge(a,b) => Ok(self.split_edge(a,b,p)),
-            Place::Face(t) => Ok(self.split_face(t,p)),
-        }
+            Place::Edge(a,b) => self.split_edge(a,b,p),
+            Place::Face(t) => self.split_face(t,p),
+        };
+        self.pinned.insert(v);
+        Ok(v)
     }
 
     fn share_facet(&self,u: u32,w: u32) -> bool { self.incident[u as usize].iter().any(|&t| self.triangles[t as usize].contains(&w)) }
@@ -258,6 +276,7 @@ impl CutMesh {
             let (a,b) = (chain[k],chain[k+1]);
             if !self.share_facet(a,b) { return Err(format!("the cut from {pu:?} to {pw:?} does not follow the tool's mesh between {:?} and {:?}",self.vertices[a as usize],self.vertices[b as usize])); }
             self.cuts.insert((a.min(b),a.max(b)));
+            self.pinned.insert(a); self.pinned.insert(b);
         }
         Ok(())
     }

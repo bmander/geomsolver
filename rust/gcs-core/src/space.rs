@@ -9,6 +9,15 @@ pub(crate) fn add(a: V3,b: V3) -> V3 { [a[0]+b[0],a[1]+b[1],a[2]+b[2]] }
 pub(crate) fn scale(a: V3,s: f64) -> V3 { a.map(|x| x*s) }
 pub(crate) fn distance(a: V3,b: V3) -> f64 { norm(sub(a,b)) }
 pub(crate) fn lerp(a: V3,b: V3,t: f64) -> V3 { [a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1]),a[2]+t*(b[2]-a[2])] }
+/// The distance from a point to a segment: how far a curve's point stands from
+/// a polyline, which is how the tracer measures two curves apart and how a cap
+/// measures what a sheet's column already covers.
+pub(crate) fn segment_distance(p: V3,a: V3,b: V3) -> f64 {
+    let ab = sub(b,a); let ap = sub(p,a);
+    let l = dot(ab,ab);
+    let t = if l > 0. { (dot(ap,ab)/l).clamp(0.,1.) } else { 0. };
+    distance(p,std::array::from_fn(|k| a[k]+t*ab[k]))
+}
 /// The unit vector along `a`, or none for a zero vector.
 pub(crate) fn normalised(a: V3) -> Option<V3> { let l = norm(a); (l > 0.).then(|| a.map(|x| x/l)) }
 
