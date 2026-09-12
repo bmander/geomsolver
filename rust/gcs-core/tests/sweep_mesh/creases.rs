@@ -228,7 +228,13 @@ fn stl(vertices: &[V3],triangles: &[[u32;3]],name: &str) -> (Vec<u8>,usize) {
 #[test]
 fn seeds_moved_below_every_tolerance_leave_the_mesh_as_it_was() {
     use gcs_core::solid::swept_boundary::{SweptBoundaryOptions,construct_from,seeds};
-    for source in [turning_prism(),turned_lens(),turned_box()] {
+    // The turned box is a grazing region under a turn; the two slides are one under a slide,
+    // which is the other branch `Family::in_plane` reads and had no gate of its own — 5a made
+    // both exact (the box to 1e-9, the prism exactly) and nothing held them to it under a jitter.
+    // The dumbbell is left to the ignored all-case variant below: it alone costs twice this test.
+    let slid_box = format!("{}{}{}",tools::BOX,motions::slide_x(10.),motions::swept("feed",0.,360.));
+    let slid_prism = format!("{}{}{}",tools::TRIANGLE_PRISM,motions::slide_x(10.),motions::swept("feed",0.,360.));
+    for source in [turning_prism(),turned_lens(),turned_box(),slid_box,slid_prism] {
         let e = harness::read(&source);
         let swept = harness::solid(&e,"swept");
         let options = SweptBoundaryOptions {sagitta:SAGITTA,spacing:0.5,..Default::default()};
