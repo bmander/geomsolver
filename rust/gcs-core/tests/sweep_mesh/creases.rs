@@ -2648,6 +2648,192 @@ fn what_the_degenerate_three_loops_are_made_of() {
         otherwise a zero-area sliver to drop, never to span");
 }
 
+/// What makes the finished mesh look rough, measured rather than guessed. The tumbling cylinder
+/// slices, so the surface is broadly right; the question is what shape its facets are and where
+/// they come from. `the_longest_edges_the_mesh_walks` already rules out one answer: 154 of 6665
+/// triangles have an edge past the spacing (0.5), the longest 0.5713, and none past twice it — so
+/// this is not a handful of stretched giants. It also shows every one of the ten longest edges is
+/// the **zip's**, clustered at x ≈ 2.0 and x ≈ 3.96, which are the two ends of the tumble axis.
+///
+/// Two candidates remain, wanting opposite work. A mesh that is **coarse but well shaped** is a
+/// tessellation setting: the sagitta is 0.02 on a part two units across, and `caps` refines the
+/// tool's own mesh only to `longest` = the column spacing, 0.5, so a cap facet may be half a unit
+/// across — and the band this session recovered is cap surface, inheriting exactly that. A mesh
+/// **full of needles** is a stitching artefact instead, which wrecks shading at any density.
+///
+/// So: over the finished mesh, split by where each triangle came from, the distribution of longest
+/// edge, area and least altitude, and how many fall under the certificate's own least probe
+/// (0.01), which is its definition of a sliver. The source split is what makes it actionable —
+/// coarse caps and needly zip bands are different repairs.
+///
+/// The seed order is the fixture's: this tool traces nine sheets, so 9 and 10 are its two caps and
+/// `u32::MAX` is a band the zip laid.
+///
+/// Nothing is built or changed here; it only measures.
+#[test]
+#[ignore]
+fn what_makes_the_finished_mesh_rough() {
+    use gcs_core::solid::swept_boundary::{Seed,Stage,SweptBoundaryOptions,construct};
+    use std::collections::BTreeMap;
+    let options = SweptBoundaryOptions {sagitta:SAGITTA,spacing:0.5,..Default::default()};
+    let least = options.least_probe();
+    let cases: [(&str,String); 5] = [
+        ("turning_prism",turning_prism()),
+        ("turned_lens",turned_lens()),
+        ("tumbling_cylinder",tumbling_cylinder()),
+        ("turned_box",turned_box()),
+        ("sliding_dumbbell",sliding_dumbbell()),
+    ];
+    eprintln!("== facet shape by source, every case (least probe {least:.4}, sagitta {SAGITTA}, \
+        spacing {})",options.spacing);
+    eprintln!("   a well-shaped triangle's altitude is a good fraction of its longest edge, so a \
+        median edge:altitude near 10 means the mesh is slivers whatever its density");
+    for (name,source) in &cases {
+    let e = harness::read(source);
+    let swept = harness::solid(&e,"swept");
+    // each seed's class, kept from the stage where the seeds are still in hand; a band the zip
+    // laid carries `u32::MAX` instead of a seed index
+    let mut class: Vec<&'static str> = Vec::new();
+    let _ = construct(&e.sketch,swept,&options,&|_| {},&mut |stage,_| {
+        if let Stage::Labelled {seeds,..} = &stage {
+            class = seeds.iter().map(|s| match s {
+                Seed::Traced(_) => "sheet",Seed::Cap(_) => "cap",Seed::Grazing(_) => "region" }).collect();
+        }
+        let Stage::Zipped {mesh,..} = stage else { return };
+        let class_of = |s: u32| -> &'static str {
+            if s == u32::MAX { "zip" } else { class.get(s as usize).copied().unwrap_or("?") } };
+        let mut rows: BTreeMap<&str,(Vec<f64>,Vec<f64>,Vec<f64>)> = Default::default();
+        for (i,t) in mesh.triangles.iter().enumerate() {
+            let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
+            let d = |p: V3,q: V3| ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt();
+            let longest = d(a,b).max(d(b,c)).max(d(c,a));
+            let (u,v): (V3,V3) = (std::array::from_fn(|k| b[k]-a[k]),std::array::from_fn(|k| c[k]-a[k]));
+            let n: V3 = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+            let area = 0.5*(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+            let alt = gcs_core::space::altitude(a,b,c);
+            let row = rows.entry(class_of(mesh.sheet.get(i).copied().unwrap_or(u32::MAX))).or_default();
+            row.0.push(longest); row.1.push(area); row.2.push(alt);
+        }
+        let pct = |v: &[f64],p: f64| -> f64 {
+            if v.is_empty() { return f64::NAN; }
+            v[((((v.len()-1) as f64)*p).round() as usize).min(v.len()-1)]
+        };
+        eprintln!("  {name}: {} triangles",mesh.triangles.len());
+        for (name,(edges,areas,alts)) in rows.iter_mut() {
+            let n = edges.len();
+            let slivers = alts.iter().filter(|h| **h < least).count();
+            let flat = alts.iter().filter(|h| **h < SAGITTA).count();
+            edges.sort_by(f64::total_cmp); areas.sort_by(f64::total_cmp); alts.sort_by(f64::total_cmp);
+            eprintln!("  {name:>5}: {n:>5} triangles, {slivers} under the least probe \
+                ({:.1}%), {flat} under the sagitta ({:.1}%)",
+                100.*slivers as f64/n.max(1) as f64,100.*flat as f64/n.max(1) as f64);
+            eprintln!("         longest edge   p10 {:.4}  median {:.4}  p90 {:.4}  max {:.4}",
+                pct(edges,0.1),pct(edges,0.5),pct(edges,0.9),pct(edges,1.0));
+            eprintln!("         area           p10 {:.3e}  median {:.3e}  p90 {:.3e}",
+                pct(areas,0.1),pct(areas,0.5),pct(areas,0.9));
+            eprintln!("         least altitude p10 {:.3e}  median {:.3e}  p90 {:.3e}",
+                pct(alts,0.1),pct(alts,0.5),pct(alts,0.9));
+        }
+    });
+    }
+    eprintln!("   a case that is coarse but well shaped wants a tessellation setting; one whose \
+        median edge:altitude is near 10 is built of slivers, which is a different repair — and \
+        whether that is peculiar to one case or how the pipeline meshes everywhere is the point \
+        of running all five");
+}
+
+/// Whether the open loops sit in slivery neighbourhoods — the test of whether facet shape is
+/// *upstream* of the closure failure or merely cosmetic. Across the five cases, both that fail to
+/// close carry a major source at edge:altitude 11 or worse while no closing case does
+/// (`what_makes_the_finished_mesh_rough`), and every stitch failure chased in this work was a sliver
+/// of some kind. That is a correlation over five cases, not a mechanism, and this asks the
+/// within-case question the correlation implies.
+///
+/// **The control is the whole design.** "The open loops are surrounded by slivers" says nothing when
+/// 30% of the entire mesh is slivers — it would confirm itself by construction. So the comparison is
+/// against the seams the zip **closed**: it laid 1105 band triangles where it succeeded and left 17
+/// loops where it did not, and both are seam regions. The question is then sharp: was the surface
+/// the stitch was *given* slivery-er where it failed than where it succeeded?
+///
+/// **The zip's own output is excluded from both sides**, or the measurement is circular — a zip band
+/// is itself 38.7% slivers, so counting bands near a loop would inflate precisely the number under
+/// test. Only the sheet and cap triangles are measured: the input the stitch had, never the output
+/// it made. Two radii are reported so the answer does not hinge on one choice that happens to
+/// produce it.
+///
+/// **A limitation to keep in view:** within one mesh all boundary is *failed* boundary, so "near an
+/// open loop" and "on the boundary at all" cannot be fully separated here. The zip-seam control is
+/// the best available inside a single case; comparing against a closing case's seams would be
+/// stronger and is more work.
+///
+/// Nothing is built or changed here; it only measures.
+#[test]
+#[ignore]
+fn whether_the_open_loops_sit_in_slivery_neighbourhoods() {
+    use gcs_core::solid::swept_boundary::{Stage,SweptBoundaryOptions,construct};
+    let source = tumbling_cylinder();
+    let e = harness::read(&source);
+    let swept = harness::solid(&e,"swept");
+    let options = SweptBoundaryOptions {sagitta:SAGITTA,spacing:0.5,..Default::default()};
+    let least = options.least_probe();
+    let _ = construct(&e.sketch,swept,&options,&|_| {},&mut |stage,_| {
+        let Stage::Zipped {mesh,unpaired,..} = stage else { return };
+        let d = |p: V3,q: V3| ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt();
+        // each triangle's centroid, its edge:altitude ratio, its altitude, and whether the zip laid it
+        let facets: Vec<(V3,f64,f64,bool)> = mesh.triangles.iter().enumerate().map(|(i,t)| {
+            let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
+            let longest = d(a,b).max(d(b,c)).max(d(c,a));
+            let altitude = gcs_core::space::altitude(a,b,c);
+            let at: V3 = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
+            (at,if altitude > 0. { longest/altitude } else { f64::INFINITY },altitude,
+                mesh.sheet.get(i).copied() == Some(u32::MAX))
+        }).collect();
+        // the non-zip surface within `radius` of any of `seeds`: how many, what fraction are
+        // slivers, and the median ratio
+        let around = |seeds: &[V3],radius: f64| -> (usize,f64,f64) {
+            let (mut ratios,mut slivers) = (Vec::new(),0usize);
+            for (at,ratio,altitude,zip) in facets.iter() {
+                if *zip { continue; }
+                if !seeds.iter().any(|s| d(*s,*at) <= radius) { continue; }
+                if *altitude < least { slivers += 1; }
+                ratios.push(*ratio);
+            }
+            ratios.sort_by(f64::total_cmp);
+            let n = ratios.len();
+            (n,100.*slivers as f64/n.max(1) as f64,if n == 0 { f64::NAN } else { ratios[n/2] })
+        };
+        // where the stitch failed, and where it succeeded
+        let failed: Vec<V3> = unpaired.iter().flatten().map(|&v| mesh.vertices[v as usize]).collect();
+        let closed: Vec<V3> = facets.iter().filter(|(_,_,_,zip)| *zip).map(|(at,..)| *at).collect();
+        // the whole non-zip surface, as the flat baseline
+        let (all_n,all_sliver,all_ratio) = around(&facets.iter().map(|(at,..)| *at).collect::<Vec<_>>(),f64::INFINITY);
+        eprintln!("== does the stitch fail where the surface it was given is slivery?");
+        eprintln!("   measured over sheet and cap triangles only — the zip's own bands are excluded \
+            from both sides, or the test is circular");
+        eprintln!("   the whole non-zip surface: {all_n} triangles, {all_sliver:.1}% slivers, \
+            median edge:altitude {all_ratio:.1}");
+        eprintln!("   {} open-loop vertices against {} closed-seam band centroids",failed.len(),closed.len());
+        for radius in [0.05,0.15] {
+            let (fn_,fs,fr) = around(&failed,radius);
+            let (cn,cs,cr) = around(&closed,radius);
+            eprintln!("   radius {radius:.2}:");
+            eprintln!("      near the 17 loops the zip left OPEN: {fn_:>5} triangles, {fs:>5.1}% \
+                slivers, median ratio {fr:>5.1}");
+            eprintln!("      near the seams the zip CLOSED:       {cn:>5} triangles, {cs:>5.1}% \
+                slivers, median ratio {cr:>5.1}");
+        }
+        // and the spread, since one bad loop could carry an aggregate
+        eprintln!("   per loop at radius 0.15 (triangles, % slivers, median ratio):");
+        for (k,l) in unpaired.iter().enumerate() {
+            let seeds: Vec<V3> = l.iter().map(|&v| mesh.vertices[v as usize]).collect();
+            let (n,s,r) = around(&seeds,0.15);
+            eprintln!("      loop {k:>2} ({} vertices): {n:>4}, {s:>5.1}%, {r:>5.1}",l.len());
+        }
+        eprintln!("   failed ≈ closed ⇒ sliveriness does NOT mark where the stitch fails, and facet \
+            shape is cosmetic after all; failed much worse ⇒ it is upstream and belongs first");
+    });
+}
+
 /// Whether each degenerate three-loop bounds a **lone** zero-area facet. `zip_round`'s own note says
 /// this is what the `Spanned` loop is — "three boundary edges used once each with a triangle already
 /// on those three vertices, so that triangle is their only user and the loop bounds a lone facet

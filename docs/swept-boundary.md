@@ -2180,6 +2180,97 @@ omitting the grazing treatment. The recurring cause was trusting a quantity that
 the one the conclusion rested on — most sharply, a **triangle count of slivers** where the question
 was **area**.
 
+### Facet shape: the tumbling cylinder is built of slivers, and that is peculiar to it
+
+The finished mesh looks rough in a viewer, and `creases::what_makes_the_finished_mesh_rough`
+measures why rather than guessing. It reports, per case and split by where each triangle came from
+(a traced sheet, a cap, a grazing region, or a band the zip laid), the distribution of longest edge,
+area and least altitude, and how many triangles fall under the certificate's own least probe (0.01).
+A well-shaped triangle's altitude is a good fraction of its longest edge, so the **median
+edge : altitude ratio** is the number to read:
+
+| case | closes? | cap | sheet | zip | region |
+| --- | --- | --- | --- | --- | --- |
+| turning_prism | certifies | 2.3 (210) | 5.2 (1212) | 2.4 (14) | — |
+| turned_lens | certifies | 2.0 (2042) | 2.0 (744) | — | — |
+| turned_box | certifies | 2.2 (376) | 4.5 (256) | 19 (24) | 7.2 (648) |
+| **tumbling_cylinder** | **open** | **11.3** (4189) | **8.5** (1371) | **8.6** (1105) | — |
+| **sliding_dumbbell** | **open** | 3.8 (33934) | **11.4** (1322) | 7.1 (114) | — |
+
+Triangle counts in brackets, since a ratio over two dozen triangles says little: the turned box's
+zip is 19 but holds 24 triangles and *no* sliver by the probe, while its 648-triangle region at 7.2
+is the substantial one.
+
+**This is not a quality ceiling of the pipeline** — the three cases that certify keep every
+substantial source at ratio 5.2 or better, two of them at 2. And a sharper pattern shows once all
+five are in: **both cases that fail to close carry a major source at ratio 11 or worse**, at 23% to
+63% slivers, while no closing case does. On the tumbling cylinder roughly 2000 of 6665 triangles are
+thinner than the certificate's sliver threshold and over half are thinner than the sagitta; long
+thin triangles shade badly and round badly into float32, which is the whole of the visible
+roughness.
+
+Five cases is a correlation and not a proof, and it suggested a hypothesis that would have inverted
+the obvious ranking: that facet shape is *upstream* of the closure failure rather than cosmetic,
+every stitch failure chased in this work having been a sliver of some kind.
+
+**Measured within the case, that is refuted** (`creases::whether_the_open_loops_sit_in_slivery_neighbourhoods`).
+The control is what makes it mean anything: "the open loops are surrounded by slivers" is empty when
+28% of the mesh is slivers, so the comparison is against the seams the zip **closed** — it laid 1105
+band triangles where it succeeded and left 17 loops where it did not, and both are seam regions. The
+zip's own bands are excluded from both sides, or the test is circular, so what is measured is the
+surface the stitch was *given*, never the output it made:
+
+```
+the whole non-zip surface: 5560 triangles, 28.3% slivers, median edge:altitude 7.8
+radius 0.05:  near the OPEN loops  330 tri, 41.8% slivers, ratio 9.2
+              near the CLOSED seams 1639 tri, 44.7% slivers, ratio 7.8
+radius 0.15:  near the OPEN loops  700 tri, 41.0% slivers, ratio 9.5
+              near the CLOSED seams 3233 tri, 37.6% slivers, ratio 8.6
+```
+
+Seam regions are slivery in general — 38% to 45% against a 28.3% baseline — which is simply where
+the cutting and zipping happen. But the failed seams are not meaningfully worse than the succeeded
+ones, and the sliver fraction **flips direction between the two radii**: at 0.05 the closed seams are
+slivery-er. Two radii were reported precisely so the answer could not hinge on one choice, and the
+three-point gap at 0.15 does not survive that.
+
+The per-loop spread settles it: loops 0 and 1 fail in neighbourhoods **cleaner than the mesh
+average** (25.3% and 21.2% slivers at ratios 6.4 and 6.8, against 28.3% and 7.8). If sliveriness
+caused the failure, no loop should fail in a below-average neighbourhood. And the selection bias runs
+*against* the refutation, since the zip closes seams where closing is easy, so the closed-seam
+control is selected for closability and should have flattered the open loops by comparison.
+
+So **facet shape is not upstream of closure**, the ranking below stands as written, and the
+cross-case correlation is most parsimoniously a **common cause**: a case with nine traced sheets,
+fixed points and degenerate strata produces both more slivers and more closure failures, with
+neither causing the other.
+
+Two distinct mechanisms, which should not be conflated. The tumbling cylinder's cap carries **4189
+triangles where the turned box's carries 376**: nine sheets' end columns criss-cross it and
+`CutMesh::connect` splits every facet edge a chord crosses, so the cutting itself shreds it. The
+sliding dumbbell has *both* — an over-refined cap (median edge 0.0264, twenty times finer than the
+prism's, 63% slivers) and a shredded sheet at ratio 11.4.
+
+**The tool-face cut added by this work is not the cause.** Those edges already exist in the mesh —
+`indexed_faces` groups facets per tool face, so a rim is already an edge — and the change only
+inserts them into `cuts`, calling no `split_edge`. It adds cut marks, not geometry.
+
+### What is left on the tumbling cylinder, in dependency order
+
+1. **Closure** — 17 unpaired loops, every one the honest `Open` category, so each reaches the field
+   pass and the field declines it. Surface is genuinely absent there.
+2. **A certificate, which has never run on this case at all.** `construct` refuses at `UnpairedRim`
+   before `certify`, so there is no per-triangle verification that the surface is *correct* — only
+   that its volume is within 2.0% and its area within 8.4%. This is the real open question, and it
+   is gated behind (1).
+3. **Coverage** — 1.979 of 23.493 reference area still absent, spread evenly and peaking at
+   x = 3.00 (0.98 there), over radius 0.322–1.412.
+4. **Facet shape** — the table above. The most visible, and **measured to be the least dangerous**:
+   the loops the zip left open sit in neighbourhoods no slivery-er than the seams it closed, and two
+   of them sit in neighbourhoods cleaner than the mesh average. It briefly looked as though this
+   belonged above (1); it does not. Worth fixing for the look of the thing and for float32, not as a
+   route to closure.
+
 Three reversals on one question, worth recording as a lesson in what to measure. The bowtie framing
 was refuted by *where* the gap is; "traced, then annihilated" was refuted by *how much area* is
 there; and the intermediate "both partly right" reading came of trusting a **triangle count** where
