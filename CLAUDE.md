@@ -354,6 +354,28 @@ within the judge's tolerance of zero is near, flatness is `space::degenerate` (n
 zero area), and choices within 1e-9 of the coordinates are ties taken the same way; every
 milestone-4 case built from seeds moved by 1e-12 is the same mesh
 (`seeds_moved_below_every_tolerance_leave_the_mesh_as_it_was`, and the ignored all-case test).
+**Milestone 5 (2026-09-12):** a planar face the motion carries within its own plane is swept
+exactly as a 2D region (`grazing.rs`), not traced: `Family::in_plane` reads the motion's own steps,
+`leave_faces` stops the tracer emitting its edges, `swept_region` builds the region in rows, and
+`caps` drops its facets **and cuts its components at that face's boundary**. The turned box closes
+and certifies. The rest of 5 was **measured, not reasoned**, and the plan's own account of it was
+refuted by measurement (the cap's end-pose curve was already covered by the surviving columns,
+point for point). Three instruments did the work and are the way to chase the next such defect:
+`hygiene` judges each stage's mesh on what it must never hand on (an edge used more than twice,
+two triangles walking one edge the same way, a degenerate triangle, a repeated triangle) and names
+the first few at fault with their midpoints — an edge used *once* is no fault, and a near pair is
+reported only between the weld's coincidence and the snap; `window` gives what stands in a ball of
+any stage, keyed by **position**, the only handle that survives renumbering between stages; and
+`Origin` says how each cut-mesh vertex came to be. They showed that **every unpaired loop fails one
+of `rim_zip`'s two gates and none fails for want of a partner**: a loop repeating a vertex is
+pinched, and `simple` is the first thing the fill, the pairing and the slit pass each ask. A walk
+that returns to a vertex is two walks, and `unpinch` cuts it into them on identity and no
+tolerance. Where the pinches come from: a cap cut along a sheet's end column is left touching
+itself where that chain crosses the tool's own rim. Still refusing, with evidence in
+`docs/swept-boundary.md`: the tilted cylinders at 30° and 85°, the thin plate, the tumbling
+cylinder; 5c is not begun. Recorded and **off** the path: `planar_union`'s foot trimming takes one
+region from 2 fragments to 2434 and leaves 744 duplicate triangles, which `dedupe` clears with no
+change to any outcome — work, not correctness.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

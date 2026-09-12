@@ -329,6 +329,75 @@ the tracer fixes of milestone 5 lead.
   their slivers leave four loops at the crease junctions. This is project 2's problem, the
   Boolean meshes, and is noted for it.
 
+## Milestone 5: grazing faces, and what the refusals turned out to be (2026-09-12)
+
+**5a, grazing planar faces, is done.** A face the motion carries within its own plane
+(`n·v ≡ 0` over the whole face) is given nothing by the tracer: every edge bounding it enters the
+fan at every parameter, is emitted whole, and is zipped into a ruled band that folds. So such a
+face is swept exactly instead, as a 2D region: `Family::in_plane` reads a motion's own steps for a
+turn about an axis square to the plane or a slide along it (anything else is none, and an
+invariant plane grazes exactly, needing no sampling), `grazing_faces` finds them,
+`SweepContacts::leave_faces` stops the tracer emitting their edges, and `swept_region`
+(`grazing.rs`) builds the region in rows — radius and angle about the pivot for a turn, across and
+along for a slide — with critical rows where the row's tagged interval list changes, bisected to
+the coordinates' own precision. `caps` drops facets lying in such a plane **and cuts its
+components at those faces' boundaries**: without that cut a slid box has no end columns and the
+whole tool reads as one component. The turned box closes and certifies: 1304 triangles, 1300
+certified, 4 thin, 0 failed, volume 15.3167 against 15.3237. Its last defect was in the region
+builder — two cells of one strip both meshing the stretch they shared at a row where a gap between
+them closes — fixed by `Sweep::share`, which halves such an overlap so a strip's cells partition
+the rows they share.
+
+Landing first with it, a guard: `rim_zip` leaves a loop that visits a vertex twice, or a walk of
+two vertices, unpaired rather than laying a band over triangles already there, and
+`ConstructError::UnpairedRim` refuses instead of shipping an open shell.
+
+**5b was redirected twice by measurement, and the second redirection is the result.** The plan's
+own account — that a cap is cut only where a strip survived, so a band the strip never reached is
+bounded by the cap's own tessellation — was implemented and refuted: at the end poses **0 of 42
+contact-curve points were uncovered, farthest distance 0.000000**, the surviving columns being the
+end-pose curve point for point. Two further changes (snapping clip points at source in
+`clip_sheets`; snapping to pinned vertices in `CutMesh`) measured inert or regressive. All were
+reverted.
+
+What settled it was instrumenting rather than reasoning. `hygiene` measures every stage's mesh
+against what it should never hand on — an edge used more than twice, an edge two triangles walk
+the same way, a degenerate triangle, a triangle repeating another's corners — and names the first
+few at fault with their midpoints; an edge used *once* is no fault, since a sheet is open until the
+shell closes, and a near pair of vertices is reported only between the weld's coincidence and the
+snap, exact duplicates before the weld being by design. `window` gives what stands in one ball of
+any stage, keyed by **position**, which is the only handle that survives the pipeline: the same
+point of the surface is a different index at `Clipped` than at `Split`. `Origin` records how each
+cut-mesh vertex came to be — the tool's own mesh, `refine`'s midpoint, a column point inserted, or
+a chord's crossing — and `Cap` carries it out.
+
+They gave the finding. **Every unpaired loop in every failing case fails one of the zip's two
+gates, and none fails for want of a partner.** A loop that repeats a vertex is pinched, and
+`simple` is the first thing the fill, the pairing and the slit pass each ask; the slit pass takes
+only a loop turning back at exactly two corners. The 5° cylinder slid along x leaves four pinched
+loops (14/13, 12/11, 11/10, 12/11 distinct), the thin plate two pinched and two simple turning at
+1 and 4 corners, the tilted cylinders at 30° and 85° one simple loop turning at 4.
+
+So the question was never why the zip refuses but why the boundary touches itself, and the answer
+is in the caps: a cap is cut along the sheet's end column, and where that chain crosses the tool's
+own rim the kept component is left touching itself at a column point the cut inserted. A walk that
+returns to a vertex is two walks, and `unpinch` cuts it into them on vertex identity and no
+tolerance — the pieces walking every edge of the original and inventing none. With it the sliding
+dumbbell gets past the zip for the first time (a certificate of 28132 of 35396, 4 failed, though
+its shell is still open at one edge used three times), the tumbling cylinder falls from 71 unpaired
+loops to 8, the slid cylinder from four loops to one, and the thin plate from six to four. The
+turning prism, the turned lens and the turned box certify closed exactly as before, byte for byte.
+
+**Recorded and off the path:** `planar_union`'s foot-trimming pass takes one region from 2
+fragments to 2434 over eleven feet and leaves 744 of 5935 triangles repeating another's corners,
+every fragment a foot touches coming back with its largest piece 100.0000% of what went in.
+Dropping them with `dedupe` changes no outcome in any case, so it costs work, not correctness.
+
+**Still refusing**, each with its evidence: the tilted cylinders at 30° and 85° (one simple
+5-vertex loop turning at four corners — too long for the fan fill, alone within the pairing's
+reach, and not a slit), the thin plate under a 1.05 roll, and the tumbling cylinder. 5c — the
+tumbling cylinder's rim folds and its fixed-point bowties — is not begun.
+
 ## Cost (2026-09-11)
 
 The target is WASM on one core, so the work is total cycles and complexity classes, never
