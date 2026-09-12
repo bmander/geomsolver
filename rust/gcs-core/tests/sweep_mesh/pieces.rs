@@ -227,6 +227,35 @@ fn a_window_names_what_stands_in_a_ball_and_whose_it_is() {
     assert!(window(&m,[9.,9.,9.],0.5).vertices.is_empty());
 }
 
+#[test]
+fn a_cut_mesh_says_how_each_of_its_vertices_came_to_be() {
+    use gcs_core::solid::swept_boundary::Origin;
+    let (vertices,triangles) = cube();
+    let tool = vertices.len();
+    let mut mesh = CutMesh::new(vertices,triangles.clone(),vec![0;triangles.len()],1e-3,1e-2);
+    assert_eq!(mesh.origin.len(),tool);
+    assert!(mesh.origin.iter().all(|o| *o == Origin::Tool),"the tool's own mesh, to begin with");
+    // no facet edge longer than nine tenths: the midpoints are the refinement's
+    mesh.refine(0.9);
+    assert!(mesh.origin.len() > tool,"refine put vertices in");
+    assert!(mesh.origin[tool..].iter().all(|o| *o == Origin::Refined));
+    // A belt round the cube: its own points go in, and the chords between them cross edges.
+    // Its height is off the refinement's own midpoints on purpose. A cut point within the snap
+    // of a vertex already there takes that vertex and mints nothing, which is the common case
+    // rather than the exception — the tilted cylinder's cap is built of 4 inserted points
+    // against 144 crossings — so a belt at z = 0.5 would land on the split midpoints and
+    // exercise none of the minting this is here to check.
+    let refined = mesh.origin.len();
+    let belt: Vec<(V3,V3)> = vec![[0.,0.,0.37],[1.,0.,0.37],[1.,1.,0.37],[0.,1.,0.37]]
+        .into_iter().map(|p| (p,[0.;3])).collect();
+    mesh.cut_along(&belt,true).unwrap();
+    let made = &mesh.origin[refined..];
+    assert!(made.iter().any(|o| *o == Origin::Inserted),"the belt's own points");
+    assert!(made.iter().any(|o| *o == Origin::Crossed),"and where its chords crossed an edge");
+    assert!(made.iter().all(|o| matches!(o,Origin::Inserted | Origin::Crossed)),
+        "a cut mints nothing else: {made:?}");
+}
+
 /// How many vertices of the mesh stand exactly at `p`.
 fn at(mesh: &CutMesh,p: V3) -> usize { mesh.vertices.iter().filter(|v| **v == p).count() }
 

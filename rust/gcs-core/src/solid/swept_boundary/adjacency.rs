@@ -32,6 +32,34 @@ impl Edges {
     pub fn walks(&self,a: u32,b: u32) -> bool { !self.range(a,b).is_empty() }
     /// How many triangles use the edge between `a` and `b`, either way.
     pub fn uses(&self,a: u32,b: u32) -> usize { if a == b { self.range(a,b).len() } else { self.range(a,b).len()+self.range(b,a).len() } }
+    /// Every undirected edge once, ascending, with how many triangles walk it each way round.
+    /// These are the counts a mesh is judged sound by: one triangle alone is a boundary and no
+    /// fault, two walking it the same way is a fold, and more than two a seam gone wrong.
+    pub fn counts(&self) -> Vec<((u32,u32),(usize,usize))> {
+        // each directed edge with how many walk it, in key order
+        let mut directed: Vec<((u32,u32),bool,usize)> = Vec::new();
+        let mut i = 0;
+        while i < self.keys.len() {
+            let k = self.keys[i].0;
+            let n = self.keys[i..].partition_point(|e| e.0 == k);
+            let (a,b) = split(k);
+            directed.push(((a.min(b),a.max(b)),a < b,n));
+            i += n;
+        }
+        directed.sort_unstable();
+        let mut out: Vec<((u32,u32),(usize,usize))> = Vec::with_capacity(directed.len());
+        let mut i = 0;
+        while i < directed.len() {
+            let e = directed[i].0;
+            let j = i+directed[i..].partition_point(|x| x.0 == e);
+            let mut count = (0,0);
+            for x in &directed[i..j] { if x.1 { count.0 += x.2; } else { count.1 += x.2; } }
+            out.push((e,count));
+            i = j;
+        }
+        out
+    }
+
     /// Every directed edge used by one triangle alone (no other walks it either way).
     pub fn boundary(&self) -> BTreeSet<(u32,u32)> {
         let mut undirected: Vec<u64> = self.keys.iter().map(|e| { let (a,b) = split(e.0); key(a.min(b),a.max(b)) }).collect();

@@ -22,6 +22,7 @@
 //! and so a whisker for a boundary loop to walk round. Even there it may be a
 //! genuine thin feature, which the certificate already declines to claim, so
 //! this measures and does not refuse.
+use super::adjacency::Edges;
 use super::trim::KeptMesh;
 use crate::space::{Grid,degenerate,distance};
 
@@ -92,17 +93,10 @@ pub fn hygiene(mesh: &KeptMesh,coincidence: f64,snap: f64) -> Hygiene {
         }
         grid.insert(*p,v as u32);
     }
-    // every undirected edge, counted each way round
-    let mut uses: std::collections::BTreeMap<(u32,u32),(usize,usize)> = Default::default();
-    for t in &mesh.triangles { for k in 0..3 {
-        let (a,b) = (t[k],t[(k+1)%3]);
-        let e = uses.entry((a.min(b),a.max(b))).or_default();
-        if a < b { e.0 += 1; } else { e.1 += 1; }
-    } }
-    for (f,b) in uses.values() {
+    for (_,(f,b)) in Edges::new(&mesh.triangles).counts() {
         if f+b == 1 { out.boundary_edges += 1; }
         if f+b > 2 { out.crowded_edges += 1; }
-        if *f >= 2 || *b >= 2 { out.same_way += 1; }
+        if f >= 2 || b >= 2 { out.same_way += 1; }
     }
     out.degenerate = mesh.triangles.iter().filter(|t| {
         let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);

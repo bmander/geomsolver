@@ -27,12 +27,30 @@ pub enum End { From, To }
 
 use crate::space::{Grid,Region,add,closest_on_triangle,cross,dot,norm,normalised,scale,sub};
 
+/// How a vertex of a cut mesh came to be. A defect in a cap is nearly always a vertex that
+/// should not be where it is, and which operation put it there is the question that names the
+/// code to look at: the twins the tilted cylinder's whisker is made of are all `Crossed`, minted
+/// a fraction of a snap from one another while a chord walked from one column point to the next.
+#[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
+pub enum Origin {
+    /// The tool's own mesh, as it was read.
+    Tool,
+    /// A midpoint `refine` put in, so no facet edge is longer than the column spacing.
+    Refined,
+    /// A point of a contact curve, put into the mesh where the curve runs.
+    Inserted,
+    /// Where the chord between two such points crossed a facet's far edge.
+    Crossed,
+}
+
 /// A triangle mesh being cut along polylines on it.
 pub struct CutMesh {
     pub vertices: Vec<V3>,
     pub triangles: Vec<[u32;3]>,
     /// The tool face each facet lies on; the pieces of a split facet keep it.
     pub faces: Vec<u32>,
+    /// How each vertex came to be, beside `vertices`.
+    pub origin: Vec<Origin>,
     /// Vertex pairs the cuts run along.
     pub cuts: std::collections::BTreeSet<(u32,u32)>,
     /// The vertices a cut runs through. A later point within the snap of one
@@ -65,7 +83,8 @@ impl CutMesh {
     pub fn new(vertices: Vec<V3>,triangles: Vec<[u32;3]>,faces: Vec<u32>,vertex_tolerance: f64,sagitta: f64) -> CutMesh {
         let mut incident = vec![Vec::new();vertices.len()];
         for (t,tri) in triangles.iter().enumerate() { for &v in tri { attach(&mut incident[v as usize],t); } }
-        CutMesh {vertices,triangles,faces,cuts:Default::default(),pinned:Default::default(),vertex_tolerance,sagitta,incident,index:None}
+        let origin = vec![Origin::Tool;vertices.len()];
+        CutMesh {vertices,triangles,faces,origin,cuts:Default::default(),pinned:Default::default(),vertex_tolerance,sagitta,incident,index:None}
     }
 
     /// How far from a facet `locate` looks for a point.
@@ -90,7 +109,10 @@ impl CutMesh {
         for t in 0..self.triangles.len() { self.file(t); }
     }
 
-    fn push_vertex(&mut self,p: V3) -> u32 { self.vertices.push(p); self.incident.push(Vec::new()); (self.vertices.len()-1) as u32 }
+    fn push_vertex(&mut self,p: V3,origin: Origin) -> u32 {
+        self.vertices.push(p); self.origin.push(origin); self.incident.push(Vec::new());
+        (self.vertices.len()-1) as u32
+    }
 
     /// A facet's corners changed to `now`: the lists of the vertices it left and joined follow.
     fn set_triangle(&mut self,t: usize,now: [u32;3]) {
@@ -158,8 +180,8 @@ impl CutMesh {
     }
 
     /// A new vertex at `p` on the edge `a`-`b`, both facets on it split.
-    fn split_edge(&mut self,a: u32,b: u32,p: V3) -> u32 {
-        let v = self.push_vertex(p);
+    fn split_edge(&mut self,a: u32,b: u32,p: V3,origin: Origin) -> u32 {
+        let v = self.push_vertex(p,origin);
         // a cut running along this edge runs along its two halves now. Left
         // naming the edge that is gone, it separates nothing and `components`
         // floods straight through the seam.
@@ -181,8 +203,8 @@ impl CutMesh {
     }
 
     /// A new vertex at `p` inside facet `t`, the facet split in three.
-    fn split_face(&mut self,t: usize,p: V3) -> u32 {
-        let v = self.push_vertex(p);
+    fn split_face(&mut self,t: usize,p: V3,origin: Origin) -> u32 {
+        let v = self.push_vertex(p,origin);
         let [a,b,c] = self.triangles[t];
         self.set_triangle(t,[a,b,v]);
         let face = self.faces[t];
@@ -203,8 +225,8 @@ impl CutMesh {
                 }
                 v
             }
-            Place::Edge(a,b) => self.split_edge(a,b,p),
-            Place::Face(t) => self.split_face(t,p),
+            Place::Edge(a,b) => self.split_edge(a,b,p,Origin::Inserted),
+            Place::Face(t) => self.split_face(t,p,Origin::Inserted),
         };
         self.pinned.insert(v);
         Ok(v)
@@ -267,7 +289,7 @@ impl CutMesh {
             // farther of two near ends walked off the plane onto a vertex
             // beside the true one, with nothing ahead of it
             let (da,db) = (norm(sub(p,pa)),norm(sub(p,pb)));
-            let next = if da.min(db) <= self.vertex_tolerance { if da <= db { a } else { b } } else { self.split_edge(a,b,p) };
+            let next = if da.min(db) <= self.vertex_tolerance { if da <= db { a } else { b } } else { self.split_edge(a,b,p,Origin::Crossed) };
             if next == w { chain.push(w); break; }
             chain.push(next); current = next; along = t;
         }
@@ -294,7 +316,7 @@ impl CutMesh {
             } }
             let Some((_,a,b)) = worst else { break };
             let mid = scale(add(self.vertices[a as usize],self.vertices[b as usize]),0.5);
-            self.split_edge(a,b,mid);
+            self.split_edge(a,b,mid,Origin::Refined);
         }
     }
 
@@ -348,6 +370,8 @@ pub struct Cap {
     /// Per vertex of `patch`: whether it lies on an edge of the tool (its facets lie on more
     /// than one of the tool's faces), where its own label cannot say which face it speaks for.
     pub tool_edges: Vec<bool>,
+    /// Per vertex of `patch`: how the cut mesh came to have it.
+    pub origin: Vec<Origin>,
 }
 
 /// The tool's boundary at each end pose, cut along the end columns of
@@ -431,6 +455,7 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
             }
         }
         let mut edge = Vec::new();
+        let mut origin = Vec::new();
         let mut remap: Vec<u32> = vec![u32::MAX;mesh.vertices.len()];
         // every vertex's summed facet normal in one pass, each facet's added in the order
         // `vertex_normal` adds them
@@ -451,11 +476,12 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
                     patch.normals.push(normalised(normals[v as usize]).unwrap_or([0.;3]));
                     patch.column.push(0);
                     edge.push(on_edge[v as usize]);
+                    origin.push(mesh.origin[v as usize]);
                 }
                 remap[v as usize]
             }));
         }
-        out.push(Cap {end,patch,components,tool_edges:edge});
+        out.push(Cap {end,patch,components,tool_edges:edge,origin});
     }
     Ok([out.remove(0),out.remove(0)])
 }

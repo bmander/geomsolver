@@ -160,6 +160,13 @@ impl Report<'_> {
             }
             Stage::Capped {caps} => {
                 self.clock.lap("caps");
+                // which operation each cap's vertices came from: a defect in a cap is a vertex
+                // that should not be there, and this names the code that put it there
+                if d.sheets { for (k,c) in caps.iter().enumerate() {
+                    let mut by: BTreeMap<String,usize> = Default::default();
+                    for o in &c.origin { *by.entry(format!("{o:?}")).or_default() += 1; }
+                    eprintln!("  cap {k} vertices by origin: {by:?}");
+                } }
                 if d.sheets { for (k,c) in caps.iter().enumerate() { eprintln!("  cap {k} components: {:?}",c.components.iter().map(|c| format!("{} facets {:+.2}{}",c.facets,c.extreme,if c.kept { " kept" } else { "" })).collect::<Vec<_>>()); } }
                 eprintln!("{} sheets of {} points, caps of {} and {} triangles ({:?})",self.sheets,self.points,caps[0].patch.triangles.len(),caps[1].patch.triangles.len(),self.started.elapsed());
             }

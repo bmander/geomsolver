@@ -25,7 +25,7 @@ pub mod grazing;
 pub mod hygiene;
 pub mod window;
 
-pub use caps::{Cap,CapComponent,CutMesh,End,caps};
+pub use caps::{Cap,CapComponent,CutMesh,End,Origin,caps};
 pub use construct::{ConstructError,Stage,SweptBoundary,construct,construct_from};
 pub use crate::space::{Region,altitude,closest_on_triangle};
 pub use certify::{Certificate,Failure,certify,triangle_normal};
