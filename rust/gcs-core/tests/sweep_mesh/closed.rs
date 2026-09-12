@@ -255,7 +255,20 @@ impl Report<'_> {
                 for (k,l) in unpaired.iter().enumerate() {
                     let pts: Vec<V3> = l.iter().map(|&v| mesh.vertices[v as usize]).collect();
                     let (lo,hi) = bounds(pts.iter().copied());
-                    eprintln!("  unpaired loop {k}: {} vertices, box {:?}..{:?}, bordered by sheets {:?}",l.len(),rounded(lo,1e3),rounded(hi,1e3),bordering(mesh,l));
+                    // what `rim_zip` itself judged the loop on: a loop visiting a vertex twice is
+                    // pinched and is never paired or filled, and the slit pass takes only a loop
+                    // turning back at exactly two corners. A rounded picture of the points says
+                    // neither, and both are read off the loop alone.
+                    let distinct: BTreeSet<u32> = l.iter().copied().collect();
+                    let n = l.len();
+                    let corners = (0..n).filter(|&k| {
+                        let (a,b,c) = (pts[(k+n-1)%n],pts[k],pts[(k+1)%n]);
+                        let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-b[0],c[1]-b[1],c[2]-b[2]]);
+                        let (lu,lw) = ((u[0]*u[0]+u[1]*u[1]+u[2]*u[2]).sqrt(),(w[0]*w[0]+w[1]*w[1]+w[2]*w[2]).sqrt());
+                        lu > 0. && lw > 0. && (u[0]*w[0]+u[1]*w[1]+u[2]*w[2])/(lu*lw) < -0.5
+                    }).count();
+                    eprintln!("  unpaired loop {k}: {} vertices ({} distinct, {corners} reflex corners), box {:?}..{:?}, bordered by sheets {:?}",
+                        l.len(),distinct.len(),rounded(lo,1e3),rounded(hi,1e3),bordering(mesh,l));
                     if d.sheets {
                         eprintln!("    {:?}",pts.iter().map(|&p| rounded(p,1e3)).collect::<Vec<_>>());
                         // the triangles on the first few loop edges
