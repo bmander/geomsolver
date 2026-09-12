@@ -270,6 +270,17 @@ impl Report<'_> {
                     eprintln!("  unpaired loop {k}: {} vertices ({} distinct, {corners} reflex corners), box {:?}..{:?}, bordered by sheets {:?}",
                         l.len(),distinct.len(),rounded(lo,1e3),rounded(hi,1e3),bordering(mesh,l));
                     if d.sheets {
+                        // the walk itself, each vertex with the seeds whose triangles use it: a
+                        // loop bounded by one seed is a hole in it, one alternating between two
+                        // is the gap between their rims, and a vertex the walk meets twice is
+                        // where the two touch without sharing an edge
+                        for (k,&v) in l.iter().enumerate() {
+                            let on: BTreeSet<u32> = mesh.triangles.iter().zip(&mesh.sheet)
+                                .filter(|(t,_)| t.contains(&v)).map(|(_,s)| *s).collect();
+                            let twice = l.iter().filter(|&&u| u == v).count() > 1;
+                            eprintln!("      {k}: v{v} at {:?}, seeds {:?}{}",rounded(mesh.vertices[v as usize],1e4),on,
+                                if twice { "   <- the walk meets this one twice" } else { "" });
+                        }
                         eprintln!("    {:?}",pts.iter().map(|&p| rounded(p,1e3)).collect::<Vec<_>>());
                         // the triangles on the first few loop edges
                         for k in 0..l.len().min(8) {

@@ -138,9 +138,34 @@ fn apart(a: &[V3],b: &[V3]) -> f64 {
 /// the same edge) are first made one by `split_at_vertices` within `split`,
 /// so no band is ever laid between them. Returns the pairs zipped and the
 /// loops left unpaired.
+/// A boundary walk meeting a vertex twice is two walks joined there, and this is which. Two
+/// pieces of surface touching at one point and sharing no edge (a cap's cut crossing the tool's
+/// rim leaves exactly that) give one walk that passes through the point twice; it bounds no disc,
+/// so nothing could fill or pair it and it was refused whole. Cut at the repeat, each piece is a
+/// walk of the same boundary edges that does bound one, and the passes below take them as they
+/// take any other. The cut is on vertex identity, not on any tolerance: where the walk returns to
+/// a vertex, the stretch between is closed already.
+pub fn unpinch(l: Vec<u32>) -> Vec<Vec<u32>> {
+    let mut out = Vec::new();
+    let mut walk: Vec<u32> = Vec::new();
+    let mut at: std::collections::BTreeMap<u32,usize> = Default::default();
+    for v in l {
+        if let Some(&i) = at.get(&v) {
+            // the stretch from where `v` was last seen to here closes on itself
+            let closed: Vec<u32> = walk.split_off(i);
+            for u in &closed { at.remove(u); }
+            if closed.len() >= 3 { out.push(closed); }
+        }
+        at.insert(v,walk.len());
+        walk.push(v);
+    }
+    if walk.len() >= 3 { out.push(walk); }
+    out
+}
+
 pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64) -> (usize,Vec<Vec<u32>>) {
     split_at_vertices(mesh,split);
-    let loops = boundary_loops(&mesh.triangles);
+    let loops: Vec<Vec<u32>> = boundary_loops(&mesh.triangles).into_iter().flat_map(unpinch).collect();
     // the directed boundary edges as the mesh walks them
     let mut boundary: std::collections::BTreeSet<(u32,u32)> = Default::default();
     for l in &loops { for k in 0..l.len() { boundary.insert((l[k],l[(k+1)%l.len()])); } }

@@ -31,7 +31,7 @@ pub use crate::space::{Region,altitude,closest_on_triangle};
 pub use certify::{Certificate,Failure,certify,triangle_normal};
 pub use crease::{Rim,chains,clip_sheets,merge_creases};
 pub use planar::planar_union;
-pub use stitch::{collapse_short_edges,dedupe,drop_doubled_slivers,rim_zip,split_at_vertices,split_where,weld,zip_loops};
+pub use stitch::{collapse_short_edges,dedupe,drop_doubled_slivers,rim_zip,split_at_vertices,split_where,unpinch,weld,zip_loops};
 pub use judge::{FieldJudge,JudgeError,Projection,QueryStats,Sign};
 pub use project::{Label,Labelled,directions,label_patch,label_seeds,label_sheets,orientation};
 pub use seeds::{Grazing,Seed,grazing_seeds,seeds};

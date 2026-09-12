@@ -256,6 +256,38 @@ fn a_cut_mesh_says_how_each_of_its_vertices_came_to_be() {
         "a cut mints nothing else: {made:?}");
 }
 
+/// A boundary walk that meets a vertex twice is two walks joined there. The walk below is the one
+/// the tilted cylinder slid along x actually leaves: two arcs of its cap's rim returning to the
+/// column point the cut inserted, which bounds no disc and so could be neither filled, paired nor
+/// zipped as a slit, and was refused whole.
+///
+/// Cut at the repeat, each piece walks the same boundary edges and does bound one. The cut is on
+/// vertex identity and no tolerance, so the property to hold is exact: the pieces are simple, and
+/// between them they walk every edge of the original and invent none.
+#[test]
+fn a_walk_meeting_a_vertex_twice_is_cut_into_simple_walks() {
+    use gcs_core::solid::swept_boundary::unpinch;
+    let walk: Vec<u32> = vec![9,2474,519,2469,2470,524,2471,2472,530,1272,1358,1280,10,524];
+    let out = unpinch(walk.clone());
+    assert_eq!(out.len(),2,"two walks, cut at the vertex met twice: {out:?}");
+    let mut sizes: Vec<usize> = out.iter().map(|l| l.len()).collect();
+    sizes.sort();
+    assert_eq!(sizes,vec![6,8]);
+    for l in &out {
+        let distinct: std::collections::BTreeSet<u32> = l.iter().copied().collect();
+        assert_eq!(distinct.len(),l.len(),"each piece is simple: {l:?}");
+    }
+    // the same boundary edges, no more and no fewer
+    let edges = |w: &[u32]| -> std::collections::BTreeSet<(u32,u32)> {
+        (0..w.len()).map(|k| { let (a,b) = (w[k],w[(k+1)%w.len()]); (a.min(b),a.max(b)) }).collect()
+    };
+    let made: std::collections::BTreeSet<(u32,u32)> = out.iter().flat_map(|l| edges(l)).collect();
+    assert_eq!(made,edges(&walk),"the pieces walk the original's edges exactly");
+    // a walk with no repeat is handed back whole, and one too short to bound anything is dropped
+    assert_eq!(unpinch(vec![1,2,3,4]),vec![vec![1,2,3,4]]);
+    assert!(unpinch(vec![1,2]).is_empty());
+}
+
 /// How many vertices of the mesh stand exactly at `p`.
 fn at(mesh: &CutMesh,p: V3) -> usize { mesh.vertices.iter().filter(|v| **v == p).count() }
 
