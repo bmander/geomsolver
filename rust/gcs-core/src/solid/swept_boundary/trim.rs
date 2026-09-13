@@ -65,6 +65,12 @@ pub enum Span {
 /// or a finite set of successful probes is not a whole-surface certificate.
 pub fn loop_span(judge: &mut super::judge::FieldJudge,points: &[V3],normals: &[V3],epsilon: f64,reach: f64)
     -> Result<Span,super::judge::JudgeError> {
+    loop_span_observed(judge,points,normals,epsilon,reach,&mut |_,_,_| {})
+}
+
+/// Preserve the actual projection witnesses used by the fallback heuristic.
+pub fn loop_span_observed(judge: &mut super::judge::FieldJudge,points: &[V3],normals: &[V3],epsilon: f64,reach: f64,
+    observe: &mut dyn FnMut(V3,V3,&Result<super::judge::Projection,super::judge::JudgeError>)) -> Result<Span,super::judge::JudgeError> {
     use super::judge::Projection;
     let n = points.len();
     if n < 3 { return Ok(Span::Open {at:points.first().copied().unwrap_or([0.;3])}); }
@@ -97,7 +103,9 @@ pub fn loop_span(judge: &mut super::judge::FieldJudge,points: &[V3],normals: &[V
         // worth keeping: those per-loop diagnostics read the **finished** mesh, while this runs on
         // the intermediate loops of each `rim_zip` round, so they cannot forecast a change that
         // acts during the rounds.
-        match judge.project(at,m,epsilon,reach)? {
+        let projection = judge.project(at,m,epsilon,reach);
+        observe(at,m,&projection);
+        match projection? {
             Projection::Kept {..} | Projection::Moved {..} => {}
             Projection::Inner | Projection::Positive => {
                 // The direction is the caller's guess, and at a rim it is often wrong. `zip_round`
@@ -119,7 +127,9 @@ pub fn loop_span(judge: &mut super::judge::FieldJudge,points: &[V3],normals: &[V
                 // orienting each owner by a `sides` probe of its own centroid recovers, which is why
                 // this is done here rather than by widening what `closeable` carries.
                 let back: V3 = std::array::from_fn(|j| -m[j]);
-                match judge.project(at,back,epsilon,reach)? {
+                let projection = judge.project(at,back,epsilon,reach);
+                observe(at,back,&projection);
+                match projection? {
                     Projection::Kept {..} | Projection::Moved {..} => {}
                     Projection::Inner | Projection::Positive => return Ok(Span::Open {at}),
                     Projection::Unresolved {..} => { unresolved.get_or_insert(at); }
@@ -322,7 +332,22 @@ pub fn covered_by(t: [V3;3],tiles: &[[V3;3]],outline: &[([V3;3],V3,V3)],toleranc
 /// Nearness alone would eat a cap's facets beside the seam where its sheet
 /// is tangent to them, and a planar sliver beside a perpendicular wall.
 /// Returns the mesh and how many triangles were clipped or dropped.
+/// A pure overlap decision before its result replaces a candidate piece. Source
+/// IDs refer to the immutable input mesh; no field test participates in this cut.
+pub struct OverlapDecision<'a> {
+    pub source_triangle: usize,
+    pub covering_sheet: u32,
+    pub piece: [V3;3],
+    pub covering_triangles: &'a std::collections::BTreeSet<u32>,
+    pub outline: &'a [([V3;3],V3,V3)],
+    pub left: &'a Option<Vec<[V3;3]>>,
+}
+
 pub fn clip_overlaps(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
+    clip_overlaps_observed(mesh,tolerance,&mut |_| {})
+}
+
+pub fn clip_overlaps_observed(mesh: &KeptMesh,tolerance: f64,observe: &mut dyn FnMut(OverlapDecision<'_>)) -> (KeptMesh,usize) {
     let cell = (tolerance*8.).max(f64::MIN_POSITIVE);
     let box_of = |corners: &[V3]| -> (V3,V3) {
         (std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min)),
@@ -375,7 +400,9 @@ pub fn clip_overlaps(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
                         if seen_edges.insert((a,b)) { outline.push((mesh.triangles[j].map(|w| mesh.vertices[w as usize]),mesh.vertices[a as usize],mesh.vertices[b as usize])); }
                     });
                 }
-                match if tiles.is_empty() { None } else { uncovered(piece,&tiles,&outline,tolerance) } {
+                let left = if tiles.is_empty() { None } else { uncovered(piece,&tiles,&outline,tolerance) };
+                observe(OverlapDecision {source_triangle:i,covering_sheet:earlier,piece,covering_triangles:&seen,outline:&outline,left:&left});
+                match left {
                     None => next.push(piece),
                     Some(left) => { touched = true; next.extend(left); }
                 }

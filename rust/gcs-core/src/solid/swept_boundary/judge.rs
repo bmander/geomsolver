@@ -180,13 +180,22 @@ impl FieldJudge {
     }
 
     /// Read a spatial box without interpreting a residual as a distance.
-    pub(crate) fn enclose(&mut self,points: [I;3]) -> Result<I,JudgeError> {
+    pub(crate) fn enclose(&mut self,points: [I;3],budget: usize) -> Result<I,JudgeError> {
         let started = Instant::now();
-        let result = self.evaluator.bounds_stopping(points,Stop::Outside(I::ZERO),self.far)
+        let options = Options {max_evaluations:budget.min(self.far.max_evaluations),..self.far};
+        let result = self.evaluator.bounds_stopping(points,Stop::Outside(I::ZERO),options)
             .map_err(|e| JudgeError::Field(format!("{e:?}")))?;
         self.stats.far += 1;
         self.stats.far_time += started.elapsed();
         self.stats.roll_evaluations += result.sweeps.iter().map(|q| q.minimum.evaluations).sum::<usize>();
+        if result.value.contains(0.) {
+            use crate::interval::minimum::Status;
+            let exhausted = result.sweeps.iter().any(|q| q.minimum.status == Status::BudgetExhausted);
+            let limited = result.sweeps.iter().any(|q| q.minimum.status == Status::ResolutionLimit);
+            if exhausted || limited { self.stats.unresolved += 1; }
+            if exhausted { self.stats.exhausted += 1; }
+            if limited { self.stats.resolution_limited += 1; }
+        }
         Ok(result.value)
     }
 

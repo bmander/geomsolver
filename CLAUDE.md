@@ -279,12 +279,24 @@ is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, 
 placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
 `SpatialField::value` for what may be judged in plain floating point: a face point on
 the boundary, a probe's side, never an interval claim.
-**Swept boundary Phase 0:** [docs/swept-boundary-phase-zero.md](docs/swept-boundary-phase-zero.md)
-is the current field/evidence contract and status. `candidate` returns inspectable unaccepted
+**Swept boundary Phase 1:** [docs/swept-boundary-phase-one.md](docs/swept-boundary-phase-one.md)
+records the independent continuous cylinder oracle and frozen alias/zip counterexamples.
+The oracle is test-only; its quadrature and sampled coverage are not acceptance certificates.
+Construction observers preserve actual inputs/results and strict fallback witnesses. Crease
+removal currently leaves stale sheet entries; source identity must be repaired and the
+baseline regenerated before the Phase 2 shared-boundary comparison. The retained cylinder
+fixture is a negative control, not a requirement to reproduce future failure counts.
+**Swept boundary Phase 0a:** [docs/swept-boundary-phase-zero-a.md](docs/swept-boundary-phase-zero-a.md)
+documents curved validator calibration and partial audit reports; the
+[Phase 0 record](docs/swept-boundary-phase-zero.md) preserves the candidate baseline.
+`candidate` returns inspectable unaccepted
 geometry; `construct`/`validate` require strict sample evidence, checked topology and bounded
 whole-surface/reverse-coverage evidence. `Near` bounds a value only. Historical milestone
 acceptance assertions below do not override these gates. The tests in `sweep_mesh/status.rs`
-record newly exposed refusals; the old success targets remain explicitly deferred.
+check reporting/acceptance invariants; exact refusal counts belong to the exported status
+matrix. `inspect` attempts independent checks even on open candidates and retains completed
+witnesses, unfinished regions and unattempted dependencies. The old success targets remain
+explicitly deferred in [the recovery ledger](docs/swept-boundary-recovery-ledger.md).
 
 **The certified swept boundary (2026-09-10, project 1 of two prerequisites):** the hypoid
 pinion at 15° to 45° showed the mesh arrangement passing its recorded-volume and STL-shell

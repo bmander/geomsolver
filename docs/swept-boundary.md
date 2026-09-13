@@ -1,7 +1,12 @@
 # The certified swept boundary
 
-**Current contract and statuses:** [Phase 0](swept-boundary-phase-zero.md) supersedes the
-residual-based labels and permissive certificates in this chronological investigation.
+**Current construction diagnosis:** [Phase 1](swept-boundary-phase-one.md) adds independent
+cylinder geometry and frozen counterexamples from actual crease merging and zipping. It also
+identifies a source-provenance defect that must precede the Phase 2 construction comparison.
+
+**Current contract and statuses:** [Phase 0a](swept-boundary-phase-zero-a.md) covers calibrated
+validation and partial audit reports; [Phase 0](swept-boundary-phase-zero.md) preserves the
+candidate baseline and supersedes the residual-based labels and permissive certificates here.
 Historical claims of certification below are not current acceptance results.
 
 `solid/swept_boundary` builds a closed triangle mesh of the material a tool sweeps under

@@ -11,7 +11,7 @@
 //! is ever read off a value's magnitude, and an enclosure containing zero is
 //! never a sign. See `docs/swept-boundary.md`.
 pub mod audit;
-pub use audit::{AuditOptions,AuditError,SpatialAudit,SurfaceWitness,CoverageWitness};
+pub use audit::{AuditOptions,AuditError,AuditReport,AuditIssue,SpatialAudit,SurfaceWitness,CoverageWitness,MeshWitness,SurfaceObligation,CoverageObligation};
 pub mod adjacency;
 pub mod judge;
 pub mod seeds;
@@ -28,7 +28,7 @@ pub mod hygiene;
 pub mod window;
 
 pub use caps::{Cap,CapComponent,CutMesh,End,Origin,caps};
-pub use construct::{BoundaryCandidate,ConstructError,Stage,SweptBoundary,candidate,candidate_from,construct,construct_from,validate};
+pub use construct::{BoundaryCandidate,BoundaryReport,Check,ConstructError,Stage,SweptBoundary,candidate,candidate_from,construct,construct_from,inspect,validate};
 pub use crate::space::{Region,altitude,closest_on_triangle};
 pub use certify::{Certificate,Failure,certify,triangle_normal};
 pub use crease::{Rim,chains,clip_sheets,merge_creases};
@@ -72,7 +72,7 @@ impl Default for SweptBoundaryOptions {
 /// Every tolerance of the construction, derived here and only here.
 impl SweptBoundaryOptions {
     /// Spatial acceptance is deliberately bounded; exhausted coverage remains a refusal.
-    pub fn audit(&self) -> AuditOptions { AuditOptions {tolerance:self.probe_distance(),max_cells:100000,max_depth:24} }
+    pub fn audit(&self) -> AuditOptions { AuditOptions {tolerance:self.probe_distance(),max_cells:100000,max_depth:24,box_budget:self.far_budget} }
     /// How far a judged vertex may be from the boundary.
     pub fn vertex_tolerance(&self) -> f64 { self.vertex_tolerance.unwrap_or(self.sagitta/4.) }
     /// How far inside and outside every triangle the certificate asks the field to agree.

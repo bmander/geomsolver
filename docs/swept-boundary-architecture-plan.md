@@ -1,25 +1,69 @@
 # Swept boundary: architectural diagnosis and recovery plan
 
-2026-09-12. Reviewed at `5e95019`, including the existing uncommitted changes.
+Original review: 2026-09-12 at `5e95019`, including the then-uncommitted changes.
+Plan revised: 2026-09-13 after Phase 0, commit `a996167`, and the subsequent Phase 0a and Phase 1 implementations.
 
 ## Recommendation
 
 Keep the continuous material field and analytic sweep candidates. Replace the boundary
 construction's reliance on independently trimmed triangle soups followed by proximity-based
 repair with **shared, geometrically supported boundaries that are established before final
-tessellation**. Begin with a bounded replacement of the tumbling cylinder's failing surface
-neighborhoods, rather than a whole-kernel rewrite.
+tessellation**. Test this architecture on a replayable group of interacting cylinder patches
+before extending it. The replacement may need to encompass more than a small rim neighborhood.
 
-Before doing that, repair the meaning of the field judge and acceptance result. There is a
-mathematical error in the foundation of `Sign::Near`, and the current certificate can report
-completion while leaving triangles uncertified. A stronger surface generator judged by the
-same permissive gate would repeat the earlier hypoid failure: successful construction without
-adequate evidence that the constructed surface is the intended one.
+Phase 0 corrected the field judge's residual-to-distance inference and separated candidate
+reports from accepted surfaces. Phase 0a now provides independently bounded curved controls
+at tolerances 0.04 and 0.02, with explicit resource budgets and inspectable unfinished work.
+Phase 1 now supplies an independent continuous cylinder oracle and exact construction replay;
+see the [implementation record](swept-boundary-phase-one.md). It finds an inadmissible crease
+alias before the zip and substantial extra/reversed surface after it. It also exposes a
+triangle/sheet-array mismatch at crease removal. **Before the Phase 2 comparison, repair and
+enforce source provenance, regenerate the baseline, and then select the reconstruction region.**
+The calibrated validator remains expensive on continuous fields and is not a production-speed
+gear validator.
 
-The remaining seven loops are a symptom, not a sufficient definition of the remaining work.
-Closing them cannot by itself finish this cylinder, general sweeps, or hypoid gears.
+The historical seven loops were a symptom, not a sufficient definition of the remaining work.
+The corrected pipeline produces a different cylinder candidate with ten loops and substantial
+failed and unresolved surface checks. Closing its rims cannot by itself finish this cylinder,
+general sweeps, or hypoid gears.
+
+## What Phase 0 changed
+
+These findings motivated Phase 0a. Its [implementation record](swept-boundary-phase-zero-a.md)
+now records the curved positive controls, partial reporting and measured limits that address
+the calibration/reporting gaps below. Shared-boundary construction remains untested.
+
+The [implementation record](swept-boundary-phase-zero.md) contains the reproducible baseline,
+new status matrix and validation results. It supersedes the historical counts and API behavior
+in the original diagnosis below.
+
+- The accepted positive control is a manually constructed cube at spatial tolerance 0.2.
+  Default sweep acceptance uses 0.04; stationary-sphere, capsule and torus candidates currently
+  fail the spatial gate. These results do not yet isolate candidate error from validation
+  conservatism or resource limits. Curved positive controls are required before judging a new
+  construction method with this audit.
+- Open candidates now receive centroid-side reports, but acceptance still stops at its first
+  failed gate, and the spatial audit discards partial evidence when it returns an error.
+  The cylinder report is not yet an inventory of all geometric and coverage obligations.
+- The new cylinder has 350 reversed checks and 252 unresolved checks, in addition to ten open
+  loops. The dumbbell refuses before a final candidate, and the whole-turn box reports genus
+  10. Since construction changed, old/new counts do not isolate deterioration or improvement.
+  They invalidate an assumption that completing the old rim repairs is the remaining task.
+- Phase 0 validates the need for stronger evidence. It does not experimentally establish that
+  shared-boundary construction will resolve the cylinder; Phase 2 must test that hypothesis.
+- Thirteen historical success/repair tests were explicitly deferred. Active refusal tests
+  establish containment, while restoration of successful construction remains a separate
+  milestone. Exact current failure counts are baseline observations, not permanent targets.
+
+The revised sequence is: validator calibration and reporting → independent cylinder oracle →
+region selection from measured failures → one shared-boundary experiment → incremental recovery
+of successful sweeps. Existing phase numbers are retained; Phase 0a and Phase 1 are now implemented.
 
 ## Evidence and scope of this review
+
+This section and the architectural diagnosis through “Target design” record the original
+2026-09-12 review. Descriptions of permissive judge/acceptance behavior are historical; Phase 0
+corrected those contracts without replacing the surface construction.
 
 I read the [handoff](swept-boundary-handoff.md), the running
 [investigation](swept-boundary.md), recent commit history and relevant changes, the current
@@ -242,7 +286,7 @@ structure to replace one failing neighborhood and test whether it resolves the a
 
 ### Phase 0 — establish a trustworthy result contract
 
-Implemented on `swept-boundary-phase-zero`; see the [implementation record](swept-boundary-phase-zero.md)
+Implemented in `a996167` on `swept-boundary-phase-zero`; see the [implementation record](swept-boundary-phase-zero.md)
 for the evidence contract, validation results, changed candidates and remaining limitations.
 
 1. Freeze a reproducible snapshot of the current dirty tree and the five-case exports into a
@@ -260,12 +304,48 @@ for the evidence contract, validation results, changed candidates and remaining 
    coverage guarantees. Run diagnostics on open candidates as well; report closure, side
    agreement, unresolved area and topology independently.
 
-**Exit:** negative controls are refused; accepted simple controls have real spatial evidence;
-the cylinder's report shows its full outstanding obligations without waiting for closure.
+**Exit:** negative controls are refused; the accepted cube has real spatial evidence;
+the cylinder's topology and centroid-side obligations are reported without waiting for closure.
 Expect some previously green cases to become unresolved. Record this as correction of an
 overstated guarantee rather than weakening the new rule to preserve their old status.
+Whole-surface and reverse-coverage diagnostics remain incomplete on refused candidates; the
+following phase addresses that limitation.
 
-### Phase 1 — give the cylinder an independent, continuous oracle
+### Phase 0a — calibrate the validator and retain unresolved work
+
+Implemented; see the [Phase 0a record](swept-boundary-phase-zero-a.md) and
+[recovery ledger](swept-boundary-recovery-ledger.md). The finer continuous-field calibration
+is an explicitly run slow test. Default resource budgets still need not accept correct meshes.
+
+1. Construct sphere and capsule reference meshes independently of the sweep repair pipeline,
+   with analytic approximation bounds. Test them first against static reference fields, then
+   equivalent stationary/moving-tool fields, so failures can be attributed to mesh error,
+   continuous-field evaluation, or the audit. Keep the cube and existing negative controls.
+2. Demonstrate acceptance at the intended default spatial tolerance, 0.04, and a stated tighter
+   tolerance with correspondingly refined reference meshes. Record triangle counts, visited
+   support cells/subtriangles, field queries, time and memory or retained-witness counts.
+   Compare independently known error with the audit bound. Identify the limiting operation
+   before changing subdivision or budgets; do not loosen the geometric tolerance to obtain
+   a pass. This is a bounded calibration task, not a production-performance rewrite.
+3. Separate an inspectable audit report from acceptance. Preserve completed witnesses, the
+   remaining regions and the resource limit reached. Distinguish a proved contradiction from
+   an unresolved witness search, exhausted resources and a check not attempted. A failed
+   bracket search or subdivision limit is not itself proof that the surface is wrong.
+4. In diagnostic mode, run independent obligations even when topology fails, wherever the
+   input is valid for those checks. Retain bounded partial forward and reverse reports;
+   explicitly mark dependencies that prevent a check. Acceptance continues to require every
+   applicable obligation and must never treat unattempted work as passed.
+5. Keep exact current refusal counts in the reproducible status matrix. Use deliberately
+   defective fixtures for enduring refusal assertions. Give the thirteen deferred tests a
+   recovery ledger naming their barrier and the positive acceptance test that will replace
+   or restore each one. Do not promote historical repair heuristics into acceptance rules.
+
+**Exit:** independently bounded curved controls pass at stated useful tolerances and measured
+cost; negative controls still refuse; an intentionally constrained audit retains its successful
+evidence and explicit unfinished work. The report distinguishes validator limitations from
+demonstrated geometric errors. It still makes no embedding, isotopy or encoded-STL guarantee.
+
+### Phase 1 — give the cylinder an independent, continuous oracle (implemented)
 
 The current field-contour reference shares the field implementation and is coarser than the
 holes. The cylinder has a much cheaper independent geometric description.
@@ -293,12 +373,12 @@ analytic candidates determine membership continuously over the roll; uniform pos
 is unnecessary. Handle `a = 0`, angular wrapping and the axis explicitly, including the planar
 end sections of the three-dimensional swept solid.
 
-This derivation is a proposed independent test oracle, not implemented or numerically audited
-here. Validate its zero-roll limit, symmetry, end sections and full-turn limit first. For a
-full turn, sections are disks of radius `sqrt(2 - (x-3)²)`, giving total volume `10π/3`.
-Then use it for section overlays, material-side probes and convergent volume quadrature of
-the ±30° fixture. Keep it out of the production mesher so a cylinder-specific formula cannot
-be mistaken for general sweep support.
+The test-only implementation validates zero roll, symmetry, angular wrapping, end sections
+and full turn. Full-turn sections are disks of radius `sqrt(2 - (x-3)²)`, with volume `10π/3`.
+The ±30° volume quadrature converges near 9.426350. Analytic section overlays and weighted
+triangle-distance/material-side measurements are implemented. These binary64 diagnostics and
+convergence estimates are not interval-certified whole-surface bounds. The oracle remains
+outside the production mesher; it is not general sweep support.
 
 Instrument actual `rim_zip` decisions and the earlier affected cuts with stable provenance,
 as the handoff requests. Reuse one reporter; record the candidate before mutation, its field
@@ -307,14 +387,37 @@ Do not infer missing area from nearest-vertex distance. Use distances to triangl
 cross-sections and area-weighted coverage at a resolution that resolves the defect.
 
 **Exit:** the independent oracle distinguishes the current defective geometry from a correct
-reference, and one bounded neighborhood has a replayable account of its required surface and
-its first unsupported construction decision.
+reference, and one region has a replayable account of its required surface and its first
+unsupported construction decision. Select that region from the new failure evidence, including
+failures away from rims. Establish whether its surrounding surface can be validated; if not,
+identify the larger interacting patch group that must be reconstructed. Do not assume that a
+small local repair has a valid interface to the retained mesh.
 
-### Phase 2 — replace one neighborhood with shared boundaries
+**Phase 1 outcome:** the oracle distinguishes a refined reference from frozen bad alias/zip
+emissions. A crease alias moves a correctly oriented cap triangle inward despite satisfying
+the snap distance. A later small-fan emission passes topology-only guards while both the
+oracle and strict field probes read its material sides in reverse. Weighted reverse area
+converges near 2.013, much of it away from open rims. At distance 0.04 the reference samples
+show no missing area in the final mesh; this is sampled coverage, not a completeness proof.
+The local interface is unvalidated. Conservatively retain all eleven cylinder source patches
+and both caps as the interacting reconstruction group.
+
+The trace also shows that crease removal leaves stale sheet-array entries. Downstream
+sheet IDs must be repaired and verified against independent source-triangle lineage before
+they can define a shared arrangement. Preserve the frozen Phase 1 baseline while regenerating
+new evidence after that correction. Do not tune the geometric method against corrupted IDs.
+
+### Phase 2 — test shared boundaries on one replayable region
+
+First repair triangle/source identity through crease removal and splitting, enforce its
+preservation through later operations, and regenerate the Phase 1 report. This is a concrete
+prerequisite discovered by Phase 1, not a reason to assume the geometry is then correct.
 
 Choose one failing junction together with all incident sheets, overlapping fragments and
 nearby unsupported bands. Its outer boundary must lie on validated surface. If it does not,
-expand the neighborhood; the seven existing rim loops are not immutable constraints.
+expand to the necessary interacting patch group; neither historical nor current rim loops
+are immutable constraints. Freeze the pre-replacement candidate, source patches, options and
+independent oracle results so both constructions are compared on the same fixture.
 
 1. Recover the relevant source patches and split their parameter domains at contact endpoints,
    crossings, coincident boundaries and singular events. Preserve those identities in the
@@ -331,24 +434,38 @@ expand the neighborhood; the seven existing rim loops are not immutable constrai
    committing. Check directed edges, vertex links, overlaps/intersections and retained boundary
    identities. Reject the replacement atomically on failure, with its unresolved obligation.
 
-**Exit:** the replay fixture acquires supported, conforming surface without a proximity band
-or arbitrary fan; its independent section checks pass; perturbing seed positions or sheet
-order does not change the accepted geometry/topology outside the declared error.
+**Exit:** compared with the frozen candidate, the replay fixture acquires supported, conforming
+surface without a proximity band or arbitrary fan; its independent section checks and applicable
+spatial obligations pass. Perturbing seed positions or sheet order does not change the accepted
+geometry/topology outside the declared error. Closing a loop alone does not establish success.
 
-This is the decision point for the architecture. If source patches cannot provide the needed
-evaluations or event isolation, stop and specify that missing capability. Do not conceal it
-behind another downstream weld rule.
+This is the decision point for the architecture. Extend shared-boundary construction only
+after this comparison demonstrates supported geometry and stability. If source patches cannot
+provide the needed evaluations or event isolation, specify that missing capability; if the
+validator cannot resolve the replacement, report that separately from construction failure.
+Use the bounded spatial-cell fallback experiment below only for an identified missing capability.
+Do not conceal either limitation behind another downstream weld rule.
 
 ### Phase 3 — complete this cylinder, then test generality
 
 Extend the successful replacement mechanism to the remaining unsupported regions, including
-the 160 reported failures away from open-loop vertices. Remove the corresponding repair
+failures away from rims identified in the current report. The historical count of 160 such
+failures is not the new backlog. Remove the corresponding repair
 paths as their responsibilities move into common boundaries. Keep supported existing surface
 where its evidence survives the change; invalidate evidence whenever geometry changes.
 
 Make the cylinder acceptance case an ordinary test once it passes. Promote a focused subset
 of diagnostic counterexamples into assertions rather than running thousands of lines of
 historical printouts as the acceptance suite.
+
+Restore positive coverage incrementally: first the independent curved controls in Phase 0a;
+then simple stationary/translated sphere and prismatic sweep cases as their mechanisms become
+supported; then the complete cylinder; then the remaining turned box/prism/lens, whole-turn
+and Boolean-tool cases. Each restored case must pass the current acceptance contract, rather
+than simply re-enable its old centroid-only assertion. Track construction recovery separately
+from validator calibration and keep the permanent negative controls active throughout. Update
+the recovery ledger as tests are restored or superseded; justify any change in recovery order
+by the mechanism actually being implemented.
 
 **Cylinder exit:** closed oriented topology with valid vertex links; no geometric
 self-intersections; zero failed and zero unresolved surface obligations; independent section
@@ -421,6 +538,10 @@ finite budgets cannot resolve the obligation.
   experiment. Preserve retired hypotheses as history rather than copying them into invariants.
 - Make diagnostic results inspectable even when construction refuses. Persist a small replay
   fixture for each architectural change and state its negative control before implementing it.
+- Retain bounded partial audit evidence and mark unattempted checks explicitly. Report safety
+  regressions and successful-construction milestones separately; a refusal suite is not a
+  measure of recovered sweep support. Update baseline counts when geometry improves instead
+  of requiring the old failure mode to persist.
 - Track unsupported and unresolved **area**, coverage error and geometric/topological failures
   separately from loop and triangle counts. Use closed-shell volume only after closure.
 - Render the changed region with source ownership and failure overlays. Repeatable views and
@@ -434,7 +555,9 @@ finite budgets cannot resolve the obligation.
   with the target ignored is an incomplete milestone. Measure one-core time and field-query
   counts after correctness holds; reuse spatial indexes and bounds before adding refinement.
 
-The next implementation deliverable should therefore be **a corrected evidence/acceptance
-contract and a replayable, independently judged cylinder neighborhood**. The following
-deliverable is its supported shared-boundary replacement. That makes each step capable of
-settling a specific architectural question and keeps the route to actual hypoid exports visible.
+The next implementation deliverable is **the independent continuous cylinder oracle and a
+replay region selected from measured failures**. Phase 0a's calibrated validator and unfinished
+obligation reports provide the evidence tools for that investigation. The shared-boundary
+replacement remains an experiment with an explicit decision gate before expansion. These
+steps keep validation limitations distinguishable from construction defects and preserve
+the route to hypoid exports.

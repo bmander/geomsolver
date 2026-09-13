@@ -1,5 +1,9 @@
 # Phase 0: field evidence and acceptance
 
+This is the Phase 0 implementation record. [Phase 0a](swept-boundary-phase-zero-a.md)
+extends the validator with curved calibration and retained partial audit reports; its resource
+policy and reporting API supersede those described here. The candidate baseline below is retained.
+
 Implementation record for [the architectural plan](swept-boundary-architecture-plan.md).
 The baseline is commit `48b915692987a22af6500d240f0c3e7dda0278dc`, on a clean tree.
 Work is on `swept-boundary-phase-zero`.

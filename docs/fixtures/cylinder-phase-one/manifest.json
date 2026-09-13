@@ -1,0 +1,267 @@
+{
+  "schema": 1,
+  "head": "a99616774f4688f0e437f2667be73a9ace15e550",
+  "date": "2026-09-13",
+  "scope": "Phase 1 frozen negative geometry and execution evidence; includes uncommitted Phase 0a Rust overlay",
+  "restore": "Start at head; overlay implementation/ at repository root. All other files are captured diagnostic inputs/results. Compare new construction to these; do not require old failures.",
+  "files": {
+    "00-source.mesh": {
+      "bytes": 325028,
+      "sha256": "4c382db27d7ad13797e738f5f640cb1a40be2ef07c4d71d7f1c38e592e7429ab"
+    },
+    "01-clipped.mesh": {
+      "bytes": 378169,
+      "sha256": "7caffc62ab05a3d02f4345046e455263e61533e45e2dfcfb5679135644abace7"
+    },
+    "02-merged.mesh": {
+      "bytes": 376548,
+      "sha256": "7b233f7a6f670e0ad0e3767c4792d87cfb804e187b8e278f2721680bc4e496d4"
+    },
+    "03-kept.mesh": {
+      "bytes": 376548,
+      "sha256": "7b233f7a6f670e0ad0e3767c4792d87cfb804e187b8e278f2721680bc4e496d4"
+    },
+    "04-unioned.mesh": {
+      "bytes": 444486,
+      "sha256": "4ff39cf203867f808e066240953149a9fcdedcd89efe9b8b06d83dfe26ff52de"
+    },
+    "05-uncovered.mesh": {
+      "bytes": 498530,
+      "sha256": "f60fa9242854f7014ba21ec50c33ecf84df326a6f7fb0e289aa99044e0445d73"
+    },
+    "06-welded.mesh": {
+      "bytes": 450545,
+      "sha256": "fd05c56c5e4417f0404d18a53061ff0f6a2acd16043451d95f83fd478da73bd2"
+    },
+    "07-split.mesh": {
+      "bytes": 461414,
+      "sha256": "fe1989849f360b0b50a0155a9b7fb4ae905ebe9a189ba8da46e92260f7780ff8"
+    },
+    "08-zipped.mesh": {
+      "bytes": 492684,
+      "sha256": "ee3435d7d25e9053700536f28586bb5c0452f626d3ec70367a401bb24afb97a5"
+    },
+    "centroid-keep.txt": {
+      "bytes": 22752,
+      "sha256": "b3e98ae65b05c0e3cd308800125f821c4a1a48a1823e668506d3e999f0cc0057"
+    },
+    "clipped-rims.txt": {
+      "bytes": 39056,
+      "sha256": "8cac5dc4505b12a7161c74f809da8fcb67f9ac8ca480ed3fde02085f1d38857d"
+    },
+    "crease-merge-decisions.txt": {
+      "bytes": 120607,
+      "sha256": "7c14c430298e4c917353013e336acc4d574bc03560dfa96add5624bc4495e672"
+    },
+    "export-parity.json": {
+      "bytes": 1706,
+      "sha256": "75d0320eac82520f71559cc6e397ef8cf991503f93001ed13bf25dc774dcf365"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary.rs": {
+      "bytes": 5756,
+      "sha256": "ca953fff3cc0de2bfe2dfaea7ff55fc8c7a0b791aa735f831d4b7370ceb150e5"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/audit.rs": {
+      "bytes": 15046,
+      "sha256": "69d2765f9851cc2d0d091fcdcd5ddc98f700d0b27d8de2386fbe00b630c5338d"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/audit/index.rs": {
+      "bytes": 3990,
+      "sha256": "395fdfbfa0b73b8c6cbc43833684d605d76aeea188bb3509b0898522548f35ec"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/construct.rs": {
+      "bytes": 15203,
+      "sha256": "6c0c89120e7e19b3c26500d78c8e8a40e44984a2389b9d35f5c3fc0d8c205235"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/crease.rs": {
+      "bytes": 15954,
+      "sha256": "b7a355ab548bff457520a19c8277345ba11c7f27f0144cc5e8fc36fe58b84b93"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/judge.rs": {
+      "bytes": 15629,
+      "sha256": "2b2c19f39c4aaf9f1bacf726656ce030cb5496b0f51d859a8fc2599f3e061085"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/stitch.rs": {
+      "bytes": 57831,
+      "sha256": "6e7436b955e063e347a82758766512261ea78578614590068cd2010a54f9a20a"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/trim.rs": {
+      "bytes": 28981,
+      "sha256": "4da99daa03b07a1d67152e5326522a9d2c21b35140c34a5b860523ce4e680e59"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh.rs": {
+      "bytes": 620,
+      "sha256": "fffd310b37b96e523354d2763e09fc13a4a842868fd16f380f3376d21ad3ecff"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/audit_report.rs": {
+      "bytes": 5679,
+      "sha256": "9c9402a2761c196865ad299431cd5b2475826561c701d83de029d1e9111670c0"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/calibration.rs": {
+      "bytes": 7693,
+      "sha256": "7392ee018803d60f104b7ff7570f851c017e65769ba711dfb36b7b17cbd0045e"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/cylinder_oracle.rs": {
+      "bytes": 5792,
+      "sha256": "5b9fc7ca356b03aeb6d8aeca99c52bf7f986012bd25fa046fd9b59c0d790c048"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/cylinder_replay.rs": {
+      "bytes": 31443,
+      "sha256": "f41594a2ce109c5f9a4a6b43b65b100d47cec9e4d5bf611a6587376ca3e8c1f6"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/evidence.rs": {
+      "bytes": 8927,
+      "sha256": "a3e42b2e1abcdc8cf6ea18a2466d65fb67f62f38e241354cca063a78f1172031"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/fixtures/cylinder-phase-one/merge-after.mesh": {
+      "bytes": 288,
+      "sha256": "5e6e64671cea8c5fe5920f98e7374f8e95079c53b6615f7dc2e0fcd98181c0c2"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/fixtures/cylinder-phase-one/merge-before.mesh": {
+      "bytes": 288,
+      "sha256": "4d38a6a9039c60a2ec4994a82a031940ce2b762e322b277cd5ea4b4973e494c9"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/fixtures/cylinder-phase-one/zip-proposal.mesh": {
+      "bytes": 298,
+      "sha256": "284b9d60ed3c1a78ed5b0b7df1563bf8fbfe3750065497ef32ad661dc9136d9a"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/status.rs": {
+      "bytes": 9299,
+      "sha256": "7f9b659011f2bece85ef7fd44f0911fa58c95037dcda3dc2916097b3ff0d7752"
+    },
+    "merge-after-proposal.mesh": {
+      "bytes": 288,
+      "sha256": "5e6e64671cea8c5fe5920f98e7374f8e95079c53b6615f7dc2e0fcd98181c0c2"
+    },
+    "merge-before-proposal.mesh": {
+      "bytes": 288,
+      "sha256": "4d38a6a9039c60a2ec4994a82a031940ce2b762e322b277cd5ea4b4973e494c9"
+    },
+    "merged-with-correct-provenance.mesh": {
+      "bytes": 376544,
+      "sha256": "2b7a6594e2fdbf9e4187e591332f233339215c523bedb4aaec9ab481cf7bc8b7"
+    },
+    "options.txt": {
+      "bytes": 287,
+      "sha256": "12b4b7b79460296f34ab8b59adf9ee2eae8217344e68a8add654a5eddf526282"
+    },
+    "overlap-decisions.txt": {
+      "bytes": 4658438,
+      "sha256": "5854fd75556081ed6b1a28477f085a7a7ed0dc340afefb775443a52d08e71859"
+    },
+    "report.txt": {
+      "bytes": 10480,
+      "sha256": "3c257417e23a033e6f3d9c7de0495363d7f681910503a68bcc230a5381940ff9"
+    },
+    "sections.png": {
+      "bytes": 52828,
+      "sha256": "0d83b1a45dec2eff69f7eea8d28a595ee7e70aba92eec59377a7b7ab04f051da"
+    },
+    "sections.svg": {
+      "bytes": 288164,
+      "sha256": "6e0e180b53dc5a3e3ee6a5a50ab9d7a8c22e28da6ebb729d291b00dd04a07347"
+    },
+    "seeds-and-label-witnesses.txt": {
+      "bytes": 4583399,
+      "sha256": "88ccc947d852fa3f2ed8f8a8404d8226e0940565ac446e2f30f96aa06e1cb426"
+    },
+    "selected-before.mesh": {
+      "bytes": 461609,
+      "sha256": "db7e045036966601a2cbecb901f0c45ff4dedc1ffd7d4c5687d7b489fb0bc78f"
+    },
+    "selected-proposal.mesh": {
+      "bytes": 298,
+      "sha256": "284b9d60ed3c1a78ed5b0b7df1563bf8fbfe3750065497ef32ad661dc9136d9a"
+    },
+    "selected-region.mesh": {
+      "bytes": 18289,
+      "sha256": "e85750ff67136d0e4053633ad8d12da63f58ffebd49668c51d0003eb0a465bbb"
+    },
+    "selected-section.png": {
+      "bytes": 32171,
+      "sha256": "7dc53c1b34d016e3e69db534898703d7cd235a31830e54ed1d0935efcc90dbc2"
+    },
+    "selected-section.svg": {
+      "bytes": 173260,
+      "sha256": "e9b610c3da6f273eca8beac9be17236b2267a895bb0e767f7de92e312d85201d"
+    },
+    "source.sv": {
+      "bytes": 800,
+      "sha256": "12fe5d5aa9bb6b033409d3374d801cb8fac25078af804ca7d4bad39110d46a94"
+    },
+    "validation/cylinder-phase1-complete.log": {
+      "bytes": 13755,
+      "sha256": "3c3b5f9b21d336d415c51e4a3625e249efedeaa8fddccf2e8f4c9224d74a458e"
+    },
+    "validation/cylinder-phase1-exports.log": {
+      "bytes": 3865,
+      "sha256": "4df98e4ae05a3bfeab1b56601bcce4c8cb36b1526395d416b966be2521368dbe"
+    },
+    "zip-decisions.txt": {
+      "bytes": 1605571,
+      "sha256": "6a4e72761e6bc7965e53c30b87cca73651faea07ebbe1d65b9a61314070502ae"
+    },
+    "zip-field-witnesses.txt": {
+      "bytes": 117236,
+      "sha256": "1ca2570bce5a2594297abc0fe1dbbd8aaaffe33d8790561680a1cce85a1de192"
+    },
+    "zip-finished.mesh": {
+      "bytes": 492684,
+      "sha256": "ee3435d7d25e9053700536f28586bb5c0452f626d3ec70367a401bb24afb97a5"
+    },
+    "zip-round-00.mesh": {
+      "bytes": 461414,
+      "sha256": "fe1989849f360b0b50a0155a9b7fb4ae905ebe9a189ba8da46e92260f7780ff8"
+    },
+    "zip-round-01.mesh": {
+      "bytes": 484621,
+      "sha256": "849321d70c3b980e279e117dc9864e09c2ffadc35fa0fcb10acc71afbf8b51f8"
+    },
+    "zip-round-02.mesh": {
+      "bytes": 488714,
+      "sha256": "98e80267c8310528107eb4426700694cdcc0a98bdc0a6b154ae3f0c0858597b6"
+    },
+    "zip-round-03.mesh": {
+      "bytes": 490906,
+      "sha256": "ea0e6b7d03fb118f7012d02b6be6374f89a1b40d9abefcfadb0d3d1d9ede8888"
+    },
+    "zip-round-04.mesh": {
+      "bytes": 491900,
+      "sha256": "efdc16385a34fdf0c876221238e4e21b84b3c4204ad41187f416c7518c72c300"
+    },
+    "zip-round-05.mesh": {
+      "bytes": 492320,
+      "sha256": "90ac3bd37db965be4565bf3ee12eefa1fc3ef6577556ae7207f9c8cac2f5fd85"
+    },
+    "zip-round-06.mesh": {
+      "bytes": 492572,
+      "sha256": "2194c0a5191b7c06977720b671acc0571090f87a31fa609c1f526a6a51f24e71"
+    },
+    "zip-round-07.mesh": {
+      "bytes": 492684,
+      "sha256": "ee3435d7d25e9053700536f28586bb5c0452f626d3ec70367a401bb24afb97a5"
+    },
+    "validation/cylinder-phase1-core.log": {
+      "bytes": 105771,
+      "sha256": "7bdd4723fefb1847618cb955c4d78a1657521cd1c490e84ccff9783ce4fc9043"
+    }
+  },
+  "validation": {
+    "core": {
+      "passed": 1236,
+      "failed": 0,
+      "ignored": 96,
+      "seconds": 168.54
+    },
+    "phase_one_explicit": {
+      "passed": 5,
+      "failed": 0,
+      "seconds": 22.7
+    },
+    "byte_identical_exports": 16,
+    "rendered_and_inspected": [
+      "sections.svg",
+      "selected-section.svg"
+    ]
+  }
+}

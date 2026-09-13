@@ -233,7 +233,19 @@ pub fn chains(edges: &[(u32,u32)]) -> Vec<(Vec<u32>,bool)> {
 /// runs alone (along a sheet's own column, which its neighbour already
 /// shares by identity) nothing is done. Returns the vertices welded and the
 /// edges split.
+/// Identities used by the actual crease merge, before aliasing and after removal.
+/// `source_triangles` indexes the pre-alias mesh independently of its sheet array.
+pub enum MergeEvent<'a> {
+    Aliases { mesh: &'a KeptMesh, aliases: &'a std::collections::BTreeMap<u32,u32> },
+    Retained { mesh: &'a KeptMesh, source_triangles: &'a [usize] },
+}
+
 pub fn merge_creases(mesh: &mut KeptMesh,rims: &[Rim],tolerance: f64,snap: f64) -> (usize,usize) {
+    merge_creases_observed(mesh,rims,tolerance,snap,&mut |_| {})
+}
+
+pub fn merge_creases_observed(mesh: &mut KeptMesh,rims: &[Rim],tolerance: f64,snap: f64,
+    observe: &mut dyn FnMut(MergeEvent<'_>)) -> (usize,usize) {
     // coincident rim vertices of different sheets are one
     let mut welded = 0;
     let mut alias: std::collections::BTreeMap<u32,u32> = Default::default();
@@ -248,8 +260,15 @@ pub fn merge_creases(mesh: &mut KeptMesh,rims: &[Rim],tolerance: f64,snap: f64) 
             }
         }
     } }
+    observe(MergeEvent::Aliases {mesh,aliases:&alias});
     for t in mesh.triangles.iter_mut() { for v in t.iter_mut() { if let Some(&a) = alias.get(v) { *v = a; } } }
-    mesh.triangles.retain(|t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0]);
+    let mut source_triangles = Vec::new(); let mut source_triangle = 0;
+    mesh.triangles.retain(|t| {
+        let keep = t[0] != t[1] && t[1] != t[2] && t[2] != t[0];
+        if keep { source_triangles.push(source_triangle); }
+        source_triangle += 1; keep
+    });
+    observe(MergeEvent::Retained {mesh,source_triangles:&source_triangles});
     let resolve = |v: u32| *alias.get(&v).unwrap_or(&v);
     let rim_vertices: std::collections::BTreeSet<u32> = rims.iter().flat_map(|r| r.vertices.iter().map(|&v| resolve(v))).collect();
     let mut rim_edges: std::collections::BTreeSet<(u32,u32)> = Default::default();

@@ -42,7 +42,7 @@ fn a_zero_set_sliver_is_not_a_material_boundary() {
     assert!(!c.is_complete(),"a residual-only sliver was accepted: {c:?}");
 }
 
-fn slab(half_height: f64) -> MaterialField {
+pub(super) fn slab(half_height: f64) -> MaterialField {
     let mut square = PlanarField::disk([0.;2],2.).unwrap();
     for (p,n) in [([1.,0.],[1.,0.]),([-1.,0.],[-1.,0.]),([0.,1.],[0.,1.]),([0.,-1.],[0.,-1.])] {
         square = square.intersection(PlanarField::half_plane(p,n).unwrap()).unwrap();
@@ -94,7 +94,7 @@ fn unresolved_bisection_returns_its_original_witnesses() {
     assert!(w.inside().0[0] < -1. && w.outside().0[0] > 1.);
 }
 
-fn cube() -> gcs_core::solid::swept_boundary::KeptMesh {
+pub(super) fn cube() -> gcs_core::solid::swept_boundary::KeptMesh {
     let vertices: Vec<_> = (0..8).map(|i| std::array::from_fn(|k| if i&(1<<k) == 0 {-1.} else {1.})).collect();
     let mut triangles = Vec::new();
     for axis in 0..3 { for side in 0..2 {
@@ -110,7 +110,7 @@ fn cube() -> gcs_core::solid::swept_boundary::KeptMesh {
     gcs_core::solid::swept_boundary::KeptMesh {vertices,triangles,sheet}
 }
 fn audit_options() -> gcs_core::solid::swept_boundary::AuditOptions {
-    gcs_core::solid::swept_boundary::AuditOptions {tolerance:0.2,max_cells:100000,max_depth:24}
+    gcs_core::solid::swept_boundary::AuditOptions {tolerance:0.2,max_cells:100000,max_depth:24,box_budget:64}
 }
 
 #[test]
@@ -125,9 +125,10 @@ fn an_accepted_cube_has_whole_surface_and_reverse_coverage_evidence() {
         assert!(w.bracket.inside().1[1] < 0. && w.bracket.outside().1[0] > 0.);
         assert!(w.distance <= 0.2);
     }
-    assert!(proof.coverage().iter().any(|c| c.surface_witness.is_none()));
-    assert!(proof.coverage().iter().any(|c| c.surface_witness.is_some()));
-    for c in proof.coverage() { assert_eq!(c.value.contains(0.),c.surface_witness.is_some()); }
+    assert!(proof.coverage().iter().any(|c| c.mesh_witness.is_none()));
+    assert!(proof.coverage().iter().any(|c| c.mesh_witness.is_some()));
+    for c in proof.coverage() { assert_eq!(c.value.is_none(),c.mesh_witness.is_some());
+        if let Some(value) = c.value { assert!(!value.contains(0.)); } }
     // The retained terminal boxes cover the whole support, not a caller crop.
     let volume = |b: [gcs_core::interval::Interval;3]| b.iter().map(|v| {let [a,b]=v.bounds(); b-a}).product::<f64>();
     let sum: f64 = proof.coverage().iter().map(|c| volume(c.bounds)).sum();

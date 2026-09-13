@@ -69,6 +69,10 @@ impl SweptBoundary {
 }
 
 impl BoundaryCandidate {
+    /// Diagnose independent obligations even when topology or centroid checks fail.
+    pub fn inspect(&self,options: &SweptBoundaryOptions,audit: super::AuditOptions) -> BoundaryReport {
+        inspect(self.field.clone(),self.mesh.clone(),options,audit)
+    }
     /// Revalidate the actual candidate, since callers may have edited its mesh or
     /// report. Only fresh evidence can create an accepted result.
     pub fn accept(&self,options: &SweptBoundaryOptions,audit: super::AuditOptions) -> Result<SweptBoundary,ConstructError> {
@@ -76,12 +80,62 @@ impl BoundaryCandidate {
     }
 }
 
+/// Whether an independent check was attempted. Invalid mesh input prevents all
+/// checks; spatial setup limitations are recorded inside the audit report.
+#[derive(Clone,Debug)]
+pub enum Check<T> { Attempted(T), NotAttempted(ConstructError) }
+
+/// Immutable diagnostics of the actual mesh, independent of earlier candidate
+/// labels. A report can only become accepted by satisfying every gate.
+#[derive(Debug)]
+pub struct BoundaryReport {
+    mesh: KeptMesh,
+    topology: Check<Result<crate::topology::ClosedShell,crate::topology::Error>>,
+    certificate: Check<Result<Certificate,JudgeError>>,
+    spatial: Check<super::AuditReport>,
+    stats: QueryStats,
+}
+impl BoundaryReport {
+    pub fn mesh(&self) -> &KeptMesh { &self.mesh }
+    pub fn topology(&self) -> &Check<Result<crate::topology::ClosedShell,crate::topology::Error>> { &self.topology }
+    pub fn certificate(&self) -> &Check<Result<Certificate,JudgeError>> { &self.certificate }
+    pub fn spatial(&self) -> &Check<super::AuditReport> { &self.spatial }
+    pub fn stats(&self) -> &QueryStats { &self.stats }
+    pub fn into_accepted(self) -> Result<SweptBoundary,ConstructError> {
+        let shell = match self.topology { Check::Attempted(r) => r.map_err(ConstructError::Topology)?,Check::NotAttempted(e) => return Err(e) };
+        let certificate = match self.certificate { Check::Attempted(r) => r?,Check::NotAttempted(e) => return Err(e) };
+        if !certificate.is_complete() { return Err(ConstructError::Certificate {failed:certificate.failures.len(),unresolved:certificate.unresolved.len()}); }
+        let spatial = match self.spatial { Check::Attempted(r) => r.into_result().map_err(ConstructError::Spatial)?,Check::NotAttempted(e) => return Err(e) };
+        Ok(SweptBoundary {mesh:self.mesh,certificate,shell,spatial,stats:self.stats})
+    }
+}
+
+fn valid_mesh(mesh: &KeptMesh) -> bool {
+    mesh.vertices.iter().flatten().all(|x| x.is_finite())
+        && mesh.triangles.iter().flatten().all(|&i| (i as usize) < mesh.vertices.len())
+        && mesh.sheet.len() == mesh.triangles.len()
+}
+
+/// Bounded diagnostic mode. Topology failure does not suppress centroid or
+/// spatial work. Only invalid input prevents these independent checks.
+pub fn inspect(field: MaterialField,mesh: KeptMesh,options: &SweptBoundaryOptions,audit: super::AuditOptions) -> BoundaryReport {
+    if !valid_mesh(&mesh) {
+        return BoundaryReport {mesh,topology:Check::NotAttempted(ConstructError::InvalidMesh),
+            certificate:Check::NotAttempted(ConstructError::InvalidMesh),spatial:Check::NotAttempted(ConstructError::InvalidMesh),stats:QueryStats::default()};
+    }
+    let mesh = mesh.compact();
+    let triangles: Vec<_> = mesh.triangles.iter().map(|t| t.map(|i| i as usize)).collect();
+    let topology = crate::topology::ClosedShell::from_triangles(mesh.vertices.len(),&triangles);
+    let mut judge = FieldJudge::new(field.clone(),options.judge_tolerance(),options.near_budget,options.far_budget,options.cached_poses);
+    let certificate = super::certify(&mut judge,&mesh.vertices,&mesh.triangles,options.probe_distance(),options.least_probe());
+    let spatial = super::audit::report(&field,&mut judge,&mesh,audit);
+    BoundaryReport {mesh,topology:Check::Attempted(topology),certificate:Check::Attempted(certificate),spatial:Check::Attempted(spatial),stats:judge.stats}
+}
+
 /// Validate a proposed mesh without trusting caller-supplied labels or reports.
 pub fn validate(field: MaterialField,mesh: KeptMesh,options: &SweptBoundaryOptions,audit: super::AuditOptions)
     -> Result<SweptBoundary,ConstructError> {
-    if mesh.vertices.iter().flatten().any(|x| !x.is_finite())
-        || mesh.triangles.iter().flatten().any(|&i| i as usize >= mesh.vertices.len())
-        || mesh.sheet.len() != mesh.triangles.len() { return Err(ConstructError::InvalidMesh); }
+    if !valid_mesh(&mesh) { return Err(ConstructError::InvalidMesh); }
     let mesh = mesh.compact();
     // Range checks precede compaction; topology then checks the complete vertex links.
     let triangles: Vec<_> = mesh.triangles.iter().map(|t| t.map(|i| i as usize)).collect();

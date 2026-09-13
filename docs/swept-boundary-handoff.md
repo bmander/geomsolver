@@ -1,6 +1,9 @@
 # Handoff: the certified swept boundary, milestone 5 (2026-09-12)
 
-**Historical handoff.** The [Phase 0 record](swept-boundary-phase-zero.md) now contains the
+**Historical handoff.** The [Phase 1 record](swept-boundary-phase-one.md) now provides the
+independent cylinder oracle, frozen alias/zip counterexamples and source-provenance barrier.
+Read it and the revised architecture plan before choosing a repair region. The [Phase 0a record](swept-boundary-phase-zero-a.md) covers validator
+calibration and inspectable partial audits. The [Phase 0 record](swept-boundary-phase-zero.md) contains the
 current evidence contract and status matrix. The seven-loop numbers below describe the
 pre-Phase-0 construction, and its certificate was not a sound acceptance gate.
 

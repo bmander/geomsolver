@@ -163,11 +163,32 @@ pub fn unpinch(l: Vec<u32>) -> Vec<Vec<u32>> {
     out
 }
 
+/// Candidate construction only. Events describe actual zip decisions, including
+/// rejected proposals, before mutation. IDs are (round, pass, event order); vertex
+/// and triangle indices belong to the supplied snapshot, never to a later compact.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum ZipPass { SmallFan, Pair, Slit, FieldFan }
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum ZipRejection { RepeatedVertex, Degenerate, WalkedEdge, DuplicateFacet }
+pub enum ZipEvent<'a> {
+    Round { round: usize, mesh: &'a KeptMesh },
+    Preflight { round: usize, mesh: &'a KeptMesh, fan: &'a [[u32;3]], accepted: bool },
+    Triangle { round: usize, pass: ZipPass, mesh: &'a KeptMesh, triangle: [u32;3], rejection: Option<ZipRejection> },
+    Applied { round: usize, pass: ZipPass, mesh: &'a KeptMesh, triangle: usize },
+    Finished { mesh: &'a KeptMesh },
+}
+
 /// `closeable` is asked of a loop no pass could pair, with its points and the outward normal of
 /// the mesh triangle owning each of its edges: a loop the field says the boundary spans is a hole
 /// and is filled however many vertices it has, and one it does not is left to be refused. It is
 /// asked last, so every case that closed without it closes the same way.
 pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64,thin: f64,closeable: &mut dyn FnMut(&[V3],&[V3]) -> bool) -> (usize,Vec<Vec<u32>>) {
+    rim_zip_observed(mesh,within,split,thin,closeable,&mut |_| {})
+}
+
+/// The same construction with a read-only trace; observers do not choose geometry.
+pub fn rim_zip_observed(mesh: &mut KeptMesh,within: f64,split: f64,thin: f64,
+    closeable: &mut dyn FnMut(&[V3],&[V3]) -> bool,observe: &mut dyn FnMut(ZipEvent<'_>)) -> (usize,Vec<Vec<u32>>) {
     // Welding here, before anything is laid, was tried and **refused** (2026-09-12). The reasoning
     // was sound and the local result good: the rounds below weld only *after* `zip_round` lays its
     // bands, so the weld never sees the mesh as it arrives, and those bands are what it cannot then
@@ -194,9 +215,10 @@ pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64,thin: f64,closeable: &
     // What ends this is the break below — a round that lays nothing, welds nothing and collapses
     // nothing — and not the count, which was measured to be the binding constraint instead: on the
     // tumbling cylinder's finished mesh the small-hole fill would still have taken two more loops.
-    for _ in 0..32 {
+    for round in 0..32 {
+        observe(ZipEvent::Round {round,mesh});
         let before = mesh.triangles.len();
-        pairs += zip_round(mesh,within,closeable);
+        pairs += zip_round(mesh,within,closeable,round,observe);
         dedupe(mesh);
         // Two samplings of one boundary junction, which no split can pair, are merged instead —
         // guarded, so a merge that would leave an edge walked twice the same way is refused. The
@@ -227,12 +249,13 @@ pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64,thin: f64,closeable: &
     // closes part of a loop leaves the rest of it boundary, and the opening walk would name
     // vertices whose edges are now used twice.
     let unpaired: Vec<Vec<u32>> = boundary_loops(&mesh.triangles).into_iter().flat_map(unpinch).collect();
+    observe(ZipEvent::Finished {mesh});
     (pairs,unpaired)
 }
 
 /// One round of the passes over the boundary as it stands: the small-hole fill, the pairing, the
 /// slits, and last what the field says is a hole. Returns how many loops it closed or paired.
-fn zip_round(mesh: &mut KeptMesh,within: f64,closeable: &mut dyn FnMut(&[V3],&[V3]) -> bool) -> usize {
+fn zip_round(mesh: &mut KeptMesh,within: f64,closeable: &mut dyn FnMut(&[V3],&[V3]) -> bool,round: usize,observe: &mut dyn FnMut(ZipEvent<'_>)) -> usize {
     // Every directed edge the mesh walks as the round begins, kept up to date as the passes lay
     // their bands: a band along an edge already walked would give it a third use, so such a
     // triangle is left out. Read afresh every round, since `dedupe` may since have dropped a
@@ -300,34 +323,28 @@ fn zip_round(mesh: &mut KeptMesh,within: f64,closeable: &mut dyn FnMut(&[V3],&[V
     // loop it was claimed for must be left to a later pass: measured on the tumbling cylinder, 29
     // of its 33 loops were claimed by the pairing or the slit pass and laid **nothing**, so only
     // two of them ever reached the field pass at all.
-    let lay = |mesh: &mut KeptMesh,walked: &mut std::collections::BTreeSet<(u32,u32)>,
-        corners: &mut std::collections::BTreeSet<[u32;3]>,band: Vec<[u32;3]>| -> usize {
+    let mut lay = |mesh: &mut KeptMesh,walked: &mut std::collections::BTreeSet<(u32,u32)>,
+        corners: &mut std::collections::BTreeSet<[u32;3]>,band: Vec<[u32;3]>,pass: ZipPass,atomic: bool| -> usize {
+        if atomic {
+            let accepted = band.iter().all(|&tri| takes(mesh,walked,corners,tri));
+            observe(ZipEvent::Preflight {round,mesh,fan:&band,accepted});
+            if !accepted { return 0; }
+        }
         let mut laid = 0;
         for tri in band {
             let tri = wind(tri);
-            if tri[0] == tri[1] || tri[1] == tri[2] || tri[2] == tri[0] { continue; }
-            // a zero-area triangle (rim vertices collinear with the column
-            // along a straight edge) closes nothing
             let [p,q,r] = tri.map(|v| mesh.vertices[v as usize]);
-            // Measured on every failing case: the bands declined here have altitude **exactly**
-            // zero with sides that sum exactly (a + b = c to the last digit), so their vertices
-            // are exactly collinear. The loops they would close are zero-width slits — the walk
-            // runs out along a line and back along collinear points — and no triangle can span
-            // one. Such a loop is collapsed, not filled; see the note in `rim_zip`.
-            if crate::space::degenerate(p,q,r) { continue; }
-            // Measured on every failing case: a band declined here is never free wound the other
-            // way, and the edge that blocks it is never a loop edge but an interior one already
-            // used twice — by a triangle on the band's own three vertices, wound the other way.
-            // The band is a facet the mesh already has, so the loop is no hole: it is a false
-            // boundary, where two samplings of one surface meet at different vertices and the
-            // edges never paired. Nothing may be laid there; the pairing belongs upstream.
-            if (0..3).any(|k| walked.contains(&(tri[k],tri[(k+1)%3]))) { continue; }
-            // and a facet the mesh already has, which `dedupe` would drop again: the insert is the
-            // test, so a corner set is claimed exactly once
             let mut key = tri; key.sort();
-            if !corners.insert(key) { continue; }
+            let rejection = if tri[0] == tri[1] || tri[1] == tri[2] || tri[2] == tri[0] { Some(ZipRejection::RepeatedVertex) }
+                else if crate::space::degenerate(p,q,r) { Some(ZipRejection::Degenerate) }
+                else if (0..3).any(|k| walked.contains(&(tri[k],tri[(k+1)%3]))) { Some(ZipRejection::WalkedEdge) }
+                else if corners.contains(&key) { Some(ZipRejection::DuplicateFacet) } else { None };
+            observe(ZipEvent::Triangle {round,pass,mesh,triangle:tri,rejection});
+            if rejection.is_some() { continue; }
+            corners.insert(key);
             for k in 0..3 { walked.insert((tri[k],tri[(k+1)%3])); }
             mesh.triangles.push(tri); mesh.sheet.push(u32::MAX);
+            observe(ZipEvent::Applied {round,pass,mesh,triangle:mesh.triangles.len()-1});
             laid += 1;
         }
         laid
@@ -348,9 +365,8 @@ fn zip_round(mesh: &mut KeptMesh,within: f64,closeable: &mut dyn FnMut(&[V3],&[V
         if paired[i] || !simple(&loops[i]) || loops[i].len() > 4 { continue; }
         let (l,n) = (&loops[i],loops[i].len());
         let fan: Vec<[u32;3]> = (1..n-1).map(|k| [l[0],l[k+1],l[k]]).collect();
-        if !fan.iter().all(|&tri| takes(mesh,&walked,&facets,tri)) { continue; }
+        if lay(mesh,&mut walked,&mut facets,fan,ZipPass::SmallFan,true) == 0 { continue; }
         paired[i] = true; pairs += 1;
-        lay(mesh,&mut walked,&mut facets,fan);
     }
     for i in 0..loops.len() {
         if paired[i] || !simple(&loops[i]) { continue; }
@@ -364,7 +380,7 @@ fn zip_round(mesh: &mut KeptMesh,within: f64,closeable: &mut dyn FnMut(&[V3],&[V
         // Committed only on a band that closed something. Marking both loops paired first, as this
         // did, consumed them: a band `lay` declines whole took two loops out of every later pass
         // and out of every later round too, the pairing being decided the same way each time.
-        if lay(mesh,&mut walked,&mut facets,band) == 0 { continue; }
+        if lay(mesh,&mut walked,&mut facets,band,ZipPass::Pair,false) == 0 { continue; }
         paired[i] = true; paired[j] = true; pairs += 1;
     }
     // where a walk turns back on itself: a slit's end, read the same way by both passes below
@@ -402,7 +418,7 @@ fn zip_round(mesh: &mut KeptMesh,within: f64,closeable: &mut dyn FnMut(&[V3],&[V
         if apart(&pa,&pb) > within { continue; }
         let band: Vec<[u32;3]> = zip_polylines(&pa,&pb,false).into_iter().map(|t| t.map(|(on_b,k)| if on_b { arc_b[k as usize] } else { arc_a[k as usize] })).collect();
         // committed only on a band that closed something, as the pairing is
-        if lay(mesh,&mut walked,&mut facets,band) == 0 { continue; }
+        if lay(mesh,&mut walked,&mut facets,band,ZipPass::Slit,false) == 0 { continue; }
         paired[i] = true; pairs += 1;
     }
     // A wide seam that folds back on itself looks like a slit — most of its vertices have a
@@ -451,7 +467,7 @@ fn zip_round(mesh: &mut KeptMesh,within: f64,closeable: &mut dyn FnMut(&[V3],&[V
         //
         // A fan that lays nothing leaves its apex unused, so the vertex goes back: nothing can
         // reference it, and a stray vertex would travel into the shell and the export.
-        if lay(mesh,&mut walked,&mut facets,fan) == 0 { mesh.vertices.pop(); continue; }
+        if lay(mesh,&mut walked,&mut facets,fan,ZipPass::FieldFan,false) == 0 { mesh.vertices.pop(); continue; }
         paired[i] = true; pairs += 1;
     }
     pairs
