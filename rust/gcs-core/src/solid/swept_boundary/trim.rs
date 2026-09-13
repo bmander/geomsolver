@@ -77,12 +77,22 @@ pub fn loop_span(judge: &mut super::judge::FieldJudge,points: &[V3],normals: &[V
     if n < 3 { return Ok(Span::Open {at:points.first().copied().unwrap_or([0.;3])}); }
     let centroid: V3 = std::array::from_fn(|k| points.iter().map(|p| p[k]).sum::<f64>()/n as f64);
     let mut unresolved: Option<V3> = None;
+    let mut judged = 0;
     for k in 0..n {
         let (a,b) = (points[k],points[(k+1)%n]);
         let at: V3 = std::array::from_fn(|j| (centroid[j]+a[j]+b[j])/3.);
         let m = normals.get(k).copied().unwrap_or([0.;3]);
         // an edge whose owner gave no stable normal says nothing either way
         if !(crate::space::norm(m) > 0.) { continue; }
+        // Nor does a fan piece with no area. This asks whether the boundary passes through the
+        // piece's span, and a degenerate piece has no span — its "centre" lies on the loop itself,
+        // so whatever the field says there is a statement about the rim and not about any interior
+        // the fill would cover. The tumbling cylinder's last two refusals are exactly this: loops
+        // of three exactly collinear vertices, every fan triangle flat to 2e-11, which no triangle
+        // can fill and which `space::degenerate` rightly refuses to let one try. Calling such a
+        // loop a hole claims something the field cannot support.
+        if crate::space::degenerate(centroid,a,b) { continue; }
+        judged += 1;
         // Judging instead along the fan triangle's **own** normal — what `certify` probes a laid
         // triangle along, the owner's serving only to orient it outward — was tried and
         // **refused**. It looked compelling: measured on the finished mesh, loops 2, 5 and 10
@@ -96,10 +106,38 @@ pub fn loop_span(judge: &mut super::judge::FieldJudge,points: &[V3],normals: &[V
         // acts during the rounds.
         match judge.project(at,m,epsilon,reach)? {
             Projection::Kept {..} | Projection::Moved {..} => {}
-            Projection::Inner | Projection::Positive => return Ok(Span::Open {at}),
+            Projection::Inner | Projection::Positive => {
+                // The direction is the caller's guess, and at a rim it is often wrong. `zip_round`
+                // takes it from the owner triangle's raw winding (`owners.owner(a,b)` then
+                // `stable_normal`), with nothing orienting it outward — so where that owner is
+                // reversed the probe runs *into* the material, finds material however far it
+                // reaches, and reports `Inner`. That is not a statement about the loop; it is a
+                // statement about the direction it was asked along. The certificate finds 167
+                // triangles of this mesh wound inside out, 24 of them touching an open loop.
+                //
+                // So ask the other way before refusing. A fan centre that reads `Inner` along `m`
+                // and brackets the boundary along `-m` **is** on the boundary: the field found it,
+                // and only the sense was wrong. Nothing is assumed — an enclosure containing zero
+                // is still never a sign, and a centre that refuses both ways is still `Open`.
+                //
+                // Measured on the tumbling cylinder's 17 refused loops: as passed, 0 span; negating
+                // wholesale, 0 (it is not a blanket sign error, the owners disagree one from the
+                // next); retrying per fan piece, **11 of 17** — the same eleven, loop for loop, that
+                // orienting each owner by a `sides` probe of its own centroid recovers, which is why
+                // this is done here rather than by widening what `closeable` carries.
+                let back: V3 = std::array::from_fn(|j| -m[j]);
+                match judge.project(at,back,epsilon,reach)? {
+                    Projection::Kept {..} | Projection::Moved {..} => {}
+                    Projection::Inner | Projection::Positive => return Ok(Span::Open {at}),
+                    Projection::Unresolved {..} => { unresolved.get_or_insert(at); }
+                }
+            }
             Projection::Unresolved {..} => { unresolved.get_or_insert(at); }
         }
     }
+    // A loop no piece of which could be judged bounds no area to span: it is open, whatever the
+    // field says at points lying on the rim itself.
+    if judged == 0 { return Ok(Span::Open {at:centroid}); }
     Ok(match unresolved { Some(at) => Span::Unresolved {at},None => Span::Spanned })
 }
 

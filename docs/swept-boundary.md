@@ -2271,6 +2271,245 @@ inserts them into `cuts`, calling no `split_edge`. It adds cut marks, not geomet
    belonged above (1); it does not. Worth fixing for the look of the thing and for float32, not as a
    route to closure.
 
+### Where the stitching line of work ends: 17 loops to 7, and the rest is not the stitch's to close
+
+Two changes landed, each measured before it went in and each leaving the turning prism, turned lens,
+turned box and sliding dumbbell **byte for byte identical**.
+
+**`loop_span` asks the other way before refusing.** `zip_round` hands it the owner triangle's raw
+winding with nothing orienting it outward, so where that owner faces inward the probe runs *into* the
+material, finds material however far it reaches, and reports `Inner` — a fact about the direction
+asked, not about the loop. It now asks along `−m` before giving up: a fan centre that reads `Inner`
+one way and brackets the boundary the other **is** on the boundary, the field having found it.
+Measured on the 17 beforehand — as passed 0 span, negated wholesale 0 (so not a blanket sign error,
+the owners disagree one from the next), retried per piece **11**, the same eleven that orienting each
+owner by a `sides` probe of its own centroid recovers. In the pipeline: **17 loops → 7, volume 9.2929
+→ 9.3057** against the reference's 9.4786, 6665 → 6713 triangles.
+
+**A loop with no area is no hole.** The last two refusals were three exactly collinear vertices with
+every fan triangle flat to 2e-11. `loop_span` asks whether the boundary passes through each piece's
+span; a degenerate piece has no span, and its centre lies on the rim itself, so what the field says
+there describes the rim and not any interior a fill would cover. Such a piece is now skipped, as one
+whose owner gave no stable normal already was, and a loop where every piece is skipped is `Open`.
+This changes **no geometry** — 6713 triangles and volume 9.3057 either way — only the claim, and it
+is what took the suite from red to green.
+
+**And the remaining five are not the stitch's to close.** Asked under every direction available —
+the owner's raw winding, flipped, oriented outward by the field, retried against the negation, and
+the fan piece's own normal both ways — all five come back `Open`. The verdict is not an artefact of
+the direction asked: there is no boundary spanning them, so closing them means **generating**
+surface, which is tracer and coverage work. The one route through the field is refused too, and was
+before: `grazing.rs` records three of four such neighbourhoods returning `AmbiguousPoint` —
+enclosures straddling zero, the extractor keeping its own rule that an interval containing zero is
+never a sign — and the fourth exhausting its cell budget at a deliberately coarse tolerance.
+
+**Eight approaches were refuted along the way**, each by measurement and most by a control fixed in
+advance, and all are recorded so they are not tried again: a bowtie generator; a trim defect at
+`welded`/`zipped`; a generation gap wanting a funnel; component swallowing in `caps`; a divider cut
+(a no-op — every branch was already cut); a cluster weld (0 of 13 clusters collapse, and two-vertex
+clusters fail too, so it was never an arity problem); weld-before-zip (17 → 14, but the dumbbell then
+reached `certify` with a `NonManifoldVertex` and 20 failures); `wind` by the live `walked` set
+(changed *nothing* — identical triangles, volume, loops and all 169 reversals); and dropping the
+inward-facing bands (7 → **119** loops).
+
+**Two findings outlast this.** First, **winding consistency is not outwardness**: 10053 shared edges
+are walked oppositely with zero folds, yet 169 triangles genuinely face inward — the verdicts hold at
+0.04, 0.02 and 0.01 with none flipping, and the failing triangles are *thicker* than the mesh median,
+so no probe artefact explains them. Consistency is topological and propagates across shared edges
+wherever the surface sits, so a patch folded back into the material stays consistently wound while
+facing inward. Second, and the real defect this uncovered, **`lay` never asks the field**: `takes`
+checks manifoldness, area and duplicate corners and nothing else, which is how the zip comes to lay
+142 bands into the solid — a band is `Reversed` 12.3% of the time against 2.5% for the mesh at large.
+That sits upstream of the loops, and it is where the next work belongs.
+
+### What `loop_span` sees at the decision point — and why "blocked on coverage" was wrong
+
+`creases::what_loop_span_sees_when_it_actually_decides` replicates `rim_zip` from the `Stage::Split`
+mesh with a logging `closeable`, so it records what `loop_span` sees **at the moment it decides**
+rather than what the mesh looks like afterwards. That distinction is not academic: `loop_span`'s own
+comment records a change adopted on finished-mesh numbers that closed nothing, for exactly this
+reason. The scale of the sampling error is now measured — **134 asks across the rounds against 17
+surviving loops**, so every per-loop diagnostic in this file sees 13% of the decisions, and a biased
+13%: the residue is by construction the set the current rule already refuses.
+
+```
+134 asks over all rounds; the zip paired 317 and left 17 loops open
+23 of 134 asks came back Spanned (the field would let the fill close them)
+asks by how many fan pieces refused (0 = Spanned): {0: 23, 1: 28, 2: 31, 3: 29, 4: 6, 5: 17}
+base rate — apex-outside pieces: 158 of 581 (27.2%)
+refusals on such a piece:         72 of 286 (25.2%)
+```
+
+Twenty-three asks came back `Spanned`, so the fill mechanism works and does authorise closures.
+`loop_span` vetoes on the **first** fan piece reading `Inner` or `Positive`, and 28 asks are refused
+by a single piece — which suggested the fan itself might be at fault, since it fans from the loop's
+**centroid** and a non-convex loop can put that centroid outside itself, so a fan triangle may lie
+outside the hole and its `Inner` reading say nothing about the hole.
+
+**Measured against its base rate, that is refuted.** A quarter of refusals falling on apex-outside
+pieces means nothing when **27.2% of all pieces are apex-outside anyway**; the refusal share is
+25.2%, marginally *below* chance. Apex-outside has nothing to do with refusal, and no better
+triangulation — ear clipping, an apex chosen inside the loop — will close these loops.
+
+So the refusals are genuine, and three independent lines now agree: the decision-point projections,
+the finished-mesh spans (every loop's fan centres `material`, rims submerged 0.0067 to 0.0161 inside,
+five loops finding no boundary in *any* direction within 8 sagittas), and the voxel reference's 8.4%
+of uncovered area. **No stitching change closes these loops.** The surface is short of the true
+boundary, and closing them means generating surface, not zipping it.
+
+One qualification, because `Inner` is relative to `reach`: at reach 0.02 it means only "no boundary
+within a sagitta along this direction", and boundaries *are* found at up to 4 sagittas along other
+directions. But a fill spanning that gap would sit 0.08 from the true surface — four times the chord
+tolerance — and `certify` would reject it. Reaching further is not a way out.
+
+That reading — "closure is blocked on coverage" — **was wrong, and the thing that was left open is
+what refuted it.** The 17 loops sit at x ≈ 2.03 and x ≈ 3.97, the two ends of the tumble axis, plus
+two against the axis near x ≈ 3.95, while the uncovered area supposedly peaked at x ∈ [3.0, 3.5).
+That mismatch was the clue, and the answer is that the uncovered measure was the artefact.
+
+`reference::whether_the_uncovered_reference_is_absent_or_merely_displaced` computes both criteria
+over the same reference triangles in one pass:
+
+```
+reference area 23.493
+by the criterion in use (centroid > 0.15 from any constructed VERTEX): 1.979 (8.4%)
+by distance to the nearest constructed TRIANGLE:
+   < 0.005: 11.345 (48.3%)   < 0.01: 3.791 (16.1%)   < 0.02 (a sagitta): 7.677 (32.7%)
+   < 0.05:   0.681 ( 2.9%)   < 0.10, < 0.15, < 0.30, >= 0.30: 0.000 each
+within a sagitta of some triangle: 22.813 (97.1%)
+far area by x: 2.00:0.15  2.50:0.15  3.00:0.10  3.50:0.16  4.00:0.12
+```
+
+**97.1% of the reference lies within a sagitta of a construction triangle, and nothing whatever lies
+beyond 0.05.** The 8.4% was a vertex test at 7.5 sagittas on a mesh whose median edge is 0.18 — a
+triangle's own interior can sit 0.09 from all three of its corners. And the x = 3.00 peak
+**disappeared**: 0.98 of 1.979 became 0.10 of 0.681, the far area now flat across x. That peak was
+never a hole; it was where the facets are largest, so centroids sat farthest from any corner.
+
+So **the surface is present**, coverage is not a real deficit, and the 2.0% volume gap is ordinary
+chordal inscription rather than missing material. Item (3) below is retired, and item (1) is not
+waiting on it.
+
+Which reframed the rims as possible **false boundaries** — two samplings of one surface meeting at
+different vertices whose edges never paired, a category this document already names among the
+refusals. **Measured, that is refuted too** (`creases::whether_the_open_rims_are_false_boundaries`),
+against a control of interior edges sampled by stride, each edge's own vertex-sharing neighbours
+excluded on both sides so the control is not trivially zero:
+
+```
+distance to the nearest non-adjacent edge      rim (79)        interior (400)
+              < 0.005 (the snap)            0   ( 0.0%)       10   ( 2.5%)
+              < 0.01                        7   ( 8.9%)       25   ( 6.2%)
+              < 0.02 (a sagitta)           11   (13.9%)       71   (17.8%)
+              < 0.04 (the junction)        36   (45.6%)      132   (33.0%)
+              < 0.10                       22   (27.8%)      120   (30.0%)
+             >= 0.10                        3   ( 3.8%)       42   (10.5%)
+```
+
+The criterion fixed beforehand was "rim twins clustered at the snap while interior edges are not".
+**Not one rim edge has a twin at the snap**, and rim edges are *less* likely than interior ones to
+have a very near neighbour. The mild shift into 0.01–0.04 is small, and the control shows that
+spacing is simply what this mesh has — a third of *interior* edges also have a non-adjacent
+neighbour inside the junction tolerance, unsurprising at median edge 0.18 with 30% slivers. So these
+are **genuine rims with nothing to pair against**.
+
+Three framings have now been refuted for these same 17 loops: blocked on coverage, the fan at fault,
+and false boundaries.
+
+**The two measurements are not in conflict, and the reason is a resolution limit worth stating.** The
+reference contours on an **h = 0.1 grid**, so the coverage test cannot see a hole smaller than 0.1.
+These loops are 3 to 7 vertices with edges of 0.02 to 0.10 — wholly beneath it. "97.1% covered"
+therefore means *no large missing region*, not *no holes*.
+
+**But they are not small holes either — that is the fourth refutation.**
+`creases::where_the_boundary_has_no_mesh` finds **0 boundary points beyond 0.15** from a mesh vertex,
+median 0.0601, worst 0.0845: there is no gap in the mesh anywhere on the field's boundary.
+
+What the rims actually are is named by
+`creases::how_far_apart_the_sheets_bordering_each_loop_stand`: **every loop is bordered by three to
+five different sheets**, standing 0.0028 to 0.05 apart — at or below the junction tolerance of 0.04,
+far below the spacing of 0.5. Loops 12 and 13 are bordered by sheets 0, 7, 9 and 10 with a 0–9 gap of
+0.0028, half the snap; loops 0 and 1 by sheets 1, 2 and 10 with a 1–2 gap of 0.0056. Sheets 9 and 10
+are the two caps, so most of these are cap-meets-cap-meets-traced-sheet corners — which is exactly
+where the loops sit, at x ≈ 2.03 and x ≈ 3.97, the ends of the tumble axis where wall, discs and caps
+all meet.
+
+Two halves of a mechanism are then measured, and both are structural rather than tolerances:
+
+* **The pairing pass is strictly pairwise.** For each unpaired loop it gathers candidates, takes the
+  single nearest, zips the two and marks both paired. A junction of three or four rims cannot be
+  resolved by it at any tolerance — it can reconcile two, and the rest are left over.
+* **The weld is refused at the survivors by `walks_once`.** `rim_zip` calls
+  `weld_boundary_ends(mesh, junction)`, so gaps of 0.0028–0.0139 are well inside reach and the pairs
+  *are* offered. At `Stage::Split` the weld is mostly succeeding — of the 400 nearest of 3573 pairs,
+  **309 would be taken**, 83 refused by `walks_once`, 8 by `flattens`. At `Stage::Zipped`, where it
+  has run to a fixpoint, **0 of 39 would be taken, 35 refused by `walks_once` and 4 by `flattens`**.
+  That 0 is what a fixpoint means and is not itself news; the news is that 90% of the refusals are
+  the manifold guard, and that `flattens` is nearly absent — `space::degenerate` being
+  `altitude <= 1e-10*(magnitude + longest)`, about 4e-10 here, an exact collinearity test rather
+  than a tolerance.
+
+The last link — that `walks_once` fires *because a third rim is incident* — was the one thing still
+inferred, and it is now measured against its control. Distinct sheets meeting at each refused merge
+site, beside the same count over every vertex in the mesh, since "three sheets meet here" is worth
+nothing if three meet at a typical vertex too:
+
+```
+ sheets at the site      refused merges          all vertices
+        1                   0 ( 0.0%)            1420 (47.4%)
+        2                   2 ( 5.7%)            1085 (36.2%)
+        3                  14 (40.0%)             403 (13.5%)
+        4                  18 (51.4%)              80 ( 2.7%)
+        5                   1 ( 2.9%)               6 ( 0.2%)
+```
+
+**94.3% of refused merge sites carry three or more sheets, against 16.4% of vertices generally** — a
+5.8× enrichment, and **19×** at four sheets. Not one refused site is single-sheet, while 47.4% of all
+vertices are.
+
+**So the mechanism is measured end to end.** The surviving rims are **multi-way sheet junctions**,
+and the stitch is pairwise on both sides that matter: the pairing pass takes one loop and its single
+nearest partner, and the weld merges two vertices at a time. Merge two rims of a four-way convergence
+and the third's edge is walked twice, which `walks_once` correctly refuses — the guard is doing its
+job, and the manifold rule it protects is the one this whole construction rests on. Nothing here is a
+tolerance to loosen.
+
+The repair therefore points at a **junction-aware pass**: at a site where three or more rims meet,
+reconcile all of them in one guarded step rather than two at a time — for instance welding a whole
+cluster of boundary vertices mutually within the junction onto one representative, tested as a single
+merge. That is the smaller of the two changes and it addresses the measured cause directly.
+
+**Measured, the cluster weld does not work, and it fails in a way that retires the arity reading
+altogether** (`creases::whether_a_cluster_weld_can_close_the_junctions`). The 64 boundary vertices
+form 13 clusters mutually within the junction; each was collapsed to the member nearest its centroid,
+applied atomically, and the manifold judged of the result:
+
+```
+0 clusters collapse cleanly on their own, 13 do not
+all clusters at once: 6665 triangles -> 6602, STILL doubles an edge
+   area 27.1793 -> 27.1781; collapsed 5.462e-2, of it above the least probe 4.933e-2 (0.18%)
+   boundary loops 17 -> 7
+```
+
+It does take the loops from 17 to 7 — by shedding 0.18% of real surface while *still* breaking the
+manifold, which is precisely the trade this construction refuses.
+
+**And six of the thirteen clusters hold only two vertices, and those fail too.** Cluster 11 is two
+vertices **0.0020 apart** — well inside the snap of 0.005 — spanning four sheets, collapsing *zero*
+real area, and it still doubles an edge; cluster 9 likewise. For a two-vertex cluster there are only
+two possible representatives and they yield isomorphic connectivity, so that verdict is
+**representative-independent**: no choice of survivor rescues it.
+
+So the obstruction is **not arity**. It is not that pairwise merging is too weak for an n-way
+junction — at these sites *no vertex identification whatsoever* preserves the manifold. Layer 1 is
+retired, and **retriangulation, filed above as the fallback, is the main path**.
+
+The successor hypothesis, to be measured and not assumed: if identifying two coincident boundary
+vertices always doubles an edge, the likely reason is that the sheets there **overlap** rather than
+abut, and the merge merely makes an already-duplicated surface explicit. That would make this a
+coverage-clipping problem rather than a welding one — a different pass entirely. The doubled edges'
+owning sheets, and whether their aliased corner sets coincide, tell those apart.
+
 Three reversals on one question, worth recording as a lesson in what to measure. The bowtie framing
 was refuted by *where* the gap is; "traced, then annihilated" was refuted by *how much area* is
 there; and the intermediate "both partly right" reading came of trusting a **triangle count** where
@@ -2278,3 +2517,78 @@ the quantity in question was **area**. A count of slivers reads exactly like a c
 **Ask for area whenever the question is coverage** — and note that the sliver count was not merely
 uninformative but actively misleading, since it fell by half at the very passes a trim defect would
 have implicated.
+
+## What the open loops actually are: a bracket ladder, with both failure modes as controls (2026-09-12)
+
+Every instrument before this one asked `loop_span` whether a loop was fillable. `loop_span` is the
+thing refusing, so that was circular, and it could not settle anything. The authority on whether
+surface may stand is `certify`, so the fans were put to it instead.
+
+**First result, and it is a trap.** Fanned from their centroids, the seven loops' triangles come back
+overwhelmingly `thin` — 4 failures in about sixty triangles — and `Certificate::is_complete()` is
+`failures.is_empty()`, so a fill would have passed the gate. That reads like a licence and is not
+one. `certify`'s own arithmetic says why:
+
+```rust
+let reversed = matches!(last,InsideNotMaterial(Sign::Exterior))
+    || (matches!(last,OutsideNotExterior(Material)) && inside == Exterior);
+if reversed { failures.push(Reversed) } else { thin.push(last) }
+```
+
+A triangle **buried deep inside the solid** probes `(Material,Material)`, which is
+`OutsideNotExterior(Material)`; the reversed test then needs the inside to read `Exterior`, which it
+does not. So it lands in `thin`, not `failures`, and the certificate passes it. **`thin` therefore
+cannot distinguish thin real surface from a triangle laid inside the material** — exactly the case
+`loop_span`'s `Inner` verdict exists to refuse. This is a limitation of the gate itself and is worth
+stating plainly: *a complete certificate does not by itself license a fill in thin or deep material.*
+
+**The discriminator is the probe distance, not the verdict.** Real surface, however thin, brackets
+`(Material,Exterior)` once the probe is shorter than the material is thick; surface buried in the
+solid never brackets at any distance. `certify` halves only down to `least` (0.01) and then gives up,
+so it structurally cannot tell them apart. `creases::whether_the_open_loops_are_thin_surface_or_buried_surface`
+sweeps the ladder `0.04 … 0.00015625`, four steps below that floor, and reports per fan triangle the
+largest distance at which the field brackets, or the signs where it never does.
+
+Nothing here reads a field *value*. Every reading is a two-sided strict-sign bracket, which is all the
+one-Lipschitz contract licenses — deliberately, since reading a conservative enclosure as a distance
+is the error this investigation made four separate times.
+
+**Both failure modes are controls, on the same fan moved bodily to places whose answer is known:**
+
+```
+loop  0 (4 vertices) centred [3.9817, -0.4419, 0.8977]
+   its own fan                     2 of 4 bracket [0.04000, 0.04000]; never: Material/Material x2
+   CONTROL buried at (3,0,0)       0 of 4 bracket [];               never: Material/Material x4
+   CONTROL in open air at (10,0,0) 0 of 4 bracket [];               never: Exterior/Exterior x4
+```
+
+The buried control never brackets and reads material both ways; the open-air control never brackets
+and reads exterior both ways. The ladder discriminates, so the rest may be read.
+
+```
+loop  1 (7)  4 of 7 bracket at 0.04; never: Material/Material x3
+loop  2 (5)  3 of 5 bracket at 0.04; never: Material/Material x2
+loop  3 (7)  2 of 7 bracket at 0.04; never: Material/Material x5
+loop  4 (4)  3 of 4 bracket at 0.04; never: Material/Material x1
+loop  5 (3)  3 of 3 bracket at 0.04
+loop  6 (3)  0 of 3 bracket;         never: Material/Material x3
+```
+
+**Every loop's fan is mixed, and the mixture is stark.** The pieces that bracket bracket at the
+**full** 0.04 — robust boundary, not thin at all — while the pieces that do not read
+`Material/Material` at every distance down to 1.6e-4, matching the buried control exactly. Loop 6 is
+wholly buried; loop 5 is wholly real but is one of the two collinear zero-width loops, so there is no
+area to lay.
+
+So a fan over any of these loops would put some triangles on real boundary and the rest **inside the
+material**. `loop_span` is refusing correctly, and its `Open` is not the artefact of a probe direction
+that several earlier readings took it for. What the mesh is missing is surface running *beside* each
+rim, not across it — a coverage defect upstream, which is what the record has said since the stitch
+was measured clean.
+
+**One caveat, and it decides which fix is right.** Every fan triangle has the apex as a corner, so a
+buried apex would bury pieces wherever the rim lay. The apex-free form of the question asks the same
+ladder at each loop **edge midpoint**, which lies exactly on the rim, along its owner triangle's
+normal. Rim midpoints that bracket ⇒ the rim is on the boundary and the *fan* is the wrong shape;
+midpoints that read material both ways ⇒ the rim itself runs inside the solid and the defect is in
+the trim. Instrument: `creases::whether_the_open_loops_own_rims_lie_on_the_boundary`.

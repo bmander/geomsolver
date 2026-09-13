@@ -168,6 +168,22 @@ pub fn unpinch(l: Vec<u32>) -> Vec<Vec<u32>> {
 /// and is filled however many vertices it has, and one it does not is left to be refused. It is
 /// asked last, so every case that closed without it closes the same way.
 pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64,thin: f64,closeable: &mut dyn FnMut(&[V3],&[V3]) -> bool) -> (usize,Vec<Vec<u32>>) {
+    // Welding here, before anything is laid, was tried and **refused** (2026-09-12). The reasoning
+    // was sound and the local result good: the rounds below weld only *after* `zip_round` lays its
+    // bands, so the weld never sees the mesh as it arrives, and those bands are what it cannot then
+    // merge past — of the 146 doublings the junction merges would create on the tumbling cylinder,
+    // 106 involve a band the zip itself laid. Welding first gave that case 821 vertices merged,
+    // **17 loops to 14**, volume held at 9.2905 against 9.2929, every directed edge walked once.
+    //
+    // It is refused for what it does to the **sliding dumbbell**, which the five-case gate caught
+    // and no single-case measurement could: that case went from refusing at `UnpairedRim {[4,4]}`
+    // with nothing failing the certificate to `NonManifoldVertex { vertex: 724 }` with **20
+    // triangles failing it**. Closing the two loops let the pipeline reach `certify` and arrive
+    // broken. The cause is that this weld's guard is **edge**-based — `walks_once` checks directed
+    // edges — so it admits a vertex whose triangle fan is no disc, which 821 merges duly produced.
+    // A case that closes on a refused certificate is a failure, never a warning. The prism and the
+    // turned box also moved (1436 to 1404, 1304 to 1296 triangles) while staying closed and
+    // certified.
     split_at_vertices(mesh,split);
     let mut pairs = 0;
     // A round's passes all read the one walk of the boundary it began with, so a loop another
@@ -253,6 +269,15 @@ fn zip_round(mesh: &mut KeptMesh,within: f64,closeable: &mut dyn FnMut(&[V3],&[V
     // mesh already does; each triangle is turned by its own loop edge, since a zip of arcs winds
     // each arc for itself. Said once here, so the test of whether the mesh can take a triangle
     // and the laying of it cannot come to disagree about which way it goes.
+    // Orienting a band by the **live** `walked` set instead — taking whichever of the two windings
+    // walks no directed edge the mesh already walks, and falling back to the rule below only where
+    // neither or both clash — was tried and **changed nothing at all**: the tumbling cylinder came
+    // back at the same 6713 triangles, the same volume 9.3057, the same loops [4,7,5,7,4,3,3], and
+    // the certificate's identical 169 `Reversed` with the identical split (142 bands, and 3/11/1/2/10
+    // over sheets 0/10/2/4/9) down to the same reversed area of 0.8267. So the `unwrap_or` default
+    // below is **not** what produces the reversed bands: on every band actually laid, the clash test
+    // and the boundary test agree. The reversals come from somewhere else — the band's own
+    // construction, or the sheet it attaches to.
     let wind = |tri: [u32;3]| -> [u32;3] {
         let flip = (0..3).find_map(|k| {
             let (p,q) = (tri[k],tri[(k+1)%3]);

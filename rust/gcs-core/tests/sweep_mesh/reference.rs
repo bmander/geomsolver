@@ -328,3 +328,107 @@ fn rough_reference_surfaces() {
         eprintln!("   wrote {}",path.display());
     }
 }
+
+/// Absent surface, or merely displaced? `where_the_reference_has_surface_and_the_construction_has
+/// _none` calls a reference triangle uncovered when its centroid is farther than **0.15 from any
+/// constructed vertex** — a vertex test at seven and a half sagittas, on a mesh whose median edge is
+/// 0.18. A triangle's own interior can sit 0.09 from all three of its corners, so that criterion
+/// cannot tell surface that is *missing* from surface that is *present and coarsely sampled*, and
+/// the 8.4% it reports has been carrying both readings at once.
+///
+/// Distance to the nearest construction **triangle** separates them, and the two criteria are
+/// computed over the same reference triangles in the same pass so the comparison is a control
+/// rather than two runs held side by side.
+///
+/// Fixed before running, so the result can contradict it: area within a **sagitta** of a
+/// construction triangle means the surface is there and the vertex test was simply too coarse —
+/// then most of the 8.4% is an artefact and the real deficit is far smaller. Area beyond 0.05 means
+/// genuinely absent surface, and coverage means generating it. The by-x breakdown is taken over
+/// that far subset alone, to see whether the x ∈ [3.0, 3.5) peak survives the sharper test or was
+/// itself an artefact of the vertex criterion.
+///
+/// The grid cannot miss a near triangle: if a triangle's closest point lies within `REACH` of the
+/// centroid then its bounding box contains that point, so the box overlaps the queried range and
+/// `insert_box` filed it in a cell the query visits.
+///
+/// Nothing is built or changed here; it only measures.
+#[test]
+#[ignore]
+fn whether_the_uncovered_reference_is_absent_or_merely_displaced() {
+    use gcs_core::solid::swept_boundary::{Stage,SweptBoundaryOptions,closest_on_triangle,construct};
+    use gcs_core::space::Grid;
+    use std::collections::BTreeMap;
+    const REACH: f64 = 0.30;
+    let h: f64 = std::env::var("SOLVENT_REFERENCE_H").ok().and_then(|v| v.parse().ok()).unwrap_or(0.1);
+    let source = creases::tumbling_cylinder();
+    let (tris,report) = rough(&source,h);
+    eprintln!("== the reference: {report}");
+    let e = harness::read(&source);
+    let swept = harness::solid(&e,"swept");
+    let options = SweptBoundaryOptions {sagitta:0.02,spacing:0.5,..Default::default()};
+    let (mut verts,mut faces): (Vec<V3>,Vec<[u32;3]>) = (Vec::new(),Vec::new());
+    let _ = construct(&e.sketch,swept,&options,&|_| {},&mut |stage,_| {
+        if let Stage::Zipped {mesh,..} = stage {
+            verts = mesh.vertices.clone(); faces = mesh.triangles.clone();
+        }
+    });
+    assert!(!faces.is_empty(),"the construction handed over no mesh");
+    let mut grid = Grid::new(0.15);
+    for (i,t) in faces.iter().enumerate() {
+        let [a,b,c] = t.map(|v| verts[v as usize]);
+        let lo: V3 = std::array::from_fn(|k| a[k].min(b[k]).min(c[k]));
+        let hi: V3 = std::array::from_fn(|k| a[k].max(b[k]).max(c[k]));
+        grid.insert_box(lo,hi,i as u32);
+    }
+    let area = |[a,b,c]: &[V3;3]| {
+        let n = cross(sub(*b,*a),sub(*c,*a));
+        0.5*(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt()
+    };
+    let bands = ["< 0.005","< 0.01","< 0.02 (a sagitta)","< 0.05","< 0.10","< 0.15","< 0.30",">= 0.30"];
+    let (mut whole,mut vertex_lost,mut far) = (0.,0.,0.);
+    let mut bins: BTreeMap<usize,f64> = Default::default();
+    let mut far_by_x: BTreeMap<i64,f64> = Default::default();
+    let mut seen: Vec<u32> = Vec::new();
+    for tri in &tris {
+        let a = area(tri);
+        whole += a;
+        let centre: V3 = std::array::from_fn(|k| (tri[0][k]+tri[1][k]+tri[2][k])/3.);
+        // the criterion in use today, on this very triangle, as the control
+        if verts.iter().map(|v| harness::distance(centre,*v)).fold(f64::INFINITY,f64::min) > 0.15 {
+            vertex_lost += a;
+        }
+        // and the sharper one
+        seen.clear();
+        let lo: V3 = std::array::from_fn(|k| centre[k]-REACH);
+        let hi: V3 = std::array::from_fn(|k| centre[k]+REACH);
+        grid.in_box(lo,hi,|i| seen.push(i));
+        seen.sort_unstable(); seen.dedup();
+        let mut best = f64::INFINITY;
+        for &i in &seen {
+            let [p,q,r] = faces[i as usize].map(|v| verts[v as usize]);
+            let (at,_) = closest_on_triangle(centre,p,q,r);
+            best = best.min(harness::distance(centre,at));
+        }
+        let band = if !best.is_finite() { 7 }
+            else if best < 0.005 { 0 } else if best < 0.01 { 1 } else if best < 0.02 { 2 }
+            else if best < 0.05 { 3 } else if best < 0.10 { 4 } else if best < 0.15 { 5 }
+            else if best < 0.30 { 6 } else { 7 };
+        *bins.entry(band).or_insert(0.) += a;
+        if band >= 3 { far += a; *far_by_x.entry((centre[0]*2.).round() as i64).or_insert(0.) += a; }
+    }
+    eprintln!("== reference area {whole:.3}");
+    eprintln!("   by the criterion in use (centroid > 0.15 from any constructed VERTEX): \
+        {vertex_lost:.3} uncovered ({:.1}%)",100.*vertex_lost/whole);
+    eprintln!("   by distance to the nearest constructed TRIANGLE:");
+    for (b,label) in bands.iter().enumerate() {
+        let a = bins.get(&b).copied().unwrap_or(0.);
+        eprintln!("      {label:>18}: {a:7.3}  ({:5.1}%)",100.*a/whole);
+    }
+    let within = bins.iter().filter(|(b,_)| **b <= 2).map(|(_,a)| *a).sum::<f64>();
+    eprintln!("   within a sagitta of some triangle: {within:.3} ({:.1}%)",100.*within/whole);
+    eprintln!("   farther than 0.02 from every triangle: {far:.3} ({:.1}%)",100.*far/whole);
+    eprintln!("   that far area by x (half-unit bins): {}",
+        far_by_x.iter().map(|(b,a)| format!("{:.2}:{a:.2}",*b as f64/2.)).collect::<Vec<_>>().join("  "));
+    eprintln!("   most of the 8.4% within a sagitta ⇒ the surface is THERE and the vertex test was \
+        too coarse; most of it beyond 0.05 ⇒ genuinely absent, and coverage means generating it");
+}
