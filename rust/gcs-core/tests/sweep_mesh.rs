@@ -28,3 +28,5 @@ mod provenance;
 mod cylinder_domains;
 mod shared;
 mod shared_intersections;
+
+mod source_charts;

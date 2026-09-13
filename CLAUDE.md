@@ -279,6 +279,13 @@ is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, 
 placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
 `SpatialField::value` for what may be judged in plain floating point: a face point on
 the boundary, a probe's side, never an interval claim.
+**Swept boundary Phase 3 source connection:** [docs/swept-boundary-phase-three.md](docs/swept-boundary-phase-three.md)
+records native coordinates, local station branches and candidate event observations retained
+through tracing. `solid::sweep_source` evaluates the original snapshot; chained vertices retain
+all original consumers without asserting a shared boundary. Caps/grazing meshes have no native
+provenance. Global visibility arrangement and production shared-tessellator integration remain.
+`field_value_tolerance`, `minimum_probe_distance` and optional `spatial_audit` independently
+configure validation; defaults and the legacy candidate geometry are preserved.
 **Swept boundary Phase 2:** [docs/swept-boundary-phase-two.md](docs/swept-boundary-phase-two.md)
 records the isolated shared-domain tessellator and explicit cylinder chart experiment. Curve
 identities are distinct from endpoint identities; incident patches share sample indices and

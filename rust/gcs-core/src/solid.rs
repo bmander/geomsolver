@@ -41,6 +41,7 @@ pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles
 mod tool_faces;
 pub use tool_faces::{ToolFace,ToolEdge,EdgeChart,Crease,StationEquation,PlanarFace,PlanarLoop,PlanarEdge,ExtrudedFace};
 mod sweep_candidates;
+pub use sweep_candidates::source as sweep_source;
 pub use sweep_candidates::{Characteristic,SweepSheet,SweepPatch,constant_twist,zip_polylines};
 pub(crate) use document::{evaluation_operands,operand_paths};
 use document::{frame_origin,resolve_at};

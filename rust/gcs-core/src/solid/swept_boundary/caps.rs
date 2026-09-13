@@ -458,7 +458,7 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
             entry.facets += 1;
         }
         let components = report.into_values().collect::<Vec<_>>();
-        let mut patch = SweepPatch {points:Vec::new(),normals:Vec::new(),triangles:Vec::new(),column:Vec::new(),times:vec![t],closed:false};
+        let mut patch = SweepPatch {points:Vec::new(),normals:Vec::new(),triangles:Vec::new(),column:Vec::new(),times:vec![t],closed:false,provenance:None};
         // a vertex on a tool edge: its facets lie on more than one face
         let mut first = vec![u32::MAX;mesh.vertices.len()];
         let mut on_edge = vec![false;mesh.vertices.len()];

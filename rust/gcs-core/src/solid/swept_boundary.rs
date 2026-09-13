@@ -56,6 +56,14 @@ pub struct SweptBoundaryOptions {
     /// How far inside and outside every triangle the field is asked to agree:
     /// twice the sagitta unless given.
     pub probe_distance: Option<f64>,
+    /// Field-value refinement width, independent of construction vertex spacing.
+    /// None preserves the legacy vertex_tolerance / 2 default.
+    pub field_value_tolerance: Option<f64>,
+    /// Minimum permitted normal probe, independent of construction tolerances.
+    /// None preserves the legacy 2 * vertex_tolerance default.
+    pub minimum_probe_distance: Option<f64>,
+    /// Explicit spatial tolerance and audit budgets; None uses audit() defaults.
+    pub spatial_audit: Option<AuditOptions>,
     /// Roll evaluations a query near the boundary may spend before refusing.
     pub near_budget: usize,
     /// Roll evaluations a query a probe distance from the boundary may spend.
@@ -66,26 +74,26 @@ pub struct SweptBoundaryOptions {
 
 impl Default for SweptBoundaryOptions {
     fn default() -> Self {
-        Self {sagitta:0.02,spacing:0.5,vertex_tolerance:None,probe_distance:None,near_budget:4000,far_budget:1000,cached_poses:4096}
+        Self {sagitta:0.02,spacing:0.5,vertex_tolerance:None,probe_distance:None,field_value_tolerance:None,minimum_probe_distance:None,spatial_audit:None,near_budget:4000,far_budget:1000,cached_poses:4096}
     }
 }
 
 /// Every tolerance of the construction, derived here and only here.
 impl SweptBoundaryOptions {
     /// Spatial acceptance is deliberately bounded; exhausted coverage remains a refusal.
-    pub fn audit(&self) -> AuditOptions { AuditOptions {tolerance:self.probe_distance(),max_cells:100000,max_depth:24,box_budget:self.far_budget} }
+    pub fn audit(&self) -> AuditOptions { self.spatial_audit.unwrap_or(AuditOptions {tolerance:self.probe_distance(),max_cells:100000,max_depth:24,box_budget:self.far_budget}) }
     /// How far a judged vertex may be from the boundary.
     pub fn vertex_tolerance(&self) -> f64 { self.vertex_tolerance.unwrap_or(self.sagitta/4.) }
     /// How far inside and outside every triangle the certificate asks the field to agree.
     pub fn probe_distance(&self) -> f64 { self.probe_distance.unwrap_or(2.*self.sagitta) }
-    /// The least distance the certificate halves its probe to, for thin material: twice the
-    /// vertex tolerance. A triangle with no altitude above it is a sliver.
-    pub fn least_probe(&self) -> f64 { 2.*self.vertex_tolerance() }
+    /// The least distance the certificate halves its probe to, for thin material.
+    /// Defaults to twice the vertex tolerance; it can be calibrated independently.
+    pub fn least_probe(&self) -> f64 { self.minimum_probe_distance.unwrap_or(2.*self.vertex_tolerance()) }
     /// How far along its direction a vertex is searched for the boundary before it is judged
     /// inner or off the material.
     pub fn reach(&self) -> f64 { self.sagitta }
     /// Field-value refinement width, not a spatial proximity guarantee.
-    pub fn judge_tolerance(&self) -> f64 { self.vertex_tolerance()/2. }
+    pub fn judge_tolerance(&self) -> f64 { self.field_value_tolerance.unwrap_or(self.vertex_tolerance()/2.) }
     /// How near a column point or a crossing must come to a vertex of the tool's mesh to be it.
     pub fn snap(&self) -> f64 { self.vertex_tolerance() }
     /// How far apart two rims' vertices on one crease may be to be merged, and how near a rim

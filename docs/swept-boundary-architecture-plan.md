@@ -67,9 +67,10 @@ in the original diagnosis below.
 The revised sequence is: validator calibration and reporting → independent cylinder oracle →
 bounded provenance repair and refreshed measurements → region selection from measured failures →
 one shared-boundary experiment → incremental recovery of successful sweeps. Existing phase
-numbers are retained; Phase 0a, Phase 1 and Phase 1a are implemented. Phase 2 now has an
-successful explicit-chart experiment. Phase 3 begins with the missing tracer-to-chart
-connection; its ordinary cylinder acceptance test is still deferred.
+numbers are retained; Phase 0a, Phase 1 and Phase 1a are implemented. Phase 2 now has a
+successful explicit-chart experiment. Phase 3 has begun with retained source coordinates and
+candidate chart evaluators; global trim arrangement and ordinary cylinder acceptance remain.
+See [Phase 3 progress](swept-boundary-phase-three.md).
 
 ## Evidence and scope of this review
 
@@ -548,10 +549,21 @@ the new backend, and retain the default refusal and probe-factor controls as dia
 
 ### Phase 3 — complete this cylinder, then test generality
 
-First restore the evaluable source-chart connection described above, and reproduce the accepted
-Phase 2 cylinder through the ordinary Solvent sweep path. The explicit test adapter is not a
-production geometry recognizer. The Phase 2 calibration provides a working validation setting;
-this task does not require another validator rewrite before starting source-chart integration.
+**Source-connection milestone implemented:** [Phase 3 progress](swept-boundary-phase-three.md)
+records native face/edge/crease coordinates, local station branches and numerical event
+observations retained through ordinary tracing, with owned source evaluators. It also separates
+field-value refinement, minimum side probes and spatial audit options from construction
+vertex/trimming tolerances. The ordinary mesh construction is still the legacy path.
+
+**Next milestone:** resolve the candidate events and construct the globally visible native
+domain arrangement. Old proximity chains and normal-velocity band endpoints are observations,
+not established common trim curves. Then connect that arrangement to the shared tessellator
+and reproduce the accepted cylinder. Phase 3's cylinder exit gate is not yet met.
+
+Use the retained evaluable source charts to reproduce the accepted Phase 2 cylinder through
+the ordinary Solvent sweep path. The explicit test adapter is not a production geometry
+recognizer. The Phase 2 calibration provides a working validation setting; this task does not
+require another validator rewrite before constructing the domain arrangement.
 
 Extend the successful replacement mechanism to the remaining unsupported regions, including
 failures away from rims identified in the current report. The historical count of 160 such
@@ -661,7 +673,7 @@ finite budgets cannot resolve the obligation.
   counts after correctness holds; reuse spatial indexes and bounds before adding refinement.
 
 Phase 2 now demonstrates accepted shared-domain geometry against the corrected Phase 1a
-baseline. **Phase 3 should restore evaluable source-chart provenance and reproduce that result
-through the ordinary sweep path.** Preserve both the older alias/zip counterexamples and the
+baseline. **Phase 3 now retains evaluable source-chart provenance; its next step is global
+trim arrangement and reproduction of that result through the ordinary sweep path.** Preserve both the older alias/zip counterexamples and the
 new compressed-chart counterexample. The explicit fixture adapter and its calibrated settings
 do not establish general sweeps or hypoid exports.

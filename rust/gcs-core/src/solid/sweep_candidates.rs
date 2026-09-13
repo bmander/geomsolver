@@ -13,6 +13,10 @@
 use super::{SweepContacts,ToolFace,ToolEdge,tool_faces::Crease};
 use crate::{envelope::{self,Motion},plane};
 
+pub mod source;
+use source::{Source,SourcePoint,Observation,Chart,Event,Provenance};
+use std::sync::Arc;
+
 type V3 = [f64;3];
 use crate::space::{distance,norm,segment_distance,sub};
 
@@ -26,17 +30,20 @@ pub struct Characteristic {
     pub normals: Vec<V3>,
     pub closed: bool,
     pub joints: Vec<usize>,
+    /// Original native coordinates, including both consumers at a chained joint.
+    /// These are candidate observations, not a proof that the joint is shared.
+    pub sources: Vec<Vec<Observation>>,
 }
 
 impl Characteristic {
-    fn open(points: Vec<V3>,normals: Vec<V3>) -> Self { Self {points,normals,closed:false,joints:Vec::new()} }
+    fn open(points: Vec<V3>,normals: Vec<V3>) -> Self { Self {sources:vec![Vec::new();points.len()],points,normals,closed:false,joints:Vec::new()} }
 
     /// The same curve run the other way.
     fn reversed(&self) -> Self {
         let n = self.points.len();
         let mut joints: Vec<usize> = self.joints.iter().map(|&j| n-1-j).collect();
         joints.sort();
-        Self {points:self.points.iter().rev().copied().collect(),normals:self.normals.iter().rev().copied().collect(),closed:self.closed,joints}
+        Self {points:self.points.iter().rev().copied().collect(),normals:self.normals.iter().rev().copied().collect(),closed:self.closed,joints,sources:self.sources.iter().rev().cloned().collect()}
     }
 
     /// A closed curve started `k` points on.
@@ -45,7 +52,7 @@ impl Characteristic {
         let mut joints: Vec<usize> = self.joints.iter().map(|&j| (j+n-k)%n).collect();
         joints.sort();
         let mut c = self.clone();
-        c.points.rotate_left(k); c.normals.rotate_left(k); c.joints = joints;
+        c.points.rotate_left(k); c.normals.rotate_left(k); c.sources.rotate_left(k); c.joints = joints;
         c
     }
 
@@ -83,8 +90,25 @@ struct Signs { signs: Vec<f64>, shadows: Vec<Vec<usize>>, edge_points: Vec<Vec<O
 #[derive(Clone,Copy)]
 struct EdgePoint { position: V3, normals: [V3;2] }
 
-/// A station root in the tool's frame: `(v, position, outward normal)`.
-type Root = (f64,V3,V3);
+/// A root with its original chart coordinates, before polyline assembly.
+#[derive(Clone,Copy,Debug)]
+struct Root {
+    /// v on a face station, t on a tool edge.
+    parameter: f64,
+    position: V3,
+    normal: V3,
+    uv: [f64;2],
+    branch: Option<usize>,
+    event: Option<Event>,
+}
+impl Root {
+    fn face(u: f64,v: f64,position: V3,normal: V3,branch: Option<usize>) -> Self {
+        Self {parameter:v,position,normal,uv:[u,v],branch,event:None}
+    }
+    fn edge(t: f64,position: V3,normal: V3,event: Option<Event>) -> Self {
+        Self {parameter:t,position,normal,uv:[t,0.],branch:None,event}
+    }
+}
 
 /// A run of station roots at consecutive stations from `first`, with the
 /// exact points where it enters and leaves the contact set between stations.
@@ -92,11 +116,19 @@ type Root = (f64,V3,V3);
 struct Strand { roots: Vec<Root>, head: Option<Root>, tail: Option<Root> }
 
 impl Strand {
-    fn into_characteristic(self) -> Characteristic {
+    fn into_characteristic(self,source: Source) -> Characteristic {
         let mut points = Vec::with_capacity(self.roots.len()+2);
         let mut normals = Vec::with_capacity(self.roots.len()+2);
-        for (_,p,n) in self.head.iter().chain(&self.roots).chain(&self.tail) { points.push(*p); normals.push(*n); }
-        Characteristic::open(points,normals)
+        let mut sources = Vec::new();
+        for r in self.head.iter().chain(&self.roots).chain(&self.tail) {
+            points.push(r.position); normals.push(r.normal);
+            let chart = match source {
+                Source::Face(face) => r.branch.map(|branch| Chart::Station {face,branch}),
+                Source::Edge(i) => Some(Chart::Edge(i)),Source::Crease(i) => Some(Chart::Crease(i)),
+            };
+            sources.push(vec![Observation {point:SourcePoint {source,parameters:r.uv},chart,event:r.event}]);
+        }
+        Characteristic {points,normals,sources,closed:false,joints:Vec::new()}
     }
 }
 
@@ -112,6 +144,7 @@ pub struct SweepSheet {
     pub rows: usize,
     pub columns: usize,
     pub closed_rows: bool,
+    pub provenance: Provenance,
 }
 
 /// A candidate boundary sheet of a sweep whose twist varies, in the body's
@@ -128,6 +161,8 @@ pub struct SweepPatch {
     pub column: Vec<u32>,
     pub times: Vec<f64>,
     pub closed: bool,
+    /// Absent for legacy faceted caps/grazing regions and externally supplied meshes.
+    pub provenance: Option<Provenance>,
 }
 
 impl SweepPatch {
@@ -224,6 +259,7 @@ impl SweepContacts {
         if curves.is_empty() { return Err("the tool has no contact curve under its motion".into()); }
         let motion = self.motion();
         let mut sheets = Vec::with_capacity(curves.len());
+        let snapshot = Arc::new(self.clone());
         for curve in curves {
             let start = motion.at(from)?;
             let speed = curve.points.iter().map(|p| norm(start.velocity(*p))).fold(0_f64,f64::max).max(1e-9);
@@ -237,7 +273,9 @@ impl SweepContacts {
             for (p,n) in curve.points.iter().zip(&curve.normals) {
                 for pose in &poses { points.push(pose.point(*p)); normals.push(pose.vector(*n)); }
             }
-            sheets.push(SweepSheet {points,normals,times,rows:curve.points.len(),columns,closed_rows:curve.closed});
+            let samples = curve.sources.iter().flat_map(|s| times.iter().map(move |&t| (t,s.clone()))).collect();
+            let provenance = Provenance::new(snapshot.clone(),samples);
+            sheets.push(SweepSheet {points,normals,times,rows:curve.points.len(),columns,closed_rows:curve.closed,provenance});
         }
         Ok(sheets)
     }
@@ -292,7 +330,7 @@ impl SweepContacts {
         let pose = self.motion.at(t)?;
         let mut out = Vec::new();
         for (index,face) in self.faces.iter().enumerate() {
-            for c in self.contact_curves(face,signs.signs[index],&signs.shadows[index],pose,tolerance,scale)? { out.push((format!("face {index}"),c)); }
+            for c in self.contact_curves(face,signs.signs[index],&signs.shadows[index],pose,tolerance,scale,index)? { out.push((format!("face {index}"),c)); }
         }
         for (i,edge) in self.edges.iter().enumerate() {
             for c in self.edge_curves(EdgeRef::Charted(edge),i,&signs,pose,tolerance,scale)? { out.push((format!("edge {:?}",edge.faces),c)); }
@@ -306,7 +344,7 @@ impl SweepContacts {
     fn characteristics_at(&self,pose: Motion,signs: &Signs,tolerance: f64,scale: f64) -> Result<Vec<Characteristic>,String> {
         let mut pieces: Vec<Characteristic> = Vec::new();
         for (index,face) in self.faces.iter().enumerate() {
-            pieces.extend(self.contact_curves(face,signs.signs[index],&signs.shadows[index],pose,tolerance,scale)?);
+            pieces.extend(self.contact_curves(face,signs.signs[index],&signs.shadows[index],pose,tolerance,scale,index)?);
         }
         for (i,edge) in self.edges.iter().enumerate() {
             pieces.extend(self.edge_curves(EdgeRef::Charted(edge),i,signs,pose,tolerance,scale)?);
@@ -404,14 +442,14 @@ impl SweepContacts {
                         Err(e) => return Err(format!("station {u}: {e:?}")),
                     };
                     if amplitude > tolerance {
-                        for (_,v) in roots {
+                        for (branch,v) in roots {
                             if !face.contains(u,v) { continue; }
                             let s = face.at(u,v).map_err(|e| format!("station {u} root {v}: {e:?}"))?;
                             let contact = envelope::contact(s,motion).map_err(|e| format!("station {u} root {v} contact: {e:?}"))?;
                             if contact.normal_velocity.abs() > tolerance { return Err("a station root did not converge".into()); }
                             let (p,n) = face.normal(u,v,sign).map_err(|e| format!("station {u} root {v} normal: {e:?}"))?;
                             if self.off_face(shadows,p,scale)? { continue; }
-                            row.push((v,p,n));
+                            row.push(Root::face(u,v,p,n,Some(branch)));
                         }
                     }
                 }
@@ -436,12 +474,12 @@ impl SweepContacts {
         let root_near = |u: f64,near_v: f64| -> Result<Option<Root>,String> {
             let Ok(equation) = face.station(u,motion) else { return Ok(None); };
             let Ok(roots) = equation.roots(tolerance) else { return Ok(None); };
-            let Some(&(_,v)) = roots.iter().filter(|(_,v)| face.contains(u,*v))
+            let Some(&(branch,v)) = roots.iter().filter(|(_,v)| face.contains(u,*v))
                 .min_by(|a,b| angle_gap(a.1,near_v).total_cmp(&angle_gap(b.1,near_v))) else { return Ok(None); };
             if angle_gap(v,near_v) >= 0.02 { return Ok(None); }
             let (p,n) = face.normal(u,v,sign).map_err(|e| format!("{e:?}"))?;
             if self.off_face(shadows,p,scale)? { return Ok(None); }
-            Ok(Some((v,p,n)))
+            Ok(Some(Root::face(u,v,p,n,Some(branch))))
         };
         // The march from a root at `from` toward `to`: the last root reached,
         // its parameter, whether `to` was reached, and the parameter just past
@@ -452,7 +490,7 @@ impl SweepContacts {
             for _ in 0..200 {
                 if step.abs() < 1e-13 { break; }
                 let next = if (to-from) > 0. { (u+step).min(to) } else { (u+step).max(to) };
-                match root_near(next,current.0)? {
+                match root_near(next,current.parameter)? {
                     Some(r) => { u = next; current = r; if u == to { return Ok(March {root:current,u,reached:true,lost:to}); } }
                     None => { lost = next; step *= 0.5; }
                 }
@@ -473,14 +511,15 @@ impl SweepContacts {
                 match margin(mid) { Some(x) if x > 0. => f_lo = mid,Some(_) => f_hi = mid,None => break }
             }
             let u = 0.5*(f_lo+f_hi);
-            let Some(v) = face.station(u,motion).ok().and_then(|e| e.fold(m.root.0)) else { return Ok(None) };
+            let Some(v) = face.station(u,motion).ok().and_then(|e| e.fold(m.root.parameter)) else { return Ok(None) };
             if !face.contains(u,v) { return Ok(None); }
             let Ok((p,n)) = face.normal(u,v,sign) else { return Ok(None) };
-            Ok(if self.off_face(shadows,p,scale)? { None } else { Some((v,p,n)) })
+            Ok(if self.off_face(shadows,p,scale)? { None } else { Some(Root {event:Some(Event::Fold),..Root::face(u,v,p,n,None)}) })
         };
         let end = |m: &March| -> Result<Option<Root>,String> {
             if let Some(r) = fold_end(m)? { return Ok(Some(r)); }
-            Ok(Some(m.root))
+            let mut root = m.root; root.event = Some(Event::ContinuationLimit);
+            Ok(Some(root))
         };
         let station_u = |i: usize| i as f64/STATIONS as f64;
         let mut done: Vec<Strand> = Vec::new();
@@ -492,12 +531,12 @@ impl SweepContacts {
                 let last = *strand.roots.last().unwrap();
                 let m = march(station_u(i-1),station_u(i),last)?;
                 let landed = if m.reached { row.iter().enumerate().filter(|(j,_)| !used[*j])
-                    .min_by(|a,b| angle_gap(a.1.0,m.root.0).total_cmp(&angle_gap(b.1.0,m.root.0)))
-                    .filter(|(_,r)| angle_gap(r.0,m.root.0) < 1e-6).map(|(j,_)| j) } else { None };
+                    .min_by(|a,b| angle_gap(a.1.parameter,m.root.parameter).total_cmp(&angle_gap(b.1.parameter,m.root.parameter)))
+                    .filter(|(_,r)| angle_gap(r.parameter,m.root.parameter) < 1e-6).map(|(j,_)| j) } else { None };
                 match landed {
                     Some(j) => { used[j] = true; strand.roots.push(row[j]); next.push(strand); }
                     None => {
-                        if let Some(r) = end(&m)? { if distance(r.1,last.1) > scale*1e-12 { strand.tail = Some(r); } }
+                        if let Some(r) = end(&m)? { if distance(r.position,last.position) > scale*1e-12 { strand.tail = Some(r); } }
                         done.push(strand);
                     }
                 }
@@ -507,7 +546,7 @@ impl SweepContacts {
                 let mut strand = Strand {roots:vec![root],head:None,tail:None};
                 if i > 0 {
                     let m = march(station_u(i),station_u(i-1),root)?;
-                    if let Some(r) = end(&m)? { if distance(r.1,root.1) > scale*1e-12 { strand.head = Some(r); } }
+                    if let Some(r) = end(&m)? { if distance(r.position,root.position) > scale*1e-12 { strand.head = Some(r); } }
                 }
                 next.push(strand);
             }
@@ -519,18 +558,18 @@ impl SweepContacts {
 
     /// The contact curves on one face under `motion`: its strands, stationary
     /// stations as whole rings, and poles joined.
-    fn contact_curves(&self,face: &ToolFace,sign: f64,shadows: &[usize],motion: Motion,tolerance: f64,scale: f64)
+    fn contact_curves(&self,face: &ToolFace,sign: f64,shadows: &[usize],motion: Motion,tolerance: f64,scale: f64,index: usize)
         -> Result<Vec<Characteristic>,String> {
         let mut pieces: Vec<Characteristic> = Vec::new();
         let [_,v_domain] = face.domain();
         let ring = |u: f64| -> Result<Characteristic,String> {
-            let mut points = Vec::new(); let mut normals = Vec::new();
+            let mut points = Vec::new(); let mut normals = Vec::new(); let mut sources = Vec::new();
             for j in 0..4*STATIONS {
                 let v = v_domain[0]+(v_domain[1]-v_domain[0])*j as f64/(4*STATIONS) as f64;
                 let (p,n) = face.normal(u,v,sign).map_err(|e| format!("{e:?}"))?;
-                points.push(p); normals.push(n);
+                points.push(p); normals.push(n); sources.push(vec![Observation {point:SourcePoint {source:Source::Face(index),parameters:[u,v]},chart:Some(Chart::Stationary {face:index,u}),event:None}]);
             }
-            Ok(Characteristic {points,normals,closed:true,joints:Vec::new()})
+            Ok(Characteristic {points,normals,sources,closed:true,joints:Vec::new()})
         };
         // With zero amplitude the station's equation is a constant: the whole
         // station is in contact where that constant vanishes. A station with no
@@ -571,7 +610,7 @@ impl SweepContacts {
         }
         let rows = self.station_rows(face,sign,shadows,motion,tolerance,scale)?;
         let mut strands: Vec<Characteristic> = self.station_strands(face,sign,shadows,motion,tolerance,scale,rows)?
-            .into_iter().map(Strand::into_characteristic).collect();
+            .into_iter().map(|s| s.into_characteristic(Source::Face(index))).collect();
         // A station on the axis is a pole where every branch meets; a strand
         // reaching the adjacent station is extended to it so the halves chain.
         for (end,neighbour) in [(0.,1./STATIONS as f64),(1.,1.-1./STATIONS as f64)] {
@@ -582,8 +621,8 @@ impl SweepContacts {
             for strand in strands.iter_mut().chain(pieces.iter_mut()) {
                 let first = strand.points[0]; let last = *strand.points.last().unwrap();
                 let near = |p: V3| distance(p,pole) < scale*0.05 && distance(p,pole) > scale*1e-9;
-                if near(last) { strand.points.push(pole); strand.normals.push(n); }
-                else if near(first) { strand.points.insert(0,pole); strand.normals.insert(0,n); }
+                if near(last) { strand.points.push(pole); strand.normals.push(n); strand.sources.push(vec![Observation {point:SourcePoint {source:Source::Face(index),parameters:[end,v_domain[0]]},chart:None,event:Some(Event::Pole)}]); }
+                else if near(first) { strand.points.insert(0,pole); strand.normals.insert(0,n); strand.sources.insert(0,vec![Observation {point:SourcePoint {source:Source::Face(index),parameters:[end,v_domain[0]]},chart:None,event:Some(Event::Pole)}]); }
             }
         }
         pieces.extend(strands);
@@ -641,7 +680,7 @@ impl SweepContacts {
                 if off { return Ok(None); }
                 t
             };
-            Ok(at(t)?.map(|p| (t,p.position,p.normals[k])))
+            Ok(at(t)?.map(|p| Root::edge(t,p.position,p.normals[k],Some(Event::NormalVelocityBand {face:edge.faces()[k]}))))
         };
         // Where a fan runs into a part of the edge that contributes nothing,
         // its boundary is bisected on that instead.
@@ -650,7 +689,7 @@ impl SweepContacts {
             for _ in 0..32 {
                 let mid = 0.5*(lo+hi);
                 match at(mid)? {
-                    Some(p) if in_fan(&p) => { found = Some((mid,p.position,fan_normal(&p))); lo = mid; }
+                    Some(p) if in_fan(&p) => { found = Some(Root::edge(mid,p.position,fan_normal(&p),Some(Event::EligibilityLimit))); lo = mid; }
                     _ => hi = mid,
                 }
             }
@@ -664,8 +703,8 @@ impl SweepContacts {
         // already meet) is nothing, and must not stand on their shared point.
         let close = |strand: &mut Option<Strand>,tail: Option<Root>,strands: &mut Vec<Strand>| {
             if let Some(mut s) = strand.take() {
-                if let Some(r) = tail { if s.roots.last().map_or(true,|last| distance(last.1,r.1) > scale*1e-12) { s.tail = Some(r); } }
-                let points: Vec<V3> = s.head.iter().chain(&s.roots).chain(&s.tail).map(|r| r.1).collect();
+                if let Some(r) = tail { if s.roots.last().map_or(true,|last| distance(last.position,r.position) > scale*1e-12) { s.tail = Some(r); } }
+                let points: Vec<V3> = s.head.iter().chain(&s.roots).chain(&s.tail).map(|r| r.position).collect();
                 let length: f64 = points.windows(2).map(|w| distance(w[0],w[1])).sum();
                 if points.len() >= 2 && length > scale*1e-9 { strands.push(s); }
             }
@@ -675,7 +714,7 @@ impl SweepContacts {
             match &points[i] {
                 Some(p) if in_fan(p) => {
                     let strand = current.get_or_insert_with(|| Strand {roots:Vec::new(),head:None,tail:None});
-                    strand.roots.push((t,p.position,fan_normal(p)));
+                    strand.roots.push(Root::edge(t,p.position,fan_normal(p),None));
                 }
                 Some(_) => close(&mut current,None,&mut strands),
                 None => close(&mut current,None,&mut strands),
@@ -693,7 +732,7 @@ impl SweepContacts {
                             if let Some(r) = root(k,t,t1,p.speeds[k],q.speeds[k])? { events.push(r); }
                         }
                     }
-                    events.sort_by(|x,y| x.0.total_cmp(&y.0));
+                    events.sort_by(|x,y| x.parameter.total_cmp(&y.parameter));
                     // The stretches between the events: each is in the fan or
                     // not as its midpoint says, and only one that is holds a
                     // strand. With both faces' velocities changing sign between
@@ -704,7 +743,7 @@ impl SweepContacts {
                     // that met the faces' strands in a junction of three.
                     if !events.is_empty() {
                         let mut bounds: Vec<(f64,Option<Root>)> = vec![(t,None)];
-                        bounds.extend(events.iter().map(|r| (r.0,Some(*r))));
+                        bounds.extend(events.iter().map(|r| (r.parameter,Some(*r))));
                         bounds.push((t1,None));
                         for w in bounds.windows(2) {
                             let ((ta,ra),(tb,rb)) = (w[0],w[1]);
@@ -733,7 +772,9 @@ impl SweepContacts {
 
     fn edge_curves(&self,edge: EdgeRef,index: usize,signs: &Signs,motion: Motion,tolerance: f64,scale: f64)
         -> Result<Vec<Characteristic>,String> {
-        Ok(self.edge_strands(edge,index,signs,motion,tolerance,scale)?.into_iter().map(Strand::into_characteristic).collect())
+        let source = match edge { EdgeRef::Charted(_) => Source::Edge(index),
+            EdgeRef::Crease(_) => Source::Crease(index-self.edges.len()) };
+        Ok(self.edge_strands(edge,index,signs,motion,tolerance,scale)?.into_iter().map(|s| s.into_characteristic(source)).collect())
     }
 
     /// The sheets of a sweep whose twist varies along the motion. At each of a
@@ -972,6 +1013,7 @@ impl SweepContacts {
             emitted.push((times,oriented,closed));
         }
         let mut sheets = Vec::new();
+        let snapshot = Arc::new(self.clone());
         for (times,oriented,closed) in emitted {
             // Each column thinned to what the sagitta needs, its joints and
             // ends kept: a straight contact line on a plane or a cone is its
@@ -992,7 +1034,9 @@ impl SweepContacts {
                     }
                 }
             }
-            sheets.push(SweepPatch {points,normals,triangles,column,times,closed});
+            let samples = times.iter().zip(&oriented).flat_map(|(&t,c)| c.sources.iter().map(move |s| (t,s.clone()))).collect();
+            let provenance = Some(Provenance::new(snapshot.clone(),samples));
+            sheets.push(SweepPatch {points,normals,triangles,column,times,closed,provenance});
         }
         // a tool with no contact curve under its motion (a sphere about its
         // own centre) sweeps only itself: no sheets, and the caps are its whole boundary
@@ -1006,12 +1050,12 @@ impl SweepContacts {
             let hidden: Vec<bool> = piece.points.iter().map(|p| self.hidden(*p,scale)).collect::<Result<_,_>>()?;
             if !hidden.iter().any(|h| *h) { trimmed.push(piece); continue; }
             let mut run: Option<Characteristic> = None;
-            for ((p,n),h) in piece.points.iter().zip(&piece.normals).zip(&hidden) {
+            for (i,((p,n),h)) in piece.points.iter().zip(&piece.normals).zip(&hidden).enumerate() {
                 if *h {
                     if let Some(r) = run.take() { if r.points.len() > 1 { trimmed.push(r); } }
                 } else {
                     run.get_or_insert_with(|| Characteristic::open(vec![],vec![]));
-                    let r = run.as_mut().unwrap(); r.points.push(*p); r.normals.push(*n);
+                    let r = run.as_mut().unwrap(); r.points.push(*p); r.normals.push(*n); r.sources.push(piece.sources[i].clone());
                 }
             }
             if let Some(r) = run { if r.points.len() > 1 { trimmed.push(r); } }
@@ -1137,7 +1181,7 @@ fn simplified(c: &Characteristic,sagitta: f64,longest: f64) -> Characteristic {
     let position = |i: usize| index.iter().position(|&k| k == i).unwrap();
     let mut joints: Vec<usize> = c.joints.iter().filter(|&&j| j < n && keep[j]).map(|&j| position(j)).collect();
     joints.dedup();
-    Characteristic {points:index.iter().map(|&i| c.points[i]).collect(),normals:index.iter().map(|&i| c.normals[i]).collect(),closed:c.closed,joints}
+    Characteristic {points:index.iter().map(|&i| c.points[i]).collect(),normals:index.iter().map(|&i| c.normals[i]).collect(),closed:c.closed,joints,sources:index.iter().map(|&i| c.sources[i].clone()).collect()}
 }
 
 /// The triangles between two consecutive curves of a strip, piece by piece:
@@ -1219,7 +1263,10 @@ fn chain(pieces: Vec<Characteristic>,tolerance: f64) -> Vec<Characteristic> {
             let tail = *current.points.last().unwrap();
             let head = current.points[0];
             if current.points.len() > 2 && distance(tail,head) < tolerance && degree(tail) == 2 {
-                current.points.pop(); current.normals.pop(); current.closed = true;
+                current.points.pop(); current.normals.pop();
+                let tail = current.sources.pop().unwrap();
+                for s in tail { if !current.sources[0].contains(&s) { current.sources[0].push(s); } }
+                current.closed = true;
                 current.joints.retain(|&j| j < current.points.len()); break;
             }
             // `a` then `b`, joined at a's last point, which is a joint
@@ -1229,7 +1276,10 @@ fn chain(pieces: Vec<Characteristic>,tolerance: f64) -> Vec<Characteristic> {
                 joints.extend(b.joints.iter().map(|&j| j+n-1));
                 let mut points = a.points; points.extend(b.points.into_iter().skip(1));
                 let mut normals = a.normals; normals.extend(b.normals.into_iter().skip(1));
-                Characteristic {points,normals,closed:false,joints}
+                let mut sources = a.sources; let mut other = b.sources.into_iter();
+                for s in other.next().unwrap() { if !sources[n-1].contains(&s) { sources[n-1].push(s); } }
+                sources.extend(other);
+                Characteristic {points,normals,sources,closed:false,joints}
             };
             let mut joined = false;
             for i in 0..pieces.len() {

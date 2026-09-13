@@ -1,9 +1,15 @@
 # The certified swept boundary
 
+**Latest implementation:** [Phase 3 source connection](swept-boundary-phase-three.md) retains
+native source coordinates and evaluable candidate charts through tracing, and separates
+validation controls from construction tolerances. Global trim arrangement and integration of
+the shared tessellator remain; the ordinary cylinder candidate geometry is still the baseline.
+
 **Latest experiment:** [Phase 2](swept-boundary-phase-two.md) adds shared parametric domains,
 common edge samples and an explicit cylinder source-chart adapter. The cylinder and three
 perturbations pass full interval acceptance at tolerance 0.04 with calibrated value/probe
-settings. The ordinary sweep path is unchanged; Phase 3 must restore its tracer-chart connection.
+settings. Phase 3 now retains the tracer-chart connection; its global arrangement and ordinary
+accepted-cylinder integration are outstanding.
 
 **Latest baseline:** [Phase 1a](swept-boundary-phase-one-a.md) repairs source ownership and
 records the corrected candidate and replay inputs for Phase 2. Earlier counts below are historical.

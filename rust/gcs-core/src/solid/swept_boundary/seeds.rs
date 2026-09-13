@@ -55,7 +55,7 @@ pub fn grazing_seeds(faces: &[GrazingFace],times: &[f64],roll: [f64;2],sagitta: 
             points:region.points.iter().map(|p| face.lift(*p)).collect(),
             normals:vec![face.outward;region.points.len()],
             triangles:region.triangles.iter().map(|t| if flip { [t[0],t[2],t[1]] } else { *t }).collect(),
-            column:region.row.clone(),times:vec![from,to],closed:false,
+            column:region.row.clone(),times:vec![from,to],closed:false,provenance:None,
         };
         out.push(Grazing {face:face.clone(),patch,rim:region.rim});
     }

@@ -196,7 +196,7 @@ fn the_pinion_cutters_sheets_are_judged() {
     let (points,normals) = cutter_contacts(&e,swept,6,sample/6);
     let field = MaterialField::read(&e.sketch,swept,1e-10).unwrap();
     let mut judge = FieldJudge::new(field,EPSILON/2.,4000,1000,4096);
-    let patch = SweepPatch {points:points.clone(),normals:normals.clone(),triangles:Vec::new(),column:vec![0;points.len()],times:vec![0.],closed:false};
+    let patch = SweepPatch {points:points.clone(),normals:normals.clone(),triangles:Vec::new(),column:vec![0;points.len()],times:vec![0.],closed:false,provenance:None};
     let started = std::time::Instant::now();
     let l = gcs_core::solid::swept_boundary::label_patch(&mut judge,&patch,&normals,EPSILON,REACH).unwrap();
     report(&format!("pinion cutter ({} contact points)",points.len()),&[patch],&[l],&judge,started.elapsed(),&Sampler::new(&e,swept));
