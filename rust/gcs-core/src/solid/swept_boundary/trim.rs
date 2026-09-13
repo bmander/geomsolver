@@ -50,26 +50,19 @@ pub fn kept_triangles(sheets: &[SweepPatch],labelled: &[Labelled]) -> KeptMesh {
 /// Whether the boundary passes through the span a loop would be closed across.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub enum Span {
-    /// Every part of the span has the boundary running through it: the loop is a hole in the
-    /// mesh, and filling it adds triangles the certificate will find on the boundary.
+    /// Every tested fan centroid found a spatial bracket. This proposes a fill;
+    /// it does not certify the whole fan or the mesh that a caller actually lays.
     Spanned,
-    /// Somewhere across the span there is no boundary at all — material or exterior both ways as
-    /// far as the judge looked. A band laid there would be uncertified surface invented to close
-    /// a seam, which is the one thing the construction must not do.
+    /// A sampled search found no opposed witnesses across the proposed span.
+    /// This declines the fill; it does not prove absence of intervening boundary.
     Open { at: V3 },
     /// The field gave no sign there at the full budget. Never rounded either way.
     Unresolved { at: V3 },
 }
 
-/// Ask the field whether a boundary loop is a hole worth filling. The loop is fanned from its own
-/// centroid and each fan triangle's centre projected along the outward normal of the mesh triangle
-/// that owns the loop edge it stands on: where the field brackets the boundary about that point
-/// the surface really does run there, and where it reads material or exterior both ways it does
-/// not. Every part must span, because every triangle the fill lays is certified afterwards and one
-/// laid across open air fails — so a loop is closeable only if the whole of it is `Spanned`.
-///
-/// Takes the loop's points and per-edge normals rather than the mesh, so the caller may hold the
-/// mesh mutably while asking.
+/// A candidate-fill heuristic: project each fan centroid along its owner normal.
+/// The caller must validate the actual emitted patch separately. A moved bracket
+/// or a finite set of successful probes is not a whole-surface certificate.
 pub fn loop_span(judge: &mut super::judge::FieldJudge,points: &[V3],normals: &[V3],epsilon: f64,reach: f64)
     -> Result<Span,super::judge::JudgeError> {
     use super::judge::Projection;

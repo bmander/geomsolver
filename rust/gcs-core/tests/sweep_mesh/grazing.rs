@@ -331,7 +331,7 @@ fn what_the_field_yields_in_an_unpaired_loops_own_box() {
 /// What a case's construction comes to, for a case that does not close yet.
 fn outcome(source: &str) -> String {
     match super::closed::shell_at(source,0.02) {
-        (mesh,Ok(c)) => format!("{} triangles, {} certified, {} thin, {} failed",mesh.triangles.len(),c.certified,c.thin.len(),c.failures.len()),
+        (mesh,Ok(c)) => format!("{} triangles, {} certified, {} thin, {} failed",mesh.triangles.len(),c.certified,c.unresolved.len(),c.failures.len()),
         (mesh,Err(e)) => format!("{} triangles, refused {e:?}",mesh.triangles.len()),
     }
 }

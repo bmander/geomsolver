@@ -58,6 +58,7 @@ pub(super) fn run(case: &Case) {
 macro_rules! sweep_cases {
     ($($test:ident: $case:expr;)*) => { $(
         #[test]
+        #[ignore = "Phase 0: historical acceptance target; active refusal coverage is in status.rs"]
         fn $test() { run(&$case); }
     )* };
 }

@@ -37,14 +37,73 @@ pub enum Stage<'a> {
     Certified { mesh: &'a KeptMesh, certificate: &'a Certificate },
 }
 
-/// A finished construction: the mesh, its certificate, and what the judge asked of the field.
-pub struct SweptBoundary { pub mesh: KeptMesh, pub certificate: Certificate, pub stats: QueryStats }
+/// Inspectable construction output. A candidate makes no surface-acceptance claim.
+/// The report is available even with open rims or failed/unknown centroid checks.
+pub struct BoundaryCandidate {
+    pub mesh: KeptMesh,
+    pub certificate: Certificate,
+    pub stats: QueryStats,
+    pub unpaired: Vec<Vec<u32>>,
+    pub topology: Result<crate::topology::ClosedShell,crate::topology::Error>,
+    field: MaterialField,
+}
+
+/// Immutable accepted single shell for one material snapshot. The spatial audit
+/// bounds both distance directions; it does not establish isotopy, geometric
+/// embedding, source-solve error or the accuracy of a later STL encoding.
+#[derive(Debug)]
+pub struct SweptBoundary {
+    mesh: KeptMesh,
+    certificate: Certificate,
+    shell: crate::topology::ClosedShell,
+    spatial: super::SpatialAudit,
+    stats: QueryStats,
+}
+impl SweptBoundary {
+    pub fn mesh(&self) -> &KeptMesh { &self.mesh }
+    pub fn certificate(&self) -> &Certificate { &self.certificate }
+    pub fn shell(&self) -> &crate::topology::ClosedShell { &self.shell }
+    pub fn spatial(&self) -> &super::SpatialAudit { &self.spatial }
+    /// Field work performed by acceptance; construction has its own candidate stats.
+    pub fn stats(&self) -> &QueryStats { &self.stats }
+}
+
+impl BoundaryCandidate {
+    /// Revalidate the actual candidate, since callers may have edited its mesh or
+    /// report. Only fresh evidence can create an accepted result.
+    pub fn accept(&self,options: &SweptBoundaryOptions,audit: super::AuditOptions) -> Result<SweptBoundary,ConstructError> {
+        validate(self.field.clone(),self.mesh.clone(),options,audit)
+    }
+}
+
+/// Validate a proposed mesh without trusting caller-supplied labels or reports.
+pub fn validate(field: MaterialField,mesh: KeptMesh,options: &SweptBoundaryOptions,audit: super::AuditOptions)
+    -> Result<SweptBoundary,ConstructError> {
+    if mesh.vertices.iter().flatten().any(|x| !x.is_finite())
+        || mesh.triangles.iter().flatten().any(|&i| i as usize >= mesh.vertices.len())
+        || mesh.sheet.len() != mesh.triangles.len() { return Err(ConstructError::InvalidMesh); }
+    let mesh = mesh.compact();
+    // Range checks precede compaction; topology then checks the complete vertex links.
+    let triangles: Vec<_> = mesh.triangles.iter().map(|t| t.map(|i| i as usize)).collect();
+    let shell = crate::topology::ClosedShell::from_triangles(mesh.vertices.len(),&triangles).map_err(ConstructError::Topology)?;
+    let mut judge = FieldJudge::new(field.clone(),options.judge_tolerance(),options.near_budget,options.far_budget,options.cached_poses);
+    let certificate = super::certify(&mut judge,&mesh.vertices,&mesh.triangles,options.probe_distance(),options.least_probe())?;
+    if !certificate.is_complete() {
+        return Err(ConstructError::Certificate {failed:certificate.failures.len(),unresolved:certificate.unresolved.len()});
+    }
+    let spatial = super::audit::audit(&field,&mut judge,&mesh,audit).map_err(ConstructError::Spatial)?;
+    Ok(SweptBoundary {mesh,certificate,shell,spatial,stats:judge.stats})
+}
 
 /// Why a construction stopped.
 #[derive(Clone,Debug,PartialEq)]
 pub enum ConstructError {
     /// The tracer declined.
     Seeds(String),
+    InvalidMesh,
+    Topology(crate::topology::Error),
+    Certificate { failed: usize, unresolved: usize },
+    Spatial(super::AuditError),
     /// A cap could not be cut from the tool.
     Caps(String),
     /// A grazing face's region could not be swept.
@@ -53,8 +112,6 @@ pub enum ConstructError {
     Field(String),
     /// The field refused a judgement.
     Judge(JudgeError),
-    /// Boundary loops no zip could close (their vertex counts): the shell is open there.
-    UnpairedRim { loops: Vec<usize> },
 }
 
 impl From<JudgeError> for ConstructError { fn from(e: JudgeError) -> Self { ConstructError::Judge(e) } }
@@ -63,14 +120,27 @@ impl From<JudgeError> for ConstructError { fn from(e: JudgeError) -> Self { Cons
 /// the tracer, and `observe` each stage as it finishes.
 pub fn construct(sk: &Sketch,swept: usize,options: &SweptBoundaryOptions,progress: &dyn Fn(&str),
     observe: &mut dyn FnMut(Stage<'_>,&QueryStats)) -> Result<SweptBoundary,ConstructError> {
-    let (_,sheets,_) = super::seeds(sk,swept,options.spacing,options.sagitta,progress).map_err(ConstructError::Seeds)?;
-    construct_from(sk,swept,options,sheets,observe)
+    let candidate = candidate(sk,swept,options,progress,observe)?;
+    candidate.accept(options,options.audit())
 }
 
 /// `construct` from sheets already traced (the tracer's, or a test's own: moved, thinned,
 /// one withheld), from the caps on.
 pub fn construct_from(sk: &Sketch,swept: usize,options: &SweptBoundaryOptions,sheets: Vec<SweepPatch>,
     observe: &mut dyn FnMut(Stage<'_>,&QueryStats)) -> Result<SweptBoundary,ConstructError> {
+    let candidate = candidate_from(sk,swept,options,sheets,observe)?;
+    candidate.accept(options,options.audit())
+}
+
+/// Build an inspectable candidate without claiming surface acceptance.
+pub fn candidate(sk: &Sketch,swept: usize,options: &SweptBoundaryOptions,progress: &dyn Fn(&str),
+    observe: &mut dyn FnMut(Stage<'_>,&QueryStats)) -> Result<BoundaryCandidate,ConstructError> {
+    let (_,sheets,_) = super::seeds(sk,swept,options.spacing,options.sagitta,progress).map_err(ConstructError::Seeds)?;
+    candidate_from(sk,swept,options,sheets,observe)
+}
+
+pub fn candidate_from(sk: &Sketch,swept: usize,options: &SweptBoundaryOptions,sheets: Vec<SweepPatch>,
+    observe: &mut dyn FnMut(Stage<'_>,&QueryStats)) -> Result<BoundaryCandidate,ConstructError> {
     let none = QueryStats::default();
     observe(Stage::Seeded {sheets:&sheets},&none);
     // the faces the motion carries within their own planes, which the tracer leaves alone
@@ -88,7 +158,7 @@ pub fn construct_from(sk: &Sketch,swept: usize,options: &SweptBoundaryOptions,sh
     seeds.extend(caps.into_iter().map(Seed::Cap));
     seeds.extend(regions.into_iter().map(Seed::Grazing));
     let field = MaterialField::read(sk,swept,options.axis_tolerance()).map_err(ConstructError::Field)?;
-    let mut judge = FieldJudge::new(field,options.judge_tolerance(),options.near_budget,options.far_budget,options.cached_poses);
+    let mut judge = FieldJudge::new(field.clone(),options.judge_tolerance(),options.near_budget,options.far_budget,options.cached_poses);
     let (epsilon,reach) = (options.vertex_tolerance(),options.reach());
     let labelled = super::label_seeds(&mut judge,&seeds,epsilon,reach)?;
     observe(Stage::Labelled {seeds:&seeds,labelled:&labelled},&judge.stats);
@@ -119,8 +189,10 @@ pub fn construct_from(sk: &Sketch,swept: usize,options: &SweptBoundaryOptions,sh
     };
     let (pairs,unpaired) = super::rim_zip(&mut mesh,options.spacing,options.junction(),least,&mut closeable);
     observe(Stage::Zipped {mesh:&mesh,pairs,unpaired:&unpaired},&judge.stats);
-    if !unpaired.is_empty() { return Err(ConstructError::UnpairedRim {loops:unpaired.iter().map(Vec::len).collect()}); }
     let certificate = super::certify(&mut judge,&mesh.vertices,&mesh.triangles,probe,least)?;
     observe(Stage::Certified {mesh:&mesh,certificate:&certificate},&judge.stats);
-    Ok(SweptBoundary {mesh,certificate,stats:judge.stats})
+    let compact = mesh.compact();
+    let triangles: Vec<_> = compact.triangles.iter().map(|t| t.map(|v| v as usize)).collect();
+    let topology = crate::topology::ClosedShell::from_triangles(compact.vertices.len(),&triangles);
+    Ok(BoundaryCandidate {mesh,certificate,stats:judge.stats,unpaired,topology,field})
 }

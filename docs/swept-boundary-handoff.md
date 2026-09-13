@@ -1,5 +1,9 @@
 # Handoff: the certified swept boundary, milestone 5 (2026-09-12)
 
+**Historical handoff.** The [Phase 0 record](swept-boundary-phase-zero.md) now contains the
+current evidence contract and status matrix. The seven-loop numbers below describe the
+pre-Phase-0 construction, and its certificate was not a sound acceptance gate.
+
 Read this before touching `solid/swept_boundary`. `docs/swept-boundary.md` is the full running
 record; this is the short version plus the traps.
 

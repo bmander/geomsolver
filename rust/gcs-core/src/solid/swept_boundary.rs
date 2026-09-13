@@ -10,6 +10,8 @@
 //! which needs no gradient. And the contract gives no gradient, so no distance
 //! is ever read off a value's magnitude, and an enclosure containing zero is
 //! never a sign. See `docs/swept-boundary.md`.
+pub mod audit;
+pub use audit::{AuditOptions,AuditError,SpatialAudit,SurfaceWitness,CoverageWitness};
 pub mod adjacency;
 pub mod judge;
 pub mod seeds;
@@ -26,13 +28,13 @@ pub mod hygiene;
 pub mod window;
 
 pub use caps::{Cap,CapComponent,CutMesh,End,Origin,caps};
-pub use construct::{ConstructError,Stage,SweptBoundary,construct,construct_from};
+pub use construct::{BoundaryCandidate,ConstructError,Stage,SweptBoundary,candidate,candidate_from,construct,construct_from,validate};
 pub use crate::space::{Region,altitude,closest_on_triangle};
 pub use certify::{Certificate,Failure,certify,triangle_normal};
 pub use crease::{Rim,chains,clip_sheets,merge_creases};
 pub use planar::planar_union;
 pub use stitch::{collapse_needles,collapse_short_edges,dedupe,drop_doubled_slivers,rim_zip,split_at_vertices,split_where,unpinch,weld,weld_boundary_ends,zip_loops};
-pub use judge::{FieldJudge,JudgeError,Projection,QueryStats,Sign};
+pub use judge::{BoundaryBracket,FieldJudge,JudgeError,Projection,QueryStats,Sign};
 pub use project::{Label,Labelled,directions,label_patch,label_seeds,label_sheets,orientation};
 pub use seeds::{Grazing,Seed,grazing_seeds,seeds};
 pub use grazing::{GrazingFace,PlaneMotion,grazing_faces,swept_region};
@@ -69,6 +71,8 @@ impl Default for SweptBoundaryOptions {
 
 /// Every tolerance of the construction, derived here and only here.
 impl SweptBoundaryOptions {
+    /// Spatial acceptance is deliberately bounded; exhausted coverage remains a refusal.
+    pub fn audit(&self) -> AuditOptions { AuditOptions {tolerance:self.probe_distance(),max_cells:100000,max_depth:24} }
     /// How far a judged vertex may be from the boundary.
     pub fn vertex_tolerance(&self) -> f64 { self.vertex_tolerance.unwrap_or(self.sagitta/4.) }
     /// How far inside and outside every triangle the certificate asks the field to agree.
@@ -79,8 +83,7 @@ impl SweptBoundaryOptions {
     /// How far along its direction a vertex is searched for the boundary before it is judged
     /// inner or off the material.
     pub fn reach(&self) -> f64 { self.sagitta }
-    /// The value width a near query resolves to: half the vertex tolerance, so a point that far
-    /// from the boundary reads strictly.
+    /// Field-value refinement width, not a spatial proximity guarantee.
     pub fn judge_tolerance(&self) -> f64 { self.vertex_tolerance()/2. }
     /// How near a column point or a crossing must come to a vertex of the tool's mesh to be it.
     pub fn snap(&self) -> f64 { self.vertex_tolerance() }

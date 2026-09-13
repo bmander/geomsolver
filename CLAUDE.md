@@ -279,6 +279,13 @@ is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, 
 placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
 `SpatialField::value` for what may be judged in plain floating point: a face point on
 the boundary, a probe's side, never an interval claim.
+**Swept boundary Phase 0:** [docs/swept-boundary-phase-zero.md](docs/swept-boundary-phase-zero.md)
+is the current field/evidence contract and status. `candidate` returns inspectable unaccepted
+geometry; `construct`/`validate` require strict sample evidence, checked topology and bounded
+whole-surface/reverse-coverage evidence. `Near` bounds a value only. Historical milestone
+acceptance assertions below do not override these gates. The tests in `sweep_mesh/status.rs`
+record newly exposed refusals; the old success targets remain explicitly deferred.
+
 **The certified swept boundary (2026-09-10, project 1 of two prerequisites):** the hypoid
 pinion at 15° to 45° showed the mesh arrangement passing its recorded-volume and STL-shell
 gates while a field probe (points 0.1 mm inside and outside every triangle) found 19% to
@@ -286,10 +293,10 @@ gates while a field probe (points 0.1 mm inside and outside every triangle) foun
 large project on a unit-test foundation: a solid as the spacetime sweep of any tool, then
 reliable meshes from Booleans. `solid/swept_boundary` is the first: a closed mesh of the
 swept material alone, every vertex and triangle judged by `SweptField`, the traced sheets
-only seeds. Two facts carry it: a strict sign change brackets the boundary, and a converged
-enclosure containing zero puts the boundary within its width (`Sign::Near`), the field being
-one-Lipschitz; nothing else is inferred, and an enclosure stopped by budget is `Unresolved`,
-never a sign. `FieldJudge` counts and times every query; `project` keeps a vertex on a
+only seeds. Strict opposed signs establish a spatial boundary bracket. The original claim
+that a converged zero-containing enclosure establishes proximity was false and is superseded
+by Phase 0: one-Lipschitz gives a lower distance bound, never that upper bound. Value convergence
+and query exhaustion both remain distinct from strict signs. `FieldJudge` counts and times every query; `project` keeps a vertex on a
 two-query bracket, widens by doubling and bisects otherwise, and labels `Inner` (a branch the
 sweep covers at another time) or `Positive`. A vertex is judged along the normalised sum of
 its incident triangle normals across all sheets (`directions`): one face's own normal at a

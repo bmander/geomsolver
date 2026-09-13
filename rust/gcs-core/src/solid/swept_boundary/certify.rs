@@ -1,12 +1,7 @@
-//! The triangle certificate: every triangle probed a fixed distance inside
-//! and outside along its own normal, the field asked to read material and
-//! exterior there. A triangle that passes lies within that distance of the
-//! boundary along its normal at its centroid, on the right side; the
-//! chord and vertex tolerances of the construction make that the whole
-//! triangle to within the sagitta. Nothing here is inferred from a value's
-//! magnitude, and an enclosure containing zero is a failure to certify,
-//! never a pass.
-use super::judge::{FieldJudge,JudgeError,Sign};
+//! A report of strict centroid-side witnesses for candidate triangles. These
+//! point checks are not whole-triangle or reverse-coverage certificates; accepted
+//! boundaries additionally require the spatial audit. Unknown triangles never pass.
+use super::judge::{BoundaryBracket,FieldJudge,JudgeError,Sign};
 
 type V3 = [f64;3];
 
@@ -26,6 +21,12 @@ pub enum Failure {
 
 #[derive(Clone,Debug,Default)]
 pub struct Certificate {
+    pub triangles: usize,
+    pub surface_area: f64,
+    pub unresolved_area: f64,
+    pub failed_area: f64,
+    /// Actual strict spatial witnesses for each successful centroid check.
+    pub brackets: Vec<(usize,BoundaryBracket)>,
     /// The probe distance every triangle was first tested at.
     pub probe_distance: f64,
     /// The least probe distance any triangle was certified at: material
@@ -34,65 +35,72 @@ pub struct Certificate {
     pub least_used: f64,
     /// How many triangles needed a halved distance.
     pub halved: usize,
-    /// How many slivers were certified by the boundary passing within the
-    /// least distance of their centroid.
+    /// Slivers with successful strict centroid-side witnesses.
     pub slivers: usize,
     pub certified: usize,
-    /// Triangles on material or exterior thinner than the least probe
-    /// distance: their vertices were bracketed, and at the least distance one
-    /// side still reads the boundary or the material beyond a gap. They are
-    /// not certified and not wrong; the certificate says so.
-    pub thin: Vec<(usize,V3,Failure)>,
+    /// Unresolved centroid checks, including thin material, insufficient query
+    /// budgets, and unsupported geometry. None is licensed by this report.
+    pub unresolved: Vec<(usize,V3,Failure)>,
     /// Every failing triangle by index, with its centroid and the failure.
     pub failures: Vec<(usize,V3,Failure)>,
 }
 
 impl Certificate {
-    /// Every triangle certified, thin ones excepted and stated.
-    pub fn is_complete(&self) -> bool { self.failures.is_empty() }
+    /// Every triangle has a strict centroid bracket. This is only a point-check
+    /// completion predicate; whole-surface acceptance also needs the spatial audit.
+    pub fn is_complete(&self) -> bool {
+        self.triangles > 0 && self.certified == self.triangles && self.failures.is_empty() && self.unresolved.is_empty()
+    }
 }
 
 pub use crate::space::triangle_normal;
 
-/// Certify every triangle of an indexed mesh whose winding faces outward, at
-/// probe distance `d`, halving the distance down to `least` for a triangle
-/// whose material or exterior is thinner than that. A sliver, with no
-/// altitude above `least`, has no normal worth probing along: it lies
-/// within `least` of the segment its corners span, and is certified where
-/// the field reads the boundary within `least` of its centroid.
+/// Probe triangle centroids, retaining strict witnesses and unresolved outcomes.
+/// Halving may resolve thin material; exhaustion is never evidence of thinness.
 pub fn certify(judge: &mut FieldJudge,vertices: &[V3],triangles: &[[u32;3]],d: f64,least: f64) -> Result<Certificate,JudgeError> {
-    let mut out = Certificate {probe_distance:d,least_used:d,..Default::default()};
+    if !d.is_finite() || !least.is_finite() || least <= 0. || d < least {
+        return Err(JudgeError::Field("invalid certificate probe distances".into()));
+    }
+    if vertices.iter().flatten().any(|x| !x.is_finite()) || triangles.iter().flatten().any(|&v| v as usize >= vertices.len()) {
+        return Err(JudgeError::Field("invalid certificate mesh".into()));
+    }
+    let mut out = Certificate {triangles:triangles.len(),probe_distance:d,least_used:d,..Default::default()};
     for (i,t) in triangles.iter().enumerate() {
         let [a,b,c] = t.map(|v| vertices[v as usize]);
         let centroid: V3 = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
-        // a triangle with no area is the flattest sliver: no normal, and within `least` of the
-        // segment its corners span all the same
-        let altitude = crate::space::altitude(a,b,c);
-        if altitude < least {
-            match judge.sign(centroid)?.0 {
-                Sign::Near {within} if within <= least => { out.certified += 1; out.slivers += 1; }
-                other => { out.thin.push((i,centroid,Failure::InsideNotMaterial(other))); }
-            }
-            continue;
-        }
+        let sliver = crate::space::altitude(a,b,c) < least;
         let Some(n) = triangle_normal(a,b,c) else { out.failures.push((i,centroid,Failure::Degenerate)); continue };
         let mut probe = d;
         loop {
             let (inside,outside) = judge.sides(centroid,n,probe)?;
             let last = if inside != Sign::Material { Failure::InsideNotMaterial(inside) } else if outside != Sign::Exterior { Failure::OutsideNotExterior(outside) } else {
+                let inside = std::array::from_fn(|k| centroid[k]-probe*n[k]);
+                let outside = std::array::from_fn(|k| centroid[k]+probe*n[k]);
+                let Some(bracket) = judge.bracket(inside,outside)? else {
+                    out.unresolved.push((i,centroid,Failure::InsideNotMaterial(Sign::Unresolved)));
+                    break;
+                };
+                out.brackets.push((i,bracket));
                 out.certified += 1;
+                if sliver { out.slivers += 1; }
                 if probe < d { out.halved += 1; }
                 if probe < out.least_used { out.least_used = probe; }
                 break;
             };
             if probe/2. < least {
-                let reversed = matches!(last,Failure::InsideNotMaterial(Sign::Exterior))
-                    || (matches!(last,Failure::OutsideNotExterior(Sign::Material)) && judge.sides(centroid,n,probe)?.0 == Sign::Exterior);
-                if reversed { out.failures.push((i,centroid,Failure::Reversed)); } else { out.thin.push((i,centroid,last)); }
+                let reversed = inside == Sign::Exterior && outside == Sign::Material;
+                if reversed { out.failures.push((i,centroid,Failure::Reversed)); } else { out.unresolved.push((i,centroid,last)); }
                 break;
             }
             probe /= 2.;
         }
     }
+    let area = |i: usize| {
+        let [a,b,c] = triangles[i].map(|v| vertices[v as usize]);
+        0.5*crate::space::norm(crate::space::cross(crate::space::sub(b,a),crate::space::sub(c,a)))
+    };
+    out.surface_area = (0..triangles.len()).map(area).sum();
+    out.unresolved_area = out.unresolved.iter().map(|(i,_,_)| area(*i)).sum();
+    out.failed_area = out.failures.iter().map(|(i,_,_)| area(*i)).sum();
     Ok(out)
 }

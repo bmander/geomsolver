@@ -1,7 +1,7 @@
 //! Every vertex of a seed sheet judged by the field along the sheet's own
 //! normal there: kept, moved onto the boundary, or labelled as an inner
 //! branch or as off the swept material.
-use super::judge::{FieldJudge,JudgeError,Projection};
+use super::judge::{BoundaryBracket,FieldJudge,JudgeError,Projection};
 use crate::solid::SweepPatch;
 
 type V3 = [f64;3];
@@ -17,6 +17,7 @@ pub struct Labelled {
     pub points: Vec<V3>,
     pub labels: Vec<Label>,
     pub radius: Vec<f64>,
+    pub brackets: Vec<Option<BoundaryBracket>>,
     /// How far each moved vertex travelled along its normal, outward positive.
     pub moved_by: Vec<f64>,
     /// Every unresolved vertex: its index, the offset along its normal where
@@ -182,20 +183,27 @@ pub fn label_patch(judge: &mut FieldJudge,patch: &SweepPatch,directions: &[V3],e
     let n = patch.points.len();
     let (mut points,mut labels,mut radius,mut moved_by) = (Vec::with_capacity(n),Vec::with_capacity(n),Vec::with_capacity(n),Vec::with_capacity(n));
     let mut unresolved = Vec::new();
+    let mut brackets = Vec::new();
     for (i,(p,m)) in patch.points.iter().zip(directions).enumerate() {
         let len = (m[0]*m[0]+m[1]*m[1]+m[2]*m[2]).sqrt();
         if !(len > 0.) { return Err(JudgeError::ReversedNormal {point:*p,direction:*m}); }
         let m = m.map(|x| x/len);
-        match judge.project(*p,m,epsilon,reach)? {
-            Projection::Kept {radius:r} => { points.push(*p); labels.push(Label::Kept); radius.push(r); moved_by.push(0.); }
-            Projection::Moved {point,radius:r,by} => { points.push(point); labels.push(Label::Moved); radius.push(r); moved_by.push(by); }
+        let projection = judge.project(*p,m,epsilon,reach)?;
+        brackets.push(match projection {
+            Projection::Kept {bracket,..} | Projection::Moved {bracket,..} => Some(bracket),
+            Projection::Unresolved {bracket,..} => bracket,
+            _ => None,
+        });
+        match projection {
+            Projection::Kept {radius:r,..} => { points.push(*p); labels.push(Label::Kept); radius.push(r); moved_by.push(0.); }
+            Projection::Moved {point,radius:r,by,..} => { points.push(point); labels.push(Label::Moved); radius.push(r); moved_by.push(by); }
             Projection::Inner => { points.push(*p); labels.push(Label::Inner); radius.push(f64::INFINITY); moved_by.push(0.); }
             Projection::Positive => { points.push(*p); labels.push(Label::Positive); radius.push(f64::INFINITY); moved_by.push(0.); }
-            Projection::Unresolved {radius:r,enclosure} => {
+            Projection::Unresolved {radius:r,enclosure,..} => {
                 points.push(*p); labels.push(Label::Unresolved); radius.push(f64::INFINITY); moved_by.push(0.);
                 unresolved.push((i,r,enclosure));
             }
         }
     }
-    Ok(Labelled {points,labels,radius,moved_by,unresolved,directions:directions.to_vec()})
+    Ok(Labelled {points,labels,radius,brackets,moved_by,unresolved,directions:directions.to_vec()})
 }

@@ -1,5 +1,9 @@
 # The certified swept boundary
 
+**Current contract and statuses:** [Phase 0](swept-boundary-phase-zero.md) supersedes the
+residual-based labels and permissive certificates in this chronological investigation.
+Historical claims of certification below are not current acceptance results.
+
 `solid/swept_boundary` builds a closed triangle mesh of the material a tool sweeps under
 a motion, alone (no blank), with every triangle judged against the sweep's own
 one-Lipschitz field. It replaces the arrangement in `gcs-cli/src/cad/mesh_sweep.rs` as the
@@ -17,9 +21,11 @@ reliable when closed-form cases and zero-disagreement field probes say so.
 
 - **A strict sign change brackets the boundary.** Strictly material at `p⁻` and strictly
   exterior at `p⁺` puts a boundary point on the segment between them. No gradient is needed.
-- **A converged enclosure containing zero is a distance certificate.** Being one-Lipschitz,
-  the field's zero set lies within `max(|lo|, |hi|)` of a point whose converged enclosure is
-  `[lo, hi] ∋ 0`. That is the `Near` sign, and it is a bracket end, not a failure.
+- **Correction (Phase 0): a converged enclosure containing zero is not a distance
+  certificate.** The original opposite claim was mathematically invalid. One-Lipschitz gives
+  `|f(p)| <= distance(p, zero set)`, a lower bound. `Near` supplies no spatial witness;
+  actual strict signs and geometric bounds are required. See the architecture plan's
+  union-of-balls counterexample.
 
 Nothing else is inferred: never a distance from a value's magnitude, never a sign from an
 enclosure that stopped on its budget or on the roll's resolution limit (`Unresolved`).

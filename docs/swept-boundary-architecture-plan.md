@@ -242,6 +242,9 @@ structure to replace one failing neighborhood and test whether it resolves the a
 
 ### Phase 0 — establish a trustworthy result contract
 
+Implemented on `swept-boundary-phase-zero`; see the [implementation record](swept-boundary-phase-zero.md)
+for the evidence contract, validation results, changed candidates and remaining limitations.
+
 1. Freeze a reproducible snapshot of the current dirty tree and the five-case exports into a
    separate output directory. Include the whole-turn box and cylinder perturbation case in the
    status matrix. Preserve the original work and record hashes/options with each artifact.

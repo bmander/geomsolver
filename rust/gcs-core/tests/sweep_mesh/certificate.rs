@@ -28,8 +28,8 @@ fn certified(source: &str) -> (gcs_core::solid::swept_boundary::KeptMesh,gcs_cor
     let certificate = certify(&mut judge,&mesh.vertices,&mesh.triangles,PROBE,2.*EPSILON).unwrap();
     let loops = boundary_loops(&mesh.triangles);
     eprintln!("{} triangles: {} certified ({} at a halved probe, least {:.4}), {} thin, {} failed in {:?}; {} boundary loops of {:?} vertices; {}",mesh.triangles.len(),certificate.certified,
-        certificate.halved,certificate.least_used,certificate.thin.len(),certificate.failures.len(),started.elapsed(),loops.len(),loops.iter().map(|l| l.len()).collect::<Vec<_>>(),judge.stats.report());
-    for (i,c,f) in certificate.thin.iter().take(3) { eprintln!("  thin triangle {i} at {c:?}: {f:?}"); }
+        certificate.halved,certificate.least_used,certificate.unresolved.len(),certificate.failures.len(),started.elapsed(),loops.len(),loops.iter().map(|l| l.len()).collect::<Vec<_>>(),judge.stats.report());
+    for (i,c,f) in certificate.unresolved.iter().take(3) { eprintln!("  thin triangle {i} at {c:?}: {f:?}"); }
     for (i,c,f) in certificate.failures.iter().take(5) { eprintln!("  triangle {i} at {c:?}: {f:?}"); }
     (mesh,certificate,loops)
 }
@@ -51,8 +51,10 @@ fn a_translated_boxs_sides_are_certified() {
 }
 
 #[test]
-fn a_tumbling_cylinders_kept_triangles_are_certified() {
+fn a_tumbling_cylinders_unresolved_centroids_prevent_completion() {
     let source = format!("{}{}{}",tools::CYLINDER,motions::TUMBLE,motions::swept("turn",-30.,30.));
     let (mesh,certificate,_) = certified(&source);
-    assert!(certificate.is_complete(),"{} of {} triangles failed",certificate.failures.len(),mesh.triangles.len());
+    assert!(!certificate.is_complete());
+    assert!(!certificate.unresolved.is_empty());
+    assert_eq!(certificate.certified+certificate.failures.len()+certificate.unresolved.len(),mesh.triangles.len());
 }
