@@ -1,0 +1,6 @@
+# First Phase 2 isotropic-domain trial: small chord error did not control normals.
+# Triangle 1560, source support 4, sagitta .004, level 4, 16x16 domain grid.
+v 2.0 -0.38268343236508984 0.9238795325112867
+v 2.0 -0.4127070298043948 0.9108638249211758
+v 2.00073978234672 -0.44127495822609025 0.8981956516584132
+t 0 1 2 4

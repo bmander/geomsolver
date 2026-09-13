@@ -1,0 +1,5 @@
+Unresolved original triangle IDs: [3188, 3190, 3192, 3194, 3196, 3198, 8308, 8310, 8312, 8314, 8316, 8318, 24833, 24835, 24837, 24839, 24841, 24843, 29953, 29955, 29957, 29959, 29961, 29963]
+value width=0.0025 least=0.01 certified=0 failed=0 unresolved=24 least_used=0.04
+value width=0.0025 least=0.00002 certified=0 failed=0 unresolved=24 least_used=0.04
+value width=0.000005 least=0.01 certified=0 failed=0 unresolved=24 least_used=0.04
+value width=0.000005 least=0.00002 certified=24 failed=0 unresolved=0 least_used=0.000625

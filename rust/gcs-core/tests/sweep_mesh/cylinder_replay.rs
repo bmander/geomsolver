@@ -13,7 +13,7 @@ fn area([a,b,c]: [V3;3]) -> f64 {
     let cr = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
     dot(cr,cr).sqrt()/2.
 }
-fn signed_volume(m: &KeptMesh) -> f64 {
+pub(super) fn signed_volume(m: &KeptMesh) -> f64 {
     m.triangles.iter().map(|t| { let [a,b,c] = t.map(|v| m.vertices[v as usize]);
         (a[0]*(b[1]*c[2]-b[2]*c[1])+a[1]*(b[2]*c[0]-b[0]*c[2])+a[2]*(b[0]*c[1]-b[1]*c[0]))/6.
     }).sum()
@@ -30,7 +30,7 @@ fn reversed(c: Cylinder,p: [V3;3],h: f64) -> bool {
 /// The two endpoint sector faces are essential; an x-uniform radial grid alone
 /// misses their radial edges. Chords approximate each analytic patch; validation
 /// below measures refinement, it does not claim a certified Hausdorff bound.
-fn reference(c: Cylinder,n: usize) -> KeptMesh {
+pub(super) fn reference(c: Cylinder,n: usize) -> KeptMesh {
     assert!(c.half_roll > 0. && c.half_roll < PI/4.);
     let mut m = KeptMesh::default();
     let mut rings = Vec::new();
@@ -125,13 +125,13 @@ impl<'a> Index<'a> {
     }
 }
 
-fn write_mesh(path: &Path,m: &KeptMesh) {
+pub(super) fn write_mesh(path: &Path,m: &KeptMesh) {
     let mut s = String::from("# v x y z; t a b c source_sheet; indices local to this snapshot\n");
     for p in &m.vertices { writeln!(s,"v {:.17e} {:.17e} {:.17e}",p[0],p[1],p[2]).unwrap(); }
     for (i,t) in m.triangles.iter().enumerate() { writeln!(s,"t {} {} {} {}",t[0],t[1],t[2],m.sheet[i]).unwrap(); }
     std::fs::write(path,s).unwrap();
 }
-fn read_mesh(s: &str) -> KeptMesh {
+pub(super) fn read_mesh(s: &str) -> KeptMesh {
     let mut m = KeptMesh::default();
     for line in s.lines().filter(|l| !l.starts_with('#')) {
         let v: Vec<_> = line.split_whitespace().collect();
@@ -151,8 +151,8 @@ fn rim_distance(edges: &[(V3,V3)],p: V3) -> f64 {
 }
 
 #[derive(Default,Debug)]
-struct Measure { area: f64, correct_area: f64, reversed_area: f64, other_area: f64, away_reversed_area: f64 }
-fn measure(c: Cylinder,m: &KeptMesh,h: f64,subdivide: usize) -> Measure {
+pub(super) struct Measure { pub area: f64, pub correct_area: f64, pub reversed_area: f64, pub other_area: f64, pub away_reversed_area: f64 }
+pub(super) fn measure(c: Cylinder,m: &KeptMesh,h: f64,subdivide: usize) -> Measure {
     let mut out = Measure::default();
     let edges: Vec<_> = if subdivide == 1 {
         sb::boundary_loops(&m.triangles).iter().flat_map(|l| (0..l.len()).map(move |i| (m.vertices[l[i] as usize],m.vertices[l[(i+1)%l.len()] as usize]))).collect()
@@ -178,7 +178,7 @@ fn measure(c: Cylinder,m: &KeptMesh,h: f64,subdivide: usize) -> Measure {
 
 /// Sample analytic boundary points, weighted by the reference facet area.
 /// This reports estimated missing area; it is not an acceptance certificate.
-fn coverage(c: Cylinder,reference: &KeptMesh,m: &KeptMesh,tol: f64) -> (f64,f64,f64) {
+pub(super) fn coverage(c: Cylinder,reference: &KeptMesh,m: &KeptMesh,tol: f64) -> (f64,f64,f64) {
     let index = Index::new(m); let mut total = 0.; let mut missed = 0.; let mut max = 0_f64;
     for (i,t) in reference.triangles.iter().enumerate() {
         let p = t.map(|v| reference.vertices[v as usize]); let a = area(p); let mid = centre(p);
@@ -187,7 +187,22 @@ fn coverage(c: Cylinder,reference: &KeptMesh,m: &KeptMesh,tol: f64) -> (f64,f64,
     } (total,missed,max)
 }
 
-fn sections(c: Cylinder,m: &KeptMesh,xs: &[f64]) -> String {
+/// Forward diagnostic to independently refined reference facets. Unlike
+/// `coverage`, queries are on the candidate triangles, not projected to the oracle.
+pub(super) fn forward_distance(mesh: &KeptMesh,reference: &KeptMesh,tolerance: f64) -> (f64,f64) {
+    let index = Index::new(reference); let mut beyond = 0.; let mut max = 0_f64;
+    for t in &mesh.triangles {
+        let p = t.map(|v| mesh.vertices[v as usize]);
+        for weights in [[1./3.;3],[0.6,0.2,0.2],[0.2,0.6,0.2],[0.2,0.2,0.6]] {
+            let q = std::array::from_fn(|k| (0..3).map(|j| weights[j]*p[j][k]).sum());
+            let d = index.nearest(q).0; max = max.max(d);
+            if d > tolerance { beyond += area(p)/4.; }
+        }
+    }
+    (beyond,max)
+}
+
+pub(super) fn sections(c: Cylinder,m: &KeptMesh,xs: &[f64]) -> String {
     let mut s = format!("<svg xmlns='http://www.w3.org/2000/svg' width='{}' height='440' viewBox='0 0 {} 440'><rect width='100%' height='100%' fill='white'/><style>text{{font:14px sans-serif}} .mesh{{stroke:#b54e34;stroke-width:1;fill:none}} .oracle{{stroke:#176c9e;stroke-width:2;fill:none}} .bad{{stroke:#ce2645;stroke-width:4;fill:none}}</style><text x='15' y='22'>Tumbling cylinder sections: blue analytic boundary, rust candidate facets, red reversed facets</text>",xs.len()*370,xs.len()*370);
     for (panel,&x) in xs.iter().enumerate() {
         let xy = |p: V3| [185.+panel as f64*370.+p[1]*110.,230.-p[2]*110.];

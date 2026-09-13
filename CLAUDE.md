@@ -279,6 +279,13 @@ is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, 
 placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
 `SpatialField::value` for what may be judged in plain floating point: a face point on
 the boundary, a probe's side, never an interval claim.
+**Swept boundary Phase 2:** [docs/swept-boundary-phase-two.md](docs/swept-boundary-phase-two.md)
+records the isolated shared-domain tessellator and explicit cylinder chart experiment. Curve
+identities are distinct from endpoint identities; incident patches share sample indices and
+retain their parameter coordinates. Anisotropic refinement addresses compressed rim charts.
+The cylinder and three perturbations pass full validation at 0.04 with explicit calibrated
+value/probe settings. Tessellation alone is not acceptance or a production sweep adapter.
+`SweepPatch` still lacks evaluable source-chart provenance. The ordinary pipeline is unchanged.
 **Swept boundary Phase 1a:** [docs/swept-boundary-phase-one-a.md](docs/swept-boundary-phase-one-a.md)
 records source-label retention through crease removal, parent-ownership regressions and
 stage checks. The corrected cylinder has 6033 triangles and still refuses acceptance;

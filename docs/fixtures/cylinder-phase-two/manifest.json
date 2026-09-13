@@ -1,0 +1,277 @@
+{
+  "schema": 1,
+  "base_commit": "56f98c4004480dc7f7291ee3f50b3b62b834c159",
+  "baseline": {
+    "path": "docs/fixtures/cylinder-phase-one-a/replay.tar.gz",
+    "bytes": 5092792,
+    "sha256": "914b94111651a4efcaa3249614fd2731e3c87ef9c24ba8abd509af1461e7fb7c"
+  },
+  "scope": "Explicit source-chart cylinder experiment; ordinary sweep pipeline unchanged",
+  "restore": "Start at base_commit and overlay implementation/ at repository root. The Phase 1a bundle is already in that commit. Run the exact replay commands in docs/swept-boundary-phase-two.md.",
+  "validation": {
+    "core_passed": 1246,
+    "core_seconds": 180.22,
+    "final_phase_two_passed": 10,
+    "final_phase_two_seconds": 213.2,
+    "accepted_cases": [
+      "primary",
+      "warp .1 and roll -.001 rad",
+      "warp .1",
+      "warp .1 and roll +.001 rad"
+    ],
+    "spatial_tolerance": 0.04,
+    "validation_vertex_tolerance": 1e-05,
+    "value_refinement_width": 5e-06,
+    "least_allowed_probe": 2e-05,
+    "least_used_primary_probe": 0.000625,
+    "max_cells": 800000,
+    "max_depth": 36,
+    "default_validation": "24 unresolved centroids; no reversed failures",
+    "interrupted_run": "Default value/probe settings with 800000 audit visits were stopped after more than 14 minutes; no completed spatial result is claimed.",
+    "renders_verified": 2,
+    "rendered_mesh_matches_final": true
+  },
+  "files": {
+    "default-centroid-refusal.txt": {
+      "bytes": 10690,
+      "sha256": "fe92e9069bb933fa9ec7b2cc58d773eaa2c3535c2726adc3ba17a504b5953fdb"
+    },
+    "domains-and-edges.txt": {
+      "bytes": 15091335,
+      "sha256": "c80fad13ad020bca4490359ec529299cfa80cb780c0c4bbf25460bdc8c23b782"
+    },
+    "implementation/docs/fixtures/cylinder-phase-two/isotropic-rim.mesh": {
+      "bytes": 320,
+      "sha256": "b96999645049873f703fc0aa79765a28488b2e1f25cc57845a92cec166f0a393"
+    },
+    "implementation/docs/fixtures/cylinder-phase-two/render.py": {
+      "bytes": 2307,
+      "sha256": "19e1c532ce6dd3f7f743563f2381be3a7c6ac5c614258ca9fda65b3c4a60531a"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary.rs": {
+      "bytes": 5772,
+      "sha256": "59989e3b922b0379d0a3ae8cfd851a41496ae616106e02d9d141d540571d0f66"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/shared.rs": {
+      "bytes": 9124,
+      "sha256": "e145d542fc3252005a3a8a2efe4d5fb08ae671dadaf74649e146a42f0eeb9ffc"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh.rs": {
+      "bytes": 697,
+      "sha256": "bde8fad771e0e66b41db075eae66dd8e63f515a8d92f2ff8b003b108e874e391"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/cylinder_domains.rs": {
+      "bytes": 4886,
+      "sha256": "1e507e321fb7cf3a5f738394feec859b83d1e778492aafcc9055e9cf612e063d"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/cylinder_replay.rs": {
+      "bytes": 33083,
+      "sha256": "7a3b6f031d8be16a2a222bef9594c9067459c0c1f16de858244fc80f0e7aaf68"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/shared.rs": {
+      "bytes": 17490,
+      "sha256": "416d3a29a41a1799e48684c7c4c9e3a1eea065e1a6152ebf78d16d8602d24381"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/shared_intersections.rs": {
+      "bytes": 5656,
+      "sha256": "7765e730daaee540ee17695ad7c4065f50292442c88e0d91174f0cc6671b4e4f"
+    },
+    "options.txt": {
+      "bytes": 127,
+      "sha256": "bc6ab3510188a073e289be6057b51a736b449a373ac1dead1eb21683cdcd8e18"
+    },
+    "ownership.png": {
+      "bytes": 320517,
+      "sha256": "d4ad7b59122e7531dcbd5933897f580d2c54442877f8b14e62afda6784516493"
+    },
+    "ownership.svg": {
+      "bytes": 5822077,
+      "sha256": "4fa985dfa2322fea3afb24d8eb7de1cb8c118a1069d1ce245a63ecf34afa0318"
+    },
+    "probe-controls.txt": {
+      "bytes": 529,
+      "sha256": "e5f2e3b83b1a4a9a7a8bd99e536313c3e5627c793bf9b83cd734b5c0458e42a8"
+    },
+    "refined-audit/certificate-and-stats.txt": {
+      "bytes": 41893233,
+      "sha256": "f49eab6c1cae1fdfd828ebc806d1747a45f8cc5368ea35c388dcd96e95ad4e20"
+    },
+    "refined-audit/report.txt": {
+      "bytes": 707,
+      "sha256": "9b0f27911e11a2538921f57ddd571b66e359345b48052da91c0973982b2127fa"
+    },
+    "refined-audit/spatial-obligations.txt": {
+      "bytes": 5,
+      "sha256": "28daa2b2523e068f42fb2c17d7cfce182d882ae74fd4182a5262159cf0f00cf1"
+    },
+    "report.txt": {
+      "bytes": 3618,
+      "sha256": "ff337ce0a3ad750e7eda95ec18f9a667a2212112c40956e0a722b3f5a37b4224"
+    },
+    "sections.png": {
+      "bytes": 49721,
+      "sha256": "93a334118a39fcb10e13ddc2488c6e90dbdd10ce796bd3d01d047cf8066ab3f8"
+    },
+    "sections.svg": {
+      "bytes": 525919,
+      "sha256": "529a732db32200bac476b44bfb6f5e5a538057eef300c565adf7675c138da5c5"
+    },
+    "shared.mesh": {
+      "bytes": 2712888,
+      "sha256": "493d09eee76a3ce12fde3bb2e77707db05ac4d5ccebb3790c1c4c76a3de9db0a"
+    },
+    "source.sv": {
+      "bytes": 800,
+      "sha256": "12fe5d5aa9bb6b033409d3374d801cb8fac25078af804ca7d4bad39110d46a94"
+    },
+    "spatial-witnesses.txt": {
+      "bytes": 150319,
+      "sha256": "d1804fa265b6ea72414ddd00420be82c4ccee918644a09c57af298153414e324"
+    },
+    "validation/default-bounded.log": {
+      "bytes": 3011,
+      "sha256": "e8c444e9fac4bc90113bcc1d716850e335242b96fcc04550302dc302e76967b5"
+    },
+    "validation/full-core.log": {
+      "bytes": 106877,
+      "sha256": "97c2317106e4d6e511044f46460374dce46ca4c3bcf4c3c2ba9e4ea6fe28701f"
+    },
+    "validation/interrupted-default.log": {
+      "bytes": 6022,
+      "sha256": "a6ec3fb6eec9528aa12df25d9175b0194b2685af23c2da3da84fe117cd54a4d1"
+    },
+    "validation/interrupted-default.sample": {
+      "bytes": 72984,
+      "sha256": "821d487810aab070506a34478128f9980b0f652838bb9ab72a3c9f34b329a6e1"
+    },
+    "validation/phase-two-final.log": {
+      "bytes": 14146,
+      "sha256": "8ff9393473cde8f78565b79cae94a1667254dcfa92887824d4ccb9ab2873de31"
+    },
+    "validation/refined-initial.log": {
+      "bytes": 2974,
+      "sha256": "e638b2ce74c8f0cded7b54e587a852c21ba6ee417c10e2f419289bd6f073edd1"
+    },
+    "variant-0/report.txt": {
+      "bytes": 706,
+      "sha256": "1c88f919f93fb225bf277c978eb0f75b7d6689ab96db60eee359f4deb88de9de"
+    },
+    "variant-0/shared.mesh": {
+      "bytes": 2712894,
+      "sha256": "536c54676d3a96ed7bb8f2c5f9a8794a5b1ee05c6b28eb1b2f22fd826b2ab188"
+    },
+    "variant-0/source.sv": {
+      "bytes": 830,
+      "sha256": "61b6df60da42723ba6d7a7eff91a21488179d22d21d36d587f1a895b39edfb84"
+    },
+    "variant-0/spatial-obligations.txt": {
+      "bytes": 5,
+      "sha256": "28daa2b2523e068f42fb2c17d7cfce182d882ae74fd4182a5262159cf0f00cf1"
+    },
+    "variant-1/report.txt": {
+      "bytes": 709,
+      "sha256": "9e52baab1c05a722342985afeeedb50ced88afc59add59e3d5e895b4614b7b7d"
+    },
+    "variant-1/shared.mesh": {
+      "bytes": 2712920,
+      "sha256": "51d9820867733e8a7213587322051ceae0eee6d7df4b1b142cc284e303be3f9e"
+    },
+    "variant-1/source.sv": {
+      "bytes": 832,
+      "sha256": "6d8e9cfc6d65e98f6e7d3309f25b42a6b9a26cd3c25852262a3c66d5a9ce6a5b"
+    },
+    "variant-1/spatial-obligations.txt": {
+      "bytes": 5,
+      "sha256": "28daa2b2523e068f42fb2c17d7cfce182d882ae74fd4182a5262159cf0f00cf1"
+    },
+    "variant-2/report.txt": {
+      "bytes": 706,
+      "sha256": "0f259288720a4141a5a76ed778a256fd233cccf3c2171d54005dfab74d1272ce"
+    },
+    "variant-2/shared.mesh": {
+      "bytes": 2712900,
+      "sha256": "ad3af160d415b46e1f1febefd3727930e8c373ff6426a7ce1f41d55615cc4055"
+    },
+    "variant-2/source.sv": {
+      "bytes": 832,
+      "sha256": "fd5a4453f98cf16ce15d1f68991d1a5f67092e6f6ce8d645e4161488cafdde70"
+    },
+    "variant-2/spatial-obligations.txt": {
+      "bytes": 5,
+      "sha256": "28daa2b2523e068f42fb2c17d7cfce182d882ae74fd4182a5262159cf0f00cf1"
+    }
+  },
+  "omitted_regeneratable_reports": {
+    "certificate-and-stats.txt": {
+      "bytes": 41882445,
+      "sha256": "a10a5c104ee7c8f1b31f9effccbc12427771062ae4e8e80c9d806ec004c47d6d"
+    },
+    "refined-audit-800000/spatial-witnesses.txt": {
+      "bytes": 322975556,
+      "sha256": "7e1d9fde7269eafbd857f3ea82ab4bc234b6c8a87fd4696ab4cf36ea0052749c"
+    },
+    "spatial-obligations.txt": {
+      "bytes": 26737319,
+      "sha256": "4d3c3c58e685b26c872828d32300cf31e700cf1d64d3f4eddb2f5ad84b21ba72"
+    },
+    "variant-0/certificate-and-stats.txt": {
+      "bytes": 41894871,
+      "sha256": "8f5d0aac3385637b57e650d93010959b0e7260eb10dc5fbaf48875266c680360"
+    },
+    "variant-0/spatial-witnesses.txt": {
+      "bytes": 324733568,
+      "sha256": "e42d8273f8915f88008ae979d6090ddfa0699497fbe182b2483a48edcfe800bd"
+    },
+    "variant-1/certificate-and-stats.txt": {
+      "bytes": 41893579,
+      "sha256": "57ff96f7a0c0340fea1e3c42166a17b810838a1fd6cb731e0bdb4d9daf66f6d9"
+    },
+    "variant-1/spatial-witnesses.txt": {
+      "bytes": 324515127,
+      "sha256": "8449a4e7ec52d10326607a54de7b4afdc3fbbd28960f283f50f198dff588dc5b"
+    },
+    "variant-2/certificate-and-stats.txt": {
+      "bytes": 41894750,
+      "sha256": "64c43af2a3ddc58b93ac9f287e0333b2bbbf362190308cdd2e4c2581da00a464"
+    },
+    "variant-2/spatial-witnesses.txt": {
+      "bytes": 323567548,
+      "sha256": "74e89c49fe99185e8fc8fb938ad46a68088f152ece3332ac67172a6f50dee6c0"
+    }
+  },
+  "omission_note": "Full spatial-witness arrays and extra certificates remain in the local run directory and are regenerated by the tests. Hashes identify this recorded run; duration fields need not reproduce byte-for-byte.",
+  "archive": {
+    "bytes": 9184826,
+    "sha256": "b099f1e85299e0e367d1da4eee8e14eccabdc67367336596a3cb2a8c8924480b"
+  },
+  "beside_archive": {
+    "report.txt": {
+      "bytes": 3618,
+      "sha256": "ff337ce0a3ad750e7eda95ec18f9a667a2212112c40956e0a722b3f5a37b4224"
+    },
+    "probe-controls.txt": {
+      "bytes": 529,
+      "sha256": "e5f2e3b83b1a4a9a7a8bd99e536313c3e5627c793bf9b83cd734b5c0458e42a8"
+    },
+    "acceptance.json": {
+      "bytes": 2946,
+      "sha256": "5aa7145ed9e1f6fdd1d8f5723820308d0b871d7476babdac5fc47a1ac1a9ebf9"
+    },
+    "ownership.png": {
+      "bytes": 320517,
+      "sha256": "d4ad7b59122e7531dcbd5933897f580d2c54442877f8b14e62afda6784516493"
+    },
+    "sections.png": {
+      "bytes": 49721,
+      "sha256": "93a334118a39fcb10e13ddc2488c6e90dbdd10ce796bd3d01d047cf8066ab3f8"
+    },
+    "render.py": {
+      "bytes": 2307,
+      "sha256": "19e1c532ce6dd3f7f743563f2381be3a7c6ac5c614258ca9fda65b3c4a60531a"
+    },
+    "isotropic-rim.mesh": {
+      "bytes": 320,
+      "sha256": "b96999645049873f703fc0aa79765a28488b2e1f25cc57845a92cec166f0a393"
+    }
+  }
+}

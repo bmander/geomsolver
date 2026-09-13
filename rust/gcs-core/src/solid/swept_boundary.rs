@@ -13,6 +13,7 @@
 pub mod audit;
 pub use audit::{AuditOptions,AuditError,AuditReport,AuditIssue,SpatialAudit,SurfaceWitness,CoverageWitness,MeshWitness,SurfaceObligation,CoverageObligation};
 pub mod adjacency;
+pub mod shared;
 pub mod judge;
 pub mod seeds;
 pub mod project;

@@ -24,3 +24,7 @@ mod audit_report;
 mod cylinder_oracle;
 mod cylinder_replay;
 mod provenance;
+
+mod cylinder_domains;
+mod shared;
+mod shared_intersections;

@@ -1,0 +1,37 @@
+# Phase 2 explicit source-chart experiment on the Phase 1a fixture
+# Sampled binary64 geometry diagnostics are not interval certificates.
+# Eight analytic support IDs replace, and are not aliases of, eleven old sheet IDs.
+patches=36 edges=70 level=4 triangles=48512 vertices=24258 sampled_chord_error=0.002891186300933338
+shared sides subdivision=1: Measure { area: 23.4901290314357, correct_area: 23.490043585798755, reversed_area: 0.0, other_area: 8.54456369343965e-5, away_reversed_area: 0.0 }
+shared sides subdivision=2: Measure { area: 23.490129031432403, correct_area: 23.4900466122557, reversed_area: 0.0, other_area: 8.241917669271742e-5, away_reversed_area: 0.0 }
+shared sides subdivision=4: Measure { area: 23.490129031352588, correct_area: 23.490048125405952, reversed_area: 0.0, other_area: 8.090594657187782e-5, away_reversed_area: 0.0 }
+shared sides subdivision=8: Measure { area: 23.490129031321572, correct_area: 23.49004831452895, reversed_area: 0.0, other_area: 8.071679280677275e-5, away_reversed_area: 0.0 }
+shared volume=9.412744895419 oracle volume=9.426350471573
+unexpected intersections at numeric tolerance 1e-9: 0 []
+reference n=32 to shared tol=0.01: (23.47795691412346, 0.0, 0.0017771726126557233)
+shared to reference n=32 tol=0.01: (0.0, 0.003955585615365531)
+reference n=32 to shared tol=0.02: (23.47795691412346, 0.0, 0.0017771726126557233)
+shared to reference n=32 tol=0.02: (0.0, 0.003955585615365531)
+reference n=32 to shared tol=0.04: (23.47795691412346, 0.0, 0.0017771726126557233)
+shared to reference n=32 tol=0.04: (0.0, 0.003955585615365531)
+reference n=64 to shared tol=0.01: (23.49796983118968, 0.0, 0.0017816161509857102)
+shared to reference n=64 tol=0.01: (0.0, 0.001708107961666477)
+reference n=64 to shared tol=0.02: (23.49796983118968, 0.0, 0.0017816161509857102)
+shared to reference n=64 tol=0.02: (0.0, 0.001708107961666477)
+reference n=64 to shared tol=0.04: (23.49796983118968, 0.0, 0.0017816161509857102)
+shared to reference n=64 tol=0.04: (0.0, 0.001708107961666477)
+reference n=128 to shared tol=0.01: (23.502855593252132, 0.0, 0.0017815870032665273)
+shared to reference n=128 tol=0.01: (0.0, 0.0017094901433651825)
+reference n=128 to shared tol=0.02: (23.502855593252132, 0.0, 0.0017815870032665273)
+shared to reference n=128 tol=0.02: (0.0, 0.0017094901433651825)
+reference n=128 to shared tol=0.04: (23.502855593252132, 0.0, 0.0017815870032665273)
+shared to reference n=128 tol=0.04: (0.0, 0.0017094901433651825)
+baseline 01-clipped.mesh: triangles=3873 sides=Measure { area: 22.99031284635611, correct_area: 22.65518149974183, reversed_area: 1.135957161413538e-16, other_area: 0.33513134661443233, away_reversed_area: 0.0 }
+baseline 08-zipped.mesh: triangles=6033 sides=Measure { area: 27.9255014817335, correct_area: 25.13484526231168, reversed_area: 1.909631176731412, other_area: 0.8810250426898885, away_reversed_area: 0.0 }
+audit tolerance=.04 max_cells=256 depth=36 vertex_tolerance=None
+topology: closed, vertices=24258 edges=72768 faces=48512 Euler=2
+query stats=QueryStats { near: 97128, near_time: 2.465671571s, near_slowest: 13.996517ms, far: 97261, far_time: 3.73472415s, roll_evaluations: 4781080, near_hits: 48, unresolved: 69, exhausted: 62, resolution_limited: 7 }
+centroid certified=48488 failed=0 unresolved=24 failed_area=-0 unresolved_area=0.00007333979596768037
+spatial complete=false visited=[128, 128] forward witnesses=76 reverse witnesses=59 forward unfinished=48488 reverse unfinished=11 not attempted=None/None
+unchanged acceptance gate: REFUSED Certificate { failed: 0, unresolved: 24 }; no replacement installed
+audit seconds=7.493

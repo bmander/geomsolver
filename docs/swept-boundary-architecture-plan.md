@@ -2,7 +2,9 @@
 
 Original review: 2026-09-12 at `5e95019`, including the then-uncommitted changes.
 Plan revised: 2026-09-13 after Phase 0a and Phase 1, committed in `2331234`, to add the
-bounded Phase 1a provenance-repair checkpoint, now implemented.
+bounded Phase 1a provenance-repair checkpoint, now implemented. The Phase 2 explicit-chart
+experiment and its passing fixture acceptance runs are recorded in
+[its implementation report](swept-boundary-phase-two.md).
 
 ## Recommendation
 
@@ -20,8 +22,12 @@ see the [implementation record](swept-boundary-phase-one.md). It finds an inadmi
 alias before the zip and substantial extra/reversed surface after it. It also exposes a
 triangle/sheet-array mismatch at crease removal. Phase 1a now repairs that mismatch and
 verifies source ownership; its [refreshed baseline](swept-boundary-phase-one-a.md) isolates the
-first geometric change to overlap trimming. **The next step is Phase 2's shared-boundary
-experiment, starting before the remaining unsafe crease identification.**
+first geometric change to overlap trimming. Phase 2 now has a shared-domain tessellator and an
+explicit source-chart cylinder experiment, beginning before that unsafe alias. **The production
+tracer still lacks evaluable chart provenance; the experiment does not replace the ordinary
+sweep path or establish general sweep support.** The complete cylinder and three chart/roll perturbations pass the existing interval
+acceptance gate at spatial tolerance 0.04 with calibrated value/probe settings; see the
+[Phase 2 report](swept-boundary-phase-two.md).
 The calibrated validator remains expensive on continuous fields and is not a production-speed
 gear validator.
 
@@ -34,7 +40,7 @@ general sweeps, or hypoid gears.
 
 These findings motivated Phase 0a. Its [implementation record](swept-boundary-phase-zero-a.md)
 now records the curved positive controls, partial reporting and measured limits that address
-the calibration/reporting gaps below. Shared-boundary construction remains untested.
+the calibration/reporting gaps below. The later Phase 2 report records the shared-domain experiment.
 
 The [implementation record](swept-boundary-phase-zero.md) contains the reproducible baseline,
 new status matrix and validation results. It supersedes the historical counts and API behavior
@@ -61,7 +67,9 @@ in the original diagnosis below.
 The revised sequence is: validator calibration and reporting → independent cylinder oracle →
 bounded provenance repair and refreshed measurements → region selection from measured failures →
 one shared-boundary experiment → incremental recovery of successful sweeps. Existing phase
-numbers are retained; Phase 0a, Phase 1 and Phase 1a are implemented, and Phase 2 is next.
+numbers are retained; Phase 0a, Phase 1 and Phase 1a are implemented. Phase 2 now has an
+successful explicit-chart experiment. Phase 3 begins with the missing tracer-to-chart
+connection; its ordinary cylinder acceptance test is still deferred.
 
 ## Evidence and scope of this review
 
@@ -465,7 +473,7 @@ The local interface is still unvalidated; retain all eleven source patches as co
 See the [implementation record](swept-boundary-phase-one-a.md) for validation and frozen inputs.
 This checkpoint is complete despite continued cylinder refusal; proceed to Phase 2.
 
-### Phase 2 — test shared boundaries on one replayable region (next)
+### Phase 2 — test shared boundaries on one replayable region (experiment implemented)
 
 Use the corrected baseline and region assessment delivered by Phase 1a. Include the earliest
 remaining unsafe crease identification in the experiment's scope; replacing only the later
@@ -504,7 +512,46 @@ validator cannot resolve the replacement, report that separately from constructi
 Use the bounded spatial-cell fallback experiment below only for an identified missing capability.
 Do not conceal either limitation behind another downstream weld rule.
 
+**Phase 2 outcome:** the [experiment](swept-boundary-phase-two.md) reconstructs
+all interacting supports using 36 explicit analytic domains and 70 shared curves. Its mesh
+closes, retains consumer coordinates, has zero sampled reversed area and passes the numeric
+intersection checks. Sampled two-way distances are below 0.002 at the finest independent
+reference resolution. With explicit value/probe calibration, the complete mesh and all three
+parameter/roll perturbations pass the full existing interval acceptance gate at tolerance
+0.04, with zero failed or unresolved obligations. The ordinary production candidate remains
+unchanged. This passes the geometric experiment for the supplied source atlas; seed stability
+through the missing production adapter remains a Phase 3 integration requirement.
+
+The experiment also identifies two capabilities that the general path lacks. `SweepPatch`
+retains only sampled geometry, columns and times; it cannot evaluate a continuous source chart
+or identify its visibility events. Additionally, small chord error on a compressed parameter
+grid does not control facet normals. A frozen failed isotropic triangle and its anisotropic
+replacement demonstrate the latter independently. The graph now propagates different
+subdivision requests in the two parameters; a general adapter must derive suitable requests
+from chart differential/approximation information.
+
+Before production integration, preserve source face/edge identity, tool coordinates and roll
+through tracing, and provide evaluable charts and identified trim events. Reproduce the
+explicit fixture's domains from that data rather than substituting its cylinder-specific
+adapter into `candidate`. Check the resulting arrangement under actual seed perturbations;
+current tests establish patch-order and interior-parameter sampling stability, not that missing
+tracer connection. Retain the independent oracle strictly as validation.
+
+The default field/probe settings leave 24 tiny rim triangles unresolved. Isolating the two
+controls shows that this mesh needs both finer field-value refinement and a smaller allowed
+normal probe. At unchanged spatial tolerance 0.04, value width 0.000005 and least allowed
+probe 0.00002 resolve all obligations (smallest centroid probe actually used: 0.000625).
+Keep these explicit settings separate from the constructor's vertex/trimming tolerance;
+blindly applying the validation-only `vertex_tolerance` override to the old pipeline would
+change its geometry. Make those three controls independently expressible when integrating
+the new backend, and retain the default refusal and probe-factor controls as diagnostics.
+
 ### Phase 3 — complete this cylinder, then test generality
+
+First restore the evaluable source-chart connection described above, and reproduce the accepted
+Phase 2 cylinder through the ordinary Solvent sweep path. The explicit test adapter is not a
+production geometry recognizer. The Phase 2 calibration provides a working validation setting;
+this task does not require another validator rewrite before starting source-chart integration.
 
 Extend the successful replacement mechanism to the remaining unsupported regions, including
 failures away from rims identified in the current report. The historical count of 160 such
@@ -613,8 +660,8 @@ finite budgets cannot resolve the obligation.
   with the target ignored is an incomplete milestone. Measure one-core time and field-query
   counts after correctness holds; reuse spatial indexes and bounds before adding refinement.
 
-The next implementation deliverable is **Phase 2's shared-boundary experiment against the
-corrected Phase 1a baseline**. Begin before the unsafe crease identification, retain the
-frozen counterexamples, and establish a validated interface before narrowing the interacting
-patch group. The construction decision gate remains in place before expansion toward general
-sweeps and hypoid exports.
+Phase 2 now demonstrates accepted shared-domain geometry against the corrected Phase 1a
+baseline. **Phase 3 should restore evaluable source-chart provenance and reproduce that result
+through the ordinary sweep path.** Preserve both the older alias/zip counterexamples and the
+new compressed-chart counterexample. The explicit fixture adapter and its calibrated settings
+do not establish general sweeps or hypoid exports.

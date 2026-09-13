@@ -1,5 +1,10 @@
 # The certified swept boundary
 
+**Latest experiment:** [Phase 2](swept-boundary-phase-two.md) adds shared parametric domains,
+common edge samples and an explicit cylinder source-chart adapter. The cylinder and three
+perturbations pass full interval acceptance at tolerance 0.04 with calibrated value/probe
+settings. The ordinary sweep path is unchanged; Phase 3 must restore its tracer-chart connection.
+
 **Latest baseline:** [Phase 1a](swept-boundary-phase-one-a.md) repairs source ownership and
 records the corrected candidate and replay inputs for Phase 2. Earlier counts below are historical.
 
