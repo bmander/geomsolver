@@ -246,6 +246,7 @@ pub fn merge_creases(mesh: &mut KeptMesh,rims: &[Rim],tolerance: f64,snap: f64) 
 
 pub fn merge_creases_observed(mesh: &mut KeptMesh,rims: &[Rim],tolerance: f64,snap: f64,
     observe: &mut dyn FnMut(MergeEvent<'_>)) -> (usize,usize) {
+    mesh.assert_sheet_alignment();
     // coincident rim vertices of different sheets are one
     let mut welded = 0;
     let mut alias: std::collections::BTreeMap<u32,u32> = Default::default();
@@ -268,6 +269,9 @@ pub fn merge_creases_observed(mesh: &mut KeptMesh,rims: &[Rim],tolerance: f64,sn
         if keep { source_triangles.push(source_triangle); }
         source_triangle += 1; keep
     });
+    // Remove ownership entries with their triangles, before the splitter appends
+    // children. A stale tail can give those children another source's label.
+    mesh.sheet = source_triangles.iter().map(|&i| mesh.sheet[i]).collect();
     observe(MergeEvent::Retained {mesh,source_triangles:&source_triangles});
     let resolve = |v: u32| *alias.get(&v).unwrap_or(&v);
     let rim_vertices: std::collections::BTreeSet<u32> = rims.iter().flat_map(|r| r.vertices.iter().map(|&v| resolve(v))).collect();

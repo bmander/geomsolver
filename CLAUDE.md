@@ -279,12 +279,18 @@ is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, 
 placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
 `SpatialField::value` for what may be judged in plain floating point: a face point on
 the boundary, a probe's side, never an interval claim.
+**Swept boundary Phase 1a:** [docs/swept-boundary-phase-one-a.md](docs/swept-boundary-phase-one-a.md)
+records source-label retention through crease removal, parent-ownership regressions and
+stage checks. The corrected cylinder has 6033 triangles and still refuses acceptance;
+geometric alias/zip rules are unchanged. Use the refreshed baseline for Phase 2, and keep
+the Phase 1 frozen counterexamples unchanged. Low-level mesh edits require one sheet entry
+per triangle; constructed bands carry u32::MAX. Stage checks do not prove semantic ancestry.
 **Swept boundary Phase 1:** [docs/swept-boundary-phase-one.md](docs/swept-boundary-phase-one.md)
 records the independent continuous cylinder oracle and frozen alias/zip counterexamples.
 The oracle is test-only; its quadrature and sampled coverage are not acceptance certificates.
 Construction observers preserve actual inputs/results and strict fallback witnesses. Crease
-removal currently leaves stale sheet entries; source identity must be repaired and the
-baseline regenerated before the Phase 2 shared-boundary comparison. The retained cylinder
+removal was found to leave stale sheet entries; Phase 1a repairs this and regenerates the
+baseline for the Phase 2 shared-boundary comparison. The retained cylinder
 fixture is a negative control, not a requirement to reproduce future failure counts.
 **Swept boundary Phase 0a:** [docs/swept-boundary-phase-zero-a.md](docs/swept-boundary-phase-zero-a.md)
 documents curved validator calibration and partial audit reports; the

@@ -1,5 +1,8 @@
 # The certified swept boundary
 
+**Latest baseline:** [Phase 1a](swept-boundary-phase-one-a.md) repairs source ownership and
+records the corrected candidate and replay inputs for Phase 2. Earlier counts below are historical.
+
 **Current construction diagnosis:** [Phase 1](swept-boundary-phase-one.md) adds independent
 cylinder geometry and frozen counterexamples from actual crease merging and zipping. It also
 identifies a source-provenance defect that must precede the Phase 2 construction comparison.

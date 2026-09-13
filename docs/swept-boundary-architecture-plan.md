@@ -1,7 +1,8 @@
 # Swept boundary: architectural diagnosis and recovery plan
 
 Original review: 2026-09-12 at `5e95019`, including the then-uncommitted changes.
-Plan revised: 2026-09-13 after Phase 0, commit `a996167`, and the subsequent Phase 0a and Phase 1 implementations.
+Plan revised: 2026-09-13 after Phase 0a and Phase 1, committed in `2331234`, to add the
+bounded Phase 1a provenance-repair checkpoint, now implemented.
 
 ## Recommendation
 
@@ -17,14 +18,16 @@ at tolerances 0.04 and 0.02, with explicit resource budgets and inspectable unfi
 Phase 1 now supplies an independent continuous cylinder oracle and exact construction replay;
 see the [implementation record](swept-boundary-phase-one.md). It finds an inadmissible crease
 alias before the zip and substantial extra/reversed surface after it. It also exposes a
-triangle/sheet-array mismatch at crease removal. **Before the Phase 2 comparison, repair and
-enforce source provenance, regenerate the baseline, and then select the reconstruction region.**
+triangle/sheet-array mismatch at crease removal. Phase 1a now repairs that mismatch and
+verifies source ownership; its [refreshed baseline](swept-boundary-phase-one-a.md) isolates the
+first geometric change to overlap trimming. **The next step is Phase 2's shared-boundary
+experiment, starting before the remaining unsafe crease identification.**
 The calibrated validator remains expensive on continuous fields and is not a production-speed
 gear validator.
 
 The historical seven loops were a symptom, not a sufficient definition of the remaining work.
-The corrected pipeline produces a different cylinder candidate with ten loops and substantial
-failed and unresolved surface checks. Closing its rims cannot by itself finish this cylinder,
+The Phase 1a pipeline produces a 6,033-triangle cylinder candidate with thirteen loops and
+substantial failed and unresolved surface checks. Closing its rims cannot by itself finish this cylinder,
 general sweeps, or hypoid gears.
 
 ## What Phase 0 changed
@@ -56,8 +59,9 @@ in the original diagnosis below.
   milestone. Exact current failure counts are baseline observations, not permanent targets.
 
 The revised sequence is: validator calibration and reporting → independent cylinder oracle →
-region selection from measured failures → one shared-boundary experiment → incremental recovery
-of successful sweeps. Existing phase numbers are retained; Phase 0a and Phase 1 are now implemented.
+bounded provenance repair and refreshed measurements → region selection from measured failures →
+one shared-boundary experiment → incremental recovery of successful sweeps. Existing phase
+numbers are retained; Phase 0a, Phase 1 and Phase 1a are implemented, and Phase 2 is next.
 
 ## Evidence and scope of this review
 
@@ -407,11 +411,65 @@ sheet IDs must be repaired and verified against independent source-triangle line
 they can define a shared arrangement. Preserve the frozen Phase 1 baseline while regenerating
 new evidence after that correction. Do not tune the geometric method against corrupted IDs.
 
-### Phase 2 — test shared boundaries on one replayable region
+### Phase 1a — repair source provenance and regenerate the baseline (implemented)
 
-First repair triangle/source identity through crease removal and splitting, enforce its
-preservation through later operations, and regenerate the Phase 1 report. This is a concrete
-prerequisite discovered by Phase 1, not a reason to assume the geometry is then correct.
+This is a bounded correctness checkpoint before comparing construction methods. Phase 1
+observed 129 stale sheet entries after crease removal and four incorrectly labelled live
+triangles after subsequent splitting. Correcting only the metadata at the removal boundary
+preserved the splitter's geometry. The effect on downstream unions, trimming and the final
+candidate has not yet been measured.
+
+1. Preserve the Phase 1 replay bundle and frozen alias/zip counterexamples from `2331234`.
+   Repair crease removal so each surviving triangle retains its own source label. Check the
+   mutations that subsequently split, remove, reorder or compact triangles, and keep triangle
+   data and source ownership synchronized. New fragments must inherit the appropriate parent's
+   source; newly constructed geometry must carry explicit provenance rather than an unrelated
+   array entry. Keep the implementation focused on these identity-preservation obligations.
+2. Add regression coverage for removal followed by splitting and compaction, including adjacent
+   triangles from different sources. Verify expected ownership through an independent parent
+   mapping: equal array lengths alone cannot detect shifted labels. Add stage-boundary checks
+   that expose malformed metadata where it is introduced, before later processing hides it.
+3. Replay the corrected pipeline with the same source, options and oracle resolutions as
+   Phase 1. Isolate metadata correction from geometric changes: establish where the geometry
+   first changes, then record the effects of corrected ownership on later operations. Refresh
+   section overlays, area-weighted material-side checks, triangle-distance coverage at 0.01,
+   0.02 and 0.04, topology, strict field reports and the candidate status/export matrix.
+   Preserve the distinction between sampled diagnostics and whole-surface acceptance.
+4. Reassess the proposed replacement region using reliable source ownership and the refreshed
+   failures. Keep all eleven cylinder source patches as context until a smaller interface can
+   be validated. Freeze the corrected candidate and its source/decision evidence for the
+   Phase 2 comparison, and identify the earliest remaining unsupported geometric decision.
+
+**Scope limit:** keep alias distances, geometric merge rules, zip filling, the material field
+and the spatial acceptance contract unchanged during this checkpoint. The geometric alias
+counterexample is independent of the metadata defect. Its repair belongs in the Phase 2
+construction experiment. This checkpoint does not require a new mesher, a broader validator
+redesign or successful cylinder acceptance.
+
+**Exit:** the ownership regression tests and full core suite pass; the construction-stage
+checks and replay demonstrate preserved source identities; and the refreshed oracle report
+and status/export matrix document the effect of the correction. Retain byte parity for
+unaffected cases and explain and validate changed cases, rather than requiring the old wrong
+geometry to persist. The frozen negative controls must still be detected. Deliver a corrected
+baseline, a supported choice of reconstruction scope (or an explicitly unvalidated larger
+group), and the next discriminating construction experiment. Once these are available,
+proceed to Phase 2 even if the cylinder still refuses acceptance.
+
+**Phase 1a outcome:** surviving triangles and split children agree with independently
+reconstructed source ownership. The four corrected labels change no vertices or triangle
+indices through planar union; geometry first changes in overlap trimming. The refreshed
+cylinder has 6,033 triangles, thirteen loops, 324 failed and 236 unresolved centroid checks.
+Its sampled reversed area at 64 samples per facet is approximately 1.9105. The frozen unsafe
+alias and zip counterexamples remain detectable and occur again in the corrected construction.
+The local interface is still unvalidated; retain all eleven source patches as context.
+See the [implementation record](swept-boundary-phase-one-a.md) for validation and frozen inputs.
+This checkpoint is complete despite continued cylinder refusal; proceed to Phase 2.
+
+### Phase 2 — test shared boundaries on one replayable region (next)
+
+Use the corrected baseline and region assessment delivered by Phase 1a. Include the earliest
+remaining unsafe crease identification in the experiment's scope; replacing only the later
+zip cannot address a patch that was already turned inward during merging.
 
 Choose one failing junction together with all incident sheets, overlapping fragments and
 nearby unsupported bands. Its outer boundary must lie on validated surface. If it does not,
@@ -555,9 +613,8 @@ finite budgets cannot resolve the obligation.
   with the target ignored is an incomplete milestone. Measure one-core time and field-query
   counts after correctness holds; reuse spatial indexes and bounds before adding refinement.
 
-The next implementation deliverable is **the independent continuous cylinder oracle and a
-replay region selected from measured failures**. Phase 0a's calibrated validator and unfinished
-obligation reports provide the evidence tools for that investigation. The shared-boundary
-replacement remains an experiment with an explicit decision gate before expansion. These
-steps keep validation limitations distinguishable from construction defects and preserve
-the route to hypoid exports.
+The next implementation deliverable is **Phase 2's shared-boundary experiment against the
+corrected Phase 1a baseline**. Begin before the unsafe crease identification, retain the
+frozen counterexamples, and establish a validated interface before narrowing the interacting
+patch group. The construction decision gate remains in place before expansion toward general
+sweeps and hypoid exports.

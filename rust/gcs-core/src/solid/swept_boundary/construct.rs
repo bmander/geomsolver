@@ -116,6 +116,15 @@ fn valid_mesh(mesh: &KeptMesh) -> bool {
         && mesh.sheet.len() == mesh.triangles.len()
 }
 
+// Check before downstream operations can hide malformed ownership by retaining
+// or zipping arrays. Semantic inheritance is covered by parent-domain regressions.
+fn check_stage_mesh(mesh: &KeptMesh,sources: usize,stage: &'static str) -> Result<(),ConstructError> {
+    if !valid_mesh(mesh) || mesh.sheet.iter().any(|&s| s != u32::MAX && s as usize >= sources) {
+        return Err(ConstructError::InvalidStageMesh {stage});
+    }
+    Ok(())
+}
+
 /// Bounded diagnostic mode. Topology failure does not suppress centroid or
 /// spatial work. Only invalid input prevents these independent checks.
 pub fn inspect(field: MaterialField,mesh: KeptMesh,options: &SweptBoundaryOptions,audit: super::AuditOptions) -> BoundaryReport {
@@ -155,6 +164,8 @@ pub enum ConstructError {
     /// The tracer declined.
     Seeds(String),
     InvalidMesh,
+    /// A construction operation produced malformed geometry or source metadata.
+    InvalidStageMesh { stage: &'static str },
     Topology(crate::topology::Error),
     Certificate { failed: usize, unresolved: usize },
     Spatial(super::AuditError),
@@ -216,32 +227,43 @@ pub fn candidate_from(sk: &Sketch,swept: usize,options: &SweptBoundaryOptions,sh
     let (epsilon,reach) = (options.vertex_tolerance(),options.reach());
     let labelled = super::label_seeds(&mut judge,&seeds,epsilon,reach)?;
     observe(Stage::Labelled {seeds:&seeds,labelled:&labelled},&judge.stats);
+    let source_count = seeds.len();
     let (mut mesh,rims) = super::clip_sheets(&mut judge,&seeds,&labelled,epsilon,reach)?;
+    check_stage_mesh(&mesh,source_count,"clipped")?;
     observe(Stage::Clipped {mesh:&mesh,rims:&rims},&judge.stats);
     let (distance,snap) = options.crease_merge();
     let (welded,split) = super::merge_creases(&mut mesh,&rims,distance,snap);
+    check_stage_mesh(&mesh,source_count,"merged")?;
     observe(Stage::Merged {mesh:&mesh,rims:&rims,welded,split},&judge.stats);
     let (probe,least) = (options.probe_distance(),options.least_probe());
     let (keep,inside,outside) = super::centroid_kept(&mut judge,&mesh,probe,least)?;
     let kept = super::retained(&mesh,&keep);
+    check_stage_mesh(&kept,source_count,"kept")?;
     observe(Stage::Kept {before:&mesh,keep:&keep,kept:&kept,inside,outside},&judge.stats);
     let (mesh,replaced) = super::planar_union(&kept,options.coincidence());
+    check_stage_mesh(&mesh,source_count,"unioned")?;
     observe(Stage::Unioned {mesh:&mesh,replaced},&judge.stats);
     let (mut mesh,dropped) = super::clip_overlaps(&mesh,options.coverage());
+    check_stage_mesh(&mesh,source_count,"uncovered")?;
     observe(Stage::Uncovered {mesh:&mesh,dropped},&judge.stats);
     super::weld(&mut mesh,options.coincidence());
+    check_stage_mesh(&mesh,source_count,"weld")?;
     let collapsed = super::collapse_short_edges(&mut mesh,options.shortest_edge());
+    check_stage_mesh(&mesh,source_count,"collapse_short_edges")?;
     // a sliver doubled over another source's edge is one thinner than the certificate's least
     // probe distance
     let doubled = super::drop_doubled_slivers(&mut mesh,least);
+    check_stage_mesh(&mesh,source_count,"welded")?;
     observe(Stage::Welded {mesh:&mesh,collapsed,doubled},&judge.stats);
     super::split_at_vertices(&mut mesh,options.junction());
+    check_stage_mesh(&mesh,source_count,"split")?;
     observe(Stage::Split {mesh:&mesh},&judge.stats);
     // a loop nothing could pair is filled only where the field says the boundary spans it
     let mut closeable = |points: &[[f64;3]],normals: &[[f64;3]]| -> bool {
         matches!(super::loop_span(&mut judge,points,normals,epsilon,reach),Ok(super::Span::Spanned))
     };
     let (pairs,unpaired) = super::rim_zip(&mut mesh,options.spacing,options.junction(),least,&mut closeable);
+    check_stage_mesh(&mesh,source_count,"zipped")?;
     observe(Stage::Zipped {mesh:&mesh,pairs,unpaired:&unpaired},&judge.stats);
     let certificate = super::certify(&mut judge,&mesh.vertices,&mesh.triangles,probe,least)?;
     observe(Stage::Certified {mesh:&mesh,certificate:&certificate},&judge.stats);

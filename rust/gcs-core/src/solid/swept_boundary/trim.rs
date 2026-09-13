@@ -14,6 +14,7 @@ type V3 = [f64;3];
 pub struct KeptMesh {
     pub vertices: Vec<V3>,
     pub triangles: Vec<[u32;3]>,
+    /// One source ID per triangle, in the same order; u32::MAX marks constructed bands.
     pub sheet: Vec<u32>,
 }
 
@@ -348,6 +349,7 @@ pub fn clip_overlaps(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
 }
 
 pub fn clip_overlaps_observed(mesh: &KeptMesh,tolerance: f64,observe: &mut dyn FnMut(OverlapDecision<'_>)) -> (KeptMesh,usize) {
+    mesh.assert_sheet_alignment();
     let cell = (tolerance*8.).max(f64::MIN_POSITIVE);
     let box_of = |corners: &[V3]| -> (V3,V3) {
         (std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min)),
@@ -433,8 +435,15 @@ pub fn without_overlaps(mesh: &KeptMesh,tolerance: f64) -> Vec<bool> {
 }
 
 impl KeptMesh {
+    /// Low-level edits require aligned input; never silently truncate a zip or
+    /// preserve a stale tail. Construction also checks full meshes at each stage.
+    pub(super) fn assert_sheet_alignment(&self) {
+        assert_eq!(self.triangles.len(),self.sheet.len(),"triangle/source arrays are misaligned");
+    }
+
     /// The mesh with its unused vertices dropped and the rest renumbered.
     pub fn compact(&self) -> KeptMesh {
+        self.assert_sheet_alignment();
         let mut remap: Vec<u32> = vec![u32::MAX;self.vertices.len()];
         let mut vertices = Vec::new();
         for t in &self.triangles { for &v in t { if remap[v as usize] == u32::MAX { remap[v as usize] = vertices.len() as u32; vertices.push(self.vertices[v as usize]); } } }
@@ -444,6 +453,8 @@ impl KeptMesh {
 
 /// The mesh with only the triangles `keep` says.
 pub fn retained(mesh: &KeptMesh,keep: &[bool]) -> KeptMesh {
+    mesh.assert_sheet_alignment();
+    assert_eq!(keep.len(),mesh.triangles.len(),"keep mask must address every triangle");
     let mut out = KeptMesh {vertices:mesh.vertices.clone(),triangles:Vec::new(),sheet:Vec::new()};
     for (i,t) in mesh.triangles.iter().enumerate() { if keep[i] { out.triangles.push(*t); out.sheet.push(mesh.sheet[i]); } }
     out

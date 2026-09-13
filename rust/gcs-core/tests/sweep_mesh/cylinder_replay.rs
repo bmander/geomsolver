@@ -1,4 +1,4 @@
-//! One reproducible reporter for stage cuts, live zip proposals, oracle probes,
+//! Shared Phase 1/1a reporter for stage cuts, live zip proposals, oracle probes,
 //! triangle distances and section overlays. This is diagnostic test support.
 use super::{cylinder_oracle::{Cylinder,Side},creases,harness::{self,V3,distance}};
 use gcs_core::solid::{MaterialField,swept_boundary::{self as sb,KeptMesh,Stage,SweptBoundaryOptions,FieldJudge}};
@@ -269,9 +269,13 @@ fn phase_one_cylinder_replay() {
             Stage::Welded {mesh,..} => ("welded",mesh), Stage::Split {mesh} => ("split",mesh),
             Stage::Zipped {mesh,..} => ("zipped",mesh), _ => return,
         };
+        assert_eq!(m.sheet.len(),m.triangles.len(),"source alignment at {name}");
+        assert!(m.sheet.iter().all(|&s| s == u32::MAX || (s as usize) < source_seeds.len()),"source range at {name}");
         write_mesh(&dir.join(format!("{:02}-{name}.mesh",stages.len())),m); stages.push((name.into(),m.clone()));
     }).unwrap();
-    let mut report = String::from("# Binary64 diagnostic estimates, not whole-surface certificates\n");
+    let mut report = String::from("# Binary64 diagnostic estimates, not whole-surface certificates\n# away_reversed_area is measured only when subdivision=1; finer rows omit that measurement.\n");
+    writeln!(report,"candidate topology={:?} loops={:?} centroid certified={} failed={} unresolved={}",candidate.topology,candidate.unpaired.iter().map(Vec::len).collect::<Vec<_>>(),candidate.certificate.certified,candidate.certificate.failures.len(),candidate.certificate.unresolved.len()).unwrap();
+    std::fs::write(dir.join("certificate-and-stats.txt"),format!("{:#?}\n{:#?}",candidate.certificate,candidate.stats)).unwrap();
     for (name,m) in &stages {
         let stats = measure(c,m,0.02,1);
         writeln!(report,"{name}: triangles={} signed_volume={} {stats:?}",m.triangles.len(),signed_volume(m)).unwrap();
@@ -303,15 +307,16 @@ fn phase_one_cylinder_replay() {
         sb::crease::MergeEvent::Retained {mesh,source_triangles} => {
             let mut fixed = mesh.clone(); fixed.sheet = source_triangles.iter().map(|&i| clipped.sheet[i]).collect(); corrected = Some(fixed);
             let mismatches: Vec<_> = source_triangles.iter().enumerate().filter(|&(i,&source)| mesh.sheet[i] != clipped.sheet[source]).map(|(i,&source)| (i,source,mesh.sheet[i],clipped.sheet[source])).collect();
-            writeln!(report,"crease retain: triangles={}, sheet_labels={}, wrong_source_labels={}; IDs after this point are pipeline labels, not trusted source provenance",mesh.triangles.len(),mesh.sheet.len(),mismatches.len()).unwrap();
+            assert_eq!(mesh.sheet.len(),mesh.triangles.len()); assert!(mismatches.is_empty());
+            writeln!(report,"crease retain: triangles={}, sheet_labels={}, wrong_source_labels={}",mesh.triangles.len(),mesh.sheet.len(),mismatches.len()).unwrap();
             writeln!(merges,"retained origins={source_triangles:?}\nwrong_labels (output,source_triangle,actual,expected)={mismatches:?}").unwrap();
         }
     });
     let actual = &stages.iter().find(|(name,_)| name == "merged").unwrap().1;
     assert_eq!(merged.vertices,actual.vertices); assert_eq!(merged.triangles,actual.triangles); assert_eq!(merged.sheet,actual.sheet);
-    // Diagnostic counterfactual: repair only the sheet array at the retention
-    // boundary, then run the same geometric splitter with the same admitted rims.
-    // Equal geometry isolates provenance corruption from the alias deformation.
+    // Independent parent-index reconstruction of ownership at the retention
+    // boundary, followed by the same geometric splitter on the same admitted rims.
+    // Compare both geometry and labels; equal array lengths alone are insufficient.
     let mut corrected = corrected.unwrap();
     let resolve = |v: u32| *actual_aliases.get(&v).unwrap_or(&v);
     let vertices: std::collections::BTreeSet<_> = clipped_rims.iter().flat_map(|r| r.vertices.iter().map(|&v| resolve(v))).collect();
@@ -323,9 +328,10 @@ fn phase_one_cylinder_replay() {
     sb::split_where(&mut corrected,distance,&|a,b| edges.contains(&(a.min(b),a.max(b))),&|v| vertices.contains(&v));
     assert_eq!(corrected.vertices,actual.vertices); assert_eq!(corrected.triangles,actual.triangles);
     let wrong: Vec<_> = actual.sheet.iter().zip(&corrected.sheet).enumerate().filter(|(_,(&a,&b))| a != b).map(|(i,(&a,&b))| (i,a,b)).collect();
-    writeln!(report,"after crease splitting: geometry identical under metadata correction, incorrect live labels={}",wrong.len()).unwrap();
+    assert_eq!(corrected.sheet,actual.sheet);
+    writeln!(report,"after crease splitting: geometry and ownership agree with independent parent mapping, incorrect live labels={}",wrong.len()).unwrap();
     writeln!(merges,"after split wrong_labels (triangle,actual,expected)={wrong:?}").unwrap();
-    write_mesh(&dir.join("merged-with-correct-provenance.mesh"),&corrected);
+    write_mesh(&dir.join("merged-lineage-check.mesh"),&corrected);
     std::fs::write(dir.join("crease-merge-decisions.txt"),merges).unwrap();
     // Replay the earlier overlap cuts with source identities and exact inputs.
     let unioned = &stages.iter().find(|(name,_)| name == "unioned").unwrap().1;
@@ -423,13 +429,13 @@ fn phase_one_cylinder_replay() {
         region = sb::retained(&region,&keep).compact();
         write_mesh(&dir.join("selected-region.mesh"),&region);
         let sheets: std::collections::BTreeSet<_> = region.sheet.iter().copied().filter(|&s| s != u32::MAX).collect();
-        writeln!(report,"selected region centre +/- .25: triangles={}, pipeline sheet labels={sheets:?}; sides={:?}",region.triangles.len(),measure(c,&region,0.02,4)).unwrap();
+        writeln!(report,"selected region centre +/- .25: triangles={}, source sheet labels={sheets:?}; sides={:?}",region.triangles.len(),measure(c,&region,0.02,4)).unwrap();
         writeln!(report,"No validated outer interface has been established. Conservative reconstruction group: ALL {} source patches (IDs 0..{}), including both roll caps and all interacting bands; the local crop is diagnostic only.",source_seeds.len(),source_seeds.len()-1).unwrap();
         for (name,m) in &stages {
             let (d,i) = Index::new(m).nearest(at); let p = m.triangles[i].map(|v| m.vertices[v as usize]);
             writeln!(report,"selected region stage={name} nearest_triangle={i} sheet={} distance={d} nearest_centroid_sides={:?} (proximity, not ancestry)",m.sheet[i],sides(c,p,centre(p),0.02)).unwrap();
         }
-        for s in sheets { std::fs::write(dir.join(format!("selected-labelled-seed-{s}.txt")),format!("{:#?}\n{:#?}",source_seeds[s as usize],source_labels[s as usize])).unwrap(); }
+        for s in sheets { std::fs::write(dir.join(format!("selected-source-{s}.txt")),format!("{:#?}\n{:#?}",source_seeds[s as usize],source_labels[s as usize])).unwrap(); }
         std::fs::write(dir.join("selected-section.svg"),sections(c,&candidate.mesh,&[at[0]-0.025,at[0],at[0]+0.025])).unwrap();
     } else { writeln!(report,"No robust reversed zip proposal found; inspect stage evidence before selecting a region.").unwrap(); }
     eprintln!("{report}"); std::fs::write(dir.join("report.txt"),report).unwrap();

@@ -1,5 +1,8 @@
 # Handoff: the certified swept boundary, milestone 5 (2026-09-12)
 
+**Latest baseline:** [Phase 1a](swept-boundary-phase-one-a.md) repairs source ownership and
+records the corrected candidate and replay inputs for Phase 2. Earlier counts below are historical.
+
 **Historical handoff.** The [Phase 1 record](swept-boundary-phase-one.md) now provides the
 independent cylinder oracle, frozen alias/zip counterexamples and source-provenance barrier.
 Read it and the revised architecture plan before choosing a repair region. The [Phase 0a record](swept-boundary-phase-zero-a.md) covers validator

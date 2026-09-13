@@ -88,6 +88,7 @@ pub fn planar_union(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
 /// One pass over the planes: the union of each group's triangles, and with
 /// `trim` their trimming at the feet of the sheets standing on the plane.
 fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
+    mesh.assert_sheet_alignment();
     let normal = |t: &[u32;3]| -> Option<(V3,f64)> {
         let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
         crate::space::stable_normal(a,b,c).map(|n| (n,dot(n,a)))

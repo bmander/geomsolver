@@ -16,6 +16,7 @@ use crate::space::distance;
 /// Identify vertices within `tolerance` of one another and drop the
 /// triangles that collapse. The first vertex of a group keeps its position.
 pub fn weld(mesh: &mut KeptMesh,tolerance: f64) {
+    mesh.assert_sheet_alignment();
     let mut grid = Grid::new(tolerance.max(f64::MIN_POSITIVE)*4.);
     let mut remap: Vec<u32> = Vec::with_capacity(mesh.vertices.len());
     let mut kept: Vec<V3> = Vec::new();
@@ -47,6 +48,7 @@ pub fn weld(mesh: &mut KeptMesh,tolerance: f64) {
 /// nothing thinner than a sagitta is a feature of the boundary. Returns
 /// how many pairs were merged.
 pub fn collapse_short_edges(mesh: &mut KeptMesh,shortest: f64) -> usize {
+    mesh.assert_sheet_alignment();
     use crate::space::stable_normal;
     let mut collapsed = 0;
     loop {
@@ -548,6 +550,7 @@ pub fn split_at_vertices(mesh: &mut KeptMesh,tolerance: f64) { split_where(mesh,
 /// `split_at_vertices` over the boundary edges `edge_ok` admits, at the
 /// boundary vertices `vertex_ok` admits. Returns how many splits were made.
 pub fn split_where(mesh: &mut KeptMesh,tolerance: f64,edge_ok: &dyn Fn(u32,u32) -> bool,vertex_ok: &dyn Fn(u32) -> bool) -> usize {
+    mesh.assert_sheet_alignment();
     let mut made = 0;
     // the mesh's edges and fans, kept as the rounds split its triangles
     let mut live = Live::new(mesh.vertices.len(),&mesh.triangles);
@@ -709,6 +712,7 @@ fn lies_over(mesh: &KeptMesh,on: &[u32],v: u32,first: [u32;3],second: [u32;3],n:
 /// tool edge over another source's region, which the merge of their
 /// vertices has laid on the same edges. Returns how many went.
 pub fn drop_doubled_slivers(mesh: &mut KeptMesh,thin: f64) -> usize {
+    mesh.assert_sheet_alignment();
     let mut owners: std::collections::BTreeMap<(u32,u32),Vec<usize>> = Default::default();
     for (i,t) in mesh.triangles.iter().enumerate() { for k in 0..3 { owners.entry((t[k],t[(k+1)%3])).or_default().push(i); } }
     let altitude = |t: &[u32;3]| -> f64 { let [a,b,c] = t.map(|v| mesh.vertices[v as usize]); crate::space::altitude(a,b,c) };
@@ -732,6 +736,7 @@ pub fn drop_doubled_slivers(mesh: &mut KeptMesh,thin: f64) -> usize {
 /// guard is the whole difference from welding by proximity alone, which folded strips into edges
 /// used three times. Returns how many vertices were merged away.
 pub fn weld_boundary_ends(mesh: &mut KeptMesh,tol: f64) -> usize {
+    mesh.assert_sheet_alignment();
     let walks_once = |triangles: &[[u32;3]]| -> bool {
         let mut seen: std::collections::BTreeSet<(u32,u32)> = Default::default();
         triangles.iter().all(|t| (0..3).all(|k| seen.insert((t[k],t[(k+1)%3]))))
@@ -792,6 +797,7 @@ pub fn weld_boundary_ends(mesh: &mut KeptMesh,tol: f64) -> usize {
 /// flat — the guard `weld_boundary_ends` keeps — so a collapse can neither break the manifold nor
 /// shed surface, and one that would is refused. Returns how many were collapsed.
 pub fn collapse_needles(mesh: &mut KeptMesh,thin: f64,longest: f64) -> usize {
+    mesh.assert_sheet_alignment();
     let walks_once = |triangles: &[[u32;3]]| -> bool {
         let mut seen: std::collections::BTreeSet<(u32,u32)> = Default::default();
         triangles.iter().all(|t| (0..3).all(|k| seen.insert((t[k],t[(k+1)%3]))))
@@ -860,6 +866,7 @@ pub fn collapse_needles(mesh: &mut KeptMesh,thin: f64,longest: f64) -> usize {
 
 /// Drop every triangle that repeats another's three vertices.
 pub fn dedupe(mesh: &mut KeptMesh) -> usize {
+    mesh.assert_sheet_alignment();
     // each triangle's sorted corners with its index, sorted: a repeat follows the first of its kind
     let mut keys: Vec<([u32;3],u32)> = mesh.triangles.iter().enumerate().map(|(i,t)| { let mut k = *t; k.sort(); (k,i as u32) }).collect();
     keys.sort_unstable();

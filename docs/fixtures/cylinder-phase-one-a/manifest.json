@@ -1,0 +1,311 @@
+{
+  "schema": 1,
+  "head": "23312343feeeb3479b9fccd00f261bd9b84b7764",
+  "date": "2026-09-13",
+  "baseline_bundle_sha256": "c591cdfadf23eeb6e9a6c62f497bcb7c4c965652d1c88ecac3223d9679c17514",
+  "scope": "Phase 1a corrected provenance, unchanged geometric rules; frozen candidate still refused",
+  "restore": "Start at head and overlay implementation/ at repository root. Stage meshes, exports and witnesses describe the corrected candidate. Source parameters and labels are in seeds-and-label-witnesses.txt.",
+  "validation": {
+    "core": {
+      "passed": 1240,
+      "failed": 0,
+      "ignored": 96,
+      "seconds": 177.97
+    },
+    "explicit_cylinder": {
+      "passed": 5,
+      "seconds": 56.07
+    },
+    "export_matrix": {
+      "passed": 1,
+      "seconds": 128.15
+    },
+    "byte_identical_export_files": 11,
+    "changed_stls": [
+      "turning_prism",
+      "tumbling_cylinder",
+      "tumbling_cylinder_perturbed_0",
+      "tumbling_cylinder_perturbed_1"
+    ],
+    "frozen_negative_geometry_unchanged": true,
+    "section_renders_inspected": 2
+  },
+  "files": {
+    "00-source.mesh": {
+      "bytes": 325028,
+      "sha256": "4c382db27d7ad13797e738f5f640cb1a40be2ef07c4d71d7f1c38e592e7429ab"
+    },
+    "01-clipped.mesh": {
+      "bytes": 378169,
+      "sha256": "7caffc62ab05a3d02f4345046e455263e61533e45e2dfcfb5679135644abace7"
+    },
+    "02-merged.mesh": {
+      "bytes": 376544,
+      "sha256": "2b7a6594e2fdbf9e4187e591332f233339215c523bedb4aaec9ab481cf7bc8b7"
+    },
+    "03-kept.mesh": {
+      "bytes": 376544,
+      "sha256": "2b7a6594e2fdbf9e4187e591332f233339215c523bedb4aaec9ab481cf7bc8b7"
+    },
+    "04-unioned.mesh": {
+      "bytes": 444482,
+      "sha256": "b3b3e7a1106b561d2dc7aedcef1a24fa2656526ff1ab700a0e5f8df96b3220f0"
+    },
+    "05-uncovered.mesh": {
+      "bytes": 491181,
+      "sha256": "1c8121cf8aeae6e488b19eb93f22ecc084840c05efe52f3d140cb3e8b6256dea"
+    },
+    "06-welded.mesh": {
+      "bytes": 445470,
+      "sha256": "a39f632e11495e5c60609265d14ebf7a34b3a4bffb11384149eb7eccbb9d8ab9"
+    },
+    "07-split.mesh": {
+      "bytes": 455988,
+      "sha256": "8fdad3b3cf4e852b53bff18c6811640314c9877014cb5ffcd68df8610c9e731f"
+    },
+    "08-zipped.mesh": {
+      "bytes": 486179,
+      "sha256": "5b2a6d41cf663c37285d4ab11b0c7cf77405beea9e4f352574b42d87288e9c8e"
+    },
+    "centroid-keep.txt": {
+      "bytes": 22752,
+      "sha256": "b3e98ae65b05c0e3cd308800125f821c4a1a48a1823e668506d3e999f0cc0057"
+    },
+    "certificate-and-stats.txt": {
+      "bytes": 3889681,
+      "sha256": "3ec1861a1bc2bab1e849544a797540d9a478194138ec683fb6c425be957e215a"
+    },
+    "clipped-rims.txt": {
+      "bytes": 39056,
+      "sha256": "8cac5dc4505b12a7161c74f809da8fcb67f9ac8ca480ed3fde02085f1d38857d"
+    },
+    "crease-merge-decisions.txt": {
+      "bytes": 120549,
+      "sha256": "b0b05d040d423dc895c5df8344318018971db41b4bdacddd73c80a0805499e9e"
+    },
+    "export-comparison.json": {
+      "bytes": 3724,
+      "sha256": "799dbc500bdb70f8611936d62026528c0670ffb84ba3eba3d532c26ab8a8f52d"
+    },
+    "exports/sliding_dumbbell.sv": {
+      "bytes": 1485,
+      "sha256": "c3d32cbd4a6a47abf29bc38edf9e297714dd6240120db88753e2acb78c0597f8"
+    },
+    "exports/status.tsv": {
+      "bytes": 1476,
+      "sha256": "7700eba173d985406e33622dfff107280a98665b27ca9ab696abf043b3135007"
+    },
+    "exports/tumbling_cylinder.stl": {
+      "bytes": 301734,
+      "sha256": "18ce27d2482ac515eaf1129d56aa195f069bb732ac609327b2b14c466a124df6"
+    },
+    "exports/tumbling_cylinder.sv": {
+      "bytes": 800,
+      "sha256": "12fe5d5aa9bb6b033409d3374d801cb8fac25078af804ca7d4bad39110d46a94"
+    },
+    "exports/tumbling_cylinder_perturbed_0.stl": {
+      "bytes": 336634,
+      "sha256": "5c5af06c94b11f12224e4f595f234d82a054f075613fe6939068a25c2ec520fb"
+    },
+    "exports/tumbling_cylinder_perturbed_0.sv": {
+      "bytes": 800,
+      "sha256": "12fe5d5aa9bb6b033409d3374d801cb8fac25078af804ca7d4bad39110d46a94"
+    },
+    "exports/tumbling_cylinder_perturbed_1.stl": {
+      "bytes": 313634,
+      "sha256": "5197ab7f630712d3e328c83cde1749b62b9cf8b4c9adf90aa0e2007b18db07d2"
+    },
+    "exports/tumbling_cylinder_perturbed_1.sv": {
+      "bytes": 800,
+      "sha256": "12fe5d5aa9bb6b033409d3374d801cb8fac25078af804ca7d4bad39110d46a94"
+    },
+    "exports/turned_box.stl": {
+      "bytes": 68384,
+      "sha256": "0066448220a982663c096737f1c7fd249b76b54f1021409437b939c718681dd6"
+    },
+    "exports/turned_box.sv": {
+      "bytes": 772,
+      "sha256": "3601fbba2ba9fe8893904b549187f09cc687ac3b8a238040f73be45cdc7ff76e"
+    },
+    "exports/turned_lens.stl": {
+      "bytes": 140984,
+      "sha256": "105bb4d9225c177eb7595d00ca339f1f6c5437d870f023d48fc8b17e1cabb22c"
+    },
+    "exports/turned_lens.sv": {
+      "bytes": 1065,
+      "sha256": "4b2fc49f8f0fc41b8c6e87dfa6bb2299bd3194e43e4746a72fd540f6bfe85fb0"
+    },
+    "exports/turning_prism.stl": {
+      "bytes": 52534,
+      "sha256": "32d0846e981288bf0476ff017e5403fc10832ec0f59ae03a551a3668a415f274"
+    },
+    "exports/turning_prism.sv": {
+      "bytes": 707,
+      "sha256": "4aa5d9cce0829531dbd45f106837d33c608afc6199f4b0e285b7430cf37c5080"
+    },
+    "exports/whole_turn_box.stl": {
+      "bytes": 68784,
+      "sha256": "a304b582d6c9599a7b44ac9737a05ab07bca4ae7eb2057f9ac7618240acba0c5"
+    },
+    "exports/whole_turn_box.sv": {
+      "bytes": 773,
+      "sha256": "088b5de6c26aa01421e66418de08c114887007dcdfeef4afd8d64054d4b08fac"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/construct.rs": {
+      "bytes": 16346,
+      "sha256": "98685c5ab45140e8de3d6484b8bd6df5bb387eacd8e84918fb01821453fdb569"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/crease.rs": {
+      "bytes": 16225,
+      "sha256": "6b434a2632f0b2920ab90f6123b10ff80b9e0f574a7779c34d38732687f57dec"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/planar.rs": {
+      "bytes": 19196,
+      "sha256": "ed97cfc1ba31507f2df8e13daac97069a262c2c8bf56029d6a293f5a28e2865c"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/stitch.rs": {
+      "bytes": 58076,
+      "sha256": "eb668daef6093eb48b9f2289aeb23a078af808951254de1425da3033290056b4"
+    },
+    "implementation/rust/gcs-core/src/solid/swept_boundary/trim.rs": {
+      "bytes": 29587,
+      "sha256": "9010e6231b961d91a4f5918dac8b14092a17208c4617267a61e41831898d460c"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh.rs": {
+      "bytes": 636,
+      "sha256": "89b7c9c56e34cab2a8d1c7581bae198427e2bf4112eabdc69799728e95489e9b"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/cylinder_replay.rs": {
+      "bytes": 32237,
+      "sha256": "bfcdb7fd78652ffd59b1fd1779bc2ccef3d8198e5698b3939ff17821354e1f59"
+    },
+    "implementation/rust/gcs-core/tests/sweep_mesh/provenance.rs": {
+      "bytes": 4721,
+      "sha256": "6c099ce71aa9bfb041c7d029516a142723f421233514256754ec7b01f4eb0bb3"
+    },
+    "merge-after-proposal.mesh": {
+      "bytes": 288,
+      "sha256": "5e6e64671cea8c5fe5920f98e7374f8e95079c53b6615f7dc2e0fcd98181c0c2"
+    },
+    "merge-before-proposal.mesh": {
+      "bytes": 288,
+      "sha256": "4d38a6a9039c60a2ec4994a82a031940ce2b762e322b277cd5ea4b4973e494c9"
+    },
+    "merged-lineage-check.mesh": {
+      "bytes": 376544,
+      "sha256": "2b7a6594e2fdbf9e4187e591332f233339215c523bedb4aaec9ab481cf7bc8b7"
+    },
+    "options.txt": {
+      "bytes": 287,
+      "sha256": "12b4b7b79460296f34ab8b59adf9ee2eae8217344e68a8add654a5eddf526282"
+    },
+    "overlap-decisions.txt": {
+      "bytes": 4587808,
+      "sha256": "3709ab307ab89bfc9dd85b7ce8f0f34fa9cd9b58672c5a15b27706740401c096"
+    },
+    "report.txt": {
+      "bytes": 10670,
+      "sha256": "3a209a593ff6133127b8d5b19e9586a9e8c7059314d2f91f540568db40811f21"
+    },
+    "sections.png": {
+      "bytes": 53216,
+      "sha256": "f00956e34db680c6b863b9d8cbefb3af63203a2ff18de656f714ecb516d08bf5"
+    },
+    "sections.svg": {
+      "bytes": 287852,
+      "sha256": "3e49425d7b7d45ff1f67ce31e4577634fb53d4c2b53794886a97010a75acb21f"
+    },
+    "seeds-and-label-witnesses.txt": {
+      "bytes": 4583399,
+      "sha256": "88ccc947d852fa3f2ed8f8a8404d8226e0940565ac446e2f30f96aa06e1cb426"
+    },
+    "selected-before.mesh": {
+      "bytes": 456183,
+      "sha256": "8e2c6d9ffabd7d01825cbb0e7d87c83a7e3135fcf90d53eccf89de560f18bc33"
+    },
+    "selected-proposal.mesh": {
+      "bytes": 298,
+      "sha256": "284b9d60ed3c1a78ed5b0b7df1563bf8fbfe3750065497ef32ad661dc9136d9a"
+    },
+    "selected-region.mesh": {
+      "bytes": 15272,
+      "sha256": "ea989ef673b7ee388be8016ce99e1c6ca62086c540b922d1f60e52fe4623e01b"
+    },
+    "selected-section.png": {
+      "bytes": 32512,
+      "sha256": "c762aeda1075fb79880b2bea79294fc83d5ee83ccf8a9872cedff9a63f77dc8d"
+    },
+    "selected-section.svg": {
+      "bytes": 173058,
+      "sha256": "225a22066acce599b020ab1943e3db23f1a1231435d0564f293e8fd8d41071fe"
+    },
+    "source.sv": {
+      "bytes": 800,
+      "sha256": "12fe5d5aa9bb6b033409d3374d801cb8fac25078af804ca7d4bad39110d46a94"
+    },
+    "stage-comparison.json": {
+      "bytes": 2971,
+      "sha256": "9b5423e71c5cabd3bb8a968d5df522faa369a94b214a5d9b338acca6c9841981"
+    },
+    "validation/phase1a-before.log": {
+      "bytes": 2564,
+      "sha256": "d115307921620cd393f1f1e088f7489738e4e39174599a3ffd3a3a17e9842d1c"
+    },
+    "validation/phase1a-core.log": {
+      "bytes": 106237,
+      "sha256": "28af30819acdf1d195303b34f161c7820f7a4d8718f364e99b83905f44e2cbd5"
+    },
+    "validation/phase1a-exports.log": {
+      "bytes": 3876,
+      "sha256": "5999acf6882502a756138561774b66b63c481b7f0cb6fef6a539fd1018e71608"
+    },
+    "validation/phase1a-provenance.log": {
+      "bytes": 4666,
+      "sha256": "6366fd12a94e17720167c24abfb1aa6d090334452f80073fd97af35a140d8e68"
+    },
+    "validation/phase1a-replay.log": {
+      "bytes": 13911,
+      "sha256": "324ba36e699ff25fe47e7cd76708b5bf6f7683240862c786343fa57c1b61a0ae"
+    },
+    "zip-decisions.txt": {
+      "bytes": 1613558,
+      "sha256": "81496a442d5bb7fe48e364a033ddbd4e851b0c19eb383ea8fcbd2225a05e0e14"
+    },
+    "zip-field-witnesses.txt": {
+      "bytes": 138423,
+      "sha256": "ee6184de36a7e585a4b97655fa936c94bd2ca8b30e6358119769fa3b6a9c59ea"
+    },
+    "zip-finished.mesh": {
+      "bytes": 486179,
+      "sha256": "5b2a6d41cf663c37285d4ab11b0c7cf77405beea9e4f352574b42d87288e9c8e"
+    },
+    "zip-round-00.mesh": {
+      "bytes": 455988,
+      "sha256": "8fdad3b3cf4e852b53bff18c6811640314c9877014cb5ffcd68df8610c9e731f"
+    },
+    "zip-round-01.mesh": {
+      "bytes": 478651,
+      "sha256": "f32182caa18ce5a261ca1084aaae02d52eca1beeeed7b9e2c052374eb12f6157"
+    },
+    "zip-round-02.mesh": {
+      "bytes": 482613,
+      "sha256": "df7479fe054aeea7c3c751310a7563bb6ca99bebdb7cc138703708769e67e712"
+    },
+    "zip-round-03.mesh": {
+      "bytes": 484666,
+      "sha256": "cd0a877079c4d99a467e439ff702197d8fab540d600e59b1afb629c0d0c4da5d"
+    },
+    "zip-round-04.mesh": {
+      "bytes": 485407,
+      "sha256": "384574b0f35d5971a403dc4c59e64567ccdc5c8a6b54fb5abb9aa232750f7631"
+    },
+    "zip-round-05.mesh": {
+      "bytes": 485866,
+      "sha256": "467de41645f1a0825dc6eea0079f44ebf40c3846dc06e4388a3501962883fa6f"
+    },
+    "zip-round-06.mesh": {
+      "bytes": 486179,
+      "sha256": "5b2a6d41cf663c37285d4ab11b0c7cf77405beea9e4f352574b42d87288e9c8e"
+    }
+  }
+}
