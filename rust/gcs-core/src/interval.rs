@@ -5,6 +5,30 @@
 
 pub mod minimum;
 
+/// Exact subtraction of binary64 data, or refusal if the result cannot be
+/// represented. TwoDiff retains the rounding residual; no tolerance is used.
+pub(crate) fn exact_difference(a: f64,b: f64) -> Option<f64> {
+    let x = a-b; let bv = a-x; let av = x+bv;
+    let br = bv-b; let ar = a-av;
+    [x,bv,av,br,ar].iter().all(|x| x.is_finite()).then_some(())?;
+    (ar+br == 0.).then_some(x)
+}
+
+#[cfg(test)]
+mod exact_tests {
+    use super::exact_difference as sub;
+    #[test]
+    fn an_inexact_difference_cannot_establish_identity() {
+        assert_eq!(sub(4.,3.),Some(1.));
+        assert_eq!(sub(3.,4.),Some(-1.));
+        assert_eq!(sub(0.,-f64::from_bits(1)),Some(f64::from_bits(1)));
+        for (a,b) in [(1.,f64::from_bits(1)),(1.,2_f64.powi(-54)),
+            (f64::MAX,-f64::MAX),(f64::NAN,0.),(0.,f64::INFINITY)] {
+            assert_eq!(sub(a,b),None);
+        }
+    }
+}
+
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Error { InvalidBounds, Overflow, DivisionByZero, OutsideDomain }
 

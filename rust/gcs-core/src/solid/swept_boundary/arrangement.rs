@@ -4,6 +4,7 @@
 use crate::{envelope,interval::{Interval as I,minimum},solid::{SweepContacts,SweptField,
     sweep_source::{self,Chart,SourcePoint}},space::{cross,distance,norm,normalised,sub}};
 pub mod edge;
+pub mod carrier;
 type V3 = [f64;3];
 type UV = [f64;2];
 

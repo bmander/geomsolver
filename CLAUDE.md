@@ -290,6 +290,12 @@ invent a trim; common-carrier domain arrangement remains necessary. Global visib
 arrangement and production shared-tessellator integration remain.
 `field_value_tolerance`, `minimum_probe_distance` and optional `spatial_audit` independently
 configure validation; defaults and the legacy candidate geometry are preserved.
+The [Phase 3 subphase plan](docs/swept-boundary-phase-three-plan.md) labels these milestones
+3a–3c complete; 3d (mapped rim-domain union) is next. The
+[3c record](docs/swept-boundary-phase-three-c.md) documents exact circle/coordinate-axis carrier
+identity, interval-regular projection maps and checked numerical inverses. Unsupported
+orientations and singular/budget limits remain explicit. 3k completes the cylinder's
+checked mesh export; 3l–3m extend general-sweep coverage. Use each subphase's stated exit gate.
 **Swept boundary Phase 2:** [docs/swept-boundary-phase-two.md](docs/swept-boundary-phase-two.md)
 records the isolated shared-domain tessellator and explicit cylinder chart experiment. Curve
 identities are distinct from endpoint identities; incident patches share sample indices and

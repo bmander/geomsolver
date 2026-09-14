@@ -38,7 +38,20 @@ pub struct Family {
     steps: Vec<Step>,
 }
 
+/// Structural reading for analytic carrier relations, without an axis tolerance.
+pub(crate) struct CoordinateRotation {
+    pub origin: [f64;3],
+    pub axis: usize,
+    pub rate: f64,
+}
+
 impl Family {
+    pub(crate) fn coordinate_rotation(&self) -> Option<CoordinateRotation> {
+        let [Step::Rotation {origin,axis,ratio,advance:0.,..}] = self.steps.as_slice()
+            else { return None; };
+        let (axis,direction) = crate::space::coordinate_axis(*axis)?;
+        (*ratio != 0.).then_some(CoordinateRotation {origin:*origin,axis,rate:direction*ratio})
+    }
     /// Upper bound on the speed of inverse(M(t))*point per radian, for every t in
     /// `domain`. This bounds the mathematical rigid family represented by the
     /// solved axes; it does not bound roundoff in `at` or error in the solved

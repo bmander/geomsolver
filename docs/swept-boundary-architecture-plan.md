@@ -551,65 +551,61 @@ the new backend, and retain the default refusal and probe-factor controls as dia
 
 ### Phase 3 — complete this cylinder, then test generality
 
-**Source-connection milestone implemented:** [Phase 3 progress](swept-boundary-phase-three.md)
-records native face/edge/crease coordinates, local station branches and numerical event
-observations retained through ordinary tracing, with owned source evaluators. It also separates
-field-value refinement, minimum side probes and spatial audit options from construction
-vertex/trimming tolerances. The ordinary mesh construction is still the legacy path.
+The [Phase 3 subphase plan](swept-boundary-phase-three-plan.md) is the implementation sequence
+for this phase. It defines dependencies, concrete outputs, refusal controls and completion
+criteria. The [implementation record](swept-boundary-phase-three.md) holds measured results.
 
-**Trim-construction milestone implemented:** the same progress record describes numerical
-intersections retaining both consumers' parameters, interval edge-contact isolation across a
-whole roll interval, and strict whole-box hiding witnesses. These operations remain separate
-from production construction. The carried rim counterexample demonstrates that repeated
-coverage can be a two-dimensional overlap on one spherical carrier, not a transverse curve.
+| Subphase | Work | Current status |
+| --- | --- | --- |
+| 3a | Retain evaluable source coordinates through tracing | Complete, `092f2cf` |
+| 3b | Supply local transverse trims, isolated edge roots and hiding witnesses | Complete, `9bf5cd9` |
+| 3c | Establish coincident-carrier correspondence for the overlapping rim bands | Complete; [record](swept-boundary-phase-three-c.md) |
+| 3d | Arrange the union of their covered domains and retain all consumer maps | **Next** |
+| 3e | Discover the cylinder's complete source/event cover and supported handoffs | Planned |
+| 3f | Construct its connected trim network | Planned |
+| 3g | Classify global visibility on native regions | Planned |
+| 3h | Assemble an oriented atlas compatible with the shared tessellator | Planned |
+| 3i | Integrate that atlas into ordinary sweep construction | Planned |
+| 3j | Pass the production cylinder's complete geometric acceptance gate | Planned |
+| 3k | Validate the actual float32 mesh export | Planned; **cylinder delivery** |
+| 3l | Restore primitive-tool and motion coverage | Planned |
+| 3m | Handle Boolean tools, multiple shells and topology changes | Planned; **general-sweep completion** |
 
-**Next milestone:** discover and resolve a complete event cover, establish correspondences for
-coincident carriers and arrange their overlapping domains as well as transverse trims. Then
-classify global visibility. Rank deficiency does not prove carrier equivalence, and failure
-to find a hiding witness does not prove exposure. Old proximity chains and normal-velocity
-band endpoints are observations, not established common trim curves. Connect the arrangement to the shared tessellator
-and reproduce the accepted cylinder. Phase 3's cylinder exit gate is not yet met.
+3c now establishes the carrier relation and regular maps for the two rim bands using exact
+structural circle/axis checks and interval monotonicity. Its first supported family uses
+orthogonal coordinate axes; it does not infer arbitrary carrier identity from rank deficiency.
+**Next is 3d:** arrange the union of those mapped domains while retaining every consumer.
+Local source boxes are still supplied to the experiment; 3e must discover them for production.
 
-Use the retained evaluable source charts to reproduce the accepted Phase 2 cylinder through
-the ordinary Solvent sweep path. The explicit test adapter is not a production geometry
-recognizer. The Phase 2 calibration provides a working validation setting; this task does not
-require another validator rewrite before constructing the domain arrangement.
+Use the retained source charts to reproduce the accepted Phase 2 cylinder through the ordinary
+Solvent sweep path. The explicit test adapter stays test-only. The Phase 2 calibration provides
+working validation settings; another validator rewrite is not a prerequisite for construction.
+No hiding witness means unresolved, not exposed. Numerical trim samples alone do not establish
+continuation. In 3h explicitly bridge trimmed regions to the tessellator's four-sided domains.
 
-Extend the successful replacement mechanism to the remaining unsupported regions, including
-failures away from rims identified in the current report. The historical count of 160 such
-failures is not the new backlog. Remove the corresponding repair
-paths as their responsibilities move into common boundaries. Keep supported existing surface
-where its evidence survives the change; invalidate evidence whenever geometry changes.
+Replace old repair responsibilities as their regions migrate into shared-boundary construction.
+Keep supported existing surfaces where their evidence survives; revalidate any changed geometry.
+Historical failure counts are measurements, not a fixed backlog of triangles to patch.
 
-Make the cylinder acceptance case an ordinary test once it passes. Promote a focused subset
-of diagnostic counterexamples into assertions rather than running thousands of lines of
-historical printouts as the acceptance suite.
+**Cylinder exit (3j–3k):** closed oriented topology with valid vertex links; no geometric
+self-intersections under the declared predicate contract; zero failed and unresolved surface
+obligations; independent section and volume agreement with stated numerical error; forward
+and reverse coverage at the requested spatial tolerance; and checks on the actual encoded
+float32 geometry. Promote the ordinary accepted-cylinder regression when these gates pass.
+Centroid tests alone do not establish whole-surface accuracy or geometric embedding.
 
-Restore positive coverage incrementally: first the independent curved controls in Phase 0a;
-then simple stationary/translated sphere and prismatic sweep cases as their mechanisms become
-supported; then the complete cylinder; then the remaining turned box/prism/lens, whole-turn
-and Boolean-tool cases. Each restored case must pass the current acceptance contract, rather
-than simply re-enable its old centroid-only assertion. Track construction recovery separately
-from validator calibration and keep the permanent negative controls active throughout. Update
-the recovery ledger as tests are restored or superseded; justify any change in recovery order
-by the mechanism actually being implemented.
+**General-sweep exit (3l–3m):** the same mechanism passes the turned box, whole-turn box,
+prism, lens and dumbbell plus cylinder angle/dimension/axis/scale/direction/tolerance variations.
+Restore simple curved and prismatic controls as their mechanisms become available; the
+completion sequence now prioritizes cylinder delivery before the broader recovery matrix.
+This makes the recovery order explicit instead of requiring a general constructor before the
+cylinder can ship. Keep permanent negative controls and the recovery ledger active throughout.
 
-**Cylinder exit:** closed oriented topology with valid vertex links; no geometric
-self-intersections; zero failed and zero unresolved surface obligations; independent section
-and volume agreement with stated numerical error; forward and reverse coverage at the
-requested spatial tolerance; and checked float32 export. Report actual evidence strength
-rather than calling centroid samples a whole-surface certificate.
-
-**General-sweep exit:** the same mechanism survives the turned box, whole-turn box, prism,
-lens and dumbbell, plus nearby cylinder angles, dimensions, axis perturbations, scale changes,
-reversed motion and finer/coarser tolerances. Add cases for endpoint contact, repeated coverage,
-concave Boolean-tool features and changes in contact topology. These should exercise shared
-mechanisms, not introduce fixture-specific fill dispatch.
-
-Arbitrary solids can have disconnected material, cavities and singular boundary contacts.
-Define which are representable as accepted shells and which produce an explicit unsupported
-or unresolved result. One connected manifold shell cannot be a universal success condition
-for every possible Boolean tool and motion. Do not quietly erase components to meet it.
+Cover endpoint contact, repeated coverage, concave features and topology changes. Define
+supported shell/component/cavity representations and explicit unsupported singular contacts.
+Do not discard material to satisfy a single-shell assumption. Unsupported arbitrary inputs
+are distinct from acceptance of the named regression cases. Neither gate is a theorem that
+every arbitrary sweep admits a finite manifold mesh. Hypoid integration remains Phase 4.
 
 ### Phase 4 — reconnect the work to hypoid gears
 
@@ -684,7 +680,10 @@ finite budgets cannot resolve the obligation.
 
 Phase 2 now demonstrates accepted shared-domain geometry against the corrected Phase 1a
 baseline. **Phase 3 now retains evaluable source charts and supplies local trim and hiding operations;
-its next step is a complete global arrangement, including coincident carriers, and reproduction
-of that result through the ordinary sweep path.** Preserve both the older alias/zip counterexamples
-and the new compressed-chart counterexample. The explicit fixture adapter and its calibrated settings
+3c now establishes the supported coincident-carrier relation and inverse branches. Its next
+bounded step is 3d, the mapped-domain union, in the
+[Phase 3 subphase plan](swept-boundary-phase-three-plan.md). Subphases 3d–3k build the
+arrangement and reproduce that result through ordinary construction and checked export.** Preserve
+both the older alias/zip counterexamples and the new compressed-chart counterexample. The explicit
+fixture adapter and its calibrated settings
 do not establish general sweeps or hypoid exports.

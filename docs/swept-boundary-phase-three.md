@@ -1,11 +1,16 @@
 # Phase 3 progress: source charts and trim construction
 
-Source connection was committed as `092f2cf` after `f09fa19`. The subsequent trim-construction
-milestone adds native-chart intersection candidates, isolated edge-contact roots and strict
+Subphase 3a, source connection, was committed as `092f2cf` after `f09fa19`. Subphase 3b,
+trim construction, was committed as `9bf5cd9` and adds native-chart intersection candidates, isolated edge-contact roots and strict
 hiding witnesses. Neither milestone completes the cylinder exit gate. Ordinary tracing retains
-evaluable source coordinates and local contact-branch/event observations. The ordinary candidate still uses
-the legacy cap, overlap and stitching construction. Phase 2's explicit atlas remains test
+evaluable source coordinates and local contact-branch/event observations. The ordinary candidate
+still uses the legacy cap, overlap and stitching construction. Phase 2's explicit atlas remains test
 support; it has not been installed as a cylinder recognizer.
+
+**Latest implementation:** [3c, carried-rim correspondence](swept-boundary-phase-three-c.md),
+establishes the common carrier analytically for supported circular edges and coordinate-axis
+rotations, retains interval-regular native maps, and supplies checked numerical inverses.
+The original two-band case is resolved. Domain union is the next subphase, 3d.
 
 ## Source connection
 
@@ -242,27 +247,23 @@ Final validation results:
 The full suite includes the source-chart regressions and shared-domain tests. The cylinder
 production acceptance gate is still deferred; passing these tests does not complete Phase 3.
 
-## Next construction milestone
+## Remaining subphases
 
-Build the global visibility arrangement from the retained source charts and solved motion:
+The [Phase 3 subphase plan](swept-boundary-phase-three-plan.md) now owns the detailed remaining
+sequence and completion criteria. This document remains the implementation and measurement
+record. The source-connection and trim-construction milestones above are **3a and 3b**, complete.
+[3c is also implemented](swept-boundary-phase-three-c.md), establishing a checked correspondence
+for the two carried-rim bands within the documented geometric support.
 
-1. Use source intervals to discover a complete event cover and continue branches through
-   periodic seams, folds and edge/face handoffs. The new edge isolator needs supplied brackets;
-   it does not discover all roots or license seam aliases. Preserve unresolved searches.
-2. Trace transverse trim candidates with the new pair evaluator, and separately establish
-   coincident-carrier correspondences. Arrange overlapping native domains on their common
-   carrier, preserving multiplicity. This is now a named requirement before assembling the
-   cylinder atlas, rather than assuming all repeated coverage produces transverse curves.
-3. Split native domains at those curves and classify global exposure against the complete
-   sweep. Whole-box hiding witnesses support discards; the no-witness case needs additional
-   exposure evidence. Sampled trace continuity and local contact alone cannot select material.
-4. Assign each supported common trim curve one identity and parameter sequence, retain its
-   coordinates on all consumers, and derive adequate directional refinement requests.
-5. Feed the arranged domains into the existing shared tessellator. Reproduce the Phase 2
-   cylinder through ordinary construction and check actual tracing-seed perturbations.
-6. Complete the cylinder gate: interval acceptance in both distance directions, topology,
-   intersections, independent section/volume checks, and encoded float32 export validation.
+**Next is 3d:** construct their domain union with all consumer maps. Shared carrier identity
+does not by itself construct that union or prove visibility.
+
+Subphases **3e–3h** discover the complete event cover, connect the trim network, classify
+visibility and assemble an oriented atlas compatible with the shared tessellator. **3i–3k**
+integrate ordinary construction, pass the cylinder's geometric gates and validate the actual
+encoded float32 mesh. **3l–3m** extend the same mechanism to the broader tool/motion matrix and
+multiple-shell or topology-changing cases. Hypoid CLI/Boolean integration remains Phase 4.
 
 The ordinary cylinder is still the Phase 1a candidate (6033 triangles, 13 open loops;
-5473 centroid brackets, 324 failed and 236 unresolved). These utilities do not improve that
-mesh until the arrangement owns its domains and is connected to production construction.
+5473 centroid brackets, 324 failed and 236 unresolved). The implemented utilities do not improve
+that mesh until the arrangement owns its domains and is connected to production construction.
