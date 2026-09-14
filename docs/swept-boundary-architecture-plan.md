@@ -69,7 +69,9 @@ bounded provenance repair and refreshed measurements → region selection from m
 one shared-boundary experiment → incremental recovery of successful sweeps. Existing phase
 numbers are retained; Phase 0a, Phase 1 and Phase 1a are implemented. Phase 2 now has a
 successful explicit-chart experiment. Phase 3 has begun with retained source coordinates and
-candidate chart evaluators; global trim arrangement and ordinary cylinder acceptance remain.
+candidate chart evaluators, followed by transverse trim candidates, isolated edge-contact roots
+and strict hiding witnesses. Coincident-carrier arrangement and ordinary cylinder acceptance
+remain.
 See [Phase 3 progress](swept-boundary-phase-three.md).
 
 ## Evidence and scope of this review
@@ -555,9 +557,17 @@ observations retained through ordinary tracing, with owned source evaluators. It
 field-value refinement, minimum side probes and spatial audit options from construction
 vertex/trimming tolerances. The ordinary mesh construction is still the legacy path.
 
-**Next milestone:** resolve the candidate events and construct the globally visible native
-domain arrangement. Old proximity chains and normal-velocity band endpoints are observations,
-not established common trim curves. Then connect that arrangement to the shared tessellator
+**Trim-construction milestone implemented:** the same progress record describes numerical
+intersections retaining both consumers' parameters, interval edge-contact isolation across a
+whole roll interval, and strict whole-box hiding witnesses. These operations remain separate
+from production construction. The carried rim counterexample demonstrates that repeated
+coverage can be a two-dimensional overlap on one spherical carrier, not a transverse curve.
+
+**Next milestone:** discover and resolve a complete event cover, establish correspondences for
+coincident carriers and arrange their overlapping domains as well as transverse trims. Then
+classify global visibility. Rank deficiency does not prove carrier equivalence, and failure
+to find a hiding witness does not prove exposure. Old proximity chains and normal-velocity
+band endpoints are observations, not established common trim curves. Connect the arrangement to the shared tessellator
 and reproduce the accepted cylinder. Phase 3's cylinder exit gate is not yet met.
 
 Use the retained evaluable source charts to reproduce the accepted Phase 2 cylinder through
@@ -673,7 +683,8 @@ finite budgets cannot resolve the obligation.
   counts after correctness holds; reuse spatial indexes and bounds before adding refinement.
 
 Phase 2 now demonstrates accepted shared-domain geometry against the corrected Phase 1a
-baseline. **Phase 3 now retains evaluable source-chart provenance; its next step is global
-trim arrangement and reproduction of that result through the ordinary sweep path.** Preserve both the older alias/zip counterexamples and the
-new compressed-chart counterexample. The explicit fixture adapter and its calibrated settings
+baseline. **Phase 3 now retains evaluable source charts and supplies local trim and hiding operations;
+its next step is a complete global arrangement, including coincident carriers, and reproduction
+of that result through the ordinary sweep path.** Preserve both the older alias/zip counterexamples
+and the new compressed-chart counterexample. The explicit fixture adapter and its calibrated settings
 do not establish general sweeps or hypoid exports.

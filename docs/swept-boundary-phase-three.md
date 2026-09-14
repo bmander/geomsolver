@@ -1,8 +1,9 @@
-# Phase 3 progress: reconnect tracing to source charts
+# Phase 3 progress: source charts and trim construction
 
-Implementation after `f09fa19`. This is the source-connection milestone of Phase 3,
-not completion of its cylinder exit gate. Ordinary tracing now retains evaluable source
-coordinates and local contact-branch/event observations. The ordinary candidate still uses
+Source connection was committed as `092f2cf` after `f09fa19`. The subsequent trim-construction
+milestone adds native-chart intersection candidates, isolated edge-contact roots and strict
+hiding witnesses. Neither milestone completes the cylinder exit gate. Ordinary tracing retains
+evaluable source coordinates and local contact-branch/event observations. The ordinary candidate still uses
 the legacy cap, overlap and stitching construction. Phase 2's explicit atlas remains test
 support; it has not been installed as a cylinder recognizer.
 
@@ -76,7 +77,7 @@ let options = SweptBoundaryOptions {
 These settings do not fix the legacy candidate's unsupported geometry. No acceptance condition
 has been weakened, and the ordinary cylinder success test remains deferred.
 
-## Validation
+## Source-connection validation (`092f2cf`)
 
 The focused `sweep_mesh::source_charts` tests exercise original geometry reevaluation across
 cylinder, sphere, box and Boolean-lens sources; both sheet layouts; intermediate native
@@ -122,22 +123,146 @@ The featureless CLI compile also attempted here fails at the pre-existing unguar
 features. The same references and feature guards are present in `f09fa19`. No CLI code was
 changed by this milestone.
 
+## Trim-construction milestone
+
+`solid::swept_boundary::arrangement` operates on the same solved source/motion snapshot.
+It does not yet alter `candidate` or `construct`.
+
+### Transverse trim candidates
+
+`Pair` intersects two evaluable source charts within explicit native-coordinate boxes. One
+of their four parameters is the curve coordinate; the shared bounded DogLeg adapter solves
+three original position-equality equations for the remaining parameters. Each result retains
+both native parameter pairs, source identities, roll values and separately evaluated positions.
+It does not average positions or infer a source from a nearby mesh vertex.
+
+Every root, including an exact initial seed, must pass the shared solver's rank check and a
+sampled surface-normal transversality check. Coincident carriers, tangent supports, missing
+station branches and out-of-domain trials cannot establish a trim curve. `trace` adaptively
+samples midpoint chord error and native parameter steps on both consumers. Its completed and
+unresolved spans partition the requested interval; budget exhaustion or failed solves cannot
+create a chord across a missing span. This is numerical intersection and sampling evidence,
+not a proof of branch uniqueness, continuous coverage, global exposure or spatial error.
+The caller currently supplies chart pairs, parameter boxes, seeds and a continuation coordinate.
+
+The cylinder's endpoint-wall intersection is constructed this way without its visibility
+formula in production code. A test-only analytic section judges the result. With sagitta
+`0.001`, tracing native `v` from `0.05` to `0.45` needs 65 root solves for 32 segments, with
+maximum sampled midpoint error `0.000891` or less. Both original consumers agree within
+`1e-11`. Perturbed seeds, exchanged consumers and half-roll angles 29.9, 30 and 30.1 degrees
+produce the same intersection within the stated test tolerance.
+
+### Isolated edge-contact events
+
+`arrangement::edge::isolate` uses outward-rounded source-surface and motion bounds for the
+original equation `G(t,roll) = n dot velocity = 0` on a declared incident face of a source edge.
+Strict opposite endpoint signs and a derivative excluding zero isolate one edge-coordinate
+root for **every** roll in the requested roll interval. The whole source interval must also
+have a nonzero normal: a pole's vacuous zero is not a contact root. Interval Newton contraction
+then encloses that same root. It retains the sign evidence, derivative, original domain, roll
+interval, root enclosure and work count. Reaching the requested parameter width is reported
+separately from having isolated the root; zero refinement budget keeps the wider enclosure.
+The width comparison is outward rounded too.
+
+This currently supports fixed-u/fixed-v edges of revolved faces. Other chart families, absent
+brackets, possible singularities and nonmonotone boxes refuse explicitly. It is an isolator
+within a supplied box, not a complete root cover or event discovery algorithm. In the cylinder
+regression all four edge/incident-face combinations isolate the root at `t=0.5` across the
+entire roll domain to width below `1e-12`. A root on the `t=0/1` seam cannot be strictly
+bracketed inside one such box and remains refused; a periodic handoff must establish the alias
+and outgoing branch before joining it. These roots are contact evidence, not edge eligibility,
+trim adjacency or global visibility evidence.
+
+### Global hiding witnesses
+
+`arrangement::hiding` queries the existing continuous minimizer over the complete sweep roll
+interval, then independently bounds the source field at its witness pose. Only a strictly
+negative upper bound licenses a `Hidden` witness for the **entire supplied spatial box**.
+The result retains the minimum enclosure, status and query count; confirming the witness
+costs one additional source-bound query beyond the minimizer's count. A hidden center cannot
+license discarding a box containing an exterior point. The cylinder test distinguishes local
+endpoint contact from coverage by an intermediate pose.
+
+No witness means unresolved, including when the budget runs out. It is not evidence of
+exposure. Nor does a box witness classify a whole source-parameter cell unless that cell's
+image has separately been enclosed in the box. Source-solve error transfer is still outside
+the existing interval geometry contract.
+
+### Barrier exposed: coincident carried supports
+
+Different parameter bands of a carried cylinder rim can overlap over a two-dimensional
+surface. They are not merely two transverse surfaces with an awkward intersection seed.
+For the nominal fixture a rim point satisfies `(x-3)^2 + y^2 + z^2 = 2`; tumbling about the x axis
+preserves this spherical carrier. Distinct generating edge parameters and roll values can
+therefore reach the same surface region. The new counterexample gives the intersection solver
+such an exact coincident point and requires refusal instead of manufacturing a trim curve.
+
+The arrangement needs an explicit treatment of **coincident carriers and their covered
+domains**, preserving each consumer's coordinates and multiplicity. Numerical rank deficiency
+only identifies an unresolved case; it does not prove carrier equivalence. Establish an
+analytic source/motion relation or a certified chart correspondence before arranging a union
+on one carrier. Then split at the domains' own boundaries, classify coverage and retain the
+chosen consumers with their maps. Proximity welding, dropping nearby triangles, or hard-coding
+the Phase 2 cylinder atlas would evade this obligation.
+
+The next focused construction experiment should arrange the two overlapping rim bands from
+this counterexample before attempting the full atlas. Derive a carrier correspondence from
+the source curve and motion, split at its folds and periodic seams, and retain each band's
+covered parameter domain. The output must contain the union boundary and maps back to every
+covering consumer. Test reversed consumer order and altered sampling seeds against the same
+analytic rim geometry; an incomplete correspondence must remain unresolved. Only then combine
+this result with the transverse endpoint trims and contact events. This gives the next step a
+specific geometric output and refusal control, rather than another mesh-repair heuristic.
+
+### Trim-construction validation
+
+The six `sweep_mesh::arrangement` tests cover source incidence, the independent endpoint-wall
+section, seed/consumer/roll perturbations, coincident-support refusal, partial trace coverage,
+work limits, uniform edge-root isolation, seam refusal, and whole-box hiding versus unresolved
+searches. Run:
+
+```
+cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core sweep_mesh::arrangement -- --nocapture
+cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core
+```
+
+Final validation results:
+
+- Focused arrangement suite: **6 passed**, zero failed.
+- Full core suite: **1,257 passed, zero failed, 100 ignored** (157.04 seconds).
+- `cargo check --manifest-path rust/Cargo.toml -p gcs-cli --features occt,manifold`: passed.
+- The ignored `sweep_mesh::status::phase_zero_status` exporter passed (102.78 seconds),
+  writing diagnostics to `/private/tmp/swept-boundary-phase3-trim-exports`. All seven STLs and
+  `status.tsv` are byte-identical to `exports/` in the unchanged Phase 1a replay archive;
+  its SHA-256 remains `914b94111651a4efcaa3249614fd2731e3c87ef9c24ba8abd509af1461e7fb7c`.
+  The dumbbell retains the same construction refusal. These are diagnostic candidates,
+  not newly accepted exports.
+- `git diff --check` and whitespace checks on the three new Rust files: passed.
+
+The full suite includes the source-chart regressions and shared-domain tests. The cylinder
+production acceptance gate is still deferred; passing these tests does not complete Phase 3.
+
 ## Next construction milestone
 
-Build the global visibility arrangement from these source charts and the solved motion:
+Build the global visibility arrangement from the retained source charts and solved motion:
 
-1. Resolve candidate events and contact branch continuations, including periodic seams,
-   folds and edge/face handoffs. Preserve unresolved event searches explicitly.
-2. Intersect endpoint carriers and swept supports, split their native domains at the
-   resulting trim curves, and determine exposure against the complete sweep. Trace
-   continuity and a local normal-velocity root alone cannot determine global exposure.
-3. Assign each supported common trim curve one identity and parameter sequence, retain its
+1. Use source intervals to discover a complete event cover and continue branches through
+   periodic seams, folds and edge/face handoffs. The new edge isolator needs supplied brackets;
+   it does not discover all roots or license seam aliases. Preserve unresolved searches.
+2. Trace transverse trim candidates with the new pair evaluator, and separately establish
+   coincident-carrier correspondences. Arrange overlapping native domains on their common
+   carrier, preserving multiplicity. This is now a named requirement before assembling the
+   cylinder atlas, rather than assuming all repeated coverage produces transverse curves.
+3. Split native domains at those curves and classify global exposure against the complete
+   sweep. Whole-box hiding witnesses support discards; the no-witness case needs additional
+   exposure evidence. Sampled trace continuity and local contact alone cannot select material.
+4. Assign each supported common trim curve one identity and parameter sequence, retain its
    coordinates on all consumers, and derive adequate directional refinement requests.
-4. Feed the arranged domains into the existing shared tessellator. Reproduce the Phase 2
+5. Feed the arranged domains into the existing shared tessellator. Reproduce the Phase 2
    cylinder through ordinary construction and check actual tracing-seed perturbations.
-5. Complete the cylinder gate: interval acceptance in both distance directions, topology,
+6. Complete the cylinder gate: interval acceptance in both distance directions, topology,
    intersections, independent section/volume checks, and encoded float32 export validation.
 
-The source connection removes the need to infer geometry from triangles. It does not remove
-the need for an arrangement solver. That distinction is the remaining architectural boundary;
-copying the Phase 2 cylinder's visibility formulas into production would bypass it.
+The ordinary cylinder is still the Phase 1a candidate (6033 triangles, 13 open loops;
+5473 centroid brackets, 324 failed and 236 unresolved). These utilities do not improve that
+mesh until the arrangement owns its domains and is connected to production construction.

@@ -1,9 +1,11 @@
 # Handoff: the certified swept boundary, milestone 5 (2026-09-12)
 
-**Latest implementation:** [Phase 3 source connection](swept-boundary-phase-three.md) retains
-native source coordinates and evaluable candidate charts through tracing, and separates
-validation controls from construction tolerances. Global trim arrangement and integration of
-the shared tessellator remain; the ordinary cylinder candidate geometry is still the baseline.
+**Latest implementation:** [Phase 3 progress](swept-boundary-phase-three.md) records source
+connection (`092f2cf`) and subsequent trim construction: intersections retaining both native
+consumers, interval-isolated edge-contact roots and strict whole-box hiding witnesses.
+Coincident carried surfaces require domain arrangement as well as transverse intersections.
+The global arrangement and production shared-tessellator integration remain; the ordinary
+cylinder geometry is still the Phase 1a baseline.
 
 **Latest experiment:** [Phase 2](swept-boundary-phase-two.md) adds shared parametric domains,
 common edge samples and an explicit cylinder source-chart adapter. The cylinder and three

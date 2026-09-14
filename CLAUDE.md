@@ -279,11 +279,15 @@ is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, 
 placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
 `SpatialField::value` for what may be judged in plain floating point: a face point on
 the boundary, a probe's side, never an interval claim.
-**Swept boundary Phase 3 source connection:** [docs/swept-boundary-phase-three.md](docs/swept-boundary-phase-three.md)
+**Swept boundary Phase 3 source charts and trims:** [docs/swept-boundary-phase-three.md](docs/swept-boundary-phase-three.md)
 records native coordinates, local station branches and candidate event observations retained
 through tracing. `solid::sweep_source` evaluates the original snapshot; chained vertices retain
 all original consumers without asserting a shared boundary. Caps/grazing meshes have no native
-provenance. Global visibility arrangement and production shared-tessellator integration remain.
+provenance. `swept_boundary::arrangement` adds numerical transverse trim candidates, interval
+edge-contact isolation and strict whole-box hiding witnesses. A failed hiding search is not
+exposure. Carried rim bands can share a spherical carrier: rank deficiency must refuse, not
+invent a trim; common-carrier domain arrangement remains necessary. Global visibility
+arrangement and production shared-tessellator integration remain.
 `field_value_tolerance`, `minimum_probe_distance` and optional `spatial_audit` independently
 configure validation; defaults and the legacy candidate geometry are preserved.
 **Swept boundary Phase 2:** [docs/swept-boundary-phase-two.md](docs/swept-boundary-phase-two.md)
@@ -292,7 +296,7 @@ identities are distinct from endpoint identities; incident patches share sample 
 retain their parameter coordinates. Anisotropic refinement addresses compressed rim charts.
 The cylinder and three perturbations pass full validation at 0.04 with explicit calibrated
 value/probe settings. Tessellation alone is not acceptance or a production sweep adapter.
-`SweepPatch` still lacks evaluable source-chart provenance. The ordinary pipeline is unchanged.
+Phase 3 adds `SweepPatch` source provenance; the ordinary construction pipeline is unchanged.
 **Swept boundary Phase 1a:** [docs/swept-boundary-phase-one-a.md](docs/swept-boundary-phase-one-a.md)
 records source-label retention through crease removal, parent-ownership regressions and
 stage checks. The corrected cylinder has 6033 triangles and still refuses acceptance;
