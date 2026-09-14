@@ -2,8 +2,8 @@
 
 This breaks down Phase 3 of the [architecture plan](swept-boundary-architecture-plan.md).
 The [implementation record](swept-boundary-phase-three.md) holds measurements and completed
-work. Subphases 3a–3b are committed through `9bf5cd9`; the 3c implementation is recorded
-[here](swept-boundary-phase-three-c.md). The ordinary cylinder still has 6033 triangles,
+work. Subphases 3a–3c are committed through `2f6e677`; the 3d implementation is recorded
+[here](swept-boundary-phase-three-d.md). The ordinary cylinder still has 6033 triangles,
 13 open loops, 324 failed centroid obligations and 236 unresolved ones. Phase 2's accepted
 mesh comes from a test-only explicit atlas, not the ordinary constructor.
 
@@ -19,8 +19,8 @@ output works, not that the cylinder or arbitrary sweeps are accepted.
 | 3a — Source connection | Evaluable source identities and native parameters through tracing | Phase 2 | Complete, `092f2cf` |
 | 3b — Local trim operations | Transverse trim candidates, isolated edge roots, strict hiding witnesses | 3a | Complete, `9bf5cd9` |
 | 3c — Coincident-carrier correspondence | A checked mapping between the two overlapping carried-rim charts | 3b | Complete; see 3c record |
-| 3d — Union of carried-rim domains | One arranged rim region with all covering consumer maps | 3c | **Next** |
-| 3e — Complete source and event cover | Automatically discovered charts, events and supported handoffs for the cylinder | 3b; uses 3c–3d at rim overlaps | Planned |
+| 3d — Union of carried-rim domains | One arranged rim region with all covering consumer maps | 3c | Complete; see 3d record |
+| 3e — Complete source and event cover | Automatically discovered charts, events and supported handoffs for the cylinder | 3b; uses 3c–3d at rim overlaps | **Next** |
 | 3f — Trim network | Connected intersection curves and event vertices in every incident chart | 3d, 3e | Planned |
 | 3g — Global visibility | Exposed/hidden/unresolved native regions with retained evidence | 3e, 3f | Planned |
 | 3h — Oriented shared atlas | Visible regions decomposed into evaluable domains with common curve identities | 3d, 3f, 3g | Planned |
@@ -92,7 +92,15 @@ Consumer reversal and changed solve seeds preserve the same relation; a nearby
 noncoincident example refuses the shared-carrier classification. No mesh or union is required
 here. Failure to establish correspondence is the reason to revise this approach before 3d.
 
-## 3d — Arrange the union of carried-rim domains
+## 3d — Arrange the union of carried-rim domains (complete)
+
+**Implementation:** [Phase 3d record](swept-boundary-phase-three-d.md). The original two bands
+produce seven oriented arrangement cells and one boundary loop, retaining both consumers in
+the overlap. Analytic line incidence and bounded interval ordering determine the union;
+near-periodic endpoints are not welded. Disjoint, nested, repeated and adjacent coverage have
+independent checks. Unsupported chart combinations, singular junctions, unresolved input boxes
+and uncertain/budget-limited predicates refuse. Native inverse failures remain numerical
+failures, never holes in the domain union. Production integration and visibility remain open.
 
 **Problem:** common-carrier identity does not say which part of that carrier either band covers,
 or what boundary their union has.
@@ -115,6 +123,11 @@ unresolved-domain controls. These are domain tests, so an open diagnostic rim pi
 satisfy the closed-solid mesher's topology contract.
 
 ## 3e — Discover the cylinder's complete source and event cover
+
+**Carry forward from 3d:** the local union requires regular pieces in one common projection
+chart, with fixed source-coordinate signs. Discover chart transitions and unresolved limits
+explicitly; do not turn numerical inverse failures or near-periodic endpoint proximity into
+coverage decisions. Broaden this contract only for concrete configurations found by the cover.
 
 **Problem:** today's charts and root isolator require caller-selected branches, boxes and seeds.
 Production cannot infer completeness from whichever strands happen to be sampled.

@@ -1,13 +1,14 @@
 # Handoff: the certified swept boundary, milestone 5 (2026-09-12)
 
-**Latest implementation:** [Phase 3c correspondence](swept-boundary-phase-three-c.md)
-establishes the common carried-rim sphere from exact source/motion relations for the supported
-coordinate-axis family. It retains interval-regular native maps, numerical inverse branches
-and unresolved singular limits. [3a–3b](swept-boundary-phase-three.md) supplied source provenance
-and local trim operations. The ordinary cylinder geometry remains the Phase 1a baseline.
+**Latest implementation:** [Phase 3d rim-domain union](swept-boundary-phase-three-d.md)
+arranges the original two carried-rim bands into seven oriented cells and one boundary loop,
+retaining every covering native consumer. It uses the [3c correspondence](swept-boundary-phase-three-c.md)
+and preserves distinct periodic endpoints, unsupported charts and unresolved limits explicitly.
+This is a carrier-domain union, not a global visibility classification. The ordinary cylinder
+geometry remains the Phase 1a baseline.
 
 **Implementation sequence:** [Phase 3 subphases](swept-boundary-phase-three-plan.md) names
-3a–3c as complete and **3d, the union of mapped rim domains, as next**. Cylinder construction,
+3a–3d as complete and **3e, the complete source/event cover, as next**. Cylinder construction,
 acceptance and encoded mesh validation finish at 3k; broader sweep coverage finishes at 3m.
 
 **Latest experiment:** [Phase 2](swept-boundary-phase-two.md) adds shared parametric domains,

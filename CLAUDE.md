@@ -286,15 +286,18 @@ all original consumers without asserting a shared boundary. Caps/grazing meshes 
 provenance. `swept_boundary::arrangement` adds numerical transverse trim candidates, interval
 edge-contact isolation and strict whole-box hiding witnesses. A failed hiding search is not
 exposure. Carried rim bands can share a spherical carrier: rank deficiency must refuse, not
-invent a trim; common-carrier domain arrangement remains necessary. Global visibility
-arrangement and production shared-tessellator integration remain.
+invent a trim. The local common-carrier union now retains all covering consumers. Global
+visibility arrangement and production shared-tessellator integration remain.
 `field_value_tolerance`, `minimum_probe_distance` and optional `spatial_audit` independently
 configure validation; defaults and the legacy candidate geometry are preserved.
 The [Phase 3 subphase plan](docs/swept-boundary-phase-three-plan.md) labels these milestones
-3a–3c complete; 3d (mapped rim-domain union) is next. The
+3a–3d complete; 3e (complete source/event cover) is next. The
 [3c record](docs/swept-boundary-phase-three-c.md) documents exact circle/coordinate-axis carrier
-identity, interval-regular projection maps and checked numerical inverses. Unsupported
-orientations and singular/budget limits remain explicit. 3k completes the cylinder's
+identity and regular maps. The [3d record](docs/swept-boundary-phase-three-d.md) documents the
+seven-cell two-band union, shared boundary identities and retained native consumers. Its common
+chart has fixed source-coordinate signs; unsupported chart combinations and singular/budget
+limits refuse explicitly. Near-periodic endpoints are not welded. Numerical inverse failures
+cannot remove established domain coverage. 3k completes the cylinder's
 checked mesh export; 3l–3m extend general-sweep coverage. Use each subphase's stated exit gate.
 **Swept boundary Phase 2:** [docs/swept-boundary-phase-two.md](docs/swept-boundary-phase-two.md)
 records the isolated shared-domain tessellator and explicit cylinder chart experiment. Curve

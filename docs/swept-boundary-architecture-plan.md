@@ -560,8 +560,8 @@ criteria. The [implementation record](swept-boundary-phase-three.md) holds measu
 | 3a | Retain evaluable source coordinates through tracing | Complete, `092f2cf` |
 | 3b | Supply local transverse trims, isolated edge roots and hiding witnesses | Complete, `9bf5cd9` |
 | 3c | Establish coincident-carrier correspondence for the overlapping rim bands | Complete; [record](swept-boundary-phase-three-c.md) |
-| 3d | Arrange the union of their covered domains and retain all consumer maps | **Next** |
-| 3e | Discover the cylinder's complete source/event cover and supported handoffs | Planned |
+| 3d | Arrange the union of their covered domains and retain all consumer maps | Complete; [record](swept-boundary-phase-three-d.md) |
+| 3e | Discover the cylinder's complete source/event cover and supported handoffs | **Next** |
 | 3f | Construct its connected trim network | Planned |
 | 3g | Classify global visibility on native regions | Planned |
 | 3h | Assemble an oriented atlas compatible with the shared tessellator | Planned |
@@ -574,8 +574,10 @@ criteria. The [implementation record](swept-boundary-phase-three.md) holds measu
 3c now establishes the carrier relation and regular maps for the two rim bands using exact
 structural circle/axis checks and interval monotonicity. Its first supported family uses
 orthogonal coordinate axes; it does not infer arbitrary carrier identity from rank deficiency.
-**Next is 3d:** arrange the union of those mapped domains while retaining every consumer.
-Local source boxes are still supplied to the experiment; 3e must discover them for production.
+3d now arranges the original two mapped bands into seven cells and one boundary loop,
+retaining every covering consumer and explicit refusals at unsupported or unresolved limits.
+**Next is 3e:** discover the complete source/event cover and its supported chart handoffs.
+Local source boxes are still supplied to the experiment; the ordinary constructor is unchanged.
 
 Use the retained source charts to reproduce the accepted Phase 2 cylinder through the ordinary
 Solvent sweep path. The explicit test adapter stays test-only. The Phase 2 calibration provides
@@ -680,9 +682,9 @@ finite budgets cannot resolve the obligation.
 
 Phase 2 now demonstrates accepted shared-domain geometry against the corrected Phase 1a
 baseline. **Phase 3 now retains evaluable source charts and supplies local trim and hiding operations;
-3c now establishes the supported coincident-carrier relation and inverse branches. Its next
-bounded step is 3d, the mapped-domain union, in the
-[Phase 3 subphase plan](swept-boundary-phase-three-plan.md). Subphases 3d–3k build the
+3c establishes the supported coincident-carrier relation and inverse branches, and 3d supplies
+the mapped-domain union. The next bounded step is 3e, the complete source/event cover, in the
+[Phase 3 subphase plan](swept-boundary-phase-three-plan.md). Subphases 3e–3k complete the
 arrangement and reproduce that result through ordinary construction and checked export.** Preserve
 both the older alias/zip counterexamples and the new compressed-chart counterexample. The explicit
 fixture adapter and its calibrated settings

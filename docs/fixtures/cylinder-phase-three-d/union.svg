@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="680" viewBox="0 0 800 680">
+<rect width="800" height="680" fill="white"/>
+<g font-family="sans-serif" fill="#18232e"><text x="45" y="35" font-size="22">Carried-rim domain union</text>
+<text x="45" y="60" font-size="14">Two native bands · one common chart · seven cells · one boundary loop</text>
+<text x="45" y="630" font-size="14">Blue: band 0 only   Orange: band 1 only   Purple: both consumers</text>
+<text x="45" y="655" font-size="13">Thin periodic-end cells remain distinct; this drawing cannot resolve their width.</text></g>
+<path d="M80 85 V590 H725" fill="none" stroke="#607080"/>
+<g font-family="sans-serif" font-size="14" fill="#18232e"><text x="610" y="612">w = |source y|</text><text x="20" y="95">posed y</text></g>
+<polygon points="142.79051953,463.05076441 142.79051953,463.05076441 142.79051953,223.05076441 142.79051953,223.05076441" fill="#70b7e5" stroke="#ffffff" stroke-width="1"><title>Cell 0, consumers [0]</title></polygon>
+<polygon points="142.79051953,463.05076441 657.35026919,570.00000000 657.35026919,330.00000000 142.79051953,436.94923559" fill="#70b7e5" stroke="#ffffff" stroke-width="1"><title>Cell 1, consumers [0]</title></polygon>
+<polygon points="142.79051953,436.94923559 657.35026919,330.00000000 657.35026919,330.00000000 142.79051953,223.05076441" fill="#b096d4" stroke="#ffffff" stroke-width="1"><title>Cell 2, consumers [0, 1]</title></polygon>
+<polygon points="142.79051953,223.05076441 657.35026919,330.00000000 657.35026919,90.00000000 142.79051953,196.94923559" fill="#edb471" stroke="#ffffff" stroke-width="1"><title>Cell 3, consumers [1]</title></polygon>
+<polygon points="657.35026919,570.00000000 667.78525229,572.16887051 667.78525229,332.16887051 657.35026919,330.00000000" fill="#70b7e5" stroke="#ffffff" stroke-width="1"><title>Cell 4, consumers [0]</title></polygon>
+<polygon points="657.35026919,330.00000000 667.78525229,327.83112949 667.78525229,87.83112949 657.35026919,90.00000000" fill="#edb471" stroke="#ffffff" stroke-width="1"><title>Cell 5, consumers [1]</title></polygon>
+<polygon points="667.78525229,327.83112949 667.78525229,327.83112949 667.78525229,87.83112949 667.78525229,87.83112949" fill="#edb471" stroke="#ffffff" stroke-width="1"><title>Cell 6, consumers [1]</title></polygon>
+<polyline points="142.79051953,463.05076441 142.79051953,463.05076441" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 0</title></polyline>
+<polyline points="142.79051953,463.05076441 657.35026919,570.00000000" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 6</title></polyline>
+<polyline points="657.35026919,570.00000000 667.78525229,572.16887051" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 13</title></polyline>
+<polyline points="667.78525229,572.16887051 667.78525229,332.16887051" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 14</title></polyline>
+<polyline points="657.35026919,330.00000000 667.78525229,332.16887051" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 15</title></polyline>
+<polyline points="657.35026919,330.00000000 667.78525229,327.83112949" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 16</title></polyline>
+<polyline points="667.78525229,327.83112949 667.78525229,327.83112949" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 19</title></polyline>
+<polyline points="667.78525229,327.83112949 667.78525229,87.83112949" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 20</title></polyline>
+<polyline points="667.78525229,87.83112949 667.78525229,87.83112949" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 21</title></polyline>
+<polyline points="657.35026919,90.00000000 667.78525229,87.83112949" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 18</title></polyline>
+<polyline points="142.79051953,196.94923559 657.35026919,90.00000000" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 11</title></polyline>
+<polyline points="142.79051953,223.05076441 142.79051953,196.94923559" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 12</title></polyline>
+<polyline points="142.79051953,223.05076441 142.79051953,223.05076441" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 3</title></polyline>
+<polyline points="142.79051953,436.94923559 142.79051953,223.05076441" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 4</title></polyline>
+<polyline points="142.79051953,463.05076441 142.79051953,436.94923559" fill="none" stroke="#18232e" stroke-width="2"><title>Shared edge 5</title></polyline>
+</svg>

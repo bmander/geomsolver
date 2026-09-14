@@ -6,6 +6,7 @@ use crate::{envelope,interval::{Interval as I,Error as Arithmetic},solid::{Sweep
     ToolFace,EdgeChart,sweep_source::{Source,SourcePoint,Evaluation}},space::distance};
 type V = [f64;3];
 type Box2 = [[f64;2];2];
+pub mod union;
 
 #[derive(Clone,Debug,PartialEq)]
 pub enum Error {

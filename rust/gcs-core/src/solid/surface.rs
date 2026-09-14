@@ -7,6 +7,7 @@ mod meridian_contacts;
 pub use meridian_contacts::MeridianContact;
 mod bounds;
 mod carrier;
+pub(crate) use carrier::CoordinateCircle;
 pub use bounds::SurfaceBounds;
 mod project;
 pub use project::{SurfaceProjection,SurfaceProjector};

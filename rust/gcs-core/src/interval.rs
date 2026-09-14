@@ -4,6 +4,7 @@
 //! not the platform libm's unspecified transcendental accuracy.
 
 pub mod minimum;
+pub(crate) mod wide;
 
 /// Exact subtraction of binary64 data, or refusal if the result cannot be
 /// represented. TwoDiff retains the rounding residual; no tolerance is used.
