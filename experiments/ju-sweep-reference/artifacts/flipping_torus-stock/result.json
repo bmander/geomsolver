@@ -1,0 +1,178 @@
+{
+  "case": "flipping_torus-stock",
+  "command": [
+    "/private/tmp/ju-swept-volume-20260914/build/generalized_sweep",
+    "/private/tmp/ju-sweep-showcase-20260914/flipping_torus-stock/mesh",
+    "-f",
+    "/private/tmp/ju-sweep-showcase-20260914/flipping_torus-stock/sweep.yaml",
+    "-c",
+    "/private/tmp/ju-sweep-showcase-20260914/flipping_torus-stock/config.yaml"
+  ],
+  "capsule": null,
+  "input_sha256": {
+    "sweep": "b43764efcbe0126cfb3895cc237cebe8866fdc3bfe796f8a36567ee607a8aa2a",
+    "config": "03a728cfc79f52cb019ebf949cf81dd7f533b2210fe77e5460b3654169731ee2"
+  },
+  "status": "ok",
+  "returncode": 0,
+  "run_seconds": 37.434298409032635,
+  "audit": {
+    "file": "/private/tmp/ju-sweep-showcase-20260914/flipping_torus-stock/mesh/sweep_surface.msh",
+    "sha256": "e0693ef26c17ae909974a74b99bae5335639dd930d1469862e699400980112d5",
+    "topology": {
+      "vertices": 79608,
+      "unused_vertices": 0,
+      "edges": 238817,
+      "triangles": 159212,
+      "boundary_edges": 0,
+      "nonmanifold_edges": 1,
+      "inconsistent_edges": 0,
+      "nonmanifold_vertex_links": 3,
+      "components": [
+        {
+          "vertices": 77485,
+          "edges": 232460,
+          "faces": 154974,
+          "euler": -1,
+          "signed_volume": 0.10710852464894788
+        },
+        {
+          "vertices": 1715,
+          "edges": 5139,
+          "faces": 3426,
+          "euler": 2,
+          "signed_volume": -0.0003725528334439387
+        },
+        {
+          "vertices": 408,
+          "edges": 1218,
+          "faces": 812,
+          "euler": 2,
+          "signed_volume": -1.2963888445006169e-05
+        }
+      ],
+      "signed_volume": 0.10672300792705894
+    },
+    "binary64": {
+      "degenerate_triangles": 1787,
+      "first_degenerate": [
+        144187,
+        144191,
+        144193,
+        144200,
+        144210,
+        144225,
+        144230,
+        144236,
+        144239,
+        144246,
+        144277,
+        144278,
+        144281,
+        144287,
+        144291,
+        144293
+      ],
+      "coordinate_aliases": 894,
+      "improper_pairs": [
+        [
+          157122,
+          157021
+        ],
+        [
+          157122,
+          86202
+        ],
+        [
+          157122,
+          140688
+        ],
+        [
+          157123,
+          140688
+        ],
+        [
+          157122,
+          157018
+        ],
+        [
+          157122,
+          157020
+        ],
+        [
+          157122,
+          158301
+        ],
+        [
+          157123,
+          158301
+        ],
+        [
+          157122,
+          158303
+        ],
+        [
+          140688,
+          158303
+        ],
+        [
+          126639,
+          154940
+        ]
+      ],
+      "tested_pairs": 74068,
+      "pair_scan_complete": false,
+      "integer_scale_exponent": 57,
+      "exact_signed_volume_as_float": 0.10672300792706114,
+      "seconds": 15.615592663991265,
+      "scope": "Exact predicates on represented coordinates; no source-accuracy or topology-equivalence claim"
+    },
+    "binary32": {
+      "degenerate_triangles": 2449,
+      "first_degenerate": [
+        142496,
+        144187,
+        144191,
+        144193,
+        144200,
+        144210,
+        144225,
+        144229,
+        144230,
+        144236,
+        144239,
+        144246,
+        144254,
+        144259,
+        144267,
+        144277
+      ],
+      "coordinate_aliases": 1224,
+      "improper_pairs": [
+        [
+          126639,
+          154940
+        ],
+        [
+          151332,
+          151333
+        ],
+        [
+          152016,
+          151333
+        ],
+        [
+          152016,
+          152018
+        ]
+      ],
+      "tested_pairs": 74294,
+      "pair_scan_complete": false,
+      "integer_scale_exponent": 28,
+      "exact_signed_volume_as_float": 0.10672300837651047,
+      "seconds": 15.35856922203675,
+      "scope": "Exact predicates on represented coordinates; no source-accuracy or topology-equivalence claim",
+      "topology_refusal": "repeated directed edge"
+    }
+  }
+}

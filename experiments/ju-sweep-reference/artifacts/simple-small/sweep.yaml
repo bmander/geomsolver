@@ -1,0 +1,19 @@
+type: sweep
+dimension: 3
+primitive:
+  type: ball
+  center:
+  - 0.0
+  - 0.0
+  - 0.0
+  radius: 0.020000000000000004
+  degree: 2
+transform:
+  type: polyline
+  points:
+  - - -0.05
+    - 0.0
+    - 0.0
+  - - 0.05
+    - 0.0
+    - 0.0

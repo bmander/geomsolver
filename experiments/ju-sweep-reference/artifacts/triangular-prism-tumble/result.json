@@ -1,0 +1,177 @@
+{
+  "case": "triangular-prism-tumble",
+  "commit": "0bb260118443545029c98db2e98278fac27ba460",
+  "command": [
+    "/private/tmp/ju-swept-volume-20260914/build/generalized_sweep",
+    "/private/tmp/ju-sweep-prisms-20260914/triangular-prism-tumble/mesh",
+    "-f",
+    "/private/tmp/ju-sweep-prisms-20260914/triangular-prism-tumble/tool.obj",
+    "-c",
+    "/private/tmp/ju-sweep-prisms-20260914/triangular-prism-tumble/config.yaml",
+    "-r",
+    "2"
+  ],
+  "binary_sha256": "4a724b36ed1cb9881385fdb42cc75c9a47236b25e8d34479c0b6a1336aa692b5",
+  "tool_sha256": "65e9e19655c26d26336802e73680bded9ba4b07c9407123670705ce7bbbf7998",
+  "tool_audit": {
+    "vertices": 258,
+    "edges": 768,
+    "triangles": 512,
+    "euler": 2,
+    "genus": 0,
+    "signed_volume": 0.0032399997290966493,
+    "sha256": "f34e00c2e814e378b47e64fea86baea8b7e4cf0a73f309d4bbdaabfc879d31d3",
+    "bytes": 25684,
+    "coordinate_scale_exponent": 29,
+    "signed_volume_exact": "3916919328049343171813/1208925819614629174706176",
+    "embedded": true,
+    "all_triangle_pairs": 130816,
+    "exact_pair_tests": 4136,
+    "seconds": 0.26584943500347435,
+    "scope": "exact embedding and outward orientation of this encoded closed mesh; source geometry, material coverage, surface deviation and mating not certified"
+  },
+  "tool_topology": {
+    "vertices": 258,
+    "unused_vertices": 0,
+    "edges": 768,
+    "triangles": 512,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "inconsistent_edges": 0,
+    "nonmanifold_vertex_links": 0,
+    "components": [
+      {
+        "vertices": 258,
+        "edges": 768,
+        "faces": 512,
+        "euler": 2,
+        "signed_volume": 0.0032400000000000003
+      }
+    ],
+    "signed_volume": 0.0032400000000000003
+  },
+  "generation_timeout": 300,
+  "audit_seconds": 15,
+  "motion": {
+    "start": [
+      0.14,
+      0.51,
+      0.5
+    ],
+    "end": [
+      0.86,
+      0.51,
+      0.51
+    ],
+    "axis": [
+      0,
+      0,
+      1
+    ],
+    "angle_degrees": 360
+  },
+  "input_representation": "Sharp, subdivided planar OBJ faces; reference mesh distance and gradient callback",
+  "status": "ok",
+  "returncode": 0,
+  "run_seconds": 177.28551130800042,
+  "audit": {
+    "file": "/private/tmp/ju-sweep-prisms-20260914/triangular-prism-tumble/mesh/sweep_surface.msh",
+    "sha256": "666bcb8e6391f89c97ca261a28a3d94bb3b877eb01626b2683fd6d6fb4013616",
+    "topology": {
+      "vertices": 200795,
+      "unused_vertices": 0,
+      "edges": 602532,
+      "triangles": 401708,
+      "boundary_edges": 0,
+      "nonmanifold_edges": 30,
+      "inconsistent_edges": 0,
+      "nonmanifold_vertex_links": 74,
+      "components": [
+        {
+          "vertices": 200795,
+          "edges": 602532,
+          "faces": 401708,
+          "euler": -29,
+          "signed_volume": 0.025714907812911775
+        }
+      ],
+      "signed_volume": 0.025714907812911775
+    },
+    "binary64": {
+      "degenerate_triangles": 2927,
+      "first_degenerate": [
+        372686,
+        372703,
+        372726,
+        372727,
+        372740,
+        372761,
+        372786,
+        372787,
+        372788,
+        372789,
+        372801,
+        372813,
+        372814,
+        372818,
+        372827,
+        372833
+      ],
+      "coordinate_aliases": 1464,
+      "improper_pairs": [],
+      "tested_pairs": 95401,
+      "pair_scan_complete": false,
+      "integer_scale_exponent": 64,
+      "exact_signed_volume_as_float": 0.025714907812910935,
+      "seconds": 16.164246111991815,
+      "scope": "Exact predicates on represented coordinates; no source-accuracy or topology-equivalence claim"
+    },
+    "binary32": {
+      "degenerate_triangles": 4212,
+      "first_degenerate": [
+        372686,
+        372703,
+        372726,
+        372727,
+        372740,
+        372750,
+        372761,
+        372775,
+        372786,
+        372787,
+        372788,
+        372789,
+        372796,
+        372799,
+        372801,
+        372813
+      ],
+      "coordinate_aliases": 2107,
+      "improper_pairs": [
+        [
+          387564,
+          360267
+        ],
+        [
+          387565,
+          360267
+        ],
+        [
+          387567,
+          360267
+        ],
+        [
+          387567,
+          400332
+        ]
+      ],
+      "tested_pairs": 71562,
+      "pair_scan_complete": false,
+      "integer_scale_exponent": 39,
+      "exact_signed_volume_as_float": 0.02571490782941171,
+      "seconds": 15.989835744025186,
+      "scope": "Exact predicates on represented coordinates; no source-accuracy or topology-equivalence claim",
+      "topology_refusal": "repeated directed edge"
+    }
+  }
+}

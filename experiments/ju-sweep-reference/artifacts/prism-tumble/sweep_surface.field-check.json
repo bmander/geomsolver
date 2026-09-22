@@ -1,0 +1,109 @@
+{
+  "file": "/private/tmp/ju-sweep-prisms-20260914/prism-tumble/mesh/sweep_surface.npz",
+  "surface_samples": 8192,
+  "time_samples": 2049,
+  "worst_inside_samples": [
+    {
+      "point": [
+        0.5435357406235088,
+        0.43373208642884997,
+        0.4553927668797956
+      ],
+      "field_value": -0.011393743442295545,
+      "time": 0.39990234375,
+      "kind": "vertex",
+      "index": 225433
+    },
+    {
+      "point": [
+        0.07343751564621927,
+        0.45445038637734064,
+        0.5566548182148559
+      ],
+      "field_value": -0.004370572410144102,
+      "time": 0.1025390625,
+      "kind": "triangle centroid",
+      "index": 456952,
+      "triangle_area": 7.446633054888886e-21
+    },
+    {
+      "point": [
+        0.07090011501838349,
+        0.45673348663715463,
+        0.557708395812576
+      ],
+      "field_value": -0.0033267604374239146,
+      "time": 0.103515625,
+      "kind": "triangle centroid",
+      "index": 442605,
+      "triangle_area": 2.3430458780033673e-07
+    },
+    {
+      "point": [
+        0.32773441553581506,
+        0.34276690976453694,
+        0.4494163064837402
+      ],
+      "field_value": -0.003202068247966594,
+      "time": 0.3046875,
+      "kind": "vertex",
+      "index": 226958
+    },
+    {
+      "point": [
+        0.23203127994202077,
+        0.6415200922223958,
+        0.44531255355104804
+      ],
+      "field_value": -0.002749076988548038,
+      "time": 0.25634765625,
+      "kind": "vertex",
+      "index": 222158
+    },
+    {
+      "point": [
+        0.5460633514618531,
+        0.34456175367911007,
+        0.5601563137024641
+      ],
+      "field_value": -0.002684468945727117,
+      "time": 0.6240234375,
+      "kind": "vertex",
+      "index": 30833
+    },
+    {
+      "point": [
+        0.327592352229504,
+        0.3419376417870112,
+        0.4523478201646299
+      ],
+      "field_value": -0.0026738757072045233,
+      "time": 0.30517578125,
+      "kind": "triangle centroid",
+      "index": 456161,
+      "triangle_area": 6.349625464438773e-07
+    },
+    {
+      "point": [
+        0.010980634482147348,
+        0.4101994227546888,
+        0.531945065599795
+      ],
+      "field_value": -0.0024815082825821178,
+      "time": 0.013671875,
+      "kind": "vertex",
+      "index": 32527
+    }
+  ],
+  "maximum_tool_point_speed_bound": 1.8191779792726765,
+  "temporal_sampling_remainder": 0.0004441352488458683,
+  "sampled_min_field_min": -0.011393743442295545,
+  "sampled_min_field_max": 0.0007066166052955292,
+  "min_field_interval_over_samples": [
+    -0.011837878691141413,
+    0.0007066166052955292
+  ],
+  "samples_with_field_below_minus_002": 24,
+  "samples_with_field_above_002_after_remainder": 0,
+  "scope": "Sampled original float64 vertices and centroids; min-over-time box field, not whole-surface or repaired-mesh accuracy"
+}

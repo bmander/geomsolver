@@ -1,0 +1,11 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 58b172b..6ef5dc2 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -133,3 +133,6 @@ if (SWEEP_PYTHON_BINDING)
+     )
+     add_library(sweep::pysweep3d ALIAS pysweep3d)
+ endif()
++
++# Avoid mixing optional system fmt headers with spdlog bundled fmt.
++target_compile_definitions(strong_type INTERFACE STRONG_HAS_FMT_FORMAT=0)

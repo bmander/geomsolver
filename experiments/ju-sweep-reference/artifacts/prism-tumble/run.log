@@ -1,0 +1,37 @@
+[2026-09-14 00:56:12.589] [sweep] [info] === Generalized Sweep Parameters ===
+[2026-09-14 00:56:12.590] [sweep] [info] Grid resolution: 4 x 4 x 4
+[2026-09-14 00:56:12.590] [sweep] [info] Grid bbox min: (-0.2, -0.2, -0.2)
+[2026-09-14 00:56:12.590] [sweep] [info] Grid bbox max: (1.2, 1.2, 1.2)
+[2026-09-14 00:56:12.590] [sweep] [info] Envelope epsilon: 0.002
+[2026-09-14 00:56:12.590] [sweep] [info] Silhouette epsilon: 0.005
+[2026-09-14 00:56:12.590] [sweep] [info] Max splits: 2147483647
+[2026-09-14 00:56:12.590] [sweep] [info] Insideness check: true
+[2026-09-14 00:56:12.590] [sweep] [info] Vertex snapping: true
+[2026-09-14 00:56:12.590] [sweep] [info] Cyclic trajectory: false
+[2026-09-14 00:56:12.590] [sweep] [info] Volume threshold: 1e-05
+[2026-09-14 00:56:12.590] [sweep] [info] Face count threshold: 200
+[2026-09-14 00:56:12.590] [sweep] [info] Adaptive refinement: true
+[2026-09-14 00:56:12.590] [sweep] [info] Initial time samples: 8
+[2026-09-14 00:56:12.590] [sweep] [info] Minimum tet radius ratio: 1e-05
+[2026-09-14 00:56:12.590] [sweep] [info] Minimum tet edge length: 2e-05
+[2026-09-14 00:56:12.590] [sweep] [info] =====================================
+[2026-09-14 00:56:12.590] [sweep] [info] Initial grid generation time: 0.000339421 seconds
+[2026-09-14 00:56:12.590] [sweep] [info] Adaptively refine the background grid...
+[2026-09-14 00:58:24.793] [sweep] [info] 4D Vertex Number: 6323182 4D Tetrahedra Number: 130130195
+[2026-09-14 00:58:25.749] [sweep] [info] Grid refinement time: 133.156791227 seconds
+[2026-09-14 00:58:25.750] [mtetcol] [info] Set simplices with 922798 tets
+[2026-09-14 00:58:27.497] [mtetcol] [info] num_vertices: 170732
+[2026-09-14 00:58:27.498] [mtetcol] [info] num_edges: 1093630
+[2026-09-14 00:58:27.498] [mtetcol] [info] num_triangles: 1845697
+[2026-09-14 00:58:27.498] [mtetcol] [info] num_tetrahedra: 922798
+[2026-09-14 00:58:27.649] [mtetcol] [info] Contour vertices: 911980
+[2026-09-14 00:58:28.020] [mtetcol] [info] Contour segments: 5757044
+[2026-09-14 00:58:28.777] [mtetcol] [info] Contour cycles: 9854838
+[2026-09-14 00:58:29.644] [mtetcol] [info] Contour polyhedra: 4813486
+[2026-09-14 00:58:30.744] [sweep] [info] Silhouette extraction time: 3.126496118 seconds
+[2026-09-14 00:58:40.500] [sweep] [info] Envelope computation time: 9.642922005 seconds
+[2026-09-14 00:59:27.378] [sweep] [info] Arrangement computation time: 46.876332445 seconds
+[2026-09-14 00:59:27.420] [sweep] [info] Sweep surface extraction time: 0.042681607 seconds
+[2026-09-14 00:59:27.566] [sweep] [info] Created output directory: /private/tmp/ju-sweep-prisms-20260914/prism-tumble/mesh
+[2026-09-14 00:59:28.217] [lagrange] [warning] Skipping saving edge attribute is_feature in MSH format
+[2026-09-14 00:59:30.224] [sweep] [info] Saving time: 2.658509 seconds

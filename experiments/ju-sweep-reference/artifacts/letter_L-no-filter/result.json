@@ -1,0 +1,112 @@
+{
+  "case": "letter_L-no-filter",
+  "command": [
+    "/private/tmp/ju-swept-volume-20260914/build/generalized_sweep",
+    "/private/tmp/ju-sweep-showcase-20260914/letter_L-no-filter/mesh",
+    "-f",
+    "/private/tmp/ju-sweep-showcase-20260914/letter_L-no-filter/sweep.yaml",
+    "-c",
+    "/private/tmp/ju-sweep-showcase-20260914/letter_L-no-filter/config.yaml"
+  ],
+  "capsule": null,
+  "input_sha256": {
+    "sweep": "99ee8f9b48cbe52dec8bc94b3470e75a5750e5e5941af26b948bad64b759b457",
+    "config": "be6a3d18f9d8057518fa045bc7f44b859701859823f7507f91e6b85d2efe7ddf"
+  },
+  "status": "ok",
+  "returncode": 0,
+  "run_seconds": 40.373860334046185,
+  "audit": {
+    "file": "/private/tmp/ju-sweep-showcase-20260914/letter_L-no-filter/mesh/sweep_surface.msh",
+    "sha256": "6c0abf4028f04b62f1eeaf948f6336c749024e801a776e3eb6e5e8a8bb9b2910",
+    "topology": {
+      "vertices": 52934,
+      "unused_vertices": 0,
+      "edges": 158799,
+      "triangles": 105866,
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "inconsistent_edges": 0,
+      "nonmanifold_vertex_links": 3,
+      "components": [
+        {
+          "vertices": 52928,
+          "edges": 158787,
+          "faces": 105858,
+          "euler": -1,
+          "signed_volume": 0.00819703362468993
+        },
+        {
+          "vertices": 6,
+          "edges": 12,
+          "faces": 8,
+          "euler": 2,
+          "signed_volume": -9.644615551971454e-16
+        }
+      ],
+      "signed_volume": 0.008197033624688965
+    },
+    "binary64": {
+      "degenerate_triangles": 396,
+      "first_degenerate": [
+        101689,
+        101708,
+        101722,
+        101726,
+        101742,
+        101746,
+        101754,
+        101764,
+        101768,
+        101773,
+        101799,
+        101811,
+        101820,
+        101835,
+        101838,
+        101856
+      ],
+      "coordinate_aliases": 197,
+      "improper_pairs": [],
+      "tested_pairs": 132026,
+      "pair_scan_complete": false,
+      "integer_scale_exponent": 54,
+      "exact_signed_volume_as_float": 0.008197033624690247,
+      "seconds": 15.28898236504756,
+      "scope": "Exact predicates on represented coordinates; no source-accuracy or topology-equivalence claim"
+    },
+    "binary32": {
+      "degenerate_triangles": 562,
+      "first_degenerate": [
+        101689,
+        101708,
+        101722,
+        101726,
+        101742,
+        101746,
+        101750,
+        101754,
+        101764,
+        101768,
+        101773,
+        101799,
+        101811,
+        101820,
+        101825,
+        101833
+      ],
+      "coordinate_aliases": 281,
+      "improper_pairs": [],
+      "tested_pairs": 101321,
+      "pair_scan_complete": false,
+      "integer_scale_exponent": 25,
+      "exact_signed_volume_as_float": 0.008197033605883362,
+      "seconds": 15.400459928030614,
+      "scope": "Exact predicates on represented coordinates; no source-accuracy or topology-equivalence claim",
+      "topology_refusal": "degenerate triangle"
+    }
+  },
+  "reused_from": "/private/tmp/ju-sweep-showcase-20260914/letter_L-no-filter",
+  "audit_seconds": 15.0,
+  "generation_timeout": 300
+}

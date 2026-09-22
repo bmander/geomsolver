@@ -1,0 +1,36 @@
+Maximum sampled gradient difference: 1.73739e-10
+[2026-09-14 00:56:59.922] [sweep] [info] === Generalized Sweep Parameters ===
+[2026-09-14 00:56:59.923] [sweep] [info] Grid resolution: 4 x 4 x 4
+[2026-09-14 00:56:59.923] [sweep] [info] Grid bbox min: (-0.2, -0.2, -0.2)
+[2026-09-14 00:56:59.923] [sweep] [info] Grid bbox max: (1.2, 1.2, 1.2)
+[2026-09-14 00:56:59.923] [sweep] [info] Envelope epsilon: 0.002
+[2026-09-14 00:56:59.923] [sweep] [info] Silhouette epsilon: 0.005
+[2026-09-14 00:56:59.923] [sweep] [info] Max splits: 200000
+[2026-09-14 00:56:59.923] [sweep] [info] Insideness check: true
+[2026-09-14 00:56:59.923] [sweep] [info] Vertex snapping: true
+[2026-09-14 00:56:59.923] [sweep] [info] Cyclic trajectory: false
+[2026-09-14 00:56:59.923] [sweep] [info] Volume threshold: 1e-05
+[2026-09-14 00:56:59.923] [sweep] [info] Face count threshold: 200
+[2026-09-14 00:56:59.923] [sweep] [info] Adaptive refinement: true
+[2026-09-14 00:56:59.923] [sweep] [info] Initial time samples: 8
+[2026-09-14 00:56:59.923] [sweep] [info] Minimum tet radius ratio: 1e-05
+[2026-09-14 00:56:59.923] [sweep] [info] Minimum tet edge length: 2e-05
+[2026-09-14 00:56:59.923] [sweep] [info] =====================================
+[2026-09-14 00:56:59.927] [sweep] [info] Initial grid generation time: 0.003864411 seconds
+[2026-09-14 00:56:59.927] [sweep] [info] Adaptively refine the background grid...
+[2026-09-14 00:58:23.502] [sweep] [info] 4D Vertex Number: 5464971 4D Tetrahedra Number: 113090969
+[2026-09-14 00:58:24.171] [sweep] [info] Grid refinement time: 84.24202689 seconds
+[2026-09-14 00:58:24.172] [mtetcol] [info] Set simplices with 807486 tets
+[2026-09-14 00:58:25.916] [mtetcol] [info] num_vertices: 148473
+[2026-09-14 00:58:25.917] [mtetcol] [info] num_edges: 956059
+[2026-09-14 00:58:25.917] [mtetcol] [info] num_triangles: 1615073
+[2026-09-14 00:58:25.917] [mtetcol] [info] num_tetrahedra: 807486
+[2026-09-14 00:58:26.059] [mtetcol] [info] Contour vertices: 788559
+[2026-09-14 00:58:26.441] [mtetcol] [info] Contour segments: 5000048
+[2026-09-14 00:58:27.144] [mtetcol] [info] Contour cycles: 8572847
+[2026-09-14 00:58:27.907] [mtetcol] [info] Contour polyhedra: 4183356
+[2026-09-14 00:58:28.869] [sweep] [info] Silhouette extraction time: 2.844102872 seconds
+[2026-09-14 00:58:33.713] [sweep] [info] Envelope computation time: 4.745917136 seconds
+[2026-09-14 00:59:21.241] [sweep] [info] Arrangement computation time: 47.525887103 seconds
+[2026-09-14 00:59:21.279] [sweep] [info] Sweep surface extraction time: 0.03733834 seconds
+[2026-09-14 00:59:21.774] [lagrange] [warning] Skipping saving edge attribute is_feature in MSH format

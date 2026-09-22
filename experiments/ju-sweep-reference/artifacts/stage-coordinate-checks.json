@@ -1,0 +1,50 @@
+[
+  {
+    "case": "letter_L-stock",
+    "stage": "envelope",
+    "vertices": 59250,
+    "triangles": 118496,
+    "coordinate_aliases": 0,
+    "triangles_with_repeated_coordinates": 0
+  },
+  {
+    "case": "letter_L-stock",
+    "stage": "arrangement",
+    "vertices": 60735,
+    "triangles": 124564,
+    "coordinate_aliases": 201,
+    "triangles_with_repeated_coordinates": 794
+  },
+  {
+    "case": "letter_L-stock",
+    "stage": "sweep_surface",
+    "vertices": 52923,
+    "triangles": 105850,
+    "coordinate_aliases": 197,
+    "triangles_with_repeated_coordinates": 394
+  },
+  {
+    "case": "flipping_torus-stock",
+    "stage": "envelope",
+    "vertices": 89896,
+    "triangles": 179968,
+    "coordinate_aliases": 50,
+    "triangles_with_repeated_coordinates": 82
+  },
+  {
+    "case": "flipping_torus-stock",
+    "stage": "arrangement",
+    "vertices": 95830,
+    "triangles": 204032,
+    "coordinate_aliases": 952,
+    "triangles_with_repeated_coordinates": 3780
+  },
+  {
+    "case": "flipping_torus-stock",
+    "stage": "sweep_surface",
+    "vertices": 79608,
+    "triangles": 159212,
+    "coordinate_aliases": 894,
+    "triangles_with_repeated_coordinates": 1786
+  }
+]

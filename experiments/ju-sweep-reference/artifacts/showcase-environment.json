@@ -1,0 +1,12 @@
+{
+  "upstream": "https://github.com/Jurwen/Swept-Volume",
+  "commit": "0bb260118443545029c98db2e98278fac27ba460",
+  "source": "/private/tmp/ju-swept-volume-20260914",
+  "platform": "macOS-15.7.4-x86_64-i386-64bit-Mach-O",
+  "machine": "x86_64",
+  "python": "3.14.2",
+  "binary_sha256": "4a724b36ed1cb9881385fdb42cc75c9a47236b25e8d34479c0b6a1336aa692b5",
+  "source_diff": "diff --git a/CMakeLists.txt b/CMakeLists.txt\nindex 58b172b..6ef5dc2 100644\n--- a/CMakeLists.txt\n+++ b/CMakeLists.txt\n@@ -133,3 +133,6 @@ if (SWEEP_PYTHON_BINDING)\n     )\n     add_library(sweep::pysweep3d ALIAS pysweep3d)\n endif()\n+\n+# Avoid mixing optional system fmt headers with spdlog bundled fmt.\n+target_compile_definitions(strong_type INTERFACE STRONG_HAS_FMT_FORMAT=0)\n",
+  "timeout": 300,
+  "audit_seconds": 15.0
+}

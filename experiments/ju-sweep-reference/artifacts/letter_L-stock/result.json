@@ -1,0 +1,102 @@
+{
+  "case": "letter_L-stock",
+  "command": [
+    "/private/tmp/ju-swept-volume-20260914/build/generalized_sweep",
+    "/private/tmp/ju-sweep-showcase-20260914/letter_L-stock/mesh",
+    "-f",
+    "/private/tmp/ju-sweep-showcase-20260914/letter_L-stock/sweep.yaml",
+    "-c",
+    "/private/tmp/ju-sweep-showcase-20260914/letter_L-stock/config.yaml"
+  ],
+  "capsule": null,
+  "input_sha256": {
+    "sweep": "835825ad74bfe363f538598428707340a85dd9b4ac3136b2beb0757c48964573",
+    "config": "e3a491921b2adbc6b6d724a88ca7aed3d5c56597e37700129dc9db936dab7c3b"
+  },
+  "status": "ok",
+  "returncode": 0,
+  "run_seconds": 30.770710693963338,
+  "audit": {
+    "file": "/private/tmp/ju-sweep-showcase-20260914/letter_L-stock/mesh/sweep_surface.msh",
+    "sha256": "80c3ae66eb22b67fc646de77228ee559c52714ccae1ea670c89b7101681a65fa",
+    "topology": {
+      "vertices": 52923,
+      "unused_vertices": 0,
+      "edges": 158775,
+      "triangles": 105850,
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "inconsistent_edges": 0,
+      "nonmanifold_vertex_links": 0,
+      "components": [
+        {
+          "vertices": 52923,
+          "edges": 158775,
+          "faces": 105850,
+          "euler": -2,
+          "signed_volume": 0.008197033624689931
+        }
+      ],
+      "signed_volume": 0.008197033624689931
+    },
+    "binary64": {
+      "degenerate_triangles": 396,
+      "first_degenerate": [
+        101689,
+        101708,
+        101722,
+        101726,
+        101742,
+        101746,
+        101754,
+        101764,
+        101768,
+        101773,
+        101799,
+        101811,
+        101820,
+        101835,
+        101838,
+        101856
+      ],
+      "coordinate_aliases": 197,
+      "improper_pairs": [],
+      "tested_pairs": 112277,
+      "pair_scan_complete": false,
+      "integer_scale_exponent": 54,
+      "exact_signed_volume_as_float": 0.00819703362469122,
+      "seconds": 15.471415191015694,
+      "scope": "Exact predicates on represented coordinates; no source-accuracy or topology-equivalence claim"
+    },
+    "binary32": {
+      "degenerate_triangles": 560,
+      "first_degenerate": [
+        101689,
+        101708,
+        101722,
+        101726,
+        101742,
+        101746,
+        101750,
+        101754,
+        101764,
+        101768,
+        101773,
+        101799,
+        101811,
+        101820,
+        101825,
+        101833
+      ],
+      "coordinate_aliases": 280,
+      "improper_pairs": [],
+      "tested_pairs": 139931,
+      "pair_scan_complete": false,
+      "integer_scale_exponent": 25,
+      "exact_signed_volume_as_float": 0.008197033605882479,
+      "seconds": 15.220558304048609,
+      "scope": "Exact predicates on represented coordinates; no source-accuracy or topology-equivalence claim",
+      "topology_refusal": "degenerate triangle"
+    }
+  }
+}

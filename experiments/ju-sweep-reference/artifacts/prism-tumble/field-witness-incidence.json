@@ -1,0 +1,15 @@
+{
+  "case": "prism-tumble",
+  "vertex": 225433,
+  "incident_faces": [
+    440240,
+    444479,
+    457993
+  ],
+  "incident_triangle_areas": [
+    0.0,
+    0.0,
+    6.890416440883599e-33
+  ],
+  "summed_area": 6.890416440883599e-33
+}

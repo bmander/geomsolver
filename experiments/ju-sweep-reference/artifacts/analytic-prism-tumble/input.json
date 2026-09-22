@@ -1,0 +1,1 @@
+{"tool":"exact box signed distance","size":[0.3,0.18,0.12],"start":[0.14,0.51,0.5],"end":[0.86,0.51,0.51],"rotation_z_degrees":360,"epsilon_env":0.002,"epsilon_sil":0.005,"max_split":200000}
