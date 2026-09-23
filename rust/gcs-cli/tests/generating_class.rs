@@ -288,3 +288,46 @@ fn an_exported_member_agrees_with_its_field() {
     for d in &r.disagreements { eprintln!("  {d:?}"); }
     assert!(r.agrees());
 }
+
+/// The material field's sign along a line: `SOLVENT_LINE=x,y,z,dx,dy,dz` (a point and a
+/// direction), ±1 mm in 10 µm steps, for `pair.<SOLVENT_AGREE_MEMBER>.body` at the configured
+/// design. Shows where material begins and ends across a failing probe.
+#[test]
+#[ignore]
+fn the_material_along_a_line() {
+    use gcs_core::{interval::{Interval,minimum::{Options,Stop}},solid::MaterialField};
+    let v: Vec<f64> = std::env::var("SOLVENT_LINE").expect("SOLVENT_LINE").split(',').map(|s| s.trim().parse().unwrap()).collect();
+    let member = std::env::var("SOLVENT_AGREE_MEMBER").unwrap_or("gear".into());
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let e = support::read_configured_with(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base,&mut |_,t| t);
+    let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
+    let mut material = MaterialField::read(&e.sketch,body,1e-10).unwrap().evaluator(4096);
+    let n = (v[3]*v[3]+v[4]*v[4]+v[5]*v[5]).sqrt();
+    let mut last = 'x';
+    for k in -100..=100 {
+        let d = k as f64*0.01;
+        let p = [v[0]+d*v[3]/n,v[1]+d*v[4]/n,v[2]+d*v[5]/n];
+        let b = material.bounds_stopping(p.map(|x| Interval::point(x).unwrap()),Stop::Outside(Interval::ZERO),
+            Options {value_tolerance:0.002,max_evaluations:20000}).unwrap();
+        let [lo,hi] = b.value.bounds();
+        let c = if hi < 0. { 'M' } else if lo > 0. { '.' } else { '?' };
+        if c != last { eprintln!("  {d:+.2} mm: {}",match c { 'M' => "material", '.' => "outside", _ => "undecided" }); last = c; }
+    }
+}
+
+/// Every named solid's static field at `SOLVENT_POINT=x,y,z` for the configured design, the
+/// ones within 0.2 of zero first: which boundary surfaces pass near a point.
+#[test]
+#[ignore]
+fn which_boundaries_pass_near_a_point() {
+    use gcs_core::solid::SpatialField;
+    let p: Vec<f64> = std::env::var("SOLVENT_POINT").expect("SOLVENT_POINT").split(',').map(|s| s.trim().parse().unwrap()).collect();
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let e = support::read_configured_with(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base,&mut |_,t| t);
+    let mut rows = Vec::new();
+    for (i,s) in e.sketch.solids.iter().enumerate() {
+        if let Ok(f) = SpatialField::read(&e.sketch,i,1e-10) { rows.push((f.value([p[0],p[1],p[2]]),s.name.clone())); }
+    }
+    rows.sort_by(|a,b| a.0.abs().total_cmp(&b.0.abs()));
+    for (v,name) in rows.iter().take(12) { eprintln!("  {v:+.4} {name}"); }
+}

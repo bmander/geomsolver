@@ -173,6 +173,11 @@ pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8]) -> R
         {} withdrawn beside another face, {} disagree ({:?})",report.probed_triangles,report.triangles,
         options.offset*scale,report.unresolved,report.withdrawn,report.disagreements.len(),started.elapsed()));
     if report.agrees() { return Ok(()); }
+    // A diagnostic, never the requested output: the refused mesh, for inspection.
+    if let Ok(path) = std::env::var("SOLVENT_KEEP_REJECTED") {
+        match std::fs::write(&path,stl) { Ok(()) => sweep_boundary::stage(&format!("kept the refused mesh at {path}")),
+            Err(e) => sweep_boundary::stage(&format!("could not keep the refused mesh at {path}: {e}")) }
+    }
     for d in report.disagreements.iter().take(10) {
         eprintln!("solventc:   {} the mesh at ({:.4}, {:.4}, {:.4}) the field reads [{:.4}, {:.4}]",
             if d.inside_mesh { "inside" } else { "outside" },d.point[0]*scale,d.point[1]*scale,d.point[2]*scale,

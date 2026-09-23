@@ -109,7 +109,9 @@ fn the_native_space_at_an_offset_against_its_field() {
         text.replace("param offset_angle = 0deg",&format!("param offset_angle = {offset}deg")).lines()
             .map(|l| match knobs.iter().find(|(p,_)| l.starts_with(p.as_str())) {
                 Some((p,v)) => format!("{p} = {v}deg\n"), None => format!("{l}\n") }).collect() } else { text });
-    let id = |n: &str| e.map.ent_named(&format!("pair.pinion.{n}")).unwrap().i();
+    // `SOLVENT_INSPECT_MEMBER`: pinion by default.
+    let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("pinion".into());
+    let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
@@ -254,6 +256,59 @@ fn measure_gear_probe_cost() {
                 eprintln!("{label} field, {what} point, distance {distance}: {:?} in {:?}; {} sweep queries, {evaluations} centre + {sides} side evaluations, {statuses:?}, cached poses {}",
                     probe.state,started.elapsed(),probe.center.sweeps.len(),material.cached_poses());
             }
+        }
+    }
+}
+
+/// Where a sheet fails its withheld contacts, for the design `SOLVENT_INSPECT_OFFSET`,
+/// `_SHIFT`, `_SPIRAL` and `_MEMBER`: each withheld contact farther than 0.05 mm from the
+/// fitted sheet with its column and whether it lies in the blank, and each column's
+/// largest step between consecutive contacts against its median.
+#[test]
+#[ignore]
+fn where_a_sheet_misses_its_contacts() {
+    let offset: f64 = std::env::var("SOLVENT_INSPECT_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(25.);
+    let knob = |name: &str,line: &str| std::env::var(name).ok().map(|v| (line.to_string(),v));
+    let knobs: Vec<(String,String)> = [knob("SOLVENT_INSPECT_SHIFT","param pressure_shift"),
+        knob("SOLVENT_INSPECT_SPIRAL","param spiral_angle")].into_iter().flatten().collect();
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let e = read_gears_with(&base,&mut |name,text| if name == "configuration" {
+        text.replace("param offset_angle = 0deg",&format!("param offset_angle = {offset}deg")).lines()
+            .map(|l| match knobs.iter().find(|(p,_)| l.starts_with(p.as_str())) {
+                Some((p,v)) => format!("{p} = {v}deg\n"), None => format!("{l}\n") }).collect() } else { text });
+    let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("gear".into());
+    let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();
+    let cad = Cad::new();
+    let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
+    let field = gcs_core::solid::SpatialField::read(&e.sketch,id("blank"),1e-10).unwrap();
+    let (face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&field).unwrap();
+    eprintln!("sheet {}x{}, withheld error {error:.4}",sheet.rows,sheet.columns);
+    let per_column = (0..sheet.rows).filter(|r| r % 3 == 1 && r+1 < sheet.rows).count();
+    let found = cad.0.face_parameters_many(face,&sheet.withheld,0.5).unwrap();
+    let mut bad = 0;
+    for (k,(p,f)) in sheet.withheld.iter().zip(&found).enumerate() {
+        let gap = f.map(|(_,g)| g).unwrap_or(f64::INFINITY);
+        if gap <= 0.05 { continue; }
+        bad += 1;
+        if bad <= 25 {
+            eprintln!("  withheld {k} (column {}, row {}): gap {gap:.3}, in blank {}, at {:?}",k/per_column,3*(k%per_column)+1,
+                field.value(*p) < 0.,p.map(|x| (x*1e3).round()/1e3));
+        }
+    }
+    eprintln!("{bad} of {} withheld contacts farther than 0.05 mm",sheet.withheld.len());
+    for c in 0..sheet.columns {
+        let mut steps: Vec<f64> = (1..sheet.rows).map(|r| {
+            let (a,b) = (sheet.points[(r-1)*sheet.columns+c],sheet.points[r*sheet.columns+c]);
+            (0..3).map(|k| (a[k]-b[k]).powi(2)).sum::<f64>().sqrt()
+        }).collect();
+        let largest = steps.iter().cloned().fold(0.,f64::max);
+        let at = steps.iter().position(|&s| s == largest).unwrap();
+        steps.sort_by(f64::total_cmp);
+        let median = steps[steps.len()/2];
+        if largest > 5.*median { eprintln!("  column {c}: step {largest:.3} at row {at} against median {median:.3}"); }
+        let short: Vec<f64> = steps.iter().cloned().filter(|&x| x < median/20.).collect();
+        if !short.is_empty() && (c % 8 == 0 || c+1 == sheet.columns) {
+            eprintln!("  column {c}: {} steps under a twentieth of the median {median:.3}, the least {:.2e}",short.len(),short[0]);
         }
     }
 }

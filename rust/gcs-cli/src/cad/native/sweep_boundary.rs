@@ -135,6 +135,31 @@ pub(crate) struct Sheet {
     pub columns: usize,
     /// Contacts at row midpoints of every column, withheld from any fit.
     pub withheld: Vec<[f64;3]>,
+    /// The first column's walk length, the rows being spaced evenly along it.
+    pub span: f64,
+}
+
+impl Sheet {
+    /// The rows at each end of the walk past which consecutive contacts jump: a step more
+    /// than ten times its column's median, where the contact the column was following ends
+    /// and the nearest remaining root lies elsewhere. The first is the first row after the
+    /// last jump in the head half, the second the last row before the first jump in the tail.
+    fn continuous_rows(&self) -> [Option<usize>;2] {
+        let (mut head,mut tail): (Option<usize>,Option<usize>) = (None,None);
+        for c in 0..self.columns {
+            let at = |r: usize| self.points[r*self.columns+c];
+            let steps: Vec<f64> = (1..self.rows).map(|r| distance(at(r-1),at(r))).collect();
+            let mut sorted = steps.clone(); sorted.sort_by(f64::total_cmp);
+            let median = sorted[sorted.len()/2];
+            for (i,&step) in steps.iter().enumerate() {
+                if step <= 10.*median { continue; }
+                let r = i+1;
+                if r < self.rows/2 { head = Some(head.map_or(r,|h| h.max(r))); }
+                else { tail = Some(tail.map_or(r-1,|t| t.min(r-1))); }
+            }
+        }
+        [head,tail]
+    }
 }
 
 /// Whether points lie inside the blank, in native millimetres.
@@ -387,10 +412,10 @@ impl Session {
     }
 
     /// The augmented range between the anchors on a station's loop, widened by
-    /// `margin` on each side.
-    fn range(profile: &Loop,reach: &Reach,margin: f64) -> Result<[f64;2],String> {
-        let s0 = profile.resolve(reach.start)?-margin;
-        let mut s1 = profile.resolve(reach.end)?+margin;
+    /// `margin[0]` before the start and `margin[1]` past the end.
+    fn range(profile: &Loop,reach: &Reach,margin: [f64;2]) -> Result<[f64;2],String> {
+        let s0 = profile.resolve(reach.start)?-margin[0];
+        let mut s1 = profile.resolve(reach.end)?+margin[1];
         let total = profile.augmented_length();
         if s1 < s0 { s1 += total; }
         if s1-s0 >= total { return Err("the profile walk covers the whole section; the sheet cannot leave the blank".into()); }
@@ -399,7 +424,7 @@ impl Session {
 
     /// The candidate sheet over the reach with the given margins. Contact times
     /// follow continuity down each column and across the first row.
-    fn sheet(&self,cutter: &Cutter,sweep: &SweepContacts,scale: f64,reach: &Reach,margin: f64,station_margin: f64)
+    fn sheet(&self,cutter: &Cutter,sweep: &SweepContacts,scale: f64,reach: &Reach,margin: [f64;2],station_margin: f64)
         -> Result<Sheet,String> {
         let [lo,hi] = reach.stations;
         let span = hi-lo+2.*station_margin;
@@ -407,14 +432,14 @@ impl Session {
         let wide = [-PI,PI];
         let mut columns_data: Vec<Vec<([f64;3],[f64;3],f64)>> = Vec::with_capacity(columns);
         let mut withheld = Vec::new();
-        let mut rows = 0;
+        let (mut rows,mut walk) = (0,0.);
         for c in 0..columns {
             let angle = lo-station_margin+span*c as f64/(columns-1) as f64;
             let loops = self.profile(cutter,angle)?;
             let profile = loops.iter().find(|l| l.index_of(reach.start.face).is_some() && l.index_of(reach.end.face).is_some())
                 .ok_or("no section loop carries the profile at a station of the band")?;
             let [s0,s1] = Self::range(profile,reach,margin)?;
-            if c == 0 { rows = (((s1-s0)/ROW_SPACING).ceil() as usize).clamp(24,240); }
+            if c == 0 { rows = (((s1-s0)/ROW_SPACING).ceil() as usize).clamp(24,240); walk = s1-s0; }
             let mut column = Vec::with_capacity(rows);
             let mut near = columns_data.last().map(|previous| previous[0].2).unwrap_or(0.);
             for r in 0..rows {
@@ -433,7 +458,7 @@ impl Session {
         let mut points = Vec::with_capacity(rows*columns);
         let mut normals = Vec::with_capacity(rows*columns);
         for r in 0..rows { for column in &columns_data { points.push(column[r].0); normals.push(column[r].1); } }
-        Ok(Sheet {points,normals,rows,columns,withheld})
+        Ok(Sheet {points,normals,rows,columns,withheld,span:walk})
     }
 }
 
@@ -516,14 +541,34 @@ pub(crate) fn swept_sheet_grid(session: &Session,sk: &Sketch,swept: usize,inside
         sections {:.1} s, contacts {:.1} s, {} blank queries {:.1} s)",
         (reach.stations[1]-reach.stations[0]).to_degrees(),reach.faces,started.elapsed(),
         reach.spent[0],reach.spent[1],reach.queried,reach.spent[2]));
-    let (mut margin,mut station_margin) = (1.,(reach.stations[1]-reach.stations[0])*0.15);
-    for _ in 0..6 {
+    // The margins carry the sheet's edge out of the blank. Where the contacts jump before
+    // an end of the walk, that end is shortened to a row short of the jump and capped there:
+    // a sheet fitted through the jump oscillates, and the kernel cannot split by it.
+    let (mut margin,mut cap,mut station_margin) = ([1.,1.],[f64::INFINITY;2],(reach.stations[1]-reach.stations[0])*0.15);
+    for _ in 0..10 {
         let sheet = session.sheet(&cutter,&sweep,scale,&reach,margin,station_margin)?;
+        let step = sheet.span/(sheet.rows-1) as f64;
+        let [head,tail] = sheet.continuous_rows();
+        if head.is_some() || tail.is_some() {
+            if let Some(r) = head { cap[0] = margin[0]-step*(r+1) as f64; margin[0] = cap[0]; }
+            if let Some(r) = tail { cap[1] = margin[1]-step*(sheet.rows-r) as f64; margin[1] = cap[1]; }
+            stage(&format!("`{name}`: contacts jump at {} of the walk; its margins are now {:.2} and {:.2}",
+                match (head,tail) { (Some(_),Some(_)) => "both ends", (Some(_),None) => "the start", _ => "the end" },margin[0],margin[1]));
+            continue;
+        }
         let mut boundary = Vec::new();
         for r in 0..sheet.rows { for c in 0..sheet.columns {
             if r == 0 || r+1 == sheet.rows || c == 0 || c+1 == sheet.columns { boundary.push(sheet.points[r*sheet.columns+c]); }
         } }
-        if inside(&boundary)?.iter().any(|b| *b) { margin *= 1.6; station_margin *= 1.6; continue; }
+        if inside(&boundary)?.iter().any(|b| *b) {
+            let grown = margin.map(|m| m*1.6);
+            if (0..2).all(|k| grown[k] > cap[k]) {
+                return Err(format!("`{name}`: the contacts along the cutter's profile jump before the sheet leaves the blank"));
+            }
+            margin = std::array::from_fn(|k| grown[k].min(cap[k]));
+            station_margin *= 1.6;
+            continue;
+        }
         stage(&format!("`{name}`: sheet {}x{} ({:?})",sheet.rows,sheet.columns,started.elapsed()));
         return Ok(sheet);
     }
@@ -564,6 +609,12 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
         error = error.max(found.map(|(_,gap)| gap).unwrap_or(0.5));
     }
     stage(&format!("`{name}`: withheld contact error {error:.2e} mm"));
+    // A sheet this far from its own contacts is not the sweep's boundary, and the kernel can
+    // grind for minutes splitting by it; refuse before. Accuracy within this is a separate
+    // budget, not a construction failure.
+    if error > 0.25 {
+        return Err(format!("`{name}`: the fitted sheet misses its withheld contacts by {error:.3} mm"));
+    }
     Ok((face,sheet,error))
 }
 
