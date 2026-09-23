@@ -34,6 +34,11 @@ path = "tests/mesh_sweep.rs"
 required-features = ["manifold"]
 
 [[test]]
+name = "generating_harness"
+path = "tests/generating_harness.rs"
+required-features = ["occt","manifold"]
+
+[[test]]
 name = "native_boundary"
 path = "tests/native_boundary.rs"
 required-features = ["occt"]

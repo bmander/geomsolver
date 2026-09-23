@@ -172,7 +172,7 @@ pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8]) -> R
     sweep_boundary::stage(&format!("field agreement: {} of {} triangles probed {:.2} mm off each side, {} probes unresolved, \
         {} withdrawn beside another face, {} disagree ({:?})",report.probed_triangles,report.triangles,
         options.offset*scale,report.unresolved,report.withdrawn,report.disagreements.len(),started.elapsed()));
-    if report.agrees() { return Ok(()); }
+    if report.agrees() { sweep_boundary::mark("agreement"); return Ok(()); }
     // A diagnostic, never the requested output: the refused mesh, for inspection.
     if let Ok(path) = std::env::var("SOLVENT_KEEP_REJECTED") {
         match std::fs::write(&path,stl) { Ok(()) => sweep_boundary::stage(&format!("kept the refused mesh at {path}")),
@@ -245,6 +245,7 @@ pub fn export(sk: &gcs_core::model::Sketch,solid: usize,step: Option<&str>,stl: 
                     .map_err(|e| format!("native float32 STL validation failed: {e}"))?;
             }
             sweep_boundary::stage(&format!("staged the {} output",kind.to_uppercase()));
+            sweep_boundary::mark(kind);
             staged.push((temporary,destination));
         }
         // A swept body is judged on the STL being written when there is one, meshed once.
@@ -257,6 +258,7 @@ pub fn export(sk: &gcs_core::model::Sketch,solid: usize,step: Option<&str>,stl: 
         for (temporary,output) in &staged {
             std::fs::rename(temporary,output).map_err(|e| format!("cannot replace CAD output: {e}"))?;
         }
+        sweep_boundary::mark("written");
         Ok(())
     })();
     for directory in directories { let _ = std::fs::remove_dir_all(directory); }

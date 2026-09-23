@@ -129,3 +129,54 @@ Each must be refused at its own stage once that stage's contract exists.
 
 Each step's exit is a set of harness rows turning green, with the negative controls still
 refused. The 25° gear is an acceptance row, not the lens the work is designed through.
+
+## Step 1 results (2026-09-22): the harness, red
+
+**How the harness runs.** `rust/gcs-cli/tests/generating_harness.rs` runs the real `solventc` for
+each case in a child process with a wall-clock budget.
+- **Stage trace:** `SOLVENT_STAGE_TRACE` makes `solventc` append a line for each completed stage:
+  admission, blank, clearance, reach, sheet, fit, withheld, split, classify, fuse, stl,
+  agreement, written.
+- **Kept output:** `SOLVENT_KEEP_REJECTED` keeps a refused mesh.
+- **What each case records:** the stage reached, where it was refused and with what message, the
+  time and volume, and the field agreement. Where the case has one, it also records an
+  independent truth's agreement: for the sphere, the exact tube; for the torus and lens,
+  their least distance sampled over the roll every 10⁻⁴ rad. It measures the mesh's tiny
+  triangles too, those under 1 µm².
+- **The matrix** is written to `build/harness/<test>.md`.
+
+**Tests.** Three ignored tests: `fixtures` (seconds each), `controls` (the gear's known cases
+plus the negative controls) and `design_space` (48 single tooth spaces, about half an hour).
+
+**Probe sampling.** The field probe now samples triangles by area. A 0.005 mm² sliver that
+drew 40% of the count-weighted probes no longer passes for a surface fault. It is left to the
+tiny-triangle measure, which is not yet a contract.
+
+The classes the harness reveals, located by stage:
+
+| Class | Cases | Where it is met today |
+| --- | --- | --- |
+| **A.** The walk reaches the end of a contact branch: a jump, or no root at all | Pinion 20/5/35 and 25/10/25 ("no contact time"); gear 25/10/25 (jumps, trimmed); the 25/10/25 pinion **regressed** under the trim | The sheet, with no chart reason |
+| **B.** Crease-fan slivers in the gear cutter | **Every gear with a 10° pressure split**, including at 0° offset: 7–10k triangles under 1 µm², about 1.5×10⁻³ mm² | Nowhere: exports pass the area-weighted gate |
+| **C.** Surface disagreement on a regular-looking case | Pinion 15/0/35 and 15/0/25 (15 and 14 of 2000 probes); the torus fixture (2 of 514 by the field, 1 against the independent truth) | Only the final gate |
+| **D.** Stationary points: a pole on the spin axis, in contact at every time | The sphere fixtures (crossed and parallel axes) | The construction; admission skips points whose normal is undefined |
+| **E.** A Boolean tool whose operands have different axes | The lens fixture | Reach: "a section of the cutter did not close into a loop" |
+| **F.** A sweep that never reaches the blank | A torus through its own hole | Reach; admission admits it vacuously |
+
+What holds:
+- The negative controls: Manifold 15° refused at agreement; 17.5° and 30° symmetric racks
+  refused at admission (E3, E2).
+- The bevel spaces, and most of the design space, export cleanly with no tiny triangles.
+- The torus grazing a post's top is refused at the sheet, with a message.
+
+The degenerate-contact refusal said "does not depend on the motion" for any degenerate root,
+a double root included. It now says the contact equation is degenerate, with the point and
+normal.
+
+Step 2 turns the stage at which each class is met into the stage that names it:
+- **A:** a chart-validity check on the sheet grid, covering branch identity and discriminant.
+- **B:** a mesh-quality contract.
+- **C:** a dense fit check and a check after the split, to find which stage C comes from.
+- **D:** admission names degenerate points, and does not skip them.
+- **E:** refused at the tool, with its cause.
+- **F:** admission refuses a sweep that reaches nothing.

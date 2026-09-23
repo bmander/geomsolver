@@ -336,14 +336,17 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             if gcs_core::solid::cad::recipe_static(&sk,i).map(|r| !r.sweeps.is_empty()).unwrap_or(false) {
                 use gcs_core::solid::admission;
                 match admission::admit_body(&sk,i,&admission::Options::default()) {
-                    Ok(a) => for s in &a.sweeps {
-                        let checked = s.placements.iter().filter(|p| p.equivalent_to.is_none()).count();
-                        let admission::Basis::Sampled {rows,columns} = s.basis;
-                        let alike = if s.placements.len() > checked {
-                            format!(" ({checked} of {} placements checked, the rest reading the blank alike)",s.placements.len())
-                        } else { String::new() };
-                        eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name);
-                    },
+                    Ok(a) => {
+                        cad::mark("admission");
+                        for s in &a.sweeps {
+                            let checked = s.placements.iter().filter(|p| p.equivalent_to.is_none()).count();
+                            let admission::Basis::Sampled {rows,columns} = s.basis;
+                            let alike = if s.placements.len() > checked {
+                                format!(" ({checked} of {} placements checked, the rest reading the blank alike)",s.placements.len())
+                            } else { String::new() };
+                            eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name);
+                        }
+                    }
                     Err(err) => {
                         let message = err.to_string();
                         eprintln!("solventc: {message}");
@@ -598,3 +601,4 @@ fn doc_json(
         ("positions", positions),
     ])
 }
+

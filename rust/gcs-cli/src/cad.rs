@@ -14,6 +14,13 @@ pub fn set_verbosity(level: u8) {
     let _ = level;
 }
 
+/// A completed stage for a harness (`SOLVENT_STAGE_TRACE`); nothing without native support.
+pub fn mark(key: &str) {
+    #[cfg(feature="occt")]
+    native::sweep_boundary::mark(key);
+    let _ = key;
+}
+
 /// Whether the mesh path applies: the solid cuts continuous sweeps and both
 /// native features are built in.
 pub fn swept_mesh_applies(sk: &gcs_core::model::Sketch,solid: usize) -> bool {
@@ -37,6 +44,7 @@ pub fn export_swept_stl(sk: &gcs_core::model::Sketch,solid: usize,path: &str) ->
         let bytes = mesh_sweep::stl(&vertices,&triangles,&sk.solids[solid].name)?;
         native::field_agreement(sk,solid,&bytes)?;
         std::fs::write(path,bytes).map_err(|e| format!("{path}: {e}"))?;
+        mark("written");
         return Ok(());
     }
     #[cfg(not(all(feature="manifold",feature="occt")))]

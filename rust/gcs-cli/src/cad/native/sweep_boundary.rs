@@ -33,10 +33,23 @@ fn distance(a: [f64;3],b: [f64;3]) -> f64 { norm(sub(a,b)) }
 
 /// Progress on stderr: a member takes minutes, and the JSON report owns stdout. Each line
 /// carries the time since the first, so a whole export reads as one timeline.
+static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 pub(crate) fn stage(message: &str) {
-    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
     let at = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
     eprintln!("solventc: [{at:7.1} s] {message}");
+}
+
+/// A stage completed, for a harness: with `SOLVENT_STAGE_TRACE` naming a file, one line
+/// `key<TAB>seconds` is appended to it. The keys, in the order a swept export completes them:
+/// admission, blank, clearance, reach, sheet, fit, withheld, split, classify, fuse, step, stl,
+/// agreement, written. Independent of the prose lines, which may change.
+pub(crate) fn mark(key: &str) {
+    let Ok(path) = std::env::var("SOLVENT_STAGE_TRACE") else { return };
+    let at = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file,"{key}\t{at:.3}");
+    }
 }
 
 /// The augmented length scale of a corner: one radian of turning counts as this
@@ -319,8 +332,12 @@ impl Session {
         -> Result<Option<([f64;3],[f64;3],f64)>,String> {
         let roots = sweep.at_point_normal_over(scaled(sample.position,1./scale),sample.normal,interval,1e-9)
             .map_err(|e| if e == "Degenerate" {
-                "a cutter point's contact condition does not depend on the motion (the cutter is a revolution \
-                 about an axis parallel to the motion's); such sweeps are not supported by the section construction".to_string()
+                // Constant zero (in contact at every time: a pole on the spin axis, or a revolution
+                // about the motion's own axis) and a double root (a point grazing at one time) are
+                // alike to the root finder; neither gives the per-point time this construction needs.
+                format!("a cutter point's contact equation is degenerate (in contact at every time, or only grazing) \
+                 at {:?} with normal {:?}; the section construction needs one contact time per point",
+                 sample.position.map(|x| (x*1e4).round()/1e4),sample.normal.map(|x| (x*1e4).round()/1e4))
             } else { e })?;
         Ok(roots.iter().min_by(|x,y| (x.root.time-near).abs().total_cmp(&(y.root.time-near).abs()))
             .map(|r| (scaled(r.contact.position,scale),r.contact.normal,r.root.time)))
@@ -541,6 +558,7 @@ pub(crate) fn swept_sheet_grid(session: &Session,sk: &Sketch,swept: usize,inside
         sections {:.1} s, contacts {:.1} s, {} blank queries {:.1} s)",
         (reach.stations[1]-reach.stations[0]).to_degrees(),reach.faces,started.elapsed(),
         reach.spent[0],reach.spent[1],reach.queried,reach.spent[2]));
+    mark("reach");
     // The margins carry the sheet's edge out of the blank. Where the contacts jump before
     // an end of the walk, that end is shortened to a row short of the jump and capped there:
     // a sheet fitted through the jump oscillates, and the kernel cannot split by it.
@@ -570,6 +588,7 @@ pub(crate) fn swept_sheet_grid(session: &Session,sk: &Sketch,swept: usize,inside
             continue;
         }
         stage(&format!("`{name}`: sheet {}x{} ({:?})",sheet.rows,sheet.columns,started.elapsed()));
+        mark("sheet");
         return Ok(sheet);
     }
     Err(format!("`{name}`: the candidate sheet cannot be widened out of the blank"))
@@ -600,10 +619,12 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
         }
     }
     stage(&format!("`{name}`: the roll carries the cutter clear of the blank at both limits ({:?})",started.elapsed()));
+    mark("clearance");
     let inside = |points: &[[f64;3]]| Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect());
     let sheet = swept_sheet_grid(session,sk,swept,&inside)?;
     let face = session.fit_sheet(&sheet.points,sheet.rows,sheet.columns)?;
     stage(&format!("`{name}`: fitted the sheet; measuring {} withheld contacts against it",sheet.withheld.len()));
+    mark("fit");
     let mut error = 0_f64;
     for found in session.face_parameters_many(face,&sheet.withheld,0.5)? {
         error = error.max(found.map(|(_,gap)| gap).unwrap_or(0.5));
@@ -615,6 +636,7 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
     if error > 0.25 {
         return Err(format!("`{name}`: the fitted sheet misses its withheld contacts by {error:.3} mm"));
     }
+    mark("withheld");
     Ok((face,sheet,error))
 }
 
@@ -625,6 +647,7 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     let blank = session.construct(&recipe.recipe)?;
     let (field,_) = gcs_core::solid::admission::static_remainder(sk,body,1e-10)?;
     stage(&format!("`{}`: static blank of {} operations",sk.solids[body].name,recipe.recipe.get("nodes").unwrap().arr().len()));
+    mark("blank");
     let mut tools = Vec::new();
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
@@ -637,16 +660,19 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     let started = std::time::Instant::now();
     let partition = session.split_solid(blank,&tools)?;
     stage(&format!("split the blank by {} sheets into {} cells ({:?})",tools.len(),session.solids(partition)?.len(),started.elapsed()));
+    mark("split");
     let started = std::time::Instant::now();
     let mut material = MaterialField::read(sk,body,1e-10)?.evaluator(4096);
     let (kept,removed) = classify(session,partition,&mut material)?;
     stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),started.elapsed()));
+    mark("classify");
     if kept.is_empty() { return Err("no cell of the blank is material".into()); }
     let started = std::time::Instant::now();
     let part = session.fuse(&kept.iter().map(|c| c.solid).collect::<Vec<_>>())?;
     let [vertex,edge,_] = session.tolerances(part)?;
     stage(&format!("united the material: {:.6} mm³, {} faces, tolerances {vertex:.1e}/{edge:.1e} mm ({:?})",
         session.volume(part)?,session.faces(part)?.len(),started.elapsed()));
+    mark("fuse");
     Ok(part)
 }
 

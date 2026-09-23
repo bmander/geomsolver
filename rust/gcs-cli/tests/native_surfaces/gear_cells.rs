@@ -169,7 +169,7 @@ fn a_cutter_with_a_motion_independent_contact_condition_is_refused() {
     let cad = Cad::new();
     let error = native::sweep_boundary::construct_solid(&cad.0,&e.sketch,part_id).unwrap_err();
     eprintln!("{error}");
-    assert!(error.contains("does not depend on the motion"));
+    assert!(error.contains("contact equation is degenerate"));
     let _ = PI;
 }
 

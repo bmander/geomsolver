@@ -20,14 +20,18 @@ pub struct Options {
     /// triangle standing off the boundary has its centroid on the wrong side itself. Keep it
     /// above the mesh's chordal deviation, or faceting reads as a fault.
     pub confirm: f64,
-    /// Triangles probed at most, spread evenly through the mesh.
+    /// Triangles probed at most.
     pub triangles: usize,
+    /// Choose them by area, stratified over the surface, so each probe answers for an equal
+    /// share of it; by count, a patch of microscopic triangles draws probes out of all
+    /// proportion to the surface it is. By index when false.
+    pub by_area: bool,
     pub value_tolerance: f64,
     pub max_evaluations: usize,
 }
 
 impl Default for Options {
-    fn default() -> Self { Options {offset:0.1,confirm:0.025,triangles:1000,value_tolerance:0.02,max_evaluations:20000} }
+    fn default() -> Self { Options {offset:0.1,confirm:0.025,triangles:1000,by_area:true,value_tolerance:0.02,max_evaluations:20000} }
 }
 
 /// A probe the field decides the other way from the mesh.
@@ -67,8 +71,7 @@ pub fn of_triangles(vertices: &[V],triangles: &[[u32;3]],material: &mut Material
 pub fn of_triangles_observed(vertices: &[V],triangles: &[[u32;3]],material: &mut MaterialEvaluator,options: &Options,
     observe: &mut dyn FnMut(&Agreement)) -> Result<Agreement,String> {
     let mut report = Agreement {triangles:triangles.len(),..Default::default()};
-    let step = (triangles.len()/options.triangles.max(1)).max(1);
-    for t in triangles.iter().step_by(step) {
+    for t in sample(vertices,triangles,options) {
         observe(&report);
         let [a,b,c] = t.map(|i| vertices[i as usize]);
         let n = [(b[1]-a[1])*(c[2]-a[2])-(b[2]-a[2])*(c[1]-a[1]),(b[2]-a[2])*(c[0]-a[0])-(b[0]-a[0])*(c[2]-a[2]),
@@ -108,6 +111,33 @@ pub fn of_triangles_observed(vertices: &[V],triangles: &[[u32;3]],material: &mut
         report.disagreements.extend(found);
     }
     Ok(report)
+}
+
+/// The triangles to probe: stratified by area (the one whose share of the cumulative area
+/// holds each of `options.triangles` evenly spaced marks, each at most once), or every n-th.
+fn sample<'a>(vertices: &[V],triangles: &'a [[u32;3]],options: &Options) -> Vec<&'a [u32;3]> {
+    let wanted = options.triangles.max(1);
+    if !options.by_area {
+        let step = (triangles.len()/wanted).max(1);
+        return triangles.iter().step_by(step).collect();
+    }
+    let mut cumulative = Vec::with_capacity(triangles.len());
+    let mut total = 0.;
+    for t in triangles {
+        let [a,b,c] = t.map(|i| vertices[i as usize]);
+        let (u,v): (V,V) = (std::array::from_fn(|k| b[k]-a[k]),std::array::from_fn(|k| c[k]-a[k]));
+        let n = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+        let area = 0.5*(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+        if area.is_finite() { total += area; }
+        cumulative.push(total);
+    }
+    if !(total > 0.) { return Vec::new(); }
+    let mut chosen: Vec<usize> = (0..wanted).map(|k| {
+        let mark = total*(k as f64+0.5)/wanted as f64;
+        cumulative.partition_point(|&c| c < mark).min(triangles.len()-1)
+    }).collect();
+    chosen.dedup();
+    chosen.into_iter().map(|i| &triangles[i]).collect()
 }
 
 /// The triangles of a binary STL, its coordinates divided by `scale` into model units.
