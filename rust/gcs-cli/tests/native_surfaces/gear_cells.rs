@@ -91,6 +91,42 @@ fn single_space(member: &str,expected: f64) {
 #[test]
 fn generic_sheet_reproduces_the_pinion_tooth_space() { single_space("pinion",120.708817); }
 
+/// Phase 1 of docs/generating-sweeps-plan.md: one pinion space through the
+/// same construction at the offset angle `SOLVENT_INSPECT_OFFSET` (degrees),
+/// reporting rather than asserting what it builds and how the field judges
+/// both sides of its sheet. No recorded volume exists for a hypoid.
+#[test]
+#[ignore]
+fn the_native_space_at_an_offset_against_its_field() {
+    let offset: f64 = std::env::var("SOLVENT_INSPECT_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(15.);
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let e = read_gears_with(&base,&mut |name,text| if name == "configuration" {
+        text.replace("param offset_angle = 0deg",&format!("param offset_angle = {offset}deg")) } else { text });
+    let id = |n: &str| e.map.ent_named(&format!("pair.pinion.{n}")).unwrap().i();
+    let cad = Cad::new();
+    let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
+    let blank_volume = cad.0.volume(blank).unwrap();
+    let started = std::time::Instant::now();
+    let built = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank);
+    let (face,sheet,error) = match built {
+        Ok(b) => b,
+        Err(refusal) => { eprintln!("offset {offset}: sheet refused: {refusal}"); return; }
+    };
+    eprintln!("offset {offset}: sheet {}x{} in {:?}, withheld error {error:e} mm",sheet.rows,sheet.columns,started.elapsed());
+    let partition = cad.0.split_solid(blank,&[face]).unwrap();
+    let mut material = gcs_core::solid::MaterialField::read(&e.sketch,id("single"),1e-10).unwrap().evaluator(4096);
+    let (kept,removed) = match native::sweep_boundary::classify(&cad.0,partition,&mut material) {
+        Ok(c) => c,
+        Err(refusal) => { eprintln!("offset {offset}: classification refused: {refusal}"); return; }
+    };
+    let cell_total: f64 = kept.iter().chain(&removed).map(|c| c.volume).sum();
+    eprintln!("offset {offset}: blank {blank_volume:.4}, cells {cell_total:.4}, {} kept, {} removed {:?}",
+        kept.len(),removed.len(),removed.iter().map(|c| c.volume).collect::<Vec<_>>());
+    let part = cad.0.fuse(&kept.iter().map(|c| c.solid).collect::<Vec<_>>()).unwrap();
+    let (agree,disagree) = sides_agree(&cad,part,blank,&sheet,&mut material);
+    eprintln!("offset {offset}: {agree} side checks agree, {disagree} disagree ({:?})",started.elapsed());
+}
+
 #[test]
 fn generic_sheet_reproduces_the_gear_tooth_space() { single_space("gear",117.137321); }
 

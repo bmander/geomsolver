@@ -175,8 +175,8 @@ fn main() -> ExitCode {
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
-            "--verbose" | "-v" | "--verbose=1" => cad::mesh_sweep::VERBOSITY.store(1,std::sync::atomic::Ordering::Relaxed),
-            "--verbose=2" | "-vv" => cad::mesh_sweep::VERBOSITY.store(2,std::sync::atomic::Ordering::Relaxed),
+            "--verbose" | "-v" | "--verbose=1" => cad::set_verbosity(1),
+            "--verbose=2" | "-vv" => cad::set_verbosity(2),
             "--allow-unsolved" => opts.allow_unsolved = true,
             "-h" | "--help" => {
                 print!("{USAGE}");

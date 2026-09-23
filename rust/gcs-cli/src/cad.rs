@@ -6,6 +6,14 @@ pub mod manifold;
 #[cfg(all(feature="manifold",feature="occt"))]
 pub mod mesh_sweep;
 
+/// How much the mesh path reports while it works (`--verbose`); without it
+/// there is nothing to report and the flag is accepted and ignored.
+pub fn set_verbosity(level: u8) {
+    #[cfg(all(feature="manifold",feature="occt"))]
+    mesh_sweep::VERBOSITY.store(level,std::sync::atomic::Ordering::Relaxed);
+    let _ = level;
+}
+
 /// Whether the mesh path applies: the solid cuts continuous sweeps and both
 /// native features are built in.
 pub fn swept_mesh_applies(sk: &gcs_core::model::Sketch,solid: usize) -> bool {

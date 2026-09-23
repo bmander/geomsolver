@@ -28,6 +28,64 @@ class. **Decision gate with the user:** if the offsets the design needs fail E2�
 between restricting supported offsets and widening the class (a Phase 5b below). Do not
 start construction changes before this gate.
 
+### Phase 1 results (2026-09-22)
+
+Measured by `where_the_pair_stands_against_the_generating_class` in
+`rust/gcs-cli/tests/generating_class.rs` (ignored; about 30 s per offset). It samples each
+revolved tool face over 300 × 1200 source points across the band of revolution that reaches the
+blank, and finds every contact time from the analytic sinusoid (`SweepContacts::at_source_over`).
+It counts contacts strictly inside the blank's field.
+
+- **E3** is the generated surface's oriented area factor. It is computed by central differences
+  on the same contact branch, relative to the source surface's own.
+- **E4** counts pairs of in-blank sheet points within half the sample spacing whose source
+  points are more than five spacings apart. "Crossing" means their normals differ; "parallel"
+  means they nearly coincide.
+- Failing points (J < 0 and E4 pairs) are judged against the removal's own material field:
+  "buried" means strictly inside the swept material.
+
+The native column is `the_native_space_at_an_offset_against_its_field` in
+`native_surfaces/gear_cells.rs`. It checks the field on both sides of every eleventh interior
+sheet node inside the blank.
+
+Axis offset ≈ 53.67 mm × sin(offset). The pinion has 24 teeth, module 2 mm, 35° spiral and
+20° pressure. Tool patches: 1 outer flank, 2 outer round, 3 tip, 4 inner round, 5 inner flank.
+
+| Offset | Axis offset | E1 | E2 | E3: least J, folds | E4 far-source pairs | Failing points buried | Native path |
+| ---: | ---: | --- | ---: | --- | --- | --- | --- |
+| 0° | 0 mm | clear | 0 | 0.47, none | 0 | — | 120.705 mm³, 260 agree / 0 |
+| 6° | 5.6 mm | clear | 0 | 0.65, none | 0 | — | 130.427 mm³, 258 / 0; withheld error 0.024 mm |
+| 15° | 13.9 mm | clear | 0 | 0.33, none | 0 | — | 153.552 mm³, 258 / 0 |
+| 16° | 14.8 mm | clear | 0 | flank 0.17, none | 0 crossing, 70 parallel | — | not run |
+| 17.5° | 16.1 mm | clear | 0 | inner flank folds (30k samples J < 0) | 295k crossing, inner round × inner flank | 191 / 201 | not run |
+| 20° | 18.4 mm | clear | 0 | inner flank folds (56k) | 32k crossing | 198 / 201 | not run |
+| 25° | 22.7 mm | clear | 273 | inner round and inner flank fold | 31k crossing | 180 / 201 | not run |
+| 30° | 26.8 mm | clear | 868 | inner round folds | 51k crossing | 189 / 201 | refused: "a cutter point has no contact time" |
+| 45° | 38.0 mm | clear | 1695 | inner round folds | 23k crossing | 170 / 201 | not run |
+| Gear, 0° | — | clear | 0 | 0.86, none | 0 | — | recorded 117.137 mm³ (existing test) |
+
+**Reading.** Up to 15° the pinion is inside the class: one contact per source point, no fold, no
+self-crossing. The native OCCT construction agrees with the field at 0°, 6° and 15°. At 15° the
+traced-sheet mesh path had 19% of its triangles wrong, so that failure was the construction,
+not the geometry.
+
+Between 16° and 17.5° the side the crown's inner flank generates leaves the class. First,
+the inner flank's envelope folds, and the crown tooth's inner tip round's envelope crosses it. From 25° the round's own
+envelope also folds, and some source points touch twice. Nearly every failing point is buried
+inside the removed material. The few on the boundary lie near the crossing curves.
+
+This is **undercut** on that side of the pinion. The true surface is the flank and fillet
+envelopes, trimmed where they cross. It is the case the scope names under "Undercut is
+excluded deliberately", plus a self-fold that 5a alone would not cover. The native
+construction does not see it and refuses with an unhelpful reason.
+
+These are sampled observations of the reference design, not bounds. A design with other
+pressure angles, tip radius or tooth counts moves the threshold. That is part of why
+admission belongs in the core rather than in a supported-offset list.
+
+**Decision needed:** support offsets up to about 15° with this design and refuse the rest
+through admission (Phases 2–4 unchanged), or take on 5a and 5b now.
+
 ## Phase 2 — Admission predicates in the core
 
 Add one core entry point that takes a solved sweep graph and returns either `Admitted`,
