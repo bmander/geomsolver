@@ -27,6 +27,7 @@ mod curve_of;
 mod curve;
 mod curvedef;
 mod decompose;
+mod delaunay;
 mod derived;
 mod describe;
 mod diagnose;

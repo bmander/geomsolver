@@ -15,6 +15,7 @@ pub mod complex;
 pub mod constraints;
 pub mod curve;
 pub mod decompose;
+pub mod delaunay;
 pub mod diagnose;
 pub mod drawing;
 pub mod edit;

@@ -159,3 +159,49 @@ missed. The certified enclosure check stays the test of it.
 - the query count, from meshing the whole blank at 5 µm facet distance;
 - the float32 needle triangle, for F4;
 - OCCT in the features, which F2 removes.
+
+## F3 results (2026-09-23): predicates and the regular triangulation
+
+**`delaunay`** (core, no dependencies):
+- **`expansion`:** Shewchuk's exact expansions (two-sum, two-product by splitting, grow, scale,
+  with zero elimination).
+- **`predicates`:** `orient` and the weighted `power` test.
+  - Each evaluates in floating point first, against an error bound proportional to its
+    permanent: Shewchuk's orientation bound, and his insphere bound doubled for the weight
+    difference in each lifted coordinate.
+  - A value inside the bound is re-evaluated exactly.
+  - `EXACT_CALLS` counts the fallbacks.
+- **`regular`:** the regular triangulation, built by incremental Bowyer–Watson inside an
+  enclosing tetrahedron whose insphere is sixteen times the points' radius.
+  - A point is located by a remembering stochastic walk.
+  - A point in conflict with no tetrahedron is hidden, and a vertex engulfed by a conflict region
+    becomes hidden.
+  - Where the region's boundary would make a flat tetrahedron with the point, a tie, the region
+    grows past that face.
+  - `check` is the definition by brute force: orientation, neighbour reciprocity, no unhidden
+    vertex in conflict with any tetrahedron, every unhidden vertex used, and every hidden point
+    conflicting with nothing.
+- **`spatial_order`:** biased randomized insertion rounds, each in Hilbert order.
+
+**Tests** (`tests/delaunay.rs`):
+- The expansions reproduce values doubles lose.
+- The filtered predicates agree with the exact ones:
+  - on 100 000 nearly coplanar and 100 000 nearly cospherical, weighted cases;
+  - on the one-ulp perturbations;
+  - on exact zeros for integer coplanar and cospherical input.
+- Triangulations pass `check` for:
+  - 1 500 random points;
+  - a 7³ lattice (degenerate everywhere);
+  - 400 cospherical points, 400 coplanar points, and an integer lattice on a sphere of radius 5;
+  - duplicates (the lighter hidden) and random weights (23 of 1 200 hidden);
+  - a weighted lattice.
+- Half the cases run in spatial order and half in input order.
+
+**Speed**, release, 50 000 random points, no exact fallbacks:
+- 39 µs a point in random order;
+- **14 µs** a point in spatial order: about 7 walk steps and 20 conflicting tetrahedra per
+  insertion.
+
+What remains is the conflict search's power tests and creating the new tetrahedra, both with
+cache misses. CGAL is several times faster, and closing that gap is F5's. For now it is small
+against the oracle's queries.
