@@ -13,7 +13,13 @@ pub type SweepError = minimum::Error<Error>;
 pub struct SweptField {source:SpatialField,motion:Family,domain:I,
     /// The inverse poses at the first `SIDE_TABLE` dyadic divisions of the roll, which every
     /// `side` query walks through first, filled once.
-    poses:std::sync::OnceLock<std::sync::Arc<Vec<Option<crate::envelope::Motion>>>>}
+    poses:std::sync::OnceLock<std::sync::Arc<Vec<Option<crate::motion::Pose>>>>}
+
+/// Source evaluations made by every `side` query so far, for a caller measuring the oracle.
+pub static SIDE_EVALUATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Dyadic level at which `side` stops splitting and searches each basin left (see `side`).
+const SIDE_BASIN: u32 = 6;
 
 /// Dyadic levels of the roll whose inverse poses `side` keeps: 2¹⁰ + 1 of them.
 const SIDE_LEVELS: u32 = 10;
@@ -46,18 +52,25 @@ impl SweptField {
         let n = (1u64 << SIDE_DEPTH) as f64;
         let time = |i: u64| a+(b-a)*(i as f64/n);
         let table = self.poses.get_or_init(|| std::sync::Arc::new((0..=1u64 << SIDE_LEVELS)
-            .map(|k| self.motion.at(time(k << (SIDE_DEPTH-SIDE_LEVELS))).ok().map(|m| m.inverse())).collect()));
+            .map(|k| self.motion.pose_at(time(k << (SIDE_DEPTH-SIDE_LEVELS))).ok().map(|m| m.inverse())).collect()));
+        let evaluations = std::cell::Cell::new(0u64);
+        let at_time = |t: f64| {
+            evaluations.set(evaluations.get()+1);
+            self.motion.pose_at(t).ok().map(|m| m.inverse()).map_or(f64::INFINITY,|m| self.source.value(m.point(p)))
+        };
         let at = |i: u64| {
+            evaluations.set(evaluations.get()+1);
             let step = SIDE_DEPTH-SIDE_LEVELS;
             let pose = if i & ((1u64 << step)-1) == 0 { table[(i >> step) as usize] }
-                else { self.motion.at(time(i)).ok().map(|m| m.inverse()) };
+                else { self.motion.pose_at(time(i)).ok().map(|m| m.inverse()) };
             pose.map_or(f64::INFINITY,|m| self.source.value(m.point(p)))
         };
         let last = 1u64 << SIDE_DEPTH;
         let (fa,fb) = (at(0),at(last));
         let mut best = fa.min(fb);
-        if !(b > a) || best < 0. { return best; }
-        let Ok(speed) = self.motion.inverse_point_speed_bound(p,self.domain) else { return best };
+        let count = |n: u64| SIDE_EVALUATIONS.fetch_add(n,std::sync::atomic::Ordering::Relaxed);
+        if !(b > a) || best < 0. { count(evaluations.get()); return best; }
+        let Ok(speed) = self.motion.inverse_point_speed_bound(p,self.domain) else { count(evaluations.get()); return best };
         let per = (b-a)/n;
         // A bound this close to zero leaves the side a tie a mesher's bisection resolves by
         // position; refining it further buys a sign nothing downstream can use.
@@ -71,17 +84,61 @@ impl SweptField {
         impl Ord for Stretch { fn cmp(&self,o: &Self) -> std::cmp::Ordering { o.0.total_cmp(&self.0) } }
         let mut stretches = std::collections::BinaryHeap::new();
         stretches.push(Stretch(bound(0,fa,last,fb),0,fa,last,fb));
-        for _ in 0..4096 {
-            let Some(Stretch(low,i0,f0,i1,f1)) = stretches.pop() else { break };
-            if low > -tolerance || i1-i0 < 2 { break; }
+        // Near a rolling contact the path runs along the tool, so the source rises slowly away
+        // from its minimum: a long shallow basin that a first-order bound splits stretch by
+        // stretch at every level. So splitting stops at `SIDE_BASIN`: the stretches that may
+        // still hold a negative value are grouped into contiguous runs, each a basin, and each
+        // basin's minimum is found by golden section around its lowest reading. That is a
+        // reading, not a bound: a second dip inside one run, between readings, can be missed.
+        let basin = last >> SIDE_BASIN;
+        let result = 'search: {
+        loop {
+            let Some(Stretch(low,i0,f0,i1,f1)) = stretches.pop() else { break 'search best };
+            if low > -tolerance { break 'search best; }
+            if i1-i0 <= basin {
+                let mut open: Vec<(u64,f64,u64,f64)> = vec![(i0,f0,i1,f1)];
+                open.extend(stretches.drain().filter(|s| s.0 <= -tolerance).map(|s| (s.1,s.2,s.3,s.4)));
+                open.sort_by_key(|s| s.0);
+                let mut runs: Vec<Vec<(u64,f64,u64,f64)>> = Vec::new();
+                for s in open {
+                    match runs.last_mut() { Some(r) if r.last().unwrap().2 == s.0 => r.push(s), _ => runs.push(vec![s]) }
+                }
+                for run in runs {
+                    // The lowest reading in the run and the readings either side bracket its minimum.
+                    let mut readings: Vec<(u64,f64)> = run.iter().map(|s| (s.0,s.1)).collect();
+                    let end = run[run.len()-1];
+                    readings.push((end.2,end.3));
+                    let k = (0..readings.len()).min_by(|&x,&y| readings[x].1.total_cmp(&readings[y].1)).unwrap();
+                    let w = run[0].2-run[0].0;
+                    let (w0,w1) = (readings[k.saturating_sub(1)].0.saturating_sub(if k == 0 { w } else { 0 }),
+                        (if k+1 < readings.len() { readings[k+1].0 } else { readings[k].0+w }).min(last));
+                    let (mut lo,mut hi) = (time(w0),time(w1));
+                    let g = 0.5*(5f64.sqrt()-1.);
+                    let (mut x1,mut x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
+                    let (mut g1,mut g2) = (at_time(x1),at_time(x2));
+                    // 28 steps narrow the bracket by 10⁻⁶: the minimum is quadratic, so its value
+                    // is then found to 10⁻¹² of the bracket's rise, far below any tolerance.
+                    for _ in 0..28 {
+                        if g1.min(g2) < 0. { break; }
+                        if g1 <= g2 { hi = x2; x2 = x1; g2 = g1; x1 = hi-g*(hi-lo); g1 = at_time(x1); }
+                        else { lo = x1; x1 = x2; g1 = g2; x2 = lo+g*(hi-lo); g2 = at_time(x2); }
+                    }
+                    let found = g1.min(g2);
+                    best = best.min(found);
+                    if found < 0. { break 'search found; }
+                }
+                break 'search best;
+            }
             let im = i0+(i1-i0)/2;
             let fm = at(im);
             best = best.min(fm);
-            if fm < 0. { return fm; }
+            if fm < 0. { break 'search fm; }
             stretches.push(Stretch(bound(i0,f0,im,fm),i0,f0,im,fm));
             stretches.push(Stretch(bound(im,fm,i1,f1),im,fm,i1,f1));
         }
-        best
+        };
+        count(evaluations.get());
+        result
     }
 
     /// Numerical storage is an evaluator control, not a geometry parameter.

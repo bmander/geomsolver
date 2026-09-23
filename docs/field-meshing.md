@@ -127,3 +127,35 @@ triangulation.
   - Coarse-to-fine refinement for previews.
   - After an edit, re-mesh only where the field changed.
   - Exit: the targets above, measured in the browser.
+
+## F1 results (2026-09-23): the oracle
+
+**Measurement.** `generating_class::side_query_cost` (ignored; `SOLVENT_AGREE_STL` and the design
+variables) times `MaterialField::side`. The points are each triangle's centroid of an exported
+member and the points 1 µm and 0.1 mm either side of it, the mix a mesher's bisection asks. It
+checks every side against the certified enclosure wherever that decides:
+`SIDE_EVALUATIONS` counts sweep evaluations. On the bevel gear space:
+
+| Step | µs a query | Evaluations a query |
+| --- | ---: | ---: |
+| First-order branch-and-bound over the roll | 420 | 229 |
+| Golden section per short stretch (tried, reverted) | 880–1490 | 444–768 |
+| Basins: split to 1/64 of the roll, then golden section per contiguous run | 62 | 42 |
+| Position-only poses (`Family::pose_at`), 28 golden steps | 18 | 32 |
+
+In every row but the reverted one, 0 of 10 292 decided points disagree.
+
+**What the measurement showed.** The speed bound is about 156 mm/rad. Near a rolling contact the
+path runs along the tool, so the source rises slowly away from its minimum. That shallow basin
+kept 20–30 stretches alive at every level from 8 to 17. The fix treats each contiguous run as one
+basin, which is a reading, not a bound: two dips inside one run, between readings, could be
+missed. The certified enclosure check stays the test of it.
+
+**The whole gear space through Mesh_3:** from 10 min to **55 s**. That is 3.35 million queries at
+12 µs (41 s), and 3.9 s of feature tracing, almost all of it OCCT's face classification
+(the field takes 0.2 s). F1's exit is met.
+
+**Left:**
+- the query count, from meshing the whole blank at 5 µm facet distance;
+- the float32 needle triangle, for F4;
+- OCCT in the features, which F2 removes.

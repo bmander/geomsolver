@@ -77,8 +77,10 @@ pub fn export(sk: &gcs_core::model::Sketch,solid: usize,path: &str) -> Result<()
         let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }.to_string_lossy().into_owned();
         return Err(format!("Mesh_3 failed: {message}"));
     }
-    eprintln!("solventc: Mesh_3: {count} triangles from {} field queries ({:.1} s in the field) in {:?}, \
-        facet size {:.4} mm, distance {:.4} mm",oracle.queries,oracle.spent.as_secs_f64(),started.elapsed(),sizes[0]*scale,sizes[1]*scale);
+    let evaluations = gcs_core::solid::SIDE_EVALUATIONS.load(std::sync::atomic::Ordering::Relaxed);
+    eprintln!("solventc: Mesh_3: {count} triangles from {} field queries ({:.1} s in the field, {evaluations} sweep evaluations \
+        in all) in {:?}, facet size {:.4} mm, distance {:.4} mm",oracle.queries,oracle.spent.as_secs_f64(),started.elapsed(),
+        sizes[0]*scale,sizes[1]*scale);
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     gcs_core::mesh::stl_shells(&bytes).map_err(|e| format!("the Mesh_3 STL fails its shell check: {e}"))?;
     super::mark("stl");

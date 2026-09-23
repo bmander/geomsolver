@@ -331,3 +331,55 @@ fn which_boundaries_pass_near_a_point() {
     rows.sort_by(|a,b| a.0.abs().total_cmp(&b.0.abs()));
     for (v,name) in rows.iter().take(12) { eprintln!("  {v:+.4} {name}"); }
 }
+
+/// The cost of the floating-point side query on a member's field (`MaterialField::side`), at
+/// points on and just off an exported mesh of it (`SOLVENT_AGREE_STL`): each triangle's centroid
+/// and the points 1 µm and 0.1 mm either side, the mix a mesher's bisection asks. Reports the time
+/// and sweep evaluations per query. Configure the design as `an_exported_member_agrees_with_its_field`.
+#[test]
+#[ignore]
+fn side_query_cost() {
+    use gcs_core::solid::{agreement,MaterialField,SIDE_EVALUATIONS};
+    use std::sync::atomic::Ordering;
+    let path = std::env::var("SOLVENT_AGREE_STL").expect("SOLVENT_AGREE_STL");
+    let member = std::env::var("SOLVENT_AGREE_MEMBER").unwrap_or("pinion".into());
+    let offset: f64 = std::env::var("SOLVENT_CLASS_OFFSETS").map_or(0.,|v| v.parse().unwrap());
+    let shift: Option<f64> = std::env::var("SOLVENT_CLASS_SHIFTS").ok().map(|v| v.parse().unwrap());
+    let e = read(offset,shift);
+    let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
+    let scale = e.sketch.units.length.unwrap().1;
+    let (vertices,triangles) = agreement::stl_triangles(&std::fs::read(&path).unwrap(),scale).unwrap();
+    let field = MaterialField::read(&e.sketch,body,1e-10).unwrap();
+    let mut points = Vec::new();
+    for t in triangles.iter().step_by((triangles.len()/2000).max(1)) {
+        let [a,b,c] = t.map(|i| vertices[i as usize]);
+        let n = [(b[1]-a[1])*(c[2]-a[2])-(b[2]-a[2])*(c[1]-a[1]),(b[2]-a[2])*(c[0]-a[0])-(b[0]-a[0])*(c[2]-a[2]),
+            (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])];
+        let l = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+        if !(l > 0.) { continue; }
+        for d in [0.,1e-3,-1e-3,0.1,-0.1] {
+            points.push(std::array::from_fn::<f64,3,_>(|k| (a[k]+b[k]+c[k])/3.+d/scale*n[k]/l));
+        }
+    }
+    SIDE_EVALUATIONS.store(0,Ordering::Relaxed);
+    let started = std::time::Instant::now();
+    let inside = points.iter().filter(|p| field.side(**p) < 0.).count();
+    let elapsed = started.elapsed();
+    let evaluations = SIDE_EVALUATIONS.load(Ordering::Relaxed);
+    eprintln!("{} queries ({inside} inside): {:.1} µs and {:.1} sweep evaluations a query",points.len(),
+        elapsed.as_secs_f64()*1e6/points.len() as f64,evaluations as f64/points.len() as f64);
+    // The side is a reading; wherever the certified enclosure decides, it must agree.
+    use gcs_core::interval::{Interval,minimum::{self,Stop}};
+    let mut material = field.evaluator(4096);
+    let (mut decided,mut wrong) = (0,0);
+    for p in &points {
+        let [lo,hi] = material.bounds_stopping(p.map(|x| Interval::point(x).unwrap()),Stop::Outside(Interval::ZERO),
+            minimum::Options {value_tolerance:1e-9,max_evaluations:20000}).unwrap().value.bounds();
+        if lo > 0. || hi < 0. {
+            decided += 1;
+            if (field.side(*p) < 0.) != (hi < 0.) { wrong += 1; if wrong <= 5 { eprintln!("  {p:?}: side {} against [{lo:e}, {hi:e}]",field.side(*p)); } }
+        }
+    }
+    eprintln!("{wrong} of {decided} decided points disagree");
+    assert_eq!(wrong,0);
+}

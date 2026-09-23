@@ -274,6 +274,69 @@ impl Family {
     }
 }
 
+/// A rigid pose without its derivative: `x ↦ r·x + p`.
+#[derive(Clone,Copy,Debug)]
+pub struct Pose { pub r: [[f64;3];3], pub p: [f64;3] }
+
+impl Pose {
+    pub fn point(&self,x: [f64;3]) -> [f64;3] {
+        std::array::from_fn(|i| self.r[i][0]*x[0]+self.r[i][1]*x[1]+self.r[i][2]*x[2]+self.p[i])
+    }
+    /// Apply this pose, then `next`.
+    fn then(self,next: Pose) -> Pose {
+        Pose {r:std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| next.r[i][k]*self.r[k][j]).sum())),
+            p:next.point(self.p)}
+    }
+    pub fn inverse(self) -> Pose {
+        let r: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j| self.r[j][i]));
+        let p = std::array::from_fn(|i| -(r[i][0]*self.p[0]+r[i][1]*self.p[1]+r[i][2]*self.p[2]));
+        Pose {r,p}
+    }
+}
+
+impl Family {
+    /// The pose alone at `angle`, as `at` gives it without the derivative and without allocating
+    /// for a family of up to eight steps: for a caller evaluating many poses that needs no
+    /// velocity (a floating-point field reading).
+    pub fn pose_at(&self,angle: f64) -> Result<Pose,String> {
+        if !angle.is_finite() { return Err("a motion angle must be finite".into()); }
+        let identity = Pose {r:[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],p:[0.;3]};
+        let mut fixed = [identity;8];
+        let mut spilled: Vec<Pose> = Vec::new();
+        let many = self.steps.len() > fixed.len();
+        for (n,step) in self.steps.iter().enumerate() {
+            let get = |k: usize,fixed: &[Pose;8],spilled: &Vec<Pose>| if many { spilled[k] } else { fixed[k] };
+            let value = match *step {
+                Step::Rotation {origin,axis,ratio,phase,advance} => {
+                    let a = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
+                    let (s,c) = (phase+ratio*angle).sin_cos();
+                    let k = [[0.,-a[2],a[1]],[a[2],0.,-a[0]],[-a[1],a[0],0.]];
+                    let r: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j|
+                        c*if i == j { 1. } else { 0. }+(1.-c)*a[i]*a[j]+s*k[i][j]));
+                    let turned = Pose {r,p:[0.;3]}.point(origin);
+                    let mut p: [f64;3] = std::array::from_fn(|i| origin[i]-turned[i]);
+                    if advance != 0. {
+                        let rate = advance/std::f64::consts::TAU;
+                        for i in 0..3 { p[i] += a[i]*rate*angle; }
+                    }
+                    Pose {r,p}
+                }
+                Step::Translation {axis,advance} => {
+                    let a = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
+                    let rate = advance/std::f64::consts::TAU;
+                    Pose {p:a.map(|v| v*rate*angle),..identity}
+                }
+                Step::Relative {source,observer} => get(source,&fixed,&spilled).then(get(observer,&fixed,&spilled).inverse()),
+            };
+            if many { spilled.push(value) } else { fixed[n] = value }
+        }
+        let last = self.steps.len().checked_sub(1).ok_or("a motion family has a root")?;
+        let pose = if many { spilled[last] } else { fixed[last] };
+        if !pose.r.iter().flatten().chain(&pose.p).all(|v| v.is_finite()) { return Err("a motion pose overflowed".into()); }
+        Ok(pose)
+    }
+}
+
 /// Read and evaluate against the current solved geometry. Reuse `Family` for many samples
 /// of the same solved state, just as a surface evaluator reuses a solved surface snapshot.
 pub fn evaluate(sk: &Sketch, index: usize, angle: f64) -> Result<Motion,String> {

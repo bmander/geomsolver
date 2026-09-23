@@ -273,3 +273,28 @@ fn screws_and_translations_follow_their_closed_forms() {
     assert!(tap.normal_velocity(surface).is_err());
     assert!(feed.normal_velocity(surface).is_err());
 }
+
+/// The position-only pose is the full pose without its derivative, for every kind of step:
+/// offset rotations, screws, translations and relative motions of them.
+#[test]
+fn a_pose_alone_is_the_motion_without_its_derivative() {
+    let e = solved(&format!("{AXES}\n\
+        motion tap(about: axis,ratio: 2,phase: 30deg,advance: 3mm)\n\
+        motion feed(along: other,advance: 10mm)\n\
+        motion turn(about: axis,ratio: 2,phase: 90deg)\n\
+        motion observer(about: other,ratio: -3,phase: 20deg)\n\
+        motion relative(tap,relative_to: feed)\n\
+        motion rolled(turn,relative_to: observer)\n\
+        motion nested(rolled,relative_to: turn)\n"));
+    for name in ["tap","feed","turn","relative","rolled","nested"] {
+        let family = motion::Family::read(&e.sketch,e.map.ent_named(name).unwrap().i()).unwrap();
+        for k in -8..=8 {
+            let angle = 0.37*k as f64;
+            let (full,pose) = (family.at(angle).unwrap(),family.pose_at(angle).unwrap());
+            for x in [[0.,0.,0.],[1.,-2.,3.5],[-4.,0.5,2.]] {
+                near(full.point(x),pose.point(x),1e-12);
+                near(full.inverse().point(x),pose.inverse().point(x),1e-12);
+            }
+        }
+    }
+}
