@@ -155,6 +155,49 @@ implementation time; the entry point lives beside `SweepContacts` in `solid/`.
 **Exit:** every fixture's test passes in under a few seconds. `solventc` reports the
 condition row and witness for a refused document.
 
+### Phase 2 status (2026-09-22)
+
+The core's `solid/admission.rs` has `admit_body(sketch, body, options)`. It reads the body's
+static remainder as a `SpatialField` and each swept cut with its placement poses. It returns
+`Admission`, whose evidence records `Basis::Sampled` and which placements were checked, or a
+`Refusal` naming the row, the sweep, a message and a witness in the body's coordinates.
+
+- T1 and M1 are read from the solid and motion graphs. T2 samples each concave profile corner's
+  circle at 65 roll times.
+- E1 runs over the whole tool at coarse density. M2 and E2–E4 run as in Phase 1, at 100 × 400
+  per face by default.
+- A later placement is skipped when the blank is inside at exactly the points the earlier
+  placement's checks read. For the gear's 24 indexed cuts that is exact, and it means one check.
+
+`tests/admission.rs` (core) covers:
+
+| Case | Outcome |
+| --- | --- |
+| A sphere rolled through a post | Admitted |
+| A single rotation | M2 |
+| A prism tool | T1 |
+| A union tool | T1 |
+| A translation | M1 |
+| A roll starting in the blank | E1, witness in the post |
+| An L-profile's concave corner | T2, witness in the post |
+| The bevel pinion | Admitted; 24 placements, one checked |
+| The configured 25° hypoid | Admitted |
+| 30° symmetric rack | E2 |
+| 20° symmetric rack | E3, at the inner-flank fold Phase 1 located |
+| 20° with a 7.5° shift | Admitted |
+
+The small fixtures run in well under a second. The gear cases take 3–10 s.
+
+`solventc --step/--stl` runs admission first for a body with swept cuts. A refusal is printed
+with its row and witness, writes nothing and exits 1. An admission prints one line of evidence.
+The configured design is now the 25° hypoid (`offset_angle` 25°, `pressure_shift` 10°,
+`spiral_angle` 25°). Tests with recorded numbers pin the design they were recorded at:
+`support::bevel` and `support::hypoid6`.
+
+Not yet done: the general-sweep fixtures (tumbling cylinder, thin plate, and others) as
+admission refusals. Their tools are prisms or single-rotation sweeps, already covered by the
+T1 and M2 cases above.
+
 ## Phase 3 — Admission gates export
 
 - `solventc --step/--stl` runs admission before any construction. A refused sweep writes

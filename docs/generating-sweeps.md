@@ -37,16 +37,18 @@ failure is reported with its witness.
 | --- | --- | --- | --- |
 | T1 | The tool is a full revolution with a line/arc/circle profile, or an intersection (`bound`) of such revolutions, under fixed placements. | Every face has closed-form contacts. An intersection creates only convex creases. | The first operand that is not a revolution, or a union/cut in the tool. |
 | T2 | Every profile vertex inside the swept region is convex or tangent. | A convex corner sweeps a fan of normals. A concave corner sweeps nothing, but it trims two envelopes against each other, which is not supported. | The vertex and its turning angle. |
-| M1 | The motion is a composition of rotations about fixed axes at constant ratios (`motion turn`, `motion relative`), with a finite increasing roll. | This is the generating motion of a face-milled bevel or hypoid, including skew axes. | The motion node outside the class. |
-| M2 | The contact condition depends on the motion. | Otherwise every contact is stationary and there is no sheet (the existing refusal). | The face. |
+| M1 | The motion is one rotation about a fixed axis, or one rotation relative to another (`motion turn`, `motion relative`), at constant ratios, with a finite increasing roll. | This is the generating motion of a face-milled bevel or hypoid, including skew axes. | The motion node outside the class. |
+| M2 | Each tool point's contact condition changes over the roll. | Where it does not, the point is on the boundary at every time or at none, and a contact time cannot parameterize the surface. A single rotation is like that everywhere (its tool-frame twist is constant), so the generator's motion is a relative one. This is the native path's existing refusal. | A tool point whose path reaches the blank. |
 | E1 | The tool at both roll limits has no common volume with the blank. | Then no end caps are needed inside the blank (the existing refusal). | The limit and the overlap volume. |
 | E2 | Every source point whose contact reaches the blank has at most one contact time within the roll. | One sheet per placement, as the bevel pinion already satisfies. | The source point and both times. |
-| E3 | The generated area factor stays away from zero over the region reaching the blank. | A zero is a fold of the envelope: the cusp of undercut. | The source/roll point and the factor. |
+| E3 | The generated area factor J stays away from zero over the region reaching the blank. | A zero is a fold of the envelope: the cusp of undercut. J alone passes through infinity where a point's two contact times merge, which is a fold of the time chart and not of the surface. So the sign is read from J times the rate of the contact condition, which changes sign only at a true fold. | The contact point and the factor. |
 | E4 | A placement's sheet does not cross itself inside the blank. | Sheets of different placements may cross, since the kernel split handles that. A self-crossing sheet is the defect the hypoid investigation found (`split_at_crossings`). | The pair of sheet points. |
 
-Translations and screws have constant tool-frame twist and are easier than rotations
-(`solid::constant_twist`). They are left out only because the gear does not need them.
-Admitting them later is a small extension, not a new project.
+Translations, screws and single rotations have constant tool-frame twist. Their contact set is
+fixed on the tool, so they are easier than relative rotations, but by a different construction
+(`solid::constant_twist`, the tracer's characteristics). They are left out only because the
+gear does not need them. Admitting them later is a separate, small extension, not a new
+project.
 
 ### Undercut is excluded deliberately
 
@@ -56,6 +58,10 @@ version refuses undercut and requires the design to avoid it. Supporting it mean
 *declared* intersection between two known envelopes of the same sweep. `BoundarySeam` and
 `EnvelopeSeam` already perform that operation. Supporting it is a later, separately gated
 extension. An undeclared crossing stays refused.
+
+The class is implemented as `solid::admission::admit_body`. `solventc --step/--stl` runs it
+before building a body with swept cuts. Placements whose blank reads the same at every point
+the checks read are checked once: the gear's 24 indexed cuts are one check.
 
 ## Refused, and how
 

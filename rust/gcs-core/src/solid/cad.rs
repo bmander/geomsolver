@@ -50,13 +50,13 @@ pub fn recipe_static(sk: &Sketch,root: usize) -> Result<StaticRecipe,String> {
     recipe_with(sk,root,true)
 }
 
-fn contains_sweep(sk: &Sketch,i: usize) -> bool {
+pub(crate) fn contains_sweep(sk: &Sketch,i: usize) -> bool {
     matches!(sk.solids[i].def,SolidDef::Swept {..})
         || sk.solids[i].operands().into_iter().any(|o| contains_sweep(sk,o as usize))
 }
 
 /// A cut operand that is a sweep or a chain of placements ending in one.
-fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String> {
+pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String> {
     let solid = &sk.solids[i];
     match &solid.def {
         SolidDef::Swept {source,..} => {

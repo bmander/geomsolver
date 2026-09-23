@@ -3,9 +3,9 @@
 //! written from, and each remaining module is a stage of the construction
 //! judged against independent truth (closed forms, sampled membership, and
 //! the field itself, in that order of trust).
-mod harness;
-mod tools;
-mod motions;
+pub(crate) mod harness;
+pub(crate) mod tools;
+pub(crate) mod motions;
 mod forms;
 mod cases;
 mod labels;

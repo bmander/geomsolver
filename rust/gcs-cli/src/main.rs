@@ -327,6 +327,34 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     // A body with swept cuts goes to the mesh arrangement when it is built in;
     // the kernel path stays for STEP and for `--stl-backend occt`.
     let mut stl = opts.stl.clone();
+    let mut step = opts.step.clone();
+    // A body with swept cuts is built only when every sweep is in the generating class
+    // (docs/generating-sweeps.md): a refusal names the row it fails and a point where, and
+    // nothing is written, so an earlier output stays as it was.
+    if (step.is_some() || stl.is_some()) && r.success {
+        if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
+            if gcs_core::solid::cad::recipe_static(&sk,i).map(|r| !r.sweeps.is_empty()).unwrap_or(false) {
+                use gcs_core::solid::admission;
+                match admission::admit_body(&sk,i,&admission::Options::default()) {
+                    Ok(a) => for s in &a.sweeps {
+                        let checked = s.placements.iter().filter(|p| p.equivalent_to.is_none()).count();
+                        let admission::Basis::Sampled {rows,columns} = s.basis;
+                        eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face \
+                            ({checked} of {} placements checked, the rest reading the blank alike)",s.name,s.placements.len());
+                    },
+                    Err(err) => {
+                        let message = err.to_string();
+                        eprintln!("solventc: {message}");
+                        e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
+                            span:Default::default(),stmt:None,message});
+                        code = 1;
+                        stl = None;
+                        step = None;
+                    }
+                }
+            }
+        }
+    }
     if let Some(path) = stl.clone().filter(|_| opts.swept_mesh && r.success) {
         if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
             if cad::swept_mesh_applies(&sk,i) {
@@ -340,10 +368,10 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             }
         }
     }
-    if opts.step.is_some() || (stl.is_some() && opts.native_stl) {
+    if step.is_some() || (stl.is_some() && opts.native_stl) {
         let result = if !r.success { Err("native STEP/STL export requires a solved model".into()) }
             else { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| cad::export(&sk,i,
-                opts.step.as_deref(),stl.as_deref().filter(|_| opts.native_stl))) };
+                step.as_deref(),stl.as_deref().filter(|_| opts.native_stl))) };
         if let Err(message) = result {
             eprintln!("solventc: {message}");
             e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,

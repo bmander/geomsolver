@@ -81,6 +81,7 @@ mod solid_motion;
 mod solid_sweep;
 mod sweep_candidates;
 mod sweep_mesh;
+mod admission;
 mod solid_regressions;
 mod solid_issue51;
 mod stack;
