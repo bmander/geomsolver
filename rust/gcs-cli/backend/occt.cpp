@@ -64,7 +64,7 @@ static std::string invalidity(const TopoDS_Shape& shape) {
     }
     return message.str();
 }
-void validate(TopoDS_Shape& shape) {
+double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record) {
     if (shape.IsNull()) throw std::runtime_error("native solid is null");
     if (!BRepCheck_Analyzer(shape).IsValid())
         throw std::runtime_error("native solid is invalid:"+invalidity(shape));
@@ -74,12 +74,30 @@ void validate(TopoDS_Shape& shape) {
         shape = solid;
     }
     int count = 0;
+    double total = 0;
     for (TopExp_Explorer it(shape,TopAbs_SOLID); it.More(); it.Next()) {
         double v = volume(it.Current());
         if (!std::isfinite(v) || v <= 0) throw std::runtime_error("solid has no positive volume");
+        if (record) record->Bind(it.Current(),v);
+        total += v;
         ++count;
     }
     if (!count) throw std::runtime_error("operation produced no solid");
+    return total;
+}
+
+void Cad::validated(int id) {
+    if (valid.at(static_cast<size_t>(id))) return;
+    // A single solid's volume is what `validate` just measured.
+    const double v = validate(at(id));
+    if (at(id).ShapeType() == TopAbs_SOLID) volumes[static_cast<size_t>(id)] = v;
+    valid[static_cast<size_t>(id)] = 1;
+}
+
+double Cad::volume_of(int id) {
+    double& v = volumes.at(static_cast<size_t>(id));
+    if (std::isnan(v)) v = volume(at(id));
+    return v;
 }
 
 extern "C" {
@@ -190,7 +208,7 @@ int solvent_cad_bounds(Cad* cad,const int* ids,int count,double* bounds) noexcep
     });
 }
 int solvent_cad_validate(Cad* cad,int id) noexcept {
-    return guarded(cad,[&] { validate(cad->at(id)); return 0; });
+    return guarded(cad,[&] { cad->validated(id); return 0; });
 }
 int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
     return guarded(cad,[&] {
@@ -200,8 +218,8 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
             std::streambuf* old = std::cout.rdbuf(std::cerr.rdbuf());
             ~LogStream() { std::cout.rdbuf(old); }
         } log_stream;
+        cad->validated(id);
         auto& shape = cad->at(id);
-        validate(shape);
         STEPControl_Writer writer;
         if (writer.Transfer(shape,STEPControl_AsIs) != IFSelect_RetDone
             || writer.Write(path) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
@@ -216,17 +234,17 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
         GProp_GProps surface;
         BRepGProp::SurfaceProperties(shape,surface);
         const double slack = BRep_Tool::MaxTolerance(shape,TopAbs_VERTEX)*surface.Mass();
-        const double change = std::abs(volume(shape)-volume(imported));
-        if (change > std::max(1e-9+1e-7*std::abs(volume(shape)),slack))
+        const double before = cad->volume_of(id),after = volume(imported);
+        if (std::abs(before-after) > std::max(1e-9+1e-7*std::abs(before),slack))
             throw std::runtime_error("STEP round trip changed solid volume from "
-                +std::to_string(volume(shape))+" to "+std::to_string(volume(imported)));
+                +std::to_string(before)+" to "+std::to_string(after));
         return 0;
     });
 }
 int solvent_cad_stl(Cad* cad,int id,const char* path) noexcept {
     return guarded(cad,[&] {
+        cad->validated(id);
         auto& shape = cad->at(id);
-        validate(shape);
         // Absolute millimetres, matching the native construction recipe. These
         // are tessellator controls, not an end-to-end geometry error certificate.
         BRepMesh_IncrementalMesh mesher(shape,0.01,false,0.2,false);

@@ -135,8 +135,9 @@ pub struct SweepEvidence {
 pub struct Admission { pub sweeps: Vec<SweepEvidence> }
 
 /// The body's static remainder as a field, and its swept cuts with their poses. Swept material
-/// is read only where it is cut from the body itself, directly or through placements.
-fn blank(sk: &Sketch,root: usize,options: &Options) -> Result<(SpatialField,Vec<cad::SweptCut>),String> {
+/// is read only where it is cut from the body itself, directly or through placements. A host
+/// constructing the swept boundary reads the blank here too: exact, and microseconds a point.
+pub fn static_remainder(sk: &Sketch,root: usize,axis_tolerance: f64) -> Result<(SpatialField,Vec<cad::SweptCut>),String> {
     super::validate(sk,root)?;
     let solid = &sk.solids[root];
     let SolidDef::Body {stock,on,through,bound} = &solid.def else {
@@ -145,7 +146,7 @@ fn blank(sk: &Sketch,root: usize,options: &Options) -> Result<(SpatialField,Vec<
     if let Some(&o) = std::iter::once(stock).chain(on).chain(bound).find(|&&o| cad::contains_sweep(sk,o as usize)) {
         return Err(format!("`{}`: only a `cut` may hold swept material for now (`{}`)",solid.name,sk.solids[o as usize].name));
     }
-    let read = |i: u32| SpatialField::read(sk,i as usize,options.axis_tolerance);
+    let read = |i: u32| SpatialField::read(sk,i as usize,axis_tolerance);
     let mut field = read(*stock)?;
     for &o in on { field = field.union(read(o)?).map_err(|e| format!("{e:?}"))?; }
     for &b in bound { field = field.intersection(read(b)?).map_err(|e| format!("{e:?}"))?; }
@@ -184,7 +185,7 @@ struct Reads { points: Vec<V>,inside: Vec<bool> }
 
 /// Admit or refuse every swept cut of the body `root`.
 pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission,Error> {
-    let (field,cuts) = blank(sk,root,options).map_err(Error::Unreadable)?;
+    let (field,cuts) = static_remainder(sk,root,options.axis_tolerance).map_err(Error::Unreadable)?;
     let mut by_sweep: BTreeMap<usize,Vec<Motion>> = BTreeMap::new();
     let mut order = Vec::new();
     for cut in cuts {

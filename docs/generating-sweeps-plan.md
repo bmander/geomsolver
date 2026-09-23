@@ -270,6 +270,31 @@ thing to measure. Probing also cost 3.5–6 minutes a pinion at 0.005 mm value t
 now use 0.02, and the fine tolerance is kept for centroid checks. The CLI prints the probe's
 progress every tenth of its triangles.
 
+### Export speed (2026-09-22)
+
+Every stage line of a native swept export now carries the time since the first, so a whole
+export reads as one timeline. Each change below was measured at the stage it acts on, and the
+exported STL stayed byte-identical throughout.
+
+| Stage | Cause | Change | Pinion | Gear |
+| --- | --- | --- | --- | --- |
+| Field probe | `bounds` refined every sweep of the body to 0.02 wide, including the forty-odd far from the point | Probes stop each sweep once its enclosure leaves zero; the centroid check stops once decided against ±confirm | 58 s → 1.6 s | 683 s → 6 s |
+| Contact reach | 2455 blank-membership queries to the kernel's classifier at 30 ms each | Asked of the core's analytic static remainder (`admission::static_remainder`) | 73 s → 1 s | 65 s → 2 s |
+| Interior samples | A 125-point grid classified at 32 ms a point to find insides of thin cells | Candidates stepped in from each face along its inward normal; grid kept as fallback | 5.7 s → 1.5 s a space | — |
+| Cell listing | Each cell's centroid and volume integrated again, twice | Volumes measured once by the partition's validation, kept by handle; the sampler's centroid dropped | 26 s → 11 s | 62 s → 23 s |
+| Split | OCCT splitter | Oriented bounding boxes (`SetUseOBB`) | 29 s → 21 s build | 88 s → 70 s |
+| Validation, volume | Validity analysis and volume integration repeated on an unchanged solid by fuse, report, STEP and STL | Once per stored shape (`Cad::validated`, `volume_of`) | STEP 15 s → 8 s | fuse 20 s → 11 s |
+| Withheld error | 814 projections each re-initialising a global search | One projector per face (`FaceProjector`) | 8.5 s → 1.8 s | — |
+| STL | Meshed once for the probe and again for the output | The probe reads the staged STL | 7 s | 17 s |
+
+The totals, with admission, solve and both outputs, are:
+
+- Pinion: 4 min 47 s → **65 s**.
+- Gear: 18 min 48 s → **2 min 34 s**.
+
+What remains on the gear is kernel work: split 70 s, the STEP round trip's import checks 24 s,
+interior sampling 22 s. The round trip's checks are kept deliberately.
+
 ## Phase 4 — The hypoid inside the class
 
 Using Phase 1's supported offsets, export both hypoid members through the ordinary path.

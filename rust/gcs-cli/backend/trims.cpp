@@ -44,6 +44,58 @@ static void tolerance(double value) {
         throw std::runtime_error("contact curve needs a positive finite tolerance");
 }
 
+// Project world-mm points into a face's finite UV box. `parameters` returns 0 if no
+// point within the requested spatial distance belongs to the face's trims, leaving the
+// output untouched, and 1 with normalized u,v and the measured distance. This is
+// incidence, not a choice of a globally continuous branch across seams or singularities.
+struct FaceProjector {
+    FaceChart chart;
+    GeomAPI_ProjectPointOnSurf project;
+    // The whole support's bounds, as the single-point constructor reads them itself.
+    FaceProjector(Cad* cad,int id): chart(cad,id) {
+        double u0,u1,v0,v1;
+        chart.surface->Bounds(u0,u1,v0,v1);
+        project.Init(chart.surface,u0,u1,v0,v1,Precision::PConfusion());
+    }
+    int parameters(const double* point,double distance,double* output) {
+        for (int k=0;k<3;++k) if (!std::isfinite(point[k])) throw std::runtime_error("nonfinite projection point");
+        gp_Pnt p(point[0],point[1],point[2]);
+        p.Transform(chart.location.Transformation().Inverted());
+        // Project on the support first, then classify its actual trims. Restricting
+        // the extrema search to a fragment's UV box can report failure merely
+        // because the ordinary orthogonal foot belongs to another fragment.
+        project.Perform(p);
+        if (!project.IsDone()) throw std::runtime_error("native face projection failed");
+        double best = distance,u = 0,v = 0;
+        bool found = false;
+        for (int i=1;i<=project.NbPoints();++i) {
+            double a,b; project.Parameters(i,a,b);
+            if (chart.surface->IsUPeriodic()) {
+                const double period = chart.surface->UPeriod();
+                a += std::round(((chart.a+chart.b)*0.5-a)/period)*period;
+            }
+            if (chart.surface->IsVPeriodic()) {
+                const double period = chart.surface->VPeriod();
+                b += std::round(((chart.c+chart.d)*0.5-b)/period)*period;
+            }
+            // The projector can overshoot an exact trim-box endpoint by a few
+            // ulps. Return an actual in-box point and remeasure its incidence;
+            // never reuse the distance of the unclamped projection.
+            a = std::clamp(a,chart.a,chart.b); b = std::clamp(b,chart.c,chart.d);
+            const double gap = p.Distance(chart.surface->Value(a,b));
+            if (!std::isfinite(gap) || gap > best) continue;
+            BRepClass_FaceClassifier classify(chart.face,gp_Pnt2d(a,b),Precision::PConfusion());
+            if (classify.State() == TopAbs_UNKNOWN) throw std::runtime_error("projection trim membership unresolved");
+            if (classify.State() == TopAbs_OUT) continue;
+            u = (a-chart.a)/(chart.b-chart.a); v = (b-chart.c)/(chart.d-chart.c);
+            best = gap; found = true;
+        }
+        if (!found) return 0;
+        output[0] = u; output[1] = v; output[2] = best;
+        return 1;
+    }
+};
+
 extern "C" {
 // Only a full period across the finite face box supplies opposite seam aliases.
 // Spatial incidence is checked separately when a trace actually reaches them.
@@ -86,42 +138,21 @@ int solvent_cad_face_parameters(Cad* cad,int id,const double* point,double dista
     return guarded(cad,[&] {
         tolerance(distance);
         if (!point || !output) throw std::runtime_error("projection needs input and output buffers");
-        for (int k=0;k<3;++k) if (!std::isfinite(point[k])) throw std::runtime_error("nonfinite projection point");
-        const FaceChart chart(cad,id);
-        gp_Pnt p(point[0],point[1],point[2]);
-        p.Transform(chart.location.Transformation().Inverted());
-        // Project on the support first, then classify its actual trims. Restricting
-        // the extrema search to a fragment's UV box can report failure merely
-        // because the ordinary orthogonal foot belongs to another fragment.
-        GeomAPI_ProjectPointOnSurf project(p,chart.surface,Precision::PConfusion());
-        if (!project.IsDone()) throw std::runtime_error("native face projection failed");
-        double best = distance,u = 0,v = 0;
-        bool found = false;
-        for (int i=1;i<=project.NbPoints();++i) {
-            double a,b; project.Parameters(i,a,b);
-            if (chart.surface->IsUPeriodic()) {
-                const double period = chart.surface->UPeriod();
-                a += std::round(((chart.a+chart.b)*0.5-a)/period)*period;
-            }
-            if (chart.surface->IsVPeriodic()) {
-                const double period = chart.surface->VPeriod();
-                b += std::round(((chart.c+chart.d)*0.5-b)/period)*period;
-            }
-            // The projector can overshoot an exact trim-box endpoint by a few
-            // ulps. Return an actual in-box point and remeasure its incidence;
-            // never reuse the distance of the unclamped projection.
-            a = std::clamp(a,chart.a,chart.b); b = std::clamp(b,chart.c,chart.d);
-            const double gap = p.Distance(chart.surface->Value(a,b));
-            if (!std::isfinite(gap) || gap > best) continue;
-            BRepClass_FaceClassifier classify(chart.face,gp_Pnt2d(a,b),Precision::PConfusion());
-            if (classify.State() == TopAbs_UNKNOWN) throw std::runtime_error("projection trim membership unresolved");
-            if (classify.State() == TopAbs_OUT) continue;
-            u = (a-chart.a)/(chart.b-chart.a); v = (b-chart.c)/(chart.d-chart.c);
-            best = gap; found = true;
-        }
-        if (!found) return 0;
-        output[0] = u; output[1] = v; output[2] = best;
-        return 1;
+        return FaceProjector(cad,id).parameters(point,distance,output);
+    });
+}
+
+// The same for many points against one face, its projector initialised once: the
+// global search's sampling of the surface is most of a single projection's cost.
+// Row i of `output` is u, v, distance; `found[i]` is 1 where a point projects on trim.
+int solvent_cad_face_parameters_many(Cad* cad,int id,const double* points,int count,double distance,double* output,
+    int* found) noexcept {
+    return guarded(cad,[&] {
+        tolerance(distance);
+        if (!points || !output || !found || count < 0) throw std::runtime_error("projection needs input and output buffers");
+        FaceProjector projector(cad,id);
+        for (int i=0;i<count;++i) found[i] = projector.parameters(points+3*i,distance,output+3*i);
+        return 0;
     });
 }
 

@@ -5,7 +5,7 @@
 //! acceptance of every swept export (docs/generating-sweeps.md, Acceptance). It is sampled,
 //! and a probe the field cannot decide is counted apart and never taken as agreement.
 use super::MaterialEvaluator;
-use crate::interval::{Interval,minimum};
+use crate::interval::{Interval,minimum::{self,Stop}};
 
 type V = [f64;3];
 
@@ -77,17 +77,20 @@ pub fn of_triangles_observed(vertices: &[V],triangles: &[[u32;3]],material: &mut
         if !(length > 0.) || !length.is_finite() { continue; }
         report.probed_triangles += 1;
         let centroid: V = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
-        // A probe needs only its sign; the centroid needs a width well inside `confirm`.
-        let mut ask = |distance: f64,tolerance: f64| -> Result<(V,[f64;2]),String> {
+        // A probe asks only a sign, so every swept operand stops once its enclosure leaves
+        // zero (a far sweep at once); the centroid asks only whether it lies within `confirm`.
+        // Minima and maxima of enclosures each clear of a band are clear of it, so the answer
+        // is the one full convergence would give, without refining what cannot change it.
+        let mut ask = |distance: f64,stop: Stop,tolerance: f64| -> Result<(V,[f64;2]),String> {
             let point: V = std::array::from_fn(|k| centroid[k]+distance*n[k]/length);
-            let bounds = material.bounds(point.map(|x| Interval::point(x).unwrap()),
+            let bounds = material.bounds_stopping(point.map(|x| Interval::point(x).unwrap()),stop,
                 minimum::Options {value_tolerance:tolerance,max_evaluations:options.max_evaluations})
                 .map_err(|e| format!("{e:?}"))?;
             Ok((point,bounds.value.bounds()))
         };
         let mut found = Vec::new();
         for (distance,inside_mesh) in [(-options.offset,true),(options.offset,false)] {
-            let (point,[lo,hi]) = ask(distance,options.value_tolerance)?;
+            let (point,[lo,hi]) = ask(distance,Stop::Outside(Interval::ZERO),options.value_tolerance)?;
             report.probes += 1;
             if lo <= 0. && hi >= 0. { report.unresolved += 1; continue; }
             if (inside_mesh && lo > 0.) || (!inside_mesh && hi < 0.) {
@@ -98,7 +101,8 @@ pub fn of_triangles_observed(vertices: &[V],triangles: &[[u32;3]],material: &mut
         // centroid reads. One side wrong stands only if the centroid is off the boundary too;
         // withdrawn only on the field's word, which an enclosure wider than `confirm` does not give.
         if found.len() == 1 {
-            let (_,[c_lo,c_hi]) = ask(0.,options.confirm/4.)?;
+            let band = Interval::new(-options.confirm,options.confirm).map_err(|e| format!("{e:?}"))?;
+            let (_,[c_lo,c_hi]) = ask(0.,Stop::Decided(band),options.confirm/4.)?;
             if c_lo >= -options.confirm && c_hi <= options.confirm { report.withdrawn += 1; continue; }
         }
         report.disagreements.extend(found);

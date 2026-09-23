@@ -31,8 +31,13 @@ fn unit(a: [f64;3]) -> Result<[f64;3],String> {
 fn scaled(a: [f64;3],s: f64) -> [f64;3] { a.map(|v| v*s) }
 fn distance(a: [f64;3],b: [f64;3]) -> f64 { norm(sub(a,b)) }
 
-/// Progress on stderr: a member takes minutes, and the JSON report owns stdout.
-fn stage(message: &str) { eprintln!("solventc: {message}"); }
+/// Progress on stderr: a member takes minutes, and the JSON report owns stdout. Each line
+/// carries the time since the first, so a whole export reads as one timeline.
+pub(crate) fn stage(message: &str) {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let at = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
+    eprintln!("solventc: [{at:7.1} s] {message}");
+}
 
 /// The augmented length scale of a corner: one radian of turning counts as this
 /// many millimetres of profile, so a fan receives rows like an arc of that radius.
@@ -116,7 +121,9 @@ struct Anchor { face: c_int,fraction: f64 }
 /// The band and walk chosen from where the cutter's declared-roll contacts enter
 /// the blank: station angles, the walk's anchors in loop order, and the profile's
 /// mean distance from the axis for column spacing.
-struct Reach { stations: [f64;2],start: Anchor,end: Anchor,faces: usize,radius: f64 }
+struct Reach { stations: [f64;2],start: Anchor,end: Anchor,faces: usize,radius: f64,
+    /// Where its time went: sections, contacts, blank queries (seconds) and points queried.
+    spent: [f64;3],queried: usize }
 
 /// A candidate sheet: contact positions on a row-major grid with the outward
 /// normal of the cutter at each contact, in native millimetres.
@@ -303,20 +310,28 @@ impl Session {
         let mut face_hits: std::collections::BTreeMap<c_int,(f64,f64)> = Default::default();
         let mut order: Option<Vec<c_int>> = None;
         let (mut radius_sum,mut radius_count) = (0.,0);
+        let (mut spent,mut queried) = ([0.;3],0);
         for c in 0..stations {
             let angle = TAU*c as f64/stations as f64;
             let mut hit_here = false;
-            for profile in &self.profile(cutter,angle)? {
+            let clock = std::time::Instant::now();
+            let loops = self.profile(cutter,angle)?;
+            spent[0] += clock.elapsed().as_secs_f64();
+            for profile in &loops {
                 let total = profile.augmented_length();
                 let count = ((total/0.3).ceil() as usize).max(8);
                 let mut queries = Vec::new();
+                let clock = std::time::Instant::now();
                 for i in 0..count {
                     let s = total*i as f64/count as f64;
                     let sample = self.sample(cutter,profile,s)?;
                     if let Some((p,_)) = Self::contact(sweep,scale,sample,declared,0.)? { queries.push((s,sample,p)); }
                 }
+                spent[1] += clock.elapsed().as_secs_f64();
                 if queries.is_empty() { continue; }
+                let clock = std::time::Instant::now();
                 let states = inside(&queries.iter().map(|q| q.2).collect::<Vec<_>>())?;
+                spent[2] += clock.elapsed().as_secs_f64(); queried += queries.len();
                 let mut any = false;
                 for ((s,sample,_),state) in queries.iter().zip(&states) {
                     if !*state { continue; }
@@ -367,6 +382,7 @@ impl Session {
             end:Anchor {face:end_face,fraction:face_hits[&end_face].1},
             faces:hit.len(),
             radius:radius_sum/radius_count.max(1) as f64,
+            spent,queried,
         })
     }
 
@@ -442,15 +458,25 @@ fn reverse(pieces: &mut Vec<Piece>) {
 pub(crate) fn classify(session: &Session,partition: c_int,material: &mut MaterialEvaluator)
     -> Result<(Vec<Cell>,Vec<Cell>),String> {
     let (mut kept,mut removed) = (Vec::new(),Vec::new());
-    for cell in session.cells(partition)? {
-        let samples = session.samples(cell.solid,4,12)?;
-        if samples.is_empty() { return Err(format!("a cell of volume {} has no interior sample",cell.volume)); }
+    let (mut sampling,mut probing,mut probes) = (0.,0.,0);
+    // Each cell's volume was measured when the partition was validated; its point is the
+    // deepest interior sample measured here.
+    for solid in session.solids(partition)? {
+        let volume = session.volume(solid)?;
+        let clock = std::time::Instant::now();
+        let samples = session.samples(solid,4,12)?;
+        sampling += clock.elapsed().as_secs_f64();
+        if samples.is_empty() { return Err(format!("a cell of volume {volume} has no interior sample")); }
+        let cell = Cell {solid,point:samples[0].0,margin:samples[0].1,volume};
         let mut verdict = None;
         for (point,boundary) in samples {
             let distance = (boundary*0.5).min(0.05);
             if distance <= 1e-4 { continue; }
+            let clock = std::time::Instant::now();
+            probes += 1;
             let probe = material.probe(point.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
                 Options {value_tolerance:distance/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))?;
+            probing += clock.elapsed().as_secs_f64();
             let inside = match probe.state {
                 ProbeState::InteriorBall => true,
                 ProbeState::ExteriorBall => false,
@@ -469,6 +495,7 @@ pub(crate) fn classify(session: &Session,partition: c_int,material: &mut Materia
             None => return Err(format!("a cell of volume {} has no sample clear of its boundary",cell.volume)),
         }
     }
+    stage(&format!("classification: interior samples {sampling:.1} s, {probes} field probes {probing:.1} s"));
     Ok((kept,removed))
 }
 
@@ -485,8 +512,10 @@ pub(crate) fn swept_sheet_grid(session: &Session,sk: &Sketch,swept: usize,inside
     let sweep = SweepContacts::read(sk,swept,1e-10)?;
     let started = std::time::Instant::now();
     let reach = session.reach(&cutter,&sweep,scale,inside)?;
-    stage(&format!("`{name}`: contacts reach the blank over {:.1} degrees of stations and {} profile faces ({:?})",
-        (reach.stations[1]-reach.stations[0]).to_degrees(),reach.faces,started.elapsed()));
+    stage(&format!("`{name}`: contacts reach the blank over {:.1} degrees of stations and {} profile faces ({:?}: \
+        sections {:.1} s, contacts {:.1} s, {} blank queries {:.1} s)",
+        (reach.stations[1]-reach.stations[0]).to_degrees(),reach.faces,started.elapsed(),
+        reach.spent[0],reach.spent[1],reach.queried,reach.spent[2]));
     let (mut margin,mut station_margin) = (1.,(reach.stations[1]-reach.stations[0])*0.15);
     for _ in 0..6 {
         let sheet = session.sheet(&cutter,&sweep,scale,&reach,margin,station_margin)?;
@@ -504,7 +533,11 @@ pub(crate) fn swept_sheet_grid(session: &Session,sk: &Sketch,swept: usize,inside
 /// The candidate sheet of one swept solid against a native blank: the roll must
 /// carry the cutter clear of the blank at both limits (no caps on this path),
 /// and the grid is fitted as a native face with its withheld contact error.
-pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int) -> Result<(c_int,Sheet,f64),String> {
+/// Where contacts reach the blank is asked of `field`, the same blank as the
+/// core's analytic field, not of the kernel: a point there is microseconds where
+/// the kernel's classifier took 30 ms, and this question only sizes the sheet.
+pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int,field: &gcs_core::solid::SpatialField)
+    -> Result<(c_int,Sheet,f64),String> {
     let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else {
         return Err(format!("`{}` is not a continuous sweep",sk.solids[swept].name));
     };
@@ -512,6 +545,7 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
     let name = &sk.solids[swept].name;
     let cutter = session.cutter(sk,*source as usize)?;
     let family = Family::read(sk,*motion as usize)?;
+    let started = std::time::Instant::now();
     for (label,limit) in [("start",from.value),("end",to.value)] {
         let placed = session.place(cutter.solid,family.at(limit)?,scale)?;
         let overlap = session.common_volume(placed,blank)?;
@@ -520,12 +554,14 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
                 ({:.1} degrees, {overlap:.3} mm³ overlap); declare a roll that carries it clear",limit.to_degrees()));
         }
     }
-    let inside = |points: &[[f64;3]]| Ok(session.solid_contains(blank,points,1e-6)?.into_iter().map(|s| s == 1).collect());
+    stage(&format!("`{name}`: the roll carries the cutter clear of the blank at both limits ({:?})",started.elapsed()));
+    let inside = |points: &[[f64;3]]| Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect());
     let sheet = swept_sheet_grid(session,sk,swept,&inside)?;
     let face = session.fit_sheet(&sheet.points,sheet.rows,sheet.columns)?;
+    stage(&format!("`{name}`: fitted the sheet; measuring {} withheld contacts against it",sheet.withheld.len()));
     let mut error = 0_f64;
-    for p in &sheet.withheld {
-        error = error.max(session.face_parameters(face,*p,0.5)?.map(|(_,gap)| gap).unwrap_or(0.5));
+    for found in session.face_parameters_many(face,&sheet.withheld,0.5)? {
+        error = error.max(found.map(|(_,gap)| gap).unwrap_or(0.5));
     }
     stage(&format!("`{name}`: withheld contact error {error:.2e} mm"));
     Ok((face,sheet,error))
@@ -536,12 +572,13 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
 pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,recipe: &cad::StaticRecipe) -> Result<c_int,String> {
     let scale = sk.units.length.ok_or("CAD construction requires an explicit length unit")?.1;
     let blank = session.construct(&recipe.recipe)?;
+    let (field,_) = gcs_core::solid::admission::static_remainder(sk,body,1e-10)?;
     stage(&format!("`{}`: static blank of {} operations",sk.solids[body].name,recipe.recipe.get("nodes").unwrap().arr().len()));
     let mut tools = Vec::new();
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
     for swept in distinct {
-        let (face,_,_) = swept_sheet(session,sk,swept,blank)?;
+        let (face,_,_) = swept_sheet(session,sk,swept,blank,&field)?;
         for cut in recipe.sweeps.iter().filter(|c| c.swept == swept) {
             tools.push(session.place(face,cut.pose,scale)?);
         }

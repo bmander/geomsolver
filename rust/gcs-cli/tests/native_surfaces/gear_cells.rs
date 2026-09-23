@@ -70,7 +70,7 @@ fn single_space(member: &str,expected: f64) {
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
     let started = std::time::Instant::now();
-    let (face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank).unwrap();
+    let (face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&gcs_core::solid::SpatialField::read(&e.sketch,blank_id,1e-10).unwrap()).unwrap();
     eprintln!("{member}: sheet {}x{} in {:?}, withheld error {error:e} mm",sheet.rows,sheet.columns,started.elapsed());
     assert!(error < 0.02,"withheld contact error {error}");
     let partition = cad.0.split_solid(blank,&[face]).unwrap();
@@ -114,7 +114,7 @@ fn the_native_space_at_an_offset_against_its_field() {
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
     let started = std::time::Instant::now();
-    let built = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank);
+    let built = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&gcs_core::solid::SpatialField::read(&e.sketch,id("blank"),1e-10).unwrap());
     let (face,sheet,error) = match built {
         Ok(b) => b,
         Err(refusal) => { eprintln!("offset {offset}: sheet refused: {refusal}"); return; }
@@ -180,7 +180,7 @@ fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
     let blank_id = e.map.ent_named("pair.gear.blank").unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
-    let error = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank).unwrap_err();
+    let error = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&gcs_core::solid::SpatialField::read(&e.sketch,blank_id,1e-10).unwrap()).unwrap_err();
     eprintln!("{error}");
     assert!(error.contains("leaves the cutter inside the blank") && error.contains("35.0 degrees"));
 }
