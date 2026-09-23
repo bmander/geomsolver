@@ -10,7 +10,7 @@
 //! boundary construction is restricted.
 use super::{SpatialField,SweepContacts,TimedContact,EdgeChart,cad};
 use crate::{envelope::{Motion,SurfacePoint},model::{Sketch,SolidDef}};
-use std::{collections::BTreeMap,f64::consts::TAU,fmt};
+use std::{collections::BTreeMap,f64::consts::{PI,TAU},fmt};
 
 type V = [f64;3];
 fn sub(a: V,b: V) -> V { std::array::from_fn(|k| a[k]-b[k]) }
@@ -345,9 +345,12 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
         let (start,width) = band.unwrap_or((0,cv));
         let v_at = |j: usize| ((start as f64+width as f64*j as f64/nv as f64)/cv as f64).rem_euclid(1.);
         let mut previous: Vec<Option<V>> = vec![None;nv+1];
+        // Each sample's contact equation, to find stationary points between samples.
+        let mut equations: Vec<Option<([f64;5],V)>> = vec![None;nv+1];
         for i in 0..=nu {
             let u = i as f64/nu as f64;
             let mut row: Vec<Option<V>> = vec![None;nv+1];
+            let mut here: Vec<Option<([f64;5],V)>> = vec![None;nv+1];
             for j in 0..=nv {
                 let v = v_at(j);
                 let Ok(s) = surface.at(u,v) else { continue };
@@ -357,6 +360,44 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
                 // point is on the boundary at every time or at none, and its time is no
                 // parameter of the generated surface. A single rotation is that everywhere.
                 let rate = c.motion().normal_velocity(s).ok();
+                // M2 between samples: the equation is C + a cos + b sin in the roll. Where (a, b)
+                // turns right round between neighbours while roots exist on both sides, it passed
+                // through zero with C: a point between them is in contact at every time, as on a
+                // curve of such points, which no single sample is on.
+                if let Some(g) = &rate {
+                    let k = g.coefficients();
+                    here[j] = Some((k,s.position));
+                    // An isolated such point lies inside a sample cell rather than on a segment
+                    // between two samples: there (a, b) winds right round the cell's corners.
+                    if j > 0 { if let (Some(p0),Some(p1),Some(p2)) = (equations[j-1],equations[j],here[j-1]) {
+                        let corners = [p0,p1,(k,s.position),p2];
+                        let reached = corners.iter().all(|(m,_)| m[0].abs() <= m[1].hypot(m[2]));
+                        let mut turn = 0.;
+                        for w in 0..4 {
+                            let (m,n) = (corners[w].0,corners[(w+1)%4].0);
+                            turn += (m[1]*n[2]-m[2]*n[1]).atan2(m[1]*n[1]+m[2]*n[2]);
+                        }
+                        if reached && turn.abs() > PI {
+                            let centre: V = std::array::from_fn(|n| corners.iter().map(|c| c.1[n]).sum::<f64>()/4.);
+                            if let Some(p) = times.iter().map(|m| m.point(centre)).find(|&p| read(p)) {
+                                return Err((Condition::Stationary,format!("a tool point of `{}` inside a sample cell is in contact \
+                                    at every time",surface.name),Some(p)));
+                            }
+                        }
+                    } }
+                    for neighbour in [equations[j],if j > 0 { here[j-1] } else { None }].into_iter().flatten() {
+                        let (m,q) = neighbour;
+                        let (a1,a2) = (m[1].hypot(m[2]),k[1].hypot(k[2]));
+                        let turned = m[1]*k[1]+m[2]*k[2] < -0.5*a1*a2;
+                        if turned && m[0].abs() <= a1 && k[0].abs() <= a2 {
+                            let between: V = std::array::from_fn(|n| 0.5*(q[n]+s.position[n]));
+                            if let Some(p) = times.iter().map(|m| m.point(between)).find(|&p| read(p)) {
+                                return Err((Condition::Stationary,format!("tool points between samples of `{}` are in contact at every time",
+                                    surface.name),Some(p)));
+                            }
+                        }
+                    }
+                }
                 if let Some(g) = &rate {
                     let scale = 1.+norm(s.position);
                     let at = [domain[0],middle,domain[1]].map(|t| g.at(t).unwrap_or(f64::NAN));
@@ -411,6 +452,7 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
                 }
             }
             previous = row;
+            equations = here;
         }
     }
     for ((patch,_),(counts,at)) in &signs {

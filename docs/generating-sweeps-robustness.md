@@ -259,3 +259,120 @@ naming that stage.
 Both are what step 3's charts from analytic data replace:
 - a chart per root, bounded by the declared roll and its folds;
 - the crease as its own edge-sweep chart, not a fan folded into a face's grid.
+
+## Step 3 results (2026-09-23): contact curves traced, and what the fixtures taught
+
+**The construction.** Each station's column is now its contact curve, traced in the plane of
+walk length and time, not a grid filled by the nearest root:
+- The curve starts from a contact in the blank within the roll. It runs both ways around the
+  closed section loop until it has been outside the blank for the margin.
+- Where its root meets the other, a fold of the time chart, it turns onto that root and back.
+- Rows are spaced by unfolded walk length (τ), common to every column. Rows matched by each
+  column's own arc-length fraction shear the sheet: every gear failed its fit normals at about
+  90° that way.
+- Stations whose contacts miss the blank are traced over the same span, anchored beside their
+  nearest neighbour. The rows run over the span every column reached, which must hold every
+  contact in the blank, or the sheet is refused as ending inside it.
+
+**What the fixtures found, each fixed where it arose:**
+- **Steep roots.** Where the contact equation's amplitude is small against its constant, a step
+  along the profile can move the root by more than a radian. The walk now follows it in halved
+  steps before calling the root ended, and finds where a root does end by halving too. A double
+  root found there is the fold itself, not an error.
+- **The time window.** Roots were sought over ±180°, so a curve whose time crossed that bound
+  looked like a curve that ended. The window is now the declared roll and a turn either side, and
+  a root ending at its edge is no fold.
+- **Runaway guard.** The guard counts length spent in the blank. A curve outside it may run far,
+  in space, before its span ends.
+- **The station band.** The reach samples coarsely and missed stations whose contacts are in a
+  thin post. Each end of the band now moves outward until the station there has no contact in
+  the blank anywhere on its loop.
+- **Seams.** The reach's stations sat at exact multiples of the step. The first was the profile
+  plane, where every revolution's seam lies, and a section plane containing a seam loses that
+  face's section. They are now half a step off.
+- **Sections through the axis.** A face about another axis, or a sphere's meridian, gives one
+  plane-section edge that crosses the axis. It was kept or dropped whole by its middle; it is
+  now split at the axis. A chain open through the axis is also extended backward from its head,
+  not only forward from wherever it started.
+- **Extension re-entering the blank.** The sheet is rectangular, so it runs on past the roll.
+  On a tall post, the torus turned on past its limit comes back into the post. There the sheet's
+  edge lies in the blank at a time outside the roll. Widening only carries the extension
+  further, so this is now a named refusal: a time-trimmed sheet is needed.
+
+**Admission, sharpened by the same fixtures:**
+- **Stationary points inside a sample cell.** With two axes that meet, a tool point whose normal
+  passes through the crossing point is in contact at every time. On a sphere these are isolated
+  points, which the between-samples test found only when one lay on a segment between samples.
+  A cell around which (a, b) winds right round, with roots at every corner, is now refused too
+  (M2).
+- **A coaxial tool is not required.** The gear's cutter is its outer crown bounded by the inner
+  crown's indexed neighbour, a revolution about another axis. A check that the faces share one
+  axis refused both gear members and was withdrawn.
+
+**The fixtures were redrawn to be what they claim.**
+- The earlier "skew" roll spun the tool about its own axis. That changes nothing of a
+  revolution, so the sweep was a single rotation with an awkward time chart. The tool is now
+  carried about a cradle axis 1 mm off its own, as a generator carries its cutter.
+- The observer turns about a line parallel to x through (0, 0.5, 0.5).
+- Each geometry was chosen by a search against its independent truth: clearance at both roll
+  limits, a deep cut, and the tool turned past the limits clear of the post.
+
+**Fixture matrix after step 3:**
+
+| Case | Result |
+| --- | --- |
+| Torus through a post (skew) | Exported, 0 of 750 truth probes disagree |
+| Sphere through a post (skew) | Exported, 0 of 672 disagree |
+| Ring lens (two tori intersected, a sharp rim, no pole) | Exported, 0 of 696 disagree |
+| Torus through a tall post | Refused at the sheet: the extension re-enters the blank |
+| Torus grazing the post's top | Refused at admission, E3 |
+| Torus, meeting axes | Refused at admission, M2 (stationary ring) |
+| Sphere, meeting axes, post taking in its stationary points | Refused at admission, M2 (inside a sample cell) |
+| Sphere, parallel axes | Refused at admission, M2 (poles) |
+| Lens about two parallel axes | Refused at the reach: one face meets a section twice |
+| Lens with poles (class B reproducer) | Refused at the STL check: see below |
+
+**Class B located: a pleat in our fitted sheet, not the kernel.** The spherical lens agrees with
+its truth everywhere probed. Its mesh has 928 of 1675 triangles under 1 µm², and an edge used
+three times.
+- **Where:** all but one of those triangles lie on the sheet face, in a strip 0.7 µm wide and
+  0.15 mm long, next to the post's wall. About half face backwards.
+- **What:** a pleat of the fitted surface, not a defect of the split or the mesher.
+- **What moves it:** how many rows the crease's fan is given. The walk weights a fan by its
+  turning (0.5 mm a radian).
+  - At 0.05 or 0.15 the lens exports, with every probe agreeing.
+  - At 1.5 the split leaves a cell unseparated.
+- **What didn't work:** weighting each fan by its measured sweep. At the stations measured, this
+  crease's fan sweeps 3–10 mm, all at times outside the roll and away from the blank. What
+  matters is only the part of the fan near the blank, which no single weight describes.
+
+So step 4 (fitting with error control) has to treat the fan as its own chart, not as rows
+folded into a face's grid. The 25° gear's crease slivers are presumably the same mechanism, so
+they are the construction's to fix.
+
+**Owners.** The harness now gives every refusal an owner, by the stage where it was met:
+- the **class** (admission);
+- the **construction** (reach, sheet);
+- the **fit** (the fit and its withheld contacts);
+- the **kernel** (blank, clearance, split, classify, fuse, STL, mesh);
+- the **gate** (the field probe).
+
+The matrix ends with a tally. This is where a refusal is met, not what caused it: the lens is
+refused at a kernel stage for a pleat in our sheet.
+
+**Design sweep after step 3:**
+- **Exported:** 26 of 48, against 21 after step 2. The new ones are the 15/0/25 pinion and
+  every gear with a 25° spiral and a 5° split.
+- **Refused:**
+  - by the class: 10;
+  - at kernel stages: 11. Nine are at the mesh contract (crease slivers, every gear with a 10°
+    split, and 0/0/25), and two are invalid splits (20/0/25, 25/0/25);
+  - at the fit: 1 (gear 15/0/25).
+- None fails at the final gate or runs out of time.
+- The gear slivers form one long thin strip, 13% of it facing backwards: consistent with the
+  lens's pleat.
+- One gear space read directly by `native_surfaces` (`generic_sheet_reproduces_the_gear_tooth_space`)
+  now fails its fit contract near the crease, and is ignored with that reason.
+
+**What came next.** The export moved to meshing the field directly ([field meshing](field-meshing.md)),
+which exports every admitted fixture, including the class B lens.

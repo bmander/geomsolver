@@ -13,6 +13,8 @@ gcs-core = { path = "../gcs-core" }
 [features]
 occt = []
 manifold = []
+# Experimental: Mesh_3 (GPL-3.0) meshing the material field, `--stl-backend cgal`.
+cgal = []
 
 [dev-dependencies]
 gcs-core = { path = "../gcs-core" }

@@ -73,6 +73,9 @@ impl Family {
 }
 
 impl NormalVelocity {
+    /// The equation's constant, cosine and sine coefficients, rate and phase.
+    pub fn coefficients(&self) -> [f64;5] { [self.constant,self.cosine,self.sine,self.rate,self.phase] }
+
     pub fn at(&self,time: f64) -> Result<f64,Error> {
         let angle = self.phase+self.rate*time;
         let value = self.constant+self.cosine*angle.cos()+self.sine*angle.sin();

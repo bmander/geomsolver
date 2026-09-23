@@ -3,6 +3,8 @@
 mod native;
 #[cfg(feature="manifold")]
 pub mod manifold;
+#[cfg(feature="cgal")]
+pub mod delpsc;
 #[cfg(all(feature="manifold",feature="occt"))]
 pub mod mesh_sweep;
 

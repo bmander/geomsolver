@@ -18,6 +18,8 @@ mod traces;
 pub(crate) mod cells;
 #[path="native/sweep_boundary.rs"]
 pub(crate) mod sweep_boundary;
+#[cfg(feature="cgal")]
+pub(crate) mod features;
 
 extern "C" {
     fn solvent_cad_new() -> *mut c_void;
@@ -158,7 +160,10 @@ pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8]) -> R
     let scale = sk.units.length.ok_or("CAD export requires an explicit model length unit")?.1;
     let started = std::time::Instant::now();
     let (vertices,triangles) = agreement::stl_triangles(stl,scale)?;
-    mesh_contract(&vertices,&triangles,scale)?;
+    if let Err(e) = mesh_contract(&vertices,&triangles,scale) {
+        if let Ok(kept) = std::env::var("SOLVENT_KEEP_REJECTED") { let _ = std::fs::write(kept,stl); }
+        return Err(e);
+    }
     sweep_boundary::mark("mesh");
     let mut material = MaterialField::read(sk,body,1e-10)?.evaluator(4096);
     let options = agreement::Options {offset:0.1/scale,confirm:0.025/scale,value_tolerance:0.02/scale,..Default::default()};
@@ -267,8 +272,10 @@ pub fn export(sk: &gcs_core::model::Sketch,solid: usize,step: Option<&str>,stl: 
             })?;
             if kind == "stl" {
                 let bytes = std::fs::read(&temporary).map_err(|e| e.to_string())?;
-                gcs_core::mesh::stl_shells(&bytes)
-                    .map_err(|e| format!("native float32 STL validation failed: {e}"))?;
+                if let Err(e) = gcs_core::mesh::stl_shells(&bytes) {
+                    if let Ok(kept) = std::env::var("SOLVENT_KEEP_REJECTED") { let _ = std::fs::write(kept,&bytes); }
+                    return Err(format!("native float32 STL validation failed: {e}"));
+                }
             }
             sweep_boundary::stage(&format!("staged the {} output",kind.to_uppercase()));
             sweep_boundary::mark(kind);

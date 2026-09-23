@@ -73,6 +73,20 @@ impl MaterialField {
     pub fn intersection(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Intersection) }
     pub fn difference(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Difference) }
 
+    /// A number with the field's sign at a point, in plain floating point: `SpatialField::value`
+    /// for static material and `SweptField::side` for a sweep, composed by the Booleans (which
+    /// keep signs). Which side a point is on, for a mesher; never an interval claim.
+    pub fn side(&self,p: [f64;3]) -> f64 {
+        match self.node.as_ref() {
+            Node::Static(source) => source.value(p),
+            Node::Swept(source) => source.side(p),
+            Node::Transformed {source,pose} => source.side(pose.inverse_point_mid(p)),
+            Node::Union(a,b) => a.side(p).min(b.side(p)),
+            Node::Intersection(a,b) => a.side(p).max(b.side(p)),
+            Node::Difference(a,b) => a.side(p).max(-b.side(p)),
+        }
+    }
+
     /// Cloned swept operands share one capped pose cache, even under different
     /// fixed transforms. The cap applies per distinct swept node, not per copy.
     pub fn evaluator(&self,max_cached_poses_per_sweep: usize) -> MaterialEvaluator {

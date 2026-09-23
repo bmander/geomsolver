@@ -78,10 +78,55 @@ private motion observer(about: xaxis)
 motion turn(spin, relative_to: observer)
 ";
 
+/// A generator's roll: the tool carried about a vertical cradle axis through (2, 0), 1 off its
+/// own (a spin about its own axis would change nothing of a revolution), seen from an observer
+/// turning about the line parallel to world x through (0, 0.5, 0.5), skew to the cradle's.
+const SKEW_ROLL: &str = "private point hub hint(x: 2, y: 0)
+hub distance(2mm, along: u) std.front
+hub distance(0mm, along: v) std.front
+private point hub_up hint(x: 2, y: 5)
+hub_up distance(2mm, along: u) std.front
+hub_up distance(5mm, along: v) std.front
+construction centerline line cradle(hub, hub_up)
+private point xend hint(x: 5, y: 0)
+xend distance(5mm, along: u) std.front
+xend distance(0mm, along: v) std.front
+private plane flat(origin: std.origin, toward: xend, u: (1, 0, 0), v: (0, 1, 1))
+in flat {
+  private point k0 hint(x: 0, y: 0.7071)
+  private point k1 hint(x: 5, y: 0.7071)
+  k0 distance(0mm, along: u) flat
+  k0 distance(0.7071mm, along: v) flat
+  k1 distance(5mm, along: u) flat
+  k1 distance(0.7071mm, along: v) flat
+  construction centerline line kaxis(k0, k1)
+}
+private motion spin(about: cradle, ratio: 0.25)
+private motion observer(about: kaxis)
+motion turn(spin, relative_to: observer)
+";
+
+/// With the spin axis meeting the observer's, a surface of revolution's contact equation has
+/// no constant term, and where its amplitude passes through zero a ring of the torus is in
+/// contact at every time: refused, found between samples (or inside a sample cell).
 #[test]
-fn a_torus_rolled_through_a_post_is_admitted() {
+fn a_ring_in_contact_at_every_time_is_refused() {
     let source = format!("{TORUS}{CROSSED_ROLL}construction solid removal(tool, under: turn, from: -60deg, to: 60deg)\n{}",
         POST.replace("x: 3,","x: 4,").replace("x: 3.4,","x: 4.4,"));
+    let r = refused(admit(&source));
+    assert_eq!(r.condition,Condition::Stationary);
+    assert!(r.message.contains("at every time"),"{}",r.message);
+}
+
+/// The post under the torus's cradle roll: at x = 4, z in [0.5, 2], clear of the torus at both
+/// limits of a ±75° roll and of the torus turned on past them.
+fn skew_post(x: f64) -> String {
+    POST.replace("x: 3,",&format!("x: {x},")).replace("x: 3.4,",&format!("x: {},",x+0.4)).replace("y: -2)","y: 0.5)")
+}
+
+#[test]
+fn a_torus_rolled_about_a_skew_axis_through_a_post_is_admitted() {
+    let source = format!("{TORUS}{SKEW_ROLL}construction solid removal(tool, under: turn, from: -75deg, to: 75deg)\n{}",skew_post(4.));
     let a = admit(&source).unwrap();
     let s = &a.sweeps[0];
     eprintln!("{} samples, {} contacts, spacing {:.4}, least J {:.3}, {} near double roots, {} near tangent",
@@ -103,8 +148,7 @@ fn a_pole_in_contact_at_every_time_is_refused() {
 /// A tool that never meets the blank is no cut: refused, not admitted vacuously.
 #[test]
 fn a_sweep_that_reaches_nothing_is_refused() {
-    let source = format!("{TORUS}{CROSSED_ROLL}construction solid removal(tool, under: turn, from: -60deg, to: 60deg)\n{}",
-        POST.replace("x: 3,","x: 13,").replace("x: 3.4,","x: 13.4,"));
+    let source = format!("{TORUS}{SKEW_ROLL}construction solid removal(tool, under: turn, from: -75deg, to: 75deg)\n{}",skew_post(13.));
     let r = refused(admit(&source));
     assert_eq!(r.condition,Condition::Reach);
 }
@@ -314,4 +358,29 @@ fn a_probe_through_another_face_is_withdrawn_nearer_the_mesh() {
     let shifted = agreement::of_triangles(&moved,&t,&mut material,&agreement::Options {offset:0.03,confirm:0.01,
         triangles:t.len(),..Default::default()}).unwrap();
     assert!(!shifted.agrees());
+}
+
+/// The plain floating-point side of a swept material agrees with the certified
+/// enclosure wherever that enclosure decides one, over a grid through the cut post.
+#[test]
+fn a_material_side_agrees_with_its_enclosure() {
+    use gcs_core::interval::{Interval,minimum::{self,Stop}};
+    let source = format!("{TORUS}{SKEW_ROLL}construction solid removal(tool, under: turn, from: -75deg, to: 75deg)\n{}",skew_post(4.));
+    let e = harness::read(&source);
+    let field = gcs_core::solid::MaterialField::read(&e.sketch,harness::solid(&e,"part"),1e-10).unwrap();
+    let mut material = field.evaluator(4096);
+    let (mut decided,mut agreed) = (0,0);
+    for i in 0..12 { for j in 0..12 { for k in 0..12 {
+        let p = [3.5+0.1*i as f64,-0.55+0.1*j as f64,0.4+0.15*k as f64];
+        let value = field.side(p);
+        let bounds = material.bounds_stopping(p.map(|x| Interval::point(x).unwrap()),Stop::Outside(Interval::ZERO),
+            minimum::Options {value_tolerance:1e-9,max_evaluations:20000}).unwrap().value.bounds();
+        if bounds[0] > 0. || bounds[1] < 0. {
+            decided += 1;
+            if (value > 0.) == (bounds[0] > 0.) { agreed += 1; } else { eprintln!("{p:?}: {value} against {bounds:?}"); }
+        }
+    } } }
+    eprintln!("{agreed} of {decided} decided points agree");
+    assert!(decided > 1000);
+    assert_eq!(agreed,decided);
 }

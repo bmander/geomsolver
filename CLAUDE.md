@@ -349,6 +349,21 @@ is a diagnostic, and failed this probe on 18% of a hypoid space), and writes not
 probe agrees. The configured gear is a 25° hypoid designed out of undercut (`pressure_shift`,
 `spiral_angle` in `configuration.sv`); tests with recorded numbers pin theirs through
 `support::bevel` / `support::hypoid6`. `solid/swept_boundary` and its Phase 3 plan are parked.
+The robustness plan ([docs/generating-sweeps-robustness.md](docs/generating-sweeps-robustness.md))
+is worked through `tests/generating_harness.rs` (fixtures with independent truths, the gear
+controls, a 48-design sweep; each refusal located by stage and owner, matrices in
+`build/harness/`). Each sheet column is its station's contact curve, traced in (walk length,
+time) through folds with halved steps, rows by unfolded walk length. A fixture's geometry is
+chosen against its truth (clearance at both limits, the tool turned past them clear of the
+blank). The gear's crease slivers are a pleat in our fitted sheet at the crease fan, not the
+kernel: the fan needs its own chart (step 4).
+**Field meshing supersedes the sheet construction (2026-09-23):** [docs/field-meshing.md](docs/field-meshing.md).
+`--stl-backend cgal` (feature `cgal`, GPL Mesh_3, never shipped) meshes the material field by
+Delaunay refinement with protected features and exports every admitted fixture and a gear
+space with no field disagreement, including the cases the native path refuses. Its oracle is
+`MaterialField::side` (a floating-point sign, never an interval claim), its features the
+blank's sharp edges and the field's contours on blank faces. The plan (F1–F5) ports the method
+to the core for WASM; measure the oracle first, since query cost dominates.
 **The certified swept boundary (2026-09-10, project 1 of two prerequisites):** the hypoid
 pinion at 15° to 45° showed the mesh arrangement passing its recorded-volume and STL-shell
 gates while a field probe (points 0.1 mm inside and outside every triangle) found 19% to

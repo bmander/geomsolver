@@ -21,6 +21,32 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=manifoldc");
         println!("cargo:rustc-link-arg=-Wl,-rpath,{}",root.join("lib").display());
     }
+    if env::var_os("CARGO_FEATURE_CGAL").is_some() {
+        // Header-only CGAL (Homebrew's, or CGAL_ROOT), Boost headers, and GMP/MPFR.
+        println!("cargo:rerun-if-changed=backend/delpsc.cpp");
+        println!("cargo:rerun-if-env-changed=CGAL_ROOT");
+        let find = |name: &str,probe: &str| -> PathBuf {
+            ["/usr/local/opt","/opt/homebrew/opt"].into_iter().map(|p| PathBuf::from(p).join(name))
+                .find(|p| p.join(probe).exists()).unwrap_or_else(|| panic!("install {name} (brew install cgal)"))
+        };
+        let cgal = env::var_os("CGAL_ROOT").map(PathBuf::from).unwrap_or_else(|| find("cgal","include/CGAL/make_mesh_3.h"));
+        let boost = find("boost","include/boost/version.hpp");
+        let gmp = find("gmp","include/gmp.h");
+        let mpfr = find("mpfr","include/mpfr.h");
+        let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+        let object = out.join("delpsc.o");
+        let mut compile = Command::new(env::var_os("CXX").unwrap_or_else(|| "c++".into()));
+        compile.args(["-std=c++17","-O2","-fPIC","-frounding-math","-DCGAL_NDEBUG","-c","backend/delpsc.cpp","-o"]).arg(&object);
+        for root in [&cgal,&boost,&gmp,&mpfr] { compile.arg("-I").arg(root.join("include")); }
+        run(&mut compile);
+        run(Command::new(env::var_os("AR").unwrap_or_else(|| "ar".into())).arg("crs").arg(out.join("libsolvent_cgal.a")).arg(&object));
+        println!("cargo:rustc-link-search=native={}",out.display());
+        println!("cargo:rustc-link-lib=static=solvent_cgal");
+        for root in [&gmp,&mpfr] { println!("cargo:rustc-link-search=native={}",root.join("lib").display()); }
+        println!("cargo:rustc-link-lib=dylib=gmp");
+        println!("cargo:rustc-link-lib=dylib=mpfr");
+        println!("cargo:rustc-link-lib={}",if env::var("TARGET").unwrap().contains("apple") { "c++" } else { "stdc++" });
+    }
     if env::var_os("CARGO_FEATURE_OCCT").is_none() { return; }
     let target = env::var("TARGET").unwrap();
     assert_eq!(target,env::var("HOST").unwrap(),"OCCT currently requires a native host build");

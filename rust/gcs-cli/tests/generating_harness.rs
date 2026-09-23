@@ -75,7 +75,10 @@ fn run(case: &Case) -> Record {
     let _ = std::fs::remove_file(&trace);
     let mut command = Command::new(env!("CARGO_BIN_EXE_solventc"));
     command.arg(case.dir.join(&case.entry)).args(["--no-diagnose","--solid",&case.solid,"--stl"]).arg(&output)
-        .args(&case.arguments).env("SOLVENT_STAGE_TRACE",&trace).env("SOLVENT_KEEP_REJECTED",&rejected)
+        .args(&case.arguments)
+        // `SOLVENT_HARNESS_BACKEND` runs every case through another STL backend (`cgal`, `manifold`).
+        .args(std::env::var("SOLVENT_HARNESS_BACKEND").ok().map(|b| vec!["--stl-backend".to_string(),b]).unwrap_or_default())
+        .env("SOLVENT_STAGE_TRACE",&trace).env("SOLVENT_KEEP_REJECTED",&rejected)
         .stdout(Stdio::null()).stderr(Stdio::piped());
     let started = Instant::now();
     let mut child = command.spawn().expect("solventc starts");
@@ -197,12 +200,31 @@ fn truth_agreement(triangles: &[[V;3]],sd: &(dyn Fn(V) -> f64+Sync)) -> (usize,u
 }
 
 /// The matrix, to stderr and `build/harness/<name>.md`.
+/// Whose stage a refusal is at. The class: admission says the design is outside it, which is
+/// no failure. Construction: our own analytic sampling and tracing of the sheet. Fit: the sheet
+/// as a kernel surface, judged by our contract. Kernel: what OCCT builds, splits, fuses and
+/// meshes, and our checks of its output. Gate: the final field probe. This is where a refusal
+/// is met, not what caused it: a kernel-stage refusal may be a bad sheet handed on.
+fn owner(stage: &str) -> &'static str {
+    match stage {
+        "admission" => "class",
+        "reach" | "sheet" => "construction",
+        "fit" | "withheld" => "fit",
+        "blank" | "clearance" | "split" | "classify" | "fuse" | "step" | "stl" | "mesh" => "kernel",
+        "agreement" => "gate",
+        _ => "?",
+    }
+}
+
 fn report(name: &str,cases: &[Case],records: &[Record]) {
-    let mut table = String::from("| Case | Expect | Reached | Refused at | Time | Volume | Agreement | Truth (probes/withdrawn/disagree) | Mesh (triangles, tiny, tiny area) | Fault |\n| --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |\n");
+    let mut table = String::from("| Case | Expect | Reached | Refused at | Owner | Time | Volume | Agreement | Truth (probes/withdrawn/disagree) | Mesh (triangles, tiny, tiny area) | Fault |\n| --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |\n");
+    let mut owners: std::collections::BTreeMap<&str,usize> = Default::default();
     for (c,r) in cases.iter().zip(records) {
         let agreement = r.agreement.as_deref().and_then(|a| a.split(", ").last()).unwrap_or("—");
-        table += &format!("| {} | {:?} | {} | {} | {:.0} s | {} | {} | {} | {} | {} |\n",c.name,c.expect,
-            r.completed.last().map_or("—",|(k,_)| k),r.failed_at.as_deref().unwrap_or("—"),r.seconds,
+        let who = r.failed_at.as_deref().map_or("exported",owner);
+        *owners.entry(who).or_default() += 1;
+        table += &format!("| {} | {:?} | {} | {} | {} | {:.0} s | {} | {} | {} | {} | {} |\n",c.name,c.expect,
+            r.completed.last().map_or("—",|(k,_)| k),r.failed_at.as_deref().unwrap_or("—"),who,r.seconds,
             r.volume.map_or("—".into(),|v| format!("{v:.4}")),agreement,
             r.truth.map_or("—".into(),|t| format!("{}/{}/{}",t.0,t.1,t.2)),
             r.mesh.as_ref().map_or("—".into(),|m| format!("{}, {}, {:.2e} mm²",m.triangles,m.tiny,m.tiny_area)),
@@ -210,10 +232,12 @@ fn report(name: &str,cases: &[Case],records: &[Record]) {
     }
     let messages: String = cases.iter().zip(records).filter(|(_,r)| r.exit != Some(0))
         .map(|(c,r)| format!("- **{}**: {}\n",c.name,r.message)).collect();
-    let text = format!("# {name}\n\n{table}\n{messages}");
+    let tally: Vec<String> = owners.iter().map(|(k,n)| format!("{k} {n}")).collect();
+    let text = format!("# {name}\n\n{table}\nBy owner: {}.\n\n{messages}",tally.join(", "));
     eprintln!("{text}");
     let dir = workspace().join("build/harness");
     std::fs::create_dir_all(&dir).unwrap();
+    let name = std::env::var("SOLVENT_HARNESS_BACKEND").map_or(name.to_string(),|b| format!("{name}-{b}"));
     std::fs::write(dir.join(format!("{name}.md")),text).unwrap();
 }
 
@@ -274,18 +298,48 @@ construction solid tool(face(ring), about: taxis)
 ",b=h-1.,t=h+1.)
 }
 
-/// The unit sphere at (3, 0, `h`) bounded by the unit sphere at (3.8, 0, `h`): a lens whose
-/// rim is a sharp crease circle of radius 0.917 in the plane x = 3.4.
-fn lens(h: f64) -> String {
-    let (b,t) = (h-1.,h+1.);
+/// A ring with a sharp rim, as a cutter blade's tip: two tori about the vertical line through
+/// (3, 0), tubes of radius 0.5 centred 1 out at heights `h` ± 0.2, intersected. Its meridian is a
+/// lens whose two corners are creases, each fanning its normals across a 47° turn, and it never
+/// meets its axis. (At ± 0.3 the lower torus's retained cap folds under this roll: refused at E3.)
+fn ring_lens(h: f64) -> String {
+    format!("unit mm
+use std
+construction centerline line spindle(std.origin, std.up.toward)
+private point ta hint(x: 3, y: {b})
+private point tb hint(x: 3, y: {t})
+ground ta
+ground tb
+private line taxis(ta, tb)
+private point tc hint(x: 4, y: {lo})
+ground tc
+private circle ring(center: tc) hint(r: 0.5)
+radius(0.5mm) ring
+construction solid stock(face(ring), about: taxis)
+construction solid tool(stock)
+private point tc2 hint(x: 4, y: {hi})
+ground tc2
+private circle ring2(center: tc2) hint(r: 0.5)
+radius(0.5mm) ring2
+construction solid other(face(ring2), about: taxis)
+other bound tool
+",b=h-1.,t=h+1.,lo=h-0.2,hi=h+0.2)
+}
+
+/// A lens about the tool's axis: two spheres of radius 1 centred on the vertical line through
+/// (3, 0), `apart` above and below height `h`, intersected. Its crease, where the two meet, is a
+/// convex edge whose normals fan across the dihedral. With `offset`, the second sphere is about
+/// a parallel axis 0.8 away instead, at the same height.
+fn lens(h: f64,apart: f64,offset: bool) -> String {
+    let (x2,h1,h2) = if offset { (3.8,h,h) } else { (3.,h-apart,h+apart) };
     format!("unit mm
 use std
 construction centerline line spindle(std.origin, std.up.toward)
 private point center
 center distance(3mm, along: u) std.front
-center distance({h}mm, along: v) std.front
-private point bottom hint(x: 3, y: {b})
-private point top hint(x: 3, y: {t})
+center distance({h1}mm, along: v) std.front
+private point bottom hint(x: 3, y: {b1})
+private point top hint(x: 3, y: {t1})
 private line diameter(bottom, top)
 center midpoint diameter
 diameter parallel spindle
@@ -294,10 +348,10 @@ radius(1mm) meridian
 construction solid stock(face(meridian, diameter), about: diameter)
 construction solid tool(stock)
 private point center2
-center2 distance(3.8mm, along: u) std.front
-center2 distance({h}mm, along: v) std.front
-private point bottom2 hint(x: 3.8, y: {b})
-private point top2 hint(x: 3.8, y: {t})
+center2 distance({x2}mm, along: u) std.front
+center2 distance({h2}mm, along: v) std.front
+private point bottom2 hint(x: {x2}, y: {b2})
+private point top2 hint(x: {x2}, y: {t2})
 private line diameter2(bottom2, top2)
 center2 midpoint diameter2
 diameter2 parallel spindle
@@ -305,27 +359,59 @@ private arc meridian2(center: center2, start: bottom2, end: top2)
 radius(1mm) meridian2
 construction solid other(face(meridian2, diameter2), about: diameter2)
 other bound tool
-")
+",b1=h1-1.,t1=h1+1.,b2=h2-1.,t2=h2+1.)
 }
 
-/// The tool spinning about its own vertical axis through (3, 0) at `ratio` turns a turn, seen
-/// from an observer turning about `observer`: the spindle (world z, parallel to the tool's
-/// axis) or world x (crossed, as a generator's axes are).
-fn roll(ratio: f64,crossed: bool) -> String {
-    let observer = if crossed { "private point xend hint(x: 5, y: 0)
+/// Which axis the observer turns about.
+#[derive(Clone,Copy,PartialEq)]
+enum Observer {
+    /// The spindle, world z: parallel to the tool's axis.
+    Parallel,
+    /// World x: meeting the tool's axis, crossed.
+    Crossed,
+    /// Parallel to world x through (0, 0.5, 0.5): skew to the tool's axis, as a generator's
+    /// cutter axis is to the member's, and off the torus's mid-plane, since an axis in that
+    /// plane leaves the equators in contact at every time.
+    Skew,
+}
+
+/// The tool (whose own axis is the vertical line through (3, 0)) carried about a vertical cradle
+/// axis through (2, 0) at `ratio` turns a turn, seen from an observer turning about another axis,
+/// as a generator carries its cutter. A spin about the tool's own axis would change nothing of a
+/// revolution, leaving a single rotation.
+fn roll(ratio: f64,observer: Observer) -> String {
+    let observer = match observer {
+        Observer::Crossed => "private point xend hint(x: 5, y: 0)
 xend distance(5mm, along: u) std.front
 xend distance(0mm, along: v) std.front
 construction centerline line xaxis(std.origin, xend)
 private motion observer(about: xaxis)
-" } else { "private motion observer(about: spindle)\n" };
-    format!("private point hub hint(x: 3, y: 0)
-hub distance(3mm, along: u) std.front
+",
+        Observer::Skew => "private point xend hint(x: 5, y: 0)
+xend distance(5mm, along: u) std.front
+xend distance(0mm, along: v) std.front
+private plane flat(origin: std.origin, toward: xend, u: (1, 0, 0), v: (0, 1, 1))
+in flat {
+  private point k0 hint(x: 0, y: 0.7071)
+  private point k1 hint(x: 5, y: 0.7071)
+  k0 distance(0mm, along: u) flat
+  k0 distance(0.7071mm, along: v) flat
+  k1 distance(5mm, along: u) flat
+  k1 distance(0.7071mm, along: v) flat
+  construction centerline line kaxis(k0, k1)
+}
+private motion observer(about: kaxis)
+",
+        Observer::Parallel => "private motion observer(about: spindle)\n",
+    };
+    format!("private point hub hint(x: 2, y: 0)
+hub distance(2mm, along: u) std.front
 hub distance(0mm, along: v) std.front
-private point hub_up hint(x: 3, y: 5)
-hub_up distance(3mm, along: u) std.front
+private point hub_up hint(x: 2, y: 5)
+hub_up distance(2mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
-construction centerline line own(hub, hub_up)
-private motion spin(about: own, ratio: {ratio})
+construction centerline line cradle(hub, hub_up)
+private motion spin(about: cradle, ratio: {ratio})
 {observer}motion turn(spin, relative_to: observer)
 ")
 }
@@ -358,9 +444,11 @@ fn fixture(name: &str,tool: String,motion: String,roll_deg: f64,blank: String,ex
 }
 
 fn rot_x(p: V,a: f64) -> V { let (s,c) = a.sin_cos(); [p[0],c*p[1]-s*p[2],s*p[1]+c*p[2]] }
+/// Rotation by `a` about the line parallel to x through (0, 0.5, 0.5).
+fn rot_skew(p: V,a: f64) -> V { let q = rot_x([p[0],p[1]-0.5,p[2]-0.5],a); [q[0],q[1]+0.5,q[2]+0.5] }
 fn rot_z(p: V,a: f64) -> V { let (s,c) = a.sin_cos(); [c*p[0]-s*p[1],s*p[0]+c*p[1],p[2]] }
-/// Rotation by `a` about the vertical line through (3, 0).
-fn rot_own(p: V,a: f64) -> V { let q = rot_z([p[0]-3.,p[1],p[2]],a); [q[0]+3.,q[1],q[2]] }
+/// Rotation by `a` about the vertical cradle axis through (2, 0).
+fn rot_cradle(p: V,a: f64) -> V { let q = rot_z([p[0]-2.,p[1],p[2]],a); [q[0]+2.,q[1],q[2]] }
 
 /// The post's material, negative inside.
 fn post_sd(p: V,cx: f64,radius: f64,low: f64,high: f64) -> f64 {
@@ -390,59 +478,73 @@ fn tube_truth(h: f64,radius: f64,low: f64,high: f64) -> Truth {
     }),volume:Some(volume)}
 }
 
-/// The lens's sweep, independently: its least distance over the roll, sampled every 1e-4 rad
-/// (the travel there is under 5e-4 mm, far inside the probes' 0.1).
-fn lens_truth(h: f64,radius: f64,low: f64,high: f64,ratio: f64,roll_deg: f64) -> Truth {
-    let half = roll_deg.to_radians();
-    let steps = (2.*half/1e-4).ceil() as usize;
-    Truth {sd:Box::new(move |p| {
-        let mut best = f64::INFINITY;
-        for k in 0..=steps {
-            let t = -half+2.*half*k as f64/steps as f64;
-            let q = rot_own(rot_x(p,t),-ratio*t);
-            let lens = ((q[0]-3.).hypot(q[1]).hypot(q[2]-h)-1.).max((q[0]-3.8).hypot(q[1]).hypot(q[2]-h)-1.);
-            best = best.min(lens);
-        }
-        post_sd(p,3.,radius,low,high).max(-best)
-    }),volume:None}
-}
-
 /// A tool's sweep, independently: its least distance `tool` over the roll, sampled every
-/// 1e-4 rad, the post less it.
-fn swept_truth(tool: fn(V) -> f64,cx: f64,radius: f64,low: f64,high: f64,ratio: f64,roll_deg: f64) -> Truth {
+/// 1e-4 rad (the travel there is under 5e-4 mm, far inside the probes' 0.1), the post less it.
+fn swept_truth(tool: fn(V) -> f64,observer: fn(V,f64) -> V,cx: f64,radius: f64,low: f64,high: f64,ratio: f64,roll_deg: f64) -> Truth {
     let half = roll_deg.to_radians();
     let steps = (2.*half/1e-4).ceil() as usize;
     Truth {sd:Box::new(move |p| {
         let mut best = f64::INFINITY;
         for k in 0..=steps {
             let t = -half+2.*half*k as f64/steps as f64;
-            best = best.min(tool(rot_own(rot_x(p,t),-ratio*t)));
+            best = best.min(tool(rot_cradle(observer(p,t),-ratio*t)));
         }
         post_sd(p,cx,radius,low,high).max(-best)
     }),volume:None}
 }
 
+/// The ring lens at height 2.
+fn ring_lens_sd(q: V) -> f64 {
+    let r = (q[0]-3.).hypot(q[1])-1.;
+    (r.hypot(q[2]-1.8)-0.5).max(r.hypot(q[2]-2.2)-0.5)
+}
+/// The coaxial lens at height 2, 0.4 apart.
+fn lens_sd(q: V) -> f64 { ((q[0]-3.).hypot(q[1]).hypot(q[2]-1.6)-1.).max((q[0]-3.).hypot(q[1]).hypot(q[2]-2.4)-1.) }
+fn sphere_sd(q: V) -> f64 { (q[0]-3.).hypot(q[1]).hypot(q[2]-2.)-1. }
 fn torus_sd(q: V) -> f64 { (((q[0]-3.).hypot(q[1])-1.).hypot(q[2]-2.))-0.5 }
 
 #[test]
 #[ignore]
 fn fixtures() {
     let cases = vec![
-        // Crossed axes, as a generator's: the regular case, the crease fan, a tangent face.
-        fixture("torus through a post",torus(2.),roll(0.25,true),60.,post(4.,0.4,-2.,2.),Expect::Export,
-            Some(swept_truth(torus_sd,4.,0.4,-2.,2.,0.25,60.))),
-        // A sphere's poles lie on its spin axis with normals radial to the observer's turn: in
-        // contact at every time, tracing the tube's outer and inner equators. The inner one
-        // passes through the post, so admission names it.
-        fixture("sphere through a post (inner pole in the blank)",sphere(2.),roll(0.25,true),60.,post(3.,0.4,-2.,2.),
+        // Skew axes, as a generator's: the regular case and a tangent face.
+        fixture("torus through a post",torus(2.),roll(0.25,Observer::Skew),75.,post(4.,0.4,0.5,2.),Expect::Export,
+            Some(swept_truth(torus_sd,rot_skew,4.,0.4,0.5,2.,0.25,75.))),
+        fixture("torus grazing a post's top (tangent)",torus(2.),roll(0.25,Observer::Skew),75.,post(4.,0.4,0.5,2.5),Expect::Either,
+            Some(swept_truth(torus_sd,rot_skew,4.,0.4,0.5,2.5,0.25,75.))),
+        // A post tall enough that the torus, turned on past the roll's limit, comes back into
+        // it: the rectangular sheet extended past the roll does too, where the true boundary is
+        // the clear cap. Refused at the sheet until the sheet is trimmed at the roll's limits.
+        fixture("torus through a tall post (extension re-enters)",torus(2.),roll(0.25,Observer::Skew),75.,post(4.,0.4,-2.,2.),
+            Expect::Refuse("sheet"),None),
+        // A sphere's contact curve is a great circle, which crosses every meridian of its axis.
+        fixture("sphere through a post (skew axes)",sphere(2.),roll(0.25,Observer::Skew),90.,post(3.5,0.4,1.,2.),Expect::Export,
+            Some(swept_truth(sphere_sd,rot_skew,3.5,0.4,1.,2.,0.25,90.))),
+        // The crease fan with poles: a lens about the tool's axis. Class B's reproducer in seconds:
+        // it agrees with its truth but meshes with hundreds of sub-micron slivers along the crease
+        // and an edge used three times, refused where the STL is checked. Moved 0.05 either way
+        // it is refused at the fit instead, near a pole where the meridian stations meet.
+        fixture("lens through a post (crease slivers)",lens(2.,0.4,false),roll(0.25,Observer::Skew),60.,post(3.5,0.4,1.,2.5),Expect::Either,
+            Some(swept_truth(lens_sd,rot_skew,3.5,0.4,1.,2.5,0.25,60.))),
+        // The crease without a pole: a sharp-rimmed ring, as a cutter blade's tip.
+        fixture("ring lens through a post (crease fan)",ring_lens(2.),roll(0.25,Observer::Skew),75.,post(4.,0.4,0.5,2.),
+            Expect::Export,Some(swept_truth(ring_lens_sd,rot_skew,4.,0.4,0.5,2.,0.25,75.))),
+        // Two spheres about parallel axes, as the gear's cutter bounds its crown by an indexed
+        // neighbour: the second face meets a meridian section of the first in two arcs, one each
+        // side of the crease, which the profile walk cannot yet name apart. Refused at the reach.
+        fixture("lens about two axes",lens(2.,0.,true),roll(0.25,Observer::Skew),60.,post(3.5,0.4,1.,2.5),Expect::Refuse("reach"),None),
+        // Meeting axes: a surface of revolution's contact equation has no constant term, and a
+        // ring where its amplitude vanishes is in contact at every time. Admission names it.
+        fixture("torus, meeting axes (a stationary ring)",torus(2.),roll(0.25,Observer::Crossed),60.,post(4.,0.4,-2.,2.),
             Expect::Refuse("admission"),None),
-        fixture("lens through a post (crease fan)",lens(2.),roll(0.25,true),60.,post(3.,0.4,-2.,2.),Expect::Export,
-            Some(lens_truth(2.,0.4,-2.,2.,0.25,60.))),
-        fixture("torus grazing a post's top (tangent)",torus(2.),roll(0.25,true),60.,post(4.,0.4,-2.,2.5),Expect::Either,
-            Some(swept_truth(torus_sd,4.,0.4,-2.,2.5,0.25,60.))),
+        // Meeting axes again: a sphere point whose normal passes through the point where the axes
+        // meet is in contact at every time. Two such points, isolated, pass 0.447 from the post's
+        // axis; a post of radius 0.5 takes them in, and admission names them.
+        fixture("sphere, meeting axes (stationary points in the blank)",sphere(2.),roll(0.25,Observer::Crossed),60.,post(3.,0.5,-2.,2.),
+            Expect::Refuse("admission"),None),
         // Parallel axes: the sphere's poles are in contact at every time and pass through the
         // post, which admission must name rather than the construction meet.
-        fixture("sphere, parallel axes (stationary poles)",sphere(0.),roll(0.25,false),60.,post(3.,0.4,-2.,2.),Expect::Refuse("admission"),None),
+        fixture("sphere, parallel axes (stationary poles)",sphere(0.),roll(0.25,Observer::Parallel),60.,post(3.,0.4,-2.,2.),Expect::Refuse("admission"),None),
     ];
     let faults = run_all("fixtures",cases);
     assert!(faults.is_empty(),"{faults:#?}");
