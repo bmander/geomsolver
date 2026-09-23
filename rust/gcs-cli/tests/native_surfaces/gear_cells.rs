@@ -99,9 +99,16 @@ fn generic_sheet_reproduces_the_pinion_tooth_space() { single_space("pinion",120
 #[ignore]
 fn the_native_space_at_an_offset_against_its_field() {
     let offset: f64 = std::env::var("SOLVENT_INSPECT_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(15.);
+    // `SOLVENT_INSPECT_SHIFT` and `SOLVENT_INSPECT_SPIRAL` (degrees) set the
+    // pressure shift and the crown's spiral angle.
+    let knob = |name: &str,line: &str| std::env::var(name).ok().map(|v| (line.to_string(),v));
+    let knobs: Vec<(String,String)> = [knob("SOLVENT_INSPECT_SHIFT","param pressure_shift"),
+        knob("SOLVENT_INSPECT_SPIRAL","param spiral_angle")].into_iter().flatten().collect();
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     let e = read_gears_with(&base,&mut |name,text| if name == "configuration" {
-        text.replace("param offset_angle = 0deg",&format!("param offset_angle = {offset}deg")) } else { text });
+        text.replace("param offset_angle = 0deg",&format!("param offset_angle = {offset}deg")).lines()
+            .map(|l| match knobs.iter().find(|(p,_)| l.starts_with(p.as_str())) {
+                Some((p,v)) => format!("{p} = {v}deg\n"), None => format!("{l}\n") }).collect() } else { text });
     let id = |n: &str| e.map.ent_named(&format!("pair.pinion.{n}")).unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();

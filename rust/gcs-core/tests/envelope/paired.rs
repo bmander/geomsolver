@@ -34,7 +34,7 @@ fn read_model(src: &str,teeth: [u32;2],module: f64) -> program::Elaborated {
     let link = modules::link(&mut p,&mut |name| match name {
         // The reference checks assume the common apex, so the offset is zero here.
         "configuration" => Some(format!("param pinion_teeth = {}\nparam gear_teeth = {}\n\
-            param mean_module = {module}mm\nparam offset_angle = 0deg\n",teeth[0],teeth[1])),
+            param mean_module = {module}mm\nparam offset_angle = 0deg\nparam pressure_shift = 0deg\nparam spiral_angle = 35deg\n",teeth[0],teeth[1])),
         "paired_references" => Some(include_str!("../../../examples/spiral_bevel/paired_references.sv").into()),
         "verification" => Some(include_str!("../../../examples/spiral_bevel/verification.sv").into()),
         "matched_pair" => Some(include_str!("../../../examples/spiral_bevel/matched_pair.sv").into()),

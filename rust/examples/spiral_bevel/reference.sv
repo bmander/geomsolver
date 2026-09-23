@@ -3,13 +3,16 @@
 // for the bevel-pair design, not a specification of a physical cutting tool.
 use std
 
-// `section` bundles width, tip_height, base_depth, pressure and tip_radius; the
-// pitch radius is the one number that differs between sections of one pair.
+// `section` bundles width, tip_height, base_depth, outer_pressure, inner_pressure
+// and tip_radius; the pitch radius is the one number that differs between
+// sections of one pair. Each flank has its own pressure angle, since a hypoid's
+// offset works the two sides of a tooth at different effective angles.
 component RoundedRackSection(f: plane, pitch_radius: Length, section: group) {
   param width = section.width
   param tip_height = section.tip_height
   param base_depth = section.base_depth
-  param pressure = section.pressure
+  param outer_pressure = section.outer_pressure
+  param inner_pressure = section.inner_pressure
   param tip_radius = section.tip_radius
   private construction line datum(f.origin, f.toward)
   private point center hint(x: pitch_radius, y: 0)
@@ -24,25 +27,28 @@ component RoundedRackSection(f: plane, pitch_radius: Length, section: group) {
   distance(width) pitch
 
   // Seeds choose the minor fillets. Tangency, radii, angles and heights determine them.
-  param join_height = tip_height - tip_radius * (1 - sin(pressure))
-  param join_right = pitch_radius + width / 2 - join_height * tan(pressure)
-  param top_right = join_right - tip_radius * cos(pressure)
-  private point bl hint(x: pitch_radius - width / 2 - base_depth * tan(pressure), y: -base_depth)
-  private point br hint(x: pitch_radius + width / 2 + base_depth * tan(pressure), y: -base_depth)
-  private point rj hint(x: join_right, y: join_height)
+  param join_height_right = tip_height - tip_radius * (1 - sin(outer_pressure))
+  param join_height_left = tip_height - tip_radius * (1 - sin(inner_pressure))
+  param join_right = pitch_radius + width / 2 - join_height_right * tan(outer_pressure)
+  param join_left = pitch_radius - width / 2 + join_height_left * tan(inner_pressure)
+  param top_right = join_right - tip_radius * cos(outer_pressure)
+  param top_left = join_left + tip_radius * cos(inner_pressure)
+  private point bl hint(x: pitch_radius - width / 2 - base_depth * tan(inner_pressure), y: -base_depth)
+  private point br hint(x: pitch_radius + width / 2 + base_depth * tan(outer_pressure), y: -base_depth)
+  private point rj hint(x: join_right, y: join_height_right)
   private point rt hint(x: top_right, y: tip_height)
-  private point lt hint(x: 2 * pitch_radius - top_right, y: tip_height)
-  private point lj hint(x: 2 * pitch_radius - join_right, y: join_height)
+  private point lt hint(x: top_left, y: tip_height)
+  private point lj hint(x: join_left, y: join_height_left)
   private point cr hint(x: top_right, y: tip_height - tip_radius)
-  private point cl hint(x: 2 * pitch_radius - top_right, y: tip_height - tip_radius)
+  private point cl hint(x: top_left, y: tip_height - tip_radius)
 
   profile = line base(bl, br) -> line outer(br, rj) -> tangent
             arc outer_round(center: cr) -> tangent line tip(rt, lt) -> tangent
             arc inner_round(center: cl) -> tangent line inner(lj, bl) -> close
   base parallel datum
   tip parallel datum
-  base angle(90deg + pressure) outer
-  base angle(270deg - pressure) inner
+  base angle(90deg + outer_pressure) outer
+  base angle(270deg - inner_pressure) inner
   lp on inner
   rp on outer
   center distance(base_depth, side: left) base
@@ -61,7 +67,8 @@ preview {
   // Preview proportions only; the matched pair derives its section width from the
   // crown traces (paired_references.sv). These are not manufacturing allowances.
   group section(width: 1.3 * mean_module, tip_height: mean_module,
-                base_depth: mean_module, pressure: 20deg, tip_radius: 0.3 * mean_module)
+                base_depth: mean_module, outer_pressure: 20deg, inner_pressure: 20deg,
+                tip_radius: 0.3 * mean_module)
   rack: RoundedRackSection(std.front, pitch_radius: reference_radius, section: section)
   construction centerline line axis(std.origin, std.up.toward)
   solid crown(rack.profile, about: axis)

@@ -86,6 +86,50 @@ admission belongs in the core rather than in a supported-offset list.
 **Decision needed:** support offsets up to about 15° with this design and refuse the rest
 through admission (Phases 2–4 unchanged), or take on 5a and 5b now.
 
+### Designing undercut out (2026-09-22)
+
+The user chose to change the reference design, not the class. Elsewhere a hypoid is designed
+free of singularities on its working surfaces: Litvin's synthesis checks for them, and a
+hypoid's two sides get unequal pressure angles. The configuration now carries two knobs
+besides `offset_angle`:
+
+- `pressure_shift` is added to the crown tooth's inner flank pressure angle and taken from
+  its outer flank's. `RoundedRackSection` reads `outer_pressure` and `inner_pressure`.
+- `spiral_angle` is the crown's spiral angle; the pinion's is this plus the offset.
+
+Both default to the bevel pair's values (0° and 35°). At those defaults the bevel pinion space
+is 120.704660 mm³, as before, and the core envelope and example tests pass unchanged.
+
+Measured with `SOLVENT_CLASS_SHIFTS`, `SOLVENT_CLASS_SPIRAL` and `SOLVENT_CLASS_TIP`
+(`generating_class.rs`). Mean pressure is 20°; the spiral column is crown / pinion.
+
+| Offset | Spiral | Shift in the class (least J) | Shift outside it |
+| ---: | --- | --- | --- |
+| 20° | 35° / 55° | 5° (0.44), 7.5° (0.76), 10° (0.92) | −5°, 0°, 2.5° |
+| 22.5° | 35° / 57.5° | 7.5° (0.38), 10° (0.80) | 5° |
+| 25° | 35° / 60° | none | 5°, 7.5°, 10° (at 10°: 326 fold samples, no crossings) |
+| 25° | 25° / 50° | 10° (0.59) | 0°, 5° |
+| 30° | 35° / 65° | none | −5° to 10° |
+| 30° | 20° / 50° | 12.5° (0.23, with 1191 near-tangent pairs), 15° (0.75) | 10° |
+| 30° | 15° / 45° | 12.5° (0.30) | 10° |
+
+- The gear stays in the class at shifts of 5°, 7.5° and 10° (least J 0.76, 0.66, 0.45), and at
+  spiral 25° with shift 10° (0.35).
+- Halving the tip round (0.15 normal modules) at 25° and 30° with spiral 35° changes nothing.
+- The native construction at 25° / spiral 25° / shift 10° builds one space of 188.265 mm³, with
+  272 side checks agreeing and none disagreeing. That confirms the prediction from the class.
+  Its withheld contact error, 0.070 mm, is ten times the bevel pair's. That is sheet-fitting
+  accuracy, left for the accuracy budget.
+
+**Reading.** Unequal pressure angles move the in-class limit from about 16° to 22.5°. Also
+holding the pinion's spiral near 50° by lowering the crown's reaches 25° with a 30°/10° split,
+and 30° with a 32.5°/7.5° split. Splits beyond about 10° are lopsided for a real tooth, which
+would be weak on its low-pressure side. The approximate generation (one crown slid by the
+offset, not per-member machine settings from local synthesis) is the likely limit past 25°.
+Replacing it is the path to larger offsets, and the motion class already admits it.
+
+These are sampled observations and not bounds. Tooth strength and contact are not checked.
+
 ## Phase 2 — Admission predicates in the core
 
 Add one core entry point that takes a solved sweep graph and returns either `Admitted`,
