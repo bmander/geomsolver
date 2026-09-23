@@ -18,15 +18,15 @@ fn cross(a: V,b: V) -> V { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[
 fn norm(a: V) -> f64 { dot(a,a).sqrt() }
 
 /// The pair at `offset` degrees, its members also publishing their blanks.
-fn read(offset: f64,shift: f64) -> program::Elaborated {
+fn read(offset: f64,shift: Option<f64>) -> program::Elaborated {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     // `SOLVENT_CLASS_SPIRAL` (degrees) replaces the configured spiral angle.
     let spiral = std::env::var("SOLVENT_CLASS_SPIRAL").ok();
     support::read_configured_with(&source,&base,&mut |name,text| match name {
         "configuration" => text.lines().map(|l| if l.trim_start().starts_with("param offset_angle") {
-            format!("param offset_angle = {offset}deg\n") } else if l.trim_start().starts_with("param pressure_shift") {
-            format!("param pressure_shift = {shift}deg\n") } else if let (true,Some(k)) = (l.trim_start().starts_with("param spiral_angle"),&spiral) {
+            format!("param offset_angle = {offset}deg\n") } else if let (true,Some(k)) = (l.trim_start().starts_with("param pressure_shift"),shift) {
+            format!("param pressure_shift = {k}deg\n") } else if let (true,Some(k)) = (l.trim_start().starts_with("param spiral_angle"),&spiral) {
             format!("param spiral_angle = {k}deg\n") } else { format!("{l}\n") }).collect(),
         // `SOLVENT_CLASS_ROLL` (degrees) widens the pinion's roll: the negative
         // control, a tool left in the blank and revisiting it.
@@ -219,16 +219,20 @@ fn where_the_pair_stands_against_the_generating_class() {
         .split(',').map(|s| s.trim().parse().unwrap()).collect();
     let members: Vec<String> = std::env::var("SOLVENT_CLASS_MEMBERS").unwrap_or("pinion,gear".into())
         .split(',').map(|s| s.trim().to_string()).collect();
-    let shifts: Vec<f64> = std::env::var("SOLVENT_CLASS_SHIFTS").unwrap_or("0".into())
-        .split(',').map(|s| s.trim().parse().unwrap()).collect();
+    // Unset, the configured pressure shift stands.
+    let shifts: Vec<Option<f64>> = match std::env::var("SOLVENT_CLASS_SHIFTS") {
+        Ok(v) => v.split(',').map(|s| Some(s.trim().parse().unwrap())).collect(),
+        Err(_) => vec![None],
+    };
     for (offset,shift) in offsets.iter().flat_map(|&o| shifts.iter().map(move |&s| (o,s))) {
         let started = std::time::Instant::now();
         let e = read(offset,shift);
-        eprintln!("offset {offset}deg shift {shift}deg: read and solved in {:?}",started.elapsed());
+        let shift = shift.map_or("configured".to_string(),|s| format!("{s}deg"));
+        eprintln!("offset {offset}deg shift {shift}: read and solved in {:?}",started.elapsed());
         for member in &members {
             let started = std::time::Instant::now();
             let r = measure(&e,member);
-            eprintln!("== offset {offset}deg shift {shift}deg {member} ({:?})",started.elapsed());
+            eprintln!("== offset {offset}deg shift {shift} {member} ({:?})",started.elapsed());
             eprintln!("  samples {} on the tool, {} root errors, {} in-blank contacts, spacing {:.4} (largest gap {:.4})",
                 r.boundary_samples,r.root_errors,r.hits,r.spacing,r.largest_gap);
             eprintln!("  E1 tool samples inside the blank at the roll limits: {:?}",r.at_limits);
@@ -241,7 +245,7 @@ fn where_the_pair_stands_against_the_generating_class() {
             let folded: usize = r.factors.values().map(|f| f.1).sum();
             let least = r.factors.values().map(|f| f.2).fold(f64::INFINITY,f64::min);
             let admitted = r.at_limits == [0,0] && r.multiple == 0 && folded == 0 && r.crossings == 0;
-            eprintln!("SUMMARY offset {offset:>5} shift {shift:>5} {member:<6} {} E1 {:?} E2 {} J<0 {} least|J| {least:.3} E4 {}/{}",
+            eprintln!("SUMMARY offset {offset:>5} shift {shift:>10} {member:<6} {} E1 {:?} E2 {} J<0 {} least|J| {least:.3} E4 {}/{}",
                 if admitted { "IN " } else { "OUT" },r.at_limits,r.multiple,folded,r.crossings,r.parallel);
             if !r.folds.is_empty() {
                 eprintln!("  failing points against the removal's field: {} buried, {} outside, {} on the boundary",

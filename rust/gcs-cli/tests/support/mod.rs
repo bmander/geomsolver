@@ -21,12 +21,23 @@ pub fn read_as_configured(source: &str,base: &Path) -> program::Elaborated {
     assert!(result.success,"{result:?}"); e
 }
 
-/// The module rewrite that zeroes the configured offset angle.
-pub fn bevel(name: &str,text: String) -> String {
+/// The module rewrite that zeroes the configured offset angle and restores the
+/// bevel pair's pressure angles and spiral, whatever the configured design is.
+pub fn bevel(name: &str,text: String) -> String { design(name,text,0.,0.,35.) }
+
+/// The module rewrite that sets the gear design: the offset angle, the pressure
+/// shift and the crown's spiral angle, in degrees.
+pub fn design(name: &str,text: String,offset: f64,shift: f64,spiral: f64) -> String {
     if name != "configuration" { return text; }
-    text.lines().filter(|l| !l.trim_start().starts_with("param offset_angle")).map(|l| format!("{l}\n")).collect::<String>()
-        + "param offset_angle = 0deg\n"
+    let set = ["param offset_angle","param pressure_shift","param spiral_angle"];
+    text.lines().filter(|l| !set.iter().any(|s| l.trim_start().starts_with(s))).map(|l| format!("{l}\n")).collect::<String>()
+        + &format!("param offset_angle = {offset}deg\nparam pressure_shift = {shift}deg\nparam spiral_angle = {spiral}deg\n")
 }
+
+/// The hypoid the mesh-path records were taken at: 6 degrees, with the bevel
+/// pair's pressure angles and spiral.
+#[allow(dead_code)]
+pub fn hypoid6(name: &str,text: String) -> String { design(name,text,6.,0.,35.) }
 
 /// The pair as configured, with a module text rewrite.
 #[allow(dead_code)]

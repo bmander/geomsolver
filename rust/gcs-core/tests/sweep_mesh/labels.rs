@@ -159,7 +159,15 @@ fn a_turning_prisms_unresolved_labels_do_not_claim_boundary_positions() {
 fn pinion_cutter() -> (Elaborated,usize) {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
-    let mut one = |name: &str,text: String| if name == "matched_pair" { text.replace("repeat teeth as i {","repeat 1 as i {") } else { text };
+    // The 6-degree hypoid with the bevel pair's pressure angles and spiral, the
+    // design these diagnostics were taken at.
+    let mut one = |name: &str,text: String| match name {
+        "matched_pair" => text.replace("repeat teeth as i {","repeat 1 as i {"),
+        "configuration" => text.lines().filter(|l| !["param offset_angle","param pressure_shift","param spiral_angle"]
+            .iter().any(|s| l.starts_with(s))).map(|l| format!("{l}\n")).collect::<String>()
+            + "param offset_angle = 6deg\nparam pressure_shift = 0deg\nparam spiral_angle = 35deg\n",
+        _ => text,
+    };
     let mut resolver = harness::directory_resolver(&base,&mut one);
     let e = harness::read_resolving(&source,&mut resolver);
     let swept = harness::solid(&e,"pair.pinion.removal");

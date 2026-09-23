@@ -125,7 +125,7 @@ fn member_volume(e: &gcs_core::program::Elaborated,member: &str) -> f64 {
 fn the_hypoid_pinion_exports_with_every_placement_cutting() {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
-    let hypoid = support::read_as_configured(&source,&base);
+    let hypoid = support::read_configured_with(&source,&base,&mut |name,text| support::hypoid6(name,text));
     let axis = |name: &str| {
         let line = &hypoid.sketch.lines[hypoid.map.ent_named(name).unwrap().i()];
         let (a,b) = (hypoid.sketch.world_point(line.p1 as usize),hypoid.sketch.world_point(line.p2 as usize));
@@ -167,7 +167,8 @@ fn single_space(member: &str,configured: bool,expected: f64) {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     let mut one = |name: &str,text: String| if name == "matched_pair" { text.replace("repeat teeth as i {","repeat 1 as i {") } else { text };
-    let e = if configured { support::read_configured_with(&source,&base,&mut one) } else { support::read_with(&source,&base,&mut one) };
+    let mut six = |name: &str,text: String| one(name,support::hypoid6(name,text));
+    let e = if configured { support::read_configured_with(&source,&base,&mut six) } else { support::read_with(&source,&base,&mut one) };
     let volume = member_volume(&e,member);
     assert!((volume-expected).abs() < 1.,"{member}: {volume} against {expected}");
 }
@@ -193,7 +194,7 @@ fn a_hypoid_pinion_space_agrees_with_its_field() {
     let nocut = std::env::var("SOLVENT_INSPECT_NOCUT").is_ok();
     let mut one = |name: &str,text: String| match name {
         "matched_pair" => { let t = text.replace("repeat teeth as i {","repeat 1 as i {"); if nocut { t.replace("    indexed cut body\n","") } else { t } },
-        "configuration" => text.replace("param offset_angle = 6deg",&format!("param offset_angle = {offset}deg")),
+        "configuration" => support::design(name,text,offset,0.,35.),
         _ => text,
     };
     let e = support::read_configured_with(&source,&base,&mut one);
@@ -272,7 +273,7 @@ fn inspect_pieces_at_a_parameter() {
     let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("pinion".into());
     let mut one = |name: &str,text: String| match name {
         "matched_pair" => text.replace("repeat teeth as i {","repeat 1 as i {"),
-        "configuration" => text.replace("param offset_angle = 6deg",&format!("param offset_angle = {offset}deg")),
+        "configuration" => support::design(name,text,offset,0.,35.),
         _ => text,
     };
     let e = support::read_configured_with(&source,&base,&mut one);
