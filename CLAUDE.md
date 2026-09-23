@@ -331,6 +331,24 @@ matrix. `inspect` attempts independent checks even on open candidates and retain
 witnesses, unfinished regions and unattempted dependencies. The old success targets remain
 explicitly deferred in [the recovery ledger](docs/swept-boundary-recovery-ledger.md).
 
+**Generating sweeps (2026-09-22) supersede the general sweep.** Arbitrary sweeps proved a research
+problem; Solvent now builds a swept boundary only for the class that generates bevel and hypoid
+gears ([docs/generating-sweeps.md](docs/generating-sweeps.md), plan and measurements in
+[docs/generating-sweeps-plan.md](docs/generating-sweeps-plan.md)). `solid::admission::admit_body`
+asks rows T1–E4 of a body's swept cuts (revolved line/arc tools or their intersections, a single
+or relative rotation whose contact condition changes over the roll, clear of the blank at both
+limits, one contact per tool point, no fold, no self-crossing) and refuses with the row and a
+witness; it is sampled and says so, and checks a placement once when the blank reads alike at
+every point its checks read. A fold is judged by the sign of the area factor times the contact
+condition's rate, since the factor alone passes through infinity where two contact times merge.
+`solid::agreement` probes an exported mesh 0.1 mm off each side against the material field; a
+one-sided disagreement is withdrawn only when the triangle's centroid reads on the boundary (a
+probe through another face beside a sharp edge), a two-sided one always stands. `solventc
+--step/--stl` admits first, builds on the native OCCT path by default (`--stl-backend manifold`
+is a diagnostic, and failed this probe on 18% of a hypoid space), and writes nothing unless the
+probe agrees. The configured gear is a 25° hypoid designed out of undercut (`pressure_shift`,
+`spiral_angle` in `configuration.sv`); tests with recorded numbers pin theirs through
+`support::bevel` / `support::hypoid6`. `solid/swept_boundary` and its Phase 3 plan are parked.
 **The certified swept boundary (2026-09-10, project 1 of two prerequisites):** the hypoid
 pinion at 15° to 45° showed the mesh arrangement passing its recorded-volume and STL-shell
 gates while a field probe (points 0.1 mm inside and outside every triangle) found 19% to

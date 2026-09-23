@@ -174,3 +174,90 @@ fn a_folding_flank_is_refused_and_balanced_pressure_angles_admit_it() {
     assert!(matches!(r.condition,Condition::Fold | Condition::Crossing),"{r}");
     pinion(20.,7.5,35.).unwrap();
 }
+
+/// A UV sphere about (3, 0, 0), wound outward unless `inward`.
+fn sphere_mesh(radius: f64,inward: bool) -> (Vec<[f64;3]>,Vec<[u32;3]>) {
+    let (m,n) = (96,48);
+    let mut vertices = vec![[3.,0.,-radius],[3.,0.,radius]];
+    for i in 1..n { for j in 0..m {
+        let (theta,phi) = (std::f64::consts::PI*i as f64/n as f64,std::f64::consts::TAU*j as f64/m as f64);
+        vertices.push([3.+radius*theta.sin()*phi.cos(),radius*theta.sin()*phi.sin(),-radius*theta.cos()]);
+    }}
+    let at = |i: usize,j: usize| (2+(i-1)*m+j%m) as u32;
+    let mut triangles = Vec::new();
+    for j in 0..m {
+        triangles.push([0,at(1,j+1),at(1,j)]);
+        triangles.push([1,at(n-1,j),at(n-1,j+1)]);
+        for i in 1..n-1 {
+            triangles.push([at(i,j),at(i,j+1),at(i+1,j+1)]);
+            triangles.push([at(i,j),at(i+1,j+1),at(i+1,j)]);
+        }
+    }
+    if inward { for t in &mut triangles { t.swap(1,2); } }
+    (vertices,triangles)
+}
+
+#[test]
+fn a_mesh_agrees_with_its_field_only_where_it_lies_on_the_boundary() {
+    use gcs_core::solid::{agreement,MaterialField};
+    let e = harness::read(tools::SPHERE);
+    let mut material = MaterialField::read(&e.sketch,harness::solid(&e,"tool"),1e-10).unwrap().evaluator(4096);
+    let options = agreement::Options::default();
+    let (v,t) = sphere_mesh(1.,false);
+    let good = agreement::of_triangles(&v,&t,&mut material,&options).unwrap();
+    eprintln!("true sphere: {good:?}");
+    assert!(good.agrees() && good.unresolved == 0 && good.probed_triangles > 500);
+    let (v,t) = sphere_mesh(1.3,false);
+    let large = agreement::of_triangles(&v,&t,&mut material,&options).unwrap();
+    assert_eq!(large.disagreements.len(),large.probed_triangles,"every inner probe is outside the true sphere");
+    assert!(large.disagreements.iter().all(|d| d.inside_mesh));
+    let (v,t) = sphere_mesh(1.,true);
+    let inverted = agreement::of_triangles(&v,&t,&mut material,&options).unwrap();
+    assert_eq!(inverted.disagreements.len(),2*inverted.probed_triangles);
+}
+
+/// The triangular prism tool as a closed mesh wound outward, each side cut in `k` strips so
+/// centroids come near its edges. Its profile's page coordinates are world x and z (corners
+/// (3, -0.8), (4.5, 0), (3, 0.8)) and it is extruded along world y over [-1.5, 1.5].
+fn prism_mesh(k: usize) -> (Vec<[f64;3]>,Vec<[u32;3]>) {
+    let corners = [[3.,-0.8],[4.5,0.],[3.,0.8]];
+    let (mut vertices,mut triangles): (Vec<[f64;3]>,Vec<[u32;3]>) = (Vec::new(),Vec::new());
+    for side in 0..3 {
+        let (a,b) = (corners[side],corners[(side+1)%3]);
+        for i in 0..k {
+            let at = |f: f64,z: f64| [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,z];
+            let n = vertices.len() as u32;
+            let (f0,f1) = (i as f64/k as f64,(i+1) as f64/k as f64);
+            vertices.extend([at(f0,-1.5),at(f1,-1.5),at(f1,1.5),at(f0,1.5)]);
+            triangles.extend([[n,n+1,n+2],[n,n+2,n+3]]);
+        }
+    }
+    let n = vertices.len() as u32;
+    for z in [-1.5,1.5] { for c in corners { vertices.push([c[0],c[1],z]); } }
+    triangles.extend([[n,n+2,n+1],[n+3,n+4,n+5]]);
+    // Built with the profile in x-y and the extrusion along z; swapping y and z is a
+    // reflection, so the winding turns too.
+    for p in &mut vertices { p.swap(1,2); }
+    for t in &mut triangles { t.swap(1,2); }
+    (vertices,triangles)
+}
+
+#[test]
+fn a_probe_through_another_face_is_withdrawn_nearer_the_mesh() {
+    use gcs_core::solid::{agreement,MaterialField};
+    let e = harness::read(tools::TRIANGLE_PRISM);
+    let mut material = MaterialField::read(&e.sketch,harness::solid(&e,"tool"),1e-10).unwrap().evaluator(4096);
+    let (v,t) = prism_mesh(40);
+    // Wide enough that an inner probe beside the 56-degree edge at x = 4.5 leaves through
+    // the other side; asked again at 0.02 it is inside.
+    let options = agreement::Options {offset:0.3,confirm:0.02,triangles:t.len(),..Default::default()};
+    let report = agreement::of_triangles(&v,&t,&mut material,&options).unwrap();
+    eprintln!("{} probes, {} unresolved, {} withdrawn, {} disagree",report.probes,report.unresolved,report.withdrawn,report.disagreements.len());
+    assert!(report.withdrawn > 0,"some probes cross the other side");
+    assert!(report.agrees());
+    // Shifted 0.05 outward, the same mesh disagrees, and nearer the mesh the more surely.
+    let moved: Vec<[f64;3]> = v.iter().map(|p| [p[0]+0.05,p[1],p[2]]).collect();
+    let shifted = agreement::of_triangles(&moved,&t,&mut material,&agreement::Options {offset:0.03,confirm:0.01,
+        triangles:t.len(),..Default::default()}).unwrap();
+    assert!(!shifted.agrees());
+}

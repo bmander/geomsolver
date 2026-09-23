@@ -149,11 +149,29 @@ impl Session {
     }
 }
 
+/// The STL a body's field agreement is judged on, written through a temporary file.
+fn agreement(session: &Session,sk: &gcs_core::model::Sketch,body: usize,solid: c_int) -> Result<(),String> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let directory = std::env::temp_dir().join(format!("solvent-agreement-{}-{}",std::process::id(),NEXT.fetch_add(1,Ordering::Relaxed)));
+    std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+    let path = directory.join("probe.stl");
+    let name = CString::new(path.to_str().ok_or("CAD path must be UTF-8")?).map_err(|e| e.to_string())?;
+    let started = std::time::Instant::now();
+    let written = session.result(unsafe { solvent_cad_stl(session.0,solid,name.as_ptr()) })
+        .and_then(|_| std::fs::read(&path).map_err(|e| e.to_string()));
+    let _ = std::fs::remove_dir_all(&directory);
+    let written = written?;
+    eprintln!("solventc: meshed the solid for its field agreement ({:?})",started.elapsed());
+    super::field_agreement(sk,body,&written)
+}
+
 /// Build once, stage and validate every requested format, then replace outputs.
 /// A geometry or encoding failure cannot leave only half the requested pair updated.
 pub fn export(sk: &gcs_core::model::Sketch,solid: usize,step: Option<&str>,stl: Option<&str>) -> Result<(),String> {
     let session = Session::new()?;
+    let body = solid;
     let solid = sweep_boundary::construct_solid(&session,sk,solid)?;
+    if !gcs_core::solid::cad::recipe_static(sk,body)?.sweeps.is_empty() { agreement(&session,sk,body,solid)?; }
     let mut staged = Vec::new();
     let mut directories = Vec::new();
     let result = (|| {

@@ -211,6 +211,65 @@ T1 and M2 cases above.
 volumes (120.7088 / 117.1373 mm³ within the recorded tolerance) with zero probe
 disagreement. The mesh path's hypoid tests remain diagnostics.
 
+### Phase 3 status (2026-09-22)
+
+**Admission runs first.** Admission runs before any swept construction (Phase 2).
+
+**The native path is the default.** `--stl-backend` now defaults to `occt` for every solid,
+including a body with swept cuts. `manifold` is an explicit diagnostic.
+
+**The native construction keeps its own refusals, deliberately.** Its roll-limit check
+measures the exact common volume of the placed cutter and the blank in the kernel, which is
+stronger than admission's sampled E1. Its motion-independence refusal cannot be reached
+after admission. This departs from the plan's "remove them"; the rules are stated in
+admission, and these are the construction's preconditions.
+
+**Field agreement is the acceptance of every swept export, by either backend.**
+`gcs_core::solid::agreement` samples up to 1000 triangles of the STL the export would write,
+evenly through the mesh. It probes the material field 0.1 mm inside and outside each.
+
+- **Undecided probes.** A probe the field cannot decide is counted as unresolved, never as
+  agreement.
+- **Withdrawal.** A one-sided disagreement is withdrawn only when the triangle's own centroid
+  reads within 0.025 mm of the boundary. That is a probe that crossed another face beside a
+  sharp edge. A triangle off the boundary has its centroid on the wrong side itself.
+- **Reversed triangles.** A two-sided disagreement always stands.
+- **On failure.** The export writes nothing and exits 1 (`cad::field_agreement`, used by
+  `native::export` and `export_swept_stl`).
+
+The rule was set by measurement, not argued:
+
+- The first native exports (bevel pinion, 25° pinion) had 5 and 8 raw disagreements. All were
+  inside probes reading outside by 0.002–0.06 mm, mostly out on the blank at sharp edges.
+  Re-asking nearer the mesh left some standing: sliver triangles have centroids within
+  0.025 mm of their edge. The centroid test withdraws every one, so 0 remain on both members.
+- The **negative control** is the Manifold path's 15° pinion space, the failure that started
+  all this. It shows 376 disagreements in 2038 probes (18%, against the 19% originally
+  recorded), with 16 withdrawn. The export is refused.
+
+Core tests: a true sphere mesh agrees; one 0.3 too large disagrees on every inner probe; one
+wound inside out disagrees on both sides; the triangular prism's 56° edge has probes withdrawn
+and none standing, and 0.05 of shift is caught. CLI test:
+`a_sweep_outside_the_generating_class_is_refused_with_its_row` (a 30° copy of the project,
+E2, the old output untouched).
+
+**Exit met.** Both bevel members export through `solventc` with the gated native default:
+
+| Member | Volume (recorded) | Probes | Disagreements |
+| --- | --- | --- | --- |
+| Pinion | 9142.079137 mm³ (9142.079) | 2016 | 0 (5 withdrawn) |
+| Gear | 20284.172458 mm³ (20284.173) | 2004 | 0 (3 withdrawn) |
+
+The tooth-space volumes of the single-space tests are unchanged.
+
+**Costs, and one to fix.** The pinion takes 4 min 47 s in all: 10 s admission, 58 s probing.
+The gear takes 18 min 48 s, of which probing is **683 s**, about 0.34 s a field query
+against the pinion's 0.03. The gear's body carries 48 indexed sweeps. Whether every query
+evaluates all of them, rather than the few whose support reaches the point, is the first
+thing to measure. Probing also cost 3.5–6 minutes a pinion at 0.005 mm value tolerance; signs
+now use 0.02, and the fine tolerance is kept for centroid checks. The CLI prints the probe's
+progress every tenth of its triangles.
+
 ## Phase 4 — The hypoid inside the class
 
 Using Phase 1's supported offsets, export both hypoid members through the ordinary path.

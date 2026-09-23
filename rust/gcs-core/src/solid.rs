@@ -58,6 +58,7 @@ mod surface;
 mod sweep_contacts;
 pub mod swept_boundary;
 pub mod admission;
+pub mod agreement;
 pub use sweep_contacts::{SweepContacts,TimedContact};
 pub use sweep_contacts::{ContactCover,ContactCoverOptions,ContactCell,ContactEvidence,ContactLimit,ContactCoverError};
 pub use sweep_contacts::{ContactChart,ContactParameter};

@@ -30,6 +30,10 @@ fn read(offset: f64,shift: Option<f64>) -> program::Elaborated {
             format!("param spiral_angle = {k}deg\n") } else { format!("{l}\n") }).collect(),
         // `SOLVENT_CLASS_ROLL` (degrees) widens the pinion's roll: the negative
         // control, a tool left in the blank and revisiting it.
+        // `SOLVENT_CLASS_ONE`: the members with a single tooth space, as a one-space export has.
+        "matched_pair" if std::env::var("SOLVENT_CLASS_ONE").is_ok() => text.replace("repeat teeth as i {","repeat 1 as i {")
+            .replace("  solid body(design.heel)\n",
+            "  solid body(design.heel)\n  construction solid blank(design.heel)\n  design.tip bound blank\n  design.toe cut blank\n  design.back cut blank\n"),
         "matched_pair" => text.replace("roll_limit: 35deg",&format!("roll_limit: {}deg",
             std::env::var("SOLVENT_CLASS_ROLL").unwrap_or("35".into()))).replace("  solid body(design.heel)\n",
             "  solid body(design.heel)\n  construction solid blank(design.heel)\n  design.tip bound blank\n  design.toe cut blank\n  design.back cut blank\n"),
@@ -253,4 +257,34 @@ fn where_the_pair_stands_against_the_generating_class() {
             }
         }
     }
+}
+
+/// The field agreement of an STL already written: `SOLVENT_AGREE_STL=<path>` of
+/// `pair.<SOLVENT_AGREE_MEMBER>.body` (pinion by default) at the configured design,
+/// or with `SOLVENT_CLASS_OFFSETS` etc. as above, and `SOLVENT_AGREE_TRIANGLES`.
+#[test]
+#[ignore]
+fn an_exported_member_agrees_with_its_field() {
+    use gcs_core::solid::{agreement,MaterialField};
+    let path = std::env::var("SOLVENT_AGREE_STL").expect("SOLVENT_AGREE_STL");
+    let member = std::env::var("SOLVENT_AGREE_MEMBER").unwrap_or("pinion".into());
+    let offset: Option<f64> = std::env::var("SOLVENT_CLASS_OFFSETS").ok().map(|v| v.parse().unwrap());
+    let shift: Option<f64> = std::env::var("SOLVENT_CLASS_SHIFTS").ok().map(|v| v.parse().unwrap());
+    let e = match offset { Some(o) => read(o,shift), None => {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+        support::read_configured_with(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base,&mut |_,t| t)
+    } };
+    let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
+    let scale = e.sketch.units.length.unwrap().1;
+    let (vertices,triangles) = agreement::stl_triangles(&std::fs::read(&path).unwrap(),scale).unwrap();
+    let mut material = MaterialField::read(&e.sketch,body,1e-10).unwrap().evaluator(4096);
+    let triangles_probed = std::env::var("SOLVENT_AGREE_TRIANGLES").ok().map_or(1000,|v| v.parse().unwrap());
+    let options = agreement::Options {offset:0.1/scale,confirm:0.025/scale,value_tolerance:0.02/scale,
+        triangles:triangles_probed,..Default::default()};
+    let started = std::time::Instant::now();
+    let r = agreement::of_triangles(&vertices,&triangles,&mut material,&options).unwrap();
+    eprintln!("{} of {} triangles, {} probes, {} unresolved, {} withdrawn, {} disagree ({:?})",r.probed_triangles,r.triangles,
+        r.probes,r.unresolved,r.withdrawn,r.disagreements.len(),started.elapsed());
+    for d in &r.disagreements { eprintln!("  {d:?}"); }
+    assert!(r.agrees());
 }

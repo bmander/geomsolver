@@ -41,8 +41,8 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (requires a native OCCT build)
-    --stl-backend NAME  occt, mesh or manifold; a body with swept cuts defaults to manifold
-                        (mesh arrangement) when built in, other solids to occt
+    --stl-backend NAME  occt, mesh or manifold; every solid defaults to occt when built in,
+                        a body with swept cuts included (manifold is a diagnostic)
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
     --width PX          the SVG's page width in pixels (default 800)
@@ -102,7 +102,7 @@ impl Default for Opts {
             stl: None,
             step: None,
             native_stl: cfg!(feature="occt"),
-            swept_mesh: cfg!(all(feature="manifold",feature="occt")),
+            swept_mesh: false,
             gltf: None,
             solid: None,
             width: 800.0,
@@ -339,8 +339,10 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
                     Ok(a) => for s in &a.sweeps {
                         let checked = s.placements.iter().filter(|p| p.equivalent_to.is_none()).count();
                         let admission::Basis::Sampled {rows,columns} = s.basis;
-                        eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face \
-                            ({checked} of {} placements checked, the rest reading the blank alike)",s.name,s.placements.len());
+                        let alike = if s.placements.len() > checked {
+                            format!(" ({checked} of {} placements checked, the rest reading the blank alike)",s.placements.len())
+                        } else { String::new() };
+                        eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name);
                     },
                     Err(err) => {
                         let message = err.to_string();

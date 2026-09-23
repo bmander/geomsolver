@@ -39,6 +39,37 @@ fn unsupported_continuous_boundary_cannot_export_the_unswept_source() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A body whose sweep is outside the generating class is refused before any construction,
+/// with the row it fails and a point, and an earlier output is left as it was: the gear pair
+/// at 30 degrees of offset on a symmetric rack, whose pinion touches the blank twice.
+#[test]
+fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
+    let dir = std::env::temp_dir().join(format!("solventc-class-refusal-{}",std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for entry in std::fs::read_dir(examples().join("spiral_bevel")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().map_or(false,|e| e == "sv") { std::fs::copy(&path,dir.join(path.file_name().unwrap())).unwrap(); }
+    }
+    let configuration = dir.join("configuration.sv");
+    let text: String = std::fs::read_to_string(&configuration).unwrap().lines().map(|l| {
+        if l.starts_with("param offset_angle") { "param offset_angle = 30deg".into() }
+        else if l.starts_with("param pressure_shift") { "param pressure_shift = 0deg".into() }
+        else if l.starts_with("param spiral_angle") { "param spiral_angle = 35deg".into() }
+        else { l.to_string() }
+    }+"\n").collect();
+    std::fs::write(&configuration,text).unwrap();
+    let output = dir.join("pinion.stl");
+    std::fs::write(&output,"old STL").unwrap();
+    let result = run(&[dir.join("gears.sv").to_str().unwrap(),"--stl",output.to_str().unwrap(),
+        "--solid","pair.pinion.body","--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(1),"{stderr}");
+    assert!(stderr.contains("outside the generating-sweep class (E2"),"{stderr}");
+    assert_eq!(std::fs::read_to_string(output).unwrap(),"old STL");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[cfg(not(feature="occt"))]
 #[test]
 fn explicit_native_stl_never_falls_back_when_occt_is_unavailable() {
