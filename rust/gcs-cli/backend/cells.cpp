@@ -4,6 +4,9 @@
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
+#include <Message_ProgressIndicator.hxx>
+#include <Message_ProgressScope.hxx>
+#include <chrono>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
@@ -36,6 +39,17 @@ static double volume(const TopoDS_Shape& shape) {
     BRepGProp::VolumeProperties(shape,props,1e-9,false,false);
     return props.Mass();
 }
+
+// A kernel operation's time budget: the algorithm polls UserBreak and stops once it is past.
+// A split that grinds on near-tangent sheets is refused by name, not waited on.
+class Deadline: public Message_ProgressIndicator {
+    std::chrono::steady_clock::time_point end;
+public:
+    explicit Deadline(double seconds): end(std::chrono::steady_clock::now()+std::chrono::duration_cast<
+        std::chrono::steady_clock::duration>(std::chrono::duration<double>(seconds))) {}
+    Standard_Boolean UserBreak() override { return std::chrono::steady_clock::now() > end; }
+    void Show(const Message_ProgressScope&,const Standard_Boolean) override {}
+};
 
 static void check_algorithm(BRepAlgoAPI_BuilderAlgo& algorithm,const char* what) {
     if (!algorithm.IsDone() || algorithm.HasErrors()) {
@@ -80,7 +94,17 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
         // a quarter of the split, and the same cells.
         split.SetNonDestructive(true); split.SetRunParallel(false); split.SetUseOBB(Standard_True);
         if (fuzzy > 0) split.SetFuzzyValue(fuzzy);
-        split.Build();
+        // The kernel polls the break only between its phases, so a stop can come well after the
+        // budget; the message says both.
+        const double budget = 15.+5.*count;
+        const auto started = std::chrono::steady_clock::now();
+        Handle(Deadline) deadline = new Deadline(budget);
+        split.Build(deadline->Start());
+        if (deadline->UserBreak()) {
+            const double spent = std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
+            throw std::runtime_error("the split did not finish within its "+std::to_string(int(budget))
+                +" s budget (stopped after "+std::to_string(int(spent))+" s)");
+        }
         check_algorithm(split,"solid split");
         const auto result = split.Shape();
         int cells = 0;

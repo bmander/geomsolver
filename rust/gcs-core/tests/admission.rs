@@ -43,16 +43,70 @@ fn refused(result: Result<admission::Admission,Error>) -> admission::Refusal {
     }
 }
 
+/// A torus about the vertical line through (3, 0), its tube of radius 0.5 centred 1 from that
+/// axis at height 2: a profile that never meets its axis, as a cutter's does not.
+const TORUS: &str = "unit mm
+use std
+construction centerline line spindle(std.origin, std.up.toward)
+private point ta hint(x: 3, y: 1)
+private point tb hint(x: 3, y: 3)
+ground ta
+ground tb
+private line taxis(ta, tb)
+private point tc hint(x: 4, y: 2)
+ground tc
+private circle ring(center: tc) hint(r: 0.5)
+radius(0.5mm) ring
+construction solid tool(face(ring), about: taxis)
+";
+
+/// The tool spinning about its own vertical axis through (3, 0), seen from an observer turning
+/// about world x: crossed axes, as a generator's are.
+const CROSSED_ROLL: &str = "private point hub hint(x: 3, y: 0)
+hub distance(3mm, along: u) std.front
+hub distance(0mm, along: v) std.front
+private point hub_up hint(x: 3, y: 5)
+hub_up distance(3mm, along: u) std.front
+hub_up distance(5mm, along: v) std.front
+construction centerline line own(hub, hub_up)
+private point xend hint(x: 5, y: 0)
+xend distance(5mm, along: u) std.front
+xend distance(0mm, along: v) std.front
+construction centerline line xaxis(std.origin, xend)
+private motion spin(about: own, ratio: 0.25)
+private motion observer(about: xaxis)
+motion turn(spin, relative_to: observer)
+";
+
 #[test]
-fn a_sphere_rolled_through_a_post_is_admitted() {
-    let a = admit(&document(tools::SPHERE,&motions::roll(0.25),"turn",-60.,60.)).unwrap();
+fn a_torus_rolled_through_a_post_is_admitted() {
+    let source = format!("{TORUS}{CROSSED_ROLL}construction solid removal(tool, under: turn, from: -60deg, to: 60deg)\n{}",
+        POST.replace("x: 3,","x: 4,").replace("x: 3.4,","x: 4.4,"));
+    let a = admit(&source).unwrap();
     let s = &a.sweeps[0];
     eprintln!("{} samples, {} contacts, spacing {:.4}, least J {:.3}, {} near double roots, {} near tangent",
         s.samples,s.contacts,s.spacing,s.least_area_factor,s.near_double_roots,s.near_tangent_pairs);
     assert_eq!(s.name,"removal");
     assert!(s.contacts > 100,"the sweep reaches the post");
-    assert!(s.least_area_factor > 0.1);
     assert_eq!(s.placements.len(),1);
+}
+
+/// With the spin and the observer's axes parallel, a sphere's poles (on its spin axis, normals
+/// along it) are in contact at every time, and one passes through the post.
+#[test]
+fn a_pole_in_contact_at_every_time_is_refused() {
+    let r = refused(admit(&document(tools::SPHERE,&motions::roll(0.25),"turn",-60.,60.)));
+    assert_eq!(r.condition,Condition::Stationary);
+    assert!(r.message.contains("pole"),"{}",r.message);
+}
+
+/// A tool that never meets the blank is no cut: refused, not admitted vacuously.
+#[test]
+fn a_sweep_that_reaches_nothing_is_refused() {
+    let source = format!("{TORUS}{CROSSED_ROLL}construction solid removal(tool, under: turn, from: -60deg, to: 60deg)\n{}",
+        POST.replace("x: 3,","x: 13,").replace("x: 3.4,","x: 13.4,"));
+    let r = refused(admit(&source));
+    assert_eq!(r.condition,Condition::Reach);
 }
 
 #[test]

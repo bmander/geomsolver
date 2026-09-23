@@ -1,3 +1,4 @@
+#include <limits>
 // Curves on native faces, for contact cuts without tangent face intersections.
 #include "occt.hpp"
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -139,6 +140,36 @@ int solvent_cad_face_parameters(Cad* cad,int id,const double* point,double dista
         tolerance(distance);
         if (!point || !output) throw std::runtime_error("projection needs input and output buffers");
         return FaceProjector(cad,id).parameters(point,distance,output);
+    });
+}
+
+// For many points, the support surface's unit normal (du x dv, no orientation) at each
+// point's nearest foot, and the distance to it: rows of nx, ny, nz, distance, with a NaN
+// distance where the projection finds no foot. One projector serves them all.
+int solvent_cad_surface_feet(Cad* cad,int id,const double* points,int count,double* output) noexcept {
+    return guarded(cad,[&] {
+        if (!points || !output || count < 0) throw std::runtime_error("surface feet need input and output buffers");
+        FaceProjector projector(cad,id);
+        const auto& chart = projector.chart;
+        for (int i=0;i<count;++i) {
+            double* row = output+4*i;
+            gp_Pnt p(points[3*i],points[3*i+1],points[3*i+2]);
+            p.Transform(chart.location.Transformation().Inverted());
+            projector.project.Perform(p);
+            if (!projector.project.IsDone() || projector.project.NbPoints() < 1) {
+                row[0] = row[1] = row[2] = 0; row[3] = std::numeric_limits<double>::quiet_NaN(); continue;
+            }
+            double a,b; projector.project.LowerDistanceParameters(a,b);
+            gp_Pnt q; gp_Vec du,dv;
+            chart.surface->D1(a,b,q,du,dv);
+            gp_Vec n = du.Crossed(dv);
+            const double length = n.Magnitude();
+            if (length > 0) n.Divide(length);
+            n.Transform(chart.location.Transformation());
+            row[0] = n.X(); row[1] = n.Y(); row[2] = n.Z();
+            row[3] = projector.project.LowerDistance();
+        }
+        return 0;
     });
 }
 

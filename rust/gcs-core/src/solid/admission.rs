@@ -20,12 +20,12 @@ fn norm(a: V) -> f64 { dot(a,a).sqrt() }
 
 /// The rows of the class, in the order they are asked.
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
-pub enum Condition { Tool, Corner, Motion, Stationary, Clearance, Single, Fold, Crossing }
+pub enum Condition { Tool, Corner, Motion, Stationary, Reach, Clearance, Single, Fold, Crossing }
 
 impl Condition {
     pub fn code(self) -> &'static str {
         match self { Condition::Tool => "T1", Condition::Corner => "T2", Condition::Motion => "M1",
-            Condition::Stationary => "M2", Condition::Clearance => "E1", Condition::Single => "E2",
+            Condition::Stationary => "M2", Condition::Reach => "E0", Condition::Clearance => "E1", Condition::Single => "E2",
             Condition::Fold => "E3", Condition::Crossing => "E4" }
     }
     /// What the row asks, in the words the scope document uses.
@@ -35,6 +35,7 @@ impl Condition {
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
             Condition::Motion => "the motion is rotations about fixed axes at constant ratios",
             Condition::Stationary => "the contact condition depends on the motion",
+            Condition::Reach => "the sweep's contacts reach the blank",
             Condition::Clearance => "the tool is clear of the blank at both ends of the roll",
             Condition::Single => "each tool point touches the blank at most once in the roll",
             Condition::Fold => "the generated surface does not fold",
@@ -280,6 +281,36 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
             }
         }}
     }
+    // M2 at the poles: where a face's profile meets the tool's axis the surface has no normal of
+    // its own, so the sampled checks below cannot evaluate it. Its normal is the axis, the limit
+    // along the profile; a pole whose contact condition is zero at every time and whose path
+    // enters the blank is refused, as a sampled point would be.
+    for surface in c.patches() {
+        for end in [0.,1.] {
+            let (Ok(s),Ok(near)) = (surface.at(end,0.),surface.at(if end == 0. { 1e-6 } else { 1.-1e-6 },0.)) else { continue };
+            if norm(s.dv) > 1e-9*(1.+norm(s.position)) || !on_tool(s.position) { continue; }
+            // The pole's normal is the revolution axis, oriented as the surface beside it: the
+            // axis is square to the small circle a point beside the pole turns on.
+            let inward = if end == 0. { 1e-6 } else { 1.-1e-6 };
+            let ring: Vec<V> = [0.,1./3.,2./3.].iter().filter_map(|&v| surface.at(inward,v).ok().map(|q| q.position)).collect();
+            if ring.len() < 3 { continue; }
+            let axis = cross(sub(ring[1],ring[0]),sub(ring[2],ring[0]));
+            let beside = cross(near.du,near.dv);
+            if norm(axis) == 0. || norm(beside) == 0. { continue; }
+            let n = axis.map(|x| x/norm(axis)*dot(axis,beside).signum());
+            let seed = if n[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
+            let a = cross(seed,n); let a = a.map(|x| x/norm(a));
+            let pole = SurfacePoint {position:s.position,du:a,dv:cross(n,a)};
+            let Ok(g) = c.motion().normal_velocity(pole) else { continue };
+            let scale = 1.+norm(s.position);
+            let values = [domain[0],middle,domain[1]].map(|t| g.at(t).unwrap_or(f64::NAN));
+            if !values.iter().all(|x| x.abs() <= options.root_tolerance*scale) { continue; }
+            if let Some(p) = poses.iter().map(|m| m.point(s.position)).find(|&p| read(p)) {
+                return Err((Condition::Stationary,format!("the pole of `{}`, where its profile meets its axis, is in contact \
+                    at every time",surface.name),Some(p)));
+            }
+        }
+    }
     // E3's sign: the area factor times the rate of the contact condition. The factor alone
     // runs through infinity and changes sign where a point's two contact times merge, which
     // is a fold of the tool's time chart and not of the surface; the product stays finite
@@ -388,6 +419,9 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
             return Err((Condition::Fold,format!("the generated surface of `{}` turns back on itself ({} samples one way, {} the other)",
                 c.patches()[*patch].name,counts[0],counts[1]),at[minority]));
         }
+    }
+    if hits.is_empty() {
+        return Err((Condition::Reach,"no contact of the tool within the roll lies in the blank".into(),None));
     }
     // E4: contacts closer than the sample spacing whose tool points lie far apart.
     gaps.sort_by(f64::total_cmp);

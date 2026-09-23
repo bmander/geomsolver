@@ -180,3 +180,82 @@ Step 2 turns the stage at which each class is met into the stage that names it:
 - **D:** admission names degenerate points, and does not skip them.
 - **E:** refused at the tool, with its cause.
 - **F:** admission refuses a sweep that reaches nothing.
+
+## Step 2 results (2026-09-23): contracts at the stages
+
+Each contract is a check at the stage whose output it judges, and a violation is a refusal
+naming that stage.
+
+- **Admission.**
+  - **M2 now covers poles.** A face's profile meeting the tool's axis has no normal of its own,
+    so the sampled checks skipped it. Its normal is the axis, found square to the small circle a
+    point beside the pole turns on. A pole in contact at every time whose path enters the blank
+    is refused.
+  - **E0 (new):** a sweep none of whose contacts reach the blank is refused, not admitted
+    vacuously.
+  - **Ordering:** clearance (E1) is still reported before either.
+- **Reach.** A degenerate point is skipped only when its path over the roll never enters the
+  blank. Otherwise it is refused, now with a true message: the contact equation is degenerate,
+  at this point, with this normal.
+- **Sheet: the chart contract.** Wherever the grid lies in the blank, each column keeps one root
+  of the contact equation (`ContactTime::branch`, which changes only where the two roots merge)
+  and its contact time does not leap by more than a radian (the same root a turn away).
+  - **Position is deliberately not tested.** A first version flagged steps over ten times a
+    column's median, and so refused the 25° pinion, which exports correctly: near a time-chart
+    fold a contact runs fast along the sweep for a small step along the profile.
+  - **Trim replaced.** Last session's margin trim is gone. The widening margin is back, and the
+    contract is judged at the blank.
+  - **Class C traced.** The trim was itself the cause of class C on the 15° pinions: without it
+    they export with every probe agreeing.
+- **Fit.** A contact is withheld at the centre of every grid cell, a section at each column's
+  mid angle and each row's mid length. At those in or within 0.5 mm of the blank, the fitted
+  sheet must pass within 0.25 mm and its normal within 20° of the contact's. Feet are found by
+  one projector per face (`solvent_cad_surface_feet`).
+- **Split.** A deadline on the kernel's splitter, 15 s plus 5 s per sheet, through its progress
+  indicator. The kernel polls it only between phases, so the message gives the budget and the
+  time actually spent. Validity failures name the kernel's status (`BRepCheck_UnorientableShape`
+  rather than 27).
+- **Cells.** After classification:
+  - no cell under 10⁻³ mm³;
+  - one removed cell per placement;
+  - the removed cells congruent to 10⁻⁴.
+- **Mesh.** No more than 100 triangles under 1 µm². More is refused with their total area and
+  bounding box.
+
+**Harness after step 2:**
+
+- **Controls: all green.**
+  - The bevel spaces export.
+  - The 25° pinion exports again: it was a regression of the trim.
+  - The 25° gear is refused at the split (`BRepCheck_UnorientableShape`) instead of exporting its
+    slivers.
+  - The symmetric racks are refused at admission.
+  - The Manifold arrangement is refused at the mesh contract (797 triangles under 1 µm²), before
+    the probe.
+- **Design sweep: no case now reaches the final gate and fails.** The one that timed out is now
+  a named split refusal.
+  - **Exported:** every pinion admission admits, except 15/0/25, which is refused at the split
+    as unorientable. Also every gear with a 35° spiral and a pressure split of 5° or less.
+  - **Refused:** the rest of the gears, all at the gear cutter's crease (class B):
+    - with a 10° split and a 35° spiral, by the mesh contract (10 500 triangles under 1 µm²,
+      in one 1.6 mm box);
+    - with a 25° spiral, by the fit contract (normals 61–78° off at distances of 0.004–0.02 mm:
+      the sheet collapsing towards the crease line), an unorientable split, a cell without an
+      interior sample (a 1.4 mm³ sliver among them), or the split's budget.
+- **Fixtures.**
+  - The sphere cases are refused at admission, poles in the blank.
+  - The torus is refused at the sheet: roots swap in the blank, the sheet following roots
+    outside the declared roll through their fold.
+  - The lens is refused at reach (class E).
+  - The tangent torus is refused at the sheet.
+
+**What step 2 leaves for step 3.** Every remaining refusal comes from one of two causes:
+- **Walking the sheet by nearest time over ±180°.** This covers the torus, and branch ends
+  generally.
+- **Sampling the crease fan into a sheet that collapses there.** This covers the gear cutter
+  with a 25° spiral or 10° split, and presumably the pinion 15/0/25 as well; step 3 should
+  confirm that.
+
+Both are what step 3's charts from analytic data replace:
+- a chart per root, bounded by the declared roll and its folds;
+- the crease as its own edge-sweep chart, not a fan folded into a face's grid.

@@ -3,6 +3,7 @@ use super::*;
 extern "C" {
     fn solvent_cad_curve_point(cad: *mut c_void,edge: c_int,t: f64,output: *mut f64) -> c_int;
     fn solvent_cad_face_parameters(cad: *mut c_void,face: c_int,point: *const f64,distance: f64,output: *mut f64) -> c_int;
+    fn solvent_cad_surface_feet(cad: *mut c_void,face: c_int,points: *const f64,count: c_int,output: *mut f64) -> c_int;
     fn solvent_cad_face_parameters_many(cad: *mut c_void,face: c_int,points: *const f64,count: c_int,distance: f64,
         output: *mut f64,found: *mut c_int) -> c_int;
     fn solvent_cad_pcurve(cad: *mut c_void,face: c_int,points: *const f64,count: c_int,closed: c_int,distance: f64) -> c_int;
@@ -48,6 +49,13 @@ impl Session {
     /// Normalized finite-face UV coordinates and measured incidence distance in
     /// mm. None means no on-trim projection within tolerance. A projection alone
     /// does not establish continuity across periodic seams or poles.
+    /// For each point, the face's support normal (unoriented) at its nearest foot and the
+    /// distance to it; None where no foot is found.
+    pub(crate) fn surface_feet(&self,face: c_int,points: &[[f64;3]]) -> Result<Vec<Option<([f64;3],f64)>>,String> {
+        let mut data = vec![0.;4*points.len()];
+        self.result(unsafe { solvent_cad_surface_feet(self.0,face,points.as_ptr().cast(),points.len() as c_int,data.as_mut_ptr()) })?;
+        Ok((0..points.len()).map(|i| data[4*i+3].is_finite().then(|| ([data[4*i],data[4*i+1],data[4*i+2]],data[4*i+3]))).collect())
+    }
     /// `face_parameters` for many points, the projector initialised once.
     pub(crate) fn face_parameters_many(&self,face: c_int,points: &[[f64;3]],distance: f64)
         -> Result<Vec<Option<([f64;2],f64)>>,String> {

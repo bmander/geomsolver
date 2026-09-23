@@ -1,5 +1,6 @@
 // Native solid construction and export.
 #include "occt.hpp"
+#include <BRepCheck.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -58,7 +59,13 @@ static std::string invalidity(const TopoDS_Shape& shape) {
             if (!bad) continue;
             message << " " << (kind == TopAbs_SOLID ? "solid" : kind == TopAbs_SHELL ? "shell" : kind == TopAbs_FACE ? "face"
                 : kind == TopAbs_WIRE ? "wire" : kind == TopAbs_EDGE ? "edge" : "vertex") << " " << index << ":";
-            for (const auto status: result->Status()) if (status != BRepCheck_NoError) message << " " << int(status);
+            // The kernel's own name for each status (BRepCheck::Print ends it with a newline).
+            for (const auto status: result->Status()) if (status != BRepCheck_NoError) {
+                std::ostringstream name; BRepCheck::Print(status,name);
+                std::string text = name.str();
+                while (!text.empty() && (text.back() == '\n' || text.back() == ' ')) text.pop_back();
+                message << " " << text;
+            }
             return message.str();
         }
     }

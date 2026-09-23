@@ -158,6 +158,8 @@ pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8]) -> R
     let scale = sk.units.length.ok_or("CAD export requires an explicit model length unit")?.1;
     let started = std::time::Instant::now();
     let (vertices,triangles) = agreement::stl_triangles(stl,scale)?;
+    mesh_contract(&vertices,&triangles,scale)?;
+    sweep_boundary::mark("mesh");
     let mut material = MaterialField::read(sk,body,1e-10)?.evaluator(4096);
     let options = agreement::Options {offset:0.1/scale,confirm:0.025/scale,value_tolerance:0.02/scale,..Default::default()};
     let total = (triangles.len()+(triangles.len()/options.triangles.max(1)).max(1)-1)/(triangles.len()/options.triangles.max(1)).max(1);
@@ -185,6 +187,30 @@ pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8]) -> R
     }
     Err(format!("`{}`: the exported surface disagrees with the material field at {} of {} probes; nothing was written",
         sk.solids[body].name,report.disagreements.len(),report.probes))
+}
+
+/// The mesh contract: no cluster of microscopic triangles. A few may come of a tessellator
+/// meeting a short edge; a hundred under a square micrometre is a crumpled or folded patch of
+/// surface, whatever a probe sampled by area happens to find there.
+fn mesh_contract(vertices: &[[f64;3]],triangles: &[[u32;3]],scale: f64) -> Result<(),String> {
+    const FLOOR: f64 = 1e-6;
+    const MOST: usize = 100;
+    let (mut count,mut area,mut low,mut high) = (0,0.,[f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+    for t in triangles {
+        let [a,b,c] = t.map(|i| vertices[i as usize].map(|x| x*scale));
+        let (u,v): ([f64;3],[f64;3]) = (std::array::from_fn(|k| b[k]-a[k]),std::array::from_fn(|k| c[k]-a[k]));
+        let n = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+        let size = 0.5*(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+        if size >= FLOOR { continue; }
+        count += 1; area += size;
+        for k in 0..3 { low[k] = low[k].min(a[k]); high[k] = high[k].max(a[k]); }
+    }
+    sweep_boundary::stage(&format!("mesh: {count} of {} triangles under {FLOOR} mm²",triangles.len()));
+    if count > MOST {
+        return Err(format!("the mesh has {count} triangles under {FLOOR} mm² ({area:.2e} mm² in all) between {:?} and {:?}: \
+            a crumpled or folded patch of surface",low.map(|x| (x*1e3).round()/1e3),high.map(|x| (x*1e3).round()/1e3)));
+    }
+    Ok(())
 }
 
 /// The STL a body's field agreement is judged on, written through a temporary file.

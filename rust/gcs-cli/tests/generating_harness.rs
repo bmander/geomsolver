@@ -11,8 +11,8 @@
 use std::{f64::consts::PI,io::Read,path::{Path,PathBuf},process::{Command,Stdio},time::{Duration,Instant}};
 
 /// The stages of an STL export of a body with swept cuts, in the order they complete.
-const ORDER: [&str;13] = ["admission","blank","clearance","reach","sheet","fit","withheld","split",
-    "classify","fuse","stl","agreement","written"];
+const ORDER: [&str;14] = ["admission","blank","clearance","reach","sheet","fit","withheld","split",
+    "classify","fuse","stl","mesh","agreement","written"];
 
 type V = [f64;3];
 
@@ -110,6 +110,7 @@ fn run(case: &Case) -> Record {
     if record.exit != Some(0) {
         record.failed_at = Some(if record.message.contains("outside the generating-sweep class") { "admission".into() }
             else if record.message.contains("disagrees with the material field") { "agreement".into() }
+            else if record.message.starts_with("the mesh has") { "mesh".into() }
             else { ORDER.iter().find(|k| !record.completed.iter().any(|(c,_)| c == *k)).unwrap_or(&"?").to_string() });
     }
     let mesh_path = if output.exists() && record.exit == Some(0) { Some(output) } else if rejected.exists() { Some(rejected) } else { None };
@@ -430,16 +431,17 @@ fn fixtures() {
         // Crossed axes, as a generator's: the regular case, the crease fan, a tangent face.
         fixture("torus through a post",torus(2.),roll(0.25,true),60.,post(4.,0.4,-2.,2.),Expect::Export,
             Some(swept_truth(torus_sd,4.,0.4,-2.,2.,0.25,60.))),
-        // A sphere's poles lie on its spin axis with normals radial to the observer's turn:
-        // in contact at every time, the tube's outer equator. Admission must name them.
-        fixture("sphere through a post (poles)",sphere(2.),roll(0.25,true),60.,post(3.,0.4,-2.,2.),Expect::Refuse("admission"),
-            Some(tube_truth(2.,0.4,-2.,2.))),
+        // A sphere's poles lie on its spin axis with normals radial to the observer's turn: in
+        // contact at every time, tracing the tube's outer and inner equators. The inner one
+        // passes through the post, so admission names it.
+        fixture("sphere through a post (inner pole in the blank)",sphere(2.),roll(0.25,true),60.,post(3.,0.4,-2.,2.),
+            Expect::Refuse("admission"),None),
         fixture("lens through a post (crease fan)",lens(2.),roll(0.25,true),60.,post(3.,0.4,-2.,2.),Expect::Export,
             Some(lens_truth(2.,0.4,-2.,2.,0.25,60.))),
         fixture("torus grazing a post's top (tangent)",torus(2.),roll(0.25,true),60.,post(4.,0.4,-2.,2.5),Expect::Either,
             Some(swept_truth(torus_sd,4.,0.4,-2.,2.5,0.25,60.))),
-        // Parallel axes: the sphere's poles are in contact at every time, which admission must
-        // name rather than the construction meet.
+        // Parallel axes: the sphere's poles are in contact at every time and pass through the
+        // post, which admission must name rather than the construction meet.
         fixture("sphere, parallel axes (stationary poles)",sphere(0.),roll(0.25,false),60.,post(3.,0.4,-2.,2.),Expect::Refuse("admission"),None),
     ];
     let faults = run_all("fixtures",cases);
@@ -479,7 +481,7 @@ fn controls() {
         gear("hypoid 25 gear space (crease sliver)","gear",25.,10.,25.,true,&[],Expect::Either),
         gear("symmetric rack at 17.5 (undercut)","pinion",17.5,0.,35.,true,&[],Expect::Refuse("admission")),
         gear("symmetric rack at 30 (double contact)","pinion",30.,0.,35.,true,&[],Expect::Refuse("admission")),
-        gear("Manifold arrangement at 15 (negative control)","pinion",15.,0.,35.,true,&["--stl-backend","manifold"],Expect::Refuse("agreement")),
+        gear("Manifold arrangement at 15 (negative control)","pinion",15.,0.,35.,true,&["--stl-backend","manifold"],Expect::Refuse("mesh")),
     ];
     let faults = run_all("controls",cases);
     assert!(faults.is_empty(),"{faults:#?}");
