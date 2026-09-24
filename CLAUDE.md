@@ -377,7 +377,16 @@ Delaunay refinement with protected features and exports every admitted fixture a
 space with no field disagreement, including the cases the native path refuses. Its oracle is
 `MaterialField::side` (a floating-point sign, never an interval claim), its features the
 blank's sharp edges and the field's contours on blank faces. The plan (F1–F5) ports the method
-to the core for WASM; measure the oracle first, since query cost dominates. `--stl-backend refine`
+to the core for WASM; measure the oracle first, since query cost dominates.
+**Feature curves from the field (2026-09-24):** `solid::crease` traces creases where the deciding
+operand changes — an operand is a leaf, a piece of its boundary (`PlanarField::carrier`, lifted by
+revolutions and prisms, which add caps) and a sweep's contact time; `WHOLE` reads a leaf as the
+field sees it (a leaf of a sweep's tool through the whole tool). A crease point needs the field at
+zero *and* both leaves active; a tangent takeover hands the crease on, any other ends it at an
+exact corner, and `End` says why. `FieldMesher` runs two passes: unprotected on
+`MaterialField::tight_support`, then refinement protecting the traced creases.
+`SOLVENT_FEATURES=field` does the same in `--stl-backend refine`, which skips admission.
+Rays seed from beside the centre, never on it. Record: `docs/field-meshing.md`. `--stl-backend refine`
 is that port (`delaunay::refine`): every fixture and four of five gear spaces export with no
 disagreement; its F4 record lists what is still heuristic. The target is a rough preview that
 refines live, then a longer export render; the next step is an analytic feature graph with a

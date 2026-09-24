@@ -56,6 +56,49 @@ impl MaterialField {
         cache.insert(key,value);
         Ok(value)
     }
+    /// A box holding all the material, tighter than `support_bounds`: that box split up to
+    /// `depth` times, keeping the parts the field may be negative in, and their hull. A cut is
+    /// left out of the test, since removing material cannot put any outside the rest, and so is a
+    /// sweep standing for material (it may be anywhere its support says); only static operands
+    /// prune. At most `cap` boxes are split a level; past that the hull stands as it is. Sizing,
+    /// never a claim: the hull is a box the material is in, found by interval bounds.
+    pub fn tight_support(&self,depth: usize,cap: usize) -> Result<Option<V>,Error> {
+        let Some(support) = self.support_bounds()? else { return Ok(None) };
+        let mut boxes = vec![support];
+        for _ in 0..depth {
+            if boxes.len()*8 > cap { break; }
+            let mut next = Vec::new();
+            for b in &boxes {
+                let [lo,hi] = [0,1].map(|k| b.map(|x| x.bounds()[k]));
+                let mid: [f64;3] = std::array::from_fn(|k| 0.5*(lo[k]+hi[k]));
+                for corner in 0..8 {
+                    let low = |k: usize| corner>>k & 1 == 0;
+                    let part = boxed(std::array::from_fn(|k| if low(k) { lo[k] } else { mid[k] }),
+                        std::array::from_fn(|k| if low(k) { mid[k] } else { hi[k] }))?;
+                    if self.least(part) <= 0. { next.push(part); }
+                }
+            }
+            if next.is_empty() { return Ok(None); }
+            boxes = next;
+        }
+        let lo: [f64;3] = std::array::from_fn(|k| boxes.iter().map(|b| b[k].bounds()[0]).fold(f64::INFINITY,f64::min));
+        let hi: [f64;3] = std::array::from_fn(|k| boxes.iter().map(|b| b[k].bounds()[1]).fold(f64::NEG_INFINITY,f64::max));
+        Ok(Some(boxed(lo,hi)?))
+    }
+
+    /// A lower bound on the field over a box from its static material alone: minus infinity
+    /// wherever a sweep or a failed bound leaves it unknown, and a cut's bound its minuend's.
+    fn least(&self,b: V) -> f64 {
+        match self.node.as_ref() {
+            Node::Static(source) => source.bounds(b).map_or(f64::NEG_INFINITY,|x| x.bounds()[0]),
+            Node::Swept(_) => f64::NEG_INFINITY,
+            Node::Transformed {source,pose} => pose.inverse_point(b).map_or(f64::NEG_INFINITY,|q| source.least(q)),
+            Node::Union(x,y) => x.least(b).min(y.least(b)),
+            Node::Intersection(x,y) => x.least(b).max(y.least(b)),
+            Node::Difference(x,_) => x.least(b),
+        }
+    }
+
     fn node(node: Node,depth: u8) -> Result<Self,Error> {
         if depth > 64 { return Err(Error::OutsideDomain); }
         Ok(Self {node:Arc::new(node),depth})
@@ -117,7 +160,7 @@ impl MaterialField {
                 let pose = source.motion().pose_at(m.time).ok().map(|x| x.inverse());
                 let Some(inverse) = pose else {
                     *next += 1;
-                    return super::Reading {value:m.value,gradient:[0.;3],leaf:*next-1,time:Some(m.time),ambiguous:true};
+                    return super::Reading {value:m.value,gradient:[0.;3],leaf:*next-1,piece:0,time:Some(m.time),ambiguous:true};
                 };
                 let r = source.source().reading(inverse.point(p),options,next);
                 let g = r.gradient;
@@ -139,6 +182,91 @@ impl MaterialField {
             Node::Difference(a,b) => {
                 let (x,y) = (a.reading_warm(p,options,next,hints),b.reading_warm(p,options,next,hints));
                 higher(x,y.negated(),options.tie)
+            }
+        }
+    }
+
+    /// How many leaves the field has, as `reading` numbers them (a sweep's are its source's).
+    pub fn leaf_count(&self) -> usize {
+        match self.node.as_ref() {
+            Node::Static(source) => source.leaf_count(),
+            Node::Swept(source) => source.source().leaf_count(),
+            Node::Transformed {source,..} => source.leaf_count(),
+            Node::Union(a,b) | Node::Intersection(a,b) | Node::Difference(a,b) => a.leaf_count()+b.leaf_count(),
+        }
+    }
+
+    /// The reading of one operand alone at a point: piece `piece` of leaf `target` (its smooth
+    /// carrier, `SpatialField::leaf_reading`), with the transforms above it and the sign it
+    /// enters the field with. With `piece` `WHOLE`, the leaf as the field sees it: a static leaf's
+    /// own value, and for a leaf of a sweep's tool the whole tool's, whose reading names the leaf
+    /// deciding it. A leaf of a sweep's source is that leaf swept, and
+    /// near `time` — the least value over roll times about it, a window of a sixty-fourth of the
+    /// roll that follows the minimum when it reaches an edge — so two contacts of one sweep are two
+    /// operands, told apart by their times. Without a time the whole roll is searched coarsely
+    /// first. `None` when `target` is not a leaf of this field.
+    pub fn operand(&self,p: [f64;3],target: usize,piece: usize,time: Option<f64>,
+        options: &super::ReadingOptions) -> Option<super::Reading> {
+        self.operand_from(p,target,piece,time,options,&mut 0)
+    }
+
+    fn operand_from(&self,p: [f64;3],target: usize,piece: usize,time: Option<f64>,options: &super::ReadingOptions,
+        next: &mut usize) -> Option<super::Reading> {
+        match self.node.as_ref() {
+            Node::Static(source) => source.leaf_reading(p,options,target,piece,next),
+            Node::Swept(source) => {
+                let first = *next;
+                let count = source.source().leaf_count();
+                *next += count;
+                if target < first || target >= first+count { return None; }
+                let [a,b] = source.domain().bounds();
+                let pose = |t: f64| source.motion().pose_at(t).ok().map(|m| m.inverse());
+                // A leaf's whole value inside a sweep is the tool's: the tool may be a Boolean, and
+                // a leaf of it cuts only where the rest of the tool lets it. Its reading says
+                // which leaf decides.
+                let read = |q: [f64;3]| if piece == super::WHOLE { Some(source.source().reading(q,options,&mut first.clone())) }
+                    else { source.source().leaf_reading(q,options,target,piece,&mut first.clone()) };
+                let value = |t: f64| pose(t).and_then(|m| read(m.point(p))).map_or(f64::INFINITY,|r| r.value);
+                let width = (b-a)/64.;
+                // Where to look: about the time given, or about the least of a coarse sampling.
+                let mut centre = time.filter(|t| t.is_finite()).unwrap_or_else(|| (0..=256)
+                    .map(|k| a+(b-a)*k as f64/256.).min_by(|x,y| value(*x).total_cmp(&value(*y))).unwrap_or(a));
+                let mut found = (value(centre),centre);
+                for _ in 0..16 {
+                    let (lo,hi) = ((centre-0.5*width).max(a),(centre+0.5*width).min(b));
+                    let g = 0.5*(5f64.sqrt()-1.);
+                    let (mut l,mut h) = (lo,hi);
+                    let (mut x1,mut x2) = (h-g*(h-l),l+g*(h-l));
+                    let (mut g1,mut g2) = (value(x1),value(x2));
+                    for _ in 0..60 {
+                        if h-l <= 1e-12*(1.+h.abs()) || (g1-g2).abs() <= 0.25*options.accuracy { break; }
+                        if g1 <= g2 { h = x2; x2 = x1; g2 = g1; x1 = h-g*(h-l); g1 = value(x1); }
+                        else { l = x1; x1 = x2; g1 = g2; x2 = l+g*(h-l); g2 = value(x2); }
+                    }
+                    found = if g1 <= g2 { (g1,x1) } else { (g2,x2) };
+                    // At the window's edge, and not the roll's: the minimum lies beyond; follow it.
+                    let margin = 0.02*width;
+                    let beyond = (found.1-lo < margin && lo > a) || (hi-found.1 < margin && hi < b);
+                    if !beyond { break; }
+                    centre = found.1+if found.1-lo < margin { -0.45*width } else { 0.45*width };
+                }
+                let inverse = pose(found.1)?;
+                let r = read(inverse.point(p))?;
+                let g = r.gradient;
+                let gradient = std::array::from_fn(|i| (0..3).map(|k| inverse.r[k][i]*g[k]).sum());
+                Some(super::Reading {value:r.value,gradient,time:Some(found.1),..r})
+            }
+            Node::Transformed {source,pose} => source.operand_from(pose.inverse_point_mid(p),target,piece,time,options,next)
+                .map(|r| super::Reading {gradient:pose.gradient_mid(r.gradient),..r}),
+            Node::Union(a,b) | Node::Intersection(a,b) => {
+                let first = a.operand_from(p,target,piece,time,options,next);
+                if first.is_some() { return first; }
+                b.operand_from(p,target,piece,time,options,next)
+            }
+            Node::Difference(a,b) => {
+                let first = a.operand_from(p,target,piece,time,options,next);
+                if first.is_some() { return first; }
+                b.operand_from(p,target,piece,time,options,next).map(super::Reading::negated)
             }
         }
     }
@@ -259,4 +387,8 @@ impl MaterialEvaluator {
         cache.insert(key,value);
         Ok(value)
     }
+}
+
+fn boxed(lo: [f64;3],hi: [f64;3]) -> Result<V,Error> {
+    Ok([I::new(lo[0],hi[0])?,I::new(lo[1],hi[1])?,I::new(lo[2],hi[2])?])
 }

@@ -259,6 +259,39 @@ impl Profile {
     }
     pub(super) fn reach(&self) -> f64 { self.reach }
 
+    pub(super) fn edge_count(&self) -> usize { self.edges.len() }
+
+    /// `value`, and the edge nearest the point, which decides it.
+    pub(super) fn value_edge(&self,p: P) -> (f64,usize) {
+        let (edge,nearest) = self.edges.iter().map(|e| e.distance(p)).enumerate()
+            .fold((0,f64::INFINITY),|a,(k,d)| if d < a.1 { (k,d) } else { a });
+        let inside = self.edges.iter().map(|e| e.crossings(p)).sum::<usize>()%2 == 1;
+        (if inside { -nearest } else { nearest },edge)
+    }
+
+    /// Edge `j`'s carrier, its whole line or circle, negative on the loop's material side of it:
+    /// which side that is, is read off the loop a hair inside the edge's middle.
+    pub(super) fn carrier(&self,p: P,j: usize) -> f64 {
+        let eps = 1e-6*(1.+self.reach);
+        match self.edges[j] {
+            Edge::Line {a,b,..} => {
+                let d = [b[0]-a[0],b[1]-a[1]];
+                let l = (d[0]*d[0]+d[1]*d[1]).sqrt().max(f64::MIN_POSITIVE);
+                let left = (d[0]*(p[1]-a[1])-d[1]*(p[0]-a[0]))/l;
+                let m = self.edges[j].at(0.5);
+                let probe = [m[0]-d[1]/l*eps,m[1]+d[0]/l*eps];
+                if self.value(probe) < 0. { -left } else { left }
+            }
+            Edge::Arc {center,radius,..} => {
+                let ring = (p[0]-center[0]).hypot(p[1]-center[1])-radius;
+                let m = self.edges[j].at(0.5);
+                let r = (m[0]-center[0]).hypot(m[1]-center[1]).max(f64::MIN_POSITIVE);
+                let probe = [m[0]+(center[0]-m[0])/r*eps,m[1]+(center[1]-m[1])/r*eps];
+                if self.value(probe) < 0. { ring } else { -ring }
+            }
+        }
+    }
+
     /// The signed boundary distance at a point, in plain floating point.
     pub(super) fn value(&self,p: P) -> f64 {
         let nearest = self.edges.iter().map(|e| e.distance(p)).fold(f64::INFINITY,f64::min);

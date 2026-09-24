@@ -1,7 +1,8 @@
 //! Meshing a body's material field directly (docs/field-meshing.md): the region and the 1D
 //! features every field mesher needs, and `--stl-backend refine`, the core's own Delaunay
 //! refinement (`gcs_core::delaunay::refine`). The features are read off the static blank's
-//! kernel topology (OCCT) and the field; F2 moves them into the core.
+//! kernel topology (OCCT) and the field, or with `SOLVENT_FEATURES=field` traced from the field
+//! alone by the core (`solid::crease`), as the app does.
 use gcs_core::solid::MaterialField;
 
 pub fn setting(name: &str,default: f64) -> f64 {
@@ -36,7 +37,30 @@ pub fn export_refine(sk: &gcs_core::model::Sketch,solid: usize,path: &str) -> Re
     let criteria = Criteria {facet_size:facet,facet_distance:setting("SOLVENT_REFINE_DISTANCE",0.005)/scale,
         facet_angle:setting("SOLVENT_REFINE_ANGLE",25.),edge_size:setting("SOLVENT_REFINE_EDGE",facet*scale)/scale,
         bisection:1e-5*radius,max_points:2_000_000};
-    let curves = features(sk,solid,&field,scale,diagonal)?;
+    // `SOLVENT_FEATURES=field` finds the features from the field itself, as the app does: a
+    // coarse pass without them, and the creases its edges cross (`solid::field_creases`).
+    let curves = if std::env::var("SOLVENT_FEATURES").as_deref() == Ok("field") {
+        let f = field.clone();
+        let (near,within,coarse) = gcs_core::solid::field_first_pass(&field,&criteria,center,radius);
+        let mut first = Progressive::new(Box::new(move |p| f.side(p)),near,within,Vec::new(),coarse);
+        loop {
+            match first.step(usize::MAX) {
+                Ok(false) => {}
+                Ok(true) => break,
+                // the first pass need not close: its edges still cross the creases
+                Err(e) => { eprintln!("solventc: refine: the first pass stopped: {e}"); break }
+            }
+        }
+        if let Some(e) = first.done_error() { eprintln!("solventc: refine: the first pass stopped: {e}"); }
+        let coarse = first.snapshot();
+        eprintln!("solventc: [{:7.1} s] refine: first pass of {} triangles",started.elapsed().as_secs_f64(),coarse.triangles.len());
+        let curves = gcs_core::solid::field_creases(&field,&coarse,&criteria,center,radius);
+        if let Some(path) = std::env::var_os("SOLVENT_FEATURE_DUMP") {
+            let text: String = curves.iter().map(|l| l.iter().map(|q| format!("{} {} {}\n",q[0],q[1],q[2])).collect::<String>()+"\n").collect();
+            let _ = std::fs::write(path,text);
+        }
+        curves
+    } else { features(sk,solid,&field,scale,diagonal)? };
     eprintln!("solventc: [{:7.1} s] refine: {} feature curves of {} points",started.elapsed().as_secs_f64(),curves.len(),
         curves.iter().map(Vec::len).sum::<usize>());
     // Time in the field, signs and readings alike, and a line every three seconds.

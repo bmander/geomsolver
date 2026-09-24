@@ -109,8 +109,8 @@ impl SpatialField {
     pub fn reading(&self,p: [f64;3],options: &super::ReadingOptions,next: &mut usize) -> super::Reading {
         use super::reading::{higher,leaf,lower};
         match self.node.as_ref() {
-            Node::Revolved(source) => { *next += 1; leaf(|q| source.value(q),p,options.step,*next-1) }
-            Node::Extruded(source) => { *next += 1; leaf(|q| source.value(q),p,options.step,*next-1) }
+            Node::Revolved(source) => { *next += 1; leaf(|q| source.value(q),p,options.step,*next-1,source.value_piece(p).1) }
+            Node::Extruded(source) => { *next += 1; leaf(|q| source.value(q),p,options.step,*next-1,source.value_piece(p).1) }
             Node::Transformed {source,pose} => {
                 let r = source.reading(pose.inverse_point_mid(p),options,next);
                 super::Reading {gradient:pose.gradient_mid(r.gradient),..r}
@@ -120,6 +120,52 @@ impl SpatialField {
             Node::Difference(a,b) => {
                 let (x,y) = (a.reading(p,options,next),b.reading(p,options,next));
                 higher(x,y.negated(),options.tie)
+            }
+        }
+    }
+
+    /// How many leaves the field has, as `reading` numbers them.
+    pub fn leaf_count(&self) -> usize {
+        match self.node.as_ref() {
+            Node::Revolved(_) | Node::Extruded(_) => 1,
+            Node::Transformed {source,..} => source.leaf_count(),
+            Node::Union(a,b) | Node::Intersection(a,b) | Node::Difference(a,b) => a.leaf_count()+b.leaf_count(),
+        }
+    }
+
+    /// The reading of one operand alone at a point — piece `piece` of leaf `target`, its whole
+    /// smooth carrier, or with `piece` `WHOLE` the leaf itself — with the transforms above it and the sign it enters the field with (turned
+    /// where it is subtracted), leaves numbered from `*next` as `reading` numbers them; `None`
+    /// when `target` is not among this field's leaves or has no such piece.
+    pub fn leaf_reading(&self,p: [f64;3],options: &super::ReadingOptions,target: usize,piece: usize,
+        next: &mut usize) -> Option<super::Reading> {
+        use super::reading::leaf;
+        match self.node.as_ref() {
+            Node::Revolved(source) => {
+                *next += 1;
+                if *next-1 != target { return None; }
+                if piece == super::WHOLE { return Some(leaf(|q| source.value(q),p,options.step,target,source.value_piece(p).1)); }
+                if piece >= source.piece_count() { return None; }
+                Some(leaf(|q| source.carrier(q,piece).unwrap_or(f64::NAN),p,options.step,target,piece))
+            }
+            Node::Extruded(source) => {
+                *next += 1;
+                if *next-1 != target { return None; }
+                if piece == super::WHOLE { return Some(leaf(|q| source.value(q),p,options.step,target,source.value_piece(p).1)); }
+                if piece >= source.piece_count() { return None; }
+                Some(leaf(|q| source.carrier(q,piece).unwrap_or(f64::NAN),p,options.step,target,piece))
+            }
+            Node::Transformed {source,pose} => source.leaf_reading(pose.inverse_point_mid(p),options,target,piece,next)
+                .map(|r| super::Reading {gradient:pose.gradient_mid(r.gradient),..r}),
+            Node::Union(a,b) | Node::Intersection(a,b) => {
+                let first = a.leaf_reading(p,options,target,piece,next);
+                if first.is_some() { return first; }
+                b.leaf_reading(p,options,target,piece,next)
+            }
+            Node::Difference(a,b) => {
+                let first = a.leaf_reading(p,options,target,piece,next);
+                if first.is_some() { return first; }
+                b.leaf_reading(p,options,target,piece,next).map(super::Reading::negated)
             }
         }
     }

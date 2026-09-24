@@ -356,9 +356,10 @@ again in 1–4 s with no disagreement, and the gear controls are as before (the 
 meshes, one probe short of the agreement gate).
 
 **Still refused: sharp creases with no features.** A ball-end groove cut into a block
-(`swept_groove.sv`, not committed) is not a manifold and has no ball to shrink: in the app the core
+(`swept_groove.sv`) is not a manifold and has no ball to shrink: in the app the core
 protects no feature curves, and the block's edges and the groove's crease with the top face need
 them. The ball swept alone meshes (volume 2094.9 against 2110.7). Features from the core are next.
+(Since done: "Feature curves from the field" below.)
 
 ## Readings: value, gradient and active operand (2026-09-24)
 
@@ -425,3 +426,83 @@ next brought the gear to parity (6.72 M) and cost the spring a third more (cross
 are far apart, so the hint is stale and the check falls back), so it was dropped. The CLI still
 bisects by default: a gear's sign queries are cheap, and its first reading of a crossing is a
 whole cold search.
+
+## Feature curves from the field (2026-09-24)
+
+**What others do.** CGAL's Mesh_3 protects the features of an implicit domain only when the caller
+lists them as polylines; it finds none itself. Dual contouring (Ju et al. 2002) keeps sharp edges
+by placing a vertex per cell from Hermite data (intersections and exact normals), which is a
+contouring method and not a feature graph. CAD kernels intersect two surfaces by marching:
+predictor along the cross product of the normals, corrector onto both (Barnhill and Kersey; Patrikalakis
+and Maekawa), with loop detection as the hard part. Function representation (FRep) CSG keeps the
+"active zone" of each operand. None of these finds the creases of an arbitrary Boolean of swept
+fields; the pieces we needed were the readings (value, gradient, deciding operand) and marching.
+
+**Operands and pieces.** A crease is where the operand deciding the field changes, so an operand
+is exact: a leaf, a *piece* of that leaf's boundary, and for a leaf of a sweep the contact time.
+A planar field's pieces are its half-planes, disks and loop edges (`PlanarField::value_piece`,
+`piece_count`, `carrier`); a carrier is the piece's whole line or circle, signed so the material
+side of the piece reads negative (a loop edge's side is probed a hair inside its middle). A
+revolution turns them (cones, planes, tori, spheres); a prism runs them along its depth and adds
+its two caps. `Reading::piece` says which decides, and `MaterialField::operand` reads one
+operand alone: the carrier, through the transforms and signs above it, and for a sweep the least
+over a window of a sixty-fourth of the roll about the contact time, following the minimum when it
+reaches the window's edge. `WHOLE` in place of a piece reads the leaf as the field sees it: a
+static leaf's own value, and a leaf of a sweep's tool through the whole tool, with the leaf that
+decides it (the gear's cutter is a Boolean, and one leaf of it cuts only where the rest lets it).
+
+**Tracing** (`solid::crease`). `pin` puts a point on both carriers by minimum-norm Newton
+(`Jᵀ(JJᵀ)⁻¹F`), the contact times following. `trace` goes both ways by predictor-corrector with
+step halving, and a point is on the crease only while the field reads zero *and* both operands'
+leaves are active there: a carrier runs on past its piece, and a tip face reads zero everywhere
+the cutter is not. Where a step leaves the crease, `takeover` bisects back to the point where it
+does; the operand taking over is the inactive leaf's own deciding piece, or the field's. If it is
+tangent to one being followed (the next piece of a tool's profile, or another contact time on one
+smooth sheet) the crease is handed on to it; otherwise the three are pinned at a corner (a 3 × 3
+Newton) and the crease ends there. Each end records why (`End`: closed, corner, unpinned, ball,
+lost, hand-offs, budget). A crease starts only where its surfaces meet at two degrees or more: the
+envelope of a sweep runs tangentially into the tool at a roll limit, and that is no crease.
+Seeds are the middles of a mesh's edges whose ends read different operands; a seed that pins onto
+a crease already traced starts nothing; open creases' ends at one corner are made one point
+(`features`), which is what `protect` shares a corner by.
+
+**Two passes** (`FieldMesher`, and `solventc --stl-backend refine` with `SOLVENT_FEATURES=field`).
+A first pass without features at three times the facet size, facets standing off by no less than
+a thirtieth of their size (an unprotected edge can never meet a finer distance), finds the seeds;
+the creases are traced at a quarter of the feature spacing to a billionth of the ball; the second
+pass protects them. The first pass is sized and centred on `MaterialField::tight_support`, the
+support box split six times keeping what the static operands' interval bounds may put material in:
+a bevel blank's support is its heel sphere's, a box with a 550 mm diagonal round a part a tenth
+of that, and a pass sized to it found no surface. The host shows the first pass's surface until the second has one.
+
+**Ray seeding from a centre on the surface.** The groove's support centre is on its top face, so
+every downward ray crossed there and seeded a cluster a bisection apart that no triangulation could
+mesh (in the CLI, not a manifold at any size). The rays now leave from a point a thousandth of the
+radius off the centre, in no particular direction, and crossings within a quarter facet seed once.
+
+**Results.** Tests (`tests/crease.rs`): the pierced sphere's two rims to 1e-6 of their closed form;
+a block's twelve edges, each ending at two exact corners; the groove's twelve edges and one closed
+rim, 1e-5 from the swing's closed form; the groove through `FieldMesher`, closed, its volume within
+0.2% of Pappus's (the chords are inside the round). Exports, field agreement 0.1 mm off each side,
+features found by OCCT against the field:
+
+| | OCCT features | field features |
+| --- | --- | --- |
+| groove | 15 156 triangles, 6.0 s, 0 disagree | 14 918, 6.5 s, 0 disagree |
+| torus through a post | 1 286, 1.5 s, 0 disagree | 1 268, 2.0 s, 0 disagree |
+| tumble | (no native sweep boundary) | 6 268, 5.3 s, 0 disagree |
+| hypoid 25 gear, one space | 14 168, 16.4 s, 0 disagree | 14 052, 14.6 s, 0 disagree |
+| hypoid 25 pinion, one space | 11 000, 19.6 s, 0 disagree | 12 944, 13.5 s, 0 disagree |
+
+On the hypoid spaces every OCCT curve lies within 0.04 mm of a traced one, and the traced set also
+has the rims where the generated flanks meet the tip cone and the heel sphere. The app's times
+(first surface, then total): spring 0.08 s, 4.98 s (4.88 before); tumble 0.12 s, 1.38 s (1.52);
+torus through a post 0.15 s, 1.54 s (1.47); groove 0.07 s, 1.60 s (1.39 without its rim).
+`--stl-backend refine` no longer asks admission: the class is what the native boundary
+construction needs, and the refinement is gated by the agreement probe instead.
+
+**Left.** A crease loop smaller than the first pass's facets can be missed (marching's known
+limit). The whole gears have not been exported with field features. Corners where more than three
+operands meet, and creases along which the dihedral goes to zero, end the curve rather than being
+resolved.
+

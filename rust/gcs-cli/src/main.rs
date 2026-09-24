@@ -340,8 +340,10 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     let mut step = opts.step.clone();
     // A body with swept cuts is built only when every sweep is in the generating class
     // (docs/generating-sweeps.md): a refusal names the row it fails and a point where, and
-    // nothing is written, so an earlier output stays as it was.
-    if (step.is_some() || stl.is_some()) && r.success {
+    // nothing is written, so an earlier output stays as it was. The class is what the native
+    // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
+    // only the field, and is gated by the field-agreement probe instead.
+    if (step.is_some() || (stl.is_some() && !opts.refine)) && r.success {
         if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
             if gcs_core::solid::cad::recipe_static(&sk,i).map(|r| !r.sweeps.is_empty()).unwrap_or(false) {
                 use gcs_core::solid::admission;

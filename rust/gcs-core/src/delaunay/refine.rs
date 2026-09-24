@@ -907,7 +907,15 @@ fn standing_off(r: &mut Refiner,facets: &[([u32;3],u32,usize)]) -> Vec<Vec<usize
 fn seed(r: &mut Refiner) -> Result<(),String> {
     let (rays,steps) = (128,96);
     let golden = std::f64::consts::PI*(3.-5f64.sqrt());
-    let (centre,radius) = (r.centre,r.radius);
+    // The rays leave from beside the centre, in no particular direction: a centre on the surface
+    // (a symmetric part's, on its mid-plane or a face through it) would have every ray crossing
+    // there, and seed a cluster of points a bisection apart that no triangulation meshes.
+    let radius = r.radius;
+    let centre = [0.5773,0.3162,0.7071].map(|x| x*1e-3*radius);
+    let centre: P = std::array::from_fn(|k| r.centre[k]+centre[k]);
+    // Two crossings closer than a quarter facet are one seed.
+    let spacing = 0.25*r.criteria.facet_size;
+    let mut planted: Vec<P> = Vec::new();
     for k in 0..rays {
         let z = 1.-2.*(k as f64+0.5)/rays as f64;
         let s = (1.-z*z).sqrt();
@@ -919,7 +927,10 @@ fn seed(r: &mut Refiner) -> Result<(),String> {
             let sp = r.side(p);
             if sp != last.1 {
                 let c = r.crossing(last.0,last.1,p);
-                if r.insert_judging(c,false)? { r.report.seeds += 1; }
+                if !planted.iter().any(|&q| dist2(q,c) < spacing*spacing) {
+                    planted.push(c);
+                    if r.insert_judging(c,false)? { r.report.seeds += 1; }
+                }
             }
             last = (p,sp);
         }

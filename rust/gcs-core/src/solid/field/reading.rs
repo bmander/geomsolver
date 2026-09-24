@@ -9,6 +9,10 @@
 //! read within `tie` of each other the point is at or beside a crease: the reading says so, and
 //! its gradient is one side's.
 
+/// A piece number standing for a leaf's whole boundary: its own value, trimmed, rather than one
+/// piece's untrimmed carrier.
+pub const WHOLE: usize = usize::MAX;
+
 /// A reading at a point.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Reading {
@@ -17,6 +21,9 @@ pub struct Reading {
     /// The leaf deciding the value, numbered depth-first over the whole field, a sweep's source
     /// leaves among them.
     pub leaf: usize,
+    /// The piece of that leaf's boundary deciding it (`PlanarField::piece_count`): a face, where
+    /// the leaf is the whole solid.
+    pub piece: usize,
     /// The roll time a sweep decides the value at.
     pub time: Option<f64>,
     /// Another operand or another contact time reads within the tie: a crease.
@@ -67,12 +74,12 @@ pub(super) fn higher(a: Reading,b: Reading,tie: f64) -> Reading {
 }
 
 /// A leaf's reading: its value, and its gradient by central differences.
-pub(super) fn leaf(value: impl Fn([f64;3]) -> f64,p: [f64;3],step: f64,index: usize) -> Reading {
+pub(super) fn leaf(value: impl Fn([f64;3]) -> f64,p: [f64;3],step: f64,index: usize,piece: usize) -> Reading {
     let gradient = std::array::from_fn(|k| {
         let (mut up,mut down) = (p,p);
         up[k] += step;
         down[k] -= step;
         (value(up)-value(down))/(2.*step)
     });
-    Reading {value:value(p),gradient,leaf:index,time:None,ambiguous:false}
+    Reading {value:value(p),gradient,leaf:index,piece,time:None,ambiguous:false}
 }
