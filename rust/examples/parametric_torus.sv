@@ -9,8 +9,8 @@ param tube = 6mm        // the tube's radius
 
 construction centerline line spine(std.origin, std.up.toward)
 private point centre hint(x: ring, y: 0)
-centre distance(ring, along: u) std.front
-centre distance(0mm, along: v) std.front
+std.origin horizontal centre
+std.origin distance(ring, along: right) centre
 private circle section(center: centre) hint(r: tube)
 radius(tube) section
 solid torus(face(section), about: spine)
