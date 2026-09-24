@@ -1,0 +1,77 @@
+/* A swept solid's surface, meshed from its material field a step at a time.
+ *
+ * The refinement is the core's (`solid::FieldMesher`); this is the handle a worker drives and the
+ * two calls a page makes with what the worker hands back: `deferFields`, so the page's own sketch
+ * never meshes a field on the thread that draws, and `supplyField`, which gives it each surface as
+ * it arrives.  Numbers cross as flat buffers — three doubles a vertex, three indices a triangle. */
+import { Sketch } from './model.js';
+import { core, lastError, withBuf } from './wasm.js';
+
+/** A surface in world coordinates: `provisional` while the refinement is still going. */
+export interface FieldSurface {
+  vertices: Float64Array;
+  triangles: Uint32Array;
+  provisional: boolean;
+}
+
+/** Whether solid `idx` has a continuous sweep among its operands, and so a field's surface. */
+export function isSwept(sk: Sketch, idx: number): boolean {
+  return core().gcs_solid_is_swept(sk.handle, idx) !== 0;
+}
+
+/** Have this sketch refuse a swept solid it has been given no surface for, rather than mesh it. */
+export function deferFields(sk: Sketch, on = true): void {
+  core().gcs_sketch_defer_fields(sk.handle, on ? 1 : 0);
+}
+
+/** Give swept solid `idx` a surface meshed elsewhere, against the drawing as it stands now. */
+export function supplyField(sk: Sketch, idx: number, s: FieldSurface): void {
+  const nv = s.vertices.length / 3, nt = s.triangles.length / 3;
+  const ok = withBuf(s.vertices.length, 8, (v) => {
+    v.set(s.vertices);
+    return withBuf(s.triangles.length, 4, (t) => {
+      t.set(s.triangles);
+      return core().gcs_solid_supply_field(sk.handle, idx, v.ptr, nv, t.ptr, nt, s.provisional ? 1 : 0);
+    });
+  });
+  if (ok < 0) throw new Error(lastError());
+}
+
+/** Delaunay refinement of one swept solid's field, driven by `step` and read by `snapshot`. */
+export class FieldMesher {
+  private constructor(private h: number) {}
+
+  static create(sk: Sketch, idx: number): FieldMesher {
+    const h = core().gcs_field_mesher_new(sk.handle, idx);
+    if (!h) throw new Error(lastError() || 'could not start meshing the solid');
+    return new FieldMesher(h);
+  }
+
+  /** Refine at most about `budget` facets: whether the refinement has finished. */
+  step(budget: number): boolean {
+    const r = core().gcs_field_mesher_step(this.h, budget);
+    if (r < 0) throw new Error(lastError() || 'the refinement failed');
+    return r === 1;
+  }
+
+  /** The surface as it stands. */
+  snapshot(): FieldSurface {
+    const c = core();
+    const nv = c.gcs_field_mesher_snapshot(this.h);
+    const nt = c.gcs_field_mesher_triangle_count(this.h);
+    const vertices = withBuf(3 * nv, 8, (b) => {
+      c.gcs_field_mesher_vertices(this.h, b.ptr, 3 * nv);
+      return b.f64.slice(0, 3 * nv);
+    });
+    const triangles = withBuf(3 * nt, 4, (b) => {
+      c.gcs_field_mesher_triangles(this.h, b.ptr, 3 * nt);
+      return Uint32Array.from(b.i32.subarray(0, 3 * nt));
+    });
+    return { vertices, triangles, provisional: c.gcs_field_mesher_provisional(this.h) !== 0 };
+  }
+
+  dispose(): void {
+    if (this.h) core().gcs_field_mesher_free(this.h);
+    this.h = 0;
+  }
+}

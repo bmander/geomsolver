@@ -449,6 +449,26 @@ impl Sketch {
         value
     }
 
+    /// Give swept solid `i` a surface meshed elsewhere, against the drawing as it stands now.
+    pub fn supply_field(&self, i: usize, surface: crate::solid::FieldSurface) {
+        let key = crate::solid::reads(self, i, 0.0);
+        self.field_surfaces.borrow_mut().insert(i, (key, std::rc::Rc::new(surface)));
+        self.solid_cache.borrow_mut().retain(|(index, _), _| *index != i);
+        self.field_epoch.set(self.field_epoch.get() + 1);
+    }
+
+    /// The surface supplied for swept solid `i`, while the drawing still reads as it did.
+    pub fn supplied_field(&self, i: usize) -> Option<std::rc::Rc<crate::solid::FieldSurface>> {
+        let supplied = self.field_surfaces.borrow();
+        let (key, surface) = supplied.get(&i)?;
+        (*key == crate::solid::reads(self, i, 0.0)).then(|| surface.clone())
+    }
+
+    /// Whether solid `i` has a continuous sweep among its operands, and so a field's surface.
+    pub fn is_swept(&self, i: usize) -> bool {
+        crate::solid::has_sweep(self, i)
+    }
+
     /// Compatibility output in world coordinates. New queries use `evaluated_solid` so
     /// invalid geometry remains a diagnostic instead of an empty drawing.
     pub fn solid_boundary(&self, i: usize, unit: f64) -> Vec<crate::csg::Piece> {

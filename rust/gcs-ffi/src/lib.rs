@@ -1778,6 +1778,133 @@ pub unsafe extern "C" fn gcs_solid_normals(
     })
 }
 
+/* -- swept solids' surfaces, meshed elsewhere ---------------------------------- */
+
+/// A page that meshes swept solids in a worker says so: a swept solid with no supplied
+/// surface is then refused here rather than meshed on the thread that draws.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_defer_fields(h: *mut Sketch, on: i32) {
+    guard((), move || sk(h).defer_fields.set(on != 0))
+}
+
+/// Bumped by every supplied surface, for a front end's caches of what it drew.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_field_epoch(h: *mut Sketch) -> f64 {
+    guard(-1.0, move || sk(h).field_epoch.get() as f64)
+}
+
+/// 1 when solid `idx` has a continuous sweep among its operands, so a field's surface.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_is_swept(h: *mut Sketch, idx: i32) -> i32 {
+    guard(0, move || sk(h).is_swept(idx as usize) as i32)
+}
+
+/// Give swept solid `idx` a surface meshed elsewhere: `nv` vertices as `3·nv` doubles and `nt`
+/// triangles as `3·nt` vertex indices. 0, or −1 with the reason for an index out of range.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_supply_field(
+    h: *mut Sketch,
+    idx: i32,
+    vertices: *const f64,
+    nv: i32,
+    triangles: *const u32,
+    nt: i32,
+    provisional: i32,
+) -> i32 {
+    guard(-1, move || {
+        let (nv, nt) = (nv.max(0) as usize, nt.max(0) as usize);
+        let v = if nv == 0 { &[][..] } else { std::slice::from_raw_parts(vertices, 3 * nv) };
+        let t = if nt == 0 { &[][..] } else { std::slice::from_raw_parts(triangles, 3 * nt) };
+        if t.iter().any(|&i| i as usize >= nv) || idx < 0 || idx as usize >= sk(h).solids.len() {
+            set_error("a supplied surface names a vertex or a solid that is not there");
+            return -1;
+        }
+        sk(h).supply_field(idx as usize, gcs_core::solid::FieldSurface {
+            vertices: v.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
+            triangles: t.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
+            provisional: provisional != 0,
+        });
+        0
+    })
+}
+
+/// A field mesher and the last surface it was asked for.
+pub struct Mesher {
+    mesher: gcs_core::solid::FieldMesher,
+    last: gcs_core::solid::FieldSurface,
+}
+
+/// Start meshing swept solid `idx` of this sketch: a handle, or null with the reason.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_field_mesher_new(h: *mut Sketch, idx: i32) -> *mut Mesher {
+    guard(std::ptr::null_mut(), move || {
+        match gcs_core::solid::FieldMesher::new(sk(h), idx as usize) {
+            Ok(mesher) => Box::into_raw(Box::new(Mesher { mesher, last: Default::default() })),
+            Err(message) => { set_error(message); std::ptr::null_mut() }
+        }
+    })
+}
+
+/// Refine at most about `budget` facets: 0 still going, 1 finished, −1 failed with the reason.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_field_mesher_step(m: *mut Mesher, budget: i32) -> i32 {
+    guard(-1, move || match (*m).mesher.step(budget.max(0) as usize) {
+        Ok(done) => done as i32,
+        Err(message) => { set_error(message); -1 }
+    })
+}
+
+/// Take the surface as it stands: its vertex count. `gcs_field_mesher_vertices`,
+/// `_triangles` and `_provisional` then read it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_field_mesher_snapshot(m: *mut Mesher) -> i32 {
+    guard(-1, move || {
+        (*m).last = (*m).mesher.snapshot();
+        (*m).last.vertices.len() as i32
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gcs_field_mesher_triangle_count(m: *mut Mesher) -> i32 {
+    guard(-1, move || (*m).last.triangles.len() as i32)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gcs_field_mesher_provisional(m: *mut Mesher) -> i32 {
+    guard(1, move || (*m).last.provisional as i32)
+}
+
+/// The snapshot's vertices, three doubles each: the number written, or −1 past `cap`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_field_mesher_vertices(m: *mut Mesher, out: *mut f64, cap: i32) -> i32 {
+    guard(-1, move || {
+        let flat: Vec<f64> = (*m).last.vertices.iter().flatten().copied().collect();
+        if flat.len() > cap.max(0) as usize { return -1; }
+        write(out, &flat);
+        flat.len() as i32
+    })
+}
+
+/// The snapshot's triangles, three vertex indices each: the number written, or −1 past `cap`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_field_mesher_triangles(m: *mut Mesher, out: *mut u32, cap: i32) -> i32 {
+    guard(-1, move || {
+        let flat: Vec<u32> = (*m).last.triangles.iter().flatten().copied().collect();
+        if flat.len() > cap.max(0) as usize { return -1; }
+        write(out, &flat);
+        flat.len() as i32
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gcs_field_mesher_free(m: *mut Mesher) {
+    guard((), move || {
+        if !m.is_null() {
+            drop(Box::from_raw(m));
+        }
+    })
+}
+
 /// **The faces of that mesh**, as the document names them: `[{ "path", "start", "count",
 /// "smooth" }]`, where `start` and `count` are triangles.  A viewer selects and shades by these
 /// — `body.bore.wall` and not a triangle index.

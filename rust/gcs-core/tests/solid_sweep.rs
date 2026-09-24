@@ -163,3 +163,37 @@ fn invalid_intervals_cycles_and_nested_sweeps_are_explicit() {
     let i = e.map.ent_named("outer_sweep").unwrap().i();
     assert!(MaterialField::read(&e.sketch,i,1e-10).unwrap_err().contains("nested continuous sweeps"));
 }
+
+#[test]
+fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
+    let e = read(include_str!("../../examples/solid_generating_sweep.sv"));
+    let i = e.map.ent_named("removal.body").unwrap().i();
+    let mut mesher = solid::FieldMesher::new(&e.sketch,i).unwrap();
+    let mut seen = Vec::new();
+    loop {
+        let done = mesher.step(100).unwrap();
+        let s = mesher.snapshot();
+        seen.push((s.triangles.len(),s.provisional));
+        if done { break; }
+    }
+    // A preview first, refined over many steps, and a final surface last.
+    assert!(seen.len() > 5,"{seen:?}");
+    assert!(seen.iter().rev().skip(1).all(|s| s.1) && !seen.last().unwrap().1,"{seen:?}");
+    let first = seen.iter().find(|s| s.0 > 0).unwrap().0;
+    assert!(first < seen.last().unwrap().0,"{seen:?}");
+    let surface = mesher.snapshot();
+
+    // A page meshing elsewhere: the solid is refused until its surface arrives.
+    e.sketch.defer_fields.set(true);
+    assert!(e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap_err().contains("being meshed"));
+    let epoch = e.sketch.field_epoch.get();
+    e.sketch.supply_field(i,solid::FieldSurface {provisional:true,..surface.clone()});
+    assert!(e.sketch.field_epoch.get() > epoch);
+    let preview = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
+    assert!(preview.provisional() && preview.stl().is_err());
+    e.sketch.supply_field(i,surface);
+    let done = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
+    let exact = 2.*std::f64::consts::PI.powi(2)+4./3.*std::f64::consts::PI;
+    assert!(!done.provisional() && (done.volume()-exact).abs() < 0.03*exact,"{}",done.volume());
+    assert!(done.stl().is_ok());
+}

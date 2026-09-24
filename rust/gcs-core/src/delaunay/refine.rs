@@ -87,7 +87,7 @@ impl PartialOrd for Bad { fn partial_cmp(&self,o: &Self) -> Option<std::cmp::Ord
 impl Ord for Bad { fn cmp(&self,o: &Self) -> std::cmp::Ordering { self.badness.total_cmp(&o.badness) } }
 
 struct Refiner<'a> {
-    domain: &'a mut dyn FnMut(P) -> f64,
+    domain: Box<dyn FnMut(P) -> f64 + 'a>,
     centre: P,
     radius: f64,
     criteria: Criteria,
@@ -289,8 +289,14 @@ impl Refiner<'_> {
     /// may be gone, and even when the facet stands the tetrahedron across it may have been
     /// remade, moving its dual edge and so its surface centre; the stored centre is then no
     /// centre of an empty ball, and can fall on a vertex inserted since.
-    fn refine(&mut self) -> Result<(),String> {
-        while let Some(bad) = self.queue.pop() {
+    fn refine(&mut self) -> Result<(),String> { self.refine_some(usize::MAX).map(|_| ()) }
+
+    /// Refine at most `budget` queued facets: whether the queue is empty.
+    fn refine_some(&mut self,budget: usize) -> Result<bool,String> {
+        let mut spent = 0;
+        while spent < budget {
+            let Some(bad) = self.queue.pop() else { return Ok(true) };
+            spent += 1;
             if !self.tri.alive(bad.t) { continue; }
             let mut face = facet_vertices(self.tri.tet(bad.t).v,bad.i);
             face.sort_unstable();
@@ -314,7 +320,7 @@ impl Refiner<'_> {
             if !region.iter().any(|&t| t == bad.t || t == n) { self.report.off_dual += 1; continue; }
             self.insert(centre)?;
         }
-        Ok(())
+        Ok(self.queue.is_empty())
     }
 
     /// The restricted facets, oriented from the material side out.
@@ -546,23 +552,112 @@ fn protect(curves: &[Vec<P>],edge_size: f64,sizing: &mut [Sizing]) -> Result<(Ve
 /// Mesh the boundary of `{p : side(p) < 0}` within `radius` of `centre`.
 pub fn mesh(side: &mut dyn FnMut(P) -> f64,centre: P,radius: f64,curves: &[Vec<P>],criteria: &Criteria)
     -> Result<Mesh,String> {
-    let length = |c: &[P]| c.windows(2).map(|w| dist2(w[0],w[1]).sqrt()).sum::<f64>();
-    let mut sizing: Vec<Sizing> = curves.iter().map(|c| Sizing {base:length(c).min(criteria.edge_size).max(criteria.edge_size*1e-3),local:Vec::new()}).collect();
-    let mut kept: Vec<P> = Vec::new();
-    let mut memo: HashMap<[u64;3],i8> = HashMap::new();
-    let mut total = Report::default();
-    // Refinement that a ball blocks is the ball's to give way: the curves are sampled twice as
-    // finely where balls blocked a manifold repair, graded back to their spacing, and the
-    // triangulation rebuilt with the new balls and every point kept so far (Mesh_3 shrinks balls
-    // in place; this triangulation removes no vertex, and a rebuild costs a few microseconds a
-    // point, the field's answers being remembered).
-    let least = criteria.edge_size/LEAST;
-    for rebuild in 0..REBUILDS {
-        let (balls,owners) = protect(curves,criteria.edge_size,&mut sizing)?;
-        let cell = balls.iter().map(|b| b.1).fold(criteria.edge_size,f64::max).max(radius*1e-9);
-        let mut r = Refiner {domain:&mut *side,centre,radius,criteria:criteria.clone(),tri:Regular::new(centre,radius),
-            sign:Vec::new(),balls:Vec::new(),owners:Vec::new(),ball_of:HashMap::new(),kept:Vec::new(),memo:std::mem::take(&mut memo),blocking:Vec::new(),grid:HashMap::new(),cell,
-            queue:BinaryHeap::new(),report:Report {queries:total.queries,..Report::default()}};
+    let mut run = Progressive::new(Box::new(|p| side(p)),centre,radius,curves.to_vec(),criteria.clone());
+    while !run.step(usize::MAX)? {}
+    run.finished()
+}
+
+/// Where a progressive refinement stands.
+enum Stage {
+    /// Protect, seed or re-insert, and judge every facet.
+    Build,
+    /// Refine the queued facets, worst first.
+    Refine,
+    /// Repair the manifold, check what the balls hold off the surface, and finish or rebuild.
+    Repair,
+    Done(Result<Mesh,String>),
+}
+
+/// **A refinement that can be stopped and looked at**: `step` does a bounded amount of work, and
+/// `snapshot` gives the restricted facets as they stand — worst first means the first snapshots
+/// are the coarse shape and every later one a finer version of it, which is what a preview shows
+/// while the refinement goes on. A snapshot before the end may be open or not manifold.
+///
+/// Refinement that a ball blocks is the ball's to give way: the curves are sampled twice as
+/// finely where balls blocked a manifold repair, graded back to their spacing, and the
+/// triangulation rebuilt with the new balls and every point kept so far (Mesh_3 shrinks balls in
+/// place; this triangulation removes no vertex, and a rebuild costs a few microseconds a point,
+/// the field's answers being remembered).
+pub struct Progressive<'a> {
+    domain: Option<Box<dyn FnMut(P) -> f64 + 'a>>,
+    refiner: Option<Refiner<'a>>,
+    centre: P,
+    radius: f64,
+    curves: Vec<Vec<P>>,
+    criteria: Criteria,
+    sizing: Vec<Sizing>,
+    least: f64,
+    kept: Vec<P>,
+    memo: HashMap<[u64;3],i8>,
+    queries: usize,
+    rebuild: usize,
+    stage: Stage,
+}
+
+impl<'a> Progressive<'a> {
+    pub fn new(side: Box<dyn FnMut(P) -> f64 + 'a>,centre: P,radius: f64,curves: Vec<Vec<P>>,criteria: Criteria) -> Self {
+        let length = |c: &[P]| c.windows(2).map(|w| dist2(w[0],w[1]).sqrt()).sum::<f64>();
+        let sizing = curves.iter().map(|c| Sizing {base:length(c).min(criteria.edge_size).max(criteria.edge_size*1e-3),local:Vec::new()}).collect();
+        let least = criteria.edge_size/LEAST;
+        Self {domain:Some(side),refiner:None,centre,radius,curves,criteria,sizing,least,kept:Vec::new(),
+            memo:HashMap::new(),queries:0,rebuild:0,stage:Stage::Build}
+    }
+
+    /// Do at most about `budget` refinements (a build or a repair runs whole): whether the
+    /// refinement has finished, well or not — `finished` says which.
+    pub fn step(&mut self,budget: usize) -> Result<bool,String> {
+        match self.stage {
+            Stage::Done(_) => return Ok(true),
+            Stage::Build => { self.build()?; self.stage = Stage::Refine; }
+            Stage::Refine => {
+                let r = self.refiner.as_mut().expect("a refiner while refining");
+                if r.refine_some(budget)? { self.stage = Stage::Repair; }
+            }
+            Stage::Repair => {
+                let outcome = self.repair();
+                if let Some(result) = outcome { self.stage = Stage::Done(result); }
+            }
+        }
+        Ok(matches!(self.stage,Stage::Done(_)))
+    }
+
+    /// Whether the refinement has finished, well or not.
+    pub fn done(&self) -> bool { matches!(self.stage,Stage::Done(_)) }
+
+    /// Why a finished refinement could not make a mesh, if it could not.
+    pub fn done_error(&self) -> Option<String> {
+        match &self.stage { Stage::Done(Err(e)) => Some(e.clone()), _ => None }
+    }
+
+    /// The mesh a finished refinement made, or why it could not.
+    pub fn finished(self) -> Result<Mesh,String> {
+        match self.stage {
+            Stage::Done(result) => result,
+            _ => Err("the refinement has not finished".into()),
+        }
+    }
+
+    /// The restricted facets as they stand, oriented outward; empty before the first build.
+    pub fn snapshot(&mut self) -> Mesh {
+        if let Stage::Done(Ok(m)) = &self.stage { return m.clone(); }
+        let Some(r) = self.refiner.as_mut() else { return Mesh {vertices:Vec::new(),triangles:Vec::new(),report:Report::default()} };
+        let facets = r.extract();
+        let (vertices,triangles) = collect(r,&facets);
+        Mesh {vertices,triangles,report:r.report.clone()}
+    }
+
+    fn build(&mut self) -> Result<(),String> {
+        let criteria = &self.criteria;
+        let (balls,owners) = protect(&self.curves,criteria.edge_size,&mut self.sizing)?;
+        let cell = balls.iter().map(|b| b.1).fold(criteria.edge_size,f64::max).max(self.radius*1e-9);
+        let domain = match self.refiner.take() {
+            Some(old) => { self.kept = old.kept; self.memo = old.memo; self.queries = old.report.queries; old.domain }
+            None => self.domain.take().expect("the domain before the first build"),
+        };
+        let mut r = Refiner {domain,centre:self.centre,radius:self.radius,criteria:criteria.clone(),
+            tri:Regular::new(self.centre,self.radius),sign:Vec::new(),balls:Vec::new(),owners:Vec::new(),
+            ball_of:HashMap::new(),kept:Vec::new(),memo:std::mem::take(&mut self.memo),blocking:Vec::new(),
+            grid:HashMap::new(),cell,queue:BinaryHeap::new(),report:Report {queries:self.queries,..Report::default()}};
         // Protecting balls first, in spatial order.
         let order = super::spatial_order(&balls.iter().map(|b| b.0).collect::<Vec<_>>());
         for &k in &order {
@@ -574,65 +669,79 @@ pub fn mesh(side: &mut dyn FnMut(P) -> f64,centre: P,radius: f64,curves: &[Vec<P
             r.owners.push(owners[k].clone());
         }
         r.report.balls = r.balls.len();
-        if rebuild == 0 {
+        r.report.rebuilds = self.rebuild;
+        if self.rebuild == 0 {
             seed(&mut r)?;
         } else {
+            let kept = std::mem::take(&mut self.kept);
             for &k in &super::spatial_order(&kept) { r.insert_judging(kept[k],false)?; }
             r.blocking.clear();
         }
-        // Every facet now, then refinement.
+        // Every facet now; refinement follows in steps.
         let tets: Vec<u32> = r.tri.tets().collect();
         for t in tets { for i in 0..4 { r.judge(t,i); } }
-        r.refine()?;
-        let manifold = repair(&mut r)?;
-        total.queries = r.report.queries;
+        self.refiner = Some(r);
+        Ok(())
+    }
+
+    /// Repair and judge the refined surface: the finished mesh, a refusal, or `None` after
+    /// arranging a rebuild with shrunk balls.
+    fn repair(&mut self) -> Option<Result<Mesh,String>> {
+        let rebuild = self.rebuild;
+        let r = self.refiner.as_mut().expect("a refiner while repairing");
+        let manifold = match repair(r) { Ok(m) => m, Err(e) => return Some(Err(e)) };
         if manifold {
             let facets = r.extract();
             // A facet with a protecting ball for a vertex may stand off the surface where no
             // refinement could reach it, its surface centre inside the ball: those balls are too
             // big for the surface's curvature there, and shrink as a repair's blocking balls do.
-            let off = standing_off(&mut r,&facets);
+            let off = standing_off(r,&facets);
             r.report.coarse = off.len();
             if trace() && !off.is_empty() { eprintln!("refine: rebuild {rebuild}: {} facets stand off the surface",off.len()); }
             let blocking: Vec<usize> = off.iter().flatten().copied().collect();
-            if blocking.is_empty() || rebuild+1 == REBUILDS || !shrink(&r,&blocking,&mut sizing,least) {
-                let mut index: HashMap<u32,u32> = HashMap::new();
-                let mut vertices = Vec::new();
-                let mut triangles = Vec::with_capacity(facets.len());
-                for (f,_,_) in &facets {
-                    triangles.push(f.map(|v| *index.entry(v).or_insert_with(|| {
-                        vertices.push(r.tri.points()[v as usize].p);
-                        (vertices.len()-1) as u32
-                    })));
+            if blocking.is_empty() || rebuild+1 == REBUILDS || !shrink(r,&blocking,&mut self.sizing,self.least) {
+                let (vertices,triangles) = collect(r,&facets);
+                return Some(Ok(Mesh {vertices,triangles,report:r.report.clone()}));
+            }
+        } else {
+            let mut blocking = r.blocking.clone();
+            blocking.sort_unstable();
+            blocking.dedup();
+            let shrunk = shrink(r,&blocking,&mut self.sizing,self.least);
+            if trace() {
+                let faults = non_manifold(&r.extract());
+                eprintln!("refine: rebuild {rebuild}: {} faults (first at {:?}), {} points, {} queries; {} blocking balls, {} balls",
+                    faults.len(),faults.first().map(|f| r.tri.orthosphere(f.0).0),r.kept.len(),r.report.queries,blocking.len(),r.balls.len());
+                for &b in blocking.iter().take(6) { eprintln!("refine:   ball {b} at {:?} r {:.3e}",r.balls[b].0,r.balls[b].1); }
+                for &(t,i,key) in faults.iter().take(8) {
+                    let n = r.tri.tet(t).n[i];
+                    eprintln!("refine:   fault {key:?} sides {} {}: {:?}",r.tet_side(t),r.tet_side(n),
+                        key.map(|v| { let q = r.tri.points()[v as usize]; (q.p.map(|x| (x*1e4).round()/1e4),(q.w.max(0.).sqrt()*1e4).round()/1e4) }));
                 }
-                let mut report = r.report;
-                report.rebuilds = rebuild;
-                return Ok(Mesh {vertices,triangles,report});
             }
-            kept = r.kept;
-            memo = r.memo;
-            continue;
-        }
-        let mut blocking = r.blocking.clone();
-        blocking.sort_unstable();
-        blocking.dedup();
-        let shrunk = shrink(&r,&blocking,&mut sizing,least);
-        if trace() {
-            let faults = non_manifold(&r.extract());
-            eprintln!("refine: rebuild {rebuild}: {} faults (first at {:?}), {} points, {} queries; {} blocking balls, {} balls",
-                faults.len(),faults.first().map(|f| r.tri.orthosphere(f.0).0),r.kept.len(),r.report.queries,blocking.len(),r.balls.len());
-            for &b in blocking.iter().take(6) { eprintln!("refine:   ball {b} at {:?} r {:.3e}",r.balls[b].0,r.balls[b].1); }
-            for &(t,i,key) in faults.iter().take(8) {
-                let n = r.tri.tet(t).n[i];
-                eprintln!("refine:   fault {key:?} sides {} {}: {:?}",r.tet_side(t),r.tet_side(n),
-                    key.map(|v| { let q = r.tri.points()[v as usize]; (q.p.map(|x| (x*1e4).round()/1e4),(q.w.max(0.).sqrt()*1e4).round()/1e4) }));
+            if !shrunk { return Some(Err("the boundary is not a manifold, and no ball blocking its repair can shrink".into())); }
+            if rebuild+1 == REBUILDS {
+                return Some(Err(format!("the boundary is not a manifold after refining the protecting balls {REBUILDS} times")));
             }
         }
-        if !shrunk { return Err("the boundary is not a manifold, and no ball blocking its repair can shrink".into()); }
-        kept = r.kept;
-        memo = r.memo;
+        self.rebuild += 1;
+        self.stage = Stage::Build;
+        None
     }
-    Err(format!("the boundary is not a manifold after refining the protecting balls {REBUILDS} times"))
+}
+
+/// The facets' vertices, renumbered from the triangulation's, and the triangles over them.
+fn collect(r: &Refiner,facets: &[([u32;3],u32,usize)]) -> (Vec<P>,Vec<[u32;3]>) {
+    let mut index: HashMap<u32,u32> = HashMap::new();
+    let mut vertices = Vec::new();
+    let mut triangles = Vec::with_capacity(facets.len());
+    for (f,_,_) in facets {
+        triangles.push(f.map(|v| *index.entry(v).or_insert_with(|| {
+            vertices.push(r.tri.points()[v as usize].p);
+            (vertices.len()-1) as u32
+        })));
+    }
+    (vertices,triangles)
 }
 
 /// Halve the feature spacing at the places of balls `blocking`, down to `least`: whether any

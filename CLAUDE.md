@@ -210,10 +210,14 @@ operands use the ordinary solid dependency graph. `MaterialField::read` retains 
 and promotes them when a sweep appears; placed/composed sweeps share immutable source nodes.
 Nested continuous sweeps are refused. Cache reads include the whole motion graph, since equal
 endpoint poses do not determine the swept material. The native CAD recipe rejects every graph
-containing a sweep; `EvaluatedSolid` meshes one from its material field instead
-(`from_field`: `delaunay::refine` with no feature curves yet, preview criteria, the closed mesh
-standing in as one polyhedral primitive), one mesh for every view's pixel length, which is how
-the app's glass box draws `rust/examples/swept_torus.sv`.
+containing a sweep; `EvaluatedSolid` takes one from its material field instead
+(`from_surface`: `solid::FieldMesher`, a resumable `delaunay::refine::Progressive` with no feature
+curves yet and preview criteria, the mesh standing in as one polyhedral primitive), one mesh for
+every view's pixel length. The terminal and tests mesh in place. **The page never does**: its
+sketch `defer_fields`, and `app/field-preview.ts` runs `app/mesh-worker.ts` (its own core, the
+page's text and parameter values) which posts each swept object's surface every ~120 ms,
+worst facet first, to `supply_field` — a provisional surface draws and exports nothing. The
+`swept_torus.sv` part shows 48 triangles at 0.7 s and its final 1912 at 2.8 s.
 **Swept boundaries by arrangement and classification (2026-09-09):** `solventc --step/--stl`
 builds a body with swept cuts in `rust/gcs-cli/src/cad/native/sweep_boundary.rs`, not from the
 contact atlas. `cad::recipe_static` gives the static blank and lists each swept cut with its

@@ -22,7 +22,8 @@ import {
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Plane, Point, Sketch, Spline } from '../core/model.js';
-import { mesh, stl, glb } from '../core/mesh.js';
+import { mesh, objects, stl, glb } from '../core/mesh.js';
+import { FieldMesher, deferFields, isSwept, supplyField } from '../core/field.js';
 import { overview } from '../core/overview.js';
 import { Document, fromSketch, highlight } from '../core/program.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
@@ -2398,4 +2399,32 @@ test('related files include transitive libraries and host overrides without dupl
   }
   assert.equal(modules.source('demo.a'), null);
   assert.ok(modules.source('std')?.includes('component ThreeViews'));
+});
+
+test('a swept solid is refined in steps, and a deferring sketch draws only what it is given', async () => {
+  const { readFileSync } = await import('node:fs');
+  const text = readFileSync(new URL('../../../rust/examples/swept_torus.sv', import.meta.url), 'utf8');
+  const page = Document.read(text), worker = Document.read(text);
+  worker.sketch.setX(page.sketch.getX());
+  const part = objects(page.sketch).find((o) => o.name === 'part')!;
+  assert.ok(isSwept(page.sketch, part.index));
+  const mesher = FieldMesher.create(worker.sketch, part.index);
+  const counts: number[] = [];
+  for (let done = false; !done;) {
+    done = mesher.step(40);
+    const s = mesher.snapshot();
+    counts.push(s.triangles.length / 3);
+    assert.equal(s.provisional, !done);
+  }
+  const surface = mesher.snapshot();
+  mesher.dispose();
+  assert.ok(counts.length > 3 && counts[0] < counts[counts.length - 1], `${counts}`);
+  deferFields(page.sketch);
+  assert.throws(() => mesh(page.sketch, part.index, 0));
+  supplyField(page.sketch, part.index, surface);
+  const m = mesh(page.sketch, part.index, 0);
+  assert.equal(m.positions.length, surface.triangles.length * 3);   // three indices a triangle, nine numbers
+  assert.ok(stl(page.sketch, part.index).length > 84);
+  page.dispose();
+  worker.dispose();
 });

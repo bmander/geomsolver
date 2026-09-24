@@ -26,6 +26,8 @@
 //! *outside*, and the wall would silently vanish.
 
 mod evaluated;
+mod field_mesh;
+pub use field_mesh::{FieldMesher, FieldSurface};
 pub mod cad;
 mod profile;
 mod primitive;

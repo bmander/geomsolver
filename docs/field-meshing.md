@@ -310,6 +310,17 @@ A solid with a continuous sweep among its operands now evaluates by field refine
 `?example=swept_torus.sv` shows the torus-through-a-post fixture in the browser. It uses
 preview criteria (facet size 1/40 and surface distance 1/2000 of the support's diagonal) and
 protects no features, so sharp edges are rounded to the facet size, and every facet is marked
-smooth, so the shading rounds the creases too. The wasm meshes on the main thread and the page
-is unresponsive for several seconds while it does. Next for the preview: mesh off the main thread
-and show the refinement as it goes, then features from the core.
+smooth, so the shading rounds the creases too.
+
+**Off the main thread, refining as it goes.** `delaunay::refine::Progressive` runs the refinement
+in steps (`step(budget)`, `snapshot()`), and `mesh` is a loop over it. `solid::FieldMesher` holds
+one solid's field and run. The page's sketch is told never to mesh a field (`defer_fields`: a
+swept solid with no supplied surface is refused), and `app/field-preview.ts` hands a worker
+(`app/mesh-worker.ts`, its own copy of the core) the document's text, modules and parameter
+values; the worker refines each swept object 40 facets at a time, letting messages in between
+steps so an edit ends the job, and posts the surface every 120 ms and at the end. Each arrives
+through `supply_field`, keyed by the drawing's `solid::reads`, and the page redraws. A
+provisional surface exports nothing. Measured in Chrome on `swept_torus.sv`: the first surface
+(48 triangles) 0.69 s after navigation, then one every ~130 ms, the final closed 1912 triangles
+at 2.77 s; the page stays responsive throughout (`performance.mark('field-surface')` per
+surface). Next: features from the core, so edges come out sharp.
