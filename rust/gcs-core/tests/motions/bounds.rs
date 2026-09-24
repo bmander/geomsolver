@@ -50,10 +50,20 @@ fn relative_motion_bounds_cover_input_boxes_and_nested_observer_inverses() {
 }
 
 #[test]
-fn motion_bounds_retain_solved_snapshots_and_reject_unsupported_angles() {
+fn motion_bounds_retain_solved_snapshots_and_enclose_angles_of_any_size() {
     let mut e = solved(&format!("{AXES}\nmotion turn(about: axis,ratio: 2)\n"));
     let family = motion::Family::read(&e.sketch,0).unwrap();
-    assert_eq!(family.bounds(I::new(-5.,5.).unwrap()).unwrap_err(),Error::OutsideDomain);
+    // Many turns wide, the bounds hold every pose in them, the identity among them; a single
+    // angle past sin_cos's own domain reads the same pose as that angle a turn nearer zero.
+    let q = [3.,1.,4.];
+    let wide = family.bounds(I::new(-5.,5.).unwrap()).unwrap().point(box_at(q)).unwrap();
+    assert!((0..3).all(|k| wide[k].contains(q[k])),"{wide:?}");
+    let far = family.bounds(I::point(9.).unwrap()).unwrap().point(box_at(q)).unwrap();
+    let near = family.bounds(I::point(9.-std::f64::consts::PI).unwrap()).unwrap().point(box_at(q)).unwrap();
+    for k in 0..3 {
+        let (a,b) = (far[k].bounds(),near[k].bounds());
+        assert!(a[0] <= b[1]+1e-12 && b[0] <= a[1]+1e-12 && a[1]-a[0] < 1e-9,"{k}: {a:?} {b:?}");
+    }
     assert_eq!(family.bounds(I::point(f64::MAX).unwrap()).unwrap_err(),Error::Overflow);
     let p = box_at([3.,1.,4.]);
     let original = family.bounds(I::point(0.3).unwrap()).unwrap().point(p).unwrap();

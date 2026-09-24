@@ -173,10 +173,13 @@ impl Refiner<'_> {
     }
 
     /// A ball `p` lies in, with the refinement margin.
-    fn ball_at(&self,p: P) -> Option<usize> {
+    fn ball_at(&self,p: P) -> Option<usize> { self.ball_within(p,self.margin()) }
+
+    /// A ball `p` lies within `margin` of.
+    fn ball_within(&self,p: P,margin: f64) -> Option<usize> {
         let c = self.cell_of(p);
-        let margin = self.margin();
-        for dx in -1..=1 { for dy in -1..=1 { for dz in -1..=1 {
+        let reach = (margin/self.cell).ceil().max(1.) as i64;
+        for dx in -reach..=reach { for dy in -reach..=reach { for dz in -reach..=reach {
             if let Some(list) = self.grid.get(&[c[0]+dx,c[1]+dy,c[2]+dz]) {
                 let inside = |k: &&usize| {
                     let reach = self.balls[**k].1+margin;
@@ -592,6 +595,9 @@ pub struct Progressive<'a> {
     queries: usize,
     rebuild: usize,
     stage: Stage,
+    /// The last closed, manifold surface a build reached, kept while balls are shrunk for facets
+    /// that stood off it: shrinking is an improvement, and one that fails leaves this standing.
+    manifold: Option<Mesh>,
 }
 
 impl<'a> Progressive<'a> {
@@ -600,7 +606,7 @@ impl<'a> Progressive<'a> {
         let sizing = curves.iter().map(|c| Sizing {base:length(c).min(criteria.edge_size).max(criteria.edge_size*1e-3),local:Vec::new()}).collect();
         let least = criteria.edge_size/LEAST;
         Self {domain:Some(side),refiner:None,centre,radius,curves,criteria,sizing,least,kept:Vec::new(),
-            memo:HashMap::new(),queries:0,rebuild:0,stage:Stage::Build}
+            memo:HashMap::new(),queries:0,rebuild:0,stage:Stage::Build,manifold:None}
     }
 
     /// Do at most about `budget` refinements (a build or a repair runs whole): whether the
@@ -672,6 +678,11 @@ impl<'a> Progressive<'a> {
         r.report.rebuilds = self.rebuild;
         if self.rebuild == 0 {
             seed(&mut r)?;
+            // judged, so that whether the rays found any surface is known
+            let tets: Vec<u32> = r.tri.tets().collect();
+            for t in tets { for i in 0..4 { r.judge(t,i); } }
+            if r.queue.is_empty() && r.extract().is_empty() { lattice(&mut r)?; }
+            r.queue.clear();          // judged again below, with whatever the lattice added
         } else {
             let kept = std::mem::take(&mut self.kept);
             for &k in &super::spatial_order(&kept) { r.insert_judging(kept[k],false)?; }
@@ -699,10 +710,12 @@ impl<'a> Progressive<'a> {
             r.report.coarse = off.len();
             if trace() && !off.is_empty() { eprintln!("refine: rebuild {rebuild}: {} facets stand off the surface",off.len()); }
             let blocking: Vec<usize> = off.iter().flatten().copied().collect();
+            let (vertices,triangles) = collect(r,&facets);
+            let mesh = Mesh {vertices,triangles,report:r.report.clone()};
             if blocking.is_empty() || rebuild+1 == REBUILDS || !shrink(r,&blocking,&mut self.sizing,self.least) {
-                let (vertices,triangles) = collect(r,&facets);
-                return Some(Ok(Mesh {vertices,triangles,report:r.report.clone()}));
+                return Some(Ok(mesh));
             }
+            self.manifold = Some(mesh);
         } else {
             let mut blocking = r.blocking.clone();
             blocking.sort_unstable();
@@ -719,7 +732,12 @@ impl<'a> Progressive<'a> {
                         key.map(|v| { let q = r.tri.points()[v as usize]; (q.p.map(|x| (x*1e4).round()/1e4),(q.w.max(0.).sqrt()*1e4).round()/1e4) }));
                 }
             }
-            if !shrunk { return Some(Err("the boundary is not a manifold, and no ball blocking its repair can shrink".into())); }
+            // A closed surface reached before is better than this one: the shrinking that followed
+            // it was for facets standing off it, and has opened the surface instead.
+            if self.manifold.is_some() { return Some(Ok(self.manifold.take().unwrap())); }
+            if !shrunk {
+                return Some(Err("the boundary is not a manifold, and no ball blocking its repair can shrink".into()));
+            }
             if rebuild+1 == REBUILDS {
                 return Some(Err(format!("the boundary is not a manifold after refining the protecting balls {REBUILDS} times")));
             }
@@ -802,6 +820,48 @@ fn seed(r: &mut Refiner) -> Result<(),String> {
     }
     Ok(())
 }
+
+/// Seed from a lattice over the bounding ball, every pair of neighbours on opposite sides giving
+/// a seed: `LATTICE` a side, so a body wider than the spacing is found wherever it is. Asked only
+/// when the rays left refinement nothing to start from — rays from one centre miss a thin body
+/// passing between them, a coil's wire round an empty middle. Not always: seeds scattered over a
+/// cut's surface land by creases no ball protects yet, and refinement cannot always repair what
+/// they start there, so a body the rays miss while they find another stays missed until
+/// features seed it.
+fn lattice(r: &mut Refiner) -> Result<(),String> {
+    let (centre,radius) = (r.centre,r.radius);
+    // One lattice seed a cell twice the facet size: a seed finds the surface there, and
+    // refinement, not the seeding, decides how finely it is meshed — every seed stays a vertex.
+    let cell = 2.*r.criteria.facet_size;
+    let mut taken: std::collections::HashSet<[i64;3]> = std::collections::HashSet::new();
+    // The protecting balls seed the surface round every feature already, and a seed just outside
+    // one leaves slivers against it: seeds keep a facet's size clear of the balls.
+    let clear = r.criteria.facet_size;
+    let mut plant = |r: &mut Refiner,p: P| -> Result<(),String> {
+        if r.ball_within(p,clear).is_some() { return Ok(()); }
+        if taken.insert(p.map(|x| (x/cell).floor() as i64)) && r.insert_judging(p,false)? { r.report.seeds += 1; }
+        Ok(())
+    };
+    let n = LATTICE;
+    let h = 2.*radius/n as f64;
+    let at = |i: usize,j: usize,k: usize| [centre[0]-radius+h*i as f64,centre[1]-radius+h*j as f64,centre[2]-radius+h*k as f64];
+    let mut sides = vec![0i8;(n+1)*(n+1)*(n+1)];
+    let index = |i: usize,j: usize,k: usize| (i*(n+1)+j)*(n+1)+k;
+    for i in 0..=n { for j in 0..=n { for k in 0..=n { sides[index(i,j,k)] = r.side(at(i,j,k)); } } }
+    for i in 0..=n { for j in 0..=n { for k in 0..=n {
+        let s = sides[index(i,j,k)];
+        for (di,dj,dk) in [(1,0,0),(0,1,0),(0,0,1)] {
+            let (a,b,c) = (i+di,j+dj,k+dk);
+            if a > n || b > n || c > n || sides[index(a,b,c)] == s { continue; }
+            let x = r.crossing(at(i,j,k),s,at(a,b,c));
+            plant(r,x)?;
+        }
+    } } }
+    Ok(())
+}
+
+/// Seed lattice points a side of the bounding ball's cube.
+const LATTICE: usize = 28;
 
 /// Refine at the boundary's manifold faults until none is left (true), or until refining them
 /// inserts nothing, every point needed having fallen in a ball (false: `blocking` says which).

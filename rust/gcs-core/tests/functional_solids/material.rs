@@ -88,9 +88,9 @@ fn material_cancellation_and_failed_operands_do_not_become_silent_solids() {
         assert!(query.value.bounds()[1] >= 0.); // no established material in A-A
     }
     // A failed leaf is still an error even if another operand could fix the sign.
-    let invalid = MaterialField::from(SweptField::new(sphere(),rotation(),I::point(9.).unwrap()));
+    let invalid = MaterialField::from(SweptField::new(sphere(),rotation(),I::point(f64::MAX).unwrap()));
     let mut field = ball(100.).union(invalid).unwrap().evaluator(0);
-    assert_eq!(field.bounds(point([0.;3]),options()).unwrap_err(),SweepError::Oracle(Error::OutsideDomain));
+    assert_eq!(field.bounds(point([0.;3]),options()).unwrap_err(),SweepError::Oracle(Error::Overflow));
     let mut field = torus().evaluator(0);
     assert_eq!(field.bounds(point([0.;3]),Options {max_evaluations:3,..options()}).unwrap_err(),SweepError::InvalidOptions);
     assert_eq!(field.bounds(point([f64::MAX;3]),options()).unwrap_err(),SweepError::Oracle(Error::Overflow));
@@ -122,7 +122,7 @@ fn classification_bands_follow_cut_signs_and_shared_query_identity() {
     let shared = sweep.clone().union(sweep).unwrap().evaluator(0).bounds_outside(p,I::ZERO,options()).unwrap();
     assert_eq!(shared.sweeps.len(),1);
     assert!(shared.value.bounds()[1] < 0.);
-    let invalid = MaterialField::from(SweptField::new(sphere(),rotation(),I::point(9.).unwrap()));
+    let invalid = MaterialField::from(SweptField::new(sphere(),rotation(),I::point(f64::MAX).unwrap()));
     assert_eq!(ball(100.).union(invalid).unwrap().evaluator(0).bounds_outside(p,I::ZERO,options()).unwrap_err(),
-        SweepError::Oracle(Error::OutsideDomain));
+        SweepError::Oracle(Error::Overflow));
 }

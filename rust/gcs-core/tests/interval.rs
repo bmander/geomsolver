@@ -117,3 +117,22 @@ fn interval_results_can_be_checked_with_independent_exact_rational_arithmetic() 
         std::fs::write(file,rows).unwrap();
     }
 }
+
+#[test]
+fn periodic_sine_and_cosine_enclose_every_angle_of_any_interval() {
+    // Narrow intervals far out (several turns, both signs), one exactly a period's worth wide,
+    // one just under and one wider: every sampled angle's sine and cosine lie in the enclosure.
+    let cases = [(18.8,18.9),(-40.,-39.),(100.,103.),(8.,8.5),(0.,18.85),(20.,20.+std::f64::consts::TAU),
+        (30.,36.2),(1e4,1e4+0.1)];
+    for (a,b) in cases {
+        let (s,c) = interval(a,b).sin_cos_periodic().unwrap();
+        for k in 0..=400 {
+            let x = a+(b-a)*k as f64/400.;
+            assert!(s.contains(x.sin()) && c.contains(x.cos()),"[{a}, {b}] at {x}: {s:?} {c:?}");
+        }
+        // No looser than it must be where it is narrow: a tenth of a radian stays under 0.25 wide.
+        if b-a <= 0.1 { assert!(s.bounds()[1]-s.bounds()[0] < 0.25 && c.bounds()[1]-c.bounds()[0] < 0.25,"{s:?} {c:?}"); }
+    }
+    // Inside [-8,8] it is `sin_cos` itself.
+    assert_eq!(interval(1.,2.).sin_cos_periodic().unwrap(),interval(1.,2.).sin_cos().unwrap());
+}

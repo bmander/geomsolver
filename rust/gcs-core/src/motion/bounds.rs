@@ -58,7 +58,8 @@ impl MotionBounds {
         for a in &mut axis { *a = a.div(norm)?; }
         let [x,y,z] = axis;
         let k = [[I::ZERO,z.neg(),y],[z,I::ZERO,x.neg()],[y.neg(),x,I::ZERO]];
-        let (s,c) = angle.sin_cos()?;
+        // a motion's angle runs as far as its sweep does: several turns for a coil
+        let (s,c) = angle.sin_cos_periodic()?;
         let mut r = [[I::ZERO;3];3];
         for i in 0..3 { for j in 0..3 {
             // Group the coefficient of cos(theta). Using cos(theta) and

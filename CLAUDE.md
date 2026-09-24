@@ -141,8 +141,11 @@ and resolution limits retain bounds, never guessed membership. Motion families e
 outward-rounded inverse-point speed bound for the mathematical solved motion. This does not
 bound floating-point pose evaluation or source-solve error. `Family::bounds` and its owned
 `MotionBounds` enclose mathematical poses and forward/inverse point boxes using interval
-axis normalization, trigonometry and relative-frame composition. Coefficients stay private;
-unsupported trig ranges fail. They do not certify the original nonlinear source solve.
+axis normalization, trigonometry and relative-frame composition. Coefficients stay private.
+A rotation's angle past `sin_cos`'s [-8,8] goes through `Interval::sin_cos_periodic`, a justified
+reduction (a period's width is [-1,1]; otherwise a whole number of turns off, 2π enclosed between
+the doubles either side of TAU), so a coil's several turns are bounded; an angle whose reduction
+overflows still fails. They do not certify the original nonlinear source solve.
 `solid::PlanarField` and `RevolvedField` define explicit analytic fields from half-planes,
 disks, Booleans and a revolution frame. Bounds use interval arithmetic; their material is
 closure({f<0}). Boolean fields remain one-Lipschitz but are not necessarily signed distances,

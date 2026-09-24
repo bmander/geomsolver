@@ -82,6 +82,26 @@ impl Interval {
         Ok(result)
     }
 
+    /// Enclose sin and cos over an interval anywhere, by a reduction justified here, so that
+    /// `sin_cos`'s own guarantee is untouched. An interval at least 6.3 wide (a computed width
+    /// under-reads the true one by at most an ulp, and 6.3 exceeds 2π) holds a whole period, so
+    /// both are [-1,1]. Any other is shifted by a whole number k of turns, with 2π enclosed
+    /// between the doubles either side of TAU — correctly rounded, so within an ulp of it — and
+    /// the shift made in outward-rounded arithmetic: the result holds x − 2πk for every x in the
+    /// input, which has the same sine and cosine, and lies within π + 3.15 of zero, inside
+    /// `sin_cos`'s domain.
+    pub fn sin_cos_periodic(self) -> Result<(Self,Self),Error> {
+        if self.lo.abs().max(self.hi.abs()) <= 8. { return self.sin_cos(); }
+        if !(self.hi-self.lo < 6.3) {
+            let full = Self::new(-1.,1.)?;
+            return Ok((full,full));
+        }
+        let tau = std::f64::consts::TAU;
+        let turn = Self::new(f64::from_bits(tau.to_bits()-1),f64::from_bits(tau.to_bits()+1))?;
+        let k = ((self.lo*0.5+self.hi*0.5)/tau).round();
+        self.sub(turn.mul(Self::point(k)?)?)?.sin_cos()
+    }
+
     /// Enclose sin and cos for the entire input interval in [-8,8] radians.
     /// No argument reduction or approximate pi enters the guarantee. Larger
     /// inputs are refused; callers must supply a separately justified reduction.

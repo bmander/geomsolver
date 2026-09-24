@@ -113,3 +113,18 @@ fn a_cube_keeps_its_edges_and_corners() {
     assert!((volume-1.).abs() < 1e-6,"volume {volume}: a cube with its edges kept is exact");
     for c in &corners { assert!(m.vertices.iter().any(|v| (0..3).all(|k| (v[k]-c[k]).abs() < 1e-12)),"corner {c:?} is a vertex"); }
 }
+
+#[test]
+fn a_thin_ring_the_rays_miss_is_found_by_the_lattice() {
+    // A torus of tube 0.06 round a circle of radius 1, centred on the rays' origin: rays spread
+    // over the sphere pass above and below it, and only the lattice finds it.
+    let ring = |p: P| ((p[0]*p[0]+p[1]*p[1]).sqrt()-1.).hypot(p[2])-0.06;
+    let mut c = criteria(0.05);
+    c.max_points = 200_000;
+    let m = mesh(&mut |p| ring(p),[0.;3],1.2,&[],&c).unwrap();
+    let (chi,volume) = closed(&m);
+    eprintln!("thin ring: {} triangles, {:?}",m.triangles.len(),m.report);
+    assert_eq!(chi,0);
+    let exact = 2.*std::f64::consts::PI.powi(2)*0.06*0.06;
+    assert!((volume-exact).abs() < 0.05*exact,"volume {volume} against {exact}");
+}

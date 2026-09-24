@@ -324,3 +324,38 @@ provisional surface exports nothing. Measured in Chrome on `swept_torus.sv`: the
 (48 triangles) 0.69 s after navigation, then one every ~130 ms, the final closed 1912 triangles
 at 2.77 s; the page stays responsive throughout (`performance.mark('field-surface')` per
 surface). Next: features from the core, so edges come out sharp.
+
+## Swept examples, and a regression the F4 record missed (2026-09-24)
+
+`swept_spring.sv` (a ball screwed along a helix, two turns) and `swept_tumble.sv` (a torus
+tumbled about a tilted axis) are parametric swept bodies for the app. Measured in Node's wasm: the
+spring's first surface at 0.34 s and its 12 854 triangles at 12.4 s (volume 1917.1 against the
+exact 1943.8 at preview facets), the tumble's at 0.19 s and 2.8 s.
+
+**Coils need a reduction for the motion's angle.** Two turns are 12.6 rad, past interval `sin_cos`'s
+[-8,8], and the support bounds refused. `Interval::sin_cos_periodic` reduces by a whole number of
+turns with 2π enclosed between the doubles either side of TAU (and a period's width reads
+[-1,1]); the motion bounds use it. Five tests that pinned the refusal at 9 rad as a contract now
+check the enclosure, and three that used it only to build a failing operand use an overflowing
+angle.
+
+**Seeding by a lattice when the rays find no surface.** A coil's wire passes between rays from
+the bounding ball's centre. After the rays the facets are judged; if none is restricted, a lattice
+of `LATTICE` (28) a side seeds every neighbour pair on opposite sides, one seed a cell twice the
+facet size, clear of the protecting balls by a facet. Not always: scattered over a cut, those seeds
+land by creases no ball protects and broke three fixtures. `a_thin_ring_the_rays_miss_is_found_by_the_lattice`
+holds it.
+
+**Correction.** The F4 record above says every admitted fixture exports. That was measured before
+the gear-space changes (the stand-off shrink among them) and not re-run: at `bbca0a4` the skew
+sphere, both lenses and the lens about two axes refused, not manifold after twelve rebuilds. The
+stand-off check shrank balls for 85 facets standing 0.05 mm off a surface whose facets are about
+that size, and the shrinking opened it. The stand-off shrink is now best effort: the last closed
+surface is kept, and a rebuild that opens it returns that surface instead. Every fixture exports
+again in 1–4 s with no disagreement, and the gear controls are as before (the hypoid 25 pinion now
+meshes, one probe short of the agreement gate).
+
+**Still refused: sharp creases with no features.** A ball-end groove cut into a block
+(`swept_groove.sv`, not committed) is not a manifold and has no ball to shrink: in the app the core
+protects no feature curves, and the block's edges and the groove's crease with the top face need
+them. The ball swept alone meshes (volume 2094.9 against 2110.7). Features from the core are next.
