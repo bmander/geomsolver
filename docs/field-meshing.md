@@ -302,3 +302,14 @@ intervals under looser criteria. Next:
 2. **A whole member through `refine`**, to measure the render.
 3. **Preview speed:** one tooth-space sector meshed and repeated by the indexing motion, and
    cheaper field queries.
+
+## In the app (2026-09-23)
+
+A solid with a continuous sweep among its operands now evaluates by field refinement in the core
+(`EvaluatedSolid::from_field`), so the glass box, views and the legacy mesh export draw it:
+`?example=swept_torus.sv` shows the torus-through-a-post fixture in the browser. It uses
+preview criteria (facet size 1/40 and surface distance 1/2000 of the support's diagonal) and
+protects no features, so sharp edges are rounded to the facet size, and every facet is marked
+smooth, so the shading rounds the creases too. The wasm meshes on the main thread and the page
+is unresponsive for several seconds while it does. Next for the preview: mesh off the main thread
+and show the refinement as it goes, then features from the core.

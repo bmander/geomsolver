@@ -51,9 +51,25 @@ fn continuous_sweep_source_has_the_full_interval_and_endpoint_caps() {
         let got = material(&e.sketch,i,p);
         assert!(got[0] <= expected+1e-12 && got[1] >= expected-1e-12,"{p:?}: {got:?}, {expected}");
     }
-    assert!(e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh)
-        .unwrap_err().contains("continuous motion sweeps"));
     assert!(solid::cad::recipe(&e.sketch,i).unwrap_err().contains("continuous motion sweeps"));
+}
+
+#[test]
+fn a_continuous_sweep_is_meshed_from_its_field() {
+    // A unit sphere swept along a circle of radius 3 through ±60°: a tube of length 2π and the
+    // two hemispherical caps, 2π² + 4π/3.
+    let e = read(include_str!("../../examples/solid_generating_sweep.sv"));
+    let i = e.map.ent_named("removal.body").unwrap().i();
+    let solid = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
+    let exact = 2.*std::f64::consts::PI.powi(2)+4./3.*std::f64::consts::PI;
+    assert!((solid.volume()-exact).abs() < 0.03*exact,"volume {} against {exact}",solid.volume());
+    assert!(solid.contains_world(solid::WorldPoint([3.,0.,0.])));
+    assert!(solid.contains_world(solid::WorldPoint([1.5,2.598,0.])));
+    assert!(!solid.contains_world(solid::WorldPoint([-3.,0.,0.])));
+    // Every pixel length a view asks with is the one field mesh.
+    let view = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::from_unit(0.01)).unwrap();
+    assert!(std::rc::Rc::ptr_eq(&solid,&view));
+    assert!(!solid.mesh().positions.is_empty());
 }
 
 #[test]
@@ -102,7 +118,13 @@ cuts: IndexedCuts(swept,body,generating,count: 3)
         let got = material(&e.sketch,i,p);
         assert!(if k % 2 == 0 { got[0] > 0.9 } else { got[1] < -0.1 },"{k}: {got:?}");
     }
-    assert!(e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).is_err());
+    // The field mesh agrees with the field at the same points.
+    let solid = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
+    for k in 0..6 {
+        let angle = k as f64*std::f64::consts::PI/3.;
+        let inside = solid.contains_world(solid::WorldPoint([3.*angle.cos(),3.*angle.sin(),0.]));
+        assert_eq!(inside,k % 2 == 1,"{k}");
+    }
 }
 
 #[test]

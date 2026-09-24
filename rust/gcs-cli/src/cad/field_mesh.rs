@@ -150,8 +150,9 @@ pub fn features(sk: &gcs_core::model::Sketch,solid: usize,field: &MaterialField,
     let edges_done = std::time::Instant::now();
     // Face contours.
     let mut contours: Vec<Vec<P>> = Vec::new();
+    // `SOLVENT_FEATURE_GRID`: cells a face's contour grid has along each parameter.
+    let n = setting("SOLVENT_FEATURE_GRID",64.) as usize;
     for face in session.faces(blank)? {
-        let n = 64;
         let tolerance = 1e-9;
         // A direction the face spans a whole period of is sampled at cell centres and wraps, so
         // a contour crosses its seam like any other cell edge; a bounded one runs to its trims.

@@ -209,9 +209,11 @@ labels are exclusive. Formals, repeats, forward references, print/copy/delete an
 operands use the ordinary solid dependency graph. `MaterialField::read` retains static DAGs
 and promotes them when a sweep appears; placed/composed sweeps share immutable source nodes.
 Nested continuous sweeps are refused. Cache reads include the whole motion graph, since equal
-endpoint poses do not determine the swept material. Both mesh and native boundary exports
-currently reject every graph containing a sweep, preserving old output files; material
-support is not yet native sweep-boundary construction.
+endpoint poses do not determine the swept material. The native CAD recipe rejects every graph
+containing a sweep; `EvaluatedSolid` meshes one from its material field instead
+(`from_field`: `delaunay::refine` with no feature curves yet, preview criteria, the closed mesh
+standing in as one polyhedral primitive), one mesh for every view's pixel length, which is how
+the app's glass box draws `rust/examples/swept_torus.sv`.
 **Swept boundaries by arrangement and classification (2026-09-09):** `solventc --step/--stl`
 builds a body with swept cuts in `rust/gcs-cli/src/cad/native/sweep_boundary.rs`, not from the
 contact atlas. `cad::recipe_static` gives the static blank and lists each swept cut with its

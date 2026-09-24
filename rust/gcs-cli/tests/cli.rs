@@ -26,16 +26,15 @@ fn unknown_stl_backend_is_refused() {
 }
 
 #[test]
-fn unsupported_continuous_boundary_cannot_export_the_unswept_source() {
-    let dir = std::env::temp_dir().join(format!("solventc-sweep-refusal-{}",std::process::id()));
+fn a_continuous_boundary_exports_through_the_field_mesh() {
+    let dir = std::env::temp_dir().join(format!("solventc-sweep-mesh-{}",std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let output = dir.join("swept.stl");
-    std::fs::write(&output,"old STL").unwrap();
     let result = run(&[&doc("solid_generating_sweep.sv"),"--stl",output.to_str().unwrap(),
         "--solid","removal.body","--stl-backend","mesh","--no-diagnose"]);
-    assert_eq!(result.status.code(),Some(1),"{}",String::from_utf8_lossy(&result.stderr));
-    assert!(String::from_utf8_lossy(&result.stderr).contains("continuous motion sweeps"));
-    assert_eq!(std::fs::read_to_string(output).unwrap(),"old STL");
+    assert_eq!(result.status.code(),Some(0),"{}",String::from_utf8_lossy(&result.stderr));
+    let bytes = std::fs::read(&output).unwrap();
+    gcs_core::mesh::stl_shells(&bytes).unwrap();
     std::fs::remove_dir_all(dir).unwrap();
 }
 

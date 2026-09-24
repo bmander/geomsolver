@@ -430,6 +430,9 @@ impl Sketch {
     pub fn evaluated_solid(
         &self, i: usize, policy: crate::solid::ApproximationPolicy,
     ) -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
+        // A swept solid's field mesh does not depend on the view's pixel length: one mesh
+        // serves every zoom, rather than a refinement per wheel tick.
+        let policy = if crate::solid::has_sweep(self, i) { crate::solid::ApproximationPolicy::Mesh } else { policy };
         let key = crate::solid::reads(self, i, 0.0);
         let slot = (i, policy.cache_key());
         if let Some((old, value)) = self.solid_cache.borrow().get(&slot) {

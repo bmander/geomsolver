@@ -395,6 +395,14 @@ pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
     validate_at(sk, si, REPORT_UNIT).map(|_| ())
 }
 
+/// Whether a continuous motion sweep is among the solid's operands: its boundary is then the
+/// field's, meshed once whatever approximation is asked for.
+pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
+    validate_at(sk, si, REPORT_UNIT)
+        .map(|ops| ops.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. })))
+        .unwrap_or(false)
+}
+
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {
     let mut pending = vec![(si, false)];
     let mut seen = std::collections::BTreeSet::new();

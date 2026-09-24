@@ -7,6 +7,11 @@ use crate::{
 };
 use std::{cell::OnceCell, collections::BTreeSet};
 
+/// A field-meshed solid's facet size and surface distance, as fractions of its support's
+/// diagonal: a preview's, coarse enough to mesh a small part in about a second natively.
+const FIELD_FACETS: f64 = 40.0;
+const FIELD_DISTANCE: f64 = 2000.0;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LocalPoint(pub [f64; 3]);
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -113,7 +118,7 @@ impl EvaluatedSolid {
         };
         let operands = validate_at(sk, si, unit)?;
         if operands.iter().any(|&i| matches!(sk.solids[i].def,SolidDef::Swept {..})) {
-            return Err("boundary evaluation for continuous motion sweeps is not yet supported".into());
+            return Self::from_field(sk, si, policy, unit);
         }
         let origin = WorldPoint(frame_origin(sk, si, unit));
         let csg = resolve_at(sk, si, unit, origin.0);
@@ -224,6 +229,71 @@ impl EvaluatedSolid {
             paths: operand_paths(sk, si),
             surviving,
             round,
+            edges: OnceCell::new(),
+            mesh: OnceCell::new(),
+            ray_indices: OnceCell::new(),
+        })
+    }
+    /// A solid with a continuous sweep among its operands has no facet term: its boundary is
+    /// the material field's, meshed by Delaunay refinement (docs/field-meshing.md), and the
+    /// closed mesh stands in as one polyhedral primitive, so classification, edges and views
+    /// read it as they read any other. No feature curves are protected yet, so sharp edges come
+    /// out rounded to the facet size.
+    fn from_field(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64) -> Result<Self, String> {
+        let name = sk.solid_name(si);
+        let field = MaterialField::read(sk, si, 1e-10)?;
+        let support = field.support_bounds().map_err(|e| format!("`{name}`: {e:?}"))?
+            .ok_or_else(|| format!("`{name}`: the material has no finite support to mesh in"))?;
+        let [lo, hi] = [0, 1].map(|k| support.map(|x| x.bounds()[k]));
+        let centre: [f64; 3] = std::array::from_fn(|k| 0.5 * (lo[k] + hi[k]));
+        let diagonal = (0..3).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>().sqrt();
+        if !(diagonal > 0.0) || !diagonal.is_finite() {
+            return Err(format!("`{name}`: the material's support is empty"));
+        }
+        let radius = 0.5 * diagonal * 1.05;
+        let facet = diagonal / FIELD_FACETS;
+        let criteria = crate::delaunay::refine::Criteria {
+            facet_size: facet, facet_distance: diagonal / FIELD_DISTANCE, facet_angle: 25.0,
+            edge_size: facet, bisection: 1e-5 * radius, max_points: 500_000,
+        };
+        let refined = crate::delaunay::refine::mesh(&mut |p| field.side(p), centre, radius, &[], &criteria)
+            .map_err(|e| format!("`{name}`: {e}"))?;
+        let origin = WorldPoint(centre);
+        let local = |v: [f64; 3]| -> [f64; 3] { std::array::from_fn(|k| v[k] - centre[k]) };
+        let mut facets = Vec::with_capacity(refined.triangles.len());
+        let mut bbox = Box3::empty();
+        for t in &refined.triangles {
+            let [a, b, c] = t.map(|i| local(refined.vertices[i as usize]));
+            let (u, v) = (std::array::from_fn::<f64, 3, _>(|k| b[k] - a[k]), std::array::from_fn::<f64, 3, _>(|k| c[k] - a[k]));
+            let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            if !(l > 0.0) { continue; }
+            for p in [a, b, c] { bbox.add(p); }
+            facets.push(Facet { pts: vec![a, b, c], n: n.map(|x| x / l), face: 0, smooth: true });
+        }
+        if facets.is_empty() { return Err(format!("`{name}`: the material field has no boundary")); }
+        let of = sk.solids[si].name.clone();
+        let path = format!("{of}.surface");
+        let boundary: Vec<Piece> = facets.iter().map(|f| Piece {
+            pts: f.pts.clone(), n: f.n, path: path.clone(), prim: 0, smooth: true,
+        }).collect();
+        let csg = Csg { prims: vec![Prim { facets, bbox, faces: vec!["surface".into()], of }], term: Term::Prim(0) };
+        let epsilon = csg.epsilon();
+        if !epsilon.is_finite() || epsilon <= 0.0 {
+            return Err("solid scale is not representable".into());
+        }
+        Ok(Self {
+            name,
+            origin,
+            policy,
+            unit,
+            epsilon,
+            bounds: mesh::bounds(&boundary),
+            surviving: [path].into_iter().collect(),
+            csg,
+            boundary,
+            paths: operand_paths(sk, si),
+            round: Vec::new(),
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
