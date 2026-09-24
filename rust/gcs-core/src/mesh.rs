@@ -158,19 +158,35 @@ pub fn weld(pieces: &[Piece]) -> Vec<Piece> {
         cells.insert(p, (verts.len() - 1) as u32);
         verts.len() - 1
     };
-    // -- weld: every piece, as indices into one vertex table
+    // -- weld: every piece, as indices into one vertex table. Most corners are the same bits as
+    // one already welded (each is shared by the pieces around it), and the same bits go where
+    // they went the first time without searching the cells again; looked up, never iterated.
+    let mut seen: std::collections::HashMap<[u64; 3], usize> = std::collections::HashMap::new();
     let loops: Vec<Vec<usize>> = pieces
         .iter()
-        .map(|p| p.pts.iter().map(|&q| canon(q, &mut cells, &mut verts)).collect())
+        .map(|p| p.pts.iter().map(|&q| {
+            *seen.entry(q.map(f64::to_bits)).or_insert_with(|| canon(q, &mut cells, &mut verts))
+        }).collect())
         .collect();
 
-    // -- stitch: a vertex on the interior of an edge belongs in that edge
+    // -- stitch: a vertex on the interior of an edge belongs in that edge. Nothing is filed from
+    // here on, so the grid is read packed: a cell is an array index, not a tree walk, and an edge
+    // looks in some thirty of them.
+    // Each edge is walked from both of its pieces: what lies on it is found once, from its
+    // lower-numbered end, and read backwards from the other.
+    let cells = cells.pack();
+    let mut between: std::collections::HashMap<(usize, usize), Vec<[f64; 3]>> = std::collections::HashMap::new();
     let mut out = Vec::with_capacity(pieces.len());
     for (p, idx) in pieces.iter().zip(&loops) {
         let mut pts: Vec<[f64; 3]> = Vec::with_capacity(idx.len());
         for i in 0..idx.len() {
-            let (a, b) = (verts[idx[i]], verts[idx[(i + 1) % idx.len()]]);
-            pts.push(a);
+            let (ia, ib) = (idx[i], idx[(i + 1) % idx.len()]);
+            pts.push(verts[ia]);
+            if let Some(on) = between.get(&(ia.min(ib), ia.max(ib))) {
+                if ia < ib { pts.extend(on.iter().copied()) } else { pts.extend(on.iter().rev().copied()) }
+                continue;
+            }
+            let (a, b) = (verts[ia.min(ib)], verts[ia.max(ib)]);
             let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
             let len = plane::norm(d);
             if len <= tol {
@@ -197,7 +213,9 @@ pub fn weld(pieces: &[Piece]) -> Vec<Piece> {
                 }
             });
             on.sort_by(|x, y| x.0.partial_cmp(&y.0).expect("a finite mesh"));
-            pts.extend(on.into_iter().map(|(_, q)| q));
+            let on: Vec<[f64; 3]> = on.into_iter().map(|(_, q)| q).collect();
+            if ia < ib { pts.extend(on.iter().copied()) } else { pts.extend(on.iter().rev().copied()) }
+            between.insert((ia.min(ib), ia.max(ib)), on);
         }
         if pts.len() >= 3 {
             out.push(Piece { pts, ..p.clone() });
