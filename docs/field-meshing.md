@@ -242,3 +242,63 @@ carried a load of 12–56 from system services throughout, so wall times were un
 
 Each tetrahedron is tested about 1.6 times in its life, so caching orthospheres would buy little.
 A local static filter would trade the permanent for a looser bound and more fallbacks.
+
+## F4 results (2026-09-23): refinement in the core
+
+`delaunay::refine::mesh` (`--stl-backend refine`) meshes the material field with protected
+features on our own regular triangulation. Measured through `tests/generating_harness.rs`
+(`SOLVENT_HARNESS_BACKEND=refine`, test profile, not release):
+
+- **Every admitted fixture exports** with no disagreement against its field or its independent
+  truth, in 1–3 s: the skew sphere, the crease-slivers lens, the ring lens, both tori and the lens
+  about two axes (the last two are refusals on the native path).
+- **Four of five gear tooth spaces export** with no disagreement at 2000 probes: bevel pinion
+  (20 s, 10 090 triangles), bevel gear (24 s, 12 406), hypoid 25 gear (22 s, 14 180) and the
+  15° pinion (31 s). The bevel gear space's volume is 2.4 mm³ (0.009%) above the kernel's
+  exact 25 789.54 mm³ at 10 626 triangles; Mesh_3's was 0.12 mm³ at 25 124.
+- **The hypoid 25 pinion space refuses**: four facets share an edge at a feature curve near
+  (60.27, 1.75, −0.08), and shrinking the ball there to 4 µm does not clear it. The facets
+  standing off the surface did not converge either (51, 15, 15, 24, 29, 32 over rebuilds). The
+  likely cause, not yet confirmed, is an **unprotected crease**: the features are the blank's
+  sharp edges and the cut's traces on the blank's faces, not creases inside the cut surface.
+
+**What the implementation needed** (each measured before it was fixed):
+- **Protection is a sizing function, not a spacing per curve.** A curve's stations are a fixed
+  uniform grid halved where a local target asks (`Sizing`: base spacing and `(s, h)` constraints
+  graded by 0.25 per unit length), balanced 2:1 with no gap longer than both neighbours, and a
+  ball's radius is 0.7 × its shorter gap: consecutive balls overlap and next-but-one do not.
+  Halving a whole curve re-refined everything and moved every ball.
+- **Near a corner the exemption is a distance**, within `edge_size` along the curves, not a count
+  of samples: a finer rebuild otherwise lost the exemption. Two curves passing close without a
+  shared corner are sized to their separation.
+- **A blocked repair shrinks the balls and rebuilds** (the triangulation removes no vertex): the
+  curves are refined at the blocking balls, and every kept point is re-inserted without judging,
+  with the field's answers remembered by the point's bits. `orthosphere` works from its corners
+  in a fixed order so a rebuilt tetrahedron has the same orthocentre bits. A rebuild went from
+  about 130 000 new queries to about 3 000.
+- **A surface centre is bisected along the facet's exact dual line**, the points of equal power
+  to its three weighted vertices, between the orthocentres' projections. A nearly flat
+  tetrahedron's orthocentre is far off and inaccurate; bisected toward it, the crossing conflicted
+  with neither tetrahedron, the facet survived its own refinement and was refined again at the
+  same place, leaving two vertices 4e-15 apart. A point conflicting with neither is now refused.
+- **Facets a ball holds may stand off the surface** where no refinement point can reach them.
+  Those more than ten times `facet_distance` off (by the field's side at both ends of that stretch
+  of the facet's normal) shrink their balls as a blocked repair does.
+
+**Heuristic still, and to be derived or replaced:** the `edge_size/8` floor near corners, the
+`edge_size/1024` floor for shrunk balls, the ten-times stand-off threshold and the rebuild cap.
+The feature curves (OCCT edges and 64-cell contours, joined and snapped) produced most of the
+failures fixed here: a straight chord across a contour gap, zero-area loops, curves passing
+within a millimetre of each other.
+
+**Revised plan (2026-09-23).** The target is a fast rough preview that refines live, then a
+longer render for export; exact whole-gear meshing at interactive rates is not required.
+Refinement already takes the worst facet first, so the preview is the same loop shown at
+intervals under looser criteria. Next:
+1. **A complete, analytic feature graph in the core** (F2, extended to creases inside the cut:
+   a sharp tool rim's sweep, the seams between generating faces), with a stage contract that
+   checks it — every sharp crease present, every curve end a corner, no two curves nearly touching.
+   Then the hypoid pinion again.
+2. **A whole member through `refine`**, to measure the render.
+3. **Preview speed:** one tooth-space sector meshed and repeated by the indexing motion, and
+   cheaper field queries.

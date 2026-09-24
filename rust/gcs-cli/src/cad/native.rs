@@ -18,7 +18,6 @@ mod traces;
 pub(crate) mod cells;
 #[path="native/sweep_boundary.rs"]
 pub(crate) mod sweep_boundary;
-#[cfg(feature="cgal")]
 pub(crate) mod features;
 
 extern "C" {

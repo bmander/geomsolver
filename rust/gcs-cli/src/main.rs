@@ -41,9 +41,10 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (requires a native OCCT build)
-    --stl-backend NAME  occt, mesh, manifold or cgal; every solid defaults to occt when built
-                        in, a body with swept cuts included (manifold is a diagnostic, cgal an
-                        experiment meshing the material field with Mesh_3)
+    --stl-backend NAME  occt, mesh, manifold, cgal or refine; every solid defaults to occt
+                        when built in, a body with swept cuts included (manifold is a
+                        diagnostic; refine meshes the material field by the core's Delaunay
+                        refinement, cgal by Mesh_3 as a reference)
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
     --width PX          the SVG's page width in pixels (default 800)
@@ -85,6 +86,8 @@ struct Opts {
     swept_mesh: bool,
     /// `--stl-backend cgal`: the experimental Mesh_3 mesher over the material field.
     cgal: bool,
+    /// `--stl-backend refine`: the core's Delaunay refinement of the material field.
+    refine: bool,
     /// `--gltf PATH` — the object as a viewer opens it, every face named.
     gltf: Option<String>,
     solid: Option<String>,
@@ -107,6 +110,7 @@ impl Default for Opts {
             native_stl: cfg!(feature="occt"),
             swept_mesh: false,
             cgal: false,
+            refine: false,
             gltf: None,
             solid: None,
             width: 800.0,
@@ -126,7 +130,8 @@ fn main() -> ExitCode {
                 Some("mesh") => { opts.native_stl = false; opts.swept_mesh = false; }
                 Some("manifold") => { opts.swept_mesh = true; }
                 Some("cgal") => { opts.cgal = true; }
-                _ => { eprintln!("solventc: --stl-backend needs occt, mesh, manifold or cgal"); return ExitCode::from(2); }
+                Some("refine") => { opts.refine = true; }
+                _ => { eprintln!("solventc: --stl-backend needs occt, mesh, manifold, cgal or refine"); return ExitCode::from(2); }
             },
             "--step" => match args.next() {
                 Some(p) => opts.step = Some(p),
@@ -364,6 +369,20 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
                 }
             }
         }
+    }
+    if let Some(path) = stl.clone().filter(|_| opts.refine && r.success) {
+        #[cfg(feature="occt")]
+        if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
+            if let Err(message) = cad::field_mesh::export_refine(&sk,i,&path) {
+                eprintln!("solventc: {message}");
+                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
+                    span:Default::default(),stmt:None,message});
+                code = 1;
+            }
+        }
+        #[cfg(not(feature="occt"))]
+        { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); code = 1; }
+        stl = None;
     }
     if let Some(path) = stl.clone().filter(|_| opts.cgal && r.success) {
         #[cfg(feature="cgal")]

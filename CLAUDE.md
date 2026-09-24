@@ -363,7 +363,11 @@ Delaunay refinement with protected features and exports every admitted fixture a
 space with no field disagreement, including the cases the native path refuses. Its oracle is
 `MaterialField::side` (a floating-point sign, never an interval claim), its features the
 blank's sharp edges and the field's contours on blank faces. The plan (F1–F5) ports the method
-to the core for WASM; measure the oracle first, since query cost dominates.
+to the core for WASM; measure the oracle first, since query cost dominates. `--stl-backend refine`
+is that port (`delaunay::refine`): every fixture and four of five gear spaces export with no
+disagreement; its F4 record lists what is still heuristic. The target is a rough preview that
+refines live, then a longer export render; the next step is an analytic feature graph with a
+stage contract, since the heuristic features caused most failures.
 **The certified swept boundary (2026-09-10, project 1 of two prerequisites):** the hypoid
 pinion at 15° to 45° showed the mesh arrangement passing its recorded-volume and STL-shell
 gates while a field probe (points 0.1 mm inside and outside every triangle) found 19% to

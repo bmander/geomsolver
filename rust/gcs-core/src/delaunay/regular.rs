@@ -305,7 +305,13 @@ impl Regular {
     /// the centre and radius of the sphere orthogonal to its four weighted vertices (their
     /// circumsphere for zero weights). A reading for construction, never a predicate.
     pub fn orthosphere(&self,t: u32) -> ([f64;3],f64) {
-        let [a,b,c,d] = self.corners(t);
+        // Worked from the corners in a fixed order, so the same four points give the same bits
+        // whichever tetrahedron, rotation or insertion order holds them: a caller remembering the
+        // field's side at an orthocentre finds it again after a rebuild.
+        let mut corners = self.corners(t);
+        corners.sort_unstable_by(|p,q| p.p[0].total_cmp(&q.p[0]).then(p.p[1].total_cmp(&q.p[1]))
+            .then(p.p[2].total_cmp(&q.p[2])).then(p.w.total_cmp(&q.w)));
+        let [a,b,c,d] = corners;
         let from_a = |q: Weighted| [0,1,2].map(|k| q.p[k]-a.p[k]);
         let (u,v,x) = (from_a(b),from_a(c),from_a(d));
         let dot = |p: [f64;3],q: [f64;3]| p[0]*q[0]+p[1]*q[1]+p[2]*q[2];

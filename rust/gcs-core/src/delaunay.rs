@@ -4,6 +4,7 @@
 pub mod expansion;
 pub mod predicates;
 pub mod regular;
+pub mod refine;
 
 pub use predicates::{orient,power,Weighted};
 pub use regular::{Regular,Inserted,Tet,NONE,spatial_order};
