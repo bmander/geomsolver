@@ -197,3 +197,30 @@ fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
     assert!(!done.provisional() && (done.volume()-exact).abs() < 0.03*exact,"{}",done.volume());
     assert!(done.stl().is_ok());
 }
+
+#[test]
+fn a_reading_gives_a_sweeps_value_gradient_and_contact_time() {
+    // A unit sphere swept ±60° round a circle of radius 3: outside it the field is the distance to
+    // the nearest point of the arc less one, rising straight away from that point.
+    let e = read(include_str!("../../examples/solid_generating_sweep.sv"));
+    let i = e.map.ent_named("removal.body").unwrap().i();
+    let field = MaterialField::read(&e.sketch,i,1e-10).unwrap();
+    let limit = std::f64::consts::PI/3.;
+    for p in [[4.5_f64,0.3,0.2],[1.,2.5,-0.7],[2.,-2.8,1.1],[3.,0.,1.5],[-0.5,3.6,0.4]] {
+        let angle = p[1].atan2(p[0]).clamp(-limit,limit);
+        let c = [3.*angle.cos(),3.*angle.sin(),0.];
+        let d: [f64;3] = std::array::from_fn(|k| p[k]-c[k]);
+        let len = (d[0]*d[0]+d[1]*d[1]+d[2]*d[2]).sqrt();
+        // By default the minimum is read to a thousandth of itself; asked exactly, to 1e-8.
+        let loose = field.reading(p);
+        assert!((loose.value-(len-1.)).abs() <= 1e-3*(len-1.).abs()+1e-8,"{p:?}: {} against {}",loose.value,len-1.);
+        let exact = gcs_core::solid::ReadingOptions {relative:0.,..gcs_core::solid::ReadingOptions::at(p)};
+        let r = field.reading_with(p,&exact,&mut 0);
+        assert!((r.value-(len-1.)).abs() < 1e-8,"{p:?}: {} against {}",r.value,len-1.);
+        for k in 0..3 { assert!((r.gradient[k]-d[k]/len).abs() < 1e-5,"{p:?}: {:?} against {:?}",r.gradient,d.map(|x| x/len)); }
+        assert!((r.time.unwrap()-angle).abs() < 1e-5,"{p:?}: time {:?} against {angle}",r.time);
+        assert!(!r.ambiguous,"{p:?}");
+    }
+    // Opposite the gap both end caps are equally near: two contact times, a crease.
+    assert!(field.reading([-3.,0.,0.]).ambiguous);
+}

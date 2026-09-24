@@ -5,6 +5,11 @@ use std::collections::BTreeMap;
 
 pub type SweepError = minimum::Error<Error>;
 
+/// A sweep's least value at a point, the roll time it is least at, and whether a second contact
+/// time reads nearly as low (`SweptField::minimum_at`).
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct SweptMinimum { pub value: f64,pub time: f64,pub tied: bool }
+
 /// The field min_t source(inverse(motion(t)) x) over a finite closed interval.
 /// Source, motion and domain are immutable solved snapshots. Its material is
 /// closure({f<0}); the field is one-Lipschitz but need not be signed distance.
@@ -140,6 +145,112 @@ impl SweptField {
         count(evaluations.get());
         result
     }
+
+    /// The field's value at a point and the roll time it is least at, in plain floating point —
+    /// `side`'s search carried on until no stretch of roll can read more than `accuracy` below the
+    /// best reading, where `side` stops at the first negative one. The value is a reading, not an
+    /// interval claim: a stretch is bounded by the motion's inverse-point speed, and a basin is
+    /// searched by golden section around its lowest reading, so a second dip inside one basin can
+    /// be missed. `tied` is set when the minima of two separate basins are within `tie` of each
+    /// other: two contact times, which is a crease of the swept surface.
+    pub fn minimum_at(&self,p: [f64;3],accuracy: f64,tie: f64) -> SweptMinimum {
+        self.minimum_relative(p,accuracy,0.,tie)
+    }
+
+    /// `minimum_at` found only to `relative` of its own size where that is coarser than
+    /// `accuracy`: a Newton step from a point far from the boundary needs its value to a few
+    /// digits, and the search stops as soon as no stretch can read that much lower.
+    pub fn minimum_relative(&self,p: [f64;3],accuracy: f64,relative: f64,tie: f64) -> SweptMinimum {
+        let [a,b] = self.domain.bounds();
+        let n = (1u64 << SIDE_DEPTH) as f64;
+        let time = |i: u64| a+(b-a)*(i as f64/n);
+        let table = self.poses.get_or_init(|| std::sync::Arc::new((0..=1u64 << SIDE_LEVELS)
+            .map(|k| self.motion.pose_at(time(k << (SIDE_DEPTH-SIDE_LEVELS))).ok().map(|m| m.inverse())).collect()));
+        let evaluations = std::cell::Cell::new(0u64);
+        let at_time = |t: f64| {
+            evaluations.set(evaluations.get()+1);
+            self.motion.pose_at(t).ok().map(|m| m.inverse()).map_or(f64::INFINITY,|m| self.source.value(m.point(p)))
+        };
+        let at = |i: u64| {
+            evaluations.set(evaluations.get()+1);
+            let step = SIDE_DEPTH-SIDE_LEVELS;
+            let pose = if i & ((1u64 << step)-1) == 0 { table[(i >> step) as usize] }
+                else { self.motion.pose_at(time(i)).ok().map(|m| m.inverse()) };
+            pose.map_or(f64::INFINITY,|m| self.source.value(m.point(p)))
+        };
+        let last = 1u64 << SIDE_DEPTH;
+        let (fa,fb) = (at(0),at(last));
+        let (mut best,mut best_t) = if fa <= fb { (fa,a) } else { (fb,b) };
+        let count = |n: u64| SIDE_EVALUATIONS.fetch_add(n,std::sync::atomic::Ordering::Relaxed);
+        let done = |value: f64,time: f64,tied: bool,n: u64| { count(n); SweptMinimum {value,time,tied} };
+        if !(b > a) { return done(best,best_t,false,evaluations.get()); }
+        let Ok(speed) = self.motion.inverse_point_speed_bound(p,self.domain) else { return done(best,best_t,false,evaluations.get()) };
+        let per = (b-a)/n;
+        let bound = |i0: u64,f0: f64,i1: u64,f1: f64| 0.5*(f0+f1)-0.5*speed*per*(i1-i0) as f64;
+        #[derive(PartialEq)]
+        struct Stretch(f64,u64,f64,u64,f64);
+        impl Eq for Stretch {}
+        impl PartialOrd for Stretch { fn partial_cmp(&self,o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
+        impl Ord for Stretch { fn cmp(&self,o: &Self) -> std::cmp::Ordering { o.0.total_cmp(&self.0) } }
+        let mut stretches = std::collections::BinaryHeap::new();
+        stretches.push(Stretch(bound(0,fa,last,fb),0,fa,last,fb));
+        let basin = last >> SIDE_BASIN;
+        let mut tied = false;
+        loop {
+            let Some(Stretch(low,i0,f0,i1,f1)) = stretches.pop() else { break };
+            let accuracy = accuracy.max(relative*best.abs());
+            if low > best-accuracy { break; }
+            if i1-i0 <= basin {
+                // As in `side`: the stretches still able to beat the best reading, grouped into
+                // contiguous runs, each a basin whose minimum golden section finds.
+                let mut open: Vec<(u64,f64,u64,f64)> = vec![(i0,f0,i1,f1)];
+                open.extend(stretches.drain().filter(|s| s.0 <= best-accuracy).map(|s| (s.1,s.2,s.3,s.4)));
+                open.sort_by_key(|s| s.0);
+                let mut runs: Vec<Vec<(u64,f64,u64,f64)>> = Vec::new();
+                for s in open {
+                    match runs.last_mut() { Some(r) if r.last().unwrap().2 == s.0 => r.push(s), _ => runs.push(vec![s]) }
+                }
+                let stop = accuracy;
+                let mut minima: Vec<(f64,f64)> = Vec::new();
+                for run in runs {
+                    let mut readings: Vec<(u64,f64)> = run.iter().map(|s| (s.0,s.1)).collect();
+                    let end = run[run.len()-1];
+                    readings.push((end.2,end.3));
+                    let k = (0..readings.len()).min_by(|&x,&y| readings[x].1.total_cmp(&readings[y].1)).unwrap();
+                    let w = run[0].2-run[0].0;
+                    let (w0,w1) = (readings[k.saturating_sub(1)].0.saturating_sub(if k == 0 { w } else { 0 }),
+                        (if k+1 < readings.len() { readings[k+1].0 } else { readings[k].0+w }).min(last));
+                    let (mut lo,mut hi) = (time(w0),time(w1));
+                    let g = 0.5*(5f64.sqrt()-1.);
+                    let (mut x1,mut x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
+                    let (mut g1,mut g2) = (at_time(x1),at_time(x2));
+                    for _ in 0..40 {
+                        if hi-lo <= 1e-12*(1.+hi.abs()) { break; }
+                        // the minimum is quadratic: once the two readings agree to the accuracy
+                        // asked, the least of them is that close to it
+                        if (g1-g2).abs() <= 0.25*stop && g1.min(g2).abs() > 4.*stop { break; }
+                        if g1 <= g2 { hi = x2; x2 = x1; g2 = g1; x1 = hi-g*(hi-lo); g1 = at_time(x1); }
+                        else { lo = x1; x1 = x2; g1 = g2; x2 = lo+g*(hi-lo); g2 = at_time(x2); }
+                    }
+                    minima.push(if g1 <= g2 { (g1,x1) } else { (g2,x2) });
+                }
+                minima.sort_by(|x,y| x.0.total_cmp(&y.0));
+                if let Some(&(v,t)) = minima.first() { if v < best { best = v; best_t = t; } }
+                tied = minima.len() > 1 && minima[1].0-minima[0].0 <= tie;
+                break;
+            }
+            let im = i0+(i1-i0)/2;
+            let fm = at(im);
+            if fm < best { best = fm; best_t = time(im); }
+            stretches.push(Stretch(bound(i0,f0,im,fm),i0,f0,im,fm));
+            stretches.push(Stretch(bound(im,fm,i1,f1),im,fm,i1,f1));
+        }
+        done(best,best_t,tied,evaluations.get())
+    }
+
+    /// The source, for a reading that follows a minimum to the tool's own gradient.
+    pub(crate) fn source(&self) -> &SpatialField { &self.source }
+    pub(crate) fn motion(&self) -> &Family { &self.motion }
 
     /// Numerical storage is an evaluator control, not a geometry parameter.
     /// Zero disables caching. Reaching the cap merely recomputes later poses;

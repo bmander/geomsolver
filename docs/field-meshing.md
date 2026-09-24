@@ -359,3 +359,38 @@ meshes, one probe short of the agreement gate).
 (`swept_groove.sv`, not committed) is not a manifold and has no ball to shrink: in the app the core
 protects no feature curves, and the block's edges and the groove's crease with the top face need
 them. The ball swept alone meshes (volume 2094.9 against 2110.7). Features from the core are next.
+
+## Readings: value, gradient and active operand (2026-09-24)
+
+`MaterialField::reading(p)` gives a `Reading`: the field's value, its gradient, the leaf deciding it
+(numbered depth-first, a sweep's source leaves among them), the roll time a sweep decides it at,
+and `ambiguous` where another operand or another contact time reads within a tie — a crease. A
+static leaf's gradient is by central differences; a sweep's value is its minimum over the roll
+(`SweptField::minimum_relative`, `side`'s bounded search carried on until no stretch can read
+lower by more than the accuracy, or a thousandth of the value where that is coarser) and its
+gradient the tool's own at that roll time, turned into the world by the pose (the envelope
+theorem). Fixed poses turn gradients by `MotionBounds::gradient_mid`. Checked against the swept
+sphere's closed form: value to 1e-8 asked exactly, gradient to 1e-5, the contact time, and the
+point opposite the gap read ambiguous.
+
+The refinement uses it where a caller supplies one (`Progressive::with_reading`): a crossing is
+found by Newton on the value along the segment, the bracket kept by sign, a bisection step where
+Newton would leave the bracket or not halve the value, ends outside the bounding ball cut back to
+it. Source evaluations (deterministic) and time, bisection against Newton:
+
+| | source evaluations | time |
+| --- | ---: | ---: |
+| torus through a post (app) | 2.86 M → 2.36 M | 1.46 → 1.19 s |
+| tumble (app) | 6.05 M → 4.91 M | 2.46 → 1.93 s |
+| spring (app) | 33.8 M → 20.1 M | 9.66 → 6.52 s |
+| bevel gear space (CLI) | — | 15 s → 49 s in the field |
+
+So the app's field mesher reads and the CLI bisects by default (`SOLVENT_REFINE_NEWTON=1` reads).
+On the gear a reading costs about 0.45 ms against 12 µs for an average sign query: a sign far from
+the boundary is settled by the first bound in two tool evaluations, while a reading finds the whole
+minimum, and Newton reads both ends of the segment, usually far away. Making readings pay there
+is the next step: along one crossing the points are close, so the contact time moves little, and a
+local search from the last one needs a few evaluations where the global search needs many — with
+the global bound still consulted before a local minimum is trusted near zero. The same readings
+are what feature curves can be traced from: a crease is where the deciding leaf changes, or where
+a sweep's contact time is ambiguous.

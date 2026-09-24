@@ -70,6 +70,10 @@ pub struct Report {
     pub coarse: usize,
     /// Refinement points in conflict with neither tetrahedron of their facet, left.
     pub off_dual: usize,
+    /// Crossings found by Newton on readings, those that fell back to bisection, and readings made.
+    pub newton: usize,
+    pub fallbacks: usize,
+    pub readings: usize,
     /// Times the protecting balls were refined and the triangulation rebuilt.
     pub rebuilds: usize,
 }
@@ -88,6 +92,9 @@ impl Ord for Bad { fn cmp(&self,o: &Self) -> std::cmp::Ordering { self.badness.t
 
 struct Refiner<'a> {
     domain: Box<dyn FnMut(P) -> f64 + 'a>,
+    /// The domain's value and gradient where a caller has them (`Progressive::with_reading`):
+    /// crossings are then found by safeguarded Newton rather than bisection.
+    reading: Option<Box<dyn FnMut(P) -> (f64,P) + 'a>>,
     centre: P,
     radius: f64,
     criteria: Criteria,
@@ -136,12 +143,85 @@ impl Refiner<'_> {
     }
 
     /// The boundary crossing between `a` (on side `sa`) and `b` (on the other side).
-    fn crossing(&mut self,mut a: P,sa: i8,mut b: P) -> P {
+    fn crossing(&mut self,a: P,sa: i8,b: P) -> P {
+        if self.reading.is_some() { return self.newton_crossing(a,sa,b); }
+        self.bisected(a,sa,b)
+    }
+
+    fn bisected(&mut self,mut a: P,sa: i8,mut b: P) -> P {
         while dist2(a,b) > self.criteria.bisection*self.criteria.bisection {
             let m = lerp(a,b,0.5);
             if self.side(m) == sa { a = m } else { b = m }
         }
         lerp(a,b,0.5)
+    }
+
+    /// The crossing on the segment from `a` (on side `sa`) to `b` by Newton on the value along
+    /// it, from whichever end reads nearer zero, with the bracket kept: a step that would leave
+    /// it, or that does not halve the value, is a bisection instead, and each reading's sign
+    /// moves one end. It stops where the Newton step or the bracket is within the bisection
+    /// tolerance, so the point is as near the crossing as bisection's would be, in a handful of
+    /// readings where bisection takes twenty sign queries. A reading at an end whose sign
+    /// disagrees with the one the caller found (the field is a floating-point reading, and a
+    /// sweep's side and value are searched differently) falls back to bisection.
+    fn newton_crossing(&mut self,a: P,sa: i8,b: P) -> P {
+        // An end outside the bounding ball reads outside without asking; the segment is cut at
+        // the ball, where the domain reads the same and a reading is worth making.
+        let (a,b) = (self.clipped(a,b),self.clipped(b,a));
+        let tol = self.criteria.bisection;
+        let d = sub(b,a);
+        let len = dot(d,d).sqrt();
+        if !(len > tol) { return lerp(a,b,0.5); }
+        let read = |r: &mut Self,s: f64| -> (f64,f64) {
+            let p = lerp(a,b,s);
+            if dist2(p,r.centre) > r.radius*r.radius { return (f64::INFINITY,0.); }
+            r.report.queries += 1;
+            r.report.readings += 1;
+            let (v,g) = (r.reading.as_mut().unwrap())(p);
+            (v,dot(g,d))
+        };
+        // In `s` along the segment: `lo` on `a`'s side, `hi` on the other.
+        let (mut lo,mut hi) = (0.,1.);
+        let (fa,da) = read(self,0.);
+        let (fb,db) = read(self,1.);
+        let side = |v: f64| if v < 0. { -1 } else { 1 };
+        if !fa.is_finite() || !fb.is_finite() || side(fa) != sa || side(fb) == sa {
+            self.report.fallbacks += 1;
+            return self.bisected(a,sa,b);
+        }
+        self.report.newton += 1;
+        let (mut s,mut f,mut df) = if fa.abs() <= fb.abs() { (0.,fa,da) } else { (1.,fb,db) };
+        for _ in 0..60 {
+            if (hi-lo)*len <= tol { break; }
+            let newton = if df != 0. && df.is_finite() { s-f/df } else { f64::NAN };
+            let inside = newton > lo.min(hi) && newton < lo.max(hi);
+            // Converged: the next Newton step is shorter than the tolerance.
+            if inside && (newton-s).abs()*len <= 0.5*tol { s = newton; break; }
+            let next = if inside { newton } else { 0.5*(lo+hi) };
+            let (fn_,dn) = read(self,next);
+            if !fn_.is_finite() { return self.bisected(a,sa,b); }
+            // Not halving the value: the next step bisects, whatever Newton says.
+            let slow = fn_.abs() > 0.5*f.abs();
+            if side(fn_) == sa { lo = next } else { hi = next }
+            (s,f,df) = (next,fn_,dn);
+            if slow && inside { let (fm,dm) = read(self,0.5*(lo+hi)); let m = 0.5*(lo+hi);
+                if !fm.is_finite() { return self.bisected(a,sa,b); }
+                if side(fm) == sa { lo = m } else { hi = m }
+                (s,f,df) = (m,fm,dm); }
+        }
+        let s = if s > lo.min(hi) && s < lo.max(hi) { s } else { 0.5*(lo+hi) };
+        lerp(a,b,s)
+    }
+
+    /// `p`, or where the segment from `q` to it leaves the bounding ball when `p` is outside it
+    /// and `q` is not: a hair inside, so the reading is made.
+    fn clipped(&self,p: P,q: P) -> P {
+        let r2 = self.radius*self.radius;
+        if dist2(p,self.centre) <= r2 || dist2(q,self.centre) > r2 { return p; }
+        let (d,w) = (sub(p,q),sub(q,self.centre));
+        let (a,b,c) = (dot(d,d),2.*dot(d,w),dot(w,w)-r2);
+        let t = (-b+(b*b-4.*a*c).max(0.).sqrt())/(2.*a);
+        lerp(q,p,(t*(1.-1e-12)).clamp(0.,1.))
     }
 
     /// Where the dual edge of facet `face`, from orthocentre `ot` (on side `st`) to `on`,
@@ -583,6 +663,7 @@ enum Stage {
 /// the field's answers being remembered).
 pub struct Progressive<'a> {
     domain: Option<Box<dyn FnMut(P) -> f64 + 'a>>,
+    reading: Option<Box<dyn FnMut(P) -> (f64,P) + 'a>>,
     refiner: Option<Refiner<'a>>,
     centre: P,
     radius: f64,
@@ -605,7 +686,7 @@ impl<'a> Progressive<'a> {
         let length = |c: &[P]| c.windows(2).map(|w| dist2(w[0],w[1]).sqrt()).sum::<f64>();
         let sizing = curves.iter().map(|c| Sizing {base:length(c).min(criteria.edge_size).max(criteria.edge_size*1e-3),local:Vec::new()}).collect();
         let least = criteria.edge_size/LEAST;
-        Self {domain:Some(side),refiner:None,centre,radius,curves,criteria,sizing,least,kept:Vec::new(),
+        Self {domain:Some(side),reading:None,refiner:None,centre,radius,curves,criteria,sizing,least,kept:Vec::new(),
             memo:HashMap::new(),queries:0,rebuild:0,stage:Stage::Build,manifold:None}
     }
 
@@ -625,6 +706,13 @@ impl<'a> Progressive<'a> {
             }
         }
         Ok(matches!(self.stage,Stage::Done(_)))
+    }
+
+    /// Place crossings by Newton on the domain's value and gradient (`Refiner::newton_crossing`)
+    /// rather than by bisecting its sign. The value must have the side's sign.
+    pub fn with_reading(mut self,reading: Box<dyn FnMut(P) -> (f64,P) + 'a>) -> Self {
+        self.reading = Some(reading);
+        self
     }
 
     /// Whether the refinement has finished, well or not.
@@ -656,11 +744,11 @@ impl<'a> Progressive<'a> {
         let criteria = &self.criteria;
         let (balls,owners) = protect(&self.curves,criteria.edge_size,&mut self.sizing)?;
         let cell = balls.iter().map(|b| b.1).fold(criteria.edge_size,f64::max).max(self.radius*1e-9);
-        let domain = match self.refiner.take() {
-            Some(old) => { self.kept = old.kept; self.memo = old.memo; self.queries = old.report.queries; old.domain }
-            None => self.domain.take().expect("the domain before the first build"),
+        let (domain,reading) = match self.refiner.take() {
+            Some(old) => { self.kept = old.kept; self.memo = old.memo; self.queries = old.report.queries; (old.domain,old.reading) }
+            None => (self.domain.take().expect("the domain before the first build"),self.reading.take()),
         };
-        let mut r = Refiner {domain,centre:self.centre,radius:self.radius,criteria:criteria.clone(),
+        let mut r = Refiner {domain,reading,centre:self.centre,radius:self.radius,criteria:criteria.clone(),
             tri:Regular::new(self.centre,self.radius),sign:Vec::new(),balls:Vec::new(),owners:Vec::new(),
             ball_of:HashMap::new(),kept:Vec::new(),memo:std::mem::take(&mut self.memo),blocking:Vec::new(),
             grid:HashMap::new(),cell,queue:BinaryHeap::new(),report:Report {queries:self.queries,..Report::default()}};

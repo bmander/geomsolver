@@ -29,7 +29,7 @@ pub fn region(sk: &gcs_core::model::Sketch,solid: usize) -> Result<Region,String
 /// `SOLVENT_REFINE_DISTANCE` (facet distance, mm), `SOLVENT_REFINE_ANGLE` (degrees),
 /// `SOLVENT_REFINE_EDGE` (feature spacing, mm).
 pub fn export_refine(sk: &gcs_core::model::Sketch,solid: usize,path: &str) -> Result<(),String> {
-    use gcs_core::delaunay::refine::{mesh,Criteria};
+    use gcs_core::delaunay::refine::{Criteria,Progressive};
     let Region {field,scale,center,radius,diagonal} = region(sk,solid)?;
     let started = std::time::Instant::now();
     let facet = setting("SOLVENT_REFINE_FACET",diagonal*scale/60.)/scale;
@@ -39,19 +39,37 @@ pub fn export_refine(sk: &gcs_core::model::Sketch,solid: usize,path: &str) -> Re
     let curves = features(sk,solid,&field,scale,diagonal)?;
     eprintln!("solventc: [{:7.1} s] refine: {} feature curves of {} points",started.elapsed().as_secs_f64(),curves.len(),
         curves.iter().map(Vec::len).sum::<usize>());
-    let (mut spent,mut shown) = (std::time::Duration::ZERO,0.);
-    let mut side = |p: [f64;3]| {
-        let clock = std::time::Instant::now();
-        let v = field.side(p);
-        spent += clock.elapsed();
+    // Time in the field, signs and readings alike, and a line every three seconds.
+    let spent = std::cell::Cell::new(std::time::Duration::ZERO);
+    let shown = std::cell::Cell::new(0.);
+    let timed = |clock: std::time::Instant| {
+        spent.set(spent.get()+clock.elapsed());
         let seen = started.elapsed().as_secs_f64();
-        if seen > shown+3. {
-            shown = seen;
-            eprintln!("solventc: [{seen:7.1} s] refine: {:.1} s in the field",spent.as_secs_f64());
+        if seen > shown.get()+3. {
+            shown.set(seen);
+            eprintln!("solventc: [{seen:7.1} s] refine: {:.1} s in the field",spent.get().as_secs_f64());
         }
-        v
     };
-    let m = mesh(&mut side,center,radius,&curves,&criteria)?;
+    let side = |p: [f64;3]| { let clock = std::time::Instant::now(); let v = field.side(p); timed(clock); v };
+    let mut run = Progressive::new(Box::new(side),center,radius,curves.clone(),criteria.clone());
+    // Crossings by Newton on the field's value and gradient with `SOLVENT_REFINE_NEWTON=1`. Off by
+    // default: on a gear space a reading costs some thirty sign queries (a sweep's whole minimum
+    // against a sign the first bound settles), and Newton took 49 s in the field where bisection
+    // takes 15 (docs/field-meshing.md, "Readings").
+    if setting("SOLVENT_REFINE_NEWTON",0.) != 0. {
+        run = run.with_reading(Box::new(|p: [f64;3]| {
+            let clock = std::time::Instant::now();
+            // a crossing is placed to the bisection tolerance, so its value is needed to a tenth
+            // of that, and far from the boundary to a thousandth of itself
+            let options = gcs_core::solid::ReadingOptions {accuracy:1e-6*radius,..gcs_core::solid::ReadingOptions::at(p)};
+            let r = field.reading_with(p,&options,&mut 0);
+            timed(clock);
+            (r.value,r.gradient)
+        }));
+    }
+    while !run.step(usize::MAX)? {}
+    let m = run.finished()?;
+    let spent = spent.get();
     eprintln!("solventc: refine: {} triangles in {:?} ({:.1} s in the field), {:?}",m.triangles.len(),started.elapsed(),
         spent.as_secs_f64(),m.report);
     let vertices: Vec<[f64;3]> = m.vertices.iter().map(|v| v.map(|x| x*scale)).collect();

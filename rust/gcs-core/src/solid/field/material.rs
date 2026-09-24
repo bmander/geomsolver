@@ -87,6 +87,44 @@ impl MaterialField {
         }
     }
 
+    /// The value, gradient and deciding operand at a point (`reading.rs`), with tolerances
+    /// scaled to the point.
+    pub fn reading(&self,p: [f64;3]) -> super::Reading {
+        self.reading_with(p,&super::ReadingOptions::at(p),&mut 0)
+    }
+
+    /// A reading with given tolerances, leaves numbered from `*next`.
+    pub fn reading_with(&self,p: [f64;3],options: &super::ReadingOptions,next: &mut usize) -> super::Reading {
+        use super::reading::{higher,lower};
+        match self.node.as_ref() {
+            Node::Static(source) => source.reading(p,options,next),
+            Node::Swept(source) => {
+                let m = source.minimum_relative(p,options.accuracy,options.relative,options.tie);
+                // The tool's own reading at the roll time the sweep is least, turned into the
+                // world: its value is the minimum, and so is its gradient (the envelope theorem).
+                let pose = source.motion().pose_at(m.time).ok().map(|x| x.inverse());
+                let Some(inverse) = pose else {
+                    *next += 1;
+                    return super::Reading {value:m.value,gradient:[0.;3],leaf:*next-1,time:Some(m.time),ambiguous:true};
+                };
+                let r = source.source().reading(inverse.point(p),options,next);
+                let g = r.gradient;
+                let gradient = std::array::from_fn(|i| (0..3).map(|k| inverse.r[k][i]*g[k]).sum());
+                super::Reading {value:m.value,gradient,time:Some(m.time),ambiguous:r.ambiguous || m.tied,..r}
+            }
+            Node::Transformed {source,pose} => {
+                let r = source.reading_with(pose.inverse_point_mid(p),options,next);
+                super::Reading {gradient:pose.gradient_mid(r.gradient),..r}
+            }
+            Node::Union(a,b) => { let (x,y) = (a.reading_with(p,options,next),b.reading_with(p,options,next)); lower(x,y,options.tie) }
+            Node::Intersection(a,b) => { let (x,y) = (a.reading_with(p,options,next),b.reading_with(p,options,next)); higher(x,y,options.tie) }
+            Node::Difference(a,b) => {
+                let (x,y) = (a.reading_with(p,options,next),b.reading_with(p,options,next));
+                higher(x,y.negated(),options.tie)
+            }
+        }
+    }
+
     /// Cloned swept operands share one capped pose cache, even under different
     /// fixed transforms. The cap applies per distinct swept node, not per copy.
     pub fn evaluator(&self,max_cached_poses_per_sweep: usize) -> MaterialEvaluator {

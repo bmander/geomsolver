@@ -8,6 +8,7 @@
 //! terminal, a test) has the sketch mesh the field to the end when a solid is first asked for.
 use super::*;
 use crate::delaunay::refine::{Criteria, Progressive};
+use super::ReadingOptions;
 
 /// A field-meshed solid's facet size and surface distance, as fractions of its support's
 /// diagonal: a preview's, coarse enough to mesh a small part in about a second natively.
@@ -47,7 +48,15 @@ impl FieldMesher {
             facet_size: facet, facet_distance: diagonal / FIELD_DISTANCE, facet_angle: 25.0,
             edge_size: facet, bisection: 1e-5 * radius, max_points: 500_000,
         };
-        let run = Progressive::new(Box::new(move |p| field.side(p)), centre, radius, Vec::new(), criteria);
+        let reader = field.clone();
+        let run = Progressive::new(Box::new(move |p| field.side(p)), centre, radius, Vec::new(), criteria)
+            .with_reading(Box::new(move |p| {
+                // a crossing is placed to the bisection tolerance, so its value is needed to a
+                // tenth of that, and far from the boundary to a thousandth of itself
+                let options = ReadingOptions { accuracy: 1e-6 * radius, ..ReadingOptions::at(p) };
+                let r = reader.reading_with(p, &options, &mut 0);
+                (r.value, r.gradient)
+            }));
         Ok(Self { run, failed: false })
     }
 

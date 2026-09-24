@@ -104,6 +104,26 @@ impl SpatialField {
         }
     }
 
+    /// The value, gradient and deciding leaf at a point (`reading.rs`), leaves numbered from
+    /// `*next` depth-first; every leaf is visited, so the numbering does not depend on the point.
+    pub fn reading(&self,p: [f64;3],options: &super::ReadingOptions,next: &mut usize) -> super::Reading {
+        use super::reading::{higher,leaf,lower};
+        match self.node.as_ref() {
+            Node::Revolved(source) => { *next += 1; leaf(|q| source.value(q),p,options.step,*next-1) }
+            Node::Extruded(source) => { *next += 1; leaf(|q| source.value(q),p,options.step,*next-1) }
+            Node::Transformed {source,pose} => {
+                let r = source.reading(pose.inverse_point_mid(p),options,next);
+                super::Reading {gradient:pose.gradient_mid(r.gradient),..r}
+            }
+            Node::Union(a,b) => { let (x,y) = (a.reading(p,options,next),b.reading(p,options,next)); lower(x,y,options.tie) }
+            Node::Intersection(a,b) => { let (x,y) = (a.reading(p,options,next),b.reading(p,options,next)); higher(x,y,options.tie) }
+            Node::Difference(a,b) => {
+                let (x,y) = (a.reading(p,options,next),b.reading(p,options,next));
+                higher(x,y.negated(),options.tie)
+            }
+        }
+    }
+
     pub fn bounds(&self,p: V) -> Result<I,Error> {
         // A tree that shares no node needs no memo: the memo is a hash of the
         // whole box per node, which costs about what a leaf does, and most

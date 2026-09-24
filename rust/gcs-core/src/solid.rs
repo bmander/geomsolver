@@ -50,6 +50,7 @@ use document::{frame_origin,resolve_at};
 mod field;
 pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError};
 pub use field::{MaterialField,MaterialEvaluator,MaterialBounds,MaterialSweepQuery,SIDE_EVALUATIONS};
+pub use field::{Reading,ReadingOptions,SweptMinimum};
 pub use field::{MaterialProbe,ProbeState};
 pub use field::{BoundaryOptions,BoundaryError,BoundaryStage,FieldBoundary,BoundaryCell,BoundaryPoint,BoundaryCrossing};
 pub use field::BoundaryComponent;
