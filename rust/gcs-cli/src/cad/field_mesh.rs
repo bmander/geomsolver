@@ -53,16 +53,19 @@ pub fn export_refine(sk: &gcs_core::model::Sketch,solid: usize,path: &str) -> Re
     let side = |p: [f64;3]| { let clock = std::time::Instant::now(); let v = field.side(p); timed(clock); v };
     let mut run = Progressive::new(Box::new(side),center,radius,curves.clone(),criteria.clone());
     // Crossings by Newton on the field's value and gradient with `SOLVENT_REFINE_NEWTON=1`. Off by
-    // default: on a gear space a reading costs some thirty sign queries (a sweep's whole minimum
-    // against a sign the first bound settles), and Newton took 49 s in the field where bisection
-    // takes 15 (docs/field-meshing.md, "Readings").
+    // default: a gear's sign queries are cheap (about seven tool evaluations near the boundary),
+    // and even warm-started readings leave a gear space 14% dearer than bisecting it
+    // (docs/field-meshing.md, "Warm readings").
     if setting("SOLVENT_REFINE_NEWTON",0.) != 0. {
-        run = run.with_reading(Box::new(|p: [f64;3]| {
+        let mut hints = Vec::new();
+        let (field,timed) = (&field,&timed);
+        run = run.with_reading(Box::new(move |p: [f64;3],warm: bool| {
             let clock = std::time::Instant::now();
             // a crossing is placed to the bisection tolerance, so its value is needed to a tenth
             // of that, and far from the boundary to a thousandth of itself
-            let options = gcs_core::solid::ReadingOptions {accuracy:1e-6*radius,..gcs_core::solid::ReadingOptions::at(p)};
-            let r = field.reading_with(p,&options,&mut 0);
+            let options = gcs_core::solid::ReadingOptions {accuracy:1e-6*radius,local:warm,..gcs_core::solid::ReadingOptions::at(p)};
+            if !warm { hints.clear(); }
+            let r = field.reading_warm(p,&options,&mut 0,&mut hints);
             timed(clock);
             (r.value,r.gradient)
         }));

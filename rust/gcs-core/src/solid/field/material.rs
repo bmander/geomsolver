@@ -95,11 +95,23 @@ impl MaterialField {
 
     /// A reading with given tolerances, leaves numbered from `*next`.
     pub fn reading_with(&self,p: [f64;3],options: &super::ReadingOptions,next: &mut usize) -> super::Reading {
+        self.reading_warm(p,options,next,&mut Vec::new())
+    }
+
+    /// A reading warm-started from a nearby point's: `hints[k]` is the contact time of the sweep
+    /// numbered `k` there (`SweptField::minimum_hinted`), and is left holding this point's. An
+    /// empty vector is a cold reading; a hint from far away costs time, never the answer.
+    pub fn reading_warm(&self,p: [f64;3],options: &super::ReadingOptions,next: &mut usize,
+        hints: &mut Vec<Option<f64>>) -> super::Reading {
         use super::reading::{higher,lower};
         match self.node.as_ref() {
             Node::Static(source) => source.reading(p,options,next),
             Node::Swept(source) => {
-                let m = source.minimum_relative(p,options.accuracy,options.relative,options.tie);
+                // the sweep is keyed by the number its first source leaf will take
+                let key = *next;
+                if hints.len() <= key { hints.resize(key+1,None); }
+                let m = source.minimum_hinted(p,options.accuracy,options.relative,options.tie,hints[key],options.local);
+                hints[key] = Some(m.time);
                 // The tool's own reading at the roll time the sweep is least, turned into the
                 // world: its value is the minimum, and so is its gradient (the envelope theorem).
                 let pose = source.motion().pose_at(m.time).ok().map(|x| x.inverse());
@@ -113,13 +125,19 @@ impl MaterialField {
                 super::Reading {value:m.value,gradient,time:Some(m.time),ambiguous:r.ambiguous || m.tied,..r}
             }
             Node::Transformed {source,pose} => {
-                let r = source.reading_with(pose.inverse_point_mid(p),options,next);
+                let r = source.reading_warm(pose.inverse_point_mid(p),options,next,hints);
                 super::Reading {gradient:pose.gradient_mid(r.gradient),..r}
             }
-            Node::Union(a,b) => { let (x,y) = (a.reading_with(p,options,next),b.reading_with(p,options,next)); lower(x,y,options.tie) }
-            Node::Intersection(a,b) => { let (x,y) = (a.reading_with(p,options,next),b.reading_with(p,options,next)); higher(x,y,options.tie) }
+            Node::Union(a,b) => {
+                let (x,y) = (a.reading_warm(p,options,next,hints),b.reading_warm(p,options,next,hints));
+                lower(x,y,options.tie)
+            }
+            Node::Intersection(a,b) => {
+                let (x,y) = (a.reading_warm(p,options,next,hints),b.reading_warm(p,options,next,hints));
+                higher(x,y,options.tie)
+            }
             Node::Difference(a,b) => {
-                let (x,y) = (a.reading_with(p,options,next),b.reading_with(p,options,next));
+                let (x,y) = (a.reading_warm(p,options,next,hints),b.reading_warm(p,options,next,hints));
                 higher(x,y.negated(),options.tie)
             }
         }

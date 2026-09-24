@@ -161,6 +161,22 @@ impl SweptField {
     /// `accuracy`: a Newton step from a point far from the boundary needs its value to a few
     /// digits, and the search stops as soon as no stretch can read that much lower.
     pub fn minimum_relative(&self,p: [f64;3],accuracy: f64,relative: f64,tie: f64) -> SweptMinimum {
+        self.minimum_hinted(p,accuracy,relative,tie,None,false)
+    }
+
+    /// `minimum_relative` warm-started from `hint`, the contact time at a nearby point: the
+    /// basin-wide window about it (a `SIDE_BASIN`th of the roll) is searched first, and its
+    /// minimum is the best reading the bounded search over the whole roll starts from — so every
+    /// stretch that cannot beat it is pruned as `side` prunes, the window itself is not searched
+    /// again, and a deeper minimum anywhere else is still found. A hint far from the contact
+    /// costs the window's search and nothing in correctness.
+    ///
+    /// `local` trusts the window: its minimum is returned without the search over the whole roll,
+    /// unless it lies at the window's edge (the contact moved further than the window reaches),
+    /// when the whole roll is searched after all. That is a continuation, not a minimum: a deeper
+    /// contact elsewhere is not looked for, and a caller that takes it must check its conclusions
+    /// another way (the refinement checks a crossing's bracket by `side`).
+    pub fn minimum_hinted(&self,p: [f64;3],accuracy: f64,relative: f64,tie: f64,hint: Option<f64>,local: bool) -> SweptMinimum {
         let [a,b] = self.domain.bounds();
         let n = (1u64 << SIDE_DEPTH) as f64;
         let time = |i: u64| a+(b-a)*(i as f64/n);
@@ -184,6 +200,37 @@ impl SweptField {
         let count = |n: u64| SIDE_EVALUATIONS.fetch_add(n,std::sync::atomic::Ordering::Relaxed);
         let done = |value: f64,time: f64,tied: bool,n: u64| { count(n); SweptMinimum {value,time,tied} };
         if !(b > a) { return done(best,best_t,false,evaluations.get()); }
+        let basin = last >> SIDE_BASIN;
+        // The golden section about a bracket, stopping once its two readings agree to `stop`.
+        let golden = |mut lo: f64,mut hi: f64,stop: f64| -> (f64,f64) {
+            let g = 0.5*(5f64.sqrt()-1.);
+            let (mut x1,mut x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
+            let (mut g1,mut g2) = (at_time(x1),at_time(x2));
+            for _ in 0..40 {
+                if hi-lo <= 1e-12*(1.+hi.abs()) { break; }
+                // the minimum is quadratic: once the two readings agree to the accuracy asked,
+                // the least of them is that close to it, however near zero it is
+                if (g1-g2).abs() <= 0.25*stop { break; }
+                if g1 <= g2 { hi = x2; x2 = x1; g2 = g1; x1 = hi-g*(hi-lo); g1 = at_time(x1); }
+                else { lo = x1; x1 = x2; g1 = g2; x2 = lo+g*(hi-lo); g2 = at_time(x2); }
+            }
+            if g1 <= g2 { (g1,x1) } else { (g2,x2) }
+        };
+        // The hint's window, in grid indices, searched first; `None` when cold.
+        let window = hint.filter(|t| t.is_finite() && *t >= a && *t <= b).map(|t| {
+            let centre = ((t-a)/(b-a)*n).round().clamp(0.,last as f64) as u64;
+            let (w0,w1) = (centre.saturating_sub(basin/2),(centre+basin/2).min(last));
+            let found = golden(time(w0),time(w1),accuracy);
+            if found.0 < best { best = found.0; best_t = found.1; }
+            (w0,w1,found)
+        });
+        if local {
+            if let Some((w0,w1,found)) = window {
+                let margin = 0.02*(time(w1)-time(w0));
+                let at_edge = (found.1-time(w0) < margin && w0 > 0) || (time(w1)-found.1 < margin && w1 < last);
+                if !at_edge { return done(found.0,found.1,false,evaluations.get()); }
+            }
+        }
         let Ok(speed) = self.motion.inverse_point_speed_bound(p,self.domain) else { return done(best,best_t,false,evaluations.get()) };
         let per = (b-a)/n;
         let bound = |i0: u64,f0: f64,i1: u64,f1: f64| 0.5*(f0+f1)-0.5*speed*per*(i1-i0) as f64;
@@ -194,17 +241,18 @@ impl SweptField {
         impl Ord for Stretch { fn cmp(&self,o: &Self) -> std::cmp::Ordering { o.0.total_cmp(&self.0) } }
         let mut stretches = std::collections::BinaryHeap::new();
         stretches.push(Stretch(bound(0,fa,last,fb),0,fa,last,fb));
-        let basin = last >> SIDE_BASIN;
         let mut tied = false;
+        let searched = |i0: u64,i1: u64| window.is_some_and(|(w0,w1,_)| i0 >= w0 && i1 <= w1);
         loop {
             let Some(Stretch(low,i0,f0,i1,f1)) = stretches.pop() else { break };
             let accuracy = accuracy.max(relative*best.abs());
             if low > best-accuracy { break; }
+            if searched(i0,i1) { continue; }
             if i1-i0 <= basin {
                 // As in `side`: the stretches still able to beat the best reading, grouped into
                 // contiguous runs, each a basin whose minimum golden section finds.
                 let mut open: Vec<(u64,f64,u64,f64)> = vec![(i0,f0,i1,f1)];
-                open.extend(stretches.drain().filter(|s| s.0 <= best-accuracy).map(|s| (s.1,s.2,s.3,s.4)));
+                open.extend(stretches.drain().filter(|s| s.0 <= best-accuracy && !searched(s.1,s.3)).map(|s| (s.1,s.2,s.3,s.4)));
                 open.sort_by_key(|s| s.0);
                 let mut runs: Vec<Vec<(u64,f64,u64,f64)>> = Vec::new();
                 for s in open {
@@ -220,19 +268,21 @@ impl SweptField {
                     let w = run[0].2-run[0].0;
                     let (w0,w1) = (readings[k.saturating_sub(1)].0.saturating_sub(if k == 0 { w } else { 0 }),
                         (if k+1 < readings.len() { readings[k+1].0 } else { readings[k].0+w }).min(last));
-                    let (mut lo,mut hi) = (time(w0),time(w1));
-                    let g = 0.5*(5f64.sqrt()-1.);
-                    let (mut x1,mut x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
-                    let (mut g1,mut g2) = (at_time(x1),at_time(x2));
-                    for _ in 0..40 {
-                        if hi-lo <= 1e-12*(1.+hi.abs()) { break; }
-                        // the minimum is quadratic: once the two readings agree to the accuracy
-                        // asked, the least of them is that close to it
-                        if (g1-g2).abs() <= 0.25*stop && g1.min(g2).abs() > 4.*stop { break; }
-                        if g1 <= g2 { hi = x2; x2 = x1; g2 = g1; x1 = hi-g*(hi-lo); g1 = at_time(x1); }
-                        else { lo = x1; x1 = x2; g1 = g2; x2 = lo+g*(hi-lo); g2 = at_time(x2); }
+                    minima.push(golden(time(w0),time(w1),stop));
+                }
+                // The window's minimum is a basin too. A run's beside it is the same basin carried
+                // on past the window's edge (the contact moved further than the window reaches),
+                // and the lower of the two is that basin's minimum.
+                if let Some((w0,w1,found)) = window {
+                    let reach = time(w1)-time(w0);
+                    let mut basin_min = found;
+                    let mut others = Vec::new();
+                    for m in minima {
+                        if (m.1-found.1).abs() <= reach { if m.0 < basin_min.0 { basin_min = m; } }
+                        else { others.push(m); }
                     }
-                    minima.push(if g1 <= g2 { (g1,x1) } else { (g2,x2) });
+                    minima = others;
+                    minima.push(basin_min);
                 }
                 minima.sort_by(|x,y| x.0.total_cmp(&y.0));
                 if let Some(&(v,t)) = minima.first() { if v < best { best = v; best_t = t; } }

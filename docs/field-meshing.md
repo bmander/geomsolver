@@ -394,3 +394,34 @@ local search from the last one needs a few evaluations where the global search n
 the global bound still consulted before a local minimum is trusted near zero. The same readings
 are what feature curves can be traced from: a crease is where the deciding leaf changes, or where
 a sweep's contact time is ambiguous.
+
+## Warm readings (2026-09-24)
+
+A reading within one crossing now continues each sweep's contact from the reading before it
+(`MaterialField::reading_warm`, hints by sweep leaf; `SweptField::minimum_hinted`). A warm-started
+*global* minimum did not pay: its search is the proof that no other contact time dips lower, and
+next to the contact the first-order bound (the tool's speed times the stretch) cannot rule
+neighbouring stretches out without splitting them finely, however good the starting reading —
+counted on gear points near the boundary, a sign query costs 6.7 tool evaluations, a cold
+reading 55 and a warm-started global one 66. So a warm reading is a *local continuation*
+(`ReadingOptions::local`): the basin-wide window about the last contact time is searched by golden
+section, 13 evaluations, and the whole roll only when its minimum sits at the window's edge. What
+the continuation cannot see — a deeper contact elsewhere — the crossing checks by `side`, the
+query bisection trusts, a tolerance outside each end of the bracket Newton closed (inside it a
+value's sign and `side`'s may both be right that close to the boundary); a bracket it disowns is
+bisected from the start. Newton reads only the end it starts from: the other's side is known.
+
+Tool evaluations (deterministic; wall time on this machine was not):
+
+| | bisection | Newton, cold | Newton, local |
+| --- | ---: | ---: | ---: |
+| torus through a post | 2.86 M | 2.27 M | 1.78 M |
+| tumble | 6.05 M | 4.07 M | 3.02 M |
+| spring | 33.8 M | 17.8 M | 14.8 M |
+| gear space (preview criteria) | 6.87 M | 11.3 M | 7.86 M |
+
+The app's mesher reads locally within a crossing. Carrying contact times from one crossing to the
+next brought the gear to parity (6.72 M) and cost the spring a third more (crossings along a coil
+are far apart, so the hint is stale and the check falls back), so it was dropped. The CLI still
+bisects by default: a gear's sign queries are cheap, and its first reading of a crossing is a
+whole cold search.

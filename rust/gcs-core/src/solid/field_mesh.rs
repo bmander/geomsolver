@@ -50,12 +50,17 @@ impl FieldMesher {
         };
         let reader = field.clone();
         let run = Progressive::new(Box::new(move |p| field.side(p)), centre, radius, Vec::new(), criteria)
-            .with_reading(Box::new(move |p| {
-                // a crossing is placed to the bisection tolerance, so its value is needed to a
-                // tenth of that, and far from the boundary to a thousandth of itself
-                let options = ReadingOptions { accuracy: 1e-6 * radius, ..ReadingOptions::at(p) };
-                let r = reader.reading_with(p, &options, &mut 0);
-                (r.value, r.gradient)
+            .with_reading(Box::new({
+                // the contact times of the last reading, for the next one along the same crossing
+                let mut hints = Vec::new();
+                move |p, warm| {
+                    // a crossing is placed to the bisection tolerance, so its value is needed to a
+                    // tenth of that, and far from the boundary to a thousandth of itself
+                    let options = ReadingOptions { accuracy: 1e-6 * radius, local: warm, ..ReadingOptions::at(p) };
+                    if !warm { hints.clear(); }
+                    let r = reader.reading_warm(p, &options, &mut 0, &mut hints);
+                    (r.value, r.gradient)
+                }
             }));
         Ok(Self { run, failed: false })
     }

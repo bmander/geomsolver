@@ -33,6 +33,9 @@ pub struct ReadingOptions {
     pub tie: f64,
     /// The central-difference step for a static leaf's gradient.
     pub step: f64,
+    /// A warm reading continues each sweep's contact from its hint without searching the whole
+    /// roll (`SweptField::minimum_hinted`): a continuation, which a caller must check otherwise.
+    pub local: bool,
 }
 
 impl ReadingOptions {
@@ -40,7 +43,7 @@ impl ReadingOptions {
     /// a thousandth of its own value, a tie at a millionth, a difference step at a ten-millionth.
     pub fn at(p: [f64;3]) -> Self {
         let size = 1.+(p[0]*p[0]+p[1]*p[1]+p[2]*p[2]).sqrt();
-        Self {accuracy:1e-10*size,relative:1e-3,tie:1e-6*size,step:1e-7*size}
+        Self {accuracy:1e-10*size,relative:1e-3,tie:1e-6*size,step:1e-7*size,local:false}
     }
 }
 

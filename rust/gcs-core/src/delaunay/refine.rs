@@ -94,7 +94,9 @@ struct Refiner<'a> {
     domain: Box<dyn FnMut(P) -> f64 + 'a>,
     /// The domain's value and gradient where a caller has them (`Progressive::with_reading`):
     /// crossings are then found by safeguarded Newton rather than bisection.
-    reading: Option<Box<dyn FnMut(P) -> (f64,P) + 'a>>,
+    /// Called with whether the point continues the crossing just read, so a reading may start
+    /// from the last one's.
+    reading: Option<Box<dyn FnMut(P,bool) -> (f64,P) + 'a>>,
     centre: P,
     radius: f64,
     criteria: Criteria,
@@ -172,25 +174,28 @@ impl Refiner<'_> {
         let d = sub(b,a);
         let len = dot(d,d).sqrt();
         if !(len > tol) { return lerp(a,b,0.5); }
-        let read = |r: &mut Self,s: f64| -> (f64,f64) {
+        // The first reading of a crossing is cold; every later one continues from the last.
+        let mut warm = false;
+        let mut read = |r: &mut Self,s: f64| -> (f64,f64) {
             let p = lerp(a,b,s);
             if dist2(p,r.centre) > r.radius*r.radius { return (f64::INFINITY,0.); }
             r.report.queries += 1;
             r.report.readings += 1;
-            let (v,g) = (r.reading.as_mut().unwrap())(p);
+            let (v,g) = (r.reading.as_mut().unwrap())(p,warm);
+            warm = true;
             (v,dot(g,d))
         };
-        // In `s` along the segment: `lo` on `a`'s side, `hi` on the other.
+        // In `s` along the segment: `lo` on `a`'s side, `hi` on the other. Newton starts from `a`,
+        // the one end read: `b`'s side is known, and its value would be a second whole reading.
         let (mut lo,mut hi) = (0.,1.);
         let (fa,da) = read(self,0.);
-        let (fb,db) = read(self,1.);
         let side = |v: f64| if v < 0. { -1 } else { 1 };
-        if !fa.is_finite() || !fb.is_finite() || side(fa) != sa || side(fb) == sa {
+        if !fa.is_finite() || side(fa) != sa {
             self.report.fallbacks += 1;
             return self.bisected(a,sa,b);
         }
         self.report.newton += 1;
-        let (mut s,mut f,mut df) = if fa.abs() <= fb.abs() { (0.,fa,da) } else { (1.,fb,db) };
+        let (mut s,mut f,mut df) = (0.,fa,da);
         for _ in 0..60 {
             if (hi-lo)*len <= tol { break; }
             let newton = if df != 0. && df.is_finite() { s-f/df } else { f64::NAN };
@@ -210,6 +215,19 @@ impl Refiner<'_> {
                 (s,f,df) = (m,fm,dm); }
         }
         let s = if s > lo.min(hi) && s < lo.max(hi) { s } else { 0.5*(lo+hi) };
+        // The readings after the first may have continued a contact rather than searched for the
+        // least one (`ReadingOptions::local`): the bracket they closed is checked by `side`, the
+        // query bisection trusts, a tolerance outside each end — within it a reading's sign and
+        // `side`'s may both be right about a point that close to the boundary — and a bracket it
+        // disowns is bisected from the start. The crossing is then within the tolerance of the
+        // point returned, as bisection's is.
+        let pad = tol/len;
+        let (sl,sh) = ((lo.min(hi)-pad).max(0.),(lo.max(hi)+pad).min(1.));
+        let (sl,sh) = if lo <= hi { (sl,sh) } else { (sh,sl) };
+        if (sl > 0. && self.side(lerp(a,b,sl)) != sa) || (sh < 1. && self.side(lerp(a,b,sh)) == sa) {
+            self.report.fallbacks += 1;
+            return self.bisected(a,sa,b);
+        }
         lerp(a,b,s)
     }
 
@@ -663,7 +681,7 @@ enum Stage {
 /// the field's answers being remembered).
 pub struct Progressive<'a> {
     domain: Option<Box<dyn FnMut(P) -> f64 + 'a>>,
-    reading: Option<Box<dyn FnMut(P) -> (f64,P) + 'a>>,
+    reading: Option<Box<dyn FnMut(P,bool) -> (f64,P) + 'a>>,
     refiner: Option<Refiner<'a>>,
     centre: P,
     radius: f64,
@@ -710,7 +728,7 @@ impl<'a> Progressive<'a> {
 
     /// Place crossings by Newton on the domain's value and gradient (`Refiner::newton_crossing`)
     /// rather than by bisecting its sign. The value must have the side's sign.
-    pub fn with_reading(mut self,reading: Box<dyn FnMut(P) -> (f64,P) + 'a>) -> Self {
+    pub fn with_reading(mut self,reading: Box<dyn FnMut(P,bool) -> (f64,P) + 'a>) -> Self {
         self.reading = Some(reading);
         self
     }

@@ -222,9 +222,10 @@ page's text and parameter values) which posts each swept object's surface every 
 worst facet first, to `supply_field` — a provisional surface draws and exports nothing. The
 `swept_torus.sv` part shows 48 triangles at 0.7 s and its final 1912 at 2.8 s.
 `MaterialField::reading` gives value, gradient, deciding leaf, a sweep's contact time and a crease
-flag; the app's mesher places crossings by safeguarded Newton on it (17–40% fewer tool
-evaluations on the swept examples), the CLI bisects unless `SOLVENT_REFINE_NEWTON=1`, since a
-gear reading costs ~30 sign queries until contact times are warm-started (docs/field-meshing.md).
+flag; the app's mesher places crossings by safeguarded Newton on it, each later reading of a
+crossing a local continuation of the contact (`ReadingOptions::local`) whose bracket `side` checks
+a tolerance outside each end — 38–56% fewer tool evaluations on the swept examples. The CLI bisects
+unless `SOLVENT_REFINE_NEWTON=1`: a gear space is 14% dearer that way (docs/field-meshing.md).
 **Swept boundaries by arrangement and classification (2026-09-09):** `solventc --step/--stl`
 builds a body with swept cuts in `rust/gcs-cli/src/cad/native/sweep_boundary.rs`, not from the
 contact atlas. `cad::recipe_static` gives the static blank and lists each swept cut with its

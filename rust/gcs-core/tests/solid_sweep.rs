@@ -224,3 +224,28 @@ fn a_reading_gives_a_sweeps_value_gradient_and_contact_time() {
     // Opposite the gap both end caps are equally near: two contact times, a crease.
     assert!(field.reading([-3.,0.,0.]).ambiguous);
 }
+
+#[test]
+fn a_warm_reading_is_the_cold_one_whatever_its_hint() {
+    let e = read(include_str!("../../examples/solid_generating_sweep.sv"));
+    let i = e.map.ent_named("removal.body").unwrap().i();
+    let field = MaterialField::read(&e.sketch,i,1e-10).unwrap();
+    let exact = |p: [f64;3]| gcs_core::solid::ReadingOptions {relative:0.,..gcs_core::solid::ReadingOptions::at(p)};
+    // Along a segment through the swept body, each reading warm from the last.
+    let mut hints = Vec::new();
+    for k in 0..=20 {
+        let s = k as f64/20.;
+        let p = [4.6-3.*s,-1.+2.8*s,0.3];
+        let (warm,cold) = (field.reading_warm(p,&exact(p),&mut 0,&mut hints),field.reading_with(p,&exact(p),&mut 0));
+        assert!((warm.value-cold.value).abs() < 1e-9,"{p:?}: warm {} cold {}",warm.value,cold.value);
+        assert!((0..3).all(|j| (warm.gradient[j]-cold.gradient[j]).abs() < 1e-5),"{p:?}");
+        assert!((warm.time.unwrap()-cold.time.unwrap()).abs() < 1e-4,"{p:?}: {:?} {:?}",warm.time,cold.time);
+    }
+    // A hint at a local minimum that is not the least: near the +60° cap, warm from the -60° one.
+    let limit = std::f64::consts::PI/3.;
+    let p = [1.2,2.9,0.4];
+    let mut hints = vec![Some(-limit)];
+    let warm = field.reading_warm(p,&exact(p),&mut 0,&mut hints);
+    let cold = field.reading_with(p,&exact(p),&mut 0);
+    assert!((warm.value-cold.value).abs() < 1e-9 && (warm.time.unwrap()-limit).abs() < 1e-4,"{warm:?} {cold:?}");
+}
