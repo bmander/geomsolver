@@ -96,6 +96,8 @@ pub struct EvaluatedSolid {
     round: Vec<RoundFeature>,
     /// A swept solid's surface still being refined (`from_surface`).
     provisional: bool,
+    /// Its boundary is a field's surface (`from_surface`).
+    from_field: bool,
     edges: OnceCell<Vec<Edge>>,
     mesh: OnceCell<mesh::Mesh>,
     ray_indices: OnceCell<Vec<RayIndex>>,
@@ -234,6 +236,7 @@ impl EvaluatedSolid {
             surviving,
             round,
             provisional: false,
+            from_field: false,
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
@@ -290,6 +293,7 @@ impl EvaluatedSolid {
             paths: operand_paths(sk, si),
             round: Vec::new(),
             provisional: surface.provisional,
+            from_field: true,
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
@@ -386,7 +390,9 @@ impl EvaluatedSolid {
             .get_or_init(|| csg::edges_indexed(&self.csg, self.epsilon, self.ray_indices()))
     }
     pub fn mesh(&self) -> &mesh::Mesh {
-        self.mesh.get_or_init(|| mesh::grouped(&self.boundary))
+        // a field's surface came indexed, its corners shared exactly: nothing for a weld to do
+        self.mesh.get_or_init(|| if self.from_field { mesh::grouped_welded(self.boundary.clone()) }
+            else { mesh::grouped(&self.boundary) })
     }
     pub fn world_boundary(&self) -> Vec<Piece> {
         translate_pieces(&self.boundary, self.origin.0)

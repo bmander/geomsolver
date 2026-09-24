@@ -450,7 +450,12 @@ pub struct Group {
 /// same drawing give the same buffer, and a viewer that remembers which face was selected finds
 /// it in the same place.
 pub fn grouped(pieces: &[Piece]) -> Mesh {
-    let welded = weld(pieces);
+    grouped_welded(weld(pieces))
+}
+
+/// `grouped` for pieces already welded: every shared corner the same bits and no vertex partway
+/// along another's edge — a surface that came as an indexed mesh, which a weld would only search.
+pub fn grouped_welded(welded: Vec<Piece>) -> Mesh {
     if welded.is_empty() {
         return Mesh::default();
     }

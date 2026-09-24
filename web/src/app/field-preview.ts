@@ -37,12 +37,28 @@ export interface Frame {
   error?: string;
 }
 
+/** The least time between two surfaces applied, however cheap the redraw. */
+const MIN_GAP_MS = 60;
+
+/** Once the frame now being drawn has been painted: two animation frames, since the first runs
+ *  before that paint. Without animation frames (a test's page) or with the page hidden (which
+ *  runs none, and paints nothing), at once. */
+function afterPaint(then: () => void): void {
+  if (typeof requestAnimationFrame === 'undefined' || typeof document === 'undefined' || document.hidden) {
+    setTimeout(then, 0);
+  }
+  else requestAnimationFrame(() => requestAnimationFrame(then));
+}
+
 export class FieldPreview {
   private worker: Worker | null = null;
   private job = 0;
   private sketch: Sketch | null = null;
   private key = '';
   private finished = new Map<number, FieldSurface>();
+  /** The newest surface of each solid not yet applied, and whether a redraw is in hand. */
+  private pending = new Map<number, Frame>();
+  private busy = false;
 
   constructor(private readonly arrived: (error?: string) => void) {}
 
@@ -71,6 +87,7 @@ export class FieldPreview {
     this.sketch = sk;
     this.key = key;
     this.finished.clear();
+    this.pending.clear();
     this.job += 1;
     if (!this.worker) {
       this.worker = new Worker(new URL('./mesh-worker.bundle.js', import.meta.url), { type: 'module' });
@@ -81,15 +98,41 @@ export class FieldPreview {
     this.worker.postMessage(job);
   }
 
+  /** **Surfaces are applied no faster than the page can draw them.** Every one redraws the box,
+   *  its edges and the sheet, which for a surface of fourteen thousand triangles is a third of a
+   *  second — longer than the worker takes to send the next — so applying each as it came kept
+   *  the page's thread busy until the refinement ended. The newest surface of each solid waits,
+   *  and after a redraw the next is applied no sooner than that redraw took: the page is never
+   *  more than half busy with a preview, and the finished surface, the last to arrive, is always
+   *  applied. */
   private receive(f: Frame): void {
     if (f.id !== this.job || !this.sketch) return;
-    if (f.surface) {
-      // one mark a surface, triangles in its detail: the refinement on a performance timeline
-      performance.mark('field-surface', { detail: { solid: f.solid, triangles: f.surface.triangles.length / 3,
-        provisional: f.surface.provisional } });
-      supplyField(this.sketch, f.solid, f.surface);
-      if (!f.surface.provisional) this.finished.set(f.solid, f.surface);
+    this.pending.set(f.solid, f);
+    if (!this.busy) this.apply();
+  }
+
+  private apply(): void {
+    const sk = this.sketch;
+    if (!this.pending.size || !sk) {
+      this.busy = false;
+      return;
     }
-    this.arrived(f.error);
+    this.busy = true;
+    const frames = [...this.pending.values()];
+    this.pending.clear();
+    let error: string | undefined;
+    for (const f of frames) {
+      if (f.surface) {
+        // one mark a surface, triangles in its detail: the refinement on a performance timeline
+        performance.mark('field-surface', { detail: { solid: f.solid, triangles: f.surface.triangles.length / 3,
+          provisional: f.surface.provisional } });
+        supplyField(sk, f.solid, f.surface);
+        if (!f.surface.provisional) this.finished.set(f.solid, f.surface);
+      }
+      error = f.error ?? error;
+    }
+    const start = performance.now();
+    this.arrived(error);
+    afterPaint(() => setTimeout(() => this.apply(), Math.max(MIN_GAP_MS, performance.now() - start)));
   }
 }

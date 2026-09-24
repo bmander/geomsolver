@@ -681,7 +681,7 @@ impl<'a> Progressive<'a> {
             // judged, so that whether the rays found any surface is known
             let tets: Vec<u32> = r.tri.tets().collect();
             for t in tets { for i in 0..4 { r.judge(t,i); } }
-            if r.queue.is_empty() && r.extract().is_empty() { lattice(&mut r)?; }
+            if r.balls.is_empty() || (r.queue.is_empty() && r.extract().is_empty()) { lattice(&mut r)?; }
             r.queue.clear();          // judged again below, with whatever the lattice added
         } else {
             let kept = std::mem::take(&mut self.kept);
