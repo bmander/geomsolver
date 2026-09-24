@@ -506,3 +506,42 @@ limit). The whole gears have not been exported with field features. Corners wher
 operands meet, and creases along which the dihedral goes to zero, end the curve rather than being
 resolved.
 
+## The gear pair in the app (2026-09-24)
+
+The spiral bevel directory is an example in the app's menu (`app/example-catalog.ts`, a project
+the core's case library does not hold, read like the V-twin): `gears.sv` opens on its model, and
+the glass box shows the 24-tooth pinion and the 48-tooth gear refining in the worker. What it
+took, each measured before it was changed:
+
+- **Branch and bound over the term** (`MaterialField::reading_capped`). A reading searched every
+  one of the 24 or 48 indexed cuts to full accuracy, where one decides. Each operand is now given
+  a cap below which it must be exact — a union's second operand the first's value, a cut the
+  negated blank, both less twice the tie — and above it a proven lower bound serves, which a sweep
+  proves by `SweptField::at_least`, `side`'s first-order bound search with a budget of sixteen
+  evaluations. The sign query short-circuits where one operand settles the sign (outside the
+  blank, a cut is not asked). The pinion's first surface went from 5.3 s to 1.0 s natively and its
+  rate of refinement about 2.7-fold. A cut's support box (`SweptField::clear_of`) prunes nothing
+  here, since the roll carries the cutter across the blank, but it is kept: it is free.
+- **Crossings remembered across rebuilds** (`Refiner::crossings`), beside the sides: a rebuild
+  inserts the same points, so most dual segments are the last build's to the bit, and on a gear a
+  Newton crossing is a field search per reading. A rebuild had been sitting for minutes in `judge`.
+- **Ends of creases within a fiftieth of a step are one corner.** On the whole pinion an end found
+  where a crease stops being followed lay 2.3 µm from the exact corner another crease found, past
+  the old 1e-4 step weld, and protection failed with the two balls meeting.
+- **A `construction` solid is never an object** (`overview::objects`). The crown cutters and the
+  boundary carriers the analytic surfaces are read from were objects, being operands of nothing,
+  and the box drew them over the gears; the swept torus's worker was meshing its construction
+  tool too (1.6 s).
+- **The worker refines every swept object in turn**, a budget each, so the gear's rough shape shows
+  beside the pinion's instead of after it.
+
+Natively, on a machine with a load average between 10 and 80, so the times are rough: the pinion
+closes at 7468 triangles in 163 s and the gear at 20 172 in 431 s, both on field-traced features;
+the gear's first pass alone takes 100 s (443k sign queries and 219k readings, about 150 µs a query
+against 48 cuts). In the browser both show teeth within about 15 s and refine from there.
+`solid_sweep::a_reading_bounds_what_cannot_decide_and_is_exact_where_it_can` holds the groove's
+part to max(block, −groove) read alone, wherever the sweep was only bounded. **Next:** the 48 cuts are one sweep
+turned about the gear's axis, so a query needs only the cuts nearest it in angle — evaluating an
+indexed union in its fundamental sector would take the cost per query from the tooth count to a
+constant.
+

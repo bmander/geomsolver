@@ -226,6 +226,24 @@ fn a_reading_gives_a_sweeps_value_gradient_and_contact_time() {
 }
 
 #[test]
+fn a_reading_bounds_what_cannot_decide_and_is_exact_where_it_can() {
+    // Branch and bound: the groove's part is the block less the swept ball, and its reading asks
+    // the sweep only for a bound where the block decides. Whatever it skipped, the part reads
+    // exactly what the two read alone make it, max(block, −groove), and its sign is `side`'s.
+    let e = read(include_str!("../../examples/swept_groove.sv"));
+    let field = |n: &str| MaterialField::read(&e.sketch,e.map.ent_named(n).unwrap().i(),1e-10).unwrap();
+    let (part,block,groove) = (field("part"),field("block"),field("groove"));
+    let exact = |p: [f64;3]| gcs_core::solid::ReadingOptions {relative:0.,..gcs_core::solid::ReadingOptions::at(p)};
+    for i in 0..9 { for j in 0..9 { for k in 0..5 {
+        let p = [-22.+5.5*i as f64+0.3,-22.+5.5*j as f64+0.1,-14.+4.*k as f64+0.2];
+        let whole = part.reading_with(p,&exact(p),&mut 0).value;
+        let alone = block.reading_with(p,&exact(p),&mut 0).value.max(-groove.reading_with(p,&exact(p),&mut 0).value);
+        assert!((whole-alone).abs() < 1e-8,"{p:?}: the part reads {whole}, its operands {alone}");
+        if alone.abs() > 1e-6 { assert_eq!(whole < 0.,part.side(p) < 0.,"{p:?}: {whole}"); }
+    } } }
+}
+
+#[test]
 fn a_warm_reading_is_the_cold_one_whatever_its_hint() {
     let e = read(include_str!("../../examples/solid_generating_sweep.sv"));
     let i = e.map.ent_named("removal.body").unwrap().i();

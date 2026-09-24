@@ -13,7 +13,9 @@ uses a 10-degree shift and a 25-degree spiral, holding the pinion's spiral near 
 Together they design out the undercut that a 20-degree symmetric rack at 35 degrees
 develops past about 16 degrees of offset
 (`docs/generating-sweeps-plan.md`). `gears.sv` instantiates the matched pair using ordinary components,
-named motions, revolutions and repeated cuts:
+named motions, revolutions and repeated cuts. In the app it is the example `spiral_bevel`
+(`?example=spiral_bevel`): the glass box (⌘B) shows both members refining from their material
+fields. From the terminal:
 
 ```sh
 make solventc OCCT=1

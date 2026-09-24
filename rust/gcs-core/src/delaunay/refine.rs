@@ -113,6 +113,10 @@ struct Refiner<'a> {
     ball_of: HashMap<u32,usize>,
     /// Every side read, by the point's bits, carried across rebuilds.
     memo: HashMap<[u64;3],i8>,
+    /// Every crossing found, by its segment's ends and the first end's side, carried across
+    /// rebuilds with the sides: a rebuild inserts the same points, so most of its dual segments
+    /// are the last build's to the bit, and a crossing by readings costs a field search each.
+    crossings: HashMap<[u64;7],P>,
     /// Balls a refinement point needed to enter, since the last rebuild.
     blocking: Vec<usize>,
     /// Balls by grid cell, for the in-a-ball test.
@@ -146,8 +150,11 @@ impl Refiner<'_> {
 
     /// The boundary crossing between `a` (on side `sa`) and `b` (on the other side).
     fn crossing(&mut self,a: P,sa: i8,b: P) -> P {
-        if self.reading.is_some() { return self.newton_crossing(a,sa,b); }
-        self.bisected(a,sa,b)
+        let key = [a[0].to_bits(),a[1].to_bits(),a[2].to_bits(),b[0].to_bits(),b[1].to_bits(),b[2].to_bits(),sa as u64];
+        if let Some(&c) = self.crossings.get(&key) { return c; }
+        let c = if self.reading.is_some() { self.newton_crossing(a,sa,b) } else { self.bisected(a,sa,b) };
+        self.crossings.insert(key,c);
+        c
     }
 
     fn bisected(&mut self,mut a: P,sa: i8,mut b: P) -> P {
@@ -691,6 +698,7 @@ pub struct Progressive<'a> {
     least: f64,
     kept: Vec<P>,
     memo: HashMap<[u64;3],i8>,
+    crossings: HashMap<[u64;7],P>,
     queries: usize,
     rebuild: usize,
     stage: Stage,
@@ -705,7 +713,7 @@ impl<'a> Progressive<'a> {
         let sizing = curves.iter().map(|c| Sizing {base:length(c).min(criteria.edge_size).max(criteria.edge_size*1e-3),local:Vec::new()}).collect();
         let least = criteria.edge_size/LEAST;
         Self {domain:Some(side),reading:None,refiner:None,centre,radius,curves,criteria,sizing,least,kept:Vec::new(),
-            memo:HashMap::new(),queries:0,rebuild:0,stage:Stage::Build,manifold:None}
+            memo:HashMap::new(),crossings:HashMap::new(),queries:0,rebuild:0,stage:Stage::Build,manifold:None}
     }
 
     /// Do at most about `budget` refinements (a build or a repair runs whole): whether the
@@ -763,12 +771,16 @@ impl<'a> Progressive<'a> {
         let (balls,owners) = protect(&self.curves,criteria.edge_size,&mut self.sizing)?;
         let cell = balls.iter().map(|b| b.1).fold(criteria.edge_size,f64::max).max(self.radius*1e-9);
         let (domain,reading) = match self.refiner.take() {
-            Some(old) => { self.kept = old.kept; self.memo = old.memo; self.queries = old.report.queries; (old.domain,old.reading) }
+            Some(old) => {
+                (self.kept,self.memo,self.crossings,self.queries) = (old.kept,old.memo,old.crossings,old.report.queries);
+                (old.domain,old.reading)
+            }
             None => (self.domain.take().expect("the domain before the first build"),self.reading.take()),
         };
         let mut r = Refiner {domain,reading,centre:self.centre,radius:self.radius,criteria:criteria.clone(),
             tri:Regular::new(self.centre,self.radius),sign:Vec::new(),balls:Vec::new(),owners:Vec::new(),
-            ball_of:HashMap::new(),kept:Vec::new(),memo:std::mem::take(&mut self.memo),blocking:Vec::new(),
+            ball_of:HashMap::new(),kept:Vec::new(),memo:std::mem::take(&mut self.memo),
+            crossings:std::mem::take(&mut self.crossings),blocking:Vec::new(),
             grid:HashMap::new(),cell,queue:BinaryHeap::new(),report:Report {queries:self.queries,..Report::default()}};
         // Protecting balls first, in spatial order.
         let order = super::spatial_order(&balls.iter().map(|b| b.0).collect::<Vec<_>>());

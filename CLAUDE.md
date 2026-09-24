@@ -386,7 +386,11 @@ zero *and* both leaves active; a tangent takeover hands the crease on, any other
 exact corner, and `End` says why. `FieldMesher` runs two passes: unprotected on
 `MaterialField::tight_support`, then refinement protecting the traced creases.
 `SOLVENT_FEATURES=field` does the same in `--stl-backend refine`, which skips admission.
-Rays seed from beside the centre, never on it. Record: `docs/field-meshing.md`. `--stl-backend refine`
+Rays seed from beside the centre, never on it. Record: `docs/field-meshing.md`.
+Readings are branch and bound (`MaterialField::reading_capped`: exact below a cap, a proven lower
+bound above it, a sweep's by `SweptField::at_least`), and `side` short-circuits on a settled sign;
+crossings are memoised across rebuilds. A `construction` solid is never an object. The spiral
+bevel pair is the app's example `spiral_bevel` (web-only catalog entry, `gears.sv`). `--stl-backend refine`
 is that port (`delaunay::refine`): every fixture and four of five gear spaces export with no
 disagreement; its F4 record lists what is still heuristic. The target is a rough preview that
 refines live, then a longer export render; the next step is an analytic feature graph with a

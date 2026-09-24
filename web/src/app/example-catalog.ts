@@ -6,12 +6,22 @@ export type ExampleTarget = { kind: 'file'; path: string }
 export interface Example extends Case { target: ExampleTarget }
 const parts = ['cylinder', 'plate', 'piston', 'disc', 'flywheel', 'throttle'];
 
+/** Projects the core's case library does not hold, read like the V-twin from the demo server or
+ *  the packaged sources: their modules are theirs, not the library's. */
+const projects: Example[] = [{
+  label: 'Hypoid gear pair · swept solids', key: 'spiral_bevel',
+  description: 'A 24-tooth pinion and a 48-tooth gear, each cut by one crown tooth rolled through '
+    + 'its blank at every index. Edit the tooth counts, module, offset or spiral angle in '
+    + 'configuration.sv; the solids refine in the background — open the glass box (⌘B) to watch.',
+  target: { kind: 'directory', path: 'spiral_bevel', entry: 'gears.sv' },
+}];
+
 export function exampleCases(): Example[] {
-  return cases().filter((c) => !parts.some((p) => c.key === `vtwin_${p}`)).map((c) =>
+  return cases().filter((c) => !parts.some((p) => c.key === `vtwin_${p}`)).map((c): Example =>
     c.key === 'vtwin' ? { ...c, label: 'V-twin air engine',
       description: 'Assembly and six part drawings, with their editable models and shared components.',
       target: { kind: 'directory', path: 'vtwin', entry: 'assembly.svd' } }
-    : { ...c, target: { kind: 'file', path: `${c.key}.svd` } });
+    : { ...c, target: { kind: 'file', path: `${c.key}.svd` } }).concat(projects);
 }
 
 /** Keep old part links useful, and accept explicit source paths as file examples. */

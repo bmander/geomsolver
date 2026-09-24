@@ -336,12 +336,15 @@ fn segment_distance(p: P,a: P,b: P) -> f64 {
 
 /// The feature curves of a field, for `delaunay::refine`'s protection, from a mesh made without
 /// them: every crease its edges cross, traced, with the ends that meet at one corner made one
-/// point, since a corner is a ball the curves share only where their ends are equal.
+/// point, since a corner is a ball the curves share only where their ends are equal. Ends within
+/// a fiftieth of a step are one corner: an end found where a crease stops being followed lands
+/// within the bisection of the corner another found exactly, and two corners that close could
+/// not be protected apart anyway.
 pub fn features(field: &MaterialField,vertices: &[P],triangles: &[[u32;3]],options: &CreaseOptions) -> Vec<Vec<P>> {
     let found = creases(field,&seeds(field,vertices,triangles,options),options);
     let mut corners: Vec<P> = Vec::new();
     let mut weld = |p: P| -> P {
-        match corners.iter().find(|&&c| dist(c,p) <= 1e-4*options.step) {
+        match corners.iter().find(|&&c| dist(c,p) <= 0.02*options.step) {
             Some(&c) => c,
             None => { corners.push(p); p }
         }

@@ -648,8 +648,10 @@ fn axes(basis: &Basis, (x0, y0, x1, y1): Box2) -> [Vec<[f64; 3]>; 2] {
 /// A part is written as a stock, the features cut out of it, and the body that is the term over
 /// them — four names for one thing plus three holes.  Only the body is an object, and the rule
 /// says so without the document having to: a solid named as another's operand is a *feature* of
-/// it.  A document that names none — every solid an operand of some other — has a cycle, which
-/// the elaborator has already refused, so the list is never empty when the solids are not.
+/// it.  A `construction` solid is scaffolding and never an object, used or not — a gear pair's
+/// crown cutters stand in the model for the analytic surfaces read off them, and drawn they
+/// would bury the gears.  Otherwise a document that names none — every solid an operand of some
+/// other — has a cycle, which the elaborator has already refused.
 pub fn objects(sk: &Sketch) -> Vec<usize> {
     let mut used = vec![false; sk.solids.len()];
     for s in &sk.solids {
@@ -659,7 +661,9 @@ pub fn objects(sk: &Sketch) -> Vec<usize> {
             }
         }
     }
-    (0..sk.solids.len()).filter(|&i| !used[i]).collect()
+    (0..sk.solids.len())
+        .filter(|&i| !used[i] && !sk.roles_of(crate::model::EntRef::solid(i)).construction)
+        .collect()
 }
 
 /// **The surfaces of a solid, as this eye sees them.**

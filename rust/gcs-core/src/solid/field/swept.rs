@@ -18,7 +18,10 @@ pub struct SweptMinimum { pub value: f64,pub time: f64,pub tied: bool }
 pub struct SweptField {source:SpatialField,motion:Family,domain:I,
     /// The inverse poses at the first `SIDE_TABLE` dyadic divisions of the roll, which every
     /// `side` query walks through first, filled once.
-    poses:std::sync::OnceLock<std::sync::Arc<Vec<Option<crate::motion::Pose>>>>}
+    poses:std::sync::OnceLock<std::sync::Arc<Vec<Option<crate::motion::Pose>>>>,
+    /// The box every pose of the source lies in, as plain numbers, found once: a point outside
+    /// it is outside the material (`clear_of`).
+    support:std::sync::OnceLock<Option<[[f64;2];3]>>}
 
 /// Source evaluations made by every `side` query so far, for a caller measuring the oracle.
 pub static SIDE_EVALUATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -33,7 +36,7 @@ const SIDE_DEPTH: u32 = 40;
 
 impl SweptField {
     pub fn new(source: SpatialField,motion: Family,domain: I) -> Self {
-        Self {source,motion,domain,poses:std::sync::OnceLock::new()}
+        Self {source,motion,domain,poses:std::sync::OnceLock::new(),support:std::sync::OnceLock::new()}
     }
     pub fn domain(&self) -> I { self.domain }
 
@@ -41,6 +44,64 @@ impl SweptField {
     /// The entire roll domain is passed through interval motion evaluation.
     pub fn support_bounds(&self) -> Result<Option<V>,Error> {
         self.source.support_bounds()?.map(|b| self.motion.bounds(self.domain)?.point(b)).transpose()
+    }
+
+    /// A lower bound at least `cap` on the sweep's value at `p`, when one is cheap to prove: the
+    /// support box's distance, or `side`'s first-order bound — the source is Lipschitz in the roll
+    /// by the motion's inverse-point speed bound, so a stretch between two readings is at least
+    /// their mean less that bound times half its width — split lowest first until every stretch
+    /// is at least `cap`. `None` as soon as a reading falls below `cap`, or after `budget` source
+    /// evaluations: then the caller needs the minimum itself. A Boolean asks this of an operand
+    /// that can only matter below `cap` (`MaterialField::reading_warm`).
+    pub fn at_least(&self,p: [f64;3],cap: f64,budget: u64) -> Option<f64> {
+        if let Some(d) = self.clear_of(p) { if d >= cap { return Some(d); } }
+        let [a,b] = self.domain.bounds();
+        let n = (1u64 << SIDE_DEPTH) as f64;
+        let time = |i: u64| a+(b-a)*(i as f64/n);
+        let table = self.poses.get_or_init(|| std::sync::Arc::new((0..=1u64 << SIDE_LEVELS)
+            .map(|k| self.motion.pose_at(time(k << (SIDE_DEPTH-SIDE_LEVELS))).ok().map(|m| m.inverse())).collect()));
+        let evaluations = std::cell::Cell::new(0u64);
+        let at = |i: u64| {
+            evaluations.set(evaluations.get()+1);
+            let step = SIDE_DEPTH-SIDE_LEVELS;
+            let pose = if i & ((1u64 << step)-1) == 0 { table[(i >> step) as usize] }
+                else { self.motion.pose_at(time(i)).ok().map(|m| m.inverse()) };
+            pose.map_or(f64::INFINITY,|m| self.source.value(m.point(p)))
+        };
+        let last = 1u64 << SIDE_DEPTH;
+        let result = (|| {
+            let (fa,fb) = (at(0),at(last));
+            if !(fa.min(fb) >= cap) { return None; }
+            if !(b > a) { return Some(fa.min(fb)); }
+            let speed = self.motion.inverse_point_speed_bound(p,self.domain).ok()?;
+            let per = (b-a)/n;
+            let bound = |i0: u64,f0: f64,i1: u64,f1: f64| 0.5*(f0+f1)-0.5*speed*per*(i1-i0) as f64;
+            // lowest bound first, as `side` orders them
+            let mut stretches: Vec<(f64,u64,f64,u64,f64)> = vec![(bound(0,fa,last,fb),0,fa,last,fb)];
+            loop {
+                let k = (0..stretches.len()).min_by(|&x,&y| stretches[x].0.total_cmp(&stretches[y].0))?;
+                let (low,i0,f0,i1,f1) = stretches.swap_remove(k);
+                if low >= cap { return Some(low); }
+                if evaluations.get() >= budget || i1-i0 < 2 { return None; }
+                let m = i0+(i1-i0)/2;
+                let fm = at(m);
+                if !(fm >= cap) { return None; }
+                stretches.push((bound(i0,f0,m,fm),i0,f0,m,fm));
+                stretches.push((bound(m,fm,i1,f1),m,fm,i1,f1));
+            }
+        })();
+        SIDE_EVALUATIONS.fetch_add(evaluations.get(),std::sync::atomic::Ordering::Relaxed);
+        result
+    }
+
+    /// How far `p` stands outside the box the whole sweep lies in, when it does: then no pose of
+    /// the source reaches it, and the distance is a lower bound on the field there (it is
+    /// one-Lipschitz and the material is inside the box), positive, with the field's sign. A cut
+    /// indexed round a blank is far from most points asked about, and reading this costs nothing.
+    pub fn clear_of(&self,p: [f64;3]) -> Option<f64> {
+        let support = (*self.support.get_or_init(|| self.support_bounds().ok().flatten().map(|b| b.map(|x| x.bounds()))))?;
+        let d2: f64 = (0..3).map(|k| (support[k][0]-p[k]).max(p[k]-support[k][1]).max(0.).powi(2)).sum();
+        (d2 > 0.).then(|| d2.sqrt())
     }
 
     /// A number with the field's sign at a point, in plain floating point, for a mesher that
@@ -53,6 +114,7 @@ impl SweptField {
     /// to split: far from the boundary one
     /// bound decides, and near it the work grows as the logarithm of the distance.
     pub fn side(&self,p: [f64;3]) -> f64 {
+        if let Some(d) = self.clear_of(p) { return d; }
         let [a,b] = self.domain.bounds();
         let n = (1u64 << SIDE_DEPTH) as f64;
         let time = |i: u64| a+(b-a)*(i as f64/n);

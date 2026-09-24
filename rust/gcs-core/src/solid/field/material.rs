@@ -124,9 +124,10 @@ impl MaterialField {
             Node::Static(source) => source.value(p),
             Node::Swept(source) => source.side(p),
             Node::Transformed {source,pose} => source.side(pose.inverse_point_mid(p)),
-            Node::Union(a,b) => a.side(p).min(b.side(p)),
-            Node::Intersection(a,b) => a.side(p).max(b.side(p)),
-            Node::Difference(a,b) => a.side(p).max(-b.side(p)),
+            // One operand may settle the sign alone: then the other is not asked.
+            Node::Union(a,b) => { let x = a.side(p); if x < 0. { x } else { x.min(b.side(p)) } }
+            Node::Intersection(a,b) => { let x = a.side(p); if x >= 0. { x } else { x.max(b.side(p)) } }
+            Node::Difference(a,b) => { let x = a.side(p); if x >= 0. { x } else { x.max(-b.side(p)) } }
         }
     }
 
@@ -146,13 +147,32 @@ impl MaterialField {
     /// empty vector is a cold reading; a hint from far away costs time, never the answer.
     pub fn reading_warm(&self,p: [f64;3],options: &super::ReadingOptions,next: &mut usize,
         hints: &mut Vec<Option<f64>>) -> super::Reading {
+        self.reading_capped(p,options,next,hints,f64::INFINITY)
+    }
+
+    /// A reading exact wherever its value is below `cap`, and elsewhere a lower bound at least
+    /// `cap` with no gradient worth reading — branch and bound over the term. A Boolean asks each
+    /// operand only for what can decide it: a union's second operand below the first's value, a
+    /// cut below the negated blank, both less twice the tie, so what is skipped neither decides
+    /// nor ties. A sweep proves its bound by `SweptField::at_least`, a few evaluations, where its
+    /// minimum is a whole search: a blank cut at twenty-four indices is decided by one cut.
+    fn reading_capped(&self,p: [f64;3],options: &super::ReadingOptions,next: &mut usize,
+        hints: &mut Vec<Option<f64>>,cap: f64) -> super::Reading {
         use super::reading::{higher,lower};
+        // An operand left unread still takes its numbers.
+        let skip = |node: &MaterialField,next: &mut usize,x: super::Reading| { *next += node.leaf_count(); x };
         match self.node.as_ref() {
             Node::Static(source) => source.reading(p,options,next),
             Node::Swept(source) => {
                 // the sweep is keyed by the number its first source leaf will take
                 let key = *next;
                 if hints.len() <= key { hints.resize(key+1,None); }
+                if cap.is_finite() {
+                    if let Some(low) = source.at_least(p,cap,AT_LEAST_BUDGET) {
+                        *next += source.source().leaf_count();
+                        return super::Reading {value:low,gradient:[0.;3],leaf:key,piece:0,time:hints[key],ambiguous:false};
+                    }
+                }
                 let m = source.minimum_hinted(p,options.accuracy,options.relative,options.tie,hints[key],options.local);
                 hints[key] = Some(m.time);
                 // The tool's own reading at the roll time the sweep is least, turned into the
@@ -168,19 +188,24 @@ impl MaterialField {
                 super::Reading {value:m.value,gradient,time:Some(m.time),ambiguous:r.ambiguous || m.tied,..r}
             }
             Node::Transformed {source,pose} => {
-                let r = source.reading_warm(pose.inverse_point_mid(p),options,next,hints);
+                let r = source.reading_capped(pose.inverse_point_mid(p),options,next,hints,cap);
                 super::Reading {gradient:pose.gradient_mid(r.gradient),..r}
             }
             Node::Union(a,b) => {
-                let (x,y) = (a.reading_warm(p,options,next,hints),b.reading_warm(p,options,next,hints));
+                let x = a.reading_capped(p,options,next,hints,cap);
+                let y = b.reading_capped(p,options,next,hints,cap.min(x.value+2.*options.tie));
                 lower(x,y,options.tie)
             }
             Node::Intersection(a,b) => {
-                let (x,y) = (a.reading_warm(p,options,next,hints),b.reading_warm(p,options,next,hints));
+                let x = a.reading_capped(p,options,next,hints,cap);
+                if x.value >= cap { return skip(b,next,x); }
+                let y = b.reading_capped(p,options,next,hints,cap);
                 higher(x,y,options.tie)
             }
             Node::Difference(a,b) => {
-                let (x,y) = (a.reading_warm(p,options,next,hints),b.reading_warm(p,options,next,hints));
+                let x = a.reading_capped(p,options,next,hints,cap);
+                if x.value >= cap { return skip(b,next,x); }
+                let y = b.reading_capped(p,options,next,hints,-x.value+2.*options.tie);
                 higher(x,y.negated(),options.tie)
             }
         }
@@ -388,6 +413,10 @@ impl MaterialEvaluator {
         Ok(value)
     }
 }
+
+/// Source evaluations a sweep may spend proving an operand cannot decide a reading before it is
+/// read in full: about what a warm reading's local search costs.
+const AT_LEAST_BUDGET: u64 = 16;
 
 fn boxed(lo: [f64;3],hi: [f64;3]) -> Result<V,Error> {
     Ok([I::new(lo[0],hi[0])?,I::new(lo[1],hi[1])?,I::new(lo[2],hi[2])?])
