@@ -171,3 +171,48 @@ fn insertion_speed_is_measured() {
         eprintln!("  exact predicate calls: {}",gcs_core::delaunay::predicates::EXACT_CALLS.load(std::sync::atomic::Ordering::Relaxed));
     }
 }
+
+/// What a refinement reads of the triangulation: the conflict region a point would take is
+/// what its insertion then removes; the tetrahedra made hold the new vertex; a facet seen from
+/// its mirror is itself; every unhidden vertex has an incident tetrahedron; and each
+/// orthosphere gives every vertex of its tetrahedron its own weight as power.
+#[test]
+fn an_insertion_reports_what_it_changed() {
+    let mut rng = Rng::new(13);
+    let mut r = Regular::new([0.;3],2.);
+    let mut hint = None;
+    for _ in 0..400 {
+        let (p,weight) = ([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)],rng.uniform(0.,1e-3));
+        let mut predicted = r.conflicts(p,weight,hint).unwrap();
+        let inserted = r.insert_near(p,weight,hint).unwrap();
+        let mut removed = r.removed().to_vec();
+        predicted.sort_unstable(); removed.sort_unstable();
+        assert_eq!(predicted,removed,"the conflict region is what the insertion removed");
+        match inserted {
+            Inserted::Vertex(v) => {
+                assert!(!r.created().is_empty());
+                for &t in r.created() { assert!(r.alive(t) && r.tet(t).v.contains(&v)); }
+                for &t in r.removed() { assert!(!r.alive(t) || r.created().contains(&t),"a removed tetrahedron is dead or reused"); }
+                hint = r.created().first().copied();
+            }
+            Inserted::Hidden(_) => assert!(r.created().is_empty() && r.removed().is_empty()),
+        }
+    }
+    r.check().unwrap();
+    for t in r.tets() {
+        for i in 0..4 {
+            if let Some((n,j)) = r.mirror(t,i) { assert_eq!(r.mirror(n,j),Some((t,i))); }
+        }
+        let (centre,radius2) = r.orthosphere(t);
+        for v in r.tet(t).v {
+            let q = r.points()[v as usize];
+            let power = (0..3).map(|k| (q.p[k]-centre[k]).powi(2)).sum::<f64>()-radius2;
+            assert!((power-q.w).abs() <= 1e-9*(1.+radius2),"vertex {v} has power {power} against tetrahedron {t}'s orthosphere, weight {}",q.w);
+        }
+    }
+    for v in 0..r.points().len() as u32 {
+        if r.is_hidden(v) { assert!(r.incident(v).is_none()); continue; }
+        let t = r.incident(v).expect("an unhidden vertex has an incident tetrahedron");
+        assert!(r.tet(t).v.contains(&v));
+    }
+}

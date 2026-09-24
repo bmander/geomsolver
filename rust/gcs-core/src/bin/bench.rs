@@ -128,7 +128,65 @@ fn cases() -> Vec<Case> {
     v
 }
 
+/// The regular triangulation (`delaunay`): insertion time per point, in spatial order, over
+/// point sets a mesher meets. Median of three runs; exact predicate fallbacks counted.
+fn bench_delaunay(only: Option<&str>) {
+    use gcs_core::delaunay::{Regular,spatial_order,predicates::EXACT_CALLS};
+    use gcs_core::rng::Rng;
+    use std::sync::atomic::Ordering;
+    println!("\n== regular triangulation: µs a point, spatial order ==");
+    let mut rng = Rng::new(1);
+    // `DELAUNAY_N` sizes the random cases (100 000 by default).
+    let size: usize = std::env::var("DELAUNAY_N").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000);
+    let uniform: Vec<([f64;3],f64)> = (0..size).map(|_| ([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)],0.)).collect();
+    let weighted: Vec<([f64;3],f64)> = uniform.iter().map(|&(p,_)| (p,rng.uniform(0.,1e-4))).collect();
+    let shell: Vec<([f64;3],f64)> = (0..size).map(|_| {
+        let (t,z,r) = (rng.uniform(0.,std::f64::consts::TAU),rng.uniform(-1.,1.),rng.uniform(0.999,1.));
+        let s = (1.-z*z).sqrt();
+        ([r*s*t.cos(),r*s*t.sin(),r*z],0.)
+    }).collect();
+    let mut lattice = Vec::new();
+    for i in 0..40 { for j in 0..40 { for k in 0..40 { lattice.push(([i as f64/20.-1.,j as f64/20.-1.,k as f64/20.-1.],0.)); } } }
+    {
+        // Exactly degenerate input goes to the exact path: coplanar and cospherical lattice points.
+        use gcs_core::delaunay::predicates::{orient_exact,power_exact,Weighted};
+        let w = |p: [f64;3]| Weighted {p,w:0.};
+        let (a,b,c,d) = ([0.1,0.2,0.3],[1.1,0.2,0.3],[0.1,1.2,0.3],[0.1,0.2,1.3]);
+        let n = 20_000;
+        let t0 = Instant::now();
+        let mut s = 0i64;
+        for k in 0..n { let f = (k % 7) as f64; s += orient_exact([f,0.,0.],[f+1.,0.,0.],[f,1.,0.],[f+3.,7.,0.]) as i64; }
+        let orient_ns = t0.elapsed().as_secs_f64()*1e9/n as f64;
+        let t0 = Instant::now();
+        for k in 0..n { let f = (k % 7) as f64;
+            s += power_exact(w([5.+f,0.,0.]),w([f,5.,0.]),w([f,0.,5.]),w([f-3.,-4.,0.]),w([f+3.,0.,4.])) as i64; }
+        let power_ns = t0.elapsed().as_secs_f64()*1e9/n as f64;
+        let _ = (a,b,c,d);
+        println!("exact orient {orient_ns:8.0} ns, exact power {power_ns:8.0} ns (checksum {s})");
+    }
+    for (name,points) in [("uniform",&uniform),("weighted",&weighted),("shell",&shell),("lattice 40³",&lattice)] {
+        if only.is_some_and(|o| !name.starts_with(o)) { continue; }
+        let coordinates: Vec<[f64;3]> = points.iter().map(|p| p.0).collect();
+        let order = spatial_order(&coordinates);
+        let mut times = Vec::new();
+        let mut tets = 0;
+        EXACT_CALLS.store(0,Ordering::Relaxed);
+        for _ in 0..3 {
+            let t0 = Instant::now();
+            let mut r = Regular::new([0.;3],1.8);
+            for &i in &order { r.insert(points[i].0,points[i].1).unwrap(); }
+            times.push(t0.elapsed().as_secs_f64()*1e6/points.len() as f64);
+            tets = r.tets().count();
+        }
+        println!("{name:<14}{:>8} points {:>9} tetrahedra {:8.2} µs  exact calls {}",points.len(),tets,median(times),
+            EXACT_CALLS.load(Ordering::Relaxed)/3);
+    }
+}
+
 fn main() {
+    // `bench delaunay [case]`: the triangulation alone, or one of its cases (for timing a single
+    // case's CPU from outside, as `/usr/bin/time` does when the machine is busy).
+    if std::env::args().nth(1).as_deref() == Some("delaunay") { bench_delaunay(std::env::args().nth(2).as_deref()); return; }
     let cases = cases();
 
     println!("== solve (jittered warm start): compiled-solve ms / iterations ==");
@@ -204,4 +262,5 @@ fn main() {
              frame {frame:6.3} ms | cached plan start {start2:6.2} ms frame {frame2:6.3} ms"
         );
     }
+    bench_delaunay(None);
 }

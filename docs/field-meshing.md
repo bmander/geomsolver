@@ -205,3 +205,40 @@ missed. The certified enclosure check stays the test of it.
 What remains is the conflict search's power tests and creating the new tetrahedra, both with
 cache misses. CGAL is several times faster, and closing that gap is F5's. For now it is small
 against the oracle's queries.
+
+### F3 refinement (2026-09-23): a foundation for F4
+
+**The API a refinement reads:**
+- `insert_near(p, w, hint)` walks from a tetrahedron the caller knows is near.
+- `created` and `removed` say what the last insertion changed, so a refinement's queues can
+  follow it.
+- `conflicts` gives the conflict region a point would take, without inserting it; a test holds it
+  equal to what the insertion then removes.
+- `incident(v)` gives a live tetrahedron with `v` as a vertex, kept current as tetrahedra are made.
+- `mirror(t, i)` gives the facet seen from its other side.
+- `orthosphere(t)` gives a tetrahedron's orthocentre and orthoradius², in floating point for
+  constructing the dual Voronoi edges; each vertex's power against it is its own weight.
+
+**Speed.**
+- **The orientation check is skipped on strict faces.** A face whose far tetrahedron is strictly
+  outside the conflict region needs no orientation test before the new tetrahedron is made on it.
+  Both orthospheres are orthogonal to the face's three weighted vertices, so their radical plane
+  is the face's plane, and the point lies strictly on the near side. Only ties are checked; the
+  stamps record in, strictly out, or tied.
+- **The power test shares six 2×2 minors** across its four cofactors (Shewchuk's insphere layout),
+  with the permanent in the same shape for its bound.
+- **Expansions are stored inline** up to 24 components, and summed by Shewchuk's linear
+  FAST-EXPANSION-SUM. The exact power test on cospherical input went from 12 µs to 7 µs; COMPRESS
+  was tried and did not help, the values being short already.
+- **Liveness is folded into the tetrahedron** (a freed one has `NONE` as its first vertex), and
+  faces are paired through a generation-stamped open-addressed table.
+
+**Measured by `bench delaunay [case]`**, which takes `DELAUNAY_N`, under user CPU time: the machine
+carried a load of 12–56 from system services throughout, so wall times were unusable.
+- The degenerate lattice runs **twice as fast**.
+- Uniform insertion is 5–10% faster.
+- It is **size-independent** (about 12 µs a point under that load, from 5 000 to 400 000 points),
+  so it is not memory-bound: the 17 orientation and 44 power tests per insertion are most of it.
+
+Each tetrahedron is tested about 1.6 times in its life, so caching orthospheres would buy little.
+A local static filter would trade the permanent for a looser bound and more fallbacks.

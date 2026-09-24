@@ -16,8 +16,8 @@ pub static EXACT_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 
 fn sign(v: f64) -> i8 { if v > 0. { 1 } else if v < 0. { -1 } else { 0 } }
 
-/// The sign of `det[b − a; c − a; d − a]`: positive when `d` lies on the side of the plane `abc`
-/// that `(b − a) × (c − a)` points to.
+/// The sign of `det[b − a; c − a; d − a]`: positive when `d` lies on the side of the plane
+/// `abc` that `(b − a) × (c − a)` points to.
 pub fn orient(a: P,b: P,c: P,d: P) -> i8 {
     let [bx,by,bz] = [b[0]-a[0],b[1]-a[1],b[2]-a[2]];
     let [cx,cy,cz] = [c[0]-a[0],c[1]-a[1],c[2]-a[2]];
@@ -48,33 +48,33 @@ fn det3(r0: &[Expansion;3],r1: &[Expansion;3],r2: &[Expansion;3]) -> Expansion {
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Weighted { pub p: P,pub w: f64 }
 
-/// Whether `e` is in conflict with the positively oriented tetrahedron `abcd`: +1 when its power
-/// with respect to the tetrahedron's orthosphere is negative (inside, for zero weights), 0 on it,
-/// −1 outside. The sign of the lifted determinant with rows `(p − e, |p − e|² − (w − w_e))`, which
-/// is negative for a point inside.
+/// Whether `e` is in conflict with the positively oriented tetrahedron `abcd`: +1 when its
+/// power with respect to the tetrahedron's orthosphere is negative (inside, for zero weights),
+/// 0 on it, −1 outside. The sign of the lifted determinant with rows
+/// `(p − e, |p − e|² − (w − w_e))`, which is negative for a point inside.
 pub fn power(a: Weighted,b: Weighted,c: Weighted,d: Weighted,e: Weighted) -> i8 {
-    let rows = [a,b,c,d].map(|q| {
-        let x = [q.p[0]-e.p[0],q.p[1]-e.p[1],q.p[2]-e.p[2]];
-        let dw = q.w-e.w;
-        (x,x[0]*x[0]+x[1]*x[1]+x[2]*x[2]-dw,x[0]*x[0]+x[1]*x[1]+x[2]*x[2]+dw.abs())
-    });
-    const OTHERS: [[usize;3];4] = [[1,2,3],[0,2,3],[0,1,3],[0,1,2]];
-    let minor = |i: usize| -> (f64,f64) {
-        let r = OTHERS[i].map(|j| rows[j].0);
-        let (m0,m1,m2) = (r[1][1]*r[2][2]-r[1][2]*r[2][1],r[1][2]*r[2][0]-r[1][0]*r[2][2],r[1][0]*r[2][1]-r[1][1]*r[2][0]);
-        let det = r[0][0]*m0+r[0][1]*m1+r[0][2]*m2;
-        let permanent = r[0][0].abs()*((r[1][1]*r[2][2]).abs()+(r[1][2]*r[2][1]).abs())
-            +r[0][1].abs()*((r[1][2]*r[2][0]).abs()+(r[1][0]*r[2][2]).abs())
-            +r[0][2].abs()*((r[1][0]*r[2][1]).abs()+(r[1][1]*r[2][0]).abs());
-        (det,permanent)
-    };
-    let (mut det,mut permanent) = (0.,0.);
-    for i in 0..4 {
-        let (m,pm) = minor(i);
-        let cofactor = if i % 2 == 0 { -1. } else { 1. };
-        det += cofactor*rows[i].1*m;
-        permanent += rows[i].2*pm;
-    }
+    // Shewchuk's insphere layout: six 2×2 minors of the x, y columns shared by the four 3×3
+    // cofactors of the lifted column.
+    let (ax,ay,az) = (a.p[0]-e.p[0],a.p[1]-e.p[1],a.p[2]-e.p[2]);
+    let (bx,by,bz) = (b.p[0]-e.p[0],b.p[1]-e.p[1],b.p[2]-e.p[2]);
+    let (cx,cy,cz) = (c.p[0]-e.p[0],c.p[1]-e.p[1],c.p[2]-e.p[2]);
+    let (dx,dy,dz) = (d.p[0]-e.p[0],d.p[1]-e.p[1],d.p[2]-e.p[2]);
+    let (ab,bc,cd) = (ax*by-bx*ay,bx*cy-cx*by,cx*dy-dx*cy);
+    let (da,ac,bd) = (dx*ay-ax*dy,ax*cy-cx*ay,bx*dy-dx*by);
+    let abc = az*bc-bz*ac+cz*ab;
+    let bcd = bz*cd-cz*bd+dz*bc;
+    let cda = cz*da+dz*ac+az*cd;
+    let dab = dz*ab+az*bd+bz*da;
+    let (wa,wb,wc,wd) = (a.w-e.w,b.w-e.w,c.w-e.w,d.w-e.w);
+    let (la,lb,lc,ld) = (ax*ax+ay*ay+az*az,bx*bx+by*by+bz*bz,cx*cx+cy*cy+cz*cz,dx*dx+dy*dy+dz*dz);
+    let det = ((ld-wd)*abc-(lc-wc)*dab)+((lb-wb)*cda-(la-wa)*bcd);
+    let m = |p: f64,q: f64,r: f64,s: f64| (p*q).abs()+(r*s).abs();
+    let (abm,bcm,cdm) = (m(ax,by,bx,ay),m(bx,cy,cx,by),m(cx,dy,dx,cy));
+    let (dam,acm,bdm) = (m(dx,ay,ax,dy),m(ax,cy,cx,ay),m(bx,dy,dx,by));
+    let permanent = (cdm*bz.abs()+bdm*cz.abs()+bcm*dz.abs())*(la+wa.abs())
+        +(dam*cz.abs()+acm*dz.abs()+cdm*az.abs())*(lb+wb.abs())
+        +(abm*dz.abs()+bdm*az.abs()+dam*bz.abs())*(lc+wc.abs())
+        +(bcm*az.abs()+acm*bz.abs()+abm*cz.abs())*(ld+wd.abs());
     let bound = POWER_BOUND*permanent;
     if det > bound || -det > bound { return -sign(det); }
     power_exact(a,b,c,d,e)
@@ -84,7 +84,8 @@ pub fn power_exact(a: Weighted,b: Weighted,c: Weighted,d: Weighted,e: Weighted) 
     EXACT_CALLS.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
     let rows: Vec<([Expansion;3],Expansion)> = [a,b,c,d].iter().map(|q| {
         let x = [0,1,2].map(|k| Expansion::diff(q.p[k],e.p[k]));
-        let lift = x[0].mul(&x[0]).add(&x[1].mul(&x[1])).add(&x[2].mul(&x[2])).sub(&Expansion::diff(q.w,e.w));
+        let lift = x[0].mul(&x[0]).add(&x[1].mul(&x[1])).add(&x[2].mul(&x[2]))
+            .sub(&Expansion::diff(q.w,e.w));
         (x,lift)
     }).collect();
     let mut det = Expansion::default();
