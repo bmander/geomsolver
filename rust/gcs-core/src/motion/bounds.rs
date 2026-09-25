@@ -45,6 +45,13 @@ impl MotionBounds {
         std::array::from_fn(|k| (0..3).map(|i| mid(self.r[i][k])*q[i]).sum())
     }
 
+    /// The pose applied to a point in plain floating point, from the midpoints: `inverse_point_mid`'s
+    /// converse, under the same terms.
+    pub fn point_mid(&self,point: [f64;3]) -> [f64;3] {
+        let mid = |x: I| { let [lo,hi] = x.bounds(); 0.5*(lo+hi) };
+        std::array::from_fn(|i| (0..3).map(|k| mid(self.r[i][k])*point[k]).sum::<f64>()+mid(self.p[i]))
+    }
+
     /// A gradient read in the source's frame (at `inverse_point_mid`) turned into the world's: the
     /// rotation's midpoint applied, the transpose of the inverse map's linear part.
     pub fn gradient_mid(&self,g: [f64;3]) -> [f64;3] {

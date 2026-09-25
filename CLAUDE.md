@@ -395,6 +395,19 @@ is that port (`delaunay::refine`): every fixture and four of five gear spaces ex
 disagreement; its F4 record lists what is still heuristic. The target is a rough preview that
 refines live, then a longer export render; the next step is an analytic feature graph with a
 stage contract, since the heuristic features caused most failures.
+**Meshing speed (2026-09-25):** the mesher reads sweeps from adaptive distance fields
+(`solid/field/adf.rs`, `SweptField::cached`, `MaterialField::side_cached`, `ReadingOptions::cached`):
+an octree per sweep and `Resolution`, exact corners, trilinear between, split while wider than a
+facet or while its centre reads off the interpolation by more than a tenth of the facet distance.
+Readings, never claims; creases and admission still read exactly. A body's cuts are one union,
+subtracted once and folded in pairs (`document.rs`), and a union keeps its flattened operands with
+a lazily filled cell table of lower bounds (`Spread`, from coarse floor cubes), so a query reads
+the two or three tooth spaces near it, not all 48. `MaterialField::symmetries` reads the maps
+between an indexed cut's placements, kept only if the whole field reads alike at sampled points
+(support and first-pass vertices) and their images; `crease::creases_under` traces each crease
+once and adds its images. The whole gear went from 430 s (114,584 triangles, over-refined by the
+normal-angle criterion) to 4.5 s (17,256), the pinion from 24 s to 3 s, natively. Measure with instructions
+retired (`/usr/bin/time -l`): Spotlight indexing a fresh target directory doubles wall-clock noise.
 **The certified swept boundary (2026-09-10, project 1 of two prerequisites):** the hypoid
 pinion at 15° to 45° showed the mesh arrangement passing its recorded-volume and STL-shell
 gates while a field probe (points 0.1 mm inside and outside every triangle) found 19% to

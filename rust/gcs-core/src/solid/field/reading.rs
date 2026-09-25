@@ -43,6 +43,10 @@ pub struct ReadingOptions {
     /// A warm reading continues each sweep's contact from its hint without searching the whole
     /// roll (`SweptField::minimum_hinted`): a continuation, which a caller must check otherwise.
     pub local: bool,
+    /// Given, a sweep is read from its adaptive distance field refined to this
+    /// (`SweptField::cached`) instead of searched: a mesher's reading, off the exact field by about
+    /// the resolution's tolerance. `None` reads exactly.
+    pub cached: Option<super::Resolution>,
 }
 
 impl ReadingOptions {
@@ -50,7 +54,7 @@ impl ReadingOptions {
     /// a thousandth of its own value, a tie at a millionth, a difference step at a ten-millionth.
     pub fn at(p: [f64;3]) -> Self {
         let size = 1.+(p[0]*p[0]+p[1]*p[1]+p[2]*p[2]).sqrt();
-        Self {accuracy:1e-10*size,relative:1e-3,tie:1e-6*size,step:1e-7*size,local:false}
+        Self {accuracy:1e-10*size,relative:1e-3,tie:1e-6*size,step:1e-7*size,local:false,cached:None}
     }
 }
 
@@ -73,13 +77,15 @@ pub(super) fn higher(a: Reading,b: Reading,tie: f64) -> Reading {
     lower(a.negated(),b.negated(),tie).negated()
 }
 
-/// A leaf's reading: its value, and its gradient by central differences.
+/// A leaf's reading: its value, and its gradient by forward differences.
 pub(super) fn leaf(value: impl Fn([f64;3]) -> f64,p: [f64;3],step: f64,index: usize,piece: usize) -> Reading {
+    // forward differences: the step is a ten-millionth of the point's size, so the curvature's
+    // share of the error is as small as central differences' roundoff, at half their evaluations
+    let v = value(p);
     let gradient = std::array::from_fn(|k| {
-        let (mut up,mut down) = (p,p);
+        let mut up = p;
         up[k] += step;
-        down[k] -= step;
-        (value(up)-value(down))/(2.*step)
+        (value(up)-v)/step
     });
-    Reading {value:value(p),gradient,leaf:index,piece,time:None,ambiguous:false}
+    Reading {value:v,gradient,leaf:index,piece,time:None,ambiguous:false}
 }

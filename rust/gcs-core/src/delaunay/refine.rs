@@ -109,6 +109,9 @@ struct Refiner<'a> {
     /// Called with whether the point continues the crossing just read, so a reading may start
     /// from the last one's.
     reading: Option<Box<dyn FnMut(P,bool) -> (f64,P) + 'a>>,
+    /// The readings' signs are the domain's own at every point (`Progressive::readings_agree`), so
+    /// a crossing's bracket needs no checking by it.
+    agree: bool,
     centre: P,
     radius: f64,
     criteria: Criteria,
@@ -250,7 +253,7 @@ impl Refiner<'_> {
         let pad = tol/len;
         let (sl,sh) = ((lo.min(hi)-pad).max(0.),(lo.max(hi)+pad).min(1.));
         let (sl,sh) = if lo <= hi { (sl,sh) } else { (sh,sl) };
-        if (sl > 0. && self.side(lerp(a,b,sl)) != sa) || (sh < 1. && self.side(lerp(a,b,sh)) == sa) {
+        if !self.agree && ((sl > 0. && self.side(lerp(a,b,sl)) != sa) || (sh < 1. && self.side(lerp(a,b,sh)) == sa)) {
             self.report.fallbacks += 1;
             return self.bisected(a,sa,b);
         }
@@ -754,6 +757,7 @@ enum Stage {
 pub struct Progressive<'a> {
     domain: Option<Box<dyn FnMut(P) -> f64 + 'a>>,
     reading: Option<Box<dyn FnMut(P,bool) -> (f64,P) + 'a>>,
+    agree: bool,
     refiner: Option<Refiner<'a>>,
     centre: P,
     radius: f64,
@@ -777,7 +781,7 @@ impl<'a> Progressive<'a> {
         let length = |c: &[P]| c.windows(2).map(|w| dist2(w[0],w[1]).sqrt()).sum::<f64>();
         let sizing = curves.iter().map(|c| Sizing {base:length(c).min(criteria.edge_size).max(criteria.edge_size*1e-3),local:Vec::new()}).collect();
         let least = criteria.edge_size/LEAST;
-        Self {domain:Some(side),reading:None,refiner:None,centre,radius,curves,criteria,sizing,least,kept:Vec::new(),
+        Self {domain:Some(side),reading:None,agree:false,refiner:None,centre,radius,curves,criteria,sizing,least,kept:Vec::new(),
             memo:HashMap::new(),crossings:HashMap::new(),queries:0,rebuild:0,stage:Stage::Build,manifold:None}
     }
 
@@ -803,6 +807,14 @@ impl<'a> Progressive<'a> {
     /// rather than by bisecting its sign. The value must have the side's sign.
     pub fn with_reading(mut self,reading: Box<dyn FnMut(P,bool) -> (f64,P) + 'a>) -> Self {
         self.reading = Some(reading);
+        self
+    }
+
+    /// The readings' signs agree with the domain's at every point, and none continues a contact
+    /// locally: a crossing Newton closes is then not checked a tolerance outside each end, which
+    /// costs two domain queries a crossing.
+    pub fn readings_agree(mut self) -> Self {
+        self.agree = true;
         self
     }
 
@@ -865,7 +877,7 @@ impl<'a> Progressive<'a> {
             }
             None => (self.domain.take().expect("the domain before the first build"),self.reading.take()),
         };
-        let mut r = Refiner {domain,reading,centre:self.centre,radius:self.radius,criteria:criteria.clone(),
+        let mut r = Refiner {domain,reading,agree:self.agree,centre:self.centre,radius:self.radius,criteria:criteria.clone(),
             tri:Regular::new(self.centre,self.radius),sign:Vec::new(),balls:Vec::new(),owners:Vec::new(),
             ball_of:HashMap::new(),kept:Vec::new(),memo:std::mem::take(&mut self.memo),normals:HashMap::new(),
             crossings:std::mem::take(&mut self.crossings),blocking:Vec::new(),
@@ -918,6 +930,9 @@ impl<'a> Progressive<'a> {
             let blocking: Vec<usize> = off.iter().flatten().copied().collect();
             let (vertices,triangles) = collect(r,&facets);
             let mesh = Mesh {vertices,triangles,report:r.report.clone()};
+            // Shrinking that left no fewer facets standing off than before has not helped, and
+            // another round would only pay for the whole surface again: keep the earlier one.
+            if let Some(earlier) = self.manifold.take_if(|m| m.report.coarse <= off.len()) { return Some(Ok(earlier)); }
             if blocking.is_empty() || rebuild+1 == REBUILDS || !shrink(r,&blocking,&mut self.sizing,self.least) {
                 return Some(Ok(mesh));
             }
@@ -985,7 +1000,7 @@ fn shrink(r: &Refiner,blocking: &[usize],sizing: &mut [Sizing],least: f64) -> bo
 
 /// The facets with a protecting ball for a vertex whose surface does not cross the facet's normal
 /// line within ten times `facet_distance` of its centroid, each as the balls at its vertices.
-/// Judged by the side at the two ends of that stretch of the normal, both the same.
+/// Judged by the side at points along that stretch of the normal, all the same.
 fn standing_off(r: &mut Refiner,facets: &[([u32;3],u32,usize)]) -> Vec<Vec<usize>> {
     let d = 10.*r.criteria.facet_distance;
     let mut out = Vec::new();
@@ -997,8 +1012,11 @@ fn standing_off(r: &mut Refiner,facets: &[([u32;3],u32,usize)]) -> Vec<Vec<usize
         let l = dot(n,n).sqrt();
         if !(l > 0.) { continue; }
         let g: P = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
-        let (x,y) = ([0,1,2].map(|k| g[k]+d*n[k]/l),[0,1,2].map(|k| g[k]-d*n[k]/l));
-        if r.side(x) == r.side(y) { out.push(held); }
+        // Stepping out from the facet both ways: a thin wall's surface crosses the line twice,
+        // and its two ends alone would read alike on a facet lying on it.
+        let at = |t: f64| [0,1,2].map(|k| g[k]+t*d*n[k]/l);
+        let first = r.side(at(-1.));
+        if [-0.3,-0.1,0.1,0.3,1.].iter().all(|&t| r.side(at(t)) == first) { out.push(held); }
     }
     out
 }

@@ -128,7 +128,8 @@ pub fn corner(field: &MaterialField,mut p: P,operands: &mut [Operand;3],toleranc
 
 /// Whether `p` is on the material's boundary: the whole field reads zero there, to the tolerance.
 fn on_boundary(field: &MaterialField,p: P,tolerance: f64) -> bool {
-    field.reading_with(p,&options_at(p,tolerance),&mut 0).value.abs() <= 4.*tolerance
+    // read to the tolerance, not the hundredth of it a pin needs: the test allows four
+    field.reading_with(p,&ReadingOptions {accuracy:tolerance,..options_at(p,tolerance)},&mut 0).value.abs() <= 4.*tolerance
 }
 
 /// Whether `p`, pinned onto two operands' carriers, is a point of their crease: on the material's
@@ -178,7 +179,9 @@ fn takeover(field: &MaterialField,p: P,ops: [Operand;2],q: P,options: &CreaseOpt
     let (mut lo,mut hi) = (0.,1.);
     let (mut on,mut on_ops,mut off) = (p,ops,q);
     let length = dist(p,q);
-    while (hi-lo)*length > options.tolerance {
+    // to a ten-thousandth of the step: a corner there is then found by Newton on all three
+    // (`corner`), and a hand-off or an unpinned end is as good to that as to the tolerance
+    while (hi-lo)*length > options.tolerance.max(1e-4*options.step) {
         let mid = 0.5*(lo+hi);
         let mut trial = on_ops;
         match pin(field,lerp(p,q,mid),&mut trial,options.tolerance,length) {
@@ -311,6 +314,9 @@ pub fn trace(field: &MaterialField,start: P,operands: [Operand;2],options: &Crea
     Some(Crease {points,closed,operands:first,ends:[ends[1],ends[0]]})
 }
 
+/// About how many of a first pass's vertices a symmetry is checked at (`MaterialField::symmetries`).
+const SYMMETRY_VERTICES: usize = 64;
+
 /// Starting points for creases on a mesh made without them: the middle of every edge whose ends
 /// are decided by different operands, with those two operands.
 pub fn seeds(field: &MaterialField,vertices: &[P],triangles: &[[u32;3]],options: &CreaseOptions)
@@ -336,6 +342,13 @@ pub fn seeds(field: &MaterialField,vertices: &[P],triangles: &[[u32;3]],options:
 /// traced starts nothing. A seed may lie some way off the crease it finds — a mesh made without
 /// features cuts a sharp edge on a chamfer — so it is the pinned point that is compared.
 pub fn creases(field: &MaterialField,seeds: &[(P,[Operand;2])],options: &CreaseOptions) -> Vec<Crease> {
+    creases_under(field,seeds,options,&[])
+}
+
+/// `creases` of a field alike under rigid maps (`MaterialField::symmetries`, a gear's teeth):
+/// each crease traced once and carried by every map to its images, whose seeds then find them.
+pub fn creases_under(field: &MaterialField,seeds: &[(P,[Operand;2])],options: &CreaseOptions,maps: &[super::Symmetry])
+    -> Vec<Crease> {
     let mut out: Vec<Crease> = Vec::new();
     let near = |out: &[Crease],p: P,within: f64| out.iter().any(|c| c.points.len() == 1 && dist(p,c.points[0]) < within
         || c.points.windows(2).any(|w| segment_distance(p,w[0],w[1]) < within));
@@ -351,7 +364,16 @@ pub fn creases(field: &MaterialField,seeds: &[(P,[Operand;2])],options: &CreaseO
         for (e,at) in [(c.ends[0],c.points[0]),(c.ends[1],*c.points.last().unwrap())] {
             if let End::Met(k) = e { split(&mut out,k,at); }
         }
+        // (an image keeps the original's operands and ends, a `Met` naming the crease it met)
+        let images: Vec<Crease> = maps.iter().map(|m| Crease {points:c.points.iter().map(|&x| m.apply(x)).collect(),..c.clone()}).collect();
         out.push(c);
+        // An image lying on a crease already there (a crease its own image: a ring about the axis)
+        // is not added again; T-junctions an image makes are `junctions`' to resolve.
+        for image in images {
+            let n = image.points.len();
+            let there = [n/4,n/2,3*n/4].iter().all(|&k| near(&out,image.points[k],0.25*options.step));
+            if !there { out.push(image); }
+        }
     }
     out
 }
@@ -455,7 +477,10 @@ fn segment_distance(p: P,a: P,b: P) -> f64 {
 /// within the bisection of the corner another found exactly, and two corners that close could
 /// not be protected apart anyway.
 pub fn features(field: &MaterialField,vertices: &[P],triangles: &[[u32;3]],options: &CreaseOptions) -> Vec<Vec<P>> {
-    let mut found = creases(field,&seeds(field,vertices,triangles,options),options);
+    // checked at vertices of the surface, where an unlike blank would show
+    let samples: Vec<P> = vertices.iter().step_by((vertices.len()/SYMMETRY_VERTICES).max(1)).copied().collect();
+    let maps = field.symmetries(&samples);
+    let mut found = creases_under(field,&seeds(field,vertices,triangles,options),options,&maps);
     let mut corners: Vec<P> = Vec::new();
     let mut weld = |p: P| -> P {
         match corners.iter().find(|&&c| dist(c,p) <= 0.02*options.step) {

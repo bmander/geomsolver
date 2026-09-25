@@ -25,9 +25,12 @@ pub struct SweptField {source:SpatialField,motion:Family,domain:I,
     /// Proven lower bounds of the sweep at the centres of cubes a `floor` query has reached, keyed
     /// by cube, filled as they are asked for and shared by every clone (every indexed copy of one
     /// cut reads the one table, each at its own point turned into the sweep's frame).
-    floors:std::sync::Arc<std::sync::Mutex<std::collections::HashMap<[i32;3],std::sync::Arc<Cube>>>>,
+    floors:std::sync::Arc<std::sync::Mutex<super::adf::Map<([i32;3],u32),std::sync::Arc<Cube>>>>,
     /// The side of those cubes: a fraction of the source's own size.
-    cube:std::sync::OnceLock<f64>}
+    cube:std::sync::OnceLock<f64>,
+    /// Adaptive distance fields of the sweep, by the resolution asked for (`cached`), shared by
+    /// every clone as the cubes are.
+    adfs:std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<[u64;3],super::adf::Adf>>>}
 
 /// A sweep's partition of its roll at one cube's centre (`SweptField::cube`): the least bound
 /// proven over the roll, and each stretch `(bound, start, end)` in dyadic roll indices. At a point
@@ -43,7 +46,7 @@ struct Cube { low: f64,stretches: Box<[(f64,u64,u64)]> }
 /// How far below the best value the minimum may lie is read off the parabola through the three
 /// best points: its curvature times the bracket's width squared, over two — infinite until three
 /// points make a parabola that holds water. A reading, like golden section's, not a bound.
-fn brent(f: &impl Fn(f64) -> f64,lo: f64,hi: f64,xtol: f64,steps: usize,stop: impl Fn(f64,f64) -> bool) -> (f64,f64) {
+pub(super) fn brent(f: &impl Fn(f64) -> f64,lo: f64,hi: f64,xtol: f64,steps: usize,stop: impl Fn(f64,f64) -> bool) -> (f64,f64) {
     const GOLD: f64 = 0.381_966_011_250_105_1;
     let (mut a,mut b) = (lo,hi);
     let mut x = a+GOLD*(b-a);
@@ -155,7 +158,7 @@ const SIDE_DEPTH: u32 = 40;
 impl SweptField {
     pub fn new(source: SpatialField,motion: Family,domain: I) -> Self {
         Self {source,motion,domain,poses:std::sync::OnceLock::new(),support:std::sync::OnceLock::new(),
-            floors:Default::default(),cube:std::sync::OnceLock::new()}
+            floors:Default::default(),cube:std::sync::OnceLock::new(),adfs:Default::default()}
     }
     pub fn domain(&self) -> I { self.domain }
 
@@ -220,29 +223,55 @@ impl SweptField {
     /// cube pays for its bound and every later one, from any indexed copy of the cut, looks it
     /// up. `None` without a finite source to size the cubes by.
     pub fn floor(&self,p: [f64;3]) -> Option<f64> {
-        self.cube(p).map(|(d,c)| c.low-d)
+        // the bound alone, read under the lock: no cube handle taken out for a known cube
+        let h = self.cube_side();
+        if !(h > 0.) || !h.is_finite() { return None; }
+        let key = p.map(|x| (x/h).floor().clamp(i32::MIN as f64,i32::MAX as f64) as i32);
+        let low = self.floors.lock().ok()?.get(&(key,1)).map(|c| c.low);
+        match low {
+            Some(low) => {
+                let centre = key.map(|k| (k as f64+0.5)*h);
+                Some(low-((p[0]-centre[0]).powi(2)+(p[1]-centre[1]).powi(2)+(p[2]-centre[2]).powi(2)).sqrt())
+            }
+            None => self.cube(p).map(|(d,c)| c.low-d),
+        }
     }
 
     /// The cube `p` is in, filled on first asking, and `p`'s distance from its centre.
-    fn cube(&self,p: [f64;3]) -> Option<(f64,std::sync::Arc<Cube>)> {
-        let h = *self.cube.get_or_init(|| self.source.support_bounds().ok().flatten().map_or(0.,|b| {
-            let d: f64 = b.iter().map(|x| { let [lo,hi] = x.bounds(); (hi-lo)*(hi-lo) }).sum();
-            d.sqrt()/FLOOR_CUBES
-        }));
+    fn cube(&self,p: [f64;3]) -> Option<(f64,std::sync::Arc<Cube>)> { self.cube_of(p,1) }
+
+    /// `floor` from cubes `coarsening` times as wide: a weaker bound, by the farther centre, from
+    /// a table with that cube fewer entries — for sorting out which of many placed copies of a
+    /// sweep can matter near a point, where most are far and each bound is asked once.
+    pub fn coarse_floor(&self,p: [f64;3],coarsening: u32) -> Option<f64> {
+        self.cube_of(p,coarsening).map(|(d,c)| c.low-d)
+    }
+
+    fn cube_of(&self,p: [f64;3],coarsening: u32) -> Option<(f64,std::sync::Arc<Cube>)> {
+        let h = self.cube_side()*coarsening as f64;
         if !(h > 0.) || !h.is_finite() { return None; }
         let key = p.map(|x| (x/h).floor().clamp(i32::MIN as f64,i32::MAX as f64) as i32);
         let centre = key.map(|k| (k as f64+0.5)*h);
         let d = ((p[0]-centre[0]).powi(2)+(p[1]-centre[1]).powi(2)+(p[2]-centre[2]).powi(2)).sqrt();
-        let known = self.floors.lock().ok()?.get(&key).cloned();
+        let known = self.floors.lock().ok()?.get(&(key,coarsening)).cloned();
         let cube = match known {
             Some(c) => c,
             None => {
                 let c = std::sync::Arc::new(self.bound_at(centre,0.5*h,FLOOR_BUDGET,2.*h));
-                self.floors.lock().ok()?.insert(key,c.clone());
+                self.floors.lock().ok()?.insert((key,coarsening),c.clone());
                 c
             }
         };
         Some((d,cube))
+    }
+
+    /// The side of the floor table's cubes: the source's diagonal over `FLOOR_CUBES`, or 0 without
+    /// a finite source.
+    pub(super) fn cube_side(&self) -> f64 {
+        *self.cube.get_or_init(|| self.source.support_bounds().ok().flatten().map_or(0.,|b| {
+            let d: f64 = b.iter().map(|x| { let [lo,hi] = x.bounds(); (hi-lo)*(hi-lo) }).sum();
+            d.sqrt()/FLOOR_CUBES
+        }))
     }
 
     /// A proven lower bound on the sweep at `p` and the partition of the roll it was proven over:
@@ -301,6 +330,24 @@ impl SweptField {
         })();
         tally(1,evaluations.get());
         cube
+    }
+
+    /// The sweep's value and gradient at `p` read from its adaptive distance field (`adf.rs`),
+    /// refined to `resolution`: exact at the octree's corners (found to a hundredth of the
+    /// tolerance) and interpolated between, refined only where the surface may pass. A reading
+    /// for a mesher that accepts the tolerance, never an interval claim; `None` without a finite
+    /// source to size the root cells by.
+    pub fn cached(&self,p: [f64;3],resolution: super::adf::Resolution) -> Option<(f64,[f64;3])> {
+        let h = self.cube_side();
+        if !(h > 0.) || !h.is_finite() || !(resolution.finest > 0.) { return None; }
+        // a root cell sixteen of the floor's cubes across: far from the surface a read is one cell
+        let root = 16.*h;
+        let accuracy = 1e-2*resolution.tolerance;
+        let mut adfs = self.adfs.lock().ok()?;
+        let key = [resolution.finest,resolution.coarsest,resolution.tolerance].map(f64::to_bits);
+        let adf = adfs.entry(key).or_insert_with(|| super::adf::Adf::new(root,resolution));
+        // a corner far from the boundary needs its value only to a hundredth of itself
+        Some(adf.read(p,&mut |q| self.minimum_relative(q,accuracy,1e-2,0.).value))
     }
 
     /// How far `p` stands outside the box the whole sweep lies in, when it does: then no pose of

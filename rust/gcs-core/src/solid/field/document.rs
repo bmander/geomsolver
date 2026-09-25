@@ -161,7 +161,21 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                 SolidDef::Body {stock,on,through,bound} => {
                     let mut body = get(*stock);
                     for &i in on { body = body.combine(get(i),BodyWord::On).map_err(error)?; }
-                    for &i in through { body = body.combine(get(i),BodyWord::Cut).map_err(error)?; }
+                    // Everything that cuts is one union, subtracted once: the same field as the
+                    // cuts taken away in turn, max(max(s, -a), -b) being max(s, -min(a, b)), with
+                    // the leaves in the same order; but the union keeps an indexed cut's copies
+                    // together, where a mesher's query asks only those near it (`Spread`), and
+                    // is folded in pairs, so a gear's forty-eight copies stand six unions deep.
+                    let mut cuts: Vec<Snapshot> = through.iter().map(|&i| get(i)).collect();
+                    while cuts.len() > 1 {
+                        let mut paired = Vec::with_capacity(cuts.len().div_ceil(2));
+                        let mut it = cuts.into_iter();
+                        while let Some(a) = it.next() {
+                            paired.push(match it.next() { Some(b) => a.combine(b,BodyWord::On).map_err(error)?, None => a });
+                        }
+                        cuts = paired;
+                    }
+                    if let Some(cut) = cuts.pop() { body = body.combine(cut,BodyWord::Cut).map_err(error)?; }
                     for &i in bound { body = body.combine(get(i),BodyWord::Bound).map_err(error)?; }
                     body
                 }

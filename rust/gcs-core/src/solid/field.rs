@@ -9,10 +9,12 @@ pub use spatial::SpatialField;
 mod swept;
 pub use swept::{SweptField,SweepEvaluator,SweepError,SweptMinimum,SIDE_EVALUATIONS,SWEEP_TALLY};
 mod material;
-pub use material::{MaterialField,MaterialEvaluator,MaterialBounds,MaterialSweepQuery};
+pub use material::{MaterialField,MaterialEvaluator,MaterialBounds,MaterialSweepQuery,Symmetry};
 mod reading;
 pub use reading::{Reading,ReadingOptions,WHOLE};
+pub use adf::Resolution;
 pub mod crease;
+mod adf;
 mod probe;
 pub use probe::{MaterialProbe,ProbeState};
 mod boundary;
@@ -63,10 +65,16 @@ fn intersection_support(a: Option<V>,b: Option<V>) -> Option<V> {
     }
 }
 
+
+/// An interval's midpoint in plain floating point.
+fn mid(x: I) -> f64 { let [lo,hi] = x.bounds(); 0.5*(lo+hi) }
+
 #[derive(Clone,Debug)]
 enum Node {
-    HalfPlane {through:P,normal:P},
-    Disk {center:P,radius:I},
+    /// `plain` is the midpoints in plain floating point, `value`'s: the through point, then the
+    /// normal (the centre, then the radius), worked out once rather than at every evaluation.
+    HalfPlane {through:P,normal:P,plain:[f64;4]},
+    Disk {center:P,radius:I,plain:[f64;3]},
     Union(Box<PlanarField>,Box<PlanarField>),
     Intersection(Box<PlanarField>,Box<PlanarField>),
     Difference(Box<PlanarField>,Box<PlanarField>),
@@ -88,7 +96,7 @@ impl PlanarField {
     fn radius_bound(&self) -> Result<Option<f64>,Error> {
         Ok(match &self.node {
             Node::HalfPlane {..} => None,
-            Node::Disk {center,radius} => Some(norm(*center)?.add(*radius)?.bounds()[1]),
+            Node::Disk {center,radius,..} => Some(norm(*center)?.add(*radius)?.bounds()[1]),
             Node::Union(a,b) => match (a.radius_bound()?,b.radius_bound()?) {
                 (Some(a),Some(b)) => Some(a.max(b)), _ => None,
             },
@@ -106,12 +114,16 @@ impl PlanarField {
         let uses = normal.map(|n| n != 0.);
         let mut normal = point(normal)?; let length = norm(normal)?;
         for n in &mut normal { *n = n.div(length)?; }
-        Ok(Self {node:Node::HalfPlane {through:point(through)?,normal},depth:1,uses})
+        let through = point(through)?;
+        let plain = [mid(through[0]),mid(through[1]),mid(normal[0]),mid(normal[1])];
+        Ok(Self {node:Node::HalfPlane {through,normal,plain},depth:1,uses})
     }
 
     pub fn disk(center: [f64;2],radius: f64) -> Result<Self,Error> {
         if radius <= 0. { return Err(Error::OutsideDomain); }
-        Ok(Self {node:Node::Disk {center:point(center)?,radius:I::point(radius)?},depth:1,uses:[true;2]})
+        let (center,radius) = (point(center)?,I::point(radius)?);
+        let plain = [mid(center[0]),mid(center[1]),mid(radius)];
+        Ok(Self {node:Node::Disk {center,radius,plain},depth:1,uses:[true;2]})
     }
 
     fn combine(self,other: Self,make: impl FnOnce(Box<Self>,Box<Self>)->Node) -> Result<Self,Error> {
@@ -128,10 +140,9 @@ impl PlanarField {
     /// the enclosed coefficients: a reading to compare against a tolerance
     /// far wider than the enclosure's own width, never an interval claim.
     pub fn value(&self,p: [f64;2]) -> f64 {
-        let mid = |x: I| { let [lo,hi] = x.bounds(); 0.5*(lo+hi) };
         match &self.node {
-            Node::HalfPlane {through,normal} => (p[0]-mid(through[0]))*mid(normal[0])+(p[1]-mid(through[1]))*mid(normal[1]),
-            Node::Disk {center,radius} => (p[0]-mid(center[0])).hypot(p[1]-mid(center[1]))-mid(*radius),
+            Node::HalfPlane {plain:[tx,ty,nx,ny],..} => (p[0]-tx)*nx+(p[1]-ty)*ny,
+            Node::Disk {plain:[cx,cy,r],..} => { let (x,y) = (p[0]-cx,p[1]-cy); (x*x+y*y).sqrt()-r }
             Node::Union(a,b) => a.value(p).min(b.value(p)),
             Node::Intersection(a,b) => a.value(p).max(b.value(p)),
             Node::Difference(a,b) => a.value(p).max(-b.value(p)),
@@ -196,7 +207,7 @@ impl PlanarField {
     /// Enclose the field over the complete point box; no sampling or libm calls.
     pub fn bounds(&self,p: P) -> Result<I,Error> {
         match &self.node {
-            Node::HalfPlane {through,normal} => {
+            Node::HalfPlane {through,normal,..} => {
                 let term = |k:usize| p[k].sub(through[k])?.mul(normal[k]);
                 match self.uses {
                     [true,true] => term(0)?.add(term(1)?),
@@ -205,7 +216,7 @@ impl PlanarField {
                     [false,false] => unreachable!("half-plane normalization rejects a zero normal"),
                 }
             },
-            Node::Disk {center,radius} => norm([p[0].sub(center[0])?,p[1].sub(center[1])?])?.sub(*radius),
+            Node::Disk {center,radius,..} => norm([p[0].sub(center[0])?,p[1].sub(center[1])?])?.sub(*radius),
             Node::Union(a,b) => Ok(min(a.bounds(p)?,b.bounds(p)?)),
             Node::Intersection(a,b) => Ok(max(a.bounds(p)?,b.bounds(p)?)),
             Node::Difference(a,b) => Ok(max(a.bounds(p)?,b.bounds(p)?.neg())),
@@ -220,7 +231,9 @@ impl PlanarField {
 /// Do not add a half-plane for an artificial meridian spine on the axis: radial
 /// coordinates are already nonnegative, and a spine is not a revolved boundary.
 #[derive(Clone,Debug)]
-pub struct RevolvedField { profile:PlanarField,origin:V,axis:V }
+pub struct RevolvedField { profile:PlanarField,origin:V,axis:V,
+    /// The origin's and the axis's midpoints, `value`'s, worked out once.
+    plain:[[f64;3];2] }
 
 impl RevolvedField {
     /// A finite world box enclosing all regularized material, when one can be
@@ -236,7 +249,9 @@ impl RevolvedField {
     pub fn new(profile: PlanarField,origin: [f64;3],axis: [f64;3]) -> Result<Self,Error> {
         let mut axis = point(axis)?; let length = norm(axis)?;
         for a in &mut axis { *a = a.div(length)?; }
-        Ok(Self {profile,origin:point(origin)?,axis})
+        let origin = point(origin)?;
+        let plain = [origin.map(mid),axis.map(mid)];
+        Ok(Self {profile,origin,axis,plain})
     }
 
     /// The field at a point in plain floating point; see `PlanarField::value`.
@@ -244,9 +259,8 @@ impl RevolvedField {
 
     /// A point in the profile's (radius, height).
     fn meridian(&self,p: [f64;3]) -> [f64;2] {
-        let mid = |x: I| { let [lo,hi] = x.bounds(); 0.5*(lo+hi) };
-        let q: [f64;3] = std::array::from_fn(|i| p[i]-mid(self.origin[i]));
-        let axis: [f64;3] = self.axis.map(mid);
+        let [origin,axis] = self.plain;
+        let q: [f64;3] = std::array::from_fn(|i| p[i]-origin[i]);
         let z = q[0]*axis[0]+q[1]*axis[1]+q[2]*axis[2];
         if !self.profile.uses[0] { return [0.,z]; }
         let radial: [f64;3] = std::array::from_fn(|i| q[i]-z*axis[i]);
@@ -276,7 +290,9 @@ impl RevolvedField {
 /// orthonormal, its coordinate map an isometry, and the field one-Lipschitz in
 /// world coordinates: the prism is the profile intersected with the slab.
 #[derive(Clone,Debug)]
-pub struct ExtrudedField { profile:PlanarField,origin:V,frame:[V;3],range:I }
+pub struct ExtrudedField { profile:PlanarField,origin:V,frame:[V;3],range:I,
+    /// The origin's and the frame's midpoints, `frame_of`'s, worked out once.
+    plain:[[f64;3];4] }
 
 impl ExtrudedField {
     /// `range` holds the two ordinates in either order; a zero thickness is refused.
@@ -296,7 +312,9 @@ impl ExtrudedField {
         let v = unit(v)?;
         let n = [u[1].mul(v[2])?.sub(u[2].mul(v[1])?)?,u[2].mul(v[0])?.sub(u[0].mul(v[2])?)?,
             u[0].mul(v[1])?.sub(u[1].mul(v[0])?)?];
-        Ok(Self {profile,origin:point(origin)?,frame:[u,v,n],range})
+        let origin = point(origin)?;
+        let plain = [origin.map(mid),u.map(mid),v.map(mid),n.map(mid)];
+        Ok(Self {profile,origin,frame:[u,v,n],range,plain})
     }
 
     /// A finite world box enclosing all regularized material, when the profile
@@ -319,9 +337,9 @@ impl ExtrudedField {
 
     /// A point in the frame's (u, v, depth).
     fn frame_of(&self,p: [f64;3]) -> [f64;3] {
-        let mid = |x: I| { let [lo,hi] = x.bounds(); 0.5*(lo+hi) };
-        let q: [f64;3] = std::array::from_fn(|i| p[i]-mid(self.origin[i]));
-        std::array::from_fn(|k| (0..3).map(|i| q[i]*mid(self.frame[k][i])).sum())
+        let [origin,u,v,n] = self.plain;
+        let q: [f64;3] = std::array::from_fn(|i| p[i]-origin[i]);
+        [u,v,n].map(|a| q[0]*a[0]+q[1]*a[1]+q[2]*a[2])
     }
 
     /// The profile's pieces, each run along the depth, then the two caps (the near end, then the

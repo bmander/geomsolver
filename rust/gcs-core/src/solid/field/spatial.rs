@@ -133,6 +133,37 @@ impl SpatialField {
         }
     }
 
+    /// `leaf_reading`'s value alone, without the gradient's six further evaluations.
+    pub fn leaf_value(&self,p: [f64;3],target: usize,piece: usize,next: &mut usize) -> Option<f64> {
+        match self.node.as_ref() {
+            Node::Revolved(source) => {
+                *next += 1;
+                if *next-1 != target { return None; }
+                if piece == super::WHOLE { return Some(source.value(p)); }
+                if piece >= source.piece_count() { return None; }
+                Some(source.carrier(p,piece).unwrap_or(f64::NAN))
+            }
+            Node::Extruded(source) => {
+                *next += 1;
+                if *next-1 != target { return None; }
+                if piece == super::WHOLE { return Some(source.value(p)); }
+                if piece >= source.piece_count() { return None; }
+                Some(source.carrier(p,piece).unwrap_or(f64::NAN))
+            }
+            Node::Transformed {source,pose} => source.leaf_value(pose.inverse_point_mid(p),target,piece,next),
+            Node::Union(a,b) | Node::Intersection(a,b) => {
+                let first = a.leaf_value(p,target,piece,next);
+                if first.is_some() { return first; }
+                b.leaf_value(p,target,piece,next)
+            }
+            Node::Difference(a,b) => {
+                let first = a.leaf_value(p,target,piece,next);
+                if first.is_some() { return first; }
+                b.leaf_value(p,target,piece,next).map(|v| -v)
+            }
+        }
+    }
+
     /// The reading of one operand alone at a point — piece `piece` of leaf `target`, its whole
     /// smooth carrier, or with `piece` `WHOLE` the leaf itself — with the transforms above it and the sign it enters the field with (turned
     /// where it is subtracted), leaves numbered from `*next` as `reading` numbers them; `None`

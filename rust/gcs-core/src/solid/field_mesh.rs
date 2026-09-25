@@ -8,7 +8,7 @@
 //! terminal, a test) has the sketch mesh the field to the end when a solid is first asked for.
 use super::*;
 use crate::delaunay::refine::{Criteria, Progressive};
-use super::ReadingOptions;
+use super::{ReadingOptions, Resolution};
 
 /// A field-meshed solid's facet size and surface distance, as fractions of its support's
 /// diagonal: a preview's, coarse enough to mesh a small part in about a second natively.
@@ -69,6 +69,16 @@ struct Second {
 /// fifth of the whole on a surface with no crease, and shows a rough surface at once.
 const SEED_COARSENING: f64 = 3.0;
 
+/// The adaptive distance fields' finest cells, as a multiple of the pass's facet distance.
+const CACHE_CELLS: f64 = 2.0;
+
+/// How finely a pass to `criteria` reads sweeps' distance fields: no coarser than a facet near the
+/// surface, interpolated to a tenth of the surface distance, down to `CACHE_CELLS` of it.
+fn resolution(criteria: &Criteria) -> Resolution {
+    Resolution { finest: CACHE_CELLS * criteria.facet_distance, coarsest: criteria.facet_size,
+        tolerance: 0.1 * criteria.facet_distance }
+}
+
 /// The final pass's facets keep their vertices' normals within this many degrees of each other,
 /// which is what sizes them to the local feature (`Criteria::normal_angle`); the first pass asks
 /// nothing of them, having no sharp edges protected, where facets spanning a crease always differ.
@@ -107,7 +117,7 @@ pub fn first_pass(field: &MaterialField, criteria: &Criteria, centre: [f64; 3], 
 }
 
 /// The creases' step is never longer than this fraction of the material's own extent.
-const CREASE_STEPS: f64 = 200.0;
+const CREASE_STEPS: f64 = 100.0;
 
 /// The feature curves of a field for refinement to `criteria`, found from a first pass's surface
 /// (`crease::features`): traced a quarter of the feature spacing at a time, and never more than a
@@ -120,7 +130,7 @@ pub fn creases(field: &MaterialField, first: &crate::delaunay::refine::Mesh, cri
         b.iter().map(|x| { let [lo, hi] = x.bounds(); (hi - lo) * (hi - lo) }).sum::<f64>().sqrt()
     });
     let options = crease::CreaseOptions {
-        step: (criteria.edge_size / 4.0).min(extent / CREASE_STEPS), tolerance: 1e-9 * radius, time_gap: 0.1, centre,
+        step: (criteria.edge_size / 2.0).min(extent / CREASE_STEPS), tolerance: 1e-9 * radius, time_gap: 0.1, centre,
         radius, max_points: 200_000,
     };
     crease::features(field, &first.vertices, &first.triangles, &options)
@@ -145,27 +155,34 @@ impl FieldMesher {
             edge_size: facet, bisection: 1e-5 * radius, max_points: 500_000, normal_angle: NORMAL_ANGLE,
         };
         let (near, within, coarse) = first_pass(&field, &criteria, centre, radius);
-        let run = Self::pass(&field, near, within, Vec::new(), coarse);
+        let r = resolution(&coarse);
+        let run = Self::pass(&field, near, within, Vec::new(), coarse, r);
         Ok(Self { run, second: Some(Second { field, centre, radius, criteria }), first: None, tracing: None,
             curves: None, peak: 1.0, failed: false })
     }
 
-    fn pass(field: &MaterialField, centre: [f64; 3], radius: f64, curves: Vec<Vec<[f64; 3]>>, criteria: Criteria)
-        -> Progressive<'static> {
+    fn pass(field: &MaterialField, centre: [f64; 3], radius: f64, curves: Vec<Vec<[f64; 3]>>, criteria: Criteria,
+        resolution: Resolution) -> Progressive<'static> {
         let (side, reader) = (field.clone(), field.clone());
-        Progressive::new(Box::new(move |p| side.side(p)), centre, radius, curves, criteria)
+        // Sweeps are read from their adaptive distance fields (`resolution`): what the refinement
+        // asks is a few hundred thousand values, most a cell from one already asked, where each
+        // exact one is a search over the roll.
+        Progressive::new(Box::new(move |p| side.side_cached(p, resolution)), centre, radius, curves, criteria)
             .with_reading(Box::new({
                 // the contact times of the last reading, for the next one along the same crossing
                 let mut hints = Vec::new();
                 move |p, warm| {
                     // a crossing is placed to the bisection tolerance, so its value is needed to a
-                    // tenth of that, and far from the boundary to a thousandth of itself
-                    let options = ReadingOptions { accuracy: 1e-6 * radius, local: warm, ..ReadingOptions::at(p) };
+                    // tenth of that, and far from the boundary to a thousandth of itself; every
+                    // sweep is read from its distance field, as `side_cached` reads it, so the two
+                    // agree (to the field's tolerance) and nothing is continued locally
+                    let options = ReadingOptions { accuracy: 1e-6 * radius, cached: Some(resolution), ..ReadingOptions::at(p) };
                     if !warm { hints.clear(); }
                     let r = reader.reading_warm(p, &options, &mut 0, &mut hints);
                     (r.value, r.gradient)
                 }
             }))
+            .readings_agree()
     }
 
     /// Refine at most about `budget` facets: whether the refinement has finished.
@@ -174,7 +191,8 @@ impl FieldMesher {
             let Second { field, centre, radius, criteria } = self.second.take().unwrap();
             let curves = creases(&field, &coarse, &criteria, centre, radius);
             self.curves = Some(curves.len());
-            self.run = Self::pass(&field, centre, radius, curves, criteria);
+            let r = resolution(&criteria);
+            self.run = Self::pass(&field, centre, radius, curves, criteria, r);
             self.peak = 1.0;
             return Ok(false);
         }

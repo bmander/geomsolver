@@ -16,7 +16,8 @@ enum Step {
 }
 
 fn unit(axis: [f64;3]) -> Option<[f64;3]> {
-    let n = axis[0].hypot(axis[1]).hypot(axis[2]);
+    // sqrt of the sum and not `hypot`: evaluated at every pose, and axes are of drawing size
+    let n = (axis[0]*axis[0]+axis[1]*axis[1]+axis[2]*axis[2]).sqrt();
     (n > 0. && n.is_finite()).then(|| axis.map(|v| v/n))
 }
 
