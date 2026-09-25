@@ -9,6 +9,7 @@ import { forget, provide } from '../core/modules.js';
 import { Document } from '../core/program.js';
 import { initCore } from '../core/wasm.js';
 import type { Frame, Job } from './field-preview.js';
+import type { MeshProgress } from '../core/field.js';
 
 /** Facets refined between looks at the message queue. */
 const BUDGET = 40;
@@ -49,11 +50,17 @@ async function run(job: Job): Promise<void> {
   }
   // Every swept object refines in turn, a budget at a time, so each shows its rough shape at
   // once rather than after the ones before it have finished.
-  const running: { solid: number; mesher: FieldMesher; shown: number }[] = [];
+  const running: { solid: number; mesher: FieldMesher; shown: number; phase: string }[] = [];
+  const started = performance.now();
+  const status = (m: FieldMesher): { progress?: MeshProgress; elapsed: number } => {
+    let progress: MeshProgress | undefined;
+    try { progress = m.progress(); } catch { progress = undefined; }
+    return { progress, elapsed: performance.now()-started };
+  };
   try {
     for (const solid of job.solids) {
       try {
-        running.push({ solid, mesher: FieldMesher.create(doc.sketch, solid), shown: 0 });
+        running.push({ solid, mesher: FieldMesher.create(doc.sketch, solid), shown: 0, phase: '' });
       } catch (e) {
         post({ id: job.id, solid, error: String(e) });
       }
@@ -66,15 +73,19 @@ async function run(job: Job): Promise<void> {
         try {
           done = r.mesher.step(BUDGET);
         } catch (e) {
-          post({ id: job.id, solid: r.solid, surface: r.mesher.snapshot(), error: String(e) });
+          post({ id: job.id, solid: r.solid, surface: r.mesher.snapshot(), error: String(e), ...status(r.mesher) });
           r.mesher.dispose();
           running.splice(k, 1);
           continue;
         }
+        // a new phase is said at once: the next step may be a long one (the edges traced whole)
         const now = performance.now();
-        if (done || now - r.shown > FRAME_MS) {
-          post({ id: job.id, solid: r.solid, surface: r.mesher.snapshot() });
+        const s = status(r.mesher);
+        const phase = `${s.progress?.phase}/${s.progress?.stage}/${s.progress?.rebuild}`;
+        if (done || now - r.shown > FRAME_MS || phase !== r.phase) {
+          post({ id: job.id, solid: r.solid, surface: r.mesher.snapshot(), ...s });
           r.shown = now;
+          r.phase = phase;
         }
         if (done) {
           r.mesher.dispose();

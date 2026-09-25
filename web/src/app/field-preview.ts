@@ -12,7 +12,7 @@
  * one at its next step; surfaces from an old job are ignored here. A job whose drawing has not
  * moved is not repeated, and a new elaboration of the same drawing gets the finished surfaces
  * again without meshing them twice. */
-import { deferFields, isSwept, supplyField, type FieldSurface } from '../core/field.js';
+import { deferFields, isSwept, supplyField, type FieldSurface, type MeshProgress } from '../core/field.js';
 import { objects } from '../core/mesh.js';
 import type { Sketch } from '../core/model.js';
 import { related } from '../core/modules.js';
@@ -34,6 +34,19 @@ export interface Frame {
   id: number;
   solid: number;
   surface?: FieldSurface;
+  error?: string;
+  /** Where its meshing stands, and the time since the job began, in milliseconds. */
+  progress?: MeshProgress;
+  elapsed?: number;
+}
+
+/** One swept object's refinement, as the page tells it (`FieldPreview`'s `progressed`). */
+export interface Refining {
+  name: string;
+  progress?: MeshProgress;
+  triangles: number;
+  elapsed: number;
+  done: boolean;
   error?: string;
 }
 
@@ -60,16 +73,22 @@ export class FieldPreview {
   private pending = new Map<number, Frame>();
   private busy = false;
 
-  constructor(private readonly arrived: (error?: string) => void) {}
+  /** Each swept object of the job in hand, by solid index. */
+  private refining = new Map<number, Refining>();
+
+  constructor(private readonly arrived: (error?: string) => void,
+              private readonly progressed: (refining: Refining[]) => void = () => {}) {}
 
   /** Mesh this document's swept objects, unless its drawing is the one already meshed. */
   start(doc: Document): void {
     // no workers (a test's view, node): the sketch meshes a swept solid itself when asked
     if (typeof Worker === 'undefined') return;
     const sk = doc.sketch;
-    const solids = objects(sk).map((o) => o.index).filter((i) => isSwept(sk, i));
+    const found = objects(sk).filter((o) => isSwept(sk, o.index));
+    const solids = found.map((o) => o.index);
     if (!solids.length) {
       this.sketch = sk;
+      if (this.refining.size) { this.refining.clear(); this.progressed([]); }
       return;
     }
     deferFields(sk);
@@ -89,6 +108,8 @@ export class FieldPreview {
     this.finished.clear();
     this.pending.clear();
     this.job += 1;
+    this.refining = new Map(found.map((o) => [o.index, { name: o.name, triangles: 0, elapsed: 0, done: false }]));
+    this.progressed([...this.refining.values()]);
     if (!this.worker) {
       this.worker = new Worker(new URL('./mesh-worker.bundle.js', import.meta.url), { type: 'module' });
       this.worker.onmessage = (ev: MessageEvent<Frame>) => this.receive(ev.data);
@@ -107,6 +128,15 @@ export class FieldPreview {
    *  applied. */
   private receive(f: Frame): void {
     if (f.id !== this.job || !this.sketch) return;
+    const r = this.refining.get(f.solid);
+    if (r) {
+      r.progress = f.progress ?? r.progress;
+      r.elapsed = f.elapsed ?? r.elapsed;
+      r.triangles = f.surface ? f.surface.triangles.length / 3 : r.triangles;
+      r.done = !!f.surface && !f.surface.provisional;
+      r.error = f.error ?? r.error;
+      this.progressed([...this.refining.values()]);
+    }
     this.pending.set(f.solid, f);
     if (!this.busy) this.apply();
   }

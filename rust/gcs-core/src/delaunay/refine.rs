@@ -666,6 +666,20 @@ pub fn mesh(side: &mut dyn FnMut(P) -> f64,centre: P,radius: f64,curves: &[Vec<P
 }
 
 /// Where a progressive refinement stands.
+/// A refinement's state for a host to show (`Progressive::progress`). `worst` is the badness of
+/// the worst facet waiting — above 1 by how far it misses the criteria, 1 with none waiting — and
+/// falls toward 1 as refinement goes on, worst first; it is the one measure of how near the end is.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Progress {
+    pub stage: &'static str,
+    pub rebuild: usize,
+    pub queued: usize,
+    pub worst: f64,
+    pub inserted: usize,
+    pub queries: usize,
+    pub readings: usize,
+}
+
 enum Stage {
     /// Protect, seed or re-insert, and judge every facet.
     Build,
@@ -743,6 +757,24 @@ impl<'a> Progressive<'a> {
 
     /// Whether the refinement has finished, well or not.
     pub fn done(&self) -> bool { matches!(self.stage,Stage::Done(_)) }
+
+    /// Where the refinement stands, for a host to show: which stage, how many rebuilds, the
+    /// facets waiting and the worst of them, and the work done. No total is known in advance.
+    pub fn progress(&self) -> Progress {
+        let stage = match self.stage {
+            Stage::Build => "building",
+            Stage::Refine => "refining",
+            Stage::Repair => "repairing",
+            Stage::Done(Ok(_)) => "done",
+            Stage::Done(Err(_)) => "failed",
+        };
+        let (queued,worst,report) = match &self.refiner {
+            Some(r) => (r.queue.len(),r.queue.peek().map_or(1.,|b| b.badness),r.report.clone()),
+            None => (0,1.,Report {queries:self.queries,..Report::default()}),
+        };
+        Progress {stage,rebuild:self.rebuild,queued,worst,inserted:report.inserted,queries:report.queries,
+            readings:report.readings}
+    }
 
     /// Why a finished refinement could not make a mesh, if it could not.
     pub fn done_error(&self) -> Option<String> {

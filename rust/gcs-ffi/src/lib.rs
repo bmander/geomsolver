@@ -1896,6 +1896,28 @@ pub unsafe extern "C" fn gcs_field_mesher_triangles(m: *mut Mesher, out: *mut u3
     })
 }
 
+/// Where the meshing stands, as JSON: `{ "phase", "stage", "rebuild", "queued", "worst",
+/// "inserted", "queries", "readings", "curves", "fraction", "failed" }` (`FieldProgress`).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_field_mesher_progress(m: *mut Mesher) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let p = (*m).mesher.progress();
+        out_json(Json::Obj(vec![
+            ("phase".into(), Json::Str(p.phase.into())),
+            ("stage".into(), Json::Str(p.refine.stage.into())),
+            ("rebuild".into(), Json::Int(p.refine.rebuild as i64)),
+            ("queued".into(), Json::Int(p.refine.queued as i64)),
+            ("worst".into(), Json::Num(p.refine.worst)),
+            ("inserted".into(), Json::Int(p.refine.inserted as i64)),
+            ("queries".into(), Json::Int(p.refine.queries as i64)),
+            ("readings".into(), Json::Int(p.refine.readings as i64)),
+            ("curves".into(), p.curves.map_or(Json::Null, |c| Json::Int(c as i64))),
+            ("fraction".into(), Json::Num(p.fraction)),
+            ("failed".into(), Json::Bool(p.failed)),
+        ]))
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_field_mesher_free(m: *mut Mesher) {
     guard((), move || {

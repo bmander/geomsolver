@@ -5,7 +5,7 @@
  * never meshes a field on the thread that draws, and `supplyField`, which gives it each surface as
  * it arrives.  Numbers cross as flat buffers — three doubles a vertex, three indices a triangle. */
 import { Sketch } from './model.js';
-import { core, lastError, withBuf } from './wasm.js';
+import { core, lastError, takeJson, withBuf } from './wasm.js';
 
 /** A surface in world coordinates: `provisional` while the refinement is still going. */
 export interface FieldSurface {
@@ -37,6 +37,23 @@ export function supplyField(sk: Sketch, idx: number, s: FieldSurface): void {
   if (ok < 0) throw new Error(lastError());
 }
 
+/** Where a mesher stands (`FieldProgress` in the core): its phase, the refinement's stage and
+ *  rebuilds, the facets waiting and the worst of them, the work done, the creases traced once they
+ *  are, and `fraction`, an estimate of the whole — never a count of work left. */
+export interface MeshProgress {
+  phase: 'first pass' | 'tracing edges' | 'final pass';
+  stage: 'building' | 'refining' | 'repairing' | 'done' | 'failed';
+  rebuild: number;
+  queued: number;
+  worst: number;
+  inserted: number;
+  queries: number;
+  readings: number;
+  curves: number | null;
+  fraction: number;
+  failed: boolean;
+}
+
 /** Delaunay refinement of one swept solid's field, driven by `step` and read by `snapshot`. */
 export class FieldMesher {
   private constructor(private h: number) {}
@@ -52,6 +69,11 @@ export class FieldMesher {
     const r = core().gcs_field_mesher_step(this.h, budget);
     if (r < 0) throw new Error(lastError() || 'the refinement failed');
     return r === 1;
+  }
+
+  /** Where the meshing stands. */
+  progress(): MeshProgress {
+    return takeJson<MeshProgress>(core().gcs_field_mesher_progress(this.h));
   }
 
   /** The surface as it stands. */

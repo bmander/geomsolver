@@ -21,6 +21,14 @@ export function stats(msg: string): void {
   statsEl.textContent = msg;
 }
 
+const refineEl = document.getElementById('refine') as HTMLElement;
+
+/** The background refinement's line in the footer, and how it reads: going, failed or finished. */
+export function refining(msg: string, state: 'going' | 'failed' | 'finished' = 'going'): void {
+  refineEl.textContent = msg;
+  refineEl.className = state === 'going' ? '' : state;
+}
+
 function open<T>(title: string, build: (resolve: (v: T) => void) => void): Promise<T> {
   modalTitle.textContent = title;
   modalBody.replaceChildren();

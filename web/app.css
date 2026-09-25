@@ -189,6 +189,10 @@ footer #component { color: var(--text); }
    line are describing a sketch you are not actually looking at */
 footer.unsolved { background: var(--danger-bg); border-top-color: #d62728; color: #a03b46; }
 footer.unsolved #toast { color: #8a0000; }
+/* swept solids refining in the background: on the right, there only while one is */
+footer #refine { float: right; margin-left: 16px; color: var(--text); }
+footer #refine.failed { color: #a03b46; }
+footer #refine.finished { color: var(--muted); }
 
 dialog {
   border: 1px solid var(--line); border-radius: 9px; padding: 0;

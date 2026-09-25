@@ -34,7 +34,28 @@ pub struct FieldMesher {
     second: Option<Second>,
     /// The first pass's surface, shown until the second has one.
     first: Option<FieldSurface>,
+    /// The first pass has finished and its creases are to be traced at the next step: a step of
+    /// its own, so a host can say so before it starts.
+    tracing: Option<crate::delaunay::refine::Mesh>,
+    /// Creases traced, once they are.
+    curves: Option<usize>,
+    /// The worst facet waiting at any point of the pass running: what `progress` measures by.
+    peak: f64,
     failed: bool,
+}
+
+/// Where a `FieldMesher` stands (`FieldMesher::progress`): its phase — `first pass`, `tracing
+/// edges`, `final pass` — the refinement's own state, the creases traced once they are, and a
+/// fraction of the whole: the worst waiting facet's badness fallen on a log scale from its peak in
+/// the pass, the first pass a quarter of the whole and the final pass the rest. An estimate,
+/// never a count of work left: no refinement knows that in advance.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FieldProgress {
+    pub phase: &'static str,
+    pub refine: crate::delaunay::refine::Progress,
+    pub curves: Option<usize>,
+    pub fraction: f64,
+    pub failed: bool,
 }
 
 struct Second {
@@ -116,7 +137,8 @@ impl FieldMesher {
         };
         let (near, within, coarse) = first_pass(&field, &criteria, centre, radius);
         let run = Self::pass(&field, near, within, Vec::new(), coarse);
-        Ok(Self { run, second: Some(Second { field, centre, radius, criteria }), first: None, failed: false })
+        Ok(Self { run, second: Some(Second { field, centre, radius, criteria }), first: None, tracing: None,
+            curves: None, peak: 1.0, failed: false })
     }
 
     fn pass(field: &MaterialField, centre: [f64; 3], radius: f64, curves: Vec<Vec<[f64; 3]>>, criteria: Criteria)
@@ -139,15 +161,22 @@ impl FieldMesher {
 
     /// Refine at most about `budget` facets: whether the refinement has finished.
     pub fn step(&mut self, budget: usize) -> Result<bool, String> {
+        if let Some(coarse) = self.tracing.take() {
+            let Second { field, centre, radius, criteria } = self.second.take().unwrap();
+            let curves = creases(&field, &coarse, &criteria, centre, radius);
+            self.curves = Some(curves.len());
+            self.run = Self::pass(&field, centre, radius, curves, criteria);
+            self.peak = 1.0;
+            return Ok(false);
+        }
         if self.second.is_some() {
             // The first pass's surface need not close: an unprotected sharp edge may leave it
             // short of a manifold, and its edges still cross the creases.
             if !self.run.step(budget).unwrap_or(true) { return Ok(false); }
-            let Second { field, centre, radius, criteria } = self.second.take().unwrap();
             let coarse = self.run.snapshot();
-            let curves = creases(&field, &coarse, &criteria, centre, radius);
-            self.first = Some(FieldSurface { vertices: coarse.vertices, triangles: coarse.triangles, provisional: true });
-            self.run = Self::pass(&field, centre, radius, curves, criteria);
+            self.first = Some(FieldSurface { vertices: coarse.vertices.clone(), triangles: coarse.triangles.clone(),
+                provisional: true });
+            self.tracing = Some(coarse);
             return Ok(false);
         }
         let result = self.run.step(budget).and_then(|done| match done {
@@ -156,6 +185,18 @@ impl FieldMesher {
         });
         self.failed |= result.is_err();
         result
+    }
+
+    /// Where the meshing stands, for a host to show (`FieldProgress`).
+    pub fn progress(&mut self) -> FieldProgress {
+        let refine = self.run.progress();
+        self.peak = self.peak.max(refine.worst);
+        let within = if refine.stage == "done" || refine.worst <= 1.0 || self.peak <= 1.0 { 1.0 }
+            else { (1.0 - refine.worst.ln() / self.peak.ln()).clamp(0.0, 1.0) };
+        let (phase, fraction) = if self.tracing.is_some() { ("tracing edges", 0.25) }
+            else if self.second.is_some() { ("first pass", 0.25 * within) }
+            else { ("final pass", 0.25 + 0.75 * within) };
+        FieldProgress { phase, refine, curves: self.curves, fraction, failed: self.failed }
     }
 
     /// The surface as it stands: provisional until the refinement has finished, and then the

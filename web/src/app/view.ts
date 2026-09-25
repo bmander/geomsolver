@@ -11,7 +11,7 @@
  * Every mutation funnels through `afterEdit`, which re-solves (when auto-solve is on),
  * re-diagnoses and notifies the shell exactly once. */
 import { Box3D } from './box3d.js';
-import { FieldPreview } from './field-preview.js';
+import { FieldPreview, type Refining } from './field-preview.js';
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
@@ -163,6 +163,8 @@ export class SketchView {
    *  only the status line needs updating (a drag's numbers, a band's selection count). */
   onDragFrame: () => void = () => {};
   onStatus: (msg: string) => void = () => {};
+  /** The swept objects refining in the background, as each frame of their meshing arrives. */
+  onRefine: (refining: Refining[]) => void = () => {};
   /** A dimension callout was clicked: the shell puts the focus on that constraint. */
   onPickConstraint: (c: Constraint) => void = () => {};
   /** What is held changed, and nothing else did — the line that names it is the whole of the
@@ -222,7 +224,7 @@ export class SketchView {
   private frame = 0;
   readonly derived = new DerivedDrawing(() => this.draw());
   /** Swept solids' surfaces, refined in a worker and drawn as they arrive. */
-  private readonly fields = new FieldPreview((error) => this.fieldArrived(error));
+  private readonly fields = new FieldPreview((error) => this.fieldArrived(error), (r) => this.onRefine(r));
   /** A source sync is running: `swap` re-enters `afterEdit`, and the second pass has nothing
    *  left to write.  One flag rather than a subtle argument about termination. */
   private syncing = false;

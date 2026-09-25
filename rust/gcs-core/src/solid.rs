@@ -27,7 +27,7 @@
 
 mod evaluated;
 mod field_mesh;
-pub use field_mesh::{FieldMesher, FieldSurface};
+pub use field_mesh::{FieldMesher, FieldProgress, FieldSurface};
 pub use field_mesh::{first_pass as field_first_pass, creases as field_creases};
 pub mod cad;
 mod profile;

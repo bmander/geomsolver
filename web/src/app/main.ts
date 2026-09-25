@@ -61,8 +61,9 @@ import {
 } from './shell.js';
 import {
   MenuItem, ToolbarButton, addButton, addMenu, addSeparator, askChoice, closeMenus, download, openImage,
-  toast,
+  refining, toast,
 } from './ui.js';
+import type { Refining } from './field-preview.js';
 import { Tool } from './view.js';
 
 /* -- toolbars ---------------------------------------------------------------- */
@@ -169,6 +170,47 @@ async function exportFile(kind: 'glb' | 'stl', objs: { name: string; index: numb
   const name = `${stem}${preview ? '-preview' : ''}.stl`;
   download(name, parts.length === 1 ? parts[0] : joinStl(parts));
   toast(preview ? `exported ${name} — a preview, not the finished surface` : `exported ${name}`);
+}
+
+/** **The background refinement, said in the footer** — one entry an object, while any is going:
+ *  its phase (the rough first pass, tracing sharp edges, the final pass, and a repair's rebuilds),
+ *  a bar of its estimated progress, its triangles so far and the time taken. The estimate is how
+ *  far the worst facet waiting has come toward the criteria, and no count of work left, which no
+ *  refinement knows. Finished, the line says so for a few seconds; failed, it stays with why. */
+let refineTimer = 0;
+function showRefining(list: Refining[]): void {
+  clearTimeout(refineTimer);
+  if (!list.length) { refining(''); return; }
+  const clock = (ms: number): string => {
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+  const bar = (f: number): string => {
+    const n = Math.round(Math.max(0, Math.min(1, f)) * 8);
+    return '▰'.repeat(n) + '▱'.repeat(8 - n);
+  };
+  const short = (name: string): string => name.split('.').filter((w) => w !== 'body').pop() ?? name;
+  const failed = list.filter((r) => r.error || r.progress?.failed);
+  const parts = list.map((r) => {
+    const p = r.progress;
+    if (r.error || p?.failed) return `${short(r.name)}: failed — ${r.error ?? p?.stage}`;
+    if (r.done) return `${short(r.name)}: refined · ${r.triangles.toLocaleString()} triangles · ${clock(r.elapsed)}`;
+    const what = !p ? 'starting'
+      : p.phase === 'tracing edges' ? 'tracing edges'
+      : p.stage === 'repairing' ? `${p.phase}, repairing${p.rebuild ? ` (rebuild ${p.rebuild})` : ''}`
+      : p.stage === 'building' ? `${p.phase}, building` : p.phase;
+    // the bar is the pass in hand: the whole's first quarter is the first pass, the rest the final
+    const f = !p ? 0 : p.phase === 'first pass' ? p.fraction / 0.25 : p.phase === 'final pass' ? (p.fraction - 0.25) / 0.75 : 0;
+    return `${short(r.name)}: ${what} ${bar(f)} ${r.triangles.toLocaleString()} triangles · ${clock(r.elapsed)}`;
+  });
+  const text = parts.join('   |   ');
+  if (failed.length) { refining(text, 'failed'); return; }
+  if (list.every((r) => r.done)) {
+    refining(text, 'finished');
+    refineTimer = window.setTimeout(() => refining(''), 5000);
+    return;
+  }
+  refining(text);
 }
 
 /** Several binary STLs as one: the header of the first, the summed count, and every record. */
@@ -389,6 +431,7 @@ view.onProgram = () => { refreshProgram(); };
 view.onLoad = resetProgramFiles;
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;
+view.onRefine = showRefining;
 hooks.focusChanged = showStatementFor;
 bindProgramPanel();
 new ResizeObserver(() => view.resize()).observe(canvas);

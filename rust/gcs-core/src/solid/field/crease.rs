@@ -353,27 +353,40 @@ pub fn creases(field: &MaterialField,seeds: &[(P,[Operand;2])],options: &CreaseO
         }
         out.push(c);
     }
-    junctions(&mut out,0.25*options.step);
     out
 }
 
+/// Run after the ends are welded (`features`), so what is split in is the corner as it will stand.
 /// Every crease end lying on another crease's middle — a T, where a crease meets one that runs on
 /// through the point (the tip rim, handed on tangentially between two pieces of a cutter's profile,
 /// where the crease between those pieces reaches it) — splits that other crease at the end's exact
 /// point, which protection then takes as the corner the two share. Ends near another's end are the
-/// weld's (`features`).
+/// weld's; one merely near another's end, past the weld, still splits it, beside that end.
 fn junctions(creases: &mut Vec<Crease>,within: f64) {
     let mut i = 0;
     while i < creases.len() {
         if !creases[i].closed {
-            for at in [creases[i].points[0],*creases[i].points.last().unwrap()] {
-                for k in 0..creases.len() {
+            for which in [0,1] {
+                let at = if which == 0 { creases[i].points[0] } else { *creases[i].points.last().unwrap() };
+                enum Act { Snap(P),Split(usize) }
+                let mut act = None;
+                for (k,c) in creases.iter().enumerate() {
                     if k == i { continue; }
-                    let c = &creases[k];
-                    let ends = if c.closed { vec![] } else { vec![c.points[0],*c.points.last().unwrap()] };
-                    if ends.iter().any(|&e| dist(e,at) <= 2.*within) { continue; }
-                    let near = c.points.windows(2).any(|w| segment_distance(at,w[0],w[1]) < within);
-                    if near { split(creases,k,at); break; }
+                    let ends = [c.points[0],*c.points.last().unwrap()];
+                    // already one corner, as the weld or an earlier split left it
+                    if ends.contains(&at) { act = None; break; }
+                    // near another's end, past the weld: the same corner found two ways, so this
+                    // end is moved onto that one — split instead, each would split the other again
+                    if let Some(&e) = ends.iter().find(|&&e| !c.closed && dist(e,at) <= 2.*within) { act = Some(Act::Snap(e)); break; }
+                    if c.points.windows(2).any(|w| segment_distance(at,w[0],w[1]) < within) { act = Some(Act::Split(k)); break; }
+                }
+                match act {
+                    Some(Act::Snap(e)) => {
+                        let n = creases[i].points.len();
+                        creases[i].points[if which == 0 { 0 } else { n-1 }] = e;
+                    }
+                    Some(Act::Split(k)) => split(creases,k,at),
+                    None => {}
                 }
             }
         }
@@ -401,7 +414,7 @@ fn meets(existing: &[Crease],q: P,within: f64) -> Option<(usize,P)> {
 fn split(creases: &mut Vec<Crease>,k: usize,at: P) {
     let c = &creases[k];
     let n = c.points.len();
-    if !c.closed && (c.points[0] == at || c.points[n-1] == at) { return; }
+    if c.points[0] == at || c.points[n-1] == at { return; }
     let Some(j) = (0..n-1).min_by(|&x,&y| segment_distance(at,c.points[x],c.points[x+1])
         .total_cmp(&segment_distance(at,c.points[y],c.points[y+1]))) else { return };
     let mut points = c.points.clone();
@@ -442,7 +455,7 @@ fn segment_distance(p: P,a: P,b: P) -> f64 {
 /// within the bisection of the corner another found exactly, and two corners that close could
 /// not be protected apart anyway.
 pub fn features(field: &MaterialField,vertices: &[P],triangles: &[[u32;3]],options: &CreaseOptions) -> Vec<Vec<P>> {
-    let found = creases(field,&seeds(field,vertices,triangles,options),options);
+    let mut found = creases(field,&seeds(field,vertices,triangles,options),options);
     let mut corners: Vec<P> = Vec::new();
     let mut weld = |p: P| -> P {
         match corners.iter().find(|&&c| dist(c,p) <= 0.02*options.step) {
@@ -450,13 +463,13 @@ pub fn features(field: &MaterialField,vertices: &[P],triangles: &[[u32;3]],optio
             None => { corners.push(p); p }
         }
     };
-    found.into_iter().map(|c| {
-        let mut points = c.points;
-        if !c.closed {
-            let last = points.len()-1;
-            points[0] = weld(points[0]);
-            points[last] = weld(points[last]);
-        }
-        points
-    }).collect()
+    for c in found.iter_mut().filter(|c| !c.closed) {
+        let last = c.points.len()-1;
+        c.points[0] = weld(c.points[0]);
+        c.points[last] = weld(c.points[last]);
+    }
+    // the T-junctions last, at the corners as welded: split any earlier, the weld could move the
+    // end away from the point split in, and the two would meet a few microns apart
+    junctions(&mut found,0.25*options.step);
+    found.into_iter().map(|c| c.points).collect()
 }
