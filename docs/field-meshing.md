@@ -19,6 +19,9 @@ Mesh_3 is the maintained implementation, and the experiment uses it.
 
 ## The experiment
 
+*The Mesh_3 backend was removed on 2026-09-25, once the core's refinement (below) had replaced
+it; this section and its numbers are the record the port was measured against.*
+
 `solventc --stl-backend cgal`, behind the `cgal` feature of `gcs-cli`:
 
 - `backend/delpsc.cpp`: Mesh_3 over a labelling of the domain (1 for material, 0 outside),

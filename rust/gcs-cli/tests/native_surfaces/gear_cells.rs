@@ -289,7 +289,7 @@ fn where_a_sheet_misses_its_contacts() {
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
     let field = gcs_core::solid::SpatialField::read(&e.sketch,id("blank"),1e-10).unwrap();
-    let (face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&field).unwrap();
+    let (_face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&field).unwrap();
     eprintln!("sheet {}x{}, withheld error {error:.4}",sheet.rows,sheet.columns);
     // Each grid cell's own normal (from its diagonals) against the contact normals at its
     // corners: a sheared or folded grid shows as cells where they disagree.

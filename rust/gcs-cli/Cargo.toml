@@ -12,9 +12,6 @@ gcs-core = { path = "../gcs-core" }
 
 [features]
 occt = []
-manifold = []
-# Experimental: Mesh_3 (GPL-3.0) meshing the material field, `--stl-backend cgal`.
-cgal = []
 
 [dev-dependencies]
 gcs-core = { path = "../gcs-core" }
@@ -31,14 +28,9 @@ path = "tests/native_surfaces.rs"
 required-features = ["occt"]
 
 [[test]]
-name = "mesh_sweep"
-path = "tests/mesh_sweep.rs"
-required-features = ["manifold"]
-
-[[test]]
 name = "generating_harness"
 path = "tests/generating_harness.rs"
-required-features = ["occt","manifold"]
+required-features = ["occt"]
 
 [[test]]
 name = "native_boundary"

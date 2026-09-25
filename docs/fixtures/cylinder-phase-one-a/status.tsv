@@ -1,9 +1,0 @@
-case	triangles	open_loops	centroid_brackets	failed	unresolved	area	failed_area	unresolved_area	topology	acceptance
-turning_prism	1049	[4, 3]	1029	20	0	34.326796	0.027368	-0.000000	Err(EdgeUseCount { edge: 105, count: 1 })	Topology(EdgeUseCount { edge: 105, count: 1 })
-turned_lens	2818	[]	2768	23	27	40.699447	0.077738	0.088873	Err(NonManifoldVertex { vertex: 406 })	Topology(NonManifoldVertex { vertex: 406 })
-turned_box	1366	[]	1349	0	17	37.513942	-0.000000	0.004001	Ok(0)	Certificate { failed: 0, unresolved: 17 }
-tumbling_cylinder	6033	[4, 4, 3, 5, 4, 4, 5, 5, 3, 6, 4, 6, 4]	5473	324	236	27.925501	1.163053	1.161093	Err(EdgeUseCount { edge: 206, count: 1 })	Topology(EdgeUseCount { edge: 206, count: 1 })
-sliding_dumbbell	construction refused before final candidate: Judge(ReversedNormal { point: [2.9802840023141077, -0.2504760362595412, 0.5670529447007623], direction: [-0.03297734734641094, 0.06169250584303136, 0.9975502640392623] })
-whole_turn_box	1374	[]	1300	74	0	43.020625	0.096041	-0.000000	Ok(10)	Certificate { failed: 74, unresolved: 0 }
-tumbling_cylinder_perturbed_0	6731	[7, 5, 7, 6, 4, 6, 3, 8, 6, 4, 4, 4, 6, 4]	5934	442	355	30.600868	1.580657	2.145164	Err(EdgeUseCount { edge: 104, count: 3 })	Topology(EdgeUseCount { edge: 104, count: 3 })
-tumbling_cylinder_perturbed_1	6271	[5, 3, 4, 6, 7, 9, 3, 4, 4, 4, 4, 6, 6, 4, 3, 5]	5635	329	307	28.151958	1.278175	1.265031	Err(EdgeUseCount { edge: 403, count: 1 })	Topology(EdgeUseCount { edge: 403, count: 1 })

@@ -163,6 +163,8 @@ struct Reach { stations: [f64;2],start: Anchor,end: Anchor,faces: usize,radius: 
 #[derive(Debug)]
 pub(crate) struct Sheet {
     pub points: Vec<[f64;3]>,
+    /// Read by the gear-cell tests, which check them against the field's gradient.
+    #[allow(dead_code)]
     pub normals: Vec<[f64;3]>,
     /// Each point's contact time.
     pub times: Vec<f64>,

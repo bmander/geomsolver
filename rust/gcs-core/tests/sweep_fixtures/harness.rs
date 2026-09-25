@@ -1,8 +1,6 @@
-//! Reading a fixture and the small geometry every check shares.
+//! Reading a fixture.
 use gcs_core::{program,syntax,solve};
 use std::path::Path;
-
-pub type V3 = [f64;3];
 
 /// Parse, link against the standard library, elaborate and solve one source.
 pub fn read(source: &str) -> program::Elaborated {
@@ -30,8 +28,6 @@ pub fn directory_resolver<'a>(base: &'a Path,rewrite: &'a mut dyn FnMut(&str,Str
             .or_else(|| gcs_core::library::resolve(name)).map(|text| rewrite(name,text))
     }
 }
-
-pub fn distance(a: V3,b: V3) -> f64 { (0..3).map(|k| (a[k]-b[k]).powi(2)).sum::<f64>().sqrt() }
 
 /// The index of the named solid.
 pub fn solid(e: &program::Elaborated,name: &str) -> usize { e.map.ent_named(name).unwrap().i() }

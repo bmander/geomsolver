@@ -87,17 +87,18 @@ traced-sheet mesh arrangement passed its recorded volume and closed-shell gates 
   (`docs/interval-geometry.md`), which already covers the circular crown. That
   certification is scheduled, not assumed.
 
-## What is parked
+## What was removed
 
-- `solid/swept_boundary` and the [Phase 3 plan](swept-boundary-phase-three-plan.md) are a
-  closed research track. Nothing is deleted. The fields, judge, interval refiner and
-  shell topology it built are shared, and the milestone documents remain the record.
-  No new work goes into general sweep closure.
-- `gcs-cli/src/cad/mesh_sweep.rs`, the traced-sheet Manifold arrangement, is not an
-  acceptable construction for this class until it passes the field gate. It stays as a fast
-  diagnostic.
-- The [Ju et al. reference experiment](ju-sweep-reference-experiment.md) is an
-  independent cross-check of volume and shape for admitted cases, not a backend.
+These tracks were closed and deleted on 2026-09-25; git history keeps them.
+
+- `solid/swept_boundary`, the general certified sweep closure, and its Phase 0–3 records
+  (`docs/swept-boundary*.md` and `docs/fixtures/`).
+- `gcs-cli/src/cad/mesh_sweep.rs`, the traced-sheet Manifold arrangement, with
+  `solid::sweep_candidates` (`--stl-backend manifold`). It failed the field gate on 18% of a
+  hypoid space.
+- The Ju et al. reference experiment (`experiments/ju-sweep-reference`).
+- The CGAL Mesh_3 backend (`--stl-backend cgal`), superseded by the core's own refinement
+  (`docs/field-meshing.md`).
 
 ## Open decisions
 

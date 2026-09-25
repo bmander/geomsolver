@@ -1,3 +1,5 @@
+//! Readers shared by the CLI's suites; each suite uses some of them.
+#![allow(dead_code)]
 use gcs_core::{program,syntax,solve};
 use std::path::Path;
 

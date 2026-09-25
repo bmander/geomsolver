@@ -3,7 +3,7 @@
 //! the sweep-mesh tools under a relative roll, the motion a generator uses; the gear pair is
 //! the full-size case, at the bevel, at its configured hypoid and at an offset it leaves the
 //! class by undercut.
-use crate::sweep_mesh::{harness,tools,motions};
+use crate::sweep_fixtures::{harness,tools,motions};
 use gcs_core::solid::admission::{self,Condition,Error,Options};
 
 /// A post of radius 0.4 about the vertical line x = 3, z in [-2, 2], the blank every small

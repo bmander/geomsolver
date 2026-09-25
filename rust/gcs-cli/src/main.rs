@@ -41,15 +41,12 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (requires a native OCCT build)
-    --stl-backend NAME  occt, mesh, manifold, cgal or refine; every solid defaults to occt
-                        when built in, a body with swept cuts included (manifold is a
-                        diagnostic; refine meshes the material field by the core's Delaunay
-                        refinement, cgal by Mesh_3 as a reference)
+    --stl-backend NAME  occt, mesh or refine; every solid defaults to occt when built in, a
+                        body with swept cuts included (refine meshes the material field by the
+                        core's Delaunay refinement, checked by the field-agreement probe)
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
     --width PX          the SVG's page width in pixels (default 800)
-    --verbose, -v       a line every few seconds from any stage that runs long
-    --verbose=2, -vv    also what a swept cut is made of: its sheets and their seams
     --sheet NAME        select a sheet in a .svd drawing (its page size sets SVG size)
     -h, --help          this
 
@@ -82,10 +79,6 @@ struct Opts {
     stl: Option<String>,
     step: Option<String>,
     native_stl: bool,
-    /// Bodies with swept cuts export STL by mesh arrangement when built in.
-    swept_mesh: bool,
-    /// `--stl-backend cgal`: the experimental Mesh_3 mesher over the material field.
-    cgal: bool,
     /// `--stl-backend refine`: the core's Delaunay refinement of the material field.
     refine: bool,
     /// `--gltf PATH` — the object as a viewer opens it, every face named.
@@ -108,8 +101,6 @@ impl Default for Opts {
             stl: None,
             step: None,
             native_stl: cfg!(feature="occt"),
-            swept_mesh: false,
-            cgal: false,
             refine: false,
             gltf: None,
             solid: None,
@@ -126,12 +117,10 @@ fn main() -> ExitCode {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--stl-backend" => match args.next().as_deref() {
-                Some("occt") => { opts.native_stl = true; opts.swept_mesh = false; }
-                Some("mesh") => { opts.native_stl = false; opts.swept_mesh = false; }
-                Some("manifold") => { opts.swept_mesh = true; }
-                Some("cgal") => { opts.cgal = true; }
-                Some("refine") => { opts.refine = true; }
-                _ => { eprintln!("solventc: --stl-backend needs occt, mesh, manifold, cgal or refine"); return ExitCode::from(2); }
+                Some("occt") => opts.native_stl = true,
+                Some("mesh") => opts.native_stl = false,
+                Some("refine") => opts.refine = true,
+                _ => { eprintln!("solventc: --stl-backend needs occt, mesh or refine"); return ExitCode::from(2); }
             },
             "--step" => match args.next() {
                 Some(p) => opts.step = Some(p),
@@ -185,8 +174,6 @@ fn main() -> ExitCode {
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
-            "--verbose" | "-v" | "--verbose=1" => cad::set_verbosity(1),
-            "--verbose=2" | "-vv" => cad::set_verbosity(2),
             "--allow-unsolved" => opts.allow_unsolved = true,
             "-h" | "--help" => {
                 print!("{USAGE}");
@@ -334,8 +321,6 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         }
     }
     let mut code = if r.success || opts.allow_unsolved { 0 } else { 2 };
-    // A body with swept cuts goes to the mesh arrangement when it is built in;
-    // the kernel path stays for STEP and for `--stl-backend occt`.
     let mut stl = opts.stl.clone();
     let mut step = opts.step.clone();
     // A body with swept cuts is built only when every sweep is in the generating class
@@ -385,33 +370,6 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         #[cfg(not(feature="occt"))]
         { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); code = 1; }
         stl = None;
-    }
-    if let Some(path) = stl.clone().filter(|_| opts.cgal && r.success) {
-        #[cfg(feature="cgal")]
-        if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
-            if let Err(message) = cad::delpsc::export(&sk,i,&path) {
-                eprintln!("solventc: {message}");
-                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                    span:Default::default(),stmt:None,message});
-                code = 1;
-            }
-        }
-        #[cfg(not(feature="cgal"))]
-        { let _ = path; eprintln!("solventc: --stl-backend cgal needs a build with the `cgal` feature"); code = 1; }
-        stl = None;
-    }
-    if let Some(path) = stl.clone().filter(|_| opts.swept_mesh && r.success) {
-        if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
-            if cad::swept_mesh_applies(&sk,i) {
-                if let Err(message) = cad::export_swept_stl(&sk,i,&path) {
-                    eprintln!("solventc: {message}");
-                    e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                        span:Default::default(),stmt:None,message});
-                    code = 1;
-                }
-                stl = None;
-            }
-        }
     }
     if step.is_some() || (stl.is_some() && opts.native_stl) {
         let result = if !r.success { Err("native STEP/STL export requires a solved model".into()) }

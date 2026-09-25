@@ -22,7 +22,7 @@ fn doc(name: &str) -> String {
 fn unknown_stl_backend_is_refused() {
     let output = run(&["--stl-backend","unknown"]);
     assert_eq!(output.status.code(),Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("occt, mesh, manifold, cgal or refine"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("occt, mesh or refine"));
 }
 
 #[test]

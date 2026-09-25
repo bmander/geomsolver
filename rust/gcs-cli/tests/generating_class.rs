@@ -49,7 +49,7 @@ fn read(offset: f64,shift: Option<f64>) -> program::Elaborated {
 
 /// One in-blank contact of the fine pass.
 #[derive(Clone,Copy)]
-struct Hit { patch: usize,source: V,position: V,normal: V,time: f64,branch: usize }
+struct Hit { patch: usize,source: V,position: V,normal: V,time: f64 }
 
 #[derive(Default)]
 struct Report {
@@ -141,7 +141,7 @@ fn measure(e: &program::Elaborated,member: &str) -> Report {
                 for t in found {
                     r.hits += 1;
                     let hit = Hit {patch,source:s.position,position:t.contact.position,normal:t.contact.normal,
-                        time:t.root.time,branch:t.root.branch};
+                        time:t.root.time};
                     row[j] = Some(hit.position);
                     for q in [prev_row[j],if j > 0 { row[j-1] } else { None }].into_iter().flatten() {
                         gaps.push(norm(sub(q,hit.position)));

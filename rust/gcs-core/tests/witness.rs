@@ -1,4 +1,4 @@
-use gcs_core::constraints::{Arg, CKind, Constraint};
+use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;

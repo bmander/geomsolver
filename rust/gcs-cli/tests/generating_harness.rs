@@ -5,10 +5,10 @@
 //! at a named stage before the final gate; a failure at the final gate, a timeout, or an error
 //! at no named stage is a fault of the construction's contracts, and the harness reports it.
 //!
-//! All three tests are ignored (minutes each): `cargo test -p gcs-cli --features occt,manifold
+//! All three tests are ignored (minutes each): `cargo test -p gcs-cli --features occt
 //! --test generating_harness -- --ignored --nocapture`. `SOLVENT_HARNESS_ONLY=<substring>`
 //! runs the matching cases. The matrix is written to `build/harness/<test>.md`.
-use std::{f64::consts::PI,io::Read,path::{Path,PathBuf},process::{Command,Stdio},time::{Duration,Instant}};
+use std::{io::Read,path::{Path,PathBuf},process::{Command,Stdio},time::{Duration,Instant}};
 
 /// The stages of an STL export of a body with swept cuts, in the order they complete.
 const ORDER: [&str;14] = ["admission","blank","clearance","reach","sheet","fit","withheld","split",
@@ -76,7 +76,7 @@ fn run(case: &Case) -> Record {
     let mut command = Command::new(env!("CARGO_BIN_EXE_solventc"));
     command.arg(case.dir.join(&case.entry)).args(["--no-diagnose","--solid",&case.solid,"--stl"]).arg(&output)
         .args(&case.arguments)
-        // `SOLVENT_HARNESS_BACKEND` runs every case through another STL backend (`cgal`, `manifold`).
+        // `SOLVENT_HARNESS_BACKEND` runs every case through another STL backend (`refine`, `mesh`).
         .args(std::env::var("SOLVENT_HARNESS_BACKEND").ok().map(|b| vec!["--stl-backend".to_string(),b]).unwrap_or_default())
         .env("SOLVENT_STAGE_TRACE",&trace).env("SOLVENT_KEEP_REJECTED",&rejected)
         .stdout(Stdio::null()).stderr(Stdio::piped());
@@ -455,29 +455,6 @@ fn post_sd(p: V,cx: f64,radius: f64,low: f64,high: f64) -> f64 {
     ((p[0]-cx).hypot(p[1])-radius).max(low-p[2]).max(p[2]-high)
 }
 
-/// A unit sphere whose centre turns about world x on the circle of radius `h` in the plane
-/// x = 3: near the post (the circle's top, z > 0) its sweep is exactly the tube about that
-/// circle, whatever the sphere spins. The removal's volume inside the post by quadrature.
-fn tube_truth(h: f64,radius: f64,low: f64,high: f64) -> Truth {
-    let n = 2000;
-    let mut removed = 0.;
-    for i in 0..n { for j in 0..n {
-        let (x,y) = (3.-radius+2.*radius*(i as f64+0.5)/n as f64,-radius+2.*radius*(j as f64+0.5)/n as f64);
-        if (x-3.).hypot(y) > radius || (x-3.).abs() >= 1. { continue; }
-        let w = (1.-(x-3.)*(x-3.)).sqrt();
-        let (inner,outer) = ((h-w).max(0.),h+w);
-        if outer <= y.abs() { continue; }
-        let z0 = if inner > y.abs() { (inner*inner-y*y).sqrt() } else { 0. };
-        let z1 = (outer*outer-y*y).sqrt();
-        removed += (z1.min(high)-z0.max(low)).max(0.)*(2.*radius/n as f64).powi(2);
-    }}
-    let volume = PI*radius*radius*(high-low)-removed;
-    Truth {sd:Box::new(move |p| {
-        let tube = if p[2] > 0. { (p[1].hypot(p[2])-h).hypot(p[0]-3.)-1. } else { f64::INFINITY };
-        post_sd(p,3.,radius,low,high).max(-tube)
-    }),volume:Some(volume)}
-}
-
 /// A tool's sweep, independently: its least distance `tool` over the roll, sampled every
 /// 1e-4 rad (the travel there is under 5e-4 mm, far inside the probes' 0.1), the post less it.
 fn swept_truth(tool: fn(V) -> f64,observer: fn(V,f64) -> V,cx: f64,radius: f64,low: f64,high: f64,ratio: f64,roll_deg: f64) -> Truth {
@@ -583,7 +560,6 @@ fn controls() {
         gear("hypoid 25 gear space (crease sliver)","gear",25.,10.,25.,true,&[],Expect::Either),
         gear("symmetric rack at 17.5 (undercut)","pinion",17.5,0.,35.,true,&[],Expect::Refuse("admission")),
         gear("symmetric rack at 30 (double contact)","pinion",30.,0.,35.,true,&[],Expect::Refuse("admission")),
-        gear("Manifold arrangement at 15 (negative control)","pinion",15.,0.,35.,true,&["--stl-backend","manifold"],Expect::Refuse("mesh")),
     ];
     let faults = run_all("controls",cases);
     assert!(faults.is_empty(),"{faults:#?}");

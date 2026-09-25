@@ -5,15 +5,15 @@
 //! alone by the core (`solid::crease`), as the app does.
 use gcs_core::solid::MaterialField;
 
-pub fn setting(name: &str,default: f64) -> f64 {
+fn setting(name: &str,default: f64) -> f64 {
     std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
 /// A body's field and where it lies: the scale to millimetres, and a bounding sphere holding
 /// its material with room (outside it is outside the body).
-pub struct Region { pub field: MaterialField,pub scale: f64,pub center: [f64;3],pub radius: f64,pub diagonal: f64 }
+struct Region { field: MaterialField,scale: f64,center: [f64;3],radius: f64,diagonal: f64 }
 
-pub fn region(sk: &gcs_core::model::Sketch,solid: usize) -> Result<Region,String> {
+fn region(sk: &gcs_core::model::Sketch,solid: usize) -> Result<Region,String> {
     let scale = sk.units.length.ok_or("CAD export requires an explicit model length unit")?.1;
     let field = MaterialField::read(sk,solid,1e-10)?;
     let support = field.support_bounds().map_err(|e| format!("{e:?}"))?
@@ -131,7 +131,7 @@ pub fn export_refine(sk: &gcs_core::model::Sketch,solid: usize,path: &str) -> Re
 /// crossings bisected) is where the swept boundary meets the face. A contour ends where the
 /// grid meets a trim or a seam, a cell short of the edge, and there it is joined to the corner
 /// it runs to, or to a contour it continues across a seam, so features meet only at endpoints.
-pub fn features(sk: &gcs_core::model::Sketch,solid: usize,field: &MaterialField,scale: f64,diagonal: f64)
+fn features(sk: &gcs_core::model::Sketch,solid: usize,field: &MaterialField,scale: f64,diagonal: f64)
     -> Result<Vec<Vec<[f64;3]>>,String> {
     use super::native::Session;
     type P = [f64;3];

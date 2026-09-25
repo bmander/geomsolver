@@ -106,7 +106,7 @@ spiral, tooth counts and module, all as single spaces at 15–40 s each.
   inspectable output even on refusal.
 
 **Negative controls retained:**
-- the Manifold 15° space;
+- the Manifold 15° space (removed with the Manifold backend, 2026-09-25);
 - the 25° gear sheet as it is today (walk-end jumps plus the crease sliver);
 - the 30° symmetric rack.
 
