@@ -85,9 +85,6 @@ impl SpatialField {
         self.combine(other,Node::Difference)
     }
 
-    /// Enclose the field over the complete world-coordinate box. Transform
-    /// nodes query their source through the inverse pose, including interval
-    /// axis normalization, trigonometry and all coordinate arithmetic.
     /// The field at a point in plain floating point, from the midpoints of
     /// every enclosed coefficient and pose: a reading for tests against a
     /// tolerance far wider than the enclosures' widths (is this point of a
@@ -133,8 +130,8 @@ impl SpatialField {
         }
     }
 
-    /// `leaf_reading`'s value alone, without the gradient's six further evaluations.
-    pub fn leaf_value(&self,p: [f64;3],target: usize,piece: usize,next: &mut usize) -> Option<f64> {
+    /// `leaf_reading`'s value alone, without the gradient's three further evaluations.
+    pub(crate) fn leaf_value(&self,p: [f64;3],target: usize,piece: usize,next: &mut usize) -> Option<f64> {
         match self.node.as_ref() {
             Node::Revolved(source) => {
                 *next += 1;
@@ -168,7 +165,7 @@ impl SpatialField {
     /// smooth carrier, or with `piece` `WHOLE` the leaf itself — with the transforms above it and the sign it enters the field with (turned
     /// where it is subtracted), leaves numbered from `*next` as `reading` numbers them; `None`
     /// when `target` is not among this field's leaves or has no such piece.
-    pub fn leaf_reading(&self,p: [f64;3],options: &super::ReadingOptions,target: usize,piece: usize,
+    pub(crate) fn leaf_reading(&self,p: [f64;3],options: &super::ReadingOptions,target: usize,piece: usize,
         next: &mut usize) -> Option<super::Reading> {
         use super::reading::leaf;
         match self.node.as_ref() {
@@ -201,6 +198,9 @@ impl SpatialField {
         }
     }
 
+    /// Enclose the field over the complete world-coordinate box. Transform
+    /// nodes query their source through the inverse pose, including interval
+    /// axis normalization, trigonometry and all coordinate arithmetic.
     pub fn bounds(&self,p: V) -> Result<I,Error> {
         // A tree that shares no node needs no memo: the memo is a hash of the
         // whole box per node, which costs about what a leaf does, and most

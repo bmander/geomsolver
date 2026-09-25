@@ -21,11 +21,25 @@ enum Node {
     Difference(MaterialField,MaterialField),
 }
 
+/// A union's operands are sorted by sweeps' floors from cubes this many times the fine ones.
+const SPREAD_COARSENING: u32 = 4;
+
 /// A union's operands with the unions under it flattened, and, filled as cells are asked, the
 /// operands that may decide it in each cell of a grid: a lower bound on each over the cell,
 /// lowest first (`MaterialField::low`). An indexed cut is a union of as many placed copies as the
 /// gear has teeth, and a point near one tooth space is decided by two or three of them; read in
 /// turn, every copy costs a transform and a table lookup at every one of a mesher's queries.
+#[derive(Debug,Default)]
+struct Spread {
+    operands: std::sync::OnceLock<Operands>,
+    cells: std::sync::Mutex<super::adf::Map<[i32;3],Arc<[(f64,u32)]>>>,
+}
+
+/// A union's flattened operands, each with the number its first leaf takes counted from the
+/// union's own first; the side of `Spread`'s cells; and the union's leaf count.
+#[derive(Debug)]
+struct Operands { list: Vec<(MaterialField,usize)>,cell: f64,leaves: usize }
+
 /// Points spread over the support at which a symmetry is checked, beside the caller's.
 const SYMMETRY_SAMPLES: usize = 6;
 
@@ -36,16 +50,6 @@ pub struct Symmetry { from: MotionBounds,to: MotionBounds }
 
 impl Symmetry {
     pub fn apply(&self,p: [f64;3]) -> [f64;3] { self.to.point_mid(self.from.inverse_point_mid(p)) }
-}
-
-/// A union's operands are sorted by sweeps' floors from cubes this many times the fine ones.
-const SPREAD_COARSENING: u32 = 4;
-
-#[derive(Debug,Default)]
-struct Spread {
-    /// The operands, the side of the cells, and the union's leaf count.
-    operands: std::sync::OnceLock<(Vec<(MaterialField,usize)>,f64,usize)>,
-    cells: std::sync::Mutex<super::adf::Map<[i32;3],Arc<[(f64,u32)]>>>,
 }
 
 /// Immutable one-Lipschitz material field, including completed swept operands.
@@ -89,7 +93,7 @@ impl MaterialField {
     /// sweep standing for material (it may be anywhere its support says); only static operands
     /// prune. At most `cap` boxes are split a level; past that the hull stands as it is. Sizing,
     /// never a claim: the hull is a box the material is in, found by interval bounds.
-    pub fn tight_support(&self,depth: usize,cap: usize) -> Result<Option<V>,Error> {
+    pub(crate) fn tight_support(&self,depth: usize,cap: usize) -> Result<Option<V>,Error> {
         let Some(support) = self.support_bounds()? else { return Ok(None) };
         let mut boxes = vec![support];
         for _ in 0..depth {
@@ -168,40 +172,43 @@ impl MaterialField {
         }
     }
 
-    /// A union's flattened operands, each with the number its first leaf takes counted from the
-    /// union's own first, and the ones that may decide it in the cell holding `p` (`Spread`).
-    fn spread(&self,p: [f64;3]) -> (&[(MaterialField,usize)],Arc<[(f64,u32)]>,usize) {
-        let Node::Union(_,_,spread) = self.node.as_ref() else { unreachable!("a spread of a union") };
-        let (operands,h,leaves) = spread.operands.get_or_init(|| {
+    /// A union's flattened operands (`Operands`), worked out once.
+    fn operands(&self) -> &Operands {
+        let Node::Union(_,_,spread) = self.node.as_ref() else { unreachable!("the operands of a union") };
+        spread.operands.get_or_init(|| {
             fn flatten(f: &MaterialField,first: usize,out: &mut Vec<(MaterialField,usize)>) {
                 match f.node.as_ref() {
                     Node::Union(a,b,_) => { flatten(a,first,out); flatten(b,first+a.leaf_count(),out); }
                     _ => out.push((f.clone(),first)),
                 }
             }
-            let mut out = Vec::new();
-            flatten(self,0,&mut out);
+            let mut list = Vec::new();
+            flatten(self,0,&mut list);
             // cells the side of the coarse floor cubes the bounds come from: a union's own
             // support is no measure, a sweep's reaching round the whole of its roll
-            let h = out.iter().map(|(f,_)| f.floor_cube()).fold(f64::INFINITY,f64::min)*SPREAD_COARSENING as f64;
-            (out,h,self.leaf_count())
-        });
-        let (h,leaves) = (*h,*leaves);
+            let cell = list.iter().map(|(f,_)| f.floor_cube()).fold(f64::INFINITY,f64::min)*SPREAD_COARSENING as f64;
+            Operands {list,cell,leaves:self.leaf_count()}
+        })
+    }
+
+    /// A union's operands that may decide it in the cell holding `p`, as indices into
+    /// `operands().list` under a lower bound on each over the cell, lowest first (`Spread`).
+    fn candidates(&self,p: [f64;3]) -> Arc<[(f64,u32)]> {
+        let Node::Union(_,_,spread) = self.node.as_ref() else { unreachable!("the candidates of a union") };
+        let Operands {list:operands,cell:h,..} = self.operands();
+        let h = *h;
         if !(h > 0.) || !h.is_finite() {
-            return (operands,(0..operands.len() as u32).map(|i| (f64::NEG_INFINITY,i)).collect(),leaves);
+            return (0..operands.len() as u32).map(|i| (f64::NEG_INFINITY,i)).collect();
         }
         let key = p.map(|x| (x/h).floor().clamp(i32::MIN as f64,i32::MAX as f64) as i32);
-        let known = spread.cells.lock().ok().and_then(|cells| cells.get(&key).cloned());
-        let list = known.unwrap_or_else(|| {
-            let centre = key.map(|k| (k as f64+0.5)*h);
-            let reach = 0.5*h*3f64.sqrt();
-            let mut list: Vec<(f64,u32)> = operands.iter().enumerate().map(|(i,(f,_))| (f.low(centre)-reach,i as u32)).collect();
-            list.sort_by(|a,b| a.0.total_cmp(&b.0));
-            let list: Arc<[(f64,u32)]> = list.into();
-            if let Ok(mut cells) = spread.cells.lock() { cells.insert(key,list.clone()); }
-            list
-        });
-        (operands,list,leaves)
+        if let Some(list) = spread.cells.lock().ok().and_then(|cells| cells.get(&key).cloned()) { return list; }
+        let centre = key.map(|k| (k as f64+0.5)*h);
+        let reach = 0.5*h*3f64.sqrt();
+        let mut list: Vec<(f64,u32)> = operands.iter().enumerate().map(|(i,(f,_))| (f.low(centre)-reach,i as u32)).collect();
+        list.sort_by(|a,b| a.0.total_cmp(&b.0));
+        let list: Arc<[(f64,u32)]> = list.into();
+        if let Ok(mut cells) = spread.cells.lock() { cells.insert(key,list.clone()); }
+        list
     }
 
     /// Rigid maps the field reads the same under, from the first union of placed copies of one
@@ -210,15 +217,14 @@ impl MaterialField {
     /// say), at points spread over its support, and at all their images, since the rest of the
     /// body (a gear's blank) must be alike under it too: sampled, a reading and never a claim,
     /// and empty where anything disagrees.
-    pub fn symmetries(&self,samples: &[[f64;3]]) -> Vec<Symmetry> {
+    pub(crate) fn symmetries(&self,samples: &[[f64;3]]) -> Vec<Symmetry> {
         // the largest set of one operand's placements among a union's operands (the rest, if any,
         // must be alike under the maps too, which the samples check)
         fn copies(f: &MaterialField) -> Option<Vec<MotionBounds>> {
             match f.node.as_ref() {
                 Node::Union(..) => {
-                    let (operands,..) = f.spread([0.;3]);
                     let mut groups: Vec<(*const Node,Vec<MotionBounds>)> = Vec::new();
-                    for (op,_) in operands {
+                    for (op,_) in &f.operands().list {
                         let Node::Transformed {source,pose} = op.node.as_ref() else { continue };
                         let key = Arc::as_ptr(&source.node);
                         match groups.iter_mut().find(|g| g.0 == key) {
@@ -254,57 +260,41 @@ impl MaterialField {
     /// A number with the field's sign at a point, in plain floating point: `SpatialField::value`
     /// for static material and `SweptField::side` for a sweep, composed by the Booleans (which
     /// keep signs). Which side a point is on, for a mesher; never an interval claim.
-    pub fn side(&self,p: [f64;3]) -> f64 {
-        match self.node.as_ref() {
-            Node::Static(source) => source.value(p),
-            Node::Swept(source) => source.side(p),
-            Node::Transformed {source,pose} => source.side(pose.inverse_point_mid(p)),
-            // One operand may settle the sign alone: then the other is not asked.
-            Node::Union(..) => {
-                // lowest bound first: past a bound at or above zero no operand can turn the sign
-                let (operands,list,_) = self.spread(p);
-                let mut best = f64::INFINITY;
-                for &(low,i) in list.iter() {
-                    if low >= 0. { return best.min(low); }
-                    let x = operands[i as usize].0.side(p);
-                    if x < 0. { return x; }
-                    best = best.min(x);
-                }
-                best
-            }
-            Node::Intersection(a,b) => { let x = a.side(p); if x >= 0. { x } else { x.max(b.side(p)) } }
-            Node::Difference(a,b) => { let x = a.side(p); if x >= 0. { x } else { x.max(-b.side(p)) } }
-        }
-    }
+    pub fn side(&self,p: [f64;3]) -> f64 { self.side_with(p,None) }
 
     /// `side` with every sweep read from its adaptive distance field refined to `resolution`
     /// (`SweptField::cached`), where no bound settles it first: a mesher's sign, off the exact
     /// field's only within about the resolution's tolerance of the boundary.
-    pub fn side_cached(&self,p: [f64;3],resolution: super::Resolution) -> f64 {
+    pub(crate) fn side_cached(&self,p: [f64;3],resolution: super::Resolution) -> f64 { self.side_with(p,Some(resolution)) }
+
+    fn side_with(&self,p: [f64;3],cached: Option<super::Resolution>) -> f64 {
         match self.node.as_ref() {
             Node::Static(source) => source.value(p),
-            Node::Swept(source) => {
-                // the octree's coarse cells settle a far point as cheaply as the floor table would
-                if let Some(d) = source.clear_of(p) { return d; }
-                // and the floor table settles most of the rest before the octree is walked
-                if let Some(low) = source.floor(p) { if low > 0. { return low; } }
-                source.cached(p,resolution).map_or_else(|| source.side(p),|(v,_)| v)
-            }
-            Node::Transformed {source,pose} => source.side_cached(pose.inverse_point_mid(p),resolution),
+            Node::Swept(source) => match cached {
+                None => source.side(p),
+                Some(resolution) => {
+                    // the box and the floor table settle most points before the octree is walked
+                    if let Some(d) = source.clear_of(p) { return d; }
+                    if let Some(low) = source.floor(p) { if low > 0. { return low; } }
+                    source.cached(p,resolution).map_or_else(|| source.side(p),|(v,_)| v)
+                }
+            },
+            Node::Transformed {source,pose} => source.side_with(pose.inverse_point_mid(p),cached),
+            // One operand may settle the sign alone: then the other is not asked.
             Node::Union(..) => {
                 // lowest bound first: past a bound at or above zero no operand can turn the sign
-                let (operands,list,_) = self.spread(p);
+                let operands = &self.operands().list;
                 let mut best = f64::INFINITY;
-                for &(low,i) in list.iter() {
+                for &(low,i) in self.candidates(p).iter() {
                     if low >= 0. { return best.min(low); }
-                    let x = operands[i as usize].0.side_cached(p,resolution);
+                    let x = operands[i as usize].0.side_with(p,cached);
                     if x < 0. { return x; }
                     best = best.min(x);
                 }
                 best
             }
-            Node::Intersection(a,b) => { let x = a.side_cached(p,resolution); if x >= 0. { x } else { x.max(b.side_cached(p,resolution)) } }
-            Node::Difference(a,b) => { let x = a.side_cached(p,resolution); if x >= 0. { x } else { x.max(-b.side_cached(p,resolution)) } }
+            Node::Intersection(a,b) => { let x = a.side_with(p,cached); if x >= 0. { x } else { x.max(b.side_with(p,cached)) } }
+            Node::Difference(a,b) => { let x = a.side_with(p,cached); if x >= 0. { x } else { x.max(-b.side_with(p,cached)) } }
         }
     }
 
@@ -349,17 +339,17 @@ impl MaterialField {
                     let low = source.clear_of(p).or_else(|| source.floor(p)).filter(|&low| low >= cap);
                     if let Some(value) = low {
                         *next += source.source().leaf_count();
-                        return super::Reading {value,gradient:[0.;3],leaf:key,piece:0,time:hints[key],ambiguous:false};
+                        return super::Reading::bound(value,key,hints[key]);
                     }
                     if let Some((value,gradient)) = source.cached(p,resolution) {
                         *next += source.source().leaf_count();
-                        return super::Reading {value,gradient,leaf:key,piece:0,time:hints[key],ambiguous:false};
+                        return super::Reading {gradient,..super::Reading::bound(value,key,hints[key])};
                     }
                 }
                 if cap.is_finite() {
                     if let Some(low) = source.at_least(p,cap,AT_LEAST_BUDGET) {
                         *next += source.source().leaf_count();
-                        return super::Reading {value:low,gradient:[0.;3],leaf:key,piece:0,time:hints[key],ambiguous:false};
+                        return super::Reading::bound(low,key,hints[key]);
                     }
                 }
                 let m = source.minimum_hinted(p,options.accuracy,options.relative,options.tie,hints[key],options.local);
@@ -368,13 +358,13 @@ impl MaterialField {
                 // world: its value is the minimum, and so is its gradient (the envelope theorem).
                 let pose = source.motion().pose_at(m.time).ok().map(|x| x.inverse());
                 let Some(inverse) = pose else {
-                    *next += 1;
-                    return super::Reading {value:m.value,gradient:[0.;3],leaf:*next-1,piece:0,time:Some(m.time),ambiguous:true};
+                    // numbered as every other exit numbers the sweep: all its source's leaves
+                    *next += source.source().leaf_count();
+                    return super::Reading {ambiguous:true,..super::Reading::bound(m.value,key,Some(m.time))};
                 };
                 let r = source.source().reading(inverse.point(p),options,next);
-                let g = r.gradient;
-                let gradient = std::array::from_fn(|i| (0..3).map(|k| inverse.r[k][i]*g[k]).sum());
-                super::Reading {value:m.value,gradient,time:Some(m.time),ambiguous:r.ambiguous || m.tied,..r}
+                super::Reading {value:m.value,gradient:inverse.gradient(r.gradient),time:Some(m.time),
+                    ambiguous:r.ambiguous || m.tied,..r}
             }
             Node::Transformed {source,pose} => {
                 let r = source.reading_capped(pose.inverse_point_mid(p),options,next,hints,cap);
@@ -383,21 +373,21 @@ impl MaterialField {
             Node::Union(..) => {
                 // operands in the order of their bounds, each read under the least reading so
                 // far, and none once a bound passes it
-                let (operands,list,leaves) = self.spread(p);
+                let Operands {list:operands,leaves,..} = self.operands();
                 let first = *next;
                 *next += leaves;
                 let mut best: Option<super::Reading> = None;
-                for &(low,i) in list.iter() {
+                for &(low,i) in self.candidates(p).iter() {
                     let limit = cap.min(best.as_ref().map_or(f64::INFINITY,|r| r.value+2.*options.tie));
                     if low >= limit {
-                        if best.is_none() { best = Some(super::Reading {value:low,gradient:[0.;3],leaf:first,piece:0,time:None,ambiguous:false}); }
+                        if best.is_none() { best = Some(super::Reading::bound(low,first,None)); }
                         break;
                     }
                     let (operand,start) = &operands[i as usize];
                     let r = operand.reading_capped(p,options,&mut (first+start),hints,limit);
                     best = Some(match best { None => r,Some(b) => lower(b,r,options.tie) });
                 }
-                best.unwrap_or(super::Reading {value:f64::INFINITY,gradient:[0.;3],leaf:first,piece:0,time:None,ambiguous:false})
+                best.unwrap_or(super::Reading::bound(f64::INFINITY,first,None))
             }
             Node::Intersection(a,b) => {
                 let x = a.reading_capped(p,options,next,hints,cap);
@@ -429,11 +419,11 @@ impl MaterialField {
     /// enters the field with. With `piece` `WHOLE`, the leaf as the field sees it: a static leaf's
     /// own value, and for a leaf of a sweep's tool the whole tool's, whose reading names the leaf
     /// deciding it. A leaf of a sweep's source is that leaf swept, and
-    /// near `time` — the least value over roll times about it, a window of a sixty-fourth of the
-    /// roll that follows the minimum when it reaches an edge — so two contacts of one sweep are two
+    /// near `time` — the least value over roll times about it, a window of a thousandth of the roll
+    /// widened up to a sixty-fourth as it follows the minimum past an edge — so two contacts of one sweep are two
     /// operands, told apart by their times. Without a time the whole roll is searched coarsely
     /// first. `None` when `target` is not a leaf of this field.
-    pub fn operand(&self,p: [f64;3],target: usize,piece: usize,time: Option<f64>,
+    pub(crate) fn operand(&self,p: [f64;3],target: usize,piece: usize,time: Option<f64>,
         options: &super::ReadingOptions) -> Option<super::Reading> {
         self.operand_from(p,target,piece,time,options,&mut 0)
     }
@@ -484,9 +474,7 @@ impl MaterialField {
                 }
                 let inverse = pose(found.1)?;
                 let r = read(inverse.point(p))?;
-                let g = r.gradient;
-                let gradient = std::array::from_fn(|i| (0..3).map(|k| inverse.r[k][i]*g[k]).sum());
-                Some(super::Reading {value:r.value,gradient,time:Some(found.1),..r})
+                Some(super::Reading {gradient:inverse.gradient(r.gradient),time:Some(found.1),..r})
             }
             Node::Transformed {source,pose} => source.operand_from(pose.inverse_point_mid(p),target,piece,time,options,next)
                 .map(|r| super::Reading {gradient:pose.gradient_mid(r.gradient),..r}),

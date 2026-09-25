@@ -4,7 +4,7 @@
 //!
 //! The field is one-Lipschitz, so |value| is a lower bound on the distance to the boundary, and
 //! it is smooth wherever one operand decides it: there the gradient is that operand's own — a
-//! static leaf's by central differences, a sweep's the tool's at the roll time it is least at,
+//! static leaf's by forward differences, a sweep's the tool's at the roll time it is least at,
 //! turned into the world by that pose. Where two operands, or two contact times of one sweep,
 //! read within `tie` of each other the point is at or beside a crease: the reading says so, and
 //! its gradient is one side's.
@@ -38,7 +38,7 @@ pub struct ReadingOptions {
     pub relative: f64,
     /// Two operands or contact times this close are a crease.
     pub tie: f64,
-    /// The central-difference step for a static leaf's gradient.
+    /// The finite-difference step for a static leaf's gradient.
     pub step: f64,
     /// A warm reading continues each sweep's contact from its hint without searching the whole
     /// roll (`SweptField::minimum_hinted`): a continuation, which a caller must check otherwise.
@@ -59,6 +59,11 @@ impl ReadingOptions {
 }
 
 impl Reading {
+    /// An operand left unread because a bound settled it: `value` at least, numbered `leaf`, with
+    /// no gradient worth reading.
+    pub(super) fn bound(value: f64,leaf: usize,time: Option<f64>) -> Self {
+        Self {value,gradient:[0.;3],leaf,piece:0,time,ambiguous:false}
+    }
     pub(super) fn negated(self) -> Self {
         Self {value:-self.value,gradient:self.gradient.map(|g| -g),..self}
     }

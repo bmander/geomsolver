@@ -4,11 +4,11 @@
 //! is on; the features are polylines the caller supplies (docs/field-meshing.md, F4).
 //!
 //! 1. **Protection.** Each feature curve is sampled at a spacing no larger than `edge_size` and
-//!    every sample becomes a weighted point, a ball of radius 0.6 × its spacing: consecutive
+//!    every sample becomes a weighted point, a ball of radius `BALL` × its spacing: consecutive
 //!    balls on a curve overlap, and where two balls neither consecutive on one curve nor sharing
-//!    a corner would meet, the curves involved are sampled twice as finely, down to an eighth of
-//!    `edge_size`; past that only balls near a corner their curves share (curves meeting
-//!    tangentially there) may meet. The balls' centres stay edges of the regular triangulation,
+//!    a corner would meet, the curves involved are sampled more finely there (an eighth of
+//!    `edge_size` beside a shared corner, down to `edge_size / LEAST` elsewhere); past that only
+//!    balls near a corner their curves share (curves meeting tangentially there) may meet. The balls' centres stay edges of the regular triangulation,
 //!    so the curve survives in the mesh.
 //! 2. **Seeding.** Rays from the centre, in evenly spread directions, are sampled; every change
 //!    of side is bisected to a boundary point and inserted (unless inside a ball).
@@ -510,7 +510,7 @@ impl Refiner<'_> {
     }
 }
 
-/// `SOLVENT_REFINE_TRACE=1`: a line every 2000 insertions naming the facet being refined.
+/// `SOLVENT_REFINE_TRACE=1`: a line every 250 insertions naming the facet being refined.
 fn trace() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("SOLVENT_REFINE_TRACE").is_some())
@@ -719,7 +719,6 @@ pub fn mesh(side: &mut dyn FnMut(P) -> f64,centre: P,radius: f64,curves: &[Vec<P
     run.finished()
 }
 
-/// Where a progressive refinement stands.
 /// A refinement's state for a host to show (`Progressive::progress`). `worst` is the badness of
 /// the worst facet waiting — above 1 by how far it misses the criteria, 1 with none waiting — and
 /// falls toward 1 as refinement goes on, worst first; it is the one measure of how near the end is.

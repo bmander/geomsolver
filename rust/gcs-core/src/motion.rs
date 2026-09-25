@@ -265,6 +265,11 @@ impl Family {
 pub struct Pose { pub r: [[f64;3];3], pub p: [f64;3] }
 
 impl Pose {
+    /// A gradient read at `self.point(x)` turned into the gradient at `x`: the rotation's
+    /// transpose applied.
+    pub fn gradient(&self,g: [f64;3]) -> [f64;3] {
+        std::array::from_fn(|i| (0..3).map(|k| self.r[k][i]*g[k]).sum())
+    }
     pub fn point(&self,x: [f64;3]) -> [f64;3] {
         std::array::from_fn(|i| self.r[i][0]*x[0]+self.r[i][1]*x[1]+self.r[i][2]*x[2]+self.p[i])
     }

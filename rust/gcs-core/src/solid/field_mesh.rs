@@ -30,18 +30,24 @@ pub struct FieldSurface {
 /// surface is what a host shows while the creases are traced.
 pub struct FieldMesher {
     run: Progressive<'static>,
-    /// While the first pass runs: what the second needs.
-    second: Option<Second>,
+    phase: Phase,
     /// The first pass's surface, shown until the second has one.
     first: Option<FieldSurface>,
-    /// The first pass has finished and its creases are to be traced at the next step: a step of
-    /// its own, so a host can say so before it starts.
-    tracing: Option<crate::delaunay::refine::Mesh>,
     /// Creases traced, once they are.
     curves: Option<usize>,
     /// The worst facet waiting at any point of the pass running: what `progress` measures by.
     peak: f64,
     failed: bool,
+}
+
+/// Which pass a `FieldMesher` is in, holding what the next needs.
+enum Phase {
+    /// The first pass runs; the final pass is to be set up from this.
+    First(Second),
+    /// The first pass has finished and its creases are to be traced at the next step, a step of
+    /// its own so a host can say so before it starts: its surface, and the final pass's setup.
+    Tracing(crate::delaunay::refine::Mesh, Second),
+    Final,
 }
 
 /// Where a `FieldMesher` stands (`FieldMesher::progress`): its phase — `first pass`, `tracing
@@ -63,6 +69,19 @@ struct Second {
     centre: [f64; 3],
     radius: f64,
     criteria: Criteria,
+    /// The diagonal of the box the material is in (`MaterialField::tight_support`).
+    extent: f64,
+}
+
+/// A box in space.
+type Box3 = [crate::interval::Interval; 3];
+
+/// The box `field`'s material is in (`MaterialField::tight_support`), where one is found.
+fn tight(field: &MaterialField) -> Option<Box3> { field.tight_support(6, 4096).ok().flatten() }
+
+/// A box's diagonal, or infinity for none.
+fn diagonal_of(b: Option<Box3>) -> f64 {
+    b.map_or(f64::INFINITY, |b| b.iter().map(|x| { let [lo, hi] = x.bounds(); (hi - lo) * (hi - lo) }).sum::<f64>().sqrt())
 }
 
 /// The first pass's facets are this much coarser than the surface's: three times, which costs a
@@ -95,8 +114,13 @@ const FIRST_FACETS: f64 = 20.0;
 /// refining along it to try costs what the rest of the pass does. The centre, radius and criteria.
 pub fn first_pass(field: &MaterialField, criteria: &Criteria, centre: [f64; 3], radius: f64)
     -> ([f64; 3], f64, Criteria) {
+    first_pass_within(tight(field), criteria, centre, radius)
+}
+
+fn first_pass_within(tight: Option<Box3>, criteria: &Criteria, centre: [f64; 3], radius: f64)
+    -> ([f64; 3], f64, Criteria) {
     let (mut centre, mut radius, mut facet_size) = (centre, radius, SEED_COARSENING * criteria.facet_size);
-    if let Ok(Some(tight)) = field.tight_support(6, 4096) {
+    if let Some(tight) = tight {
         let [lo, hi] = [0, 1].map(|k| tight.map(|x| x.bounds()[k]));
         let diagonal = (0..3).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>().sqrt();
         if diagonal > 0.0 && 0.5 * diagonal * 1.05 < radius {
@@ -120,15 +144,17 @@ pub fn first_pass(field: &MaterialField, criteria: &Criteria, centre: [f64; 3], 
 const CREASE_STEPS: f64 = 100.0;
 
 /// The feature curves of a field for refinement to `criteria`, found from a first pass's surface
-/// (`crease::features`): traced a quarter of the feature spacing at a time, and never more than a
-/// two-hundredth of the material's own extent (`MaterialField::tight_support`) — a gear's support
-/// box is its heel sphere's, and a step sized by it crossed a tooth space whole — to a billionth
-/// of the bounding ball.
+/// (`crease::features`): traced half the feature spacing at a time, and never more than a
+/// hundredth of the material's own extent (`MaterialField::tight_support`) — a gear's support box
+/// is its heel sphere's, and a step sized by it crossed a tooth space whole — to a billionth of
+/// the bounding ball.
 pub fn creases(field: &MaterialField, first: &crate::delaunay::refine::Mesh, criteria: &Criteria, centre: [f64; 3],
     radius: f64) -> Vec<Vec<[f64; 3]>> {
-    let extent = field.tight_support(6, 4096).ok().flatten().map_or(f64::INFINITY, |b| {
-        b.iter().map(|x| { let [lo, hi] = x.bounds(); (hi - lo) * (hi - lo) }).sum::<f64>().sqrt()
-    });
+    creases_within(field, first, criteria, centre, radius, diagonal_of(tight(field)))
+}
+
+fn creases_within(field: &MaterialField, first: &crate::delaunay::refine::Mesh, criteria: &Criteria, centre: [f64; 3],
+    radius: f64, extent: f64) -> Vec<Vec<[f64; 3]>> {
     let options = crease::CreaseOptions {
         step: (criteria.edge_size / 2.0).min(extent / CREASE_STEPS), tolerance: 1e-9 * radius, time_gap: 0.1, centre,
         radius, max_points: 200_000,
@@ -154,68 +180,67 @@ impl FieldMesher {
             facet_size: facet, facet_distance: diagonal / FIELD_DISTANCE, facet_angle: 25.0,
             edge_size: facet, bisection: 1e-5 * radius, max_points: 500_000, normal_angle: NORMAL_ANGLE,
         };
-        let (near, within, coarse) = first_pass(&field, &criteria, centre, radius);
-        let r = resolution(&coarse);
-        let run = Self::pass(&field, near, within, Vec::new(), coarse, r);
-        Ok(Self { run, second: Some(Second { field, centre, radius, criteria }), first: None, tracing: None,
+        let box3 = tight(&field);
+        let extent = diagonal_of(box3);
+        let (near, within, coarse) = first_pass_within(box3, &criteria, centre, radius);
+        let run = Self::pass(&field, near, within, Vec::new(), coarse);
+        Ok(Self { run, phase: Phase::First(Second { field, centre, radius, criteria, extent }), first: None,
             curves: None, peak: 1.0, failed: false })
     }
 
-    fn pass(field: &MaterialField, centre: [f64; 3], radius: f64, curves: Vec<Vec<[f64; 3]>>, criteria: Criteria,
-        resolution: Resolution) -> Progressive<'static> {
+    fn pass(field: &MaterialField, centre: [f64; 3], radius: f64, curves: Vec<Vec<[f64; 3]>>, criteria: Criteria)
+        -> Progressive<'static> {
+        let resolution = resolution(&criteria);
         let (side, reader) = (field.clone(), field.clone());
         // Sweeps are read from their adaptive distance fields (`resolution`): what the refinement
         // asks is a few hundred thousand values, most a cell from one already asked, where each
         // exact one is a search over the roll.
         Progressive::new(Box::new(move |p| side.side_cached(p, resolution)), centre, radius, curves, criteria)
-            .with_reading(Box::new({
-                // the contact times of the last reading, for the next one along the same crossing
-                let mut hints = Vec::new();
-                move |p, warm| {
-                    // a crossing is placed to the bisection tolerance, so its value is needed to a
-                    // tenth of that, and far from the boundary to a thousandth of itself; every
-                    // sweep is read from its distance field, as `side_cached` reads it, so the two
-                    // agree (to the field's tolerance) and nothing is continued locally
-                    let options = ReadingOptions { accuracy: 1e-6 * radius, cached: Some(resolution), ..ReadingOptions::at(p) };
-                    if !warm { hints.clear(); }
-                    let r = reader.reading_warm(p, &options, &mut 0, &mut hints);
-                    (r.value, r.gradient)
-                }
+            // Every sweep is read from its distance field, as `side_cached` reads it, so the readings
+            // agree with the signs (to the field's tolerance) and none continues a contact locally.
+            .with_reading(Box::new(move |p, _| {
+                // a crossing is placed to the bisection tolerance, so its value is needed to a
+                // tenth of that, and far from the boundary to a thousandth of itself
+                let options = ReadingOptions { accuracy: 1e-6 * radius, cached: Some(resolution), ..ReadingOptions::at(p) };
+                let r = reader.reading_with(p, &options, &mut 0);
+                (r.value, r.gradient)
             }))
             .readings_agree()
     }
 
     /// Refine at most about `budget` facets: whether the refinement has finished.
     pub fn step(&mut self, budget: usize) -> Result<bool, String> {
-        if let Some(coarse) = self.tracing.take() {
-            let Second { field, centre, radius, criteria } = self.second.take().unwrap();
-            let curves = creases(&field, &coarse, &criteria, centre, radius);
-            self.curves = Some(curves.len());
-            let r = resolution(&criteria);
-            self.run = Self::pass(&field, centre, radius, curves, criteria, r);
-            self.peak = 1.0;
-            return Ok(false);
+        match std::mem::replace(&mut self.phase, Phase::Final) {
+            Phase::Tracing(coarse, Second { field, centre, radius, criteria, extent }) => {
+                let curves = creases_within(&field, &coarse, &criteria, centre, radius, extent);
+                self.curves = Some(curves.len());
+                self.run = Self::pass(&field, centre, radius, curves, criteria);
+                self.peak = 1.0;
+                Ok(false)
+            }
+            Phase::First(second) => {
+                // The first pass's surface need not close: an unprotected sharp edge may leave it
+                // short of a manifold, and its edges still cross the creases.
+                if !self.run.step(budget).unwrap_or(true) {
+                    self.phase = Phase::First(second);
+                    return Ok(false);
+                }
+                let coarse = self.run.snapshot();
+                self.first = Some(FieldSurface { vertices: coarse.vertices.clone(), triangles: coarse.triangles.clone(),
+                    provisional: true });
+                self.phase = Phase::Tracing(coarse, second);
+                Ok(false)
+            }
+            Phase::Final => {
+                let result = self.run.step(budget).and_then(|done| match done {
+                    true => self.run.done_error().map_or(Ok(true), Err),
+                    false => Ok(false),
+                });
+                self.failed |= result.is_err();
+                result
+            }
         }
-        if self.second.is_some() {
-            // The first pass's surface need not close: an unprotected sharp edge may leave it
-            // short of a manifold, and its edges still cross the creases.
-            if !self.run.step(budget).unwrap_or(true) { return Ok(false); }
-            let coarse = self.run.snapshot();
-            self.first = Some(FieldSurface { vertices: coarse.vertices.clone(), triangles: coarse.triangles.clone(),
-                provisional: true });
-            self.tracing = Some(coarse);
-            return Ok(false);
-        }
-        let result = self.run.step(budget).and_then(|done| match done {
-            true => self.run.done_error().map_or(Ok(true), Err),
-            false => Ok(false),
-        });
-        self.failed |= result.is_err();
-        result
     }
-
-    /// The pass in hand's refinement counts.
-    pub fn report(&self) -> crate::delaunay::refine::Report { self.run.report() }
 
     /// Where the meshing stands, for a host to show (`FieldProgress`).
     pub fn progress(&mut self) -> FieldProgress {
@@ -223,9 +248,11 @@ impl FieldMesher {
         self.peak = self.peak.max(refine.worst);
         let within = if refine.stage == "done" || refine.worst <= 1.0 || self.peak <= 1.0 { 1.0 }
             else { (1.0 - refine.worst.ln() / self.peak.ln()).clamp(0.0, 1.0) };
-        let (phase, fraction) = if self.tracing.is_some() { ("tracing edges", 0.25) }
-            else if self.second.is_some() { ("first pass", 0.25 * within) }
-            else { ("final pass", 0.25 + 0.75 * within) };
+        let (phase, fraction) = match self.phase {
+            Phase::Tracing(..) => ("tracing edges", 0.25),
+            Phase::First(_) => ("first pass", 0.25 * within),
+            Phase::Final => ("final pass", 0.25 + 0.75 * within),
+        };
         FieldProgress { phase, refine, curves: self.curves, fraction, failed: self.failed }
     }
 
@@ -234,7 +261,7 @@ impl FieldMesher {
     pub fn snapshot(&mut self) -> FieldSurface {
         let m = self.run.snapshot();
         if m.triangles.is_empty() { if let Some(first) = &self.first { return first.clone(); } }
-        let finished = self.second.is_none() && self.run.done();
+        let finished = matches!(self.phase, Phase::Final) && self.run.done();
         FieldSurface { vertices: m.vertices, triangles: m.triangles, provisional: self.failed || !finished }
     }
 

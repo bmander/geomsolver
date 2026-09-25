@@ -73,7 +73,7 @@ fn options_at(p: P,tolerance: f64) -> ReadingOptions {
 /// that satisfies both linearised (`Jᵀ(JJᵀ)⁻¹F`), no step longer than `limit`. The operands'
 /// contact times follow the point. The point and both readings, or `None` where the two surfaces
 /// are tangent or Newton does not settle.
-pub fn pin(field: &MaterialField,mut p: P,operands: &mut [Operand;2],tolerance: f64,limit: f64)
+fn pin(field: &MaterialField,mut p: P,operands: &mut [Operand;2],tolerance: f64,limit: f64)
     -> Option<(P,Reading,Reading)> {
     for _ in 0..40 {
         let o = options_at(p,tolerance);
@@ -99,8 +99,8 @@ pub fn pin(field: &MaterialField,mut p: P,operands: &mut [Operand;2],tolerance: 
 
 /// Pull `p` onto three operands' zero sets at once, Newton on the three values (a 3 × 3 solve),
 /// no step longer than `limit`: a corner of the material. `None` where they do not meet in a point.
-pub fn corner(field: &MaterialField,mut p: P,operands: &mut [Operand;3],tolerance: f64,limit: f64) -> Option<P> {
-    if operands[2].differs(operands[0],0.) == false || operands[2].differs(operands[1],0.) == false { return None; }
+fn corner(field: &MaterialField,mut p: P,operands: &mut [Operand;3],tolerance: f64,limit: f64) -> Option<P> {
+    if !operands[2].differs(operands[0],0.) || !operands[2].differs(operands[1],0.) { return None; }
     for _ in 0..40 {
         let o = options_at(p,tolerance);
         let mut rows = [[0.;3];3];
@@ -203,7 +203,7 @@ fn lerp(a: P,b: P,t: f64) -> P { std::array::from_fn(|k| a[k]+t*(b[k]-a[k])) }
 /// its end where it is near one, which joins the two into one chain of curves, and otherwise at the
 /// nearest point of it, which `creases` then splits the other at. Without it a crease one trace left
 /// early and another seed started again is traced twice over the stretch they share.
-pub fn trace(field: &MaterialField,start: P,operands: [Operand;2],options: &CreaseOptions,existing: &[Crease])
+fn trace(field: &MaterialField,start: P,operands: [Operand;2],options: &CreaseOptions,existing: &[Crease])
     -> Option<Crease> {
     let mut first = operands;
     let (p0,ra,rb) = pin(field,start,&mut first,options.tolerance,options.step)?;
@@ -347,7 +347,7 @@ pub fn creases(field: &MaterialField,seeds: &[(P,[Operand;2])],options: &CreaseO
 
 /// `creases` of a field alike under rigid maps (`MaterialField::symmetries`, a gear's teeth):
 /// each crease traced once and carried by every map to its images, whose seeds then find them.
-pub fn creases_under(field: &MaterialField,seeds: &[(P,[Operand;2])],options: &CreaseOptions,maps: &[super::Symmetry])
+fn creases_under(field: &MaterialField,seeds: &[(P,[Operand;2])],options: &CreaseOptions,maps: &[super::Symmetry])
     -> Vec<Crease> {
     let mut out: Vec<Crease> = Vec::new();
     let near = |out: &[Crease],p: P,within: f64| out.iter().any(|c| c.points.len() == 1 && dist(p,c.points[0]) < within
@@ -463,12 +463,7 @@ fn closest(p: P,a: P,b: P) -> P {
     std::array::from_fn(|k| a[k]+s*d[k])
 }
 
-fn segment_distance(p: P,a: P,b: P) -> f64 {
-    let (d,w) = (sub(b,a),sub(p,a));
-    let l = dot(d,d);
-    let s = if l > 0. { (dot(w,d)/l).clamp(0.,1.) } else { 0. };
-    dist(p,std::array::from_fn(|k| a[k]+s*d[k]))
-}
+fn segment_distance(p: P,a: P,b: P) -> f64 { dist(p,closest(p,a,b)) }
 
 /// The feature curves of a field, for `delaunay::refine`'s protection, from a mesh made without
 /// them: every crease its edges cross, traced, with the ends that meet at one corner made one

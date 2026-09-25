@@ -7,7 +7,7 @@ mod spatial;
 mod document;
 pub use spatial::SpatialField;
 mod swept;
-pub use swept::{SweptField,SweepEvaluator,SweepError,SweptMinimum,SIDE_EVALUATIONS,SWEEP_TALLY};
+pub use swept::{SweptField,SweepEvaluator,SweepError,SIDE_EVALUATIONS};
 mod material;
 pub use material::{MaterialField,MaterialEvaluator,MaterialBounds,MaterialSweepQuery,Symmetry};
 mod reading;
