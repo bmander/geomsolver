@@ -77,6 +77,11 @@ pub struct Report {
     pub coarse: usize,
     /// Refinement points in conflict with neither tetrahedron of their facet, left.
     pub off_dual: usize,
+    /// Where the queries went: orthocentres' sides, crossings found (each bisected or by Newton),
+    /// and the sign queries of bisection.
+    pub orthocentre_queries: usize,
+    pub crossings: usize,
+    pub bisection_queries: usize,
     /// Crossings found by Newton on readings, those that fell back to bisection, and readings made.
     pub newton: usize,
     pub fallbacks: usize,
@@ -151,7 +156,9 @@ impl Refiner<'_> {
         if self.sign.len() <= t as usize { self.sign.resize(t as usize+1,0); }
         if self.sign[t as usize] == 0 {
             let (o,_) = self.tri.orthosphere(t);
+            let before = self.report.queries;
             let s = if o.iter().all(|x| x.is_finite()) { self.side(o) } else { 1 };
+            self.report.orthocentre_queries += self.report.queries-before;
             self.sign[t as usize] = s;
         }
         self.sign[t as usize]
@@ -161,16 +168,19 @@ impl Refiner<'_> {
     fn crossing(&mut self,a: P,sa: i8,b: P) -> P {
         let key = [a[0].to_bits(),a[1].to_bits(),a[2].to_bits(),b[0].to_bits(),b[1].to_bits(),b[2].to_bits(),sa as u64];
         if let Some(&c) = self.crossings.get(&key) { return c; }
+        self.report.crossings += 1;
         let c = if self.reading.is_some() { self.newton_crossing(a,sa,b) } else { self.bisected(a,sa,b) };
         self.crossings.insert(key,c);
         c
     }
 
     fn bisected(&mut self,mut a: P,sa: i8,mut b: P) -> P {
+        let before = self.report.queries;
         while dist2(a,b) > self.criteria.bisection*self.criteria.bisection {
             let m = lerp(a,b,0.5);
             if self.side(m) == sa { a = m } else { b = m }
         }
+        self.report.bisection_queries += self.report.queries-before;
         lerp(a,b,0.5)
     }
 
@@ -798,6 +808,11 @@ impl<'a> Progressive<'a> {
 
     /// Whether the refinement has finished, well or not.
     pub fn done(&self) -> bool { matches!(self.stage,Stage::Done(_)) }
+
+    /// The refinement's counts so far (the build in hand's; `queries` over every build).
+    pub fn report(&self) -> Report {
+        self.refiner.as_ref().map_or(Report {queries:self.queries,..Report::default()},|r| r.report.clone())
+    }
 
     /// Where the refinement stands, for a host to show: which stage, how many rebuilds, the
     /// facets waiting and the worst of them, and the work done. No total is known in advance.

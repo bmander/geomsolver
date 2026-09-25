@@ -37,9 +37,13 @@ struct Cube { low: f64,stretches: Box<[(f64,u64,u64)]> }
 
 /// The least of `f` on [lo, hi] by Brent's method — parabolic steps through the three best points,
 /// golden section where a parabola is not to be trusted — until the bracket is within `xtol` or
-/// `stop` accepts a value: `(value, argument)`. The minimum of a smooth function is found in a
+/// `stop` accepts a value and how far below it the minimum may lie: `(value, argument)`. The minimum of a smooth function is found in a
 /// few steps where golden section alone takes one per 0.62 of the bracket.
-fn brent(f: &impl Fn(f64) -> f64,lo: f64,hi: f64,xtol: f64,steps: usize,stop: impl Fn(f64) -> bool) -> (f64,f64) {
+///
+/// How far below the best value the minimum may lie is read off the parabola through the three
+/// best points: its curvature times the bracket's width squared, over two — infinite until three
+/// points make a parabola that holds water. A reading, like golden section's, not a bound.
+fn brent(f: &impl Fn(f64) -> f64,lo: f64,hi: f64,xtol: f64,steps: usize,stop: impl Fn(f64,f64) -> bool) -> (f64,f64) {
     const GOLD: f64 = 0.381_966_011_250_105_1;
     let (mut a,mut b) = (lo,hi);
     let mut x = a+GOLD*(b-a);
@@ -47,8 +51,13 @@ fn brent(f: &impl Fn(f64) -> f64,lo: f64,hi: f64,xtol: f64,steps: usize,stop: im
     let mut fx = f(x);
     let (mut fw,mut fv) = (fx,fx);
     let (mut d,mut e) = (0f64,0f64);
+    let slack = |x: f64,fx: f64,w: f64,fw: f64,v: f64,fv: f64,width: f64| -> f64 {
+        if x == w || x == v || w == v { return f64::INFINITY; }
+        let curvature = 2.*((fw-fx)/(w-x)-(fv-fx)/(v-x))/(w-v);
+        if curvature > 0. && curvature.is_finite() { 0.5*curvature*width*width } else { f64::INFINITY }
+    };
     for _ in 0..steps {
-        if stop(fx) { break; }
+        if stop(fx,slack(x,fx,w,fw,v,fv,b-a)) { break; }
         let xm = 0.5*(a+b);
         let (tol1,tol2) = (xtol,2.*xtol);
         if (x-xm).abs() <= tol2-0.5*(b-a) { break; }
@@ -415,7 +424,8 @@ impl SweptField {
                     // A bracket narrowed to 10⁻⁶ leaves the quadratic minimum's value found to
                     // 10⁻¹² of the bracket's rise, far below any tolerance; a negative reading
                     // settles the side at once.
-                    let (found,_) = brent(&at_time,lo,hi,1e-6*(hi-lo),60,|v| v < 0.);
+                    // settled once a reading is inside, or the least the minimum can be is outside
+                    let (found,_) = brent(&at_time,lo,hi,1e-6*(hi-lo),60,|v,slack| v < 0. || v-slack > tolerance);
                     best = best.min(found);
                     if found < 0. { break 'search found; }
                 }
@@ -490,11 +500,11 @@ impl SweptField {
         let done = |value: f64,time: f64,tied: bool,n: u64| { count(n); SweptMinimum {value,time,tied} };
         if !(b > a) { return done(best,best_t,false,evaluations.get()); }
         let basin = last >> SIDE_BASIN;
-        // The minimum in a bracket, by Brent's search, narrowed to 10⁻⁸ of the bracket: the
-        // minimum is quadratic, so its value is then within 10⁻¹⁶ of the bracket's rise of it,
-        // below any accuracy asked (`_stop`, kept for the golden section this replaced).
-        let golden = |lo: f64,hi: f64,_stop: f64| -> (f64,f64) {
-            brent(&at_time,lo,hi,(1e-8*(hi-lo)).max(1e-15*(1.+hi.abs())),80,|_| false)
+        // The minimum in a bracket, by Brent's search, to `stop` of its value — the accuracy asked,
+        // a thousandth of the value itself for a reading far from the boundary — or to 10⁻⁸ of the
+        // bracket, where the value is within 10⁻¹⁶ of the bracket's rise, whichever comes first.
+        let golden = |lo: f64,hi: f64,stop: f64| -> (f64,f64) {
+            brent(&at_time,lo,hi,(1e-8*(hi-lo)).max(1e-15*(1.+hi.abs())),80,|_,slack| slack <= stop)
         };
         // The hint's window, in grid indices, searched first; `None` when cold.
         let window = hint.filter(|t| t.is_finite() && *t >= a && *t <= b).map(|t| {

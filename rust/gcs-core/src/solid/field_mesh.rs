@@ -98,7 +98,10 @@ pub fn first_pass(field: &MaterialField, criteria: &Criteria, centre: [f64; 3], 
     let scale = facet_size / criteria.facet_size;
     (centre, radius, Criteria {
         facet_size, facet_distance: (scale * criteria.facet_distance).max(facet_size / 30.0),
-        edge_size: scale * criteria.edge_size, max_points: 100_000, normal_angle: 0.0,
+        // no curves to space: the spacing sets only the least surface ball refined (a twentieth of it),
+        // and a first pass refining its unprotected sharp edges to the final pass's least spent
+        // more points there than the final pass does in all; a fifth of a facet is enough to find them
+        edge_size: 4.0 * facet_size, max_points: 100_000, normal_angle: 0.0,
         ..criteria.clone()
     })
 }
@@ -192,6 +195,9 @@ impl FieldMesher {
         self.failed |= result.is_err();
         result
     }
+
+    /// The pass in hand's refinement counts.
+    pub fn report(&self) -> crate::delaunay::refine::Report { self.run.report() }
 
     /// Where the meshing stands, for a host to show (`FieldProgress`).
     pub fn progress(&mut self) -> FieldProgress {
