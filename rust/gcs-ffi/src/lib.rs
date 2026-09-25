@@ -1975,6 +1975,31 @@ pub unsafe extern "C" fn gcs_solid_stl(h: *mut Sketch, idx: i32, unit: f64) -> *
     })
 }
 
+/// Solid `idx`'s surface as binary STL as it stands, though still being refined
+/// (`EvaluatedSolid::preview_stl`); null with the reason where there is none yet.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_stl_preview(h: *mut Sketch, idx: i32, unit: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let s = sk(h);
+        match s.evaluated_solid(idx.max(0) as usize, gcs_core::solid::ApproximationPolicy::from_unit(unit)).and_then(|s| s.preview_stl()) {
+            Ok(bytes) => out_bytes(bytes),
+            Err(message) => { set_error(message); std::ptr::null_mut() }
+        }
+    })
+}
+
+/// Whether solid `idx`'s surface is still being refined: 1, 0, or −1 with the reason where it has
+/// none to ask about.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_provisional(h: *mut Sketch, idx: i32) -> i32 {
+    guard(-1, move || {
+        match sk(h).evaluated_solid(idx.max(0) as usize, gcs_core::solid::ApproximationPolicy::from_unit(0.)) {
+            Ok(s) => s.provisional() as i32,
+            Err(message) => { set_error(message); -1 }
+        }
+    })
+}
+
 /// **The objects a document has**: the solids nothing else is made of, by name and index.  A
 /// bore is a hole in a part and not a part beside it, and this is the rule that says so.
 #[no_mangle]

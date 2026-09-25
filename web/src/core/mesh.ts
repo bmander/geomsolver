@@ -75,6 +75,19 @@ export function glb(sk: Sketch, idx = -1, unit = 0): Uint8Array {
 /** **One object as binary STL**: what a printer takes.  Welded, so every edge has its partner —
  *  which a boundary evaluation does not give on its own and a strict validator refuses without.
  *  An STL carries triangles and nothing else: no face is named in it and no unit recorded. */
+/** **A surface still being refined, as it stands**, as binary STL: coarse, maybe open — a look at
+ *  the part before the refinement has finished, never a part to print. */
+export function stlPreview(sk: Sketch, idx: number, unit = 0): Uint8Array {
+  const handle = core().gcs_solid_stl_preview(sk.handle, idx, unit);
+  if (!handle) throw new Error(lastError());
+  return takeBytes(handle);
+}
+
+/** Whether a solid's surface is still being refined (a swept solid meshed in the background). */
+export function provisional(sk: Sketch, idx: number): boolean {
+  return core().gcs_solid_provisional(sk.handle, idx) === 1;
+}
+
 export function stl(sk: Sketch, idx: number, unit = 0): Uint8Array {
   const handle = core().gcs_solid_stl(sk.handle, idx, unit);
   if (!handle) throw new Error(lastError());

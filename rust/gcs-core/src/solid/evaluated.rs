@@ -414,6 +414,11 @@ impl EvaluatedSolid {
         }
         m
     }
+    /// The surface as it stands even while it is still being refined (`mesh::preview_stl`): what a
+    /// host offers when asked for a file before the refinement has finished.
+    pub fn preview_stl(&self) -> Result<Vec<u8>, String> {
+        mesh::preview_stl(self.mesh(), self.origin.0, &self.name)
+    }
     pub fn stl(&self) -> Result<Vec<u8>, String> {
         if self.provisional {
             return Err(format!("`{}`: its surface is still being refined", self.name));

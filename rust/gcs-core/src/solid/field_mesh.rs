@@ -76,13 +76,22 @@ pub fn first_pass(field: &MaterialField, criteria: &Criteria, centre: [f64; 3], 
     })
 }
 
+/// The creases' step is never longer than this fraction of the material's own extent.
+const CREASE_STEPS: f64 = 200.0;
+
 /// The feature curves of a field for refinement to `criteria`, found from a first pass's surface
-/// (`crease::features`): traced a quarter of the feature spacing at a time, to a billionth of the
-/// bounding ball.
+/// (`crease::features`): traced a quarter of the feature spacing at a time, and never more than a
+/// two-hundredth of the material's own extent (`MaterialField::tight_support`) — a gear's support
+/// box is its heel sphere's, and a step sized by it crossed a tooth space whole — to a billionth
+/// of the bounding ball.
 pub fn creases(field: &MaterialField, first: &crate::delaunay::refine::Mesh, criteria: &Criteria, centre: [f64; 3],
     radius: f64) -> Vec<Vec<[f64; 3]>> {
+    let extent = field.tight_support(6, 4096).ok().flatten().map_or(f64::INFINITY, |b| {
+        b.iter().map(|x| { let [lo, hi] = x.bounds(); (hi - lo) * (hi - lo) }).sum::<f64>().sqrt()
+    });
     let options = crease::CreaseOptions {
-        step: criteria.edge_size / 4.0, tolerance: 1e-9 * radius, time_gap: 0.1, centre, radius, max_points: 200_000,
+        step: (criteria.edge_size / 4.0).min(extent / CREASE_STEPS), tolerance: 1e-9 * radius, time_gap: 0.1, centre,
+        radius, max_points: 200_000,
     };
     crease::features(field, &first.vertices, &first.triangles, &options)
 }

@@ -60,7 +60,7 @@ import {
   view, initialExample,
 } from './shell.js';
 import {
-  MenuItem, ToolbarButton, addButton, addMenu, addSeparator, closeMenus, download, openImage,
+  MenuItem, ToolbarButton, addButton, addMenu, addSeparator, askChoice, closeMenus, download, openImage,
   toast,
 } from './ui.js';
 import { Tool } from './view.js';
@@ -129,23 +129,46 @@ function exportSvg(): void {
  *
  *  What is exported is the document's **objects** — the solids nothing else is made of.  A bore
  *  is a hole in a part, not a part beside it. */
-function exportSolid(kind: 'glb' | 'stl'): void {
+async function exportSolid(kind: 'glb' | 'stl'): Promise<void> {
   const objs = solids.objects(view.sketch);
   if (objs.length === 0) {
     toast('this drawing has no solid — a `solid` statement makes one from a `face`');
     return;
   }
   const stem = objs.length === 1 ? objs[0].name.replace(/[^\w.-]/g, '_') : 'solids';
+  // the core refuses a solid it cannot write — a swept one still refining, above all — and says
+  // why; unsaid, a menu item that does nothing reads as broken
+  try { await exportFile(kind, objs, stem); }
+  catch (e) { toast(`cannot export: ${e instanceof Error ? e.message : String(e)}`); }
+}
+
+async function exportFile(kind: 'glb' | 'stl', objs: { name: string; index: number }[], stem: string): Promise<void> {
   if (kind === 'glb') {
     // one scene holds every object, so glTF need not be told which part of an assembly to be
     download(`${stem}.glb`, solids.glb(view.sketch));
     toast(`exported ${stem}.glb — ${objs.length} object(s), every face named`);
     return;
   }
+  // A swept solid still refining has no final surface; the preview as it stands is offered,
+  // named as one, since it may be coarse or open.
+  const refining = objs.filter((o) => solids.provisional(view.sketch, o.index));
+  let preview = false;
+  if (refining.length) {
+    const names = refining.map((o) => o.name).join(', ');
+    const choice = await askChoice('Export solid (STL)',
+      `${names} ${refining.length === 1 ? 'is' : 'are'} still being refined.`, [
+        { title: 'Export the preview', description: 'the surface as it stands now: it may be coarse, or open where refinement has not reached' },
+        { title: 'Cancel', description: 'wait for the refinement to finish' },
+      ]);
+    if (choice !== 0) return;
+    preview = true;
+  }
   // an STL is a triangle soup with no grouping, so several objects go in one file as one soup
-  const parts = objs.map((o) => solids.stl(view.sketch, o.index));
-  download(`${stem}.stl`, parts.length === 1 ? parts[0] : joinStl(parts));
-  toast(`exported ${stem}.stl`);
+  const parts = objs.map((o) => preview && solids.provisional(view.sketch, o.index)
+    ? solids.stlPreview(view.sketch, o.index) : solids.stl(view.sketch, o.index));
+  const name = `${stem}${preview ? '-preview' : ''}.stl`;
+  download(name, parts.length === 1 ? parts[0] : joinStl(parts));
+  toast(preview ? `exported ${name} — a preview, not the finished surface` : `exported ${name}`);
 }
 
 /** Several binary STLs as one: the header of the first, the summed count, and every record. */
@@ -196,10 +219,10 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     { label: 'Export SVG', onClick: exportSvg,
       title: 'The drawing as a scalable image, laid out by the core — the same figure `solventc '
         + '--output` writes' },
-    { label: 'Export solid (glTF)', onClick: () => exportSolid('glb'),
+    { label: 'Export solid (glTF)', onClick: () => void exportSolid('glb'),
       title: 'The object as a viewer opens it: every face a named node, in metres.  What '
         + '`solventc --gltf` writes' },
-    { label: 'Export solid (STL)', onClick: () => exportSolid('stl'),
+    { label: 'Export solid (STL)', onClick: () => void exportSolid('stl'),
       title: 'The object as a printer takes it: triangles, welded so every edge has its '
         + 'partner.  What `solventc --stl` writes' },
     null,

@@ -163,6 +163,8 @@ pub enum End {
     Handoffs,
     /// The point budget ran out.
     Budget,
+    /// It walked onto crease `n` of those already traced, at a point of it.
+    Met(usize),
 }
 
 /// The point between `p`, on the crease, and `q`, pinned onto both operands' carriers past it,
@@ -194,7 +196,12 @@ fn lerp(a: P,b: P,t: f64) -> P { std::array::from_fn(|k| a[k]+t*(b[k]-a[k])) }
 
 /// Follow the crease of two operands through `start`, both ways, while it stays on the material's
 /// boundary. `None` when `start` cannot be pinned onto it.
-pub fn trace(field: &MaterialField,start: P,operands: [Operand;2],options: &CreaseOptions) -> Option<Crease> {
+/// A trace stops where it walks onto a crease in `existing` (`End::Met`), ending on that crease: at
+/// its end where it is near one, which joins the two into one chain of curves, and otherwise at the
+/// nearest point of it, which `creases` then splits the other at. Without it a crease one trace left
+/// early and another seed started again is traced twice over the stretch they share.
+pub fn trace(field: &MaterialField,start: P,operands: [Operand;2],options: &CreaseOptions,existing: &[Crease])
+    -> Option<Crease> {
     let mut first = operands;
     let (p0,ra,rb) = pin(field,start,&mut first,options.tolerance,options.step)?;
     if !on_crease(field,p0,&first,options.tolerance) { return None; }
@@ -232,6 +239,17 @@ pub fn trace(field: &MaterialField,start: P,operands: [Operand;2],options: &Crea
             }
             let Some((q,trial,t)) = next else { break End::Lost };
             if dist(q,options.centre) > options.radius { break End::Ball; }
+            // Both ends on the crease do not make the step one: a crease can run on across a gap
+            // the material leaves between them (a blank's edge across a narrow tooth space), so the
+            // crease is pinned at the step's middle too, and a middle off it is where it left.
+            let middle = {
+                let mut ops = trial;
+                pin(field,lerp(p,q,0.5),&mut ops,options.tolerance,dist(p,q)).map(|(m,..)| (m,ops))
+            };
+            let (q,trial) = match middle {
+                Some((m,ops)) if !on_crease(field,m,&ops,options.tolerance) => (m,ops),
+                _ => (q,trial),
+            };
             if !on_crease(field,q,&trial,options.tolerance) {
                 // A third operand has taken the boundary over, at `at`.
                 let (at,at_ops,_,reading) = takeover(field,p,ops,q,options);
@@ -273,6 +291,10 @@ pub fn trace(field: &MaterialField,start: P,operands: [Operand;2],options: &Crea
             if side == 0 && walked > 3.*options.step && dist(q,p0) < 1.5*options.step {
                 ends = [End::Closed;2];
                 break 'direction;
+            }
+            if let Some((k,x)) = meets(existing,q,0.25*options.step) {
+                halves[side].push(x);
+                break End::Met(k);
             }
             halves[side].push(q);
             (p,ops,tangent) = (q,trial,t);
@@ -322,9 +344,88 @@ pub fn creases(field: &MaterialField,seeds: &[(P,[Operand;2])],options: &CreaseO
         if near(&out,p,0.5*options.step) { continue; }
         let Some((q,..)) = pin(field,p,&mut ops.clone(),options.tolerance,options.step) else { continue };
         if near(&out,q,0.25*options.step) { continue; }
-        if let Some(c) = trace(field,q,ops,options) { if c.points.len() >= 2 { out.push(c); } }
+        let Some(c) = trace(field,q,ops,options,&out) else { continue };
+        if c.points.len() < 2 { continue; }
+        // A trace that ended on another crease's middle splits that crease there, so the two share
+        // a corner rather than one ending beside the other.
+        for (e,at) in [(c.ends[0],c.points[0]),(c.ends[1],*c.points.last().unwrap())] {
+            if let End::Met(k) = e { split(&mut out,k,at); }
+        }
+        out.push(c);
     }
+    junctions(&mut out,0.25*options.step);
     out
+}
+
+/// Every crease end lying on another crease's middle — a T, where a crease meets one that runs on
+/// through the point (the tip rim, handed on tangentially between two pieces of a cutter's profile,
+/// where the crease between those pieces reaches it) — splits that other crease at the end's exact
+/// point, which protection then takes as the corner the two share. Ends near another's end are the
+/// weld's (`features`).
+fn junctions(creases: &mut Vec<Crease>,within: f64) {
+    let mut i = 0;
+    while i < creases.len() {
+        if !creases[i].closed {
+            for at in [creases[i].points[0],*creases[i].points.last().unwrap()] {
+                for k in 0..creases.len() {
+                    if k == i { continue; }
+                    let c = &creases[k];
+                    let ends = if c.closed { vec![] } else { vec![c.points[0],*c.points.last().unwrap()] };
+                    if ends.iter().any(|&e| dist(e,at) <= 2.*within) { continue; }
+                    let near = c.points.windows(2).any(|w| segment_distance(at,w[0],w[1]) < within);
+                    if near { split(creases,k,at); break; }
+                }
+            }
+        }
+        i += 1;
+    }
+}
+
+/// The crease of `existing` that `q` lies within `within` of, and the point of it `q` is to end at:
+/// the crease's own end where that is within two of `within`, and otherwise its nearest point.
+fn meets(existing: &[Crease],q: P,within: f64) -> Option<(usize,P)> {
+    for (k,c) in existing.iter().enumerate() {
+        let near = c.points.windows(2).map(|w| (w[0],w[1],segment_distance(q,w[0],w[1])))
+            .fold(None,|best: Option<(P,P,f64)>,x| if best.is_none_or(|b| x.2 < b.2) { Some(x) } else { best });
+        let Some((a,b,d)) = near else { continue };
+        if d >= within { continue; }
+        let ends = if c.closed { vec![] } else { vec![c.points[0],*c.points.last().unwrap()] };
+        if let Some(&e) = ends.iter().find(|&&e| dist(e,q) <= 2.*within) { return Some((k,e)); }
+        return Some((k,closest(q,a,b)));
+    }
+    None
+}
+
+/// Crease `k` split at `at`, a point on it: `at` put in at its nearest segment, and the crease cut
+/// in two there — or, closed, begun and ended there. Nothing is done where `at` is already an end.
+fn split(creases: &mut Vec<Crease>,k: usize,at: P) {
+    let c = &creases[k];
+    let n = c.points.len();
+    if !c.closed && (c.points[0] == at || c.points[n-1] == at) { return; }
+    let Some(j) = (0..n-1).min_by(|&x,&y| segment_distance(at,c.points[x],c.points[x+1])
+        .total_cmp(&segment_distance(at,c.points[y],c.points[y+1]))) else { return };
+    let mut points = c.points.clone();
+    points.insert(j+1,at);
+    if c.closed {
+        // a loop begun and ended at the corner: still closed, the corner its one end
+        let mut ring: Vec<P> = points[j+1..points.len()-1].to_vec();
+        ring.extend_from_slice(&points[..=j]);
+        ring.push(at);
+        creases[k].points = ring;
+    } else {
+        let (head,tail) = (points[..=j+1].to_vec(),points[j+1..].to_vec());
+        let second = Crease {points:tail,closed:false,operands:c.operands,ends:[End::Met(k),c.ends[1]]};
+        creases[k].points = head;
+        creases[k].ends[1] = End::Met(creases.len());
+        creases.push(second);
+    }
+}
+
+fn closest(p: P,a: P,b: P) -> P {
+    let (d,w) = (sub(b,a),sub(p,a));
+    let l = dot(d,d);
+    let s = if l > 0. { (dot(w,d)/l).clamp(0.,1.) } else { 0. };
+    std::array::from_fn(|k| a[k]+s*d[k])
 }
 
 fn segment_distance(p: P,a: P,b: P) -> f64 {

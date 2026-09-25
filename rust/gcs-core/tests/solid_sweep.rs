@@ -191,6 +191,9 @@ fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
     assert!(e.sketch.field_epoch.get() > epoch);
     let preview = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
     assert!(preview.provisional() && preview.stl().is_err());
+    // asked for as a preview, it is written as it stands, every triangle in the file
+    let bytes = preview.preview_stl().unwrap();
+    assert!(bytes.len() > 84 && (bytes.len()-84)%50 == 0 && u32::from_le_bytes(bytes[80..84].try_into().unwrap()) > 0);
     e.sketch.supply_field(i,surface);
     let done = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
     let exact = 2.*std::f64::consts::PI.powi(2)+4./3.*std::f64::consts::PI;

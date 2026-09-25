@@ -324,6 +324,20 @@ pub(crate) fn placed_stl(mesh: &Mesh, origin: [f64; 3], name: &str) -> Result<Ve
     check_stl(stl_triangles(&mesh.positions, origin, name), name)
 }
 
+/// A surface still being refined, as it stands: it may be coarse or open, and a triangle float32
+/// flattens is dropped rather than refusing the file, since a preview is a look and not a part.
+pub(crate) fn preview_stl(mesh: &Mesh, origin: [f64; 3], name: &str) -> Result<Vec<u8>, String> {
+    let bytes = stl_triangles(&mesh.positions, origin, name);
+    let kept: Vec<&[u8]> = stl_points(&bytes)?.zip(bytes[84..].chunks_exact(50))
+        .filter(|(v, _)| v.iter().flatten().all(|x| x.is_finite()) && !degenerate(v[0], v[1], v[2]))
+        .map(|(_, record)| record).collect();
+    if kept.is_empty() { return Err(format!("`{name}` has no surface to export yet")); }
+    let mut out = bytes[..80].to_vec();
+    out.extend((kept.len() as u32).to_le_bytes());
+    for record in kept { out.extend_from_slice(record); }
+    Ok(out)
+}
+
 fn check_stl(bytes: Vec<u8>, name: &str) -> Result<Vec<u8>, String> {
     for v in stl_points(&bytes)? {
         if v.iter().flatten().any(|x| !x.is_finite()) || degenerate(v[0], v[1], v[2]) {

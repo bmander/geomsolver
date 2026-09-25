@@ -21,10 +21,119 @@ pub struct SweptField {source:SpatialField,motion:Family,domain:I,
     poses:std::sync::OnceLock<std::sync::Arc<Vec<Option<crate::motion::Pose>>>>,
     /// The box every pose of the source lies in, as plain numbers, found once: a point outside
     /// it is outside the material (`clear_of`).
-    support:std::sync::OnceLock<Option<[[f64;2];3]>>}
+    support:std::sync::OnceLock<Option<[[f64;2];3]>>,
+    /// Proven lower bounds of the sweep at the centres of cubes a `floor` query has reached, keyed
+    /// by cube, filled as they are asked for and shared by every clone (every indexed copy of one
+    /// cut reads the one table, each at its own point turned into the sweep's frame).
+    floors:std::sync::Arc<std::sync::Mutex<std::collections::HashMap<[i32;3],std::sync::Arc<Cube>>>>,
+    /// The side of those cubes: a fraction of the source's own size.
+    cube:std::sync::OnceLock<f64>}
 
-/// Source evaluations made by every `side` query so far, for a caller measuring the oracle.
+/// A sweep's partition of its roll at one cube's centre (`SweptField::cube`): the least bound
+/// proven over the roll, and each stretch `(bound, start, end)` in dyadic roll indices. At a point
+/// a distance d from the centre every bound holds less d, the motion being rigid.
+#[derive(Debug)]
+struct Cube { low: f64,stretches: Box<[(f64,u64,u64)]> }
+
+/// The least of `f` on [lo, hi] by Brent's method — parabolic steps through the three best points,
+/// golden section where a parabola is not to be trusted — until the bracket is within `xtol` or
+/// `stop` accepts a value: `(value, argument)`. The minimum of a smooth function is found in a
+/// few steps where golden section alone takes one per 0.62 of the bracket.
+fn brent(f: &impl Fn(f64) -> f64,lo: f64,hi: f64,xtol: f64,steps: usize,stop: impl Fn(f64) -> bool) -> (f64,f64) {
+    const GOLD: f64 = 0.381_966_011_250_105_1;
+    let (mut a,mut b) = (lo,hi);
+    let mut x = a+GOLD*(b-a);
+    let (mut w,mut v) = (x,x);
+    let mut fx = f(x);
+    let (mut fw,mut fv) = (fx,fx);
+    let (mut d,mut e) = (0f64,0f64);
+    for _ in 0..steps {
+        if stop(fx) { break; }
+        let xm = 0.5*(a+b);
+        let (tol1,tol2) = (xtol,2.*xtol);
+        if (x-xm).abs() <= tol2-0.5*(b-a) { break; }
+        let mut golden = true;
+        if e.abs() > tol1 {
+            let r = (x-w)*(fx-fv);
+            let mut q = (x-v)*(fx-fw);
+            let mut p = (x-v)*q-(x-w)*r;
+            q = 2.*(q-r);
+            if q > 0. { p = -p; }
+            q = q.abs();
+            let previous = e;
+            e = d;
+            if p.abs() < (0.5*q*previous).abs() && p > q*(a-x) && p < q*(b-x) {
+                d = p/q;
+                let u = x+d;
+                if u-a < tol2 || b-u < tol2 { d = tol1.copysign(xm-x); }
+                golden = false;
+            }
+        }
+        if golden { e = if x >= xm { a-x } else { b-x }; d = GOLD*e; }
+        let u = if d.abs() >= tol1 { x+d } else { x+tol1.copysign(d) };
+        let fu = f(u);
+        if fu <= fx {
+            if u >= x { a = x } else { b = x }
+            (v,fv,w,fw,x,fx) = (w,fw,x,fx,u,fu);
+        } else {
+            if u < x { a = u } else { b = u }
+            if fu <= fw || w == x { (v,fv,w,fw) = (w,fw,u,fu); }
+            else if fu <= fv || v == x || v == w { (v,fv) = (u,fu); }
+        }
+    }
+    (fx,x)
+}
+
+/// A stretch of roll between two dyadic indices: a lower bound on the field over it, and the
+/// readings at its ends (NaN until made). Ordered lowest bound first in a heap.
+#[derive(PartialEq)]
+struct Stretch(f64,u64,f64,u64,f64);
+impl Eq for Stretch {}
+impl PartialOrd for Stretch { fn partial_cmp(&self,o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
+impl Ord for Stretch { fn cmp(&self,o: &Self) -> std::cmp::Ordering { o.0.total_cmp(&self.0) } }
+
+/// The widest stretch still open (bounded at or below `below`) that is wider than a basin, taken
+/// out of the heap to be split.
+fn widest(stretches: &mut std::collections::BinaryHeap<Stretch>,basin: u64,below: f64) -> Option<Stretch> {
+    let k = stretches.iter().enumerate().filter(|(_,s)| s.0 <= below && s.3-s.1 > basin)
+        .max_by_key(|(_,s)| s.3-s.1).map(|(k,_)| k)?;
+    let mut all = std::mem::take(stretches).into_vec();
+    let wide = all.swap_remove(k);
+    *stretches = all.into();
+    Some(wide)
+}
+
+/// Readings at dyadic roll indices, each made once: stretches carried from a cube share ends.
+struct Reads<F: Fn(u64) -> f64> { read: F,made: std::cell::RefCell<Vec<(u64,f64)>> }
+impl<F: Fn(u64) -> f64> Reads<F> {
+    fn new(read: F) -> Self { Self {read,made:std::cell::RefCell::new(Vec::new())} }
+    fn at(&self,i: u64) -> f64 {
+        if let Some(&(_,v)) = self.made.borrow().iter().find(|m| m.0 == i) { return v; }
+        let v = (self.read)(i);
+        self.made.borrow_mut().push((i,v));
+        v
+    }
+    /// A reading already in hand, or made now where it is not.
+    fn or(&self,i: u64,v: f64) -> f64 { if v.is_nan() { self.at(i) } else { v } }
+}
+
+/// Source evaluations made by every sweep query so far, for a caller measuring the oracle.
 pub static SIDE_EVALUATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// The same by what asked, as calls and evaluations: `at_least`, `bound_at` (a `floor` cube),
+/// `side`, and the minimum searches.
+pub static SWEEP_TALLY: [[std::sync::atomic::AtomicU64;2];4] = [const { [const { std::sync::atomic::AtomicU64::new(0) };2] };4];
+
+fn tally(kind: usize,evaluations: u64) {
+    use std::sync::atomic::Ordering::Relaxed;
+    SIDE_EVALUATIONS.fetch_add(evaluations,Relaxed);
+    SWEEP_TALLY[kind][0].fetch_add(1,Relaxed);
+    SWEEP_TALLY[kind][1].fetch_add(evaluations,Relaxed);
+}
+
+/// The cubes a sweep's `floor` table is kept in are the source's diagonal over this.
+const FLOOR_CUBES: f64 = 256.;
+/// Source evaluations a cube's bound may spend.
+const FLOOR_BUDGET: u64 = 64;
 
 /// Dyadic level at which `side` stops splitting and searches each basin left (see `side`).
 const SIDE_BASIN: u32 = 6;
@@ -36,7 +145,8 @@ const SIDE_DEPTH: u32 = 40;
 
 impl SweptField {
     pub fn new(source: SpatialField,motion: Family,domain: I) -> Self {
-        Self {source,motion,domain,poses:std::sync::OnceLock::new(),support:std::sync::OnceLock::new()}
+        Self {source,motion,domain,poses:std::sync::OnceLock::new(),support:std::sync::OnceLock::new(),
+            floors:Default::default(),cube:std::sync::OnceLock::new()}
     }
     pub fn domain(&self) -> I { self.domain }
 
@@ -55,6 +165,7 @@ impl SweptField {
     /// that can only matter below `cap` (`MaterialField::reading_warm`).
     pub fn at_least(&self,p: [f64;3],cap: f64,budget: u64) -> Option<f64> {
         if let Some(d) = self.clear_of(p) { if d >= cap { return Some(d); } }
+        if let Some(f) = self.floor(p) { if f >= cap { return Some(f); } }
         let [a,b] = self.domain.bounds();
         let n = (1u64 << SIDE_DEPTH) as f64;
         let time = |i: u64| a+(b-a)*(i as f64/n);
@@ -90,8 +201,97 @@ impl SweptField {
                 stretches.push((bound(m,fm,i1,f1),m,fm,i1,f1));
             }
         })();
-        SIDE_EVALUATIONS.fetch_add(evaluations.get(),std::sync::atomic::Ordering::Relaxed);
+        tally(0,evaluations.get());
         result
+    }
+
+    /// A lower bound on the sweep at `p` read from a table: the bound proven over the roll at the
+    /// centre of the cube `p` is in (`Cube`), less `p`'s distance from that centre — the field is
+    /// one-Lipschitz, a minimum over rigid motions of a one-Lipschitz source. The first query in a
+    /// cube pays for its bound and every later one, from any indexed copy of the cut, looks it
+    /// up. `None` without a finite source to size the cubes by.
+    pub fn floor(&self,p: [f64;3]) -> Option<f64> {
+        self.cube(p).map(|(d,c)| c.low-d)
+    }
+
+    /// The cube `p` is in, filled on first asking, and `p`'s distance from its centre.
+    fn cube(&self,p: [f64;3]) -> Option<(f64,std::sync::Arc<Cube>)> {
+        let h = *self.cube.get_or_init(|| self.source.support_bounds().ok().flatten().map_or(0.,|b| {
+            let d: f64 = b.iter().map(|x| { let [lo,hi] = x.bounds(); (hi-lo)*(hi-lo) }).sum();
+            d.sqrt()/FLOOR_CUBES
+        }));
+        if !(h > 0.) || !h.is_finite() { return None; }
+        let key = p.map(|x| (x/h).floor().clamp(i32::MIN as f64,i32::MAX as f64) as i32);
+        let centre = key.map(|k| (k as f64+0.5)*h);
+        let d = ((p[0]-centre[0]).powi(2)+(p[1]-centre[1]).powi(2)+(p[2]-centre[2]).powi(2)).sqrt();
+        let known = self.floors.lock().ok()?.get(&key).cloned();
+        let cube = match known {
+            Some(c) => c,
+            None => {
+                let c = std::sync::Arc::new(self.bound_at(centre,0.5*h,FLOOR_BUDGET,2.*h));
+                self.floors.lock().ok()?.insert(key,c.clone());
+                c
+            }
+        };
+        Some((d,cube))
+    }
+
+    /// A proven lower bound on the sweep at `p` and the partition of the roll it was proven over:
+    /// `side`'s first-order bound search, lowest stretch split first, stopped when the lowest bound
+    /// is within `slack` of the lowest reading or after `budget` source evaluations. Contiguous
+    /// stretches are merged into runs under their least bound, those bounded `keep` or more above
+    /// the least apart from those that are not: a run near each contact, and the rest of the roll
+    /// in the runs between, which a point in the cube dismisses without reading. Always a lower bound however soon it
+    /// stops; minus infinity, over the whole roll, where the motion gives no speed bound.
+    fn bound_at(&self,p: [f64;3],slack: f64,budget: u64,keep: f64) -> Cube {
+        let [a,b] = self.domain.bounds();
+        let n = (1u64 << SIDE_DEPTH) as f64;
+        let time = |i: u64| a+(b-a)*(i as f64/n);
+        let table = self.poses.get_or_init(|| std::sync::Arc::new((0..=1u64 << SIDE_LEVELS)
+            .map(|k| self.motion.pose_at(time(k << (SIDE_DEPTH-SIDE_LEVELS))).ok().map(|m| m.inverse())).collect()));
+        let evaluations = std::cell::Cell::new(0u64);
+        let at = |i: u64| {
+            evaluations.set(evaluations.get()+1);
+            let step = SIDE_DEPTH-SIDE_LEVELS;
+            let pose = if i & ((1u64 << step)-1) == 0 { table[(i >> step) as usize] }
+                else { self.motion.pose_at(time(i)).ok().map(|m| m.inverse()) };
+            pose.map_or(f64::INFINITY,|m| self.source.value(m.point(p)))
+        };
+        let last = 1u64 << SIDE_DEPTH;
+        let whole = |low: f64| Cube {low,stretches:vec![(low,0,last)].into()};
+        let cube = (|| {
+            let (fa,fb) = (at(0),at(last));
+            let mut best = fa.min(fb);
+            if !(b > a) { return whole(best); }
+            let Ok(speed) = self.motion.inverse_point_speed_bound(p,self.domain) else { return whole(f64::NEG_INFINITY) };
+            let per = (b-a)/n;
+            let bound = |i0: u64,f0: f64,i1: u64,f1: f64| 0.5*(f0+f1)-0.5*speed*per*(i1-i0) as f64;
+            let mut stretches: Vec<(f64,u64,f64,u64,f64)> = vec![(bound(0,fa,last,fb),0,fa,last,fb)];
+            loop {
+                let k = (0..stretches.len()).min_by(|&x,&y| stretches[x].0.total_cmp(&stretches[y].0)).unwrap();
+                let low = stretches[k].0.min(best);
+                if best-low <= slack || evaluations.get() >= budget || stretches[k].3-stretches[k].1 < 2 {
+                    // In roll order, the stretches near the least kept apart and the rest merged.
+                    stretches.sort_by_key(|s| s.1);
+                    let mut kept: Vec<(f64,u64,u64)> = Vec::new();
+                    for &(bl,i0,_,i1,_) in &stretches {
+                        match kept.last_mut() {
+                            Some(prev) if (prev.0 >= low+keep) == (bl >= low+keep) && prev.2 == i0 => { prev.0 = prev.0.min(bl); prev.2 = i1; }
+                            _ => kept.push((bl,i0,i1)),
+                        }
+                    }
+                    return Cube {low,stretches:kept.into()};
+                }
+                let (_,i0,f0,i1,f1) = stretches.swap_remove(k);
+                let m = i0+(i1-i0)/2;
+                let fm = at(m);
+                best = best.min(fm);
+                stretches.push((bound(i0,f0,m,fm),i0,f0,m,fm));
+                stretches.push((bound(m,fm,i1,f1),m,fm,i1,f1));
+            }
+        })();
+        tally(1,evaluations.get());
+        cube
     }
 
     /// How far `p` stands outside the box the whole sweep lies in, when it does: then no pose of
@@ -115,6 +315,8 @@ impl SweptField {
     /// bound decides, and near it the work grows as the logarithm of the distance.
     pub fn side(&self,p: [f64;3]) -> f64 {
         if let Some(d) = self.clear_of(p) { return d; }
+        let seed = self.cube(p);
+        if let Some((d,c)) = &seed { if c.low-d > 0. { return c.low-d; } }
         let [a,b] = self.domain.bounds();
         let n = (1u64 << SIDE_DEPTH) as f64;
         let time = |i: u64| a+(b-a)*(i as f64/n);
@@ -125,32 +327,35 @@ impl SweptField {
             evaluations.set(evaluations.get()+1);
             self.motion.pose_at(t).ok().map(|m| m.inverse()).map_or(f64::INFINITY,|m| self.source.value(m.point(p)))
         };
-        let at = |i: u64| {
+        let read = Reads::new(|i: u64| {
             evaluations.set(evaluations.get()+1);
             let step = SIDE_DEPTH-SIDE_LEVELS;
             let pose = if i & ((1u64 << step)-1) == 0 { table[(i >> step) as usize] }
                 else { self.motion.pose_at(time(i)).ok().map(|m| m.inverse()) };
             pose.map_or(f64::INFINITY,|m| self.source.value(m.point(p)))
-        };
+        });
         let last = 1u64 << SIDE_DEPTH;
-        let (fa,fb) = (at(0),at(last));
-        let mut best = fa.min(fb);
-        let count = |n: u64| SIDE_EVALUATIONS.fetch_add(n,std::sync::atomic::Ordering::Relaxed);
-        if !(b > a) || best < 0. { count(evaluations.get()); return best; }
-        let Ok(speed) = self.motion.inverse_point_speed_bound(p,self.domain) else { count(evaluations.get()); return best };
+        let count = |n: u64| tally(2,n);
         let per = (b-a)/n;
+        let speed = std::cell::OnceCell::new();
+        let speed = || *speed.get_or_init(|| self.motion.inverse_point_speed_bound(p,self.domain).unwrap_or(f64::INFINITY));
+        // A stretch's bound from its readings here, or the bound it came with where that is higher
+        // (a cube's, carried to this point, or the stretch it was split from).
+        let bound = |i0: u64,f0: f64,i1: u64,f1: f64,given: f64| (0.5*(f0+f1)-0.5*speed()*per*(i1-i0) as f64).max(given);
+        let mut stretches = std::collections::BinaryHeap::new();
+        let mut best = f64::INFINITY;
+        match &seed {
+            Some((d,c)) => for &(bl,i0,i1) in c.stretches.iter() { stretches.push(Stretch(bl-d,i0,f64::NAN,i1,f64::NAN)); },
+            None => {
+                let (fa,fb) = (read.at(0),read.at(last));
+                best = fa.min(fb);
+                if !(b > a) || best < 0. { count(evaluations.get()); return best; }
+                stretches.push(Stretch(bound(0,fa,last,fb,f64::NEG_INFINITY),0,fa,last,fb));
+            }
+        }
         // A bound this close to zero leaves the side a tie a mesher's bisection resolves by
         // position; refining it further buys a sign nothing downstream can use.
         let tolerance = 1e-10*(1.+(p[0]*p[0]+p[1]*p[1]+p[2]*p[2]).sqrt());
-        let bound = |i0: u64,f0: f64,i1: u64,f1: f64| 0.5*(f0+f1)-0.5*speed*per*(i1-i0) as f64;
-        // Lowest bound first: a heap ordered by the bound reversed.
-        #[derive(PartialEq)]
-        struct Stretch(f64,u64,f64,u64,f64);
-        impl Eq for Stretch {}
-        impl PartialOrd for Stretch { fn partial_cmp(&self,o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
-        impl Ord for Stretch { fn cmp(&self,o: &Self) -> std::cmp::Ordering { o.0.total_cmp(&self.0) } }
-        let mut stretches = std::collections::BinaryHeap::new();
-        stretches.push(Stretch(bound(0,fa,last,fb),0,fa,last,fb));
         // Near a rolling contact the path runs along the tool, so the source rises slowly away
         // from its minimum: a long shallow basin that a first-order bound splits stretch by
         // stretch at every level. So splitting stops at `SIDE_BASIN`: the stretches that may
@@ -161,10 +366,36 @@ impl SweptField {
         let result = 'search: {
         loop {
             let Some(Stretch(low,i0,f0,i1,f1)) = stretches.pop() else { break 'search best };
-            if low > -tolerance { break 'search best; }
+            if low > -tolerance {
+                // every stretch left is above zero: a reading says how far, if none was made
+                if !best.is_finite() { best = read.at(i0).min(read.at(i1)); }
+                break 'search best;
+            }
+            // A stretch carried from a cube is read here before it is split.
+            if f0.is_nan() || f1.is_nan() {
+                let (f0,f1) = (read.at(i0),read.at(i1));
+                best = best.min(f0).min(f1);
+                if best < 0. { break 'search best; }
+                stretches.push(Stretch(bound(i0,f0,i1,f1,low),i0,f0,i1,f1));
+                continue;
+            }
             if i1-i0 <= basin {
+                // A basin is searched only once every stretch still open is a basin wide: one
+                // carried from a cube may be wider, and its interior is no reading's neighbour.
+                if let Some(wide) = widest(&mut stretches,basin,-tolerance) {
+                    stretches.push(Stretch(low,i0,f0,i1,f1));
+                    let Stretch(wl,w0,g0,w1,g1) = wide;
+                    let (g0,g1) = (read.or(w0,g0),read.or(w1,g1));
+                    let wm = w0+(w1-w0)/2;
+                    let gm = read.at(wm);
+                    best = best.min(g0).min(g1).min(gm);
+                    if best < 0. { break 'search best; }
+                    stretches.push(Stretch(bound(w0,g0,wm,gm,wl),w0,g0,wm,gm));
+                    stretches.push(Stretch(bound(wm,gm,w1,g1,wl),wm,gm,w1,g1));
+                    continue;
+                }
                 let mut open: Vec<(u64,f64,u64,f64)> = vec![(i0,f0,i1,f1)];
-                open.extend(stretches.drain().filter(|s| s.0 <= -tolerance).map(|s| (s.1,s.2,s.3,s.4)));
+                open.extend(stretches.drain().filter(|s| s.0 <= -tolerance).map(|s| (s.1,read.or(s.1,s.2),s.3,read.or(s.3,s.4))));
                 open.sort_by_key(|s| s.0);
                 let mut runs: Vec<Vec<(u64,f64,u64,f64)>> = Vec::new();
                 for s in open {
@@ -175,33 +406,27 @@ impl SweptField {
                     let mut readings: Vec<(u64,f64)> = run.iter().map(|s| (s.0,s.1)).collect();
                     let end = run[run.len()-1];
                     readings.push((end.2,end.3));
+                    if let Some(&(_,v)) = readings.iter().find(|r| r.1 < 0.) { break 'search v; }
                     let k = (0..readings.len()).min_by(|&x,&y| readings[x].1.total_cmp(&readings[y].1)).unwrap();
                     let w = run[0].2-run[0].0;
                     let (w0,w1) = (readings[k.saturating_sub(1)].0.saturating_sub(if k == 0 { w } else { 0 }),
                         (if k+1 < readings.len() { readings[k+1].0 } else { readings[k].0+w }).min(last));
-                    let (mut lo,mut hi) = (time(w0),time(w1));
-                    let g = 0.5*(5f64.sqrt()-1.);
-                    let (mut x1,mut x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
-                    let (mut g1,mut g2) = (at_time(x1),at_time(x2));
-                    // 28 steps narrow the bracket by 10⁻⁶: the minimum is quadratic, so its value
-                    // is then found to 10⁻¹² of the bracket's rise, far below any tolerance.
-                    for _ in 0..28 {
-                        if g1.min(g2) < 0. { break; }
-                        if g1 <= g2 { hi = x2; x2 = x1; g2 = g1; x1 = hi-g*(hi-lo); g1 = at_time(x1); }
-                        else { lo = x1; x1 = x2; g1 = g2; x2 = lo+g*(hi-lo); g2 = at_time(x2); }
-                    }
-                    let found = g1.min(g2);
+                    let (lo,hi) = (time(w0),time(w1));
+                    // A bracket narrowed to 10⁻⁶ leaves the quadratic minimum's value found to
+                    // 10⁻¹² of the bracket's rise, far below any tolerance; a negative reading
+                    // settles the side at once.
+                    let (found,_) = brent(&at_time,lo,hi,1e-6*(hi-lo),60,|v| v < 0.);
                     best = best.min(found);
                     if found < 0. { break 'search found; }
                 }
                 break 'search best;
             }
             let im = i0+(i1-i0)/2;
-            let fm = at(im);
+            let fm = read.at(im);
             best = best.min(fm);
             if fm < 0. { break 'search fm; }
-            stretches.push(Stretch(bound(i0,f0,im,fm),i0,f0,im,fm));
-            stretches.push(Stretch(bound(im,fm,i1,f1),im,fm,i1,f1));
+            stretches.push(Stretch(bound(i0,f0,im,fm,low),i0,f0,im,fm));
+            stretches.push(Stretch(bound(im,fm,i1,f1,low),im,fm,i1,f1));
         }
         };
         count(evaluations.get());
@@ -257,26 +482,19 @@ impl SweptField {
             pose.map_or(f64::INFINITY,|m| self.source.value(m.point(p)))
         };
         let last = 1u64 << SIDE_DEPTH;
-        let (fa,fb) = (at(0),at(last));
+        let seed = if b > a { self.cube(p) } else { None };
+        let read = Reads::new(|i: u64| at(i));
+        let (fa,fb) = if seed.is_some() { (f64::INFINITY,f64::INFINITY) } else { (read.at(0),read.at(last)) };
         let (mut best,mut best_t) = if fa <= fb { (fa,a) } else { (fb,b) };
-        let count = |n: u64| SIDE_EVALUATIONS.fetch_add(n,std::sync::atomic::Ordering::Relaxed);
+        let count = |n: u64| tally(3,n);
         let done = |value: f64,time: f64,tied: bool,n: u64| { count(n); SweptMinimum {value,time,tied} };
         if !(b > a) { return done(best,best_t,false,evaluations.get()); }
         let basin = last >> SIDE_BASIN;
-        // The golden section about a bracket, stopping once its two readings agree to `stop`.
-        let golden = |mut lo: f64,mut hi: f64,stop: f64| -> (f64,f64) {
-            let g = 0.5*(5f64.sqrt()-1.);
-            let (mut x1,mut x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
-            let (mut g1,mut g2) = (at_time(x1),at_time(x2));
-            for _ in 0..40 {
-                if hi-lo <= 1e-12*(1.+hi.abs()) { break; }
-                // the minimum is quadratic: once the two readings agree to the accuracy asked,
-                // the least of them is that close to it, however near zero it is
-                if (g1-g2).abs() <= 0.25*stop { break; }
-                if g1 <= g2 { hi = x2; x2 = x1; g2 = g1; x1 = hi-g*(hi-lo); g1 = at_time(x1); }
-                else { lo = x1; x1 = x2; g1 = g2; x2 = lo+g*(hi-lo); g2 = at_time(x2); }
-            }
-            if g1 <= g2 { (g1,x1) } else { (g2,x2) }
+        // The minimum in a bracket, by Brent's search, narrowed to 10⁻⁸ of the bracket: the
+        // minimum is quadratic, so its value is then within 10⁻¹⁶ of the bracket's rise of it,
+        // below any accuracy asked (`_stop`, kept for the golden section this replaced).
+        let golden = |lo: f64,hi: f64,_stop: f64| -> (f64,f64) {
+            brent(&at_time,lo,hi,(1e-8*(hi-lo)).max(1e-15*(1.+hi.abs())),80,|_| false)
         };
         // The hint's window, in grid indices, searched first; `None` when cold.
         let window = hint.filter(|t| t.is_finite() && *t >= a && *t <= b).map(|t| {
@@ -295,26 +513,44 @@ impl SweptField {
         }
         let Ok(speed) = self.motion.inverse_point_speed_bound(p,self.domain) else { return done(best,best_t,false,evaluations.get()) };
         let per = (b-a)/n;
-        let bound = |i0: u64,f0: f64,i1: u64,f1: f64| 0.5*(f0+f1)-0.5*speed*per*(i1-i0) as f64;
-        #[derive(PartialEq)]
-        struct Stretch(f64,u64,f64,u64,f64);
-        impl Eq for Stretch {}
-        impl PartialOrd for Stretch { fn partial_cmp(&self,o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
-        impl Ord for Stretch { fn cmp(&self,o: &Self) -> std::cmp::Ordering { o.0.total_cmp(&self.0) } }
+        let bound = |i0: u64,f0: f64,i1: u64,f1: f64,given: f64| (0.5*(f0+f1)-0.5*speed*per*(i1-i0) as f64).max(given);
         let mut stretches = std::collections::BinaryHeap::new();
-        stretches.push(Stretch(bound(0,fa,last,fb),0,fa,last,fb));
+        match &seed {
+            Some((d,c)) => for &(bl,i0,i1) in c.stretches.iter() { stretches.push(Stretch(bl-d,i0,f64::NAN,i1,f64::NAN)); },
+            None => stretches.push(Stretch(bound(0,fa,last,fb,f64::NEG_INFINITY),0,fa,last,fb)),
+        }
         let mut tied = false;
         let searched = |i0: u64,i1: u64| window.is_some_and(|(w0,w1,_)| i0 >= w0 && i1 <= w1);
         loop {
             let Some(Stretch(low,i0,f0,i1,f1)) = stretches.pop() else { break };
-            let accuracy = accuracy.max(relative*best.abs());
+            let accuracy = accuracy.max(if best.is_finite() { relative*best.abs() } else { 0. });
             if low > best-accuracy { break; }
             if searched(i0,i1) { continue; }
+            // A stretch carried from a cube is read here before it is split.
+            if f0.is_nan() || f1.is_nan() {
+                let (f0,f1) = (read.at(i0),read.at(i1));
+                if f0 < best { best = f0; best_t = time(i0); }
+                if f1 < best { best = f1; best_t = time(i1); }
+                stretches.push(Stretch(bound(i0,f0,i1,f1,low),i0,f0,i1,f1));
+                continue;
+            }
             if i1-i0 <= basin {
+                if let Some(wide) = widest(&mut stretches,basin,best-accuracy) {
+                    stretches.push(Stretch(low,i0,f0,i1,f1));
+                    let Stretch(wl,w0,g0,w1,g1) = wide;
+                    let (g0,g1) = (read.or(w0,g0),read.or(w1,g1));
+                    let wm = w0+(w1-w0)/2;
+                    let gm = read.at(wm);
+                    for (i,g) in [(w0,g0),(w1,g1),(wm,gm)] { if g < best { best = g; best_t = time(i); } }
+                    stretches.push(Stretch(bound(w0,g0,wm,gm,wl),w0,g0,wm,gm));
+                    stretches.push(Stretch(bound(wm,gm,w1,g1,wl),wm,gm,w1,g1));
+                    continue;
+                }
                 // As in `side`: the stretches still able to beat the best reading, grouped into
                 // contiguous runs, each a basin whose minimum golden section finds.
                 let mut open: Vec<(u64,f64,u64,f64)> = vec![(i0,f0,i1,f1)];
-                open.extend(stretches.drain().filter(|s| s.0 <= best-accuracy && !searched(s.1,s.3)).map(|s| (s.1,s.2,s.3,s.4)));
+                open.extend(stretches.drain().filter(|s| s.0 <= best-accuracy && !searched(s.1,s.3))
+                    .map(|s| (s.1,read.or(s.1,s.2),s.3,read.or(s.3,s.4))));
                 open.sort_by_key(|s| s.0);
                 let mut runs: Vec<Vec<(u64,f64,u64,f64)>> = Vec::new();
                 for s in open {
@@ -352,10 +588,10 @@ impl SweptField {
                 break;
             }
             let im = i0+(i1-i0)/2;
-            let fm = at(im);
+            let fm = read.at(im);
             if fm < best { best = fm; best_t = time(im); }
-            stretches.push(Stretch(bound(i0,f0,im,fm),i0,f0,im,fm));
-            stretches.push(Stretch(bound(im,fm,i1,f1),im,fm,i1,f1));
+            stretches.push(Stretch(bound(i0,f0,im,fm,low),i0,f0,im,fm));
+            stretches.push(Stretch(bound(im,fm,i1,f1,low),im,fm,i1,f1));
         }
         done(best,best_t,tied,evaluations.get())
     }
