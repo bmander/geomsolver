@@ -50,6 +50,13 @@ pub struct Criteria {
     pub bisection: f64,
     /// Refinement refuses past this many inserted points.
     pub max_points: usize,
+    /// The largest angle, in degrees, between the surface normals at a facet's vertices; 0 asks
+    /// nothing of them. Where the domain gives readings (`Progressive::with_reading`) this is what
+    /// makes the mesh follow the local feature size: the two walls of a thin feature have opposed
+    /// normals, so a facet reaching across it is refined until facets fit between them, and on a
+    /// curved face a facet is held to a fraction of its radius. A facet with a protecting ball for a
+    /// vertex is exempt — that vertex is on a sharp edge, where no one normal is the surface's.
+    pub normal_angle: f64,
 }
 
 /// What the refinement did.
@@ -113,6 +120,8 @@ struct Refiner<'a> {
     ball_of: HashMap<u32,usize>,
     /// Every side read, by the point's bits, carried across rebuilds.
     memo: HashMap<[u64;3],i8>,
+    /// The surface normal at each vertex asked about, by its bits (`normal`).
+    normals: HashMap<[u64;3],Option<P>>,
     /// Every crossing found, by its segment's ends and the first end's side, carried across
     /// rebuilds with the sides: a rebuild inserts the same points, so most of its dual segments
     /// are the last build's to the bit, and a crossing by readings costs a field search each.
@@ -322,8 +331,40 @@ impl Refiner<'_> {
         Some((key,centre))
     }
 
+    /// The surface normal at a vertex, from the domain's gradient there, made once: `None` without
+    /// readings or where the gradient vanishes.
+    fn normal(&mut self,p: P) -> Option<P> {
+        let key = p.map(f64::to_bits);
+        if let Some(&n) = self.normals.get(&key) { return n; }
+        let n = self.reading.as_mut().and_then(|read| {
+            let (_,g) = read(p,false);
+            let l = dot(g,g).sqrt();
+            (l > 0. && l.is_finite()).then(|| g.map(|x| x/l))
+        });
+        self.normals.insert(key,n);
+        n
+    }
+
+    /// How badly a restricted facet's vertex normals disagree (above 1 is bad): 1 at
+    /// `normal_angle` between the two most different, 2 at twice it; 0 for a facet exempt.
+    fn normal_badness(&mut self,key: [u32;3]) -> f64 {
+        let limit = self.criteria.normal_angle;
+        if !(limit > 0.) || self.reading.is_none() { return 0.; }
+        let q = key.map(|v| self.tri.points()[v as usize]);
+        if q.iter().any(|w| w.w > 0.) { return 0.; }
+        let mut ns = Vec::with_capacity(3);
+        for w in q { match self.normal(w.p) { Some(n) => ns.push(n), None => return 0. } }
+        let least = [(0,1),(1,2),(2,0)].iter().map(|&(i,j)| dot(ns[i],ns[j])).fold(1f64,f64::min);
+        least.clamp(-1.,1.).acos().to_degrees()/limit
+    }
+
     /// How badly a restricted facet breaks the criteria (above 1 is bad).
-    fn badness(&self,key: [u32;3],centre: P) -> f64 {
+    fn badness(&mut self,key: [u32;3],centre: P) -> f64 {
+        let turned = self.normal_badness(key);
+        self.shape_badness(key,centre).max(turned)
+    }
+
+    fn shape_badness(&self,key: [u32;3],centre: P) -> f64 {
         let q = key.map(|v| self.tri.points()[v as usize]);
         let [a,b,c] = q.map(|w| w.p);
         let size2 = (dist2(centre,a)-q[0].w).max(0.);
@@ -811,7 +852,7 @@ impl<'a> Progressive<'a> {
         };
         let mut r = Refiner {domain,reading,centre:self.centre,radius:self.radius,criteria:criteria.clone(),
             tri:Regular::new(self.centre,self.radius),sign:Vec::new(),balls:Vec::new(),owners:Vec::new(),
-            ball_of:HashMap::new(),kept:Vec::new(),memo:std::mem::take(&mut self.memo),
+            ball_of:HashMap::new(),kept:Vec::new(),memo:std::mem::take(&mut self.memo),normals:HashMap::new(),
             crossings:std::mem::take(&mut self.crossings),blocking:Vec::new(),
             grid:HashMap::new(),cell,queue:BinaryHeap::new(),report:Report {queries:self.queries,..Report::default()}};
         // Protecting balls first, in spatial order.

@@ -15,7 +15,7 @@ fn field(source: &str,name: &str) -> MaterialField {
 /// The field meshed without features, coarsely, for its seeds.
 fn unprotected(field: &MaterialField,centre: [f64;3],radius: f64,facet: f64) -> refine::Mesh {
     let criteria = refine::Criteria {facet_size:facet,facet_distance:facet/20.,facet_angle:25.,edge_size:facet,
-        bisection:1e-7*radius,max_points:200_000};
+        bisection:1e-7*radius,max_points:200_000,normal_angle:0.};
     let f = field.clone();
     let mut run = refine::Progressive::new(Box::new(move |p| f.side(p)),centre,radius,Vec::new(),criteria);
     while !run.step(usize::MAX).unwrap() {}

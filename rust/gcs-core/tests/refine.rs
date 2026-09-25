@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 type P = [f64;3];
 
 fn criteria(size: f64) -> Criteria {
-    Criteria {facet_size:size,facet_distance:size/20.,facet_angle:25.,edge_size:size,bisection:1e-9,max_points:20_000}
+    Criteria {facet_size:size,facet_distance:size/20.,facet_angle:25.,edge_size:size,bisection:1e-9,max_points:20_000,normal_angle:0.}
 }
 
 /// The mesh is a closed oriented 2-manifold: every directed edge used once and its reverse once,
@@ -127,4 +127,42 @@ fn a_thin_ring_the_rays_miss_is_found_by_the_lattice() {
     assert_eq!(chi,0);
     let exact = 2.*std::f64::consts::PI.powi(2)*0.06*0.06;
     assert!((volume-exact).abs() < 0.05*exact,"volume {volume} against {exact}");
+}
+
+#[test]
+fn facets_follow_the_local_feature_size_by_their_normals() {
+    // A pancake: an ellipsoid 1 across and 0.05 thick, meshed with facets far wider than it is
+    // thick. With readings and `normal_angle`, a facet whose vertices' normals disagree — reaching
+    // round the rim, or across from one face to the other — is refined, so the mesh closes as a
+    // sphere does, holds the volume, and every facet keeps its normals within the angle asked.
+    let (a,c) = (1.,0.05);
+    let f = move |p: P| ((p[0]/a).powi(2)+(p[1]/a).powi(2)+(p[2]/c).powi(2)).sqrt()-1.;
+    let grad = move |p: P| -> P {
+        let r = ((p[0]/a).powi(2)+(p[1]/a).powi(2)+(p[2]/c).powi(2)).sqrt().max(1e-300);
+        [p[0]/(a*a*r),p[1]/(a*a*r),p[2]/(c*c*r)]
+    };
+    let mut crit = criteria(0.3);
+    crit.facet_distance = 0.01;
+    crit.normal_angle = 45.;
+    // no curves to space, but the spacing also sets the least surface ball refined (a twentieth of
+    // it): kept under the rim's radius of curvature, c²/a = 0.0025, so the rim can be resolved
+    crit.edge_size = 0.02;
+    crit.max_points = 200_000;
+    let mut run = gcs_core::delaunay::refine::Progressive::new(Box::new(move |p| f(p)),[0.;3],1.2,Vec::new(),crit)
+        .with_reading(Box::new(move |p,_| (f(p),grad(p))));
+    while !run.step(usize::MAX).unwrap() {}
+    let m = run.finished().unwrap();
+    let (chi,volume) = closed(&m);
+    eprintln!("pancake: {} triangles, {:?}",m.triangles.len(),m.report);
+    assert_eq!(chi,2);
+    let exact = 4./3.*std::f64::consts::PI*a*a*c;
+    assert!((volume-exact).abs() < 0.05*exact,"volume {volume} against {exact}");
+    let unit = |p: P| { let g = grad(p); let l = (g[0]*g[0]+g[1]*g[1]+g[2]*g[2]).sqrt(); g.map(|x| x/l) };
+    for t in &m.triangles {
+        let n = t.map(|i| unit(m.vertices[i as usize]));
+        for (i,j) in [(0,1),(1,2),(2,0)] {
+            let cos = (0..3).map(|k| n[i][k]*n[j][k]).sum::<f64>();
+            assert!(cos.clamp(-1.,1.).acos().to_degrees() <= 45.+1e-6,"a facet's normals are {}° apart",cos.acos().to_degrees());
+        }
+    }
 }

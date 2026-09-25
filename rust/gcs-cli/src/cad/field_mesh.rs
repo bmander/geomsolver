@@ -36,7 +36,7 @@ pub fn export_refine(sk: &gcs_core::model::Sketch,solid: usize,path: &str) -> Re
     let facet = setting("SOLVENT_REFINE_FACET",diagonal*scale/60.)/scale;
     let criteria = Criteria {facet_size:facet,facet_distance:setting("SOLVENT_REFINE_DISTANCE",0.005)/scale,
         facet_angle:setting("SOLVENT_REFINE_ANGLE",25.),edge_size:setting("SOLVENT_REFINE_EDGE",facet*scale)/scale,
-        bisection:1e-5*radius,max_points:2_000_000};
+        bisection:1e-5*radius,max_points:2_000_000,normal_angle:0.};
     // `SOLVENT_FEATURES=field` finds the features from the field itself, as the app does: a
     // coarse pass without them, and the creases its edges cross (`solid::field_creases`).
     let curves = if std::env::var("SOLVENT_FEATURES").as_deref() == Ok("field") {

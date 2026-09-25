@@ -69,6 +69,11 @@ struct Second {
 /// fifth of the whole on a surface with no crease, and shows a rough surface at once.
 const SEED_COARSENING: f64 = 3.0;
 
+/// The final pass's facets keep their vertices' normals within this many degrees of each other,
+/// which is what sizes them to the local feature (`Criteria::normal_angle`); the first pass asks
+/// nothing of them, having no sharp edges protected, where facets spanning a crease always differ.
+const NORMAL_ANGLE: f64 = 45.0;
+
 /// A first pass's facets are never coarser than this fraction of the material's own extent.
 const FIRST_FACETS: f64 = 20.0;
 
@@ -93,7 +98,8 @@ pub fn first_pass(field: &MaterialField, criteria: &Criteria, centre: [f64; 3], 
     let scale = facet_size / criteria.facet_size;
     (centre, radius, Criteria {
         facet_size, facet_distance: (scale * criteria.facet_distance).max(facet_size / 30.0),
-        edge_size: scale * criteria.edge_size, max_points: 100_000, ..criteria.clone()
+        edge_size: scale * criteria.edge_size, max_points: 100_000, normal_angle: 0.0,
+        ..criteria.clone()
     })
 }
 
@@ -133,7 +139,7 @@ impl FieldMesher {
         let facet = diagonal / FIELD_FACETS;
         let criteria = Criteria {
             facet_size: facet, facet_distance: diagonal / FIELD_DISTANCE, facet_angle: 25.0,
-            edge_size: facet, bisection: 1e-5 * radius, max_points: 500_000,
+            edge_size: facet, bisection: 1e-5 * radius, max_points: 500_000, normal_angle: NORMAL_ANGLE,
         };
         let (near, within, coarse) = first_pass(&field, &criteria, centre, radius);
         let run = Self::pass(&field, near, within, Vec::new(), coarse);
