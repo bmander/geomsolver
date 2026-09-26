@@ -590,15 +590,22 @@ impl Sizing {
 #[derive(Clone,Copy,Debug)]
 struct Place { curve: usize,s: f64,gap: f64 }
 
-/// Protecting balls along the curves: `(centre, radius)` and where each stands, with corners
-/// (curve ends, and ends shared by curves) once each. A closed curve repeats its first point at
-/// its end. Where balls neither consecutive on one curve nor sharing a corner meet, the curves
-/// are refined there, down to an eighth of `edge_size`.
 /// A polyline's length.
 fn length(c: &[P]) -> f64 { c.windows(2).map(|w| dist2(w[0],w[1]).sqrt()).sum::<f64>() }
 
-fn protect(curves: &[Vec<P>],edge_size: f64,sizing: &mut [Sizing]) -> Result<(Vec<(P,f64)>,Vec<Vec<Place>>),String> {
-    let at = |c: &[P],s: f64| -> P {
+/// The feature curves as `protect` reads them: each with its length and whether it closes (its
+/// last point its first).
+struct Curves<'c> { curves: &'c [Vec<P>],lengths: Vec<f64>,closed: Vec<bool> }
+
+impl<'c> Curves<'c> {
+    fn new(curves: &'c [Vec<P>]) -> Self {
+        Self {curves,lengths:curves.iter().map(|c| length(c)).collect(),
+            closed:curves.iter().map(|c| c.len() >= 2 && dist2(c[0],*c.last().unwrap()) == 0.).collect()}
+    }
+
+    /// The point at arc length `s` along curve `k`.
+    fn at(&self,k: usize,s: f64) -> P {
+        let c = &self.curves[k];
         let mut left = s;
         for w in c.windows(2) {
             let l = dist2(w[0],w[1]).sqrt();
@@ -606,108 +613,155 @@ fn protect(curves: &[Vec<P>],edge_size: f64,sizing: &mut [Sizing]) -> Result<(Ve
             left -= l;
         }
         *c.last().unwrap()
-    };
-    let lengths: Vec<f64> = curves.iter().map(|c| length(c)).collect();
-    let closed: Vec<bool> = curves.iter().map(|c| c.len() >= 2 && dist2(c[0],*c.last().unwrap()) == 0.).collect();
-    let finest = edge_size/8.;
-    let least = edge_size/LEAST;
-    for round in 0..16 {
-        // Each ball: centre, radius, and the (curve, station) places it stands at; a corner
-        // stands at several. `at_place` finds a ball by place.
-        let mut balls: Vec<(P,f64)> = Vec::new();
-        let mut places: Vec<Vec<(usize,usize)>> = Vec::new();
-        let mut at_place: std::collections::BTreeMap<(usize,usize),usize> = Default::default();
-        let stations: Vec<Vec<f64>> = (0..curves.len()).map(|k|
-            if curves[k].len() < 2 { Vec::new() } else { sizing[k].stations(lengths[k],closed[k]) }).collect();
-        // The shorter gap either side of station `j`.
-        let gap = |k: usize,j: usize| -> f64 {
-            let st = &stations[k];
-            let n = st.len();
-            let next = if j+1 < n { st[j+1]-st[j] } else if closed[k] { lengths[k]-st[j] } else { f64::INFINITY };
-            let prev = if j > 0 { st[j]-st[j-1] } else if closed[k] { lengths[k]-st[n-1] } else { f64::INFINITY };
-            next.min(prev)
-        };
-        for (k,c) in curves.iter().enumerate() {
-            let n = stations[k].len();
+    }
+}
+
+/// One round's protecting balls: the curves' stations under the sizing, each ball's centre and
+/// radius, and the `(curve, station)` places it stands at — a corner at several — with `at_place`
+/// finding a ball by place.
+struct Protection<'c> {
+    curves: &'c Curves<'c>,
+    edge_size: f64,
+    stations: Vec<Vec<f64>>,
+    balls: Vec<(P,f64)>,
+    places: Vec<Vec<(usize,usize)>>,
+    at_place: std::collections::BTreeMap<(usize,usize),usize>,
+    /// Each ball's neighbours along its curves, and whether it is a corner.
+    neighbours: Vec<Vec<usize>>,
+    corner: Vec<bool>,
+}
+
+impl<'c> Protection<'c> {
+    fn new(curves: &'c Curves<'c>,sizing: &[Sizing],edge_size: f64) -> Self {
+        let stations: Vec<Vec<f64>> = (0..curves.curves.len()).map(|k| if curves.curves[k].len() < 2 { Vec::new() }
+            else { sizing[k].stations(curves.lengths[k],curves.closed[k]) }).collect();
+        let mut p = Self {curves,edge_size,stations,balls:Vec::new(),places:Vec::new(),at_place:Default::default(),
+            neighbours:Vec::new(),corner:Vec::new()};
+        for (k,c) in curves.curves.iter().enumerate() {
+            let n = p.stations[k].len();
             for j in 0..n {
                 // A curve's ends are its own points exactly: an end is a corner another curve
                 // must meet.
-                let p = if j == 0 { c[0] } else if !closed[k] && j+1 == n { *c.last().unwrap() } else { at(c,stations[k][j]) };
-                let r = BALL*gap(k,j);
-                let end = j == 0 || (!closed[k] && j+1 == n);
-                let same = |q: P| dist2(q,p) <= (1e-9*edge_size)*(1e-9*edge_size);
-                let b = match balls.iter().position(|b| end && same(b.0)) {
-                    Some(b) => { balls[b].1 = balls[b].1.min(r); b }
-                    None => { balls.push((p,r)); places.push(Vec::new()); balls.len()-1 }
+                let end = j == 0 || (!curves.closed[k] && j+1 == n);
+                let at = if j == 0 { c[0] } else if end { *c.last().unwrap() } else { curves.at(k,p.stations[k][j]) };
+                let r = BALL*p.gap(k,j);
+                let same = |q: P| dist2(q,at) <= (1e-9*edge_size)*(1e-9*edge_size);
+                let b = match p.balls.iter().position(|b| end && same(b.0)) {
+                    Some(b) => { p.balls[b].1 = p.balls[b].1.min(r); b }
+                    None => { p.balls.push((at,r)); p.places.push(Vec::new()); p.balls.len()-1 }
                 };
-                places[b].push((k,j));
-                at_place.insert((k,j),b);
+                p.places[b].push((k,j));
+                p.at_place.insert((k,j),b);
             }
         }
-        // Neighbours along a curve, cyclically on a closed one.
-        let next_to = |b: usize| -> Vec<usize> {
-            let mut out = Vec::new();
-            for &(k,j) in &places[b] {
-                let n = stations[k].len();
-                let mut near = Vec::new();
-                if j > 0 { near.push(j-1); } else if closed[k] { near.push(n-1); }
-                if j+1 < n { near.push(j+1); } else if closed[k] { near.push(0); }
-                out.extend(near.into_iter().filter_map(|m| at_place.get(&(k,m)).copied()));
+        p.neighbours = (0..p.balls.len()).map(|b| p.next_to(b)).collect();
+        p.corner = p.places.iter().map(|q| q.len() > 1).collect();
+        p
+    }
+
+    /// The shorter gap either side of station `j` of curve `k`.
+    fn gap(&self,k: usize,j: usize) -> f64 {
+        let (st,closed,length) = (&self.stations[k],self.curves.closed[k],self.curves.lengths[k]);
+        let n = st.len();
+        let next = if j+1 < n { st[j+1]-st[j] } else if closed { length-st[j] } else { f64::INFINITY };
+        let prev = if j > 0 { st[j]-st[j-1] } else if closed { length-st[n-1] } else { f64::INFINITY };
+        next.min(prev)
+    }
+
+    /// Ball `b`'s neighbours along its curves, cyclically on a closed one.
+    fn next_to(&self,b: usize) -> Vec<usize> {
+        let mut out = Vec::new();
+        for &(k,j) in &self.places[b] {
+            let n = self.stations[k].len();
+            let mut near = Vec::new();
+            if j > 0 { near.push(j-1); } else if self.curves.closed[k] { near.push(n-1); }
+            if j+1 < n { near.push(j+1); } else if self.curves.closed[k] { near.push(0); }
+            out.extend(near.into_iter().filter_map(|m| self.at_place.get(&(k,m)).copied()));
+        }
+        out
+    }
+
+    /// Two balls may meet when consecutive, or both next to one corner.
+    fn may_meet(&self,x: usize,y: usize) -> bool {
+        self.neighbours[x].contains(&y)
+            || self.neighbours[x].iter().any(|&c| self.corner[c] && self.neighbours[y].contains(&c))
+    }
+
+    /// Whether every place of ball `b` is within `edge_size` along its curve of a place of `c`.
+    /// Near a corner where two curves meet at a small angle they part only linearly (or
+    /// quadratically, tangent), and no spacing keeps their balls apart there: once a curve is at
+    /// its finest spacing (an eighth of `edge_size`), balls within `edge_size` along their curves
+    /// of a corner both share may meet. A distance and not a count of stations: a rebuild
+    /// samples a curve more finely than the finest, and the region stays the same.
+    fn near_corner(&self,b: usize,c: usize) -> bool {
+        let reach = self.edge_size*1.0001;
+        self.places[b].iter().all(|&(k,j)| self.places[c].iter().any(|&(kc,jc)| {
+            kc == k && {
+                let along = (self.stations[k][j]-self.stations[k][jc]).abs();
+                along <= reach || (self.curves.closed[k] && self.curves.lengths[k]-along <= reach)
             }
-            out
-        };
-        let neighbours: Vec<Vec<usize>> = (0..balls.len()).map(next_to).collect();
-        let corner: Vec<bool> = places.iter().map(|p| p.len() > 1).collect();
-        // Two balls may meet when consecutive, or both next to one corner.
-        let may_meet = |x: usize,y: usize| {
-            neighbours[x].contains(&y)
-                || neighbours[x].iter().any(|&c| corner[c] && neighbours[y].contains(&c))
-        };
-        // Near a corner where two curves meet at a small angle they part only linearly (or
-        // quadratically, tangent), and no spacing keeps their balls apart there: once a curve is
-        // at its finest spacing (an eighth of `edge_size`), balls within `edge_size` along their
-        // curves of a corner both share may meet. A distance and not a count of stations: a
-        // rebuild samples a curve more finely than `finest`, and the region stays the same.
-        let near_corner = |b: usize,c: usize| -> bool {
-            places[b].iter().all(|&(k,j)| places[c].iter().any(|&(kc,jc)| {
-                kc == k && {
-                    let along = (stations[k][j]-stations[k][jc]).abs();
-                    along <= edge_size*1.0001 || (closed[k] && lengths[k]-along <= edge_size*1.0001)
-                }
-            }))
-        };
-        let fine_gap = finest*1.0001;
-        let fine = |b: usize| places[b].iter().all(|&(k,j)| gap(k,j) <= fine_gap);
-        // Likewise a curve turning more tightly than its finest balls: stations within
-        // `edge_size` of each other along it may meet, the turn being a corner at that scale.
-        let beside = |x: usize,y: usize| (0..balls.len()).any(|c| corner[c] && near_corner(x,c) && near_corner(y,c)) || near_corner(x,y);
-        let tangent = |x: usize,y: usize| fine(x) && fine(y) && beside(x,y);
-        let mut tight: Vec<(usize,f64,f64)> = Vec::new();
+        }))
+    }
+
+    /// Both balls beside one corner they share (or each other): likewise a curve turning more
+    /// tightly than its finest balls, stations within `edge_size` of each other along it, the
+    /// turn being a corner at that scale.
+    fn beside(&self,x: usize,y: usize) -> bool {
+        (0..self.balls.len()).any(|c| self.corner[c] && self.near_corner(x,c) && self.near_corner(y,c)) || self.near_corner(x,y)
+    }
+
+    /// Every place of ball `b` at the finest spacing.
+    fn fine(&self,b: usize,finest: f64) -> bool { self.places[b].iter().all(|&(k,j)| self.gap(k,j) <= finest*1.0001) }
+
+    /// The balls that meet and may not: each place to refine, `(curve, arc length, spacing)`, and
+    /// the first such pair, or none when every ball keeps its distance. Beside a corner both
+    /// share, straight to the finest spacing (halving one station at a time, the next round's
+    /// stations stand elsewhere and the pair that met is a different pair). Elsewhere two curves
+    /// merely pass close, and their balls are sized to the distance between them, however fine
+    /// that is, down to `least`.
+    fn meeting(&self,finest: f64,least: f64) -> (Vec<(usize,f64,f64)>,Option<(usize,usize)>) {
+        let mut tight = Vec::new();
         let mut example = None;
-        for x in 0..balls.len() { for y in x+1..balls.len() {
-            let reach = balls[x].1+balls[y].1;
-            if dist2(balls[x].0,balls[y].0) >= reach*reach || may_meet(x,y) || tangent(x,y) { continue; }
-            // Beside a corner both share, straight to the finest spacing (halving one station at
-            // a time, the next round's stations stand elsewhere and the pair that met is a
-            // different pair). Elsewhere two curves merely pass close, and their balls are sized
-            // to the distance between them, however fine that is.
-            let d = dist2(balls[x].0,balls[y].0).sqrt();
-            let target = if beside(x,y) { finest } else { (0.9*d/(2.*BALL)).max(least) };
-            for &(k,j) in places[x].iter().chain(&places[y]) {
-                if gap(k,j) > target*1.0001 { tight.push((k,stations[k][j],target)); }
+        for x in 0..self.balls.len() { for y in x+1..self.balls.len() {
+            let reach = self.balls[x].1+self.balls[y].1;
+            if dist2(self.balls[x].0,self.balls[y].0) >= reach*reach || self.may_meet(x,y) { continue; }
+            if self.fine(x,finest) && self.fine(y,finest) && self.beside(x,y) { continue; }
+            let d = dist2(self.balls[x].0,self.balls[y].0).sqrt();
+            let target = if self.beside(x,y) { finest } else { (0.9*d/(2.*BALL)).max(least) };
+            for &(k,j) in self.places[x].iter().chain(&self.places[y]) {
+                if self.gap(k,j) > target*1.0001 { tight.push((k,self.stations[k][j],target)); }
             }
             example.get_or_insert((x,y));
         } }
-        if example.is_none() {
-            let owners = places.iter().map(|p| p.iter().map(|&(k,j)| Place {curve:k,s:stations[k][j],gap:gap(k,j)}).collect()).collect();
-            return Ok((balls,owners));
-        }
-        if tight.is_empty() || round == 15 {
-            let (x,y) = example.unwrap();
-            return Err(format!("the feature curves could not be protected: balls at {:?} and {:?} (places {:?} and {:?}) \
-                still meet, finest {:.2e} (radii {:.3e} and {:.3e}, gaps {:?} and {:?}, round {round})",balls[x].0,balls[y].0,places[x],places[y],finest,
-                balls[x].1,balls[y].1,places[x].iter().map(|&(k,j)| gap(k,j)).collect::<Vec<_>>(),places[y].iter().map(|&(k,j)| gap(k,j)).collect::<Vec<_>>()));
-        }
+        (tight,example)
+    }
+
+    /// Where each ball stands, for a later shrink (`Place`).
+    fn owners(&self) -> Vec<Vec<Place>> {
+        self.places.iter().map(|p| p.iter().map(|&(k,j)| Place {curve:k,s:self.stations[k][j],gap:self.gap(k,j)}).collect()).collect()
+    }
+
+    /// Why balls `x` and `y` could not be kept apart.
+    fn refusal(&self,x: usize,y: usize,finest: f64,round: usize) -> String {
+        let gaps = |b: usize| self.places[b].iter().map(|&(k,j)| self.gap(k,j)).collect::<Vec<_>>();
+        format!("the feature curves could not be protected: balls at {:?} and {:?} (places {:?} and {:?}) \
+            still meet, finest {finest:.2e} (radii {:.3e} and {:.3e}, gaps {:?} and {:?}, round {round})",
+            self.balls[x].0,self.balls[y].0,self.places[x],self.places[y],self.balls[x].1,self.balls[y].1,gaps(x),gaps(y))
+    }
+}
+
+/// Protecting balls along the curves: `(centre, radius)` and where each stands, with corners
+/// (curve ends, and ends shared by curves) once each. A closed curve repeats its first point at
+/// its end. Where balls neither consecutive on one curve nor sharing a corner meet, the curves
+/// are refined there (`Protection::meeting`), a round at a time.
+fn protect(curves: &[Vec<P>],edge_size: f64,sizing: &mut [Sizing]) -> Result<(Vec<(P,f64)>,Vec<Vec<Place>>),String> {
+    let curves = Curves::new(curves);
+    let (finest,least) = (edge_size/8.,edge_size/LEAST);
+    for round in 0..16 {
+        let p = Protection::new(&curves,sizing,edge_size);
+        let (tight,example) = p.meeting(finest,least);
+        let Some((x,y)) = example else { return Ok((p.balls.clone(),p.owners())); };
+        if tight.is_empty() || round == 15 { return Err(p.refusal(x,y,finest,round)); }
         for (k,s,h) in tight { sizing[k].local.push((s,h)); }
     }
     unreachable!()
