@@ -12,10 +12,10 @@ gcs-core = { path = "../gcs-core" }
 
 [features]
 occt = []
-manifold = []
 
 [dev-dependencies]
 gcs-core = { path = "../gcs-core" }
+fixtures = { path = "../fixtures" }
 
 [[bin]]
 name = "solventc"
@@ -29,9 +29,9 @@ path = "tests/native_surfaces.rs"
 required-features = ["occt"]
 
 [[test]]
-name = "mesh_sweep"
-path = "tests/mesh_sweep.rs"
-required-features = ["manifold"]
+name = "generating_harness"
+path = "tests/generating_harness.rs"
+required-features = ["occt"]
 
 [[test]]
 name = "native_boundary"

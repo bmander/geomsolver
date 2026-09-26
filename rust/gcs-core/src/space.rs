@@ -1,25 +1,62 @@
-//! Points and triangles in space: the vector arithmetic and the few triangle measures the swept
-//! boundary and the tracer share, written once.
-pub(crate) use crate::plane::{cross,dot,norm};
+//! Points and triangles in space: the vector arithmetic and the few triangle measures the core,
+//! the CLI's native construction and their tests share, written once.
+//!
+//! Each helper is one fixed expression, and callers rely on its bits: a mesh is compared
+//! byte for byte across refactors, so a helper is not rewritten into an equal-in-exact-arithmetic
+//! form (`norm` is `sqrt(dot)`, and `length` — by `hypot` — is a different number).
 
 type V3 = [f64;3];
 
-pub(crate) fn sub(a: V3,b: V3) -> V3 { [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
-pub(crate) fn add(a: V3,b: V3) -> V3 { [a[0]+b[0],a[1]+b[1],a[2]+b[2]] }
-pub(crate) fn scale(a: V3,s: f64) -> V3 { a.map(|x| x*s) }
-pub(crate) fn distance(a: V3,b: V3) -> f64 { norm(sub(a,b)) }
-pub(crate) fn lerp(a: V3,b: V3,t: f64) -> V3 { [a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1]),a[2]+t*(b[2]-a[2])] }
-/// The distance from a point to a segment: how far a curve's point stands from
-/// a polyline, which is how the tracer measures two curves apart and how a cap
-/// measures what a sheet's column already covers.
-pub(crate) fn segment_distance(p: V3,a: V3,b: V3) -> f64 {
-    let ab = sub(b,a); let ap = sub(p,a);
-    let l = dot(ab,ab);
-    let t = if l > 0. { (dot(ap,ab)/l).clamp(0.,1.) } else { 0. };
-    distance(p,std::array::from_fn(|k| a[k]+t*ab[k]))
-}
+pub fn sub(a: V3,b: V3) -> V3 { [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
+pub fn add(a: V3,b: V3) -> V3 { [a[0]+b[0],a[1]+b[1],a[2]+b[2]] }
+pub fn scale(a: V3,s: f64) -> V3 { a.map(|x| x*s) }
+pub fn dot(a: V3,b: V3) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
+pub fn cross(a: V3,b: V3) -> V3 { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
+/// The Euclidean length, as `sqrt(dot(a, a))`.
+pub fn norm(a: V3) -> f64 { dot(a,a).sqrt() }
+/// The Euclidean length by `hypot`, which neither overflows nor underflows where the squares
+/// would: not bit-identical to `norm`.
+pub fn length(a: V3) -> f64 { a[0].hypot(a[1]).hypot(a[2]) }
+pub fn distance(a: V3,b: V3) -> f64 { norm(sub(a,b)) }
+pub fn distance_squared(a: V3,b: V3) -> f64 { let d = sub(a,b); dot(d,d) }
 /// The unit vector along `a`, or none for a zero vector.
-pub(crate) fn normalised(a: V3) -> Option<V3> { let l = norm(a); (l > 0.).then(|| a.map(|x| x/l)) }
+pub fn normalised(a: V3) -> Option<V3> { let l = norm(a); (l > 0.).then(|| a.map(|x| x/l)) }
+/// The point a fraction `t` of the way from `a` to `b`, as `a + t (b − a)`.
+pub fn lerp(a: V3,b: V3,t: f64) -> V3 { [a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1]),a[2]+t*(b[2]-a[2])] }
+
+/// The nearest point of the segment `ab` to `p` (`a` for a segment of no length).
+pub fn closest_on_segment(p: V3,a: V3,b: V3) -> V3 {
+    let (d,w) = (sub(b,a),sub(p,a));
+    let l = dot(d,d);
+    let s = if l > 0. { (dot(w,d)/l).clamp(0.,1.) } else { 0. };
+    [a[0]+s*d[0],a[1]+s*d[1],a[2]+s*d[2]]
+}
+/// The distance from `p` to the segment `ab`.
+pub fn segment_distance(p: V3,a: V3,b: V3) -> f64 { distance(p,closest_on_segment(p,a,b)) }
+/// A polyline's length: the sum of its sides, in order.
+pub fn polyline_length(c: &[V3]) -> f64 { c.windows(2).map(|w| distance(w[0],w[1])).sum::<f64>() }
+
+/// The point of a triangle's plane of equal power `|x − p|² − w` to its three weighted corners
+/// (for zero weights, the circumcentre), with the triangle's normal `(b − a) × (c − a)`; none
+/// for a triangle with no area.
+pub fn orthocentre(a: V3,b: V3,c: V3,w: [f64;3]) -> Option<(V3,V3)> {
+    let (u,v) = (sub(b,a),sub(c,a));
+    let n = cross(u,v);
+    let nn = dot(n,n);
+    if !(nn > 0.) { return None; }
+    // a + (ru v × n + rv n × u) / (2 |n|²), with ru = |u|² − (wb − wa), rv = |v|² − (wc − wa)
+    let (ru,rv) = (dot(u,u)-(w[1]-w[0]),dot(v,v)-(w[2]-w[0]));
+    let (vn,nu) = (cross(v,n),cross(n,u));
+    Some((std::array::from_fn(|k| a[k]+(ru*vn[k]+rv*nu[k])/(2.*nn)),n))
+}
+/// The centre of the circle through a triangle's corners, or none for a triangle with no area.
+pub fn circumcentre(a: V3,b: V3,c: V3) -> Option<V3> { orthocentre(a,b,c,[0.;3]).map(|(o,_)| o) }
+
+/// A box's centre and the length of its diagonal (`[Interval; 3]`, as the fields bound things).
+pub fn box_centre_diagonal(b: &[crate::interval::Interval;3]) -> (V3,f64) {
+    let [lo,hi] = [0,1].map(|k| b.map(|x| x.bounds()[k]));
+    (std::array::from_fn(|k| 0.5*(lo[k]+hi[k])),(0..3).map(|k| (hi[k]-lo[k])*(hi[k]-lo[k])).sum::<f64>().sqrt())
+}
 
 /// The unit normal of a triangle by its winding, or none.
 pub fn triangle_normal(a: V3,b: V3,c: V3) -> Option<V3> { normalised(cross(sub(b,a),sub(c,a))) }

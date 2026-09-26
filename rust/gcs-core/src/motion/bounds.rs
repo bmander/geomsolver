@@ -26,9 +26,15 @@ fn mm(a: M,b: M) -> Result<M,Error> {
 /// themselves orthogonal. Point queries include all poses and all points in the
 /// input box; they do not claim every point of the output box is attainable.
 #[derive(Clone,Copy,Debug)]
-pub struct MotionBounds { r: M,p: V }
+pub struct MotionBounds { r: M,p: V,
+    /// The rotation's and the translation's midpoints in plain floating point, the `_mid`
+    /// methods' — asked at every query through a placed copy — worked out once.
+    plain: ([[f64;3];3],[f64;3]) }
 
 impl MotionBounds {
+    fn new(r: M,p: V) -> Self {
+        Self {r,p,plain:(r.map(|row| row.map(I::mid)),p.map(I::mid))}
+    }
     pub fn vector(&self,vector: V) -> Result<V,Error> { mv(self.r,vector) }
     pub fn point(&self,point: V) -> Result<V,Error> {
         let q = mv(self.r,point)?;
@@ -40,9 +46,23 @@ impl MotionBounds {
     /// checked against a tolerance far wider than the enclosure, never for
     /// an interval claim.
     pub fn inverse_point_mid(&self,point: [f64;3]) -> [f64;3] {
-        let mid = |x: I| { let [lo,hi] = x.bounds(); 0.5*(lo+hi) };
-        let q: [f64;3] = std::array::from_fn(|k| point[k]-mid(self.p[k]));
-        std::array::from_fn(|k| (0..3).map(|i| mid(self.r[i][k])*q[i]).sum())
+        let (r,p) = &self.plain;
+        let q: [f64;3] = std::array::from_fn(|k| point[k]-p[k]);
+        std::array::from_fn(|k| (0..3).map(|i| r[i][k]*q[i]).sum())
+    }
+
+    /// The pose applied to a point in plain floating point, from the midpoints: `inverse_point_mid`'s
+    /// converse, under the same terms.
+    pub fn point_mid(&self,point: [f64;3]) -> [f64;3] {
+        let (r,p) = &self.plain;
+        std::array::from_fn(|i| (0..3).map(|k| r[i][k]*point[k]).sum::<f64>()+p[i])
+    }
+
+    /// A gradient read in the source's frame (at `inverse_point_mid`) turned into the world's: the
+    /// rotation's midpoint applied, the transpose of the inverse map's linear part.
+    pub fn gradient_mid(&self,g: [f64;3]) -> [f64;3] {
+        let r = &self.plain.0;
+        std::array::from_fn(|i| (0..3).map(|k| r[i][k]*g[k]).sum())
     }
 
     pub fn inverse_point(&self,point: V) -> Result<V,Error> {
@@ -58,7 +78,8 @@ impl MotionBounds {
         for a in &mut axis { *a = a.div(norm)?; }
         let [x,y,z] = axis;
         let k = [[I::ZERO,z.neg(),y],[z,I::ZERO,x.neg()],[y.neg(),x,I::ZERO]];
-        let (s,c) = angle.sin_cos()?;
+        // a motion's angle runs as far as its sweep does: several turns for a coil
+        let (s,c) = angle.sin_cos_periodic()?;
         let mut r = [[I::ZERO;3];3];
         for i in 0..3 { for j in 0..3 {
             // Group the coefficient of cos(theta). Using cos(theta) and
@@ -68,7 +89,7 @@ impl MotionBounds {
             r[i][j] = parallel.add(c.mul(transverse)?)?.add(s.mul(k[i][j])?)?;
         } }
         let origin = vector(origin)?;
-        Ok(Self {r,p:sub(origin,mv(r,origin)?)?})
+        Ok(Self::new(r,sub(origin,mv(r,origin)?)?))
     }
 
     /// Advance along a unit axis by `advance` per turn over an angle interval.
@@ -81,19 +102,18 @@ impl MotionBounds {
         let distance = I::point(advance)?.mul(angle)?.div(I::point(std::f64::consts::TAU)?)?;
         let mut p = self.p;
         for k in 0..3 { p[k] = p[k].add(axis[k].mul(distance)?)?; }
-        Ok(Self {r:self.r,p})
+        Ok(Self::new(self.r,p))
     }
 
     fn identity() -> Self {
         let mut r = [[I::ZERO;3];3];
         for i in 0..3 { r[i][i] = I::ONE; }
-        Self {r,p:[I::ZERO;3]}
+        Self::new(r,[I::ZERO;3])
     }
 
     fn relative(source: Self,observer: Self) -> Result<Self,Error> {
         let inverse_rotation = transpose(observer.r);
-        Ok(Self {r:mm(inverse_rotation,source.r)?,
-            p:mv(inverse_rotation,sub(source.p,observer.p)?)?})
+        Ok(Self::new(mm(inverse_rotation,source.r)?,mv(inverse_rotation,sub(source.p,observer.p)?)?))
     }
 }
 

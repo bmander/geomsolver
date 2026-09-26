@@ -1,6 +1,6 @@
 //! Spatially bounded extraction from a material field, without an assumed SDF.
 use super::{norm,point,Error,I,V,MaterialEvaluator,SweepError};
-use crate::{interval::minimum::Options,topology::ClosedShell};
+use crate::{interval::minimum::{Options,Stop},topology::ClosedShell};
 use std::collections::BTreeMap;
 mod witness_index;
 use witness_index::WitnessIndex;
@@ -211,8 +211,8 @@ impl MaterialEvaluator {
             let center = if step > 1 { grid.point(start.map(|i| i+step/2)) }
                 else { bounds.map(|v| { let [a,b] = v.bounds(); a*0.5+b*0.5 }) };
             let radius = distance_to_box(center,bounds)?;
-            let center_value = self.bounds_outside(point(center)?,I::new(-radius,radius)?,Options {
-                value_tolerance:options.sweep.value_tolerance.max(radius),..options.sweep})?.value;
+            let center_value = self.query(point(center)?,Stop::Outside(I::new(-radius,radius)?),Options {
+                value_tolerance:options.sweep.value_tolerance.max(radius),..options.sweep},None)?.value;
             let value = center_value.add(I::new(-radius,radius)?)?;
             if !value.contains(0.) || step == 1 {
                 cells.push(BoundaryCell {start,step,bounds,center,center_value,radius,value,mesh_vertex:None});
@@ -240,7 +240,7 @@ impl MaterialEvaluator {
                     let p = grid.point(index);
                     let mut tolerance = target.max(options.sweep.value_tolerance);
                     let value = loop {
-                        let value = self.bounds_outside(point(p)?,I::ZERO,Options {value_tolerance:tolerance,..options.sweep})?.value;
+                        let value = self.query(point(p)?,Stop::Outside(I::ZERO),Options {value_tolerance:tolerance,..options.sweep},None)?.value;
                         if !value.contains(0.) { break value; }
                         if tolerance <= options.sweep.value_tolerance {
                             return Err(BoundaryError::AmbiguousPoint {point:p,value});

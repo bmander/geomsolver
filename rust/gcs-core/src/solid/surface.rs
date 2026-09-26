@@ -3,10 +3,6 @@
 //! Boundary trimming and outward orientation remain separate questions.
 pub(super) mod contact;
 pub use contact::RevolvedContact;
-mod meridian_contacts;
-pub use meridian_contacts::MeridianContact;
-mod bounds;
-pub use bounds::SurfaceBounds;
 mod project;
 pub use project::{SurfaceProjection,SurfaceProjector};
 mod region;
@@ -17,10 +13,9 @@ use crate::envelope::{Error, Motion, SurfacePoint};
 use crate::model::{EntKind, EntRef, Sense, Sketch, SolidDef};
 use crate::plane::{self, Basis};
 
+use crate::space::{add, sub, scale};
+
 type V = [f64;3];
-fn add(a: V, b: V) -> V { std::array::from_fn(|i| a[i]+b[i]) }
-fn sub(a: V, b: V) -> V { std::array::from_fn(|i| a[i]-b[i]) }
-fn scale(a: V, s: f64) -> V { a.map(|x| x*s) }
 
 #[derive(Clone, Debug)]
 enum Meridian {
@@ -173,32 +168,8 @@ impl RevolvedSurface {
     /// Original source parameters: an angular span restricts v without renumbering it.
     pub fn domain(&self) -> [[f64;2];2] { [[0.,1.],self.v_domain] }
 
-    /// Whether this snapshot retains an entire revolution, including both sides
-    /// of its coordinate seam. A restricted angular span is not periodic.
     /// The signed revolution angle the `v` chart spans.
     pub fn sweep(&self) -> f64 { self.sweep }
-
-    pub fn is_periodic(&self) -> bool {
-        self.sweep.abs() == std::f64::consts::TAU && self.v_domain == [0.,1.]
-    }
-
-    /// Allowed coordinates for a local angular chart. The quarter-turn overlap
-    /// keeps interval trigonometry within its supported [-8,8] radian domain.
-    /// This extends the coordinate chart, not the material or the motion domain.
-    pub fn angular_chart_domain(&self) -> [f64;2] {
-        if self.is_periodic() { [-0.25,1.25] } else { self.v_domain }
-    }
-
-    /// Restrict or locally continue the same angular parametrization across a
-    /// full revolution's seam. Evaluate unwrapped angles directly: interval
-    /// proofs do not assume that binary64 TAU gives exact periodic equality.
-    /// Identifying coincident seam geometry during B-rep assembly is separate.
-    pub fn angular_chart(&self,range: [f64;2]) -> Result<Self,Error> {
-        let [a,b] = range; let [lo,hi] = self.angular_chart_domain();
-        if !a.is_finite() || !b.is_finite() { return Err(Error::NonFinite); }
-        if a > b || a < lo || b > hi || b-a > 1. { return Err(Error::OutsideDomain); }
-        Ok(Self {v_domain:range,..self.clone()})
-    }
 
     pub fn at(&self, u: f64, v: f64) -> Result<SurfacePoint, Error> {
         if !u.is_finite() || !v.is_finite() { return Err(Error::NonFinite); }
@@ -218,7 +189,7 @@ impl RevolvedSurface {
         // two matrices, on a path evaluated many thousand times per trace.
         let a = crate::envelope::normalized(self.axis).ok_or(Error::Degenerate)?;
         let (s,c) = (v*self.sweep).sin_cos();
-        let cross = |x: V,y: V| [x[1]*y[2]-x[2]*y[1],x[2]*y[0]-x[0]*y[2],x[0]*y[1]-x[1]*y[0]];
+        use crate::space::cross;
         let turned = |x: V| { let along = (a[0]*x[0]+a[1]*x[1]+a[2]*x[2])*(1.-c); add(add(scale(x,c),scale(cross(a,x),s)),scale(a,along)) };
         let r = turned(sub(p,self.origin));
         let result = SurfacePoint { position: add(self.origin,r),du: turned(d),dv: scale(cross(a,r),self.sweep) };

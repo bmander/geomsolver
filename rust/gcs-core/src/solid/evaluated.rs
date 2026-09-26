@@ -81,6 +81,16 @@ pub struct RoundFeature {
     pub radius: f64,
 }
 
+/// Where an evaluated solid's boundary came from.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Surface {
+    /// The facet term's boundary evaluation.
+    Csg,
+    /// A material field's surface (`from_surface`), `provisional` while the refinement that made
+    /// it is still going, when it may be open.
+    Field { provisional: bool },
+}
+
 #[derive(Clone, Debug)]
 pub struct EvaluatedSolid {
     name: String,
@@ -89,11 +99,14 @@ pub struct EvaluatedSolid {
     unit: f64,
     epsilon: f64,
     csg: Csg,
-    boundary: Vec<Piece>,
+    /// The boundary's pieces. A field's surface derives them from its one primitive's facets when
+    /// first asked (`Surface::Field`), rather than holding every triangle twice.
+    boundary: OnceCell<Vec<Piece>>,
     bounds: Box3,
     paths: BTreeMap<String, String>,
     surviving: BTreeSet<String>,
     round: Vec<RoundFeature>,
+    surface: Surface,
     edges: OnceCell<Vec<Edge>>,
     mesh: OnceCell<mesh::Mesh>,
     ray_indices: OnceCell<Vec<RayIndex>>,
@@ -112,8 +125,8 @@ impl EvaluatedSolid {
             _ => return Err("solid approximation requires a finite positive pixel length".into()),
         };
         let operands = validate_at(sk, si, unit)?;
-        if operands.iter().any(|&i| matches!(sk.solids[i].def,SolidDef::Swept {..})) {
-            return Err("boundary evaluation for continuous motion sweeps is not yet supported".into());
+        if sweeps_among(sk, &operands) {
+            return Self::of_field(sk, si, policy, unit);
         }
         let origin = WorldPoint(frame_origin(sk, si, unit));
         let csg = resolve_at(sk, si, unit, origin.0);
@@ -219,15 +232,86 @@ impl EvaluatedSolid {
             unit,
             epsilon,
             csg,
-            boundary,
+            boundary: OnceCell::from(boundary),
             bounds,
             paths: operand_paths(sk, si),
             surviving,
             round,
+            surface: Surface::Csg,
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
         })
+    }
+    /// A swept solid's boundary is its material field's surface, whatever approximation is asked
+    /// for: one a host meshed elsewhere and supplied (`Sketch::supply_field`), none while the
+    /// sketch leaves meshing to the host (`FieldMeshing::Deferred`), or meshed here and now to the
+    /// end (`FieldMeshing::Now`) — seconds of refinement inside the call that asked.
+    fn of_field(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64) -> Result<Self, String> {
+        if let Some(surface) = sk.supplied_field(si) {
+            return Self::from_surface(sk, si, policy, unit, &surface);
+        }
+        match sk.field_meshing.get() {
+            FieldMeshing::Deferred => Err(format!("`{}`: its surface is still being meshed", sk.solid_name(si))),
+            FieldMeshing::Now => Self::from_surface(sk, si, policy, unit, &FieldMesher::new(sk, si)?.finish()?),
+        }
+    }
+    /// A swept solid from its field's surface (`field_mesh.rs`): the mesh stands in as one
+    /// polyhedral primitive, so classification, edges and views read it as they read any other.
+    /// A provisional surface may be open: what it classifies is a preview's, and it exports
+    /// nothing.
+    fn from_surface(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64,
+        surface: &FieldSurface) -> Result<Self, String> {
+        let name = sk.solid_name(si);
+        let mut world = Box3::empty();
+        for &v in &surface.vertices { world.add(v); }
+        if world.is_empty() { return Err(format!("`{name}`: the material field has no boundary yet")); }
+        let centre: [f64; 3] = std::array::from_fn(|k| 0.5 * (world.lo[k] + world.hi[k]));
+        let origin = WorldPoint(centre);
+        let local = |v: [f64; 3]| -> [f64; 3] { std::array::from_fn(|k| v[k] - centre[k]) };
+        let mut facets = Vec::with_capacity(surface.triangles.len());
+        let mut bbox = Box3::empty();
+        for t in &surface.triangles {
+            let Some(corners) = t.iter().map(|&i| surface.vertices.get(i as usize).copied().map(local))
+                .collect::<Option<Vec<_>>>() else { return Err(format!("`{name}`: a surface triangle names no vertex")) };
+            let [a, b, c] = [corners[0], corners[1], corners[2]];
+            let (u, v) = (std::array::from_fn::<f64, 3, _>(|k| b[k] - a[k]), std::array::from_fn::<f64, 3, _>(|k| c[k] - a[k]));
+            let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            if !(l > 0.0) { continue; }
+            for p in [a, b, c] { bbox.add(p); }
+            facets.push(Facet { pts: vec![a, b, c], n: n.map(|x| x / l), face: 0, smooth: true });
+        }
+        if facets.is_empty() { return Err(format!("`{name}`: the material field has no boundary yet")); }
+        let of = sk.solids[si].name.clone();
+        let path = format!("{of}.surface");
+        let csg = Csg { prims: vec![Prim { facets, bbox, faces: vec!["surface".into()], of }], term: Term::Prim(0) };
+        let epsilon = csg.epsilon();
+        if !epsilon.is_finite() || epsilon <= 0.0 {
+            return Err("solid scale is not representable".into());
+        }
+        Ok(Self {
+            name,
+            origin,
+            policy,
+            unit,
+            epsilon,
+            // every piece is a facet, so the facets' box is the pieces' (`mesh::bounds`)
+            bounds: bbox,
+            surviving: [path].into_iter().collect(),
+            csg,
+            boundary: OnceCell::new(),
+            paths: operand_paths(sk, si),
+            round: Vec::new(),
+            surface: Surface::Field { provisional: surface.provisional },
+            edges: OnceCell::new(),
+            mesh: OnceCell::new(),
+            ray_indices: OnceCell::new(),
+        })
+    }
+    /// A preview of a surface still being refined, which may be open.
+    pub fn provisional(&self) -> bool {
+        self.surface == Surface::Field { provisional: true }
     }
     pub fn policy(&self) -> ApproximationPolicy {
         self.policy
@@ -272,7 +356,14 @@ impl EvaluatedSolid {
     }
     /// Boundary/bounds/edges/mesh are solid-local. Explicit world adapters are for legacy ABI output.
     pub fn boundary(&self) -> &[Piece] {
-        &self.boundary
+        self.boundary.get_or_init(|| self.field_pieces())
+    }
+    /// A field's surface as boundary pieces: one per facet of its one primitive, each its own
+    /// smooth piece of the path `<solid>.surface`.
+    fn field_pieces(&self) -> Vec<Piece> {
+        let prim = &self.csg.prims[0];
+        let path = format!("{}.surface", prim.of);
+        prim.facets.iter().map(|f| Piece { pts: f.pts.clone(), n: f.n, path: path.clone(), prim: 0, smooth: true }).collect()
     }
     pub fn bounds(&self) -> Box3 {
         self.bounds
@@ -306,20 +397,24 @@ impl EvaluatedSolid {
         &self.paths
     }
     pub fn volume(&self) -> f64 {
-        mesh::volume(&self.boundary)
+        mesh::volume(self.boundary())
     }
     pub fn area(&self) -> f64 {
-        mesh::area(&self.boundary)
+        mesh::area(self.boundary())
     }
     pub fn edges(&self) -> &[Edge] {
         self.edges
             .get_or_init(|| csg::edges_indexed(&self.csg, self.epsilon, self.ray_indices()))
     }
     pub fn mesh(&self) -> &mesh::Mesh {
-        self.mesh.get_or_init(|| mesh::grouped(&self.boundary))
+        // a field's surface came indexed, its corners shared exactly: nothing for a weld to do
+        self.mesh.get_or_init(|| match self.surface {
+            Surface::Field { .. } => mesh::grouped_welded(self.boundary.get().cloned().unwrap_or_else(|| self.field_pieces())),
+            Surface::Csg => mesh::grouped(self.boundary()),
+        })
     }
     pub fn world_boundary(&self) -> Vec<Piece> {
-        translate_pieces(&self.boundary, self.origin.0)
+        translate_pieces(self.boundary(), self.origin.0)
     }
     pub fn world_edges(&self) -> Vec<Edge> {
         self.edges()
@@ -338,8 +433,18 @@ impl EvaluatedSolid {
         }
         m
     }
+    /// The surface as it stands even while it is still being refined (`mesh::preview_stl`): what a
+    /// host offers when asked for a file before the refinement has finished.
+    pub fn preview_stl(&self) -> Result<Vec<u8>, String> {
+        mesh::preview_stl(self.mesh(), self.origin.0, &self.name)
+    }
     pub fn stl(&self) -> Result<Vec<u8>, String> {
+        self.finished()?;
         mesh::placed_stl(self.mesh(), self.origin.0, &self.name)
+    }
+    /// Refuse a surface still being refined: it may be open, and a file is a finished part.
+    pub fn finished(&self) -> Result<(), String> {
+        if self.provisional() { Err(format!("`{}`: its surface is still being refined", self.name)) } else { Ok(()) }
     }
     pub(crate) fn classifier(&self) -> &Csg {
         &self.csg
@@ -349,7 +454,7 @@ impl EvaluatedSolid {
         let delta = std::array::from_fn(|k| other.origin.0[k] - self.origin.0[k]);
         let mut csg = other.csg.clone();
         translate_csg(&mut csg, delta);
-        (csg, translate_pieces(&other.boundary, delta))
+        (csg, translate_pieces(other.boundary(), delta))
     }
 
 }

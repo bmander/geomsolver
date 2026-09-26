@@ -1,5 +1,5 @@
 use super::*;
-use gcs_core::{interval::minimum::{Options,Status},motion::Family,
+use gcs_core::{interval::minimum::{Options,Status,Stop},motion::Family,
     solid::{SweptField,SweepError},syntax,program,solve};
 
 pub(super) fn rotation() -> Family {
@@ -44,9 +44,9 @@ fn sweep_boxes_budgets_cache_caps_and_observers_preserve_enclosures() {
     let mut cached = sweep.evaluator(64); let mut uncached = sweep.evaluator(0);
     let p = point([3.,1.,0.]);
     let mut observed = 0;
-    let a = cached.bounds_with_observer(p,options(),|d,_| {
+    let a = cached.query(p,Stop::Converged,options(),Some(&mut |d,_| {
         assert!(d.bounds()[0] >= -4. && d.bounds()[1] <= 4.); observed += 1;
-    }).unwrap();
+    })).unwrap();
     let b = uncached.bounds(p,options()).unwrap();
     assert_eq!(a.value,b.value); assert_eq!(a.witness,b.witness);
     assert_eq!(a.evaluations,b.evaluations); assert_eq!(observed,a.evaluations);
@@ -78,7 +78,7 @@ fn fixed_sweep_domains_and_failures_remain_explicit() {
     let reference = placed.bounds(p).unwrap();
     assert!(got.value.bounds()[0] <= reference.bounds()[0] && got.value.bounds()[1] >= reference.bounds()[1]);
     assert_eq!(query.bounds(p,Options {max_evaluations:3,..options()}).unwrap_err(),SweepError::InvalidOptions);
-    let invalid = SweptField::new(sphere(),rotation(),I::point(9.).unwrap());
-    assert_eq!(invalid.evaluator(0).bounds(p,options()).unwrap_err(),SweepError::Oracle(Error::OutsideDomain));
+    let invalid = SweptField::new(sphere(),rotation(),I::point(f64::MAX).unwrap());
+    assert_eq!(invalid.evaluator(0).bounds(p,options()).unwrap_err(),SweepError::Oracle(Error::Overflow));
     assert_eq!(query.bounds(point([f64::MAX;3]),options()).unwrap_err(),SweepError::Oracle(Error::Overflow));
 }

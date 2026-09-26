@@ -110,6 +110,13 @@ pub struct Sketch {
     /// derived view for its edges, and a boundary is a sweep of classifications over a drawing
     /// that has not changed.
     pub solid_cache: std::cell::RefCell<BTreeMap<(usize, (u8, u64)), (Vec<f64>, Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>)>>,
+    /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
+    /// `solid::reads` it was supplied under, so a moved drawing reads none.
+    pub field_surfaces: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, std::rc::Rc<crate::solid::FieldSurface>)>>,
+    /// Where a swept solid with no supplied surface is meshed (`solid::FieldMeshing`): here, or —
+    /// set by a host that meshes swept solids itself, a page with a worker — elsewhere, the solid
+    /// refused until its surface is supplied rather than meshed on the thread that draws.
+    pub field_meshing: std::cell::Cell<crate::solid::FieldMeshing>,
     /// The document's style sheet: what each class looks like (`style.rs`).  Presentation, and
     /// nothing the core computes reads it — it is here because it is document state, saved and
     /// grafted with everything else, and because the core resolving it is what keeps two front

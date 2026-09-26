@@ -126,7 +126,7 @@ fn spatial_transforms_use_inverse_fixed_poses_and_refuse_invalid_angles() {
     let both = sphere.clone().union(moved).unwrap();
     assert!(both.bounds(point([1.,-2.,0.])).unwrap().bounds()[1] < -0.99);
     assert!(sphere.clone().transformed(&family,f64::NAN).is_err());
-    assert_eq!(sphere.transformed(&family,9.).unwrap_err(),Error::OutsideDomain);
+    assert_eq!(sphere.transformed(&family,f64::MAX).unwrap_err(),Error::Overflow);
 }
 
 #[test]

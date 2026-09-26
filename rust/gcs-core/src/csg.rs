@@ -943,19 +943,33 @@ pub fn edges(csg: &Csg, eps: f64) -> Vec<Edge> {
 }
 
 pub(crate) fn edges_indexed(csg: &Csg, eps: f64, indices: &[RayIndex]) -> Vec<Edge> {
-    let planes: Vec<Vec<([f64; 3], f64, Box3)>> = csg.prims.iter().map(planes_of).collect();
-    let mut cand: Vec<Edge> = Vec::new();
+    // Asked for only where an edge meets another primitive: deduping one primitive's planes is
+    // quadratic in its facets, and a lone primitive's seams never need them.
+    let planes: Vec<std::cell::OnceCell<Vec<([f64; 3], f64, Box3)>>> =
+        csg.prims.iter().map(|_| std::cell::OnceCell::new()).collect();
+    // Each candidate with the primitive it is a seam of, if it is one: a primitive is a closed
+    // surface that does not cross itself, so none of its own facets cuts the inside of one of its
+    // own seams, and testing them all is a check per facet per seam — quadratic in the facets,
+    // two seconds of a 25 000-facet torus. A crossing of two primitives is cut by every plane.
+    let mut cand: Vec<(Edge, Option<usize>)> = Vec::new();
     for (i, prim) in csg.prims.iter().enumerate() {
-        seams(prim, &mut cand);
+        let mut own = Vec::new();
+        seams(prim, &mut own);
+        cand.extend(own.into_iter().map(|e| (e, Some(i))));
         for (j, other) in csg.prims.iter().enumerate() {
             if j <= i || !prim.bbox.overlaps(&other.bbox) {
                 continue;
             }
-            crossings(prim, other, &mut cand);
+            let mut crossing = Vec::new();
+            crossings(prim, other, &mut crossing);
+            cand.extend(crossing.into_iter().map(|e| (e, None)));
         }
     }
+    // A solid that is one primitive is bounded by all of it: each of its seams is on the
+    // boundary, and the ring of classifications that asks is not needed.
+    let lone = matches!(csg.term, crate::solid::Term::Prim(0)) && csg.prims.len() == 1;
     let mut out = Vec::new();
-    for e in cand {
+    for (e, seam_of) in cand {
         let mut cuts: Vec<f64> = vec![0.0, 1.0];
         let d = [e.b[0] - e.a[0], e.b[1] - e.a[1], e.b[2] - e.a[2]];
         let len = plane::norm(d);
@@ -969,11 +983,10 @@ pub(crate) fn edges_indexed(csg: &Csg, eps: f64, indices: &[RayIndex]) -> Vec<Ed
             b
         };
         for (j, other) in csg.prims.iter().enumerate() {
-            let _ = j;
-            if !other.bbox.grown(eps).overlaps(&eb) {
+            if seam_of == Some(j) || !other.bbox.grown(eps).overlaps(&eb) {
                 continue;
             }
-            for (n, dd, pb) in &planes[j] {
+            for (n, dd, pb) in planes[j].get_or_init(|| planes_of(other)) {
                 if !pb.grown(eps).overlaps(&eb) {
                     continue;
                 }
@@ -996,7 +1009,7 @@ pub(crate) fn edges_indexed(csg: &Csg, eps: f64, indices: &[RayIndex]) -> Vec<Ed
                 [e.a[0] + t * d[0], e.a[1] + t * d[1], e.a[2] + t * d[2]]
             };
             let m = at((w[0] + w[1]) / 2.0);
-            if !on_boundary(csg, indices, m, d, eps) {
+            if !(lone && seam_of.is_some()) && !on_boundary(csg, indices, m, d, eps) {
                 continue;
             }
             out.push(Edge { a: at(w[0]), b: at(w[1]), ..e.clone() });

@@ -1,10 +1,9 @@
-// Candidate surface fitting and native intersection/trim operations.
+// Surface fitting through a grid, and bounded face queries.
 #include "occt.hpp"
 #include <Approx_ParametrizationType.hxx>
 #include <GeomAPI_PointsToBSplineSurface.hxx>
 #include <Geom_BSplineSurface.hxx>
 #include <TColgp_Array2OfPnt.hxx>
-#include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass_FaceClassifier.hxx>
@@ -17,27 +16,8 @@
 #include <TopoDS_Face.hxx>
 #include <gp_Pnt2d.hxx>
 #include <cmath>
-#include <sstream>
 
 static gp_Pnt point(const double* p) { return gp_Pnt(p[0],p[1],p[2]); }
-static gp_Pnt2d parameter(const Handle(Geom_Surface)& surface,double u,double v) {
-    if (!std::isfinite(u) || !std::isfinite(v) || u < 0 || u > 1 || v < 0 || v > 1)
-        throw std::runtime_error("face query parameters must lie in [0,1]");
-    if (surface.IsNull()) throw std::runtime_error("face has no surface");
-    double u0,u1,v0,v1;
-    surface->Bounds(u0,u1,v0,v1);
-    if (!std::isfinite(u0) || !std::isfinite(u1) || !std::isfinite(v0) || !std::isfinite(v1))
-        throw std::runtime_error("face query needs a finite surface domain");
-    return gp_Pnt2d(u0+(u1-u0)*u,v0+(v1-v0)*v);
-}
-
-static TopoDS_Face valid_face(Cad* cad,int id) {
-    const auto face = TopoDS::Face(cad->at(id));
-    if (face.IsNull() || !BRepCheck_Analyzer(face).IsValid())
-        throw std::runtime_error("invalid candidate face");
-    return face;
-}
-
 static void surface_sample(const TopoDS_Face& face,const gp_Pnt2d& uv,bool oriented,double* output) {
     TopLoc_Location location;
     auto surface = BRep_Tool::Surface(face,location);
@@ -72,35 +52,7 @@ static int membership(const TopoDS_Face& face,const gp_Pnt2d& uv,double toleranc
     }
 }
 
-TopoDS_Shape split_face(const TopoDS_Face& face,const TopTools_ListOfShape& tools) {
-    if (!BRepCheck_Analyzer(face).IsValid()) throw std::runtime_error("invalid source face");
-    TopTools_ListOfShape objects;
-    objects.Append(face);
-    BRepAlgoAPI_Splitter split;
-    split.SetArguments(objects); split.SetTools(tools);
-    split.SetNonDestructive(true); split.SetRunParallel(false);
-    split.Build();
-    if (!split.IsDone() || split.HasErrors() || split.HasWarnings()) {
-        std::ostringstream message;
-        message << "native face split failed: ";
-        split.DumpErrors(message); split.DumpWarnings(message);
-        throw std::runtime_error(message.str());
-    }
-    const auto result = split.Shape();
-    TopTools_IndexedMapOfShape faces;
-    TopExp::MapShapes(result,TopAbs_FACE,faces);
-    if (faces.IsEmpty() || !BRepCheck_Analyzer(result).IsValid())
-        throw std::runtime_error("face split produced no valid faces");
-    return result;
-}
-
 extern "C" {
-int solvent_cad_bspline_face_with(Cad* cad,const double* points,int nu,int nv,int parametrization) noexcept;
-// A regular contact chart, sampled in row-major (u, motion parameter) order.
-// This creates a candidate face only. Solid closure and trimming remain separate.
-int solvent_cad_bspline_face(Cad* cad,const double* points,int nu,int nv) noexcept {
-    return solvent_cad_bspline_face_with(cad,points,nu,nv,0);
-}
 // Parametrization 0 is uniform (isoparametric), 1 chord length, 2 centripetal.
 // Uniform parameters overshoot where sample spacing changes abruptly.
 int solvent_cad_bspline_face_with(Cad* cad,const double* points,int nu,int nv,int parametrization) noexcept {
@@ -125,20 +77,9 @@ int solvent_cad_bspline_face_with(Cad* cad,const double* points,int nu,int nv,in
         return cad->put(face.Face());
     });
 }
-// Evaluate the supporting surface, not membership in a trimmed face. Parameters
-// span its bounds; the normal follows du cross dv, not material orientation.
-int solvent_cad_surface_point(Cad* cad,int id,double u,double v,double* output) noexcept {
-    return guarded(cad,[&] {
-        if (!output) throw std::runtime_error("face query needs an output buffer");
-        const auto face = TopoDS::Face(cad->at(id));
-        surface_sample(face,parameter(BRep_Tool::Surface(face),u,v),false,output);
-        return 0;
-    });
-}
-
 // Query the bounded native face, including trim membership and orientation.
-// Coordinates span this face's UV box, NOT the supporting-surface domain used
-// by surface_point. Holes/outside regions return 0 and leave output untouched.
+// Coordinates span this face's UV box, not its supporting surface's domain.
+// Holes/outside regions return 0 and leave output untouched.
 // Returns 1 inside or 2 on a trim, with position and oriented unit normal.
 int solvent_cad_face_point(Cad* cad,int id,double u,double v,double tolerance,double* output) noexcept {
     return guarded(cad,[&] {
@@ -159,20 +100,6 @@ int solvent_cad_face_point(Cad* cad,int id,double u,double v,double tolerance,do
     });
 }
 
-// Split one candidate by other faces. The result retains ALL source fragments;
-// tool fragments are excluded. This performs no material-side selection, healing,
-// fuzzy merging, or solid assembly. Inputs remain unchanged.
-int solvent_cad_split_face(Cad* cad,int source,const int* tools,int count) noexcept {
-    return guarded(cad,[&] {
-        if (!tools || count < 1 || count > 1024)
-            throw std::runtime_error("face split requires 1..1024 tool faces");
-        const auto face = valid_face(cad,source);
-        TopTools_ListOfShape cutters;
-        for (int i=0;i<count;++i) cutters.Append(valid_face(cad,tools[i]));
-        return cad->put(split_face(face,cutters));
-    });
-}
-
 // Count first with faces=null/capacity=0, then retrieve session-owned handles.
 int solvent_cad_faces(Cad* cad,int source,int* output,int capacity) noexcept {
     return guarded(cad,[&] {
@@ -183,20 +110,6 @@ int solvent_cad_faces(Cad* cad,int source,int* output,int capacity) noexcept {
         if (!output || capacity < count) throw std::runtime_error("face buffer is too small");
         for (int i=1;i<=count;++i) output[i-1] = cad->put(faces(i));
         return count;
-    });
-}
-
-// Query native trim membership at the SAME normalized supporting-surface
-// parameters as surface_point: 0=outside, 1=inside, 2=on a trimming edge.
-// Normalization never switches to a fragment's smaller UV bounding rectangle.
-// Tolerance is the native UV classifier tolerance, not an export error budget.
-int solvent_cad_face_contains(Cad* cad,int id,double u,double v,double tolerance) noexcept {
-    return guarded(cad,[&] {
-        if (!std::isfinite(tolerance) || tolerance <= 0)
-            throw std::runtime_error("face classification needs a positive tolerance");
-        const auto face = TopoDS::Face(cad->at(id));
-        const auto uv = parameter(BRep_Tool::Surface(face),u,v);
-        return membership(face,uv,tolerance);
     });
 }
 }

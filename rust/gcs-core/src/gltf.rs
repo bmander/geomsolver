@@ -43,6 +43,7 @@ pub fn glb(sk: &Sketch, solids: &[usize], unit: f64) -> Vec<u8> {
 /// triangles unrepresentable by glTF's float32 positions return a diagnostic.
 pub fn checked_glb(sk: &Sketch, solids: &[usize], policy: crate::solid::ApproximationPolicy) -> Result<Vec<u8>, String> {
     let values = solids.iter().map(|&i| sk.evaluated_solid(i, policy)).collect::<Result<Vec<_>, _>>()?;
+    for s in &values { s.finished()?; }
     let parts: Vec<_> = solids.iter().zip(&values).map(|(&i, s)| (sk.solid_name(i), s.mesh(), s.origin().0)).collect();
     let scale = sk.units.length.map(|(_, mm_per)| mm_per / 1000.0).unwrap_or(1.0);
     if !scale.is_finite() || scale <= 0.0 || parts.iter().flat_map(|(_, _, origin)| origin).any(|x| !(x * scale).is_finite()) {

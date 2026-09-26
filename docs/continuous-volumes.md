@@ -476,7 +476,7 @@ refiner. It returns the field enclosure, roll witness, evaluation count and term
 status. Invalid options, unsupported trigonometric evaluations and arithmetic overflow
 remain errors; budget exhaustion retains an enclosure and status.
 
-`bounds_with_observer` additionally exposes each raw oracle interval and its enclosure for
+`query`'s observer additionally exposes each raw oracle interval and its enclosure for
 certificate extraction. The observer supplies no geometric values or pruning decisions.
 The gear workbench now uses this core evaluator for the unindexed probes, rejected closure,
 neighboring-side space and complete-member material queries. The duplicated callback-based

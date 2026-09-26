@@ -1,0 +1,16 @@
+[package]
+name = "fixtures"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Test fixtures shared by the core's and the CLI's suites: documents, readers and rewrites."
+
+# A dev-dependency of gcs-core and gcs-cli only, so nothing here links into the cdylib, the
+# wasm or `solventc`.
+[dependencies]
+gcs-core = { path = "../gcs-core" }
+
+[lib]
+path = "src/lib.rs"
+test = false
+doctest = false

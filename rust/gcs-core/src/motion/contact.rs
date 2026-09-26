@@ -2,8 +2,6 @@
 use super::{Family,Step};
 use crate::{envelope::{self,Error,Motion,SurfacePoint},plane::{cross,dot}};
 use std::f64::consts::TAU;
-mod bounds;
-pub use bounds::NormalVelocityBounds;
 
 /// Normal velocity at one fixed source point under a supported motion family.
 /// f(t) = constant + cosine*cos(phase+rate*t) + sine*sin(phase+rate*t).
@@ -73,6 +71,9 @@ impl Family {
 }
 
 impl NormalVelocity {
+    /// The equation's constant, cosine and sine coefficients, rate and phase.
+    pub fn coefficients(&self) -> [f64;5] { [self.constant,self.cosine,self.sine,self.rate,self.phase] }
+
     pub fn at(&self,time: f64) -> Result<f64,Error> {
         let angle = self.phase+self.rate*time;
         let value = self.constant+self.cosine*angle.cos()+self.sine*angle.sin();

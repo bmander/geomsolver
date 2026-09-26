@@ -1,23 +1,15 @@
+//! The native kernel (OCCT, through `backend/`): a session constructing the core's recipes,
+//! and the swept construction over it. What is written, and whether, is `cad::output`'s.
 use gcs_core::json::Json;
-use std::{collections::BTreeMap,ffi::{c_char,c_int,c_void,CStr,CString},path::Path,
-    sync::atomic::{AtomicU64,Ordering}};
+use std::{collections::BTreeMap,ffi::{c_char,c_int,c_void,CStr,CString}};
+pub(crate) use super::progress::{mark,stage};
 
-// Candidate construction is exercised independently until closed sweep assembly
-// connects it to export; candidates must never pass as completed sweep solids.
-#[allow(dead_code)]
-#[path="native/sweep.rs"]
-mod sweep;
-#[allow(dead_code)]
-#[path="native/trims.rs"]
-mod trims;
-#[allow(dead_code)]
-#[path="native/traces.rs"]
-mod traces;
-#[allow(dead_code)]
-#[path="native/cells.rs"]
-pub(crate) mod cells;
+#[path="native/kernel.rs"]
+pub(crate) mod kernel;
 #[path="native/sweep_boundary.rs"]
 pub(crate) mod sweep_boundary;
+#[path="native/features.rs"]
+pub(crate) mod features;
 
 extern "C" {
     fn solvent_cad_new() -> *mut c_void;
@@ -55,7 +47,7 @@ impl Session {
     }
     #[cfg(test)]
     pub(crate) fn as_ptr(&self) -> *mut c_void { self.0 }
-    fn result(&self,id: c_int) -> Result<c_int,String> {
+    pub(crate) fn result(&self,id: c_int) -> Result<c_int,String> {
         if id < 0 {
             Err(unsafe { CStr::from_ptr(solvent_cad_error(self.0)) }.to_string_lossy().into_owned())
         } else { Ok(id) }
@@ -147,54 +139,4 @@ impl Session {
         }
         Ok(shapes[&field(recipe,"root").as_i64()])
     }
-}
-
-/// Build once, stage and validate every requested format, then replace outputs.
-/// A geometry or encoding failure cannot leave only half the requested pair updated.
-pub fn export(sk: &gcs_core::model::Sketch,solid: usize,step: Option<&str>,stl: Option<&str>) -> Result<(),String> {
-    let session = Session::new()?;
-    let solid = sweep_boundary::construct_solid(&session,sk,solid)?;
-    let mut staged = Vec::new();
-    let mut directories = Vec::new();
-    let result = (|| {
-        for (kind,path) in [("step",step),("stl",stl)] {
-            let Some(path) = path else { continue; };
-            let output = Path::new(path);
-            let parent = output.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
-            let destination = parent.canonicalize().map_err(|e| e.to_string())?
-                .join(output.file_name().ok_or("CAD output needs a filename")?);
-            if staged.iter().any(|(_,p)| p == &destination) {
-                return Err("STEP and STL need distinct output paths".into());
-            }
-            static NEXT: AtomicU64 = AtomicU64::new(0);
-            let directory = loop {
-                let d = parent.join(format!(".solvent-cad-{}-{}",std::process::id(),NEXT.fetch_add(1,Ordering::Relaxed)));
-                match std::fs::create_dir(&d) {
-                    Ok(()) => break d,
-                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                    Err(e) => return Err(format!("cannot create CAD output directory: {e}")),
-                }
-            };
-            let temporary = directory.join(format!("solid.{kind}"));
-            directories.push(directory);
-            let name = CString::new(temporary.to_str().ok_or("CAD path must be UTF-8")?)
-                .map_err(|e| e.to_string())?;
-            session.result(unsafe {
-                if kind == "step" { solvent_cad_step(session.0,solid,name.as_ptr()) }
-                else { solvent_cad_stl(session.0,solid,name.as_ptr()) }
-            })?;
-            if kind == "stl" {
-                let bytes = std::fs::read(&temporary).map_err(|e| e.to_string())?;
-                gcs_core::mesh::stl_shells(&bytes)
-                    .map_err(|e| format!("native float32 STL validation failed: {e}"))?;
-            }
-            staged.push((temporary,destination));
-        }
-        for (temporary,output) in &staged {
-            std::fs::rename(temporary,output).map_err(|e| format!("cannot replace CAD output: {e}"))?;
-        }
-        Ok(())
-    })();
-    for directory in directories { let _ = std::fs::remove_dir_all(directory); }
-    result
 }

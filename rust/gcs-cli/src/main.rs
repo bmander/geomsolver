@@ -41,22 +41,18 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (requires a native OCCT build)
-    --stl-backend NAME  occt, mesh or manifold; a body with swept cuts defaults to manifold
-                        (mesh arrangement) when built in, other solids to occt
+    --stl-backend NAME  occt, mesh or refine; every solid defaults to occt when built in, a
+                        body with swept cuts included (refine meshes the material field by the
+                        core's Delaunay refinement, checked by the field-agreement probe)
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
     --width PX          the SVG's page width in pixels (default 800)
-    --verbose, -v       a line every few seconds from any stage that runs long
-    --verbose=2, -vv    also what a swept cut is made of: its sheets and their seams
     --sheet NAME        select a sheet in a .svd drawing (its page size sets SVG size)
     -h, --help          this
 
 Exit codes: 0 every document elaborated and solved; 1 a document failed to parse or
 elaborate; 2 a document elaborated but did not solve.
 ";
-
-/// How much a long stage says as it goes: 0 its stages only, 1 a line every few
-/// seconds, 2 the parts a construction is made of.
 
 /// One document, as the core sees it: a name to report against and the text itself.
 ///
@@ -80,8 +76,8 @@ struct Opts {
     stl: Option<String>,
     step: Option<String>,
     native_stl: bool,
-    /// Bodies with swept cuts export STL by mesh arrangement when built in.
-    swept_mesh: bool,
+    /// `--stl-backend refine`: the core's Delaunay refinement of the material field.
+    refine: bool,
     /// `--gltf PATH` — the object as a viewer opens it, every face named.
     gltf: Option<String>,
     solid: Option<String>,
@@ -102,7 +98,7 @@ impl Default for Opts {
             stl: None,
             step: None,
             native_stl: cfg!(feature="occt"),
-            swept_mesh: cfg!(all(feature="manifold",feature="occt")),
+            refine: false,
             gltf: None,
             solid: None,
             width: 800.0,
@@ -118,10 +114,10 @@ fn main() -> ExitCode {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--stl-backend" => match args.next().as_deref() {
-                Some("occt") => { opts.native_stl = true; opts.swept_mesh = false; }
-                Some("mesh") => { opts.native_stl = false; opts.swept_mesh = false; }
-                Some("manifold") => { opts.swept_mesh = true; }
-                _ => { eprintln!("solventc: --stl-backend needs occt, mesh or manifold"); return ExitCode::from(2); }
+                Some("occt") => opts.native_stl = true,
+                Some("mesh") => opts.native_stl = false,
+                Some("refine") => opts.refine = true,
+                _ => { eprintln!("solventc: --stl-backend needs occt, mesh or refine"); return ExitCode::from(2); }
             },
             "--step" => match args.next() {
                 Some(p) => opts.step = Some(p),
@@ -175,8 +171,6 @@ fn main() -> ExitCode {
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
-            "--verbose" | "-v" | "--verbose=1" => cad::mesh_sweep::VERBOSITY.store(1,std::sync::atomic::Ordering::Relaxed),
-            "--verbose=2" | "-vv" => cad::mesh_sweep::VERBOSITY.store(2,std::sync::atomic::Ordering::Relaxed),
             "--allow-unsolved" => opts.allow_unsolved = true,
             "-h" | "--help" => {
                 print!("{USAGE}");
@@ -324,31 +318,62 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         }
     }
     let mut code = if r.success || opts.allow_unsolved { 0 } else { 2 };
-    // A body with swept cuts goes to the mesh arrangement when it is built in;
-    // the kernel path stays for STEP and for `--stl-backend occt`.
     let mut stl = opts.stl.clone();
-    if let Some(path) = stl.clone().filter(|_| opts.swept_mesh && r.success) {
+    let mut step = opts.step.clone();
+    // A body with swept cuts is built only when every sweep is in the generating class
+    // (docs/generating-sweeps.md): a refusal names the row it fails and a point where, and
+    // nothing is written, so an earlier output stays as it was. The class is what the native
+    // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
+    // only the field, and is gated by the field-agreement probe instead.
+    let mut body = None;
+    if (step.is_some() || (stl.is_some() && !opts.refine)) && r.success {
         if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
-            if cad::swept_mesh_applies(&sk,i) {
-                if let Err(message) = cad::export_swept_stl(&sk,i,&path) {
-                    eprintln!("solventc: {message}");
-                    e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                        span:Default::default(),stmt:None,message});
+            let mut b = cad::Body::read(&sk,i);
+            if b.swept() {
+                if let Err(refusal) = b.admit(&sk) {
+                    refused(&mut e,i,refusal);
                     code = 1;
+                    stl = None;
+                    step = None;
                 }
-                stl = None;
             }
+            body = Some(b);
         }
     }
-    if opts.step.is_some() || (stl.is_some() && opts.native_stl) {
-        let result = if !r.success { Err("native STEP/STL export requires a solved model".into()) }
-            else { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| cad::export(&sk,i,
-                opts.step.as_deref(),stl.as_deref().filter(|_| opts.native_stl))) };
-        if let Err(message) = result {
-            eprintln!("solventc: {message}");
-            e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                span:Default::default(),stmt:None,message});
-            code = 1;
+    if let Some(path) = stl.clone().filter(|_| opts.refine && r.success) {
+        #[cfg(feature="occt")]
+        if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
+            if let Err(refusal) = cad::field_mesh::export_refine(&sk,i,&path) {
+                refused(&mut e,i,refusal);
+                code = 1;
+            }
+        }
+        #[cfg(not(feature="occt"))]
+        { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); code = 1; }
+        stl = None;
+    }
+    if step.is_some() || (stl.is_some() && opts.native_stl) {
+        match (r.success,pick_solid(&sk,opts.solid.as_deref())) {
+            (false,_) => {
+                let message = "native STEP/STL export requires a solved model".to_string();
+                eprintln!("solventc: {message}");
+                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
+                    span:Default::default(),stmt:None,message});
+                code = 1;
+            }
+            (true,Err(message)) => {
+                eprintln!("solventc: {message}");
+                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
+                    span:Default::default(),stmt:None,message});
+                code = 1;
+            }
+            (true,Ok(i)) => {
+                let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(&sk,i));
+                if let Err(refusal) = cad::export(&sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl)) {
+                    refused(&mut e,i,refusal);
+                    code = 1;
+                }
+            }
         }
     }
     if let Some(path) = &opts.output {
@@ -367,8 +392,8 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
                 // cut to the *object*, not to the report: a printer resolves a tenth of a
                 // millimetre and a volume is quoted to four digits, and those are not one number
                 match sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh).and_then(|s| s.stl()) {
-                    Ok(bytes) => if let Err(err) = std::fs::write(path, bytes) {
-                        eprintln!("solventc: {path}: {err}");
+                    Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
+                        eprintln!("solventc: {err}");
                         code = 1;
                     },
                     Err(message) => {
@@ -408,8 +433,8 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             code = 1;
         } else if !which.is_empty() {
             match gcs_core::gltf::checked_glb(&sk, &which, gcs_core::solid::ApproximationPolicy::Mesh) {
-                Ok(bytes) => if let Err(err) = std::fs::write(path, bytes) {
-                    eprintln!("solventc: {path}: {err}"); code = 1;
+                Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
+                    eprintln!("solventc: {err}"); code = 1;
                 },
                 Err(message) => { eprintln!("solventc: {message}"); code = 1; }
             }
@@ -518,6 +543,16 @@ fn severity(s: Severity) -> &'static str {
     }
 }
 
+/// An export refused: said on stderr in the core's words, recorded at the stage it was met at
+/// for a harness, and reported as a diagnostic at the solid's own statement.
+fn refused(e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core::solid::export::ExportRefusal) {
+    eprintln!("solventc: {refusal}");
+    cad::progress::refused(refusal.stage);
+    let site = e.map.site_of(gcs_core::model::EntRef::solid(solid));
+    e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
+        span:site.map(|s| s.span).unwrap_or_default(),stmt:site.map(|s| s.stmt),message:refusal.message});
+}
+
 /// Which solid `--stl` writes.  Named, or the only one there is — a document with one part in it
 /// should not have to say which part.
 fn pick_solid(sk: &gcs_core::model::Sketch, name: Option<&str>) -> Result<usize, String> {
@@ -568,3 +603,4 @@ fn doc_json(
         ("positions", positions),
     ])
 }
+

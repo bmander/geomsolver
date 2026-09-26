@@ -22,20 +22,67 @@ fn doc(name: &str) -> String {
 fn unknown_stl_backend_is_refused() {
     let output = run(&["--stl-backend","unknown"]);
     assert_eq!(output.status.code(),Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("occt, mesh or manifold"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("occt, mesh or refine"));
 }
 
 #[test]
-fn unsupported_continuous_boundary_cannot_export_the_unswept_source() {
-    let dir = std::env::temp_dir().join(format!("solventc-sweep-refusal-{}",std::process::id()));
+fn a_continuous_boundary_exports_through_the_field_mesh() {
+    let dir = std::env::temp_dir().join(format!("solventc-sweep-mesh-{}",std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let output = dir.join("swept.stl");
-    std::fs::write(&output,"old STL").unwrap();
     let result = run(&[&doc("solid_generating_sweep.sv"),"--stl",output.to_str().unwrap(),
         "--solid","removal.body","--stl-backend","mesh","--no-diagnose"]);
-    assert_eq!(result.status.code(),Some(1),"{}",String::from_utf8_lossy(&result.stderr));
-    assert!(String::from_utf8_lossy(&result.stderr).contains("continuous motion sweeps"));
+    assert_eq!(result.status.code(),Some(0),"{}",String::from_utf8_lossy(&result.stderr));
+    let bytes = std::fs::read(&output).unwrap();
+    gcs_core::mesh::stl_shells(&bytes).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// A body whose sweep is outside the generating class is refused before any construction,
+/// with the row it fails and a point, and an earlier output is left as it was: the gear pair
+/// at 30 degrees of offset on a symmetric rack, whose pinion touches the blank twice.
+#[test]
+fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
+    let dir = std::env::temp_dir().join(format!("solventc-class-refusal-{}",std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for entry in std::fs::read_dir(examples().join("spiral_bevel")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().map_or(false,|e| e == "sv") { std::fs::copy(&path,dir.join(path.file_name().unwrap())).unwrap(); }
+    }
+    let configuration = dir.join("configuration.sv");
+    let text = fixtures::gear::design("configuration",std::fs::read_to_string(&configuration).unwrap(),30.,0.,35.);
+    std::fs::write(&configuration,text).unwrap();
+    let output = dir.join("pinion.stl");
+    std::fs::write(&output,"old STL").unwrap();
+    let result = run(&[dir.join("gears.sv").to_str().unwrap(),"--stl",output.to_str().unwrap(),
+        "--solid","pair.pinion.body","--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(1),"{stderr}");
+    assert!(stderr.contains("outside the generating-sweep class (E2"),"{stderr}");
     assert_eq!(std::fs::read_to_string(output).unwrap(),"old STL");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// A refined mesh the field-agreement probe refuses is never written: the swept torus meshed
+/// so coarsely its facets leave the field, and the earlier output is left as it was.
+#[cfg(feature="occt")]
+#[test]
+fn a_refined_mesh_the_field_refuses_leaves_the_old_output() {
+    let dir = std::env::temp_dir().join(format!("solventc-refine-refusal-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = dir.join("part.stl");
+    std::fs::write(&output,"old STL").unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_solventc"))
+        .args([doc("swept_torus.sv").as_str(),"--stl",output.to_str().unwrap(),"--stl-backend","refine","--no-diagnose"])
+        .env("SOLVENT_REFINE_FACET","3").env("SOLVENT_REFINE_DISTANCE","1")
+        .env_remove("SOLVENT_FEATURES").env_remove("SOLVENT_KEEP_REJECTED")
+        .output().expect("solventc runs");
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(1),"{stderr}");
+    assert!(stderr.contains("disagrees with the material field"),"{stderr}");
+    assert_eq!(std::fs::read_to_string(&output).unwrap(),"old STL");
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(),1,"nothing staged is left beside it");
     std::fs::remove_dir_all(dir).unwrap();
 }
 

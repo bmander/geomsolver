@@ -73,6 +73,7 @@ export interface Abi {
   gcs_program_uses(p: number, n: number): number;
   gcs_module_set(np: number, nn: number, tp: number, tn: number): void;
   gcs_module_forget(): void;
+  gcs_module_provided(np: number, nn: number): number;
   gcs_module_source(p: number, n: number): number;
   gcs_elab_free(h: number): void;
   gcs_elab_take_sketch(h: number): number;
@@ -183,9 +184,22 @@ export interface Abi {
   gcs_solid_mesh(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_normals(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_faces_json(h: number, idx: number, unit: number): number;
+  gcs_sketch_defer_fields(h: number, on: number): void;
+  gcs_sketch_field_jobs(h: number): number;
+  gcs_solid_supply_field(h: number, idx: number, vertices: number, nv: number, triangles: number,
+    nt: number, provisional: number): number;
+  gcs_solid_provisional(h: number, idx: number): number;
+  gcs_field_mesher_new(h: number, idx: number, fineness: number): number;
+  gcs_field_mesher_step(m: number, budget: number): number;
+  gcs_field_mesher_progress(m: number): number;
+  gcs_field_mesher_snapshot(m: number, out: number): number;
+  gcs_field_mesher_vertices(m: number, out: number, cap: number): number;
+  gcs_field_mesher_triangles(m: number, out: number, cap: number): number;
+  gcs_field_mesher_free(m: number): void;
   gcs_solid_glb(h: number, idx: number, unit: number): number;
   gcs_solid_objects_json(h: number): number;
   gcs_solid_stl(h: number, idx: number, unit: number): number;
+  gcs_solid_stl_preview(h: number, idx: number, unit: number): number;
   gcs_callout_pick(h: number, unit: number, x: number, y: number, tolPx: number): number;
   gcs_callout_grab(h: number, id: number, unit: number, x: number, y: number,
                    out: number): number;

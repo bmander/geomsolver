@@ -14,7 +14,7 @@ use std::f64::consts::{PI,TAU};
 type P = [f64;2];
 fn cross(a: P,b: P) -> f64 { a[0]*b[1]-a[1]*b[0] }
 fn delta(a: P,b: P) -> P { [a[0]-b[0],a[1]-b[1]] }
-fn distance(a: P,b: P) -> f64 { (a[0]-b[0]).hypot(a[1]-b[1]) }
+fn distance(a: P,b: P) -> f64 { let (x,y) = (a[0]-b[0],a[1]-b[1]); (x*x+y*y).sqrt() }
 fn failure(e: Error) -> String { format!("profile field: {e:?}") }
 
 impl Edge {
@@ -247,7 +247,10 @@ impl Wall {
 
 /// A simple closed loop as its signed boundary distance, interval-evaluable.
 #[derive(Clone,Debug)]
-pub(super) struct Profile { edges:Vec<Edge>,walls:Vec<Wall>,reach:f64 }
+pub(super) struct Profile { edges:Vec<Edge>,walls:Vec<Wall>,reach:f64,
+    /// Per edge, whether the material lies on its left (a line) or inside its circle (an arc):
+    /// read once off the loop a hair inside the edge's middle, for `carrier`.
+    material:Vec<bool> }
 
 impl Profile {
     fn new(edges: Vec<Edge>) -> Result<Self,String> {
@@ -255,9 +258,54 @@ impl Profile {
         let walls: Vec<Wall> = walls.into_iter().flatten().collect();
         if walls.is_empty() { return Err("material profile has no wall".into()); }
         let reach = edges.iter().map(Edge::reach).fold(0_f64,f64::max);
-        Ok(Self {edges,walls,reach})
+        let mut profile = Self {edges,walls,reach,material:Vec::new()};
+        let eps = 1e-6*(1.+reach);
+        profile.material = profile.edges.iter().map(|e| {
+            let m = e.at(0.5);
+            let probe = match *e {
+                Edge::Line {a,b,..} => {
+                    let d = [b[0]-a[0],b[1]-a[1]];
+                    let l = (d[0]*d[0]+d[1]*d[1]).sqrt().max(f64::MIN_POSITIVE);
+                    [m[0]-d[1]/l*eps,m[1]+d[0]/l*eps]
+                }
+                Edge::Arc {center,..} => {
+                    let r = distance(m,center).max(f64::MIN_POSITIVE);
+                    [m[0]+(center[0]-m[0])/r*eps,m[1]+(center[1]-m[1])/r*eps]
+                }
+            };
+            profile.value(probe) < 0.
+        }).collect();
+        Ok(profile)
     }
     pub(super) fn reach(&self) -> f64 { self.reach }
+
+    pub(super) fn edge_count(&self) -> usize { self.edges.len() }
+
+    /// `value`, and the edge nearest the point, which decides it.
+    pub(super) fn value_edge(&self,p: P) -> (f64,usize) {
+        let (edge,nearest) = self.edges.iter().map(|e| e.distance(p)).enumerate()
+            .fold((0,f64::INFINITY),|a,(k,d)| if d < a.1 { (k,d) } else { a });
+        let inside = self.edges.iter().map(|e| e.crossings(p)).sum::<usize>()%2 == 1;
+        (if inside { -nearest } else { nearest },edge)
+    }
+
+    /// Edge `j`'s carrier, its whole line or circle, negative on the loop's material side of it
+    /// (`Profile::material`).
+    pub(super) fn carrier(&self,p: P,j: usize) -> f64 {
+        let material = self.material[j];
+        match self.edges[j] {
+            Edge::Line {a,b,..} => {
+                let d = [b[0]-a[0],b[1]-a[1]];
+                let l = (d[0]*d[0]+d[1]*d[1]).sqrt().max(f64::MIN_POSITIVE);
+                let left = (d[0]*(p[1]-a[1])-d[1]*(p[0]-a[0]))/l;
+                if material { -left } else { left }
+            }
+            Edge::Arc {center,radius,..} => {
+                let ring = distance(p,center)-radius;
+                if material { ring } else { -ring }
+            }
+        }
+    }
 
     /// The signed boundary distance at a point, in plain floating point.
     pub(super) fn value(&self,p: P) -> f64 {

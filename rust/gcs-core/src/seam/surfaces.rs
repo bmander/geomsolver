@@ -2,8 +2,9 @@
 use crate::{envelope::{check_tolerance,Error,IntersectionOptions,SurfacePoint},
     model::Sketch,plane::cross,solid::{RevolvedSurface,SurfaceProjection,SurfaceProjector}};
 
+use crate::space::length;
+
 type V = [f64;3];
-fn length(v: V) -> f64 { v[0].hypot(v[1]).hypot(v[2]) }
 fn unit(v: V) -> Result<V,Error> {
     let n = length(v);
     if !n.is_finite() || n == 0. { Err(Error::Degenerate) } else { Ok(v.map(|x| x/n)) }

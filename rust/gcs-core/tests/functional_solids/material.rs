@@ -1,6 +1,6 @@
 use super::*;
 use super::sweeps::{rotation,sphere,options,includes};
-use gcs_core::{interval::minimum::{Options,Status},solid::{MaterialField,SweptField,SweepError}};
+use gcs_core::{interval::minimum::{Options,Status,Stop},solid::{MaterialField,SweptField,SweepError}};
 
 fn torus() -> MaterialField {
     SweptField::new(sphere(),rotation(),I::new(-4.,4.).unwrap()).into()
@@ -43,7 +43,7 @@ fn shared_sweeps_keep_transformed_boxes_evidence_and_budgets_distinct() {
     let mut cached = field.evaluator(32); let mut uncached = field.evaluator(0);
     let p = point([3.,0.,0.]);
     let mut observations = vec![0;2];
-    let a = cached.bounds_with_observer(p,options(),|query,_,_| observations[query] += 1).unwrap();
+    let a = cached.query(p,Stop::Converged,options(),Some(&mut |query,_,_| observations[query] += 1)).unwrap();
     let b = uncached.bounds(p,options()).unwrap();
     assert_eq!(a.sweeps.len(),2); assert_eq!(a.value,b.value);
     assert_ne!(a.sweeps[0].point_box,a.sweeps[1].point_box);
@@ -88,9 +88,9 @@ fn material_cancellation_and_failed_operands_do_not_become_silent_solids() {
         assert!(query.value.bounds()[1] >= 0.); // no established material in A-A
     }
     // A failed leaf is still an error even if another operand could fix the sign.
-    let invalid = MaterialField::from(SweptField::new(sphere(),rotation(),I::point(9.).unwrap()));
+    let invalid = MaterialField::from(SweptField::new(sphere(),rotation(),I::point(f64::MAX).unwrap()));
     let mut field = ball(100.).union(invalid).unwrap().evaluator(0);
-    assert_eq!(field.bounds(point([0.;3]),options()).unwrap_err(),SweepError::Oracle(Error::OutsideDomain));
+    assert_eq!(field.bounds(point([0.;3]),options()).unwrap_err(),SweepError::Oracle(Error::Overflow));
     let mut field = torus().evaluator(0);
     assert_eq!(field.bounds(point([0.;3]),Options {max_evaluations:3,..options()}).unwrap_err(),SweepError::InvalidOptions);
     assert_eq!(field.bounds(point([f64::MAX;3]),options()).unwrap_err(),SweepError::Oracle(Error::Overflow));
@@ -106,9 +106,9 @@ fn classification_bands_follow_cut_signs_and_shared_query_identity() {
     let p = point([3.3,0.,0.]);
     let fine = evaluator.bounds(p,options()).unwrap();
     let mut observations = [0;2];
-    let fast = evaluator.bounds_outside_with_observer(p,band,options(),|query,_,_| {
+    let fast = evaluator.query(p,Stop::Outside(band),options(),Some(&mut |query,_,_| {
         observations[query] += 1;
-    }).unwrap();
+    })).unwrap();
     for (s,n) in fast.sweeps.iter().zip(observations) { assert_eq!(s.minimum.evaluations,n); }
     includes(fast.value,-0.7);
     assert!(fast.value.bounds()[0] <= fine.value.bounds()[0] && fast.value.bounds()[1] >= fine.value.bounds()[1]);
@@ -119,10 +119,10 @@ fn classification_bands_follow_cut_signs_and_shared_query_identity() {
     assert_eq!(fast.sweeps[0].minimum.status,Status::Separated);
     assert_eq!(fast.sweeps[1].minimum.status,Status::Converged);
     assert!(fast.sweeps[0].minimum.evaluations < fast.sweeps[1].minimum.evaluations);
-    let shared = sweep.clone().union(sweep).unwrap().evaluator(0).bounds_outside(p,I::ZERO,options()).unwrap();
+    let shared = sweep.clone().union(sweep).unwrap().evaluator(0).query(p,Stop::Outside(I::ZERO),options(),None).unwrap();
     assert_eq!(shared.sweeps.len(),1);
     assert!(shared.value.bounds()[1] < 0.);
-    let invalid = MaterialField::from(SweptField::new(sphere(),rotation(),I::point(9.).unwrap()));
-    assert_eq!(ball(100.).union(invalid).unwrap().evaluator(0).bounds_outside(p,I::ZERO,options()).unwrap_err(),
-        SweepError::Oracle(Error::OutsideDomain));
+    let invalid = MaterialField::from(SweptField::new(sphere(),rotation(),I::point(f64::MAX).unwrap()));
+    assert_eq!(ball(100.).union(invalid).unwrap().evaluator(0).query(p,Stop::Outside(I::ZERO),options(),None).unwrap_err(),
+        SweepError::Oracle(Error::Overflow));
 }

@@ -1,6 +1,6 @@
 //! Material-side evidence for boundary candidates, using the complete solid DAG.
 use super::{MaterialEvaluator,MaterialBounds,SweepError,I,V,norm,point};
-use crate::interval::minimum::Options;
+use crate::interval::minimum::{Options,Stop};
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum ProbeState {
@@ -56,14 +56,14 @@ impl MaterialEvaluator {
             }
             Ok(sides)
         })().map_err(SweepError::Oracle)?;
-        let center = self.bounds_outside(position,I::new(-distance,distance).unwrap(),options)?;
+        let center = self.query(position,Stop::Outside(I::new(-distance,distance).unwrap()),options,None)?;
         let [lo,hi] = center.value.bounds();
         if hi < -distance || lo > distance {
             return Ok(MaterialProbe {state:if hi < -distance { ProbeState::InteriorBall }
                 else { ProbeState::ExteriorBall },center,sides:None,side_boxes});
         }
-        let minus = self.bounds_outside(side_boxes[0],I::ZERO,options)?;
-        let plus = self.bounds_outside(side_boxes[1],I::ZERO,options)?;
+        let minus = self.query(side_boxes[0],Stop::Outside(I::ZERO),options,None)?;
+        let plus = self.query(side_boxes[1],Stop::Outside(I::ZERO),options,None)?;
         let [ml,mh] = minus.value.bounds(); let [pl,ph] = plus.value.bounds();
         let state = if mh < 0. && pl > 0. { ProbeState::OutwardBracket }
             else if ml > 0. && ph < 0. { ProbeState::InwardBracket }

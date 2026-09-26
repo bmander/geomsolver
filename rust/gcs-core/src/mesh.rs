@@ -158,19 +158,35 @@ pub fn weld(pieces: &[Piece]) -> Vec<Piece> {
         cells.insert(p, (verts.len() - 1) as u32);
         verts.len() - 1
     };
-    // -- weld: every piece, as indices into one vertex table
+    // -- weld: every piece, as indices into one vertex table. Most corners are the same bits as
+    // one already welded (each is shared by the pieces around it), and the same bits go where
+    // they went the first time without searching the cells again; looked up, never iterated.
+    let mut seen: std::collections::HashMap<[u64; 3], usize> = std::collections::HashMap::new();
     let loops: Vec<Vec<usize>> = pieces
         .iter()
-        .map(|p| p.pts.iter().map(|&q| canon(q, &mut cells, &mut verts)).collect())
+        .map(|p| p.pts.iter().map(|&q| {
+            *seen.entry(q.map(f64::to_bits)).or_insert_with(|| canon(q, &mut cells, &mut verts))
+        }).collect())
         .collect();
 
-    // -- stitch: a vertex on the interior of an edge belongs in that edge
+    // -- stitch: a vertex on the interior of an edge belongs in that edge. Nothing is filed from
+    // here on, so the grid is read packed: a cell is an array index, not a tree walk, and an edge
+    // looks in some thirty of them.
+    // Each edge is walked from both of its pieces: what lies on it is found once, from its
+    // lower-numbered end, and read backwards from the other.
+    let cells = cells.pack();
+    let mut between: std::collections::HashMap<(usize, usize), Vec<[f64; 3]>> = std::collections::HashMap::new();
     let mut out = Vec::with_capacity(pieces.len());
     for (p, idx) in pieces.iter().zip(&loops) {
         let mut pts: Vec<[f64; 3]> = Vec::with_capacity(idx.len());
         for i in 0..idx.len() {
-            let (a, b) = (verts[idx[i]], verts[idx[(i + 1) % idx.len()]]);
-            pts.push(a);
+            let (ia, ib) = (idx[i], idx[(i + 1) % idx.len()]);
+            pts.push(verts[ia]);
+            if let Some(on) = between.get(&(ia.min(ib), ia.max(ib))) {
+                if ia < ib { pts.extend(on.iter().copied()) } else { pts.extend(on.iter().rev().copied()) }
+                continue;
+            }
+            let (a, b) = (verts[ia.min(ib)], verts[ia.max(ib)]);
             let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
             let len = plane::norm(d);
             if len <= tol {
@@ -197,7 +213,9 @@ pub fn weld(pieces: &[Piece]) -> Vec<Piece> {
                 }
             });
             on.sort_by(|x, y| x.0.partial_cmp(&y.0).expect("a finite mesh"));
-            pts.extend(on.into_iter().map(|(_, q)| q));
+            let on: Vec<[f64; 3]> = on.into_iter().map(|(_, q)| q).collect();
+            if ia < ib { pts.extend(on.iter().copied()) } else { pts.extend(on.iter().rev().copied()) }
+            between.insert((ia.min(ib), ia.max(ib)), on);
         }
         if pts.len() >= 3 {
             out.push(Piece { pts, ..p.clone() });
@@ -304,6 +322,20 @@ pub fn indexed_stl(vertices: &[[f64; 3]], triangles: &[[u32; 3]], name: &str) ->
 
 pub(crate) fn placed_stl(mesh: &Mesh, origin: [f64; 3], name: &str) -> Result<Vec<u8>, String> {
     check_stl(stl_triangles(&mesh.positions, origin, name), name)
+}
+
+/// A surface still being refined, as it stands: it may be coarse or open, and a triangle float32
+/// flattens is dropped rather than refusing the file, since a preview is a look and not a part.
+pub(crate) fn preview_stl(mesh: &Mesh, origin: [f64; 3], name: &str) -> Result<Vec<u8>, String> {
+    let bytes = stl_triangles(&mesh.positions, origin, name);
+    let kept: Vec<&[u8]> = stl_points(&bytes)?.zip(bytes[84..].chunks_exact(50))
+        .filter(|(v, _)| v.iter().flatten().all(|x| x.is_finite()) && !degenerate(v[0], v[1], v[2]))
+        .map(|(_, record)| record).collect();
+    if kept.is_empty() { return Err(format!("`{name}` has no surface to export yet")); }
+    let mut out = bytes[..80].to_vec();
+    out.extend((kept.len() as u32).to_le_bytes());
+    for record in kept { out.extend_from_slice(record); }
+    Ok(out)
 }
 
 fn check_stl(bytes: Vec<u8>, name: &str) -> Result<Vec<u8>, String> {
@@ -432,7 +464,12 @@ pub struct Group {
 /// same drawing give the same buffer, and a viewer that remembers which face was selected finds
 /// it in the same place.
 pub fn grouped(pieces: &[Piece]) -> Mesh {
-    let welded = weld(pieces);
+    grouped_welded(weld(pieces))
+}
+
+/// `grouped` for pieces already welded: every shared corner the same bits and no vertex partway
+/// along another's edge — a surface that came as an indexed mesh, which a weld would only search.
+pub fn grouped_welded(welded: Vec<Piece>) -> Mesh {
     if welded.is_empty() {
         return Mesh::default();
     }

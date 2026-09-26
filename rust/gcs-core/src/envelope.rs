@@ -10,15 +10,13 @@
 
 mod named;
 pub use named::GeneratedEnvelope;
-mod edge;
-pub use edge::{EdgePoint,edge_contact};
 
 use crate::plane::{cross, dot, scaled};
 
 type V3 = [f64; 3];
 type M3 = [[f64; 3]; 3];
 
-fn add(a: V3, b: V3) -> V3 { std::array::from_fn(|i| a[i] + b[i]) }
+use crate::space::{add, length};
 fn mv(a: M3, b: V3) -> V3 { a.map(|r| dot(r, b)) }
 fn mm(a: M3, b: M3) -> M3 {
     std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[i][k]*b[k][j]).sum()))
@@ -26,7 +24,6 @@ fn mm(a: M3, b: M3) -> M3 {
 fn ma(a: M3, b: M3) -> M3 {
     std::array::from_fn(|i| add(a[i], b[i]))
 }
-fn length(a: V3) -> f64 { a[0].hypot(a[1]).hypot(a[2]) }
 pub(crate) fn normalized(a: V3) -> Option<V3> {
     let n = length(a);
     (n > 0.0 && n.is_finite()).then(|| a.map(|v| v/n))

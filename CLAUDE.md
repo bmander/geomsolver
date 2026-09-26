@@ -141,8 +141,11 @@ and resolution limits retain bounds, never guessed membership. Motion families e
 outward-rounded inverse-point speed bound for the mathematical solved motion. This does not
 bound floating-point pose evaluation or source-solve error. `Family::bounds` and its owned
 `MotionBounds` enclose mathematical poses and forward/inverse point boxes using interval
-axis normalization, trigonometry and relative-frame composition. Coefficients stay private;
-unsupported trig ranges fail. They do not certify the original nonlinear source solve.
+axis normalization, trigonometry and relative-frame composition. Coefficients stay private.
+A rotation's angle past `sin_cos`'s [-8,8] goes through `Interval::sin_cos_periodic`, a justified
+reduction (a period's width is [-1,1]; otherwise a whole number of turns off, 2π enclosed between
+the doubles either side of TAU), so a coil's several turns are bounded; an angle whose reduction
+overflows still fails. They do not certify the original nonlinear source solve.
 `solid::PlanarField` and `RevolvedField` define explicit analytic fields from half-planes,
 disks, Booleans and a revolution frame. Bounds use interval arithmetic; their material is
 closure({f<0}). Boolean fields remain one-Lipschitz but are not necessarily signed distances,
@@ -190,8 +193,8 @@ interval evaluation does not certify that conversion or source-solve/axis-snappi
 **The body rule's third side (0.22):** `tip bound body` keeps of a body what lies within `tip`:
 a solid is its stock, plus everything `on` it, minus everything that `cut`s it, within everything
 that `bound`s it. `SolidDef::Body` carries `bound` beside `through`; `Term::Inter` is the term;
-the facet kernel, the fields, the CAD recipe (`"bound"`, OCCT `BRepAlgoAPI_Common`) and the
-Manifold path all evaluate it. Union first; `cut` and `bound` commute. A swept solid may only
+the facet kernel, the fields and the CAD recipe (`"bound"`, OCCT `BRepAlgoAPI_Common`) all
+evaluate it. Union first; `cut` and `bound` commute. A swept solid may only
 be `cut` for now. `bound` is a body word like `cut`, so it is no declaration name. The spiral
 bevel blank is `heel` bounded by `tip`, and the gear cutter the outer crown bounded by its
 indexed neighbour; the `A − (A − B)` intermediate is gone. The analytic faces the generating
@@ -209,226 +212,99 @@ labels are exclusive. Formals, repeats, forward references, print/copy/delete an
 operands use the ordinary solid dependency graph. `MaterialField::read` retains static DAGs
 and promotes them when a sweep appears; placed/composed sweeps share immutable source nodes.
 Nested continuous sweeps are refused. Cache reads include the whole motion graph, since equal
-endpoint poses do not determine the swept material. Both mesh and native boundary exports
-currently reject every graph containing a sweep, preserving old output files; material
-support is not yet native sweep-boundary construction.
-**Swept boundaries by arrangement and classification (2026-09-09):** `solventc --step/--stl`
-builds a body with swept cuts in `rust/gcs-cli/src/cad/native/sweep_boundary.rs`, not from the
-contact atlas. `cad::recipe_static` gives the static blank and lists each swept cut with its
-composed pose; the native cutter is sectioned by meridian half-planes of its first revolution's
-axis (`backend/sections.cpp`), each section loop chained and oriented by signed area is the
-profile, sampled in augmented arc length (a convex corner's fan of normals is the sharp-edge
-sweep), and every sample's contact time is `SweepContacts::at_point_normal_over`. The band and
-walk come from where declared-roll contacts enter the blank, widened until the sheet's boundary
-is outside it. The sheet is indexed by the declared motion, the kernel splits the blank (fuzzy
-1e-5 mm), every cell is judged by `MaterialEvaluator::probe` at points whose boundary distance
-the extrema solver measured (never the classifier's tolerance), unresolved or mixed cells refuse,
-and the material cells fuse. The declared roll must carry the cutter clear of the blank at both
-limits (the gear declares 45deg) or the export refuses with the overlap; a cutter whose contact
-condition is motion-independent (the sphere fixture) is refused too. Two sheets meeting
-tangentially cannot be split by the kernel, which is why the profile is one walk.
-`UnifySameDomain` widens tolerances on vertices shared with its input, so unify a copy. The
-atlas, transition and path code remains as verification. Read the roadmap's "Arrangement and
-classification" paragraphs first; `tests/native_surfaces/gear_cells.rs` holds the recorded
-tooth-space volumes the generic construction must reproduce.
-**Traced sheets for any tool under any motion (2026-09-10):** the mesh arrangement
-(`gcs-cli/src/cad/mesh_sweep.rs`) now takes its candidate sheets from the core's own
-tracer, `SweepContacts::characteristic_sheets`, and the OCCT sectioning is only the
-fallback when the tracer declines. A tool is its faces by family (`solid::tool_faces`:
-revolved, planar, extruded), the charted edges between them, and the Boolean creases
-traced across faces of different operands (`Crease`, marching squares on one face's
-chart against the other's carrier `implicit`, every crossing bisected). At each of a
-sequence of motion parameters the contact pieces of every face, edge and crease are
-traced (station roots followed by a step-halving march, fold ends exact, fans bracketed
-by the sign changes of both faces' normal velocities), trimmed to the tool's boundary
-(a face of one operand on another's carrier is `shadowed` and traced once), and chained
-at shared points, keeping `joints`. Every edge's sample geometry (positions, normals,
-whether the point is on the tool's boundary) is computed once in `Signs`; a pose changes
-only the normal velocities. Strips link one parameter's curves to the next by a Hausdorff
-test over the samples that reach the blank, and the parameter list is refined between two
-columns whose curves do not all continue (a contact curve crosses the tool at its own rate,
-not the material's the step is sized by) until they do or the step is a sixty-fourth of
-the uniform one, which is then a birth or a death; every traced parameter is a column and
-none is traced twice. A strip is a `SweepPatch`: every column
-keeps its own traced points and consecutive columns are zipped piece by piece by dynamic
-programming on rung length (`zip_pieces`), never resampled to a grid, since rows matched
-by arc-length fraction shear and fold. The CLI crops patches to the blank's occupancy
-(dilated by the column spacing), closes seams between strips with zipped ribbons, cuts
-every patch along its folded edges before slabbing (one slab folded over itself is what
-Manifold cannot take), splits the blank one placement at a time, rounds the material's
-vertices to float32 and lets Manifold's own simplification collapse the zero-length edges
-and needles that leaves (a Boolean between nearly coincident slabs leaves nanometre
-features float32 cannot hold), then collapses what remains under the link condition,
-splits needles at their T-junction and nudges non-adjacent vertices float32 identifies
-before the STL shell check (`merged`; welding by proximity alone folded strips into edges
-used three times). The blank's occupancy grid is rasterised from its mesh and flooded
-from outside, never probed by the field (that was 55 s of a 70 s run). Ordered containers
-only: hash iteration order in the slab walls made Manifold's output differ run to run,
-and one order lost the cut. `solventc --verbose` drips a line every three seconds. A column
-is simplified within the sagitta but never to a segment longer than the column spacing: a
-straight run on a plane reduced to its two ends left the zip a twisted quad to split by one
-diagonal, which poked through the hairpin's other arm, and that self-crossing slab lost
-gear space 29 whole. Two diagnostics stay in the tree: `SOLVENT_SELF_INTERSECT=1` reports
-every posed sheet that crosses itself with the columns and vertices involved, and
-`SOLVENT_FIND_LEAK=0.05` floods a voxel grid inside the blank from what the tool removes
-at mid roll, blocked by the slab union, the caps and the blank, and prints the path to any
-material it reaches. A lost space is found by exporting each placement alone (rewrite the
-member's `repeat` to `repeat 1 as i` with `at: (i + k) * 360deg / teeth`), three seconds
-each. The gate
-is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, one
-placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
-`SpatialField::value` for what may be judged in plain floating point: a face point on
-the boundary, a probe's side, never an interval claim.
-**The certified swept boundary (2026-09-10, project 1 of two prerequisites):** the hypoid
-pinion at 15° to 45° showed the mesh arrangement passing its recorded-volume and STL-shell
-gates while a field probe (points 0.1 mm inside and outside every triangle) found 19% to
-37% of the surface wrong; the user stopped that goal and set two prerequisites, each a
-large project on a unit-test foundation: a solid as the spacetime sweep of any tool, then
-reliable meshes from Booleans. `solid/swept_boundary` is the first: a closed mesh of the
-swept material alone, every vertex and triangle judged by `SweptField`, the traced sheets
-only seeds. Two facts carry it: a strict sign change brackets the boundary, and a converged
-enclosure containing zero puts the boundary within its width (`Sign::Near`), the field being
-one-Lipschitz; nothing else is inferred, and an enclosure stopped by budget is `Unresolved`,
-never a sign. `FieldJudge` counts and times every query; `project` keeps a vertex on a
-two-query bracket, widens by doubling and bisects otherwise, and labels `Inner` (a branch the
-sweep covers at another time) or `Positive`. A vertex is judged along the normalised sum of
-its incident triangle normals across all sheets (`directions`): one face's own normal at a
-tool edge runs tangent to the other face and reads zero forever. The evaluator's speed bound
-for one rotation or screw is now the box's distance from the axis
-(`Family::inverse_point_speed_bound_over`); the radius about the world origin left a point
-on the axis refining the whole roll. Milestone 1 evidence and the refusals are in
-`docs/swept-boundary.md`; the test foundation is `tests/sweep_mesh/` (a case is one struct
-literal in a `sweep_cases!` table once the harness lands, three tiers of independent truth:
-closed forms, sampled membership through `Family::at`, the field last). The old arrangement
-stays until project 2 consumes `SweptBoundary`; do not extend it.
-**Milestones 2 and 3 (2026-09-11):** every triangle is certified by `sides` (material `d`
-inside, exterior `d` outside along its normal, halving to `2ε` for thin material, `Reversed`
-refused), and eight closed-form cases close as `ClosedShell`s with every triangle certified
-(box, prism, plunged and turned cylinder, torus segment, capsule both ways, sphere about its
-own centre). Three lessons are the design. **The field cannot cut a cap**: the sweep is only
-quadratically deep past a contact curve, so `caps` cuts the tool's mesh along every sheet's
-end column (`CutMesh`: column points put in as vertices, chords walked facet by facet with
-every crossed edge split, components judged by their most decisive normal velocity), and the
-rim is the column itself. **Coplanar coverage is unioned, never dropped**: `planar_union`
-clips each plane's triangles by the fragments already placed. **Covered means covered**:
-`without_overlaps` clips a later triangle by the earlier tiles tangent to it in its own
-plane (`covered_by`); nearness ate a cap's facets beside its seam. `split_at_vertices`
-resolves T-junctions to one and a half sagittas under four fold guards, `directions`
-weights normals by angle, `deep_sign` gives `centroid_kept` its band while `sign_beyond`
-stays strict for the certificate. `tests/sweep_mesh/{closed,pieces,overlaps}.rs` are the
-gates; a sweep case must run in seconds, and anything longer prints progress.
-**Milestone 4 (2026-09-11):** sheets that cross are clipped at their label transitions
-by the field (`clip_sheets`, Kept-only bisection; a cap's corners judged in from the corner
-along its own plane, since a cap vertex on a tool edge belongs to either face) and the rims
-merged (`merge_creases`); the turning prism and the lens close and certify, and the eight
-milestone-3 cases stay green. The rules that took: a triangle faces the way its sheet does
-(`orientation` carries the winding across shared edges, stopping at a fold, since a fan
-point's stored normal is one end of the fan), coplanar overhangs are trimmed by their feet
-(`planar_union`'s second pass), curved coverage is clipped along the covering sheet's own
-outline with tangency judged where the two overlap (`uncovered`), a tolerant T-junction
-split may not lay a triangle over one already there (`lies_over`), and the cap cut walks in
-the column's own normals. `creases.rs` is the gate; its tumbling cylinder, turned box and
-dumbbell are `#[ignore]`d with their evidence (folds where a contact curve runs along its
-velocity, bowtie sectors through fixed points, a second-order-deep sphere, a Boolean mesh of
-45 000 facets) and lead into milestone 5 and project 2. `docs/swept-boundary.md` has the
-table and the lessons.
-**Swept boundary cost (2026-09-11):** the target is WASM on one core, so the work is cycles and
-complexity classes, never threads, each change checked by exporting the milestone-4 STLs
-byte for byte against a baseline (`export_milestone_4_cases`, `SOLVENT_EXPORT`). The turned
-lens went from 9.3 s to 0.83 s and the dumbbell from 52 s to 10 s. The BSP in `csg.rs` walks
-by explicit stack (a convex solid's tree is a chain as deep as its facets) and sends a batch
-down a chain with bounding spheres (`Balls`, `build_spine`, `clip_spine`), about n log n where
-it was quadratic; a roll cell's midpoint value serves its sample; `deep_sign` stops once its
-enclosure is inside the band (`Status::Contained`, never across a Boolean); cap corners are
-judged in from the corner only at tool-edge vertices; the kept stage asks the certificate's
-probes, which the judge remembers. The tracer's crease points and events are regula falsi.
-**Its structure (issue #57):** `construct`/`construct_from` run the pipeline in the library,
-every tolerance a method of `SweptBoundaryOptions`, each stage shown to an observer (`Stage`) —
-the harness's one `Diagnostics` reads the environment, the core never does. `Cap` and `Seed` are
-typed; `space.rs` holds the vector helpers, triangle measures and closest point, `roots.rs` the
-Illinois root; `minimum::Stop` and the judge's `Ask` replace flag arguments. `adjacency.rs`
-(`Edges`, `Incident`, `Live`) and `CutMesh`'s own incidence and facet grid replaced the full
-scans; `space::Grid`/`PackedGrid` is the one spatial index. Verify such changes by the
-byte-identical export. **No decision may stand where exact geometry sits:** a sign enclosure
-within the judge's tolerance of zero is near, flatness is `space::degenerate` (never exactly
-zero area), and choices within 1e-9 of the coordinates are ties taken the same way; every
-milestone-4 case built from seeds moved by 1e-12 is the same mesh
-(`seeds_moved_below_every_tolerance_leave_the_mesh_as_it_was`, and the ignored all-case test — which the
-**tumbling cylinder alone fails**, and did so before the 2026-09-12 stitch fixes as well as after,
-so it is no regression from them: measured both ways, the prism, lens, turned box and dumbbell all
-read "as it was" in both phases and only the case still refusing thirteen loops differs, its zip
-outcome being knife-edge while its boundary is open.  With the fixes one of its two phases improves
-to the same 3255 triangles in another order, where before it gave a different mesh).
-**Milestone 5 (2026-09-12):** a planar face the motion carries within its own plane is swept
-exactly as a 2D region (`grazing.rs`), not traced: `Family::in_plane` reads the motion's own steps,
-`leave_faces` stops the tracer emitting its edges, `swept_region` builds the region in rows, and
-`caps` drops its facets **and cuts its components at that face's boundary**. The turned box closes
-and certifies. The rest of 5 was **measured, not reasoned**, and the plan's own account of it was
-refuted by measurement (the cap's end-pose curve was already covered by the surviving columns,
-point for point). Three instruments did the work and are the way to chase the next such defect:
-`hygiene` judges each stage's mesh on what it must never hand on (an edge used more than twice,
-two triangles walking one edge the same way, a degenerate triangle, a repeated triangle) and names
-the first few at fault with their midpoints — an edge used *once* is no fault, and a near pair is
-reported only between the weld's coincidence and the snap; `window` gives what stands in a ball of
-any stage, keyed by **position**, the only handle that survives renumbering between stages; and
-`Origin` says how each cut-mesh vertex came to be. They showed first that no unpaired loop fails
-for want of a partner: a loop repeating a vertex is pinched, and `simple` is the first thing the
-fill, the pairing and the slit pass each ask.  A walk that returns to a vertex is two walks, and
-`unpinch` cuts it into them on identity and no tolerance; the pinches came from a cap cut along a
-sheet's end column, left touching itself where that chain crosses the tool's own rim.
-**The stitch is then manifold by one rule — no triangle may walk an edge some triangle already
-walks** — kept by `split_where` (each split claims the four directed edges it will make, since the
-round's batch is applied after its candidates are chosen) and by `rim_zip`'s `lay`.  Between them
-every edge used more than twice is gone from every case, the 360° box's eleven used four times
-included.  `rim_zip` re-walks the boundary and runs its passes to a fixpoint — a pass's own fill
-leaves loops the others never see — and reports what is open off the **finished** mesh, never the
-opening walk: several cases had read as certified while their shells were open, the stale walk
-naming nothing unpaired.  A loop nothing pairs is filled only where `loop_span` says the field
-brackets the boundary across it, fanned from a new centroid vertex (the triangulation the field
-judged, and the only one whose chords cannot already be edges); `Open` is refused and `Unresolved`
-never rounded.  **A loop must first *reach* that pass, and two defects stopped it** (2026-09-12,
-each measured before it was fixed): the pairing and the slit pass marked their loops paired
-**before** laying the band, so a band `lay` declined whole consumed them for every later pass and,
-the pairing being decided the same way each round, for every later round too — 29 of the tumbling
-cylinder's 33 loops were claimed by a pass that laid **nothing**, and only its two wide seams ever
-reached the field pass; and `lay` admitted a facet the mesh already carried wound the other way,
-which `dedupe` then dropped, so the loop came back each round and only the cap on rounds ended it.
-Both passes now commit only on a band that laid something, `lay` refuses a corner set the mesh
-already has, and the cap is no longer what ends the loop.  The tumbling cylinder goes **33 to 13**
-loops (volume 6.6509 to 6.6563) with the prism, lens, turned box and dumbbell byte-identical; of
-the 13, **none** is `Spanned`, twelve are `Open` and one the judge refuses with `ReversedNormal`,
-so every survivor is surface for the tracer to generate.  The gate is the property and not a
-count: `creases::no_loop_the_field_calls_a_hole_is_left_unfilled`, no loop the field itself calls a
-hole may be left open.  `planar_union`'s foot trim keeps a fragment once where it lies along a foot, since
-`cut` places a point within `eps` on **both** sides and it came back whole in each half: 744
-repeated triangles became 0 and the union's hygiene came clean, though no refusal moved, the later
-stages having cleared them anyway.  `tests/sweep_mesh/cases.rs` and `forms.rs` are the case table —
-a row is one struct literal, `sweep_cases!` makes a `#[test]` of it, `Exact` and `Inscribed` are
-the two volume tiers said once, and a case that does not close yet is not a row.
-`weld_boundary_ends` merges two samplings of one boundary junction — a vertex past an edge's end
-lies within the junction tolerance of that endpoint, where no split can reach it — and **every
-merge is tried and kept only if no directed edge is walked more than once**, so one that would
-break the manifold is refused and nothing changes; that guard is what welding by proximity alone
-lacked. With `collapse_needles` beside it — a triangle owning a boundary edge whose height over it
-is under the certificate's own least probe distance (already its definition of a sliver, so no new
-tolerance) has its apex merged into the nearer end, under that same guard — it took the slid
-cylinder from eleven unpaired loops to one, the thin plate from ten to two and the tumbling
-cylinder from 47 to 33, leaving prism, lens and turned box byte-identical. A
-merge that would flatten a triangle — distinct corners gone collinear — is **refused whole** rather
-than dropping it: a certified boundary may not quietly shed surface, and an open loop is the honest
-refusal. Refusing costs almost no reach and keeps the material (tumbling's volume 6.6457, above the
-6.6390 the dropping version began from). What still
-refuses does so for **coverage, not stitching**: sliver loops no triangle can span with area, false
-boundaries (every declined band is blocked on an interior edge already used twice, by a triangle on
-the band's own three vertices wound the other way — the facet is already there, and the loop reads
-as boundary only because two samplings of one surface met at different vertices and their edges
-never paired), and wide seams the field reads `Open` where no surface was ever laid.  Still refusing, with evidence in `docs/swept-boundary.md`: the tumbling cylinder,
-the thin plate, the slid cylinder and the tilted cylinders at 30° and 85°; 5c is not begun.  Four
-further stitching fixes were refuted by measurement and reverted (a multi-slit pass, a boundary
-weld, a winding flip, and fanning a quad across its other diagonal — which closed the 30° case
-outright and was still wrong, the certificate reading two laid facets `Reversed`) and are recorded
-with their numbers so they are not tried again.  **A case that closes on a refused certificate is a
-failure, never a warning**, and a fan is laid only where the mesh can take the whole of it.
+endpoint poses do not determine the swept material. The native CAD recipe rejects every graph
+containing a sweep; `EvaluatedSolid` takes one from its material field instead (`from_surface`:
+`solid::FieldMesher`), one mesh for every view's pixel length. The terminal and tests mesh in
+place (`FieldMeshing::Now`). **The page never does**: its sketch's `field_meshing` is
+`Deferred`; what to mesh is the core's `Sketch::field_jobs` (swept objects, each keyed by a
+digest of `solid::reads`), and `app/field-preview.ts` compares keys only and runs
+`app/mesh-worker.ts` (its own core, the page's text and parameter values), which checks its
+drawing names the same jobs and posts each swept object's surface every ~120 ms, worst facet
+first, to `supply_field` (checked in the core); a provisional surface draws, and exports only
+through the preview choice. Options ▸ mesh fineness is view state: the job carries it to
+`FieldMesher::with_fineness` (facets that many times smaller, surface distance its square;
+the core offers 0.25–4 and refuses the rest), and a change meshes every swept object again.
+**Field meshing** ([docs/field-meshing.md](docs/field-meshing.md)): Delaunay refinement of the
+material field (`delaunay::refine::Progressive`, resumable, over a regular triangulation with
+exact predicates; what it meshes is a `refine::Domain`), sharp edges protected by weighted points. `FieldMesher` runs two passes: an
+unprotected first pass on `MaterialField::tight_support` (the preview), then `solid::crease`
+traces the creases the first pass's operands disagree across, and the final pass refines with
+them protected. A crease is where the deciding operand changes — a leaf, a piece of its boundary
+(`PlanarField::carrier`, lifted by revolutions and prisms, which add caps) and a sweep's contact
+time; `OperandId::whole` reads a leaf as the field sees it. A crease point needs the field at
+zero *and* both leaves active; a tangent takeover hands the crease on, any other ends it at an
+exact corner, and `End` says why. Crease reads a `crease::CreaseSource` (whole reading, one
+operand's, symmetries) and nothing else of the field, so it is tested on analytic planes too.
+Rays seed from beside the centre, never on it. `MaterialField::reading` gives value, gradient,
+the deciding `OperandId` (opaque: leaf, piece or whole, a sweep's contact time; none where a
+bound or a cached value settled it) and a crease flag. A field is read through its term compiled
+once (`material/plan.rs`, `tape.rs`'s shape): shared nodes one op, each knowing its leaf count,
+so a leaf's number is fixed by offsets and an operand is found by descent; support, lower bounds
+and the interval enclosure are `Fold`s over it, the sign and the reading bespoke walks. Every point query is `MaterialField::query(p,
+&mut Query)` — `Want::Sign | Reading`, `Source::Exact | Cached(Resolution) | Warm {hints,local}` —
+with `side` and `reading` its two shorthands; a sweep's half (`SweptField::query`) takes box, floor
+table, cached field, search in that one order. Readings are branch and bound (exact below a cap, a
+proven lower bound above it), and crossings are
+placed by safeguarded Newton on them and memoised across rebuilds. A `construction` solid is
+never an object. The spiral bevel pair is the app's example `spiral_bevel` (web-only catalog
+entry, `gears.sv`). `solventc --stl-backend refine` meshes the same way, skipping admission and
+gated by the field-agreement probe (`SOLVENT_FEATURES=field` takes the features from the field
+as the app does).
+**Meshing speed (2026-09-25):** the mesher reads sweeps from adaptive distance fields
+(`solid/field/adf.rs`, `SweptField::cached`, `Source::Cached`):
+an octree per sweep and `Resolution`, exact corners, trilinear between, split while wider than a
+facet or while its centre reads off the interpolation by more than a tenth of the facet distance.
+Readings, never claims; creases and admission still read exactly. Every plain sweep reading is
+one `RollSearch` (`swept.rs`) under a `Goal` (`AtLeast`/`Floor`/`Sign`/`Minimum`); a sweep's caches
+are one `SweepCaches` every clone shares, and the field's keys and locks are `field/memo.rs`
+(immutable snapshots: nothing is invalidated). Brent, bisection and the Newton step onto two or
+three zero sets are `crate::roots`, shared with crease tracing and the refinement. A body's cuts are one union,
+subtracted once and folded in pairs (`document.rs`), and a union keeps its flattened operands with
+a lazily filled cell table of lower bounds (`Spread`, from coarse floor cubes), so a query reads
+the two or three tooth spaces near it, not all 48. `MaterialField::symmetries` reads the maps
+between an indexed cut's placements, kept only if the whole field reads alike at sampled points
+(support and first-pass vertices) and their images; `crease::creases_under` traces each crease
+once and adds its images. The whole gear went from 430 s (114,584 triangles, over-refined by the
+normal-angle criterion) to 4.5 s (17,256), the pinion from 24 s to 3 s, natively. Measure with
+instructions retired (`/usr/bin/time -l`): Spotlight indexing a fresh target directory doubles
+wall-clock noise.
+**Generating sweeps and the native export** ([docs/generating-sweeps.md](docs/generating-sweeps.md)):
+`solventc --step/--stl` builds a body with swept cuts only for the class that generates bevel and
+hypoid gears. `solid::admission::admit_body` asks rows T1–E4 of a body's swept cuts (revolved
+line/arc tools or their intersections, a single or relative rotation whose contact condition
+changes over the roll, clear of the blank at both limits, one contact per tool point, no fold, no
+self-crossing) and refuses with the row and a witness; it is sampled and says so, and checks a
+placement once when the blank reads alike at every point its checks read. A fold is judged by the
+sign of the area factor times the contact condition's rate. Admitted, the body is built in
+`gcs-cli/src/cad/native/sweep_boundary.rs`: each native cutter sectioned by meridian half-planes
+(`backend/sections.cpp`) into a profile sampled in augmented arc length, each sample's contact
+time from `SweepContacts::at_point_normal_over` (a typed `PointContactError`), each station's
+contact curve traced and the sheet resampled by the core (`solid::contact_trace`, which the host
+feeds with section samples and nothing else), the sheet indexed by the declared motion, the
+blank split by the kernel (fuzzy 1e-5 mm), every cell judged by `MaterialEvaluator::probe`, the
+material cells fused. `UnifySameDomain` widens tolerances on vertices shared with its input, so
+unify a copy. `solid::agreement` then probes the mesh 0.1 mm off each side against the material
+field (a one-sided disagreement is withdrawn only where the centroid reads on the boundary), and
+nothing is written unless it agrees: every backend's output goes through `cad::output::Staged`
+(staged beside the target, checked, renamed), and native swept construction takes the core's
+`admission::Admission`, which only `admit_body` makes. The mesh and cell contracts are the
+core's (`solid::contracts`), and every refusal, from admission to the gate, is one
+`solid::export::ExportRefusal` — its `Stage` (the keys `SOLVENT_STAGE_TRACE` records, with a
+`refused:` line for the stage refused at), the class row and a witness when known — reported at
+the solid's statement. The refine backend's features are `solid::blank_features`, read off the
+native blank's topology through `BlankTopology`. The configured gear is a 25° hypoid designed out of undercut
+(`pressure_shift`, `spiral_angle` in `configuration.sv`); tests with recorded numbers pin theirs
+through `fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, the dev-only crate both suites'
+readers, gear rewrites and small sweep tools live in), and `tests/native_surfaces/gear_cells.rs` holds the
+recorded tooth-space volumes. `tests/generating_harness.rs` (ignored, minutes) locates each
+refusal by stage over fixtures, the gear controls and a 48-design sweep.
+**Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
+its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
+manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference
+experiment; and (2026-09-26) the candidate construction before them — contact covers, joined
+curves and paths, meridian charts, `envelope::edge_contact`, `solid::tool_faces`, native pcurves,
+face splitting and endpoint caps, their tests and `rust/examples/swept_boundary/`. Git history
+keeps them; do not revive them without a new plan.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

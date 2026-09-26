@@ -41,236 +41,33 @@ any accidental subprocess fallback.
 Validated on Intel macOS with native OCCT 7.9.3. The FFI bevel-blank export matches the former host's blank
 under both directed native Boolean differences (neither leaves a solid).
 
-The internal bridge also interpolates regular rectangular contact grids into native
-B-spline faces and evaluates their supporting surfaces. Grid rows/columns use uniform
-parameters; callers supply coordinates in mm. Surface queries return position and the
-unit `du cross dv` normal, without claiming material orientation or trim membership.
-Invalid dimensions, nonfinite points and kernel failures return diagnostics. Candidate
-faces cannot pass the final solid validator.
+The files beyond construction and export (`occt.cpp`) serve the generating-sweep export
+([docs/generating-sweeps.md](../../../docs/generating-sweeps.md)) and the refine path's features:
 
-Run the source-driven fitting checks with:
-
-```sh
-cargo test --manifest-path rust/Cargo.toml -p gcs-cli --features occt --test native_surfaces -- --nocapture
-```
-
-These tests read `gears.sv` through ordinary parsing, module resolution and solving,
-then pass contact points from the declared cutter sweeps directly to C++. No imported
-tooth grids or Python construction are involved. Sixteen flank/fillet candidate charts
-are checked at withheld points, with observed maximum position error about 0.00013 mm.
-The charts cover meridian parameters [0.05,0.95] and roll [-0.3,-0.2] radians only.
-A former chart crossed a ring with no contacts; that missing ring remains a regression
-check. A separate orbiting-sphere fixture checks refinement and the independent torus
-equation. These sampled checks establish neither whole-domain coverage nor an error bound.
-
-The source evaluator also supplies a temporal chart for a rotation viewed from another
-fixed-axis rotation: hold cutter `(u,v)` and enumerate contact times. A native regression
-fits across the join of the earlier pinion chart's two branches, checking both positions
-and tangent planes. This is local chart continuation, not automatic domain partitioning
-or global self-intersection trimming. See the [roadmap](../../../docs/spiral-bevel-roadmap.md).
-
-This is an internal fitting primitive, exercised by integration tests; the CLI does not
-yet assemble continuous sweep solids. Chart boundaries, source trimming, sharp-edge sweeps,
-endpoint caps and global trimming remain necessary before enabling their STEP/STL export.
-
-`boundary.cpp` reads the actual topology of a constructed native solid, including edges
-made by Booleans. Its C interface first counts edges, then returns rows containing the edge
-handle, both incident face handles and explicit seam/pole flags. Edge queries return a
-position, unit curve tangent, two outward material normals and their measured face/curve
-incidence discrepancies in mm, followed by the signed dihedral in radians (15 doubles).
-Negative dihedral is convex, positive is concave and zero is smooth. Its sign uses the
-oriented face boundary, not just the angle between two normals. Seams retain their two parameter curves; collapsed edges
-remain in the inventory and explicitly refuse tangent queries. Queries check face incidence
-and consistent curve parameters instead of projecting onto unrelated supporting surfaces.
-The shared session ownership and exception boundary live in `occt.hpp`.
+- `sections.cpp` cuts a native cutter by meridian half-planes into the profile a swept sheet
+  is sampled over.
+- `surfaces.cpp` interpolates a sheet's sample grid into a B-spline face
+  (`solvent_cad_bspline_face_with`: uniform, chord-length or centripetal parameters), lists a
+  shape's faces, and queries a bounded face in its own finite UV trim box
+  (`solvent_cad_face_point`: outside, inside or on a trim, with position and oriented normal).
+- `cells.cpp` splits the blank by the sheets (fuzzy), lists and samples the cells, fuses the
+  material ones and measures volumes; which cells are material is the caller's, from the field.
+- `boundary.cpp` reads the actual topology of a constructed solid, Boolean edges included:
+  rows of edge, both incident faces and seam/pole flags, and per edge a position, unit tangent,
+  two outward material normals, their incidence discrepancies in mm and the signed dihedral
+  (15 doubles; negative convex, positive concave, zero smooth, read from the oriented face
+  boundary). Seams keep both parameter curves; collapsed edges refuse tangent queries.
+- `trims.cpp` answers the remaining face and edge queries: a face's periodic seams, a point
+  on an edge's spatial curve, the support normals at many points' nearest feet, and a face's
+  outward normal at a point's projection.
 
 ```sh
 cargo test --manifest-path rust/Cargo.toml -p gcs-cli --features occt --test native_boundary -- --nocapture
+cargo test --manifest-path rust/Cargo.toml -p gcs-cli --features occt --test native_surfaces -- --nocapture
 ```
 
-These tests use the CLI's ordinary recipe builder directly. Cube/hole checks cover edges
-created at the stock's ends by an overshooting cylindrical cutter and the hole's inward
-normals. Sphere/torus checks distinguish poles and periodic seams from creases. The actual
-pinion and gear cutters have 10 and 18 native edges; 84 sampled positions and material-side
-checks agree with the separate source field. This supplies source topology for sharp-edge
-sweeps; it does not yet select the exposed swept regions or assemble a swept solid.
-
-`envelope::edge_contact` now supplies the local sharp-edge candidate test. It checks the
-convex outward normal cone against the motion velocity and returns the candidate's outward
-normal. Smooth/concave edges contribute no regular sharp-edge face; tangent motion and
-collapsed cones remain explicit degeneracies. A blind-hole regression checks the dihedral
-sign, and a rotating cube edge generates a native fitted cylindrical patch compared against
-the known cylinder. The actual gear cutters produce 17/37 sampled sharp contacts, with 106
-nearby-time source-material checks on strict interior cone contacts. These local checks
-do not establish visibility over the whole motion interval or a complete swept solid.
-
-The native boundary tests also connect candidate positions/normals to
-`MaterialEvaluator::probe`, which checks the complete declared swept material. It returns
-strict interior/exterior ball margins or a bracket between opposite material signs at
-outward-rounded offsets. Uncertain results remain explicit. At one edge station and three
-roll times, the actual pinion/gear cutters yield 14 outward brackets and four candidates
-buried by another pose, in about two seconds including solve/construction. Covering witnesses
-are rechecked through the static source evaluator. Generic tests cover swallowed finite
-caps, cut orientation, input boxes, phantom zeros and exhausted budgets. These are local
-material checks at a 0.01 mm offset; they do not yet trace native trim curves or establish
-unique crossings, complete surface coverage or the final export error.
-
-`surfaces.cpp` now owns fitting, supporting-surface queries and native face splitting.
-`solvent_cad_split_face` uses OCCT's
-[Splitter](https://dev.opencascade.org/doc/occt-7.7.0/refman/html/class_b_rep_algo_a_p_i___splitter.html)
-to construct intersection curves and return every fragment of one source face cut by
-other faces. It preserves inputs, excludes tool fragments and refuses kernel errors,
-warnings or invalid results. It adds no fuzzy tolerance or material selection.
-`solvent_cad_faces` enumerates the result; `solvent_cad_face_contains` distinguishes
-inside, outside and on-trim at the same normalized supporting-surface parameters used
-by `surface_point`. A fragment's UV bounding rectangle does not redefine the chart.
-
-Tests check a parabolic intersection against its equation, a spherical closed trim
-that creates both a disk and a face with a hole, and a swept-sphere chart cut by a plane
-whose fragments are probed against the complete resulting material. Both source gear
-members now have a local temporal chart split by the declared native toe sphere, with
-169 withheld partition samples each checked against the separate sphere field. Their
-observed local interpolation errors are about 0.0000023 mm; this does not bound the
-entire trim curve or the finished solid. All eight native surface tests take about
-0.42 s on the current host, excluding compilation. The bridge constructs trims for
-supplied intersecting faces; automatic candidate coverage, global sweep trimming and
-closed-solid assembly are still required by the public export path.
-
-`SweepContacts::cover` now supplies automatic time/angle/meridian chart candidates to the same
-fitting bridge. Interval source geometry and the relative-rotation contact equation
-partition every source face's complete parameter/time domain. Excluded cells have a
-strict nonzero equation bound; a chart has a nonzero source normal, opposite endpoint
-signs over its entire free-parameter box and a dependent derivative separated from zero.
-`OffSource` cells have a strict material-field margin over their whole source position
-box, excluding regions of operands hidden by the cutter's Boolean construction. Uncertain
-material boxes remain candidates. Charts prove one contact root per free pair, not
-mapped-surface regularity or exposure.
-Poles, folds, domain transitions and budget exhaustion stay explicitly unresolved.
-Charts can overlap across internal partition boundaries. Full revolutions also permit
-local continuation through the angular seam, limited to `[-0.25,1.25]` so interval
-trigonometry stays in its supported domain. Partial revolutions, restricted spans and
-motion intervals retain their physical boundaries. The source-domain partition remains
-unchanged. `at_chart` evaluates unwrapped angular coordinates and refuses missing or
-ambiguous roots; it does not assume exact periodic equality for binary64 TAU. When an
-extended chart loses its monotonicity bound, subdivision can refine the dependent
-coordinate as well. Overlaps and coincident seams must still be reconciled before
-constructing a final face arrangement.
-At 30,000 evaluated cells per member, the pinion has 3,097 time/200 angular charts and
-the gear 788 time/319 angular/3 meridian charts, including 20/10 angular seam charts.
-All source faces receive work and unfinished domains remain explicit. Selected charts
-of every discovered type are fitted and checked at withheld points. Sphere fixtures
-compare angular and meridian fits with the independent torus equation, including a
-rotated profile requiring the third chart. Source poles remain unresolved.
-
-The two source derivatives use a shared interval motion-coefficient implementation for
-both terms of the position/normal product rule. Trigonometric boxes now use a midpoint
-Taylor evaluation and angle-addition displacement bounds, retaining outward rounding
-and the existing supported angular domain. The independent rational checker passes
-1,841 arithmetic/trigonometric records, including sampled checks of whole-box bounds.
-
-`native/sweep.rs` constructs finite sweep endpoint candidates from the declared static
-cutter recipe. One native source is copied under the two exact declared endpoint poses;
-both copies keep all native faces and trims. The placement matrix shares the ordinary
-placed-solid path, including conversion of translation into millimetres. These are
-candidate caps; retaining a complete cutter at an endpoint does not make every face
-part of the swept boundary.
-
-`solvent_cad_face_point` queries normalized coordinates in the native face's finite UV
-trim box. It reports outside (leaving the output untouched), inside or on-trim, with
-position and the face's oriented normal for retained points. It classifies holes rather
-than treating the UV box as a filled rectangle. This is a separate coordinate contract
-from `surface_point` and `face_contains`, which continue using the supporting surface's
-bounds for stable chart coordinates after splitting. Position/normal evaluation and trim
-classification now share internal implementations.
-
-Endpoint tests verify a drilled box, the generating sphere in mm/in, and both default
-gear cutters. The independent circular-arc distance check distinguishes covered from
-exposed sphere cap samples in about 4 ms per unit configuration. On the gear cutters,
-184 native/source position and normal checks pass; 26 whole-motion probes report
-17 covered and 9 outward brackets with no unresolved samples. This checks selected
-points, not entire endpoint faces. Endpoint trimming and final exposed-face assembly
-are not connected to public sweep export yet.
-
-`trims.cpp` adds contact edges directly on native faces:
-
-- `solvent_cad_face_parameters` returns normalized finite-face coordinates and a
-  measured incidence distance in mm. It projects onto the supporting surface, handles
-  periodic representatives, then checks actual trims. Clamping a rounded endpoint
-  always remeasures the spatial distance. Projection failure remains an error;
-  this is not a globally continuous seam/pole parameterization.
-- `solvent_cad_pcurve` interpolates supplied face coordinates and constructs an attached
-  spatial edge. Open endpoints must reach trims; closed input omits the duplicate final
-  point. The spatial construction tolerance does not bound the original contact fit.
-- `solvent_cad_split_pcurves` shares the non-destructive `BRepAlgoAPI_Splitter` operation
-  used for face tools, retaining all source face fragments. Face/edge inputs remain
-  reusable; the bridge no longer needs `TKFeat`.
-- `solvent_cad_curve_point` evaluates the actual spatial edge for independent checks.
-
-Tests split an open parabola and a closed loop, checking face membership, preserved
-support geometry and withheld edge residuals. Source-computed contact branches split
-six starting/three ending pinion faces and four starting/one ending gear faces, including
-clipping at existing Boolean trims. Across 2,644 sampled sign/membership checks, each
-tested fragment stays on one side of the normal-velocity contact equation. Maximum
-withheld edge/source-contact errors are about 0.000165/0.001526 mm for pinion/gear.
-
-The core's alternate meridian chart fixes revolution angle and solves the affine
-(line profile) or sinusoidal (circular profile) contact equation for profile position.
-It crosses a known sphere contact fold and is checked with both revolution senses,
-rigid placements and full circular meridians. The endpoint fixture tries either chart,
-brackets partial source runs and native trim crossings, and checks endpoint seam aliases
-by spatial incidence. It can still miss narrow runs and skips interior seam jumps;
-open traces ending inside a face remain refused. The chart now participates in
-interval domain coverage; complete trim coverage remains unfinished.
-`cover_at` discovers contact-curve charts over the complete source domain at one fixed
-motion parameter. Fixed-time subdivision is breadth-first, avoiding the earlier case
-where an entire half of a face remained unvisited; full motion retains depth-first
-refinement. Native tests sample along the returned curves because a narrow Boolean
-trim can miss a chart's midpoint. Source material bounds separately prune proven hidden
-operand regions. This supplies native trimming for provided curves, not
-whole endpoint coverage, global visibility or a closed swept solid.
-
-Revolution bounds rotate axis-relative coordinates before restoring the origin, and
-the interval Rodrigues matrix groups its cosine coefficient. These preserve algebraic
-correlations without changing the geometry or widening acceptance tolerances. A unit
-sphere keeps a 2 mm box width along every axis even after a large world translation.
-The contact equation also accepts the normal and `position cross normal` directly.
-Source moment bounds and their derivatives preserve the common revolution before
-motion evaluation; crossing independent position/normal boxes loses that correlation.
-Independent motion and surface tests check the same contact value and derivative.
-
-At 30,000 cells per endpoint, the native incidence check finds sampled boundary points
-on 1,035 starting/226 ending pinion charts and 111 starting/19 ending gear charts.
-Ending candidates include meridian charts. Source curves still need clipping, joining,
-global material selection and final assembly; chart counts and sampled incidences do
-not establish a closed sweep or its final accuracy.
-
-`SweepContacts::join_contact_curves` now merges overlapping/touching fixed-time charts
-of the same source patch, chart direction and analytic root. The complete cover and all
-contributing cell indices are retained, and positive gaps remain gaps. The original
-analytic branch evaluates each joined curve. Cross-direction connections are described
-below; cross-patch and periodic range joins remain separate work.
-
-The Rust session's `contact_edge` projects spatial samples onto a native face, checks
-endpoint seam aliases against their actual spatial positions, and refuses interior UV
-jumps. A joined source circle splits both rotated-sphere caps into independently checked
-contact-plane regions. Joined starting intervals also reach native cuts on both default
-gear members through the sampled test trim locator. Ending intervals remain incomplete.
-All candidate edges for a face must be passed together: a single edge joining a hole to
-the outer boundary need not separate that face. A small regression checks this case.
-
-`contact_transitions` connects alternate chart directions using interval enclosures of
-the endpoint root and uniqueness in the destination charts. It requires full enclosure
-coverage and establishes outgoing direction from the contact derivatives. It does not
-join merely close spatial samples. `trace_contact_path` follows those connections as
-original analytic segments, stopping at unresolved ends or closing on an already
-traversed oriented interval. Its measured handoff error is separate from spline error.
-Periodic seam identification, source-patch joins and native contour clipping remain
-unfinished; a closed candidate path alone does not establish an exposed swept boundary.
-
-`refine_contact_ends` incrementally subdivides unresolved cells touching unconnected
-endpoint root enclosures, preserving the rest of the cover. Its budget counts additional
-evaluations and its depth counts additional subdivisions. The returned count includes
-previous work. Targeted refinement enables ten ending-pinion and two ending-gear chart
-transitions with 26 and 491 additional evaluations, respectively. The native fixture
-checks the refined partition and samples the resulting multi-chart paths; it still
-does not build complete ending-cap contours or closed swept solids.
+`native_boundary` checks the topology reader on a blind hole, a drilled cube, a sphere and a
+torus, and the gear cutters' edges against their independent source field; `native_surfaces`
+holds the generating-sweep construction's recorded tooth-space volumes and refusals.
+The candidate-construction bridge that preceded it (contact-chart fitting, pcurves, face
+splitting, endpoint caps) was removed on 2026-09-26; git history keeps it.

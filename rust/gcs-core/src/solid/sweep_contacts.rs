@@ -1,42 +1,49 @@
-//! Candidate envelope faces read from an ordinary swept-solid definition.
-use super::{SpatialField,RevolvedSurface,RevolvedContact,ToolFace,ToolEdge,EdgeChart,tool_faces::{self,Crease}};
+//! The contacts of a continuous sweep's tool, read from an ordinary swept-solid definition.
+use super::{SpatialField,RevolvedSurface};
 use crate::{envelope::{self,Contact,Error,Motion},model::{Sketch,SolidDef,EntKind},motion::Family};
 use std::{collections::BTreeSet,f64::consts::TAU};
-mod cover;
-mod curves;
-pub use curves::{ContactCurve,ContactCurves,ContactCurvePoint};
-mod transitions;
-pub use transitions::ContactTransition;
-mod paths;
-pub use paths::{ContactPath,ContactPathSegment};
-pub use cover::{ContactCover,ContactCoverOptions,ContactCell,ContactEvidence,ContactLimit,ContactCoverError,ContactChart,ContactParameter};
 
-/// Smooth-face contact candidates of a continuous sweep. This retains every
-/// source face, including faces hidden by source Booleans. Source material can
-/// reject hidden portions; sharp-edge sweeps, endpoint caps, singular events and
-/// global trimming must still be constructed before claiming a closed B-rep.
+/// The revolved faces of a continuous sweep's tool and the edges between its faces, with the
+/// motion that carries them. Every source face is retained, including faces hidden by source
+/// Booleans; the source material is what rejects hidden portions.
 #[derive(Clone,Debug)]
 pub struct SweepContacts {
     pub(super) source: SpatialField,
     pub(super) patches: Vec<RevolvedSurface>,
-    /// Patch indices of each revolved profile loop in loop order, so adjacent
-    /// patches and the profile vertices between them are known. Axis diameters
-    /// contribute no patch and leave a gap in the loop.
-    pub(super) loops: Vec<Vec<Option<usize>>>,
-    /// The tool's boundary by surface family, and the edges between faces,
-    /// for the candidate tracer. Revolved faces are the patches above.
-    pub(super) faces: Vec<ToolFace>,
-    pub(super) edges: Vec<ToolEdge>,
-    /// Where faces of different operands cross: the edges the Boolean makes.
-    pub(super) creases: Vec<Crease>,
-    /// Which placed operand of the tool's Boolean each face belongs to.
-    pub(super) operands: Vec<usize>,
+    /// Where adjacent patches of a profile loop meet.
+    pub(super) edges: Vec<PatchEdge>,
     pub(super) motion: Family,
     pub(super) roll: [f64;2],
-    /// Faces left to something else: a grazing planar face, whose plane the motion carries
-    /// within itself, is swept exactly in that plane instead (`swept_boundary::grazing`), and
-    /// the fans of its edges would lie in the same plane, folded.
-    pub(super) left: Vec<usize>,
+}
+
+/// Why a point carrying a normal has no contact times: its normal is no direction, its contact
+/// equation is degenerate (in contact at every time, or only grazing, which the root finder
+/// cannot tell apart), or something failed that says nothing about the point.
+#[derive(Clone,Debug,PartialEq)]
+pub enum PointContactError { DegenerateNormal, Degenerate, Failed(String) }
+
+impl PointContactError {
+    fn of(e: Error) -> Self {
+        if e == Error::Degenerate { PointContactError::Degenerate } else { PointContactError::Failed(format!("{e:?}")) }
+    }
+}
+
+impl std::fmt::Display for PointContactError {
+    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            PointContactError::DegenerateNormal => f.write_str("degenerate normal"),
+            PointContactError::Degenerate => f.write_str("Degenerate"),
+            PointContactError::Failed(m) => f.write_str(m),
+        }
+    }
+}
+
+/// The circle two adjacent patches of a revolved profile loop share: the meridian end `ends[i]`
+/// (0 or 1) of patch `patches[i]`, swept.
+#[derive(Clone,Copy,Debug)]
+pub struct PatchEdge {
+    pub patches: [usize;2],
+    pub ends: [f64;2],
 }
 
 #[derive(Clone,Copy,Debug)]
@@ -56,13 +63,7 @@ impl SweepContacts {
         let mut seen = BTreeSet::new();
         let mut patches = Vec::new();
         let mut loops = Vec::new();
-        let mut faces: Vec<ToolFace> = Vec::new();
-        let mut edges: Vec<ToolEdge> = Vec::new();
-        // which placed operand each face and patch belongs to, so the creases
-        // between operands are traced and the joints within one are not
-        let mut face_operand: Vec<usize> = Vec::new();
-        let mut patch_operand: Vec<usize> = Vec::new();
-        let mut operands = 0;
+        let mut edges: Vec<PatchEdge> = Vec::new();
         while let Some((id,pose)) = pending.pop() {
             let columns: [[u64;3];4] = std::array::from_fn(|i| {
                 let p = if i == 3 { pose.point([0.;3]) } else {
@@ -70,7 +71,6 @@ impl SweepContacts {
                 }; p.map(f64::to_bits)
             });
             if !seen.insert((id,columns)) { continue; }
-            let operand = operands; operands += 1;
             match &sk.solids[id].def {
                 SolidDef::Revolve {face,..} => {
                     for (edges,_) in sk.faces[*face as usize].boundaries() {
@@ -85,31 +85,19 @@ impl SweepContacts {
                                     && radius(1.).map_err(|e| format!("{e:?}"))? <= axis_tolerance { order.push(None); continue; }
                             }
                             order.push(Some(patches.len()));
-                            patches.push(surface); patch_operand.push(operand);
+                            patches.push(surface);
                         }
                         loops.push(order);
                     }
-                }
-                SolidDef::Prism {..} => {
-                    let (prism_faces,prism_edges) = super::tool_faces::prism_faces(sk,id)?;
-                    let first = faces.len();
-                    faces.extend(prism_faces.iter().map(|f| f.placed(pose)));
-                    face_operand.extend(std::iter::repeat(operand).take(prism_faces.len()));
-                    edges.extend(prism_edges.into_iter().map(|e| ToolEdge {faces:e.faces.map(|i| i+first),charts:e.charts}));
                 }
                 SolidDef::Placed {source,motion,at} => pending.push((*source as usize,
                     Family::read(sk,*motion as usize)?.at(at.value)?.then(pose))),
                 SolidDef::Body {..} => pending.extend(sk.solids[id].operands().into_iter()
                     .rev().map(|id| (id as usize,pose))),
-                _ => return Err("contact construction requires static revolutions, prisms and Boolean operands".into()),
+                _ => return Err("contact construction requires static revolutions and Boolean operands".into()),
             }
         }
-        // Every revolved patch is a face; adjacent patches of a loop that share a
-        // meridian end share the circle that end sweeps, an edge charted at that
-        // end on both.
-        let first_revolved = faces.len();
-        faces.extend(patches.iter().cloned().map(ToolFace::Revolved));
-        face_operand.extend(patch_operand);
+        // Adjacent patches of a loop that share a meridian end share the circle that end sweeps.
         for profile in &loops {
             let n = profile.len();
             for k in 0..n {
@@ -122,76 +110,36 @@ impl SweepContacts {
                 let close = |p: [f64;3],q: [f64;3]| (0..3).map(|k| (p[k]-q[k]).powi(2)).sum::<f64>().sqrt() < 1e-7*scale;
                 let Some((ua,ub)) = [(1.,0.),(1.,1.),(0.,0.),(0.,1.)].into_iter()
                     .find(|&(ua,ub)| close(ea[ua as usize],eb[ub as usize])) else { continue; };
-                edges.push(ToolEdge {faces:[first_revolved+a,first_revolved+b],charts:[EdgeChart::FixedU(ua),EdgeChart::FixedU(ub)]});
+                edges.push(PatchEdge {patches:[a,b],ends:[ua,ub]});
             }
         }
-        // The creases: every pair of faces of different operands, traced on
-        // the first face's chart.
-        let scale = faces.iter().map(|f| f.at(0.5,f.domain()[1][0]).map(|s| s.position.iter().map(|x| x*x).sum::<f64>().sqrt()).unwrap_or(0.)).fold(1_f64,f64::max);
-        let mut creases = Vec::new();
-        for i in 0..faces.len() { for j in i+1..faces.len() {
-            if face_operand[i] == face_operand[j] { continue; }
-            for samples in tool_faces::creases(&faces[i],&faces[j],scale) { creases.push(Crease::new([i,j],samples,&faces[i],&faces[j])); }
-        } }
-        Ok(Self {source:source_field,patches,loops,faces,edges,creases,operands:face_operand,motion:Family::read(sk,*motion as usize)?,
-            roll:[from.value,to.value],left:Vec::new()})
+        Ok(Self {source:source_field,patches,edges,motion:Family::read(sk,*motion as usize)?,
+            roll:[from.value,to.value]})
     }
-    pub fn faces(&self) -> &[ToolFace] { &self.faces }
-    pub fn edges(&self) -> &[ToolEdge] { &self.edges }
-    pub fn creases(&self) -> &[Crease] { &self.creases }
+    pub fn edges(&self) -> &[PatchEdge] { &self.edges }
     pub fn patches(&self) -> &[RevolvedSurface] { &self.patches }
-    pub fn loops(&self) -> &[Vec<Option<usize>>] { &self.loops }
     pub fn motion(&self) -> &Family { &self.motion }
     pub fn source_material(&self) -> &SpatialField { &self.source }
     pub fn domain(&self) -> [f64;2] { self.roll }
-    /// Trace nothing of these faces or of the edges on them.
-    pub fn leave_faces(&mut self,faces: Vec<usize>) { self.left = faces; }
-    pub fn at(&self,patch: usize,u: f64,roll: f64,tolerance: f64)
-        -> Result<Vec<RevolvedContact>,Error> {
-        if !roll.is_finite() { return Err(Error::NonFinite); }
-        if roll < self.roll[0] || roll > self.roll[1] { return Err(Error::OutsideDomain); }
-        let surface = self.patches.get(patch).ok_or(Error::OutsideDomain)?;
-        surface.contacts(u,self.motion.at(roll).map_err(|_| Error::NonFinite)?,tolerance)
-    }
-
-    /// Fix revolution angle and solve for profile position. Meridian and ring
-    /// charts have separate algebraic branch labels; neither alone covers events.
-    pub fn at_angle(&self,patch: usize,v: f64,roll: f64,tolerance: f64)
-        -> Result<Vec<super::surface::MeridianContact>,Error> {
-        if !roll.is_finite() { return Err(Error::NonFinite); }
-        if roll < self.roll[0] || roll > self.roll[1] { return Err(Error::OutsideDomain); }
-        let surface = self.patches.get(patch).ok_or(Error::OutsideDomain)?;
-        surface.meridian_contacts(v,self.motion.at(roll).map_err(|_| Error::NonFinite)?,tolerance)
-    }
-
-    /// Alternate chart: hold both source parameters and solve for motion times.
-    /// This may cross a fold in the (u,time) chart without a surface singularity.
-    /// Only single rotations and two relative rotations support the analytic
-    /// temporal reduction. Neither chart alone guarantees complete coverage.
-    pub fn at_source(&self,patch: usize,u: f64,v: f64,tolerance: f64)
-        -> Result<Vec<TimedContact>,String> {
-        self.at_source_over(patch,u,v,self.roll,tolerance)
-    }
-
     /// Contact times of a point carrying a given unit normal, over a motion
     /// interval. This is the sharp-edge sweep condition: a convex source edge
     /// carries every normal between its incident faces', and each such normal
     /// contacts where it is perpendicular to the point's velocity. The caller
     /// supplies the normal; nothing here checks that the edge actually carries it.
     pub fn at_point_normal_over(&self,position: [f64;3],normal: [f64;3],interval: [f64;2],tolerance: f64)
-        -> Result<Vec<TimedContact>,String> {
-        let n = envelope::normalized(normal).ok_or("degenerate normal")?;
+        -> Result<Vec<TimedContact>,PointContactError> {
+        let n = envelope::normalized(normal).ok_or(PointContactError::DegenerateNormal)?;
         let seed = if n[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
-        let du = envelope::normalized(crate::plane::cross(seed,n)).ok_or("degenerate normal")?;
+        let du = envelope::normalized(crate::plane::cross(seed,n)).ok_or(PointContactError::DegenerateNormal)?;
         let dv = crate::plane::cross(n,du);
         let surface = envelope::SurfacePoint {position,du,dv};
-        let roots = self.motion.normal_velocity(surface)?.roots(interval,tolerance,4096)
-            .map_err(|e| format!("{e:?}"))?;
+        let roots = self.motion.normal_velocity(surface).map_err(PointContactError::Failed)?
+            .roots(interval,tolerance,4096).map_err(PointContactError::of)?;
         roots.into_iter().map(|root| {
-            let contact = envelope::contact(surface,self.motion.at(root.time)?)
-                .map_err(|e| format!("{e:?}"))?;
+            let contact = envelope::contact(surface,self.motion.at(root.time).map_err(PointContactError::Failed)?)
+                .map_err(PointContactError::of)?;
             if contact.normal_velocity.abs() > tolerance {
-                return Err("point-normal contact failed the normal-velocity equation".into());
+                return Err(PointContactError::Failed("point-normal contact failed the normal-velocity equation".into()));
             }
             Ok(TimedContact {root,contact})
         }).collect()

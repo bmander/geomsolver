@@ -1,5 +1,11 @@
 # Spiral bevel gears: subprojects and representation decision
 
+> This is a history. The candidate-construction APIs much of it names (`edge_contact`,
+> `sweep_caps`, `SweepContacts::cover`/`cover_at`/`at`/`at_source`, meridian charts, native
+> contact fitting, pcurves and face splitting) were removed on 2026-09-26, and the export
+> it built toward is the generating-sweep class ([generating-sweeps.md](generating-sweeps.md)).
+> Git history keeps them.
+
 ## Current critical path
 
 The goal is one fully specified, independently verifiable, parametric matched pair from

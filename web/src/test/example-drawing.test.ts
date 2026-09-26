@@ -36,7 +36,14 @@ test('menu examples open files or directories with one V-twin choice', async (t)
     const bundle = await remote.drawing(example.key);
     const target = example.target;
     assert.equal(bundle.source, target.kind === 'file' ? target.path : `${target.path}/${target.entry}`);
-    assert.ok(drawings.info(bundle.files[bundle.source]).sheets.length, example.key);
+    // a project may open on its model, whose solids the glass box shows, rather than a sheet
+    if (bundle.source.endsWith('.svd')) assert.ok(drawings.info(bundle.files[bundle.source]).sheets.length, example.key);
+    else assert.ok(bundle.files[bundle.source], example.key);
+  }
+  const gears = await remote.drawing('spiral_bevel');
+  assert.equal(gears.directory, 'spiral_bevel');
+  for (const name of ['configuration', 'matched_pair', 'paired_references', 'blank', 'cutters']) {
+    assert.ok(gears.files[`spiral_bevel/${name}.sv`], name);
   }
   const vtwin = await remote.drawing('vtwin');
   assert.equal(vtwin.directory, 'vtwin');

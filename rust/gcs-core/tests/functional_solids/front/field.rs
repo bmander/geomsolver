@@ -33,7 +33,7 @@ impl Surface {
         assert!(self.queries < 1_000_000,"front field-query budget exhausted"); self.queries += 1;
         let options = Options {value_tolerance:self.point_tolerance*0.01,max_evaluations:20000};
         let value = if precise { self.field.bounds(point(p),options) }
-            else { self.field.bounds_outside(point(p),I::ZERO,options) }.unwrap().value;
+            else { self.field.query(point(p),Stop::Outside(I::ZERO),options,None) }.unwrap().value;
         if precise { let [a,b] = value.bounds();
             assert!(b-a <= options.value_tolerance,"field enclosure too wide for a differential probe");
         }
@@ -157,9 +157,9 @@ impl Surface {
         for _ in 0..4096 {
             let Some(cell) = queue.pop_front() else { break; };
             self.box_queries += 1;
-            let value = self.field.bounds_outside(cell,I::ZERO,Options {
+            let value = self.field.query(cell,Stop::Outside(I::ZERO),Options {
                 value_tolerance:self.point_tolerance*0.01,max_evaluations:20000,
-            }).unwrap().value;
+            },None).unwrap().value;
             if value.bounds()[0] >= 0. { continue; }
             let center = cell.map(|v| { let [a,b] = v.bounds(); a*0.5+b*0.5 });
             if self.value(center).bounds()[1] < 0. { return Some(center); }

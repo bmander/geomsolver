@@ -148,7 +148,7 @@ fn a_contact_seeded_off_its_curve_still_solves() {
         assert!(r.success, "t: {t}: {}", r.message);
         let (px, py) = sk.point_xy(4);
         assert!((px - 10.0).abs() < 1e-6, "t: {t}: p at ({px}, {py})");
-        let c = sk.user_constraints().iter().find(|c| !c.aux_params().is_empty()).unwrap().clone();
+        let c = (*sk.user_constraints().iter().find(|c| !c.aux_params().is_empty()).unwrap()).clone();
         let u = sk.params[c.aux_params()[0] as usize].value;
         assert!((0.0..=1.0).contains(&u) && !sk.params[c.aux_params()[0] as usize].fixed, "t: {t}: u = {u}");
         // one answer, whatever the seed
@@ -166,7 +166,7 @@ fn a_contact_seeded_off_its_curve_still_solves() {
         assert!(d.is_empty(), "{d:?}");
         let mut sk = e.sketch;
         assert!(solve(&mut sk, SolveOpts::default()).success, "u: {u}");
-        let c = sk.user_constraints().iter().find(|c| !c.aux_params().is_empty()).unwrap().clone();
+        let c = (*sk.user_constraints().iter().find(|c| !c.aux_params().is_empty()).unwrap()).clone();
         let v = sk.params[c.aux_params()[0] as usize].value;
         assert!((0.0..=720.0).contains(&v), "u: {u} → {v}");
     }
@@ -213,7 +213,7 @@ fn a_curve_family_contact_stays_inside_its_domain() {
     // (0, −20) is u = 270°, three quadrants past the end: the drawing cannot satisfy both the
     // contact and the rise, and must not claim to
     assert!(!r.success, "a point off the drawn curve reported solved: {r:?}");
-    let c = sk.user_constraints().iter().find(|c| !c.aux_params().is_empty()).unwrap().clone();
+    let c = (*sk.user_constraints().iter().find(|c| !c.aux_params().is_empty()).unwrap()).clone();
     let u = sk.params[c.aux_params()[0] as usize].value;
     assert!((0.0..=90.0).contains(&u), "u = {u} is off the curve");
 }

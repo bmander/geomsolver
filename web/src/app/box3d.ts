@@ -93,6 +93,12 @@ export class Box3D {
     gl.render(this.scene, this.camera);
   }
 
+  /** The drawing is the same object but what it shows changed (a swept solid's surface arrived):
+   *  the next paint rebuilds the scene. */
+  invalidate(): void {
+    this.built = null;
+  }
+
   /** Let the box go — the canvas keeps its context otherwise, and a browser only allows so many. */
   clear(): void {
     this.dispose();
