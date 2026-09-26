@@ -244,7 +244,6 @@ impl EvaluatedSolid {
     }
     /// A swept solid from its field's surface (`field_mesh.rs`): the mesh stands in as one
     /// polyhedral primitive, so classification, edges and views read it as they read any other.
-    /// No feature curves are protected yet, so sharp edges come out rounded to the facet size.
     /// A provisional surface may be open: what it classifies is a preview's, and it exports
     /// nothing.
     fn from_surface(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64,
@@ -420,10 +419,12 @@ impl EvaluatedSolid {
         mesh::preview_stl(self.mesh(), self.origin.0, &self.name)
     }
     pub fn stl(&self) -> Result<Vec<u8>, String> {
-        if self.provisional {
-            return Err(format!("`{}`: its surface is still being refined", self.name));
-        }
+        self.finished()?;
         mesh::placed_stl(self.mesh(), self.origin.0, &self.name)
+    }
+    /// Refuse a surface still being refined: it may be open, and a file is a finished part.
+    pub fn finished(&self) -> Result<(), String> {
+        if self.provisional { Err(format!("`{}`: its surface is still being refined", self.name)) } else { Ok(()) }
     }
     pub(crate) fn classifier(&self) -> &Csg {
         &self.csg

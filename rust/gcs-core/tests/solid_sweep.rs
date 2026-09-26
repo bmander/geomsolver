@@ -186,11 +186,11 @@ fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
     // A page meshing elsewhere: the solid is refused until its surface arrives.
     e.sketch.defer_fields.set(true);
     assert!(e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap_err().contains("being meshed"));
-    let epoch = e.sketch.field_epoch.get();
     e.sketch.supply_field(i,solid::FieldSurface {provisional:true,..surface.clone()});
-    assert!(e.sketch.field_epoch.get() > epoch);
     let preview = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
     assert!(preview.provisional() && preview.stl().is_err());
+    // nor does a scene take a surface still being refined
+    assert!(gcs_core::gltf::checked_glb(&e.sketch,&[i],solid::ApproximationPolicy::Mesh).unwrap_err().contains("still being refined"));
     // asked for as a preview, it is written as it stands, every triangle in the file
     let bytes = preview.preview_stl().unwrap();
     assert!(bytes.len() > 84 && (bytes.len()-84)%50 == 0 && u32::from_le_bytes(bytes[80..84].try_into().unwrap()) > 0);

@@ -116,8 +116,6 @@ pub struct Sketch {
     /// Set by a host that meshes swept solids itself (a page with a worker): a swept solid with
     /// no supplied surface is then refused rather than meshed here, on the thread that draws.
     pub defer_fields: std::cell::Cell<bool>,
-    /// Bumped by every supplied surface, so a front end's caches of what it drew follow.
-    pub field_epoch: std::cell::Cell<u64>,
     /// The document's style sheet: what each class looks like (`style.rs`).  Presentation, and
     /// nothing the core computes reads it — it is here because it is document state, saved and
     /// grafted with everything else, and because the core resolving it is what keeps two front

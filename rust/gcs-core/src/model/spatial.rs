@@ -454,7 +454,6 @@ impl Sketch {
         let key = crate::solid::reads(self, i, 0.0);
         self.field_surfaces.borrow_mut().insert(i, (key, std::rc::Rc::new(surface)));
         self.solid_cache.borrow_mut().retain(|(index, _), _| *index != i);
-        self.field_epoch.set(self.field_epoch.get() + 1);
     }
 
     /// The surface supplied for swept solid `i`, while the drawing still reads as it did.

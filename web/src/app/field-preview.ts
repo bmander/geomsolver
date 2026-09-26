@@ -84,16 +84,23 @@ export class FieldPreview {
     // no workers (a test's view, node): the sketch meshes a swept solid itself when asked
     if (typeof Worker === 'undefined') return;
     const sk = doc.sketch;
+    // only objects are meshed here: a swept solid that is no object (a construction's) is never
+    // asked for by the page, so it is never deferred either
     const found = objects(sk).filter((o) => isSwept(sk, o.index));
     const solids = found.map((o) => o.index);
     if (!solids.length) {
+      // a drawing with nothing to mesh ends the job in hand: its frames are another drawing's
       this.sketch = sk;
+      this.cancel();
       if (this.refining.size) { this.refining.clear(); this.progressed([]); }
       return;
     }
     deferFields(sk);
     const x = sk.getX();
-    const key = `${doc.text}\u0000${Array.from(x).join(',')}`;
+    const modules = related(doc.text).map((f): [string, string] => [f.name, f.text]);
+    // the drawing is its text, the modules it uses and its parameter values: an edit to any of
+    // them is a new job
+    const key = [doc.text, ...modules.flat(), Array.from(x).join(',')].join('\u0000');
     if (key === this.key) {
       if (sk === this.sketch) return;                 // nothing moved: the job in flight stands
       if (solids.every((i) => this.finished.has(i))) {
@@ -113,10 +120,27 @@ export class FieldPreview {
     if (!this.worker) {
       this.worker = new Worker(new URL('./mesh-worker.bundle.js', import.meta.url), { type: 'module' });
       this.worker.onmessage = (ev: MessageEvent<Frame>) => this.receive(ev.data);
+      // a worker that dies says nothing of itself: every solid it was meshing has failed
+      this.worker.onerror = (ev: ErrorEvent) => this.failAll(ev.message || 'the meshing worker stopped');
+      this.worker.onmessageerror = () => this.failAll('the meshing worker sent what could not be read');
     }
-    const job: Job = { id: this.job, text: doc.text, x, solids,
-      modules: related(doc.text).map((f) => [f.name, f.text]) };
+    const job: Job = { id: this.job, text: doc.text, x, solids, modules };
     this.worker.postMessage(job);
+  }
+
+  /** End the job in hand: the worker drops it at its next step, and nothing it sent is applied. */
+  private cancel(): void {
+    this.job += 1;
+    this.key = '';
+    this.finished.clear();
+    this.pending.clear();
+    this.worker?.postMessage({ id: this.job, text: '', x: new Float64Array(), solids: [], modules: [] } satisfies Job);
+  }
+
+  private failAll(error: string): void {
+    for (const r of this.refining.values()) if (!r.done) r.error = error;
+    this.progressed([...this.refining.values()]);
+    this.key = '';                    // the next edit starts the job again
   }
 
   /** **Surfaces are applied no faster than the page can draw them.** Every one redraws the box,
@@ -150,19 +174,19 @@ export class FieldPreview {
     this.busy = true;
     const frames = [...this.pending.values()];
     this.pending.clear();
+    // a frame's own error is the footer's to say (`receive`); only a surface the page refuses
+    // is said here, and it does not stop the others, or every later one
     let error: string | undefined;
     for (const f of frames) {
-      if (f.surface) {
-        // one mark a surface, triangles in its detail: the refinement on a performance timeline
-        performance.mark('field-surface', { detail: { solid: f.solid, triangles: f.surface.triangles.length / 3,
-          provisional: f.surface.provisional } });
-        supplyField(sk, f.solid, f.surface);
-        if (!f.surface.provisional) this.finished.set(f.solid, f.surface);
-      }
-      error = f.error ?? error;
+      try {
+        if (f.surface) {
+          supplyField(sk, f.solid, f.surface);
+          if (!f.surface.provisional) this.finished.set(f.solid, f.surface);
+        }
+      } catch (e) { error = String(e); }
     }
     const start = performance.now();
-    this.arrived(error);
-    afterPaint(() => setTimeout(() => this.apply(), Math.max(MIN_GAP_MS, performance.now() - start)));
+    try { this.arrived(error); }
+    finally { afterPaint(() => setTimeout(() => this.apply(), Math.max(MIN_GAP_MS, performance.now() - start))); }
   }
 }

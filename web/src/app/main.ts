@@ -152,7 +152,8 @@ async function exportFile(kind: 'glb' | 'stl', objs: { name: string; index: numb
   }
   // A swept solid still refining has no final surface; the preview as it stands is offered,
   // named as one, since it may be coarse or open.
-  const refining = objs.filter((o) => solids.provisional(view.sketch, o.index));
+  const still = new Set(objs.filter((o) => solids.provisional(view.sketch, o.index)).map((o) => o.index));
+  const refining = objs.filter((o) => still.has(o.index));
   let preview = false;
   if (refining.length) {
     const names = refining.map((o) => o.name).join(', ');
@@ -165,7 +166,7 @@ async function exportFile(kind: 'glb' | 'stl', objs: { name: string; index: numb
     preview = true;
   }
   // an STL is a triangle soup with no grouping, so several objects go in one file as one soup
-  const parts = objs.map((o) => preview && solids.provisional(view.sketch, o.index)
+  const parts = objs.map((o) => preview && still.has(o.index)
     ? solids.stlPreview(view.sketch, o.index) : solids.stl(view.sketch, o.index));
   const name = `${stem}${preview ? '-preview' : ''}.stl`;
   download(name, parts.length === 1 ? parts[0] : joinStl(parts));
@@ -199,9 +200,8 @@ function showRefining(list: Refining[]): void {
       : p.phase === 'tracing edges' ? 'tracing edges'
       : p.stage === 'repairing' ? `${p.phase}, repairing${p.rebuild ? ` (rebuild ${p.rebuild})` : ''}`
       : p.stage === 'building' ? `${p.phase}, building` : p.phase;
-    // the bar is the pass in hand: the whole's first quarter is the first pass, the rest the final
-    const f = !p ? 0 : p.phase === 'first pass' ? p.fraction / 0.25 : p.phase === 'final pass' ? (p.fraction - 0.25) / 0.75 : 0;
-    return `${short(r.name)}: ${what} ${bar(f)} ${r.triangles.toLocaleString()} triangles · ${clock(r.elapsed)}`;
+    // the bar is the pass in hand, as the core estimates it
+    return `${short(r.name)}: ${what} ${bar(p?.within ?? 0)} ${r.triangles.toLocaleString()} triangles · ${clock(r.elapsed)}`;
   });
   const text = parts.join('   |   ');
   if (failed.length) { refining(text, 'failed'); return; }

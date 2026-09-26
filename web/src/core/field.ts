@@ -39,7 +39,8 @@ export function supplyField(sk: Sketch, idx: number, s: FieldSurface): void {
 
 /** Where a mesher stands (`FieldProgress` in the core): its phase, the refinement's stage and
  *  rebuilds, the facets waiting and the worst of them, the work done, the creases traced once they
- *  are, and `fraction`, an estimate of the whole — never a count of work left. */
+ *  are, and two estimates — `within` the pass in hand, `fraction` the whole — never a count of
+ *  work left. */
 export interface MeshProgress {
   phase: 'first pass' | 'tracing edges' | 'final pass';
   stage: 'building' | 'refining' | 'repairing' | 'done' | 'failed';
@@ -50,6 +51,7 @@ export interface MeshProgress {
   queries: number;
   readings: number;
   curves: number | null;
+  within: number;
   fraction: number;
   failed: boolean;
 }
@@ -81,13 +83,15 @@ export class FieldMesher {
     const c = core();
     const nv = c.gcs_field_mesher_snapshot(this.h);
     const nt = c.gcs_field_mesher_triangle_count(this.h);
+    if (nv < 0 || nt < 0) throw new Error(lastError() || 'the surface could not be read');
     const vertices = withBuf(3 * nv, 8, (b) => {
-      c.gcs_field_mesher_vertices(this.h, b.ptr, 3 * nv);
+      if (c.gcs_field_mesher_vertices(this.h, b.ptr, 3 * nv) < 0) throw new Error(lastError());
       return b.f64.slice(0, 3 * nv);
     });
     const triangles = withBuf(3 * nt, 4, (b) => {
-      c.gcs_field_mesher_triangles(this.h, b.ptr, 3 * nt);
-      return Uint32Array.from(b.i32.subarray(0, 3 * nt));
+      if (c.gcs_field_mesher_triangles(this.h, b.ptr, 3 * nt) < 0) throw new Error(lastError());
+      // the same bits read as unsigned: the buffer holds `u32` indices
+      return new Uint32Array(b.i32.slice(0, 3 * nt).buffer);
     });
     return { vertices, triangles, provisional: c.gcs_field_mesher_provisional(this.h) !== 0 };
   }

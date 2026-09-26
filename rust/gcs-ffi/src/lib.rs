@@ -1787,12 +1787,6 @@ pub unsafe extern "C" fn gcs_sketch_defer_fields(h: *mut Sketch, on: i32) {
     guard((), move || sk(h).defer_fields.set(on != 0))
 }
 
-/// Bumped by every supplied surface, for a front end's caches of what it drew.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_sketch_field_epoch(h: *mut Sketch) -> f64 {
-    guard(-1.0, move || sk(h).field_epoch.get() as f64)
-}
-
 /// 1 when solid `idx` has a continuous sweep among its operands, so a field's surface.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_is_swept(h: *mut Sketch, idx: i32) -> i32 {
@@ -1800,7 +1794,8 @@ pub unsafe extern "C" fn gcs_solid_is_swept(h: *mut Sketch, idx: i32) -> i32 {
 }
 
 /// Give swept solid `idx` a surface meshed elsewhere: `nv` vertices as `3·nv` doubles and `nt`
-/// triangles as `3·nt` vertex indices. 0, or −1 with the reason for an index out of range.
+/// triangles as `3·nt` vertex indices. 0, or −1 with the reason for an index out of range or a
+/// solid with no sweep, whose surface is its own.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_supply_field(
     h: *mut Sketch,
@@ -1817,6 +1812,10 @@ pub unsafe extern "C" fn gcs_solid_supply_field(
         let t = if nt == 0 { &[][..] } else { std::slice::from_raw_parts(triangles, 3 * nt) };
         if t.iter().any(|&i| i as usize >= nv) || idx < 0 || idx as usize >= sk(h).solids.len() {
             set_error("a supplied surface names a vertex or a solid that is not there");
+            return -1;
+        }
+        if !sk(h).is_swept(idx as usize) {
+            set_error("a supplied surface is for a swept solid, and this one has no sweep");
             return -1;
         }
         sk(h).supply_field(idx as usize, gcs_core::solid::FieldSurface {
@@ -1897,7 +1896,8 @@ pub unsafe extern "C" fn gcs_field_mesher_triangles(m: *mut Mesher, out: *mut u3
 }
 
 /// Where the meshing stands, as JSON: `{ "phase", "stage", "rebuild", "queued", "worst",
-/// "inserted", "queries", "readings", "curves", "fraction", "failed" }` (`FieldProgress`).
+/// "inserted", "queries", "readings", "curves", "fraction", "within", "failed" }`
+/// (`FieldProgress`).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_field_mesher_progress(m: *mut Mesher) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
@@ -1913,6 +1913,7 @@ pub unsafe extern "C" fn gcs_field_mesher_progress(m: *mut Mesher) -> *mut u8 {
             ("readings".into(), Json::Int(p.refine.readings as i64)),
             ("curves".into(), p.curves.map_or(Json::Null, |c| Json::Int(c as i64))),
             ("fraction".into(), Json::Num(p.fraction)),
+            ("within".into(), Json::Num(p.within)),
             ("failed".into(), Json::Bool(p.failed)),
         ]))
     })
@@ -2015,6 +2016,7 @@ pub unsafe extern "C" fn gcs_solid_stl_preview(h: *mut Sketch, idx: i32, unit: f
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_provisional(h: *mut Sketch, idx: i32) -> i32 {
     guard(-1, move || {
+        // any policy: a swept solid is always its supplied mesh, whatever the unit asked
         match sk(h).evaluated_solid(idx.max(0) as usize, gcs_core::solid::ApproximationPolicy::from_unit(0.)) {
             Ok(s) => s.provisional() as i32,
             Err(message) => { set_error(message); -1 }

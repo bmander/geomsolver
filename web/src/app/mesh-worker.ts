@@ -4,12 +4,11 @@
  * values over the result, and refines every swept object a step at a time, in turn, posting each
  * surface as it stands at most every `FRAME_MS` and when it is finished. Between steps it lets messages in,
  * so a newer job — the page has been edited — ends this one at its next step. */
-import { FieldMesher } from '../core/field.js';
+import { FieldMesher, type MeshProgress } from '../core/field.js';
 import { forget, provide } from '../core/modules.js';
 import { Document } from '../core/program.js';
 import { initCore } from '../core/wasm.js';
 import type { Frame, Job } from './field-preview.js';
-import type { MeshProgress } from '../core/field.js';
 
 /** Facets refined between looks at the message queue. */
 const BUDGET = 40;
@@ -24,8 +23,13 @@ const ready = initCore();
 let latest = 0;
 
 scope.onmessage = (ev) => {
-  latest = ev.data.id;
-  void ready.then(() => run(ev.data));
+  const job = ev.data;
+  latest = job.id;
+  // a core that will not start, or a job that throws past its own handling, fails every solid
+  // of it aloud rather than leaving the page waiting
+  ready.then(() => run(job)).catch((e: unknown) => {
+    for (const solid of job.solids) post({ id: job.id, solid, error: String(e) });
+  });
 };
 
 const pause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -37,7 +41,7 @@ function post(frame: Frame): void {
 
 async function run(job: Job): Promise<void> {
   await pause();                      // a burst of edits: only the last job is started
-  if (job.id !== latest) return;
+  if (job.id !== latest || !job.solids.length) return;
   forget();
   for (const [name, text] of job.modules) provide(name, text);
   let doc: Document;
@@ -73,7 +77,10 @@ async function run(job: Job): Promise<void> {
         try {
           done = r.mesher.step(BUDGET);
         } catch (e) {
-          post({ id: job.id, solid: r.solid, surface: r.mesher.snapshot(), error: String(e), ...status(r.mesher) });
+          // the surface it stopped at, if it can still be read, beside why
+          let surface;
+          try { surface = r.mesher.snapshot(); } catch { surface = undefined; }
+          post({ id: job.id, solid: r.solid, surface, error: String(e), ...status(r.mesher) });
           r.mesher.dispose();
           running.splice(k, 1);
           continue;

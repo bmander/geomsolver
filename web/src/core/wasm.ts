@@ -184,12 +184,13 @@ export interface Abi {
   gcs_solid_normals(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_faces_json(h: number, idx: number, unit: number): number;
   gcs_sketch_defer_fields(h: number, on: number): void;
-  gcs_sketch_field_epoch(h: number): number;
   gcs_solid_is_swept(h: number, idx: number): number;
   gcs_solid_supply_field(h: number, idx: number, vertices: number, nv: number, triangles: number,
     nt: number, provisional: number): number;
+  gcs_solid_provisional(h: number, idx: number): number;
   gcs_field_mesher_new(h: number, idx: number): number;
   gcs_field_mesher_step(m: number, budget: number): number;
+  gcs_field_mesher_progress(m: number): number;
   gcs_field_mesher_snapshot(m: number): number;
   gcs_field_mesher_triangle_count(m: number): number;
   gcs_field_mesher_provisional(m: number): number;
@@ -200,8 +201,6 @@ export interface Abi {
   gcs_solid_objects_json(h: number): number;
   gcs_solid_stl(h: number, idx: number, unit: number): number;
   gcs_solid_stl_preview(h: number, idx: number, unit: number): number;
-  gcs_field_mesher_progress(m: number): number;
-  gcs_solid_provisional(h: number, idx: number): number;
   gcs_callout_pick(h: number, unit: number, x: number, y: number, tolPx: number): number;
   gcs_callout_grab(h: number, id: number, unit: number, x: number, y: number,
                    out: number): number;

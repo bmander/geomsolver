@@ -51,15 +51,17 @@ enum Phase {
 }
 
 /// Where a `FieldMesher` stands (`FieldMesher::progress`): its phase — `first pass`, `tracing
-/// edges`, `final pass` — the refinement's own state, the creases traced once they are, and a
-/// fraction of the whole: the worst waiting facet's badness fallen on a log scale from its peak in
-/// the pass, the first pass a quarter of the whole and the final pass the rest. An estimate,
-/// never a count of work left: no refinement knows that in advance.
+/// edges`, `final pass` — the refinement's own state, the creases traced once they are, how far
+/// the pass in hand has come (`within`: the worst waiting facet's badness fallen on a log scale
+/// from its peak in the pass, 0 while tracing) and a fraction of the whole, the first pass a
+/// quarter of it and the final pass the rest. Estimates, never a count of work left: no
+/// refinement knows that in advance.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FieldProgress {
     pub phase: &'static str,
     pub refine: crate::delaunay::refine::Progress,
     pub curves: Option<usize>,
+    pub within: f64,
     pub fraction: f64,
     pub failed: bool,
 }
@@ -248,12 +250,12 @@ impl FieldMesher {
         self.peak = self.peak.max(refine.worst);
         let within = if refine.stage == "done" || refine.worst <= 1.0 || self.peak <= 1.0 { 1.0 }
             else { (1.0 - refine.worst.ln() / self.peak.ln()).clamp(0.0, 1.0) };
-        let (phase, fraction) = match self.phase {
-            Phase::Tracing(..) => ("tracing edges", 0.25),
-            Phase::First(_) => ("first pass", 0.25 * within),
-            Phase::Final => ("final pass", 0.25 + 0.75 * within),
+        let (phase, within, fraction) = match self.phase {
+            Phase::Tracing(..) => ("tracing edges", 0.0, 0.25),
+            Phase::First(_) => ("first pass", within, 0.25 * within),
+            Phase::Final => ("final pass", within, 0.25 + 0.75 * within),
         };
-        FieldProgress { phase, refine, curves: self.curves, fraction, failed: self.failed }
+        FieldProgress { phase, refine, curves: self.curves, within, fraction, failed: self.failed }
     }
 
     /// The surface as it stands: provisional until the refinement has finished, and then the
