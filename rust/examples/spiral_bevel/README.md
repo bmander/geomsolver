@@ -8,7 +8,9 @@ axes stand about `mean_distance * sin(offset_angle)` apart. The pinion sees the 
 ratio holds at the mean point. It is still one crown tooth swept through its blank at every
 index; the generating roll about the turned axis is a screw, which the contact equation reads
 like any other motion. `pressure_shift` gives the crown tooth's two flanks unequal
-pressure angles, and `spiral_angle` is the crown's spiral. The configured 25-degree hypoid
+pressure angles; the gear's crown mates it flank on flank, so its section carries the two
+angles on the opposite sides (`gear_section`, checked by `gcs-core/tests/gear_crowns.rs`). `spiral_angle`
+is the crown's spiral. The configured 25-degree hypoid
 uses a 10-degree shift and a 25-degree spiral, holding the pinion's spiral near 50 degrees.
 Together they design out the undercut that a 20-degree symmetric rack at 35 degrees
 develops past about 16 degrees of offset

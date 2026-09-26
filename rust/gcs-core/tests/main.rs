@@ -48,6 +48,7 @@ mod examples_sv;
 mod expr;
 mod frame;
 mod gauges;
+mod gear_crowns;
 mod highlight;
 mod homotopy;
 mod io;

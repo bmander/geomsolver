@@ -56,6 +56,11 @@ component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int, me
   group section(width: section_width, tip_height: root_depth, base_depth: base_depth,
                 outer_pressure: pressure_angle - pressure_shift,
                 inner_pressure: pressure_angle + pressure_shift, tip_radius: transition_radius)
+  // The gear's crown mates the pinion's: each of its flanks lies on a crown tooth
+  // flank of the other side, so a nonzero shift swaps its inner and outer angles.
+  group gear_section(width: section_width, tip_height: root_depth, base_depth: base_depth,
+                     outer_pressure: pressure_angle + pressure_shift,
+                     inner_pressure: pressure_angle - pressure_shift, tip_radius: transition_radius)
 
   in front {
     private construction centerline line front_axis(front.origin, hint(y: mean_distance))
@@ -151,9 +156,9 @@ component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int, me
     crown_back_axis.p2 distance(center_x, along: u) crown_back
     crown_back_axis.p2 distance(mean_distance, along: v) crown_back
     gear_outer: RoundedRackSection(crown_back, pitch_radius: pinion_pitch_radius + section_width,
-      section: section)
+      section: gear_section)
     gear_inner: RoundedRackSection(crown_back, pitch_radius: pinion_pitch_radius - section_width,
-      section: section)
+      section: gear_section)
   }
   // All rotations share the crown roll angle. The pitch cones roll without slip.
   motion crown_roll(about: front_axis)
