@@ -594,8 +594,10 @@ struct Place { curve: usize,s: f64,gap: f64 }
 /// (curve ends, and ends shared by curves) once each. A closed curve repeats its first point at
 /// its end. Where balls neither consecutive on one curve nor sharing a corner meet, the curves
 /// are refined there, down to an eighth of `edge_size`.
+/// A polyline's length.
+fn length(c: &[P]) -> f64 { c.windows(2).map(|w| dist2(w[0],w[1]).sqrt()).sum::<f64>() }
+
 fn protect(curves: &[Vec<P>],edge_size: f64,sizing: &mut [Sizing]) -> Result<(Vec<(P,f64)>,Vec<Vec<Place>>),String> {
-    let length = |c: &[P]| c.windows(2).map(|w| dist2(w[0],w[1]).sqrt()).sum::<f64>();
     let at = |c: &[P],s: f64| -> P {
         let mut left = s;
         for w in c.windows(2) {
@@ -763,7 +765,6 @@ pub struct Progressive<'a> {
     curves: Vec<Vec<P>>,
     criteria: Criteria,
     sizing: Vec<Sizing>,
-    least: f64,
     kept: Vec<P>,
     memo: HashMap<[u64;3],i8>,
     crossings: HashMap<[u64;7],P>,
@@ -777,10 +778,8 @@ pub struct Progressive<'a> {
 
 impl<'a> Progressive<'a> {
     pub fn new(side: Box<dyn FnMut(P) -> f64 + 'a>,centre: P,radius: f64,curves: Vec<Vec<P>>,criteria: Criteria) -> Self {
-        let length = |c: &[P]| c.windows(2).map(|w| dist2(w[0],w[1]).sqrt()).sum::<f64>();
         let sizing = curves.iter().map(|c| Sizing {base:length(c).min(criteria.edge_size).max(criteria.edge_size*1e-3),local:Vec::new()}).collect();
-        let least = criteria.edge_size/LEAST;
-        Self {domain:Some(side),reading:None,agree:false,refiner:None,centre,radius,curves,criteria,sizing,least,kept:Vec::new(),
+        Self {domain:Some(side),reading:None,agree:false,refiner:None,centre,radius,curves,criteria,sizing,kept:Vec::new(),
             memo:HashMap::new(),crossings:HashMap::new(),queries:0,rebuild:0,stage:Stage::Build,manifold:None}
     }
 
@@ -932,7 +931,7 @@ impl<'a> Progressive<'a> {
             // Shrinking that left no fewer facets standing off than before has not helped, and
             // another round would only pay for the whole surface again: keep the earlier one.
             if let Some(earlier) = self.manifold.take_if(|m| m.report.coarse <= off.len()) { return Some(Ok(earlier)); }
-            if blocking.is_empty() || rebuild+1 == REBUILDS || !shrink(r,&blocking,&mut self.sizing,self.least) {
+            if blocking.is_empty() || rebuild+1 == REBUILDS || !shrink(r,&blocking,&mut self.sizing,self.criteria.edge_size/LEAST) {
                 return Some(Ok(mesh));
             }
             self.manifold = Some(mesh);
@@ -940,7 +939,7 @@ impl<'a> Progressive<'a> {
             let mut blocking = r.blocking.clone();
             blocking.sort_unstable();
             blocking.dedup();
-            let shrunk = shrink(r,&blocking,&mut self.sizing,self.least);
+            let shrunk = shrink(r,&blocking,&mut self.sizing,self.criteria.edge_size/LEAST);
             if trace() {
                 let faults = non_manifold(&r.extract());
                 eprintln!("refine: rebuild {rebuild}: {} faults (first at {:?}), {} points, {} queries; {} blocking balls, {} balls",

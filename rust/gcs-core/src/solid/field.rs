@@ -66,8 +66,7 @@ fn intersection_support(a: Option<V>,b: Option<V>) -> Option<V> {
 }
 
 
-/// An interval's midpoint in plain floating point.
-fn mid(x: I) -> f64 { let [lo,hi] = x.bounds(); 0.5*(lo+hi) }
+fn mid(x: I) -> f64 { x.mid() }
 
 #[derive(Clone,Debug)]
 enum Node {

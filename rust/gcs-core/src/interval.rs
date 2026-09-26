@@ -21,6 +21,8 @@ impl Interval {
     }
     pub fn point(x: f64) -> Result<Self,Error> { Self::new(x,x) }
     pub fn bounds(self) -> [f64;2] { [self.lo,self.hi] }
+    /// The midpoint in plain floating point: a reading, never an enclosure.
+    pub fn mid(self) -> f64 { 0.5*(self.lo+self.hi) }
     pub fn contains(self,x: f64) -> bool { self.lo <= x && x <= self.hi }
     pub fn neg(self) -> Self { Self {lo:-self.hi,hi:-self.lo} }
 
