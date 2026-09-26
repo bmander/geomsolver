@@ -189,7 +189,7 @@ export interface Abi {
   gcs_solid_supply_field(h: number, idx: number, vertices: number, nv: number, triangles: number,
     nt: number, provisional: number): number;
   gcs_solid_provisional(h: number, idx: number): number;
-  gcs_field_mesher_new(h: number, idx: number): number;
+  gcs_field_mesher_new(h: number, idx: number, fineness: number): number;
   gcs_field_mesher_step(m: number, budget: number): number;
   gcs_field_mesher_progress(m: number): number;
   gcs_field_mesher_snapshot(m: number, out: number): number;

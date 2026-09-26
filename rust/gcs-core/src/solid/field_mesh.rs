@@ -30,6 +30,10 @@ pub enum FieldMeshing {
 const FIELD_FACETS: f64 = 40.0;
 const FIELD_DISTANCE: f64 = 2000.0;
 
+/// The finenesses a host may ask of `FieldMesher::with_fineness`: facets that many times smaller
+/// than the preview's.  Past the top a gear's surface outgrows `Criteria::max_points`.
+pub const FINENESS: std::ops::RangeInclusive<f64> = 0.25..=4.0;
+
 /// A swept solid's surface in world coordinates: outward triangles over shared vertices.
 /// `provisional` while the refinement that made it is still going, when it may be open.
 #[derive(Clone, Debug, Default)]
@@ -241,8 +245,17 @@ fn creases_within(field: &MaterialField, first: &crate::delaunay::refine::Mesh, 
 }
 
 impl FieldMesher {
-    pub fn new(sk: &Sketch, si: usize) -> Result<Self, String> {
+    pub fn new(sk: &Sketch, si: usize) -> Result<Self, String> { Self::with_fineness(sk, si, 1.0) }
+
+    /// Refinement `fineness` times finer than the preview's: facets that much smaller, and the
+    /// surface distance they may stand off the field the square of it smaller, as a chord's
+    /// sagitta goes, so a finer surface is the same shape of facet over a curve, only more of them.
+    pub fn with_fineness(sk: &Sketch, si: usize, fineness: f64) -> Result<Self, String> {
         let name = sk.solid_name(si);
+        if !FINENESS.contains(&fineness) {
+            return Err(format!("`{name}`: a mesh fineness of {fineness} is outside {} to {}",
+                FINENESS.start(), FINENESS.end()));
+        }
         let field = MaterialField::read(sk, si, cad::AXIS_TOLERANCE)?;
         let support = field.support_bounds().map_err(|e| format!("`{name}`: {e:?}"))?
             .ok_or_else(|| format!("`{name}`: the material has no finite support to mesh in"))?;
@@ -251,9 +264,9 @@ impl FieldMesher {
             return Err(format!("`{name}`: the material's support is empty"));
         }
         let radius = 0.5 * diagonal * 1.05;
-        let facet = diagonal / FIELD_FACETS;
+        let facet = diagonal / (FIELD_FACETS * fineness);
         let criteria = Criteria {
-            facet_size: facet, facet_distance: diagonal / FIELD_DISTANCE, facet_angle: 25.0,
+            facet_size: facet, facet_distance: diagonal / (FIELD_DISTANCE * fineness * fineness), facet_angle: 25.0,
             edge_size: facet, bisection: 1e-5 * radius, max_points: 500_000, normal_angle: NORMAL_ANGLE,
         };
         let bounds = tight(&field);

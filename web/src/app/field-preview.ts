@@ -33,6 +33,8 @@ export interface MeshJob {
   x: Float64Array;
   /** What to mesh, as the page's core named it: the worker checks its own drawing names the same. */
   solids: FieldJob[];
+  /** How much finer than the preview's to refine (`FieldMesher.create`). */
+  fineness: number;
 }
 
 /** What the worker hands back: a surface as it stands, or why there is none. */
@@ -92,6 +94,8 @@ export class FieldPreview {
   /** The newest surface of each key not yet applied, and whether a redraw is in hand. */
   private pending = new Map<string, Frame>();
   private busy = false;
+  /** How much finer than the preview's the surfaces are refined: view state, like the orbit. */
+  private fine = 1;
 
   /** Each swept object of the job in hand, by key. */
   private refining = new Map<string, Refining>();
@@ -148,8 +152,22 @@ export class FieldPreview {
       this.worker = w;
     }
     const modules = related(doc.text).filter((f) => f.provided).map((f): [string, string] => [f.name, f.text]);
-    this.worker.postMessage({ kind: 'mesh', id: this.job, text: doc.text, x: sk.getX(), solids: todo, modules });
+    this.worker.postMessage({ kind: 'mesh', id: this.job, text: doc.text, x: sk.getX(), solids: todo, modules,
+      fineness: this.fine });
     if (supplied) this.arrived();
+  }
+
+  get fineness(): number { return this.fine; }
+
+  /** Refine `fineness` times finer than the preview's. A surface finished at another fineness is
+   *  not this one's, so every swept object of `doc` (the view's, now) is meshed again; until its
+   *  first frame arrives the sketch keeps drawing the surface it has. */
+  setFineness(fineness: number, doc: Document): void {
+    if (fineness === this.fine) return;
+    this.fine = fineness;
+    this.finished.clear();
+    if (this.asked.size) this.cancel();
+    this.start(doc);
   }
 
   /** End the job in hand: the worker drops it at its next step, and nothing it sent is applied. */

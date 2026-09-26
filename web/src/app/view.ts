@@ -720,6 +720,11 @@ export class SketchView {
     return this.lastResult;
   }
 
+  /** How much finer than the preview's swept solids are refined (Options ▸ mesh fineness): view
+   *  state, never the document's, so it is neither saved nor undone. */
+  get meshFineness(): number { return this.fields.fineness; }
+  set meshFineness(f: number) { this.fields.setFineness(f, this.doc); }
+
   /** A swept solid's surface arrived from the worker: the same sketch now shows more, so what was
    *  drawn from it is drawn again. */
   private fieldArrived(error?: string): void {

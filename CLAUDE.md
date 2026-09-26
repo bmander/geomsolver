@@ -221,7 +221,9 @@ digest of `solid::reads`), and `app/field-preview.ts` compares keys only and run
 `app/mesh-worker.ts` (its own core, the page's text and parameter values), which checks its
 drawing names the same jobs and posts each swept object's surface every ~120 ms, worst facet
 first, to `supply_field` (checked in the core); a provisional surface draws, and exports only
-through the preview choice.
+through the preview choice. Options ▸ mesh fineness is view state: the job carries it to
+`FieldMesher::with_fineness` (facets that many times smaller, surface distance its square;
+the core offers 0.25–4 and refuses the rest), and a change meshes every swept object again.
 **Field meshing** ([docs/field-meshing.md](docs/field-meshing.md)): Delaunay refinement of the
 material field (`delaunay::refine::Progressive`, resumable, over a regular triangulation with
 exact predicates; what it meshes is a `refine::Domain`), sharp edges protected by weighted points. `FieldMesher` runs two passes: an

@@ -330,7 +330,10 @@ the same solids and keys, and refines each swept object 40 facets at a time, let
 steps so an edit (or `{kind: 'cancel'}`) ends the job, and posts the surface every 120 ms and at
 the end. Each arrives through `supply_field` (which checks what it is handed), and the page
 redraws; a finished surface is kept by key, so a new elaboration of the same drawing asks for it
-no more. What the footer says is `FieldProgress::doing`, the core's words. A
+no more. What the footer says is `FieldProgress::doing`, the core's words. Options ▸ mesh
+fineness (coarse, normal, fine, finer: 0.5, 1, 2, 3) goes with the job to
+`FieldMesher::with_fineness`, which scales the facet size down by it and the surface distance by
+its square; a change drops the finished surfaces and meshes again. A
 provisional surface exports nothing. Measured in Chrome on `swept_torus.sv`: the first surface
 (48 triangles) 0.69 s after navigation, then one every ~130 ms, the final closed 1912 triangles
 at 2.77 s; the page stays responsive throughout (`performance.mark('field-surface')` per

@@ -83,8 +83,10 @@ export interface MeshProgress {
 export class FieldMesher {
   private constructor(private h: number) {}
 
-  static create(sk: Sketch, idx: number): FieldMesher {
-    const h = core().gcs_field_mesher_new(sk.handle, idx);
+  /** Mesh swept solid `idx`, `fineness` times finer than the preview's; the core says which
+   *  finenesses it takes, and refuses another with the reason. */
+  static create(sk: Sketch, idx: number, fineness = 1): FieldMesher {
+    const h = core().gcs_field_mesher_new(sk.handle, idx, fineness);
     if (!h) throw new Error(lastError() || 'could not start meshing the solid');
     return new FieldMesher(h);
   }

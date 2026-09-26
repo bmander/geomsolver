@@ -164,6 +164,29 @@ fn invalid_intervals_cycles_and_nested_sweeps_are_explicit() {
     assert!(MaterialField::read(&e.sketch,i,1e-10).unwrap_err().contains("nested continuous sweeps"));
 }
 
+/// A finer mesh is the same surface in more, smaller facets; a fineness the mesher does not
+/// offer is refused with the range it does.
+#[test]
+fn a_swept_surface_meshes_finer_when_asked() {
+    let e = read(include_str!("../../examples/solid_generating_sweep.sv"));
+    let i = e.map.ent_named("removal.body").unwrap().i();
+    let mesh = |f: f64| solid::FieldMesher::with_fineness(&e.sketch,i,f).unwrap().finish().unwrap();
+    let (normal,fine) = (mesh(0.5),mesh(1.0));
+    // facets half the size: about four times as many over the same surface
+    let ratio = fine.triangles.len() as f64/normal.triangles.len() as f64;
+    assert!((2.5..6.0).contains(&ratio),"{} then {} triangles",normal.triangles.len(),fine.triangles.len());
+    let area = |s: &solid::FieldSurface| s.triangles.iter().map(|t| {
+        let [a,b,c] = t.map(|k| s.vertices[k as usize]);
+        0.5*gcs_core::space::norm(gcs_core::space::cross(gcs_core::space::sub(b,a),gcs_core::space::sub(c,a)))
+    }).sum::<f64>();
+    let (a1,a2) = (area(&normal),area(&fine));
+    assert!((a1-a2).abs() < 0.02*a2,"areas {a1} and {a2}");
+    for bad in [0.0,-1.0,f64::NAN,100.0] {
+        let error = solid::FieldMesher::with_fineness(&e.sketch,i,bad).err().unwrap();
+        assert!(error.contains("mesh fineness") && error.contains("0.25 to 4"),"{error}");
+    }
+}
+
 #[test]
 fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
     let e = read(include_str!("../../examples/solid_generating_sweep.sv"));

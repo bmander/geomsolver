@@ -1836,11 +1836,12 @@ pub struct Mesher {
     last: gcs_core::solid::FieldSurface,
 }
 
-/// Start meshing swept solid `idx` of this sketch: a handle, or null with the reason.
+/// Start meshing swept solid `idx` of this sketch, `fineness` times finer than the preview's
+/// (`FieldMesher::with_fineness`): a handle, or null with the reason.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_field_mesher_new(h: *mut Sketch, idx: i32) -> *mut Mesher {
+pub unsafe extern "C" fn gcs_field_mesher_new(h: *mut Sketch, idx: i32, fineness: f64) -> *mut Mesher {
     guard(std::ptr::null_mut(), move || {
-        match gcs_core::solid::FieldMesher::new(sk(h), idx as usize) {
+        match gcs_core::solid::FieldMesher::with_fineness(sk(h), idx as usize, fineness) {
             Ok(mesher) => Box::into_raw(Box::new(Mesher { mesher, last: Default::default() })),
             Err(message) => { set_error(message); std::ptr::null_mut() }
         }

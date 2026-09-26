@@ -2430,6 +2430,8 @@ test('a swept solid is refined in steps, and a deferring sketch draws only what 
   }
   const surface = mesher.snapshot();
   mesher.dispose();
+  // a fineness the core does not offer is refused with its reason, through the ABI
+  assert.throws(() => FieldMesher.create(worker.sketch, part.index, 0), /mesh fineness of 0 is outside 0.25 to 4/);
   assert.ok(counts.length > 3 && counts[0] < counts[counts.length - 1], `${counts}`);
   deferFields(page.sketch);
   assert.throws(() => mesh(page.sketch, part.index, 0));

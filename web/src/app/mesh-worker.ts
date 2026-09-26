@@ -67,7 +67,7 @@ async function run(job: MeshJob): Promise<void> {
   try {
     for (const { solid, key } of job.solids) {
       try {
-        running.push({ solid, key, mesher: FieldMesher.create(doc.sketch, solid), shown: 0, phase: '' });
+        running.push({ solid, key, mesher: FieldMesher.create(doc.sketch, solid, job.fineness), shown: 0, phase: '' });
       } catch (e) {
         post({ id: job.id, solid, key, error: String(e) });
       }

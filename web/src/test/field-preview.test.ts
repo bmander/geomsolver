@@ -112,3 +112,31 @@ test('an edited drawing is a new job, and one with nothing to mesh cancels the j
   edited.dispose();
   plain.dispose();
 });
+
+test('a new fineness meshes the drawing again, finished surfaces and all, and says how fine', async () => {
+  const { fp, stub, arrived } = preview();
+  const doc = Document.read(TORUS);
+  fp.start(doc);
+  const first = stub.last as MeshJob;
+  assert.equal(first.fineness, 1);
+  const { solid, key } = first.solids[0];
+  stub.send({ id: first.id, solid, key, surface: surface(false) });
+  await wait(20);
+  assert.equal(arrived.length, 1);
+  fp.setFineness(1, doc);
+  assert.equal(stub.posted.length, 1, 'the fineness in hand changes nothing');
+  fp.setFineness(2, doc);
+  const second = stub.last as MeshJob;
+  assert.equal(second.kind, 'mesh');
+  assert.ok(second.id > first.id);
+  assert.equal(second.fineness, 2);
+  assert.deepEqual(second.solids, first.solids, 'the same drawing, meshed again');
+  assert.equal(fp.fineness, 2);
+  // a later elaboration of it is not handed the surface finished at the old fineness
+  const next = Document.read(TORUS);
+  fp.start(next);
+  assert.equal(stub.posted.length, 2, 'the job at the new fineness stands');
+  assert.equal(arrived.length, 1);
+  doc.dispose();
+  next.dispose();
+});
