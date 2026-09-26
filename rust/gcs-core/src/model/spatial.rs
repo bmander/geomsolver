@@ -449,11 +449,45 @@ impl Sketch {
         value
     }
 
+    /// **What a host meshing swept solids elsewhere has to mesh** (`FieldMeshing::Deferred`): the
+    /// objects (`overview::objects`) with a continuous sweep among their operands, each with the
+    /// key of the drawing it is a surface of (`FieldJob`). A swept solid that is no object is left
+    /// out: nothing shows or exports it, so its surface is never asked for.
+    pub fn field_jobs(&self) -> Vec<crate::solid::FieldJob> {
+        crate::overview::objects(self).into_iter().filter(|&i| self.is_swept(i))
+            .map(|i| crate::solid::FieldJob {
+                solid: i, name: self.solids[i].name.clone(), key: crate::solid::field_key(self, i),
+            })
+            .collect()
+    }
+
     /// Give swept solid `i` a surface meshed elsewhere, against the drawing as it stands now.
-    pub fn supply_field(&self, i: usize, surface: crate::solid::FieldSurface) {
+    /// Refused, with the reason, for an index out of range, a solid with no sweep (whose surface
+    /// is its own) or a triangle naming a vertex that is not there — a surface crosses from
+    /// another host, and the core checks what it is handed.
+    pub fn supply_field(&self, i: usize, surface: crate::solid::FieldSurface) -> Result<(), String> {
+        if i >= self.solids.len() { return Err("a supplied surface names no solid of this drawing".into()); }
+        if !self.is_swept(i) {
+            return Err(format!("`{}`: a supplied surface is for a swept solid, and this one has no sweep",
+                self.solids[i].name));
+        }
+        let n = surface.vertices.len();
+        if surface.triangles.iter().flatten().any(|&v| v as usize >= n) {
+            return Err(format!("`{}`: a supplied triangle names a vertex past the {n} given", self.solids[i].name));
+        }
         let key = crate::solid::reads(self, i, 0.0);
         self.field_surfaces.borrow_mut().insert(i, (key, std::rc::Rc::new(surface)));
         self.solid_cache.borrow_mut().retain(|(index, _), _| *index != i);
+        Ok(())
+    }
+
+    /// Whether solid `i`'s surface is still being refined elsewhere: false for a solid with no
+    /// sweep, answered without evaluating it, and a swept one's supplied surface's word otherwise.
+    pub fn field_provisional(&self, i: usize) -> Result<bool, String> {
+        if i >= self.solids.len() { return Err("no such solid in this drawing".into()); }
+        if !self.is_swept(i) { return Ok(false); }
+        // any policy: a swept solid is always its supplied mesh, whatever the unit asked
+        self.evaluated_solid(i, crate::solid::ApproximationPolicy::from_unit(0.)).map(|s| s.provisional())
     }
 
     /// The surface supplied for swept solid `i`, while the drawing still reads as it did.

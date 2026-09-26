@@ -51,12 +51,7 @@ fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
         if path.extension().map_or(false,|e| e == "sv") { std::fs::copy(&path,dir.join(path.file_name().unwrap())).unwrap(); }
     }
     let configuration = dir.join("configuration.sv");
-    let text: String = std::fs::read_to_string(&configuration).unwrap().lines().map(|l| {
-        if l.starts_with("param offset_angle") { "param offset_angle = 30deg".into() }
-        else if l.starts_with("param pressure_shift") { "param pressure_shift = 0deg".into() }
-        else if l.starts_with("param spiral_angle") { "param spiral_angle = 35deg".into() }
-        else { l.to_string() }
-    }+"\n").collect();
+    let text = fixtures::gear::design("configuration",std::fs::read_to_string(&configuration).unwrap(),30.,0.,35.);
     std::fs::write(&configuration,text).unwrap();
     let output = dir.join("pinion.stl");
     std::fs::write(&output,"old STL").unwrap();
@@ -66,6 +61,28 @@ fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
     assert_eq!(result.status.code(),Some(1),"{stderr}");
     assert!(stderr.contains("outside the generating-sweep class (E2"),"{stderr}");
     assert_eq!(std::fs::read_to_string(output).unwrap(),"old STL");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// A refined mesh the field-agreement probe refuses is never written: the swept torus meshed
+/// so coarsely its facets leave the field, and the earlier output is left as it was.
+#[cfg(feature="occt")]
+#[test]
+fn a_refined_mesh_the_field_refuses_leaves_the_old_output() {
+    let dir = std::env::temp_dir().join(format!("solventc-refine-refusal-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = dir.join("part.stl");
+    std::fs::write(&output,"old STL").unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_solventc"))
+        .args([doc("swept_torus.sv").as_str(),"--stl",output.to_str().unwrap(),"--stl-backend","refine","--no-diagnose"])
+        .env("SOLVENT_REFINE_FACET","3").env("SOLVENT_REFINE_DISTANCE","1")
+        .env_remove("SOLVENT_FEATURES").env_remove("SOLVENT_KEEP_REJECTED")
+        .output().expect("solventc runs");
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(1),"{stderr}");
+    assert!(stderr.contains("disagrees with the material field"),"{stderr}");
+    assert_eq!(std::fs::read_to_string(&output).unwrap(),"old STL");
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(),1,"nothing staged is left beside it");
     std::fs::remove_dir_all(dir).unwrap();
 }
 

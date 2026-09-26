@@ -1,6 +1,7 @@
 //! Complete member material: a finite blank minus every indexed generating sweep.
 use super::*;
 use gcs_core::{solid::{SpatialField,MaterialField,MaterialEvaluator},motion::{Family,MotionBounds}};
+use gcs_core::interval::minimum::Stop;
 
 mod walk;
 mod source;
@@ -134,14 +135,14 @@ impl Member {
     fn query(&mut self,p: [I;3],options: Options,band: Option<I>) -> MaterialQuery {
         let blank = self.blank.bounds(p).unwrap();
         let mut positive: Vec<Vec<([f64;2],f64)>> = vec![];
-        let observe = |query: usize,domain: I,bound: I| {
+        let mut observe = |query: usize,domain: I,bound: I| {
             positive.resize_with(query+1,Vec::new);
             let domain = domain.bounds();
             if bound.bounds()[0] > 0. && domain[0] < domain[1] { positive[query].push((domain,bound.bounds()[0])); }
         };
         let result = if let Some(band) = band {
-            self.field.bounds_outside_with_observer(p,band,options,observe)
-        } else { self.field.bounds_with_observer(p,options,observe) }.unwrap();
+            self.field.query(p,Stop::Outside(band),options,Some(&mut observe))
+        } else { self.field.query(p,Stop::Converged,options,Some(&mut observe)) }.unwrap();
         assert_eq!(positive.len(),result.sweeps.len());
         let covers: Vec<_> = result.sweeps.iter().zip(positive).map(|(query,positive)| {
             let domain = query.domain.bounds();
@@ -295,7 +296,7 @@ fn band_queries_classify_member_boxes_with_less_roll_refinement() {
         ([39.422487402678954,-5.865393179148338,43.172816417932836],true),([0.;3],false),([70.,0.,0.],false)] {
         let box_p = p.map(|v| I::new(v-1e-5,v+1e-5).unwrap());
         let full = member.field.bounds(box_p,options).unwrap();
-        let fast = member.field.bounds_outside(box_p,band,options).unwrap();
+        let fast = member.field.query(box_p,Stop::Outside(band),options,None).unwrap();
         assert!(fast.value.bounds()[0] <= full.value.bounds()[0] && fast.value.bounds()[1] >= full.value.bounds()[1]);
         if inside { assert!(fast.value.bounds()[1] < -0.1); }
         else { assert!(fast.value.bounds()[0] > 0.1); }

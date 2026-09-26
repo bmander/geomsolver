@@ -11,26 +11,10 @@
 //! is read from cells as wide as its curvature allows, a crease from the finest. What comes back
 //! is a reading, never an interval claim: the centre test samples the interpolation's error, it
 //! does not bound it.
-use std::collections::HashMap;
-use std::hash::{BuildHasherDefault,Hasher};
+use super::memo::{Map,Mix};
+use std::hash::Hasher;
 
 type P = [f64;3];
-
-/// A multiply-rotate hash for integer keys: the octree asks one lookup per level of every read,
-/// and SipHash's resistance to chosen keys buys nothing against coordinates we mint ourselves.
-#[derive(Default)]
-pub(super) struct Mix(u64);
-
-impl Hasher for Mix {
-    fn finish(&self) -> u64 { self.0 }
-    fn write(&mut self,bytes: &[u8]) { for &b in bytes { self.write_u64(b as u64); } }
-    fn write_u64(&mut self,x: u64) { self.0 = (self.0.rotate_left(5) ^ x).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95); }
-    fn write_i64(&mut self,x: i64) { self.write_u64(x as u64); }
-    fn write_u32(&mut self,x: u32) { self.write_u64(x as u64); }
-    fn write_usize(&mut self,x: usize) { self.write_u64(x as u64); }
-}
-
-pub(super) type Map<K,V> = HashMap<K,V,BuildHasherDefault<Mix>>;
 
 /// A cell met on the way down: its corners' values and whether they settle it as a leaf.
 #[derive(Debug,Clone,Copy)]

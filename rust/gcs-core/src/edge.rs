@@ -74,9 +74,7 @@ pub struct SpatialEdge {
     tolerance: EdgeTolerance,
 }
 
-fn dot(a: [f64;3],b: [f64;3]) -> f64 { (0..3).map(|i| a[i]*b[i]).sum() }
-fn delta(a: [f64;3],b: [f64;3]) -> [f64;3] { std::array::from_fn(|i| a[i]-b[i]) }
-fn length(p: [f64;3]) -> f64 { p[0].hypot(p[1]).hypot(p[2]) }
+use crate::space::{dot,sub as delta,length};
 
 impl SpatialEdge {
     /// Endpoint witnesses use each vertex's canonical chart. They are rechecked

@@ -80,91 +80,10 @@ impl RevolvedSurface {
 
     /// The revolution's unit axis direction.
     pub fn axis_direction(&self) -> [f64;3] { self.axis }
-
-    /// The unit radial direction of the meridian's half-plane at `v = 0`.
-    fn half_plane(&self) -> Option<V> {
-        let full = Self {v_domain:[0.,1.],..self.clone()};
-        for u in [0.5,0.,1.,0.25,0.75] {
-            let Ok(s) = full.at(u,0.) else { continue };
-            let q = sub(s.position,self.origin);
-            let radial = sub(q,scale(self.axis,plane::dot(q,self.axis)));
-            let r = plane::norm(radial);
-            if r > 1e-9*(1.+plane::norm(q)) { return Some(scale(radial,1./r)); }
-        }
-        None
-    }
-
-    /// A point's coordinates in the meridian half-plane: its distance from
-    /// the axis and its height along it. For a point of the meridian itself
-    /// `signed` reads the radial coordinate against the half-plane's own
-    /// direction, so a meridian may be written on either side of the axis.
-    fn meridian_coordinates(&self,e: V,p: V,signed: bool) -> [f64;2] {
-        let q = sub(p,self.origin);
-        let z = plane::dot(q,self.axis);
-        let radial = sub(q,scale(self.axis,z));
-        [if signed { plane::dot(radial,e) } else { plane::norm(radial) },z]
-    }
-
-    /// The carrier's implicit function at `p`: the signed distance, in the
-    /// meridian half-plane through `p`, from `p` to the meridian's own line or
-    /// circle. Zero on the cone, cylinder, plane, sphere or torus the face
-    /// lies in, its sign consistent over the carrier.
-    pub fn implicit(&self,p: V) -> Option<f64> {
-        let e = self.half_plane()?;
-        let x = self.meridian_coordinates(e,p,false);
-        Some(match &self.meridian {
-            Meridian::Line {start,delta} => {
-                let s = self.meridian_coordinates(e,*start,true);
-                let d = self.meridian_coordinates(e,add(*start,*delta),true);
-                let d = [d[0]-s[0],d[1]-s[1]];
-                (d[0]*(x[1]-s[1])-d[1]*(x[0]-s[0]))/d[0].hypot(d[1])
-            }
-            Meridian::Round {center,a,..} => {
-                let c = self.meridian_coordinates(e,*center,true);
-                (x[0]-c[0]).hypot(x[1]-c[1])-plane::norm(*a)
-            }
-        })
-    }
-
-    /// The carrier's parameters at a point of it: `u` along the meridian, not
-    /// clamped to the face, and `v` about the axis brought into the chart's
-    /// domain where the chart wraps.
-    pub fn parameters(&self,p: V) -> Option<(f64,f64)> {
-        let e = self.half_plane()?;
-        let f = plane::cross(self.axis,e);
-        let x = self.meridian_coordinates(e,p,false);
-        let u = match &self.meridian {
-            Meridian::Line {start,delta} => {
-                let s = self.meridian_coordinates(e,*start,true);
-                let d = self.meridian_coordinates(e,add(*start,*delta),true);
-                let d = [d[0]-s[0],d[1]-s[1]];
-                ((x[0]-s[0])*d[0]+(x[1]-s[1])*d[1])/(d[0]*d[0]+d[1]*d[1])
-            }
-            Meridian::Round {center,a,b,sweep} => {
-                let c = self.meridian_coordinates(e,*center,true);
-                let a2 = self.meridian_coordinates(e,add(*center,*a),true);
-                let b2 = self.meridian_coordinates(e,add(*center,*b),true);
-                let (a2,b2) = ([a2[0]-c[0],a2[1]-c[1]],[b2[0]-c[0],b2[1]-c[1]]);
-                let q = [x[0]-c[0],x[1]-c[1]];
-                let angle = (q[0]*b2[0]+q[1]*b2[1]).atan2(q[0]*a2[0]+q[1]*a2[1]);
-                let turn = TAU/sweep.abs();
-                let u = (angle/sweep).rem_euclid(turn);
-                if u > 1. && turn-u < 1e-9 { 0. } else { u }
-            }
-        };
-        let q = sub(p,self.origin);
-        let radial = sub(q,scale(self.axis,plane::dot(q,self.axis)));
-        let angle = if plane::norm(radial) > 0. { plane::dot(radial,f).atan2(plane::dot(radial,e)) } else { 0. };
-        let turn = TAU/self.sweep.abs();
-        let [lo,hi] = self.v_domain;
-        let mut v = lo+(angle/self.sweep-lo).rem_euclid(turn);
-        if v > hi && v-turn >= lo-1e-9 { v -= turn; }
-        Some((u,v))
-    }
 }
 
-/// Isolated roots on a normalized angular span; shared by the two source charts.
-pub(in crate::solid) fn sinusoid_roots(a: f64,b: f64,c: f64,sweep: f64,domain: [f64;2],tolerance: f64)
+/// Isolated roots on a normalized angular span.
+fn sinusoid_roots(a: f64,b: f64,c: f64,sweep: f64,domain: [f64;2],tolerance: f64)
     -> Result<Vec<(usize,f64)>,Error> {
     let amplitude = a.hypot(b);
     if ![a,b,c,amplitude].iter().all(|v| v.is_finite()) { return Err(Error::NonFinite); }

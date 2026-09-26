@@ -1,7 +1,6 @@
 //! The generating geometry comes from a solved Solvent component, including its fillets.
 use super::*;
 use gcs_core::{diagnose,library,model::EntRef,program,solid::RevolvedSurface,solve};
-mod bounds;
 
 fn read() -> program::Elaborated {
     let src = include_str!("../../../examples/spiral_bevel/reference.sv");

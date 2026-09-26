@@ -23,7 +23,7 @@ import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Plane, Point, Sketch, Spline } from '../core/model.js';
 import { mesh, objects, stl, glb } from '../core/mesh.js';
-import { FieldMesher, deferFields, isSwept, supplyField } from '../core/field.js';
+import { FieldMesher, deferFields, fieldJobs, supplyField, unpaired } from '../core/field.js';
 import { overview } from '../core/overview.js';
 import { Document, fromSketch, highlight } from '../core/program.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
@@ -2390,6 +2390,11 @@ test('related files include transitive libraries and host overrides without dupl
   try {
     const files = modules.related('use demo.a\nuse demo.b\n');
     assert.deepEqual(files.map((f) => f.path), ['demo/a.sv', 'demo/b.sv', 'std.sv', 'hardware.sv']);
+    // what the host handed over is marked, and the library's own is not
+    assert.deepEqual(files.map((f) => f.provided), [true, true, false, false]);
+    // installing a list replaces what was handed over with it
+    modules.install([['demo.a', a]]);
+    assert.ok(modules.provided('demo.a') && !modules.provided('demo.b'));
     assert.equal(files[0].text, a);
     assert.equal(files[1].text, b);
     assert.ok(files[2].text.includes('component ThreeViews'));
@@ -2407,7 +2412,13 @@ test('a swept solid is refined in steps, and a deferring sketch draws only what 
   const page = Document.read(text), worker = Document.read(text);
   worker.sketch.setX(page.sketch.getX());
   const part = objects(page.sketch).find((o) => o.name === 'part')!;
-  assert.ok(isSwept(page.sketch, part.index));
+  // what to mesh is the core's answer, and two cores reading one drawing give the same one
+  const jobs = fieldJobs(page.sketch);
+  assert.deepEqual(jobs.map((j) => [j.solid, j.name]), [[part.index, 'part']]);
+  assert.match(jobs[0].key, /^[0-9a-f]{16}$/);
+  assert.deepEqual(fieldJobs(worker.sketch), jobs);
+  assert.equal(unpaired(jobs, fieldJobs(worker.sketch)), undefined);
+  assert.match(unpaired(jobs, [{ ...jobs[0], key: '0'.repeat(16) }])!, /part/);
   const mesher = FieldMesher.create(worker.sketch, part.index);
   const counts: number[] = [];
   for (let done = false; !done;) {
@@ -2415,12 +2426,17 @@ test('a swept solid is refined in steps, and a deferring sketch draws only what 
     const s = mesher.snapshot();
     counts.push(s.triangles.length / 3);
     assert.equal(s.provisional, !done);
+    assert.ok(mesher.progress().doing.startsWith(mesher.progress().phase));
   }
   const surface = mesher.snapshot();
   mesher.dispose();
   assert.ok(counts.length > 3 && counts[0] < counts[counts.length - 1], `${counts}`);
   deferFields(page.sketch);
   assert.throws(() => mesh(page.sketch, part.index, 0));
+  // the core checks what it is handed: a triangle past the vertices, a solid that is not there
+  assert.throws(() => supplyField(page.sketch, part.index,
+    { vertices: new Float64Array(9), triangles: new Uint32Array([0, 1, 3]), provisional: true }), /past the 3 given/);
+  assert.throws(() => supplyField(page.sketch, -1, surface), /names no solid/);
   supplyField(page.sketch, part.index, surface);
   const m = mesh(page.sketch, part.index, 0);
   assert.equal(m.positions.length, surface.triangles.length * 3);   // three indices a triangle, nine numbers

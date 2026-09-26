@@ -3,6 +3,17 @@
 use crate::{json::{object,Json},model::{EntKind,EntRef,Sense,Sketch,SolidDef},plane};
 use std::collections::BTreeSet;
 
+/// How far from a revolution's axis an endpoint is read as on it, whenever an export reads the
+/// solved model into fields, contacts or its admission (the tolerance a revolved snapshot takes).
+pub const AXIS_TOLERANCE: f64 = 1e-10;
+/// Poses a material evaluator caches per sweep while an export judges its cells and its mesh.
+pub const POSE_CACHE: usize = 4096;
+
+/// Model length units to millimetres, which every native export is written in.
+pub fn millimetres(sk: &Sketch) -> Result<f64,String> {
+    Ok(sk.units.length.ok_or("CAD export requires an explicit model length unit")?.1)
+}
+
 fn vector(v: [f64;3]) -> Json { Json::Arr(v.into_iter().map(Json::from).collect()) }
 fn ids(v: &[u32]) -> Json { Json::Arr(v.iter().copied().map(Json::from).collect()) }
 
@@ -80,7 +91,7 @@ pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String>
 
 fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe,String> {
     super::validate(sk,root)?;
-    let scale = sk.units.length.ok_or("CAD export requires an explicit model length unit")?.1;
+    let scale = millimetres(sk)?;
     let mut pending = vec![(root,false)];
     let mut seen = BTreeSet::new();
     let mut nodes = Vec::new();

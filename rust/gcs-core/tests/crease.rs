@@ -123,3 +123,60 @@ fn a_swept_groove_meshes_closed_with_its_rim_kept() {
     assert!(!surface.provisional);
     assert!((volume-exact).abs() < 0.003*exact,"volume {volume} against {exact}");
 }
+
+/// Half-spaces `n·p ≤ d` intersected, read as a crease source: the field their greatest value,
+/// each plane a leaf of one piece. Creases are where two planes meet, straight lines.
+struct Planes(Vec<([f64;3],f64)>);
+
+impl Planes {
+    fn leaf(&self,p: [f64;3],k: usize) -> solid::Reading {
+        let (n,d) = self.0[k];
+        solid::Reading {value:n[0]*p[0]+n[1]*p[1]+n[2]*p[2]-d,gradient:n,operand:Some(solid::OperandId::new(k,0)),ambiguous:false}
+    }
+}
+
+impl crease::CreaseSource for Planes {
+    fn read(&self,p: [f64;3],_: f64) -> solid::Reading {
+        let mut all: Vec<solid::Reading> = (0..self.0.len()).map(|k| self.leaf(p,k)).collect();
+        all.sort_by(|a,b| b.value.total_cmp(&a.value));
+        solid::Reading {ambiguous:all.len() > 1 && all[0].value-all[1].value <= 1e-12,..all[0]}
+    }
+    fn read_operand(&self,p: [f64;3],op: solid::OperandId,_: f64) -> Option<solid::Reading> {
+        (op.leaf() < self.0.len()).then(|| self.leaf(p,op.leaf()))
+    }
+}
+
+/// Two planes meet in a line: the crease is followed both ways to the bounding ball, every point
+/// on both, and a mesh's edge whose ends two planes decide seeds it.
+#[test]
+fn two_planes_meet_in_a_crease_followed_to_the_ball() {
+    let source = Planes(vec![([1.,0.,0.],0.),([0.,1.,0.],0.)]);
+    let options = crease::CreaseOptions {step:0.25,tolerance:1e-9,time_gap:0.1,centre:[0.;3],radius:5.,max_points:1000};
+    let vertices = [[1.,-1.,0.],[-1.,1.,0.],[1.,-1.,1.]];
+    let seeds = crease::seeds(&source,&vertices,&[[0,1,2]],&options);
+    assert_eq!(seeds.len(),2,"{seeds:?}");
+    let found = crease::creases(&source,&seeds,&options);
+    assert_eq!(found.len(),1,"one crease, traced once: {found:?}");
+    let c = &found[0];
+    assert_eq!(c.ends,[crease::End::Ball;2]);
+    assert!(c.points.iter().all(|p| p[0].abs() < 1e-9 && p[1].abs() < 1e-9),"{:?}",c.points);
+    let (lo,hi) = c.points.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),p| (lo.min(p[2]),hi.max(p[2])));
+    assert!(lo < -4.5 && hi > 4.5,"z from {lo} to {hi}");
+}
+
+/// A third plane across the line ends the crease at the corner the three meet at.
+#[test]
+fn a_third_plane_ends_the_crease_at_their_corner() {
+    let source = Planes(vec![([1.,0.,0.],0.),([0.,1.,0.],0.),([0.,0.,1.],1.)]);
+    let options = crease::CreaseOptions {step:0.25,tolerance:1e-9,time_gap:0.1,centre:[0.;3],radius:5.,max_points:1000};
+    let ops = [solid::OperandId::new(0,0),solid::OperandId::new(1,0)];
+    let found = crease::creases(&source,&[([0.3,0.2,0.],ops)],&options);
+    assert_eq!(found.len(),1,"{found:?}");
+    let c = &found[0];
+    let corner = c.ends.iter().position(|e| matches!(e,crease::End::Corner(o) if o.leaf() == 2)).expect("a corner with the third plane");
+    let at = if corner == 0 { c.points[0] } else { *c.points.last().unwrap() };
+    assert!(close(at,[0.,0.,1.],1e-8),"corner at {at:?}");
+    assert_eq!(c.ends[1-corner],crease::End::Ball);
+}
+
+fn close(a: [f64;3],b: [f64;3],tol: f64) -> bool { (0..3).all(|k| (a[k]-b[k]).abs() <= tol) }

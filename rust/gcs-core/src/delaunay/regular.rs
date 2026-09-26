@@ -27,6 +27,9 @@ pub enum Inserted { Vertex(u32),Hidden(u32) }
 /// The number of enclosing vertices, which come first and are never hidden.
 pub const ENCLOSING: u32 = 4;
 
+/// The largest coordinate a point may have (`Regular::insert_near`): 2^100.
+pub const MAGNITUDE: f64 = 1_267_650_600_228_229_401_496_703_205_376.;
+
 pub struct Regular {
     points: Vec<Weighted>,
     hidden: Vec<bool>,
@@ -153,6 +156,14 @@ impl Regular {
         if !p.iter().chain([&w]).all(|x| x.is_finite()) {
             return Err("a point must be finite".into());
         }
+        // The power test multiplies five coordinate differences: past 2^100 a product nears the
+        // largest double and the exact evaluation's expansions (which assume no overflow) would
+        // be wrong, so the triangulation refuses such a point rather than answer for it. Below,
+        // the expansions assume no underflow either: differences under about 2^-200 are ones no
+        // mesh in model units meets.
+        if p.iter().any(|x| x.abs() > MAGNITUDE) || w.abs() > MAGNITUDE*MAGNITUDE {
+            return Err(format!("{p:?} lies beyond the exact predicates' range"));
+        }
         let q = Weighted {p,w};
         self.hint(hint);
         let start = self.locate(p)?;
@@ -218,16 +229,28 @@ impl Regular {
                 }
             }
         }
-        // One new tetrahedron per boundary face, linked across the faces through the new point:
-        // three open faces per new tetrahedron wait in the table for their partner, keyed by the
-        // edge they share with the boundary; a slot from an earlier insertion is empty.
+        let first = self.link_new_tets(id,&boundary,&mut open)?;
+        for &c in &cavity {
+            self.tets[c as usize].v[0] = NONE;
+            self.free.push(c);
+        }
+        self.cavity = cavity; self.stack = stack; self.boundary = boundary; self.open = open;
+        self.last = first;
+        Ok(Inserted::Vertex(id))
+    }
+
+    /// One new tetrahedron per boundary face of the cavity, made with the new point `id` and linked
+    /// across the faces through it: three open faces per new tetrahedron wait in the table `open`
+    /// for their partner, keyed by the edge they share with the boundary; a slot from an earlier
+    /// insertion is empty. The first tetrahedron made.
+    fn link_new_tets(&mut self,id: u32,boundary: &[(u32,usize)],open: &mut Vec<(u64,u64,u32,u8)>) -> Result<u32,String> {
         let generation = self.insertion;
         let wanted = (4*3*boundary.len()).next_power_of_two().max(64);
-        if open.len() < wanted { open = vec![(0,0,0,0);wanted]; }
+        if open.len() < wanted { *open = vec![(0,0,0,0);wanted]; }
         let mask = open.len()-1;
         let mut waiting = 0usize;
         let mut first = NONE;
-        for &(c,i) in &boundary {
+        for &(c,i) in boundary {
             let old = self.tets[c as usize];
             let mut v = old.v;
             v[i] = id;
@@ -270,13 +293,7 @@ impl Regular {
             }
         }
         if waiting != 0 { return Err("the new tetrahedra do not close around the point".into()); }
-        for &c in &cavity {
-            self.tets[c as usize].v[0] = NONE;
-            self.free.push(c);
-        }
-        self.cavity = cavity; self.stack = stack; self.boundary = boundary; self.open = open;
-        self.last = first;
-        Ok(Inserted::Vertex(id))
+        Ok(first)
     }
 
     /// The tetrahedra the last insertion made (none when its point was hidden).
@@ -307,16 +324,14 @@ impl Regular {
     pub fn orthosphere(&self,t: u32) -> ([f64;3],f64) {
         // Worked from the corners in a fixed order, so the same four points give the same bits
         // whichever tetrahedron, rotation or insertion order holds them: a caller remembering the
-        // field's side at an orthocentre finds it again after a rebuild.
+        // domain's side at an orthocentre finds it again after a rebuild.
         let mut corners = self.corners(t);
         corners.sort_unstable_by(|p,q| p.p[0].total_cmp(&q.p[0]).then(p.p[1].total_cmp(&q.p[1]))
             .then(p.p[2].total_cmp(&q.p[2])).then(p.w.total_cmp(&q.w)));
         let [a,b,c,d] = corners;
         let from_a = |q: Weighted| [0,1,2].map(|k| q.p[k]-a.p[k]);
         let (u,v,x) = (from_a(b),from_a(c),from_a(d));
-        let dot = |p: [f64;3],q: [f64;3]| p[0]*q[0]+p[1]*q[1]+p[2]*q[2];
-        let cross = |p: [f64;3],q: [f64;3]|
-            [p[1]*q[2]-p[2]*q[1],p[2]*q[0]-p[0]*q[2],p[0]*q[1]-p[1]*q[0]];
+        use crate::space::{dot,cross};
         let (ru,rv,rx) = (dot(u,u)-(b.w-a.w),dot(v,v)-(c.w-a.w),dot(x,x)-(d.w-a.w));
         let (vx,xu,uv) = (cross(v,x),cross(x,u),cross(u,v));
         let det = 2.*dot(u,vx);

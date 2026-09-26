@@ -2,7 +2,7 @@
 mod bounds;
 pub use bounds::MotionBounds;
 mod contact;
-pub use contact::{NormalVelocity,ContactTime,NormalVelocityBounds};
+pub use contact::{NormalVelocity,ContactTime};
 
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 
@@ -17,7 +17,7 @@ enum Step {
 
 fn unit(axis: [f64;3]) -> Option<[f64;3]> {
     // sqrt of the sum and not `hypot`: evaluated at every pose, and axes are of drawing size
-    let n = (axis[0]*axis[0]+axis[1]*axis[1]+axis[2]*axis[2]).sqrt();
+    let n = crate::space::norm(axis);
     (n > 0. && n.is_finite()).then(|| axis.map(|v| v/n))
 }
 
@@ -146,8 +146,7 @@ impl Family {
     /// several steps) leaves the plane, and is none: a plane a motion does not preserve has no
     /// such reading.
     pub fn in_plane(&self,normal: [f64;3],point: [f64;3]) -> Option<PlaneRigid> {
-        let dot = |a: [f64;3],b: [f64;3]| a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
-        let cross = |a: [f64;3],b: [f64;3]| [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+        use crate::space::{dot,cross};
         let normal = unit(normal)?;
         match *self.steps.as_slice() {
             [Step::Rotation {origin,axis,ratio,phase:_,advance}] => {

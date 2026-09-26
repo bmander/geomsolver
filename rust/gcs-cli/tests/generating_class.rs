@@ -7,36 +7,27 @@
 //! `SOLVENT_CLASS_SHIFTS=0,5` the pressure shifts (every pair is measured), and
 //! `SOLVENT_CLASS_MEMBERS=pinion,gear` the members, and `SOLVENT_CLASS_ROLL` the
 //! pinion's roll limit for the negative control.
-mod support;
 use gcs_core::{program,solid::{SweepContacts,SpatialField,TimedContact}};
-use std::{collections::BTreeMap,path::Path};
+use std::collections::BTreeMap;
+
+use gcs_core::space::{sub,dot,cross,norm};
 
 type V = [f64;3];
-fn sub(a: V,b: V) -> V { std::array::from_fn(|k| a[k]-b[k]) }
-fn dot(a: V,b: V) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
-fn cross(a: V,b: V) -> V { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
-fn norm(a: V) -> f64 { dot(a,a).sqrt() }
 
 /// The pair at `offset` degrees, its members also publishing their blanks.
 fn read(offset: f64,shift: Option<f64>) -> program::Elaborated {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
-    let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     // `SOLVENT_CLASS_SPIRAL` (degrees) replaces the configured spiral angle.
-    let spiral = std::env::var("SOLVENT_CLASS_SPIRAL").ok();
-    support::read_configured_with(&source,&base,&mut |name,text| match name {
-        "configuration" => text.lines().map(|l| if l.trim_start().starts_with("param offset_angle") {
-            format!("param offset_angle = {offset}deg\n") } else if let (true,Some(k)) = (l.trim_start().starts_with("param pressure_shift"),shift) {
-            format!("param pressure_shift = {k}deg\n") } else if let (true,Some(k)) = (l.trim_start().starts_with("param spiral_angle"),&spiral) {
-            format!("param spiral_angle = {k}deg\n") } else { format!("{l}\n") }).collect(),
+    let spiral = std::env::var("SOLVENT_CLASS_SPIRAL").ok().map(|v| v.parse::<f64>().unwrap());
+    let design: Vec<(&str,f64)> = [("offset_angle",Some(offset)),("pressure_shift",shift),("spiral_angle",spiral)]
+        .into_iter().filter_map(|(p,v)| v.map(|v| (p,v))).collect();
+    fixtures::gear::read_configured_with(&mut |name,text| match name {
+        "configuration" => fixtures::gear::configure(name,text,&design),
         // `SOLVENT_CLASS_ROLL` (degrees) widens the pinion's roll: the negative
         // control, a tool left in the blank and revisiting it.
         // `SOLVENT_CLASS_ONE`: the members with a single tooth space, as a one-space export has.
-        "matched_pair" if std::env::var("SOLVENT_CLASS_ONE").is_ok() => text.replace("repeat teeth as i {","repeat 1 as i {")
-            .replace("  solid body(design.heel)\n",
-            "  solid body(design.heel)\n  construction solid blank(design.heel)\n  design.tip bound blank\n  design.toe cut blank\n  design.back cut blank\n"),
-        "matched_pair" => text.replace("roll_limit: 35deg",&format!("roll_limit: {}deg",
-            std::env::var("SOLVENT_CLASS_ROLL").unwrap_or("35".into()))).replace("  solid body(design.heel)\n",
-            "  solid body(design.heel)\n  construction solid blank(design.heel)\n  design.tip bound blank\n  design.toe cut blank\n  design.back cut blank\n"),
+        "matched_pair" if std::env::var("SOLVENT_CLASS_ONE").is_ok() => fixtures::gear::publish_blank(&fixtures::gear::one_space(&text),""),
+        "matched_pair" => fixtures::gear::publish_blank(&text.replace("roll_limit: 35deg",&format!("roll_limit: {}deg",
+            std::env::var("SOLVENT_CLASS_ROLL").unwrap_or("35".into()))),""),
         // `SOLVENT_CLASS_TIP` scales the crown tooth's tip round (0.3 normal modules).
         "paired_references" => match std::env::var("SOLVENT_CLASS_TIP") {
             Ok(k) => text.replace("param transition_radius = 0.3 * normal_module",
@@ -270,10 +261,7 @@ fn an_exported_member_agrees_with_its_field() {
     let member = std::env::var("SOLVENT_AGREE_MEMBER").unwrap_or("pinion".into());
     let offset: Option<f64> = std::env::var("SOLVENT_CLASS_OFFSETS").ok().map(|v| v.parse().unwrap());
     let shift: Option<f64> = std::env::var("SOLVENT_CLASS_SHIFTS").ok().map(|v| v.parse().unwrap());
-    let e = match offset { Some(o) => read(o,shift), None => {
-        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
-        support::read_configured_with(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base,&mut |_,t| t)
-    } };
+    let e = match offset { Some(o) => read(o,shift), None => fixtures::gear::read_as_configured() };
     let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
     let scale = e.sketch.units.length.unwrap().1;
     let (vertices,triangles) = agreement::stl_triangles(&std::fs::read(&path).unwrap(),scale).unwrap();
@@ -298,8 +286,7 @@ fn the_material_along_a_line() {
     use gcs_core::{interval::{Interval,minimum::{Options,Stop}},solid::MaterialField};
     let v: Vec<f64> = std::env::var("SOLVENT_LINE").expect("SOLVENT_LINE").split(',').map(|s| s.trim().parse().unwrap()).collect();
     let member = std::env::var("SOLVENT_AGREE_MEMBER").unwrap_or("gear".into());
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
-    let e = support::read_configured_with(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base,&mut |_,t| t);
+    let e = fixtures::gear::read_as_configured();
     let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
     let mut material = MaterialField::read(&e.sketch,body,1e-10).unwrap().evaluator(4096);
     let n = (v[3]*v[3]+v[4]*v[4]+v[5]*v[5]).sqrt();
@@ -307,8 +294,8 @@ fn the_material_along_a_line() {
     for k in -100..=100 {
         let d = k as f64*0.01;
         let p = [v[0]+d*v[3]/n,v[1]+d*v[4]/n,v[2]+d*v[5]/n];
-        let b = material.bounds_stopping(p.map(|x| Interval::point(x).unwrap()),Stop::Outside(Interval::ZERO),
-            Options {value_tolerance:0.002,max_evaluations:20000}).unwrap();
+        let b = material.query(p.map(|x| Interval::point(x).unwrap()),Stop::Outside(Interval::ZERO),
+            Options {value_tolerance:0.002,max_evaluations:20000},None).unwrap();
         let [lo,hi] = b.value.bounds();
         let c = if hi < 0. { 'M' } else if lo > 0. { '.' } else { '?' };
         if c != last { eprintln!("  {d:+.2} mm: {}",match c { 'M' => "material", '.' => "outside", _ => "undecided" }); last = c; }
@@ -322,8 +309,7 @@ fn the_material_along_a_line() {
 fn which_boundaries_pass_near_a_point() {
     use gcs_core::solid::SpatialField;
     let p: Vec<f64> = std::env::var("SOLVENT_POINT").expect("SOLVENT_POINT").split(',').map(|s| s.trim().parse().unwrap()).collect();
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
-    let e = support::read_configured_with(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base,&mut |_,t| t);
+    let e = fixtures::gear::read_as_configured();
     let mut rows = Vec::new();
     for (i,s) in e.sketch.solids.iter().enumerate() {
         if let Ok(f) = SpatialField::read(&e.sketch,i,1e-10) { rows.push((f.value([p[0],p[1],p[2]]),s.name.clone())); }
@@ -373,8 +359,8 @@ fn side_query_cost() {
     let mut material = field.evaluator(4096);
     let (mut decided,mut wrong) = (0,0);
     for p in &points {
-        let [lo,hi] = material.bounds_stopping(p.map(|x| Interval::point(x).unwrap()),Stop::Outside(Interval::ZERO),
-            minimum::Options {value_tolerance:1e-9,max_evaluations:20000}).unwrap().value.bounds();
+        let [lo,hi] = material.query(p.map(|x| Interval::point(x).unwrap()),Stop::Outside(Interval::ZERO),
+            minimum::Options {value_tolerance:1e-9,max_evaluations:20000},None).unwrap().value.bounds();
         if lo > 0. || hi < 0. {
             decided += 1;
             if (field.side(*p) < 0.) != (hi < 0.) { wrong += 1; if wrong <= 5 { eprintln!("  {p:?}: side {} against [{lo:e}, {hi:e}]",field.side(*p)); } }

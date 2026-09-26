@@ -54,9 +54,6 @@ Exit codes: 0 every document elaborated and solved; 1 a document failed to parse
 elaborate; 2 a document elaborated but did not solve.
 ";
 
-/// How much a long stage says as it goes: 0 its stages only, 1 a line every few
-/// seconds, 2 the parts a construction is made of.
-
 /// One document, as the core sees it: a name to report against and the text itself.
 ///
 /// The unit an importer would hand over, which is why it exists before there is one.
@@ -328,42 +325,26 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     // nothing is written, so an earlier output stays as it was. The class is what the native
     // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
     // only the field, and is gated by the field-agreement probe instead.
+    let mut body = None;
     if (step.is_some() || (stl.is_some() && !opts.refine)) && r.success {
         if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
-            if gcs_core::solid::cad::recipe_static(&sk,i).map(|r| !r.sweeps.is_empty()).unwrap_or(false) {
-                use gcs_core::solid::admission;
-                match admission::admit_body(&sk,i,&admission::Options::default()) {
-                    Ok(a) => {
-                        cad::mark("admission");
-                        for s in &a.sweeps {
-                            let checked = s.placements.iter().filter(|p| p.equivalent_to.is_none()).count();
-                            let admission::Basis::Sampled {rows,columns} = s.basis;
-                            let alike = if s.placements.len() > checked {
-                                format!(" ({checked} of {} placements checked, the rest reading the blank alike)",s.placements.len())
-                            } else { String::new() };
-                            eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name);
-                        }
-                    }
-                    Err(err) => {
-                        let message = err.to_string();
-                        eprintln!("solventc: {message}");
-                        e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                            span:Default::default(),stmt:None,message});
-                        code = 1;
-                        stl = None;
-                        step = None;
-                    }
+            let mut b = cad::Body::read(&sk,i);
+            if b.swept() {
+                if let Err(refusal) = b.admit(&sk) {
+                    refused(&mut e,i,refusal);
+                    code = 1;
+                    stl = None;
+                    step = None;
                 }
             }
+            body = Some(b);
         }
     }
     if let Some(path) = stl.clone().filter(|_| opts.refine && r.success) {
         #[cfg(feature="occt")]
         if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
-            if let Err(message) = cad::field_mesh::export_refine(&sk,i,&path) {
-                eprintln!("solventc: {message}");
-                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                    span:Default::default(),stmt:None,message});
+            if let Err(refusal) = cad::field_mesh::export_refine(&sk,i,&path) {
+                refused(&mut e,i,refusal);
                 code = 1;
             }
         }
@@ -372,14 +353,27 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         stl = None;
     }
     if step.is_some() || (stl.is_some() && opts.native_stl) {
-        let result = if !r.success { Err("native STEP/STL export requires a solved model".into()) }
-            else { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| cad::export(&sk,i,
-                step.as_deref(),stl.as_deref().filter(|_| opts.native_stl))) };
-        if let Err(message) = result {
-            eprintln!("solventc: {message}");
-            e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                span:Default::default(),stmt:None,message});
-            code = 1;
+        match (r.success,pick_solid(&sk,opts.solid.as_deref())) {
+            (false,_) => {
+                let message = "native STEP/STL export requires a solved model".to_string();
+                eprintln!("solventc: {message}");
+                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
+                    span:Default::default(),stmt:None,message});
+                code = 1;
+            }
+            (true,Err(message)) => {
+                eprintln!("solventc: {message}");
+                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
+                    span:Default::default(),stmt:None,message});
+                code = 1;
+            }
+            (true,Ok(i)) => {
+                let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(&sk,i));
+                if let Err(refusal) = cad::export(&sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl)) {
+                    refused(&mut e,i,refusal);
+                    code = 1;
+                }
+            }
         }
     }
     if let Some(path) = &opts.output {
@@ -398,8 +392,8 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
                 // cut to the *object*, not to the report: a printer resolves a tenth of a
                 // millimetre and a volume is quoted to four digits, and those are not one number
                 match sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh).and_then(|s| s.stl()) {
-                    Ok(bytes) => if let Err(err) = std::fs::write(path, bytes) {
-                        eprintln!("solventc: {path}: {err}");
+                    Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
+                        eprintln!("solventc: {err}");
                         code = 1;
                     },
                     Err(message) => {
@@ -439,8 +433,8 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             code = 1;
         } else if !which.is_empty() {
             match gcs_core::gltf::checked_glb(&sk, &which, gcs_core::solid::ApproximationPolicy::Mesh) {
-                Ok(bytes) => if let Err(err) = std::fs::write(path, bytes) {
-                    eprintln!("solventc: {path}: {err}"); code = 1;
+                Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
+                    eprintln!("solventc: {err}"); code = 1;
                 },
                 Err(message) => { eprintln!("solventc: {message}"); code = 1; }
             }
@@ -547,6 +541,16 @@ fn severity(s: Severity) -> &'static str {
         Severity::Warning => "warning",
         Severity::Note => "note",
     }
+}
+
+/// An export refused: said on stderr in the core's words, recorded at the stage it was met at
+/// for a harness, and reported as a diagnostic at the solid's own statement.
+fn refused(e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core::solid::export::ExportRefusal) {
+    eprintln!("solventc: {refusal}");
+    cad::progress::refused(refusal.stage);
+    let site = e.map.site_of(gcs_core::model::EntRef::solid(solid));
+    e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
+        span:site.map(|s| s.span).unwrap_or_default(),stmt:site.map(|s| s.stmt),message:refusal.message});
 }
 
 /// Which solid `--stl` writes.  Named, or the only one there is — a document with one part in it

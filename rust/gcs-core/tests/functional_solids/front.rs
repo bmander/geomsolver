@@ -2,7 +2,7 @@
 //! geometry-specific boundary pieces. Sampling/shape controls are experimental;
 //! this is not yet a whole-boundary accuracy or component-coverage certificate.
 use super::*;
-use gcs_core::{interval::minimum::Options,solid::{MaterialField,MaterialEvaluator}};
+use gcs_core::{interval::minimum::{Options,Stop},solid::{MaterialField,MaterialEvaluator}};
 use std::collections::{BTreeMap,BTreeSet,VecDeque};
 
 mod geometry;

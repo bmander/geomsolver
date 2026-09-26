@@ -131,9 +131,8 @@ fn cases() -> Vec<Case> {
 /// The regular triangulation (`delaunay`): insertion time per point, in spatial order, over
 /// point sets a mesher meets. Median of three runs; exact predicate fallbacks counted.
 fn bench_delaunay(only: Option<&str>) {
-    use gcs_core::delaunay::{Regular,spatial_order,predicates::EXACT_CALLS};
+    use gcs_core::delaunay::{Regular,spatial_order,predicates::exact_calls};
     use gcs_core::rng::Rng;
-    use std::sync::atomic::Ordering;
     println!("\n== regular triangulation: µs a point, spatial order ==");
     let mut rng = Rng::new(1);
     // `DELAUNAY_N` sizes the random cases (100 000 by default).
@@ -170,7 +169,7 @@ fn bench_delaunay(only: Option<&str>) {
         let order = spatial_order(&coordinates);
         let mut times = Vec::new();
         let mut tets = 0;
-        EXACT_CALLS.store(0,Ordering::Relaxed);
+        let calls = exact_calls();
         for _ in 0..3 {
             let t0 = Instant::now();
             let mut r = Regular::new([0.;3],1.8);
@@ -179,7 +178,7 @@ fn bench_delaunay(only: Option<&str>) {
             tets = r.tets().count();
         }
         println!("{name:<14}{:>8} points {:>9} tetrahedra {:8.2} µs  exact calls {}",points.len(),tets,median(times),
-            EXACT_CALLS.load(Ordering::Relaxed)/3);
+            (exact_calls()-calls)/3);
     }
 }
 

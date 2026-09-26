@@ -27,7 +27,7 @@
 
 mod evaluated;
 mod field_mesh;
-pub use field_mesh::{FieldMesher, FieldProgress, FieldSurface};
+pub use field_mesh::{FieldMesher, FieldMeshing, FieldProgress, FieldSurface, FieldJob, field_key};
 pub use field_mesh::{first_pass as field_first_pass, creases as field_creases};
 pub mod cad;
 mod profile;
@@ -41,14 +41,12 @@ use primitive::{facet_normal,finish};
 pub use document::{reads,resolve};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
-mod tool_faces;
-pub use tool_faces::{ToolFace,ToolEdge,EdgeChart,Crease,StationEquation,PlanarFace,PlanarLoop,PlanarEdge,ExtrudedFace};
 pub(crate) use document::{evaluation_operands,operand_paths};
 use document::{frame_origin,resolve_at};
 mod field;
 pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError};
 pub use field::{MaterialField,MaterialEvaluator,MaterialBounds,MaterialSweepQuery,SIDE_EVALUATIONS};
-pub use field::{Reading,ReadingOptions,Resolution,crease};
+pub use field::{OperandId,Query,Reading,Source,Want,Resolution,crease};
 pub use field::{MaterialProbe,ProbeState};
 pub use field::{BoundaryOptions,BoundaryError,BoundaryStage,FieldBoundary,BoundaryCell,BoundaryPoint,BoundaryCrossing};
 pub use field::BoundaryComponent;
@@ -59,15 +57,13 @@ mod surface;
 mod sweep_contacts;
 pub mod admission;
 pub mod agreement;
-pub use sweep_contacts::{SweepContacts,TimedContact};
-pub use sweep_contacts::{ContactCover,ContactCoverOptions,ContactCell,ContactEvidence,ContactLimit,ContactCoverError};
-pub use sweep_contacts::{ContactChart,ContactParameter};
-pub use sweep_contacts::{ContactCurve,ContactCurves,ContactCurvePoint};
-pub use sweep_contacts::ContactTransition;
-pub use sweep_contacts::{ContactPath,ContactPathSegment};
-pub use surface::SurfaceBounds;
+pub mod contracts;
+pub mod export;
+pub mod contact_trace;
+pub mod blank_features;
+pub use sweep_contacts::{SweepContacts,TimedContact,PatchEdge,PointContactError};
 pub use surface::{RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
-    SurfaceProjection,SurfaceProjector,RevolvedContact,MeridianContact};
+    SurfaceProjection,SurfaceProjector,RevolvedContact};
 pub(crate) use raycast::RayIndex;
 use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
@@ -396,11 +392,16 @@ pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
 }
 
 /// Whether a continuous motion sweep is among the solid's operands: its boundary is then the
-/// field's, meshed once whatever approximation is asked for.
+/// field's, meshed once whatever approximation is asked for. False for a solid that does not
+/// validate, whose operands are not known.
 pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
-    validate_at(sk, si, REPORT_UNIT)
-        .map(|ops| ops.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. })))
-        .unwrap_or(false)
+    validate_at(sk, si, REPORT_UNIT).map(|ops| sweeps_among(sk, &ops)).unwrap_or(false)
+}
+
+/// Whether a continuous motion sweep is among `operands` (`validate_at`'s): the one test, asked by
+/// `has_sweep` and by an evaluation that has validated the operands already at its own unit.
+fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bool {
+    operands.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. }))
 }
 
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {

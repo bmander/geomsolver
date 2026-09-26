@@ -3,36 +3,17 @@
 //! the sweep-mesh tools under a relative roll, the motion a generator uses; the gear pair is
 //! the full-size case, at the bevel, at its configured hypoid and at an offset it leaves the
 //! class by undercut.
-use crate::sweep_fixtures::{harness,tools,motions};
+use fixtures::{tools::{self,centred_post,skew_post,sphere,torus},motions::{self,CROSSED_ROLL,Observer,cradle_roll}};
 use gcs_core::solid::admission::{self,Condition,Error,Options};
-
-/// A post of radius 0.4 about the vertical line x = 3, z in [-2, 2], the blank every small
-/// fixture cuts: the tools start centred on it and a roll carries them round the spindle.
-const POST: &str = "private point q0 hint(x: 3, y: -2)
-private point q1 hint(x: 3.4, y: -2)
-private point q2 hint(x: 3.4, y: 2)
-private point q3 hint(x: 3, y: 2)
-ground q0
-ground q1
-ground q2
-ground q3
-private line qb(q0, q1)
-private line qw(q1, q2)
-private line qt(q2, q3)
-private line qa(q3, q0)
-construction solid post(face(qb, qw, qt, qa), about: qa)
-solid part(post)
-removal cut part
-";
 
 /// A tool, a motion named `motion`, the removal over [from, to] and the post it is cut from.
 fn document(tool: &str,motion: &str,name: &str,from: f64,to: f64) -> String {
-    format!("{tool}{motion}construction solid removal(tool, under: {name}, from: {from}deg, to: {to}deg)\n{POST}")
+    format!("{tool}{motion}construction solid removal(tool, under: {name}, from: {from}deg, to: {to}deg)\n{}",centred_post())
 }
 
 fn admit(source: &str) -> Result<admission::Admission,Error> {
-    let e = harness::read(source);
-    admission::admit_body(&e.sketch,harness::solid(&e,"part"),&Options::default())
+    let e = fixtures::read(source);
+    admission::admit_body(&e.sketch,fixtures::solid(&e,"part"),&Options::default())
 }
 
 fn refused(result: Result<admission::Admission,Error>) -> admission::Refusal {
@@ -43,92 +24,27 @@ fn refused(result: Result<admission::Admission,Error>) -> admission::Refusal {
     }
 }
 
-/// A torus about the vertical line through (3, 0), its tube of radius 0.5 centred 1 from that
-/// axis at height 2: a profile that never meets its axis, as a cutter's does not.
-const TORUS: &str = "unit mm
-use std
-construction centerline line spindle(std.origin, std.up.toward)
-private point ta hint(x: 3, y: 1)
-private point tb hint(x: 3, y: 3)
-ground ta
-ground tb
-private line taxis(ta, tb)
-private point tc hint(x: 4, y: 2)
-ground tc
-private circle ring(center: tc) hint(r: 0.5)
-radius(0.5mm) ring
-construction solid tool(face(ring), about: taxis)
-";
 
-/// The tool spinning about its own vertical axis through (3, 0), seen from an observer turning
-/// about world x: crossed axes, as a generator's are.
-const CROSSED_ROLL: &str = "private point hub hint(x: 3, y: 0)
-hub distance(3mm, along: u) std.front
-hub distance(0mm, along: v) std.front
-private point hub_up hint(x: 3, y: 5)
-hub_up distance(3mm, along: u) std.front
-hub_up distance(5mm, along: v) std.front
-construction centerline line own(hub, hub_up)
-private point xend hint(x: 5, y: 0)
-xend distance(5mm, along: u) std.front
-xend distance(0mm, along: v) std.front
-construction centerline line xaxis(std.origin, xend)
-private motion spin(about: own, ratio: 0.25)
-private motion observer(about: xaxis)
-motion turn(spin, relative_to: observer)
-";
 
-/// A generator's roll: the tool carried about a vertical cradle axis through (2, 0), 1 off its
-/// own (a spin about its own axis would change nothing of a revolution), seen from an observer
-/// turning about the line parallel to world x through (0, 0.5, 0.5), skew to the cradle's.
-const SKEW_ROLL: &str = "private point hub hint(x: 2, y: 0)
-hub distance(2mm, along: u) std.front
-hub distance(0mm, along: v) std.front
-private point hub_up hint(x: 2, y: 5)
-hub_up distance(2mm, along: u) std.front
-hub_up distance(5mm, along: v) std.front
-construction centerline line cradle(hub, hub_up)
-private point xend hint(x: 5, y: 0)
-xend distance(5mm, along: u) std.front
-xend distance(0mm, along: v) std.front
-private plane flat(origin: std.origin, toward: xend, u: (1, 0, 0), v: (0, 1, 1))
-in flat {
-  private point k0 hint(x: 0, y: 0.7071)
-  private point k1 hint(x: 5, y: 0.7071)
-  k0 distance(0mm, along: u) flat
-  k0 distance(0.7071mm, along: v) flat
-  k1 distance(5mm, along: u) flat
-  k1 distance(0.7071mm, along: v) flat
-  construction centerline line kaxis(k0, k1)
-}
-private motion spin(about: cradle, ratio: 0.25)
-private motion observer(about: kaxis)
-motion turn(spin, relative_to: observer)
-";
 
 /// With the spin axis meeting the observer's, a surface of revolution's contact equation has
 /// no constant term, and where its amplitude passes through zero a ring of the torus is in
 /// contact at every time: refused, found between samples (or inside a sample cell).
 #[test]
 fn a_ring_in_contact_at_every_time_is_refused() {
-    let source = format!("{TORUS}{CROSSED_ROLL}construction solid removal(tool, under: turn, from: -60deg, to: 60deg)\n{}",
-        POST.replace("x: 3,","x: 4,").replace("x: 3.4,","x: 4.4,"));
+    let source = format!("{}{CROSSED_ROLL}construction solid removal(tool, under: turn, from: -60deg, to: 60deg)\n{}",
+        torus(2.),tools::post(4.,0.4,-2.,2.));
     let r = refused(admit(&source));
     assert_eq!(r.condition,Condition::Stationary);
     assert!(r.message.contains("at every time"),"{}",r.message);
 }
 
-/// The post under the torus's cradle roll: at x = 4, z in [0.5, 2], clear of the torus at both
-/// limits of a ±75° roll and of the torus turned on past them.
-fn skew_post(x: f64) -> String {
-    POST.replace("x: 3,",&format!("x: {x},")).replace("x: 3.4,",&format!("x: {},",x+0.4)).replace("y: -2)","y: 0.5)")
-}
 
 #[test]
 fn a_torus_rolled_about_a_skew_axis_through_a_post_is_admitted() {
-    let source = format!("{TORUS}{SKEW_ROLL}construction solid removal(tool, under: turn, from: -75deg, to: 75deg)\n{}",skew_post(4.));
+    let source = format!("{}{}construction solid removal(tool, under: turn, from: -75deg, to: 75deg)\n{}",torus(2.),cradle_roll(0.25,Observer::Skew),skew_post(4.));
     let a = admit(&source).unwrap();
-    let s = &a.sweeps[0];
+    let s = &a.sweeps()[0];
     eprintln!("{} samples, {} contacts, spacing {:.4}, least J {:.3}, {} near double roots, {} near tangent",
         s.samples,s.contacts,s.spacing,s.least_area_factor,s.near_double_roots,s.near_tangent_pairs);
     assert_eq!(s.name,"removal");
@@ -140,7 +56,7 @@ fn a_torus_rolled_about_a_skew_axis_through_a_post_is_admitted() {
 /// along it) are in contact at every time, and one passes through the post.
 #[test]
 fn a_pole_in_contact_at_every_time_is_refused() {
-    let r = refused(admit(&document(tools::SPHERE,&motions::roll(0.25),"turn",-60.,60.)));
+    let r = refused(admit(&document(&sphere(0.),&motions::roll(0.25),"turn",-60.,60.)));
     assert_eq!(r.condition,Condition::Stationary);
     assert!(r.message.contains("pole"),"{}",r.message);
 }
@@ -148,14 +64,14 @@ fn a_pole_in_contact_at_every_time_is_refused() {
 /// A tool that never meets the blank is no cut: refused, not admitted vacuously.
 #[test]
 fn a_sweep_that_reaches_nothing_is_refused() {
-    let source = format!("{TORUS}{SKEW_ROLL}construction solid removal(tool, under: turn, from: -75deg, to: 75deg)\n{}",skew_post(13.));
+    let source = format!("{}{}construction solid removal(tool, under: turn, from: -75deg, to: 75deg)\n{}",torus(2.),cradle_roll(0.25,Observer::Skew),skew_post(13.));
     let r = refused(admit(&source));
     assert_eq!(r.condition,Condition::Reach);
 }
 
 #[test]
 fn a_single_rotation_is_refused_as_stationary() {
-    let r = refused(admit(&document(tools::SPHERE,motions::TURN_SPINDLE,"turn",-60.,60.)));
+    let r = refused(admit(&document(&sphere(0.),motions::TURN_SPINDLE,"turn",-60.,60.)));
     assert_eq!(r.condition,Condition::Stationary);
     assert!(r.witness.is_some());
 }
@@ -169,13 +85,13 @@ fn a_prism_tool_is_refused() {
 
 #[test]
 fn a_translation_is_refused() {
-    let r = refused(admit(&document(tools::SPHERE,&motions::slide_x(8.),"feed",-60.,60.)));
+    let r = refused(admit(&document(&sphere(0.),&motions::slide_x(8.),"feed",-60.,60.)));
     assert_eq!(r.condition,Condition::Motion);
 }
 
 #[test]
 fn a_roll_that_starts_in_the_blank_is_refused() {
-    let r = refused(admit(&document(tools::SPHERE,&motions::roll(0.25),"turn",-10.,60.)));
+    let r = refused(admit(&document(&sphere(0.),&motions::roll(0.25),"turn",-10.,60.)));
     assert_eq!(r.condition,Condition::Clearance);
     let p = r.witness.unwrap();
     assert!((p[0]-3.).hypot(p[1]) < 0.4+1e-6 && p[2].abs() <= 2.,"the witness is in the post: {p:?}");
@@ -183,8 +99,8 @@ fn a_roll_that_starts_in_the_blank_is_refused() {
 
 #[test]
 fn a_union_tool_is_refused() {
-    let tool = format!("{}construction solid twin(tool, under: observer, at: 20deg)\nconstruction solid lump(tool)\ntwin on lump\n",tools::SPHERE);
-    let source = format!("{tool}{}construction solid removal(lump, under: turn, from: -60deg, to: 60deg)\n{POST}",motions::roll(0.25));
+    let tool = format!("{}construction solid twin(tool, under: observer, at: 20deg)\nconstruction solid lump(tool)\ntwin on lump\n",sphere(0.));
+    let source = format!("{tool}{}construction solid removal(lump, under: turn, from: -60deg, to: 60deg)\n{}",motions::roll(0.25),centred_post());
     let r = refused(admit(&source));
     assert_eq!(r.condition,Condition::Tool);
     assert!(r.message.contains("adds solids"),"{}",r.message);
@@ -226,17 +142,9 @@ fn a_concave_corner_carried_through_the_blank_is_refused() {
 /// The gear pair at a design (offset, pressure shift, crown spiral, in degrees), its pinion
 /// with a blank of every index: the full-size case.
 fn pinion(offset: f64,shift: f64,spiral: f64) -> Result<admission::Admission,Error> {
-    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
-    let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
-    let set = ["param offset_angle","param pressure_shift","param spiral_angle"];
-    let mut design = |name: &str,text: String| if name == "configuration" {
-        text.lines().filter(|l| !set.iter().any(|s| l.starts_with(s))).map(|l| format!("{l}\n")).collect::<String>()
-            + &format!("param offset_angle = {offset}deg\nparam pressure_shift = {shift}deg\nparam spiral_angle = {spiral}deg\n")
-    } else { text };
-    let mut resolver = harness::directory_resolver(&base,&mut design);
-    let e = harness::read_resolving(&source,&mut resolver);
+    let e = fixtures::gear::read_configured_with(&mut |name,text| fixtures::gear::design(name,text,offset,shift,spiral));
     let started = std::time::Instant::now();
-    let result = admission::admit_body(&e.sketch,harness::solid(&e,"pair.pinion.body"),&Options::default());
+    let result = admission::admit_body(&e.sketch,fixtures::solid(&e,"pair.pinion.body"),&Options::default());
     eprintln!("pinion at {offset}/{shift}/{spiral}: {:?}",started.elapsed());
     result
 }
@@ -244,7 +152,7 @@ fn pinion(offset: f64,shift: f64,spiral: f64) -> Result<admission::Admission,Err
 #[test]
 fn the_bevel_pinion_is_admitted_once_for_every_index() {
     let a = pinion(0.,0.,35.).unwrap();
-    let s = &a.sweeps[0];
+    let s = &a.sweeps()[0];
     eprintln!("{} samples, {} contacts, spacing {:.4}, least J {:.3}",s.samples,s.contacts,s.spacing,s.least_area_factor);
     assert_eq!(s.placements.len(),24);
     assert_eq!(s.placements.iter().filter(|p| p.equivalent_to.is_none()).count(),1,
@@ -254,7 +162,7 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
 #[test]
 fn the_configured_hypoid_pinion_is_admitted() {
     let a = pinion(25.,10.,25.).unwrap();
-    assert!(a.sweeps[0].least_area_factor > 0.1);
+    assert!(a.sweeps()[0].least_area_factor > 0.1);
 }
 
 #[test]
@@ -298,8 +206,8 @@ fn sphere_mesh(radius: f64,inward: bool) -> (Vec<[f64;3]>,Vec<[u32;3]>) {
 #[test]
 fn a_mesh_agrees_with_its_field_only_where_it_lies_on_the_boundary() {
     use gcs_core::solid::{agreement,MaterialField};
-    let e = harness::read(tools::SPHERE);
-    let mut material = MaterialField::read(&e.sketch,harness::solid(&e,"tool"),1e-10).unwrap().evaluator(4096);
+    let e = fixtures::read(&sphere(0.));
+    let mut material = MaterialField::read(&e.sketch,fixtures::solid(&e,"tool"),1e-10).unwrap().evaluator(4096);
     let options = agreement::Options::default();
     let (v,t) = sphere_mesh(1.,false);
     let good = agreement::of_triangles(&v,&t,&mut material,&options).unwrap();
@@ -343,8 +251,8 @@ fn prism_mesh(k: usize) -> (Vec<[f64;3]>,Vec<[u32;3]>) {
 #[test]
 fn a_probe_through_another_face_is_withdrawn_nearer_the_mesh() {
     use gcs_core::solid::{agreement,MaterialField};
-    let e = harness::read(tools::TRIANGLE_PRISM);
-    let mut material = MaterialField::read(&e.sketch,harness::solid(&e,"tool"),1e-10).unwrap().evaluator(4096);
+    let e = fixtures::read(tools::TRIANGLE_PRISM);
+    let mut material = MaterialField::read(&e.sketch,fixtures::solid(&e,"tool"),1e-10).unwrap().evaluator(4096);
     let (v,t) = prism_mesh(40);
     // Wide enough that an inner probe beside the 56-degree edge at x = 4.5 leaves through
     // the other side; asked again at 0.02 it is inside.
@@ -365,16 +273,16 @@ fn a_probe_through_another_face_is_withdrawn_nearer_the_mesh() {
 #[test]
 fn a_material_side_agrees_with_its_enclosure() {
     use gcs_core::interval::{Interval,minimum::{self,Stop}};
-    let source = format!("{TORUS}{SKEW_ROLL}construction solid removal(tool, under: turn, from: -75deg, to: 75deg)\n{}",skew_post(4.));
-    let e = harness::read(&source);
-    let field = gcs_core::solid::MaterialField::read(&e.sketch,harness::solid(&e,"part"),1e-10).unwrap();
+    let source = format!("{}{}construction solid removal(tool, under: turn, from: -75deg, to: 75deg)\n{}",torus(2.),cradle_roll(0.25,Observer::Skew),skew_post(4.));
+    let e = fixtures::read(&source);
+    let field = gcs_core::solid::MaterialField::read(&e.sketch,fixtures::solid(&e,"part"),1e-10).unwrap();
     let mut material = field.evaluator(4096);
     let (mut decided,mut agreed) = (0,0);
     for i in 0..12 { for j in 0..12 { for k in 0..12 {
         let p = [3.5+0.1*i as f64,-0.55+0.1*j as f64,0.4+0.15*k as f64];
         let value = field.side(p);
-        let bounds = material.bounds_stopping(p.map(|x| Interval::point(x).unwrap()),Stop::Outside(Interval::ZERO),
-            minimum::Options {value_tolerance:1e-9,max_evaluations:20000}).unwrap().value.bounds();
+        let bounds = material.query(p.map(|x| Interval::point(x).unwrap()),Stop::Outside(Interval::ZERO),
+            minimum::Options {value_tolerance:1e-9,max_evaluations:20000},None).unwrap().value.bounds();
         if bounds[0] > 0. || bounds[1] < 0. {
             decided += 1;
             if (value > 0.) == (bounds[0] > 0.) { agreed += 1; } else { eprintln!("{p:?}: {value} against {bounds:?}"); }

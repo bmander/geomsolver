@@ -134,43 +134,6 @@ int solvent_cad_solids(Cad* cad,int source,int* output,int capacity) noexcept {
     });
 }
 
-// The cell's volume and one interior point (the centroid when it is inside,
-// else the first interior point of a coarse grid). The margin slot is always
-// zero: distance to the boundary is measured by solvent_cad_solid_samples.
-int solvent_cad_solid_sample(Cad* cad,int id,double* output) noexcept {
-    return guarded(cad,[&] {
-        if (!output) throw std::runtime_error("solid sample needs an output buffer");
-        const auto& shape = cad->at(id);
-        if (shape.IsNull() || shape.ShapeType() != TopAbs_SOLID)
-            throw std::runtime_error("solid sample needs one solid");
-        GProp_GProps props;
-        BRepGProp::VolumeProperties(shape,props,1e-9,false,false);
-        const double v = props.Mass();
-        if (!std::isfinite(v) || v <= 0) throw std::runtime_error("cell has no positive volume");
-        Bnd_Box box;
-        BRepBndLib::Add(shape,box,false);
-        double x0,y0,z0,x1,y1,z1;
-        box.Get(x0,y0,z0,x1,y1,z1);
-        const double diagonal = std::hypot(std::hypot(x1-x0,y1-y0),z1-z0);
-        BRepClass3d_SolidClassifier classify(shape);
-        const auto inside = [&](const gp_Pnt& p) {
-            classify.Perform(p,diagonal*1e-6);
-            return classify.State() == TopAbs_IN;
-        };
-        const auto write = [&](const gp_Pnt& p) {
-            output[0] = p.X(); output[1] = p.Y(); output[2] = p.Z(); output[3] = 0.; output[4] = v;
-            return 0;
-        };
-        if (inside(props.CentreOfMass())) return write(props.CentreOfMass());
-        const int n = 5;
-        for (int i=0;i<n;++i) for (int j=0;j<n;++j) for (int k=0;k<n;++k) {
-            const gp_Pnt p(x0+(x1-x0)*(i+0.5)/n,y0+(y1-y0)*(j+0.5)/n,z0+(z1-z0)*(k+0.5)/n);
-            if (inside(p)) return write(p);
-        }
-        throw std::runtime_error("no interior sample point found in cell");
-    });
-}
-
 // Interior points of a cell with their true distance to its boundary, best
 // first. The classifier's tolerance test only looks along its ray, so it is not
 // a distance; the extrema solver against the shell is. Candidates are stepped in
@@ -324,17 +287,6 @@ int solvent_cad_tolerance(Cad* cad,int id,double* output) noexcept {
         output[1] = BRep_Tool::MaxTolerance(shape,TopAbs_EDGE);
         output[2] = BRep_Tool::MaxTolerance(shape,TopAbs_FACE);
         return 0;
-    });
-}
-
-// Intersection of two solids, retained and validated like any Boolean result.
-int solvent_cad_common(Cad* cad,int a,int b) noexcept {
-    return guarded(cad,[&] {
-        BRepAlgoAPI_Common common(cad->at(a),cad->at(b));
-        if (!common.IsDone()) throw std::runtime_error("Boolean intersection failed");
-        auto result = common.Shape();
-        validate(result);
-        return cad->put(result);
     });
 }
 

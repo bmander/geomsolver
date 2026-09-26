@@ -2,8 +2,7 @@
 use super::*;
 use std::f64::consts::TAU;
 
-fn dot(a: V,b: V) -> f64 { plane::dot(a,b) }
-fn length(a: V) -> f64 { a[0].hypot(a[1]).hypot(a[2]) }
+use crate::space::{dot,length};
 
 #[derive(Clone,Debug)]
 enum Section {

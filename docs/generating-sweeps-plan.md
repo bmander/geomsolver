@@ -192,7 +192,7 @@ The small fixtures run in well under a second. The gear cases take 3–10 s.
 with its row and witness, writes nothing and exits 1. An admission prints one line of evidence.
 The configured design is now the 25° hypoid (`offset_angle` 25°, `pressure_shift` 10°,
 `spiral_angle` 25°). Tests with recorded numbers pin the design they were recorded at:
-`support::bevel` and `support::hypoid6`.
+`fixtures::gear::bevel` and `fixtures::gear::hypoid6` (`rust/fixtures`).
 
 Not yet done: the general-sweep fixtures (tumbling cylinder, thin plate, and others) as
 admission refusals. Their tools are prisms or single-rotation sweeps, already covered by the
@@ -234,8 +234,8 @@ evenly through the mesh. It probes the material field 0.1 mm inside and outside 
   reads within 0.025 mm of the boundary. That is a probe that crossed another face beside a
   sharp edge. A triangle off the boundary has its centroid on the wrong side itself.
 - **Reversed triangles.** A two-sided disagreement always stands.
-- **On failure.** The export writes nothing and exits 1 (`cad::field_agreement`, used by
-  `native::export` and `export_swept_stl`).
+- **On failure.** The export writes nothing and exits 1 (`cad::output::field_agreement`, used by
+  `cad::export` and `field_mesh::export_refine`; every output is staged and renamed only after it).
 
 The rule was set by measurement, not argued:
 

@@ -50,7 +50,7 @@ pub mod report;
 pub mod renderer;
 pub mod rng;
 pub mod solid;
-pub(crate) mod roots;
+pub mod roots;
 pub mod space;
 pub mod solve;
 pub mod sparse;

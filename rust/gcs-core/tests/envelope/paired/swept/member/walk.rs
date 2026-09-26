@@ -45,8 +45,8 @@ impl Walk<'_> {
         assert!(self.queries < 50000,"surface walk exhausted its query budget");
         let p = self.position(phi,theta);
         let field = if self.continue_through_ends { &mut self.material.section } else { &mut self.material.field };
-        let query = field.bounds_outside(point(p),I::ZERO,
-            Options {value_tolerance:0.0002,max_evaluations:20000}).unwrap();
+        let query = field.query(point(p),Stop::Outside(I::ZERO),
+            Options {value_tolerance:0.0002,max_evaluations:20000},None).unwrap();
         self.queries += 1;
         self.roll_evaluations += query.sweeps.iter().map(|q| q.minimum.evaluations).sum::<usize>();
         Sample {theta,point:p,value:query.value}

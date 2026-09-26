@@ -2,8 +2,6 @@
 use super::{Family,Step};
 use crate::{envelope::{self,Error,Motion,SurfacePoint},plane::{cross,dot}};
 use std::f64::consts::TAU;
-mod bounds;
-pub use bounds::NormalVelocityBounds;
 
 /// Normal velocity at one fixed source point under a supported motion family.
 /// f(t) = constant + cosine*cos(phase+rate*t) + sine*sin(phase+rate*t).

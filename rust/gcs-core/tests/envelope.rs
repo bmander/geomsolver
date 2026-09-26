@@ -3,7 +3,6 @@
 use gcs_core::envelope::{self, Error, IntersectionOptions, Motion, SurfacePoint};
 
 mod nasa;
-mod edge;
 mod crown;
 mod revolution;
 mod paired;

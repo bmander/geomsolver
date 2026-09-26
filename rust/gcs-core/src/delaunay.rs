@@ -1,4 +1,4 @@
-//! Delaunay machinery for meshing a material field by Delaunay refinement
+//! Delaunay machinery for meshing an implicit domain's boundary by Delaunay refinement
 //! (docs/field-meshing.md): exact expansions, filtered orientation and power predicates, and
 //! the incremental regular (weighted Delaunay) triangulation that protecting balls need.
 pub mod expansion;

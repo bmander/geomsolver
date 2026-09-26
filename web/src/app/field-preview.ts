@@ -8,31 +8,38 @@
  * means the first surface is the rough shape and every later one a finer version of it, like a
  * path-traced viewport; each is handed to the sketch (`supplyField`) and the page redraws.
  *
- * A job belongs to one state of the drawing. An edit starts another and the worker drops the old
- * one at its next step; surfaces from an old job are ignored here. A job whose drawing has not
- * moved is not repeated, and a new elaboration of the same drawing gets the finished surfaces
- * again without meshing them twice. */
-import { deferFields, isSwept, supplyField, type FieldSurface, type MeshProgress } from '../core/field.js';
-import { objects } from '../core/mesh.js';
+ * **What to mesh is the core's answer, and this file compares keys.** `fieldJobs` names each
+ * swept object with the key of the drawing it is a surface of — equal exactly when the surface
+ * is — so a surface finished once is supplied to every later elaboration of that drawing, a job
+ * already asking for the same keys stands, and anything else is a new job. A job belongs to one
+ * state of the drawing: a new one, or a `cancel`, ends the last at the worker's next step, and
+ * frames of an old job are ignored here. */
+import { deferFields, fieldJobs, supplyField, type FieldJob, type FieldSurface, type MeshProgress } from '../core/field.js';
 import type { Sketch } from '../core/model.js';
 import { related } from '../core/modules.js';
 import type { Document } from '../core/program.js';
 
-/** What the page asks of the worker: one drawing, and the swept objects to mesh in it. */
-export interface Job {
+/** What the page asks of the worker: to mesh these swept objects of one drawing, or to stop. */
+export type Job = MeshJob | { kind: 'cancel'; id: number };
+
+export interface MeshJob {
+  kind: 'mesh';
   id: number;
   text: string;
-  /** Every module the text reaches, as `[use name, text]`. */
+  /** The modules the page handed over and the text reaches, as `[use name, text]`: the library's
+   *  own the worker's core has already. */
   modules: [string, string][];
   /** The page's parameter values, so the worker's drawing is this one and not a fresh solve. */
   x: Float64Array;
-  solids: number[];
+  /** What to mesh, as the page's core named it: the worker checks its own drawing names the same. */
+  solids: FieldJob[];
 }
 
 /** What the worker hands back: a surface as it stands, or why there is none. */
 export interface Frame {
   id: number;
   solid: number;
+  key: string;
   surface?: FieldSurface;
   error?: string;
   /** Where its meshing stands, and the time since the job began, in milliseconds. */
@@ -63,84 +70,100 @@ function afterPaint(then: () => void): void {
   else requestAnimationFrame(() => requestAnimationFrame(then));
 }
 
+/** The worker, as this file uses it: a test hands in a stub. */
+export interface MeshWorker {
+  postMessage(job: Job): void;
+  onmessage: ((ev: MessageEvent<Frame>) => void) | null;
+  onerror: ((ev: ErrorEvent) => void) | null;
+  onmessageerror: ((ev: MessageEvent) => void) | null;
+}
+
+const spawnWorker = (): MeshWorker =>
+  new Worker(new URL('./mesh-worker.bundle.js', import.meta.url), { type: 'module' }) as unknown as MeshWorker;
+
 export class FieldPreview {
-  private worker: Worker | null = null;
+  private worker: MeshWorker | null = null;
   private job = 0;
   private sketch: Sketch | null = null;
-  private key = '';
-  private finished = new Map<number, FieldSurface>();
-  /** The newest surface of each solid not yet applied, and whether a redraw is in hand. */
-  private pending = new Map<number, Frame>();
+  /** The keys the job in hand asks for and has not finished. */
+  private asked = new Set<string>();
+  /** Finished surfaces by key: supplied to any later sketch of the same drawing. */
+  private finished = new Map<string, FieldSurface>();
+  /** The newest surface of each key not yet applied, and whether a redraw is in hand. */
+  private pending = new Map<string, Frame>();
   private busy = false;
 
-  /** Each swept object of the job in hand, by solid index. */
-  private refining = new Map<number, Refining>();
+  /** Each swept object of the job in hand, by key. */
+  private refining = new Map<string, Refining>();
 
+  /** `spawn` makes the worker; with none (no workers: a test's view, node) a sketch meshes a
+   *  swept solid itself when asked. */
   constructor(private readonly arrived: (error?: string) => void,
-              private readonly progressed: (refining: Refining[]) => void = () => {}) {}
+              private readonly progressed: (refining: Refining[]) => void = () => {},
+              private readonly spawn: (() => MeshWorker) | null = typeof Worker === 'undefined' ? null : spawnWorker) {}
 
-  /** Mesh this document's swept objects, unless its drawing is the one already meshed. */
+  /** Mesh this document's swept objects, but none whose surface is finished or in hand. */
   start(doc: Document): void {
-    // no workers (a test's view, node): the sketch meshes a swept solid itself when asked
-    if (typeof Worker === 'undefined') return;
+    if (!this.spawn) return;
     const sk = doc.sketch;
-    // only objects are meshed here: a swept solid that is no object (a construction's) is never
-    // asked for by the page, so it is never deferred either
-    const found = objects(sk).filter((o) => isSwept(sk, o.index));
-    const solids = found.map((o) => o.index);
-    if (!solids.length) {
+    const jobs = fieldJobs(sk);
+    this.sketch = sk;
+    if (!jobs.length) {
       // a drawing with nothing to mesh ends the job in hand: its frames are another drawing's
-      this.sketch = sk;
       this.cancel();
+      this.finished.clear();
       if (this.refining.size) { this.refining.clear(); this.progressed([]); }
       return;
     }
     deferFields(sk);
-    const x = sk.getX();
-    const modules = related(doc.text).map((f): [string, string] => [f.name, f.text]);
-    // the drawing is its text, the modules it uses and its parameter values: an edit to any of
-    // them is a new job
-    const key = [doc.text, ...modules.flat(), Array.from(x).join(',')].join('\u0000');
-    if (key === this.key) {
-      if (sk === this.sketch) return;                 // nothing moved: the job in flight stands
-      if (solids.every((i) => this.finished.has(i))) {
-        this.sketch = sk;
-        for (const i of solids) supplyField(sk, i, this.finished.get(i)!);
-        this.arrived();
-        return;
-      }
+    const keys = new Set(jobs.map((j) => j.key));
+    for (const k of [...this.finished.keys()]) if (!keys.has(k)) this.finished.delete(k);
+    const todo = jobs.filter((j) => !this.finished.has(j.key));
+    let supplied = false;
+    for (const j of jobs) {
+      const s = this.finished.get(j.key);
+      if (s) { supplyField(sk, j.solid, s); supplied = true; }
     }
-    this.sketch = sk;
-    this.key = key;
-    this.finished.clear();
-    this.pending.clear();
+    // the job in hand asks for exactly these: it stands, and its frames are this sketch's too
+    if (todo.length && todo.length === this.asked.size && todo.every((j) => this.asked.has(j.key))) {
+      if (supplied) this.arrived();
+      return;
+    }
+    if (!todo.length) {
+      if (this.asked.size) this.cancel();
+      if (supplied) this.arrived();
+      return;
+    }
     this.job += 1;
-    this.refining = new Map(found.map((o) => [o.index, { name: o.name, triangles: 0, elapsed: 0, done: false }]));
+    this.asked = new Set(todo.map((j) => j.key));
+    this.pending.clear();
+    this.refining = new Map(todo.map((j) => [j.key, { name: j.name, triangles: 0, elapsed: 0, done: false }]));
     this.progressed([...this.refining.values()]);
     if (!this.worker) {
-      this.worker = new Worker(new URL('./mesh-worker.bundle.js', import.meta.url), { type: 'module' });
-      this.worker.onmessage = (ev: MessageEvent<Frame>) => this.receive(ev.data);
+      const w = this.spawn();
+      w.onmessage = (ev) => this.receive(ev.data);
       // a worker that dies says nothing of itself: every solid it was meshing has failed
-      this.worker.onerror = (ev: ErrorEvent) => this.failAll(ev.message || 'the meshing worker stopped');
-      this.worker.onmessageerror = () => this.failAll('the meshing worker sent what could not be read');
+      w.onerror = (ev) => this.failAll(ev.message || 'the meshing worker stopped');
+      w.onmessageerror = () => this.failAll('the meshing worker sent what could not be read');
+      this.worker = w;
     }
-    const job: Job = { id: this.job, text: doc.text, x, solids, modules };
-    this.worker.postMessage(job);
+    const modules = related(doc.text).filter((f) => f.provided).map((f): [string, string] => [f.name, f.text]);
+    this.worker.postMessage({ kind: 'mesh', id: this.job, text: doc.text, x: sk.getX(), solids: todo, modules });
+    if (supplied) this.arrived();
   }
 
   /** End the job in hand: the worker drops it at its next step, and nothing it sent is applied. */
   private cancel(): void {
     this.job += 1;
-    this.key = '';
-    this.finished.clear();
+    this.asked.clear();
     this.pending.clear();
-    this.worker?.postMessage({ id: this.job, text: '', x: new Float64Array(), solids: [], modules: [] } satisfies Job);
+    this.worker?.postMessage({ kind: 'cancel', id: this.job });
   }
 
   private failAll(error: string): void {
     for (const r of this.refining.values()) if (!r.done) r.error = error;
     this.progressed([...this.refining.values()]);
-    this.key = '';                    // the next edit starts the job again
+    this.asked.clear();               // the next edit starts the job again
   }
 
   /** **Surfaces are applied no faster than the page can draw them.** Every one redraws the box,
@@ -151,8 +174,8 @@ export class FieldPreview {
    *  more than half busy with a preview, and the finished surface, the last to arrive, is always
    *  applied. */
   private receive(f: Frame): void {
-    if (f.id !== this.job || !this.sketch) return;
-    const r = this.refining.get(f.solid);
+    if (f.id !== this.job || !this.sketch || !this.asked.has(f.key)) return;
+    const r = this.refining.get(f.key);
     if (r) {
       r.progress = f.progress ?? r.progress;
       r.elapsed = f.elapsed ?? r.elapsed;
@@ -161,7 +184,7 @@ export class FieldPreview {
       r.error = f.error ?? r.error;
       this.progressed([...this.refining.values()]);
     }
-    this.pending.set(f.solid, f);
+    this.pending.set(f.key, f);
     if (!this.busy) this.apply();
   }
 
@@ -180,8 +203,10 @@ export class FieldPreview {
     for (const f of frames) {
       try {
         if (f.surface) {
+          // one key is one solid of one drawing: the index the job named is this sketch's too
           supplyField(sk, f.solid, f.surface);
-          if (!f.surface.provisional) this.finished.set(f.solid, f.surface);
+          // finished: no longer asked for, so a drawing of it asks nothing and cancels nothing
+          if (!f.surface.provisional) { this.finished.set(f.key, f.surface); this.asked.delete(f.key); }
         }
       } catch (e) { error = String(e); }
     }

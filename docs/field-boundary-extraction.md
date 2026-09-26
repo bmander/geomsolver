@@ -67,7 +67,7 @@ the complete-cover lower bound and attained upper-bound witness. Touching a band
 does not qualify. Material differences reflect the right operand's band; query memoization
 includes that band along with node identity and the entire input box. Every operand is still
 evaluated, so errors remain explicit. The final Boolean interval determines classification.
-`bounds_outside_with_observer` exposes the same raw oracle evidence for subsequent independent
+`query` with `Stop::Outside` and an observer exposes the same raw oracle evidence for subsequent independent
 audits; observation cannot affect the geometry or stopping decisions.
 
 Four default-pinion box queries (two retained points, the apex and an exterior point) used

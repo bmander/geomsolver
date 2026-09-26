@@ -153,14 +153,16 @@ fn duplicates_and_weights_hide_points() {
     checked(&lattice,[2.,2.,2.],5.);
 }
 
-/// Insertion cost, measured: not a gate on time, which varies by machine.
+/// Insertion cost, measured: not a gate on time, which varies by machine, and a hundred thousand
+/// insertions the suite need not pay for (`make bench` measures the same).
 #[test]
+#[ignore]
 fn insertion_speed_is_measured() {
     let mut rng = Rng::new(21);
     let n = 50_000;
     let points: Vec<[f64;3]> = (0..n).map(|_| [rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)]).collect();
     for sorted in [false,true] {
-        gcs_core::delaunay::predicates::EXACT_CALLS.store(0,std::sync::atomic::Ordering::Relaxed);
+        let calls = gcs_core::delaunay::predicates::exact_calls();
         let started = std::time::Instant::now();
         let order: Vec<usize> = if sorted { gcs_core::delaunay::spatial_order(&points) } else { (0..n).collect() };
         let mut r = Regular::new([0.;3],2.);
@@ -168,7 +170,7 @@ fn insertion_speed_is_measured() {
         let elapsed = started.elapsed();
         eprintln!("{n} random points{} in {elapsed:?}: {:.2} µs a point, {} tetrahedra",if sorted { ", spatially ordered," } else { "" },
             elapsed.as_secs_f64()*1e6/n as f64,r.tets().count());
-        eprintln!("  exact predicate calls: {}",gcs_core::delaunay::predicates::EXACT_CALLS.load(std::sync::atomic::Ordering::Relaxed));
+        eprintln!("  exact predicate calls: {}",gcs_core::delaunay::predicates::exact_calls()-calls);
     }
 }
 

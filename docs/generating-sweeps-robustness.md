@@ -135,8 +135,10 @@ refused. The 25° gear is an acceptance row, not the lens the work is designed t
 **How the harness runs.** `rust/gcs-cli/tests/generating_harness.rs` runs the real `solventc` for
 each case in a child process with a wall-clock budget.
 - **Stage trace:** `SOLVENT_STAGE_TRACE` makes `solventc` append a line for each completed stage:
-  admission, blank, clearance, reach, sheet, fit, withheld, split, classify, fuse, stl,
-  agreement, written.
+  admission, blank, clearance, reach, sheet, fit, withheld, split, classify, fuse, step, stl,
+  mesh, agreement, written (`cad::progress::mark`, keys `solid::export::Stage::key`). A refusal
+  appends `refused:<stage>`, the stage its `ExportRefusal` was met at, which the harness reads
+  rather than inferring the stage from the message.
 - **Kept output:** `SOLVENT_KEEP_REJECTED` keeps a refused mesh.
 - **What each case records:** the stage reached, where it was refused and with what message, the
   time and volume, and the field agreement. Where the case has one, it also records an

@@ -4,7 +4,7 @@
 //! Nothing here chooses a profile walk; the checks are recorded volumes, the
 //! field on both sides of every sheet node, a closed-form fixture and refusals.
 use super::*;
-use gcs_core::{program,syntax,solve,interval::Interval};
+use gcs_core::{program,interval::Interval};
 use std::f64::consts::PI;
 
 /// Link the gear project with the member component also publishing its blank
@@ -12,26 +12,23 @@ use std::f64::consts::PI;
 /// The recorded volumes are the bevel pair's, so the axis offset reads as zero.
 pub(super) fn read_gears_with(base: &Path,rewrite: &mut dyn FnMut(&str,String) -> String) -> program::Elaborated {
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
-    let (mut p,errors) = syntax::parse(&source); assert!(errors.is_empty(),"{errors:?}");
-    let errors = gcs_core::modules::link(&mut p,&mut |name| {
-        let text = std::fs::read_to_string(base.join(format!("{name}.sv"))).ok()
-            .or_else(|| gcs_core::library::resolve(name))?;
-        let text = super::support::bevel(name,text);
-        let text = if name == "matched_pair" {
-            text.replace("  solid body(design.heel)\n","  solid body(design.heel)\n  construction solid blank(design.heel)\n  design.tip bound blank\n  design.toe cut blank\n  design.back cut blank\n  construction solid single(design.heel)\n  design.tip bound single\n  design.toe cut single\n  design.back cut single\n  removal cut single\n")
-        } else { text };
-        Some(rewrite(name,text))
-    });
-    assert!(errors.is_empty(),"{errors:?}");
-    let mut e = program::elaborate(&p); assert!(e.ok(),"{:?}",e.diags);
-    let result = solve::solve(&mut e.sketch,solve::SolveOpts {tol:1e-16,acceptance_tol:1e-12,..Default::default()});
-    assert!(result.success,"{result:?}"); e
+    fixtures::gear::read_with(&source,base,&mut |name,text| {
+        let text = if name == "matched_pair" { fixtures::gear::publish_blank(&text,"  construction solid single(design.heel)\n  \
+            design.tip bound single\n  design.toe cut single\n  design.back cut single\n  removal cut single\n") } else { text };
+        rewrite(name,text)
+    })
 }
 pub(super) fn read_gears(base: &Path) -> program::Elaborated { read_gears_with(base,&mut |_,text| text) }
 
-fn sub(a: [f64;3],b: [f64;3]) -> [f64;3] { std::array::from_fn(|k| a[k]-b[k]) }
-fn dot(a: [f64;3],b: [f64;3]) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
-fn cross(a: [f64;3],b: [f64;3]) -> [f64;3] { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
+/// The design an inspection reads: the bevel pair at `offset` degrees, with the pressure shift
+/// and the crown's spiral angle from `SOLVENT_INSPECT_SHIFT` and `_SPIRAL` (degrees) when set.
+fn design_knobs(offset: f64) -> Vec<(&'static str,f64)> {
+    let knob = |name: &str| std::env::var(name).ok().map(|v| v.parse::<f64>().unwrap());
+    [("offset_angle",Some(offset)),("pressure_shift",knob("SOLVENT_INSPECT_SHIFT")),("spiral_angle",knob("SOLVENT_INSPECT_SPIRAL"))]
+        .into_iter().filter_map(|(p,v)| v.map(|v| (p,v))).collect()
+}
+
+use gcs_core::space::{sub,dot,cross,norm};
 
 /// Kernel against field on both sides of every interior sheet node: wherever
 /// the field is decisive, the united solid must agree.
@@ -101,14 +98,9 @@ fn the_native_space_at_an_offset_against_its_field() {
     let offset: f64 = std::env::var("SOLVENT_INSPECT_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(15.);
     // `SOLVENT_INSPECT_SHIFT` and `SOLVENT_INSPECT_SPIRAL` (degrees) set the
     // pressure shift and the crown's spiral angle.
-    let knob = |name: &str,line: &str| std::env::var(name).ok().map(|v| (line.to_string(),v));
-    let knobs: Vec<(String,String)> = [knob("SOLVENT_INSPECT_SHIFT","param pressure_shift"),
-        knob("SOLVENT_INSPECT_SPIRAL","param spiral_angle")].into_iter().flatten().collect();
+    let knobs = design_knobs(offset);
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
-    let e = read_gears_with(&base,&mut |name,text| if name == "configuration" {
-        text.replace("param offset_angle = 0deg",&format!("param offset_angle = {offset}deg")).lines()
-            .map(|l| match knobs.iter().find(|(p,_)| l.starts_with(p.as_str())) {
-                Some((p,v)) => format!("{p} = {v}deg\n"), None => format!("{l}\n") }).collect() } else { text });
+    let e = read_gears_with(&base,&mut |name,text| fixtures::gear::configure(name,text,&knobs));
     // `SOLVENT_INSPECT_MEMBER`: pinion by default.
     let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("pinion".into());
     let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();
@@ -176,8 +168,10 @@ fn a_cutter_with_a_motion_independent_contact_condition_is_refused() {
         Err(admission::Error::Refused(r)) => { eprintln!("{r}"); assert_eq!(r.condition,admission::Condition::Stationary); }
         other => panic!("admitted or unreadable: {other:?}"),
     }
+    // Nor can the construction be reached without an admission.
     let cad = Cad::new();
-    assert!(native::sweep_boundary::construct_solid(&cad.0,&e.sketch,part_id).is_err());
+    let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,part_id).unwrap();
+    assert!(native::sweep_boundary::construct_solid(&cad.0,&e.sketch,part_id,&recipe,None).is_err());
     let _ = PI;
 }
 
@@ -192,7 +186,8 @@ fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
     let error = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&gcs_core::solid::SpatialField::read(&e.sketch,blank_id,1e-10).unwrap()).unwrap_err();
     eprintln!("{error}");
-    assert!(error.contains("leaves the cutter inside the blank") && error.contains("35.0 degrees"));
+    assert!(error.message.contains("leaves the cutter inside the blank") && error.message.contains("35.0 degrees"));
+    assert_eq!(error.stage,gcs_core::solid::export::Stage::Clearance);
 }
 
 #[test]
@@ -220,7 +215,9 @@ fn whole_member(member: &str,expected: f64) {
     let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
     let cad = Cad::new();
     let started = std::time::Instant::now();
-    let part = native::sweep_boundary::construct_solid(&cad.0,&e.sketch,body).unwrap();
+    let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,body).unwrap();
+    let admitted = gcs_core::solid::admission::admit_body(&e.sketch,body,&Default::default()).unwrap();
+    let part = native::sweep_boundary::construct_solid(&cad.0,&e.sketch,body,&recipe,Some(&admitted)).unwrap();
     let volume = cad.0.volume(part).unwrap();
     eprintln!("{member}: {volume:.6} mm^3 against recorded {expected:.6} in {:?}",started.elapsed());
     assert!((volume-expected).abs() < 1e-3*expected);
@@ -276,14 +273,9 @@ fn measure_gear_probe_cost() {
 #[ignore]
 fn where_a_sheet_misses_its_contacts() {
     let offset: f64 = std::env::var("SOLVENT_INSPECT_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(25.);
-    let knob = |name: &str,line: &str| std::env::var(name).ok().map(|v| (line.to_string(),v));
-    let knobs: Vec<(String,String)> = [knob("SOLVENT_INSPECT_SHIFT","param pressure_shift"),
-        knob("SOLVENT_INSPECT_SPIRAL","param spiral_angle")].into_iter().flatten().collect();
+    let knobs = design_knobs(offset);
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
-    let e = read_gears_with(&base,&mut |name,text| if name == "configuration" {
-        text.replace("param offset_angle = 0deg",&format!("param offset_angle = {offset}deg")).lines()
-            .map(|l| match knobs.iter().find(|(p,_)| l.starts_with(p.as_str())) {
-                Some((p,v)) => format!("{p} = {v}deg\n"), None => format!("{l}\n") }).collect() } else { text });
+    let e = read_gears_with(&base,&mut |name,text| fixtures::gear::configure(name,text,&knobs));
     let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("gear".into());
     let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();
     let cad = Cad::new();
@@ -294,9 +286,6 @@ fn where_a_sheet_misses_its_contacts() {
     // Each grid cell's own normal (from its diagonals) against the contact normals at its
     // corners: a sheared or folded grid shows as cells where they disagree.
     let at = |r: usize,c: usize| r*sheet.columns+c;
-    let sub = |a: [f64;3],b: [f64;3]| [a[0]-b[0],a[1]-b[1],a[2]-b[2]];
-    let cross = |a: [f64;3],b: [f64;3]| [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
-    let norm = |a: [f64;3]| (a[0]*a[0]+a[1]*a[1]+a[2]*a[2]).sqrt();
     let mut bad = Vec::new();
     for r in 0..sheet.rows-1 { for c in 0..sheet.columns-1 {
         let n = cross(sub(sheet.points[at(r+1,c+1)],sheet.points[at(r,c)]),sub(sheet.points[at(r,c+1)],sheet.points[at(r+1,c)]));

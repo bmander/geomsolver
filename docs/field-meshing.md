@@ -29,7 +29,7 @@ it; this section and its numbers are the record the port was measured against.*
   Homebrew's CGAL 6.2.1 (`brew install cgal`). **Mesh_3 is GPL-3.0**, so this never ships.
 - `src/cad/delpsc.rs`: the field oracle, the features, and the checks. The result goes
   through the STL shell check and the field-agreement gate like every other backend.
-- `SweptField::side` / `MaterialField::side` (core): a number with the field's sign, in plain
+- `MaterialField::side` (core; `Query::sign`, a sweep's `SweptField::sign`): a number with the field's sign, in plain
   floating point. A sweep's side is a Lipschitz branch-and-bound over the roll, using the
   motion's inverse-point speed bound, with the first 2¹⁰ dyadic poses cached. It stops as soon
   as the side is decided (at once far from the boundary, logarithmically near it) or the bound
@@ -110,7 +110,8 @@ triangulation.
     recorded.
 - **F2: features in the core, without OCCT.**
   - The static blank's faces and sharp edges from the core's own analytic description
-    (`solid::tool_faces`: revolved, planar and extruded faces and their charted edges).
+    (revolved, planar and extruded faces and their charted edges; the `solid::tool_faces`
+    reader this named was removed with the candidate tracer on 2026-09-26).
   - Contours refined adaptively on each face, not a fixed grid.
   - Exit: the same feature curves as today's OCCT-based ones, on every fixture and a gear member.
 - **F3: robust predicates and the regular Delaunay triangulation.**
@@ -173,7 +174,10 @@ missed. The certified enclosure check stays the test of it.
     permanent: Shewchuk's orientation bound, and his insphere bound doubled for the weight
     difference in each lifted coordinate.
   - A value inside the bound is re-evaluated exactly.
-  - `EXACT_CALLS` counts the fallbacks.
+  - `exact_calls()` counts the fallbacks, per thread.
+  - `tests/predicates.rs` holds both against `i128` on integer input, near and at degeneracy,
+    and `Regular` refuses a coordinate past `regular::MAGNITUDE` (2^100), where the exact
+    power test's products would overflow.
 - **`regular`:** the regular triangulation, built by incremental Bowyer–Watson inside an
   enclosing tetrahedron whose insphere is sixteen times the points' radius.
   - A point is located by a remembering stochastic walk.
@@ -309,7 +313,7 @@ intervals under looser criteria. Next:
 ## In the app (2026-09-23)
 
 A solid with a continuous sweep among its operands now evaluates by field refinement in the core
-(`EvaluatedSolid::from_field`), so the glass box, views and the legacy mesh export draw it:
+(`EvaluatedSolid::of_field`), so the glass box, views and the legacy mesh export draw it:
 `?example=swept_torus.sv` shows the torus-through-a-post fixture in the browser. It uses
 preview criteria (facet size 1/40 and surface distance 1/2000 of the support's diagonal) and
 protects no features, so sharp edges are rounded to the facet size, and every facet is marked
@@ -317,12 +321,16 @@ smooth, so the shading rounds the creases too.
 
 **Off the main thread, refining as it goes.** `delaunay::refine::Progressive` runs the refinement
 in steps (`step(budget)`, `snapshot()`), and `mesh` is a loop over it. `solid::FieldMesher` holds
-one solid's field and run. The page's sketch is told never to mesh a field (`defer_fields`: a
-swept solid with no supplied surface is refused), and `app/field-preview.ts` hands a worker
-(`app/mesh-worker.ts`, its own copy of the core) the document's text, modules and parameter
-values; the worker refines each swept object 40 facets at a time, letting messages in between
-steps so an edit ends the job, and posts the surface every 120 ms and at the end. Each arrives
-through `supply_field`, keyed by the drawing's `solid::reads`, and the page redraws. A
+one solid's field and run. The page's sketch is told never to mesh a field (`FieldMeshing::Deferred`:
+a swept solid with no supplied surface is refused), and `app/field-preview.ts` asks the core what
+to mesh (`Sketch::field_jobs`: each swept object, keyed by a digest of its `solid::reads`), then
+hands a worker (`app/mesh-worker.ts`, its own copy of the core) the document's text, the modules
+the page was handed, the parameter values and those jobs; the worker checks its own drawing names
+the same solids and keys, and refines each swept object 40 facets at a time, letting messages in between
+steps so an edit (or `{kind: 'cancel'}`) ends the job, and posts the surface every 120 ms and at
+the end. Each arrives through `supply_field` (which checks what it is handed), and the page
+redraws; a finished surface is kept by key, so a new elaboration of the same drawing asks for it
+no more. What the footer says is `FieldProgress::doing`, the core's words. A
 provisional surface exports nothing. Measured in Chrome on `swept_torus.sv`: the first surface
 (48 triangles) 0.69 s after navigation, then one every ~130 ms, the final closed 1912 triangles
 at 2.77 s; the page stays responsive throughout (`performance.mark('field-surface')` per
@@ -366,18 +374,19 @@ them. The ball swept alone meshes (volume 2094.9 against 2110.7). Features from 
 
 ## Readings: value, gradient and active operand (2026-09-24)
 
-`MaterialField::reading(p)` gives a `Reading`: the field's value, its gradient, the leaf deciding it
-(numbered depth-first, a sweep's source leaves among them), the roll time a sweep decides it at,
+`MaterialField::reading(p)` gives a `Reading`: the field's value, its gradient, the `OperandId` deciding
+it — a leaf (numbered depth-first, a sweep's source leaves among them), a piece of its boundary and
+the roll time a sweep decides it at, or none where a bound or a cached value settled it —
 and `ambiguous` where another operand or another contact time reads within a tie — a crease. A
 static leaf's gradient is by central differences; a sweep's value is its minimum over the roll
-(`SweptField::minimum_relative`, `side`'s bounded search carried on until no stretch can read
+(`SweptField::minimum_relative`, the sign's bounded search carried on until no stretch can read
 lower by more than the accuracy, or a thousandth of the value where that is coarser) and its
 gradient the tool's own at that roll time, turned into the world by the pose (the envelope
 theorem). Fixed poses turn gradients by `MotionBounds::gradient_mid`. Checked against the swept
 sphere's closed form: value to 1e-8 asked exactly, gradient to 1e-5, the contact time, and the
 point opposite the gap read ambiguous.
 
-The refinement uses it where a caller supplies one (`Progressive::with_reading`): a crossing is
+The refinement uses it where the domain gives one (`refine::Domain::readings`): a crossing is
 found by Newton on the value along the segment, the bracket kept by sign, a bisection step where
 Newton would leave the bracket or not halve the value, ends outside the bounding ball cut back to
 it. Source evaluations (deterministic) and time, bisection against Newton:
@@ -402,13 +411,13 @@ a sweep's contact time is ambiguous.
 ## Warm readings (2026-09-24)
 
 A reading within one crossing now continues each sweep's contact from the reading before it
-(`MaterialField::reading_warm`, hints by sweep leaf; `SweptField::minimum_hinted`). A warm-started
+(`Source::Warm`, hints by sweep leaf; `SweptField::minimum_hinted`). A warm-started
 *global* minimum did not pay: its search is the proof that no other contact time dips lower, and
 next to the contact the first-order bound (the tool's speed times the stretch) cannot rule
 neighbouring stretches out without splitting them finely, however good the starting reading —
 counted on gear points near the boundary, a sign query costs 6.7 tool evaluations, a cold
 reading 55 and a warm-started global one 66. So a warm reading is a *local continuation*
-(`ReadingOptions::local`): the basin-wide window about the last contact time is searched by golden
+(`Source::Warm`'s `local`): the basin-wide window about the last contact time is searched by golden
 section, 13 evaluations, and the whole roll only when its minimum sits at the window's edge. What
 the continuation cannot see — a deeper contact elsewhere — the crossing checks by `side`, the
 query bisection trusts, a tolerance outside each end of the bracket Newton closed (inside it a
@@ -450,7 +459,7 @@ revolution turns them (cones, planes, tori, spheres); a prism runs them along it
 its two caps. `Reading::piece` says which decides, and `MaterialField::operand` reads one
 operand alone: the carrier, through the transforms and signs above it, and for a sweep the least
 over a window of a sixty-fourth of the roll about the contact time, following the minimum when it
-reaches the window's edge. `WHOLE` in place of a piece reads the leaf as the field sees it: a
+reaches the window's edge. A whole leaf (`OperandId::whole`) reads as the field sees it: a
 static leaf's own value, and a leaf of a sweep's tool through the whole tool, with the leaf that
 decides it (the gear's cutter is a Boolean, and one leaf of it cuts only where the rest lets it).
 
@@ -483,7 +492,8 @@ every downward ray crossed there and seeded a cluster a bisection apart that no 
 mesh (in the CLI, not a manifold at any size). The rays now leave from a point a thousandth of the
 radius off the centre, in no particular direction, and crossings within a quarter facet seed once.
 
-**Results.** Tests (`tests/crease.rs`): the pierced sphere's two rims to 1e-6 of their closed form;
+**Results.** Tests (`tests/crease.rs`): two and three half-spaces read as a `CreaseSource`, their
+line to the ball and its corner, in milliseconds; the pierced sphere's two rims to 1e-6 of their closed form;
 a block's twelve edges, each ending at two exact corners; the groove's twelve edges and one closed
 rim, 1e-5 from the swing's closed form; the groove through `FieldMesher`, closed, its volume within
 0.2% of Pappus's (the chords are inside the round). Exports, field agreement 0.1 mm off each side,
@@ -516,7 +526,7 @@ the core's case library does not hold, read like the V-twin): `gears.sv` opens o
 the glass box shows the 24-tooth pinion and the 48-tooth gear refining in the worker. What it
 took, each measured before it was changed:
 
-- **Branch and bound over the term** (`MaterialField::reading_capped`). A reading searched every
+- **Branch and bound over the term** (`MaterialField::query`'s reading walk). A reading searched every
   one of the 24 or 48 indexed cuts to full accuracy, where one decides. Each operand is now given
   a cap below which it must be exact — a union's second operand the first's value, a cut the
   negated blank, both less twice the tie — and above it a proven lower bound serves, which a sweep

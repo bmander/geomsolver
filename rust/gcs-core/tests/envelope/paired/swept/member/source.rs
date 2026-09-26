@@ -49,8 +49,8 @@ fn declarative_matched_pair_agrees_with_independent_member_material() {
             }
             for (p,inside) in points {
                 let b = point(p);
-                let expected = reference.field.bounds_outside(b,band,options).unwrap().value.bounds();
-                let actual = source.bounds_outside(b,band,options).unwrap().value.bounds();
+                let expected = reference.field.query(b,Stop::Outside(band),options,None).unwrap().value.bounds();
+                let actual = source.query(b,Stop::Outside(band),options,None).unwrap().value.bounds();
                 for (label,value) in [("reference",expected),("source",actual)] {
                     assert!(if inside { value[1] < 0. } else { value[0] > 0. },
                         "{teeth:?} {name}, {p:?}, inside={inside}: {label} {value:?}");
@@ -92,13 +92,13 @@ fn source_contact_curves_reproduce_independent_crown_characteristics() {
                     let mut distance = f64::INFINITY;
                     let mut temporal_match = false;
                     for i in 0..sweep.patches().len() {
-                        match sweep.at(i,u,roll,module*1e-10) {
+                        match sweep.patches()[i].contacts(u,sweep.motion().at(roll).unwrap(),module*1e-10) {
                             Ok(roots) => for root in roots {
                                 let p = root.contact.position;
                                 let gap = (p[0]-world[0]).hypot(p[1]-world[1]).hypot(p[2]-world[2]);
                                 distance = distance.min(gap);
                                 if gap < module*1e-8 {
-                                    let times = sweep.at_source(i,u,root.v,module*1e-10).unwrap();
+                                    let times = sweep.at_source_over(i,u,root.v,sweep.domain(),module*1e-10).unwrap();
                                     temporal_match |= times.iter().any(|r| {
                                         let p = r.contact.position;
                                         (r.root.time-roll).abs() < 1e-8

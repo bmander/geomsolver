@@ -113,9 +113,10 @@ pub struct Sketch {
     /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
     /// `solid::reads` it was supplied under, so a moved drawing reads none.
     pub field_surfaces: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, std::rc::Rc<crate::solid::FieldSurface>)>>,
-    /// Set by a host that meshes swept solids itself (a page with a worker): a swept solid with
-    /// no supplied surface is then refused rather than meshed here, on the thread that draws.
-    pub defer_fields: std::cell::Cell<bool>,
+    /// Where a swept solid with no supplied surface is meshed (`solid::FieldMeshing`): here, or —
+    /// set by a host that meshes swept solids itself, a page with a worker — elsewhere, the solid
+    /// refused until its surface is supplied rather than meshed on the thread that draws.
+    pub field_meshing: std::cell::Cell<crate::solid::FieldMeshing>,
     /// The document's style sheet: what each class looks like (`style.rs`).  Presentation, and
     /// nothing the core computes reads it — it is here because it is document state, saved and
     /// grafted with everything else, and because the core resolving it is what keeps two front

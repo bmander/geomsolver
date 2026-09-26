@@ -174,6 +174,9 @@ fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
         let done = mesher.step(100).unwrap();
         let s = mesher.snapshot();
         seen.push((s.triangles.len(),s.provisional));
+        // what a host shows is the core's words, and they begin with the phase
+        let p = mesher.progress();
+        assert!(p.doing().starts_with(p.phase),"{} / {}",p.doing(),p.phase);
         if done { break; }
     }
     // A preview first, refined over many steps, and a final surface last.
@@ -184,9 +187,10 @@ fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
     let surface = mesher.snapshot();
 
     // A page meshing elsewhere: the solid is refused until its surface arrives.
-    e.sketch.defer_fields.set(true);
+    e.sketch.field_meshing.set(gcs_core::solid::FieldMeshing::Deferred);
     assert!(e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap_err().contains("being meshed"));
-    e.sketch.supply_field(i,solid::FieldSurface {provisional:true,..surface.clone()});
+    e.sketch.supply_field(i,solid::FieldSurface {provisional:true,..surface.clone()}).unwrap();
+    assert!(e.sketch.field_provisional(i).unwrap());
     let preview = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
     assert!(preview.provisional() && preview.stl().is_err());
     // nor does a scene take a surface still being refined
@@ -194,11 +198,39 @@ fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
     // asked for as a preview, it is written as it stands, every triangle in the file
     let bytes = preview.preview_stl().unwrap();
     assert!(bytes.len() > 84 && (bytes.len()-84)%50 == 0 && u32::from_le_bytes(bytes[80..84].try_into().unwrap()) > 0);
-    e.sketch.supply_field(i,surface);
+    e.sketch.supply_field(i,surface).unwrap();
+    assert!(!e.sketch.field_provisional(i).unwrap());
     let done = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
     let exact = 2.*std::f64::consts::PI.powi(2)+4./3.*std::f64::consts::PI;
     assert!(!done.provisional() && (done.volume()-exact).abs() < 0.03*exact,"{}",done.volume());
     assert!(done.stl().is_ok());
+}
+
+/// What a page's worker is to mesh is the core's answer: the swept objects, each keyed by the
+/// drawing it is a surface of — the same key for the same drawing elaborated twice, another once
+/// the drawing moves — and a supplied surface the core cannot use is refused with the reason.
+#[test]
+fn field_jobs_name_the_swept_objects_and_supplied_surfaces_are_checked() {
+    let source = include_str!("../../examples/solid_generating_sweep.sv");
+    let e = read(source);
+    let jobs = e.sketch.field_jobs();
+    let i = e.map.ent_named("removal.body").unwrap().i();
+    assert_eq!(jobs.iter().map(|j| (j.solid,j.name.as_str())).collect::<Vec<_>>(),vec![(i,"removal.body")]);
+    // the construction tool it is swept from is no object, and has no sweep: no job
+    assert_eq!(read(source).sketch.field_jobs(),jobs,"the same drawing elaborated again");
+    let moved = read(&source.replace("finish: 60deg","finish: 50deg"));
+    assert_ne!(moved.sketch.field_jobs()[0].key,jobs[0].key,"another drawing is another surface");
+
+    let square = solid::FieldSurface {vertices: vec![[0.;3],[1.,0.,0.],[0.,1.,0.]],triangles: vec![[0,1,2]],provisional: true};
+    let refused = |k: usize,s: solid::FieldSurface| e.sketch.supply_field(k,s).unwrap_err();
+    assert!(refused(e.sketch.solids.len(),square.clone()).contains("names no solid"));
+    let plain = (0..e.sketch.solids.len()).find(|&k| !e.sketch.is_swept(k)).unwrap();
+    assert!(refused(plain,square.clone()).contains("has no sweep"));
+    assert!(refused(i,solid::FieldSurface {triangles: vec![[0,1,3]],..square.clone()}).contains("past the 3 given"));
+    assert!(e.sketch.field_provisional(e.sketch.solids.len()).is_err());
+    assert!(!e.sketch.field_provisional(plain).unwrap());
+    e.sketch.supply_field(i,square).unwrap();
+    assert!(e.sketch.field_provisional(i).unwrap());
 }
 
 #[test]
@@ -217,11 +249,11 @@ fn a_reading_gives_a_sweeps_value_gradient_and_contact_time() {
         // By default the minimum is read to a thousandth of itself; asked exactly, to 1e-8.
         let loose = field.reading(p);
         assert!((loose.value-(len-1.)).abs() <= 1e-3*(len-1.).abs()+1e-8,"{p:?}: {} against {}",loose.value,len-1.);
-        let exact = gcs_core::solid::ReadingOptions {relative:0.,..gcs_core::solid::ReadingOptions::at(p)};
-        let r = field.reading_with(p,&exact,&mut 0);
+        let exact = gcs_core::solid::Query {relative:0.,..gcs_core::solid::Query::at(p)};
+        let r = field.query(p,&mut exact.clone());
         assert!((r.value-(len-1.)).abs() < 1e-8,"{p:?}: {} against {}",r.value,len-1.);
         for k in 0..3 { assert!((r.gradient[k]-d[k]/len).abs() < 1e-5,"{p:?}: {:?} against {:?}",r.gradient,d.map(|x| x/len)); }
-        assert!((r.time.unwrap()-angle).abs() < 1e-5,"{p:?}: time {:?} against {angle}",r.time);
+        assert!((r.time().unwrap()-angle).abs() < 1e-5,"{p:?}: time {:?} against {angle}",r.time());
         assert!(!r.ambiguous,"{p:?}");
     }
     // Opposite the gap both end caps are equally near: two contact times, a crease.
@@ -236,11 +268,11 @@ fn a_reading_bounds_what_cannot_decide_and_is_exact_where_it_can() {
     let e = read(include_str!("../../examples/swept_groove.sv"));
     let field = |n: &str| MaterialField::read(&e.sketch,e.map.ent_named(n).unwrap().i(),1e-10).unwrap();
     let (part,block,groove) = (field("part"),field("block"),field("groove"));
-    let exact = |p: [f64;3]| gcs_core::solid::ReadingOptions {relative:0.,..gcs_core::solid::ReadingOptions::at(p)};
+    let exact = |p: [f64;3]| gcs_core::solid::Query {relative:0.,..gcs_core::solid::Query::at(p)};
     for i in 0..9 { for j in 0..9 { for k in 0..5 {
         let p = [-22.+5.5*i as f64+0.3,-22.+5.5*j as f64+0.1,-14.+4.*k as f64+0.2];
-        let whole = part.reading_with(p,&exact(p),&mut 0).value;
-        let alone = block.reading_with(p,&exact(p),&mut 0).value.max(-groove.reading_with(p,&exact(p),&mut 0).value);
+        let whole = part.query(p,&mut exact(p)).value;
+        let alone = block.query(p,&mut exact(p)).value.max(-groove.query(p,&mut exact(p)).value);
         assert!((whole-alone).abs() < 1e-8,"{p:?}: the part reads {whole}, its operands {alone}");
         if alone.abs() > 1e-6 { assert_eq!(whole < 0.,part.side(p) < 0.,"{p:?}: {whole}"); }
     } } }
@@ -251,22 +283,26 @@ fn a_warm_reading_is_the_cold_one_whatever_its_hint() {
     let e = read(include_str!("../../examples/solid_generating_sweep.sv"));
     let i = e.map.ent_named("removal.body").unwrap().i();
     let field = MaterialField::read(&e.sketch,i,1e-10).unwrap();
-    let exact = |p: [f64;3]| gcs_core::solid::ReadingOptions {relative:0.,..gcs_core::solid::ReadingOptions::at(p)};
+    let exact = |p: [f64;3]| gcs_core::solid::Query {relative:0.,..gcs_core::solid::Query::at(p)};
+    let warm = |p: [f64;3],hints: Vec<Option<f64>>| gcs_core::solid::Query {source:gcs_core::solid::Source::Warm {hints,local:false},..exact(p)};
     // Along a segment through the swept body, each reading warm from the last.
-    let mut hints = Vec::new();
+    let mut q = warm([0.;3],Vec::new());
     for k in 0..=20 {
         let s = k as f64/20.;
         let p = [4.6-3.*s,-1.+2.8*s,0.3];
-        let (warm,cold) = (field.reading_warm(p,&exact(p),&mut 0,&mut hints),field.reading_with(p,&exact(p),&mut 0));
+        let hints = match std::mem::replace(&mut q.source,gcs_core::solid::Source::Exact) {
+            gcs_core::solid::Source::Warm {hints,..} => hints,_ => unreachable!(),
+        };
+        q = warm(p,hints);
+        let (warm,cold) = (field.query(p,&mut q),field.query(p,&mut exact(p)));
         assert!((warm.value-cold.value).abs() < 1e-9,"{p:?}: warm {} cold {}",warm.value,cold.value);
         assert!((0..3).all(|j| (warm.gradient[j]-cold.gradient[j]).abs() < 1e-5),"{p:?}");
-        assert!((warm.time.unwrap()-cold.time.unwrap()).abs() < 1e-4,"{p:?}: {:?} {:?}",warm.time,cold.time);
+        assert!((warm.time().unwrap()-cold.time().unwrap()).abs() < 1e-4,"{p:?}: {:?} {:?}",warm.time(),cold.time());
     }
     // A hint at a local minimum that is not the least: near the +60° cap, warm from the -60° one.
     let limit = std::f64::consts::PI/3.;
     let p = [1.2,2.9,0.4];
-    let mut hints = vec![Some(-limit)];
-    let warm = field.reading_warm(p,&exact(p),&mut 0,&mut hints);
-    let cold = field.reading_with(p,&exact(p),&mut 0);
-    assert!((warm.value-cold.value).abs() < 1e-9 && (warm.time.unwrap()-limit).abs() < 1e-4,"{warm:?} {cold:?}");
+    let warm = field.query(p,&mut warm(p,vec![Some(-limit)]));
+    let cold = field.query(p,&mut exact(p));
+    assert!((warm.value-cold.value).abs() < 1e-9 && (warm.time().unwrap()-limit).abs() < 1e-4,"{warm:?} {cold:?}");
 }

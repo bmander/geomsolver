@@ -6,6 +6,7 @@
 //! and a probe the field cannot decide is counted apart and never taken as agreement.
 use super::MaterialEvaluator;
 use crate::interval::{Interval,minimum::{self,Stop}};
+use crate::space::{sub,cross,norm};
 
 type V = [f64;3];
 
@@ -74,9 +75,8 @@ pub fn of_triangles_observed(vertices: &[V],triangles: &[[u32;3]],material: &mut
     for t in sample(vertices,triangles,options) {
         observe(&report);
         let [a,b,c] = t.map(|i| vertices[i as usize]);
-        let n = [(b[1]-a[1])*(c[2]-a[2])-(b[2]-a[2])*(c[1]-a[1]),(b[2]-a[2])*(c[0]-a[0])-(b[0]-a[0])*(c[2]-a[2]),
-            (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])];
-        let length = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+        let n = cross(sub(b,a),sub(c,a));
+        let length = norm(n);
         if !(length > 0.) || !length.is_finite() { continue; }
         report.probed_triangles += 1;
         let centroid: V = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
@@ -86,8 +86,8 @@ pub fn of_triangles_observed(vertices: &[V],triangles: &[[u32;3]],material: &mut
         // is the one full convergence would give, without refining what cannot change it.
         let mut ask = |distance: f64,stop: Stop,tolerance: f64| -> Result<(V,[f64;2]),String> {
             let point: V = std::array::from_fn(|k| centroid[k]+distance*n[k]/length);
-            let bounds = material.bounds_stopping(point.map(|x| Interval::point(x).unwrap()),stop,
-                minimum::Options {value_tolerance:tolerance,max_evaluations:options.max_evaluations})
+            let bounds = material.query(point.map(|x| Interval::point(x).unwrap()),stop,
+                minimum::Options {value_tolerance:tolerance,max_evaluations:options.max_evaluations},None)
                 .map_err(|e| format!("{e:?}"))?;
             Ok((point,bounds.value.bounds()))
         };
@@ -125,9 +125,7 @@ fn sample<'a>(vertices: &[V],triangles: &'a [[u32;3]],options: &Options) -> Vec<
     let mut total = 0.;
     for t in triangles {
         let [a,b,c] = t.map(|i| vertices[i as usize]);
-        let (u,v): (V,V) = (std::array::from_fn(|k| b[k]-a[k]),std::array::from_fn(|k| c[k]-a[k]));
-        let n = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
-        let area = 0.5*(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+        let area = 0.5*norm(cross(sub(b,a),sub(c,a)));
         if area.is_finite() { total += area; }
         cumulative.push(total);
     }

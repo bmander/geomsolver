@@ -8,15 +8,13 @@
 //! admits has shown no failure at the samples it names, which is not a proof that none exists
 //! between them. Material evaluation answers membership for every sweep, admitted or not; only
 //! boundary construction is restricted.
-use super::{SpatialField,SweepContacts,TimedContact,EdgeChart,cad};
+use super::{SpatialField,SweepContacts,TimedContact,cad};
 use crate::{envelope::{Motion,SurfacePoint},model::{Sketch,SolidDef}};
 use std::{collections::BTreeMap,f64::consts::{PI,TAU},fmt};
 
+use crate::space::{sub,dot,cross,norm};
+
 type V = [f64;3];
-fn sub(a: V,b: V) -> V { std::array::from_fn(|k| a[k]-b[k]) }
-fn dot(a: V,b: V) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
-fn cross(a: V,b: V) -> V { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
-fn norm(a: V) -> f64 { dot(a,a).sqrt() }
 
 /// The rows of the class, in the order they are asked.
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
@@ -96,7 +94,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Options {rows:100,columns:400,coarse_rows:24,coarse_columns:1440,axis_tolerance:1e-10,
+        Options {rows:100,columns:400,coarse_rows:24,coarse_columns:1440,axis_tolerance:cad::AXIS_TOLERANCE,
             margin:1e-6,root_tolerance:1e-9,least_factor:1e-3}
     }
 }
@@ -132,8 +130,17 @@ pub struct SweepEvidence {
     pub basis: Basis,
 }
 
-#[derive(Clone,Debug,Default)]
-pub struct Admission { pub sweeps: Vec<SweepEvidence> }
+/// A body admitted to the class, and the only way to have one: `admit_body` makes it, so a
+/// construction that takes one cannot be reached without the gate.
+#[derive(Clone,Debug)]
+pub struct Admission { body: usize,sweeps: Vec<SweepEvidence> }
+
+impl Admission {
+    /// The body admitted.
+    pub fn body(&self) -> usize { self.body }
+    /// Each distinct sweep the body cuts, with what its checks saw.
+    pub fn sweeps(&self) -> &[SweepEvidence] { &self.sweeps }
+}
 
 /// The body's static remainder as a field, and its swept cuts with their poses. Swept material
 /// is read only where it is cut from the body itself, directly or through placements. A host
@@ -193,7 +200,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         if !by_sweep.contains_key(&cut.swept) { order.push(cut.swept); }
         by_sweep.entry(cut.swept).or_default().push(cut.pose);
     }
-    let mut admission = Admission::default();
+    let mut admission = Admission {body:root,sweeps:Vec::new()};
     for swept in order {
         let name = sk.solids[swept].name.clone();
         let refuse = |condition,message: String,witness| Error::Refused(Refusal {condition,sweep:name.clone(),message,witness});
@@ -246,9 +253,8 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
     let poses: Vec<Motion> = (0..=steps).map(|k| pose(domain[0]+(domain[1]-domain[0])*k as f64/steps as f64))
         .collect::<Result<_,_>>()?;
     for edge in c.edges() {
-        let [a,b] = edge.faces;
+        let ([a,b],[ua,ub]) = (edge.patches,edge.ends);
         let (Some(pa),Some(pb)) = (c.patches().get(a),c.patches().get(b)) else { continue };
-        let (EdgeChart::FixedU(ua),EdgeChart::FixedU(ub)) = (edge.charts[0],edge.charts[1]) else { continue };
         let h = 1e-4;
         let inward = |u: f64| if u < 0.5 { u+h } else { u-h };
         let (Ok(corner),Ok(sa),Ok(sb)) = (pa.at(ua,0.),pa.at(inward(ua),0.),pb.at(inward(ub),0.)) else { continue };

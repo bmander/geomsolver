@@ -1,7 +1,7 @@
 //! Delaunay refinement of an implicit boundary with protected features (`delaunay::refine`,
 //! docs/field-meshing.md F4), on shapes whose answers are closed forms: a sphere, a torus, two
 //! separate spheres, a cylinder whose rims are features and a cube whose twelve edges are.
-use gcs_core::delaunay::refine::{mesh,Criteria,Mesh};
+use gcs_core::delaunay::refine::{mesh,Criteria,Mesh,Readings,WithReadings};
 use std::collections::BTreeMap;
 
 type P = [f64;3];
@@ -148,8 +148,8 @@ fn facets_follow_the_local_feature_size_by_their_normals() {
     // it): kept under the rim's radius of curvature, c²/a = 0.0025, so the rim can be resolved
     crit.edge_size = 0.02;
     crit.max_points = 200_000;
-    let mut run = gcs_core::delaunay::refine::Progressive::new(Box::new(move |p| f(p)),[0.;3],1.2,Vec::new(),crit)
-        .with_reading(Box::new(move |p,_| (f(p),grad(p))));
+    let domain = WithReadings {value:move |p: P| f(p),reading:move |p: P,_| (f(p),grad(p)),readings:Readings::Checked};
+    let mut run = gcs_core::delaunay::refine::Progressive::new(Box::new(domain),[0.;3],1.2,Vec::new(),crit);
     while !run.step(usize::MAX).unwrap() {}
     let m = run.finished().unwrap();
     let (chi,volume) = closed(&m);

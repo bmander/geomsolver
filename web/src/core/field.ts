@@ -14,9 +14,31 @@ export interface FieldSurface {
   provisional: boolean;
 }
 
-/** Whether solid `idx` has a continuous sweep among its operands, and so a field's surface. */
-export function isSwept(sk: Sketch, idx: number): boolean {
-  return core().gcs_solid_is_swept(sk.handle, idx) !== 0;
+/** One surface for a page's worker to mesh (`Sketch::field_jobs`): a swept object, and the key
+ *  of the drawing it is a surface of — equal on every core exactly when the surface is. */
+export interface FieldJob {
+  solid: number;
+  name: string;
+  key: string;
+}
+
+/** What this sketch's worker has to mesh: the core's answer, which objects are swept and what
+ *  each is a surface of. */
+export function fieldJobs(sk: Sketch): FieldJob[] {
+  return takeJson<FieldJob[]>(core().gcs_sketch_field_jobs(sk.handle)) ?? [];
+}
+
+/** Why the solids a worker was asked to mesh are not the ones its own drawing names, or nothing:
+ *  two cores elaborating one text must agree on each solid's index, name and key, or the surface
+ *  meshed would be supplied to another solid. */
+export function unpaired(asked: FieldJob[], found: FieldJob[]): string | undefined {
+  for (const a of asked) {
+    const f = found.find((j) => j.solid === a.solid);
+    if (!f || f.name !== a.name || f.key !== a.key) {
+      return `the worker's drawing does not have \`${a.name}\` as the page's has it`;
+    }
+  }
+  return undefined;
 }
 
 /** Have this sketch refuse a swept solid it has been given no surface for, rather than mesh it. */
@@ -37,11 +59,12 @@ export function supplyField(sk: Sketch, idx: number, s: FieldSurface): void {
   if (ok < 0) throw new Error(lastError());
 }
 
-/** Where a mesher stands (`FieldProgress` in the core): its phase, the refinement's stage and
- *  rebuilds, the facets waiting and the worst of them, the work done, the creases traced once they
- *  are, and two estimates — `within` the pass in hand, `fraction` the whole — never a count of
- *  work left. */
+/** Where a mesher stands (`FieldProgress` in the core): `doing`, the core's words for what it is
+ *  doing, which a page shows as they are; its phase, the refinement's stage and rebuilds, the
+ *  facets waiting and the worst of them, the work done, the creases traced once they are, and two
+ *  estimates — `within` the pass in hand, `fraction` the whole — never a count of work left. */
 export interface MeshProgress {
+  doing: string;
   phase: 'first pass' | 'tracing edges' | 'final pass';
   stage: 'building' | 'refining' | 'repairing' | 'done' | 'failed';
   rebuild: number;
@@ -81,9 +104,10 @@ export class FieldMesher {
   /** The surface as it stands. */
   snapshot(): FieldSurface {
     const c = core();
-    const nv = c.gcs_field_mesher_snapshot(this.h);
-    const nt = c.gcs_field_mesher_triangle_count(this.h);
-    if (nv < 0 || nt < 0) throw new Error(lastError() || 'the surface could not be read');
+    const [nv, nt, provisional] = withBuf(3, 4, (b) => {
+      if (c.gcs_field_mesher_snapshot(this.h, b.ptr) < 0) throw new Error(lastError() || 'the surface could not be read');
+      return Array.from(b.i32.slice(0, 3));
+    });
     const vertices = withBuf(3 * nv, 8, (b) => {
       if (c.gcs_field_mesher_vertices(this.h, b.ptr, 3 * nv) < 0) throw new Error(lastError());
       return b.f64.slice(0, 3 * nv);
@@ -93,7 +117,7 @@ export class FieldMesher {
       // the same bits read as unsigned: the buffer holds `u32` indices
       return new Uint32Array(b.i32.slice(0, 3 * nt).buffer);
     });
-    return { vertices, triangles, provisional: c.gcs_field_mesher_provisional(this.h) !== 0 };
+    return { vertices, triangles, provisional: provisional !== 0 };
   }
 
   dispose(): void {

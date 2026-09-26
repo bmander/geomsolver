@@ -1,5 +1,5 @@
 use super::*;
-use gcs_core::{interval::minimum::{Options,Status},motion::Family,
+use gcs_core::{interval::minimum::{Options,Status,Stop},motion::Family,
     solid::{SweptField,SweepError},syntax,program,solve};
 
 pub(super) fn rotation() -> Family {
@@ -44,9 +44,9 @@ fn sweep_boxes_budgets_cache_caps_and_observers_preserve_enclosures() {
     let mut cached = sweep.evaluator(64); let mut uncached = sweep.evaluator(0);
     let p = point([3.,1.,0.]);
     let mut observed = 0;
-    let a = cached.bounds_with_observer(p,options(),|d,_| {
+    let a = cached.query(p,Stop::Converged,options(),Some(&mut |d,_| {
         assert!(d.bounds()[0] >= -4. && d.bounds()[1] <= 4.); observed += 1;
-    }).unwrap();
+    })).unwrap();
     let b = uncached.bounds(p,options()).unwrap();
     assert_eq!(a.value,b.value); assert_eq!(a.witness,b.witness);
     assert_eq!(a.evaluations,b.evaluations); assert_eq!(observed,a.evaluations);

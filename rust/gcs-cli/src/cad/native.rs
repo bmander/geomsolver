@@ -1,21 +1,11 @@
+//! The native kernel (OCCT, through `backend/`): a session constructing the core's recipes,
+//! and the swept construction over it. What is written, and whether, is `cad::output`'s.
 use gcs_core::json::Json;
-use std::{collections::BTreeMap,ffi::{c_char,c_int,c_void,CStr,CString},path::Path,
-    sync::atomic::{AtomicU64,Ordering}};
+use std::{collections::BTreeMap,ffi::{c_char,c_int,c_void,CStr,CString}};
+pub(crate) use super::progress::{mark,stage};
 
-// Candidate construction is exercised independently until closed sweep assembly
-// connects it to export; candidates must never pass as completed sweep solids.
-#[allow(dead_code)]
-#[path="native/sweep.rs"]
-mod sweep;
-#[allow(dead_code)]
-#[path="native/trims.rs"]
-mod trims;
-#[allow(dead_code)]
-#[path="native/traces.rs"]
-mod traces;
-#[allow(dead_code)]
-#[path="native/cells.rs"]
-pub(crate) mod cells;
+#[path="native/kernel.rs"]
+pub(crate) mod kernel;
 #[path="native/sweep_boundary.rs"]
 pub(crate) mod sweep_boundary;
 #[path="native/features.rs"]
@@ -57,7 +47,7 @@ impl Session {
     }
     #[cfg(test)]
     pub(crate) fn as_ptr(&self) -> *mut c_void { self.0 }
-    fn result(&self,id: c_int) -> Result<c_int,String> {
+    pub(crate) fn result(&self,id: c_int) -> Result<c_int,String> {
         if id < 0 {
             Err(unsafe { CStr::from_ptr(solvent_cad_error(self.0)) }.to_string_lossy().into_owned())
         } else { Ok(id) }
@@ -149,151 +139,4 @@ impl Session {
         }
         Ok(shapes[&field(recipe,"root").as_i64()])
     }
-}
-
-/// A body with swept cuts is judged against its own material field before anything is
-/// written, whichever backend built it: probes a little inside and outside the triangles of
-/// its STL (`gcs_core::solid::agreement`, millimetres), the check the traced-sheet
-/// arrangement failed while its volume and its shell passed. A disagreement refuses the export.
-pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8]) -> Result<(),String> {
-    use gcs_core::solid::{agreement,MaterialField};
-    let scale = sk.units.length.ok_or("CAD export requires an explicit model length unit")?.1;
-    let started = std::time::Instant::now();
-    let (vertices,triangles) = agreement::stl_triangles(stl,scale)?;
-    if let Err(e) = mesh_contract(&vertices,&triangles,scale) {
-        if let Ok(kept) = std::env::var("SOLVENT_KEEP_REJECTED") { let _ = std::fs::write(kept,stl); }
-        return Err(e);
-    }
-    sweep_boundary::mark("mesh");
-    let mut material = MaterialField::read(sk,body,1e-10)?.evaluator(4096);
-    let options = agreement::Options {offset:0.1/scale,confirm:0.025/scale,value_tolerance:0.02/scale,..Default::default()};
-    let total = (triangles.len()+(triangles.len()/options.triangles.max(1)).max(1)-1)/(triangles.len()/options.triangles.max(1)).max(1);
-    sweep_boundary::stage(&format!("probing {total} of {} triangles against the material field",triangles.len()));
-    let mut shown = 0;
-    let report = agreement::of_triangles_observed(&vertices,&triangles,&mut material,&options,&mut |r| {
-        if r.probed_triangles >= shown+total.div_ceil(10) {
-            shown = r.probed_triangles;
-            sweep_boundary::stage(&format!("  {} of {total} triangles probed, {} disagree",r.probed_triangles,r.disagreements.len()));
-        }
-    })?;
-    sweep_boundary::stage(&format!("field agreement: {} of {} triangles probed {:.2} mm off each side, {} probes unresolved, \
-        {} withdrawn beside another face, {} disagree ({:?})",report.probed_triangles,report.triangles,
-        options.offset*scale,report.unresolved,report.withdrawn,report.disagreements.len(),started.elapsed()));
-    if report.agrees() { sweep_boundary::mark("agreement"); return Ok(()); }
-    // A diagnostic, never the requested output: the refused mesh, for inspection.
-    if let Ok(path) = std::env::var("SOLVENT_KEEP_REJECTED") {
-        match std::fs::write(&path,stl) { Ok(()) => sweep_boundary::stage(&format!("kept the refused mesh at {path}")),
-            Err(e) => sweep_boundary::stage(&format!("could not keep the refused mesh at {path}: {e}")) }
-    }
-    for d in report.disagreements.iter().take(10) {
-        eprintln!("solventc:   {} the mesh at ({:.4}, {:.4}, {:.4}) the field reads [{:.4}, {:.4}]",
-            if d.inside_mesh { "inside" } else { "outside" },d.point[0]*scale,d.point[1]*scale,d.point[2]*scale,
-            d.field[0]*scale,d.field[1]*scale);
-    }
-    Err(format!("`{}`: the exported surface disagrees with the material field at {} of {} probes; nothing was written",
-        sk.solids[body].name,report.disagreements.len(),report.probes))
-}
-
-/// The mesh contract: no cluster of microscopic triangles. A few may come of a tessellator
-/// meeting a short edge; a hundred under a square micrometre is a crumpled or folded patch of
-/// surface, whatever a probe sampled by area happens to find there.
-fn mesh_contract(vertices: &[[f64;3]],triangles: &[[u32;3]],scale: f64) -> Result<(),String> {
-    const FLOOR: f64 = 1e-6;
-    const MOST: usize = 100;
-    let (mut count,mut area,mut low,mut high) = (0,0.,[f64::INFINITY;3],[f64::NEG_INFINITY;3]);
-    for t in triangles {
-        let [a,b,c] = t.map(|i| vertices[i as usize].map(|x| x*scale));
-        let (u,v): ([f64;3],[f64;3]) = (std::array::from_fn(|k| b[k]-a[k]),std::array::from_fn(|k| c[k]-a[k]));
-        let n = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
-        let size = 0.5*(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
-        if size >= FLOOR { continue; }
-        count += 1; area += size;
-        for k in 0..3 { low[k] = low[k].min(a[k]); high[k] = high[k].max(a[k]); }
-    }
-    sweep_boundary::stage(&format!("mesh: {count} of {} triangles under {FLOOR} mm²",triangles.len()));
-    if count > MOST {
-        return Err(format!("the mesh has {count} triangles under {FLOOR} mm² ({area:.2e} mm² in all) between {:?} and {:?}: \
-            a crumpled or folded patch of surface",low.map(|x| (x*1e3).round()/1e3),high.map(|x| (x*1e3).round()/1e3)));
-    }
-    Ok(())
-}
-
-/// The STL a body's field agreement is judged on, written through a temporary file.
-fn agreement(session: &Session,sk: &gcs_core::model::Sketch,body: usize,solid: c_int) -> Result<(),String> {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    let directory = std::env::temp_dir().join(format!("solvent-agreement-{}-{}",std::process::id(),NEXT.fetch_add(1,Ordering::Relaxed)));
-    std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-    let path = directory.join("probe.stl");
-    let name = CString::new(path.to_str().ok_or("CAD path must be UTF-8")?).map_err(|e| e.to_string())?;
-    let started = std::time::Instant::now();
-    let written = session.result(unsafe { solvent_cad_stl(session.0,solid,name.as_ptr()) })
-        .and_then(|_| std::fs::read(&path).map_err(|e| e.to_string()));
-    let _ = std::fs::remove_dir_all(&directory);
-    let written = written?;
-    sweep_boundary::stage(&format!("meshed the solid for its field agreement ({:?})",started.elapsed()));
-    field_agreement(sk,body,&written)
-}
-
-/// Build once, stage and validate every requested format, then replace outputs.
-/// A geometry or encoding failure cannot leave only half the requested pair updated.
-pub fn export(sk: &gcs_core::model::Sketch,solid: usize,step: Option<&str>,stl: Option<&str>) -> Result<(),String> {
-    let session = Session::new()?;
-    let body = solid;
-    let solid = sweep_boundary::construct_solid(&session,sk,solid)?;
-    let swept = !gcs_core::solid::cad::recipe_static(sk,body)?.sweeps.is_empty();
-    let mut staged = Vec::new();
-    let mut directories = Vec::new();
-    let result = (|| {
-        for (kind,path) in [("step",step),("stl",stl)] {
-            let Some(path) = path else { continue; };
-            let output = Path::new(path);
-            let parent = output.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
-            let destination = parent.canonicalize().map_err(|e| e.to_string())?
-                .join(output.file_name().ok_or("CAD output needs a filename")?);
-            if staged.iter().any(|(_,p)| p == &destination) {
-                return Err("STEP and STL need distinct output paths".into());
-            }
-            static NEXT: AtomicU64 = AtomicU64::new(0);
-            let directory = loop {
-                let d = parent.join(format!(".solvent-cad-{}-{}",std::process::id(),NEXT.fetch_add(1,Ordering::Relaxed)));
-                match std::fs::create_dir(&d) {
-                    Ok(()) => break d,
-                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                    Err(e) => return Err(format!("cannot create CAD output directory: {e}")),
-                }
-            };
-            let temporary = directory.join(format!("solid.{kind}"));
-            directories.push(directory);
-            let name = CString::new(temporary.to_str().ok_or("CAD path must be UTF-8")?)
-                .map_err(|e| e.to_string())?;
-            session.result(unsafe {
-                if kind == "step" { solvent_cad_step(session.0,solid,name.as_ptr()) }
-                else { solvent_cad_stl(session.0,solid,name.as_ptr()) }
-            })?;
-            if kind == "stl" {
-                let bytes = std::fs::read(&temporary).map_err(|e| e.to_string())?;
-                if let Err(e) = gcs_core::mesh::stl_shells(&bytes) {
-                    if let Ok(kept) = std::env::var("SOLVENT_KEEP_REJECTED") { let _ = std::fs::write(kept,&bytes); }
-                    return Err(format!("native float32 STL validation failed: {e}"));
-                }
-            }
-            sweep_boundary::stage(&format!("staged the {} output",kind.to_uppercase()));
-            sweep_boundary::mark(kind);
-            staged.push((temporary,destination));
-        }
-        // A swept body is judged on the STL being written when there is one, meshed once.
-        if swept {
-            match staged.iter().find(|(t,_): &&(std::path::PathBuf,std::path::PathBuf)| t.extension().map_or(false,|e| e == "stl")) {
-                Some((temporary,_)) => field_agreement(sk,body,&std::fs::read(temporary).map_err(|e| e.to_string())?)?,
-                None => agreement(&session,sk,body,solid)?,
-            }
-        }
-        for (temporary,output) in &staged {
-            std::fs::rename(temporary,output).map_err(|e| format!("cannot replace CAD output: {e}"))?;
-        }
-        sweep_boundary::mark("written");
-        Ok(())
-    })();
-    for directory in directories { let _ = std::fs::remove_dir_all(directory); }
-    result
 }

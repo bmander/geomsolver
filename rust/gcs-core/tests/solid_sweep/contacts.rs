@@ -1,8 +1,11 @@
 use super::*;
-use gcs_core::{envelope::{self,Motion,Error},solid::{SweepContacts,RevolvedSurface}};
+use gcs_core::{envelope::{self,Motion,Error},solid::{SweepContacts,RevolvedSurface,RevolvedContact}};
 use std::f64::consts::PI;
-mod meridian;
-mod curves;
+
+/// The contacts of patch `patch` at meridian station `u` and roll `roll`.
+fn at(sweep: &SweepContacts,patch: usize,u: f64,roll: f64,tolerance: f64) -> Result<Vec<RevolvedContact>,Error> {
+    sweep.patches()[patch].contacts(u,sweep.motion().at(roll).map_err(|_| Error::NonFinite)?,tolerance)
+}
 
 fn swept(extra: &str) -> program::Elaborated {
     read(&format!("{SOURCE}\n{extra}\nsolid swept(tool,under: generating,from: -60deg,to: 60deg)\n"))
@@ -14,7 +17,7 @@ fn source_contacts_of_an_orbiting_sphere_are_the_exact_torus() {
     let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
     assert_eq!(sweep.patches().len(),1,"the axis diameter is not a boundary face");
     for u in [0.1,0.3,0.5,0.7,0.9] { for t in [-0.7,0.,0.7] {
-        let contacts = sweep.at(0,u,t,1e-10).unwrap();
+        let contacts = at(&sweep,0,u,t,1e-10).unwrap();
         assert_eq!(contacts.len(),2);
         for c in contacts {
             let p = c.contact.position;
@@ -23,9 +26,7 @@ fn source_contacts_of_an_orbiting_sphere_are_the_exact_torus() {
             assert!(c.contact.normal_velocity.abs() < 1e-12);
         }
     } }
-    assert_eq!(sweep.at(0,0.5,2.,1e-10).unwrap_err(),Error::OutsideDomain);
-    assert_eq!(sweep.at(1,0.5,0.,1e-10).unwrap_err(),Error::OutsideDomain);
-    assert_eq!(sweep.at(0,0.5,0.,0.).unwrap_err(),Error::InvalidOptions);
+    assert_eq!(at(&sweep,0,0.5,0.,0.).unwrap_err(),Error::InvalidOptions);
 }
 
 #[test]
@@ -67,7 +68,7 @@ fn source_placements_and_boolean_sharing_preserve_contact_geometry() {
         let a = patch.at(0.,0.).unwrap().position;
         let b = patch.at(1.,0.).unwrap().position;
         centers.push(std::array::from_fn::<_,3,_>(|k| (a[k]+b[k])/2.));
-        for root in sweep.at(i,0.5,0.3,1e-10).unwrap() {
+        for root in at(&sweep,i,0.5,0.3,1e-10).unwrap() {
             let p = root.contact.position;
             assert!(((p[0].hypot(p[1])-3.).abs()-1.).abs() < 1e-12);
             let angle = centers[i][1].atan2(centers[i][0])+0.3;
@@ -134,8 +135,8 @@ fn clockwise_source_revolution_keeps_the_same_contact_set() {
         e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
     let (a,b) = (read(&a),read(&b));
     for u in [0.1,0.4,0.8] {
-        let left = a.at(0,u,0.3,1e-10).unwrap();
-        let right = b.at(0,u,0.3,1e-10).unwrap();
+        let left = at(&a,0,u,0.3,1e-10).unwrap();
+        let right = at(&b,0,u,0.3,1e-10).unwrap();
         assert_eq!(left.len(),right.len());
         for p in left {
             assert!(right.iter().any(|q| {

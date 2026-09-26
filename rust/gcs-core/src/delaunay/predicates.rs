@@ -11,8 +11,15 @@ const EPS: f64 = f64::EPSILON*0.5; // 2^-53
 const ORIENT_BOUND: f64 = (7.+56.*EPS)*EPS;
 const POWER_BOUND: f64 = (32.+512.*EPS)*EPS;
 
-/// Exact calls made so far, for a caller measuring how often the filter fails.
-pub static EXACT_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+thread_local! {
+    static EXACT_CALLS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Exact evaluations made so far on this thread, for a caller measuring how often the filter
+/// fails: per thread, so tests running beside each other do not count each other's calls.
+pub fn exact_calls() -> u64 { EXACT_CALLS.with(|c| c.get()) }
+
+fn count_exact() { EXACT_CALLS.with(|c| c.set(c.get()+1)); }
 
 fn sign(v: f64) -> i8 { if v > 0. { 1 } else if v < 0. { -1 } else { 0 } }
 
@@ -32,7 +39,7 @@ pub fn orient(a: P,b: P,c: P,d: P) -> i8 {
 }
 
 pub fn orient_exact(a: P,b: P,c: P,d: P) -> i8 {
-    EXACT_CALLS.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+    count_exact();
     let row = |p: P| [0,1,2].map(|k| Expansion::diff(p[k],a[k]));
     det3(&row(b),&row(c),&row(d)).sign()
 }
@@ -81,7 +88,7 @@ pub fn power(a: Weighted,b: Weighted,c: Weighted,d: Weighted,e: Weighted) -> i8 
 }
 
 pub fn power_exact(a: Weighted,b: Weighted,c: Weighted,d: Weighted,e: Weighted) -> i8 {
-    EXACT_CALLS.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+    count_exact();
     let rows: Vec<([Expansion;3],Expansion)> = [a,b,c,d].iter().map(|q| {
         let x = [0,1,2].map(|k| Expansion::diff(q.p[k],e.p[k]));
         let lift = x[0].mul(&x[0]).add(&x[1].mul(&x[1])).add(&x[2].mul(&x[2]))

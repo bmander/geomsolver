@@ -4,11 +4,26 @@
 //! field's, found by Delaunay refinement. `FieldMesher` runs that refinement in steps, so a host
 //! may run it where it likes — a worker beside the page, handing back a `FieldSurface` at
 //! intervals — and give each surface to the sketch the page draws from (`Sketch::supply_field`),
-//! which then never meshes a field itself (`Sketch::defer_fields`). A host that does neither (the
-//! terminal, a test) has the sketch mesh the field to the end when a solid is first asked for.
+//! which then never meshes a field itself (`FieldMeshing::Deferred`). A host that does neither (the
+//! terminal, a test) has the sketch mesh the field to the end when a solid is first asked for
+//! (`FieldMeshing::Now`).
 use super::*;
-use crate::delaunay::refine::{Criteria, Progressive};
-use super::{ReadingOptions, Resolution};
+use crate::delaunay::refine::{Criteria, Domain, Progressive, Readings, Stage};
+use super::{Query, Resolution, Source, Want};
+use crate::space::box_centre_diagonal;
+
+/// Where a swept solid's surface is meshed when a sketch is asked for the solid and holds no
+/// surface supplied for it (`Sketch::field_meshing`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FieldMeshing {
+    /// Here and now, to the end: seconds of refinement inside the call that asked. The terminal's
+    /// and the tests'.
+    #[default]
+    Now,
+    /// Elsewhere: the host meshes each swept solid itself (a page's worker) and supplies the
+    /// surface, and until it has the solid is refused rather than meshed on the thread that draws.
+    Deferred,
+}
 
 /// A field-meshed solid's facet size and surface distance, as fractions of its support's
 /// diagonal: a preview's, coarse enough to mesh a small part in about a second natively.
@@ -22,6 +37,52 @@ pub struct FieldSurface {
     pub vertices: Vec<[f64; 3]>,
     pub triangles: Vec<[u32; 3]>,
     pub provisional: bool,
+}
+
+/// One surface a host that meshes swept solids elsewhere has to mesh (`Sketch::field_jobs`):
+/// the solid, its name, and `key` — a digest of everything it was built from (`solid::reads`),
+/// equal exactly when a surface meshed for one drawing is the surface of another. So a host
+/// asks for no surface twice, re-supplies a finished one to a new elaboration of the same
+/// drawing, and can check that two copies of the core are meshing the same solid.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldJob {
+    pub solid: usize,
+    pub name: String,
+    pub key: u64,
+}
+
+/// The digest `FieldJob::key` is: FNV-1a over the bits of `solid::reads`, so equal reads give
+/// equal keys on every host (a JSON number could not carry it whole; it crosses as hex).
+pub fn field_key(sk: &Sketch, si: usize) -> u64 {
+    super::reads(sk, si, 0.0).iter().fold(0xcbf2_9ce4_8422_2325u64, |h, x| {
+        x.to_bits().to_le_bytes().iter().fold(h, |h, &b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3))
+    })
+}
+
+/// A material field as the refinement reads it: signs and readings alike from the sweeps'
+/// adaptive distance fields (`resolution`) — what the refinement asks is a few hundred thousand
+/// values, most a cell from one already asked, where each exact one is a search over the roll.
+/// Read so, the readings agree with the signs (to the field's tolerance) and none continues a
+/// search from the last (`Readings::Agreeing`).
+struct FieldDomain {
+    field: MaterialField,
+    /// The sign every point is asked for, read from the sweeps' adaptive distance fields.
+    sign: Query,
+    resolution: Resolution,
+    /// The bounding ball's radius, which scales the accuracy a reading is made to.
+    radius: f64,
+}
+
+impl Domain for FieldDomain {
+    fn value(&mut self, p: [f64; 3]) -> f64 { self.field.query(p, &mut self.sign).value }
+    fn readings(&self) -> Readings { Readings::Agreeing }
+    fn reading(&mut self, p: [f64; 3], _continues: bool) -> (f64, [f64; 3]) {
+        // a crossing is placed to the bisection tolerance, so its value is needed to a tenth of
+        // that, and far from the boundary to a thousandth of itself
+        let mut q = Query { accuracy: 1e-6 * self.radius, source: Source::Cached(self.resolution), ..Query::at(p) };
+        let r = self.field.query(p, &mut q);
+        (r.value, r.gradient)
+    }
 }
 
 /// Delaunay refinement of one solid's material field, a step at a time, in two passes: a coarse
@@ -66,6 +127,22 @@ pub struct FieldProgress {
     pub failed: bool,
 }
 
+impl FieldProgress {
+    /// What the mesher is doing, as a host shows it: the phase, and the refinement's stage where
+    /// it says more than the phase does — `first pass, building`, `final pass, repairing (rebuild
+    /// 2)` — so a front end prints the core's words and compares none of them.
+    pub fn doing(&self) -> String {
+        let r = &self.refine;
+        match r.stage {
+            _ if self.phase == "tracing edges" => self.phase.to_string(),
+            Stage::Repairing if r.rebuild > 0 => format!("{}, repairing (rebuild {})", self.phase, r.rebuild),
+            Stage::Repairing => format!("{}, repairing", self.phase),
+            Stage::Building => format!("{}, building", self.phase),
+            _ => self.phase.to_string(),
+        }
+    }
+}
+
 struct Second {
     field: MaterialField,
     centre: [f64; 3],
@@ -75,15 +152,15 @@ struct Second {
     extent: f64,
 }
 
-/// A box in space.
-type Box3 = [crate::interval::Interval; 3];
+/// A box in space, as the fields bound things.
+type Bounds = [crate::interval::Interval; 3];
 
 /// The box `field`'s material is in (`MaterialField::tight_support`), where one is found.
-fn tight(field: &MaterialField) -> Option<Box3> { field.tight_support(6, 4096).ok().flatten() }
+fn tight(field: &MaterialField) -> Option<Bounds> { field.tight_support(6, 4096).ok().flatten() }
 
 /// A box's diagonal, or infinity for none.
-fn diagonal_of(b: Option<Box3>) -> f64 {
-    b.map_or(f64::INFINITY, |b| b.iter().map(|x| { let [lo, hi] = x.bounds(); (hi - lo) * (hi - lo) }).sum::<f64>().sqrt())
+fn diagonal_of(b: Option<Bounds>) -> f64 {
+    b.map_or(f64::INFINITY, |b| box_centre_diagonal(&b).1)
 }
 
 /// The first pass's facets are this much coarser than the surface's: three times, which costs a
@@ -119,14 +196,13 @@ pub fn first_pass(field: &MaterialField, criteria: &Criteria, centre: [f64; 3], 
     first_pass_within(tight(field), criteria, centre, radius)
 }
 
-fn first_pass_within(tight: Option<Box3>, criteria: &Criteria, centre: [f64; 3], radius: f64)
+fn first_pass_within(tight: Option<Bounds>, criteria: &Criteria, centre: [f64; 3], radius: f64)
     -> ([f64; 3], f64, Criteria) {
     let (mut centre, mut radius, mut facet_size) = (centre, radius, SEED_COARSENING * criteria.facet_size);
     if let Some(tight) = tight {
-        let [lo, hi] = [0, 1].map(|k| tight.map(|x| x.bounds()[k]));
-        let diagonal = (0..3).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>().sqrt();
+        let (middle, diagonal) = box_centre_diagonal(&tight);
         if diagonal > 0.0 && 0.5 * diagonal * 1.05 < radius {
-            centre = std::array::from_fn(|k| 0.5 * (lo[k] + hi[k]));
+            centre = middle;
             radius = 0.5 * diagonal * 1.05;
             facet_size = facet_size.min(diagonal / FIRST_FACETS);
         }
@@ -167,12 +243,10 @@ fn creases_within(field: &MaterialField, first: &crate::delaunay::refine::Mesh, 
 impl FieldMesher {
     pub fn new(sk: &Sketch, si: usize) -> Result<Self, String> {
         let name = sk.solid_name(si);
-        let field = MaterialField::read(sk, si, 1e-10)?;
+        let field = MaterialField::read(sk, si, cad::AXIS_TOLERANCE)?;
         let support = field.support_bounds().map_err(|e| format!("`{name}`: {e:?}"))?
             .ok_or_else(|| format!("`{name}`: the material has no finite support to mesh in"))?;
-        let [lo, hi] = [0, 1].map(|k| support.map(|x| x.bounds()[k]));
-        let centre: [f64; 3] = std::array::from_fn(|k| 0.5 * (lo[k] + hi[k]));
-        let diagonal = (0..3).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>().sqrt();
+        let (centre, diagonal) = box_centre_diagonal(&support);
         if !(diagonal > 0.0) || !diagonal.is_finite() {
             return Err(format!("`{name}`: the material's support is empty"));
         }
@@ -182,9 +256,9 @@ impl FieldMesher {
             facet_size: facet, facet_distance: diagonal / FIELD_DISTANCE, facet_angle: 25.0,
             edge_size: facet, bisection: 1e-5 * radius, max_points: 500_000, normal_angle: NORMAL_ANGLE,
         };
-        let box3 = tight(&field);
-        let extent = diagonal_of(box3);
-        let (near, within, coarse) = first_pass_within(box3, &criteria, centre, radius);
+        let bounds = tight(&field);
+        let extent = diagonal_of(bounds);
+        let (near, within, coarse) = first_pass_within(bounds, &criteria, centre, radius);
         let run = Self::pass(&field, near, within, Vec::new(), coarse);
         Ok(Self { run, phase: Phase::First(Second { field, centre, radius, criteria, extent }), first: None,
             curves: None, peak: 1.0, failed: false })
@@ -193,21 +267,9 @@ impl FieldMesher {
     fn pass(field: &MaterialField, centre: [f64; 3], radius: f64, curves: Vec<Vec<[f64; 3]>>, criteria: Criteria)
         -> Progressive<'static> {
         let resolution = resolution(&criteria);
-        let (side, reader) = (field.clone(), field.clone());
-        // Sweeps are read from their adaptive distance fields (`resolution`): what the refinement
-        // asks is a few hundred thousand values, most a cell from one already asked, where each
-        // exact one is a search over the roll.
-        Progressive::new(Box::new(move |p| side.side_cached(p, resolution)), centre, radius, curves, criteria)
-            // Every sweep is read from its distance field, as `side_cached` reads it, so the readings
-            // agree with the signs (to the field's tolerance) and none continues a contact locally.
-            .with_reading(Box::new(move |p, _| {
-                // a crossing is placed to the bisection tolerance, so its value is needed to a
-                // tenth of that, and far from the boundary to a thousandth of itself
-                let options = ReadingOptions { accuracy: 1e-6 * radius, cached: Some(resolution), ..ReadingOptions::at(p) };
-                let r = reader.reading_with(p, &options, &mut 0);
-                (r.value, r.gradient)
-            }))
-            .readings_agree()
+        let sign = Query { want: Want::Sign, source: Source::Cached(resolution), ..Query::sign() };
+        let domain = FieldDomain { field: field.clone(), sign, resolution, radius };
+        Progressive::new(Box::new(domain), centre, radius, curves, criteria)
     }
 
     /// Refine at most about `budget` facets: whether the refinement has finished.
@@ -222,10 +284,19 @@ impl FieldMesher {
             }
             Phase::First(second) => {
                 // The first pass's surface need not close: an unprotected sharp edge may leave it
-                // short of a manifold, and its edges still cross the creases.
-                if !self.run.step(budget).unwrap_or(true) {
-                    self.phase = Phase::First(second);
-                    return Ok(false);
+                // short of a manifold (a refinement that finishes with `done_error`), and its edges
+                // still cross the creases. A step that fails — the points run out, the
+                // triangulation refuses one — has no surface to go on from, and says so.
+                match self.run.step(budget) {
+                    Ok(false) => {
+                        self.phase = Phase::First(second);
+                        return Ok(false);
+                    }
+                    Ok(true) => {}
+                    Err(e) => {
+                        self.failed = true;
+                        return Err(format!("the first pass stopped: {e}"));
+                    }
                 }
                 let coarse = self.run.snapshot();
                 self.first = Some(FieldSurface { vertices: coarse.vertices.clone(), triangles: coarse.triangles.clone(),
@@ -248,7 +319,7 @@ impl FieldMesher {
     pub fn progress(&mut self) -> FieldProgress {
         let refine = self.run.progress();
         self.peak = self.peak.max(refine.worst);
-        let within = if refine.stage == "done" || refine.worst <= 1.0 || self.peak <= 1.0 { 1.0 }
+        let within = if refine.stage == Stage::Done || refine.worst <= 1.0 || self.peak <= 1.0 { 1.0 }
             else { (1.0 - refine.worst.ln() / self.peak.ln()).clamp(0.0, 1.0) };
         let (phase, within, fraction) = match self.phase {
             Phase::Tracing(..) => ("tracing edges", 0.0, 0.25),

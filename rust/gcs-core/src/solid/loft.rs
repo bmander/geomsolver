@@ -3,13 +3,9 @@
 use super::*;
 use plane::{cross, dot, norm, scaled};
 
+use crate::space::{add, sub};
+
 type V = [f64; 3];
-fn add(a: V, b: V) -> V {
-    std::array::from_fn(|k| a[k] + b[k])
-}
-fn sub(a: V, b: V) -> V {
-    std::array::from_fn(|k| a[k] - b[k])
-}
 fn mix(a: V, b: V, t: f64) -> V {
     add(scaled(a, 1.0 - t), scaled(b, t))
 }

@@ -196,10 +196,8 @@ function showRefining(list: Refining[]): void {
     const p = r.progress;
     if (r.error || p?.failed) return `${short(r.name)}: failed — ${r.error ?? p?.stage}`;
     if (r.done) return `${short(r.name)}: refined · ${r.triangles.toLocaleString()} triangles · ${clock(r.elapsed)}`;
-    const what = !p ? 'starting'
-      : p.phase === 'tracing edges' ? 'tracing edges'
-      : p.stage === 'repairing' ? `${p.phase}, repairing${p.rebuild ? ` (rebuild ${p.rebuild})` : ''}`
-      : p.stage === 'building' ? `${p.phase}, building` : p.phase;
+    // what it is doing is the core's words (`FieldProgress::doing`), shown as they are
+    const what = p?.doing ?? 'starting';
     // the bar is the pass in hand, as the core estimates it
     return `${short(r.name)}: ${what} ${bar(p?.within ?? 0)} ${r.triangles.toLocaleString()} triangles · ${clock(r.elapsed)}`;
   });

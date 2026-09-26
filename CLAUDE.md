@@ -215,32 +215,48 @@ Nested continuous sweeps are refused. Cache reads include the whole motion graph
 endpoint poses do not determine the swept material. The native CAD recipe rejects every graph
 containing a sweep; `EvaluatedSolid` takes one from its material field instead (`from_surface`:
 `solid::FieldMesher`), one mesh for every view's pixel length. The terminal and tests mesh in
-place. **The page never does**: its sketch `defer_fields`, and `app/field-preview.ts` runs
-`app/mesh-worker.ts` (its own core, the page's text and parameter values), which posts each
-swept object's surface every ~120 ms, worst facet first, to `supply_field`; a provisional
-surface draws, and exports only through the preview choice.
+place (`FieldMeshing::Now`). **The page never does**: its sketch's `field_meshing` is
+`Deferred`; what to mesh is the core's `Sketch::field_jobs` (swept objects, each keyed by a
+digest of `solid::reads`), and `app/field-preview.ts` compares keys only and runs
+`app/mesh-worker.ts` (its own core, the page's text and parameter values), which checks its
+drawing names the same jobs and posts each swept object's surface every ~120 ms, worst facet
+first, to `supply_field` (checked in the core); a provisional surface draws, and exports only
+through the preview choice.
 **Field meshing** ([docs/field-meshing.md](docs/field-meshing.md)): Delaunay refinement of the
 material field (`delaunay::refine::Progressive`, resumable, over a regular triangulation with
-exact predicates), sharp edges protected by weighted points. `FieldMesher` runs two passes: an
+exact predicates; what it meshes is a `refine::Domain`), sharp edges protected by weighted points. `FieldMesher` runs two passes: an
 unprotected first pass on `MaterialField::tight_support` (the preview), then `solid::crease`
 traces the creases the first pass's operands disagree across, and the final pass refines with
 them protected. A crease is where the deciding operand changes — a leaf, a piece of its boundary
 (`PlanarField::carrier`, lifted by revolutions and prisms, which add caps) and a sweep's contact
-time; `WHOLE` reads a leaf as the field sees it. A crease point needs the field at zero *and* both
-leaves active; a tangent takeover hands the crease on, any other ends it at an exact corner, and
-`End` says why. Rays seed from beside the centre, never on it. `MaterialField::reading` gives
-value, gradient, deciding leaf, a sweep's contact time and a crease flag; readings are branch and
-bound (`reading_capped`: exact below a cap, a proven lower bound above it), and crossings are
+time; `OperandId::whole` reads a leaf as the field sees it. A crease point needs the field at
+zero *and* both leaves active; a tangent takeover hands the crease on, any other ends it at an
+exact corner, and `End` says why. Crease reads a `crease::CreaseSource` (whole reading, one
+operand's, symmetries) and nothing else of the field, so it is tested on analytic planes too.
+Rays seed from beside the centre, never on it. `MaterialField::reading` gives value, gradient,
+the deciding `OperandId` (opaque: leaf, piece or whole, a sweep's contact time; none where a
+bound or a cached value settled it) and a crease flag. A field is read through its term compiled
+once (`material/plan.rs`, `tape.rs`'s shape): shared nodes one op, each knowing its leaf count,
+so a leaf's number is fixed by offsets and an operand is found by descent; support, lower bounds
+and the interval enclosure are `Fold`s over it, the sign and the reading bespoke walks. Every point query is `MaterialField::query(p,
+&mut Query)` — `Want::Sign | Reading`, `Source::Exact | Cached(Resolution) | Warm {hints,local}` —
+with `side` and `reading` its two shorthands; a sweep's half (`SweptField::query`) takes box, floor
+table, cached field, search in that one order. Readings are branch and bound (exact below a cap, a
+proven lower bound above it), and crossings are
 placed by safeguarded Newton on them and memoised across rebuilds. A `construction` solid is
 never an object. The spiral bevel pair is the app's example `spiral_bevel` (web-only catalog
 entry, `gears.sv`). `solventc --stl-backend refine` meshes the same way, skipping admission and
 gated by the field-agreement probe (`SOLVENT_FEATURES=field` takes the features from the field
 as the app does).
 **Meshing speed (2026-09-25):** the mesher reads sweeps from adaptive distance fields
-(`solid/field/adf.rs`, `SweptField::cached`, `MaterialField::side_cached`, `ReadingOptions::cached`):
+(`solid/field/adf.rs`, `SweptField::cached`, `Source::Cached`):
 an octree per sweep and `Resolution`, exact corners, trilinear between, split while wider than a
 facet or while its centre reads off the interpolation by more than a tenth of the facet distance.
-Readings, never claims; creases and admission still read exactly. A body's cuts are one union,
+Readings, never claims; creases and admission still read exactly. Every plain sweep reading is
+one `RollSearch` (`swept.rs`) under a `Goal` (`AtLeast`/`Floor`/`Sign`/`Minimum`); a sweep's caches
+are one `SweepCaches` every clone shares, and the field's keys and locks are `field/memo.rs`
+(immutable snapshots: nothing is invalidated). Brent, bisection and the Newton step onto two or
+three zero sets are `crate::roots`, shared with crease tracing and the refinement. A body's cuts are one union,
 subtracted once and folded in pairs (`document.rs`), and a union keeps its flattened operands with
 a lazily filled cell table of lower bounds (`Spread`, from coarse floor cubes), so a query reads
 the two or three tooth spaces near it, not all 48. `MaterialField::symmetries` reads the maps
@@ -260,20 +276,33 @@ placement once when the blank reads alike at every point its checks read. A fold
 sign of the area factor times the contact condition's rate. Admitted, the body is built in
 `gcs-cli/src/cad/native/sweep_boundary.rs`: each native cutter sectioned by meridian half-planes
 (`backend/sections.cpp`) into a profile sampled in augmented arc length, each sample's contact
-time from `SweepContacts::at_point_normal_over`, the sheet indexed by the declared motion, the
+time from `SweepContacts::at_point_normal_over` (a typed `PointContactError`), each station's
+contact curve traced and the sheet resampled by the core (`solid::contact_trace`, which the host
+feeds with section samples and nothing else), the sheet indexed by the declared motion, the
 blank split by the kernel (fuzzy 1e-5 mm), every cell judged by `MaterialEvaluator::probe`, the
 material cells fused. `UnifySameDomain` widens tolerances on vertices shared with its input, so
 unify a copy. `solid::agreement` then probes the mesh 0.1 mm off each side against the material
 field (a one-sided disagreement is withdrawn only where the centroid reads on the boundary), and
-nothing is written unless it agrees. The configured gear is a 25° hypoid designed out of undercut
+nothing is written unless it agrees: every backend's output goes through `cad::output::Staged`
+(staged beside the target, checked, renamed), and native swept construction takes the core's
+`admission::Admission`, which only `admit_body` makes. The mesh and cell contracts are the
+core's (`solid::contracts`), and every refusal, from admission to the gate, is one
+`solid::export::ExportRefusal` — its `Stage` (the keys `SOLVENT_STAGE_TRACE` records, with a
+`refused:` line for the stage refused at), the class row and a witness when known — reported at
+the solid's statement. The refine backend's features are `solid::blank_features`, read off the
+native blank's topology through `BlankTopology`. The configured gear is a 25° hypoid designed out of undercut
 (`pressure_shift`, `spiral_angle` in `configuration.sv`); tests with recorded numbers pin theirs
-through `support::bevel` / `support::hypoid6`, and `tests/native_surfaces/gear_cells.rs` holds the
+through `fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, the dev-only crate both suites'
+readers, gear rewrites and small sweep tools live in), and `tests/native_surfaces/gear_cells.rs` holds the
 recorded tooth-space volumes. `tests/generating_harness.rs` (ignored, minutes) locates each
 refusal by stage over fixtures, the gear controls and a 48-design sweep.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference
-experiment. Git history keeps them; do not revive them without a new plan.
+experiment; and (2026-09-26) the candidate construction before them — contact covers, joined
+curves and paths, meridian charts, `envelope::edge_contact`, `solid::tool_faces`, native pcurves,
+face splitting and endpoint caps, their tests and `rust/examples/swept_boundary/`. Git history
+keeps them; do not revive them without a new plan.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

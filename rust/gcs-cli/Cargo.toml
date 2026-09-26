@@ -15,6 +15,7 @@ occt = []
 
 [dev-dependencies]
 gcs-core = { path = "../gcs-core" }
+fixtures = { path = "../fixtures" }
 
 [[bin]]
 name = "solventc"
