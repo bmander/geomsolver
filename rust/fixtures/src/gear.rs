@@ -9,6 +9,18 @@ pub fn project() -> PathBuf { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..
 /// The pair's entry document, `gears.sv`.
 pub fn source() -> String { std::fs::read_to_string(project().join("gears.sv")).unwrap() }
 
+/// One of the project's modules (a dotted name in a subdirectory), or the library's.
+pub fn module(name: &str) -> Option<String> { crate::module(&project(),name) }
+
+/// A `configuration` module of its own: the tooth counts, the mean module and the offset between
+/// the shafts in millimetres, the pressure shift and the crown's spiral in degrees, the shafts
+/// square.
+pub fn configuration(teeth: [u32;2],mean_module: f64,offset: f64,shift: f64,spiral: f64) -> String {
+    format!("param pinion_teeth = {}\nparam gear_teeth = {}\nparam mean_module = {mean_module}mm\n\
+        param shaft_angle = 90deg\nparam offset = {offset}mm\nparam pressure_shift = {shift}deg\n\
+        param spiral_angle = {spiral}deg\n",teeth[0],teeth[1])
+}
+
 /// The `configuration` module with each named parameter set to a number: the offset in
 /// millimetres, every other in degrees. Its line is dropped wherever it stands and the value
 /// written at the end. Every other module unchanged.
@@ -62,8 +74,9 @@ pub fn roll(name: &str,text: String,member: &str,degrees: f64) -> String {
     format!("{}{degrees}deg{}",&text[..at],&text[end..])
 }
 
-/// Copy the project's sources into `dir`, subdirectories and all.
-pub fn copy_project(dir: &std::path::Path) {
+/// Copy the project's sources into `dir`, subdirectories and all, its configuration at a design
+/// (`design`: the offset in millimetres, the shift and the spiral in degrees).
+pub fn copy_design(dir: &std::path::Path,offset: f64,shift: f64,spiral: f64) {
     fn walk(from: &std::path::Path,to: &std::path::Path) {
         std::fs::create_dir_all(to).unwrap();
         for entry in std::fs::read_dir(from).unwrap() {
@@ -74,6 +87,9 @@ pub fn copy_project(dir: &std::path::Path) {
         }
     }
     walk(&project(),dir);
+    let path = dir.join("configuration.sv");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path,design("configuration",text,offset,shift,spiral)).unwrap();
 }
 
 /// The pair as configured, each module rewritten.

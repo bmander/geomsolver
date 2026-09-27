@@ -21,15 +21,17 @@ pub fn read(source: &str) -> program::Elaborated {
     e
 }
 
-/// A resolver reading `<name>.sv` beside `base` (a dotted name in a subdirectory, as the CLI
-/// reads `engine.parts` as `engine/parts.sv`), then the library, with a rewrite of each module's
-/// text.
+/// The module `name` as the CLI resolves it: `<name>.sv` beside `base` (a dotted name in a
+/// subdirectory, `engine.parts` as `engine/parts.sv`), then the library.
+pub fn module(base: &Path,name: &str) -> Option<String> {
+    std::fs::read_to_string(base.join(format!("{}.sv",name.replace('.',"/")))).ok()
+        .or_else(|| gcs_core::library::resolve(name))
+}
+
+/// A resolver reading each `module` beside `base`, with a rewrite of each module's text.
 pub fn beside<'a>(base: &'a Path,rewrite: &'a mut dyn FnMut(&str,String) -> String)
     -> impl FnMut(&str) -> Option<String>+'a {
-    move |name: &str| {
-        std::fs::read_to_string(base.join(format!("{}.sv",name.replace('.',"/")))).ok()
-            .or_else(|| gcs_core::library::resolve(name)).map(|text| rewrite(name,text))
-    }
+    move |name: &str| module(base,name).map(|text| rewrite(name,text))
 }
 
 /// A document whose modules are read beside `base`, each rewritten.

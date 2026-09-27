@@ -6,9 +6,7 @@ fn read(source: &str) -> program::Elaborated {
     let (mut p,errors) = syntax::parse(source);
     assert!(errors.is_empty(),"{errors:?}");
     // the spiral bevel's modules, where a document uses one
-    let mut resolver = |name: &str| std::fs::read_to_string(fixtures::gear::project()
-        .join(format!("{}.sv",name.replace('.',"/")))).ok().or_else(|| gcs_core::library::resolve(name));
-    assert!(gcs_core::modules::link(&mut p,&mut resolver).is_empty());
+    assert!(gcs_core::modules::link(&mut p,&mut fixtures::gear::module).is_empty());
     let mut e = program::elaborate(&p);
     assert!(e.ok(),"{:?}",e.diags);
     assert!(solve::solve(&mut e.sketch,Default::default()).success);

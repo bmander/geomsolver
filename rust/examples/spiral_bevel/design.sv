@@ -1,10 +1,9 @@
 // Step 1: the requirements, as numbers a designer states. Every position in the
 // layout follows from constraints over these. The mean cone distance is arithmetic
 // on the tooth counts, and only sizes the cutter, the face width and the gear space
-// cutter's reach (the heel sphere and a module) in proportion to the pair, as the
-// pair has always been sized. The normal module, the module seen square to the
-// tooth trace, is the one number with a cosine in it: the depths are stated in it,
-// and the trace checks it (pitch/trace.sv).
+// cutter's reach (the heel sphere and a module) in proportion to the pair. The
+// normal module, the module seen square to the tooth trace, is the one number with a
+// cosine in it: the depths are stated in it, and the trace checks it (pitch/trace.sv).
 use configuration
 
 param mean_cone_distance = mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2

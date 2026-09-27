@@ -30,7 +30,7 @@ component GearCone(p: plane, g: plane, design: group) {
     line to_foot(mean, foot)
     line axis(apex, foot)
     line crown_axis(apex, top)
-    line back_cone(apex, mirror)
+    line opposite(apex, mirror)
   }
   apex on p
   mean on p

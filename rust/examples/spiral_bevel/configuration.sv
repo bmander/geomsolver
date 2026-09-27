@@ -1,4 +1,5 @@
-// Reference-pair dimensions. Manufacturing choices belong outside this model.
+// The pair's configuration: the teeth, the shafts and the crown, as a designer states
+// them (design.sv adds the proportions). Manufacturing choices belong outside this model.
 param pinion_teeth = 24
 param gear_teeth = 48
 param mean_module = 2mm

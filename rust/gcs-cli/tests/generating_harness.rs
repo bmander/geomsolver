@@ -341,9 +341,7 @@ fn fixtures() {
 /// The spiral-bevel project at a design, one tooth space per member.
 fn gear(name: &str,member: &str,offset: f64,shift: f64,spiral: f64,one: bool,arguments: &[&str],expect: Expect) -> Case {
     let dir = case_dir(name);
-    fixtures::gear::copy_project(&dir);
-    let configuration = std::fs::read_to_string(dir.join("configuration.sv")).unwrap();
-    std::fs::write(dir.join("configuration.sv"),fixtures::gear::design("configuration",configuration,offset,shift,spiral)).unwrap();
+    fixtures::gear::copy_design(&dir,offset,shift,spiral);
     if one {
         let pair = std::fs::read_to_string(dir.join("members.sv")).unwrap();
         std::fs::write(dir.join("members.sv"),fixtures::gear::one_space(&pair)).unwrap();

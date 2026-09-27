@@ -7,5 +7,5 @@ pub mod tools;
 pub mod motions;
 pub mod gear;
 
-pub use read::{elaborate,read,beside,read_beside,solid};
+pub use read::{elaborate,read,module,beside,read_beside,solid};
 

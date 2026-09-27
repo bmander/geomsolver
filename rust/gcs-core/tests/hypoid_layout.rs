@@ -1,19 +1,19 @@
 //! The spiral-bevel pair laid out step by step (`spiral_bevel/layout.sv`: the pitch cones, the
 //! trace and the crown built from lines, circles and folds), held to the pair as it was computed
 //! with trigonometry before the layout replaced it: every named quantity the layout plan lists
-//! (docs/spiral-bevel-layout-plan.md, migration step 2), at the configured hypoid, the bevel
-//! pair, the six-degree hypoid and the nine sizes and ratios the paired-envelope checks read,
-//! and the material both made at the configured design and the bevel.
+//! (docs/spiral-bevel-layout-plan.md), at the configured hypoid, the bevel pair, the six-millimetre
+//! hypoid and the nine sizes and ratios the paired-envelope checks read, and the material both
+//! made at the configured design and the bevel.
 //!
 //! The recorded numbers are that pair's (`tests/fixtures/hypoid_layout.tsv` and
 //! `hypoid_layout_material.tsv`), taken when the layout and the pair were compared side by side
-//! and agreed to 1e-9: they are the proof that the layout is the pair, so they are not re-recorded
-//! from the layout itself.  The exception is every design off the bevel pair: stating the shafts
-//! (migration step 5) made the layout a true hypoid, which the old pair never was, so the
-//! configured and six-millimetre columns were re-recorded from it (`record`); the bevel pair's
-//! and the nine sizes' still hold the layout to the old pair.  Nothing is compared by name alone: points in space, lines by where
-//! they are and which way they run, sections by their meridian coordinates about the cutter's
-//! axis, motions by the poses they give.
+//! and agreed to 1e-9: they are the proof that the layout is the pair, so they are not
+//! re-recorded from the layout itself.  The exception is every design off the bevel pair: the
+//! layout states the shafts and is a true hypoid, which the old pair never was, so the configured
+//! and six-millimetre columns are the layout's own (`record`); the bevel pair's and the nine
+//! sizes' still hold it to the old pair.  Nothing is compared by name alone: points in space,
+//! lines by where they are and which way they run, sections by their meridian coordinates about
+//! the cutter's axis, motions by the poses they give.
 use gcs_core::{motion,program::Elaborated,solid::MaterialField};
 
 type V = [f64;3];
@@ -42,23 +42,19 @@ impl Design {
         let configuration = fixtures::gear::design("configuration",text,offset,shift,spiral);
         Design { label: label.into(), configuration }
     }
+    /// A design of its own (`fixtures::gear::configuration`).
+    fn at(label: String,teeth: [u32;2],module: f64,offset: f64,shift: f64,spiral: f64) -> Self {
+        let configuration = fixtures::gear::configuration(teeth,module,offset,shift,spiral);
+        Design { label, configuration }
+    }
     /// A size and ratio case of `tests/envelope/paired.rs`: the bevel pair at those teeth.
     fn sized(teeth: [u32;2],module: f64) -> Self {
-        Design { label: format!("{}x{} m{module}",teeth[0],teeth[1]), configuration: format!(
-            "param pinion_teeth = {}\nparam gear_teeth = {}\nparam mean_module = {module}mm\n\
-             param shaft_angle = 90deg\nparam offset = 0mm\nparam pressure_shift = 0deg\nparam spiral_angle = 35deg\n",
-            teeth[0],teeth[1]) }
+        Design::at(format!("{}x{} m{module}",teeth[0],teeth[1]),teeth,module,0.,0.,35.)
     }
-    /// `entry` in the project, its modules beside it (a dotted name in a subdirectory), the
-    /// configuration replaced.
-    fn read(&self,entry: &str) -> Elaborated {
-        let base = fixtures::gear::project();
-        let source = std::fs::read_to_string(base.join(entry)).unwrap();
-        fixtures::elaborate(&source,&mut |name: &str| {
-            if name == "configuration" { return Some(self.configuration.clone()); }
-            std::fs::read_to_string(base.join(format!("{}.sv",name.replace('.',"/")))).ok()
-                .or_else(|| gcs_core::library::resolve(name))
-        })
+    /// The pair (`gears.sv`), its modules beside it, the configuration replaced.
+    fn read(&self) -> Elaborated {
+        fixtures::read_beside(&fixtures::gear::source(),&fixtures::gear::project(),&mut |name,text|
+            if name == "configuration" { self.configuration.clone() } else { text })
     }
 }
 
@@ -94,7 +90,7 @@ fn point(e: &Elaborated,name: &str) -> V {
     e.sketch.world_point(index(e,&full))
 }
 fn motion(e: &Elaborated,name: &str) -> usize {
-    let name = format!("{REF}.{name}");
+    let name = format!("{REF}.generation.{name}");
     e.sketch.motions.iter().position(|m| m.name == name)
         .unwrap_or_else(|| panic!("no motion `{name}`"))
 }
@@ -109,50 +105,28 @@ impl Reading {
     }
 }
 
-/// Where the layout keeps each thing under `REF`.
-struct Names {
-    apex: &'static str, mean: &'static str, gear_axis: &'static str,
-    crown_axis: &'static str, pinion_apex: &'static str, pinion_axis: &'static str,
-    cutter_up: &'static str, cutter_down: &'static str,
-    tooth: &'static str, outer: &'static str, inner: &'static str,
-    /// Each section's corners (base inner and outer, the joins, the tip's ends, the rounding
-    /// centres): the mate walks the other way round and names its corners by side.
-    tooth_corners: [&'static str;8], mate_corners: [&'static str;8],
-    /// Each member's blank limits: the tip, root and back cones, the toe and heel spheres.
-    gear_limits: [&'static str;5], pinion_limits: [&'static str;5],
-    motions: [&'static str;8],
-}
+/// Each crown section's corners (base, joins, tip ends, rounding centres), named by side.
+const CORNERS: [&str;8] = ["bi","bo","ij","oj","it","ot","ci","co"];
 
-/// The corners as the recorded quantities name them, a crown tooth section's.
-const CORNERS: [&str;8] = ["bl","br","lj","rj","lt","rt","cl","cr"];
+/// The sections: the crown tooth's and its mate's two.
+const SECTIONS: [(&str,&str);3] = [("tooth","tooth.rack"),("mate outer","mate.outer"),
+    ("mate inner","mate.inner")];
 
-/// The motions as the recorded quantities name them.
+/// Each member's blank limits: the tip, root and back cones, the toe and heel spheres.
+const LIMITS: [&str;5] = ["tip","root","back","toe","heel"];
+
+/// The motions, under `generation`.
 const MOTIONS: [&str;8] = ["crown_roll","pinion_roll","gear_roll","pinion_generation",
     "gear_generation","pinion_index","gear_index","crown_neighbor"];
 
-const LAYOUT: Names = Names {
-    apex: "gear.O", mean: "gear.M", gear_axis: "gear.axis", crown_axis: "gear.crown_axis",
-    pinion_apex: "pinion.A", pinion_axis: "pinion.axis",
-    cutter_up: "tooth.axis", cutter_down: "mate.axis",
-    tooth: "tooth.rack", outer: "mate.outer", inner: "mate.inner",
-    tooth_corners: CORNERS, mate_corners: ["bi","bo","ij","oj","it","ot","ci","co"],
-    gear_limits: ["gear_blank.tip","gear_blank.root","gear_blank.back","gear_blank.toe",
-        "gear_blank.heel"],
-    pinion_limits: ["pinion_blank.tip","pinion_blank.root","pinion_blank.back",
-        "pinion_blank.toe","pinion_blank.heel"],
-    motions: ["generation.crown_roll","generation.pinion_roll","generation.gear_roll",
-        "generation.pinion_generation","generation.gear_generation","generation.pinion_index",
-        "generation.gear_index","generation.crown_neighbor"],
-};
-
 /// Every quantity of one pair; `probe` sizes the points the motions are asked to carry.
-fn read_pair(e: &Elaborated,n: &Names,probe: f64) -> Reading {
-    let o = point(e,n.apex);
-    let (g0,g1) = line(e,n.gear_axis);
-    let (c0,c1) = line(e,n.crown_axis);
-    let a = point(e,n.pinion_apex);
-    let (p0,p1) = line(e,n.pinion_axis);
-    let m = point(e,n.mean);
+fn read_pair(e: &Elaborated,probe: f64) -> Reading {
+    let o = point(e,"gear.O");
+    let (g0,g1) = line(e,"gear.axis");
+    let (c0,c1) = line(e,"gear.crown_axis");
+    let a = point(e,"pinion.A");
+    let (p0,p1) = line(e,"pinion.axis");
+    let m = point(e,"gear.M");
     let r = dist(m,o);
     let mut out = Reading { values: Vec::new() };
     out.push("R",r);
@@ -172,8 +146,8 @@ fn read_pair(e: &Elaborated,n: &Names,probe: f64) -> Reading {
     let skew = unit(cross(sub(g1,g0),sub(p1,p0)));
     out.push("offset",dot(sub(p0,g0),skew).abs());
     // The cutter: its centre and axes, and the trace through M about it.
-    let (u0,u1) = line(e,n.cutter_up);
-    let (d0,d1) = line(e,n.cutter_down);
+    let (u0,u1) = line(e,"tooth.axis");
+    let (d0,d1) = line(e,"mate.axis");
     out.point("C",u0);
     out.point("cutter axis",unit(sub(u1,u0)));
     out.point("mate axis",unit(sub(d1,d0)));
@@ -184,14 +158,13 @@ fn read_pair(e: &Elaborated,n: &Names,probe: f64) -> Reading {
     // Sections, about the cutter's axis: distance from it, and height.
     let up = unit(sub(u1,u0));
     let meridian = |p: V| (off_line(p,u0,up),dot(sub(p,u0),up));
-    let lp = point(e,&format!("{}.pitch.p1",n.tooth));
-    let rp = point(e,&format!("{}.pitch.p2",n.tooth));
+    let lp = point(e,"tooth.rack.pitch.p1");
+    let rp = point(e,"tooth.rack.pitch.p2");
     out.push("section width",dist(lp,rp));
     out.push("section radius",(meridian(lp).0+meridian(rp).0)/2.);
-    for (label,section,names) in [("tooth",n.tooth,&n.tooth_corners),
-        ("mate outer",n.outer,&n.mate_corners),("mate inner",n.inner,&n.mate_corners)] {
-        for (k,c) in CORNERS.iter().zip(names) {
-            let (rho,h) = meridian(point(e,&format!("{section}.{c}")));
+    for (label,section) in SECTIONS {
+        for k in CORNERS {
+            let (rho,h) = meridian(point(e,&format!("{section}.{k}")));
             out.push(&format!("{label}.{k} radial"),rho);
             out.push(&format!("{label}.{k} height"),h);
         }
@@ -206,21 +179,23 @@ fn read_pair(e: &Elaborated,n: &Names,probe: f64) -> Reading {
         }
     }
     // The blank limits: each cone's quadrilateral and each sphere's poles, in space.
-    for (member,limits) in [("gear",&n.gear_limits),("pinion",&n.pinion_limits)] {
-        for (cone,name) in ["tip","root","back"].iter().zip(&limits[..3]) {
+    for member in ["gear","pinion"] {
+        for cone in &LIMITS[..3] {
             for c in ["a","b","p","q"] {
-                out.point(&format!("{member} {cone} cone {c}"),point(e,&format!("{name}.{c}")));
+                let p = point(e,&format!("{member}_blank.{cone}.{c}"));
+                out.point(&format!("{member} {cone} cone {c}"),p);
             }
         }
-        for (sphere,name) in ["toe","heel"].iter().zip(&limits[3..]) {
+        for sphere in &LIMITS[3..] {
             for c in ["top","bottom"] {
-                out.point(&format!("{member} {sphere} {c}"),point(e,&format!("{name}.{c}")));
+                let p = point(e,&format!("{member}_blank.{sphere}.{c}"));
+                out.point(&format!("{member} {sphere} {c}"),p);
             }
         }
     }
     // The motions: their numbers, and where they carry three points at two angles.
-    for (label,name) in MOTIONS.iter().zip(n.motions) {
-        let i = motion(e,name);
+    for label in MOTIONS {
+        let i = motion(e,label);
         let (ratio,phase,advance) = e.sketch.motions[i].rotation(&e.sketch).unwrap_or_default();
         out.push(&format!("{label} ratio"),ratio);
         out.push(&format!("{label} phase"),phase);
@@ -255,11 +230,11 @@ fn the_layout_reproduces_the_pairs_named_quantities() {
     assert_eq!(labels,all.iter().map(|d| d.label.clone()).collect::<Vec<_>>());
     let mut worst: std::collections::BTreeMap<String,(f64,String)> = Default::default();
     for (k,design) in all.iter().enumerate() {
-        let e = design.read("gears.sv");
+        let e = design.read();
         // the motions carry points at the pair's own scale, the recorded R
         let scale = rows[0].1[k];
         assert_eq!(rows[0].0,"R");
-        let reading = read_pair(&e,&LAYOUT,scale);
+        let reading = read_pair(&e,scale);
         assert_eq!(reading.values.len(),rows.len());
         for ((name,v),(recorded,values)) in reading.values.iter().zip(&rows) {
             assert_eq!(name,recorded);
@@ -320,7 +295,7 @@ fn the_layout_makes_the_pairs_material() {
         recorded.insert(key,fields.map(|v| v.parse::<f64>().unwrap()).collect::<Vec<_>>());
     }
     for (k,design) in designs().into_iter().enumerate().take(2) {
-        let e = design.read("gears.sv");
+        let e = design.read();
         let r = rows[0].1[k];
         let read = |name: &str| {
             MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10*r)
@@ -332,7 +307,8 @@ fn the_layout_makes_the_pairs_material() {
         for name in SOLIDS {
             let (field,want) = (read(&format!("{REF}.{name}")),values(name));
             assert_eq!(want.len(),points.len());
-            let worst = points.iter().zip(want).map(|(&p,w)| (field.side(p)-w).abs()).fold(0.,f64::max);
+            let worst = points.iter().zip(want).map(|(&p,w)| (field.side(p)-w).abs())
+                .fold(0.,f64::max);
             println!("{:10} {name:32} {:9.2e}",design.label,worst/r);
             assert!(worst <= 1e-9*r,"{}: {name}: the field is {worst} off the pair's",design.label);
         }
@@ -350,37 +326,42 @@ fn the_layout_makes_the_pairs_material() {
                 if a < 0. { inside += 1; }
                 if a.abs().max(b.abs()) < 0.01*r { near = near.max(d); } else {
                     let accuracy = 2e-10*(1.+norm(p))+1e-3*a.abs().max(b.abs());
-                    assert!(d <= accuracy,"{}: {member} at {p:?}: {a} recorded, {b} read",design.label);
+                    assert!(d <= accuracy,"{}: {member} at {p:?}: {a} recorded, {b} read",
+                        design.label);
                     far = far.max(d/a.abs());
                 }
             }
             println!("{:10} {member:32} {:9.2e}  (elsewhere {far:.1e} of the reading; {inside} of {} \
                 inside)",design.label,near/r,points.len());
-            assert!(inside > 0 && inside < points.len(),"{}: {member}: the grid misses it",design.label);
+            assert!(inside > 0 && inside < points.len(),"{}: {member}: the grid misses it",
+                design.label);
             assert!(near <= 1e-9*r,"{}: {member}: {near} apart near the surface",design.label);
         }
     }
 }
 
-/// Re-recording a design's columns: `SOLVENT_RECORD=configured,hypoid6` prints each design's
-/// quantities as a column and its material as rows, in the fixtures' own format. Only a design
-/// at a nonzero offset is re-recorded from the layout (the true hypoid, migration step 5);
-/// the bevel pair's columns are the old pair's and stay as they are.
+/// A tool, not a check: re-records designs' columns from the layout.
+/// `SOLVENT_RECORD=configured,hypoid6 cargo test -p gcs-core --test core hypoid_layout::record --
+/// --ignored --nocapture` prints each named design's quantities as a column and its material as
+/// rows, in the fixtures' own format, to be pasted over the old. Only a design off the bevel pair
+/// is recorded from the layout; the bevel pair's and the sizes' columns are the old pair's and
+/// stay as they are.
 #[test]
-#[ignore]
+#[ignore = "a tool: SOLVENT_RECORD names the designs to re-record"]
 fn record() {
     let wanted = std::env::var("SOLVENT_RECORD").expect("SOLVENT_RECORD");
     let (_,rows) = recorded();
     for (k,design) in designs().into_iter().enumerate() {
         if !wanted.split(',').any(|w| w == design.label) { continue; }
-        let e = design.read("gears.sv");
-        let reading = read_pair(&e,&LAYOUT,rows[0].1[k]);
+        let e = design.read();
+        let reading = read_pair(&e,rows[0].1[k]);
         println!("column\t{}",design.label);
         for (name,v) in &reading.values { println!("{name}\t{v:.12e}"); }
         if k >= 2 { continue; }
         let r = reading.values[0].1;
         let points = material_points(r);
-        let read = |name: &str| MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10*r).unwrap();
+        let read = |name: &str|
+            MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10*r).unwrap();
         let row = |name: &str,values: Vec<f64>| println!("material\t{}\t{name}\t{}",design.label,
             values.iter().map(|v| format!("{v:.12e}")).collect::<Vec<_>>().join("\t"));
         for name in SOLIDS {
@@ -394,16 +375,7 @@ fn record() {
     }
 }
 
-/// A design at a size, a ratio, an offset between the shafts in millimetres, a pressure shift
-/// and a spiral in degrees.
-fn offset_design(teeth: [u32;2],module: f64,offset: f64,shift: f64,spiral: f64) -> Design {
-    Design { label: format!("{}x{} m{module} E{offset}",teeth[0],teeth[1]), configuration: format!(
-        "param pinion_teeth = {}\nparam gear_teeth = {}\nparam mean_module = {module}mm\n\
-         param shaft_angle = 90deg\nparam offset = {offset}mm\nparam pressure_shift = {shift}deg\n\
-         param spiral_angle = {spiral}deg\n",teeth[0],teeth[1]) }
-}
-
-/// The true hypoid (docs/spiral-bevel-layout-plan.md, migration step 5), read off the solved
+/// The true hypoid (docs/spiral-bevel-layout-plan.md, the true hypoid), read off the solved
 /// layout at designs across size, ratio and offset: the shafts square and the offset apart, the
 /// two pitch cones tangent to one pitch plane along their generators through M, the pinion's
 /// pitch radius the equal normal pitch's, and each member rolling on the common crown at the
@@ -413,18 +385,19 @@ fn offset_design(teeth: [u32;2],module: f64,offset: f64,shift: f64,spiral: f64) 
 /// short leg is N_p m / 2, and this holds it to the tooth counts.
 #[test]
 fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ratio() {
-    let designs: [(Design,[f64;2],f64,f64,f64);5] = [(offset_design([24,48],2.,0.,0.,35.),[24.,48.],2.,0.,35.),
-        (offset_design([24,48],2.,5.7,0.,35.),[24.,48.],2.,5.7,35.),
-        (offset_design([24,48],2.,25.,12.5,25.),[24.,48.],2.,25.,25.),
-        (offset_design([28,49],0.2,1.,0.,35.),[28.,49.],0.2,1.,35.),
-        (offset_design([32,32],25.4,100.,5.,30.),[32.,32.],25.4,100.,30.)];
-    for (design,[np,ng],module,offset,spiral) in designs {
-        let e = design.read("gears.sv");
+    // teeth, module, offset (mm), shift and spiral (degrees)
+    let designs = [([24,48],2.,0.,0.,35.),([24,48],2.,5.7,0.,35.),([24,48],2.,25.,12.5,25.),
+        ([28,49],0.2,1.,0.,35.),([32,32],25.4,100.,5.,30.)];
+    for (teeth,module,offset,shift,spiral) in designs {
+        let design = Design::at(format!("{}x{} m{module} E{offset}",teeth[0],teeth[1]),
+            teeth,module,offset,shift,spiral);
+        let e = design.read();
         let label = &design.label;
-        let (o,m,a) = (point(&e,LAYOUT.apex),point(&e,LAYOUT.mean),point(&e,LAYOUT.pinion_apex));
-        let (g0,g1) = line(&e,LAYOUT.gear_axis);
-        let (p0,p1) = line(&e,LAYOUT.pinion_axis);
-        let (c0,c1) = line(&e,LAYOUT.crown_axis);
+        let [np,ng] = teeth.map(f64::from);
+        let (o,m,a) = (point(&e,"gear.O"),point(&e,"gear.M"),point(&e,"pinion.A"));
+        let (g0,g1) = line(&e,"gear.axis");
+        let (p0,p1) = line(&e,"pinion.axis");
+        let (c0,c1) = line(&e,"gear.crown_axis");
         let (g,p,n) = (unit(sub(g1,g0)),unit(sub(p1,p0)),unit(sub(c1,c0)));
         let r = dist(m,o);
         let ct = (np*np+ng*ng).sqrt();
@@ -442,28 +415,32 @@ fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ra
         }
         for (what,axis,apex) in [("gear",g,o),("pinion",p,a)] {
             let generator = unit(sub(m,apex));
-            assert!(dot(n,cross(axis,generator)).abs() < 1e-10,"{label}: the {what}'s cone leaves P");
+            assert!(dot(n,cross(axis,generator)).abs() < 1e-10,
+                "{label}: the {what}'s cone leaves P");
             let (pitch,incline) = (angle(axis,generator),90.-angle(axis,n).min(180.-angle(axis,n)));
-            assert!((pitch-incline).abs() < 1e-8,"{label}: the {what}'s pitch angle {pitch} against {incline}");
+            assert!((pitch-incline).abs() < 1e-8,
+                "{label}: the {what}'s pitch angle {pitch} against {incline}");
         }
         // the equal normal pitch: each member's pitch radius at M times the cosine of its spiral
         // is its teeth times half the normal module
-        let c = point(&e,&format!("{}.p1",LAYOUT.cutter_up));
+        let c = point(&e,"tooth.axis.p1");
         let heading = unit(cross(n,sub(m,c)));
         let normal_module = module*spiral.to_radians().cos();
         for (what,axis,axis_point,apex,teeth) in [("gear",g,g0,o,ng),("pinion",p,p0,a,np)] {
             let radius = off_line(m,axis_point,axis);
             let psi = slant(heading,sub(m,apex)).to_radians();
             let pitch = radius*psi.cos();
-            assert!((pitch-teeth*normal_module/2.).abs() < 1e-9*r,"{label}: the {what}'s normal pitch radius {pitch}");
+            assert!((pitch-teeth*normal_module/2.).abs() < 1e-9*r,
+                "{label}: the {what}'s normal pitch radius {pitch}");
         }
         // the rolls: each member's ratio is the crown's tooth count over its own, and the crown's
         // neighbour is one crown pitch, 2 pi / N_c
         let rotation = |name: &str| e.sketch.motions[motion(&e,name)].rotation(&e.sketch).unwrap();
-        let pinion = rotation("generation.pinion_roll").0;
-        let gear = rotation("generation.gear_roll").0;
-        let pitch = rotation("generation.crown_neighbor").1;
-        println!("{label:24} pinion {pinion:.15} against {:.15}, gear {gear:.15} against {:.15}",ct/np,-ct/ng);
+        let pinion = rotation("pinion_roll").0;
+        let gear = rotation("gear_roll").0;
+        let pitch = rotation("crown_neighbor").1;
+        println!("{label:24} pinion {pinion:.15} against {:.15}, gear {gear:.15} against {:.15}",
+            ct/np,-ct/ng);
         assert!((pinion-ct/np).abs() < 1e-12*ct,"{label}: the pinion rolls at {pinion}");
         assert!((gear+ct/ng).abs() < 1e-12*ct,"{label}: the gear rolls at {gear}");
         assert!((pitch+std::f64::consts::TAU/ct).abs() < 1e-12,"{label}: a crown pitch is {pitch}");

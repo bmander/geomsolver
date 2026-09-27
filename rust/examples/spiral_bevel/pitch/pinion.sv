@@ -7,20 +7,20 @@
 // What sizes the cone is the equal normal pitch. V is where the line MA crosses the
 // square from O to the trace's heading, so O and V fall on one point of the heading:
 // R cos(spiral) is |MV| cos(spiral + offset angle), with no cosine written. The
-// virtual axis leaves V's image at the bevel pinion's pitch angle, which the caller
-// ties to the gear's triangle (layout.sv), and the pitch radius at M is one circle
-// about M that both axes touch: the pinion's radius is the one a bevel pinion with
-// its apex at V would have. At no offset A and V are O and the two axes one.
+// virtual axis leaves V's image at the bevel pinion's pitch angle, the angle at M in
+// the gear's triangle, and the pitch radius at M is one circle about M that both
+// axes touch: the pinion's radius is the one a bevel pinion with its apex at V would
+// have. At no offset A and V are O and the two axes one.
 use std
 use design
 use views
 use pitch.gear
 use pitch.trace
 
-component PinionCone(p: plane, q: plane, generator: line, foot: line, gear_axis: line,
-                     design: group) {
-  // Seeds only: the offset angle as if the offset were R sin of it, and the bevel
-  // pinion's pitch angle.
+// `gear` is the GearCone, `foot` the trace's square from O to its heading.
+component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group) {
+  // Seeds only: the offset angle as if the offset were R sin of it, |MV| from it, and
+  // the virtual bevel pinion's cone.
   param ct = sqrt(design.pinion_teeth^2 + design.gear_teeth^2)
   param r = design.module * ct / 2
   param e = asin(design.offset / r)
@@ -29,7 +29,7 @@ component PinionCone(p: plane, q: plane, generator: line, foot: line, gear_axis:
   in p {
     point A hint(x: r - rp * cos(e), y: rp * sin(e))
     point V hint(x: r - rp * cos(e), y: rp * sin(e))
-    line hinge(generator.p2, A)
+    line hinge(gear.M, A)
   }
   V on hinge
   V on foot
@@ -50,15 +50,19 @@ component PinionCone(p: plane, q: plane, generator: line, foot: line, gear_axis:
   mean on p
   virtual on p
   A project apex
-  generator.p2 project mean
+  gear.M project mean
   V project virtual
   axis equal pitch_line
   virtual_axis equal virtual_line
   axis tangent(side: right) pitch_radius
   virtual_axis tangent(side: right) pitch_radius
   // The shafts.
-  gear_axis angle(design.shaft) axis
-  gear_axis distance(design.offset) axis
+  gear.axis angle(design.shaft) axis
+  gear.axis distance(design.offset) axis
+  // The bevel pinion's pitch angle: from the generator to the axis, the angle at M in
+  // the gear's triangle is the angle at V.
+  gear.to_apex angle(pinion_angle, sense: cw) gear.to_foot
+  virtual_line angle(pinion_angle) virtual_axis
 }
 
 preview {
@@ -67,8 +71,6 @@ preview {
   gear: GearCone(pitch.view, g.view, hypoid_design)
   g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
   trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
-  pinion: PinionCone(pitch.view, q.view, gear.generator, trace.foot, gear.axis, hypoid_design)
+  pinion: PinionCone(pitch.view, q.view, gear, trace.foot, hypoid_design)
   q: FoldedView(pitch.view, pinion.hinge, span: hypoid_design.cutter_radius)
-  gear.to_foot angle(pinion_angle) gear.to_apex
-  pinion.virtual_line angle(pinion_angle) pinion.virtual_axis
 }

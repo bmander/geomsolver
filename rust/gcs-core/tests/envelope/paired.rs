@@ -1,6 +1,6 @@
 //! Matched references read from Solvent, with independent contact and indexing checks.
 use super::*;
-use gcs_core::{diagnose,library,modules,program,solid::RevolvedSurface,solve,syntax};
+use gcs_core::{diagnose,modules,program,solid::RevolvedSurface,solve,syntax};
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 
 mod boundary;
@@ -39,11 +39,8 @@ fn read_model(src: &str,teeth: [u32;2],module: f64) -> program::Elaborated {
     let (mut p,errors) = syntax::parse(&src);
     let link = modules::link(&mut p,&mut |name| match name {
         // The reference checks assume the common apex, so the offset is zero here.
-        "configuration" => Some(format!("param pinion_teeth = {}\nparam gear_teeth = {}\n\
-            param mean_module = {module}mm\nparam shaft_angle = 90deg\nparam offset = 0mm\nparam pressure_shift = 0deg\nparam spiral_angle = 35deg\n",teeth[0],teeth[1])),
-        // every other module is the project's own, a dotted name in a subdirectory
-        _ => std::fs::read_to_string(fixtures::gear::project().join(format!("{}.sv",name.replace('.',"/"))))
-            .ok().or_else(|| library::resolve(name)),
+        "configuration" => Some(fixtures::gear::configuration(teeth,module,0.,0.,35.)),
+        _ => fixtures::gear::module(name),
     });
     assert!(errors.is_empty() && link.is_empty(),"{errors:?} {link:?}");
     let mut model = program::elaborate(&p);
@@ -180,7 +177,7 @@ impl Pair {
     /// The flank's `u` where it meets its round, which is also the round's where it meets the
     /// tip: the crown tooth's section is walked counterclockwise about the cutter's axis, so its
     /// outer flank ends at its round and its inner begins there, and its mate's the other way
-    /// round (`crown/mate.sv`).
+    /// round (`crown/mate_section.sv`).
     fn flank_join(member: usize,outer: bool) -> f64 { if outer == (member == 0) { 1. } else { 0. } }
 
     /// Which way a crown surface's chart normal points against its crown's material, +1 out of

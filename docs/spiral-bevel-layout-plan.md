@@ -10,33 +10,24 @@ arithmetic. Three principles govern it:
 - **Declarative.** A file says what is true of the layout. The requirements are stated once, as
   numbers a designer chooses, and everything else follows from constraints.
 - **Small modules, with submodules.** Each component has one idea and stays under about forty
-  lines. Every file carries a `preview { … }`, so opening it in the app draws that step alone,
-  as the V-twin parts do.
+  lines. Every step's module carries a `preview { … }`, so opening it in the app draws that
+  step alone, as the V-twin parts do.
 
-It depends on one language project, [spatial constraints with solved attitudes](#language-changes),
-which comes first; see [Order of work](#order-of-work).
+**Status.** Done: the example is this layout (`rust/examples/spiral_bevel/`, whose README walks
+the files), a true hypoid with its shafts stated ([the true hypoid](#the-true-hypoid)), and all
+six language changes it asked for exist. Open: step 6's per-side checks module (`checks/`); the
+analytic faces are still written out one by one in `verification.sv`.
 
-## Where the example stands
+## Where the example stood
 
-About 700 lines in ten files. The steps are all there, but tangled:
-
-- `paired_references.sv` (193 lines) is one component, `MatchedReferences`, holding the
-  configuration arithmetic, every plane, the pitch-cone placement, the tooth traces, the crown
-  sections and the motions.
-- About thirty values are computed with `sin`, `cos`, `tan`, `atan2` and `hypot`: `center_x`,
-  `pitch_x`, the turned plane's `u: (cos(offset), -sin(offset), 0)`, and the stand-off
-  `mean_distance * sin(offset_angle)`. `ConeBoundary` places eight point ordinates by
-  trigonometry.
-- The gear's generating crown is a second, separately parameterised copy of the rack section.
-  That duplication let the pressure-shift interference in (fixed in `46da5c3`; guarded by
-  `gcs-core/tests/gear_crowns.rs`).
-- `verification.sv` wrote out eleven surfaces, eleven envelopes and eleven regions, one
-  statement per profile edge; it now makes them one `repeat e in … { … }` block per rack section
-  (language change 3). Its seams, vertices and edges are still written one by one.
-- The pinion is placed by turning its axis by `offset_angle` in the pitch plane while keeping
-  the bevel pair's pitch angles, so the shaft angle comes out at 87.85°, not 90°. A true hypoid
-  fixes the shaft angle and the offset distance and solves the pitch cones. *(Done: migration
-  step 5.)*
+About 700 lines in ten files, the steps all there but tangled: one component,
+`MatchedReferences` (193 lines), held the configuration arithmetic, every plane, the pitch-cone
+placement, the tooth traces, the crown sections and the motions; about thirty values were
+computed with `sin`, `cos`, `tan`, `atan2` and `hypot`; the gear's generating crown was a
+second, separately parameterised copy of the rack section, which let the pressure-shift
+interference in (fixed in `46da5c3`; guarded by `gcs-core/tests/gear_crowns.rs`); and the
+pinion was placed by turning its axis by an offset angle in the pitch plane, so the shaft angle
+came out at 87.85°, not 90°.
 
 ## The idea: four views through the mean point
 
@@ -48,7 +39,7 @@ design angle, so no plane needs trigonometry:
 |---|---|---|
 | **P**, the pitch plane | — | the gear apex O, the pinion apex Aₚ, the tooth trace circle and the cutter centre C |
 | **G**, gear axial | along M→O | the gear axis, gear pitch cone, gear blank cones and the crown axis |
-| **Q**, pinion axial | at the offset angle ε | the pinion axis, pinion pitch cone and pinion blank cones |
+| **Q**, pinion axial | along M→A, turned from MO by the offset angle ε | the pinion axis, pinion pitch cone and pinion blank cones |
 | **N**, normal section | along the trace normal M→C | the rack section with its pressure angles, and the cutter axis |
 
 Every revolution then has its profile and its axis in one view: the cutter in N, the gear blank
@@ -56,81 +47,86 @@ in G, the pinion blank in Q. N is the textbook normal section, so the normal pre
 and the normal tooth thickness live where a gear designer expects them. `project` ties each
 shared point between views, since each shares a fold line with P.
 
-A fold turns about a line through its parent's origin (`Basis::fold` keeps `o`); `through: M`
-(language change 2, done) stands a folded view through M instead, so the world origin need not
-move.
+Each view is folded square to P `along` a line drawn in P through M (`views.sv`,
+`FoldedView`), which the solve places, so it stands through M with no angle of its own and the
+world origin stays at the gear apex. (`through: M`, language change 2, would stand a view
+folded by a stated angle through M; the layout does not need it.)
 
 ## The steps as geometry
 
-1. **Requirements** (`design.sv`). One `group`: the tooth counts, the module, the offset, the
-   spiral angle ψ, the pressure angle, the pressure shift, the cutter radius, the face width,
-   and the addendum and dedendum factors. Only numbers a designer states.
+1. **Requirements** (`design.sv` over `configuration.sv`). One `group`: the tooth counts, the
+   module and the normal module, the shaft angle and offset, the spiral angle ψ, the pressure
+   angle and shift, the cutter radius, the face width, the depth factors (addendum, dedendum,
+   base, tip rounding, back), the generating rolls and the space cutter's reach. Only numbers a
+   designer states.
 2. **Pitch cones** (`pitch/`).
    - *Gear cone, in G.* A right triangle O–M–F, F the foot of M on the gear axis:
      `M distance(Ng·m/2) F`, `O distance(Np·m/2) F`, a right angle at F. The pitch angle and the
      mean cone distance R follow; nothing states them.
    - *Tooth trace, in P.* C at the stated cutter radius from M, with MC at 90° − ψ to MO. The
      trace is the circle about C through M.
-   - *Pinion apex, in P.* Aₚ is where the line through M at the offset angle ε from MO meets
-     the line through O parallel to MC. O and Aₚ then project to one point on the trace tangent,
-     so `R·cos ψ = Rₚ·cos(ψ + ε)`, the equal-normal-pitch rule, holds with no cosine written. It
-     is what `pinion_distance` computes today.
-   - *Pinion axis, in Q.* Through Aₚ at the pitch angle, tied to the gear side by one shared
-     angle rather than a repeated number.
-   - With spatial constraints (below), the true hypoid replaces the last two items: the shaft
-     angle and the offset distance E are stated, and the pinion cone is solved to touch the
-     gear cone at M with a common pitch plane. *Done* (migration step 5): Aₚ is solved, and the
-     point the old construction made the apex is V, the apex of a *virtual* bevel pinion that
-     sizes the real one.
-3. **Blanks** (`blank/`). A cone boundary is a line parallel to the pitch generator at the
-   addendum, dedendum or back offset, its ends perpendicular to the generator, its end points
-   `on` the axis. Toe and heel are arcs about the apex at R ± face width/2, as the spheres are
-   now. `MemberBlank` is the same `bound`/`cut` term as today.
+   - *Pinion cone, in P and Q.* The shaft angle and the offset distance E are stated, and the
+     pinion's cone is solved to touch the gear's pitch plane along its generator through M
+     ([the true hypoid](#the-true-hypoid)). What sizes it is the equal normal pitch,
+     `R·cos ψ = |MV|·cos(ψ + ε)`, held with no cosine written: V, where MA meets the square
+     from O to the trace's heading, is the apex of a *virtual* bevel pinion whose pitch radius
+     at M the real one shares.
+3. **Blanks** (`blank/`). A cone boundary's meridian stands off the pitch generator by the
+   addendum, dedendum or back depth, along two ribs square to it at half and one and a half
+   cone distances, toward the axis or away; its caps are square to the axis and end on it. Toe
+   and heel are arcs about the apex at R ± face width/2. `MemberBlank` is the heel within the
+   tip cone, less the toe and the back.
 4. **The crown** (`crown/`).
    - *Tooth thickness, in P.* Two points on the mean pitch circle a quarter crown pitch either
-     side of M (`angle(90deg / crown_teeth)`), the inner and outer trace circles concentric
-     about C through them. The tooth width is their radial gap, which the existing `distance`
-     between concentric circles states.
+     side of M (arcs about O of `length(pi * module / 4)`), the inner and outer trace circles
+     concentric about C through them. The tooth width is their radial gap.
    - *Rack section, in N.* Its pitch points are the images of where those circles cross MC. The
      flanks are `angle` constraints at φ ± shift, then the tip roundings.
-   - *The gear's crown lies on the tooth's own flank lines* (`parallel` and a point `on`), with
-     its own tips and roundings. The two crowns are complementary by construction, the shift is
-     stated once, and the interference bug of `46da5c3` cannot be written.
+   - *The gear's crown lies on the tooth's own flank lines* (`angle(180deg)` to each and a
+     pitch point `on` it), with its own tips and roundings. The two crowns are complementary by
+     construction, the shift is stated once, and the interference bug of `46da5c3` cannot be
+     written.
 5. **Generation** (`generation.sv`). The crown roll, the two member rolls, the relative
-   generating motions and the indexing, as now. The ratios are `crown_teeth / Np` and
-   `crown_teeth / Ng`, with `crown_teeth = sqrt(Np² + Ng²)`: arithmetic, not trigonometry
-   (language change 5 removes even that). Measured, the gear's is `R / r_g` off its triangle and
-   the pinion's `R / (Np·m/2)`, the same triangle's hypotenuse over its short leg; at a nonzero
-   offset the pinion's own cone would roll at `1 / sin γ`, which is not that ratio. `members.sv` keeps `GeneratedMember` as it is.
-6. **Checks** (`checks/`). Claims readable in the model: the shaft angle, the offset, and the
-   pinion's spiral angle, each measured and reported. The analytic faces, written per member
-   side (language change 3).
+   generating motions and the indexing. Each ratio is the crown's tooth count over the
+   member's, measured after the solve (language change 5): the gear's is `R / r_g` off its
+   triangle and the pinion's `R / (Np·m/2)`, the same triangle's hypotenuse over its short leg;
+   at a nonzero offset the pinion's own cone would roll at `1 / sin γ`, which is not that ratio.
+   `members.sv` holds `GeneratedMember` and `HypoidPair`.
+6. **Checks** (`checks/`, open). Claims readable in the model: the shaft angle, the offset,
+   and the pinion's spiral angle, each measured and reported. The analytic faces, written per
+   member side (language change 3); today they are `verification.sv`'s `ReferenceFaces`, one
+   declaration per seam, corner and edge, read through `pair.sv`.
 7. **Manufacture** — machine settings — stays out of scope.
 
 ## Files
 
 ```
-spiral_bevel/          (the app key stays; the file pane lists the steps)
-  README.md            steps 1–6, one paragraph and one file each
-  design.sv            step 1: the requirements group
-  views.sv             the four views through M
+spiral_bevel/          (the app key; the file pane lists the steps)
+  README.md            the steps, one paragraph and one file each
+  configuration.sv     what a designer states: teeth, module, shafts, shift, spiral
+  design.sv            step 1: the requirements group over the configuration
+  views.sv             PitchView and FoldedView: the views through M
   pitch/gear.sv        GearCone: the O–M–F triangle, gear axis, crown axis
-  pitch/trace.sv       ToothTrace: C, the trace circle, the tangent and normal at M
-  pitch/pinion.sv      PinionCone: Aₚ, the pinion axis, the tied pitch angle
-  blank/cone.sv        ConeBoundary, from parallel and perpendicular lines
-  blank/sphere.sv      SphericalBoundary (moved as is)
-  blank/member.sv      MemberBlank
-  crown/thickness.sv   the quarter-pitch points and the inner and outer trace circles
+  pitch/trace.sv       ToothTrace: C, the trace circle, its heading and normal at M
+  pitch/pinion.sv      PinionCone: A, V, the pinion's axis solved against the gear's
+  blank/sphere.sv      FaceSpan and SphericalBoundary: the toe and heel
+  blank/cone.sv        ConeSpan and ConeBoundary: the tip, root and back cones
+  blank/member.sv      MemberLimits and MemberBlank
+  crown/thickness.sv   CrownThickness: the quarter-pitch points, inner and outer trace circles
+  crown/rounding.sv    TipRounding: base, tip and roundings every crown section shares
   crown/section.sv     RackSection: flanks, pitch points and tip in N
-  crown/rounding.sv    TipRounding: the two tangent arcs, shared by both sections
   crown/tooth.sv       CrownTooth: the pinion's generator
-  crown/mate.sv        CrownMate: the gear's generator, on the tooth's flank lines
-  generation.sv        motions and indexing
-  members.sv           GeneratedMember (as now)
-  pair.sv              HypoidPair(design): composes steps 2–5 (about 40 lines)
+  crown/mate_section.sv MateSection: a section on the tooth's flank lines
+  crown/mate.sv        CrownMate: the gear's generator
+  crown/reach.sv       CutterReach: the space cutter's cap
+  crown/space.sv       ComplementarySpace: the gear's space cutter
+  crown.svd            the crown section's sheet
+  generation.sv        Generation: motions and indexing
+  layout.sv            HypoidLayout(front, design): steps 2–5
+  members.sv           GeneratedMember and HypoidPair
   gears.sv             the entry point: pair: HypoidPair(…)
-  checks/faces.sv      ToothFaces(member, crown): one tooth side's faces, used four times
-  checks/pair.sv       the verification entry point (today's pair.sv)
+  verification.sv      ReferenceFaces: the analytic faces (the plan's checks/faces.sv)
+  pair.sv              the checks' entry point: the layout and its faces
 ```
 
 ## Migration and verification
@@ -152,13 +148,11 @@ spiral_bevel/          (the app key stays; the file pane lists the steps)
    - the app catalog entry, and `web/src/test/example-drawing.test.ts`;
    - `docs/spiral-bevel-design.md` and the example's README.
 
-   *Steps 2–4 done.* `gears.sv` is `HypoidPair` and `pair.sv` the layout with
-   `ReferenceFaces`; the old modules are gone. The step-2 gate became a regression:
-   `tests/hypoid_layout.rs` holds the layout to the old pair's quantities and material,
-   recorded at the twelve designs while both still elaborated
-   (`tests/fixtures/hypoid_layout*.tsv`). The mate's crown surfaces take the tooth's span
-   (its trace at 180°), and its flanks run base to join, so the checks read which end of a
-   flank meets its round, and which way a chart normal points, off the geometry.
+   *Steps 1–4 done.* The step-2 gate became a regression: `tests/hypoid_layout.rs` holds the
+   layout to the old pair's quantities and material, recorded at the twelve designs while both
+   still elaborated (`tests/fixtures/hypoid_layout*.tsv`). The mate's crown surfaces take the
+   tooth's span (its trace at 180°), and its flanks run base to join, so the checks read which
+   end of a flank meets its round, and which way a chart normal points, off the geometry.
 5. **The true hypoid**, once spatial constraints exist: state the shaft angle and E, solve the
    pitch cones, and re-record every number the configured design pins. Designs pinned at zero
    offset (`fixtures::gear::bevel`) must not change.
@@ -168,9 +162,9 @@ spiral_bevel/          (the app key stays; the file pane lists the steps)
 ## The true hypoid
 
 `configuration.sv` states `shaft_angle = 90deg` and `offset`, the length of the common
-perpendicular between the shafts, in place of the offset angle; E = 0 is the bevel pair.
+perpendicular between the shafts; E = 0 is the bevel pair.
 
-**What is stated** (`pitch/pinion.sv`). The gear's cone is as before: its triangle O–M–F with
+**What is stated** (`pitch/pinion.sv`). The gear's cone is the bevel pair's: its triangle O–M–F with
 legs `Ng·m/2` and `Np·m/2`, so its pitch angle is `atan(Ng/Np)` from the tooth counts. That is
 the one condition beyond the radii, the shafts and the common pitch plane that the cones need
 (primer 2.12 chooses the gear's pitch angle for the same reason); stated from the tooth counts,
@@ -179,14 +173,14 @@ angle ε nobody states; Q is folded square to P along M → A, and the pinion's 
 from A's image, so P is the pinion cone's tangent plane along AM by construction:
 
 ```
-gear_axis angle(design.shaft) axis
-gear_axis distance(design.offset) axis
+gear.axis angle(design.shaft) axis
+gear.axis distance(design.offset) axis
 ```
 
 **What sizes it** is the equal normal pitch, `r_p cos(ψ + ε) = Np·m_n / 2`: the relative
 velocity of the crown and the pinion at M is along the tooth trace when the pinion turns
 `N_c / N_p` per crown turn. It is written as geometry. V is where the line MA crosses the
-square from O to the trace's heading, so `|MV| cos(ψ + ε) = R cos ψ` (the old construction's
+square from O to the trace's heading, so `|MV| cos(ψ + ε) = R cos ψ` (the turned layout's
 apex); in Q a virtual axis leaves V's image at the bevel pinion's pitch angle (tied to the angle
 at M in the gear's triangle, `sin = Np / N_c`), and the pinion's pitch radius at M is one circle
 about M that both axes touch:
@@ -194,10 +188,14 @@ about M that both axes touch:
 ```
 V on hinge
 V on foot
-virtual_line angle(pinion_angle) virtual_axis      // in layout.sv
+gear.to_apex angle(pinion_angle, sense: cw) gear.to_foot
+virtual_line angle(pinion_angle) virtual_axis
 axis tangent(side: right) pitch_radius
 virtual_axis tangent(side: right) pitch_radius
 ```
+
+The two angles share the free `pinion_angle` because the angle-equality word (language change
+6) relates lines in one view, and these are in G and Q.
 
 Then `r_p = |MV| Np / N_c = Np·m cos ψ / (2 cos(ψ + ε))`. Unknowns A (2), the pinion's pitch
 angle and `r_p`; conditions the shaft angle, the offset and the two tangencies: DOF 0, and the
@@ -218,46 +216,54 @@ generator, each member's `r cos ψ = N m_n / 2`, the rolls `N_c / N` to 1e-12 an
 **The configured design** is E = 25 mm (the turned layout's 25° was 24.56 mm), pressure shift
 12.5° and spiral 25°, chosen inside the generating-sweep class with margin by
 `tests/admission.rs::the_admission_grid` (least area factor J; E2 a double contact, E3 a
-fold; the gear's verdict does not depend on E):
+fold; the gear's verdict does not depend on E), by spiral, shift and offset:
 
-| E (mm) | shift | spiral | pinion | gear |
+| spiral | shift | E (mm) | pinion | gear |
 |---:|---:|---:|---|---|
-| 20 | 10 | 25 | J 0.720 | J 0.580 |
-| 22.5 | 10 | 25 | J 0.619 | J 0.580 |
-| 25 | 10 | 25 | J 0.375 | J 0.580 |
-| 27.5 | 10 | 25 | E3 | J 0.580 |
-| 30 | 10 | 25 | E3 | J 0.580 |
+| 20 | 12.5 | 25 | J 0.621 | J 0.241 |
+| 22.5 | 12.5 | 25 | J 0.660 | J 0.290 |
 | 25 | 5 | 25 | E3 | J 0.785 |
 | 25 | 7.5 | 25 | E3 | J 0.709 |
+| 25 | 10 | 20 | J 0.720 | J 0.580 |
+| 25 | 10 | 22.5 | J 0.619 | J 0.580 |
+| 25 | 10 | 25 | J 0.375 | J 0.580 |
+| 25 | 10 | 27.5 | E3 | J 0.580 |
+| 25 | 10 | 30 | E3 | J 0.580 |
+| 25 | 11 | 25 | J 0.532 | J 0.503 |
+| 25 | 12.5 | 22.5 | J 0.790 | J 0.338 |
 | **25** | **12.5** | **25** | **J 0.694** | **J 0.338** |
-| 22.5 / 27.5 | 12.5 | 25 | J 0.790 / J 0.424 | J 0.338 |
-| 25 | 11 / 14 | 25 | J 0.532 / J 0.807 | J 0.503 / J 0.079 |
-| 25 | 12.5 | 20 / 22.5 / 27.5 | J 0.621 / 0.660 / 0.724 | J 0.241 / 0.290 / 0.386 |
-| 20 | 15 | 25 | J 0.919 | E3 |
-| 30 | 15 | 25 | J 0.441 | E3 |
-| 25 | 10 | 30 | J 0.339 | J 0.638 |
-| 25 | 11 | 30 | J 0.547 | J 0.572 |
-| 22.5 / 27.5 | 11 | 30 | J 0.765 / E3 | J 0.572 |
-| 25 | 9.5 | 30 | J 0.194 (314 near tangent) | J 0.665 |
-| 20 | 12.5 | 30 | J 0.908 | J 0.432 |
-| 22.5 | 12.5 | 30 | J 0.861 | J 0.432 |
-| 25 | 12.5 | 30 | J 0.744 | J 0.432 |
-| 27.5 | 12.5 | 30 | J 0.284 (66 near tangent) | J 0.432 |
+| 25 | 12.5 | 27.5 | J 0.424 | J 0.338 |
+| 25 | 14 | 25 | J 0.807 | J 0.079 |
+| 25 | 15 | 20 | J 0.919 | E3 |
+| 25 | 15 | 30 | J 0.441 | E3 |
+| 27.5 | 12.5 | 25 | J 0.724 | J 0.386 |
+| 30 | 9.5 | 25 | J 0.194 (314 near tangent) | J 0.665 |
+| 30 | 10 | 25 | J 0.339 | J 0.638 |
+| 30 | 11 | 22.5 | J 0.765 | J 0.572 |
+| 30 | 11 | 25 | J 0.547 | J 0.572 |
+| 30 | 11 | 27.5 | E3 | J 0.572 |
+| 30 | 12.5 | 20 | J 0.908 | J 0.432 |
+| 30 | 12.5 | 22.5 | J 0.861 | J 0.432 |
+| 30 | 12.5 | 25 | J 0.744 | J 0.432 |
+| 30 | 12.5 | 27.5 | J 0.284 (66 near tangent) | J 0.432 |
 | 30 | 12.5 | 30 | E3 | J 0.432 |
-| 25 | 14 | 30 | J 0.871 | J 0.213 |
-| 20 | 15 | 30 | J 0.990 | E3 |
-| 25 | 10 | 35 | J 0.018 (14401 near tangent) | J 0.693 |
-| 25 | 12.5 | 35 | J 0.690 | J 0.522 |
-| 27.5 | 12.5 | 35 | E3 | J 0.522 |
-| 15 / 17.5 / 20 | 0 | 35 | J 0.182 / E3 / E3 | J 0.864 |
-| 30 / 35 | 0 | 35 | E2 / E2 | J 0.864 |
+| 30 | 14 | 25 | J 0.871 | J 0.213 |
+| 30 | 15 | 20 | J 0.990 | E3 |
+| 35 | 0 | 15 | J 0.182 | J 0.864 |
+| 35 | 0 | 17.5 | E3 | J 0.864 |
+| 35 | 0 | 20 | E3 | J 0.864 |
+| 35 | 0 | 30 | E2 | J 0.864 |
+| 35 | 0 | 35 | E2 | J 0.864 |
+| 35 | 10 | 25 | J 0.018 (14401 near tangent) | J 0.693 |
+| 35 | 12.5 | 25 | J 0.690 | J 0.522 |
+| 35 | 12.5 | 27.5 | E3 | J 0.522 |
 
 Both members are admitted at every neighbour of the configured design within 2.5 mm of offset,
 2.5° of shift and 5° of spiral. A symmetric rack (shift 0) leaves the class past about 15 mm.
 Of the admitted designs, 25 / 12.5 / 30 has the widest margins, but its pinion's native export
 (below) is refused at the fitted sheet's normal check, where its neighbours 20 and 22.5 mm,
-25 / 11 / 30 and 25 / 12.5 / 25 all export; 25 / 12.5 / 25 keeps the native pinion today's pair
-had, at the old spiral.
+25 / 11 / 30 and 25 / 12.5 / 25 all export; 25 / 12.5 / 25 keeps a native pinion, at the turned
+layout's spiral.
 
 **Verified on the exports.** Measured off the field-meshed members' inertia axes, the shafts
 are 89.999° apart and 25.005 mm off. Turned through one gear pitch of conjugate rotation (gear
@@ -272,14 +278,15 @@ Natively the configured pinion exports in 98 s with the field agreeing at every 
 is refused at the fitted sheet's normal check (83.3° at a crease, against 20°), as the turned
 layout's gear was (89.3°).
 
-**Re-recorded.** `tests/fixtures/hypoid_layout.tsv`'s configured and `hypoid6` columns and the
-configured rows of `hypoid_layout_material.tsv` are now read off the layout (`record`); the
-bevel pair's and the nine sizes' still hold it to the old pair to 1e-9. `fixtures::gear::hypoid6`
-is 5.7 mm, the six-degree hypoid's axis offset (5.705 mm). The configured quantities, old
-(turned, 25°/10°/25°) → new (true, 25 mm/12.5°/25°): shaft angle 92.148° → 90°, offset 24.557 →
-25 mm, pinion pitch angle 26.565° → 24.357°, |MA| 75.667 → 82.249 mm, pinion spiral 50° →
-50.117° (ε 25.117°), pinion roll ratio 2.2361 → 2.2361. At `hypoid6`: shaft 90.126° → 90°, offset 5.705 →
-5.7 mm, pinion pitch angle 26.565° → 26.440°, |MA| 58.248 → 58.494 mm, spiral 41° → 40.989°.
+**Recorded.** `tests/fixtures/hypoid_layout.tsv`'s configured and `hypoid6` columns and the
+configured rows of `hypoid_layout_material.tsv` are read off the layout (`record`); the bevel
+pair's and the nine sizes' still hold it to the old pair to 1e-9. `fixtures::gear::hypoid6` is
+5.7 mm, the six-degree turned hypoid's axis offset (5.705 mm). The configured quantities, turned
+(25°/10°/25°) → true (25 mm/12.5°/25°): shaft angle 92.148° → 90°, offset 24.557 → 25 mm,
+pinion pitch angle 26.565° → 24.357°, |MA| 75.667 → 82.249 mm, pinion spiral 50° → 50.117°
+(ε 25.117°), pinion roll ratio 2.2361 → 2.2361. At `hypoid6`: shaft 90.126° → 90°, offset
+5.705 → 5.7 mm, pinion pitch angle 26.565° → 26.440°, |MA| 58.248 → 58.494 mm, spiral 41° →
+40.989°.
 
 ## Language changes
 
@@ -330,19 +337,20 @@ Ordered by what they unlock. All six are done; the table gives the spelling that
    but reads as a trick. *Done*, **spelled differently**: `l1 angle(l3, l4) l2` — the angle from
    `l1` to `l2` equals the angle from `l3` to `l4`, directed, `sense: cw` for the mirror image —
    since a joint's `equal angle` already means two statements (primer 1.5, `reflection.sv`).
+   It relates lines in one view, so the layout's one angle tie, between G and Q, keeps a
+   shared free variable (`pitch/pinion.sv`).
 
 ## Order of work
 
 1. The spatial-constraints language project (change 1), with its own plan and gates. *Done.*
 2. `through:` (change 2), if it is not subsumed by change 1. *Done.*
-3. The rewrite, steps 1–4 of the migration, reproducing today's pair.
+3. The rewrite, steps 1–4 of the migration, reproducing the old pair. *Done.*
 4. The true 90° hypoid (migration step 5). *Done.*
-5. Changes 3–6 as the rewrite shows where they pay. *All four exist*; the rewrite decides where
-   each is used.
+5. Changes 3–6 as the rewrite shows where they pay. *All four exist*; the layout uses 3
+   (`verification.sv`), 4 (`crown/thickness.sv`) and 5 (`generation.sv`).
 
-## Open decisions
+## Decisions
 
-- Whether the world origin moves to M or stays at the gear apex. `through:` makes either
-  possible.
-- Whether the verification suite is ported in the same change, or keeps running against the old
-  files until the new geometry has proven equivalent.
+- The world origin stays at the gear apex; every view is folded square to the pitch plane about
+  a line through M, so none needs `through:`.
+- The verification suite was ported with the swap, once the equivalence gate held.

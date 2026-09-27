@@ -149,7 +149,7 @@ fn periodic_seams_and_collapsed_poles_remain_explicit() {
 
 #[test]
 fn native_cutter_edges_agree_with_the_independent_source_material() {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let base = fixtures::gear::project();
     let e = fixtures::gear::read(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base);
     let cad = native::Session::new().unwrap();
     let scale = e.sketch.units.length.unwrap().1;

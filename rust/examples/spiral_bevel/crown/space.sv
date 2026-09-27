@@ -1,7 +1,7 @@
 // Step 4, the gear's space cutter: the stretch between two neighbouring mate teeth,
 // each active flank closed far from the working blank. It is the outer mate within
-// the inner one indexed a crown pitch round. The outer section is closed at a cap
-// in N standing |CO| + reach from the cutter's axis, clear of every blank point.
+// the inner one indexed a crown pitch round. The outer section is closed at the
+// reach's cap (crown/reach.sv), the inner at the cutter's axis.
 use std
 use design
 use views
@@ -12,43 +12,7 @@ use crown.section
 use crown.rounding
 use crown.tooth
 use crown.mate
-
-// The cap: in the pitch plane, the point `reach` past the apex on the ray from C
-// through it, carried onto the trace normal beyond C, and its image in N; drawn
-// there along the cutter's `axis`.
-component CutterReach(p: plane, n: plane, apex: point, normal: line, axis: line, reach: Length) {
-  in p {
-    point beyond hint(x: apex.x + (apex.x - normal.p1.x) * reach
-        / sqrt((apex.x - normal.p1.x)^2 + (apex.y - normal.p1.y)^2),
-      y: apex.y + (apex.y - normal.p1.y) * reach
-        / sqrt((apex.x - normal.p1.x)^2 + (apex.y - normal.p1.y)^2))
-    point radial hint(x: normal.p1.x + (normal.p1.x - normal.p2.x)
-        * sqrt((beyond.x - normal.p1.x)^2 + (beyond.y - normal.p1.y)^2)
-        / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2),
-      y: normal.p1.y + (normal.p1.y - normal.p2.y)
-        * sqrt((beyond.x - normal.p1.x)^2 + (beyond.y - normal.p1.y)^2)
-        / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2))
-    private line to_apex(normal.p1, apex)
-    private line past(apex, beyond)
-    private line reach_line(normal.p1, beyond)
-    private line cap_radius(normal.p1, radial)
-  }
-  to_apex angle(0deg) past
-  distance(reach) past
-  normal angle(180deg) cap_radius
-  cap_radius equal reach_line
-  in n {
-    point foot hint(x: (radial.x * (normal.p2.x - normal.p1.x)
-        + radial.y * (normal.p2.y - normal.p1.y))
-      / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2), y: 0)
-    point end hint(x: foot.x, y: foot.y + axis.p2.y - axis.p1.y)
-    line cap(foot, end)
-  }
-  foot on p
-  radial project foot
-  axis angle(0deg) cap
-  cap equal axis
-}
+use crown.reach
 
 // One active rounded flank, closed at `cap` along its base and tip. The walk enters
 // the flank from whichever end meets its round.

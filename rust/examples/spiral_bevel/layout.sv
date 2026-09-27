@@ -1,7 +1,7 @@
 // The hypoid layout, step by step (docs/spiral-bevel-layout-plan.md): the pitch
 // cones and the tooth trace through the mean point M, the members' blanks, the
 // crown tooth and its mate in the normal section, and the generating motions.
-// Every view is folded square to the pitch plane about a line through M.
+// Every other view is folded square to the pitch plane about a line through M.
 use std
 use design
 use views
@@ -12,6 +12,7 @@ use blank.member
 use crown.thickness
 use crown.tooth
 use crown.mate
+use crown.reach
 use crown.space
 use generation
 
@@ -20,14 +21,10 @@ component HypoidLayout(front: plane, design: group) {
   gear: GearCone(pitch.view, g.view, design)
   g: FoldedView(pitch.view, gear.generator, span: design.cutter_radius)
   trace: ToothTrace(pitch.view, gear.generator, design)
-  pinion: PinionCone(pitch.view, q.view, gear.generator, trace.foot, gear.axis, design)
+  pinion: PinionCone(pitch.view, q.view, gear, trace.foot, design)
   q: FoldedView(pitch.view, pinion.hinge, span: design.cutter_radius)
-  // The pinion's virtual axis stands at the angle at M in the gear's triangle, the
-  // bevel pinion's pitch angle.
-  gear.to_foot angle(pinion_angle) gear.to_apex
-  pinion.virtual_line angle(pinion_angle) pinion.virtual_axis
   // The blanks, in the axial views; the gear's cones on the generator opposite M.
-  gear_blank: MemberLimits(gear.pitch_line, gear.back_cone, gear.axis, design) in g.view
+  gear_blank: MemberLimits(gear.pitch_line, gear.opposite, gear.axis, design) in g.view
   pinion_blank: MemberLimits(pinion.pitch_line, pinion.pitch_line, pinion.axis, design) in q.view
   // The crown, in the normal section.
   thickness: CrownThickness(pitch.view, gear.generator, trace.normal, design)

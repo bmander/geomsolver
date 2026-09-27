@@ -46,10 +46,7 @@ fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
     let dir = std::env::temp_dir().join(format!("solventc-class-refusal-{}",std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    fixtures::gear::copy_project(&dir);
-    let configuration = dir.join("configuration.sv");
-    let text = fixtures::gear::design("configuration",std::fs::read_to_string(&configuration).unwrap(),30.,0.,35.);
-    std::fs::write(&configuration,text).unwrap();
+    fixtures::gear::copy_design(&dir,30.,0.,35.);
     let output = dir.join("pinion.stl");
     std::fs::write(&output,"old STL").unwrap();
     let result = run(&[dir.join("gears.sv").to_str().unwrap(),"--stl",output.to_str().unwrap(),

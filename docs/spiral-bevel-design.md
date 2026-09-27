@@ -45,13 +45,12 @@ envelope evaluator, but does not yet add a generated gear solid to the model.
 
 `blank/cone.sv` and `blank/sphere.sv` define the conical and spherical boundary components,
 drawn in each member's axial view by `blank/member.sv`. The layout declares spherical toe and
-heel at `R_mean ± face_width/2`, with the current
-`face_width = 0.2 R_mean`. Each member has tip, root and back cones at signed pitch-normal
-offsets `+m_n`, `-1.25 m_n` and `-4 m_n`. A meridian's generator coordinate spans
-`[0.5 R_mean, 1.5 R_mean]`; the separately declared spheres set the actual face ends.
-These carriers are construction geometry, not stock or machining tools. Their ordinates,
-angles and radii constrain the geometry. The private offset planes use a positive datum
-direction scaled with `R_mean` to select and condition their rotor branch.
+heel at `R_mean ± face_width/2`, with the current `face_width = 0.2 R_mean`. Each member has
+tip, root and back cones at signed pitch-normal offsets `+m_n`, `-1.25 m_n` and `-4 m_n`. A
+meridian's generator coordinate spans `[0.5 R_mean, 1.5 R_mean]`; the separately declared
+spheres set the actual face ends. These carriers are construction geometry, not stock or
+machining tools. Their offsets, angles and radii constrain the geometry; which side of the
+generator a meridian stands on is a directed angle from the rib toward the axis, not a sign.
 
 The numerical rim generator reads its tip and back cones and toe/heel distances from these
 source surfaces. Its previous hardcoded addendum, back-depth and face-end formulas are now
@@ -212,37 +211,38 @@ This construction follows the conical/toroidal generating-surface framework desc
 route is selected. In particular, the generated fillet is not an arbitrary circular blend
 inserted after generating the tooth flank.
 
-The matching step distinguishes generating normals from material normals. Simply
-using the same oriented crown patch for both members establishes the velocity equation,
-but gives coincident normals, not the opposing outward normals required for contact.
-`crown/mate.sv` implements the circular reference section by pairing the pinion's outer
-flank with a mate section drawn on that same flank line one tooth's width outward, and the
-pinion's inner flank with one a tooth's width inward. Each mate section has its tip pointing
-the other way along the cutter's axis, which reverses the pressure slope; it walks its edges
-the other way round, which restores the same geometric cone with opposite boundary
-orientation. The two axes share one spatial center, and the mate's flanks lie on the tooth's
-by construction, so the two sections cannot be given different pressure angles. Tests read the actual source geometry for 24:48, 32:32 and 28:49 pairs at
-mean modules 0.2, 2 and 25.4. At three face stations and three active-flank heights they
-verify common positions, **opposite** oriented normals, equal generating roll, and zero
-normal component of the actual shaft-relative velocity. Both sides of both members in the
-24:48 fixture also join their root cones tangentially through the declared toroidal envelope.
+The matching step distinguishes generating normals from material normals. Simply using the same
+oriented crown patch for both members establishes the velocity equation, but gives coincident
+normals, not the opposing outward normals required for contact. `crown/mate.sv` (with
+`crown/mate_section.sv`) implements the circular reference section by pairing the pinion's
+outer flank with a mate section drawn on that same flank line one tooth's width outward, and
+the pinion's inner flank with one a tooth's width inward. Each mate section has its tip
+pointing the other way along the cutter's axis, which reverses the pressure slope; it walks its
+edges the other way round, which restores the same geometric cone with opposite boundary
+orientation. The two axes share one spatial center, and the mate's flanks lie on the tooth's by
+construction, so the two sections cannot be given different pressure angles. Tests read the
+actual source geometry for 24:48, 32:32 and 28:49 pairs at mean modules 0.2, 2 and 25.4. At
+three face stations and three active-flank heights they verify common positions, **opposite**
+oriented normals, equal generating roll, and zero normal component of the actual shaft-relative
+velocity. Both sides of both members in the 24:48 fixture also join their root cones
+tangentially through the declared toroidal envelope.
 
 The source gives the reference centerline a circular trace radius of `0.8 R_mean`, with a
-35-degree tangent at the mean pitch point in the default preview. Its two flank radii are
-the distances from that trace center to the points at `±90°/hypot(z_p,z_g)` on the mean
-pitch circle. Their difference determines reference width. Thus the generated pinion space
-and mating gear tooth each occupy exactly half their angular pitch at the mean pitch circle;
-the tests check this independently in the member frames. This is a **zero-backlash nominal
-geometry** convention. It does not assert half-pitch thickness elsewhere across the face or
-choose an allowance for manufacture.
+35-degree spiral at the mean pitch point in the design the paired checks read (the configured
+pair's is 25 degrees). Its two flank radii are the distances from that trace center to the
+points at `±90°/hypot(z_p,z_g)` on the mean pitch circle. Their difference determines reference
+width. Thus the generated pinion space and mating gear tooth each occupy exactly half their
+angular pitch at the mean pitch circle; the tests check this independently in the member
+frames. This is a **zero-backlash nominal geometry** convention. It does not assert half-pitch
+thickness elsewhere across the face or choose an allowance for manufacture.
 
 The reference dimensions are uniform depth: normal module is `mean_module*cos(spiral_angle)`,
-root depth is 1.25 normal modules, and transition radius is 0.3 normal modules. A base depth
-of two normal modules extends each active reference flank beyond the future tooth-tip trim.
-For the default pair, tests trim at one normal module of addendum and sample 11 spherical
-face stations from 0.9 to 1.1 mean cone distance. On all four root-to-tip contours, polar
-angle increases from root to tip without a sampled reversal. This does not by itself prove
-surface regularity everywhere or global non-interference.
+root depth is 1.25 normal modules, and the tip rounding's radius is 0.3 normal modules. A base
+depth of two normal modules extends each active reference flank beyond the future tooth-tip
+trim. For the 24:48 pair the checks read, tests trim at one normal module of addendum and
+sample 11 spherical face stations from 0.9 to 1.1 mean cone distance. On all four root-to-tip
+contours, polar angle increases from root to tip without a sampled reversal. This does not by
+itself prove surface regularity everywhere or global non-interference.
 
 The later [continuous-volume investigation](continuous-volumes.md#indexed-closure-counterexample)
 finds that simply sweeping and indexing these full closed construction solids does not

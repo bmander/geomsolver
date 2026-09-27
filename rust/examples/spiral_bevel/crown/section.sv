@@ -13,28 +13,28 @@ component RackSection(lp: point, rp: point, design: group) {
   param th = design.dedendum * nm
   param tr = design.rounding * nm
   param bd = design.base * nm
-  param jr = th - tr * (1 - sin(outer_pressure))
-  param jl = th - tr * (1 - sin(inner_pressure))
-  param rr = jr * tan(outer_pressure) + tr * cos(outer_pressure)
-  param rl = jl * tan(inner_pressure) + tr * cos(inner_pressure)
-  private point bl hint(x: lp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * bd * tan(inner_pressure),
+  param jo = th - tr * (1 - sin(outer_pressure))
+  param ji = th - tr * (1 - sin(inner_pressure))
+  param ro = jo * tan(outer_pressure) + tr * cos(outer_pressure)
+  param ri = ji * tan(inner_pressure) + tr * cos(inner_pressure)
+  private point bi hint(x: lp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * bd * tan(inner_pressure),
                         y: lp.y - (rp.x - lp.x) / abs(rp.x - lp.x) * bd)
-  private point br hint(x: rp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * bd * tan(outer_pressure),
+  private point bo hint(x: rp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * bd * tan(outer_pressure),
                         y: lp.y - (rp.x - lp.x) / abs(rp.x - lp.x) * bd)
-  private point rj hint(x: rp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * jr * tan(outer_pressure),
-                        y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * jr)
-  private point rt hint(x: rp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * rr,
+  private point oj hint(x: rp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * jo * tan(outer_pressure),
+                        y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * jo)
+  private point ot hint(x: rp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * ro,
                         y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * th)
-  private point lt hint(x: lp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * rl,
+  private point it hint(x: lp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * ri,
                         y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * th)
-  private point lj hint(x: lp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * jl * tan(inner_pressure),
-                        y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * jl)
-  private point cr hint(x: rt.x, y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * (th - tr))
-  private point cl hint(x: lt.x, y: cr.y)
+  private point ij hint(x: lp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * ji * tan(inner_pressure),
+                        y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * ji)
+  private point co hint(x: ot.x, y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * (th - tr))
+  private point ci hint(x: it.x, y: co.y)
   construction line pitch(lp, rp)
-  profile = line base(bl, br) -> line outer(br, rj) -> tangent
-            arc outer_round(center: cr) hint(r: tr) -> tangent line tip(rt, lt) -> tangent
-            arc inner_round(center: cl) hint(r: tr) -> tangent line inner(lj, bl) -> close
+  profile = line base(bi, bo) -> line outer(bo, oj) -> tangent
+            arc outer_round(center: co) hint(r: tr) -> tangent line tip(ot, it) -> tangent
+            arc inner_round(center: ci) hint(r: tr) -> tangent line inner(ij, bi) -> close
   base angle(90deg + design.pressure - design.shift) outer
   base angle(270deg - design.pressure - design.shift) inner
   lp on inner

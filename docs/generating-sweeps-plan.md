@@ -190,8 +190,10 @@ The small fixtures run in well under a second. The gear cases take 3–10 s.
 
 `solventc --step/--stl` runs admission first for a body with swept cuts. A refusal is printed
 with its row and witness, writes nothing and exits 1. An admission prints one line of evidence.
-The configured design is now the 25° hypoid (`offset_angle` 25°, `pressure_shift` 10°,
-`spiral_angle` 25°). Tests with recorded numbers pin the design they were recorded at:
+The configured design is now a true hypoid, its shafts square and 25 mm apart (`offset` 25 mm,
+`pressure_shift` 12.5°, `spiral_angle` 25°; the offsets above are the turned layout's angles, see
+[the layout plan](spiral-bevel-layout-plan.md#the-true-hypoid)). Tests with recorded numbers pin
+the design they were recorded at:
 `fixtures::gear::bevel` and `fixtures::gear::hypoid6` (`rust/fixtures`).
 
 Not yet done: the general-sweep fixtures (tumbling cylinder, thin plate, and others) as

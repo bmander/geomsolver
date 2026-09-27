@@ -4,8 +4,8 @@ A 24-tooth pinion and a 48-tooth gear, laid out the way a gear designer lays out
 pair: the pitch cones and the tooth trace through one design point, the mean point M, then
 the blanks, the generating crown and the motions that roll it through each blank. Positions
 follow from lines, circles, angles, incidence and projection; no constraint and no `param`
-that feeds one computes a point with `sin` and `cos`. Every file carries a `preview { … }`, so
-opening it in the app draws that step alone. The plan the files follow is
+that feeds one computes a point with `sin` and `cos`. Every step's module carries a
+`preview { … }`, so opening it in the app draws that step alone. The plan the files follow is
 [docs/spiral-bevel-layout-plan.md](../../../docs/spiral-bevel-layout-plan.md).
 
 The layout is drawn in four views through M, each a fold of the pitch plane about a line
@@ -43,17 +43,19 @@ square to the gear's and the offset from it, drawn in Q from the image of its ap
 of P that turns about M by an offset angle the solve answers, so P touches the pinion's cone
 along AM. The equal normal pitch sizes it with no cosine written: V, where MA meets the square
 from O to the heading, falls with O on one point of the heading, a virtual axis leaves V at the
-bevel pinion's pitch angle (`layout.sv` ties it to the angle at M in the gear's triangle), and
-the pinion's pitch radius is one circle about M that both axes touch. The pinion's own pitch
+bevel pinion's pitch angle (the angle at M in the gear's triangle), and the pinion's pitch
+radius is one circle about M that both axes touch. The pinion's own pitch
 angle and its spiral, the crown's plus the offset angle, follow. At no offset A and V are O.
 
 **Step 3, the ends: `blank/sphere.sv`.** The face width, centred on M along the pitch
 generator, and the toe and heel spheres about the apex through its ends, poles square to the
 generator so each turns clear of the cones.
 
-**Step 3, the cones: `blank/cone.sv`.** A meridian parallel to the pitch generator at a
-stated offset square to it, its caps square to the axis and its spine on the axis; revolved,
-it is the tip, root or back cone.
+**Step 3, the cones: `blank/cone.sv`.** `ConeSpan` marks half and one and a half cone
+distances along the pitch generator, each with a rib square to it that meets the axis;
+`ConeBoundary` stands a meridian a stated offset off the generator along those ribs, toward the
+axis or away, its caps square to the axis and its spine on the axis. Revolved, it is the tip,
+root or back cone.
 
 **Step 3, the blank: `blank/member.sv`.** `MemberLimits` draws a member's five limits in its
 axial view; `MemberBlank` is the blank term: the heel sphere within the tip cone, less the
@@ -73,23 +75,25 @@ every crown section. The preview is the 24:48 crown at module 2, which **`crown.
 the images of the thickness's, and the cutter's axis standing at C's image square to P,
 pointing out of the tooth's tip. Revolved, the flanks are cones and the roundings tori.
 
-**Step 4, the gear's generator: `crown/mate.sv`.** The tooth's mate: two sections on the
-tooth's own flank lines, one tooth's width outward and one inward, each with its own tip and
-roundings, revolved about the cutter's axis turned to point the other way. The shift is stated
-once, on the tooth, so the two crowns are complementary by construction
-(`gcs-core/tests/gear_crowns.rs`). The mate walks its edges the other way round and names its
-corners by side.
+**Step 4, the gear's generator: `crown/mate.sv`** with **`crown/mate_section.sv`.** The
+tooth's mate: two sections on the tooth's own flank lines, one tooth's width outward and one
+inward, each with its own tip and roundings, revolved about the cutter's axis turned to point
+the other way. The shift is stated once, on the tooth, so the two crowns are complementary by
+construction (`gcs-core/tests/gear_crowns.rs`). A mate section walks its edges the other way
+round from the tooth's; both name their corners by side.
 
-**Step 4, the gear's space cutter: `crown/space.sv`.** The stretch between two neighbouring
-mate teeth, each active flank closed far from the working blank: the outer mate within the
-inner one indexed a crown pitch round, closed at a cap standing clear of every blank point.
+**Step 4, the gear's space cutter: `crown/space.sv`** with **`crown/reach.sv`.** The stretch
+between two neighbouring mate teeth, each active flank closed far from the working blank: the
+outer mate within the inner one indexed a crown pitch round, closed at the reach's cap, which
+stands clear of every blank point.
 
 **Step 5, generation: `generation.sv`.** Every roll shares the crown's angle, and each member
 turns at the crown's tooth count over its own, `N_c / N` with `N_c = 2R / m`, measured off the
 gear's triangle after the solve (its hypotenuse R over the gear's pitch radius, and over the
 short leg `N_p m / 2` for the pinion, whose own solved cone rolls at another ratio off the
 bevel), so both members stay conjugate through the common crown; the generating motions are
-the crown roll relative to each member's. Indexing is one member angle; the crown's neighbour is one crown pitch round.
+the crown roll relative to each member's. Indexing is one member angle; the crown's neighbour
+is one crown pitch round.
 
 **The layout: `layout.sv`.** `HypoidLayout(front, design)` composes steps 2–5 in the four
 views and publishes each member's limits and motions as a group.

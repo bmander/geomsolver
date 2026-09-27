@@ -194,11 +194,13 @@ fn a_folding_flank_is_refused_and_balanced_pressure_angles_admit_it() {
     pinion(20.,7.5,35.).unwrap();
 }
 
-/// The pair's designs against the class, for choosing one inside it with margin:
-/// `SOLVENT_GRID=offset/shift/spiral;…` (the offset in millimetres, the rest in degrees), each
-/// member's verdict and margins, one line each. The table is in docs/spiral-bevel-layout-plan.md.
+/// A tool, not a check: the pair's designs against the class, for choosing one inside it with
+/// margin. `SOLVENT_GRID='25/12.5/25;20/12.5/25' cargo test -p gcs-core --test core
+/// admission::the_admission_grid -- --ignored --nocapture` (each design offset/shift/spiral, the
+/// offset in millimetres, the rest in degrees) prints each member's verdict and margins, one line
+/// each. The table it chose the configured design from is in docs/spiral-bevel-layout-plan.md.
 #[test]
-#[ignore]
+#[ignore = "a tool: SOLVENT_GRID names the designs to admit"]
 fn the_admission_grid() {
     let grid = std::env::var("SOLVENT_GRID").expect("SOLVENT_GRID");
     for design in grid.split(';').filter(|d| !d.trim().is_empty()) {

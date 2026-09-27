@@ -212,19 +212,18 @@ the facet kernel, the fields and the CAD recipe (`"bound"`, OCCT `BRepAlgoAPI_Co
 evaluate it. Union first; `cut` and `bound` commute. A swept solid may only
 be `cut` for now. `bound` is a body word like `cut`, so it is no declaration name. The spiral
 bevel blank is `heel` bounded by `tip`, and the gear cutter the outer crown bounded by its
-indexed neighbour; the `A − (A − B)` intermediate is gone. The analytic faces the generating
-checks read live in `spiral_bevel/verification.sv` (`ReferenceFaces(refs)`), instantiated by
-`pair.sv` over `HypoidLayout` only; `gears.sv` (`HypoidPair`) elaborates the design alone. The
-layout's steps are modules (`design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
-`generation.sv`, `layout.sv`, `members.sv`; the example's README walks them), four views
-folded from the pitch plane through the mean point. `configuration.sv` states the shafts
-(`shaft_angle`, and `offset`, their common perpendicular E); the pinion's cone is solved against
-the gear's (`pitch/pinion.sv`: apex on the pitch plane, pitch radius the equal normal pitch's
-through a virtual bevel pinion at V), E = 0 being the bevel pair, and each member rolls at
-`N_c / N` measured off the gear's triangle, never its own cone's `1 / sin`;
-`tests/hypoid_layout.rs` holds the layout to the closed-form pair it replaced, recorded at
-twelve designs (the two off the bevel re-recorded as the true hypoid); the mesh export refuses a sectioned sheet whose boundary a placement carries inside the blank,
-and the CLI test readers zero the offset because the recorded volumes are the bevel pair's.
+indexed neighbour; the `A − (A − B)` intermediate is gone. The spiral bevel's steps are modules
+(`design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`, `generation.sv`, `layout.sv`'s
+`HypoidLayout`, `members.sv`'s `HypoidPair`; the example's README walks them), drawn in views
+folded from the pitch plane through the mean point. `gears.sv` elaborates the pair alone;
+`pair.sv` is the layout with the analytic faces the generating checks read
+(`verification.sv`, `ReferenceFaces`). `configuration.sv` states the shafts (`shaft_angle`,
+`offset`; E = 0 is the bevel pair), the pinion's cone is solved against the gear's
+(`pitch/pinion.sv`), and each member rolls at `N_c / N` measured off the gear's triangle, not
+its own cone's `1 / sin`. `tests/hypoid_layout.rs` holds the layout to recorded quantities and
+material at twelve designs. The mesh export refuses a sectioned sheet whose boundary a
+placement carries inside the blank, and the CLI test readers zero the offset because the
+recorded volumes are the bevel pair's.
 **Continuous motion solids:** `solid removal(tool, under: generating, from: -30deg, to: 30deg)`
 uses finite increasing Angle bounds, converted to radians at elaboration. It means the union
 of material over the complete interval, not a sequence of posed meshes. `at:` and interval
@@ -312,11 +311,12 @@ core's (`solid::contracts`), and every refusal, from admission to the gate, is o
 `solid::export::ExportRefusal` — its `Stage` (the keys `SOLVENT_STAGE_TRACE` records, with a
 `refused:` line for the stage refused at), the class row and a witness when known — reported at
 the solid's statement. The refine backend's features are `solid::blank_features`, read off the
-native blank's topology through `BlankTopology`. The configured pair is a true hypoid 25 mm off, designed out of undercut
-(`pressure_shift`, `spiral_angle` in `configuration.sv`; `admission.rs::the_admission_grid`); tests with recorded numbers pin theirs
-through `fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, the dev-only crate both suites'
-readers, gear rewrites and small sweep tools live in), and `tests/native_surfaces/gear_cells.rs` holds the
-recorded tooth-space volumes. `tests/generating_harness.rs` (ignored, minutes) locates each
+native blank's topology through `BlankTopology`. The configured pair is a true hypoid 25 mm
+off, designed out of undercut (`pressure_shift`, `spiral_angle` in `configuration.sv`, chosen
+with `admission.rs::the_admission_grid`); tests with recorded numbers pin theirs through
+`fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, the dev-only crate both suites' readers,
+gear rewrites and small sweep tools live in), and `tests/native_surfaces/gear_cells.rs` holds
+the recorded tooth-space volumes. `tests/generating_harness.rs` (ignored, minutes) locates each
 refusal by stage over fixtures, the gear controls and a 48-design sweep.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
@@ -1983,16 +1983,19 @@ Conventions:
   constants — declared in `CKind::free_kernel`, which matches `CKind` exhaustively so a new
   dimension type stops the build there; `every_dimension_can_be_written_free` checks the shape.
   Nothing else in the solve path is per-type: `params_on` appends the free column (it is always
-  last), `consts_on` returns `[m, c]`, `kernel_id` picks the twin.  A fresh free variable seeds
-  from the number the dimension already stated, or — when it states none — from the geometry, by
-  Newton on that one row (`expr::settle`), which asks the kernel and no table.  A free dimension
-  is `unsupported` in `cgraph` (the cluster vocabulary has no element for a relation *between*
-  dimensions), is never jittered by the witness (it states no number to make generic), is part of
-  `topology_key` (which unknown it names is a column), and joins `io::Part`'s walk (two dimensions
-  sharing an unknown move together, which is as real a tie as a shared point).  `expr::sync_free`
-  brings the numbers they *show* back into step with the unknown, from every seam that writes
-  parameters without going through the others — `Sketch::set_x`, `io::Part::write_back` and the
-  wave's direct writes — since a solve moves the unknown and a stale callout is a wrong drawing.
+  last), `consts_on` returns `[m, c]` turned by the statement's `side:`, `along:` or `sense:`
+  word as a stated number is turned (and a skew distance's by its seed's side), and `kernel_id`
+  picks the twin.  A fresh free variable seeds from the number the dimension already stated, or —
+  when it states none — from the geometry, by Newton on that one row (`expr::settle`), which asks
+  the kernel and no table and reads the same turned constants, so it starts on the named side.  A
+  free dimension is `unsupported` in `cgraph` (the cluster vocabulary has no element for a
+  relation *between* dimensions), is never jittered by the witness (it states no number to make
+  generic), is part of `topology_key` (which unknown it names is a column), and joins `io::Part`'s
+  walk (two dimensions sharing an unknown move together, which is as real a tie as a shared
+  point).  `expr::sync_free` brings the numbers they *show* back into step with the unknown, from
+  every seam that writes parameters without going through the others — `Sketch::set_x`,
+  `io::Part::write_back` and the wave's direct writes — since a solve moves the unknown and a
+  stale callout is a wrong drawing.
 - The page is the drawing *and the source it is written as*: the program panel is a permanent
   second child of `<main>`, because the source is not a remark about the drawing — it is what the
   drawing **is**.  Everything else the shell has to *say* is still said beside what is picked, and

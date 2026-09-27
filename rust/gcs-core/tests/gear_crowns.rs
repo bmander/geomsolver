@@ -2,10 +2,10 @@
 //! crown tooth and the gear's space cutter meet flank on flank, so at any roll no point is kept
 //! by both members and none is cut by both.  A pressure shift gives the crown tooth unequal
 //! flanks, and its mate must carry them on the opposite sides; the layout draws the mate's
-//! flanks on the tooth's own flank lines (`crown/mate.sv`), so it does by construction.  A mate
-//! whose flanks stood at the tooth's own angles instead — its section shared with the tooth's,
-//! as an earlier model had it — crossed the mating flanks at the pitch line, 20 degrees apart,
-//! and the configured hypoid interfered by 19 mm³ over the whole face width.
+//! flanks on the tooth's own flank lines (`crown/mate_section.sv`), so it does by construction.
+//! A mate whose flanks stood at the tooth's own angles instead — its section shared with the
+//! tooth's, as an earlier model had it — crossed the mating flanks at the pitch line, 20 degrees
+//! apart, and the configured hypoid interfered by 19 mm³ over the whole face width.
 use gcs_core::solid::MaterialField;
 
 /// The pinion's crown tooth and the gear's space cutter at a design, in their generating pose.
@@ -43,7 +43,7 @@ fn the_generating_crowns_mate_flank_on_flank_with_a_pressure_shift() {
     }
     // The control: each mate flank turned twice the shift off the tooth's flank line, the
     // mate's section at the tooth's own pressure angles.
-    let shared = |name: &str,text: String| if name == "crown.mate" {
+    let shared = |name: &str,text: String| if name == "crown.mate_section" {
         let lines = "  inner_along angle(180deg) inner\n  outer_along angle(180deg) outer\n";
         assert!(text.contains(lines));
         text.replace(lines,"  inner_along angle(180deg + 2 * design.shift) inner\n  \

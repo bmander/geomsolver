@@ -1,9 +1,8 @@
-// Step 4, the gear's generator: the crown tooth's mate. Each of its sections lies
-// on the tooth's own flank lines, one tooth's width outward or inward along the
-// pitch line, with its own tip and roundings. Its tips point the other way along the
-// cutter's axis, so in N it walks its edges the other way round and names its corners
-// by side. The shift is stated once, on the tooth, and the two crowns are
-// complementary by construction.
+// Step 4, the gear's generator: the crown tooth's mate. Its two sections
+// (crown/mate_section.sv) lie on the tooth's own flank lines, one tooth's width
+// outward and one inward along the pitch line, each with its own tip and roundings,
+// and it turns about the cutter's axis pointing the other way. The shift is stated
+// once, on the tooth, and the two crowns are complementary by construction.
 use std
 use design
 use views
@@ -11,48 +10,8 @@ use pitch.gear
 use pitch.trace
 use crown.thickness
 use crown.section
-use crown.rounding
 use crown.tooth
-
-// A mate section between pitch points `lp` (inner) and `rp` (outer), its inner flank
-// along `inner_along` and its outer flank along `outer_along`, both through its pitch
-// points: the tooth's outer and inner flanks, carried a tooth's width.
-component MateSection(lp: point, rp: point, inner_along: line, outer_along: line,
-                      design: group) {
-  // Seeds only, as RackSection's with the flank angles exchanged and the tip down.
-  param nm = design.normal_module
-  param inner_pressure = design.pressure - design.shift
-  param outer_pressure = design.pressure + design.shift
-  param th = design.dedendum * nm
-  param tr = design.rounding * nm
-  param bd = design.base * nm
-  param jo = th - tr * (1 - sin(outer_pressure))
-  param ji = th - tr * (1 - sin(inner_pressure))
-  param ro = jo * tan(outer_pressure) + tr * cos(outer_pressure)
-  param ri = ji * tan(inner_pressure) + tr * cos(inner_pressure)
-  private point bi hint(x: lp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * bd * tan(inner_pressure),
-                        y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * bd)
-  private point bo hint(x: rp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * bd * tan(outer_pressure),
-                        y: bi.y)
-  private point ij hint(x: lp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * ji * tan(inner_pressure),
-                        y: lp.y - (rp.x - lp.x) / abs(rp.x - lp.x) * ji)
-  private point it hint(x: lp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * ri,
-                        y: lp.y - (rp.x - lp.x) / abs(rp.x - lp.x) * th)
-  private point ot hint(x: rp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * ro, y: it.y)
-  private point oj hint(x: rp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * jo * tan(outer_pressure),
-                        y: lp.y - (rp.x - lp.x) / abs(rp.x - lp.x) * jo)
-  private point ci hint(x: it.x, y: lp.y - (rp.x - lp.x) / abs(rp.x - lp.x) * (th - tr))
-  private point co hint(x: ot.x, y: ci.y)
-  construction line pitch(lp, rp)
-  profile = line base(bo, bi) -> line inner(bi, ij) -> tangent
-            arc inner_round(center: ci) hint(r: tr) -> tangent line tip(it, ot) -> tangent
-            arc outer_round(center: co) hint(r: tr) -> tangent line outer(oj, bo) -> close
-  inner_along angle(180deg) inner
-  outer_along angle(180deg) outer
-  lp on inner
-  rp on outer
-  rounding: TipRounding(pitch, base, tip, inner_round, outer_round, design)
-}
+use crown.mate_section
 
 // The mate of `tooth` (a CrownTooth), revolved about the cutter's axis turned tip down.
 component CrownMate(tooth: group, design: group) {
