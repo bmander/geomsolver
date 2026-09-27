@@ -103,6 +103,10 @@ macro_rules! undrawn {
             | CKind::PointPlaneDistanceFixed
             // a sphere is on no sheet, so nothing about it is drawn on one
             | CKind::SphereOn
+            | CKind::CircleOnSphere
+            | CKind::CircleOnSphereFixed
+            | CKind::Midpoint3
+            | CKind::Symmetric3
             | CKind::LineOnPlane
             | CKind::LineOnPlaneFixed
             | CKind::SphereRadius

@@ -583,6 +583,8 @@ fn each_word_across_views_is_the_relation_in_space() {
         ("la parallel lb", CKind::Parallel3),
         ("la equal lb", CKind::EqualLength3),
         ("a on lb", CKind::PointOnLine3),
+        ("a midpoint lb", CKind::Midpoint3),
+        ("a symmetry(lb) la.p1", CKind::Symmetric3),
         ("a on cb", CKind::PointOnCircle3Fixed),
         // a plane is a place in space whatever view the point is drawn in
         ("a on side", CKind::PointOnPlaneFixed),
@@ -629,7 +631,6 @@ fn a_word_with_no_meaning_in_space_is_refused_across_views() {
     refused_as("a horizontal b", "E062", "no meaning in space", "a horizontal b");
     refused_as("a distance(5, along: x) b", "E062", "no meaning in space", "a distance(5, along: x) b");
     refused_as("la tangent cb", "E062", "no meaning in space", "la tangent cb");
-    refused_as("a midpoint lb", "E062", "no meaning in space", "a midpoint lb");
     refused_as("la angle(60deg, sense: cw) lb", "E040", "unsigned", "sense");
     refused_as("a distance(5, side: left) lb", "E040", "magnitude", "side");
     // a point on the page has no place in space, nor a datum point read beside another view
@@ -692,6 +693,8 @@ fn a_sphere_takes_its_words_in_space() {
     assert_eq!(kind("s tangent la"), CKind::SphereTangentLine);
     assert_eq!(kind("s tangent s2"), CKind::SphereTangentSphere);
     refused(&with("s tangent cb"), "E040", "a sphere is tangent to a line or to another sphere", "tangent");
+    refused(&with("s tangent cb"), "E040", "a circle lying on the sphere is `c on s`", "tangent");
+    assert_eq!(kind("cb on s2"), CKind::CircleOnSphereFixed);
     // and solved: the centre held, a point of the other view on it, and a line tangent to it
     let e = read(&with("ground s.center\na on s\nground la.p1\nground la.p2\ns tangent la"));
     let mut sk = e.sketch.clone();
@@ -714,4 +717,328 @@ fn a_sphere_takes_its_words_in_space() {
     };
     let tied = "ground s.center\nground la.p1\nground la.p2\ns tangent la";
     assert_eq!(dof(with(tied)) - dof(with(&format!("{tied}\na on s"))), 1);
+}
+
+/* -- P3: the hypoid's pitch cones, and the rest of the words in space ---------------------- */
+
+/// The P3 gate (`docs/spatial-constraints-plan.md`): a hypoid's pitch cones laid out through the
+/// mean point in Solvent words — the pitch plane stated, the gear and pinion axial views folded
+/// square to it along the two pitch generators, the axes drawn in them from the apexes, and the
+/// pitch radii, the gear's pitch angle, the shaft angle and the offset stated.
+const HYPOID: &str = include_str!("fixtures/hypoid_pitch_cones.sv");
+
+/// The unit vector along `a`.
+fn unit(a: [f64; 3]) -> [f64; 3] {
+    let l = norm(a);
+    [a[0] / l, a[1] / l, a[2] / l]
+}
+
+/// `p`'s distance from the line through `a` along `d`.
+fn off_line(p: [f64; 3], a: [f64; 3], d: [f64; 3]) -> f64 {
+    norm(cross(sub(p, a), d)) / norm(d)
+}
+
+#[test]
+fn the_hypoid_pitch_cones_touch_at_the_mean_point() {
+    let e = read(HYPOID);
+    let mut sk = e.sketch.clone();
+    let r = solve(&mut sk, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
+    assert!(d.over.is_empty() && d.conflicts.as_deref().unwrap_or(&[]).is_empty(),
+            "{}", gcs_core::diagnose::summary(&d));
+    assert_eq!(d.n_equations, d.structural_rank, "{}", gcs_core::diagnose::summary(&d));
+    let at = |n: &str| sk.world_point(e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`")).i());
+    let view = |n: &str| sk.basis(e.map.ent_named(n).unwrap().i());
+    let (m, o, a) = (at("M"), at("O"), at("A"));
+    let ((g1, g2), (p1, p2)) = (ends(&sk, line(&e, "gax")), ends(&sk, line(&e, "pax")));
+    let (ag, ap) = (unit(sub(g2, g1)), unit(sub(p2, p1)));
+    let (np, ng, nq) = (view("P").normal(), view("G").normal(), view("Q").normal());
+    let mut worst: Vec<(&str, f64)> = Vec::new();
+    // each axis starts at its own apex, as drawn in the pitch plane
+    worst.push(("gear axis through O", norm(sub(g1, o))));
+    worst.push(("pinion axis through Ap", norm(sub(p1, a))));
+    // each axial view is square to P and holds its generator and its axis
+    for (what, n, apex, axis) in [("G", ng, o, ag), ("Q", nq, a, ap)] {
+        worst.push((what, dot(n, np).abs()));
+        worst.push((what, dot(n, unit(sub(apex, m))).abs()));
+        worst.push((what, dot(n, sub(m, view(what).o)).abs()));
+        worst.push((what, dot(n, axis).abs()));
+    }
+    // the shaft angle and the offset, from the lifted axes alone
+    worst.push(("shaft angle 90°", dot(ag, ap).abs()));
+    let mm = cross(ag, ap);
+    let offset = dot(mm, sub(p1, g1)).abs() / norm(mm);
+    worst.push(("offset 20", (offset - 20.0).abs()));
+    // M's distances from the two axes: the pitch radii
+    worst.push(("gear pitch radius 96", (off_line(m, g1, ag) - 96.0).abs()));
+    worst.push(("pinion pitch radius 48", (off_line(m, p1, ap) - 48.0).abs()));
+    // the gear's pitch angle, between the generator from its apex and its axis
+    let gamma = dot(unit(sub(m, o)), ag).acos().to_degrees();
+    worst.push(("gear pitch angle 60°", (gamma - 60.0).abs()));
+    // **the common pitch plane**: each cone's surface normal at M — in the plane of its axis and
+    // its generator, square to the generator — is P's normal, so P touches both cones along
+    // their generators at M
+    for (what, apex, axis) in [("gear cone", o, ag), ("pinion cone", a, ap)] {
+        let g = unit(sub(m, apex));
+        worst.push((what, dot(np, g).abs()));
+        worst.push((what, dot(np, unit(cross(g, axis))).abs()));
+        let normal = unit(cross(g, cross(g, axis)));
+        worst.push((what, norm(cross(normal, np))));
+    }
+    for (what, r) in &worst {
+        eprintln!("{what}: {r:.3e}");
+        assert!(*r < 1e-9, "{what}: {r}");
+    }
+    // the pinion's cone came out as the hypoid's, not the bevel's: its apex off the gear's
+    // generator, and its pitch angle what the offset leaves (cos ε = tan Γ·tan γ)
+    let eps = dot(unit(sub(a, m)), unit(sub(o, m))).acos();
+    let gp = dot(unit(sub(m, a)), ap).acos();
+    eprintln!("ε = {:.6}°, γ = {:.6}°, |MA| = {:.6}", eps.to_degrees(), gp.to_degrees(), norm(sub(a, m)));
+    assert!(eps.to_degrees() > 1.0);
+    assert!((eps.cos() - 60f64.to_radians().tan() * gp.tan()).abs() < 1e-9);
+}
+
+/// A sketch lifted to a program and read back: the text, and the drawing it elaborates to.
+fn relift(sk: &Sketch) -> (String, Elaborated) {
+    let text = gcs_core::program::to_program(sk).text().to_string();
+    let again = read(&text);
+    (text, again)
+}
+
+/// Every point of `a` where the same point of `b` is, in space.
+fn same_points(a: &Sketch, b: &Sketch) {
+    assert_eq!(a.points.len(), b.points.len());
+    for i in 0..a.points.len() {
+        let (x, y) = (a.world_point(i), b.world_point(i));
+        assert!(norm(sub(x, y)) < 1e-7, "p{i}: {x:?} against {y:?}");
+    }
+}
+
+/// **A solved view lifts as the clauses that solve it** (P3): the fold as the free variable it
+/// was, seeded where the solve left it; the hinge is the plane's again rather than a stated basis
+/// with a grounded picture, and read back it solves to the same place with the same freedoms.
+#[test]
+fn a_lifted_program_keeps_its_solved_folds() {
+    let e = read(&format!("{AXES}{AXES_IN_WORDS}"));
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let (text, again) = relift(&sk);
+    assert!(text.contains("fold: beta)") && text.contains(", fold: "), "{text}");
+    assert!(!text.contains("u: ("), "a solved view is not lifted as a stated basis\n{text}");
+    let mut back = again.sketch.clone();
+    assert!(back.constraints.iter().any(|c| c.kind == CKind::Hinge && c.free.is_some()), "{text}");
+    // seeded where the solve left it: already solved, and nothing moves
+    let before: Vec<[f64; 3]> = (0..back.points.len()).map(|i| back.world_point(i)).collect();
+    assert!(solve(&mut back, SolveOpts::default()).success);
+    for (i, x) in before.iter().enumerate() {
+        assert!(norm(sub(*x, back.world_point(i))) < 1e-7, "p{i} moved");
+    }
+    same_points(&sk, &back);
+    assert_eq!(diagnose(&mut back, DiagnoseOptions::default()).dof, 0);
+    // and lifted again, the same clauses
+    assert!(relift(&back).0.contains("fold: beta)"));
+}
+
+/// The hypoid's two folds `along` their generators lift as that clause, not as the row that puts
+/// the generator's end in the view beside a stated basis; the page placement the gauge held is
+/// held again rather than grounded.
+#[test]
+fn a_lifted_program_keeps_its_folds_along_lines() {
+    let e = read(HYPOID);
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    assert!(!sk.page_held.is_empty());
+    let (text, again) = relift(&sk);
+    assert_eq!(text.matches("fold: along ").count(), 2, "{text}");
+    let mut back = again.sketch.clone();
+    assert_eq!(back.page_held, sk.page_held, "{text}");
+    for &p in &sk.page_held {
+        assert!(!text.contains(&format!("ground p{p}\n")), "p{p} is the gauge's\n{text}");
+    }
+    let count = |s: &Sketch, k: CKind| s.constraints.iter().filter(|c| c.kind == k).count();
+    for k in [CKind::HingeAlong, CKind::PointOnPlane, CKind::PointOnPlaneFixed, CKind::ProjectSolved] {
+        assert_eq!(count(&back, k), count(&sk, k), "{k:?}\n{text}");
+    }
+    assert!(solve(&mut back, SolveOpts::default()).success);
+    same_points(&sk, &back);
+    let d = diagnose(&mut back, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
+}
+
+/// A free attitude and a free offset lift as `attitude: free` and `offset: free` seeded where they
+/// stand; `through:` comes back as a free offset beside the point on the plane, which says the
+/// same thing; and a view stood off a solved one as `from:` it with its offset.
+#[test]
+fn a_lifted_program_keeps_free_attitudes_and_offsets() {
+    let e = read("\
+unit mm
+point o hint(x: 0, y: 0)
+point t hint(x: 40, y: 0)
+plane front(origin: o, toward: t)
+ground o
+ground t
+point m hint(x: 12, y: 3) in front
+o distance(12, along: x) m
+o distance(8, along: y) m
+point o3 hint(x: 0, y: 100)
+point t3 hint(x: 40, y: 100)
+plane top(origin: o3, toward: t3, from: front, fold: 0deg, through: m)
+point o4 hint(x: 100, y: 0)
+point t4 hint(x: 140, y: 0)
+plane q(origin: o4, toward: t4, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
+plane w(origin: o4, toward: t4, attitude: free) hint(u: (0, 0, 1), v: (1, 0, 0))
+plane r(origin: o4, toward: t4, from: w, offset: 7)
+");
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let dof = diagnose(&mut sk, DiagnoseOptions::default()).dof;
+    let (text, again) = relift(&sk);
+    for clause in ["attitude: free", "offset: free", "u: (0, 1, 0), v: (0, 0, 1), offset: 5)",
+                   "offset: 7", " on v"] {
+        assert!(text.contains(clause), "`{clause}` is not in\n{text}");
+    }
+    let mut back = again.sketch.clone();
+    for i in 0..sk.planes.len() {
+        let (a, b) = (sk.basis(i), back.basis(i));
+        for k in 0..3 {
+            assert!((a.u[k] - b.u[k]).abs() < 1e-12 && (a.v[k] - b.v[k]).abs() < 1e-12
+                    && (a.o[k] - b.o[k]).abs() < 1e-9, "v{i}: {a:?} against {b:?}\n{text}");
+        }
+        assert_eq!(sk.planes[i].att.is_some(), back.planes[i].att.is_some(), "v{i}");
+    }
+    assert!(solve(&mut back, SolveOpts::default()).success);
+    assert_eq!(diagnose(&mut back, DiagnoseOptions::default()).dof, dof, "{text}");
+}
+
+/// The page-placement gauge's holds travel through a document: a sketch loaded from JSON keeps
+/// them, so it reads the same DOF and nothing lifted from it grounds them.
+#[test]
+fn the_page_gauge_is_kept_by_a_document() {
+    let bare = AXES.replace("ground o\n", "").replace("ground t\n", "")
+        .replace("ground o2\n", "").replace("ground t2\n", "");
+    let mut sk = read(&format!("{bare}{AXES_IN_WORDS}")).sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let text = io::dumps(&sk, None);
+    assert!(text.contains("\"page_held\":["), "{text}");
+    let mut back = io::loads(&text).expect("loads");
+    assert_eq!(back.page_held, sk.page_held);
+    assert_eq!(io::dumps(&back, None), text);
+    assert_eq!(diagnose(&mut back, DiagnoseOptions::default()).dof, 0);
+    let lifted = gcs_core::program::to_program(&back).text().to_string();
+    for &p in &sk.page_held {
+        assert!(!lifted.contains(&format!("ground p{p}\n")), "p{p}\n{lifted}");
+    }
+    // a copy keeps them too, renumbered with their points
+    let copy = io::copy(&back, &back.primitives());
+    assert_eq!(copy.page_held.len(), back.page_held.len());
+    // and a stated document writes no key at all
+    assert!(!io::dumps(&read(AXES).sketch, None).contains("page_held"));
+}
+
+/// **A circle on a sphere** (P3): `c on s` puts every point of a circle drawn in one view on a
+/// sphere about a centre drawn in another — the sphere's centre on the circle's axis, and the
+/// radii and the gap a right triangle.  The toe or heel circle of a gear blank on its end sphere.
+#[test]
+fn a_circle_on_a_sphere_is_on_it_all_the_way_round() {
+    for free in [false, true] {
+        let side = if free {
+            "plane side(origin: o2, toward: t2, attitude: free) hint(u: (0, 1, 0), v: (0, 0, 1))"
+        } else {
+            "plane side(origin: o2, toward: t2, from: front, fold: 90deg)"
+        };
+        let e = read(&format!("\
+unit mm
+point o hint(x: 0, y: 0)
+point t hint(x: 40, y: 0)
+plane front(origin: o, toward: t)
+ground o
+ground t
+point o2 hint(x: 120, y: 0)
+point t2 hint(x: 160, y: 0)
+{side}
+ground o2
+ground t2
+sphere s(hint(x: 10, y: 20)) hint(r: 30) in front
+radius(30) s
+circle k(hint(x: 135, y: 12)) hint(r: 15) in side
+radius(18) k
+k on s
+"));
+        let mut sk = e.sketch.clone();
+        let want = if free { CKind::CircleOnSphere } else { CKind::CircleOnSphereFixed };
+        assert!(sk.user_constraints().iter().any(|c| c.kind == want), "{want:?}");
+        let r = solve(&mut sk, SolveOpts::default());
+        assert!(r.success, "{}", r.message);
+        let (s, k) = (e.map.ent_named("s").unwrap(), e.map.ent_named("k").unwrap());
+        let (sc, kc) = (sk.world_point(sk.round_center(s)), sk.world_point(sk.round_center(k)));
+        let n = sk.basis(e.map.ent_named("side").unwrap().i()).normal();
+        let (u, v) = { let b = sk.basis(e.map.ent_named("side").unwrap().i()); (b.u, b.v) };
+        // the sphere's centre on the circle's axis, and every point of the circle 30 from it
+        assert!(norm(cross(sub(sc, kc), n)) < 1e-9, "off the axis: {sc:?} {kc:?}");
+        for i in 0..12 {
+            let a = i as f64 * std::f64::consts::TAU / 12.0;
+            let x = [0, 1, 2].map(|t| kc[t] + 18.0 * (a.cos() * u[t] + a.sin() * v[t]));
+            assert!((norm(sub(x, sc)) - 30.0).abs() < 1e-9, "{}", norm(sub(x, sc)));
+        }
+        // three equations, independent wherever the circle is off the sphere's centre
+        let d = diagnose(&mut sk, DiagnoseOptions::default());
+        let without = read(&format!("\
+unit mm
+point o hint(x: 0, y: 0)
+point t hint(x: 40, y: 0)
+plane front(origin: o, toward: t)
+ground o
+ground t
+point o2 hint(x: 120, y: 0)
+point t2 hint(x: 160, y: 0)
+{side}
+ground o2
+ground t2
+sphere s(hint(x: 10, y: 20)) hint(r: 30) in front
+radius(30) s
+circle k(hint(x: 135, y: 12)) hint(r: 15) in side
+radius(18) k
+"));
+        let mut wk = without.sketch.clone();
+        let dw = diagnose(&mut wk, DiagnoseOptions::default());
+        assert_eq!(dw.dof, d.dof + 3, "three equations");
+        assert!(d.over.is_empty(), "{}", gcs_core::diagnose::summary(&d));
+    }
+}
+
+/// The midpoint and the mirror in a line, across views, are the same statements in space (P3).
+#[test]
+fn the_midpoint_and_the_mirror_read_in_space() {
+    let e = read(&format!("{TWO_VIEWS}\
+ground o
+ground t
+ground o2
+ground t2
+ground lb.p1
+ground la.p1
+ground la.p2
+point c hint(x: 20, y: 5) in front
+c midpoint lb
+point d hint(x: 5, y: 30) in front
+point f hint(x: 130, y: 30) in side
+d symmetry(la) f
+"));
+    let mut sk = e.sketch.clone();
+    let kinds: Vec<CKind> = sk.user_constraints().iter().map(|c| c.kind).collect();
+    assert!(kinds.contains(&CKind::Midpoint3) && kinds.contains(&CKind::Symmetric3), "{kinds:?}");
+    let r = solve(&mut sk, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let at = |n: &str| sk.world_point(e.map.ent_named(n).unwrap().i());
+    let (b1, b2) = ends(&sk, line(&e, "lb"));
+    let mid = [0, 1, 2].map(|t| 0.5 * (b1[t] + b2[t]));
+    assert!(norm(sub(at("c"), mid)) < 1e-9, "{:?} against {mid:?}", at("c"));
+    // f is d turned half round la: their midpoint on la, and their chord square to it
+    let (a1, a2) = ends(&sk, line(&e, "la"));
+    let (dd, ff) = (at("d"), at("f"));
+    let m = [0, 1, 2].map(|t| 0.5 * (dd[t] + ff[t]));
+    let dir = sub(a2, a1);
+    assert!(norm(cross(sub(m, a1), dir)) / norm(dir) < 1e-9, "the midpoint is on the line");
+    assert!(dot(sub(ff, dd), dir).abs() < 1e-9, "the chord is square to the line");
 }

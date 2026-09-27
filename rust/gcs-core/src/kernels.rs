@@ -102,9 +102,15 @@ pub enum K {
     SphereSphere,
     LineOnPlane,
     LineOnPlaneFixed,
+    // P3: a circle drawn in a view on a sphere, over the view solved and stated, and the
+    // midpoint and the mirror in a line, in space
+    CircleOnSphere,
+    CircleOnSphereFixed,
+    Midpoint3,
+    Symmetric3,
 }
 
-pub const N_KERNELS: usize = 76;
+pub const N_KERNELS: usize = 80;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2824,6 +2830,182 @@ fn line_on_plane_fixed_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
 }
 
 
+/* -- P3: a circle on a sphere, and the midpoint and the mirror in space -------------------- */
+
+/// The three rows of a circle on a sphere — the circle's centre lifted to C, its radius r and its
+/// view's in-plane axes u and v; the sphere's centre S and radius R — and their gradients in
+/// (C, S, r, R), with the two axis rows' `S − C` handed back for the q columns:
+/// `u·(S − C)`, `v·(S − C)` (the sphere's centre on the circle's axis) and `√(|S − C|² + r²) − R`
+/// (every point of the circle at R from it).  All degree 1; the third has a gradient wherever the
+/// circle has a radius.
+fn circle_sphere_rows(v: &[f64], u: [f64; 3], w: [f64; 3], j: [&mut [f64]; 3]) -> ([f64; 3], [f64; 3]) {
+    let d = sub3(at3(v, 3), at3(v, 0));
+    let r = v[6];
+    let l = (dot3(d, d) + r * r).sqrt();
+    let [j0, j1, j2] = j;
+    for t in 0..3 {
+        j0[t] = -u[t];
+        j0[3 + t] = u[t];
+        j1[t] = -w[t];
+        j1[3 + t] = w[t];
+        let g = if l > 0.0 { d[t] / l } else { 0.0 };
+        j2[t] = -g;
+        j2[3 + t] = g;
+    }
+    j0[6] = 0.0;
+    j0[7] = 0.0;
+    j1[6] = 0.0;
+    j1[7] = 0.0;
+    j2[6] = if l > 0.0 { r / l } else { 0.0 };
+    j2[7] = -1.0;
+    ([dot3(u, d), dot3(w, d), l - v[7]], d)
+}
+
+/// Columns of `circle_on_sphere`: (C, S, r, R, qw, qx, qy, qz) — the circle's view solved, its
+/// axes read off the quaternion.  Three rows, net three equations.
+pub const N_PAR_CIRCLE_ON_SPHERE: usize = 12;
+
+fn quat_axes(q: [f64; 4]) -> Option<([[f64; 3]; 2], [[[f64; 4]; 3]; 2])> {
+    let (u, _, du) = crate::plane::lift_q(q, [1.0, 0.0, 0.0])?;
+    let (w, _, dw) = crate::plane::lift_q(q, [0.0, 1.0, 0.0])?;
+    Some(([u, w], [du, dw]))
+}
+
+fn circle_on_sphere_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    const W: usize = N_PAR_CIRCLE_ON_SPHERE;
+    let mut scratch = [0.0; 3 * W];
+    for i in 0..n {
+        let o = W * i;
+        let q = [v[o + 8], v[o + 9], v[o + 10], v[o + 11]];
+        let Some(([u, w], _)) = quat_axes(q) else {
+            r[3 * i..3 * i + 3].fill(f64::NAN);
+            continue;
+        };
+        let (a, rest) = scratch.split_at_mut(W);
+        let (b, c) = rest.split_at_mut(W);
+        let (rows, _) = circle_sphere_rows(&v[o..], u, w, [a, b, c]);
+        r[3 * i..3 * i + 3].copy_from_slice(&rows);
+    }
+}
+
+fn circle_on_sphere_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    const W: usize = N_PAR_CIRCLE_ON_SPHERE;
+    for i in 0..n {
+        let o = W * i;
+        let jo = 3 * W * i;
+        let q = [v[o + 8], v[o + 9], v[o + 10], v[o + 11]];
+        let Some(([u, w], [du, dw])) = quat_axes(q) else {
+            j[jo..jo + 3 * W].fill(f64::NAN);
+            continue;
+        };
+        let (a, rest) = j[jo..jo + 3 * W].split_at_mut(W);
+        let (b, c) = rest.split_at_mut(W);
+        let (_, d) = circle_sphere_rows(&v[o..], u, w, [&mut *a, &mut *b, &mut *c]);
+        for m in 0..4 {
+            a[8 + m] = (0..3).map(|t| d[t] * du[t][m]).sum();
+            b[8 + m] = (0..3).map(|t| d[t] * dw[t][m]).sum();
+            c[8 + m] = 0.0;
+        }
+    }
+}
+
+/// Columns of `circle_on_sphere_fixed`: (C, S, r, R), K = (u, v) — the circle's view stated.
+fn circle_on_sphere_fixed_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut scratch = [0.0; 24];
+    for i in 0..n {
+        let (a, rest) = scratch.split_at_mut(8);
+        let (b, c) = rest.split_at_mut(8);
+        let (rows, _) = circle_sphere_rows(&v[8 * i..], at3(k, 6 * i), at3(k, 6 * i + 3), [a, b, c]);
+        r[3 * i..3 * i + 3].copy_from_slice(&rows);
+    }
+}
+
+fn circle_on_sphere_fixed_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let (a, rest) = j[24 * i..24 * i + 24].split_at_mut(8);
+        let (b, c) = rest.split_at_mut(8);
+        circle_sphere_rows(&v[8 * i..], at3(k, 6 * i), at3(k, 6 * i + 3), [a, b, c]);
+    }
+}
+
+/// Columns of `midpoint3`: (X, A, B).  `X − (A + B)/2`, three rows, degree 1 — a point drawn in
+/// one view the midpoint of a line drawn in another, in space.
+fn midpoint3_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        for t in 0..3 {
+            r[3 * i + t] = v[o + t] - 0.5 * (v[o + 3 + t] + v[o + 6 + t]);
+        }
+    }
+}
+
+fn midpoint3_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let jo = 27 * i;
+        j[jo..jo + 27].fill(0.0);
+        for t in 0..3 {
+            j[jo + 9 * t + t] = 1.0;
+            j[jo + 9 * t + 3 + t] = -0.5;
+            j[jo + 9 * t + 6 + t] = -0.5;
+        }
+    }
+}
+
+/// Columns of `symmetric3`: (P, Q, A, B).  `Q + P − 2F`, F the foot of P on the line through A
+/// and B: Q is P turned half way round the line, which in the plane of the page is its mirror in
+/// it.  Three rows, degree 1, a unit gradient in Q.
+fn symmetric3_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        let (p, q, a, b) = (at3(v, o), at3(v, o + 3), at3(v, o + 6), at3(v, o + 9));
+        let e = sub3(b, a);
+        let le = norm3(e);
+        if le == 0.0 {
+            r[3 * i..3 * i + 3].fill(f64::NAN);
+            continue;
+        }
+        let eh = e.map(|t| t / le);
+        let s = dot3(sub3(p, a), eh);
+        for t in 0..3 {
+            r[3 * i + t] = q[t] + p[t] - 2.0 * a[t] - 2.0 * s * eh[t];
+        }
+    }
+}
+
+fn symmetric3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        let jo = 36 * i;
+        let (p, a, b) = (at3(v, o), at3(v, o + 6), at3(v, o + 9));
+        let e = sub3(b, a);
+        let le = norm3(e);
+        if le == 0.0 {
+            j[jo..jo + 36].fill(f64::NAN);
+            continue;
+        }
+        let eh = e.map(|t| t / le);
+        let w = sub3(p, a);
+        let s = dot3(w, eh);
+        // d(s ê) = ê êᵀ dw + (ê wᵀ + s I) P de / |e|, P = I − ê êᵀ; G = (ê wᵀ + s I) P / |e|
+        let proj = |x: usize, y: usize| (if x == y { 1.0 } else { 0.0 }) - eh[x] * eh[y];
+        let g = |x: usize, y: usize| -> f64 {
+            (0..3).map(|z| (eh[x] * w[z] + if x == z { s } else { 0.0 }) * proj(z, y)).sum::<f64>() / le
+        };
+        for x in 0..3 {
+            let row = &mut j[jo + 12 * x..jo + 12 * x + 12];
+            for y in 0..3 {
+                let id = if x == y { 1.0 } else { 0.0 };
+                let ee = eh[x] * eh[y];
+                let gxy = g(x, y);
+                row[y] = id - 2.0 * ee;
+                row[3 + y] = id;
+                row[6 + y] = -2.0 * id + 2.0 * ee + 2.0 * gxy;
+                row[9 + y] = -2.0 * gxy;
+            }
+        }
+    }
+}
+
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
     Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
@@ -2901,6 +3083,10 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "sphere_sphere", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: sphere_sphere_res, jac: sphere_sphere_jac, const_jac: None },
     Kernel { name: "line_on_plane", n_res: 2, n_par: 11, degree: 1, n_const: 0, res: line_on_plane_res, jac: line_on_plane_jac, const_jac: None },
     Kernel { name: "line_on_plane_fixed", n_res: 2, n_par: 6, degree: 1, n_const: 4, res: line_on_plane_fixed_res, jac: line_on_plane_fixed_jac, const_jac: None },
+    Kernel { name: "circle_on_sphere", n_res: 3, n_par: N_PAR_CIRCLE_ON_SPHERE, degree: 1, n_const: 0, res: circle_on_sphere_res, jac: circle_on_sphere_jac, const_jac: None },
+    Kernel { name: "circle_on_sphere_fixed", n_res: 3, n_par: 8, degree: 1, n_const: 6, res: circle_on_sphere_fixed_res, jac: circle_on_sphere_fixed_jac, const_jac: None },
+    Kernel { name: "midpoint3", n_res: 3, n_par: 9, degree: 1, n_const: 0, res: midpoint3_res, jac: midpoint3_jac, const_jac: None },
+    Kernel { name: "symmetric3", n_res: 3, n_par: 12, degree: 1, n_const: 0, res: symmetric3_res, jac: symmetric3_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

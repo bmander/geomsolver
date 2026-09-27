@@ -163,6 +163,18 @@ pub enum CKind {
     Hinge,
     /// A plane stood off a solved one (`from: P, offset: …`): the same attitude, `q_c = q_P`.
     HingeParallel,
+    /// **A circle on a sphere** (P3), `c on s`: every point of a circle drawn in a view on a
+    /// sphere — the sphere's centre on the circle's axis (two rows, across the view) and
+    /// `√(|S − C|² + r²) = R` — over the circle's view solved.  What a gear blank's toe or heel
+    /// circle is to its end sphere.  A circle *tangent* to a sphere is refused as ambiguous.
+    CircleOnSphere,
+    /// The same over a stated view.
+    CircleOnSphereFixed,
+    /// A point the midpoint of a line drawn in another view, in space (P3).
+    Midpoint3,
+    /// Two points each the other's image in a line, in space: the half turn about the line — the
+    /// mirror in it, which is what `symmetry` means on a page, read one dimension up (P3).
+    Symmetric3,
     /// `fold: along l` — the child contains a line drawn in its parent, folded square to the
     /// parent about it: the hinge over a half-angle rotor `(hc, hs)` of the constraint's own,
     /// held to the unit circle and to the line's bearing (`kernels::hinge_along_res`).  Net
@@ -213,7 +225,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 65] = [
+pub const ALL_KINDS: [CKind; 69] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -279,6 +291,10 @@ pub const ALL_KINDS: [CKind; 65] = [
     CKind::SphereTangentSphere,
     CKind::LineOnPlane,
     CKind::LineOnPlaneFixed,
+    CKind::CircleOnSphere,
+    CKind::CircleOnSphereFixed,
+    CKind::Midpoint3,
+    CKind::Symmetric3,
 ];
 
 /// `along:` says which axis a run or a rise is measured on.  It is the one selector that fills no
@@ -328,6 +344,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             // in space whatever view the point is in: a plane is a place, not a picture (P2b)
             (Point, Plane) => CKind::PointOnPlane,
             (Point, Sphere) => CKind::SphereOn,
+            (k, Sphere) if round(k) => CKind::CircleOnSphere,
             (Line, Plane) => CKind::LineOnPlane,
             _ => return None,
         },
@@ -710,6 +727,10 @@ impl CKind {
             CKind::PointPlaneDistance => "PointPlaneDistance",
             CKind::PointPlaneDistanceFixed => "PointPlaneDistanceFixed",
             CKind::SphereOn => "SphereOn",
+            CKind::CircleOnSphere => "CircleOnSphere",
+            CKind::CircleOnSphereFixed => "CircleOnSphereFixed",
+            CKind::Midpoint3 => "Midpoint3",
+            CKind::Symmetric3 => "Symmetric3",
             CKind::LineOnPlane => "LineOnPlane",
             CKind::LineOnPlaneFixed => "LineOnPlaneFixed",
             CKind::SphereRadius => "SphereRadius",
@@ -845,6 +866,11 @@ impl CKind {
                 &[("p", S::Point), ("plane", S::Plane), ("d", S::Length)]
             }
             CKind::SphereOn => &[("p", S::Point), ("sphere", S::Sphere)],
+            CKind::CircleOnSphere | CKind::CircleOnSphereFixed => {
+                &[("circle", S::CircleOrArc), ("sphere", S::Sphere)]
+            }
+            CKind::Midpoint3 => &[("p", S::Point), ("line", S::Line)],
+            CKind::Symmetric3 => &[("p", S::Point), ("q", S::Point), ("line", S::Line)],
             CKind::LineOnPlane | CKind::LineOnPlaneFixed => &[("line", S::Line), ("plane", S::Plane)],
             CKind::SphereRadius => &[("sphere", S::Sphere), ("r", S::Length)],
             CKind::SphereTangentLine => &[("sphere", S::Sphere), ("line", S::Line)],
@@ -984,6 +1010,9 @@ impl CKind {
             CKind::PointOnPlane | CKind::PointOnPlaneFixed => ("on", Infix),
             CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed => ("on", Infix),
             CKind::PointOnLine3 | CKind::SphereOn => ("on", Infix),
+            CKind::CircleOnSphere | CKind::CircleOnSphereFixed => ("on", Infix),
+            CKind::Midpoint3 => ("midpoint", Infix),
+            CKind::Symmetric3 => ("symmetry", Infix),
             CKind::LineOnPlane | CKind::LineOnPlaneFixed => ("on", Infix),
             CKind::SphereRadius => ("radius", Prefix),
             CKind::SphereTangentLine | CKind::SphereTangentSphere => ("tangent", Infix),
@@ -1241,6 +1270,10 @@ impl CKind {
             | CKind::SphereRadius
             | CKind::LineOnPlane
             | CKind::LineOnPlaneFixed
+            | CKind::CircleOnSphere
+            | CKind::CircleOnSphereFixed
+            | CKind::Midpoint3
+            | CKind::Symmetric3
             // touching in space is a magnitude row with a unit gradient, never the double root
             // the screen hunts (its centre is not also held to the line)
             | CKind::SphereTangentLine
@@ -1353,6 +1386,10 @@ impl CKind {
             // a stated plane stood off by the number: the incidence kernel, D folded into h
             CKind::PointPlaneDistanceFixed => K::PointOnPlaneFixed,
             CKind::SphereOn => K::SphereOn,
+            CKind::CircleOnSphere => K::CircleOnSphere,
+            CKind::CircleOnSphereFixed => K::CircleOnSphereFixed,
+            CKind::Midpoint3 => K::Midpoint3,
+            CKind::Symmetric3 => K::Symmetric3,
             CKind::LineOnPlane => K::LineOnPlane,
             CKind::LineOnPlaneFixed => K::LineOnPlaneFixed,
             CKind::SphereRadius => K::Radius,
@@ -1463,6 +1500,10 @@ impl CKind {
             | CKind::SphereTangentSphere
             | CKind::LineOnPlane
             | CKind::LineOnPlaneFixed
+            | CKind::CircleOnSphere
+            | CKind::CircleOnSphereFixed
+            | CKind::Midpoint3
+            | CKind::Symmetric3
             | CKind::HingeParallel
             | CKind::HingeAlong
             | CKind::ProjectSolved
@@ -1506,6 +1547,10 @@ impl CKind {
                 | CKind::SphereTangentSphere
                 | CKind::LineOnPlane
                 | CKind::LineOnPlaneFixed
+                | CKind::CircleOnSphere
+                | CKind::CircleOnSphereFixed
+                | CKind::Midpoint3
+                | CKind::Symmetric3
         )
     }
 
@@ -1530,6 +1575,10 @@ impl CKind {
             (CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed, true) => CKind::PointOnCircle3,
             (CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed, false) => {
                 CKind::PointOnCircle3Fixed
+            }
+            (CKind::CircleOnSphere | CKind::CircleOnSphereFixed, true) => CKind::CircleOnSphere,
+            (CKind::CircleOnSphere | CKind::CircleOnSphereFixed, false) => {
+                CKind::CircleOnSphereFixed
             }
             (CKind::Project | CKind::ProjectSolved, true) => CKind::ProjectSolved,
             (CKind::Project | CKind::ProjectSolved, false) => CKind::Project,
@@ -2203,6 +2252,12 @@ impl Constraint {
                 let v = self.attitude_read(sk).expect("a circle in space is drawn in a view");
                 sk.basis(v).normal().to_vec()
             }
+            // the in-plane axes of the view the circle is drawn in
+            CKind::CircleOnSphereFixed => {
+                let v = self.attitude_read(sk).expect("a circle in space is drawn in a view");
+                let b = sk.basis(v);
+                [b.u, b.v].concat()
+            }
             _ => Vec::new(),
         }
     }
@@ -2429,6 +2484,17 @@ impl Constraint {
             }
             // the hidden points, and then the radii the kernel reads as columns
             CKind::SphereOn => [self.lifted_columns(sk), vec![rad(1)]].concat(),
+            // the circle's centre and the sphere's in space, both radii, and the circle's view's
+            // quaternion where it is solved
+            CKind::CircleOnSphere | CKind::CircleOnSphereFixed => {
+                let mut out = [self.lifted_columns(sk), vec![rad(0), rad(1)]].concat();
+                if self.kind == CKind::CircleOnSphere {
+                    let v = self.attitude_read(sk).expect("a circle in space is drawn in a view");
+                    out.extend(sk.planes[v].att.as_ref().expect("a solved view").q);
+                }
+                out
+            }
+            CKind::Midpoint3 | CKind::Symmetric3 => self.lifted_columns(sk),
             CKind::SphereRadius => vec![rad(0)],
             CKind::SphereTangentLine => [self.lifted_columns(sk), vec![rad(0)]].concat(),
             CKind::SphereTangentSphere => [self.lifted_columns(sk), vec![rad(0), rad(1)]].concat(),
@@ -2472,7 +2538,11 @@ impl Constraint {
                 vec![e(0).i(), sk.round_center(e(1))]
             }
             CKind::SphereTangentLine => [vec![sk.round_center(e(0))], ends(1).to_vec()].concat(),
-            CKind::SphereTangentSphere => vec![sk.round_center(e(0)), sk.round_center(e(1))],
+            CKind::SphereTangentSphere | CKind::CircleOnSphere | CKind::CircleOnSphereFixed => {
+                vec![sk.round_center(e(0)), sk.round_center(e(1))]
+            }
+            CKind::Midpoint3 => [vec![e(0).i()], ends(1).to_vec()].concat(),
+            CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
             CKind::ProjectSolved => vec![e(0).i(), e(1).i()],
             _ => [ends(0), ends(1)].concat(),
         }
@@ -2503,6 +2573,9 @@ impl Constraint {
             | CKind::LineOnPlaneFixed => Some(self.args[1].ent().i()),
             CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed => {
                 sk.plane_of(sk.round_center(self.args[1].ent()))
+            }
+            CKind::CircleOnSphere | CKind::CircleOnSphereFixed => {
+                sk.plane_of(sk.round_center(self.args[0].ent()))
             }
             _ => None,
         }

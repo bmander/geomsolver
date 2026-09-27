@@ -428,7 +428,6 @@ fn a_word_across_views_with_no_meaning_in_space_is_refused() {
         ("a horizontal b", "E062", "no meaning in space"),
         ("a vertical b", "E062", "no meaning in space"),
         ("a distance(4, along: y) b", "E062", "no meaning in space"),
-        ("a symmetry(lb) la.p1", "E062", "no meaning in space"),
         ("la angle(30, sense: cw) lb", "E040", "unsigned"),
         ("la distance(3, side: right) lb", "E040", "no sides"),
         ("point pg hint(x: 1, y: 1)\npg coincident b", "E062", "on the page"),
@@ -437,7 +436,9 @@ fn a_word_across_views_with_no_meaning_in_space_is_refused() {
         assert!(d.iter().any(|m| m.starts_with(code) && m.contains(needle)), "{stmt}: {d:?}");
     }
     // within one view the page's words stand, and across views the ones space has are accepted
-    for stmt in ["a horizontal la.p1", "a distance(4, along: y) la.p1", "a distance(8) b", "la angle(40) lb"] {
+    // (and since P3, the midpoint and the mirror in a line)
+    for stmt in ["a horizontal la.p1", "a distance(4, along: y) la.p1", "a distance(8) b", "la angle(40) lb",
+                 "a symmetry(lb) la.p1", "a midpoint lb"] {
         let (_, d) = read(&format!("{views}{stmt}\n"));
         assert!(d.is_empty(), "{stmt}: {d:?}");
     }

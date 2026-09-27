@@ -57,10 +57,17 @@ pub(crate) fn settle(
                     named(Some(a)),
                     named(Some(b))
                 );
-                // a sphere touches a line or a sphere today; a circle in space is still to come
+                // a sphere touches a line or a sphere; a circle against one says two things
                 if word == "tangent" && (a == EntKind::Sphere || b == EntKind::Sphere) {
-                    m.push_str(" yet: a sphere is tangent to a line or to another sphere, with \
-                                the sphere written first");
+                    m.push_str(": a sphere is tangent to a line or to another sphere, with the \
+                                sphere written first");
+                    if matches!(a, EntKind::Circle | EntKind::Arc)
+                        || matches!(b, EntKind::Circle | EntKind::Arc)
+                    {
+                        m.push_str(". A circle and a sphere may touch at a point or all the \
+                                    way round, so the word does not say which: a circle lying \
+                                    on the sphere is `c on s`");
+                    }
                 }
                 (w.word.span, m)
             })?

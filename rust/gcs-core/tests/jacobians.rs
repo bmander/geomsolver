@@ -196,6 +196,12 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::SphereTangentLine, vec![e(sa), e(me2)]),
         Constraint::new(CKind::SphereTangentSphere, vec![e(sa), e(sb), Arg::Bool(true)]),
         Constraint::new(CKind::SphereTangentSphere, vec![e(sb), e(sa), Arg::Bool(false)]),
+        // P3: a circle on a sphere, its view solved and stated, and the midpoint and the mirror
+        // in a line, in space
+        Constraint::new(CKind::CircleOnSphere, vec![e(EntRef::circle(kc)), e(sb)]),
+        Constraint::new(CKind::CircleOnSphere, vec![e(EntRef::circle(kb)), e(sa)]),
+        Constraint::new(CKind::Midpoint3, vec![e(qe), e(me1)]),
+        Constraint::new(CKind::Symmetric3, vec![e(pe), e(qe), e(fold_line)]),
         // the hinges, and a projection over a solved view — its stated partner given held
         // unknowns at the add
         Constraint::new(CKind::Hinge, vec![e(hpe), e(phe), Arg::Num(0.8)]),

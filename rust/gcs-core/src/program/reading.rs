@@ -159,6 +159,10 @@ pub fn in_space(
         CKind::Perpendicular => CKind::Perpendicular3,
         CKind::Parallel => CKind::Parallel3,
         CKind::EqualLength => CKind::EqualLength3,
+        // the midpoint and the mirror are as well defined in space as on a page (P3): the mirror
+        // in a line is the half turn about it, which on the line's own plane is the reflection
+        CKind::Midpoint => CKind::Midpoint3,
+        CKind::Symmetric => CKind::Symmetric3,
         CKind::PointLineDistance | CKind::ParallelDistance => {
             if chosen(3) {
                 return Err((true, "`side:` names a side of a line on the page, and in space a \

@@ -370,6 +370,12 @@ pub fn to_json(sk: &Sketch) -> Json {
     if !roles.is_empty() { doc.set("roles", Json::Arr(roles)); }
     // only when there is one, so a document with no sphere dumps exactly as it always has
     if !spheres.is_empty() { doc.set("spheres", Json::Arr(spheres)); }
+    // the page-placement gauge's holds (P2b), by point index — only when there is one, and
+    // derived again by an elaboration, but a document loaded from this has no source to derive
+    // them from: without it a writeback would read the hold as a `ground`
+    if !sk.page_held.is_empty() {
+        doc.set("page_held", Json::Arr(sk.page_held.iter().map(|&p| Json::Int(p as i64)).collect()));
+    }
     doc
 }
 
@@ -615,6 +621,14 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             }
         }
     }
+    // a hold is only the gauge's while its point is held: a document that says a point is held
+    // and not fixed says nothing, and an index past the points is refused as untrusted input
+    for v in d.get("page_held").unwrap_or(&empty).arr() {
+        let p = index(v.as_i64(), sk.points.len(), "page_held")?;
+        if sk.point_fixed(p) {
+            sk.page_held.insert(p as u32);
+        }
+    }
     for item in d.get("roles").unwrap_or(&empty).arr() {
         let entity = item.get("entity").ok_or("geometry role needs an entity")?.arr();
         if entity.len() != 2 { return Err("geometry role entity must be [kind, index]".into()); }
@@ -665,6 +679,13 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         }
     }
     let pt_index = |i: usize| pt_map[i];
+    // a held datum point is still the gauge's in the copy: fixed like any held point, and not
+    // a `ground` a writeback would spell
+    for &p in &src.page_held {
+        if let Some(n) = pt_map[p as usize] {
+            dst.page_held.insert(n as u32);
+        }
+    }
     for &i in &keep_pts {
         let (x, y) = src.point_xy(i);
         let n = dst.point(x + offset.0, y + offset.1, src.point_fixed(i),

@@ -378,6 +378,67 @@ without naming an intrinsic row.
 **Exit:** in a hypoid pitch-cone fixture, the pinion cone touches the gear's at M with a common
 pitch plane, and `fixtures::gear::bevel` designs are unchanged.
 
+### P3 — the hypoid's pitch cones, and the deferred words (done)
+
+- **The gate** is `tests/fixtures/hypoid_pitch_cones.sv`, in words only: the pitch plane P stated
+  with M grounded on it; the gear apex O and the pinion apex Aₚ drawn in P, with `horizontal` on
+  the generator O→M as the turn gauge; G and Q folded `along` the generators O→M and Aₚ→M; each
+  axis drawn in its view from the apex's image (`gax.p1 on P`, `O project gax.p1`: on the fold
+  line and at the apex) with a drawn length. The design is Ng = 48, Np = 24 at a 4 mm module
+  (pitch radii 96 and 48, `M distance(Rg) gax`), shaft angle 90° and offset E = 20
+  (`gax angle(90deg) pax`, `gax distance(E) pax`), and **the gear pitch angle Γ = 60°**
+  (`gen_g angle(60deg) gax`), the one condition the pitch cones need beyond those four: the gear
+  cone is then its radius and its pitch angle, and the pinion's apex (two) and pitch angle (one)
+  are held by its radius, the shaft angle and the offset. A spiral angle would do instead, but
+  that belongs to the tooth trace, which this fixture does not draw. The common pitch plane is by
+  construction: each axis is in a view square to P along its generator, so P is each cone's
+  tangent plane along it. It solves to DOF 0 (56 params, 56 equations, rank 56) from seeds near
+  the answer, with ε = 10.7221°, γ = 29.5650°, |MAₚ| = 97.2822.
+  `the_hypoid_pitch_cones_touch_at_the_mean_point` recomputes from the lifted geometry alone:
+  each axis through its apex, each axial view square to P holding its generator and its axis,
+  the shaft angle, the common perpendicular, M's distances to both axes, the gear pitch angle,
+  and each cone's surface normal at M parallel to P's normal (and P's normal ⟂ each generator
+  and in the plane of each axis and generator); every residual is below 5e-15, and cos ε =
+  tan Γ·tan γ holds to 1e-9. The bevel designs are untouched: no example changed, and the corpus,
+  the goldens and the gear suites are the gate.
+- **`to_program` lifts a solved view's clauses** (`program/lift.rs::lift_view`): a `Hinge` as
+  `from: P, fold: <its expression>` with `hint(fold: <the solved fold>)` where the fold is free, a
+  `HingeAlong` as `fold: along l` (the `PointOnPlane` it mints is not lifted again), a
+  `HingeParallel` as `from: P, offset: k`, a free attitude as `attitude: free` seeded with its
+  solved `u`/`v`, and a solved offset as `offset: free` seeded where it stands — so `through: M`
+  comes back as `offset: free` beside `M on Q`, the same statement. A held view (a stated one a
+  solved view reads) is lifted stated as before, and the page gauge's points are not grounded:
+  the lifted views hold them again. Round trips: the axes gate (the free fold, already solved on
+  load), the hypoid (two folds along, the same holds, the same kinds, the same points), and a
+  free attitude, a free offset, `through:` and a stand-off from a free view (same bases, same DOF).
+  A stated plane stood off its parent along the normal is still lifted as `u:`/`v:` without the
+  offset, which `Attitude::Basis` cannot carry (as before P3).
+- **`Sketch::page_held` travels through JSON** as `"page_held"` (point indices, written only when
+  nonempty, read only for a point that is fixed) and through the graft, so a loaded document reads
+  the same DOF and a writeback or a lift never spells a `ground` for those points.
+- **A circle on a sphere**, `k on s` (`CircleOnSphere` / `…Fixed`, the attitude twin pair): the
+  sphere's centre on the circle's axis (`u·(S − C)`, `v·(S − C)`, the view's in-plane axes) and
+  `√(‖S − C‖² + r²) − R`, three rows of degree 1 over the circle's view solved (12 columns) or
+  stated (8, `(u, v)` as constants). This is the useful meaning for a gear blank (a toe or heel
+  circle on its end sphere). `s tangent k` stays refused, now saying why: a circle and a sphere
+  touch at a point or all the way round, and the word does not say which.
+- **`midpoint` and `symmetry` across views** are `Midpoint3` (`X − (A + B)/2`, three rows) and
+  `Symmetric3` (`Q + P − 2F`, F the foot of P on the line: the half turn about the line, which on
+  the line's own plane is the page's mirror; three rows, a unit gradient in Q). Both degree 1.
+- **A datum point read in a view it is not drawn in stays refused (E062).** It has a lift (an
+  origin at its view's `o`), but its meaning would then turn on whether the other operands are
+  datum points: beside datum points of other views the same statement is sheet layout, and the
+  corpus has 215 of those. A document that means space draws a point in the view at the datum
+  (`m coincident o2` inside the view) and relates that.
+- **Kernels** 80 (four new), kinds 69; `jacobians.rs` rows for each and both circle twins,
+  `refusals.rs` accepts `midpoint`/`symmetry` across views. **Tests:** `spatial_lang.rs` — the
+  gate, the three lift round trips, the page gauge through JSON and a copy, a circle on a sphere
+  in a stated and a solved view (every point of the circle at the sphere's radius, three
+  equations), the midpoint and the mirror solved and checked in space.
+- **Deferred to P4:** cones and cylinders as entities (a pitch cone is still two views and an
+  axis, not a surface a relation can name), `against` with solved views (E066), and a stated
+  plane's normal offset in a lifted program.
+
 ## P4 — Cones and cylinders, and `against` with solved views
 
 ## Documentation in every phase
