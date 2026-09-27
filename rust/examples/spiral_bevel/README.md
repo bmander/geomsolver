@@ -15,15 +15,16 @@ hinge drawn there: G, the gear's axial view, along O → M; Q, the pinion's, alo
 pinion apex; N, the normal section, along the trace normal C → M.
 
 **Step 1, the requirements: `design.sv`** over **`configuration.sv`.** The configuration
-states the tooth counts, the mean module, the offset angle, the pressure shift and the crown's
-spiral angle; the design group adds the pressure angle, the cutter radius and face width in
+states the tooth counts, the mean module, the shafts (at 90°, and the offset between them, the
+length of their common perpendicular), the pressure shift and the crown's spiral angle; the design group adds the pressure angle, the cutter radius and face width in
 proportion to the mean cone distance, the depths in normal modules (addendum, dedendum, base,
 tip rounding, back), the two members' generating rolls and the gear space cutter's reach. The
 normal module is the one number with a cosine in it, and the trace checks it. Zero offset is a
-bevel pair with a common apex; the configured pair is a 25-degree hypoid whose 10-degree shift
-and 25-degree spiral design out the undercut a symmetric rack develops past about 16 degrees
-of offset (`docs/generating-sweeps-plan.md`). `fixtures::gear` rewrites these parameters for
-the suites.
+bevel pair with a common apex; the configured pair is a hypoid 25 mm off, whose 12.5-degree
+shift and 25-degree spiral design out the undercut a symmetric rack develops past about 15 mm
+of offset, chosen inside the generating-sweep class with margin
+(`docs/spiral-bevel-layout-plan.md`, the true hypoid). `fixtures::gear` rewrites these
+parameters for the suites.
 
 **Step 2, the gear's pitch cone: `pitch/gear.sv`.** O and M lie in P; in G the right
 triangle O–M–F has the two pitch radii at M for its legs, F the foot of M on the gear axis.
@@ -36,11 +37,14 @@ radius from M, with MC at 90° less the spiral angle to MO. The trace is the cir
 through M; its heading, the tangent at M, meets the square dropped from O at H. A claim checks
 the normal module: a point one module from M along the generator stands that far from MC.
 
-**Step 2, the pinion's pitch cone: `pitch/pinion.sv`.** Its apex A is where the line through
-M at the offset angle from MO meets the square from O to the heading, so O and A fall on one
-point of the heading and the equal normal pitch holds with no cosine written. At no offset A
-is O. In Q the pinion's axis leaves A at its pitch angle, which `layout.sv` ties to the angle
-at M in the gear's triangle.
+**Step 2, the pinion's pitch cone: `pitch/pinion.sv`.** Solved against the gear's: its axis is
+square to the gear's and the offset from it, drawn in Q from the image of its apex A, a point
+of P that turns about M by an offset angle the solve answers, so P touches the pinion's cone
+along AM. The equal normal pitch sizes it with no cosine written: V, where MA meets the square
+from O to the heading, falls with O on one point of the heading, a virtual axis leaves V at the
+bevel pinion's pitch angle (`layout.sv` ties it to the angle at M in the gear's triangle), and
+the pinion's pitch radius is one circle about M that both axes touch. The pinion's own pitch
+angle and its spiral, the crown's plus the offset angle, follow. At no offset A and V are O.
 
 **Step 3, the ends: `blank/sphere.sv`.** The face width, centred on M along the pitch
 generator, and the toe and heel spheres about the apex through its ends, poles square to the
@@ -80,8 +84,10 @@ mate teeth, each active flank closed far from the working blank: the outer mate 
 inner one indexed a crown pitch round, closed at a cap standing clear of every blank point.
 
 **Step 5, generation: `generation.sv`.** Every roll shares the crown's angle, and each member
-turns at the ratio its pitch cone rolls on the crown, measured off the pitch triangles after
-the solve; the generating motions are the crown roll relative to each member's. Indexing is one
+turns at the crown's tooth count over its own, `N_c / N` with `N_c = 2R / m`, measured off the
+gear's triangle after the solve (its hypotenuse R over the gear's pitch radius, and over the
+short leg `N_p m / 2` for the pinion, whose own solved cone rolls at another ratio off the
+bevel), so both members stay conjugate through the common crown; the generating motions are the crown roll relative to each member's. Indexing is one
 member angle; the crown's neighbour is one crown pitch round.
 
 **The layout: `layout.sv`.** `HypoidLayout(front, design)` composes steps 2–5 in the four

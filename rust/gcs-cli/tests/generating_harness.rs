@@ -358,8 +358,8 @@ fn controls() {
     let cases = vec![
         gear("bevel pinion space","pinion",0.,0.,35.,true,&[],Expect::Export),
         gear("bevel gear space","gear",0.,0.,35.,true,&[],Expect::Export),
-        gear("hypoid 25 pinion space","pinion",25.,12.5,30.,true,&[],Expect::Export),
-        gear("hypoid 25 gear space (crease sliver)","gear",25.,12.5,30.,true,&[],Expect::Either),
+        gear("hypoid 25 pinion space","pinion",25.,12.5,25.,true,&[],Expect::Export),
+        gear("hypoid 25 gear space (crease sliver)","gear",25.,12.5,25.,true,&[],Expect::Either),
         gear("symmetric rack 17.5 mm off (undercut)","pinion",17.5,0.,35.,true,&[],Expect::Refuse("admission")),
         gear("symmetric rack 30 mm off (double contact)","pinion",30.,0.,35.,true,&[],Expect::Refuse("admission")),
     ];

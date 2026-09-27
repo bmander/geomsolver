@@ -167,13 +167,13 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
 
 #[test]
 fn the_configured_hypoid_pinion_is_admitted() {
-    let a = pinion(25.,12.5,30.).unwrap();
+    let a = pinion(25.,12.5,25.).unwrap();
     assert!(a.sweeps()[0].least_area_factor > 0.1);
 }
 
 #[test]
 fn the_configured_hypoid_gear_is_admitted() {
-    let a = member("gear",25.,12.5,30.).unwrap();
+    let a = member("gear",25.,12.5,25.).unwrap();
     assert!(a.sweeps()[0].least_area_factor > 0.1);
 }
 

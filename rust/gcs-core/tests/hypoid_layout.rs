@@ -63,7 +63,7 @@ impl Design {
 }
 
 fn designs() -> Vec<Design> {
-    let mut all = vec![Design::configured("configured",25.,12.5,30.),
+    let mut all = vec![Design::configured("configured",25.,12.5,25.),
         Design::configured("bevel",0.,0.,35.),Design::configured("hypoid6",5.7,0.,35.)];
     for teeth in [[24,48],[32,32],[28,49]] {
         for module in [0.2,2.,25.4] { all.push(Design::sized(teeth,module)); }
@@ -415,7 +415,7 @@ fn offset_design(teeth: [u32;2],module: f64,offset: f64,shift: f64,spiral: f64) 
 fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ratio() {
     let designs: [(Design,[f64;2],f64,f64,f64);5] = [(offset_design([24,48],2.,0.,0.,35.),[24.,48.],2.,0.,35.),
         (offset_design([24,48],2.,5.7,0.,35.),[24.,48.],2.,5.7,35.),
-        (offset_design([24,48],2.,25.,12.5,30.),[24.,48.],2.,25.,30.),
+        (offset_design([24,48],2.,25.,12.5,25.),[24.,48.],2.,25.,25.),
         (offset_design([28,49],0.2,1.,0.,35.),[28.,49.],0.2,1.,35.),
         (offset_design([32,32],25.4,100.,5.,30.),[32.,32.],25.4,100.,30.)];
     for (design,[np,ng],module,offset,spiral) in designs {

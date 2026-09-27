@@ -101,6 +101,37 @@ scales the generating geometry and its trim surfaces. Search hints and tessellat
 not geometric design parameters. Invalid parameter combinations must fail visibly; the
 implementation must not quietly shorten a tooth to hide undercut or interference.
 
+### Offset shafts: the true hypoid
+
+`configuration.sv` states `shaft_angle` (90°) and `offset`, the common perpendicular E between
+the shafts. The gear's cone is the intersecting-axis one above. The pinion's is solved
+(`pitch/pinion.sv`): its apex lies on the gear's pitch plane, its axis is square to the gear's
+and E from it, and its pitch radius at the mean point is the equal normal pitch's,
+
+```
+r_p cos(psi + eps) = pinion_teeth * m_n / 2,    m_n = mean_module * cos(psi)
+```
+
+where `eps`, the angle the pinion's generator turns from the gear's in the pitch plane, is
+solved rather than stated. That is the condition under which the relative velocity of the
+crown and the pinion at the mean point lies along the tooth trace. The pinion's pitch angle
+comes out below `delta_p` (24.36° against 26.57° at the configured 25 mm), and its spiral angle
+is `psi + eps`.
+
+Conjugacy still runs through the common crown, but the relative angular velocities are no
+longer parallel, so the argument above becomes the envelope argument alone: each member is the
+envelope of one crown section, and a crown normal meeting both envelope equations at a point
+makes the members touch there. What must hold exactly is timing: the crown turns once per
+`N_c = 2 R_mean / mean_module` of its pitches, the gear `N_c / gear_teeth` and the pinion
+`N_c / pinion_teeth` times per crown turn, and each is indexed by its own tooth. The pinion's
+own cone would roll at `1 / sin(gamma_p)`, which is not that ratio off the bevel, so
+`generation.sv` measures the pinion's roll off the gear's triangle, `R_mean / (pinion_teeth *
+mean_module / 2)`; `tests/hypoid_layout.rs` holds both ratios to `N_c / N` within 1e-12 at five
+designs. At E = 0 the pinion is the intersecting-axis one and every bevel number is unchanged.
+The configured pair is E = 25 mm with a 12.5° pressure shift and a 25° spiral, inside the
+generating-sweep class for both members
+([the layout plan](spiral-bevel-layout-plan.md#the-true-hypoid) records the grid).
+
 ## Common-crown construction under investigation
 
 [Chang, Huston and Coy, NASA TM-101449 (1989)](https://ntrs.nasa.gov/api/citations/19890007877/downloads/19890007877.pdf)

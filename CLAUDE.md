@@ -217,11 +217,13 @@ checks read live in `spiral_bevel/verification.sv` (`ReferenceFaces(refs)`), ins
 `pair.sv` over `HypoidLayout` only; `gears.sv` (`HypoidPair`) elaborates the design alone. The
 layout's steps are modules (`design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
 `generation.sv`, `layout.sv`, `members.sv`; the example's README walks them), four views
-folded from the pitch plane through the mean point. `configuration.sv`'s `offset_angle` turns
-the pinion about the crown normal at the mean point and enlarges it by the spiral-angle cosine
-ratio (a hypoid at nonzero), its cones and end spheres about its own apex in its axial view;
+folded from the pitch plane through the mean point. `configuration.sv` states the shafts
+(`shaft_angle`, and `offset`, their common perpendicular E); the pinion's cone is solved against
+the gear's (`pitch/pinion.sv`: apex on the pitch plane, pitch radius the equal normal pitch's
+through a virtual bevel pinion at V), E = 0 being the bevel pair, and each member rolls at
+`N_c / N` measured off the gear's triangle, never its own cone's `1 / sin`;
 `tests/hypoid_layout.rs` holds the layout to the closed-form pair it replaced, recorded at
-twelve designs; the mesh export refuses a sectioned sheet whose boundary a placement carries inside the blank,
+twelve designs (the two off the bevel re-recorded as the true hypoid); the mesh export refuses a sectioned sheet whose boundary a placement carries inside the blank,
 and the CLI test readers zero the offset because the recorded volumes are the bevel pair's.
 **Continuous motion solids:** `solid removal(tool, under: generating, from: -30deg, to: 30deg)`
 uses finite increasing Angle bounds, converted to radians at elaboration. It means the union
@@ -310,8 +312,8 @@ core's (`solid::contracts`), and every refusal, from admission to the gate, is o
 `solid::export::ExportRefusal` — its `Stage` (the keys `SOLVENT_STAGE_TRACE` records, with a
 `refused:` line for the stage refused at), the class row and a witness when known — reported at
 the solid's statement. The refine backend's features are `solid::blank_features`, read off the
-native blank's topology through `BlankTopology`. The configured gear is a 25° hypoid designed out of undercut
-(`pressure_shift`, `spiral_angle` in `configuration.sv`); tests with recorded numbers pin theirs
+native blank's topology through `BlankTopology`. The configured pair is a true hypoid 25 mm off, designed out of undercut
+(`pressure_shift`, `spiral_angle` in `configuration.sv`; `admission.rs::the_admission_grid`); tests with recorded numbers pin theirs
 through `fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, the dev-only crate both suites'
 readers, gear rewrites and small sweep tools live in), and `tests/native_surfaces/gear_cells.rs` holds the
 recorded tooth-space volumes. `tests/generating_harness.rs` (ignored, minutes) locates each

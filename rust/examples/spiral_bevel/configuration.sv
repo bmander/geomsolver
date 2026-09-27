@@ -15,4 +15,4 @@ param pressure_shift = 12.5deg
 // The crown's spiral angle at the mean point; the pinion's is this plus the
 // offset angle, the angle the pinion's pitch generator turns from the gear's in
 // the pitch plane, which the layout solves.
-param spiral_angle = 30deg
+param spiral_angle = 25deg
