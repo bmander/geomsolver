@@ -201,6 +201,15 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             }
         }
 
+        // a solved view's seeds — its fold, its attitude, its offset — spliced where the clause
+        // wrote them, and the news that one moved where it wrote none (P2a)
+        let mut plane_now: Option<Vec<syntax::PlaneHint>> = None;
+        if d.kind == EntKind::Plane && sk.planes[parent.i()].att.is_some() {
+            let (sp, miss, now) = plane_seeds(sk, prog, d, parent.i());
+            mine.extend(sp);
+            missing |= miss;
+            plane_now = Some(now);
+        }
         if !missing {
             edits.extend(mine);
             continue;
@@ -217,7 +226,15 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         }
         // the clause, as the pose the solve arrived at; empty when the kind owns no scalar at
         // all — a line's numbers are its two points', and they are written in the slots
-        let hint = if omit_radius { String::new() } else { syntax::hint_clause(d, &pose) };
+        let hint = match &plane_now {
+            _ if omit_radius => String::new(),
+            Some(now) => {
+                let mut d2 = d.clone();
+                d2.plane.hints = now.clone();
+                syntax::hint_clause(&d2, &pose)
+            }
+            None => syntax::hint_clause(d, &pose),
+        };
         // No slot of this list is the source's own text, so the list has to be written too —
         // a chain's thread fills slots with references written in *another* link, or written
         // nowhere at all, and neither is a list this statement can splice into.  It is spelled
@@ -303,6 +320,90 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         names: Vec::new(),
         refused: None,
     }
+}
+
+/// A solved view's seeds as the solve left them (P2a): the fold its free variable came to, the
+/// attitude's axes, the offset from where the attitude alone would stand it.  Each written as a
+/// literal is spliced in place; one written as an expression is the author's arithmetic and is
+/// left alone; one not written at all is `missing` when the solve moved it off where an
+/// unwritten seed starts.  The third value is the clause's keys at the solved numbers, for a
+/// caller that writes the clause whole.
+fn plane_seeds(sk: &Sketch, prog: &Program, d: &Decl, pi: usize)
+    -> (Vec<Splice>, bool, Vec<syntax::PlaneHint>)
+{
+    use crate::constraints::CKind;
+    let b = sk.basis(pi);
+    let mut now: Vec<(&str, Vec<f64>, bool)> = Vec::new();
+    // the fold, where it is the document's free variable: m·a + c, in degrees
+    if let Some(f) = sk.constraints.iter()
+        .find(|c| c.kind == CKind::Hinge && c.args[0].ent().i() == pi)
+        .and_then(|c| c.free)
+    {
+        let theta = f.m * sk.params[f.param as usize].value + f.c;
+        now.push(("fold", vec![theta.to_degrees()], true));
+    }
+    if matches!(d.attitude, syntax::Attitude::Free { .. }) {
+        now.push(("u", b.u.to_vec(), false));
+        now.push(("v", b.v.to_vec(), false));
+    }
+    if matches!(d.plane.position, syntax::Position::Free(_)) {
+        // along the normal from the origin the attitude alone gives it: its parent's, or the
+        // shared origin
+        let base = match d.attitude.plane_ref() {
+            Some(_) => sk.constraints.iter()
+                .find(|c| matches!(c.kind, CKind::Hinge | CKind::HingeParallel | CKind::HingeAlong)
+                    && c.args[0].ent().i() == pi)
+                .map_or([0.0; 3], |c| sk.basis(c.args[1].ent().i()).o),
+            None => [0.0; 3],
+        };
+        let n = b.normal();
+        let k = crate::plane::dot(n, [b.o[0] - base[0], b.o[1] - base[1], b.o[2] - base[2]]);
+        now.push(("offset", vec![k], false));
+    }
+    let mut splices = Vec::new();
+    let mut missing = false;
+    let mut hints = d.plane.hints.clone();
+    for (key, vals, angle) in now {
+        let lit = |text: &str, v: f64| {
+            let unit = angle && crate::expr::names_unit(text);
+            if unit { format!("{}deg", num(v)) } else { num(v) }
+        };
+        let writable = |text: &str| {
+            crate::expr::literal(text).is_some() || crate::expr::notation(text)
+        };
+        match hints.iter_mut().find(|h| h.key.text == key) {
+            Some(h) => {
+                for (a, &v) in h.args.iter_mut().zip(&vals) {
+                    let syntax::Arg::Dim { text, span } = a else { continue };
+                    if !writable(text) {
+                        continue;
+                    }
+                    let with = lit(text, v);
+                    if !span.is_empty() && span.slice(prog.text()) != with {
+                        splices.push(Splice { at: *span, with: with.clone() });
+                    }
+                    *text = with;
+                }
+            }
+            None => {
+                let rest = match key {
+                    "u" => vec![1.0, 0.0, 0.0],
+                    "v" => vec![0.0, 0.0, 1.0],
+                    _ => vec![0.0; vals.len()],
+                };
+                missing |= vals.iter().zip(&rest).any(|(a, b)| (a - b).abs() > 1e-12);
+                hints.push(syntax::PlaneHint {
+                    key: syntax::Name::new(key),
+                    args: vals.iter().map(|&v| syntax::Arg::Dim {
+                        text: if angle { format!("{}deg", num(v)) } else { num(v) },
+                        span: Span::default(),
+                    }).collect(),
+                    span: Span::default(),
+                });
+            }
+        }
+    }
+    (splices, missing, hints)
 }
 
 /// Whether a statement is one of the root component's own.
@@ -485,7 +586,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         seed_at: None,
         seed_names: Vec::new(),
         attitude: Default::default(),
-        sweep: None, motion: None, angular_span: None,
+        sweep: None, motion: None, angular_span: None, plane: Default::default(),
         membership: Default::default(),
         list_span: Span::default(),
         close: None,
@@ -589,7 +690,7 @@ fn add_entity_with(
         attitude,
         // a gesture never draws a solid: the sheet is where the drawing is, and a solid is
         // written over what is drawn there
-        sweep: None, motion: None, angular_span: None,
+        sweep: None, motion: None, angular_span: None, plane: Default::default(),
         membership: Default::default(),
         list_span: Span::default(),
         close: None,
@@ -789,6 +890,14 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
             // a plane folded from a deleted one is defined from nothing, and goes with it; a
             // membership (`in …`) is a label the point survives losing, and is not counted
             if let Some(r) = d.attitude.plane_ref() {
+                look(r);
+            }
+            // and one folded along a deleted line, or stood through a deleted point: where it
+            // stands is defined from nothing too (P2a)
+            if let syntax::Attitude::Along { line, .. } = &d.attitude {
+                look(line);
+            }
+            if let syntax::Position::Through(r) = &d.plane.position {
                 look(r);
             }
             if let Some(motion) = &d.motion {

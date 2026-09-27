@@ -351,6 +351,22 @@ impl Sketch {
     /// dimension whose definition has not been grafted yet briefly a free variable — allocating
     /// an unknown the next pass immediately retires.
     pub(crate) fn add_quiet(&mut self, mut c: Constraint) -> u32 {
+        // the twin its planes can feed, decided before anything is minted for it: a projection
+        // over a solved view reads both views' quaternions, so a stated one is given held
+        // unknowns first (`Sketch::solve_projection`'s rule, for a statement not yet added)
+        let reads = c.attitudes_read(self);
+        if !reads.is_empty() {
+            let solved = reads.iter().any(|&v| self.planes[v].att.is_some());
+            c.kind = c.kind.attitude_twin(solved);
+            if c.kind == crate::constraints::CKind::ProjectSolved {
+                for v in reads {
+                    if self.planes[v].att.is_none() {
+                        self.mint_attitude(v, true);
+                        self.fix_attitude(v, true);
+                    }
+                }
+            }
+        }
         if c.id == 0 {
             self.next_cid += 1;
             c.id = self.next_cid;
@@ -364,9 +380,6 @@ impl Sketch {
         // `constraints::validate` is where that is refused
         for p in c.lifted_points(self) {
             self.lift_point(p);
-        }
-        if let Some(v) = c.attitude_read(self) {
-            c.kind = c.kind.attitude_twin(self.planes[v].att.is_some());
         }
         for (i, name) in c.kind.param_slots() {
             if matches!(c.args[i], Arg::Param(_)) {

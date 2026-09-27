@@ -426,6 +426,10 @@ pub struct Att {
     /// answers with the stored basis while the unknowns still hold exactly these numbers, and
     /// freeing a view moves nothing any reader sees until a solve moves the view.
     pub(in crate::model) seat: [f64; 5],
+    /// Held by a hinge to the view it is folded from (`CKind::Hinge`, P2a) rather than by a
+    /// `quat_unit` row of its own: a product of unit quaternions is one, and a second row saying
+    /// so would be a redundant equation at every solution.
+    pub hinged: bool,
 }
 
 /// A **hidden point in space**: the lift of one view point, held to it by an intrinsic `lift`

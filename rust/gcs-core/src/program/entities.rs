@@ -296,7 +296,9 @@ pub(super) fn build(
             // it says which plane it is parallel to and leaves where it stands to one `against`.
             // Recorded here, where the attitude as *written* is still in hand — after this the
             // basis is a number and says nothing about how it was arrived at.
-            if matches!(&d.attitude, crate::syntax::Attitude::Offset { offset: None, .. }) {
+            if matches!(&d.attitude, crate::syntax::Attitude::Offset { offset: None, .. })
+                && matches!(d.plane.position, crate::syntax::Position::Stated)
+            {
                 sk.placed_planes.insert(pi as u32);
             }
             if let Some(n) = d.name.shown() {

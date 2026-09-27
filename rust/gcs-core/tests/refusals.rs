@@ -394,3 +394,21 @@ fn a_direction_and_a_sense_are_words() {
     assert!(y < 0.0 && (y.atan2(x).to_degrees() + 30.0).abs() < 1e-6, "({x}, {y})");
     assert_eq!(gcs_core::io::dimension_text(&sk.user_constraints()[0]).as_deref(), Some("-30°"));
 }
+
+/// Views solved for (P2a): a fold along a line of another view and a position stated twice are
+/// E064, `against` on a solved view is E066, and two solved views a projection relates that come
+/// out parallel are E065 — after the solve, where no stated number could have said so.
+#[test]
+fn a_solved_view_the_model_cannot_hold_is_refused() {
+    let views = "point o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\nplane front(origin: o, toward: t)\n";
+    let (_, d) = read(&format!("{views}line l(hint(x: 0, y: 0), hint(x: 5, y: 5))\nplane s(origin: o, toward: t, from: front, fold: along l)\n"));
+    assert!(d.iter().any(|m| m.starts_with("E064") && m.contains("not drawn in")), "{d:?}");
+    let (_, d) = read(&format!("{views}point m hint(x: 1, y: 2) in front\nplane s(origin: o, toward: t, from: front, offset: 4, through: m)\n"));
+    assert!(d.iter().any(|m| m.starts_with("E064") && m.contains("stated twice")), "{d:?}");
+    let (_, d) = read(&format!("{views}plane s(origin: o, toward: t, from: front, fold: 10deg) hint(fold: 5deg)\n"));
+    assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("the fold is stated")), "{d:?}");
+    let (e, d) = read(&format!("{views}plane q(origin: o, toward: t, attitude: free) hint(u: (1, 0, 0), v: (0, 0, 1))\npoint a hint(x: 3, y: 4) in front\npoint b hint(x: 3, y: 4) in q\na project b\n"));
+    assert!(d.is_empty(), "a projection between a stated and a solved view is not refused as written: {d:?}");
+    let after = gcs_core::program::solid_diagnostics(&e.sketch, &e.map);
+    assert!(after.iter().any(|x| x.code.as_str() == "E065"), "{after:?}");
+}

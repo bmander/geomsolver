@@ -101,6 +101,11 @@ fn every_constraint_type_is_printable() {
         if kind == CKind::DragTarget {
             continue; // soft, and never in a document — `user_constraints` filters it
         }
+        if kind.hinge() {
+            // a hinge is a solved view's own statement, written in its plane's brackets
+            // (`fold: beta`, `fold: along l`); `tests/spatial_lang.rs` prints those
+            continue;
+        }
         if matches!(kind, CKind::PointOnCurve | CKind::CurveTangentLine | CKind::CurveCurvature) {
             // a curve's contacts print, but the curve they name lifts as an instance of a
             // component the sketch does not hold the text of, so there is nothing for them to
@@ -333,6 +338,7 @@ fn a_name_declared_twice_is_an_error() {
             seed_at: None,
             seed_names: Vec::new(),
             attitude: Default::default(),
+            plane: Default::default(),
             sweep: None,
             motion: None, angular_span: None,
             membership: Default::default(),
@@ -373,7 +379,8 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     // projection is inferred from
     let pa = sk.plane(r, s, gcs_core::plane::Basis::page(), "front");
     let pb = sk.plane(r, s, gcs_core::plane::Basis::page().fold(0.0), "top");
-    if kind == CKind::Project {
+    // a projection over stated views is `Project`, and comes back as the twin its views feed
+    if matches!(kind, CKind::Project | CKind::ProjectSolved) {
         sk.set_plane(p, Some(pa));
         sk.set_plane(q, Some(pb));
         let c = Constraint::project(&sk, EntRef::point(p), EntRef::point(q)).unwrap();

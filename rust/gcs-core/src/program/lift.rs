@@ -23,7 +23,9 @@ pub fn to_program(sk: &Sketch) -> Program {
     for e in sk.primitives() {
         p.push(StmtKind::Decl(lift_decl(sk, e)));
     }
-    for c in sk.user_constraints() {
+    // a hinge is a solved view's own statement, and a lifted plane states its basis outright
+    // (`lift_attitude`): the view comes back stated, where the solve left it
+    for c in sk.user_constraints().into_iter().filter(|c| !c.kind.hinge()) {
         p.push(StmtKind::Relation(lift_relation(sk, c)));
     }
     for i in 0..sk.points.len() {
@@ -113,7 +115,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         seed_at: None,
         seed_names: Vec::new(),
         attitude: lift_attitude(sk, e),
-        sweep: None, motion: None, angular_span: None,
+        sweep: None, motion: None, angular_span: None, plane: Default::default(),
         membership: lift_plane(sk, e),
         list_span: Span::default(),
         close: None,

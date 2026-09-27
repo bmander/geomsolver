@@ -97,6 +97,12 @@ macro_rules! undrawn {
             | CKind::PointOnPlaneFixed
             | CKind::PointOnCircle3
             | CKind::PointOnCircle3Fixed
+            // a view's hinge is its declaration's, and a projection in space draws what
+            // `project` draws: nothing
+            | CKind::Hinge
+            | CKind::HingeParallel
+            | CKind::HingeAlong
+            | CKind::ProjectSolved
             | CKind::Ground
             | CKind::Fix
             | CKind::Ccw

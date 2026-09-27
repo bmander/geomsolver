@@ -8,6 +8,7 @@ mod diagnostics;
 mod entities;
 mod lift;
 mod planes;
+mod views;
 mod relations;
 mod resolve;
 mod solids;
@@ -49,6 +50,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
                 stmt:site.map(|s| s.stmt),message});
         }
     }
+    diags.extend(views::degenerate(sk, map));
     for i in 0..sk.envelopes.len() {
         if let Err(message) = crate::envelope::GeneratedEnvelope::named(sk,i) {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Envelope,i));
@@ -352,6 +354,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // memberships, once every kind is built and before any constraint reads one: `point a in
     // top` names a plane built after the point, and `project` infers its planes from these
     memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
+    // views whose attitude or offset is solved for, once every membership is in and before any
+    // relation: a relation over a solved view is stated against its unknowns from the first
+    views::solve_planes(&mut sk, &res, &mut map, &body, &skip, &mut diags);
 
     // -- phase 3: constraints, in statement order
     for st in &body {

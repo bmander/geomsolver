@@ -88,6 +88,7 @@ mod solid_motion;
 mod solid_sweep;
 mod space;
 mod spatial;
+mod spatial_lang;
 mod admission;
 mod contact_trace;
 mod export_contracts;

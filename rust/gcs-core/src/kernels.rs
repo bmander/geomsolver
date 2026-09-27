@@ -84,9 +84,16 @@ pub enum K {
     PointOnPlaneFixed,
     PointOnCircle3,
     PointOnCircle3Fixed,
+    // a view folded from a solved one (P2a): its quaternion tied to its parent's by a stated
+    // fold, a solved one, or a line drawn in the parent — and a projection between two views
+    // either of which is solved
+    Hinge,
+    HingeFree,
+    HingeAlong,
+    ProjectFree,
 }
 
-pub const N_KERNELS: usize = 63;
+pub const N_KERNELS: usize = 67;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2355,6 +2362,215 @@ fn point_on_circle3_fixed_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
+/* -- hinges and the projection between solved views ------------------------------------------
+ *
+ * A view folded from a *solved* view (`docs/spatial-constraints-plan.md`, P2a) is not a constant
+ * of the document: its attitude follows its parent's, turned by the fold.  `Basis::fold(θ)` is
+ * the rotation `Rz(θ)·Rx(−90°)` in the parent's own axes — `u = cos θ·u_P + sin θ·v_P`,
+ * `v = −n_P` — so the child's quaternion is the parent's times that one, `q_P ⊗ q_rel(θ)`, and a
+ * hinge is the four rows saying so.  No unit row on the child: a product of unit quaternions is
+ * one.  The fold is a constant (`hinge`, and the identity for a plane stood off its parent), the
+ * document's free variable (`hinge_free`), or the bearing of a line drawn in the parent
+ * (`hinge_along`, over a half-angle rotor of its own).
+ */
+
+/// `qz(θ) ⊗ qx(−90°)` and its derivative in θ: the turn a fold at bearing θ is, in the parent's
+/// own axes (`plane::fold_rotor`, the one statement of it).
+#[inline]
+fn fold_rel(theta: f64) -> ([f64; 4], [f64; 4]) {
+    let (s, c) = (0.5 * theta).sin_cos();
+    let d = crate::plane::quat_mul([-0.5 * s, 0.0, 0.0, 0.5 * c], crate::plane::FOLD_TILT);
+    (crate::plane::fold_rotor(theta), d)
+}
+
+/// The four hinge rows `q_c − q_p ⊗ k` and their Jacobian in (q_c, q_p), written into `j` at
+/// `stride` per row.
+#[inline]
+fn hinge_rows(v: &[f64], k: [f64; 4], r: &mut [f64], j: Option<(&mut [f64], usize)>) {
+    let qp = [v[4], v[5], v[6], v[7]];
+    let p = crate::plane::quat_mul(qp, k);
+    for t in 0..4 {
+        r[t] = v[t] - p[t];
+    }
+    if let Some((j, stride)) = j {
+        for m in 0..4 {
+            let mut e = [0.0; 4];
+            e[m] = 1.0;
+            let d = crate::plane::quat_mul(e, k);
+            for t in 0..4 {
+                j[t * stride + m] = if t == m { 1.0 } else { 0.0 };
+                j[t * stride + 4 + m] = -d[t];
+            }
+        }
+    }
+}
+
+/// Columns of `hinge`: (q_c, q_p) — the child view's quaternion and its parent's.  Constants:
+/// `q_rel`, the fold's turn (`fold_rel`) or the identity for a plane stood off its parent.  Four
+/// dimensionless rows, degree 0.
+fn hinge_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let kk = [k[4 * i], k[4 * i + 1], k[4 * i + 2], k[4 * i + 3]];
+        hinge_rows(&v[8 * i..], kk, &mut r[4 * i..4 * i + 4], None);
+    }
+}
+
+fn hinge_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let mut r = [0.0; 4];
+    for i in 0..n {
+        let kk = [k[4 * i], k[4 * i + 1], k[4 * i + 2], k[4 * i + 3]];
+        hinge_rows(&v[8 * i..], kk, &mut r, Some((&mut j[32 * i..32 * i + 32], 8)));
+    }
+}
+
+/// Columns of `hinge_free`: (q_c, q_p, a), K = (m, c) — the fold the document's free variable
+/// `a` makes, θ = m·a + c (radians).
+fn hinge_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let (th, _) = free_dim(v, k, i, o + 8);
+        hinge_rows(&v[o..], fold_rel(th).0, &mut r[4 * i..4 * i + 4], None);
+    }
+}
+
+fn hinge_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let mut r = [0.0; 4];
+    for i in 0..n {
+        let o = 9 * i;
+        let (th, m) = free_dim(v, k, i, o + 8);
+        let (rel, drel) = fold_rel(th);
+        let jo = 36 * i;
+        hinge_rows(&v[o..], rel, &mut r, Some((&mut j[jo..jo + 36], 9)));
+        let d = crate::plane::quat_mul([v[o + 4], v[o + 5], v[o + 6], v[o + 7]], drel);
+        for t in 0..4 {
+            j[jo + 9 * t + 8] = -d[t] * m;
+        }
+    }
+}
+
+/// Columns of `hinge_along`: (q_c, q_p, hc, hs, c, s, p1x, p1y, p2x, p2y) — the child view, its
+/// parent, the fold's half-angle rotor, the parent datum's rotor and the line's two ends.
+pub const N_PAR_HINGE_ALONG: usize = 16;
+
+/// `fold: along l` — the child view contains the direction of a line drawn in its parent.  Six
+/// rows, all dimensionless (degree 0): the four hinge rows over `q_rel = qz(h) ⊗ qx(−90°)` with
+/// `qz(h) = (hc, 0, 0, hs)`, the rotor on the unit circle, and the fold's bearing along the line,
+/// `(cos θ, sin θ) × Rᵀ(c, s)(p2 − p1) / |p2 − p1| = 0` with `cos θ = hc² − hs²`,
+/// `sin θ = 2·hc·hs` — the line read in its view, `plane::in_view`'s rotation.  Either way along
+/// the line is a solution, and the seed picks one; where the line crosses the fold is the
+/// `point_on_plane` row the elaborator states beside it.
+fn hinge_along_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    const W: usize = N_PAR_HINGE_ALONG;
+    for i in 0..n {
+        let o = W * i;
+        let (hc, hs) = (v[o + 8], v[o + 9]);
+        let rel = crate::plane::quat_mul([hc, 0.0, 0.0, hs], crate::plane::FOLD_TILT);
+        hinge_rows(&v[o..], rel, &mut r[6 * i..6 * i + 4], None);
+        r[6 * i + 4] = hc * hc + hs * hs - 1.0;
+        r[6 * i + 5] = along_row(&v[o..], None);
+    }
+}
+
+/// The bearing row of `hinge_along` and, when asked, its gradient over the 16 columns.
+fn along_row(v: &[f64], g: Option<&mut [f64]>) -> f64 {
+    let (hc, hs, c, s) = (v[8], v[9], v[10], v[11]);
+    let (dx, dy) = (v[14] - v[12], v[15] - v[13]);
+    let l = dx.hypot(dy).max(MIN_LINE_LEN);
+    let (ex, ey) = (c * dx + s * dy, -s * dx + c * dy);
+    let (cc, ss) = (hc * hc - hs * hs, 2.0 * hc * hs);
+    let nn = cc * ey - ss * ex;
+    if let Some(g) = g {
+        g[..8].fill(0.0);
+        g[8] = (2.0 * hc * ey - 2.0 * hs * ex) / l;
+        g[9] = (-2.0 * hs * ey - 2.0 * hc * ex) / l;
+        g[10] = (cc * dy - ss * dx) / l;
+        g[11] = (-cc * dx - ss * dy) / l;
+        let gx = (cc * -s - ss * c) / l - nn * dx / (l * l * l);
+        let gy = (cc * c - ss * s) / l - nn * dy / (l * l * l);
+        g[12] = -gx;
+        g[13] = -gy;
+        g[14] = gx;
+        g[15] = gy;
+    }
+    nn / l
+}
+
+fn hinge_along_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    const W: usize = N_PAR_HINGE_ALONG;
+    let mut r = [0.0; 4];
+    for i in 0..n {
+        let o = W * i;
+        let jo = 6 * W * i;
+        let rows = &mut j[jo..jo + 6 * W];
+        rows.fill(0.0);
+        let (hc, hs) = (v[o + 8], v[o + 9]);
+        let x = crate::plane::FOLD_TILT;
+        let rel = crate::plane::quat_mul([hc, 0.0, 0.0, hs], x);
+        hinge_rows(&v[o..], rel, &mut r, Some((&mut rows[..4 * W], W)));
+        // ∂(q_p ⊗ qz(h) ⊗ x)/∂h: q_p ⊗ (∂qz ⊗ x), each of ∂qz a unit quaternion's axis
+        let qp = [v[o + 4], v[o + 5], v[o + 6], v[o + 7]];
+        let dc = crate::plane::quat_mul(qp, crate::plane::quat_mul([1.0, 0.0, 0.0, 0.0], x));
+        let ds = crate::plane::quat_mul(qp, crate::plane::quat_mul([0.0, 0.0, 0.0, 1.0], x));
+        for t in 0..4 {
+            rows[t * W + 8] = -dc[t];
+            rows[t * W + 9] = -ds[t];
+        }
+        rows[4 * W + 8] = 2.0 * hc;
+        rows[4 * W + 9] = 2.0 * hs;
+        along_row(&v[o..], Some(&mut rows[5 * W..6 * W]));
+    }
+}
+
+/// Columns of `project_free`: (X_A, X_B, q_A, q_B) — the two images' hidden points and the two
+/// views' quaternions.
+pub const N_PAR_PROJECT_FREE: usize = 14;
+
+/// **The projector rule in space**: `(n_A × n_B)·(X_A − X_B) = 0`, with `n = R(q)·e₃`.  Two
+/// images of one point differ by something in the span of the two normals — each is the point
+/// less its depth along its own view's normal — so their difference has nothing along the fold
+/// line `n_A × n_B` the views share.  Unnormalised, so it reads the stated `project` times the
+/// sine between the views, and vanishes with it where they come out parallel (E065, after the
+/// solve).  What `project` compiles to wherever either view is solved; degree 1.
+fn project_free_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_PROJECT_FREE * i;
+        let qa = [v[o + 6], v[o + 7], v[o + 8], v[o + 9]];
+        let qb = [v[o + 10], v[o + 11], v[o + 12], v[o + 13]];
+        r[i] = match (quat_normal(qa), quat_normal(qb)) {
+            (Some((na, _)), Some((nb, _))) => {
+                dot3(cross3(na, nb), sub3(at3(v, o), at3(v, o + 3)))
+            }
+            _ => f64::NAN,
+        };
+    }
+}
+
+fn project_free_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    const W: usize = N_PAR_PROJECT_FREE;
+    for i in 0..n {
+        let o = W * i;
+        let row = &mut j[o..o + W];
+        let qa = [v[o + 6], v[o + 7], v[o + 8], v[o + 9]];
+        let qb = [v[o + 10], v[o + 11], v[o + 12], v[o + 13]];
+        let (Some((na, da)), Some((nb, db))) = (quat_normal(qa), quat_normal(qb)) else {
+            row.fill(f64::NAN);
+            continue;
+        };
+        let w = sub3(at3(v, o), at3(v, o + 3));
+        let m = cross3(na, nb);
+        // m·w = n_A·(n_B × w) = n_B·(w × n_A)
+        let (ga, gb) = (cross3(nb, w), cross3(w, na));
+        for t in 0..3 {
+            row[t] = m[t];
+            row[3 + t] = -m[t];
+        }
+        for k in 0..4 {
+            row[6 + k] = (0..3).map(|t| ga[t] * da[t][k]).sum();
+            row[10 + k] = (0..3).map(|t| gb[t] * db[t][k]).sum();
+        }
+    }
+}
+
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
     Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
@@ -2419,6 +2635,10 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "point_on_plane_fixed", n_res: 1, n_par: 3, degree: 1, n_const: 4, res: point_on_plane_fixed_res, jac: point_on_plane_fixed_jac, const_jac: None },
     Kernel { name: "point_on_circle3", n_res: 2, n_par: N_PAR_POINT_ON_CIRCLE3, degree: 1, n_const: 0, res: point_on_circle3_res, jac: point_on_circle3_jac, const_jac: None },
     Kernel { name: "point_on_circle3_fixed", n_res: 2, n_par: 7, degree: 1, n_const: 3, res: point_on_circle3_fixed_res, jac: point_on_circle3_fixed_jac, const_jac: None },
+    Kernel { name: "hinge", n_res: 4, n_par: 8, degree: 0, n_const: 4, res: hinge_res, jac: hinge_jac, const_jac: None },
+    Kernel { name: "hinge_free", n_res: 4, n_par: 9, degree: 0, n_const: 2, res: hinge_free_res, jac: hinge_free_jac, const_jac: None },
+    Kernel { name: "hinge_along", n_res: 6, n_par: N_PAR_HINGE_ALONG, degree: 0, n_const: 0, res: hinge_along_res, jac: hinge_along_jac, const_jac: None },
+    Kernel { name: "project_free", n_res: 1, n_par: N_PAR_PROJECT_FREE, degree: 1, n_const: 0, res: project_free_res, jac: project_free_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

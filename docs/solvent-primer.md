@@ -579,8 +579,8 @@ per part.
 A `plane` is the datum, and a view: it carries a constant attitude in space, the page's where none
 is written. A point says
 which view it is drawn `in`, and `a project b` says two points are two images of one corner: their
-coordinates along the fold line the two views share agree, which is one equation. **Nothing
-three-dimensional is solved for.**
+coordinates along the fold line the two views share agree, which is one equation. A view's
+attitude is stated unless its brackets say otherwise (below).
 
 `fold` is the bearing of the fold line in the parent view. From the page, `0deg` folds up the top
 view and `-90deg` the right view; the new view's second axis points away from the parent's viewer,
@@ -596,6 +596,28 @@ views, so the whole design of a connecting rod is one module (`engine/conrod.sv`
 { … }` over a 0-or-1 `Int` formal leaves a view undrawn for an instance that does not show in it.
 
 The standard library lays out the three views once (2.10).
+
+**A view may be solved for** (spec §6.7 [0.23]). A plane is fixed unless its brackets name an
+unknown, and `hint(…)` seeds only those:
+
+```
+plane side(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
+plane aux(origin: o3, toward: t3, from: front, fold: along l)
+plane cut(origin: o4, toward: t4, from: front, fold: 0deg, through: m)
+plane q(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1))
+```
+
+`fold: beta` over a name nothing defines is a free variable (W111) the solve answers; `fold:
+along l` folds square to the parent about a line drawn in it and follows the line; `attitude:
+free` is three freedoms and `offset: free` one; `through: m` stands the plane where a point of
+another view is. A view folded from a solved one follows it. A point drawn in a view is that
+view's lift of it, and `project` over a solved view is the projector rule in space. A seed for a
+stated quantity is E040; a position stated twice or a fold along a line of another view is E064;
+views that come out parallel under a `project` are E065; `against` with a solved view is E066.
+The words for relations *between* views in space (`gax angle(90deg) pax`) come next (P2b); until
+then `Constraint::in_space` states them from Rust. `solventc --where side` reports a solved
+view's `side.u.x` … `side.o.z`, and a report names what is left free as `side.attitude` and
+`side.offset`.
 
 ### 1.14 Faces, solids and derived views
 

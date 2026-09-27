@@ -242,6 +242,20 @@ pub(super) fn place(
         };
         let (pf, ordf, sf, pathf, solidf) = f;
         let (pg, ordg, sg, pathg, solidg) = g;
+        // a mate places a plane by a number worked out here, before the solve; a solved view's
+        // place is the solve's, so the two cannot share a plane yet (P4)
+        if let Some(p) = [pf, pg].into_iter().find(|&p| sk.planes[p as usize].att.is_some()) {
+            say(
+                Code::E066,
+                r.span,
+                format!(
+                    "`{}` is a solved view, and `against` between solved views is not yet \
+                     supported: state the offset, or `through:` a point",
+                    sk.plane_name(p as usize)
+                ),
+            );
+            continue;
+        }
         let (bf, bg) = (sk.basis(pf as usize), sk.basis(pg as usize));
         let _ = bg;
         // **parallel, and facing each other**: two faces in contact share a normal and point
@@ -325,7 +339,8 @@ pub(super) fn place(
             _ => continue,
         };
         if let (Some(child), Some(parent)) = (res.of.get(&d.name.key().text), res.lookup(parent)) {
-            if !sk.placed_planes.contains(&child.idx) {
+            // a solved view's origin is its unknowns', not a delta off its parent's
+            if !sk.placed_planes.contains(&child.idx) && sk.planes[child.i()].att.is_none() {
                 let cb = sk.basis(child.i());
                 let pb = sk.basis(parent.i());
                 derived.insert(child.idx, (parent.idx, [cb.o[0] - pb.o[0], cb.o[1] - pb.o[1], cb.o[2] - pb.o[2]]));

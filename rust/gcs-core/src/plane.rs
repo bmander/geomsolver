@@ -189,6 +189,20 @@ pub fn quat_mul(a: Quat, b: Quat) -> Quat {
     ]
 }
 
+/// `qx(−90°)`: the tilt a fold stands a view up by — `e₂ → −e₃`, `e₃ → e₂` — before it is
+/// turned to its bearing.  The second factor of every `fold_rotor`.
+pub const FOLD_TILT: Quat = [std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2, 0.0, 0.0];
+
+/// **What a fold is, as a turn in the parent's own axes**: `qz(θ) ⊗ qx(−90°)`, the rotation
+/// `Basis::fold(θ)` makes — `u = cos θ·u_P + sin θ·v_P`, `v = −n_P` — so a view folded from a
+/// solved parent has the quaternion `q_P ⊗ fold_rotor(θ)`.  The one statement of it: the
+/// elaborator seeds a hinge with it and the `hinge` kernels hold one to it
+/// (`tests/spatial_lang.rs` holds it to `Basis::fold`).
+pub fn fold_rotor(theta: f64) -> Quat {
+    let (s, c) = (0.5 * theta).sin_cos();
+    quat_mul([c, 0.0, 0.0, s], FOLD_TILT)
+}
+
 /// The homogeneous rotation matrix `M(q)` — `|q|²` times the rotation — row-major.  One
 /// expression, read by `quat_matrix`, `quat_rotate` and `lift_q`, so the basis a view is read
 /// with and the row a solve holds it by are the same arithmetic.

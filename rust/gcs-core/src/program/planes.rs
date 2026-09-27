@@ -125,12 +125,32 @@ fn basis_of<'a>(
         v.dim.require(want, what)?;
         Ok(v.c)
     };
+    // a seed the `hint(…)` clause wrote for a quantity the brackets made an unknown; whether
+    // they did is the views pass's question (`views::solve_planes`), which refuses one they did
+    // not — here it is only where the solve begins
+    let seed = |key: &str, want: crate::units::Dim| -> Option<Vec<f64>> {
+        let h = d.plane.hint(key)?;
+        h.args.iter().map(|a| number(a, want, key).ok()).collect()
+    };
     let basis = match &d.attitude {
         Attitude::Page => Some(crate::plane::Basis::page()),
+        // **a solved fold starts where its seed says** — `fold: beta` with `hint(fold: 30deg)`
+        // is folded 30° until the solve moves it, and at the constant part of its expression
+        // (`beta` at 0) where no seed is written
         Attitude::From { plane, fold } => {
             let parent = parent_plane(plane, key, decls, res, units, done, stack, diags);
-            let theta = match number(fold, crate::units::Dim::ANGLE, "fold") {
-                Ok(deg) => Some(expr::to_arg_units(SpecKind::Angle, deg)),
+            let theta = match fold_aff(fold, units) {
+                Ok(a) if a.free.is_some() => {
+                    let deg = seed("fold", crate::units::Dim::ANGLE).map_or(a.c, |v| v[0]);
+                    Some(expr::to_arg_units(SpecKind::Angle, deg))
+                }
+                Ok(_) => match number(fold, crate::units::Dim::ANGLE, "fold") {
+                    Ok(deg) => Some(expr::to_arg_units(SpecKind::Angle, deg)),
+                    Err(m) => {
+                        fail(diags, Code::E103, arg_span(fold).unwrap_or(st.span), m);
+                        None
+                    }
+                },
                 Err(m) => {
                     fail(diags, Code::E103, arg_span(fold).unwrap_or(st.span), m);
                     None
@@ -161,6 +181,24 @@ fn basis_of<'a>(
                 _ => None,
             }
         }
+        // folded along a line, it stands where the line is: that is known only once the line is
+        // built, so the parent's `fold(0)` stands in until the views pass reads the line
+        Attitude::Along { plane, .. } => {
+            parent_plane(plane, key, decls, res, units, done, stack, diags).map(|p| p.fold(0.0))
+        }
+        // a free attitude starts at the basis its seed gives, or the page's
+        Attitude::Free { span } => {
+            match (seed("u", crate::units::Dim::SCALAR), seed("v", crate::units::Dim::SCALAR)) {
+                (Some(u), Some(v)) => {
+                    let b = crate::plane::Basis::explicit([u[0], u[1], u[2]], [v[0], v[1], v[2]]);
+                    if b.is_none() {
+                        fail(diags, Code::E103, *span, "the seeded `u` and `v` span no plane".into());
+                    }
+                    b
+                }
+                _ => Some(crate::plane::Basis::page()),
+            }
+        }
         Attitude::Basis { u, v } => {
             let mut vals = [[0.0; 3]; 2];
             let mut ok = true;
@@ -187,8 +225,28 @@ fn basis_of<'a>(
             b
         }
     };
+    // an offset solved for starts at its seed, along the normal of whatever the attitude is
+    let basis = match (&d.plane.position, basis) {
+        (crate::syntax::Position::Free(_), Some(b)) => {
+            Some(seed("offset", crate::units::Dim::LENGTH).map_or(b, |k| b.offset(k[0])))
+        }
+        (_, b) => b,
+    };
     done.insert(key.to_string(), basis);
     basis
+}
+
+/// A fold as its expression comes to: a number, or affine in the one name nothing defines —
+/// `fold: beta`, the fold solved for (§6.7, P2a).  The views pass asks the same question the
+/// basis did, so the two cannot disagree about which folds are unknowns.
+pub(super) fn fold_aff(fold: &Arg, units: crate::units::Units) -> Result<expr::Aff, String> {
+    let Arg::Dim { text, .. } = fold else { return Err("`fold` is not a number".into()) };
+    let p = expr::parse_in(text.trim(), units)?;
+    let a = expr::eval(&p.body, &BTreeMap::new()).map_err(|e| format!("`{text}`: {e}"))?;
+    if a.free.is_none() && !a.c.is_finite() {
+        return Err(format!("`{text}` comes to {}", a.c));
+    }
+    Ok(a)
 }
 pub(super) fn memberships(
     sk: &mut Sketch,

@@ -290,13 +290,19 @@ pub fn to_json(sk: &Sketch) -> Json {
             // states writes exactly the record it always did
             if let Some(a) = &p.att {
                 let g = |k: u32| &sk.params[k as usize];
-                o.set("att", object([
+                let mut att = object([
                     ("q", Json::Arr(a.q.iter().map(|&k| Json::Num(g(k).value)).collect())),
                     ("qfixed", a.q.iter().all(|&k| g(k).fixed).into()),
                     ("d", g(a.d).value.into()),
                     ("dfixed", g(a.d).fixed.into()),
                     ("ab", Json::Arr(a.ab.iter().map(|&x| Json::Num(x)).collect())),
-                ]));
+                ]);
+                // held by a hinge statement rather than a unit row of its own — the hinge is a
+                // constraint of the document's and travels as one
+                if a.hinged {
+                    att.set("hinged", true.into());
+                }
+                o.set("att", att);
             }
             o
         })
@@ -494,7 +500,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let flag = |key: &str| a.get(key).map(|v| v.as_bool()).unwrap_or(false);
         let pi = np_planes + k;
         sk.restore_attitude(pi, [q[0], q[1], q[2], q[3]], flag("qfixed"), dv, flag("dfixed"),
-                            [ab[0], ab[1]]);
+                            [ab[0], ab[1]], flag("hinged"));
     }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
@@ -516,6 +522,14 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
                 args.push(kind.default_arg(i));
             } else {
                 args.push(arg_from_json(&sk, *k, &raw[i])?);
+            }
+        }
+        // …but a slot the core reads off the geometry is never a slot a document predates: a
+        // relation in space written without its skew side has it inferred, as a `null` does,
+        // rather than defaulted to a side the drawing may not stand on
+        if kind.spatial() {
+            for i in (raw.len()..spec.len()).take_while(|&i| kind.infers_arg(i)) {
+                args.push(kind.default_arg(i));
             }
         }
         seed_omitted(&sk, kind, &mut args, |i| omitted(raw.get(i)))?;
@@ -739,7 +753,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         if let (Some(ni), Some(a)) = (plane_map[i], &p.att) {
             let g = |k: u32| &src.params[k as usize];
             dst.restore_attitude(ni, a.q.map(|k| g(k).value), a.q.iter().all(|&k| g(k).fixed),
-                                 g(a.d).value, g(a.d).fixed, a.ab);
+                                 g(a.d).value, g(a.d).fixed, a.ab, a.hinged);
         }
     }
     for l in &src.lifts {

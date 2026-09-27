@@ -290,6 +290,11 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         }
         if let Some(d) = &d {
             println!("  {}", gcs_core::diagnose::summary(d));
+            // a solved view's freedoms by the ledger's names; a line only where one is left
+            let views = gcs_core::diagnose::view_freedoms(&sk, d);
+            if !views.is_empty() {
+                println!("  free views: {}", views.join(", "));
+            }
             report_set(&sk, &e.map, "conflict", d.conflicts.as_deref().unwrap_or(&[]));
             report_set(&sk, &e.map, "over", &d.over);
             report_set(&sk, &e.map, "implied", &d.implied);

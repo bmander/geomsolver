@@ -1,6 +1,14 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.22 — September 2026**
+**Specification, Draft 0.23 — September 2026**
+
+**[0.23] A view may be a workplane solved for.** A plane is fixed unless its brackets name an
+unknown (§6.7): `fold: beta` over a name nothing defines solves the fold, `fold: along l` folds
+the view square to its parent about a line drawn there, `attitude: free` and `offset: free` are
+three and one unknowns, and `through: M` solves the offset that puts `M` in the view. Their
+seeds are `hint(fold:, u:, v:, offset:)`, and a seed for a stated quantity is E040. A point drawn
+in a view is that view's lift of it, and `project` between views either of which is solved is
+the projector rule in space. New codes E064–E066 (§16.1).
 
 **[0.22] The body rule gains its third side.** `tip bound body` keeps of a body what lies
 within `tip`: a solid is its stock, plus everything `on` it, minus everything that `cut`s it,
@@ -65,7 +73,7 @@ The `ring` construct asserts cyclic symmetry. Its solution set contains exactly 
 
 This draft specifies **planar (2D) geometry only**. The entity vocabulary, constraint library, and group actions are two-dimensional. Section 17 lists the known lifting questions for 3D. This draft also excludes curve entities beyond lines and circles (no involutes, splines, or conics); see §17.
 
-**[0.18] More precisely: the draft specifies planar geometry *solved*, with solids evaluated over it.** A document may say what object its drawing is of — a face is a region of a plane (§6.8), a solid is a face swept or a term over other solids (§6.9), and a view or a section of one is a picture the sheet asks for (§6.11) — and **nothing three-dimensional is ever an unknown**. A plane's attitude is a constant (§6.7), an extent is an expression (§6.9), and neither a face nor a solid owns a parameter, appears in a residual, or is reached by a constraint. The strata run one way and there is no edge back: the sketch solves, the extents are worked out, the terms are ordered, the outputs are read. So everything §15 says about a solver, and every count in §16.3's ledger, is unchanged by the presence of an object — which is the whole of what makes the addition affordable.
+**[0.18] More precisely: the draft specifies planar geometry *solved*, with solids evaluated over it.** A document may say what object its drawing is of — a face is a region of a plane (§6.8), a solid is a face swept or a term over other solids (§6.9), and a view or a section of one is a picture the sheet asks for (§6.11) — and **nothing three-dimensional is ever an unknown**. A plane's attitude is a constant unless its brackets name an unknown (§6.7 **[0.23]**, and then it is solved with the sketch, before anything below reads it), an extent is an expression (§6.9), and neither a face nor a solid owns a parameter, appears in a residual, or is reached by a constraint. The strata run one way and there is no edge back: the sketch solves, the extents are worked out, the terms are ordered, the outputs are read. So everything §15 says about a solver, and every count in §16.3's ledger, is unchanged by the presence of an object — which is the whole of what makes the addition affordable.
 
 ### 1.3 Conformance keywords
 
@@ -573,7 +581,21 @@ plane p(origin: o4, toward: q4, u: (0.6, 0.8, 0), v: (0, 0, 1))     // given out
 - `from: P, fold: θ` **folds** the plane from `P` about the line at bearing `θ` in `P`: the new plane is perpendicular to `P` and contains that line, which is its `u` — `u = cos θ·u_P + sin θ·v_P` — and its `v = −n_P` points *away* from `P`'s viewer, so distance from the fold line in the new view is depth behind `P` (third-angle projection). `fold` is an `Angle`; **[0.18]** an omitted one was 0 through 0.17 and that default is **withdrawn** — a `from:` with no clause beside it is now the plane *moved* rather than the plane turned (§6.10), and a document that means the fold writes `fold: 0deg`. From the page, `fold: 0deg` is the top view (`u = x`, `v = y`) and `fold: -90deg` the right view (`u = −z`, `v = y`), drawn with its frame turned −90° so z is up on the page. Two folds reach any plane; `P` may be declared after the plane that folds from it (P2), and a plane folded from itself, however indirectly, is **E041**. `from` names a plane and nothing else (**E040**, **E101**).
 - `u:`, `v:` give the basis outright as two triples of dimensionless expressions. They are normalised, `v` is orthogonalised against `u`, and a pair spanning no plane is **E103**. Neither half alone, and not both a `from` and a basis, is a syntax error.
 
-An implementation MUST NOT make the attitude an unknown; a document that wants a view to follow the geometry writes the fold as an expression over its parameters.
+**[0.23] A view is a workplane, and it may be solved for.** A point drawn in view V *is* the point `o_V + a·u_V + b·v_V` in space, `(a, b)` its view coordinates; a point with no membership is on the page. **A plane is fixed unless its brackets name an unknown**, and `hint(…)` seeds only unknowns (§4.3):
+
+```
+plane side(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)  // the fold solved
+plane aux(origin: o3, toward: t3, from: front, fold: along l)    // square to front, about l
+plane cut(origin: o4, toward: t4, from: front, fold: 0deg, through: m)   // stood through m
+plane q(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
+```
+
+- `fold: E` where `E` is affine in a name nothing defines makes that name the fold's unknown — a free variable (W111), tied to every other dimension that reads it — seeded by `hint(fold: …)`. A fold over a stated number from a solved parent follows the parent; a chain of stated folds from stated planes is constant, exactly as before.
+- `fold: along l`, with `l` a line drawn in the parent (**E064** otherwise), folds the view square to the parent about `l`: it contains `l` and follows it as the solve moves it, and has no unknown of its own.
+- `attitude: free` makes the attitude three unknowns, seeded by `hint(u: (…), v: (…))` (the page's where none is written); it takes no `from:`, `fold:`, `u:` or `v:`.
+- `offset: free` makes the offset along the normal one unknown, seeded by `hint(offset: …)` from where the attitude alone stands the plane; `through: M` solves it so the point `M`, drawn in another view, is in the plane. A position is stated once: either beside a written `offset:`, beside `fold: along`, or `through:` a point of the plane itself is **E064**, as is a view derived from one whose own offset is solved.
+- A `hint` key for a quantity the brackets state is **E040** at the key. A bare `from:` still means a plane placed by `against` (§6.10), and `against` with a solved view is **E066** (deferred).
+- `a project b` between views either of which is solved is the projector rule in space, `(n_A × n_B)·(X_A − X_B) = 0` over the two images' points in space; two stated views keep the residual below, and are refused if parallel (E061). Two solved views that *come out* parallel are **E065** after the solve.
 
 **A point says which plane it is on with `in`.** `point a in top` is a trailer of the declaration, order-free against `hint`, `knots` and `class`, and it applies to **every point the declaration mints or names**: `line l(a, b) in top` puts `a` and `b` on `top`, `circle c in right` its centre, `arc` and `spline` likewise. A membership moves nothing — it is a label, read only by `project` — and a point with none is simply on the page. A point put on two different planes by two declarations is **E060**; agreement is not an error. `frame`, `plane` and `curve` have no points of their own to put anywhere, and `in` on them is a syntax error. Inside a `ring` (§12.5) a plane is invariant: a membership or a fold referencing one is true of every copy alike.
 
@@ -1701,6 +1723,9 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |
 | E060 | a point put on two different planes (§6.7) **[0.10]** |
 | E061 | `project` refused: a point on no plane, both on one plane, or parallel planes (§6.7) **[0.10]** |
+| E064 | a solved view the model cannot hold: `fold: along` a line not drawn in the parent, a position stated twice, `through:` a point of the plane itself, or a view derived from one whose offset is solved (§6.7) **[0.23]** |
+| E065 | a relation in space degenerate at the solve: views a `project` relates that came out parallel, lines whose skew distance is stated that came out parallel (§6.7) **[0.23]** |
+| E066 | `against` with a solved view (§6.10) — deferred **[0.23]** |
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
 | E071 | a component defined twice, across the document and its modules (§14.4) **[0.12]** |
 | E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc, a circle or a point, a circle standing *in* a loop rather than being one, **[0.19]** an edge that meets neither neighbour and so is walked two ways, a straight loop with fewer than three corners, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body |
@@ -1737,7 +1762,7 @@ Implementations SHOULD emit, on request, a degrees-of-freedom ledger: per alias 
 
    **[0.18] The object is settled too, and on the same terms.** A face is a region of a plane (§6.8), a solid is a face swept or a term over other solids (§6.9), a plane may be stood off another (§6.10), and a view or a section of a solid is a picture the sheet asks for (§6.11) — so a part is written once and every drawing of it is a question, with no depth kept in step by hand. The stratification is what makes it affordable and is the thing to preserve: **nothing three-dimensional is an unknown**, every extent is an expression, and a solid owns no parameter, so the solver contract of §15 and the ledger of §16.3 are untouched.
 
-   What remains open is the lift itself, and it is now a shorter list. **Lofts** — a solid between two faces on two planes, which is the one sweep the grammar does not have. **Fillets and chamfers**, which need a name for an *edge* rather than for a face: the spelling is reserved, `body.block.side_l.near` — the edge where two named faces of one solid meet, in the path vocabulary §6.9 already uses, so that a boolean cannot renumber one. A **rigid-body mate solver**: joints between two solids in space, at which point something three-dimensional does become an unknown and P4's decomposition question is asked again one stratum out. **Export of the object itself** (a boundary format such as STEP), as against the picture of it a view already exports. Still open from before: `Frame` generalizes; the arc-branch rule needs a replacement (no global winding in 3D); the joint library grows (revolute gains an axis argument, add prismatic/cylindrical/spherical); and from §6.7, a solved-for fold (`fold: along l`).
+   What remains open is the lift itself, and it is now a shorter list. **Lofts** — a solid between two faces on two planes, which is the one sweep the grammar does not have. **Fillets and chamfers**, which need a name for an *edge* rather than for a face: the spelling is reserved, `body.block.side_l.near` — the edge where two named faces of one solid meet, in the path vocabulary §6.9 already uses, so that a boolean cannot renumber one. A **rigid-body mate solver**: joints between two solids in space, at which point something three-dimensional does become an unknown and P4's decomposition question is asked again one stratum out. **Export of the object itself** (a boundary format such as STEP), as against the picture of it a view already exports. Still open from before: `Frame` generalizes; the arc-branch rule needs a replacement (no global winding in 3D); the joint library grows (revolute gains an axis argument, add prismatic/cylindrical/spherical); and from §6.7, a solved-for fold (`fold: along l`) — **[0.23]** answered: §6.7's `fold: along l` and `fold: beta`.
 
    **[0.18]** One item of the old list is answered by §6.9 rather than deferred: "`ring` generalizes to rotation about a line" is what `about:` does for a **sweep**, and it needed no group action to do it, because a revolution is one solid and not *N* congruent copies. `ring` itself is still the cyclic-symmetry question of §12.3 and is untouched by this — the reference implementation goes on refusing the word until it can hold its copies congruent. The two were only ever adjacent.
 2. ~~**Curve entities.**~~ **[0.2] Settled — see §6.5.** A curve is a *family declared in the document*, two expressions over the geometry it is drawn from, rather than an entity kind per curve. Involute, cycloid and trochoid are library code. What remains open is `tangent` against such a curve (one more order in the parameter, and what a *mating* gear needs) and the path grammar's slot for a curve segment.

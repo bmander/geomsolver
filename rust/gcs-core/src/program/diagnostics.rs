@@ -30,6 +30,17 @@ pub enum Code {
     /// a `project` the model refuses: a point on no plane, both on one, or parallel planes
     /// (§6.7) — the core's own words, given a span
     E061,
+    /// a solved view the model cannot hold (§6.7, P2a): a fold taken along a line not drawn in
+    /// the view it folds from, a position stated twice (`offset:` or a fold `along` beside
+    /// `offset: free` or `through:`), `through:` a point of the plane itself, or a view derived
+    /// from one whose own origin moves with the solve
+    E064,
+    /// a relation in space that came out degenerate at the solve (§6.7, P2a): two solved views
+    /// a `project` relates, parallel — they share no fold line — where no stated number said so
+    E065,
+    /// `against` between faces on a solved view (§6.10): a mate places a plane by a number worked
+    /// out before the solve, which a solved view's offset is not — deferred to P4
+    E066,
     /// a `use` nothing resolves (§14.4)
     E070,
     /// a component defined twice, across the document and its modules (§14.4)
@@ -75,6 +86,9 @@ impl Code {
             Code::E041 => "E041",
             Code::E060 => "E060",
             Code::E061 => "E061",
+            Code::E064 => "E064",
+            Code::E065 => "E065",
+            Code::E066 => "E066",
             Code::E070 => "E070",
             Code::E071 => "E071",
             Code::E080 => "E080",

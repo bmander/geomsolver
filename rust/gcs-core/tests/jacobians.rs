@@ -68,6 +68,24 @@ fn all_constraints(seed: u32) -> Sketch {
     let kc = sk.circle(cpc, rng.uniform(1.0, 11.0), "kc");
     let kb = sk.circle(cpb, rng.uniform(1.0, 11.0), "kb");
     let (me1, me2) = (EntRef::line(m1), EntRef::line(m2));
+    // a view hinged to the solved one, its quaternion knocked about too, and a line drawn in the
+    // solved view for a fold to be taken along (P2a)
+    let (ho, ht) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    let ph = sk.plane(ho, ht, gcs_core::plane::Basis::page().fold(0.3), "ph");
+    sk.free_attitude(ph);
+    for &k in &sk.planes[ph].att.clone().unwrap().q {
+        sk.params[k as usize].value = rng.uniform(-1.0, 1.0);
+    }
+    let lc2 = pt(&mut sk, &mut rng);
+    sk.set_plane(lc2, Some(pc));
+    let fold_line = EntRef::line(sk.line(lc, lc2));
+    let (hpe, phe) = (EntRef::plane(ph), EntRef::plane(pc));
+    // and a stated view of its own for a projection to a solved one, which gives it held
+    // unknowns — its own, so no other statement here turns to its solved twin
+    let (do_, dt) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    let pd = sk.plane(do_, dt, gcs_core::plane::Basis::page().fold(-1.1), "pd");
+    let dp = pt(&mut sk, &mut rng);
+    sk.set_plane(dp, Some(pd));
 
     let (pe, qe) = (EntRef::point(p), EntRef::point(q));
     let (le1, le2) = (EntRef::line(l1), EntRef::line(l2));
@@ -160,6 +178,16 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::PointOnPlane, vec![e(EntRef::point(lc)), e(EntRef::plane(pb))]),
         Constraint::new(CKind::PointOnCircle3, vec![e(qe), e(EntRef::circle(kc))]),
         Constraint::new(CKind::PointOnCircle3, vec![e(pe), e(EntRef::circle(kb))]),
+        // the hinges, and a projection over a solved view — its stated partner given held
+        // unknowns at the add
+        Constraint::new(CKind::Hinge, vec![e(hpe), e(phe), Arg::Num(0.8)]),
+        Constraint::new(CKind::HingeParallel, vec![e(hpe), e(phe)]),
+        Constraint::new(CKind::HingeAlong, vec![
+            e(hpe), e(phe), e(fold_line),
+            Arg::Seed { value: rng.uniform(-1.0, 1.0), pinned: false },
+            Arg::Seed { value: rng.uniform(-1.0, 1.0), pinned: false },
+        ]),
+        Constraint::new(CKind::ProjectSolved, vec![e(EntRef::point(dp)), e(EntRef::point(lc)), e(EntRef::plane(pd)), e(phe)]),
         // every dimension again with its number written in terms of a free variable, which is
         // an unknown of the sketch rather than a constant — one more column, and (m, c) where
         // the number was.  A different name each time, so no two of them are tied together, and
@@ -185,6 +213,7 @@ fn all_constraints(seed: u32) -> Sketch {
             c
         },
         fx(CKind::Angle3, vec![e(me1), e(me2)], "t3 + 0.5", 0.9),
+        fx(CKind::Hinge, vec![e(hpe), e(phe)], "2 * f3 - 10", 0.4),
     ];
     // the two intrinsic PointOnCircle constraints the arc brought with it stay in the sketch
     sk.constraints.clear();

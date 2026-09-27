@@ -12,7 +12,7 @@ pub(super) fn chain_face(c: &crate::syntax::NamedChain) -> Decl {
         unseeded: false, seed_explicit: Vec::new(), closed: false, knots: None,
         curve: None, computed: None, class: Classes::default(), seed_at: None,
         seed_names: Vec::new(), attitude: crate::syntax::Attitude::Page,
-        sweep: None, motion: None, angular_span: None, membership: crate::syntax::Membership::default(),
+        sweep: None, motion: None, angular_span: None, plane: Default::default(), membership: crate::syntax::Membership::default(),
     }
 }
 

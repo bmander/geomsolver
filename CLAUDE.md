@@ -1008,7 +1008,10 @@ Conventions:
 - A **`plane`** (Solvent §6.7) is also a **view**: the datum's origin, toward point and rotor
   (the two intrinsics, minted by `Sketch::plane` through `datum`/`slave`), plus a constant
   attitude in space, `plane::Basis` `(u, v)`, with
-  `n = u × v` toward the viewer.  **Nothing three-dimensional is solved for**: the basis is
+  `n = u × v` toward the viewer.  **Nothing three-dimensional is solved for** unless the
+  brackets name an unknown (`fold: beta`, `fold: along l`, `attitude: free`, `offset: free`,
+  `through: M` — `program/views.rs` mints the `att` and the `Hinge` rows; see
+  `docs/spatial-constraints-plan.md`, P2a): otherwise the basis is
   document data like a spline's knots, resolved at elaboration (`program::plane_bases`, a
   memoised walk over the `from` chain — the page, `from: P, fold: θ` as `Basis::fold`, or
   `u:`/`v:` orthonormalised by `Basis::explicit`) and stored on `PlaneE`; it is written in the

@@ -273,6 +273,53 @@ refusals in `tests/refusals.rs`.
 computation, and round-trips through JSON. A redundant fold row is flagged as over-constrained
 without naming an intrinsic row.
 
+### P2a — solved views in the language (done)
+
+- **Clauses.** `fold: E` affine in a name nothing defines solves the fold, a free variable
+  (W111) seeded by `hint(fold: …)`; `fold: along l`; `attitude: free`; `offset: free`;
+  `through: M`. `syntax::Attitude` gains `Along` and `Free`, and `Decl::plane: PlaneSolve`
+  carries the position (`Stated`, `Free`, `Through`) and the plane's `hint` keys
+  (`fold`, `offset`, `u`, `v`). The printer spells every clause back; the flattener settles the
+  seeds and rewrites the `along` and `through` references; deleting the line or the point a view
+  stands on deletes the view.
+- **The pass.** `program/views.rs` runs after the memberships and before any relation, parents
+  first. A stated parent a solved child reads is given **held** unknowns (its `quat_unit` row
+  then has no free column). A chain of stated folds from stated planes mints nothing.
+- **Kinds and kernels** (67 kernels). `Hinge` (`q_c − q_P ⊗ fold_rotor(θ)`, four rows, degree
+  0, no unit row on the child; `Att::hinged`), with the free twin `hinge_free` reading θ as the
+  document's free variable — so `beta` is one unknown with every dimension that names it, not a
+  second rotor. `HingeParallel` (`from: P, offset:` over a solved `P`, the same kernel with the
+  identity). `HingeAlong`: the hinge over a half-angle rotor `(hc, hs)` that is the constraint's
+  own `Param` slots, its unit row, and a row putting the fold's bearing on `l` as drawn in the
+  parent (16 columns, six rows); a `PointOnPlane` beside it puts `l.p1` in the view.
+  `ProjectSolved` (`project_free`, `(n_A × n_B)·(X_A − X_B)`, 14 columns) is `project`'s twin
+  wherever either view has an `att`; `Sketch::add` and `free_attitude` pick it
+  (`Constraint::attitudes_read`) and give the other view held unknowns and both images lifts.
+  `plane::fold_rotor` is the one statement of a fold as a quaternion.
+- **Limits, refused as E064.** A view derived from one whose offset is solved; a solved fold or
+  `along` from a parent whose origin stands off its own normal; a position stated twice;
+  `through:` a point of the plane itself; `along` a line of another view. `against` with a
+  solved view is E066. E065 (`program::solid_diagnostics`, after the solve): views a `project`
+  relates, or lines a skew distance names, that came out parallel.
+- **Reports.** `report::positions` adds `Q.u/v/n/o.{x,y,z}` for a plane with an `att` only;
+  `diagnose::view_freedoms` names the movable ones `Q.attitude` and `Q.offset`, and `solventc`
+  prints them as `free views:` where there are any. The ledger has no other naming hook.
+- **IO and writeback.** JSON writes `"hinged": true` on a hinged view's `att`; the hinge rows
+  are ordinary constraints of the document. A relation in space read without its skew side
+  infers it (`io::from_json`). `edit::commit_seeds` splices a solved fold, attitude or offset
+  into its written seed, or writes the clause where none was. `program::to_program` lifts a
+  solved view as a stated one where the solve left it.
+- **Tests.** `tests/spatial_lang.rs`: the gate (gear axis in the front view, pinion axis in a
+  view whose fold is solved; `Angle3` 90° and `LineLine3` 17.5 through `Constraint::in_space`)
+  solves to DOF 0 from a 30° seed, the fold at 0° to 2e-11°, the angle between the lifted axes
+  90° (cos < 1e-9) and their skew distance 17.5 (to 1e-9), and it round-trips through JSON byte
+  for byte; `fold: along`, `through:`, free attitude and offset with their seeds and freedoms,
+  `project` between a stated and a solved view (β = atan2(40, 30)), the print round trip, the
+  refusals with their spans, writeback, deletion and a solved fold in a component.
+- **Deferred to P2b.** The inferred cross-view word dispatch with the role rule, `sphere`, the
+  page-placement gauge, the primer's worked example, the FFI's `gcs_plane_frame3`, and lifting a
+  solved view's clauses in `to_program`.
+
 ## P3 — Circles, spheres, tangency and `through:`
 
 **Exit:** in a hypoid pitch-cone fixture, the pinion cone touches the gear's at M with a common
