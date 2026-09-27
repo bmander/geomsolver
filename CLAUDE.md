@@ -85,6 +85,12 @@ glyph. Forward references, formals, privacy and copy/delete dependencies are sup
 cycles and dependency depth over 64 are refused. Browser `core/motion.ts` samples position
 and velocity in six doubles. `motion::Family::read` retains a solved snapshot for repeated
 sampling; re-read after axis edits. Dependency height is checked even with cached subgraphs.
+**Measurements read after the solve** (`measure.rs`, `expr::Measure`): `length(l)`, `radius(c)`,
+`distance(a, b)`, `angle(l1, l2)` may stand in a motion's `ratio:`/`phase:`/`advance:` only. The
+flattener resolves their names like references (`rescope_measures`); `MotionE::measured` holds the
+compiled text and `MotionE::rotation`/`advance` work it out from the solved sketch on every read
+(`Family::read`, `solid::reads`'s motion key), so nothing stale is stored and caches follow the
+geometry. Everywhere else `expr::eval` refuses one, and the elaborator codes that message E107.
 
 **Solid placement:** `solid indexed(source, under: indexing, at: 90deg)` places one source
 solid at a named motion's pose. `at:` is a constant Angle, converted to radians at elaboration;

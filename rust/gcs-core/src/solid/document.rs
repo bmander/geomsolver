@@ -132,15 +132,18 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
         if !seen.insert(i) { continue; }
         let Some(m) = sk.motions.get(i as usize) else { values.push(f64::NAN); continue; };
         values.push(i as f64);
+        // a number written as a measurement is read as it now comes to, so the key moves
+        // exactly when the measured geometry does (`MotionE::rotation`)
         match m.def {
-            crate::model::MotionDef::Rotation {axis,ratio,phase,advance} => {
+            crate::model::MotionDef::Rotation {axis,..} => {
+                let (ratio,phase,advance) = m.rotation(sk).unwrap_or((f64::NAN,f64::NAN,f64::NAN));
                 values.extend([0.,axis as f64,ratio,phase,advance]);
                 if let Some(axis) = sk.lines.get(axis as usize) {
                     for p in [axis.p1,axis.p2] { values.extend(sk.world_point(p as usize)); }
                 } else { values.push(f64::NAN); }
             }
-            crate::model::MotionDef::Translation {axis,advance} => {
-                values.extend([2.,axis as f64,advance]);
+            crate::model::MotionDef::Translation {axis,..} => {
+                values.extend([2.,axis as f64,m.advance(sk).unwrap_or(f64::NAN)]);
                 if let Some(axis) = sk.lines.get(axis as usize) {
                     for p in [axis.p1,axis.p2] { values.extend(sk.world_point(p as usize)); }
                 } else { values.push(f64::NAN); }

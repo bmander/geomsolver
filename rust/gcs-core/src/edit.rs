@@ -904,6 +904,17 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                     syntax::MotionSpec::Rotation {axis,..} | syntax::MotionSpec::Translation {axis,..} => look(axis),
                     syntax::MotionSpec::Relative {source,observer} => { look(source); look(observer); }
                 }
+                // a number measured off the drawing is defined from what it measures, and a
+                // motion measuring a deleted line goes with it, as a dimension on it would
+                let mut spec = motion.clone();
+                for a in spec.args_mut() {
+                    if let syntax::Arg::Dim {text,..} = a {
+                        for n in crate::expr::measured_names(text) {
+                            let root = n.split('.').next().unwrap_or_default();
+                            look(&syntax::Ref {root:syntax::Name::new(root),path:vec![],span:Default::default()});
+                        }
+                    }
+                }
             }
             // a curve is a point of an instance, and goes with what it is written over: the
             // instance's point, or — written in place — the entities the instance was given

@@ -1,6 +1,6 @@
 //! Tokenize and parse dimension expressions and unit notation.
 
-use super::{is_builtin, Ast, Op, Parsed, FUNCTIONS, MAX_DEPTH, MAX_TEXT};
+use super::{is_builtin, Ast, Op, Parsed, FUNCTIONS, MAX_DEPTH, MAX_TEXT, MEASURES};
 use crate::units::{unit, Dim, Units};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -171,7 +171,7 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
         // one — or an unbound formal of an instance in one — is `#3.0.w`, and the graph has to
         // read it.  The digits and dots after the `#` are the copy's, so they are part of the
         // name here where `3.0` alone would be a number.
-        let key =
+        let mut key =
             c == '#' && chars.get(i + 1).is_some_and(|d| d.is_ascii_alphanumeric() || *d == '_');
         if c.is_ascii_alphabetic() || c == '_' || key {
             let start = i;
@@ -185,13 +185,24 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
             // coordinate a curve is written over, not a name and a decimal point.  Only there —
             // `a.5` and a trailing `a.` are left alone, so `.5` is still the number it always was
             // and nothing that used to parse now parses differently.
+            // A copy's key may also stand *inside* a path (`side.#282.0.small`, the absolute
+            // name a measurement's argument resolves to), which no text wrote before.
+            let copy = |j: usize| {
+                chars.get(j) == Some(&'#')
+                    && chars.get(j + 1).is_some_and(|d| d.is_ascii_alphanumeric() || *d == '_')
+            };
             while i + 1 < chars.len()
                 && chars[i] == '.'
                 && (chars[i + 1].is_ascii_alphabetic()
                     || chars[i + 1] == '_'
-                    || (key && chars[i + 1].is_ascii_digit()))
+                    || (key && chars[i + 1].is_ascii_digit())
+                    || copy(i + 1))
             {
                 i += 1;
+                if chars[i] == '#' {
+                    key = true;
+                    i += 1;
+                }
                 while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
                     i += 1;
                 }
@@ -328,6 +339,25 @@ impl Parser {
                     return Ok(Ast::Var(name));
                 }
                 self.next();
+                if let Some(&(_, m, n)) = MEASURES.iter().find(|f| f.0 == name) {
+                    // a measurement's arguments are names of geometry, never numbers
+                    let mut args = Vec::new();
+                    loop {
+                        match self.next() {
+                            Tok::Ident(a) => args.push(a),
+                            _ => return Err(format!("`{name}` measures geometry: its arguments are names")),
+                        }
+                        match self.next() {
+                            Tok::Comma => continue,
+                            Tok::RParen => break,
+                            _ => return Err(format!("expected `,` or `)` at {}", self.here())),
+                        }
+                    }
+                    if args.len() != n {
+                        return Err(format!("`{name}` takes {n} argument(s)"));
+                    }
+                    return Ok(Ast::Measure(m, args));
+                }
                 let mut args = Vec::new();
                 if *self.peek() != Tok::RParen {
                     loop {

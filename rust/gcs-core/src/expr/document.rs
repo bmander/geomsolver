@@ -21,6 +21,9 @@ pub enum Fault {
     /// It would not compute — a cycle, a name defined twice, a non-number — and the last
     /// number stands, so the solver always has a constant.
     Uncomputable,
+    /// It measures the solved drawing (`length(l)`), and a constraint's number is needed
+    /// before the solve it would read: E107, the stratum refusal every such context shares.
+    Measure,
 }
 
 /// An expression's fault and the words for it.
@@ -106,8 +109,14 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     let n = nodes.len();
     let mut errors: Vec<Option<ExprError>> = vec![None; n];
     for (i, nd) in nodes.iter().enumerate() {
-        if let Err(e) = &nd.parsed {
-            errors[i] = Some(e.clone().into());
+        match &nd.parsed {
+            Err(e) => errors[i] = Some(e.clone().into()),
+            Ok(p) => {
+                if let Some((m, args)) = p.body.measures().first() {
+                    errors[i] =
+                        Some(ExprError::new(Fault::Measure, super::measure_refusal(&m.text(args))));
+                }
+            }
         }
     }
     // who defines what; a name defined twice is nobody's, and every definer is told
