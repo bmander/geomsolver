@@ -38,7 +38,8 @@ component CutterReach(p: plane, n: plane, apex: point, normal: line, axis: line,
   normal angle(180deg) cap_radius
   cap_radius equal reach_line
   in n {
-    point foot hint(x: (radial.x * (normal.p2.x - normal.p1.x) + radial.y * (normal.p2.y - normal.p1.y))
+    point foot hint(x: (radial.x * (normal.p2.x - normal.p1.x)
+        + radial.y * (normal.p2.y - normal.p1.y))
       / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2), y: 0)
     point end hint(x: foot.x, y: foot.y + axis.p2.y - axis.p1.y)
     line cap(foot, end)

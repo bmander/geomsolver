@@ -55,8 +55,10 @@ component MateSection(lp: point, rp: point, inner_along: line, outer_along: line
 
 // The mate of `tooth` (a CrownTooth), revolved about the cutter's axis turned tip down.
 component CrownMate(tooth: group, design: group) {
-  point outer_far hint(x: 2 * tooth.rack.pitch.p2.x - tooth.rack.pitch.p1.x, y: tooth.rack.pitch.p2.y)
-  point inner_far hint(x: 2 * tooth.rack.pitch.p1.x - tooth.rack.pitch.p2.x, y: tooth.rack.pitch.p1.y)
+  point outer_far hint(x: 2 * tooth.rack.pitch.p2.x - tooth.rack.pitch.p1.x,
+                       y: tooth.rack.pitch.p2.y)
+  point inner_far hint(x: 2 * tooth.rack.pitch.p1.x - tooth.rack.pitch.p2.x,
+                       y: tooth.rack.pitch.p1.y)
   point bottom hint(x: tooth.axis.p1.x, y: 2 * tooth.axis.p1.y - tooth.axis.p2.y)
   construction line outer_span(tooth.rack.pitch.p1, outer_far)
   construction line inner_span(inner_far, tooth.rack.pitch.p2)

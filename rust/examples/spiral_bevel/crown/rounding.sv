@@ -25,9 +25,9 @@ preview {
   line pitch(std.origin, hint(x: 5, y: 0))
   std.origin distance(5mm, along: right) pitch.p2
   std.origin distance(0mm, along: up) pitch.p2
-  profile = line base(bl, br) -> line outer(br, rj) -> tangent arc outer_round(center: hint(x: 6, y: 2)) ->
-            tangent line tip(rt, lt) -> tangent arc inner_round(center: hint(x: 0, y: 2)) ->
-            tangent line inner(lj, bl) -> close
+  profile = line base(bl, br) -> line outer(br, rj) ->
+            tangent arc outer_round(center: hint(x: 6, y: 2)) -> tangent line tip(rt, lt) ->
+            tangent arc inner_round(center: hint(x: 0, y: 2)) -> tangent line inner(lj, bl) -> close
   base angle(110deg) outer
   base angle(250deg) inner
   std.origin on inner

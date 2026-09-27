@@ -14,7 +14,8 @@ use crown.section
 // `inner` and `outer` are the pitch points there.
 component CrownTooth(p: plane, normal: line, inner: point, outer: point, design: group) {
   // Seeds: a pitch-plane point's place along the trace normal is its x in N.
-  point center hint(x: (normal.p1.x * (normal.p2.x - normal.p1.x) + normal.p1.y * (normal.p2.y - normal.p1.y))
+  point center hint(x: (normal.p1.x * (normal.p2.x - normal.p1.x)
+      + normal.p1.y * (normal.p2.y - normal.p1.y))
     / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2), y: 0)
   point lp hint(x: (inner.x * (normal.p2.x - normal.p1.x) + inner.y * (normal.p2.y - normal.p1.y))
     / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2), y: 0)

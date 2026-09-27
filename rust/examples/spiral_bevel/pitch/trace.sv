@@ -1,8 +1,9 @@
 // Step 2, the tooth trace, in the pitch plane. The cutter centre C stands at the
 // cutter radius from M, with MC at 90deg - spiral to MO; the trace is the circle
-// about C through M, and its heading, the tangent at M, meets the square dropped from O at H.
-// The normal module is the module seen square to the trace, which the claim checks:
-// the distance from MC of a point one module from M along the generator.
+// about C through M, and its heading, the tangent at M, meets the square dropped
+// from O at H. The normal module is the module seen square to the trace, which the
+// claim checks: the distance from MC of a point one module from M along the
+// generator.
 use std
 use design
 use views

@@ -16,34 +16,43 @@ component ConeBoundary(generator: line, axis: line, offset: Length, lean: Angle)
   near midpoint generator
   generator.p2 midpoint span
   // Each end stands on the square to the generator through it, which meets the axis.
-  // Seeds: where the squares through the ends meet the axis, from its seeded direction.
+  // Seeds: that meeting, from the seeded directions, `(g . g) / (2 g . a)` axes out.
   private point near_cross hint(
-    x: axis.p1.x + (axis.p2.x - axis.p1.x) * ((generator.p2.x - generator.p1.x)^2 + (generator.p2.y - generator.p1.y)^2)
-      / (2 * ((generator.p2.x - generator.p1.x) * (axis.p2.x - axis.p1.x) + (generator.p2.y - generator.p1.y) * (axis.p2.y - axis.p1.y))),
-    y: axis.p1.y + (axis.p2.y - axis.p1.y) * ((generator.p2.x - generator.p1.x)^2 + (generator.p2.y - generator.p1.y)^2)
-      / (2 * ((generator.p2.x - generator.p1.x) * (axis.p2.x - axis.p1.x) + (generator.p2.y - generator.p1.y) * (axis.p2.y - axis.p1.y))))
-  private point far_cross hint(x: 3 * near_cross.x - 2 * axis.p1.x, y: 3 * near_cross.y - 2 * axis.p1.y)
+    x: axis.p1.x + (axis.p2.x - axis.p1.x)
+      * ((generator.p2.x - generator.p1.x)^2 + (generator.p2.y - generator.p1.y)^2)
+      / (2 * ((generator.p2.x - generator.p1.x) * (axis.p2.x - axis.p1.x)
+            + (generator.p2.y - generator.p1.y) * (axis.p2.y - axis.p1.y))),
+    y: axis.p1.y + (axis.p2.y - axis.p1.y)
+      * ((generator.p2.x - generator.p1.x)^2 + (generator.p2.y - generator.p1.y)^2)
+      / (2 * ((generator.p2.x - generator.p1.x) * (axis.p2.x - axis.p1.x)
+            + (generator.p2.y - generator.p1.y) * (axis.p2.y - axis.p1.y))))
+  private point far_cross hint(x: 3 * near_cross.x - 2 * axis.p1.x,
+                               y: 3 * near_cross.y - 2 * axis.p1.y)
   private line near_rib(near, near_cross)
   private line far_rib(far, far_cross)
   near_rib perpendicular generator
   far_rib perpendicular generator
   near_cross on axis
   far_cross on axis
-  // Seeds: a step along each rib, toward the axis or away as `lean` says.
+  // Seeds: a step along each rib, toward the axis or away as `lean` says, and the feet of
+  // the ends on the axis.
   private point p hint(x: near.x + (1 - lean / 90deg) * (near_cross.x - near.x) / 20,
                        y: near.y + (1 - lean / 90deg) * (near_cross.y - near.y) / 20)
   private point q hint(x: far.x + (1 - lean / 90deg) * (far_cross.x - far.x) / 20,
                        y: far.y + (1 - lean / 90deg) * (far_cross.y - far.y) / 20)
-  // Seeds: the feet on the axis of the meridian's ends.
   private point a hint(
-    x: axis.p1.x + (axis.p2.x - axis.p1.x) * ((p.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (p.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
+    x: axis.p1.x + (axis.p2.x - axis.p1.x)
+      * ((p.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (p.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
       / ((axis.p2.x - axis.p1.x)^2 + (axis.p2.y - axis.p1.y)^2),
-    y: axis.p1.y + (axis.p2.y - axis.p1.y) * ((p.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (p.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
+    y: axis.p1.y + (axis.p2.y - axis.p1.y)
+      * ((p.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (p.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
       / ((axis.p2.x - axis.p1.x)^2 + (axis.p2.y - axis.p1.y)^2))
   private point b hint(
-    x: axis.p1.x + (axis.p2.x - axis.p1.x) * ((q.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (q.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
+    x: axis.p1.x + (axis.p2.x - axis.p1.x)
+      * ((q.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (q.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
       / ((axis.p2.x - axis.p1.x)^2 + (axis.p2.y - axis.p1.y)^2),
-    y: axis.p1.y + (axis.p2.y - axis.p1.y) * ((q.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (q.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
+    y: axis.p1.y + (axis.p2.y - axis.p1.y)
+      * ((q.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (q.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
       / ((axis.p2.x - axis.p1.x)^2 + (axis.p2.y - axis.p1.y)^2))
   private line near_lift(near, p)
   private line far_lift(far, q)
