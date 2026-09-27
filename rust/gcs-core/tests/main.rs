@@ -16,6 +16,7 @@ mod renderer;
 mod anonymous;
 mod callout;
 mod chain;
+mod chain_edges;
 mod claim;
 mod components;
 mod closed_scopes;

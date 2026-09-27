@@ -41,6 +41,13 @@ pub fn square() -> Sketch {
     document(SQUARE, "square")
 }
 
+/// A plate with a tab on every edge — `edge_tabs.sv`.  The case for iterating over a named
+/// chain: `repeat e in outline { … }` states the tab once, and the flattener makes a copy per
+/// edge of the outline, in the order the chain walks them.
+pub fn edge_tabs() -> Sketch {
+    document(EDGE_TABS, "edge_tabs")
+}
+
 /// A regular n-gon from one component — `ngon.sv`.  The parametric sibling of `square.sv`:
 /// `Ngon(n: Int, side: Length)` is a corner on a circle and a side round a `cycle` whose body
 /// ends mid-joint, the instance line picking the count and the seeds picking the winding.
@@ -162,6 +169,7 @@ pub fn example(name: &str) -> Option<Sketch> {
         "truss" => truss(8, 20.0, 15.0, true),
         "square" => square(),
         "ngon" => ngon(),
+        "edge_tabs" => edge_tabs(),
         "polygon_chain" => polygon_chain(12, 50.0),
         "rect_fillets_conflict" => rect_fillets_conflict(),
         "rect_fillets_under" => rect_fillets_under(),
@@ -243,7 +251,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 40] = [
+pub const CASES: [(&str, &str, &str); 41] = [
     ("Mounting flange · solids", "solid_flange", "Annular extrusions, an added hub, and a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "A hollow square section swept along a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
@@ -252,6 +260,7 @@ pub const CASES: [(&str, &str, &str); 40] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Square, one line round a cycle", "square", "`cycle 4 { line s -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
     ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: corners on a circle, equal sides, the open-jointed cycle welding them round — pure relations, so the closure equality is implied rather than Over, and the seeds walk once round the circle to pick the convex winding no residual can state (1 DOF: it spins about its hub)"),
+    ("Tabs on every edge · repeat over a chain", "edge_tabs", "a rectangle written as a named chain, and `repeat e in outline { … }` stating one tab: the flattener makes a copy per edge, in the order the chain walks them, `e` naming that copy's edge — change the width, the height or the rise and all four follow; add an edge to the outline and it gets a tab too"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
     ("Truss (50 bays)", "truss50", "300 entities — drag a node"),
@@ -395,6 +404,7 @@ pub fn source(key: &str) -> Option<&'static str> {
         "rect_fillets_under" => Some(RECT_FILLETS_UNDER),
         "square" => Some(SQUARE),
         "ngon" => Some(NGON),
+        "edge_tabs" => Some(EDGE_TABS),
         "polygon_chain" => Some(POLYGON_CHAIN),
         "truss" => Some(TRUSS),
         "truss_redundant" => Some(TRUSS_REDUNDANT),
@@ -442,6 +452,7 @@ pub const RECT_FILLETS_CONFLICT: &str = include_str!("../../examples/rect_fillet
 pub const RECT_FILLETS_UNDER: &str = include_str!("../../examples/rect_fillets_under.sv");
 pub const SQUARE: &str = include_str!("../../examples/square.sv");
 pub const NGON: &str = include_str!("../../examples/ngon.sv");
+pub const EDGE_TABS: &str = include_str!("../../examples/edge_tabs.sv");
 pub const POLYGON_CHAIN: &str = include_str!("../../examples/polygon_chain.sv");
 pub const TRUSS: &str = include_str!("../../examples/truss.sv");
 pub const TRUSS_REDUNDANT: &str = include_str!("../../examples/truss_redundant.sv");

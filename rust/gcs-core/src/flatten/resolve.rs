@@ -442,16 +442,14 @@ fn rewrite(
     *needs_standard_datums |= needed.get();
 }
 impl<'a> Walk<'a> {
-    /// Turn every reference into the absolute name of what it denotes.
-    pub(super) fn resolve(&mut self) -> (Vec<crate::ir::Statement>, BTreeMap<String, String>) {
-        let access = std::rc::Rc::new(self.private_names.clone());
-        for (_, _, sc) in &mut self.out { sc.access = access.clone(); }
-        for (_, _, sc) in &mut self.aliases { sc.access = access.clone(); }
-        // aliases first, and transitively: a formal bound to another instance's formal
+    /// Every alias the walk has made, resolved to the absolute name it denotes — transitively,
+    /// since a formal may be bound to another instance's formal.
+    fn alias_table(&self) -> BTreeMap<String, String> {
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
-        for (abs, r, sc) in self.aliases.clone() {
-            if let Some((target, rest)) = lookup_raw(&r, &sc, &self.names, &alias, self.units) {
-                alias.insert(abs, std::iter::once(target).chain(rest).collect::<Vec<_>>().join("."));
+        for (abs, r, sc) in &self.aliases {
+            if let Some((target, rest)) = lookup_raw(r, sc, &self.names, &alias, self.units) {
+                let to = std::iter::once(target).chain(rest).collect::<Vec<_>>().join(".");
+                alias.insert(abs.clone(), to);
             }
         }
         for _ in 0..MAX_DEPTH {
@@ -471,6 +469,138 @@ impl<'a> Walk<'a> {
                 break;
             }
         }
+        alias
+    }
+
+    /// The scope a set-aside block's chain is looked up in, with the access table the resolve
+    /// pass would give it — so a private chain is no more reachable by iterating it.
+    fn pending_scope(&self, p: &Pending) -> Scope {
+        Scope { access: std::rc::Rc::new(self.private_names.clone()), ..p.scope.clone() }
+    }
+
+    /// The chain a set-aside block runs over, where it can be found yet: each link as the chain
+    /// wrote it, with the scope it was written in, and whether the chain closes.
+    fn chain_of(
+        &self,
+        p: &Pending,
+        alias: &BTreeMap<String, String>,
+    ) -> Option<(Vec<(Ref, Scope)>, bool)> {
+        let StmtKind::Block(b) = &p.st.kind else { return None };
+        let over = b.over.as_ref()?;
+        let sc = self.pending_scope(p);
+        let (abs, rest) = lookup(&over.chain, &sc, &self.names, alias, self.units)?;
+        if !rest.is_empty() {
+            return None;
+        }
+        self.out.iter().find_map(|(st, _, sc)| match &st.kind {
+            StmtKind::Chain(c) if c.name.key().text == abs => {
+                Some((c.links.iter().map(|r| (r.clone(), sc.clone())).collect(), c.closed))
+            }
+            _ => None,
+        })
+    }
+
+    /// Expand every block over a chain's edges (`repeat e in rack.profile { … }`), each where
+    /// the walk met it, once its chain can be found.  A copy may itself hold such a block, or
+    /// make the instance holding another's chain, so this runs until nothing more resolves; what
+    /// is left names no chain, and says so at the reference.
+    pub(super) fn expand_pending(&mut self) {
+        while !self.pending.is_empty() {
+            let alias = self.alias_table();
+            let found = self
+                .pending
+                .iter()
+                .enumerate()
+                .find_map(|(i, p)| self.chain_of(p, &alias).map(|c| (i, c)));
+            let Some((i, (links, closed))) = found else { break };
+            let p = self.pending.remove(i);
+            self.expand_edges(p, links, closed);
+        }
+        let alias = self.alias_table();
+        for p in std::mem::take(&mut self.pending) {
+            self.take_placeholder(&p);
+            let StmtKind::Block(b) = &p.st.kind else { continue };
+            let Some(over) = &b.over else { continue };
+            let sc = self.pending_scope(&p);
+            let r = &over.chain;
+            match lookup(r, &sc, &self.names, &alias, self.units) {
+                Some(_) => self.err(
+                    Code::E103,
+                    r.span,
+                    format!(
+                        "`{}` is not a named chain: `{} {} in …` runs over the edges of a \
+                         chain written `name = line -> …`",
+                        written(r),
+                        if b.kind.wraps() { "cycle" } else { "repeat" },
+                        over.var.text
+                    ),
+                ),
+                None => {
+                    let msg = missing_ref(r, &sc, &self.names, &alias, self.units);
+                    self.err(Code::E101, r.span, msg)
+                }
+            }
+        }
+    }
+
+    /// Where a set-aside block stands in the walk's output — the block statement itself, at its
+    /// own path, which no other statement is — taken out.
+    fn take_placeholder(&mut self, p: &Pending) -> Option<usize> {
+        let at = self.out.iter().position(|(st, path, _)| {
+            st.id == p.st.id && matches!(st.kind, StmtKind::Block(_)) && *path == p.path
+        })?;
+        self.out.remove(at);
+        Some(at)
+    }
+
+    /// One block over a chain's edges: a copy per link, made into a vector of their own and
+    /// spliced in where the walk met the block, so the statements stand in source order.
+    fn expand_edges(&mut self, p: Pending, links: Vec<(Ref, Scope)>, closed: bool) {
+        let Some(at) = self.take_placeholder(&p) else { return };
+        let StmtKind::Block(b) = &p.st.kind else { return };
+        let Some(over) = &b.over else { return };
+        if b.kind.wraps() && !closed {
+            self.err(
+                Code::E103,
+                over.chain.span,
+                format!(
+                    "`{}` is an open chain, and a `cycle` closes — its last edge's `next` would \
+                     be its first; write `repeat {} in …`",
+                    written(&over.chain),
+                    over.var.text
+                ),
+            );
+            return;
+        }
+        // a declaration of the body called what each copy calls its edge would hide it
+        let var = &over.var.text;
+        if b.body.iter().any(|st| match &st.kind {
+            StmtKind::Decl(d) => &d.name.key().text == var,
+            StmtKind::Chain(c) => &c.name.key().text == var,
+            StmtKind::Instance(i) => &i.name.text == var,
+            StmtKind::Param(d) => &d.name.text == var,
+            StmtKind::Group(g) => &g.name.text == var,
+            _ => false,
+        }) {
+            self.err(Code::E001, over.var.span, format!("`{var}` is declared twice"));
+            return;
+        }
+        let outer = std::mem::take(&mut self.out);
+        self.held = outer.len();
+        let (b, var) = (b.clone(), over.var.clone());
+        let edges = Some((&var, links.as_slice()));
+        self.copies(&b, &p.st, &p.scope, &p.vals, &p.path, p.depth, links.len(), edges);
+        let made = std::mem::replace(&mut self.out, outer);
+        self.held = 0;
+        self.out.splice(at..at, made);
+    }
+
+    /// Turn every reference into the absolute name of what it denotes.
+    pub(super) fn resolve(&mut self) -> (Vec<crate::ir::Statement>, BTreeMap<String, String>) {
+        let access = std::rc::Rc::new(self.private_names.clone());
+        for (_, _, sc) in &mut self.out { sc.access = access.clone(); }
+        for (_, _, sc) in &mut self.aliases { sc.access = access.clone(); }
+        let alias = self.alias_table();
         for (_, r, sc) in self.aliases.clone() {
             if let Some((target, _)) = lookup_raw(&r, &sc, &self.names, &alias, self.units) {
                 if let Some(member) = private_member(&r, &sc, &target, &alias) {

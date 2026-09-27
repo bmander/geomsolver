@@ -1584,6 +1584,10 @@ Conventions:
   Source edits preserve the expression; deleting its geometry is refused under the existing
   chain rule. Canonical flat printing refuses named chains atomically and retains source,
   as it does for components. `tests/solid_lang.rs` and the browser binding test cover this.
+  `repeat e in CHAIN { … }` (and `cycle e in`, refused on an open chain) makes a copy per link,
+  `e` an alias to that link in each copy (`#<id>.<k>.e`); the count is the chain's, so the block
+  is set aside where it stands and expanded once the chain resolves (`flatten::expand_pending`),
+  through instances and group formals alike. `tests/chain_edges.rs` is the gate.
 - **A face closes itself** (§6.8, `program::build_face`; issue #49, item 1).  What the brackets
   hold is a *walk*, and an item may be a **point**: a corner the walk goes straight to and
   straight on from, with `-> close` — the chain's own word, in the other place the language draws

@@ -81,6 +81,7 @@ ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation
 component NAME(FORMALS) { statement* }  a definition
 repeat N [as i] { ... }                 N copies, unrelated
 cycle N [as i] { ... }                  N copies that close; `next` and `prev` are in scope
+repeat e in CHAIN [as i] { ... }        a copy per edge of a named chain, `e` that edge (1.7)
 curve NAME = INSTANCE.POINT over FORMAL in (A, B)          a curve                  (1.9)
 curve NAME = Component(ARGS).POINT over FORMAL in (A, B)
 ```
@@ -405,6 +406,58 @@ copy leaves it unstated, so `repeat N { line -> angle(a) }` is an open polyline 
 boundary links must be the body's own declarations, and at most one of the two boundary slots may
 name its point. A statement inside braces ends at the `}`, so a block fits one line:
 `cycle 4 { line s -> perpendicular equal }` is a square but for a size and a pose.
+
+**Repetition over a chain's edges.** `repeat e in CHAIN { … }` makes one copy of the body per
+link of a named chain (1.14), in the order the chain walks them, with `e` naming that copy's
+edge; `as i` binds the index as before. `e` is an ordinary reference: a constraint operand, a
+field (`e.p1`), an argument to an instance, the edge of a `surface`. The copies are a `repeat`'s
+in every other respect — named `#<id>.<k>.m`, reached from outside as `m[2]`, and one statement
+however many copies it makes, so a seed inside is not written back and a gesture on one copy is
+refused. The chain may be open or closed, declared anywhere in the body (P2), or reached through
+an instance or a group formal (`refs.pinion.profile`). A hole at every edge's midpoint, sized by
+its index (`holes.sv`):
+
+```
+unit mm
+point a hint(x: 0, y: 0)
+point b hint(x: 60, y: 0)
+point c hint(x: 60, y: 40)
+point d hint(x: 0, y: 40)
+ground a
+outline = line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+horizontal ab
+vertical bc
+horizontal cd
+vertical da
+distance(60) ab
+distance(40) bc
+
+repeat e in outline as i {
+  point m
+  m midpoint e
+  circle hole(center: m) hint(r: 3)
+  radius(2mm + i * 1mm) hole
+}
+```
+
+`solventc --where '#22.2.hole' holes.sv` (the block is statement 22; copy 2 is the third edge,
+`cd`, so its hole has radius 4 at the middle of the top edge):
+
+```
+holes.sv: solved
+  18 params, 18 equations, structural rank 18; DOF 0; 5 components: DOF 0, 0, 0, 0, 0; 2 rigid cluster(s) in the distance graph
+  #22.2.hole.center.x = 30
+  #22.2.hole.center.y = 40
+  #22.2.hole.r = 4
+```
+
+`cycle e in CHAIN { … }` closes as `cycle N` does — `next.m` is the following edge's copy and
+the last copy's `next` is the first's — and is refused on an open chain (E103, at the reference).
+Iterating over something that is not a named chain is E103 at the reference (`` `ab` is not a
+named chain``), a name nothing declares E101, a private chain reached from outside E101, and a
+body declaration called what the copies call their edge E001. `edge_tabs.sv` puts a tab on every
+edge of a plate; `spiral_bevel/verification.sv` makes each rack section's generated flanks —
+surface, envelope and material region — one block per section.
 
 ### 1.8 Components
 

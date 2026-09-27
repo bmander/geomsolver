@@ -104,6 +104,9 @@ fn shadowing(p: &Program, diags: &mut Vec<Diag>) {
                     if let Some(i) = &b.binder {
                         say(i, "a block's index", Some(st.id), diags);
                     }
+                    if let Some(o) = &b.over {
+                        say(&o.var, "a block's edge", Some(st.id), diags);
+                    }
                     body(&b.body, diags);
                 }
                 _ => {}
