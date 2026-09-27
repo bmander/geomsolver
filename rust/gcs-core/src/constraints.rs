@@ -1698,8 +1698,8 @@ impl Constraint {
             // with none cannot be here; recomputed with every refresh, being a cross product
             // and four dots, rather than kept in a second skip set beside the curve contacts
             CKind::Project => {
-                let basis = |i: usize| &sk.planes[self.args[i].ent().i()].basis;
-                let (da, db) = crate::plane::fold_line(basis(2), basis(3))
+                let basis = |i: usize| sk.basis(self.args[i].ent().i());
+                let (da, db) = crate::plane::fold_line(&basis(2), &basis(3))
                     .expect("a projection between parallel planes is refused at the add");
                 vec![da[0], da[1], db[0], db[1]]
             }
@@ -2003,8 +2003,8 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                     crate::io::entity_name(pa)
                 ));
             }
-            let basis = |e: EntRef| &sk.planes[e.i()].basis;
-            if crate::plane::fold_line(basis(pa), basis(pb)).is_none() {
+            let basis = |e: EntRef| sk.basis(e.i());
+            if crate::plane::fold_line(&basis(pa), &basis(pb)).is_none() {
                 return Err(format!(
                     "{} and {} are parallel, so no fold line relates their views",
                     crate::io::entity_name(pa),

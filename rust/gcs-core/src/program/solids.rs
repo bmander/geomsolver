@@ -256,7 +256,7 @@ pub(super) fn solids(
         // **a section is drawn in a view parallel to the cut**, or the true shape it shows is
         // not the shape it is a section of
         if let Some(a) = at {
-            let (pa, pb) = (sk.planes[a as usize].basis, sk.planes[plane as usize].basis);
+            let (pa, pb) = (sk.basis(a as usize), sk.basis(plane as usize));
             if crate::plane::fold_line(&pa, &pb).is_some() {
                 say(
                     Code::E084,

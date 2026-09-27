@@ -401,5 +401,5 @@ pub struct FrameE {
 #[derive(Clone, Debug)]
 pub struct PlaneE {
     pub frame: FrameE,
-    pub basis: crate::plane::Basis,
+    pub(in crate::model) basis: crate::plane::Basis,
 }

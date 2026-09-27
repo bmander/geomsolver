@@ -205,13 +205,15 @@ fn reversed_and_rotated_guides_keep_the_same_loft_and_source_round_trips() {
         .contains("solid body(end_section, section, along: guide)"));
     let k = 0.5_f64.sqrt();
     let rotate = |p: [f64; 3]| [p[0], k * (p[1] - p[2]), k * (p[1] + p[2])];
-    for p in &mut e.sketch.planes {
-        p.basis.u = rotate(p.basis.u);
-        p.basis.v = rotate(p.basis.v);
-        p.basis.o = rotate(p.basis.o);
+    for p in 0..e.sketch.planes.len() {
+        let mut b = e.sketch.basis(p);
+        b.u = rotate(b.u);
+        b.v = rotate(b.v);
+        b.o = rotate(b.o);
         for (i, delta) in [100.0, -70.0, 50.0].iter().enumerate() {
-            p.basis.o[i] += delta;
+            b.o[i] += delta;
         }
+        e.sketch.set_basis(p, b);
     }
     let s = evaluated(&e, "body");
     assert!((s.volume() - want).abs() < 1e-6);
@@ -369,8 +371,8 @@ fn an_opposite_end_plane_normal_does_not_twist_circular_sections() {
     let before = evaluated(&e, "body").volume();
     let p = e.map.ent_named("back").unwrap().i();
     let (sn, cs) = 97.0_f64.to_radians().sin_cos();
-    e.sketch.planes[p].basis.u = [cs, 0.0, sn];
-    e.sketch.planes[p].basis.v = [sn, 0.0, -cs];
+    let b = e.sketch.basis(p);
+    e.sketch.set_basis(p, gcs_core::plane::Basis { u: [cs, 0.0, sn], v: [sn, 0.0, -cs], ..b });
     let after = evaluated(&e, "body");
     assert!((after.volume() - before).abs() < 1e-7);
     assert_eq!(super::solid::unpaired(after.mesh()), 0);

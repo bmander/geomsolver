@@ -34,7 +34,7 @@ fn the_rotor_and_intrinsics_mirror_a_frame() {
     assert!(sk.user_constraints().is_empty());
     let rp = sk.constraints[1].args[1].param() as usize;
     assert!((sk.params[rp].value - 5.0).abs() < 1e-12);
-    assert_eq!(sk.planes[p].basis, Basis::page());
+    assert_eq!(sk.basis(p), Basis::page());
     let d = diagnose::diagnose(&mut sk, Default::default());
     assert_eq!(d.dof, 4, "two free points, and the rotor slaved to them");
 }
@@ -204,7 +204,7 @@ fn round_trips_through_json_and_the_graft() {
     assert!(!text.contains("FrameUnit"), "an intrinsic is never stored");
     let back = io::loads(&text).unwrap();
     assert_eq!(back.planes.len(), 3);
-    assert_eq!(back.planes[right].basis, sk.planes[right].basis);
+    assert_eq!(back.basis(right), sk.basis(right));
     assert_eq!(back.plane_of(pf), Some(front));
     assert_eq!(back.plane_of(pt), Some(top));
     assert_eq!(back.plane_of(pr), Some(right));

@@ -257,20 +257,28 @@ pub fn to_json(sk: &Sketch) -> Json {
     let planes: Vec<Json> = sk
         .planes
         .iter()
-        .map(|p| {
+        .enumerate()
+        .map(|(i, p)| {
             let f = &p.frame;
+            let b = sk.basis(i);
             let v3 = |a: [f64; 3]| Json::Arr(a.iter().map(|&x| Json::Num(x)).collect());
-            object([
+            let mut o = object([
                 ("origin", (f.origin as i64).into()),
                 ("toward", (f.toward as i64).into()),
                 ("c", sk.params[f.c as usize].value.into()),
                 ("s", sk.params[f.s as usize].value.into()),
                 ("cfixed", sk.params[f.c as usize].fixed.into()),
                 ("sfixed", sk.params[f.s as usize].fixed.into()),
-                ("u", v3(p.basis.u)),
-                ("v", v3(p.basis.v)),
+                ("u", v3(b.u)),
+                ("v", v3(b.v)),
                 ("class", class_json(&f.class)),
-            ])
+            ]);
+            // where the plane stands in space, which an `offset:` or an `against` moved it to;
+            // written only when it stands off the origin, so a view's record is as it was
+            if b.o != [0.0; 3] {
+                o.set("o", v3(b.o));
+            }
+            o
         })
         .collect();
     let user = sk.user_constraints();
@@ -426,6 +434,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         };
         let basis = crate::plane::Basis::explicit(v3("u"), v3("v"))
             .ok_or_else(|| format!("plane {k}: u and v do not span a plane"))?;
+        let basis = crate::plane::Basis { o: v3("o"), ..basis };
         let pi = sk.plane(g("origin")?, g("toward")?, basis, "");
         let f = &sk.planes[pi].frame;
         let (cp, sp) = (f.c as usize, f.s as usize);
@@ -667,7 +676,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         else {
             continue;
         };
-        let ni = dst.plane(o, t, p.basis, "");
+        let ni = dst.plane(o, t, src.basis(i), "");
         let (nc, ns) = (dst.planes[ni].frame.c as usize, dst.planes[ni].frame.s as usize);
         dst.params[nc].value = src.params[f.c as usize].value;
         dst.params[ns].value = src.params[f.s as usize].value;

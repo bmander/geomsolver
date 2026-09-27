@@ -88,7 +88,7 @@ fn exact_revolution_respects_partial_turn_sense_and_world_plane_not_page_placeme
     sweep.value = std::f64::consts::FRAC_PI_2;
     *sense = Sense::Cw;
     e.sketch.faces[*face as usize].support = gcs_core::model::FaceSupport::Plane(Some(pi as u32));
-    e.sketch.planes[pi].basis = Basis { u: [0.,0.,1.],v: [1.,0.,0.],o: [10.,20.,30.] };
+    e.sketch.set_basis(pi, Basis { u: [0.,0.,1.],v: [1.,0.,0.],o: [10.,20.,30.] });
     let before = patch(&e,"outer_round");
     let a = before.at(0.4,0.).unwrap().position;
     near(before.at(0.4,1.).unwrap().position,[a[0],20.+a[2]-30.,30.],1e-7);

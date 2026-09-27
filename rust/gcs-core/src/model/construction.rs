@@ -148,6 +148,25 @@ impl Sketch {
         pi
     }
 
+    /// Plane `i`'s attitude in space.  The one reader: every consumer outside the model asks
+    /// here and never reads the field, so an attitude that comes to be solved for rather than
+    /// stated changes this function and no caller (`docs/spatial-constraints-plan.md`).
+    pub fn basis(&self, i: usize) -> crate::plane::Basis {
+        self.planes[i].basis
+    }
+
+    /// Stand plane `i`'s origin at `o`, its directions untouched — the one writer after
+    /// elaboration built the plane, which is what `against` and a derived offset do.
+    pub fn set_plane_origin(&mut self, i: usize, o: [f64; 3]) {
+        self.planes[i].basis.o = o;
+    }
+
+    /// Replace plane `i`'s whole stated attitude — for a caller that holds a sketch and turns
+    /// its views in space (the tests that move a part rigidly), never for a solve.
+    pub fn set_basis(&mut self, i: usize, b: crate::plane::Basis) {
+        self.planes[i].basis = b;
+    }
+
     /// The rotor's two params, seeded from the chord — the half of `frame` a plane shares.
     fn datum(&mut self, origin: usize, toward: usize, name: &str) -> FrameE {
         let ((c, s), scale) = self.frame_chord(origin, toward);

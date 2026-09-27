@@ -561,7 +561,7 @@ point q hint(x: 40)
 plane front(origin: o, toward: q)
 plane back(origin: o, toward: q, from: front, offset: 12mm)
 ");
-    let b = |n: usize| e.sketch.planes[n].basis;
+    let b = |n: usize| e.sketch.basis(n);
     assert_eq!(b(0).u, b(1).u, "parallel");
     assert_eq!(b(0).v, b(1).v);
     assert!((b(1).along_normal() - 12.0).abs() < 1e-9, "twelve along its own normal");
@@ -866,7 +866,9 @@ fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
     let a = e.sketch.evaluated_solid(tool, gcs_core::solid::ApproximationPolicy::Report).unwrap();
     assert!(a.world_bounds().lo[1] < 0.0 && a.world_bounds().hi[1] > 40.0);
     // A different placement of the target along the cutter normal changes its cached extent.
-    e.sketch.planes[0].basis.o[1] = 100.0;
+    let mut o = e.sketch.basis(0).o;
+    o[1] = 100.0;
+    e.sketch.set_plane_origin(0, o);
     let b = e.sketch.evaluated_solid(tool, gcs_core::solid::ApproximationPolicy::Report).unwrap();
     assert!(!std::rc::Rc::ptr_eq(&a, &b));
     assert!(b.world_bounds().lo[1] > 99.0 && b.world_bounds().hi[1] > 140.0);
@@ -876,10 +878,9 @@ fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
         let k = std::f64::consts::FRAC_1_SQRT_2;
         [k * (v[0] - v[1]), k * (v[0] + v[1]), v[2]]
     };
-    for p in &mut e.sketch.planes {
-        p.basis.u = rotate(p.basis.u);
-        p.basis.v = rotate(p.basis.v);
-        p.basis.o = rotate(p.basis.o);
+    for p in 0..e.sketch.planes.len() {
+        let b = e.sketch.basis(p);
+        e.sketch.set_basis(p, gcs_core::plane::Basis { u: rotate(b.u), v: rotate(b.v), o: rotate(b.o) });
     }
     assert!((volume(&e, "body") - want).abs() < 1e-6);
     let copied = gcs_core::io::copy(&e.sketch, &[gcs_core::model::EntRef::solid(body)]);
@@ -1150,8 +1151,9 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
             assert!((a.lo[k] - b.lo[k]).abs() < 0.03 && (a.hi[k] - b.hi[k]).abs() < 0.03,
                 "phi={phi}: {a:?} versus {b:?}");
         }
-        let front = &e.sketch.planes[e.map.ent_named("front").unwrap().i()];
-        let basis = front.basis;
+        let fi = e.map.ent_named("front").unwrap().i();
+        let front = &e.sketch.planes[fi];
+        let basis = e.sketch.basis(fi);
         let uv = plane::in_view(e.sketch.params[front.frame.c as usize].value,
             e.sketch.params[front.frame.s as usize].value,
             e.sketch.point_xy(front.frame.origin as usize),

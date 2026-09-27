@@ -30,7 +30,7 @@ fn close(a: f64, b: f64) {
 #[test]
 fn coordinate_conversions_preserve_depth_rotation_and_page_placement() {
     let mut e = read(BOX);
-    e.sketch.planes[0].basis.o = [123.0, -456.0, 789.0];
+    e.sketch.set_plane_origin(0, [123.0, -456.0, 789.0]);
     let s = e.sketch.evaluated_solid(index(&e), Policy::Report).unwrap();
     let local = LocalPoint([2.0, 0.5, 3.0]);
     assert_eq!(s.to_local(s.to_world(local)), local);
@@ -128,7 +128,7 @@ fn policies_coexist_and_geometry_placement_and_provenance_invalidate_cache() {
     let mut e = read(BOX);
     let i = index(&e);
     let a = e.sketch.evaluated_solid(i, Policy::Report).unwrap();
-    e.sketch.planes[0].basis.o = [1e9, 1e9, 1e9];
+    e.sketch.set_plane_origin(0, [1e9, 1e9, 1e9]);
     let moved = e.sketch.evaluated_solid(i, Policy::Report).unwrap();
     assert!(!Rc::ptr_eq(&a, &moved));
     close(a.volume(), moved.volume());
@@ -177,7 +177,7 @@ fn translation_keeps_local_geometry_collision_and_export_triangles() {
     let original = e.sketch.evaluated_solid(i, Policy::Mesh).unwrap();
     let before = clear::judge_evaluated(SolidWord::Clear, &original, &original, 0.0);
     let original_glb = gltf::checked_glb(&e.sketch, &[i], Policy::Mesh).unwrap();
-    e.sketch.planes[0].basis.o = [1e12, -1e12, 1e12];
+    e.sketch.set_plane_origin(0, [1e12, -1e12, 1e12]);
     let moved = e.sketch.evaluated_solid(i, Policy::Mesh).unwrap();
     assert_eq!(original.mesh().positions, moved.mesh().positions);
     assert_eq!(original.epsilon(), moved.epsilon());
@@ -317,7 +317,7 @@ fn validation_and_evaluation_agree_on_cycles_and_shared_operands() {
 #[test]
 fn stl_rejects_world_coordinates_that_collapse_in_f64_before_encoding() {
     let mut e = read(BOX);
-    e.sketch.planes[0].basis.o = [1e20; 3];
+    e.sketch.set_plane_origin(0, [1e20; 3]);
     let solid = e.sketch.evaluated_solid(index(&e), Policy::Mesh).unwrap();
     assert_eq!(solid.mesh().positions.len() / 9, 12);
     assert!(

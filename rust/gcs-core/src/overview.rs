@@ -179,7 +179,7 @@ fn corners_in(sk: &Sketch, views: &[Option<usize>]) -> Vec<Corner> {
         let mut rows: Vec<f64> = Vec::with_capacity(12);
         let mut rhs: Vec<f64> = Vec::with_capacity(4);
         for (i, p) in [(a, pa), (b, pb)] {
-            let basis = sk.planes[p].basis;
+            let basis = sk.basis(p);
             let (x, y) = view_xy(sk, p, sk.point_xy(i));
             rows.extend_from_slice(&basis.u);
             rhs.push(x);
@@ -228,7 +228,7 @@ pub fn view_xy(sk: &Sketch, plane: usize, p: (f64, f64)) -> (f64, f64) {
 /// which is what "a point with none is simply on the page" already means.
 fn in_space(sk: &Sketch, plane: Option<usize>, p: (f64, f64)) -> [f64; 3] {
     let (basis, (a, b)) = match plane {
-        Some(i) => (sk.planes[i].basis, view_xy(sk, i, p)),
+        Some(i) => (sk.basis(i), view_xy(sk, i, p)),
         None => (Basis::page(), p),
     };
     basis.lift(a, b)
@@ -339,7 +339,7 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
     let least = sk.extent() * LEAST_SIDE;
     for i in 0..sk.planes.len() {
         let of = Some(EntRef::plane(i));
-        let basis = sk.planes[i].basis;
+        let basis = sk.basis(i);
         let rect = pane(sk, i, &views, least);
         items.push(Item3 { of, in_plane: of, what: Part::Face, pts: face(&basis, rect) });
         for arm in axes(&basis, rect) {
@@ -412,7 +412,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
     // its own axes at its origin
     for i in 0..sk.planes.len() {
         let of = Some(EntRef::plane(i));
-        let basis = sk.planes[i].basis;
+        let basis = sk.basis(i);
         let rect = pane(sk, i, &views, least);
         items.push(Item {
             of,

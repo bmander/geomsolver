@@ -242,7 +242,7 @@ pub(super) fn place(
         };
         let (pf, ordf, sf, pathf, solidf) = f;
         let (pg, ordg, sg, pathg, solidg) = g;
-        let (bf, bg) = (sk.planes[pf as usize].basis, sk.planes[pg as usize].basis);
+        let (bf, bg) = (sk.basis(pf as usize), sk.basis(pg as usize));
         let _ = bg;
         // **parallel, and facing each other**: two faces in contact share a normal and point
         // opposite ways along it, which is what "against" means and what a stack needs
@@ -326,8 +326,8 @@ pub(super) fn place(
         };
         if let (Some(child), Some(parent)) = (res.of.get(&d.name.key().text), res.lookup(parent)) {
             if !sk.placed_planes.contains(&child.idx) {
-                let cb = sk.planes[child.i()].basis;
-                let pb = sk.planes[parent.i()].basis;
+                let cb = sk.basis(child.i());
+                let pb = sk.basis(parent.i());
                 derived.insert(child.idx, (parent.idx, [cb.o[0] - pb.o[0], cb.o[1] - pb.o[1], cb.o[2] - pb.o[2]]));
             }
         }
@@ -339,8 +339,8 @@ pub(super) fn place(
         let children: Vec<_> = derived.iter().filter(|(_, (parent, _))| done.contains(parent))
             .map(|(&child, &value)| (child, value)).collect();
         for (child, (parent, delta)) in &children {
-            let origin = sk.planes[*parent as usize].basis.o;
-            sk.planes[*child as usize].basis.o = std::array::from_fn(|k| origin[k] + delta[k]);
+            let origin = sk.basis(*parent as usize).o;
+            sk.set_plane_origin(*child as usize, std::array::from_fn(|k| origin[k] + delta[k]));
             done.insert(*child);
             derived.remove(child);
         }
@@ -365,10 +365,10 @@ pub(super) fn place(
             // f sits at `off(Pf) + ordf` along Pf's own normal; measured along Pg's that is
             // `dot·(off(Pf) + ordf)`, and contact makes it equal to `off(Pg) + ordg` — read
             // *now*, with the datum's own offset already written
-            let datum = sk.planes[m.datum as usize].basis.along_normal();
+            let datum = sk.basis(m.datum as usize).along_normal();
             let want = (datum + m.ordg) * m.dot - m.ordf;
-            let b = sk.planes[m.placed as usize].basis;
-            sk.planes[m.placed as usize].basis = b.offset(want - b.along_normal());
+            let b = sk.basis(m.placed as usize);
+            sk.set_plane_origin(m.placed as usize, b.offset(want - b.along_normal()).o);
             done.insert(m.placed);
             left.retain(|&k| k != i);
         }

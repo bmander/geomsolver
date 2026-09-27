@@ -92,9 +92,9 @@ fn a_mate_places_a_plane_and_the_offset_is_a_consequence() {
     assert!((hi - 32.0).abs() < 1e-9, "and it reaches its own full depth: {hi}");
     // **the number nobody wrote**: the placed plane stands 20 along the normal, which is the
     // `zA = fwA + D / 2` the V-twin kept in three files
-    let b = e.sketch.planes[1].basis;
+    let b = e.sketch.basis(1);
     assert!((b.along_normal() - 20.0).abs() < 1e-9, "placed at {}", b.along_normal());
-    assert_eq!(e.sketch.planes[0].basis.along_normal(), 0.0, "and the datum stands where it did");
+    assert_eq!(e.sketch.basis(0).along_normal(), 0.0, "and the datum stands where it did");
 }
 
 #[test]

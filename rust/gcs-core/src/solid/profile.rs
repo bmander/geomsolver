@@ -104,7 +104,7 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
         return None;
     }
     let basis = match plane {
-        Some(p) => sk.planes.get(p as usize)?.basis,
+        Some(p) => { sk.planes.get(p as usize)?; sk.basis(p as usize) }
         None => Basis::page(),
     };
     let pose = match plane {

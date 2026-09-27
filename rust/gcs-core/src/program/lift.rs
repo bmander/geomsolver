@@ -173,7 +173,7 @@ fn lift_attitude(sk: &Sketch, e: EntRef) -> Attitude {
     if e.kind != EntKind::Plane {
         return Attitude::Page;
     }
-    let b = sk.planes[e.i()].basis;
+    let b = sk.basis(e.i());
     let page = crate::plane::Basis::page();
     let same = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
     if same(b.u, page.u) && same(b.v, page.v) {

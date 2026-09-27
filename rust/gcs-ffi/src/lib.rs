@@ -446,7 +446,7 @@ pub unsafe extern "C" fn gcs_sketch_plane(
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plane_basis(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {
     guard(-1, move || {
-        let b = &sk(h).planes[idx as usize].basis;
+        let b = sk(h).basis(idx as usize);
         for (i, x) in b.u.iter().chain(b.v.iter()).enumerate() {
             *out.add(i) = *x;
         }
