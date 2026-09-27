@@ -85,7 +85,7 @@ macro_rules! undrawn {
             | CKind::QuatUnit
             | CKind::Lift
             | CKind::LiftFixed
-            // a relation in space states a number of no one view: P2 decides its figure
+            // a relation in space states a number of no one view, so it has no figure on one
             | CKind::Coincident3
             | CKind::Distance3
             | CKind::PointLine3

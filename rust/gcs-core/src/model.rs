@@ -50,9 +50,9 @@ pub struct Sketch {
     pub points: Vec<PointE>,
     pub lines: Vec<LineE>,
     pub circles: Vec<CircleE>,
-    /// The spheres (P2b), appended last of the drawn kinds; empty in every document before them.
+    /// The spheres, appended last of the drawn kinds; empty in a document that declares none.
     pub spheres: Vec<SphereE>,
-    /// The cones and cylinders (P4), after the spheres; empty in every document before them.
+    /// The cones and cylinders, after the spheres; likewise.
     pub cones: Vec<AxialE>,
     pub cylinders: Vec<AxialE>,
     pub arcs: Vec<ArcE>,
@@ -84,7 +84,7 @@ pub struct Sketch {
     /// 2D claim, one stratum further out.
     pub solid_claims: Vec<SolidClaim>,
     pub solid_bearings: Vec<SolidBearing>,
-    /// The datum points the **page-placement gauge** holds (P2b): a solved view's origin and
+    /// The datum points the **page-placement gauge** holds: a solved view's origin and
     /// toward, where no statement of the document names them.  Their params are `fixed`, so no
     /// solve moves them and no ledger counts them; this set is what says the hold is the gauge's
     /// and not a `ground`, so a writeback into the source never spells one.  (A lifted program

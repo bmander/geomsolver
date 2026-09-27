@@ -644,8 +644,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         if sk.is_entity() && kind.infers_arg(i) {
             continue;
         }
-        // nor is a skew distance's side: the word is `distance`, and the side is the seed's
-        if (kind == CKind::LineLine3 && i == 3) || (kind == CKind::CylinderTangentLine && i == 2) {
+        // nor is a skew distance's side (or a cylinder's tangency's, which is one): the word
+        // is `distance`, and the side is the seed's `sign`
+        if *name == "sign" && kind.infers_arg(i) {
             continue;
         }
         // a selector nobody wrote is not written: the empty word is what an omitted `side:` or

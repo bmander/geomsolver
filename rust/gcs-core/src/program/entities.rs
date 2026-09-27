@@ -64,7 +64,7 @@ pub(super) fn build(
     if d.kind == EntKind::Curve {
         return build_curve(sk, res, d, st, diags, prog, insts);
     }
-    // and a cone's and a cylinder's is a line (P4), which no walk over points can mint
+    // and a cone's and a cylinder's is a line, which no walk over points can mint
     if matches!(d.kind, EntKind::Cone | EntKind::Cylinder) {
         return build_axial(sk, res, d, st, diags);
     }
@@ -356,7 +356,7 @@ pub(super) fn build(
     Some(e)
 }
 
-/// **A cone or a cylinder** (P4): `cone k(axis: l) hint(half: 30deg)`, `cylinder c(axis: l)
+/// **A cone or a cylinder**: `cone k(axis: l) hint(half: 30deg)`, `cylinder c(axis: l)
 /// hint(r: 10)`.  What it is made of is a line already drawn in some view — a cone's apex is the
 /// line's start and its axis runs toward the end — and it owns one number, a half-angle or a
 /// radius, which a relation states (`angle(30deg) k`, `radius(10) c`) or a solve finds.  The

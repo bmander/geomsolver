@@ -174,7 +174,7 @@ impl Sketch {
         if e.kind == EntKind::Cone { v.to_degrees() } else { v }
     }
 
-    /// A cone's or a cylinder's axis and the number it owns (P4).
+    /// A cone's or a cylinder's axis and the number it owns.
     pub fn axial(&self, e: EntRef) -> &AxialE {
         match e.kind {
             EntKind::Cone => &self.cones[e.i()],

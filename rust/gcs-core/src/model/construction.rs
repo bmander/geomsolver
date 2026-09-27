@@ -387,10 +387,7 @@ impl Sketch {
             c.kind = c.kind.attitude_twin(solved);
             if c.kind == crate::constraints::CKind::ProjectSolved {
                 for v in reads {
-                    if self.planes[v].att.is_none() {
-                        self.mint_attitude(v, true);
-                        self.fix_attitude(v, true);
-                    }
+                    self.hold_attitude(v);
                 }
             }
         }

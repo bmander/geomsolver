@@ -3,9 +3,8 @@
 //! A multiview drawing is several 2D pictures of one object on one sheet, each on a stated
 //! plane in space (Solvent §6.7).  A stated plane's attitude is a constant of the document (a
 //! solved one is a quaternion of unknowns, `Quat` below), and what it buys is the *projector
-//! rule* of
-//! descriptive geometry — two images of one point agree on their coordinate along the fold
-//! line their planes share, and on nothing else.  That rule is `fold_line`, and `Project`'s
+//! rule* of descriptive geometry — two images of one point agree on their coordinate along the
+//! fold line their planes share, and on nothing else.  That rule is `fold_line`, and `Project`'s
 //! kernel is the one equation it comes to.
 //!
 //! An attitude is an orthonormal basis `(u, v)` of the plane with `n = u × v` toward the
@@ -190,8 +189,9 @@ pub fn quat_mul(a: Quat, b: Quat) -> Quat {
 }
 
 /// `qx(−90°)`: the tilt a fold stands a view up by — `e₂ → −e₃`, `e₃ → e₂` — before it is
-/// turned to its bearing.  The second factor of every `fold_rotor`.
-pub const FOLD_TILT: Quat = [std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2, 0.0, 0.0];
+/// turned to its bearing.  The second factor of every `fold_turn`.
+const FOLD_TILT: Quat =
+    [std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2, 0.0, 0.0];
 
 /// **What a fold is, as a turn in the parent's own axes**: `qz(θ) ⊗ qx(−90°)`, the rotation
 /// `Basis::fold(θ)` makes — `u = cos θ·u_P + sin θ·v_P`, `v = −n_P` — so a view folded from a
@@ -200,12 +200,20 @@ pub const FOLD_TILT: Quat = [std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts:
 /// (`tests/spatial_lang.rs` holds it to `Basis::fold`).
 pub fn fold_rotor(theta: f64) -> Quat {
     let (s, c) = (0.5 * theta).sin_cos();
-    quat_mul([c, 0.0, 0.0, s], FOLD_TILT)
+    fold_turn(c, s)
+}
+
+/// The same fold over its half-angle rotor `(hc, hs)` = `(cos θ/2, sin θ/2)`: `qz ⊗ qx(−90°)`
+/// with `qz = (hc, 0, 0, hs)`.  Linear in the rotor, so it is also its own derivative in each
+/// component — which is how the `hinge` kernels differentiate a fold, and how `fold: along l`
+/// reads one whose rotor is two unknowns.
+pub fn fold_turn(hc: f64, hs: f64) -> Quat {
+    quat_mul([hc, 0.0, 0.0, hs], FOLD_TILT)
 }
 
 /// The homogeneous rotation matrix `M(q)` — `|q|²` times the rotation — row-major.  One
-/// expression, read by `quat_matrix`, `quat_rotate` and `lift_q`, so the basis a view is read
-/// with and the row a solve holds it by are the same arithmetic.
+/// expression, read through `quat_matrix` by `quat_rotate`, `from_quat` and `lift_q`, so the
+/// basis a view is read with and the row a solve holds it by are the same arithmetic.
 fn quat_m(q: Quat) -> [[f64; 3]; 3] {
     let [w, x, y, z] = q;
     [

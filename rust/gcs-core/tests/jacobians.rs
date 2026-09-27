@@ -67,17 +67,17 @@ fn all_constraints(seed: u32) -> Sketch {
     sk.set_plane(cpb, Some(pb));
     let kc = sk.circle(cpc, rng.uniform(1.0, 11.0), "kc");
     let kb = sk.circle(cpb, rng.uniform(1.0, 11.0), "kb");
-    // and a sphere about each of those centres (P2b), one in a solved view and one in a stated
+    // and a sphere about each of those centres, one in a solved view and one in a stated
     let sa = EntRef::new(gcs_core::model::EntKind::Sphere, sk.sphere(cpc, rng.uniform(1.0, 11.0), "sa"));
     let sb = EntRef::new(gcs_core::model::EntKind::Sphere, sk.sphere(cpb, rng.uniform(1.0, 11.0), "sb"));
     let (me1, me2) = (EntRef::line(m1), EntRef::line(m2));
-    // and a cone about each of those lines and a cylinder about the first (P4)
+    // and a cone about each of those lines and a cylinder about the first
     use gcs_core::model::EntKind::{Cone, Cylinder};
     let kn1 = EntRef::new(Cone, sk.cone(m1, rng.uniform(0.3, 1.2), "kn1"));
     let kn2 = EntRef::new(Cone, sk.cone(m2, rng.uniform(0.3, 1.2), "kn2"));
     let cy = EntRef::new(Cylinder, sk.cylinder(m1, rng.uniform(1.0, 11.0), "cy"));
     // a view hinged to the solved one, its quaternion knocked about too, and a line drawn in the
-    // solved view for a fold to be taken along (P2a)
+    // solved view for a fold to be taken along
     let (ho, ht) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
     let ph = sk.plane(ho, ht, gcs_core::plane::Basis::page().fold(0.3), "ph");
     sk.free_attitude(ph);
@@ -186,7 +186,7 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::PointOnPlane, vec![e(EntRef::point(lc)), e(EntRef::plane(pb))]),
         Constraint::new(CKind::PointOnCircle3, vec![e(qe), e(EntRef::circle(kc))]),
         Constraint::new(CKind::PointOnCircle3, vec![e(pe), e(EntRef::circle(kb))]),
-        // the rest of the words in space (P2b): a point on a line and true lengths, a point's
+        // the rest of the words in space: a point on a line and true lengths, a point's
         // distance along a plane's normal and a line on a plane — each over a solved plane and a
         // stated one, `Sketch::add` picking the twin — and the sphere's four
         Constraint::new(CKind::PointOnLine3, vec![e(qe), e(me1)]),
@@ -201,13 +201,13 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::SphereTangentLine, vec![e(sa), e(me2)]),
         Constraint::new(CKind::SphereTangentSphere, vec![e(sa), e(sb), Arg::Bool(true)]),
         Constraint::new(CKind::SphereTangentSphere, vec![e(sb), e(sa), Arg::Bool(false)]),
-        // P3: a circle on a sphere, its view solved and stated, and the midpoint and the mirror
+        // a circle on a sphere, its view solved and stated, and the midpoint and the mirror
         // in a line, in space
         Constraint::new(CKind::CircleOnSphere, vec![e(EntRef::circle(kc)), e(sb)]),
         Constraint::new(CKind::CircleOnSphere, vec![e(EntRef::circle(kb)), e(sa)]),
         Constraint::new(CKind::Midpoint3, vec![e(qe), e(me1)]),
         Constraint::new(CKind::Symmetric3, vec![e(pe), e(qe), e(fold_line)]),
-        // P4: the cones' and the cylinder's words, and a mate between two solved views
+        // the cones' and the cylinder's words, and a mate between two solved views
         Constraint::new(CKind::ConeOn, vec![e(qe), e(kn1)]),
         Constraint::new(CKind::ConeOn, vec![e(pe), e(kn2)]),
         Constraint::new(CKind::CylinderOn, vec![e(qe), e(cy)]),

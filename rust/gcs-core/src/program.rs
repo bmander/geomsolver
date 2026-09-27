@@ -62,7 +62,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
     diags
 }
 pub use lift::{dumps, to_program};
-pub use reading::{in_space, is_datum, operand_points, reading_views};
+pub use reading::reading_views;
 pub use source_map::{public_path, Elaborated, InstPath, Made, Site, SourceMap};
 
 use crate::expr;
@@ -375,7 +375,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     }
 
     // a solved view's place on the sheet is held where it was drawn, unless a statement says
-    // otherwise (the page-placement gauge, P2b)
+    // otherwise (the page-placement gauge)
     reading::hold_page_placement(&mut sk);
 
     // -- phase 3b: faces, then solids (§6.8, §6.9).  **After every other kind and after the

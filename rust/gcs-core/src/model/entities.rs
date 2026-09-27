@@ -72,16 +72,16 @@ pub enum EntKind {
     Vertex,
     /// A finite directed portion of a spatial seam between named corners.
     Edge,
-    /// **A sphere** (`docs/spatial-constraints-plan.md`, P2b): a centre drawn in some view and a
+    /// **A sphere** (`docs/spatial-constraints-plan.md`): a centre drawn in some view and a
     /// radius it owns, like a circle's — but no picture on any sheet, since a sphere seen in a
     /// view is a circle only square on.  Its relations (`p on s`, `radius`, `tangent`) are in
     /// space and read its centre's lift.  Last in the enum so every kind's id stays what it was.
     Sphere,
-    /// **A cone** (P4): an axis line drawn in some view — the apex its start, the axis running
+    /// **A cone**: an axis line drawn in some view — the apex its start, the axis running
     /// toward its end — and a half-angle it owns, like a sphere's radius.  No picture on any
     /// sheet; its relations (`p on k`, `angle`, `tangent`) are in space and read the axis's lifts.
     Cone,
-    /// **A cylinder** (P4): an axis line drawn in some view and a radius it owns.
+    /// **A cylinder**: an axis line drawn in some view and a radius it owns.
     Cylinder,
 }
 
@@ -399,7 +399,7 @@ pub struct SphereE {
     pub class: Classes,
 }
 
-/// A cone or a cylinder (P4): its axis, a drawn line — a cone's apex is the line's start — and
+/// A cone or a cylinder: its axis, a drawn line — a cone's apex is the line's start — and
 /// the number it owns, a Param: a cone's half-angle (radians) or a cylinder's radius.
 #[derive(Clone, Debug)]
 pub struct AxialE {
@@ -456,9 +456,9 @@ pub struct FrameE {
 pub struct PlaneE {
     pub frame: FrameE,
     pub(in crate::model) basis: crate::plane::Basis,
-    /// The attitude as **unknowns**, where the view is solved rather than stated — `None` for
-    /// every plane a document states, which is every plane that elaborates today, so no
-    /// parameter is minted and nothing compiles differently (`Sketch::free_attitude`).
+    /// The attitude as **unknowns**, where the view is solved rather than stated (or read by one
+    /// that is) — `None` for every other plane a document states, so no parameter is minted and
+    /// nothing compiles differently (`Sketch::free_attitude`).
     pub att: Option<Att>,
 }
 
@@ -480,7 +480,7 @@ pub struct Att {
     /// answers with the stored basis while the unknowns still hold exactly these numbers, and
     /// freeing a view moves nothing any reader sees until a solve moves the view.
     pub(in crate::model) seat: [f64; 5],
-    /// Held by a hinge to the view it is folded from (`CKind::Hinge`, P2a) rather than by a
+    /// Held by a hinge to the view it is folded from (`CKind::Hinge`) rather than by a
     /// `quat_unit` row of its own: a product of unit quaternions is one, and a second row saying
     /// so would be a redundant equation at every solution.
     pub hinged: bool,
@@ -488,7 +488,7 @@ pub struct Att {
 
 /// A **hidden point in space**: the lift of one view point, held to it by an intrinsic `lift`
 /// row — three Params and three rows, so it adds no freedom.  What a spatial relation between
-/// two views will read (P1b), so its kernel sees three coordinates and never a view's attitude.
+/// two views reads, so its kernel sees three coordinates and never a view's attitude.
 /// Not an entity: nothing names it, draws it, picks it or saves it; it is minted on request
 /// (`Sketch::lift_point`), once per view point, and re-minted rather than stored.
 #[derive(Clone, Debug)]

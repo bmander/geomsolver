@@ -1,5 +1,5 @@
-//! Views whose attitude or position is **solved for** (§6.7; `docs/spatial-constraints-plan.md`,
-//! P2a): a plane is fixed unless its brackets name an unknown, and this pass is where the
+//! Views whose attitude or position is **solved for** (§6.7; `docs/spatial-constraints-plan.md`):
+//! a plane is fixed unless its brackets name an unknown, and this pass is where the
 //! unknowns a plane's brackets named are minted and tied down.
 //!
 //! It runs once every plane is built and every membership is in, and before any relation is
@@ -196,23 +196,9 @@ fn one(
     let mut theta_along = None;
     if let Attitude::Along { line, .. } = &d.attitude {
         let p = parent.expect("an `along` fold names its parent");
-        let l = match res.lookup(line).map(|e| follow(sk, e, &line.path)) {
-            None => {
-                fail(diags, Code::E101, line.span, format!("no such entity: `{}`", line.root.text));
-                return;
-            }
-            Some(Err(m)) => {
-                fail(diags, Code::E101, line.span, m);
-                return;
-            }
-            Some(Ok(e)) if e.kind != EntKind::Line => {
-                fail(diags, Code::E040, line.span, format!(
-                    "`{}` is a {}, and a fold is taken along a line",
-                    crate::syntax::ref_text(line), e.kind.as_str()
-                ));
-                return;
-            }
-            Some(Ok(e)) => e,
+        let l = match named(sk, res, line, EntKind::Line, "a fold is taken along a line") {
+            Ok(e) => e,
+            Err((code, m)) => return fail(diags, code, line.span, m),
         };
         if super::planes::plane_of_entity(sk, l) != Some(p) {
             fail(diags, Code::E064, line.span, format!(
@@ -247,23 +233,9 @@ fn one(
         ]));
     }
     if let Position::Through(r) = &d.plane.position {
-        let m = match res.lookup(r).map(|e| follow(sk, e, &r.path)) {
-            None => {
-                fail(diags, Code::E101, r.span, format!("no such entity: `{}`", r.root.text));
-                return;
-            }
-            Some(Err(m)) => {
-                fail(diags, Code::E101, r.span, m);
-                return;
-            }
-            Some(Ok(e)) if e.kind != EntKind::Point => {
-                fail(diags, Code::E040, r.span, format!(
-                    "`{}` is a {}, and a plane is stood `through:` a point",
-                    crate::syntax::ref_text(r), e.kind.as_str()
-                ));
-                return;
-            }
-            Some(Ok(e)) => e.i(),
+        let m = match named(sk, res, r, EntKind::Point, "a plane is stood `through:` a point") {
+            Ok(e) => e.i(),
+            Err((code, m)) => return fail(diags, code, r.span, m),
         };
         match sk.plane_of(m) {
             None => {
@@ -291,12 +263,6 @@ fn one(
         ]));
     }
     // -- the attitude's unknowns
-    let hold_parent = |sk: &mut Sketch, p: usize| {
-        if sk.planes[p].att.is_none() {
-            sk.free_attitude(p);
-            sk.fix_attitude(p, true);
-        }
-    };
     let q_parent = |sk: &Sketch, p: usize| {
         let a = sk.planes[p].att.as_ref().expect("held or solved");
         a.q.map(|k| sk.params[k as usize].value)
@@ -305,13 +271,13 @@ fn one(
         Attitude::Free { .. } => sk.free_attitude(pi),
         Attitude::Along { .. } => {
             let p = parent.expect("an `along` fold names its parent");
-            hold_parent(sk, p);
+            sk.hold_attitude(p);
             let rel = crate::plane::fold_rotor(theta_along.expect("read above"));
             sk.hinge_attitude(pi, crate::plane::quat_mul(q_parent(sk, p), rel));
         }
         Attitude::From { fold, .. } if free_fold.is_some() || parent_solved => {
             let Some(p) = parent else { return };
-            hold_parent(sk, p);
+            sk.hold_attitude(p);
             let (text, deg) = match (&free_fold, fold) {
                 (Some(a), crate::syntax::Arg::Dim { text, .. }) => {
                     // where the basis was folded to: the seed, or the expression at nothing
@@ -356,17 +322,26 @@ fn one(
     match (&d.plane.position, &d.attitude) {
         (Position::Stated, Attitude::Along { .. }) => sk.fix_offset(pi, false),
         (Position::Stated, _) => sk.fix_offset(pi, true),
-        (Position::Free(_) | Position::Through(_), _) => {
-            if sk.planes[pi].att.is_none() {
-                sk.free_attitude(pi);
-                sk.fix_turn(pi, true);
-            }
-            sk.fix_offset(pi, false);
-        }
+        (Position::Free(_) | Position::Through(_), _) => sk.free_offset(pi),
     }
     for c in hinges.into_iter().chain(rows) {
         let id = sk.add_quiet(c);
         map.record(st, Made::Con(id));
+    }
+}
+
+/// What a plane clause's reference names, when it is a `want`: E101 for a name nothing binds,
+/// and E040, ending in `why`, for one that names another kind of thing.
+fn named(sk: &Sketch, res: &Resolver, r: &crate::syntax::Ref, want: EntKind, why: &str)
+    -> Result<EntRef, (Code, String)>
+{
+    match res.lookup(r).map(|e| follow(sk, e, &r.path)) {
+        None => Err((Code::E101, format!("no such entity: `{}`", r.root.text))),
+        Some(Err(m)) => Err((Code::E101, m)),
+        Some(Ok(e)) if e.kind != want => Err((Code::E040, format!(
+            "`{}` is a {}, and {why}", crate::syntax::ref_text(r), e.kind.as_str()
+        ))),
+        Some(Ok(e)) => Ok(e),
     }
 }
 
@@ -398,7 +373,7 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
             }
             CKind::LineLine3 | CKind::CylinderTangentLine => {
                 let dir = |i: usize| {
-                    // a cylinder's line is its axis (P4)
+                    // a cylinder's line is its axis
                     let e = c.args[i].ent();
                     let e = if e.kind == crate::model::EntKind::Cylinder {
                         crate::model::EntRef::line(sk.axial(e).axis as usize)

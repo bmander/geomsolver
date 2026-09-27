@@ -389,7 +389,7 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let pb = sk.plane(da, db, gcs_core::plane::Basis::page().fold(0.0), "top");
     // two spheres, about a point of each view
     let (sa, sb) = (sk.sphere(q, 6.0, "sa"), sk.sphere(s, 4.0, "sb"));
-    // two cones and a cylinder, about the second line and the first (P4)
+    // two cones and a cylinder, about the second line and the first
     let (ka, kb) = (sk.cone(l2, 0.5, "ka"), sk.cone(l1, 0.25, "kb"));
     let cy = sk.cylinder(l2, 7.0, "cy");
     // a projection over stated views is `Project`, and comes back as the twin its views feed

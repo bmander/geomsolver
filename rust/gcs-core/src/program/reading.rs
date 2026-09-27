@@ -1,11 +1,12 @@
-//! **Which view a relation is read in** (`docs/spatial-constraints-plan.md`, P2b): a relation
+//! **Which view a relation is read in** (`docs/spatial-constraints-plan.md`): a relation
 //! between entities drawn in different views is a relation in space, and one within a view is the
 //! 2D relation it always was — which, the lift being rigid, is the same statement.  No selector
 //! says so; the operands' views do.
 //!
-//! The one subtlety is the **role rule**, which the P0 audit found in the corpus.  A plane's own
-//! datum points — its origin and its toward — place the view on the sheet, and their membership
-//! says nothing about what they mean in a statement: `std.origin` is a member of `std.front`,
+//! The one subtlety is the **role rule**, which the corpus audit found
+//! (`tests/cross_view_audit.rs`).  A plane's own datum points — its origin and its toward —
+//! place the view on the sheet, and their membership says nothing about what they mean in a
+//! statement: `std.origin` is a member of `std.front`,
 //! every `bracket.sv` view is drawn from one of its own corners, and 212 layout statements relate
 //! datum points of different views to each other.  So a datum point is read by what it is
 //! related to: beside only other datum points it is sheet layout, on the page; beside a view's own
@@ -25,16 +26,10 @@ fn places(sk: &Sketch, p: usize) -> Vec<usize> {
         .collect()
 }
 
-/// Whether point `p` is some plane's datum point — what the page-placement gauge and the role
-/// rule both ask.
-pub fn is_datum(sk: &Sketch, p: usize) -> bool {
-    !places(sk, p).is_empty()
-}
-
 /// The drawn points an operand stands on: a point itself, a line's ends, a round thing's centre
 /// (and an arc's ends), a spline's control points.  A plane, a curve and the spatial kinds stand
 /// on none a view reads.
-pub fn operand_points(sk: &Sketch, e: EntRef) -> Vec<usize> {
+fn operand_points(sk: &Sketch, e: EntRef) -> Vec<usize> {
     match e.kind {
         EntKind::Point => vec![e.i()],
         EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline | EntKind::Sphere => sk
@@ -120,7 +115,7 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
 /// arguments in `k`'s spec order with the inferred slots left for `io::seed_omitted`; `Err` a
 /// word that has no meaning in space, or a selector that says nothing there, as (E040 or E062,
 /// the message).
-pub fn in_space(
+pub(super) fn in_space(
     sk: &Sketch,
     kind: CKind,
     args: &[Arg],
@@ -161,7 +156,7 @@ pub fn in_space(
         CKind::Perpendicular => CKind::Perpendicular3,
         CKind::Parallel => CKind::Parallel3,
         CKind::EqualLength => CKind::EqualLength3,
-        // the midpoint and the mirror are as well defined in space as on a page (P3): the mirror
+        // the midpoint and the mirror are as well defined in space as on a page: the mirror
         // in a line is the half turn about it, which on the line's own plane is the reflection
         CKind::Midpoint => CKind::Midpoint3,
         CKind::Symmetric => CKind::Symmetric3,
@@ -208,7 +203,7 @@ pub fn in_space(
     Ok(Some((k3, out, left_out)))
 }
 
-/// **The page-placement gauge** (P2b): where a solved view's picture sits on the sheet — its
+/// **The page-placement gauge**: where a solved view's picture sits on the sheet — its
 /// datum's origin and toward, the x, y and turn of the picture — is presentation, not a freedom
 /// of the object.  So a view with an attitude has its datum points held where they were drawn,
 /// and the ledger does not count them, *unless the document states something about them*: a

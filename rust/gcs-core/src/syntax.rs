@@ -607,7 +607,7 @@ pub struct Decl {
     pub seed_names: Vec<(String, String)>,
     /// A plane's attitude in space, as written (§6.7).  `Page` for every other kind.
     pub attitude: Attitude,
-    /// What of a plane is solved beyond its attitude, and the seeds of it (P2a).
+    /// What of a plane is solved beyond its attitude, and the seeds of it.
     pub plane: PlaneSolve,
     /// How a solid is swept (§6.9): a prism along the plane's normal, a revolution about a line
     /// in it, or a body over other solids.  `None` for every other kind.
@@ -746,19 +746,19 @@ pub enum Attitude {
     /// leaves placement to stack relations (§6.10).
     Offset { plane: Ref, offset: Option<Arg> },
     /// `u: (0.6, 0.8, 0), v: (0, 0, 1)` — six dimensionless `Arg::Dim`s — and, optionally,
-    /// `o: (0, 0, 12)`, where in space the basis stands (three lengths, P4): what a stated plane
+    /// `o: (0, 0, 12)`, where in space the basis stands (three lengths): what a stated plane
     /// that stands off the shared origin is lifted as, since `u:` and `v:` say only how it turns.
     Basis { u: [Arg; 3], v: [Arg; 3], o: Option<[Arg; 3]> },
-    /// `from: front, fold: along l` **[P2a]** — folded square to `front` about a line drawn in
+    /// `from: front, fold: along l` — folded square to `front` about a line drawn in
     /// it: the view contains `l`, and follows it as the solve moves it.
     Along { plane: Ref, line: Ref },
-    /// `attitude: free` **[P2a]** — the attitude is three unknowns of the solve, seeded by
+    /// `attitude: free` — the attitude is three unknowns of the solve, seeded by
     /// `hint(u: (…), v: (…))`; the span is the clause's, for a diagnostic to point at.
     Free { span: Span },
 }
 
 /// Where a plane stands along its own normal when that is **solved for** rather than stated
-/// (§6.7, P2a): `Stated` is whatever the attitude says (the parent's origin for a fold, the
+/// (§6.7): `Stated` is whatever the attitude says (the parent's origin for a fold, the
 /// written `offset:` for a stood-off plane), `Free` is `offset: free` — one unknown, seeded by
 /// `hint(offset: …)` — and `Through` is `through: M`, the offset that puts the point `M` in it.
 #[derive(Clone, Debug, Default)]
@@ -769,7 +769,7 @@ pub enum Position {
     Through(Ref),
 }
 
-/// One key of a plane's `hint(…)` clause beyond its datum's scalars **[P2a]**: `fold: 30deg`,
+/// One key of a plane's `hint(…)` clause beyond its datum's scalars: `fold: 30deg`,
 /// `offset: 12`, `u: (1, 0, 0)` — a seed for a quantity the brackets made an unknown, as
 /// written (one `Arg::Dim`, or three for a direction).  Whether the quantity *is* an unknown is
 /// the elaborator's question, and a seed for a stated one is refused there (E040), at `key`.

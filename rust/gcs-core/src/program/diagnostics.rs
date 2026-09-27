@@ -30,21 +30,21 @@ pub enum Code {
     /// a `project` the model refuses: a point on no plane, both on one, or parallel planes
     /// (§6.7) — the core's own words, given a span
     E061,
-    /// a word across views that has no meaning in space (P2b): `horizontal`, a run or a rise, a
-    /// tangency, a midpoint or a symmetry between entities drawn in different views; an ordinate
-    /// `along: u`/`v` of a point drawn in another view; or a relation across views naming a point
-    /// on the page, or a datum point the role rule reads in a view it is not drawn in
+    /// a word across views that has no meaning in space (§9.2): `horizontal`, a run or a rise, a
+    /// tangency between drawn figures, a curve's contacts; or a relation across views naming a
+    /// point on the page, or a datum point the role rule reads in a view it is not drawn in
     E062,
-    /// a solved view the model cannot hold (§6.7, P2a): a fold taken along a line not drawn in
-    /// the view it folds from, a position stated twice (`offset:` or a fold `along` beside
+    /// a solved view the model cannot hold (§6.7): a fold taken along a line not drawn in the
+    /// view it folds from, a position stated twice (`offset:` or a fold `along` beside
     /// `offset: free` or `through:`), `through:` a point of the plane itself, or a view derived
     /// from one whose own origin moves with the solve
     E064,
-    /// a relation in space that came out degenerate at the solve (§6.7, P2a): two solved views
-    /// a `project` relates, parallel — they share no fold line — where no stated number said so
+    /// a relation in space that came out degenerate at the solve (§6.7): two solved views a
+    /// `project` relates that came out parallel — they share no fold line — or two lines whose
+    /// skew distance (or a cylinder's tangency) is stated that came out parallel
     E065,
-    /// `against` between faces on a solved view (§6.10): a mate places a plane by a number worked
-    /// out before the solve, which a solved view's offset is not — deferred to P4
+    /// `against` between faces whose planes turn apart, one of them a solved view, or a placed
+    /// plane that follows a solved offset and has views derived from it (§6.10)
     E066,
     /// a `use` nothing resolves (§14.4)
     E070,

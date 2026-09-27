@@ -1,10 +1,11 @@
-//! The migration audit for spatial constraints (`docs/spatial-constraints-plan.md`, P0): every
-//! relation in the example corpus whose operands are drawn in different views.  Today such a
-//! relation is read on the page; once a relation across views means space, each one is either a
-//! sheet-layout statement to rewrite on datum points or a genuine cross-view relation.  A report
-//! and never a gate, so it is ignored: `cargo test cross_view_audit -- --ignored --nocapture`.
+//! Every relation in the example corpus whose operands carry different memberships
+//! (`docs/spatial-constraints-plan.md`, the P0 audit): the role rule reads each one as sheet
+//! layout or as an ordinate in one view, never as a relation in space.  The gate holds the corpus
+//! to that; the audit that found it is kept as a report, ignored:
+//! `cargo test cross_view_audit -- --ignored --nocapture`.
 use gcs_core::constraints::{Arg, CKind};
 use gcs_core::model::{EntKind, EntRef, Sketch};
+use gcs_core::program::Elaborated;
 use std::path::{Path, PathBuf};
 
 fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -14,6 +15,30 @@ fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
         if p.is_dir() { sources(&p, out) }
         else if p.extension().is_some_and(|e| e == "sv") { out.push(p) }
     }
+}
+
+/// Every `.sv` in `rust/examples`, by its path there, elaborated with its modules — `None` for
+/// one that does not parse.
+fn corpus() -> Vec<(String, Option<Elaborated>)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let mut files = Vec::new();
+    sources(&root, &mut files);
+    files.into_iter().map(|path| {
+        let name = path.strip_prefix(&root).unwrap().to_string_lossy().to_string();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let (mut prog, errs) = gcs_core::syntax::parse(&text);
+        if !errs.is_empty() { return (name, None); }
+        let dir = path.parent().unwrap().to_path_buf();
+        let mut resolve = |m: &str| -> Option<String> {
+            // beside the document, then its ancestors up to the examples, then the library
+            gcs_core::modules::search_paths(m, &name).iter()
+                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
+                .or_else(|| gcs_core::library::resolve(m))
+        };
+        let _ = gcs_core::modules::link(&mut prog, &mut resolve);
+        let e = gcs_core::program::elaborate(&prog);
+        (name, Some(e))
+    }).collect()
 }
 
 /// The points an operand is drawn by: itself, or a line's, circle's or arc's children.
@@ -29,24 +54,9 @@ fn points(sk: &Sketch, e: EntRef) -> Vec<usize> {
 #[test]
 #[ignore]
 fn cross_view_audit() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
-    let mut files = Vec::new();
-    sources(&root, &mut files);
     let (mut total, mut docs, mut spatial) = (0, 0, 0);
-    for path in files {
-        let name = path.strip_prefix(&root).unwrap().to_string_lossy().to_string();
-        let text = std::fs::read_to_string(&path).unwrap();
-        let (mut prog, errs) = gcs_core::syntax::parse(&text);
-        if !errs.is_empty() { println!("{name}: does not parse"); continue; }
-        let dir = path.parent().unwrap().to_path_buf();
-        let mut resolve = |m: &str| -> Option<String> {
-            // beside the document, then its ancestors up to the examples, then the library
-            gcs_core::modules::search_paths(m, &name).iter()
-                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-                .or_else(|| gcs_core::library::resolve(m))
-        };
-        let _ = gcs_core::modules::link(&mut prog, &mut resolve);
-        let e = gcs_core::program::elaborate(&prog);
+    for (name, e) in corpus() {
+        let Some(e) = e else { println!("{name}: does not parse"); continue };
         if !e.ok() { println!("{name}: does not elaborate"); continue; }
         let sk = &e.sketch;
         let view = |p: usize| sk.plane_of(p).map_or("page".to_string(), |i| {
@@ -101,29 +111,15 @@ fn cross_view_audit() {
         an ordinate from the view's own datum");
 }
 
-/// **The gate the audit became** (P2b): with a relation across views now meaning space, every
+/// **The gate the audit became**: with a relation across views meaning space, every
 /// one of the corpus's 215 relations whose points carry different memberships still reads the
 /// 2D kind it always did — the role rule reads each as sheet layout or as an ordinate in one view
 /// — and no document is refused for one.
 #[test]
 fn every_cross_membership_relation_in_the_corpus_keeps_its_reading() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
-    let mut files = Vec::new();
-    sources(&root, &mut files);
     let mut across = 0;
-    for path in files {
-        let name = path.strip_prefix(&root).unwrap().to_string_lossy().to_string();
-        let text = std::fs::read_to_string(&path).unwrap();
-        let (mut prog, errs) = gcs_core::syntax::parse(&text);
-        assert!(errs.is_empty(), "{name} does not parse");
-        let dir = path.parent().unwrap().to_path_buf();
-        let mut resolve = |m: &str| -> Option<String> {
-            gcs_core::modules::search_paths(m, &name).iter()
-                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-                .or_else(|| gcs_core::library::resolve(m))
-        };
-        let _ = gcs_core::modules::link(&mut prog, &mut resolve);
-        let e = gcs_core::program::elaborate(&prog);
+    for (name, e) in corpus() {
+        let e = e.unwrap_or_else(|| panic!("{name} does not parse"));
         assert!(!e.diags.iter().any(|d| d.code.as_str() == "E062"),
                 "{name}: {:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
         if !e.ok() { continue; }

@@ -202,7 +202,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         }
 
         // a solved view's seeds — its fold, its attitude, its offset — spliced where the clause
-        // wrote them, and the news that one moved where it wrote none (P2a)
+        // wrote them, and the news that one moved where it wrote none
         let mut plane_now: Option<Vec<syntax::PlaneHint>> = None;
         if d.kind == EntKind::Plane && sk.planes[parent.i()].att.is_some() {
             let (sp, miss, now) = plane_seeds(sk, prog, d, parent.i());
@@ -322,7 +322,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
     }
 }
 
-/// A solved view's seeds as the solve left them (P2a): the fold its free variable came to, the
+/// A solved view's seeds as the solve left them: the fold its free variable came to, the
 /// attitude's axes, the offset from where the attitude alone would stand it.  Each written as a
 /// literal is spliced in place; one written as an expression is the author's arithmetic and is
 /// left alone; one not written at all is `missing` when the solve moved it off where an
@@ -351,8 +351,7 @@ fn plane_seeds(sk: &Sketch, prog: &Program, d: &Decl, pi: usize)
         // shared origin
         let base = match d.attitude.plane_ref() {
             Some(_) => sk.constraints.iter()
-                .find(|c| matches!(c.kind, CKind::Hinge | CKind::HingeParallel | CKind::HingeAlong)
-                    && c.args[0].ent().i() == pi)
+                .find(|c| c.kind.hinge() && c.args[0].ent().i() == pi)
                 .map_or([0.0; 3], |c| sk.basis(c.args[1].ent().i()).o),
             None => [0.0; 3],
         };
@@ -893,7 +892,7 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                 look(r);
             }
             // and one folded along a deleted line, or stood through a deleted point: where it
-            // stands is defined from nothing too (P2a)
+            // stands is defined from nothing too
             if let syntax::Attitude::Along { line, .. } = &d.attitude {
                 look(line);
             }

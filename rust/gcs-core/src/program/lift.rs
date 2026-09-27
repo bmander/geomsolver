@@ -26,7 +26,7 @@ pub fn to_program(sk: &Sketch) -> Program {
     // a hinge is a solved view's own statement, and so is the row a fold `along` a line puts
     // its first end in the view by: both are spelled by the plane's clauses (`lift_view`)
     let along = along_rows(sk);
-    // and a mate's row is its `against` statement's, and solids are not lifted (P4)
+    // and a mate's row is its `against` statement's, and solids are not lifted
     let lifted = |c: &&Constraint| {
         !c.kind.hinge() && c.kind != CKind::Mate && !along.contains(&c.id)
     };
@@ -192,7 +192,7 @@ fn lift_attitude_at(sk: &Sketch, e: EntRef, o: [f64; 3]) -> Attitude {
     let b = crate::plane::Basis { o, ..sk.basis(e.i()) };
     let page = crate::plane::Basis::page();
     let same = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
-    // **where it stands, as well as how it turns** (P4): a plane stood off the shared origin — by
+    // **where it stands, as well as how it turns**: a plane stood off the shared origin — by
     // an `offset:`, a mate, a fold from one that was — keeps its origin through the lift, as
     // `o:`; one at the origin writes nothing new, so a lifted page view is `Page` as before
     let at_origin = b.o.iter().all(|x| *x == 0.0);
@@ -207,7 +207,7 @@ fn lift_attitude_at(sk: &Sketch, e: EntRef, o: [f64; 3]) -> Attitude {
     }
 }
 
-/// **A solved view as the clauses that solve it** (P3): the hinge it is held by spelled as the
+/// **A solved view as the clauses that solve it**: the hinge it is held by spelled as the
 /// fold it came from — `from: P, fold: beta` with the fold where the solve left it as its seed,
 /// `from: P, fold: along l`, `from: P, offset: k` — a free attitude as `attitude: free` seeded
 /// with its solved `u` and `v`, and a solved offset as `offset: free` seeded where it stands (a

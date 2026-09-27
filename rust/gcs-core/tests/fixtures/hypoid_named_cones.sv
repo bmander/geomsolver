@@ -1,4 +1,4 @@
-// The hypoid of `hypoid_pitch_cones.sv`, spelled with its pitch cones named (P4): the same
+// The hypoid of `hypoid_pitch_cones.sv`, spelled with its pitch cones named: the same
 // design — 48 and 24 teeth at a 4 mm module, square shafts 20 mm apart, a 60 degree gear pitch
 // angle — and the same pitch plane P through the mean point M.  There the common pitch plane held
 // by construction, each axial view folded square to P along its generator; here each cone is an

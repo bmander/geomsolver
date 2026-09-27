@@ -395,7 +395,7 @@ fn a_direction_and_a_sense_are_words() {
     assert_eq!(gcs_core::io::dimension_text(&sk.user_constraints()[0]).as_deref(), Some("-30°"));
 }
 
-/// Views solved for (P2a): a fold along a line of another view and a position stated twice are
+/// Views solved for: a fold along a line of another view and a position stated twice are
 /// E064, `against` between views that turn apart is E066, and two solved views a projection
 /// relates that come out parallel are E065 — after the solve, where no stated number could have
 /// said so.
@@ -414,7 +414,7 @@ fn a_solved_view_the_model_cannot_hold_is_refused() {
     assert!(after.iter().any(|x| x.code.as_str() == "E065"), "{after:?}");
 }
 
-/// Across views a word means space (P2b): a word with no meaning there is E062, a selector that
+/// Across views a word means space: a word with no meaning there is E062, a selector that
 /// names a page direction is E040, and a point on the page has no place in space to be related
 /// from — while the same words inside one view are what they always were.
 #[test]
@@ -436,8 +436,8 @@ fn a_word_across_views_with_no_meaning_in_space_is_refused() {
         let (_, d) = read(&format!("{views}{stmt}\n"));
         assert!(d.iter().any(|m| m.starts_with(code) && m.contains(needle)), "{stmt}: {d:?}");
     }
-    // within one view the page's words stand, and across views the ones space has are accepted
-    // (and since P3, the midpoint and the mirror in a line)
+    // within one view the page's words stand, and across views the ones space has are accepted,
+    // the midpoint and the mirror in a line among them
     for stmt in ["a horizontal la.p1", "a distance(4, along: y) la.p1", "a distance(8) b", "la angle(40) lb",
                  "a symmetry(lb) la.p1", "a midpoint lb"] {
         let (_, d) = read(&format!("{views}{stmt}\n"));
@@ -445,7 +445,7 @@ fn a_word_across_views_with_no_meaning_in_space_is_refused() {
     }
 }
 
-/// Cones and cylinders (P4) take the words they have kernels for and say so for the rest: a
+/// Cones and cylinders take the words they have kernels for and say so for the rest: a
 /// line on either (a generator) is said of its points, two cones touch at a point the statement
 /// names, and each is built about a line already drawn in a view.
 #[test]

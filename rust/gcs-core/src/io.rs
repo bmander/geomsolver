@@ -370,7 +370,7 @@ pub fn to_json(sk: &Sketch) -> Json {
     if !roles.is_empty() { doc.set("roles", Json::Arr(roles)); }
     // only when there is one, so a document with no sphere dumps exactly as it always has
     if !spheres.is_empty() { doc.set("spheres", Json::Arr(spheres)); }
-    // and the cones and the cylinders (P4), likewise only when there is one
+    // and the cones and the cylinders, likewise only when there is one
     for (key, list) in [("cones", &sk.cones), ("cylinders", &sk.cylinders)] {
         let own = if key == "cones" { "half" } else { "r" };
         let v: Vec<Json> = list
@@ -388,7 +388,7 @@ pub fn to_json(sk: &Sketch) -> Json {
             doc.set(key, Json::Arr(v));
         }
     }
-    // the page-placement gauge's holds (P2b), by point index — only when there is one, and
+    // the page-placement gauge's holds, by point index — only when there is one, and
     // derived again by an elaboration, but a document loaded from this has no source to derive
     // them from: without it a writeback would read the hold as a `ground`
     if !sk.page_held.is_empty() {
@@ -526,7 +526,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.params[rp].fixed = c.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.spheres[ci].class = read_class(c);
     }
-    // the cones and the cylinders after the spheres, each about a line already read (P4)
+    // the cones and the cylinders after the spheres, each about a line already read
     let nl = sk.lines.len();
     for (key, kind) in [("cones", EntKind::Cone), ("cylinders", EntKind::Cylinder)] {
         let own = if kind == EntKind::Cone { "half" } else { "r" };
@@ -840,7 +840,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         sphere_map[i] = Some(ni);
         made.push(EntRef::new(EntKind::Sphere, ni));
     }
-    // the cones and the cylinders after the spheres, each following its axis across (P4)
+    // the cones and the cylinders after the spheres, each following its axis across
     let mut axial_maps: [Vec<Option<usize>>; 2] =
         [vec![None; src.cones.len()], vec![None; src.cylinders.len()]];
     for (m, kind) in [EntKind::Cone, EntKind::Cylinder].into_iter().enumerate() {

@@ -134,7 +134,7 @@ pub struct Diagnosis {
     pub status: State,
 }
 
-/// **Which freedoms of a solved view are left**, by the name the ledger gives them (§16.3, P2a):
+/// **Which freedoms of a solved view are left**, by the name the ledger gives them (§16.3):
 /// `Q.attitude` for any of its quaternion's unknowns the diagnosis finds movable, `Q.offset` for
 /// its offset along its normal — a view's turn is three freedoms carried by four numbers and one
 /// row, so naming the numbers would name nothing a reader wrote.  Empty where no view is solved,

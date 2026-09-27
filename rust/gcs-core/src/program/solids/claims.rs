@@ -188,11 +188,11 @@ pub(super) fn place(
         ordg: f64,
         dot: f64,
         faces: [(u32, String); 2],
-        /// Either plane solved (P4): the two share an attitude, and the placed plane's offset is
+        /// Either plane solved: the two share an attitude, and the placed plane's offset is
         /// written where the datum's is held, or a row where the datum's is an unknown.
         solved: bool,
     }
-    // **the attitude a plane shares by construction** (P4): a plane written `from: P` with no
+    // **the attitude a plane shares by construction**: a plane written `from: P` with no
     // fold — placed, or stood off by an offset — turns with `P`, so two planes on one chain of
     // those from one root are parallel however the root is solved
     let mut parent_of: BTreeMap<u32, u32> = BTreeMap::new();
@@ -272,7 +272,7 @@ pub(super) fn place(
         };
         let (pf, ordf, sf, pathf, solidf) = f;
         let (pg, ordg, sg, pathg, solidg) = g;
-        // **a mate with a solved view** (P4) is a row, or a number the solve's own held offset
+        // **a mate with a solved view** is a row, or a number the solve's own held offset
         // gives — but only between faces whose planes turn together: two views solved apart
         // are parallel at the seed and nowhere else, and a mate cannot say which way to turn
         let solved = [pf, pg].into_iter().any(|p| sk.planes[p as usize].att.is_some());
@@ -294,8 +294,8 @@ pub(super) fn place(
             continue;
         }
         // a placed plane that follows a solved offset by a row has an offset of its own that
-        // moves, and a view derived from it would have to follow that too (P2a's E064, one
-        // statement later)
+        // moves, and a view derived from it would have to follow that too (the views pass's
+        // E064, one statement later)
         let moves = sk.planes[pg as usize].att.as_ref()
             .is_some_and(|a| !sk.params[a.d as usize].fixed);
         if solved && moves && parent_of.values().any(|&p| p == pf) {
@@ -442,18 +442,14 @@ pub(super) fn place(
             let b = sk.basis(m.placed as usize);
             sk.set_plane_origin(m.placed as usize, b.offset(want - b.along_normal()).o);
             // **and where the datum's offset is an unknown, the placed one follows it by a row**
-            // (P4): both offsets are measured along the one normal the two planes share, so the
+            // both offsets are measured along the one normal the two planes share, so the
             // contact is `d_f − d_g = ordg − ordf`, and the placed plane's offset is let go to be
             // held by it.  Where the datum's is held, the number just written is the whole of it.
             let d_of = |sk: &Sketch, p: u32| sk.planes[p as usize].att.as_ref().map(|a| a.d);
             let datum_free = d_of(sk, m.datum).is_some_and(|d| !sk.params[d as usize].fixed);
             if m.solved && datum_free {
                 let pf = m.placed as usize;
-                if sk.planes[pf].att.is_none() {
-                    sk.free_attitude(pf);
-                    sk.fix_turn(pf, true);
-                }
-                sk.fix_offset(pf, false);
+                sk.free_offset(pf);
                 let id = sk.add_quiet(crate::constraints::Constraint::new(
                     crate::constraints::CKind::Mate,
                     vec![

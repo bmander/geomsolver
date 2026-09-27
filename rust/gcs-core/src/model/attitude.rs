@@ -1,9 +1,9 @@
 //! A view's attitude as unknowns, and the hidden points in space a spatial relation reads
-//! (`docs/spatial-constraints-plan.md`, P1).
+//! (`docs/spatial-constraints-plan.md`).
 //!
-//! Nothing here is minted unless asked for: a document that states every plane — every
-//! document today — has no `Att` and no `LiftE`, so its parameter vector, its constraints and
-//! every number a solve reads are what they were.
+//! Nothing here is minted unless asked for: a document that states every plane and relates no
+//! two views in space has no `Att` and no `LiftE`, so its parameter vector, its constraints and
+//! every number a solve reads are what they would be without any of this.
 
 use super::*;
 use crate::constraints::CKind;
@@ -29,8 +29,8 @@ impl Sketch {
         self.fix_attitude(i, false);
     }
 
-    /// Plane `i`'s attitude as unknowns **held by a hinge** to the view it is folded from
-    /// (P2a): minted as `free_attitude` would but with no `quat_unit` row — the hinge's four rows
+    /// Plane `i`'s attitude as unknowns **held by a hinge** to the view it is folded from:
+    /// minted as `free_attitude` would but with no `quat_unit` row — the hinge's four rows
     /// say what the quaternion is — its quaternion `q`, the parent's times the fold's turn, so
     /// the hinge starts satisfied and not merely up to a sign, and its offset held (a fold turns
     /// a view about a line through its parent's origin; `through:` or `offset: free` let it go
@@ -104,17 +104,36 @@ impl Sketch {
         let c = &self.constraints[k];
         let (a, b) = (c.args[0].ent().i(), c.args[1].ent().i());
         for v in [c.args[2].ent().i(), c.args[3].ent().i()] {
-            if self.planes[v].att.is_none() {
-                self.mint_attitude(v, true);
-                self.fix_attitude(v, true);
-            }
+            self.hold_attitude(v);
         }
         self.lift_point(a);
         self.lift_point(b);
     }
 
+    /// Plane `i`'s attitude as **held** unknowns, where it has none yet: minted with its unit row
+    /// and fixed where they stand.  What a solved view reads of a stated one — the parent a
+    /// hinge turns from, the other view of a projection — so the rows have columns to read and
+    /// the stated view moves nowhere.
+    pub fn hold_attitude(&mut self, i: usize) {
+        if self.planes[i].att.is_none() {
+            self.mint_attitude(i, true);
+            self.fix_attitude(i, true);
+        }
+    }
+
+    /// Plane `i`'s offset along its normal as an unknown — `offset: free`, `through:`, a mate on
+    /// a solved offset — its turn held where the view had no unknowns of its own yet, and left
+    /// to whatever else says it where it had.
+    pub fn free_offset(&mut self, i: usize) {
+        if self.planes[i].att.is_none() {
+            self.mint_attitude(i, true);
+            self.fix_turn(i, true);
+        }
+        self.fix_offset(i, false);
+    }
+
     /// Hold a solved view's quaternion, or let it go — the turn alone, its offset untouched.
-    pub fn fix_turn(&mut self, i: usize, fixed: bool) {
+    pub(in crate::model) fn fix_turn(&mut self, i: usize, fixed: bool) {
         let Some(a) = self.planes[i].att.clone() else { return };
         for p in a.q {
             self.params[p as usize].fixed = fixed;
@@ -201,8 +220,8 @@ impl Sketch {
     /// The hidden point in space that is view point `p`'s lift — minted once per point, with
     /// three Params seeded at the lift it has now and the intrinsic row holding it there: `lift`
     /// where the view is solved and `lift_fixed` (the stated basis as constants) where it is not.
-    /// `None` for a point on no view: the page lift is P2's, with the role rule that reads a
-    /// datum point by what it is related to.
+    /// `None` for a point on no view: the page has no place in space, and a relation across
+    /// views that names a page point is refused (`program::reading`).
     pub fn lift_point(&mut self, p: usize) -> Option<usize> {
         if let Some(k) = self.lift_of(p) {
             return Some(k);

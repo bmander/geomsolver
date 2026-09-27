@@ -455,7 +455,7 @@ pub unsafe extern "C" fn gcs_plane_basis(h: *mut Sketch, idx: i32, out: *mut f64
 }
 
 /// A plane's whole frame in space: nine doubles, `u`, `v` and then its origin `o` — the solved
-/// one, for a view whose attitude or offset the drawing solves for (P2b), where six were not
+/// one, for a view whose attitude or offset the drawing solves for, where six were not
 /// enough to say where the view stands.  Returns how many were written.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plane_frame3(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {

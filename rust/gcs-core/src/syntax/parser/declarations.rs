@@ -101,9 +101,9 @@ struct AttParts {
     offset: Option<Arg>,
     u: Option<[Arg; 3]>,
     v: Option<[Arg; 3]>,
-    /// `o: (x, y, z)` beside `u:` and `v:` (P4)
+    /// `o: (x, y, z)` beside `u:` and `v:`
     o: Option<[Arg; 3]>,
-    /// `fold: along l` (P2a)
+    /// `fold: along l`
     along: Option<Ref>,
     /// `attitude: free`, at the clause
     free: Option<Span>,
@@ -119,7 +119,7 @@ fn attitude_label(l: &str) -> bool {
 }
 
 /// The keys a plane's `hint(…)` clause may carry beside its datum's scalars: a seed for each
-/// quantity the brackets can make an unknown (P2a).
+/// quantity the brackets can make an unknown.
 fn plane_hint_key(k: &str) -> bool {
     matches!(k, "fold" | "offset" | "u" | "v")
 }
@@ -159,7 +159,7 @@ fn split_triple(text: &str, span: Span) -> Option<Vec<Arg>> {
 /// a fold when it named a plane, a basis when it gave both vectors — and a complaint for the
 /// halves and the mixtures.
 fn attitude_of(p: AttParts) -> Result<(Attitude, Position), String> {
-    // **where it stands along its normal, when that is solved** (P2a): `offset: free` or
+    // **where it stands along its normal, when that is solved**: `offset: free` or
     // `through: M`.  Either beside a stated `offset:` or a fold `along` a line — both of which
     // already say where it stands — is a position stated twice, and the elaborator says so
     // (E064) with both in hand

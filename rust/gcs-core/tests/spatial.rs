@@ -1,5 +1,5 @@
 //! A view whose attitude is solved rather than stated, and the hidden points in space a spatial
-//! relation will read (`docs/spatial-constraints-plan.md`, P1a): the quaternion helpers, the
+//! relation reads (`docs/spatial-constraints-plan.md`): the quaternion helpers, the
 //! unknowns a freed view mints, what they cost in freedoms, and that none of it moves a number
 //! until a solve moves the view.
 use gcs_core::constraints::CKind;
@@ -280,7 +280,7 @@ fn a_drag_part_carries_the_view_and_its_hidden_points() {
     assert_eq!(sk.params[att.q[0] as usize].value, 0.25);
 }
 
-/* -- P1b: the relations in space ------------------------------------------------------------- */
+/* -- the relations in space, through the Rust API --------------------------------------------- */
 
 use gcs_core::constraints::{Arg, Constraint};
 use gcs_core::diagnose::Diagnosis;

@@ -702,7 +702,7 @@ it finds the order of `h = w / 2`.
 **The order lives inside a term and never between statements**, so `bore cut body` may be
 written above the `solid body(…)` it belongs to or fifty lines below it and says the same thing.
 
-**Nothing three-dimensional is solved for.** A solid owns no parameter. Numeric extents are
+**Nothing about a solid is solved for.** A solid owns no parameter. Numeric extents are
 expressions the elaborator works out; a
 `through:` extent follows the target after solving. The geometry swept is the drawing, solved
 in 2D as it always was.

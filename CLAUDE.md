@@ -37,12 +37,12 @@ out of user-facing names. The cylinder preview keeps `cyl:` for its `.svd` refer
 
 
 
-**Cones and cylinders (P4, `docs/spatial-constraints-plan.md`):** `cone k(axis: l) hint(half:
+**Cones and cylinders** (`docs/spatial-constraints-plan.md`): `cone k(axis: l) hint(half:
 30deg)` and `cylinder c(axis: l) hint(r: 10)` are built about a line drawn in a view (a cone's
 apex is its start) and own one Param each (a half-angle in radians, written in degrees:
 `Sketch::seed_value`). Words: `p on k|c`, `angle(θ) k`, `radius(r) c`, `c tangent l`,
-`k1 tangent(M) k2` (one tangent plane at M; `M on` each stated beside it). New kernels use the
-forward-mode `Dual<N>` in `kernels.rs`. `against` with solved views works when the planes share an
+`k1 tangent(M) k2` (one tangent plane at M; `M on` each stated beside it). The cone kernels take
+their Jacobians by the forward-mode `Dual<N>` in `kernels.rs`. `against` with solved views works when the planes share an
 attitude root (`from:` with no fold); a solved datum offset makes a `CKind::Mate` row. `o:` beside
 `u:`/`v:` is where a stated basis stands, which `to_program` writes for a stand-off plane.
 
@@ -631,7 +631,7 @@ Conventions:
   error about the operands for a mistake in the selector.  All three are E040 **at the key**
   (`Written::key_span`, since a selector's value carries no span of its own), and
   `report::registry_json` publishes each slot's words so a front end offers what the core accepts.
-  `tests/refusals.rs` is the gate.  `along: n` (P2b) is the one entry naming no page
+  `tests/refusals.rs` is the gate.  `along: n` is the one entry naming no page
   axis: a point's signed distance along a plane's normal, in space (`PointPlaneDistance`).
 - **A recorded root choice is one record of one triangle** (`decompose::branch_record`; issue #48,
   item 4).  Three points can be named six ways, and `ccw(a, b, c)` ("c left of a→b") is the same
@@ -1021,7 +1021,7 @@ Conventions:
   `n = u × v` toward the viewer.  **Nothing three-dimensional is solved for** unless the
   brackets name an unknown (`fold: beta`, `fold: along l`, `attitude: free`, `offset: free`,
   `through: M` — `program/views.rs` mints the `att` and the `Hinge` rows; see
-  `docs/spatial-constraints-plan.md`, P2a): otherwise the basis is
+  `docs/spatial-constraints-plan.md`): otherwise the basis is
   document data like a spline's knots, resolved at elaboration (`program::plane_bases`, a
   memoised walk over the `from` chain — the page, `from: P, fold: θ` as `Basis::fold`, or
   `u:`/`v:` orthonormalised by `Basis::explicit`) and stored on `PlaneE`; it is written in the
@@ -1070,15 +1070,15 @@ Conventions:
   Not commutative (`same_args` swaps only the first two entity slots).  `cgraph` leaves it
   unsupported, so a multiview drawing drags on the numeric path.  `bracket.sv` is the case;
   `tests/plane.rs` and `tests/plane_lang.rs` are the gates.
-  **Across views a word means space** (P2b, `program/reading.rs`): after `constrain` resolves the
+  **Across views a word means space** (`program/reading.rs`): after `constrain` resolves the
   arguments, `in_space` reads each operand's points' views by the **role rule** — a plane's own
   origin/toward is layout among datum points, its view's beside that view's points, otherwise its
   membership — and where they differ maps the 2D kind to its twin in space (`Distance3`,
   `PointLine3`, `LineLine3`, `Angle3`, `PointOnLine3`, `EqualLength3`, …) or refuses (E062, and
   E040 for `side:`/`sense:`).  Radii, `along: u`/`v` and `project` are view-free.  `on`/`distance
-  (along: n)` to a plane, and the `sphere` kind's words, are spatial from `infix_op` itself.
-  `tests/cross_view_audit.rs` asserts the corpus's 215 cross-membership relations keep their 2D
-  kinds.  **A solved view's page placement is held silently**: `reading::hold_page_placement`
+  (along: n)` to a plane, and the `sphere`, `cone` and `cylinder` kinds' words, are spatial from
+  `infix_op` itself.  `tests/cross_view_audit.rs` asserts the corpus's 215 cross-membership
+  relations keep their 2D kinds.  **A solved view's page placement is held silently**: `reading::hold_page_placement`
   fixes a view-with-`att`'s datum points no statement names and records them in
   `Sketch::page_held`, so `edit::held_refs` writes no `ground` for them; and a held view's
   `quat_unit` row with no free column is compiled as not hard, so the ledger's equations equal
@@ -1404,7 +1404,8 @@ Conventions:
   exist lives inside one term over names, exactly as it lives inside `h = w / 2`.  A design that
   needs the other order (a pocket with a boss standing in it) **names the intermediate**, which
   is honest: there are two things there.
-  **Nothing three-dimensional is ever solved for.**  `EntKind::Face` and `EntKind::Solid` own no
+  **Nothing three-dimensional is solved for past the sketch** (a view's attitude may be, with the
+  sketch and before anything below reads it).  `EntKind::Face` and `EntKind::Solid` own no
   `Param` — `entity_params` returns nothing for either, so no column of the Jacobian is one —
   and every extent is an `Extent`: the text a person wrote and the number the *flattener* settled
   it to, the `fold:` bargain.  The strata run one way with no edge back: the sketch solves, the

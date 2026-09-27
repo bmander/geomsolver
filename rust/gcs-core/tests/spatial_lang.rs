@@ -1,38 +1,19 @@
 //! Views whose attitude or position is solved for, in the language (§6.7;
-//! `docs/spatial-constraints-plan.md`, P2a): the plane clauses that name unknowns, the hinges
-//! they come to, their seeds, their refusals, and `project` between a stated and a solved view.
+//! `docs/spatial-constraints-plan.md`): the plane clauses that name unknowns, the hinges they
+//! come to, their seeds, their refusals, and `project` between a stated and a solved view; the
+//! words across views; spheres; and the hypoid's pitch cones laid out by construction.
 use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::diagnose::{diagnose, view_freedoms, DiagnoseOptions};
 use gcs_core::edit;
 use gcs_core::io;
-use gcs_core::model::{EntRef, Sketch};
+use gcs_core::model::Sketch;
 use gcs_core::plane::{fold_rotor, from_quat, quat_mul, to_quat, Basis};
-use gcs_core::program::{elaborate, solid_diagnostics, Elaborated};
+use gcs_core::program::{solid_diagnostics, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot, norm, sub};
 use gcs_core::syntax::{parse, write_stmt_to};
 
-fn read(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
-    let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}\n{src}",
-        e.errors().map(|d| format!("{} {}", d.code.as_str(), d.message)).collect::<Vec<_>>()
-    );
-    e
-}
-
-fn line(e: &Elaborated, n: &str) -> EntRef {
-    e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`"))
-}
-
-/// A line's two ends where they stand in space.
-fn ends(sk: &Sketch, l: EntRef) -> ([f64; 3], [f64; 3]) {
-    let l = &sk.lines[l.i()];
-    (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize))
-}
+use crate::common::{ends, ent, off_line, read, refused, unit};
 
 /// The gear and pinion axes of a hypoid layout, each drawn in its own view: the gear's in the
 /// front view, the pinion's in a view folded from it by a fold the document solves for.
@@ -64,7 +45,7 @@ fn the_shaft_angle_and_the_offset_solve_the_fold() {
     assert!(e.diags.iter().any(|d| d.code.as_str() == "W111" && d.message.contains("beta")),
             "{:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch.clone();
-    let (gax, pax) = (line(&e, "gax"), line(&e, "pax"));
+    let (gax, pax) = (ent(&e, "gax"), ent(&e, "pax"));
     let offset = 17.5;
     let angle = Constraint::in_space(&sk, CKind::Angle3, &[gax, pax], Some(90f64.to_radians()))
         .unwrap();
@@ -89,11 +70,11 @@ fn the_shaft_angle_and_the_offset_solve_the_fold() {
     assert!(beta.rem_euclid(180.0).min(180.0 - beta.rem_euclid(180.0)) < 1e-7, "beta = {beta}");
 }
 
-/// The gate fixture's statements in space, stated through the Rust API (the words are P2b's).
+/// The gate fixture's statements in space, stated through the Rust API rather than in words.
 fn gate() -> (Elaborated, Sketch) {
     let e = read(AXES);
     let mut sk = e.sketch.clone();
-    let (gax, pax) = (line(&e, "gax"), line(&e, "pax"));
+    let (gax, pax) = (ent(&e, "gax"), ent(&e, "pax"));
     let angle = Constraint::in_space(&sk, CKind::Angle3, &[gax, pax], Some(90f64.to_radians()));
     sk.add(angle.unwrap());
     sk.add(Constraint::in_space(&sk, CKind::LineLine3, &[gax, pax], Some(17.5)).unwrap());
@@ -205,7 +186,7 @@ ground t2
         assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
         let side = e.map.ent_named("side").unwrap().i();
         let b = sk.basis(side);
-        let (p1, p2) = ends(&sk, line(&e, "l"));
+        let (p1, p2) = ends(&sk, ent(&e, "l"));
         let dir = sub(p2, p1);
         // the view contains the line: its direction and its first end
         assert!(dot(b.normal(), dir).abs() < 1e-9 * norm(dir), "{b:?}");
@@ -350,17 +331,6 @@ a project b
             "{diags:?}");
 }
 
-fn refused(src: &str, code: &str, needle: &str, at: &str) {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "{errs:?}");
-    let e = elaborate(&prog);
-    let saw: Vec<String> =
-        e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect();
-    let d = e.diags.iter().find(|d| d.code.as_str() == code && d.message.contains(needle))
-        .unwrap_or_else(|| panic!("expected {code} `{needle}`\n{src}\n{saw:#?}"));
-    assert_eq!(d.span.slice(prog.text()), at, "{saw:?}");
-}
-
 const VIEWS: &str = "\
 point o hint(x: 0, y: 0)
 point t hint(x: 40, y: 0)
@@ -406,7 +376,7 @@ fn a_position_stated_twice_is_refused() {
 
 /// `against` places a plane written to be placed (`from:` with no fold and no offset); a view
 /// whose offset is solved already says where it stands, and a mate on it as the placed plane is
-/// the stack's E083 (P4 lets a solved view be the *datum*: `tests/spatial_surfaces.rs`).
+/// the stack's E083 (a solved view may be the *datum*: `tests/spatial_surfaces.rs`).
 #[test]
 fn against_places_only_a_plane_written_to_be_placed() {
     let square = |tag: &str, plane: &str, lo: &str, hi: &str| format!(
@@ -447,7 +417,7 @@ fn a_skew_side_left_out_of_a_document_is_read_off_the_geometry() {
     for doc in [AXES.to_string(), below] {
         let e = read(&doc);
         let mut sk = e.sketch.clone();
-        let ls = [line(&e, "gax"), line(&e, "pax")];
+        let ls = [ent(&e, "gax"), ent(&e, "pax")];
         let c = Constraint::in_space(&sk, CKind::LineLine3, &ls, Some(5.0)).unwrap();
         let side = c.args[3].clone();
         sk.add(c);
@@ -472,7 +442,7 @@ fn deleting_what_a_view_stands_on_deletes_the_view() {
                        plane s(origin: o2, toward: t2, from: front, fold: along l)\n\
                        plane u(origin: o2, toward: t2, from: front, fold: 0deg, through: m)\n");
     let e = read(&src);
-    let out = edit::remove(&e, &e.program, &e.sketch, &[line(&e, "l")], &[]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[ent(&e, "l")], &[]);
     assert!(!out.text.contains("plane s(") && out.text.contains("plane u("), "{}", out.text);
     let m = e.map.ent_named("m").unwrap();
     let out = edit::remove(&e, &e.program, &e.sketch, &[m], &[]);
@@ -501,7 +471,7 @@ two: Wing(front)
     assert_eq!(e.sketch.constraints.iter().filter(|c| c.kind == CKind::Hinge).count(), 2);
 }
 
-/* -- P2b: the words across views ----------------------------------------------------------- */
+/* -- the words across views --------------------------------------------------------------- */
 
 /// The gate, written in words: the shaft angle and the offset are `angle` and `distance` between
 /// two axes drawn in different views, and so are relations in space.
@@ -520,15 +490,15 @@ fn the_gate_in_words_solves_the_fold() {
     assert!(r.success, "{}", r.message);
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
-    let ((a, b), (c, dd)) = (ends(&sk, line(&e, "gax")), ends(&sk, line(&e, "pax")));
+    let ((a, b), (c, dd)) = (ends(&sk, ent(&e, "gax")), ends(&sk, ent(&e, "pax")));
     let (e1, e2) = (sub(b, a), sub(dd, c));
     assert!((dot(e1, e2) / (norm(e1) * norm(e2))).abs() < 1e-9);
     let m = cross(e1, e2);
     assert!((dot(m, sub(c, a)).abs() / norm(m) - 17.5).abs() < 1e-9);
-    // the same solve the Rust API's statements (P2a's gate) come to, point for point in space
+    // the same solve the Rust API's statements (`gate`) come to, point for point in space
     let (ge, mut gk) = gate();
     assert!(solve(&mut gk, SolveOpts::default()).success);
-    let (gc, gd) = ends(&gk, line(&ge, "pax"));
+    let (gc, gd) = ends(&gk, ent(&ge, "pax"));
     for (x, y) in [(c, gc), (dd, gd)] {
         assert!(norm(sub(x, y)) < 1e-9, "{x:?} against {y:?}");
     }
@@ -637,7 +607,7 @@ fn a_word_with_no_meaning_in_space_is_refused_across_views() {
     // a point on the page has no place in space, nor a datum point read beside another view
     refused_as("point pg hint(x: 1, y: 1)\npg distance(5) b", "E062", "on the page", "pg distance(5) b");
     refused_as("o2 distance(5) a", "E062", "on the page", "o2 distance(5) a");
-    // a point on its own view, and a sphere against a circle, which is still to come
+    // a point on its own view
     refused_as("b on side", "E061", "every point of a view is on it", "b on side");
 }
 
@@ -706,7 +676,7 @@ fn a_sphere_takes_its_words_in_space() {
     let rad = sk.radius_value(s);
     let pa = sk.world_point(e.map.ent_named("a").unwrap().i());
     assert!((norm(sub(pa, c)) - rad).abs() < 1e-9, "{} against {rad}", norm(sub(pa, c)));
-    let (l1, l2) = ends(&sk, line(&e, "la"));
+    let (l1, l2) = ends(&sk, ent(&e, "la"));
     let dl = sub(l2, l1);
     let gap = norm(cross(sub(c, l1), dl)) / norm(dl);
     assert!((gap - rad).abs() < 1e-9, "the line touches the sphere: {gap} against {rad}");
@@ -720,24 +690,13 @@ fn a_sphere_takes_its_words_in_space() {
     assert_eq!(dof(with(tied)) - dof(with(&format!("{tied}\na on s"))), 1);
 }
 
-/* -- P3: the hypoid's pitch cones, and the rest of the words in space ---------------------- */
+/* -- the hypoid's pitch cones, and the rest of the words in space -------------------------- */
 
-/// The P3 gate (`docs/spatial-constraints-plan.md`): a hypoid's pitch cones laid out through the
+/// The hypoid by construction (the plan's P3 gate): a hypoid's pitch cones laid out through the
 /// mean point in Solvent words — the pitch plane stated, the gear and pinion axial views folded
 /// square to it along the two pitch generators, the axes drawn in them from the apexes, and the
 /// pitch radii, the gear's pitch angle, the shaft angle and the offset stated.
 const HYPOID: &str = include_str!("fixtures/hypoid_pitch_cones.sv");
-
-/// The unit vector along `a`.
-fn unit(a: [f64; 3]) -> [f64; 3] {
-    let l = norm(a);
-    [a[0] / l, a[1] / l, a[2] / l]
-}
-
-/// `p`'s distance from the line through `a` along `d`.
-fn off_line(p: [f64; 3], a: [f64; 3], d: [f64; 3]) -> f64 {
-    norm(cross(sub(p, a), d)) / norm(d)
-}
 
 #[test]
 fn the_hypoid_pitch_cones_touch_at_the_mean_point() {
@@ -753,7 +712,7 @@ fn the_hypoid_pitch_cones_touch_at_the_mean_point() {
     let at = |n: &str| sk.world_point(e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`")).i());
     let view = |n: &str| sk.basis(e.map.ent_named(n).unwrap().i());
     let (m, o, a) = (at("M"), at("O"), at("A"));
-    let ((g1, g2), (p1, p2)) = (ends(&sk, line(&e, "gax")), ends(&sk, line(&e, "pax")));
+    let ((g1, g2), (p1, p2)) = (ends(&sk, ent(&e, "gax")), ends(&sk, ent(&e, "pax")));
     let (ag, ap) = (unit(sub(g2, g1)), unit(sub(p2, p1)));
     let (np, ng, nq) = (view("P").normal(), view("G").normal(), view("Q").normal());
     let mut worst: Vec<(&str, f64)> = Vec::new();
@@ -817,7 +776,7 @@ fn same_points(a: &Sketch, b: &Sketch) {
     }
 }
 
-/// **A solved view lifts as the clauses that solve it** (P3): the fold as the free variable it
+/// **A solved view lifts as the clauses that solve it**: the fold as the free variable it
 /// was, seeded where the solve left it; the hinge is the plane's again rather than a stated basis
 /// with a grounded picture, and read back it solves to the same place with the same freedoms.
 #[test]
@@ -938,7 +897,7 @@ fn the_page_gauge_is_kept_by_a_document() {
     assert!(!io::dumps(&read(AXES).sketch, None).contains("page_held"));
 }
 
-/// **A circle on a sphere** (P3): `c on s` puts every point of a circle drawn in one view on a
+/// **A circle on a sphere**: `c on s` puts every point of a circle drawn in one view on a
 /// sphere about a centre drawn in another — the sphere's centre on the circle's axis, and the
 /// radii and the gap a right triangle.  The toe or heel circle of a gear blank on its end sphere.
 #[test]
@@ -1009,7 +968,7 @@ radius(18) k
     }
 }
 
-/// The midpoint and the mirror in a line, across views, are the same statements in space (P3).
+/// The midpoint and the mirror in a line, across views, are the same statements in space.
 #[test]
 fn the_midpoint_and_the_mirror_read_in_space() {
     let e = read(&format!("{TWO_VIEWS}\
@@ -1032,11 +991,11 @@ d symmetry(la) f
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let at = |n: &str| sk.world_point(e.map.ent_named(n).unwrap().i());
-    let (b1, b2) = ends(&sk, line(&e, "lb"));
+    let (b1, b2) = ends(&sk, ent(&e, "lb"));
     let mid = [0, 1, 2].map(|t| 0.5 * (b1[t] + b2[t]));
     assert!(norm(sub(at("c"), mid)) < 1e-9, "{:?} against {mid:?}", at("c"));
     // f is d turned half round la: their midpoint on la, and their chord square to it
-    let (a1, a2) = ends(&sk, line(&e, "la"));
+    let (a1, a2) = ends(&sk, ent(&e, "la"));
     let (dd, ff) = (at("d"), at("f"));
     let m = [0, 1, 2].map(|t| 0.5 * (dd[t] + ff[t]));
     let dir = sub(a2, a1);

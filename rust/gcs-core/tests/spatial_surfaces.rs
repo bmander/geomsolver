@@ -1,53 +1,21 @@
-//! Cones and cylinders (`docs/spatial-constraints-plan.md`, P4): surfaces in space a relation can
+//! Cones and cylinders (`docs/spatial-constraints-plan.md`): surfaces in space a relation can
 //! name, built about an axis already drawn in a view and owning one number each — a half-angle
 //! or a radius — and the words they take, against closed forms; the hypoid's pitch cones named
-//! and stated to touch, against P3's construction of them; `against` between solved views; and a
-//! stated plane's origin through a lifted program.
+//! and stated to touch, against the fold construction of them (`spatial_lang.rs`); `against`
+//! between solved views; and a stated plane's origin through a lifted program.
 use gcs_core::constraints::CKind;
 use gcs_core::diagnose::{diagnose, summary, DiagnoseOptions};
 use gcs_core::io;
 use gcs_core::model::{EntKind, EntRef, Sketch};
-use gcs_core::program::{elaborate, Elaborated};
+use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot, norm, sub};
 use gcs_core::syntax::parse;
 
-fn read(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
-    let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}\n{src}",
-        e.errors().map(|d| format!("{} {}", d.code.as_str(), d.message)).collect::<Vec<_>>()
-    );
-    e
-}
-
-/// `src` is refused with `code` and a message holding `needle`, shown at `at`.
-fn refused(src: &str, code: &str, needle: &str, at: &str) {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "{errs:?}");
-    let e = elaborate(&prog);
-    let saw: Vec<String> =
-        e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect();
-    let d = e.diags.iter().find(|d| d.code.as_str() == code && d.message.contains(needle))
-        .unwrap_or_else(|| panic!("expected {code} `{needle}`\n{src}\n{saw:#?}"));
-    assert_eq!(d.span.slice(prog.text()), at, "{saw:?}");
-}
-
-fn ent(e: &Elaborated, n: &str) -> EntRef {
-    e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`"))
-}
+use crate::common::{ends, ent, off_line, read, refused, unit};
 
 fn at(sk: &Sketch, e: &Elaborated, n: &str) -> [f64; 3] {
     sk.world_point(ent(e, n).i())
-}
-
-/// A line's two ends where they stand in space.
-fn ends(sk: &Sketch, l: EntRef) -> ([f64; 3], [f64; 3]) {
-    let l = &sk.lines[l.i()];
-    (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize))
 }
 
 /// A cone's or a cylinder's axis — its start (a cone's apex) and unit direction — and its own
@@ -56,16 +24,6 @@ fn axial(sk: &Sketch, e: EntRef) -> ([f64; 3], [f64; 3], f64) {
     let a = sk.axial(e);
     let (p, q) = ends(sk, EntRef::line(a.axis as usize));
     (p, unit(sub(q, p)), sk.params[a.param as usize].value)
-}
-
-fn unit(a: [f64; 3]) -> [f64; 3] {
-    let l = norm(a);
-    [a[0] / l, a[1] / l, a[2] / l]
-}
-
-/// `p`'s distance from the line through `a` along the unit `d`.
-fn off_line(p: [f64; 3], a: [f64; 3], d: [f64; 3]) -> f64 {
-    norm(cross(sub(p, a), d))
 }
 
 /// The angle in degrees between two directions.
@@ -196,11 +154,12 @@ fn a_line_touching_a_cylinder_is_its_radius_from_the_axis() {
     assert!((gap - 12.0).abs() < 1e-9, "{gap}");
 }
 
-/// **The P4 gate**: the hypoid of P3 spelled with its pitch cones named — the gear's axial plane
-/// stated, the pinion's solved, `M on` both cones and `gc tangent(M) pc` — against the fold
-/// construction P3 states it by (`hypoid_pitch_cones.sv`).  The two documents put their views
-/// differently on the sheet, so they are compared by what a hypoid is: the pitch angles, the
-/// offset angle, the apexes' distances from M and from each other, all to 1e-9.
+/// **The named hypoid** (the plan's P4 gate): the hypoid of `hypoid_pitch_cones.sv` spelled with
+/// its pitch cones named — the gear's axial plane stated, the pinion's solved, `M on` both cones
+/// and `gc tangent(M) pc` — against the fold construction that file states it by.  The two
+/// documents put their views differently on the sheet, so they are compared by what a hypoid
+/// is: the pitch angles, the offset angle, the apexes' distances from M and from each other, all
+/// to 1e-9.
 #[test]
 fn the_hypoid_with_its_pitch_cones_named_agrees_with_the_fold_construction() {
     let named = read(include_str!("fixtures/hypoid_named_cones.sv"));
@@ -360,7 +319,7 @@ fn stack(mid_clause: &str) -> String {
     )
 }
 
-/// **A mate on a view whose offset is solved is a row** (P4): `mid` stands `through:` a point of
+/// **A mate on a view whose offset is solved is a row**: `mid` stands `through:` a point of
 /// another view, so where it stands is the solve's, and the part mated to it follows — to where a
 /// document stating `mid`'s offset outright puts it.
 #[test]
@@ -432,7 +391,7 @@ fn a_mate_between_views_that_turn_apart_is_refused() {
 
 /* -- a stated plane's origin through a lifted program ----------------------------------------- */
 
-/// **A stated plane stood off the shared origin keeps where it stands when lifted** (P4): `u:`
+/// **A stated plane stood off the shared origin keeps where it stands when lifted**: `u:`
 /// and `v:` say how it turns, and `o:` beside them where it is — a stand-off, and a view folded
 /// from one, whose origin is off its own normal.
 #[test]

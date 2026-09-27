@@ -213,7 +213,7 @@ pub(super) fn constrain(
             }
         }
     }
-    // **across views, a word means the relation in space** (P2b): the operands' views, read by
+    // **across views, a word means the relation in space**: the operands' views, read by
     // the role rule (`reading`), decide it, and the statement is the kind in space from here on —
     // or refused, where the word has no meaning there or a selector says nothing there
     let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args) {
@@ -230,7 +230,7 @@ pub(super) fn constrain(
             return None;
         }
     };
-
+    // a magnitude stated negative: the kernel would square the sign away and the drawing show
     // the positive, so the document and the drawing would disagree about what the thing is
     // **A number that says which way is a word** (§9.2, issue #48 item 4).  Where the sign was a
     // *convention about a side* — a distance measured from a line, which the kernel cannot tell

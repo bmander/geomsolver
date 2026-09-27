@@ -248,7 +248,7 @@ fn basis_of<'a>(
 }
 
 /// A fold as its expression comes to: a number, or affine in the one name nothing defines —
-/// `fold: beta`, the fold solved for (§6.7, P2a).  The views pass asks the same question the
+/// `fold: beta`, the fold solved for (§6.7).  The views pass asks the same question the
 /// basis did, so the two cannot disagree about which folds are unknowns.
 pub(super) fn fold_aff(fold: &Arg, units: crate::units::Units) -> Result<expr::Aff, String> {
     let Arg::Dim { text, .. } = fold else { return Err("`fold` is not a number".into()) };
