@@ -1,8 +1,9 @@
 // Step 4, the gear's generator: the crown tooth's mate. Each of its sections lies
 // on the tooth's own flank lines, one tooth's width outward or inward along the
-// pitch line, with its own tip and roundings; it is drawn tip down in N, so it
-// walks its edges the other way round. The shift is stated once, on the tooth, and
-// the two crowns are complementary by construction.
+// pitch line, with its own tip and roundings. Its tips point the other way along the
+// cutter's axis, so in N it walks its edges the other way round and names its corners
+// by side. The shift is stated once, on the tooth, and the two crowns are
+// complementary by construction.
 use std
 use design
 use views
