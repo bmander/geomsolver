@@ -40,7 +40,7 @@ fn read_model(src: &str,teeth: [u32;2],module: f64) -> program::Elaborated {
     let link = modules::link(&mut p,&mut |name| match name {
         // The reference checks assume the common apex, so the offset is zero here.
         "configuration" => Some(format!("param pinion_teeth = {}\nparam gear_teeth = {}\n\
-            param mean_module = {module}mm\nparam offset_angle = 0deg\nparam pressure_shift = 0deg\nparam spiral_angle = 35deg\n",teeth[0],teeth[1])),
+            param mean_module = {module}mm\nparam shaft_angle = 90deg\nparam offset = 0mm\nparam pressure_shift = 0deg\nparam spiral_angle = 35deg\n",teeth[0],teeth[1])),
         // every other module is the project's own, a dotted name in a subdirectory
         _ => std::fs::read_to_string(fixtures::gear::project().join(format!("{}.sv",name.replace('.',"/"))))
             .ok().or_else(|| library::resolve(name)),

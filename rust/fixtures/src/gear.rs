@@ -9,30 +9,33 @@ pub fn project() -> PathBuf { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..
 /// The pair's entry document, `gears.sv`.
 pub fn source() -> String { std::fs::read_to_string(project().join("gears.sv")).unwrap() }
 
-/// The `configuration` module with each named parameter set to a number of degrees: its line
-/// dropped wherever it stands and the value written at the end.  Every other module unchanged.
+/// The `configuration` module with each named parameter set to a number: the offset in
+/// millimetres, every other in degrees. Its line is dropped wherever it stands and the value
+/// written at the end. Every other module unchanged.
 pub fn configure(name: &str,text: String,params: &[(&str,f64)]) -> String {
     if name != "configuration" { return text; }
     let lines: Vec<String> = params.iter().map(|(p,_)| format!("param {p}")).collect();
-    // `param offset` must not take `param offset_angle`: a name ends at a space or an `=`.
+    // `param offset` must not take a `param offset_…`: a name ends at a space or an `=`.
     let names = |l: &str| lines.iter().any(|p| l.trim_start().strip_prefix(p.as_str())
         .is_some_and(|rest| rest.starts_with([' ','='])));
+    let unit = |p: &str| if p == "offset" { "mm" } else { "deg" };
     text.lines().filter(|l| !names(l)).map(|l| format!("{l}\n")).collect::<String>()
-        + &params.iter().map(|(p,v)| format!("param {p} = {v}deg\n")).collect::<String>()
+        + &params.iter().map(|(p,v)| format!("param {p} = {v}{}\n",unit(p))).collect::<String>()
 }
 
-/// The gear design: the offset angle, the pressure shift and the crown's spiral angle, in degrees.
+/// The gear design: the offset between the shafts in millimetres, the pressure shift and the
+/// crown's spiral angle in degrees.
 pub fn design(name: &str,text: String,offset: f64,shift: f64,spiral: f64) -> String {
-    configure(name,text,&[("offset_angle",offset),("pressure_shift",shift),("spiral_angle",spiral)])
+    configure(name,text,&[("offset",offset),("pressure_shift",shift),("spiral_angle",spiral)])
 }
 
 /// The bevel pair: every recorded number in the suites was taken with the pinion axis through
 /// the common apex and the bevel pair's pressure angles and spiral, whatever is configured.
 pub fn bevel(name: &str,text: String) -> String { design(name,text,0.,0.,35.) }
 
-/// The hypoid the mesh-path records were taken at: 6 degrees, with the bevel pair's pressure
-/// angles and spiral.
-pub fn hypoid6(name: &str,text: String) -> String { design(name,text,6.,0.,35.) }
+/// A small hypoid: 5.7 mm between the shafts, the axis offset of the turned layout's six-degree
+/// hypoid it replaced (5.705 mm), with the bevel pair's pressure angles and spiral.
+pub fn hypoid6(name: &str,text: String) -> String { design(name,text,5.7,0.,35.) }
 
 /// The `members` module with a single tooth space per member, as a one-space export has.
 pub fn one_space(text: &str) -> String {

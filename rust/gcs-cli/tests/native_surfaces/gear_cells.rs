@@ -20,11 +20,11 @@ pub(super) fn read_gears_with(base: &Path,rewrite: &mut dyn FnMut(&str,String) -
 }
 pub(super) fn read_gears(base: &Path) -> program::Elaborated { read_gears_with(base,&mut |_,text| text) }
 
-/// The design an inspection reads: the bevel pair at `offset` degrees, with the pressure shift
+/// The design an inspection reads: the bevel pair at `offset` millimetres between the shafts, with the pressure shift
 /// and the crown's spiral angle from `SOLVENT_INSPECT_SHIFT` and `_SPIRAL` (degrees) when set.
 fn design_knobs(offset: f64) -> Vec<(&'static str,f64)> {
     let knob = |name: &str| std::env::var(name).ok().map(|v| v.parse::<f64>().unwrap());
-    [("offset_angle",Some(offset)),("pressure_shift",knob("SOLVENT_INSPECT_SHIFT")),("spiral_angle",knob("SOLVENT_INSPECT_SPIRAL"))]
+    [("offset",Some(offset)),("pressure_shift",knob("SOLVENT_INSPECT_SHIFT")),("spiral_angle",knob("SOLVENT_INSPECT_SPIRAL"))]
         .into_iter().filter_map(|(p,v)| v.map(|v| (p,v))).collect()
 }
 
@@ -90,7 +90,7 @@ fn single_space(member: &str,expected: f64) {
 fn generic_sheet_reproduces_the_pinion_tooth_space() { single_space("pinion",120.708817); }
 
 /// Phase 1 of docs/generating-sweeps-plan.md: one pinion space through the
-/// same construction at the offset angle `SOLVENT_INSPECT_OFFSET` (degrees),
+/// same construction at the offset `SOLVENT_INSPECT_OFFSET` (millimetres),
 /// reporting rather than asserting what it builds and how the field judges
 /// both sides of its sheet. No recorded volume exists for a hypoid.
 #[test]

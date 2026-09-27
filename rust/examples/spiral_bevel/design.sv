@@ -12,7 +12,7 @@ param mean_cone_distance = mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2
 // Depths are in normal modules.
 group hypoid_design(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   module: mean_module, normal_module: mean_module * cos(spiral_angle),
-  offset: offset_angle, spiral: spiral_angle,
+  shaft: shaft_angle, offset: offset, spiral: spiral_angle,
   pressure: 20deg, shift: pressure_shift,
   cutter_radius: 0.8 * mean_cone_distance, face_width: 0.2 * mean_cone_distance,
   addendum: 1, dedendum: 1.25, base: 2, rounding: 0.3, back: 4,

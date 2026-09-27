@@ -15,7 +15,7 @@ use crown.thickness
 component Generation(gear: group, pinion: group, thickness: group) {
   motion crown_roll(about: gear.crown_axis)
   motion pinion_roll(about: pinion.axis,
-    ratio: distance(pinion.apex, pinion.mean) / distance(pinion.mean, pinion.axis))
+    ratio: distance(gear.apex, gear.mean) / distance(gear.apex, gear.foot))
   motion gear_roll(about: gear.axis,
     ratio: -distance(gear.apex, gear.mean) / distance(gear.mean, gear.axis))
   motion pinion_generation(crown_roll, relative_to: pinion_roll)
@@ -32,10 +32,10 @@ preview {
   gear: GearCone(pitch.view, g.view, hypoid_design)
   g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
   trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
-  pinion: PinionCone(pitch.view, q.view, gear.generator, trace.foot, hypoid_design)
+  pinion: PinionCone(pitch.view, q.view, gear.generator, trace.foot, gear.axis, hypoid_design)
   q: FoldedView(pitch.view, pinion.hinge, span: hypoid_design.cutter_radius)
   gear.to_foot angle(pinion_angle) gear.to_apex
-  pinion.pitch_line angle(pinion_angle) pinion.axis
+  pinion.virtual_line angle(pinion_angle) pinion.virtual_axis
   thickness: CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
   generation: Generation(gear, pinion, thickness)
 }

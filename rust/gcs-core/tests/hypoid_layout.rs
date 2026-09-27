@@ -8,7 +8,10 @@
 //! The recorded numbers are that pair's (`tests/fixtures/hypoid_layout.tsv` and
 //! `hypoid_layout_material.tsv`), taken when the layout and the pair were compared side by side
 //! and agreed to 1e-9: they are the proof that the layout is the pair, so they are not re-recorded
-//! from the layout itself.  Nothing is compared by name alone: points in space, lines by where
+//! from the layout itself.  The exception is every design off the bevel pair: stating the shafts
+//! (migration step 5) made the layout a true hypoid, which the old pair never was, so the
+//! configured and six-millimetre columns were re-recorded from it (`record`); the bevel pair's
+//! and the nine sizes' still hold the layout to the old pair.  Nothing is compared by name alone: points in space, lines by where
 //! they are and which way they run, sections by their meridian coordinates about the cutter's
 //! axis, motions by the poses they give.
 use gcs_core::{motion,program::Elaborated,solid::MaterialField};
@@ -43,7 +46,7 @@ impl Design {
     fn sized(teeth: [u32;2],module: f64) -> Self {
         Design { label: format!("{}x{} m{module}",teeth[0],teeth[1]), configuration: format!(
             "param pinion_teeth = {}\nparam gear_teeth = {}\nparam mean_module = {module}mm\n\
-             param offset_angle = 0deg\nparam pressure_shift = 0deg\nparam spiral_angle = 35deg\n",
+             param shaft_angle = 90deg\nparam offset = 0mm\nparam pressure_shift = 0deg\nparam spiral_angle = 35deg\n",
             teeth[0],teeth[1]) }
     }
     /// `entry` in the project, its modules beside it (a dotted name in a subdirectory), the
@@ -60,8 +63,8 @@ impl Design {
 }
 
 fn designs() -> Vec<Design> {
-    let mut all = vec![Design::configured("configured",25.,10.,25.),
-        Design::configured("bevel",0.,0.,35.),Design::configured("hypoid6",6.,0.,35.)];
+    let mut all = vec![Design::configured("configured",25.,12.5,30.),
+        Design::configured("bevel",0.,0.,35.),Design::configured("hypoid6",5.7,0.,35.)];
     for teeth in [[24,48],[32,32],[28,49]] {
         for module in [0.2,2.,25.4] { all.push(Design::sized(teeth,module)); }
     }
@@ -356,5 +359,117 @@ fn the_layout_makes_the_pairs_material() {
             assert!(inside > 0 && inside < points.len(),"{}: {member}: the grid misses it",design.label);
             assert!(near <= 1e-9*r,"{}: {member}: {near} apart near the surface",design.label);
         }
+    }
+}
+
+/// Re-recording a design's columns: `SOLVENT_RECORD=configured,hypoid6` prints each design's
+/// quantities as a column and its material as rows, in the fixtures' own format. Only a design
+/// at a nonzero offset is re-recorded from the layout (the true hypoid, migration step 5);
+/// the bevel pair's columns are the old pair's and stay as they are.
+#[test]
+#[ignore]
+fn record() {
+    let wanted = std::env::var("SOLVENT_RECORD").expect("SOLVENT_RECORD");
+    let (_,rows) = recorded();
+    for (k,design) in designs().into_iter().enumerate() {
+        if !wanted.split(',').any(|w| w == design.label) { continue; }
+        let e = design.read("gears.sv");
+        let reading = read_pair(&e,&LAYOUT,rows[0].1[k]);
+        println!("column\t{}",design.label);
+        for (name,v) in &reading.values { println!("{name}\t{v:.12e}"); }
+        if k >= 2 { continue; }
+        let r = reading.values[0].1;
+        let points = material_points(r);
+        let read = |name: &str| MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10*r).unwrap();
+        let row = |name: &str,values: Vec<f64>| println!("material\t{}\t{name}\t{}",design.label,
+            values.iter().map(|v| format!("{v:.12e}")).collect::<Vec<_>>().join("\t"));
+        for name in SOLIDS {
+            let field = read(&format!("{REF}.{name}"));
+            row(name,points.iter().map(|&p| field.side(p)).collect());
+        }
+        for member in ["pair.pinion.body","pair.gear.body"] {
+            let field = read(member);
+            row(member,points.iter().map(|&p| field.reading(p).value).collect());
+        }
+    }
+}
+
+/// A design at a size, a ratio, an offset between the shafts in millimetres, a pressure shift
+/// and a spiral in degrees.
+fn offset_design(teeth: [u32;2],module: f64,offset: f64,shift: f64,spiral: f64) -> Design {
+    Design { label: format!("{}x{} m{module} E{offset}",teeth[0],teeth[1]), configuration: format!(
+        "param pinion_teeth = {}\nparam gear_teeth = {}\nparam mean_module = {module}mm\n\
+         param shaft_angle = 90deg\nparam offset = {offset}mm\nparam pressure_shift = {shift}deg\n\
+         param spiral_angle = {spiral}deg\n",teeth[0],teeth[1]) }
+}
+
+/// The true hypoid (docs/spiral-bevel-layout-plan.md, migration step 5), read off the solved
+/// layout at designs across size, ratio and offset: the shafts square and the offset apart, the
+/// two pitch cones tangent to one pitch plane along their generators through M, the pinion's
+/// pitch radius the equal normal pitch's, and each member rolling on the common crown at the
+/// crown's tooth count over its own, N_c / N = (2R / m) / N. The pinion's pitch angle is solved,
+/// so its cone's own ratio, one over the sine of it, is not that ratio: the layout measures the
+/// pinion's roll off the gear's triangle (`generation.sv`), whose hypotenuse is R and whose
+/// short leg is N_p m / 2, and this holds it to the tooth counts.
+#[test]
+fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ratio() {
+    let designs: [(Design,[f64;2],f64,f64,f64);5] = [(offset_design([24,48],2.,0.,0.,35.),[24.,48.],2.,0.,35.),
+        (offset_design([24,48],2.,5.7,0.,35.),[24.,48.],2.,5.7,35.),
+        (offset_design([24,48],2.,25.,12.5,30.),[24.,48.],2.,25.,30.),
+        (offset_design([28,49],0.2,1.,0.,35.),[28.,49.],0.2,1.,35.),
+        (offset_design([32,32],25.4,100.,5.,30.),[32.,32.],25.4,100.,30.)];
+    for (design,[np,ng],module,offset,spiral) in designs {
+        let e = design.read("gears.sv");
+        let label = &design.label;
+        let (o,m,a) = (point(&e,LAYOUT.apex),point(&e,LAYOUT.mean),point(&e,LAYOUT.pinion_apex));
+        let (g0,g1) = line(&e,LAYOUT.gear_axis);
+        let (p0,p1) = line(&e,LAYOUT.pinion_axis);
+        let (c0,c1) = line(&e,LAYOUT.crown_axis);
+        let (g,p,n) = (unit(sub(g1,g0)),unit(sub(p1,p0)),unit(sub(c1,c0)));
+        let r = dist(m,o);
+        let ct = (np*np+ng*ng).sqrt();
+        assert!((r-module*ct/2.).abs() < 1e-9*r,"{label}: R {r}");
+        // the shafts
+        let shaft = angle(g,p);
+        let skew = dot(sub(p0,g0),unit(cross(g,p))).abs();
+        println!("{label:24} shaft {shaft:.12} offset {skew:.12}");
+        assert!((shaft-90.).abs() < 1e-9,"{label}: shaft angle {shaft}");
+        assert!((skew-offset).abs() < 1e-9*r,"{label}: offset {skew}");
+        // one pitch plane: both apexes and M on it, each axis in the plane square to it
+        // through its generator, so each cone touches it along that generator
+        for (what,x) in [("M",m),("the pinion's apex",a)] {
+            assert!(dot(sub(x,o),n).abs() < 1e-9*r,"{label}: {what} off the pitch plane");
+        }
+        for (what,axis,apex) in [("gear",g,o),("pinion",p,a)] {
+            let generator = unit(sub(m,apex));
+            assert!(dot(n,cross(axis,generator)).abs() < 1e-10,"{label}: the {what}'s cone leaves P");
+            let (pitch,incline) = (angle(axis,generator),90.-angle(axis,n).min(180.-angle(axis,n)));
+            assert!((pitch-incline).abs() < 1e-8,"{label}: the {what}'s pitch angle {pitch} against {incline}");
+        }
+        // the equal normal pitch: each member's pitch radius at M times the cosine of its spiral
+        // is its teeth times half the normal module
+        let c = point(&e,&format!("{}.p1",LAYOUT.cutter_up));
+        let heading = unit(cross(n,sub(m,c)));
+        let normal_module = module*spiral.to_radians().cos();
+        for (what,axis,axis_point,apex,teeth) in [("gear",g,g0,o,ng),("pinion",p,p0,a,np)] {
+            let radius = off_line(m,axis_point,axis);
+            let psi = slant(heading,sub(m,apex)).to_radians();
+            let pitch = radius*psi.cos();
+            assert!((pitch-teeth*normal_module/2.).abs() < 1e-9*r,"{label}: the {what}'s normal pitch radius {pitch}");
+        }
+        // the rolls: each member's ratio is the crown's tooth count over its own, and the crown's
+        // neighbour is one crown pitch, 2 pi / N_c
+        let rotation = |name: &str| e.sketch.motions[motion(&e,name)].rotation(&e.sketch).unwrap();
+        let pinion = rotation("generation.pinion_roll").0;
+        let gear = rotation("generation.gear_roll").0;
+        let pitch = rotation("generation.crown_neighbor").1;
+        println!("{label:24} pinion {pinion:.15} against {:.15}, gear {gear:.15} against {:.15}",ct/np,-ct/ng);
+        assert!((pinion-ct/np).abs() < 1e-12*ct,"{label}: the pinion rolls at {pinion}");
+        assert!((gear+ct/ng).abs() < 1e-12*ct,"{label}: the gear rolls at {gear}");
+        assert!((pitch+std::f64::consts::TAU/ct).abs() < 1e-12,"{label}: a crown pitch is {pitch}");
+        // off the bevel, the pinion's own cone would roll at another ratio
+        let cone = 1./angle(p,sub(m,a)).to_radians().sin();
+        println!("{label:24} the pinion's cone alone {cone:.6}");
+        if offset > 0. { assert!((cone-ct/np).abs() > 1e-3,"{label}: {cone}"); }
     }
 }

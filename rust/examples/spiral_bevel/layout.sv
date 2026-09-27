@@ -20,11 +20,12 @@ component HypoidLayout(front: plane, design: group) {
   gear: GearCone(pitch.view, g.view, design)
   g: FoldedView(pitch.view, gear.generator, span: design.cutter_radius)
   trace: ToothTrace(pitch.view, gear.generator, design)
-  pinion: PinionCone(pitch.view, q.view, gear.generator, trace.foot, design)
+  pinion: PinionCone(pitch.view, q.view, gear.generator, trace.foot, gear.axis, design)
   q: FoldedView(pitch.view, pinion.hinge, span: design.cutter_radius)
-  // The pinion's pitch angle is the angle at M in the gear's triangle.
+  // The pinion's virtual axis stands at the angle at M in the gear's triangle, the
+  // bevel pinion's pitch angle.
   gear.to_foot angle(pinion_angle) gear.to_apex
-  pinion.pitch_line angle(pinion_angle) pinion.axis
+  pinion.virtual_line angle(pinion_angle) pinion.virtual_axis
   // The blanks, in the axial views; the gear's cones on the generator opposite M.
   gear_blank: MemberLimits(gear.pitch_line, gear.back_cone, gear.axis, design) in g.view
   pinion_blank: MemberLimits(pinion.pitch_line, pinion.pitch_line, pinion.axis, design) in q.view

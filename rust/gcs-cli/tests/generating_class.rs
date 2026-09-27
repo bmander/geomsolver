@@ -3,7 +3,7 @@
 //! the solved source by sampling. Nothing here constructs a boundary; these are
 //! the numbers the plan's decision gate reads. Sampled, never certified.
 //!
-//! `SOLVENT_CLASS_OFFSETS=0,6,15` (degrees) chooses the offsets,
+//! `SOLVENT_CLASS_OFFSETS=0,6,15` (millimetres between the shafts) chooses the offsets,
 //! `SOLVENT_CLASS_SHIFTS=0,5` the pressure shifts (every pair is measured), and
 //! `SOLVENT_CLASS_MEMBERS=pinion,gear` the members, and `SOLVENT_CLASS_ROLL` the
 //! pinion's roll limit for the negative control.
@@ -14,11 +14,11 @@ use gcs_core::space::{sub,dot,cross,norm};
 
 type V = [f64;3];
 
-/// The pair at `offset` degrees, its members also publishing their blanks.
+/// The pair at `offset` millimetres, its members also publishing their blanks.
 fn read(offset: f64,shift: Option<f64>) -> program::Elaborated {
     // `SOLVENT_CLASS_SPIRAL` (degrees) replaces the configured spiral angle.
     let spiral = std::env::var("SOLVENT_CLASS_SPIRAL").ok().map(|v| v.parse::<f64>().unwrap());
-    let design: Vec<(&str,f64)> = [("offset_angle",Some(offset)),("pressure_shift",shift),("spiral_angle",spiral)]
+    let design: Vec<(&str,f64)> = [("offset",Some(offset)),("pressure_shift",shift),("spiral_angle",spiral)]
         .into_iter().filter_map(|(p,v)| v.map(|v| (p,v))).collect();
     fixtures::gear::read_configured_with(&mut |name,text| match name {
         "configuration" => fixtures::gear::configure(name,text,&design),
@@ -228,11 +228,11 @@ fn where_the_pair_stands_against_the_generating_class() {
         let started = std::time::Instant::now();
         let e = read(offset,shift);
         let shift = shift.map_or("configured".to_string(),|s| format!("{s}deg"));
-        eprintln!("offset {offset}deg shift {shift}: read and solved in {:?}",started.elapsed());
+        eprintln!("offset {offset}mm shift {shift}: read and solved in {:?}",started.elapsed());
         for member in &members {
             let started = std::time::Instant::now();
             let r = measure(&e,member);
-            eprintln!("== offset {offset}deg shift {shift} {member} ({:?})",started.elapsed());
+            eprintln!("== offset {offset}mm shift {shift} {member} ({:?})",started.elapsed());
             eprintln!("  samples {} on the tool, {} root errors, {} in-blank contacts, spacing {:.4} (largest gap {:.4})",
                 r.boundary_samples,r.root_errors,r.hits,r.spacing,r.largest_gap);
             eprintln!("  E1 tool samples inside the blank at the roll limits: {:?}",r.at_limits);

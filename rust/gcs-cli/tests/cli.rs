@@ -40,7 +40,7 @@ fn a_continuous_boundary_exports_through_the_field_mesh() {
 
 /// A body whose sweep is outside the generating class is refused before any construction,
 /// with the row it fails and a point, and an earlier output is left as it was: the gear pair
-/// at 30 degrees of offset on a symmetric rack, whose pinion touches the blank twice.
+/// 30 mm off the bevel on a symmetric rack, whose pinion touches the blank twice.
 #[test]
 fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
     let dir = std::env::temp_dir().join(format!("solventc-class-refusal-{}",std::process::id()));
