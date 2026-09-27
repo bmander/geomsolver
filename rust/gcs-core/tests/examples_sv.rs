@@ -20,12 +20,15 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("altitudes", (7, 6, 0, 0), 3, State::Under),
     ("parallels", (8, 4, 0, 0), 1, State::Under),
     ("belt_tangency", (4, 1, 2, 0), 0, State::Well),
+    ("belt_wrap", (6, 2, 0, 2), 0, State::Well),
+    ("reflection", (6, 4, 0, 0), 0, State::Well),
     ("rect_fillets", (12, 4, 0, 4), 0, State::Well),
     ("rect_fillets_under", (12, 4, 0, 4), 1, State::Under),
     ("rect_fillets_conflict", (12, 4, 0, 4), 0, State::Conflict),
     ("slotted_link", (6, 2, 2, 2), 0, State::Well),
     ("square", (4, 4, 0, 0), 1, State::Under),
     ("ngon", (6, 5, 1, 0), 1, State::Under),
+    ("edge_tabs", (8, 12, 0, 0), 0, State::Well),
     ("polygon_chain", (24, 12, 0, 0), 11, State::Under),
     ("truss", (17, 31, 0, 0), 0, State::Well),
     ("truss_redundant", (13, 23, 0, 0), 0, State::Over),
@@ -133,5 +136,39 @@ fn no_document_writes_a_seed_the_old_way() {
                 }
             }
         }
+    }
+}
+
+/// **The spatial demos** — documents the app opens as files rather than as cases, since they are
+/// looked at in the glass box and have no sheet — hold what their headers say: the unknowns, the
+/// equations and the freedom left.
+#[test]
+fn the_spatial_demos_are_what_they_say() {
+    let demos: &[(&str, &str, (usize, usize), i64, State)] = &[
+        ("skew_axes", include_str!("../../examples/skew_axes.sv"), (29, 29), 0, State::Well),
+        (
+            "hypoid_pitch_cones",
+            include_str!("../../examples/hypoid_pitch_cones.sv"),
+            (39, 39),
+            0,
+            State::Well,
+        ),
+        (
+            "sphere_cone_cylinder",
+            include_str!("../../examples/sphere_cone_cylinder.sv"),
+            (51, 50),
+            1,
+            State::Under,
+        ),
+    ];
+    for &(key, src, counts, dof, status) in demos {
+        let (prog, errs, linked) = gcs_core::library::parse_linked(src);
+        assert!(errs.is_empty() && linked.is_empty(), "{key}: {errs:?} {linked:?}");
+        let mut e = gcs_core::program::elaborate(&prog);
+        assert!(e.ok(), "{key}: {:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+        let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+        assert!(r.success, "{key} solves");
+        let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+        assert_eq!(((d.n_params, d.n_equations), d.dof, d.status), (counts, dof, status), "{key}");
     }
 }

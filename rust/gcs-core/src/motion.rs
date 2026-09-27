@@ -180,7 +180,9 @@ impl Family {
             if depth >= 64 { return Err("motion dependencies exceed 64 levels".into()); }
             visiting[i] = true;
             let value = match node.def {
-                MotionDef::Rotation {axis,ratio,phase,advance} => {
+                MotionDef::Rotation {axis,..} => {
+                    // a number written as a measurement is read off the drawing as it stands
+                    let (ratio,phase,advance) = node.rotation(sk)?;
                     let axis = sk.lines.get(axis as usize).ok_or("no such motion axis")?;
                     let origin = sk.world_point(axis.p1 as usize);
                     let b = sk.world_point(axis.p2 as usize);
@@ -191,7 +193,8 @@ impl Family {
                     }
                     Step::Rotation {origin,axis,ratio,phase,advance}
                 }
-                MotionDef::Translation {axis,advance} => {
+                MotionDef::Translation {axis,..} => {
+                    let advance = node.advance(sk)?;
                     let line = sk.lines.get(axis as usize).ok_or("no such motion axis")?;
                     let a = sk.world_point(line.p1 as usize);
                     let b = sk.world_point(line.p2 as usize);

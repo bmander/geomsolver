@@ -30,6 +30,17 @@ pub enum CKind {
     /// winding is algebraic in the residual itself — the strongest of the three branch
     /// instruments (spec §6.5.1) — and a trace block posing a crank by its angle needs no `ccw`.
     Angle,
+    /// **Two directed angles equal** (`l1 angle(l3, l4) l2`): the angle from `l1` to `l2` is the
+    /// angle from `l3` to `l4`, both read as `Angle` reads one — counter-clockwise from the first
+    /// line's direction, on the full turn — and `sense: cw` says the second pair turns the other
+    /// way, which is what a mirror image does.  The shared free variable it replaces
+    /// (`l1 angle(beta) l2` beside `l3 angle(beta) l4`) said the same with an unknown nobody
+    /// wanted to name; this states it with no number at all, one row of degree 0.
+    EqualAngle,
+    /// **An arc's length along itself** (`length(L) a`): `r·θ`, with θ the arc's own sweep
+    /// counter-clockwise from its start to its end, in (0, 2π] — what `Sketch::arc_angles`
+    /// reads.  A magnitude, degree 1; the length a belt wraps or a circular pitch measures.
+    ArcLength,
     ParallelDistance,
     EqualLength,
     PointOnLine,
@@ -251,7 +262,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 76] = [
+pub const ALL_KINDS: [CKind; 78] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -328,6 +339,8 @@ pub const ALL_KINDS: [CKind; 76] = [
     CKind::CylinderTangentLine,
     CKind::ConeTangentCone,
     CKind::Mate,
+    CKind::EqualAngle,
+    CKind::ArcLength,
 ];
 
 /// `along:` says which axis a run or a rise is measured on.  It is the one selector that fills no
@@ -481,6 +494,8 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
         ("radius", Circle | Arc) => CKind::Radius,
         ("radius", EntKind::Sphere) => CKind::SphereRadius,
         ("radius", EntKind::Cylinder) => CKind::CylinderRadius,
+        // an arc's length along itself: the other way a round thing is dimensioned
+        ("length", Arc) => CKind::ArcLength,
         // a cone's half-angle: the one prefix `angle`, since between two lines it is infix
         ("angle", EntKind::Cone) => CKind::ConeAngle,
         ("distance", Line) => CKind::Distance,
@@ -493,9 +508,9 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the four is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `ground point p -> …` stays what it always was, no chain.
-pub const OPERATORS: [&str; 22] = [
+pub const OPERATORS: [&str; 23] = [
     "on", "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "angle",
-    "radius", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
+    "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "ground", "fix", "ccw", "cw",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement
     // reads the way every other statement does; they settle to no `CKind` and compile no row,
@@ -730,6 +745,8 @@ impl CKind {
             CKind::Parallel => "Parallel",
             CKind::Perpendicular => "Perpendicular",
             CKind::Angle => "Angle",
+            CKind::EqualAngle => "EqualAngle",
+            CKind::ArcLength => "ArcLength",
             CKind::ParallelDistance => "ParallelDistance",
             CKind::EqualLength => "EqualLength",
             CKind::PointOnLine => "PointOnLine",
@@ -844,6 +861,16 @@ impl CKind {
             CKind::Angle => {
                 &[("l1", S::Line), ("l2", S::Line), ("theta", S::Angle), ("sense", S::Str)]
             }
+            // the second pair stands in the parentheses, as `symmetry`'s line does; `sense: cw`
+            // says it turns the other way (§9.4)
+            CKind::EqualAngle => &[
+                ("l1", S::Line),
+                ("l2", S::Line),
+                ("l3", S::Line),
+                ("l4", S::Line),
+                ("sense", S::Str),
+            ],
+            CKind::ArcLength => &[("arc", S::Arc), ("l", S::Length)],
             // the number is a magnitude, and `side` says which side of `l1` its second line lies
             // on; omitted, both sides are solutions and the seed picks between them (§9.2)
             CKind::ParallelDistance => {
@@ -1051,7 +1078,11 @@ impl CKind {
             // over two lines a Length means a parallel distance and an Angle means an angle, and
             // nothing but the number's unit could separate them
             CKind::Angle => ("angle", Infix),
+            // the same word with a second pair where the number would be: an angle stated as
+            // another angle rather than as a number
+            CKind::EqualAngle => ("angle", Infix),
             CKind::Radius => ("radius", Prefix),
+            CKind::ArcLength => ("length", Prefix),
             CKind::Coincident => ("coincident", Infix),
             CKind::Midpoint => ("midpoint", Infix),
             CKind::Parallel => ("parallel", Infix),
@@ -1145,6 +1176,7 @@ impl CKind {
             (CKind::HorizontalDistance, 3) => &["x", "right", "left"][..],
             (CKind::VerticalDistance, 3) => &["y", "up", "down"][..],
             (CKind::Angle, 3) => &["ccw", "cw"][..],
+            (CKind::EqualAngle, 4) => &["ccw", "cw"][..],
             _ => return None,
         })
     }
@@ -1168,6 +1200,8 @@ impl CKind {
             CKind::HorizontalDistance => (3, &[("right", 1.0), ("left", -1.0)][..]),
             CKind::VerticalDistance => (3, &[("up", 1.0), ("down", -1.0)][..]),
             CKind::Angle => (3, &[("ccw", 1.0), ("cw", -1.0)][..]),
+            // the second pair turns the way the first does, or — `cw` — the other way round
+            CKind::EqualAngle => (4, &[("ccw", 1.0), ("cw", -1.0)][..]),
             _ => return None,
         })
     }
@@ -1231,6 +1265,7 @@ impl CKind {
                 | CKind::LineLine3
                 | CKind::SphereRadius
                 | CKind::CylinderRadius
+                | CKind::ArcLength
         )
     }
 
@@ -1299,6 +1334,8 @@ impl CKind {
             | CKind::Parallel
             | CKind::Perpendicular
             | CKind::Angle
+            | CKind::EqualAngle
+            | CKind::ArcLength
             | CKind::ParallelDistance
             | CKind::EqualLength
             | CKind::PointOnLine
@@ -1424,6 +1461,8 @@ impl CKind {
             CKind::Parallel => K::Parallel,
             CKind::Perpendicular => K::Perpendicular,
             CKind::Angle => K::Angle,
+            CKind::EqualAngle => K::EqualAngle,
+            CKind::ArcLength => K::ArcLength,
             CKind::ParallelDistance => K::ParallelDistance,
             CKind::EqualLength => K::EqualLength,
             CKind::PointOnLine => K::PointOnLine,
@@ -1536,6 +1575,7 @@ impl CKind {
             CKind::Distance => K::DistanceFree,
             CKind::Angle => K::AngleFree,
             CKind::Radius => K::RadiusFree,
+            CKind::ArcLength => K::ArcLengthFree,
             CKind::ParallelDistance => K::ParallelDistanceFree,
             CKind::PointLineDistance => K::PointLineDistanceFree,
             CKind::AnnularDistance => K::AnnularDistanceFree,
@@ -1561,6 +1601,8 @@ impl CKind {
             | CKind::Vertical
             | CKind::Parallel
             | CKind::Perpendicular
+            // two angles equal states no number: there is nothing for a free variable to stand in
+            | CKind::EqualAngle
             | CKind::EqualLength
             | CKind::PointOnLine
             | CKind::PointOnCircle
@@ -2272,6 +2314,9 @@ impl Constraint {
             // an angle is directed, so `sense: cw` turns the number it states rather than the
             // reader having to write the minus (§9.4)
             CKind::Angle => vec![self.sense() * self.args[2].num()],
+            // the sign the second pair's angle is read with: `sense: cw` is its mirror image
+            CKind::EqualAngle => vec![self.sense()],
+            CKind::ArcLength => vec![self.args[1].num()],
             CKind::AnnularDistance => vec![self.args[2].num()],
             CKind::Radius => vec![self.args[1].num()],
             // the word times the radius: the centre stands off the line on the side it names
@@ -2441,6 +2486,7 @@ impl Constraint {
     fn own_params_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<u32> {
         let e = |i: usize| self.args[i].ent();
         let pt = |i: usize| sk.point_params(e(i).i()).to_vec();
+        let pt_at = |p: u32| sk.point_params(p as usize).to_vec();
         let ln = |i: usize| sk.line_params(e(i).i()).to_vec();
         let centre = |i: usize| sk.point_params(sk.round_center(e(i))).to_vec();
         let rad = |i: usize| sk.round_radius(e(i)) as u32;
@@ -2465,6 +2511,13 @@ impl Constraint {
             | CKind::Angle
             | CKind::ParallelDistance
             | CKind::EqualLength => [ln(0), ln(1)].concat(),
+            CKind::EqualAngle => [ln(0), ln(1), ln(2), ln(3)].concat(),
+            // the centre, the two ends and the radius: the sweep is read off the ends, the
+            // length is the radius times it
+            CKind::ArcLength => {
+                let a = &sk.arcs[e(0).i()];
+                [pt_at(a.center), pt_at(a.start), pt_at(a.end), vec![rad(0)]].concat()
+            }
             CKind::PointOnCircle => [pt(0), centre(1), vec![rad(1)]].concat(),
             CKind::Radius => vec![rad(0)],
             CKind::EqualRadius | CKind::AnnularDistance => vec![rad(0), rad(1)],

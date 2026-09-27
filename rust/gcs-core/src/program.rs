@@ -104,6 +104,9 @@ fn shadowing(p: &Program, diags: &mut Vec<Diag>) {
                     if let Some(i) = &b.binder {
                         say(i, "a block's index", Some(st.id), diags);
                     }
+                    if let Some(o) = &b.over {
+                        say(&o.var, "a block's edge", Some(st.id), diags);
+                    }
                     body(&b.body, diags);
                 }
                 _ => {}
@@ -416,6 +419,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 expr::Fault::Dimension => (Code::E103, ""),
                 expr::Fault::ClaimFree => (Code::E040, ""),
                 expr::Fault::Uncomputable => (Code::W110, " — the last number stands"),
+                expr::Fault::Measure => (Code::E107, ""),
             };
             diags.push(Diag { code, span, stmt, message: format!("`{}`: {err}{tail}", item.text) });
         } else if !item.free.is_empty() {
@@ -451,6 +455,15 @@ pub fn elaborate(p: &Program) -> Elaborated {
     for (&entity, site) in &map.of_entity {
         if let Some(&roles) = roles.get(&(site.stmt, site.path.0.clone())) {
             sk.roles.insert(entity, roles);
+        }
+    }
+    // a measurement read before the solve is one refusal wherever it stood — a param, a seed, a
+    // constraint's number, an extent — and every one of those paths says it in the same words
+    // (`expr::measure_refusal`), so the code is given once, here, the way the flattener sorts
+    // its plain errors by message
+    for d in &mut diags {
+        if d.message.contains(expr::MEASURE_MARK) {
+            d.code = Code::E107;
         }
     }
     crate::modules::localize(p, &mut diags);

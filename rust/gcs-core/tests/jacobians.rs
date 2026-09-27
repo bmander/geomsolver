@@ -128,6 +128,14 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::two_line(CKind::Parallel, le1, le2),
         Constraint::two_line(CKind::Perpendicular, le1, le2),
         Constraint::new(CKind::Angle, vec![e(le1), e(le2), Arg::Num(0.7)]),
+        // an angle stated as another, turning the same way and the other (`sense: cw`)
+        Constraint::new(CKind::EqualAngle, vec![e(le1), e(le2), e(le2), e(me1)]),
+        Constraint::new(
+            CKind::EqualAngle,
+            vec![e(le2), e(le1), e(le1), e(me2), Arg::Str("cw".into())],
+        ),
+        // an arc's length along itself
+        Constraint::new(CKind::ArcLength, vec![e(ae), Arg::Num(7.5)]),
         Constraint::two_line(CKind::EqualLength, le1, le2),
         Constraint::new(CKind::PointOnLine, vec![e(pe), e(le1)]),
         Constraint::point_on_circle(pe, ce1, false),
@@ -258,6 +266,7 @@ fn all_constraints(seed: u32) -> Sketch {
         fx(CKind::SphereRadius, vec![e(sb)], "rs", 3.0),
         fx(CKind::ConeAngle, vec![e(kn2)], "2 * ka", 0.5),
         fx(CKind::CylinderRadius, vec![e(cy)], "kr - 1", 3.0),
+        fx(CKind::ArcLength, vec![e(ae)], "3 * al + 1", 7.5),
     ];
     // the two intrinsic PointOnCircle constraints the arc brought with it stay in the sketch
     sk.constraints.clear();

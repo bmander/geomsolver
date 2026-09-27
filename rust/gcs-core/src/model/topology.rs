@@ -44,10 +44,12 @@ impl Sketch {
                 vec![EntRef::new(EntKind::Surface,v.surface as usize),
                     EntRef::new(EntKind::Motion,v.motion as usize)]
             }
-            EntKind::Motion => match self.motions[e.i()].def {
-                MotionDef::Rotation {axis,..} | MotionDef::Translation {axis,..} => vec![EntRef::line(axis as usize)],
+            // what a motion measures is what it is written over, as much as its axis is
+            EntKind::Motion => { let m = &self.motions[e.i()]; match m.def {
+                MotionDef::Rotation {axis,..} | MotionDef::Translation {axis,..} => std::iter::once(EntRef::line(axis as usize))
+                    .chain(m.measured.iter().flat_map(|x| x.value.ents.values().copied())).collect(),
                 MotionDef::Relative {source,observer} => [source,observer].map(|i| EntRef::new(EntKind::Motion,i as usize)).to_vec(),
-            },
+            } },
             EntKind::Surface => {
                 let s = &self.surfaces[e.i()];
                 vec![EntRef::solid(s.solid as usize),s.edge]

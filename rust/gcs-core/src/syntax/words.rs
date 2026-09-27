@@ -30,6 +30,16 @@ pub(super) const OPENERS: [&str; 17] = [
 
 pub(super) const BLOCKS: [&str; 2] = ["repeat", "cycle"];
 
+/// `repeat e in rack.profile`: a block runs over a chain's edges when the tokens from `at` (the
+/// one after its word) are a name and `in`, which no count expression can begin with, `in` being
+/// no operator.  The parser and the colouring both ask it.
+pub(super) fn over_chain(toks: &[(Tok, Span)], at: usize) -> bool {
+    matches!(
+        (toks.get(at), toks.get(at + 1)),
+        (Some((Tok::Ident(_), _)), Some((Tok::Ident(w), _))) if w == "in"
+    )
+}
+
 /// Whether the operator registry admits this joint word.
 pub(super) fn joint_word(w: &str) -> bool {
     is_operator(w)

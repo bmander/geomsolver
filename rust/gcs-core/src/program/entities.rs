@@ -7,7 +7,7 @@ use crate::ir::{Decl, Kid, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::rng::Rng;
 use crate::style::Classes;
-use crate::syntax::{AtRef, Name, Program, Seg, Span, StmtId};
+use crate::syntax::{AtRef, Program, Span, StmtId};
 use crate::{curve, expr, io};
 use std::collections::BTreeMap;
 
@@ -451,14 +451,9 @@ pub(super) enum Deferred {
 fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<(f64, crate::units::Dim), String> {
     let (path, scalar) =
         dotted.rsplit_once('.').ok_or_else(|| format!("`{dotted}` is not a number here"))?;
-    // an entity's absolute name is dotted itself (`t1.pin` under an instance), so the entity is
-    // the longest head of the path that names one, and the rest is fields into it
     let segs: Vec<&str> = path.split('.').collect();
-    let (e, fields) = (1..=segs.len())
-        .rev()
-        .find_map(|k| res.of.get(&segs[..k].join(".")).map(|e| (*e, &segs[k..])))
-        .ok_or_else(|| format!("no such entity: `{}`", segs[0]))?;
-    let fields: Vec<Seg> = fields.iter().map(|f| Seg::Field(Name::new(*f))).collect();
+    let (e, fields) =
+        res.dotted(&segs).ok_or_else(|| format!("no such entity: `{}`", segs[0]))?;
     let e = follow(sk, e, &fields)?;
     // A datum's seed follows its defining points, including deferred hints already
     // settled on them. Its stored rotor is refreshed after the deferred pass.
@@ -483,8 +478,7 @@ fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<(f64, crate::u
         )
     })?;
     let p = *sk.entity_params(e).get(at).ok_or_else(|| format!("`{dotted}` has no seed yet"))?;
-    let dim = if sk.units.name().is_some() { crate::units::Dim::LENGTH } else { crate::units::Dim::SCALAR };
-    Ok((sk.params[p as usize].value, dim))
+    Ok((sk.params[p as usize].value, sk.units.read_length()))
 }
 
 /// An expression over geometry's seeds, come to its number.  `names` is what each dotted name

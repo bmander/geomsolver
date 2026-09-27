@@ -128,6 +128,8 @@ impl<'a> P<'a> {
         // parentheses unlabelled; `tangent` states no number, so nothing else is read there
         let takes_entity = word == "symmetry" || word == "tangent" || call_word(word);
         let mut out = Vec::new();
+        // where each unlabelled item was read as text: `angle`'s may turn out to be two lines
+        let mut texts: Vec<(usize, usize, usize)> = Vec::new();
         while !self.eat_p(')') {
             match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t.clone())) {
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) => {
@@ -150,6 +152,7 @@ impl<'a> P<'a> {
                 _ if takes_entity => out.push(OpArg::Ent(self.refr()?)),
                 _ => {
                     let from = self.here().lo as usize;
+                    let first = self.i;
                     let mut depth = 0i32;
                     while !self.done() {
                         match self.peek() {
@@ -168,6 +171,7 @@ impl<'a> P<'a> {
                         return None;
                     }
                     let hi = self.prev_hi();
+                    texts.push((out.len(), first, self.i));
                     out.push(OpArg::Dim(text, Span::new(from, hi)));
                 }
             }
@@ -175,6 +179,24 @@ impl<'a> P<'a> {
                 self.fail("expected `,` or `)`");
                 return None;
             }
+        }
+        // **an angle stated as another angle**: `l1 angle(l3, l4) l2`.  A kind states at most one
+        // number, so two unlabelled items in `angle`'s parentheses cannot be its number — they
+        // are the pair of lines whose angle this one equals, read again as the references they
+        // are.  Anything else in two is a mistake, and said so here rather than one of the two
+        // being dropped where the arguments are assembled
+        if word == "angle" && texts.len() == 2 {
+            let end = self.i;
+            if !texts.iter().all(|&(_, from, to)| self.past_ref(from) == Some(to)) {
+                self.i = texts[0].1;
+                self.fail("`angle` takes one number, or the two lines of the angle it equals");
+                return None;
+            }
+            for &(at, from, _) in &texts {
+                self.i = from;
+                out[at] = OpArg::Ent(self.refr()?);
+            }
+            self.i = end;
         }
         Some(out)
     }

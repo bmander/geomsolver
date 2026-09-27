@@ -85,6 +85,12 @@ glyph. Forward references, formals, privacy and copy/delete dependencies are sup
 cycles and dependency depth over 64 are refused. Browser `core/motion.ts` samples position
 and velocity in six doubles. `motion::Family::read` retains a solved snapshot for repeated
 sampling; re-read after axis edits. Dependency height is checked even with cached subgraphs.
+**Measurements read after the solve** (`measure.rs`, `expr::Measure`): `length(l)`, `radius(c)`,
+`distance(a, b)`, `angle(l1, l2)` may stand in a motion's `ratio:`/`phase:`/`advance:` only. The
+flattener resolves their names like references (`rescope_measures`); `MotionE::measured` holds the
+compiled text and `MotionE::rotation`/`advance` work it out from the solved sketch on every read
+(`Family::read`, `solid::reads`'s motion key), so nothing stale is stored and caches follow the
+geometry. Everywhere else `expr::eval` refuses one, and the elaborator codes that message E107.
 
 **Solid placement:** `solid indexed(source, under: indexing, at: 90deg)` places one source
 solid at a named motion's pose. `at:` is a constant Angle, converted to radians at elaboration;
@@ -1584,6 +1590,10 @@ Conventions:
   Source edits preserve the expression; deleting its geometry is refused under the existing
   chain rule. Canonical flat printing refuses named chains atomically and retains source,
   as it does for components. `tests/solid_lang.rs` and the browser binding test cover this.
+  `repeat e in CHAIN { … }` (and `cycle e in`, refused on an open chain) makes a copy per link,
+  `e` an alias to that link in each copy (`#<id>.<k>.e`); the count is the chain's, so the block
+  is set aside where it stands and expanded once the chain resolves (`flatten::expand_pending`),
+  through instances and group formals alike. `tests/chain_edges.rs` is the gate.
 - **A face closes itself** (§6.8, `program::build_face`; issue #49, item 1).  What the brackets
   hold is a *walk*, and an item may be a **point**: a corner the walk goes straight to and
   straight on from, with `-> close` — the chain's own word, in the other place the language draws

@@ -3,10 +3,10 @@
 use super::P;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{names_decl, BLOCKS};
+use crate::syntax::words::{names_decl, over_chain, BLOCKS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
-    DeclName, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership, Name,
+    DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership, Name,
     OpenJoint, ParamDecl, Ref, SolidRel, Source, Span, Stmt, StmtKind, SynErr, Ty, Use,
 };
 
@@ -638,6 +638,23 @@ impl<'a> P<'a> {
 
     fn block(&mut self, kind: BlockKind, next_id: &mut u32) -> Option<Block> {
         let lo = self.prev_hi();
+        // `repeat e in rack.profile` — the block runs over a chain's edges
+        if over_chain(&self.t, self.i) {
+            let var = self.ident()?;
+            self.i += 1;
+            let chain = self.refr()?;
+            let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
+            let (body, joint) = self.braced_body(next_id)?;
+            return Some(Block {
+                kind,
+                count: String::new(),
+                over: Some(EdgesOf { var, chain }),
+                binder,
+                body,
+                joint,
+                span: Span::new(lo, self.prev_hi()),
+            });
+        }
         // the count runs to `as` or `{`, and is an expression over what is in scope
         let from = self.here().lo as usize;
         let mut depth = 0i32;
@@ -655,7 +672,8 @@ impl<'a> P<'a> {
         let count = self.text_from(from).trim().to_string();
         let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
         let (body, joint) = self.braced_body(next_id)?;
-        Some(Block { kind, count, binder, body, joint, span: Span::new(lo, self.prev_hi()) })
+        let span = Span::new(lo, self.prev_hi());
+        Some(Block { kind, count, over: None, binder, body, joint, span })
     }
 
     /// Step over a refused block: the rest of its header line and, where one opens there, the

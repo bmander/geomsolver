@@ -471,7 +471,7 @@ pitch plane, and `fixtures::gear::bevel` designs are unchanged.
   refused with the spelling that says it of the line's points; a cone against a line, the
   cylinder written second, a half-angle on a cylinder and two cones with no point are refused at
   the word (E040); an axis that is not a line, or none, is E103.
-- **The hypoid, named.** `tests/fixtures/hypoid_named_cones.sv`: P stated with M grounded on it;
+- **The hypoid, named.** `rust/examples/hypoid_pitch_cones.sv`: P stated with M grounded on it;
   the gear's axial plane G is P folded square about its vertical axis and the gear's apex on P
   (so P is the gear cone's tangent plane at M); the pinion's axial plane Q is `attitude: free,
   through: M`, its turn held by `horizontal pax`; the cones named, `angle(60deg) gc`, `M on gc`,

@@ -355,8 +355,12 @@ pub struct GroupDecl {
 #[derive(Clone, Debug)]
 pub struct Block {
     pub kind: BlockKind,
-    /// How many, as an expression over the enclosing parameters.
+    /// How many, as an expression over the enclosing parameters.  Empty where the block runs
+    /// over a named chain's edges (`over`), whose count is the chain's own.
     pub count: String,
+    /// `repeat e in rack.profile { … }` — one copy per edge of a named chain, in traversal order,
+    /// with `e` naming that copy's edge (§6.6, §12).
+    pub over: Option<EdgesOf>,
     /// `as i` — the index, available to every expression inside.
     pub binder: Option<Name>,
     pub body: Vec<Stmt>,
@@ -364,6 +368,15 @@ pub struct Block {
     /// onto the next copy (issue #38).
     pub joint: Option<OpenJoint>,
     pub span: Span,
+}
+
+/// What a block runs over when it runs over a chain: the name each copy calls its edge, and the
+/// chain as written.  The chain is resolved by the flattener in the scope the block stands in,
+/// so it may be reached through an instance or a formal (`refs.pinion.profile`).
+#[derive(Clone, Debug)]
+pub struct EdgesOf {
+    pub var: Name,
+    pub chain: Ref,
 }
 
 /// A block body that ends mid-joint — `cycle N { distance(d) line -> angle(a) }` — threads its

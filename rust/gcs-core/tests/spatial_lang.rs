@@ -602,6 +602,8 @@ fn a_word_with_no_meaning_in_space_is_refused_across_views() {
     refused_as("a horizontal b", "E062", "no meaning in space", "a horizontal b");
     refused_as("a distance(5, along: x) b", "E062", "no meaning in space", "a distance(5, along: x) b");
     refused_as("la tangent cb", "E062", "no meaning in space", "la tangent cb");
+    // an angle stated as another is a relation of the page's turns, and has none in space
+    refused_as("la angle(la, lb) lb", "E062", "no meaning in space", "la angle(la, lb) lb");
     refused_as("la angle(60deg, sense: cw) lb", "E040", "unsigned", "sense");
     refused_as("a distance(5, side: left) lb", "E040", "magnitude", "side");
     // a point on the page has no place in space, nor a datum point read beside another view

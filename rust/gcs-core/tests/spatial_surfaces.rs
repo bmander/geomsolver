@@ -154,15 +154,15 @@ fn a_line_touching_a_cylinder_is_its_radius_from_the_axis() {
     assert!((gap - 12.0).abs() < 1e-9, "{gap}");
 }
 
-/// **The named hypoid** (the plan's P4 gate): the hypoid of `hypoid_pitch_cones.sv` spelled with
-/// its pitch cones named — the gear's axial plane stated, the pinion's solved, `M on` both cones
-/// and `gc tangent(M) pc` — against the fold construction that file states it by.  The two
+/// **The named hypoid** (the plan's P4 gate): the app's `examples/hypoid_pitch_cones.sv`, its
+/// pitch cones named — the gear's axial plane stated, the pinion's solved, `M on` both cones and
+/// `gc tangent(M) pc` — against the fold construction `fixtures/hypoid_pitch_cones.sv` states.  The two
 /// documents put their views differently on the sheet, so they are compared by what a hypoid
 /// is: the pitch angles, the offset angle, the apexes' distances from M and from each other, all
 /// to 1e-9.
 #[test]
 fn the_hypoid_with_its_pitch_cones_named_agrees_with_the_fold_construction() {
-    let named = read(include_str!("fixtures/hypoid_named_cones.sv"));
+    let named = read(include_str!("../../examples/hypoid_pitch_cones.sv"));
     let mut sk = solved(&named);
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "{}", summary(&d));
@@ -220,7 +220,7 @@ fn the_hypoid_with_its_pitch_cones_named_agrees_with_the_fold_construction() {
 /// goes back into the source in degrees, as it was written.
 #[test]
 fn cones_and_cylinders_round_trip() {
-    let named = read(include_str!("fixtures/hypoid_named_cones.sv"));
+    let named = read(include_str!("../../examples/hypoid_pitch_cones.sv"));
     let sk = solved(&named);
     let text = io::dumps(&sk, None);
     let back = io::loads(&text).expect("reads back");

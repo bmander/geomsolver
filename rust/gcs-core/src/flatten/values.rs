@@ -97,6 +97,11 @@ fn fold(sub: &str, text: &str, units: Units) -> Result<String, String> {
         return Ok(text.to_string());
     }
     let p = expr::parse_in(sub, units)?;
+    // a measurement comes to a number only once the drawing is solved: kept as written, for
+    // the context to read then or to refuse
+    if !p.body.measures().is_empty() {
+        return Ok(sub.to_string());
+    }
     let env: BTreeMap<String, Aff> = BTreeMap::new();
     let evaluated = expr::eval(&p.body, &env);
     if p.body.deps().is_empty() {
@@ -156,6 +161,57 @@ pub(super) fn reads_geometry(text: &str, units: Units) -> bool {
         .unwrap_or(false)
 }
 
+/// Where a measurement call opens and closes when `word`, ending at `i`, names one: its `(`
+/// after any space, and its `)` (the text's end where it is unclosed).
+fn measure_call(b: &[char], word: &str, i: usize) -> Option<(usize, usize)> {
+    if !expr::MEASURES.iter().any(|m| m.0 == word) {
+        return None;
+    }
+    let j = i + b[i..].iter().take_while(|c| c.is_whitespace()).count();
+    if b.get(j) != Some(&'(') {
+        return None;
+    }
+    Some((j, b[j..].iter().position(|&c| c == ')').map_or(b.len(), |k| j + k)))
+}
+
+/// The text with every measurement's argument names replaced by what `of` says (where it says
+/// anything), and nothing else touched: `length(gen_g) / 2` → `length(pair.gen_g) / 2`.
+pub(super) fn map_measured(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
+    let b: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0usize;
+    while i < b.len() {
+        let word_start = b[i].is_alphabetic() || b[i] == '_';
+        let prev_ident = i > 0 && (b[i - 1].is_alphanumeric() || b[i - 1] == '_' || b[i - 1] == '.');
+        if word_start && !prev_ident {
+            let from = i;
+            while i < b.len() && (b[i].is_alphanumeric() || b[i] == '_') {
+                i += 1;
+            }
+            let word: String = b[from..i].iter().collect();
+            out.push_str(&word);
+            if let Some((j, close)) = measure_call(&b, &word, i) {
+                let inner: String = b[j + 1..close].iter().collect();
+                let args: Vec<String> = inner
+                    .split(',')
+                    .map(|a| a.trim())
+                    .map(|a| of(a).unwrap_or_else(|| a.to_string()))
+                    .collect();
+                out.push('(');
+                out.push_str(&args.join(", "));
+                if close < b.len() {
+                    out.push(')');
+                }
+                i = (close + 1).min(b.len());
+            }
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
 fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::with_capacity(text.len());
     let b: Vec<char> = text.chars().collect();
@@ -184,6 +240,14 @@ fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
                 }
             }
             let word: String = b[from..i].iter().collect();
+            // a measurement's arguments are names of geometry, resolved as references are
+            // (`rescope_measures`) and never read as numbers: the call is copied as written
+            if let Some((_, close)) = measure_call(&b, &word, i) {
+                let end = (close + 1).min(b.len());
+                out.extend(&b[from..end]);
+                i = end;
+                continue;
+            }
             match of(&word) {
                 Some(t) => out.push_str(&t),
                 None => out.push_str(&word),

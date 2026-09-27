@@ -30,8 +30,9 @@ About 700 lines in ten files. The steps are all there, but tangled:
 - The gear's generating crown is a second, separately parameterised copy of the rack section.
   That duplication let the pressure-shift interference in (fixed in `46da5c3`; guarded by
   `gcs-core/tests/gear_crowns.rs`).
-- `verification.sv` writes out eleven surfaces, eleven envelopes, eleven regions, eight seams
-  and so on, one statement per profile edge.
+- `verification.sv` wrote out eleven surfaces, eleven envelopes and eleven regions, one
+  statement per profile edge; it now makes them one `repeat e in … { … }` block per rack section
+  (language change 3). Its seams, vertices and edges are still written one by one.
 - The pinion is placed by turning its axis by `offset_angle` in the pitch plane while keeping
   the bevel pair's pitch angles, so the shaft angle comes out at 87.85°, not 90°. A true hypoid
   fixes the shaft angle and the offset distance and solves the pitch cones.
@@ -54,8 +55,9 @@ in G, the pinion blank in Q. N is the textbook normal section, so the normal pre
 and the normal tooth thickness live where a gear designer expects them. `project` ties each
 shared point between views, since each shares a fold line with P.
 
-A fold today turns about a line through its parent's origin (`Basis::fold` keeps `o`), so either
-M becomes the world origin or the language gains `through:` (language change 2).
+A fold turns about a line through its parent's origin (`Basis::fold` keeps `o`); `through: M`
+(language change 2, done) stands a folded view through M instead, so the world origin need not
+move.
 
 ## The steps as geometry
 
@@ -150,38 +152,66 @@ spiral_bevel/          (the app key stays; the file pane lists the steps)
 
 ## Language changes
 
-Ordered by what they unlock.
+Ordered by what they unlock. All six are done; the table gives the spelling that shipped.
+
+| # | change | status | shipped spelling | where |
+|---|---|---|---|---|
+| 1 | spatial constraints, solved attitudes | done | `fold: beta`, `fold: along l`, `through: M`, `attitude: free`, `offset: free`; relations across views read in space; `sphere`, `cone`, `cylinder`; `against` with solved views | primer 1.13, 2.11–2.13; [spatial-constraints-plan.md](spatial-constraints-plan.md) |
+| 2 | a fold through a solved point | done, as planned | `plane q(…, from: P, fold: ε, through: M)` | primer 1.13 |
+| 3 | iterating over a chain's edges | done | `repeat e in CHAIN [as i] { … }`, and `cycle e in CHAIN` for a closed one | primer 1.7; `verification.sv` |
+| 4 | an arc-length dimension | done, as planned | `length(L) a` | primer 1.5, 2.14; `belt_wrap.sv` |
+| 5 | measurements after the solve | done for motions only | `length(l)`, `radius(c)`, `distance(a, b)`, `angle(l1, l2)` in `ratio:`, `phase:`, `advance:` | primer 1.6, 1.14; `lantern_generation.sv` |
+| 6 | angle equality as a word | done, spelled differently | `l1 angle(l3, l4) l2` | primer 1.5, 2.15; `reflection.sv` |
 
 1. **Spatial constraints with solved attitudes** — its own project, first. Spatial points and
    lines, point-to-line distance and angles between lines in space, and a plane whose attitude
-   is an unknown rotor slaved by intrinsic rows, as the 2D datum's already is. Today's model
-   cannot state a 90° shaft angle and an offset distance and solve the cones, because the view
-   that shows both axes in true shape has an attitude that depends on the solve. This is the
+   is an unknown rotor slaved by intrinsic rows, as the 2D datum's already is. Without it the
+   model cannot state a 90° shaft angle and an offset distance and solve the cones, because the
+   view that shows both axes in true shape has an attitude that depends on the solve. This is the
    only change that alters what the layout can express rather than how cleanly it reads.
+   *Done.* A hypoid's pitch cones solve both ways — each axial view folded `along` its pitch
+   generator (`gcs-core/tests/fixtures/hypoid_pitch_cones.sv`), or the cones named and
+   `gc tangent(M) pc` stated (`rust/examples/hypoid_pitch_cones.sv`) — and agree to 2e-11
+   (`tests/spatial_surfaces.rs`). Beyond the plan: cones, cylinders and spheres are entities with
+   their own words, and the relations across views are the ordinary words read in space rather
+   than new ones.
 2. **`plane q(from: P, fold: ε, through: M)`**: a fold through a solved point. `project` never
    reads a plane's normal offset; the offset matters only when points are lifted to 3D, after
    the solve, as `against` placement already does. It lets every view pass through M while the
-   gear apex stays at the origin.
+   gear apex stays at the origin. *Done* as written; where a mate bears on a view whose offset is
+   `through:` a point, the mate's gap is a row of the solve.
 3. **Iterating over a chain's edges**: `repeat e in rack.profile { surface s(crown, edge: e) … }`.
-   Collapses most of `checks/faces.sv`.
+   Collapses most of `checks/faces.sv`. *Done*, as `repeat e in CHAIN [as i] { … }` with `cycle
+   e in CHAIN` beside it (`next` is the following edge's copy). Today's `verification.sv` already
+   uses it: each rack section's surfaces, envelopes and material regions are one block per
+   section, so the per-edge declarations (and their names) changed there before the file split.
 4. **An arc-length dimension**: `length(pi * m / 2) arc`, the circular pitch along the pitch
-   circle, replacing the quarter-pitch angle and `crown_teeth`.
+   circle, replacing the quarter-pitch angle and `crown_teeth`. *Done:* `length(L) a` on an
+   arc, its radius times its counter-clockwise sweep (primer 1.5, `belt_wrap.sv`).
 5. **Motion ratios from solved geometry**, or post-solve contexts (motions, extents) reading
    measured lengths: safe for the same reason as change 2, and removes `crown_teeth` from the
-   ratios.
+   ratios. *Done for motions*: `ratio: length(a) / distance(p, l)` and the rest (primer 1.14);
+   `tests/measurements.rs` checks the measured rolls against `1 / sin(pinion_angle)` and
+   `-1 / sin(gear_angle)` on the bevel pair. **Deviation:** a solid's extent and a placement's
+   `at:` angle are settled at elaboration, before there is a solve to measure, so a measurement
+   there is refused (E107), as it is in a `param`, a seed and a constraint's own number.
 6. **Angle equality as a word**, `a equal angle b`, where a shared free variable does it now
-   but reads as a trick.
+   but reads as a trick. *Done*, **spelled differently**: `l1 angle(l3, l4) l2` — the angle from
+   `l1` to `l2` equals the angle from `l3` to `l4`, directed, `sense: cw` for the mirror image —
+   since a joint's `equal angle` already means two statements (primer 1.5, `reflection.sv`).
 
 ## Order of work
 
-1. The spatial-constraints language project (change 1), with its own plan and gates.
-2. `through:` (change 2), if it is not subsumed by change 1.
+1. The spatial-constraints language project (change 1), with its own plan and gates. *Done.*
+2. `through:` (change 2), if it is not subsumed by change 1. *Done.*
 3. The rewrite, steps 1–4 of the migration, reproducing today's pair.
 4. The true 90° hypoid (migration step 5).
-5. Changes 3–6 as the rewrite shows where they pay.
+5. Changes 3–6 as the rewrite shows where they pay. *All four exist*; the rewrite decides where
+   each is used.
 
 ## Open decisions
 
-- Whether the world origin moves to M or stays at the gear apex (`through:`).
+- Whether the world origin moves to M or stays at the gear apex. `through:` makes either
+  possible.
 - Whether the verification suite is ported in the same change, or keeps running against the old
   files until the new geometry has proven equivalent.

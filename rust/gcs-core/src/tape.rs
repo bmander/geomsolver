@@ -266,6 +266,7 @@ impl Tape {
                     _ => return Err(format!("`{name}` cannot be called with {} here", a.len())),
                 }
             }
+            Ast::Measure(m, args) => return Err(crate::expr::measure_refusal(&m.text(args))),
         })
     }
 

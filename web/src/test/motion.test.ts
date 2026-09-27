@@ -33,3 +33,44 @@ motion observer(about: axis,ratio: 1)
     assert.throws(() => motionSample(doc.sketch, index, 0, [Infinity, 0, 0]), /finite/);
   } finally { doc.dispose(); }
 });
+
+test('a ratio measured off the drawing is read through the ABI once the drawing is solved', () => {
+  const doc = Document.read(`unit mm
+point a hint(x: 0,y: 0)
+point b hint(x: 0,y: 1)
+ground a
+ground b
+line axis(a,b)
+point c hint(x: 0,y: -2)
+point d hint(x: 25,y: -2)
+ground c
+horizontal line big(c,d)
+c distance(30mm) d
+point e hint(x: 0,y: -4)
+point f hint(x: 12,y: -4)
+ground e
+horizontal line small(e,f)
+e distance(10mm) f
+motion turn(about: axis, ratio: length(big) / length(small))
+`);
+  try {
+    assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+    assert.ok(solve(doc.sketch).success);
+    const index = doc.motions().find(m => m.name === 'turn')!.index;
+    // a point a unit off the axis moves at the ratio: 30 / 10 as solved, not 25 / 12 as seeded
+    const v = motionSample(doc.sketch, index, 0, [1, 0, 0]).velocity;
+    assert.ok(Math.abs(Math.hypot(...v) - 3) < 1e-9, JSON.stringify(v));
+  } finally { doc.dispose(); }
+});
+
+test('a measurement where a number is needed before the solve is refused as E107', () => {
+  const doc = Document.read(`unit mm
+point c hint(x: 0,y: -2)
+point d hint(x: 25,y: -2)
+line big(c,d)
+param k = length(big)
+`);
+  try {
+    assert.ok(doc.diagnostics.some(d => d.code === 'E107'), JSON.stringify(doc.diagnostics));
+  } finally { doc.dispose(); }
+});

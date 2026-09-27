@@ -74,6 +74,10 @@ pub enum Code {
     E105,
     /// not yet: a construct the language has and elaboration does not
     E106,
+    /// a measurement of the solved drawing (`length(l)`) read where the number is needed before
+    /// the solve: a `param`, a seed, a constraint's number, a solid's extent or placement angle.
+    /// Only a motion's `ratio:`, `phase:` and `advance:` are read after it (§6.14)
+    E107,
     /// an expression that would not compute — the last number stands
     W110,
     /// a free variable: which dimensions it ties together
@@ -109,6 +113,7 @@ impl Code {
             Code::E104 => "E104",
             Code::E105 => "E105",
             Code::E106 => "E106",
+            Code::E107 => "E107",
             Code::W110 => "W110",
             Code::W111 => "W111",
             Code::W112 => "W112",

@@ -12,8 +12,8 @@ fn declared_tooth_faces_have_shared_oriented_boundaries_on_their_exact_supports(
                     let name = if member == side { "outer" } else { "inner" };
                     let flank = pair.patch(member,side,name);
                     let round = pair.patch(member,side,&format!("{name}_round"));
-                    let working = &pair.faces[&format!("{}_faces.working",flank.name)];
-                    let transition = &pair.faces[&format!("{}_faces.transition",flank.name)];
+                    let working = &pair.faces[&format!("{}_faces.working",pair.label(&flank))];
+                    let transition = &pair.faces[&format!("{}_faces.transition",pair.label(&flank))];
                     assert_eq!(working.edge_uses()[3].edge,transition.edge_uses()[1].edge);
                     assert_eq!(working.edge_uses()[3].direction,transition.edge_uses()[1].direction.reversed());
                     for (face,surface) in [(working,&flank),(transition,&round)] {

@@ -1,6 +1,6 @@
 //! Evaluate typed arithmetic and affine expressions.
 
-use super::{Ast, Op, CONSTANTS};
+use super::{Ast, Measure, Op, CONSTANTS};
 use crate::constraints::SpecKind;
 use crate::units::Dim;
 use std::collections::BTreeMap;
@@ -102,7 +102,26 @@ fn not_affine(name: &str) -> String {
 /// solver moves rather than an error — so the result may be an affine form in it; `Err` is for
 /// a free name used in a way an affine form cannot hold.  A result that is not a number
 /// (`sqrt(-1)`, `1/0`) comes back as is, for the caller to judge.
+///
+/// A measurement is refused here: nothing has been solved for it to read (`measure_refusal`).
 pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, String> {
+    ev(ast, env, None)
+}
+
+/// What reads a measurement: its kind and the names it is over, to what it comes to.
+pub type Measurer<'a> = &'a dyn Fn(Measure, &[String]) -> Result<Aff, String>;
+
+/// `eval` in a context read **after** the solve, where `measure` says what each measurement
+/// comes to: a motion's numbers, worked out from the geometry the solve left.
+pub fn eval_measured(
+    ast: &Ast,
+    env: &BTreeMap<String, Aff>,
+    measure: Measurer,
+) -> Result<Aff, String> {
+    ev(ast, env, Some(measure))
+}
+
+fn ev(ast: &Ast, env: &BTreeMap<String, Aff>, ms: Option<Measurer>) -> Result<Aff, String> {
     Ok(match ast {
         Ast::Num(v, d) => Aff::of_dim(*v, *d),
         Ast::Var(name) => match CONSTANTS.iter().find(|&&(n, _, _)| n == name) {
@@ -113,11 +132,11 @@ pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, String> {
             },
         },
         Ast::Neg(a) => {
-            let x = eval(a, env)?;
+            let x = ev(a, env, ms)?;
             Aff { free: x.free, m: -x.m, c: -x.c, dim: x.dim }
         }
         Ast::Bin(op, a, b) => {
-            let (x, y) = (eval(a, env)?, eval(b, env)?);
+            let (x, y) = (ev(a, env, ms)?, ev(b, env, ms)?);
             match op {
                 // `+` and `-` demand agreement, where a *bare number* takes the other's
                 // dimension: `90 / N + ivp` is an angle because `ivp` is, and `w + phi` is an
@@ -175,7 +194,7 @@ pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, String> {
             let mut vals = Vec::with_capacity(args.len());
             let mut dims = Vec::with_capacity(args.len());
             for a in args {
-                let v = eval(a, env)?;
+                let v = ev(a, env, ms)?;
                 dims.push(v.dim);
                 match v.number() {
                     Some(n) => vals.push(n),
@@ -184,6 +203,10 @@ pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, String> {
             }
             Aff::of_dim(call(name, &vals), signature(name, &dims)?)
         }
+        Ast::Measure(m, args) => match ms {
+            Some(f) => f(*m, args)?,
+            None => return Err(super::measure_refusal(&m.text(args))),
+        },
     })
 }
 

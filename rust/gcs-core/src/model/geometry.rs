@@ -92,6 +92,13 @@ impl Sketch {
         (a0, a1)
     }
 
+    /// An arc's length along itself: its radius times that sweep.  What `length(L) a` states
+    /// (the kernel reads the sweep the same way) and what `length(a)` measures.
+    pub fn arc_length(&self, i: usize) -> f64 {
+        let (a0, a1) = self.arc_angles(i);
+        self.params[self.arcs[i].radius as usize].value.abs() * (a1 - a0)
+    }
+
     /// The points that bound the drawn sweep: its two ends, plus every quarter-turn direction the
     /// sweep passes through.
     pub fn arc_extremes(&self, i: usize) -> Vec<(f64, f64)> {
