@@ -15,29 +15,25 @@ use crown.mate
 use crown.space
 use generation
 
-// `normal_module` is left unbound by the caller: the trace measures it, and every
-// depth reads it.
-component HypoidLayout(front: plane, design: group, normal_module: Length) {
-  pitch: PitchView(front)
+component HypoidLayout(front: plane, design: group) {
+  pitch: PitchView(front, span: design.cutter_radius)
   gear: GearCone(pitch.view, g.view, design)
-  g: FoldedView(pitch.view, gear.generator)
-  trace: ToothTrace(pitch.view, gear.generator, design, normal_module: normal_module)
+  g: FoldedView(pitch.view, gear.generator, span: design.cutter_radius)
+  trace: ToothTrace(pitch.view, gear.generator, design)
   pinion: PinionCone(pitch.view, q.view, gear.generator, trace.foot, design)
-  q: FoldedView(pitch.view, pinion.hinge)
+  q: FoldedView(pitch.view, pinion.hinge, span: design.cutter_radius)
   // The pinion's pitch angle is the angle at M in the gear's triangle.
-  gear.to_apex angle(pinion_angle, sense: cw) gear.to_foot
+  gear.to_foot angle(pinion_angle) gear.to_apex
   pinion.pitch_line angle(pinion_angle) pinion.axis
   // The blanks, in the axial views; the gear's cones on the generator opposite M.
-  gear_blank: MemberLimits(gear.pitch_line, gear.back_cone, gear.axis, design,
-    normal_module: normal_module, outward: left, inward: right) in g.view
-  pinion_blank: MemberLimits(pinion.pitch_line, pinion.pitch_line, pinion.axis, design,
-    normal_module: normal_module, outward: right, inward: left) in q.view
+  gear_blank: MemberLimits(gear.pitch_line, gear.back_cone, gear.axis, design) in g.view
+  pinion_blank: MemberLimits(pinion.pitch_line, pinion.pitch_line, pinion.axis, design) in q.view
   // The crown, in the normal section.
   thickness: CrownThickness(pitch.view, gear.generator, trace.normal, design)
-  n: FoldedView(pitch.view, trace.normal)
+  n: FoldedView(pitch.view, trace.normal, span: design.cutter_radius)
   tooth: CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
-    design, normal_module: normal_module) in n.view
-  mate: CrownMate(tooth, design, normal_module: normal_module) in n.view
+    design) in n.view
+  mate: CrownMate(tooth, design) in n.view
   reach: CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
     reach: design.space_reach)
   generation: Generation(gear, pinion, thickness)

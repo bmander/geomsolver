@@ -77,16 +77,15 @@ component ComplementarySpace(axis: line, outside: group, inside: group, indexing
 
 preview {
   unit mm
-  pitch: PitchView(std.front)
+  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
   gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator)
+  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
   trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
   thickness: CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
-  n: FoldedView(pitch.view, trace.normal)
-  param nm = hypoid_design.module * cos(hypoid_design.spiral)
+  n: FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
   tooth: CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
-    hypoid_design, normal_module: nm) in n.view
-  mate: CrownMate(tooth, hypoid_design, normal_module: nm) in n.view
+    hypoid_design) in n.view
+  mate: CrownMate(tooth, hypoid_design) in n.view
   reach: CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
     reach: hypoid_design.space_reach)
   motion crown_neighbor(about: gear.crown_axis,

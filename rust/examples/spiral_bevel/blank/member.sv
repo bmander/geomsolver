@@ -6,16 +6,14 @@ use blank.sphere
 use blank.cone
 
 // `generator` runs from the apex to the mean point; `cone` is the generator the
-// cones are drawn on (the gear's lies opposite M across its axis); `outward` is
-// the side of `cone` away from the axis and `inward` the other.
-component MemberLimits(generator: line, cone: line, axis: line, design: group,
-                       normal_module: Length, outward: Side, inward: Side) {
+// cones are drawn on (the gear's lies opposite M across its axis).
+component MemberLimits(generator: line, cone: line, axis: line, design: group) {
   span: FaceSpan(generator, width: design.face_width)
   toe: SphericalBoundary(generator.p1, generator, span.toe)
   heel: SphericalBoundary(generator.p1, generator, span.heel)
-  tip: ConeBoundary(cone, axis, offset: design.addendum * normal_module, side: outward)
-  root: ConeBoundary(cone, axis, offset: design.dedendum * normal_module, side: inward)
-  back: ConeBoundary(cone, axis, offset: design.back * normal_module, side: inward)
+  tip: ConeBoundary(cone, axis, offset: design.addendum * design.normal_module, lean: 180deg)
+  root: ConeBoundary(cone, axis, offset: design.dedendum * design.normal_module, lean: 0deg)
+  back: ConeBoundary(cone, axis, offset: design.back * design.normal_module, lean: 0deg)
 }
 
 // The blank term on a body its member declares over the heel, `solid body(design.heel)`:
@@ -28,7 +26,7 @@ component MemberBlank(body: solid, design: group) {
 
 preview {
   unit mm
-  group proportions(face_width: 10mm, addendum: 1, dedendum: 1.25, back: 4)
+  group proportions(face_width: 10mm, normal_module: 2mm, addendum: 1, dedendum: 1.25, back: 4)
   point mean hint(x: 50, y: 0)
   point foot hint(x: 40, y: 20)
   std.origin distance(50mm, along: right) mean
@@ -38,8 +36,7 @@ preview {
   line to_foot(mean, foot)
   to_foot perpendicular axis
   generator angle(30deg) axis
-  limits: MemberLimits(generator, generator, axis, proportions, normal_module: 2mm,
-    outward: right, inward: left)
+  limits: MemberLimits(generator, generator, axis, proportions)
   group solids(heel: limits.heel.wall.solid, toe: limits.toe.wall.solid,
     tip: limits.tip.wall.solid, root: limits.root.wall.solid, back: limits.back.wall.solid)
   solid body(solids.heel)

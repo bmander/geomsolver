@@ -12,8 +12,7 @@ use crown.section
 
 // Drawn in N (`in n`); `normal` runs from C to M in the pitch plane `p`, and
 // `inner` and `outer` are the pitch points there.
-component CrownTooth(p: plane, normal: line, inner: point, outer: point, design: group,
-                     normal_module: Length) {
+component CrownTooth(p: plane, normal: line, inner: point, outer: point, design: group) {
   // Seeds: a pitch-plane point's place along the trace normal is its x in N.
   point center hint(x: (normal.p1.x * (normal.p2.x - normal.p1.x) + normal.p1.y * (normal.p2.y - normal.p1.y))
     / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2), y: 0)
@@ -28,7 +27,7 @@ component CrownTooth(p: plane, normal: line, inner: point, outer: point, design:
   normal.p1 project center
   inner project lp
   outer project rp
-  rack: RackSection(lp, rp, design, normal_module: normal_module)
+  rack: RackSection(lp, rp, design)
   // The cutter's axis, pointing out of the tooth's tip.
   line axis(center, top)
   rack.pitch angle(90deg) axis
@@ -38,14 +37,12 @@ component CrownTooth(p: plane, normal: line, inner: point, outer: point, design:
 
 preview {
   unit mm
-  pitch: PitchView(std.front)
+  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
   gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator)
+  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
   trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
   thickness: CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
-  n: FoldedView(pitch.view, trace.normal)
-  // The layout ties the tooth's depths to the trace's normal module; alone, it is stated.
-  param nm = hypoid_design.module * cos(hypoid_design.spiral)
+  n: FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
   tooth: CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
-    hypoid_design, normal_module: nm) in n.view
+    hypoid_design) in n.view
 }

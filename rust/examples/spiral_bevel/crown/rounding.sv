@@ -1,21 +1,21 @@
 // Step 4, what every crown section shares: a base parallel to the pitch line and a tip
-// running back along it, at their depths, and two tip roundings of one radius. The chain
-// walks the section counter-clockwise, so the pitch line lies left of both.
+// running back along it, at their depths, and two tip roundings of one radius. The
+// chain walks the section counter-clockwise, so the pitch line lies left of both.
 use std
 
 component TipRounding(pitch: line, base: line, tip: line, first: arc, second: arc,
-                      design: group, normal_module: Length) {
+                      design: group) {
   base parallel pitch
   base angle(180deg) tip
-  pitch.p1 distance(design.base * normal_module, side: left) base
-  pitch.p1 distance(design.dedendum * normal_module, side: left) tip
-  radius(design.rounding * normal_module) first
+  pitch.p1 distance(design.base * design.normal_module, side: left) base
+  pitch.p1 distance(design.dedendum * design.normal_module, side: left) tip
+  radius(design.rounding * design.normal_module) first
   first equal second
 }
 
 preview {
   unit mm
-  group proportions(base: 2, dedendum: 1.25, rounding: 0.3)
+  group proportions(normal_module: 2mm, base: 2, dedendum: 1.25, rounding: 0.3)
   point bl hint(x: -5, y: -4)
   point br hint(x: 10, y: -4)
   point rj hint(x: 7, y: 1.5)
@@ -32,5 +32,5 @@ preview {
   base angle(250deg) inner
   std.origin on inner
   pitch.p2 on outer
-  rounding: TipRounding(pitch, base, tip, outer_round, inner_round, proportions, normal_module: 2mm)
+  rounding: TipRounding(pitch, base, tip, outer_round, inner_round, proportions)
 }

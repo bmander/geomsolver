@@ -23,7 +23,8 @@ component SphericalBoundary(apex: point, generator: line, rim: point) {
   // Seeds: the rim turned a quarter either way about the apex.
   private point bottom hint(x: apex.x + rim.y - apex.y, y: apex.y - rim.x + apex.x)
   private point top hint(x: apex.x - rim.y + apex.y, y: apex.y + rim.x - apex.x)
-  private arc meridian(center: apex, start: bottom, end: top)
+  private arc meridian(center: apex, start: bottom, end: top) hint(r:
+    sqrt((rim.x - apex.x)^2 + (rim.y - apex.y)^2))
   private line diameter(top, bottom)
   apex on diameter
   generator angle(90deg, sense: cw) diameter

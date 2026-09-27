@@ -20,8 +20,8 @@ component GeneratedMember(design: group, tool: solid, teeth: Int, roll_limit: An
 }
 
 // The pair: each member's blank less its generator, swept at every tooth.
-component HypoidPair(front: plane, design: group, normal_module: Length) {
-  private reference: HypoidLayout(front, design, normal_module: normal_module)
+component HypoidPair(front: plane, design: group) {
+  private reference: HypoidLayout(front, design)
   pinion: GeneratedMember(reference.pinion_design, reference.tooth.crown,
     teeth: design.pinion_teeth, roll_limit: design.pinion_roll)
   // The gear rolls slower against the crown, so its roll is longer to carry the

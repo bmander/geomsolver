@@ -5,9 +5,9 @@
 use std
 use crown.rounding
 
-component RackSection(lp: point, rp: point, design: group, normal_module: Length) {
+component RackSection(lp: point, rp: point, design: group) {
   // Seeds only: the closed forms, turned to where the pitch points are drawn.
-  param nm = design.module * cos(design.spiral)
+  param nm = design.normal_module
   param outer_pressure = design.pressure - design.shift
   param inner_pressure = design.pressure + design.shift
   param th = design.dedendum * nm
@@ -33,22 +33,21 @@ component RackSection(lp: point, rp: point, design: group, normal_module: Length
   private point cl hint(x: lt.x, y: cr.y)
   construction line pitch(lp, rp)
   profile = line base(bl, br) -> line outer(br, rj) -> tangent
-            arc outer_round(center: cr) -> tangent line tip(rt, lt) -> tangent
-            arc inner_round(center: cl) -> tangent line inner(lj, bl) -> close
+            arc outer_round(center: cr) hint(r: tr) -> tangent line tip(rt, lt) -> tangent
+            arc inner_round(center: cl) hint(r: tr) -> tangent line inner(lj, bl) -> close
   base angle(90deg + design.pressure - design.shift) outer
   base angle(270deg - design.pressure - design.shift) inner
   lp on inner
   rp on outer
-  rounding: TipRounding(pitch, base, tip, outer_round, inner_round, design,
-    normal_module: normal_module)
+  rounding: TipRounding(pitch, base, tip, outer_round, inner_round, design)
 }
 
 preview {
   unit mm
-  group proportions(module: 2mm, spiral: 25deg, pressure: 20deg, shift: 10deg,
+  group proportions(normal_module: 1.8mm, pressure: 20deg, shift: 10deg,
                     base: 2, dedendum: 1.25, rounding: 0.3)
   point rp hint(x: 3, y: 0)
   std.origin distance(3mm, along: right) rp
   std.origin distance(0mm, along: up) rp
-  rack: RackSection(std.origin, rp, proportions, normal_module: 1.8mm)
+  rack: RackSection(std.origin, rp, proportions)
 }

@@ -17,9 +17,9 @@ use crown.tooth
 // along `inner_along` and its outer flank along `outer_along`, both through its pitch
 // points: the tooth's outer and inner flanks, carried a tooth's width.
 component MateSection(lp: point, rp: point, inner_along: line, outer_along: line,
-                      design: group, normal_module: Length) {
+                      design: group) {
   // Seeds only, as RackSection's with the flank angles exchanged and the tip down.
-  param nm = design.module * cos(design.spiral)
+  param nm = design.normal_module
   param inner_pressure = design.pressure - design.shift
   param outer_pressure = design.pressure + design.shift
   param th = design.dedendum * nm
@@ -44,18 +44,17 @@ component MateSection(lp: point, rp: point, inner_along: line, outer_along: line
   private point co hint(x: ot.x, y: ci.y)
   construction line pitch(lp, rp)
   profile = line base(bo, bi) -> line inner(bi, ij) -> tangent
-            arc inner_round(center: ci) -> tangent line tip(it, ot) -> tangent
-            arc outer_round(center: co) -> tangent line outer(oj, bo) -> close
+            arc inner_round(center: ci) hint(r: tr) -> tangent line tip(it, ot) -> tangent
+            arc outer_round(center: co) hint(r: tr) -> tangent line outer(oj, bo) -> close
   inner_along angle(180deg) inner
   outer_along angle(180deg) outer
   lp on inner
   rp on outer
-  rounding: TipRounding(pitch, base, tip, inner_round, outer_round, design,
-    normal_module: normal_module)
+  rounding: TipRounding(pitch, base, tip, inner_round, outer_round, design)
 }
 
 // The mate of `tooth` (a CrownTooth), revolved about the cutter's axis turned tip down.
-component CrownMate(tooth: group, design: group, normal_module: Length) {
+component CrownMate(tooth: group, design: group) {
   point outer_far hint(x: 2 * tooth.rack.pitch.p2.x - tooth.rack.pitch.p1.x, y: tooth.rack.pitch.p2.y)
   point inner_far hint(x: 2 * tooth.rack.pitch.p1.x - tooth.rack.pitch.p2.x, y: tooth.rack.pitch.p1.y)
   point bottom hint(x: tooth.axis.p1.x, y: 2 * tooth.axis.p1.y - tooth.axis.p2.y)
@@ -63,10 +62,8 @@ component CrownMate(tooth: group, design: group, normal_module: Length) {
   construction line inner_span(inner_far, tooth.rack.pitch.p2)
   tooth.rack.pitch.p2 midpoint outer_span
   tooth.rack.pitch.p1 midpoint inner_span
-  outer: MateSection(tooth.rack.pitch.p2, outer_far, tooth.rack.outer, tooth.rack.inner, design,
-    normal_module: normal_module)
-  inner: MateSection(inner_far, tooth.rack.pitch.p1, tooth.rack.outer, tooth.rack.inner, design,
-    normal_module: normal_module)
+  outer: MateSection(tooth.rack.pitch.p2, outer_far, tooth.rack.outer, tooth.rack.inner, design)
+  inner: MateSection(inner_far, tooth.rack.pitch.p1, tooth.rack.outer, tooth.rack.inner, design)
   line axis(tooth.axis.p1, bottom)
   tooth.axis angle(180deg) axis
   axis equal tooth.axis
@@ -76,15 +73,13 @@ component CrownMate(tooth: group, design: group, normal_module: Length) {
 
 preview {
   unit mm
-  pitch: PitchView(std.front)
+  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
   gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator)
+  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
   trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
   thickness: CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
-  n: FoldedView(pitch.view, trace.normal)
-  // The layout ties the depths to the trace's normal module; alone, it is stated.
-  param nm = hypoid_design.module * cos(hypoid_design.spiral)
+  n: FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
   tooth: CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
-    hypoid_design, normal_module: nm) in n.view
-  mate: CrownMate(tooth, hypoid_design, normal_module: nm) in n.view
+    hypoid_design) in n.view
+  mate: CrownMate(tooth, hypoid_design) in n.view
 }

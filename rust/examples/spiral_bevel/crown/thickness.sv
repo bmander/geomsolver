@@ -23,8 +23,8 @@ component CrownThickness(p: plane, generator: line, normal: line, design: group)
   in p {
     point ahead_end hint(x: r * cos(q), y: r * sin(q))
     point behind_end hint(x: r * cos(q), y: -r * sin(q))
-    arc ahead(center: generator.p1, start: generator.p2, end: ahead_end)
-    arc behind(center: generator.p1, start: behind_end, end: generator.p2)
+    arc ahead(center: generator.p1, start: generator.p2, end: ahead_end) hint(r: r)
+    arc behind(center: generator.p1, start: behind_end, end: generator.p2) hint(r: r)
     circle inner(center: normal.p1) hint(r: ri)
     circle outer(center: normal.p1) hint(r: ro)
     point inner_pitch hint(x: normal.p1.x + (normal.p1.x - normal.p2.x) * ri / rc,
@@ -46,9 +46,9 @@ component CrownThickness(p: plane, generator: line, normal: line, design: group)
 
 preview {
   unit mm
-  pitch: PitchView(std.front)
+  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
   gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator)
+  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
   trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
   thickness: CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
 }

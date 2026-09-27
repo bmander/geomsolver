@@ -1,14 +1,14 @@
 // Step 2, the tooth trace, in the pitch plane. The cutter centre C stands at the
 // cutter radius from M, with MC at 90deg - spiral to MO; the trace is the circle
 // about C through M, and its heading, the tangent at M, meets the square dropped from O at H.
-// The normal module is the module seen square to the trace: the distance from
-// MC of a point one module from M along the generator.
+// The normal module is the module seen square to the trace, which the claim checks:
+// the distance from MC of a point one module from M along the generator.
 use std
 use design
 use views
 use pitch.gear
 
-component ToothTrace(p: plane, generator: line, design: group, normal_module: Length) {
+component ToothTrace(p: plane, generator: line, design: group) {
   // Seeds only.
   param r = design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
   param rc = design.cutter_radius
@@ -28,13 +28,13 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
   foot perpendicular heading
   K on generator
   generator.p2 distance(design.module) K
-  K distance(normal_module) normal
+  claim K distance(design.normal_module) normal
 }
 
 preview {
   unit mm
-  pitch: PitchView(std.front)
+  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
   gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator)
+  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
   trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
 }

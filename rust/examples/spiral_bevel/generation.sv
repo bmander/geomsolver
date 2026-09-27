@@ -28,13 +28,13 @@ component Generation(gear: group, pinion: group, thickness: group) {
 
 preview {
   unit mm
-  pitch: PitchView(std.front)
+  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
   gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator)
+  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
   trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
   pinion: PinionCone(pitch.view, q.view, gear.generator, trace.foot, hypoid_design)
-  q: FoldedView(pitch.view, pinion.hinge)
-  gear.to_apex angle(pinion_angle, sense: cw) gear.to_foot
+  q: FoldedView(pitch.view, pinion.hinge, span: hypoid_design.cutter_radius)
+  gear.to_foot angle(pinion_angle) gear.to_apex
   pinion.pitch_line angle(pinion_angle) pinion.axis
   thickness: CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
   generation: Generation(gear, pinion, thickness)
