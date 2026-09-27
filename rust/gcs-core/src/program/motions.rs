@@ -1,5 +1,5 @@
 //! Compile named rigid motions with forward references and explicit dependency diagnostics.
-use super::{resolve::{follow_building,Resolver},Code,Diag,Made,SourceMap};
+use super::{resolve::{follow,follow_building,Resolver},Code,Diag,Made,SourceMap};
 use crate::{ir::{Decl,Operation,Statement},model::{EntKind,EntRef,MotionDef,MotionE,Sketch},
     measure::{Measured,MotionMeasure,MotionSlot},syntax::{Arg,MotionSpec,Ref,StmtId},units::Dim};
 use std::collections::{BTreeMap,BTreeSet};
@@ -29,16 +29,10 @@ impl Builder<'_> {
         if crate::expr::measurement_in(text,self.sk.units).is_none() { return Ok(None); }
         let (sk,res) = (&*self.sk,&*self.res);
         let value = Measured::compile(text,sk.units,slot.dim(),slot.label(),|name| {
-            // the flattener wrote the name absolute: the longest head the resolver knows is the
-            // declaration, and what follows it is a path into what that declaration made
+            // the flattener wrote the name absolute, and every drawn entity is built by now
             let segs: Vec<&str> = name.split('.').collect();
-            let k = (1..=segs.len()).rev().find(|&k| res.of.contains_key(&segs[..k].join(".")))
-                .ok_or_else(|| format!("no such entity: `{name}`"))?;
-            let r = Ref {root:crate::syntax::Name::new(&segs[..k].join(".")),
-                path:segs[k..].iter().map(|f| crate::syntax::Seg::Field(crate::syntax::Name::new(*f))).collect(),
-                span:Default::default()};
-            let e = res.lookup(&r).ok_or_else(|| format!("no such entity: `{name}`"))?;
-            follow_building(sk,res,e,&r)
+            let (e,fields) = res.dotted(&segs).ok_or_else(|| format!("no such entity: `{name}`"))?;
+            follow(sk,e,&fields)
         })?;
         Ok(Some(MotionMeasure {slot,value}))
     }

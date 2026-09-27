@@ -41,9 +41,8 @@ pub fn square() -> Sketch {
     document(SQUARE, "square")
 }
 
-/// A plate with a tab on every edge — `edge_tabs.sv`.  The case for iterating over a named
-/// chain: `repeat e in outline { … }` states the tab once, and the flattener makes a copy per
-/// edge of the outline, in the order the chain walks them.
+/// A plate with a tab on every edge, the tab stated once — `edge_tabs.sv`, the case for
+/// `repeat e in CHAIN { … }`: a copy per edge of the outline, in the order the chain walks them.
 pub fn edge_tabs() -> Sketch {
     document(EDGE_TABS, "edge_tabs")
 }

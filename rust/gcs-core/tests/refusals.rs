@@ -36,9 +36,10 @@ fn a_negative_magnitude_is_refused_and_a_signed_dimension_is_not() {
     assert!(gcs_core::expr::set_dimension(&mut sk, id, "r", "5").is_ok());
 }
 
-/// An arc's length is a magnitude like a radius, refused negative where it is written; and
-/// `angle`'s parentheses hold one number or the pair of lines of the angle it equals — two
-/// numbers there are a mistake, said at the first rather than the second being dropped.
+/// An arc's length is a magnitude like a radius, refused negative where it is written, and only
+/// an arc has one to state this way; `angle`'s parentheses hold one number or the pair of lines
+/// of the angle it equals — two numbers there are a mistake, said at the first rather than the
+/// second being dropped, and a point in the pair is not a line.
 #[test]
 fn an_arc_length_and_an_angle_pair_refuse_what_they_cannot_mean() {
     const ARC: &str = "point o hint(x: 0, y: 0)\npoint s hint(x: 10, y: 0)\npoint e hint(x: 0, y: 10)\n\
@@ -46,12 +47,18 @@ fn an_arc_length_and_an_angle_pair_refuse_what_they_cannot_mean() {
     let (_, d) = read(&format!("{ARC}length(-5) a\n"));
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("length is a magnitude")), "{d:?}");
     assert!(read(&format!("{ARC}length(5) a\n")).1.is_empty());
+    let (_, d) = read("point o hint(x: 0, y: 0)\ncircle c(center: o) hint(r: 5)\nlength(10) c\n");
+    assert!(d.iter().any(|m| m.contains("`length` does not apply to a circle")), "{d:?}");
+    let (_, d) = read("point a hint(x: 0, y: 0)\npoint b hint(x: 5, y: 0)\nline l(a, b)\nlength(10) l\n");
+    assert!(d.iter().any(|m| m.contains("`length` does not apply to a line")), "{d:?}");
     const PAIR: &str = "point a hint(x: 0, y: 0)\npoint b hint(x: 10, y: 0)\npoint c hint(x: 0, y: 10)\n\
                         line ab(a, b)\nline ac(a, c)\n";
     let (_, d) = read(&format!("{PAIR}ab angle(30, 40) ac\n"));
     assert!(d.iter().any(|m| m.contains("`angle` takes one number, or the two lines")), "{d:?}");
     let (_, d) = read(&format!("{PAIR}ab angle(ab, ac, sense: left) ac\n"));
     assert!(d.iter().any(|m| m == "E040: `sense` is `ccw` or `cw`, not `left`"), "{d:?}");
+    let (_, d) = read(&format!("{PAIR}ab angle(a, ac) ac\n"));
+    assert!(!d.is_empty(), "a point in the pair is refused");
 }
 
 /// #43.13 — a second `param w` is the E001 a second `point w` is, and the first stands.

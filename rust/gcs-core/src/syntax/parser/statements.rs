@@ -3,7 +3,7 @@
 use super::P;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{names_decl, BLOCKS};
+use crate::syntax::words::{names_decl, over_chain, BLOCKS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership, Name,
@@ -638,13 +638,8 @@ impl<'a> P<'a> {
 
     fn block(&mut self, kind: BlockKind, next_id: &mut u32) -> Option<Block> {
         let lo = self.prev_hi();
-        // `repeat e in rack.profile` — a name and `in` say the block runs over a chain's edges,
-        // which no count expression can begin with (`in` is no operator)
-        let chain_form = matches!(
-            (self.t.get(self.i), self.t.get(self.i + 1)),
-            (Some((Tok::Ident(_), _)), Some((Tok::Ident(w), _))) if w == "in"
-        );
-        if chain_form {
+        // `repeat e in rack.profile` — the block runs over a chain's edges
+        if over_chain(&self.t, self.i) {
             let var = self.ident()?;
             self.i += 1;
             let chain = self.refr()?;

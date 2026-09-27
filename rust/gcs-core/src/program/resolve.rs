@@ -25,6 +25,16 @@ impl Resolver {
         self.of.get(&r.root.text).copied()
     }
 
+    /// An absolute dotted name as the flattener wrote it (`t1.pin`, `pair.gen_g.p2`): an entity's
+    /// absolute name is dotted itself, so the entity is the longest head that names one, and the
+    /// rest is fields into it for `follow`.
+    pub(super) fn dotted(&self, segs: &[&str]) -> Option<(EntRef, Vec<Seg>)> {
+        (1..=segs.len()).rev().find_map(|k| {
+            let fields = segs[k..].iter().map(|f| Seg::Field(crate::syntax::Name::new(*f)));
+            self.of.get(&segs[..k].join(".")).map(|e| (*e, fields.collect()))
+        })
+    }
+
     /// The name declaration `name` (of kind `kind`) wrote in its child field `f`, mirroring
     /// `follow`'s reading of the built entity — the same fields, the same refusals.
     fn kid(&self, name: &str, kind: EntKind, f: &str) -> Result<Option<Ref>, String> {

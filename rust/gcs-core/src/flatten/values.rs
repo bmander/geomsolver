@@ -161,6 +161,19 @@ pub(super) fn reads_geometry(text: &str, units: Units) -> bool {
         .unwrap_or(false)
 }
 
+/// Where a measurement call opens and closes when `word`, ending at `i`, names one: its `(`
+/// after any space, and its `)` (the text's end where it is unclosed).
+fn measure_call(b: &[char], word: &str, i: usize) -> Option<(usize, usize)> {
+    if !expr::MEASURES.iter().any(|m| m.0 == word) {
+        return None;
+    }
+    let j = i + b[i..].iter().take_while(|c| c.is_whitespace()).count();
+    if b.get(j) != Some(&'(') {
+        return None;
+    }
+    Some((j, b[j..].iter().position(|&c| c == ')').map_or(b.len(), |k| j + k)))
+}
+
 /// The text with every measurement's argument names replaced by what `of` says (where it says
 /// anything), and nothing else touched: `length(gen_g) / 2` → `length(pair.gen_g) / 2`.
 pub(super) fn map_measured(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
@@ -176,13 +189,8 @@ pub(super) fn map_measured(text: &str, of: impl Fn(&str) -> Option<String>) -> S
                 i += 1;
             }
             let word: String = b[from..i].iter().collect();
-            let mut j = i;
-            while j < b.len() && b[j].is_whitespace() {
-                j += 1;
-            }
             out.push_str(&word);
-            if b.get(j) == Some(&'(') && expr::MEASURES.iter().any(|m| m.0 == word) {
-                let close = b[j..].iter().position(|&c| c == ')').map_or(b.len(), |k| j + k);
+            if let Some((j, close)) = measure_call(&b, &word, i) {
                 let inner: String = b[j + 1..close].iter().collect();
                 let args: Vec<String> = inner
                     .split(',')
@@ -234,14 +242,10 @@ fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
             let word: String = b[from..i].iter().collect();
             // a measurement's arguments are names of geometry, resolved as references are
             // (`rescope_measures`) and never read as numbers: the call is copied as written
-            let mut j = i;
-            while j < b.len() && b[j].is_whitespace() {
-                j += 1;
-            }
-            if b.get(j) == Some(&'(') && expr::MEASURES.iter().any(|m| m.0 == word) {
-                let close = b[j..].iter().position(|&c| c == ')').map_or(b.len(), |k| j + k + 1);
-                out.extend(&b[from..close]);
-                i = close;
+            if let Some((_, close)) = measure_call(&b, &word, i) {
+                let end = (close + 1).min(b.len());
+                out.extend(&b[from..end]);
+                i = end;
                 continue;
             }
             match of(&word) {

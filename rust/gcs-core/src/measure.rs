@@ -25,8 +25,7 @@ pub struct Measured {
     body: Ast,
     /// What each measured name denotes.
     pub ents: BTreeMap<String, EntRef>,
-    /// What a length reads as: a `Length` where the document names a unit, a bare number where
-    /// it does not (the seed reading's rule).
+    /// What a length reads as (`Units::read_length`).
     length: Dim,
 }
 
@@ -115,11 +114,12 @@ impl Measured {
                     "`{}` measures {}, and was given {}",
                     m.text(&args),
                     takes(m),
-                    kinds.iter().map(|k| format!("a {}", k.as_str())).collect::<Vec<_>>().join(" and ")
+                    kinds.iter().map(|k| format!("a {}", k.as_str())).collect::<Vec<_>>()
+                        .join(" and ")
                 ));
             }
         }
-        let length = if units.name().is_some() { Dim::LENGTH } else { Dim::SCALAR };
+        let length = units.read_length();
         let out = Measured { text: text.trim().to_string(), body: p.body, ents, length };
         // the dimension is a fact about the text, not about where the geometry stands: checked
         // once here over stand-in numbers of the right kinds, so a wrong one is refused at
@@ -127,8 +127,8 @@ impl Measured {
         let a = expr::eval_measured(&out.body, &BTreeMap::new(), &|m, _| {
             Ok(Aff::of_dim(1.0, out.dim_of(m)))
         })?;
-        if a.free.is_some() {
-            return Err(format!("`{what}` reads `{}`, which nothing gives a number", a.free.unwrap()));
+        if let Some(free) = &a.free {
+            return Err(format!("`{what}` reads `{free}`, which nothing gives a number"));
         }
         a.dim.require(want, what)?;
         Ok(out)
@@ -161,38 +161,36 @@ impl Measured {
     /// The same expression over entities renumbered by `f`; `None` where one of them is gone,
     /// so what reads it goes with it (a copy that leaves a measured line behind).
     pub fn remap(&self, f: impl Fn(EntRef) -> Option<EntRef>) -> Option<Measured> {
-        let ents = self.ents.iter().map(|(n, &e)| f(e).map(|e| (n.clone(), e))).collect::<Option<_>>()?;
+        let ents =
+            self.ents.iter().map(|(n, &e)| f(e).map(|e| (n.clone(), e))).collect::<Option<_>>()?;
         Some(Measured { ents, ..self.clone() })
     }
-}
-
-fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
-    crate::space::norm(std::array::from_fn(|k| b[k] - a[k]))
 }
 
 /// One measurement, in space: a line's length is between its ends' lifts, a distance to a
 /// line is to the line produced, and an angle is between two lines' directions `p1 → p2`.
 pub fn measure(sk: &Sketch, m: Measure, es: &[EntRef]) -> Result<f64, String> {
-    let get = |e: EntRef| -> Result<(), String> {
-        (e.i() < sk.count(e.kind)).then_some(()).ok_or_else(|| format!("no such {}", e.kind.as_str()))
-    };
+    use crate::space::{cross, distance, dot, norm, sub};
     for &e in es {
-        get(e)?;
+        if e.i() >= sk.count(e.kind) {
+            return Err(format!("no such {}", e.kind.as_str()));
+        }
     }
     let ends = |l: usize| {
         let l = &sk.lines[l];
         (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize))
     };
+    let dir = |l: usize| {
+        let (a, b) = ends(l);
+        sub(b, a)
+    };
     let param = |p: u32| sk.params[p as usize].value;
     let v = match (m, es) {
         (Measure::Length, [e]) if e.kind == EntKind::Line => {
             let (a, b) = ends(e.i());
-            dist(a, b)
+            distance(b, a)
         }
-        (Measure::Length, [e]) if e.kind == EntKind::Arc => {
-            let (a0, a1) = sk.arc_angles(e.i());
-            param(sk.arcs[e.i()].radius).abs() * (a1 - a0)
-        }
+        (Measure::Length, [e]) if e.kind == EntKind::Arc => sk.arc_length(e.i()),
         (Measure::Radius, [e]) => param(match e.kind {
             EntKind::Circle => sk.circles[e.i()].radius,
             EntKind::Arc => sk.arcs[e.i()].radius,
@@ -202,33 +200,25 @@ pub fn measure(sk: &Sketch, m: Measure, es: &[EntRef]) -> Result<f64, String> {
         })
         .abs(),
         (Measure::Distance, [a, b]) if a.kind == EntKind::Point && b.kind == EntKind::Point => {
-            dist(sk.world_point(a.i()), sk.world_point(b.i()))
+            distance(sk.world_point(b.i()), sk.world_point(a.i()))
         }
-        (Measure::Distance, [p, l] | [l, p]) if p.kind == EntKind::Point && l.kind == EntKind::Line => {
-            let x = sk.world_point(p.i());
-            let (a, b) = ends(l.i());
-            let d: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
-            let n = crate::space::norm(d);
+        (Measure::Distance, [p, l] | [l, p])
+            if p.kind == EntKind::Point && l.kind == EntKind::Line =>
+        {
+            let (a, d) = (ends(l.i()).0, dir(l.i()));
+            let n = norm(d);
             if n == 0.0 {
                 return Err("a distance to a line of no length".into());
             }
-            let r: [f64; 3] = std::array::from_fn(|k| x[k] - a[k]);
-            crate::space::norm(crate::space::cross(r, d)) / n
+            norm(cross(sub(sk.world_point(p.i()), a), d)) / n
         }
         (Measure::Angle, [l1, l2]) if l1.kind == EntKind::Line && l2.kind == EntKind::Line => {
-            let dir = |l: usize| {
-                let (a, b) = ends(l);
-                let d: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
-                d
-            };
             let (u, w) = (dir(l1.i()), dir(l2.i()));
-            let (nu, nw) = (crate::space::norm(u), crate::space::norm(w));
-            if nu == 0.0 || nw == 0.0 {
+            if norm(u) == 0.0 || norm(w) == 0.0 {
                 return Err("an angle to a line of no length".into());
             }
             // atan2 of the cross and the dot: accurate at 0° and 180°, where acos is not
-            let c = crate::space::norm(crate::space::cross(u, w));
-            c.atan2(crate::space::dot(u, w)).to_degrees()
+            norm(cross(u, w)).atan2(dot(u, w)).to_degrees()
         }
         _ => return Err(format!("`{}` cannot measure these", m.name())),
     };

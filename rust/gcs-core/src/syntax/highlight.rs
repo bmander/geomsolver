@@ -2,7 +2,8 @@
 
 use super::lexer::{lex, Tok};
 use super::words::{
-    joint_word, names_decl, opens_link, past_args, trails_decl, word_at, BLOCKS, MODIFIERS,
+    joint_word, names_decl, opens_link, over_chain, past_args, trails_decl, word_at, BLOCKS,
+    MODIFIERS,
 };
 use super::{Span, Ty, MAX_TEXT};
 use crate::constraints::is_operator;
@@ -227,10 +228,8 @@ fn tint_word(
             }
             if w == "preview" || BLOCKS.contains(&w) {
                 // `repeat e in rack.profile` — the edge is a name the block declares, as the
-                // index after `as` is; the parser's own test, a name and then `in`
-                let over = BLOCKS.contains(&w)
-                    && matches!(next, Some(Tok::Ident(_)))
-                    && matches!(toks.get(i + 2).map(|(t, _)| t), Some(Tok::Ident(s)) if s == "in");
+                // index after `as` is
+                let over = BLOCKS.contains(&w) && over_chain(toks, i + 1);
                 return (Some(Tint::Word), if over { Next::Def } else { Next::Word });
             }
             // a raw branch: a statement the parser knows by name

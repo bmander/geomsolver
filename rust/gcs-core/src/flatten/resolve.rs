@@ -60,17 +60,11 @@ fn rescope_measures(
                 continue;
             }
             let segs: Vec<&str> = a.split('.').collect();
-            let r = Ref {
-                root: Name { text: segs[0].to_string(), span },
-                path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
-                span,
-            };
-            match lookup(&r, sc, names_seen, alias, units) {
-                Some((abs, rest)) => {
-                    let full = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
+            match resolve_dotted(&segs, span, sc, names_seen, alias, units) {
+                Ok(full) => {
                     to.insert(a, full);
                 }
-                None => bad.push((span, missing_ref(&r, sc, names_seen, alias, units))),
+                Err(why) => bad.push((span, why)),
             }
         }
     }
@@ -101,24 +95,34 @@ fn rescope_text(
             continue;
         }
         let scalar = segs.pop().unwrap_or_default();
-        let r = Ref {
-            root: Name { text: segs[0].to_string(), span },
-            path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
-            span,
-        };
-        match lookup(&r, sc, names_seen, alias, units) {
-            Some((abs, rest)) => {
-                let mut full = abs;
-                for f in rest {
-                    full.push('.');
-                    full.push_str(&f);
-                }
-                full.push('.');
-                full.push_str(scalar);
-                names.insert(dep.clone(), full);
+        match resolve_dotted(&segs, span, sc, names_seen, alias, units) {
+            Ok(full) => {
+                names.insert(dep.clone(), format!("{full}.{scalar}"));
             }
-            None => bad.push((span, missing_ref(&r, sc, names_seen, alias, units))),
+            Err(why) => bad.push((span, why)),
         }
+    }
+}
+
+/// A dotted name an expression reads (`gen_g`, `k.center`), resolved as the reference it spells
+/// by the same `lookup` every reference goes through: the absolute name of what it denotes, or
+/// the words for why nothing is.
+fn resolve_dotted(
+    segs: &[&str],
+    span: Span,
+    sc: &Scope,
+    names_seen: &BTreeSet<String>,
+    alias: &BTreeMap<String, String>,
+    units: Units,
+) -> Result<String, String> {
+    let r = Ref {
+        root: Name { text: segs[0].to_string(), span },
+        path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
+        span,
+    };
+    match lookup(&r, sc, names_seen, alias, units) {
+        Some((abs, rest)) => Ok(std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".")),
+        None => Err(missing_ref(&r, sc, names_seen, alias, units)),
     }
 }
 

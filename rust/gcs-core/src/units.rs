@@ -269,6 +269,17 @@ impl Units {
         self.length.map(|(n, _)| n)
     }
 
+    /// What a length read off the geometry is: a `Length` where the document names a unit, and a
+    /// bare number where it does not, since there no literal can be a length.  A seed reading a
+    /// seed and a measurement of the solved drawing both read it so.
+    pub fn read_length(&self) -> Dim {
+        if self.length.is_some() {
+            Dim::LENGTH
+        } else {
+            Dim::SCALAR
+        }
+    }
+
     /// How many of the document's own length units a literal in `u` is worth.
     ///
     /// `Err` where the document named no unit: a number with a unit on it in a document that has

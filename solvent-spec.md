@@ -1,6 +1,14 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.26 — September 2026**
+**Specification, Draft 0.27 — September 2026**
+
+**[0.27] Equal angles, an arc's length, iteration over a chain, and measurements after the
+solve.** `l1 angle(l3, l4) l2` states the angle from `l1` to `l2` equal to the angle from `l3` to
+`l4`, with no number, and `length(L) a` an arc's length along itself (§9.3, §9.4). `repeat e in
+CHAIN { … }` and `cycle e in CHAIN { … }` make a copy per edge of a named chain (§12.8). A
+motion's `ratio:`, `phase:` and `advance:` may measure the solved drawing — `length(l)`,
+`radius(c)`, `distance(a, b)`, `angle(l1, l2)` — and a measurement anywhere a number is needed
+before the solve is refused (§6.14).
 
 **[0.26] Cones and cylinders, `against` between solved views, and `o:`.** `cone k(axis: l)
 hint(half: 30deg)` and `cylinder c(axis: l) hint(r: 10)` are surfaces in space built about a line
@@ -891,6 +899,18 @@ component formals, privacy, and dependency-aware copy/delete are supported.
 These constant-ratio families provide relative generating kinematics. They do not yet specify
 arbitrary motion laws or an assembly-joint solver.
 
+**[0.27] A motion's numbers may measure the solved drawing.** A motion is read after the solve,
+so `ratio:`, `phase:` and `advance:` may call `length(l)` (a line's length, or an arc's along
+itself), `radius(c)` (a circle, arc, sphere or cylinder), `distance(a, b)` (two points, or a point
+and a line produced) and `angle(l1, l2)` (between two lines' directions, 0° to 180°), all in
+space: `motion pinion(about: axis, ratio: -length(wheel_r) / length(pinion_r))`. The arguments
+are references, resolved as any reference in the statement's scope; a length reads as a `Length`
+where the document names a `unit`, so the slot's dimension is checked as for any number. The
+value is worked out from the solved geometry each time the motion is read and adds no unknown or
+equation; a motion goes with what it measures under copy and delete. Every other context — a
+`param`, a seed, a constraint's number, a solid's extent or placement angle — is needed before
+the solve, and a measurement there is an error (the reference implementation's **E107**).
+
 ### 6.15 Generated envelopes
 
 ```
@@ -1306,6 +1326,8 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `distance(p, q) == e` | ‖p − q‖ − e | 1 | |
 | `angle(a, b, c) == e` | ∠(a−b, c−b) − e | 1 | signed; see §9.4 |
 | `angle(L1, L2) == e` | wrap(∠(dir(L1), dir(L2)) − e) | 1 | directed, mod 2π; see §9.4 |
+| `angle(L1, L2) == angle(L3, L4)` **[0.27]** | wrap(∠(dir(L1), dir(L2)) − s·∠(dir(L3), dir(L4))) | 1 | written `l1 angle(l3, l4) l2`; s = −1 under `sense: cw`; §9.4 |
+| `length(A: Arc) == e` **[0.27]** | A.r·θ − e | 1 | θ the sweep counter-clockwise from `start` to `end`, in (0, 2π]; a magnitude |
 | `parallel(L1, L2)` | sin(L1.dir − L2.dir) | 1 | |
 | `perpendicular(L1, L2)` | cos(L1.dir − L2.dir) | 1 | |
 | `tangent(C1, C2)` | ‖c1−c2‖ − (r1 + r2) *or* ‖c1−c2‖ − \|r1 − r2\| | 1 | branch by decoration, §9.5 |
@@ -1341,6 +1363,8 @@ Implementations MAY extend this library. Extensions MUST document residuals and 
 **[0.17]** `sense: cw` turns the number a statement writes: `l1 angle(30, sense: cw) l2` states −30° and is the spelling a drawing SHOULD use, the minus being a coin a reader cannot check. An implementation MUST draw the figure from the number the statement *makes* — the arc sweeping the way the label reads.
 
 `angle(L1, L2)` between two lines is likewise directed: `∠(dir(L1), dir(L2))`, the signed turn from `L1`'s direction (p1→p2) to `L2`'s, positive counterclockwise, in (−π, π] as everywhere else in this section. It is NOT a statement mod a half turn — the residual pins which side, so a bearing needs no orientation predicate beside it — and it is therefore sensitive to the order of the two lines and to the endpoint order each was declared with. Equating it to `e` compares the two mod 2π, so `e` may be written on any lap: 270° and −90° state the same thing, and an implementation MUST NOT treat a stated angle outside (−π, π] as an error.
+
+**[0.27]** The number may be another such angle: `l1 angle(l3, l4) l2` states `∠(L1, L2) = ∠(L3, L4)`, both directed, compared mod 2π, and `sense: cw` equates the first with the second's negative — its mirror image. A statement holds at most one number, so two unlabelled items in `angle`'s parentheses are the second pair or an error. It relates turns on a page and has no reading across views (**E062**).
 
 ### 9.5 Branch decorations are constraints
 
@@ -1553,6 +1577,15 @@ An implementation MUST NOT give each expanded copy a statement identity of its o
 **Why this is normative rather than an implementation detail.** It decides whether the language can be edited at all. Give each copy its own identity and every entity a `cycle` or a component produced names a statement that appears nowhere in the source — so a caret in the text cannot find what it draws, a diagnostic cannot point at the line that caused it, and an edit computed against a span has nothing to splice. It also hides exactly the fact a seed writeback needs (§4.3): a statement reached thirty times has thirty poses and no single one to record, and that is visible only if the thirty agree on which statement they are.
 
 An implementation MAY still need a per-instance key for its own tables. That key is `(statement, path)`, and it is not a statement.
+
+### 12.8 Repetition over a chain's edges **[0.27]**
+
+```
+repeat e in CHAIN as i { ... }
+cycle e in CHAIN as i { ... }
+```
+
+One copy per link of a named chain (§6.6), in traversal order, with `e` a reference to that copy's edge — a constraint operand, a field (`e.p1`), an argument — and `as i` optional as before. The count is the chain's, so the chain MAY be declared later in the body (P2) or reached through an instance or a group. The copies are §12.1's (or §12.2's, with `next`/`prev`) in every other respect, and §12.7 holds. `cycle` over an open chain, and iteration over what is not a named chain, are errors at the reference (**E103**); a body declaration named as the edge is **E001**.
 
 ---
 
@@ -2053,8 +2086,8 @@ hint           = "hint" ref hint_clause ;                  (* §11; unimplemente
 gauge          = "ground" ref | "fix" ref ;                 (* §9.2: prefix operators *)
 orientation    = orient "(" ref "," ref "," ref ")" ;      (* §9.2: a call *)
 
-block          = "repeat" expr [ "as" IDENT ] "{" { statement } "}"
-               | "cycle"  expr [ "as" IDENT ] "{" { statement } "}"
+block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref ) [ "as" IDENT ]
+                 "{" { statement } "}"                (* IDENT "in" ref: §12.8 [0.27] *)
                | "ring"   expr "about" ref [ "as" IDENT ] "{" { statement } "}" ;
 
 ref            = ( IDENT | "next" | "prev" ) { "." IDENT | "[" expr "]" } ;

@@ -1,7 +1,7 @@
 //! Two words the spiral-bevel layout asked for (`docs/spiral-bevel-layout-plan.md`, language
 //! changes 4 and 6): an angle stated as another angle, `l1 angle(l3, l4) l2`, and an arc's length
 //! along itself, `length(L) a`.  Each is checked against a closed form the document never
-//! states, with its free twin, its refusals and its printed spelling.
+//! states, with its free twin and its printed spelling; their refusals are in `refusals.rs`.
 
 use gcs_core::constraints::CKind;
 use gcs_core::io;
@@ -120,17 +120,6 @@ length(s) a2
     assert!(e.sketch.user_constraints().iter().all(|c| c.kind != CKind::ArcLength || c.free.is_some()));
 }
 
-/// A length is a magnitude, and a line or a circle has none to state this way.
-#[test]
-fn a_negative_arc_length_and_a_length_on_a_circle_are_refused() {
-    let (_, d) = read(&format!("{QUARTER}length(-5) a\n"));
-    assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("magnitude")), "{d:?}");
-    let (_, d) = read("point o hint(x: 0, y: 0)\ncircle c(center: o) hint(r: 5)\nlength(10) c\n");
-    assert!(d.iter().any(|m| m.contains("`length` does not apply to a circle")), "{d:?}");
-    let (_, d) = read("point a hint(x: 0, y: 0)\npoint b hint(x: 5, y: 0)\nline l(a, b)\nlength(10) l\n");
-    assert!(d.iter().any(|m| m.contains("`length` does not apply to a line")), "{d:?}");
-}
-
 /// Drawn, it is an arc concentric with the one it measures, swept exactly as far, the number
 /// marked apart from a chord.
 #[test]
@@ -199,19 +188,6 @@ fn equal_angles_say_what_a_shared_free_variable_said() {
     assert!(d.iter().any(|m| m.starts_with("W111")), "{d:?}");
     assert!(solve(&mut free.sketch, SolveOpts::default()).success);
     assert!(near(at(&word, "d"), at(&free, "d")));
-}
-
-/// Two items in `angle`'s parentheses are the pair of lines or nothing: two numbers are a
-/// mistake, said where they stand rather than one being dropped.
-#[test]
-fn two_numbers_in_an_angle_are_refused() {
-    let (_, d) = read(&format!("{FAN}ab angle(30, 40) ad\n"));
-    assert!(d.iter().any(|m| m.contains("the two lines of the angle it equals")), "{d:?}");
-    let (_, d) = read(&format!("{FAN}ab angle(ad, ac, sense: up) ad\n"));
-    assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("sense")), "{d:?}");
-    // the pair must be lines
-    let (_, d) = read(&format!("{FAN}ab angle(a, ac) ad\n"));
-    assert!(!d.is_empty(), "a point in the pair is refused");
 }
 
 /* -- the spellings ------------------------------------------------------------------------- */

@@ -75,8 +75,8 @@ pub enum Code {
     /// not yet: a construct the language has and elaboration does not
     E106,
     /// a measurement of the solved drawing (`length(l)`) read where the number is needed before
-    /// the solve: a `param`, a seed, a constraint's number, a solid's extent.  Only a motion's
-    /// `ratio:`, `phase:` and `advance:` are read after it
+    /// the solve: a `param`, a seed, a constraint's number, a solid's extent or placement angle.
+    /// Only a motion's `ratio:`, `phase:` and `advance:` are read after it (§6.14)
     E107,
     /// an expression that would not compute — the last number stands
     W110,
