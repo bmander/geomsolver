@@ -54,6 +54,7 @@ mod gauges;
 mod gear_crowns;
 mod highlight;
 mod homotopy;
+mod hypoid_layout;
 mod io;
 mod interval;
 mod jacobians;

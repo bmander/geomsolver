@@ -80,8 +80,8 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
             kind,
             // an ordinate `along: u`/`v` measures against a datum as it stands on the sheet,
             // wherever the point is drawn — the page reading it always had, which the corpus
-            // uses between views (`paired_references.sv`), and which a statement in space would
-            // not be: a point has no ordinate on a view's axes unless it is drawn there
+            // uses between views, and which a statement in space would not be: a point has no
+            // ordinate on a view's axes unless it is drawn there
             CKind::CoordinateU
                 | CKind::CoordinateV
                 | CKind::Project

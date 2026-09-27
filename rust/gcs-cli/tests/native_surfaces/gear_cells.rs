@@ -13,18 +13,19 @@ use std::f64::consts::PI;
 pub(super) fn read_gears_with(base: &Path,rewrite: &mut dyn FnMut(&str,String) -> String) -> program::Elaborated {
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     fixtures::gear::read_with(&source,base,&mut |name,text| {
-        let text = if name == "matched_pair" { fixtures::gear::publish_blank(&text,"  construction solid single(design.heel)\n  \
+        let text = if name == "members" { fixtures::gear::publish_blank(&text,"  construction solid single(design.heel)\n  \
             design.tip bound single\n  design.toe cut single\n  design.back cut single\n  removal cut single\n") } else { text };
         rewrite(name,text)
     })
 }
 pub(super) fn read_gears(base: &Path) -> program::Elaborated { read_gears_with(base,&mut |_,text| text) }
 
-/// The design an inspection reads: the bevel pair at `offset` degrees, with the pressure shift
-/// and the crown's spiral angle from `SOLVENT_INSPECT_SHIFT` and `_SPIRAL` (degrees) when set.
+/// The design an inspection reads: the bevel pair at `offset` millimetres between the shafts,
+/// with the pressure shift and the crown's spiral angle from `SOLVENT_INSPECT_SHIFT` and
+/// `_SPIRAL` (degrees) when set.
 fn design_knobs(offset: f64) -> Vec<(&'static str,f64)> {
     let knob = |name: &str| std::env::var(name).ok().map(|v| v.parse::<f64>().unwrap());
-    [("offset_angle",Some(offset)),("pressure_shift",knob("SOLVENT_INSPECT_SHIFT")),("spiral_angle",knob("SOLVENT_INSPECT_SPIRAL"))]
+    [("offset",Some(offset)),("pressure_shift",knob("SOLVENT_INSPECT_SHIFT")),("spiral_angle",knob("SOLVENT_INSPECT_SPIRAL"))]
         .into_iter().filter_map(|(p,v)| v.map(|v| (p,v))).collect()
 }
 
@@ -58,7 +59,7 @@ fn sides_agree(cad: &Cad,part: c_int,blank: c_int,sheet: &native::sweep_boundary
 /// One member's single tooth space through the generic construction must
 /// reproduce its recorded volume and agree with the declared field.
 fn single_space(member: &str,expected: f64) {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let base = fixtures::gear::project();
     let e = read_gears(&base);
     let removal = e.map.ent_named(&format!("pair.{member}.removal")).unwrap().i();
     let blank_id = e.map.ent_named(&format!("pair.{member}.blank")).unwrap().i();
@@ -90,7 +91,7 @@ fn single_space(member: &str,expected: f64) {
 fn generic_sheet_reproduces_the_pinion_tooth_space() { single_space("pinion",120.708817); }
 
 /// Phase 1 of docs/generating-sweeps-plan.md: one pinion space through the
-/// same construction at the offset angle `SOLVENT_INSPECT_OFFSET` (degrees),
+/// same construction at the offset `SOLVENT_INSPECT_OFFSET` (millimetres),
 /// reporting rather than asserting what it builds and how the field judges
 /// both sides of its sheet. No recorded volume exists for a hypoid.
 #[test]
@@ -100,7 +101,7 @@ fn the_native_space_at_an_offset_against_its_field() {
     // `SOLVENT_INSPECT_SHIFT` and `SOLVENT_INSPECT_SPIRAL` (degrees) set the
     // pressure shift and the crown's spiral angle.
     let knobs = design_knobs(offset);
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let base = fixtures::gear::project();
     let e = read_gears_with(&base,&mut |name,text| fixtures::gear::configure(name,text,&knobs));
     // `SOLVENT_INSPECT_MEMBER`: pinion by default.
     let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("pinion".into());
@@ -178,9 +179,9 @@ fn a_cutter_with_a_motion_independent_contact_condition_is_refused() {
 
 #[test]
 fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let base = fixtures::gear::project();
     // The gear's cutter still overlaps its blank at 35 degrees of roll.
-    let e = read_gears_with(&base,&mut |name,text| if name == "matched_pair" { text.replace("roll_limit: 45deg","roll_limit: 35deg") } else { text });
+    let e = read_gears_with(&base,&mut |name,text| fixtures::gear::roll(name,text,"gear",35.));
     let removal = e.map.ent_named("pair.gear.removal").unwrap().i();
     let blank_id = e.map.ent_named("pair.gear.blank").unwrap().i();
     let cad = Cad::new();
@@ -193,7 +194,7 @@ fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
 
 #[test]
 fn the_static_recipe_lists_swept_cuts_with_their_poses() {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let base = fixtures::gear::project();
     let e = read_gears(&base);
     let body = e.map.ent_named("pair.pinion.body").unwrap().i();
     let removal = e.map.ent_named("pair.pinion.removal").unwrap().i();
@@ -211,7 +212,7 @@ fn the_static_recipe_lists_swept_cuts_with_their_poses() {
 }
 
 fn whole_member(member: &str,expected: f64) {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let base = fixtures::gear::project();
     let e = read_gears(&base);
     let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
     let cad = Cad::new();
@@ -242,7 +243,7 @@ fn whole_gear_through_the_generic_construction() { whole_member("gear",20284.109
 #[test]
 #[ignore = "measurement: cost of one material probe against the whole gear body field"]
 fn measure_gear_probe_cost() {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let base = fixtures::gear::project();
     let e = read_gears(&base);
     let body_id = e.map.ent_named("pair.gear.body").unwrap().i();
     let single_id = e.map.ent_named("pair.gear.single").unwrap().i();
@@ -275,7 +276,7 @@ fn measure_gear_probe_cost() {
 fn where_a_sheet_misses_its_contacts() {
     let offset: f64 = std::env::var("SOLVENT_INSPECT_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(25.);
     let knobs = design_knobs(offset);
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let base = fixtures::gear::project();
     let e = read_gears_with(&base,&mut |name,text| fixtures::gear::configure(name,text,&knobs));
     let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("gear".into());
     let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();

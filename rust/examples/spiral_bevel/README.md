@@ -1,60 +1,144 @@
-# Spiral bevel source examples
+# Spiral bevel and hypoid pair
 
-`configuration.sv` sets the tooth counts, the mean module and the offset angle: zero is a
-bevel pair with a common apex; anything else slides the pinion around the crown by that angle,
-turning its axis about the crown's normal at the mean point, and the pair is a hypoid whose
-axes stand about `mean_distance * sin(offset_angle)` apart. The pinion sees the tooth trace at
-`spiral_angle + offset_angle` and is enlarged by the ratio of the cosines so the tooth-count
-ratio holds at the mean point. It is still one crown tooth swept through its blank at every
-index; the generating roll about the turned axis is a screw, which the contact equation reads
-like any other motion. `pressure_shift` gives the crown tooth's two flanks unequal
-pressure angles; the gear's crown mates it flank on flank, so its section carries the two
-angles on the opposite sides (`gear_section`, checked by `gcs-core/tests/gear_crowns.rs`). `spiral_angle`
-is the crown's spiral. The configured 25-degree hypoid
-uses a 10-degree shift and a 25-degree spiral, holding the pinion's spiral near 50 degrees.
-Together they design out the undercut that a 20-degree symmetric rack at 35 degrees
-develops past about 16 degrees of offset
-(`docs/generating-sweeps-plan.md`). `gears.sv` instantiates the matched pair using ordinary components,
-named motions, revolutions and repeated cuts. In the app it is the example `spiral_bevel`
-(`?example=spiral_bevel`): the glass box (⌘B) shows both members refining from their material
-fields. From the terminal:
+A 24-tooth pinion and a 48-tooth gear, laid out the way a gear designer lays out a hypoid
+pair: the pitch cones and the tooth trace through one design point, the mean point M, then
+the blanks, the generating crown and the motions that roll it through each blank. Positions
+follow from lines, circles, angles, incidence and projection; no constraint and no `param`
+that feeds one computes a point with `sin` and `cos`. Every step's module carries a
+`preview { … }`, so opening it in the app draws that step alone. The plan the files follow is
+[docs/spiral-bevel-layout-plan.md](../../../docs/spiral-bevel-layout-plan.md).
+
+The layout is drawn in four views through M, each a fold of the pitch plane about a line
+through M, so no view needs an angle of its own. **`views.sv`**: `PitchView` is the pitch
+plane P, the gear apex O at its datum origin; `FoldedView` folds a view square to it about a
+hinge drawn there: G, the gear's axial view, along O → M; Q, the pinion's, along M → the
+pinion apex; N, the normal section, along the trace normal C → M.
+
+**Step 1, the requirements: `design.sv`** over **`configuration.sv`.** The configuration
+states the tooth counts, the mean module, the shafts (at 90°, and the offset between them, the
+length of their common perpendicular), the pressure shift and the crown's spiral angle; the
+design group adds the pressure angle, the cutter radius and face width in proportion to the
+mean cone distance, the depths in normal modules (addendum, dedendum, base, tip rounding,
+back), the two members' generating rolls and the gear space cutter's reach. The
+normal module is the one number with a cosine in it, and the trace checks it. Zero offset is a
+bevel pair with a common apex; the configured pair is a hypoid 25 mm off, whose 12.5-degree
+shift and 25-degree spiral design out the undercut a symmetric rack develops past about 15 mm
+of offset, chosen inside the generating-sweep class with margin
+(`docs/spiral-bevel-layout-plan.md`, the true hypoid). `fixtures::gear` rewrites these
+parameters for the suites.
+
+**Step 2, the gear's pitch cone: `pitch/gear.sv`.** O and M lie in P; in G the right
+triangle O–M–F has the two pitch radii at M for its legs, F the foot of M on the gear axis.
+The pitch angle and the mean cone distance follow; nothing states them. The crown's axis
+stands square to P at O, and the generator opposite M, across the axis, is where the gear's
+blank is drawn.
+
+**Step 2, the tooth trace: `pitch/trace.sv`.** The cutter centre C stands at the cutter
+radius from M, with MC at 90° less the spiral angle to MO. The trace is the circle about C
+through M; its heading, the tangent at M, meets the square dropped from O at H. A claim checks
+the normal module: a point one module from M along the generator stands that far from MC.
+
+**Step 2, the pinion's pitch cone: `pitch/pinion.sv`.** Solved against the gear's: its axis is
+square to the gear's and the offset from it, drawn in Q from the image of its apex A, a point
+of P that turns about M by an offset angle the solve answers, so P touches the pinion's cone
+along AM. The equal normal pitch sizes it with no cosine written: V, where MA meets the square
+from O to the heading, falls with O on one point of the heading, a virtual axis leaves V at the
+bevel pinion's pitch angle (the angle at M in the gear's triangle), and the pinion's pitch
+radius is one circle about M that both axes touch. The pinion's own pitch
+angle and its spiral, the crown's plus the offset angle, follow. At no offset A and V are O.
+
+**Step 3, the ends: `blank/sphere.sv`.** The face width, centred on M along the pitch
+generator, and the toe and heel spheres about the apex through its ends, poles square to the
+generator so each turns clear of the cones.
+
+**Step 3, the cones: `blank/cone.sv`.** `ConeSpan` marks half and one and a half cone
+distances along the pitch generator, each with a rib square to it that meets the axis;
+`ConeBoundary` stands a meridian a stated offset off the generator along those ribs, toward the
+axis or away, its caps square to the axis and its spine on the axis. Revolved, it is the tip,
+root or back cone.
+
+**Step 3, the blank: `blank/member.sv`.** `MemberLimits` draws a member's five limits in its
+axial view; `MemberBlank` is the blank term: the heel sphere within the tip cone, less the
+toe and the back. The root cone bounds only the tooth regions the checks declare.
+
+**Step 4, the tooth's thickness: `crown/thickness.sv`.** Two points on the mean pitch
+circle a quarter of the crown's circular pitch either side of M (arcs of length π m / 4 about
+O); the inner and outer trace circles about C pass through them, so the tooth is their radial
+gap, and its pitch points are where they cross the trace normal beyond C.
+
+**Step 4, the rack section: `crown/section.sv`** with **`crown/rounding.sv`.** Straight
+flanks through the two pitch points at the pressure angle, split by the shift; a base and a
+tip at their depths; two tangent tip roundings of one radius, which `TipRounding` states for
+every crown section. The preview is the 24:48 crown at module 2, which **`crown.svd`** draws.
+
+**Step 4, the pinion's generator: `crown/tooth.sv`.** The rack section in N, its pitch points
+the images of the thickness's, and the cutter's axis standing at C's image square to P,
+pointing out of the tooth's tip. Revolved, the flanks are cones and the roundings tori.
+
+**Step 4, the gear's generator: `crown/mate.sv`** with **`crown/mate_section.sv`.** The
+tooth's mate: two sections on the tooth's own flank lines, one tooth's width outward and one
+inward, each with its own tip and roundings, revolved about the cutter's axis turned to point
+the other way. The shift is stated once, on the tooth, so the two crowns are complementary by
+construction (`gcs-core/tests/gear_crowns.rs`). A mate section walks its edges the other way
+round from the tooth's; both name their corners by side.
+
+**Step 4, the gear's space cutter: `crown/space.sv`** with **`crown/reach.sv`.** The stretch
+between two neighbouring mate teeth, each active flank closed far from the working blank: the
+outer mate within the inner one indexed a crown pitch round, closed at the reach's cap, which
+stands clear of every blank point.
+
+**Step 5, generation: `generation.sv`.** Every roll shares the crown's angle, and each member
+turns at the crown's tooth count over its own, `N_c / N` with `N_c = 2R / m`, measured off the
+gear's triangle after the solve (its hypotenuse R over the gear's pitch radius, and over the
+short leg `N_p m / 2` for the pinion, whose own solved cone rolls at another ratio off the
+bevel), so both members stay conjugate through the common crown; the generating motions are
+the crown roll relative to each member's. Indexing is one member angle; the crown's neighbour
+is one crown pitch round.
+
+**The layout: `layout.sv`.** `HypoidLayout(front, design)` composes steps 2–5 in the four
+views and publishes each member's limits and motions as a group.
+
+**The members: `members.sv`.** `GeneratedMember` is a blank less one continuous generating
+sweep of its crown at every tooth index; `HypoidPair` generates the pinion from the crown tooth
+and the gear from its space cutter.
+
+**The entry: `gears.sv`.** `pair: HypoidPair(std.front, hypoid_design)`. In the app it is the
+example `spiral_bevel` (`?example=spiral_bevel`): the glass box (⌘B) shows both members
+refining from their material fields. The public bodies are `pair.pinion.body` and
+`pair.gear.body`; the layout is `pair.reference`.
+
+**The checks: `pair.sv`** with **`verification.sv`.** The layout alone, `pair: HypoidLayout(…)`,
+with `ReferenceFaces(pair)`: each generated flank as an envelope of its crown surface trimmed to
+its member's limits, and the seams, corners, edges and faces its face loop is built from. The
+independent generating-system checks (`gcs-core/tests/envelope/paired.rs`) read these; the
+exported bodies do not.
+
+## Export
 
 ```sh
 make solventc OCCT=1
 build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose
-```
-
-The public material bodies are `pair.pinion.body` and `pair.gear.body`. Each subtracts
-one continuous generating sweep at every tooth index. Either exports as STEP and STL:
-
-```sh
 mkdir -p build/exports
 build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose --solid pair.pinion.body \
   --step build/exports/solvent-pinion.step --stl build/exports/solvent-pinion.stl
 build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose --solid pair.gear.body \
-  --step build/exports/solvent-gear.step --stl build/exports/solvent-gear.stl
+  --stl build/exports/solvent-gear.stl --stl-backend mesh
 ```
 
-Built with `make solventc OCCT=1 MANIFOLD=1`, an STL takes about eight seconds for the
-pinion and twenty-five for the gear: the generating sheet comes from exact contacts on
-sections of the declared cutter, the blank and the sheets are arranged as meshes, and every
-cell is classified by the declared material field. STEP, or `--stl-backend occt`, takes the
-kernel path instead (six and eleven minutes). Progress is reported on stderr; see the
-roadmap for what each path does and does not certify. The source is a mathematical
-zero-backlash, 90-degree common-crown construction, not a production acceptance result.
-
-The stationary gear-space cutter can already be inspected through the native backend:
+The native path builds a member with swept cuts only for the generating-sweep class
+(`docs/generating-sweeps.md`): admission asks each swept cut its rows and refuses with the row
+and a witness, and nothing is written unless the mesh agrees with the material field. The
+configured pinion exports natively; the configured gear is refused there, and
+`--stl-backend mesh` meshes it from its material field instead. Progress is
+reported on stderr. The stationary gear space cutter can be inspected on its own:
 
 ```sh
 build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose \
-  --solid pair.reference.gear_space.body \
-  --step build/exports/solvent-gear-space.step \
-  --stl build/exports/solvent-gear-space.stl
+  --solid pair.reference.gear_space.body --step build/exports/solvent-gear-space.step
 ```
 
-Create the output directory first if it does not exist. The explicit CLI selector can
-inspect private construction geometry; it does not grant access from other source
-components. `pair.sv` is the entry point the independent generating-system checks read: the
-reference geometry plus the analytic faces `verification.sv` declares over it. See [the roadmap](../../../docs/spiral-bevel-roadmap.md)
-for the generating-system evidence and the outstanding 0.0254 mm export-accuracy and
-engagement checks.
+The explicit CLI selector can inspect private construction geometry; it does not grant access
+from other source components. The source is a mathematical zero-backlash, common-crown
+construction, not a production acceptance result; see
+[the roadmap](../../../docs/spiral-bevel-roadmap.md) for the generating-system evidence and the
+outstanding export-accuracy and engagement checks.

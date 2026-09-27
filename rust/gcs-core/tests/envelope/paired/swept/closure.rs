@@ -22,7 +22,7 @@ impl GearSpace {
         // inactive opposite wall is not part of this tooth-space boundary.
         let delta = -TAU/pair.teeth[0].hypot(pair.teeth[1]);
         let mut sk = pair.model.sketch.clone();
-        let id = pair.model.map.ent_named("pair.crown_roll").unwrap().i();
+        let id = pair.model.map.ent_named("pair.generation.crown_roll").unwrap().i();
         let gcs_core::model::MotionDef::Rotation {axis,ratio,phase,..} = &mut sk.motions[id].def else { panic!() };
         *ratio = 0.; *phase = delta;
         let axis = &sk.lines[*axis as usize];
@@ -108,8 +108,9 @@ fn neighbor_closed_gear_space_matches_selected_boundary_and_interior() {
         let tip_theta = pair.delta[1]+(normal_module/rho).asin();
         let outer = pair.patch(1,0,"inner_round");
         let inner = pair.patch(1,1,"outer_round");
-        let a = pair.analytic(1,&outer,0.,rho).contact.position;
-        let b = rotate(2,TAU/pair.teeth[1],0.).point(pair.analytic(1,&inner,1.,rho).contact.position);
+        // each round where it meets the tip
+        let a = pair.analytic(1,&outer,Pair::flank_join(1,false),rho).contact.position;
+        let b = rotate(2,TAU/pair.teeth[1],0.).point(pair.analytic(1,&inner,Pair::flank_join(1,true),rho).contact.position);
         let first = a[1].atan2(a[0]);
         let span = (b[1].atan2(b[0])-first).rem_euclid(TAU);
         assert!(span > 0. && span < TAU/pair.teeth[1]);

@@ -3,11 +3,32 @@
 use super::*;
 
 impl Pair {
+    /// Where a crown surface's chart starts about the crown's axis (the azimuth, about the
+    /// crown centre, of its first meridian) and which way it turns: the source chart is the
+    /// section's own, whichever view it is drawn in and whichever way its axis points.
+    fn chart(&self,patch: &RevolvedSurface) -> (f64,f64,f64) {
+        let v0 = patch.domain()[1][0];
+        let meridian = patch.at(0.5,v0).unwrap();
+        let (x,y) = (meridian.position[0]-self.offset[0],meridian.position[1]-self.offset[1]);
+        (v0,y.atan2(x),(x*meridian.dv[1]-y*meridian.dv[0]).signum())
+    }
+
+    /// The chart's `v` at azimuth `theta` about the crown centre.
+    pub(super) fn chart_at(&self,patch: &RevolvedSurface,theta: f64) -> f64 {
+        let (v0,start,turn) = self.chart(patch);
+        (v0+(turn*(theta-start)/TAU).rem_euclid(1.)).rem_euclid(1.)
+    }
+
+    /// The azimuth about the crown centre of the chart's `v`.
+    pub(super) fn azimuth_at(&self,patch: &RevolvedSurface,v: f64) -> f64 {
+        let (v0,start,turn) = self.chart(patch);
+        start+turn*(v-v0)*TAU
+    }
+
     pub(super) fn analytic(&self, member: usize, patch: &RevolvedSurface, u: f64, rho: f64)
         -> envelope::Intersection {
         let meridian = patch.at(u,patch.domain()[1][0]).unwrap();
         let [cx,cy,_] = self.offset;
-        assert!((meridian.position[1]-cy).abs() < 1e-8*self.module);
         let r = (meridian.position[0]-cx).hypot(meridian.position[1]-cy);
         let h = meridian.position[2];
         let c = cx.hypot(cy);
@@ -15,8 +36,7 @@ impl Pair {
         let cosine = (rho*rho-h*h-c*c-r*r)/(2.*c*r);
         assert!(cosine.abs() <= 1.,"reference circle misses spherical section");
         let theta = cy.atan2(cx)-cosine.acos();
-        let sign = if member == 0 { 1. } else { -1. };
-        let v = (sign*theta/TAU).rem_euclid(1.);
+        let v = self.chart_at(patch,theta);
         let s = patch.at(u,v).unwrap();
         let normal = envelope::contact(s,Motion::identity()).unwrap().normal;
         let p = s.position;

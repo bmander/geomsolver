@@ -10,9 +10,11 @@ const parts = ['cylinder', 'plate', 'piston', 'disc', 'flywheel', 'throttle'];
  *  the packaged sources: their modules are theirs, not the library's. */
 const projects: Example[] = [{
   label: 'Hypoid gear pair · swept solids', key: 'spiral_bevel',
-  description: 'A 24-tooth pinion and a 48-tooth gear, each cut by one crown tooth rolled through '
-    + 'its blank at every index. Edit the tooth counts, module, offset or spiral angle in '
-    + 'configuration.sv; the solids refine in the background — open the glass box (⌘B) to watch.',
+  description: 'A 24-tooth pinion and a 48-tooth gear on square shafts 25 mm apart, laid out step '
+    + 'by step from their pitch cones through the mean point (layout.sv). Each is its blank less '
+    + 'a generating crown rolled through it at every tooth. Edit the tooth counts, module, the '
+    + 'offset between the shafts or the spiral angle in configuration.sv; the solids refine in '
+    + 'the background — open the glass box (⌘B) to watch.',
   target: { kind: 'directory', path: 'spiral_bevel', entry: 'gears.sv' },
 }, {
   label: 'Pin wheel, generated · swept solid', key: 'lantern_generation',

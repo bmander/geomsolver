@@ -139,13 +139,19 @@ fn a_concave_corner_carried_through_the_blank_is_refused() {
     assert!((p[0]-3.).hypot(p[1]) < 0.4+1e-6,"the witness is in the post: {p:?}");
 }
 
-/// The gear pair at a design (offset, pressure shift, crown spiral, in degrees), its pinion
-/// with a blank of every index: the full-size case.
+/// The gear pair at a design (the offset between the shafts in millimetres, the pressure shift
+/// and the crown's spiral in degrees), its pinion with a blank of every index: the full-size case.
 fn pinion(offset: f64,shift: f64,spiral: f64) -> Result<admission::Admission,Error> {
+    member("pinion",offset,shift,spiral)
+}
+
+/// `pinion`, or the gear.
+fn member(member: &str,offset: f64,shift: f64,spiral: f64) -> Result<admission::Admission,Error> {
     let e = fixtures::gear::read_configured_with(&mut |name,text| fixtures::gear::design(name,text,offset,shift,spiral));
     let started = std::time::Instant::now();
-    let result = admission::admit_body(&e.sketch,fixtures::solid(&e,"pair.pinion.body"),&Options::default());
-    eprintln!("pinion at {offset}/{shift}/{spiral}: {:?}",started.elapsed());
+    let body = fixtures::solid(&e,&format!("pair.{member}.body"));
+    let result = admission::admit_body(&e.sketch,body,&Options::default());
+    eprintln!("{member} at {offset}/{shift}/{spiral}: {:?}",started.elapsed());
     result
 }
 
@@ -161,7 +167,13 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
 
 #[test]
 fn the_configured_hypoid_pinion_is_admitted() {
-    let a = pinion(25.,10.,25.).unwrap();
+    let a = pinion(25.,12.5,25.).unwrap();
+    assert!(a.sweeps()[0].least_area_factor > 0.1);
+}
+
+#[test]
+fn the_configured_hypoid_gear_is_admitted() {
+    let a = member("gear",25.,12.5,25.).unwrap();
     assert!(a.sweeps()[0].least_area_factor > 0.1);
 }
 
@@ -172,7 +184,7 @@ fn a_hypoid_pinion_with_undercut_is_refused() {
     assert_eq!(r.sweep,"pair.pinion.removal");
 }
 
-/// At 20 degrees with a symmetric rack no tool point touches the blank twice; the flank's
+/// At 20 mm of offset with a symmetric rack no tool point touches the blank twice; the flank's
 /// generated surface folds, and the fold is what refuses it. Split 7.5 degrees, it does not.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 22 s: admission of two gear designs")]
@@ -180,6 +192,31 @@ fn a_folding_flank_is_refused_and_balanced_pressure_angles_admit_it() {
     let r = refused(pinion(20.,0.,35.));
     assert!(matches!(r.condition,Condition::Fold | Condition::Crossing),"{r}");
     pinion(20.,7.5,35.).unwrap();
+}
+
+/// A tool, not a check: the pair's designs against the class, for choosing one inside it with
+/// margin. `SOLVENT_GRID='25/12.5/25;20/12.5/25' cargo test -p gcs-core --test core
+/// admission::the_admission_grid -- --ignored --nocapture` (each design offset/shift/spiral, the
+/// offset in millimetres, the rest in degrees) prints each member's verdict and margins, one line
+/// each. The table it chose the configured design from is in docs/spiral-bevel-layout-plan.md.
+#[test]
+#[ignore = "a tool: SOLVENT_GRID names the designs to admit"]
+fn the_admission_grid() {
+    let grid = std::env::var("SOLVENT_GRID").expect("SOLVENT_GRID");
+    for design in grid.split(';').filter(|d| !d.trim().is_empty()) {
+        let v: Vec<f64> = design.split('/').map(|x| x.trim().parse().unwrap()).collect();
+        for which in ["pinion","gear"] {
+            let started = std::time::Instant::now();
+            let verdict = match member(which,v[0],v[1],v[2]) {
+                Ok(a) => { let s = &a.sweeps()[0];
+                    format!("admitted\tleast J {:.3}, {} near double roots, {} near tangent, {} contacts",
+                        s.least_area_factor,s.near_double_roots,s.near_tangent_pairs,s.contacts) }
+                Err(Error::Refused(r)) => format!("refused\t{} {}",r.condition.code(),r.message.replace('\n'," ")),
+                Err(Error::Unreadable(m)) => format!("unreadable\t{m}"),
+            };
+            println!("grid\t{}\t{}\t{}\t{which}\t{verdict}\t{:.1} s",v[0],v[1],v[2],started.elapsed().as_secs_f64());
+        }
+    }
 }
 
 /// A UV sphere about (3, 0, 0), wound outward unless `inward`.

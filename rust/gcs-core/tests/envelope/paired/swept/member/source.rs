@@ -2,7 +2,7 @@
 use super::*;
 
 #[test]
-fn declarative_matched_pair_agrees_with_independent_member_material() {
+fn declarative_pair_agrees_with_independent_member_material() {
     for (teeth,module) in [([24,48],2.),([28,49],1.5)] {
         let pair = Pair::read(teeth,module);
         let e = read_model(include_str!("../../../../../../examples/spiral_bevel/gears.sv"),teeth,module);
