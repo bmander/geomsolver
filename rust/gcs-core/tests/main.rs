@@ -17,6 +17,7 @@ mod angle_and_arc_words;
 mod anonymous;
 mod callout;
 mod chain;
+mod chain_edges;
 mod claim;
 mod components;
 mod closed_scopes;

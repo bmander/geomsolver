@@ -18,7 +18,7 @@ use crate::expr::{self, Aff};
 use crate::ir::PathStep;
 use crate::program::{Code, Diag};
 use crate::syntax::{
-    build_rank, under_root, BlockKind, Component, CurveTarget, Decl, Kid, Name, OpenJoint,
+    build_rank, under_root, Block, BlockKind, Component, CurveTarget, Decl, Kid, Name, OpenJoint,
     OpenNamed, OpenSide, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
 };
 use crate::units::Units;
@@ -163,6 +163,18 @@ pub struct InstanceInfo {
     pub drawn: bool,
 }
 
+/// A block over a chain's edges, set aside by the walk until the chain it names can be found:
+/// its count is the chain's length, and the chain may stand further down or inside an instance
+/// the walk has not reached (P2).  The block statement itself stands in the walk's output where
+/// it was met, at its own path, and its copies replace it there.
+struct Pending {
+    st: Stmt,
+    scope: Scope,
+    vals: BTreeMap<String, Aff>,
+    path: Vec<PathStep>,
+    depth: usize,
+}
+
 /// The walk's *symbolic* mode: a component expanded over its formals as **variables**, which is
 /// what compiling a curve over it needs (§6.5).  The numeric formals are bound as free values
 /// named after themselves, so the ordinary machinery carries them — `substitute` writes a free
@@ -210,6 +222,11 @@ struct Walk<'a> {
     group_names: BTreeSet<String>,
     group_bindings: Vec<(String, Span)>,
     group_fields: Vec<(String, Span)>,
+    /// Blocks over a chain's edges, waiting for their chain — see `Pending`.
+    pending: Vec<Pending>,
+    /// Statements held aside in the walk's own output while a deferred block is expanded into a
+    /// vector of its own, so the statement cap counts them.
+    held: usize,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -290,6 +307,8 @@ impl<'a> Walk<'a> {
             group_names: BTreeSet::new(),
             group_bindings: Vec::new(),
             group_fields: Vec::new(),
+            pending: Vec::new(),
+            held: 0,
         }
     }
 
@@ -304,6 +323,7 @@ impl<'a> Walk<'a> {
     }
 
     fn finish(mut self) -> Expansion {
+        self.expand_pending();
         let (mut flat, mut aliases) = self.resolve();
         if self.standard_datums && self.needs_standard_datums {
             // Keep the datums as ordinary library statements with their own source spans.
@@ -312,6 +332,7 @@ impl<'a> Walk<'a> {
             let scope = Scope { prefixes: vec!["std.".into()], ..Scope::default() };
             let mut vals = self.module_params(comp.module.unwrap());
             self.body(&comp.body, &scope, &mut vals, &[], 1);
+            self.expand_pending();
             let (mut datums, resolved) = self.resolve();
             datums.append(&mut flat);
             flat = datums;

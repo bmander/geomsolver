@@ -90,7 +90,7 @@ impl<'a> Walk<'a> {
         }));
         let scope = &Scope { vals: vals.clone(), graph, groups, ..scope.clone() };
         for st in body {
-            if self.out.len() >= MAX_FLAT {
+            if self.emitted() >= MAX_FLAT {
                 self.err(
                     Code::E103,
                     st.span,
@@ -238,6 +238,21 @@ impl<'a> Walk<'a> {
                     self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
                 }
                 StmtKind::Block(b) => {
+                    if b.over.is_some() {
+                        // how many is the chain's, and the chain may be a name no walk has
+                        // reached yet (a forward reference, or one inside an instance written
+                        // further down): expanded once every name is known, where the block
+                        // itself stands in the output until then
+                        self.pending.push(Pending {
+                            st: st.clone(),
+                            scope: scope.clone(),
+                            vals: vals.clone(),
+                            path: path.to_vec(),
+                            depth,
+                        });
+                        self.out.push((st.clone(), path.to_vec(), scope.clone()));
+                        continue;
+                    }
                     let n = match value_of(&b.count, vals, self.units) {
                         Ok(v) if v.is_finite() && v >= 0.0 => v.round() as usize,
                         Ok(v) => {
@@ -253,68 +268,7 @@ impl<'a> Walk<'a> {
                             continue;
                         }
                     };
-                    if n == 0 {
-                        continue;
-                    }
-                    if n > MAX_FLAT {
-                        self.err(Code::E103, b.span, format!("{n} copies is more than {MAX_FLAT}"));
-                        continue;
-                    }
-                    let block_prefix = format!("{prefix}#{}.", st.id.0);
-                    let mut ranges: Vec<(usize, usize)> = Vec::new();
-                    for k in 0..n {
-                        let mut sub = vals.clone();
-                        if let Some(i) = &b.binder {
-                            sub.insert(i.text.clone(), Aff::num(k as f64));
-                        }
-                        let sc = Scope {
-                            owner: scope.owner.clone(),
-                            access: scope.access.clone(),
-                            in_roles: scope.in_roles,
-                            prefixes: std::iter::once(format!("{block_prefix}{k}."))
-                                .chain(scope.prefixes.iter().cloned())
-                                .collect(),
-                            // `next` and `prev` mean something only where the copies close
-                            closed: scope.closed,
-                            forbidden: scope.forbidden.clone(),
-                            groups: scope.groups.clone(),
-                            cyc: b.kind.wraps().then(|| Cyc { prefix: block_prefix.clone(), k, n }),
-                            // the prefix just built is the block's id, so every declaration
-                            // below is a copy, however deep and through however many instances
-                            copies: true,
-                            anonymous: scope.anonymous,
-                            vals: sub.clone(),
-                            in_plane: scope.in_plane.clone(),
-                            in_class: scope.in_class.clone(),
-                            graph: scope.graph.clone(),
-                            sides: scope.sides.clone(),
-                        };
-                        let mut p2 = path.to_vec();
-                        p2.push(PathStep::Copy { block: st.id, index: k as u32 });
-                        let from = self.out.len();
-                        self.body(&b.body, &sc, &mut sub, &p2, depth + 1);
-                        // the trailing joint's relations, stated between this copy and the
-                        // next: every copy for a cycle (the wrap seals the loop),
-                        // all but the last for a repeat, whose final corner is simply not
-                        // stated (issue #38).  The joint is the *block's* statement, so it
-                        // gets the `cyc` a repeat's own body does not — a wrapping kind's
-                        // scope already carries it.
-                        if let Some(j) = &b.joint {
-                            if b.kind.wraps() {
-                                self.body(&j.stmts, &sc, &mut sub, &p2, depth + 1);
-                            } else if k + 1 < n {
-                                let sc2 = Scope {
-                                    cyc: Some(Cyc { prefix: block_prefix.clone(), k, n }),
-                                    ..sc.clone()
-                                };
-                                self.body(&j.stmts, &sc2, &mut sub, &p2, depth + 1);
-                            }
-                            ranges.push((from, self.out.len()));
-                        }
-                    }
-                    if let Some(j) = &b.joint {
-                        self.weld(j, b.kind, &block_prefix, n, &ranges);
-                    }
+                    self.copies(b, st, scope, vals, path, depth, n, None);
                 }
                 // a constraint: its dimension is written in the component's own parameters, which
                 // do not exist in the flat document, so they are worked out here
@@ -445,6 +399,98 @@ impl<'a> Walk<'a> {
                 None
             }
         }
+    }
+
+    /// The copies of one block: `n` of them, each its body under the block's prefix, with the
+    /// trailing joint stated between neighbours.  Where the block runs over a chain, `edges`
+    /// holds each copy's edge — the link as the chain wrote it and the scope it was written in —
+    /// and copy `k` gets an alias `<block>#<id>.<k>.<var>` for it, which is how `e` is found
+    /// through the copy's prefix like any name, and passed on to an instance as any alias is.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn copies(
+        &mut self,
+        b: &Block,
+        st: &Stmt,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        path: &[PathStep],
+        depth: usize,
+        n: usize,
+        edges: Option<(&Name, &[(Ref, Scope)])>,
+    ) {
+        if n == 0 {
+            return;
+        }
+        if n > MAX_FLAT {
+            self.err(Code::E103, b.span, format!("{n} copies is more than {MAX_FLAT}"));
+            return;
+        }
+        let block_prefix = format!("{}#{}.", scope.prefix(), st.id.0);
+        let mut ranges: Vec<(usize, usize)> = Vec::new();
+        for k in 0..n {
+            let mut sub = vals.clone();
+            if let Some(i) = &b.binder {
+                sub.insert(i.text.clone(), Aff::num(k as f64));
+            }
+            if let Some((var, links)) = edges {
+                let (r, sc) = &links[k];
+                let key = format!("{block_prefix}{k}.{}", var.text);
+                self.aliases.push((key, r.clone(), sc.clone()));
+            }
+            let sc = Scope {
+                owner: scope.owner.clone(),
+                access: scope.access.clone(),
+                in_roles: scope.in_roles,
+                prefixes: std::iter::once(format!("{block_prefix}{k}."))
+                    .chain(scope.prefixes.iter().cloned())
+                    .collect(),
+                // `next` and `prev` mean something only where the copies close
+                closed: scope.closed,
+                forbidden: scope.forbidden.clone(),
+                groups: scope.groups.clone(),
+                cyc: b.kind.wraps().then(|| Cyc { prefix: block_prefix.clone(), k, n }),
+                // the prefix just built is the block's id, so every declaration
+                // below is a copy, however deep and through however many instances
+                copies: true,
+                anonymous: scope.anonymous,
+                vals: sub.clone(),
+                in_plane: scope.in_plane.clone(),
+                in_class: scope.in_class.clone(),
+                graph: scope.graph.clone(),
+                sides: scope.sides.clone(),
+            };
+            let mut p2 = path.to_vec();
+            p2.push(PathStep::Copy { block: st.id, index: k as u32 });
+            let from = self.out.len();
+            self.body(&b.body, &sc, &mut sub, &p2, depth + 1);
+            // the trailing joint's relations, stated between this copy and the
+            // next: every copy for a cycle (the wrap seals the loop),
+            // all but the last for a repeat, whose final corner is simply not
+            // stated (issue #38).  The joint is the *block's* statement, so it
+            // gets the `cyc` a repeat's own body does not — a wrapping kind's
+            // scope already carries it.
+            if let Some(j) = &b.joint {
+                if b.kind.wraps() {
+                    self.body(&j.stmts, &sc, &mut sub, &p2, depth + 1);
+                } else if k + 1 < n {
+                    let sc2 = Scope {
+                        cyc: Some(Cyc { prefix: block_prefix.clone(), k, n }),
+                        ..sc.clone()
+                    };
+                    self.body(&j.stmts, &sc2, &mut sub, &p2, depth + 1);
+                }
+                ranges.push((from, self.out.len()));
+            }
+        }
+        if let Some(j) = &b.joint {
+            self.weld(j, b.kind, &block_prefix, n, &ranges);
+        }
+    }
+
+    /// How many statements the walk has made, counting those held aside while a deferred block
+    /// is expanded into a vector of its own (`expand_pending`).
+    pub(super) fn emitted(&self) -> usize {
+        self.out.len() + self.held
     }
 
     /// An expanded statement keeps the id of the statement it came from.

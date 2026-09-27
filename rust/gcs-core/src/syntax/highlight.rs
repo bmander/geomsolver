@@ -226,7 +226,12 @@ fn tint_word(
                 return (Some(Tint::Word), Next::Word);
             }
             if w == "preview" || BLOCKS.contains(&w) {
-                return (Some(Tint::Word), Next::Word);
+                // `repeat e in rack.profile` — the edge is a name the block declares, as the
+                // index after `as` is; the parser's own test, a name and then `in`
+                let over = BLOCKS.contains(&w)
+                    && matches!(next, Some(Tok::Ident(_)))
+                    && matches!(toks.get(i + 2).map(|(t, _)| t), Some(Tok::Ident(s)) if s == "in");
+                return (Some(Tint::Word), if over { Next::Def } else { Next::Word });
             }
             // a raw branch: a statement the parser knows by name
             if w == "branch" {
