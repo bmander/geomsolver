@@ -46,12 +46,15 @@ impl Sketch {
             )]);
             c.intrinsic = true;
             self.add(c);
-            // a lift written against the stated basis now reads the unknowns instead: the same
-            // statement, a different twin, so the constraint keeps its id and its arguments
-            for c in self.constraints.iter_mut() {
-                if c.kind == CKind::LiftFixed && c.args[1].ent().i() == i {
-                    c.kind = CKind::Lift;
-                }
+            // a statement written against the stated basis — a lift, a point on the plane, a
+            // circle drawn in it — now reads the unknowns instead: the same statement, a
+            // different twin, so the constraint keeps its id and its arguments
+            let flip: Vec<usize> = (0..self.constraints.len())
+                .filter(|&k| self.constraints[k].attitude_read(self) == Some(i))
+                .collect();
+            for k in flip {
+                let c = &mut self.constraints[k];
+                c.kind = c.kind.attitude_twin(true);
             }
         }
         self.fix_attitude(i, false);
@@ -153,6 +156,16 @@ impl Sketch {
     /// Which hidden point lifts view point `p`, if one has been minted.
     pub fn lift_of(&self, p: usize) -> Option<usize> {
         self.lifts.iter().position(|l| l.point as usize == p)
+    }
+
+    /// Where view point `p` stands in space as a solve sees it: its hidden point where one has
+    /// been minted, and the lift of its drawn pose where not — the same number until a solve has
+    /// moved one and not yet the other.
+    pub fn lifted(&self, p: usize) -> [f64; 3] {
+        match self.lift_of(p) {
+            Some(k) => self.lifts[k].x.map(|x| self.params[x as usize].value),
+            None => self.world_point(p),
+        }
     }
 }
 

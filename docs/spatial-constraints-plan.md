@@ -119,8 +119,8 @@ twin through `CKind::free_kernel` where it states a dimension, and a row in
 | `angle3` | cos form | 0 | 12 |
 | `perpendicular3` | normalised a·b | 0 | 12 |
 | `parallel3` | two rows against seed-refreshed constants ⟂ a | 0 | 12 |
-| `point_on_plane` | n(q)·X − d | 1 | 8 |
-| `point_on_circle3` | radius row plus plane row | 2 / 1 | 11 |
+| `point_on_plane` / `point_on_plane_fixed` | n(q)·X − d | 1 | 8 / 3 |
+| `point_on_circle3` / `point_on_circle3_fixed` | \|X − C\| − r and n·(X − C) | 1 | 11 / 7 |
 | `sphere_on` | \|X − C\| − r | 1 | 7 |
 
 **The system.** No structural change: row scaling by `extent^degree` already handles mixed
@@ -230,6 +230,37 @@ closed-form fixtures in a new `tests/spatial.rs`:
   never written. The graft carries both, and a drag part maps their params.
 - Deferred to P1b: the spatial relation kernels and their `tests/spatial.rs` fixtures (the
   tetrahedron, the skew lines).
+
+### P1b — the relations in space (done)
+
+- Eleven kinds, `CKind::spatial`: `Coincident3`, `Distance3`, `PointLine3`, `LineLine3`,
+  `Angle3`, `Perpendicular3`, `Parallel3`, and `PointOnPlane` / `PointOnCircle3` each with a
+  `…Fixed` twin. Their slots name the **drawn** points, lines and circles; the kernels read only
+  the hidden points' columns (`Constraint::lifted_points`: a point, a line's two ends, a circle's
+  centre). `Sketch::add` mints the lifts they read, so no caller mints one, and `validate`
+  refuses an operand on no view, a negative magnitude, a line of no length in space and a skew
+  distance between lines parallel as drawn. `Constraint::in_space` is the Rust constructor,
+  through `io::seed_omitted` like every other.
+- Fifteen kernels (63 in all), with free twins for the four dimensions. `line_line3` is the
+  **signed** gap, stated along the side the seed stands on: an inferred `sign` slot
+  (`constraints::infer_value`, ±1, written to JSON) folded into the constant, and into (m, c)
+  for the free twin, so neither kernel carries it. `angle3` is `â·b̂ − cos θ`, unsigned, with no
+  `sense`. `parallel3` is two rows `(â × b̂)·e_k` against two unit vectors across the first
+  line, constants re-read by every `refresh_consts`.
+- A kernel has one degree, so `point_on_circle3`'s radius row is the magnitude `|X − C| − r`
+  (degree 1, beside the plane row) rather than the squared form the table first had.
+- The two that read a plane follow P1a's `lift`/`lift_fixed` split: `CKind::attitude_twin` is
+  the one table of the pairs, `Constraint::attitude_read` says which plane, `Sketch::add` picks
+  the twin its plane can feed and `free_attitude` flips every statement reading the view it
+  frees. Lifts are unchanged.
+- No operator and no callout yet (`undrawn!`): the words and their figures are P2's.
+  `tests/spatial.rs` holds the regular tetrahedron (height `a·√(2/3)` to 1e-9 relative; the
+  ledger is 2 for the apex, 6 with its view freed, 3 after the three lengths, the view's gauge
+  about the apex), skew lines against the hand-worked bearing and offset, parallel,
+  perpendicular, a point on a stated and a solved plane, a point on a circle in a stated and a
+  solved view, coincidence, the refusals, claims (a true one a theorem, a false one violated,
+  nothing counted), and the JSON and copy round trips. Every kernel and twin has a
+  finite-difference row.
 
 ## P2 — The language
 

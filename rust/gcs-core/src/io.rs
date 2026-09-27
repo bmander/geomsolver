@@ -150,6 +150,14 @@ pub fn seed_omitted(
             args[i] = Arg::Ent(crate::constraints::infer_entity(sk, kind, args, i)?);
         }
     }
+    // and a number the geometry decides — a skew distance's side — once the entities are in
+    for i in 0..args.len() {
+        if left_out(i) {
+            if let Some(a) = crate::constraints::infer_value(sk, kind, args, i) {
+                args[i] = a;
+            }
+        }
+    }
     crate::constraints::validate(sk, kind, args)
 }
 

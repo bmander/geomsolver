@@ -358,6 +358,16 @@ impl Sketch {
             self.next_cid = self.next_cid.max(c.id);
         }
         let id = c.id;
+        // a relation in space reads the hidden points its drawn operands lift to, so they are
+        // minted here — after the id, so a constraint that arrived carrying one keeps it — and
+        // the statement takes the twin its plane can feed; a point on no view has no lift, and
+        // `constraints::validate` is where that is refused
+        for p in c.lifted_points(self) {
+            self.lift_point(p);
+        }
+        if let Some(v) = c.attitude_read(self) {
+            c.kind = c.kind.attitude_twin(self.planes[v].att.is_some());
+        }
         for (i, name) in c.kind.param_slots() {
             if matches!(c.args[i], Arg::Param(_)) {
                 continue;   // already allocated (a constraint moved between sketches)

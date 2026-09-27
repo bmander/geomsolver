@@ -120,8 +120,10 @@ fn every_constraint_type_is_printable() {
             p.text()
         );
         let back = e.sketch.user_constraints();
+        // a statement that reads a view's attitude comes back as the twin its view can feed —
+        // `Lift` over a stated view is `LiftFixed` — which is one statement in two kernels
         assert!(
-            back.iter().any(|b| b.kind == kind),
+            back.iter().any(|b| b.kind.attitude_twin(false) == kind.attitude_twin(false)),
             "{} did not come back\n{}",
             kind.name(),
             p.text()
@@ -376,6 +378,13 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
         sk.set_plane(q, Some(pb));
         let c = Constraint::project(&sk, EntRef::point(p), EntRef::point(q)).unwrap();
         return (sk, c);
+    }
+    // a relation in space reads where views put its points, so each point it names is drawn in
+    // one — two views, so a line from one to the other runs across them
+    if kind.spatial() {
+        for (x, v) in [(p, pa), (q, pb), (r, pa), (s, pb)] {
+            sk.set_plane(x, Some(v));
+        }
     }
     let arg = |k: SpecKind| -> Arg {
         match k {

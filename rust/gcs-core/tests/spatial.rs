@@ -279,3 +279,325 @@ fn a_drag_part_carries_the_view_and_its_hidden_points() {
     let att = sk.planes[v].att.clone().unwrap();
     assert_eq!(sk.params[att.q[0] as usize].value, 0.25);
 }
+
+/* -- P1b: the relations in space ------------------------------------------------------------- */
+
+use gcs_core::constraints::{Arg, Constraint};
+use gcs_core::diagnose::Diagnosis;
+
+/// A view with its datum held at the page's origin, so a point drawn in it at page `(x, y)` is at
+/// view coordinates `(x, y)` and stands in space at `basis.lift(x, y)`.
+fn view(sk: &mut Sketch, b: Basis, name: &str) -> usize {
+    let o = sk.point(0.0, 0.0, true, &format!("{name}.o"));
+    let t = sk.point(1.0, 0.0, true, &format!("{name}.t"));
+    sk.plane(o, t, b, name)
+}
+
+fn drawn(sk: &mut Sketch, v: usize, x: f64, y: f64, name: &str) -> usize {
+    let p = sk.point(x, y, false, name);
+    sk.set_plane(p, Some(v));
+    p
+}
+
+fn exact() -> SolveOpts {
+    SolveOpts { acceptance_tol: 1e-12, ..SolveOpts::default() }
+}
+
+fn ledger(sk: &mut Sketch) -> Diagnosis {
+    diagnose::diagnose(sk, Default::default())
+}
+
+fn relation(sk: &Sketch, kind: CKind, ents: &[EntRef], value: Option<f64>) -> Constraint {
+    Constraint::in_space(sk, kind, ents, value).unwrap_or_else(|e| panic!("{kind:?}: {e}"))
+}
+
+/// **A regular tetrahedron.**  The base is an equilateral triangle drawn on the page; the apex is
+/// drawn in a second view whose attitude is left to the solve, and stated a true length `a` from
+/// each corner.  Nothing says where the apex is in space but those three lengths, and the height
+/// that comes back is the closed form, `a·√(2/3)`.
+#[test]
+fn a_regular_tetrahedron_stands_at_its_height() {
+    let a = 30.0;
+    let mut sk = Sketch::new();
+    let page = view(&mut sk, Basis::page(), "page");
+    let b0 = drawn(&mut sk, page, 0.0, 0.0, "b0");
+    let b1 = drawn(&mut sk, page, a + 2.0, 1.0, "b1");
+    let b2 = drawn(&mut sk, page, 0.4 * a, 0.9 * a, "b2");
+    sk.fix_point(b0, true);
+    for (p, q) in [(b0, b1), (b1, b2), (b2, b0)] {
+        sk.add(Constraint::distance(EntRef::point(p), EntRef::point(q), a));
+    }
+    sk.add(Constraint::new(CKind::HorizontalPoints, vec![
+        Arg::Ent(EntRef::point(b0)), Arg::Ent(EntRef::point(b1)),
+    ]));
+    // the apex's view: folded off the page and then let go, so the solve may turn and stand it
+    // off wherever the three lengths want the apex
+    let slant = view(&mut sk, Basis::page().fold(0.9), "slant");
+    let apex = drawn(&mut sk, slant, 10.0, 8.0, "apex");
+    assert_eq!(ledger(&mut sk).dof, 2, "the base is determined; the apex has its two in the view");
+    sk.free_attitude(slant);
+    assert_eq!(ledger(&mut sk).dof, 6, "and its view three turns and an offset");
+    for b in [b0, b1, b2] {
+        sk.add(relation(&sk, CKind::Distance3, &[EntRef::point(apex), EntRef::point(b)], Some(a)));
+    }
+    assert_eq!(sk.lifts.len(), 4, "the hidden points are minted by the add, one per point");
+    let d = ledger(&mut sk);
+    // three lengths place a point in space up to its mirror; the three left are the view's own
+    // gauge about the apex — turning the view about the point, and sliding the point in it
+    assert_eq!(d.dof, 3, "{d:?}");
+    assert!(d.over.is_empty() && d.implied.is_empty());
+    let r = solve(&mut sk, exact());
+    assert!(r.success, "{}", r.message);
+    // the page is the plane y = 0, so the height is the apex's distance from it
+    let h = sk.world_point(apex)[1].abs();
+    let want = a * (2.0f64 / 3.0).sqrt();
+    assert!((h - want).abs() < 1e-9 * want, "height {h} against {want}");
+    // and the hidden point is the drawn one, stood up by the view as it was solved
+    assert!(close3(sk.lifted(apex), sk.world_point(apex), 1e-9));
+    for b in [b0, b1, b2] {
+        let d = gcs_core::space::distance(sk.world_point(apex), sk.world_point(b));
+        assert!((d - a).abs() < 1e-9 * a);
+    }
+    let att = sk.planes[slant].att.clone().unwrap();
+    let q = att.q.map(|k| sk.params[k as usize].value);
+    assert!((q.iter().map(|x| x * x).sum::<f64>() - 1.0).abs() < 1e-12);
+}
+
+/// Two lines drawn in two stated views — one on the page, one on a top view stood `h` above the
+/// origin — with the angle between them and their common-perpendicular distance stated.  The
+/// answer is worked out by hand: the top line's bearing from the angle, then its offset from the
+/// distance.
+#[test]
+fn two_skew_lines_meet_their_closed_form() {
+    let (h, e, theta) = (6.0, 3.0, 60f64.to_radians());
+    let mut sk = Sketch::new();
+    let page = view(&mut sk, Basis::page(), "page");
+    let top = view(&mut sk, Basis::page().fold(0.0).offset(h), "top");
+    // on the page, (0, 0) to (10, 10): in space from the origin along (1, 0, 1)
+    let (a, b) = (drawn(&mut sk, page, 0.0, 0.0, "a"), drawn(&mut sk, page, 10.0, 10.0, "b"));
+    sk.fix_point(a, true);
+    sk.fix_point(b, true);
+    // on the top view (the plane z = h), from x = 5 somewhere along y, ten long
+    let c = drawn(&mut sk, top, 5.0, 2.0, "c");
+    let phi0 = 40f64.to_radians();
+    let d = drawn(&mut sk, top, 5.0 + 10.0 * phi0.cos(), 2.0 + 10.0 * phi0.sin(), "d");
+    let cx = sk.points[c].x as usize;
+    sk.params[cx].fixed = true;
+    let (l1, l2) = (sk.line(a, b), sk.line(c, d));
+    let (e1, e2) = (EntRef::line(l1), EntRef::line(l2));
+    sk.add(Constraint::distance(EntRef::point(c), EntRef::point(d), 10.0));
+    let dist = relation(&sk, CKind::LineLine3, &[e1, e2], Some(e));
+    let sign = match dist.args[3] { Arg::Int(s) => s as f64, _ => unreachable!() };
+    assert_eq!(sign, 1.0, "the side the seed stands on");
+    sk.add(dist);
+    sk.add(relation(&sk, CKind::Angle3, &[e1, e2], Some(theta)));
+    assert_eq!(ledger(&mut sk).dof, 0);
+    let r = solve(&mut sk, exact());
+    assert!(r.success, "{}", r.message);
+    let ((x0, y0), (x1, y1)) = (sk.point_xy(c), sk.point_xy(d));
+    let phi = (y1 - y0).atan2(x1 - x0);
+    // cos θ = (1, 0, 1)/√2 · (cos φ, sin φ, 0)
+    assert!((phi.cos() - 2f64.sqrt() * theta.cos()).abs() < 1e-10, "{}", phi.to_degrees());
+    // s = (e₁ × e₂)·(C − A)/|e₁ × e₂| = (−5 sin φ + y cos φ + h sin φ) / √(1 + sin² φ)
+    let (sn, cs) = phi.sin_cos();
+    let want = (sign * e * (1.0 + sn * sn).sqrt() + (5.0 - h) * sn) / cs;
+    assert!((y0 - want).abs() < 1e-9, "c.y {y0} against {want}");
+    // and an independent reading of both off the points in space
+    let w = |p: usize| sk.world_point(p);
+    let (u1, u2) = (gcs_core::space::sub(w(b), w(a)), gcs_core::space::sub(w(d), w(c)));
+    let m = cross(u1, u2);
+    let got = gcs_core::space::dot(m, gcs_core::space::sub(w(c), w(a))) / gcs_core::space::norm(m);
+    assert!((got - e).abs() < 1e-9);
+    let cosv = gcs_core::space::dot(u1, u2)
+        / (gcs_core::space::norm(u1) * gcs_core::space::norm(u2));
+    assert!((cosv - theta.cos()).abs() < 1e-10);
+
+    // a claim in space is judged and never acts: a true one is a theorem, a false one violated
+    let before = (sk.params.len(), sk.n_residuals(), ledger(&mut sk).dof);
+    let ac = gcs_core::space::distance(sk.world_point(a), sk.world_point(c));
+    let mut yes = relation(&sk, CKind::Distance3, &[EntRef::point(a), EntRef::point(c)], Some(ac));
+    yes.claim = true;
+    let yes = sk.add(yes);
+    let mut no = relation(&sk, CKind::Perpendicular3, &[e1, e2], None);
+    no.claim = true;
+    let no = sk.add(no);
+    let d = ledger(&mut sk);
+    assert_eq!((sk.params.len(), sk.n_residuals(), d.dof), before, "a claim adds nothing");
+    assert_eq!(d.claims_theorem, vec![yes]);
+    assert_eq!(d.claims_violated, vec![no]);
+}
+
+/// A skew distance between lines that are parallel as drawn has no common perpendicular, and a
+/// point on no view has no place in space: both are refused where they are stated.
+#[test]
+fn a_relation_in_space_refuses_what_it_cannot_read() {
+    let mut sk = Sketch::new();
+    let page = view(&mut sk, Basis::page(), "page");
+    let top = view(&mut sk, Basis::page().fold(0.0).offset(4.0), "top");
+    let (a, b) = (drawn(&mut sk, page, 0.0, 0.0, "a"), drawn(&mut sk, page, 10.0, 0.0, "b"));
+    let (c, d) = (drawn(&mut sk, top, 0.0, 3.0, "c"), drawn(&mut sk, top, 7.0, 3.0, "d"));
+    let (l1, l2) = (EntRef::line(sk.line(a, b)), EntRef::line(sk.line(c, d)));
+    let e = Constraint::in_space(&sk, CKind::LineLine3, &[l1, l2], Some(2.0)).unwrap_err();
+    assert!(e.contains("parallel"), "{e}");
+    let loose = sk.point(1.0, 1.0, false, "loose");
+    let e = Constraint::in_space(&sk, CKind::Distance3, &[EntRef::point(loose), EntRef::point(a)],
+                                 Some(2.0)).unwrap_err();
+    assert!(e.contains("no view"), "{e}");
+    let e = Constraint::in_space(&sk, CKind::Distance3, &[EntRef::point(c), EntRef::point(a)],
+                                 Some(-2.0)).unwrap_err();
+    assert!(e.contains("magnitude"), "{e}");
+}
+
+/// Two lines in two views held parallel in space: the page's line runs along (2, 0, 1), and a
+/// view parallel to the page stood off it can carry a line that way — ten long from a held end,
+/// it can only end at `c + 10·(2, 1)/√5`.  Perpendicular from the top view, whose lines all run
+/// level, the second line can only run straight across: `c + (0, 10)`.
+#[test]
+fn parallel_and_perpendicular_in_space() {
+    for kind in [CKind::Parallel3, CKind::Perpendicular3] {
+        let mut sk = Sketch::new();
+        let page = view(&mut sk, Basis::page(), "page");
+        let other = match kind {
+            CKind::Parallel3 => Basis::page().offset(7.0),
+            _ => Basis::page().fold(0.0).offset(5.0),
+        };
+        let v = view(&mut sk, other, "v");
+        let (a, b) = (drawn(&mut sk, page, 0.0, 0.0, "a"), drawn(&mut sk, page, 10.0, 5.0, "b"));
+        sk.fix_point(a, true);
+        sk.fix_point(b, true);
+        let c = drawn(&mut sk, v, 3.0, 4.0, "c");
+        sk.fix_point(c, true);
+        let seed = if kind == CKind::Parallel3 { 20f64 } else { 70f64 }.to_radians();
+        let d = drawn(&mut sk, v, 3.0 + 10.0 * seed.cos(), 4.0 + 10.0 * seed.sin(), "d");
+        let (l1, l2) = (EntRef::line(sk.line(a, b)), EntRef::line(sk.line(c, d)));
+        sk.add(Constraint::distance(EntRef::point(c), EntRef::point(d), 10.0));
+        sk.add(relation(&sk, kind, &[l1, l2], None));
+        assert_eq!(ledger(&mut sk).dof, 0, "{kind:?}");
+        // the interactive acceptance: the perpendicular stops a few ulps short of 1e-12 on the
+        // squared length's row, a stall of the step test and not of the geometry
+        let r = solve(&mut sk, SolveOpts::default());
+        assert!(r.success, "{kind:?}: {}", r.message);
+        let want = match kind {
+            CKind::Parallel3 => (3.0 + 20.0 / 5f64.sqrt(), 4.0 + 10.0 / 5f64.sqrt()),
+            _ => (3.0, 14.0),
+        };
+        let got = sk.point_xy(d);
+        assert!((got.0 - want.0).abs() < 1e-9 && (got.1 - want.1).abs() < 1e-9,
+                "{kind:?}: {got:?} against {want:?}");
+    }
+}
+
+/// A point on a plane, over a stated plane and then over a solved one; and the statement changes
+/// twin with its plane, keeping its id.
+#[test]
+fn a_point_on_a_plane_in_space() {
+    let h = 6.0;
+    let mut sk = Sketch::new();
+    let page = view(&mut sk, Basis::page(), "page");
+    let top = view(&mut sk, Basis::page().fold(0.0).offset(h), "top");
+    // drawn on the page at x = 3, so it stands at (3, 0, y): on the plane z = h exactly at y = h
+    let p = drawn(&mut sk, page, 3.0, 1.0, "p");
+    let px = sk.points[p].x as usize;
+    sk.params[px].fixed = true;
+    let id = sk.add(relation(&sk, CKind::PointOnPlane, &[EntRef::point(p), EntRef::plane(top)],
+                             None));
+    let kind = |sk: &Sketch| sk.constraint(id).unwrap().kind;
+    assert_eq!(kind(&sk), CKind::PointOnPlaneFixed, "a stated plane's twin");
+    assert_eq!(ledger(&mut sk).dof, 0);
+    let r = solve(&mut sk, exact());
+    assert!(r.success, "{}", r.message);
+    assert!((sk.point_xy(p).1 - h).abs() < 1e-10);
+    // now hold the point and let the plane's offset go: the plane comes to the point
+    sk.fix_point(p, true);
+    let py = sk.points[p].y as usize;
+    sk.params[py].value = 2.5;
+    sk.free_attitude(top);
+    assert_eq!(kind(&sk), CKind::PointOnPlane, "and the solved one's, the same statement");
+    sk.fix_attitude(top, true);
+    let att = sk.planes[top].att.clone().unwrap();
+    sk.params[att.d as usize].fixed = false;
+    assert_eq!(ledger(&mut sk).dof, 0);
+    let r = solve(&mut sk, exact());
+    assert!(r.success, "{}", r.message);
+    assert!((sk.params[att.d as usize].value - 2.5).abs() < 1e-10);
+    assert!((sk.basis(top).along_normal() - 2.5).abs() < 1e-10);
+}
+
+/// A point on a circle drawn in another view: the circle is in the top view at height `h`, about
+/// the origin with radius `r`; a point drawn on the page stands at (x, 0, y), so it can only be
+/// at `(r, h)` — on the circle's plane, and `r` out from its centre.
+#[test]
+fn a_point_on_a_circle_in_space() {
+    let (h, rad) = (4.0, 7.5);
+    for solved in [false, true] {
+        let mut sk = Sketch::new();
+        let page = view(&mut sk, Basis::page(), "page");
+        let top = view(&mut sk, Basis::page().fold(0.0).offset(h), "top");
+        let centre = drawn(&mut sk, top, 0.0, 0.0, "centre");
+        sk.fix_point(centre, true);
+        let k = sk.circle(centre, rad, "k");
+        let rp = sk.circles[k].radius as usize;
+        sk.params[rp].fixed = true;
+        if solved {
+            sk.free_attitude(top);
+            sk.fix_attitude(top, true);
+        }
+        let p = drawn(&mut sk, page, 6.0, 3.0, "p");
+        let id = sk.add(relation(&sk, CKind::PointOnCircle3, &[EntRef::point(p), EntRef::circle(k)],
+                                 None));
+        let want = if solved { CKind::PointOnCircle3 } else { CKind::PointOnCircle3Fixed };
+        assert_eq!(sk.constraint(id).unwrap().kind, want);
+        assert_eq!(ledger(&mut sk).dof, 0, "solved: {solved}");
+        let r = solve(&mut sk, exact());
+        assert!(r.success, "{}", r.message);
+        let got = sk.point_xy(p);
+        assert!((got.0 - rad).abs() < 1e-9 && (got.1 - h).abs() < 1e-9, "{got:?}");
+    }
+}
+
+/// The same point in space, drawn in two views: on the page (x, 0, y) and on the top view
+/// (x′, y′, h), with the page's x held — so the page point is at `(3, h)` and the top one at
+/// `(3, 0)`.
+#[test]
+fn one_point_in_two_views_is_coincident_in_space() {
+    let h = 5.0;
+    let mut sk = Sketch::new();
+    let page = view(&mut sk, Basis::page(), "page");
+    let top = view(&mut sk, Basis::page().fold(0.0).offset(h), "top");
+    let p = drawn(&mut sk, page, 3.0, 1.0, "p");
+    let q = drawn(&mut sk, top, 2.0, 1.5, "q");
+    let px = sk.points[p].x as usize;
+    sk.params[px].fixed = true;
+    sk.add(relation(&sk, CKind::Coincident3, &[EntRef::point(p), EntRef::point(q)], None));
+    assert_eq!(ledger(&mut sk).dof, 0);
+    let r = solve(&mut sk, exact());
+    assert!(r.success, "{}", r.message);
+    let (gp, gq) = (sk.point_xy(p), sk.point_xy(q));
+    assert!((gp.0 - 3.0).abs() < 1e-10 && (gp.1 - h).abs() < 1e-10, "{gp:?}");
+    assert!((gq.0 - 3.0).abs() < 1e-10 && gq.1.abs() < 1e-10, "{gq:?}");
+}
+
+/// A relation in space is a document statement like any other: it writes, reads back and copies
+/// with its hidden points re-minted by the add, and a skew distance keeps the side it was read on.
+#[test]
+fn a_relation_in_space_round_trips() {
+    let mut sk = Sketch::new();
+    let page = view(&mut sk, Basis::page(), "page");
+    let top = view(&mut sk, Basis::page().fold(0.0).offset(3.0), "top");
+    let (a, b) = (drawn(&mut sk, page, 0.0, 0.0, "a"), drawn(&mut sk, page, 10.0, 10.0, "b"));
+    let (c, d) = (drawn(&mut sk, top, 5.0, 9.0, "c"), drawn(&mut sk, top, 8.0, -2.0, "d"));
+    let (l1, l2) = (EntRef::line(sk.line(a, b)), EntRef::line(sk.line(c, d)));
+    let dist = relation(&sk, CKind::LineLine3, &[l1, l2], Some(2.0));
+    let sign = dist.args[3].clone();
+    sk.add(dist);
+    sk.add(relation(&sk, CKind::Distance3, &[EntRef::point(a), EntRef::point(d)], Some(12.0)));
+    let text = io::dumps(&sk, None);
+    let back = io::loads(&text).unwrap();
+    assert_eq!(io::dumps(&back, None), text);
+    assert_eq!(back.lifts.len(), sk.lifts.len(), "the hidden points are the add's, again");
+    let ll = back.constraints.iter().find(|c| c.kind == CKind::LineLine3).unwrap();
+    assert_eq!(ll.args[3], sign);
+    let copy = io::copy(&sk, &[l1, l2]);
+    assert_eq!(copy.constraints.iter().filter(|c| c.kind == CKind::LineLine3).count(), 1);
+    assert_eq!(copy.lifts.len(), 4);
+}
