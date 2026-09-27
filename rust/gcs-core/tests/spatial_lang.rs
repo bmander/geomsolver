@@ -404,10 +404,11 @@ fn a_position_stated_twice_is_refused() {
             "E064", "drawn in `s` itself", "m");
 }
 
-/// `against` places a plane by a number worked out before the solve, which a solved view's
-/// offset is not: refused until P4.
+/// `against` places a plane written to be placed (`from:` with no fold and no offset); a view
+/// whose offset is solved already says where it stands, and a mate on it as the placed plane is
+/// the stack's E083 (P4 lets a solved view be the *datum*: `tests/spatial_surfaces.rs`).
 #[test]
-fn against_a_solved_view_is_refused() {
+fn against_places_only_a_plane_written_to_be_placed() {
     let square = |tag: &str, plane: &str, lo: &str, hi: &str| format!(
         "point a{tag} hint(x: 0, y: 0) in {plane}\npoint b{tag} hint(x: 20, y: 0) in {plane}\n\
          point c{tag} hint(x: 20, y: 20) in {plane}\npoint d{tag} hint(x: 0, y: 20) in {plane}\n\
@@ -420,7 +421,7 @@ fn against_a_solved_view_is_refused() {
         plane back(origin: o, toward: qq, from: front, offset: free) hint(offset: 20)\n\
         {}{}back_part.far against front_part.near\n",
         square("front_part", "front", "-6mm", "0mm"), square("back_part", "back", "-2mm", "2mm"));
-    refused(&src, "E066", "solved view", "back_part.far against front_part.near");
+    refused(&src, "E083", "already says where it stands", "back_part.far against front_part.near");
 }
 
 /// A solve's fold goes back into the source as its seed, where the seed was written.

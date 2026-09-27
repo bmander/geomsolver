@@ -30,6 +30,9 @@ pub fn kind_initial(k: EntKind) -> char {
         EntKind::Edge => 'k',
         // `s` is the spline's: a sphere is an orb
         EntKind::Sphere => 'o',
+        // `c` is the circle's and `k` the curve's: a coNe, and a cYlinder
+        EntKind::Cone => 'n',
+        EntKind::Cylinder => 'y',
         EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline => {
             k.as_str().chars().next().expect("every kind name has a letter")
         }

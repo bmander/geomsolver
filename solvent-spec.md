@@ -1,6 +1,16 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.25 — September 2026**
+**Specification, Draft 0.26 — September 2026**
+
+**[0.26] Cones and cylinders, `against` between solved views, and `o:`.** `cone k(axis: l)
+hint(half: 30deg)` and `cylinder c(axis: l) hint(r: 10)` are surfaces in space built about a line
+already drawn in a view, each owning one number (§3.1): a cone's apex is its axis's start. They
+take `angle` (a cone's half-angle) and `radius` (a cylinder's), `p on k` and `p on c`, `c tangent
+l` (a line touching a cylinder) and `k1 tangent(M) k2` (two cones with one tangent plane at M),
+all in space (§9.2, §9.3). `F against G` with a solved view is a placement where the two faces'
+planes turn together — one derived from the other, or both from one, with no fold — and a row
+of the solve where the datum's offset is solved; two views that turn apart are E066 (§6.10). A
+basis given outright may say where it stands: `u: (…), v: (…), o: (…)` (§6.7).
 
 **[0.25] A circle on a sphere, and the midpoint and the mirror in space.** `c on s` puts every
 point of a circle (or an arc's circle) drawn in a view on a sphere: the sphere's centre on the
@@ -123,6 +133,8 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Line` | segment between two `Point`s; its infinite carrier is what constraints read **[0.2]** | 0 of its own (4 through its ends) |
 | `Circle` | center + radius | 3 |
 | `Sphere` | a center drawn in some view + a radius, on no sheet **[0.24]** | 3 (the center's 2 in its view, and `r`) |
+| `Cone` | an axis `Line` drawn in some view — the apex its start, opening toward its end — + a half-angle, on no sheet **[0.26]** | 1 of its own (`half`), beyond its axis's |
+| `Cylinder` | an axis `Line` drawn in some view + a radius, on no sheet **[0.26]** | 1 of its own (`r`), beyond its axis's |
 | `Plane` | the datum: origin + orientation **[0.6]**, and a **view** — a plane in space, given as a constant orthonormal basis `(u, v)` **[0.10]**; one with no attitude written is the page's **[0.15]** | 0 beyond its two points (§6.7) |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
 | `Face` | a planar profile (§6.8) or an ordered boundary on an explicit spatial support (§6.20) | 0 — it owns no parameter |
@@ -151,6 +163,9 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Circle` | `.r` | `Length` |
 | `Sphere` | `.center` | `Point` — drawn in whichever view the declaration is `in` **[0.24]** |
 | `Sphere` | `.r` | `Length` **[0.24]** |
+| `Cone`, `Cylinder` | `.axis` | `Line` — named in the brackets, never minted: it is what places the surface in space **[0.26]** |
+| `Cone` | `.half` | `Angle` — written in degrees in `hint(half: …)`, stated by `angle(θ) k` **[0.26]** |
+| `Cylinder` | `.r` | `Length` **[0.26]** |
 | `Plane` | `.origin`, `.toward` | `Point` **[0.6]** |
 | `Plane` | `.c`, `.s` | `Scalar` **[0.6]** — the unit rotor |
 | `Plane` | `.angle` | `Angle` — derived, `atan2(s, c)`; readable in trace-block expressions **[0.6]** |
@@ -598,7 +613,7 @@ plane p(origin: o4, toward: q4, u: (0.6, 0.8, 0), v: (0, 0, 1))     // given out
 
 - With neither `from` nor a basis, the plane is **the page**: `u = (1, 0, 0)`, `v = (0, 0, 1)`, so `n = (0, −1, 0)` — the front view, the viewer standing at −y.
 - `from: P, fold: θ` **folds** the plane from `P` about the line at bearing `θ` in `P`: the new plane is perpendicular to `P` and contains that line, which is its `u` — `u = cos θ·u_P + sin θ·v_P` — and its `v = −n_P` points *away* from `P`'s viewer, so distance from the fold line in the new view is depth behind `P` (third-angle projection). `fold` is an `Angle`; **[0.18]** an omitted one was 0 through 0.17 and that default is **withdrawn** — a `from:` with no clause beside it is now the plane *moved* rather than the plane turned (§6.10), and a document that means the fold writes `fold: 0deg`. From the page, `fold: 0deg` is the top view (`u = x`, `v = y`) and `fold: -90deg` the right view (`u = −z`, `v = y`), drawn with its frame turned −90° so z is up on the page. Two folds reach any plane; `P` may be declared after the plane that folds from it (P2), and a plane folded from itself, however indirectly, is **E041**. `from` names a plane and nothing else (**E040**, **E101**).
-- `u:`, `v:` give the basis outright as two triples of dimensionless expressions. They are normalised, `v` is orthogonalised against `u`, and a pair spanning no plane is **E103**. Neither half alone, and not both a `from` and a basis, is a syntax error.
+- `u:`, `v:` give the basis outright as two triples of dimensionless expressions. They are normalised, `v` is orthogonalised against `u`, and a pair spanning no plane is **E103**. Neither half alone, and not both a `from` and a basis, is a syntax error. **[0.26]** `o: (x, y, z)` beside them, three lengths, is where in space the basis stands (the shared origin where it is left out); alone it is a syntax error. It is how a stated plane that stands off the origin — a stand-off, a mate, a view folded from one — is written out again with its place.
 
 **[0.23] A view is a workplane, and it may be solved for.** A point drawn in view V *is* the point `o_V + a·u_V + b·v_V` in space, `(a, b)` its view coordinates; a point with no membership is on the page. **A plane is fixed unless its brackets name an unknown**, and `hint(…)` seeds only unknowns (§4.3):
 
@@ -613,7 +628,7 @@ plane q(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 0),
 - `fold: along l`, with `l` a line drawn in the parent (**E064** otherwise), folds the view square to the parent about `l`: it contains `l` and follows it as the solve moves it, and has no unknown of its own.
 - `attitude: free` makes the attitude three unknowns, seeded by `hint(u: (…), v: (…))` (the page's where none is written); it takes no `from:`, `fold:`, `u:` or `v:`.
 - `offset: free` makes the offset along the normal one unknown, seeded by `hint(offset: …)` from where the attitude alone stands the plane; `through: M` solves it so the point `M`, drawn in another view, is in the plane. A position is stated once: either beside a written `offset:`, beside `fold: along`, or `through:` a point of the plane itself is **E064**, as is a view derived from one whose own offset is solved.
-- A `hint` key for a quantity the brackets state is **E040** at the key. A bare `from:` still means a plane placed by `against` (§6.10), and `against` with a solved view is **E066** (deferred).
+- A `hint` key for a quantity the brackets state is **E040** at the key. A bare `from:` still means a plane placed by `against` (§6.10), which **[0.26]** works with solved views whose planes turn together and is **E066** between views that turn apart.
 - `a project b` between views either of which is solved is the projector rule in space, `(n_A × n_B)·(X_A − X_B) = 0` over the two images' points in space; two stated views keep the residual below, and are refused if parallel (E061). Two solved views that *come out* parallel are **E065** after the solve.
 - **[0.24] A solved view's place on the sheet is held silently.** Where a view's picture sits on the page — its datum's origin and toward — is presentation, not a freedom of the object: for a view whose attitude or offset is solved (or that a solved view reads), the datum points are held where they were drawn and §16's ledger does not count them, unless a statement names them (a relation, a gauge), when they are ordinary points. A free view's freedoms are then its attitude and its offset, and nothing else. Relations *between* views are §9.2's: a relation whose operands are drawn in different views is a relation in space.
 
@@ -771,6 +786,7 @@ washer.body.far against cylA.block.near
 - The plane `F`'s solid is drawn in MUST be a **placed** plane: one written `from: P` with neither `fold:` nor `offset:`.  A plane the document already positioned is **E083**, as is one placed twice, and a placed plane that no mate places is **E083** for the opposite reason.
 - The two faces MUST be planar, parallel, and looking at each other — their outward normals opposite.  Each is **E083** at the statement.  A face at no single ordinate along its plane's normal (the side of a prism, the wall of a revolution) is nothing a stack can bear on: **E082**, naming it.
 - Two faces in contact are at the same point along the normal they share, which fixes one offset per statement.  The offsets are worked out in **dependency order** and a cycle is **E041**, the same words a plane folded from itself gets.
+- **[0.26] With a solved view.** Where either plane's attitude or offset is solved (§6.7), the two MUST turn together: they share an attitude root — each is the other or reached from one plane through `from:` clauses with no fold — so they stay parallel whatever the solve does. The placed plane then turns with its datum. Where the datum's offset along the shared normal is a constant (a fold solved about the shared origin), the placed plane is stood off it by the faces' gap as before; where it is an unknown (`offset: free`, `through:`), the placed plane's offset is one too, held by the row `d_F − d_G − (ord_G − ord_F) = 0` (§9.3). Two views that turn apart are **E066**, naming both, as is a placed plane that follows a solved offset and has views derived from it.
 
 *Non-normative:* what this replaces reads, in the drawing it was written for, `zA = fwA + D / 2` and `tdisc = zA - rw / 2 - wsh - zdisc`.  Those are true statements about the object; they are just not the ones the designer made, which were "cylinder B's face against the plate's front" and "a washer between the disc and rod A".
 
@@ -1244,16 +1260,17 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `on` | infix | (point, line \| circle \| arc \| spline \| curve) — **four** constraints; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.18]** (solid, solid) — the body rule (§6.9), and no constraint at all |
+| `on` | infix | (point, line \| circle \| arc \| spline \| curve) — **four** constraints; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder); **[0.18]** (solid, solid) — the body rule (§6.9), and no constraint at all |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed local ordinates, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space |
 | `distance` | prefix | on a line: the distance between its own ends |
-| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line) — **five**; **[0.24]** (sphere, line), (sphere, sphere), in space |
+| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line) — **five**; **[0.24]** (sphere, line), (sphere, sphere), in space; **[0.26]** (cylinder, line), and (cone, cone) with the contact point in the parentheses, `k1 tangent(M) k2` |
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
 | `curvature` | infix | (spline, circle), (curve, circle) |
 | `horizontal`, `vertical` | prefix / infix | a line; or a pair of points |
 | `angle` | infix | (line, line) |
-| `radius` | prefix | a circle or an arc; **[0.24]** a sphere |
+| `radius` | prefix | a circle or an arc; **[0.24]** a sphere; **[0.26]** a cylinder |
+| `angle` | prefix | **[0.26]** a cone: its half-angle (between two lines `angle` is infix) |
 | `coincident`, `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `ground`, `fix` | prefix | the gauges (§13): a point, or one of an entity's own numbers by its field (`fix c.r`) |
@@ -1305,6 +1322,12 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `on(p, S: Sphere)` **[0.24]** | ‖X − C‖ − S.r | 1 | C the centre's lift |
 | `tangent(S, L)` **[0.24]** | ‖(C − A) × (B − A)‖ / ‖B − A‖ − S.r | 1 | the line's distance from the centre, in space |
 | `on(c, S: Sphere)` **[0.25]** | u·(S − C), v·(S − C), √(‖S − C‖² + r²) − S.r | 3 | C the circle's centre lifted, (u, v) its view's axes; `S tangent c` is refused (a point or a whole circle of contact) |
+| `on(p, K: Cone)` **[0.26]** | ρ cos α − h sin α | 1 | X the point's lift, A the apex and ê the axis (both lifted), h = (X − A)·ê, ρ = ‖(X − A) − h ê‖: X's distance from the generator in its meridian half-plane, zero on the nappe ê points into |
+| `on(p, C: Cylinder)` **[0.26]** | ‖(X − A) × (B − A)‖ / ‖B − A‖ − C.r | 1 | the axis A → B lifted |
+| `angle(K: Cone) == θ` **[0.26]** | K.half − θ | 1 | degree 0 |
+| `tangent(C: Cylinder, L)` **[0.26]** | the signed common perpendicular of the axis and L − s·C.r | 1 | s the side the seed stands on, as a skew distance's; parallel lines are refused |
+| `tangent(K1, K2, at: M)` **[0.26]** | n₂·g₁, n₂·c₁ | 2 | at M, a cone's normal is n = û cos α − ê sin α, its generator g = ê cos α + û sin α and its circle c = ê × û (û the unit radial direction); one tangent plane at M. That M is on each is `M on K` beside it |
+| `against(F, G)` with a solved view **[0.26]** | d_F − d_G − (ord_G − ord_F) | 1 | where the datum's offset is solved; the planes share an attitude (§6.10) |
 | `tangent(S1, S2)` **[0.24]** | ‖C1 − C2‖ − (r1 + r2) *or* ‖C1 − C2‖ − \|r1 − r2\| | 1 | `external:` inferred from the seed, as two circles' is |
 | *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `on` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `on` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
 | `project(p, q)` **[0.10]** | d_A·Rᵀ(c_A, s_A)(p − o_A) − d_B·Rᵀ(c_B, s_B)(q − o_B) | 1 | the planes A, B inferred from `p`, `q`'s memberships; d the fold line they share, §6.7 |
@@ -1758,7 +1781,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E062 | a word across views with no meaning in space (`horizontal`, a run or rise, `tangent` between drawn figures), or a relation across views naming a point on the page or a datum point read in a view it is not drawn in (§9.2) **[0.24]** |
 | E064 | a solved view the model cannot hold: `fold: along` a line not drawn in the parent, a position stated twice, `through:` a point of the plane itself, or a view derived from one whose offset is solved (§6.7) **[0.23]** |
 | E065 | a relation in space degenerate at the solve: views a `project` relates that came out parallel, lines whose skew distance is stated that came out parallel (§6.7) **[0.23]** |
-| E066 | `against` with a solved view (§6.10) — deferred **[0.23]** |
+| E066 | `against` between faces whose planes turn apart, one of them a solved view, or a placed plane that follows a solved offset and has views derived from it (§6.10) **[0.23; narrowed 0.26]** |
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
 | E071 | a component defined twice, across the document and its modules (§14.4) **[0.12]** |
 | E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc, a circle or a point, a circle standing *in* a loop rather than being one, **[0.19]** an edge that meets neither neighbour and so is walked two ways, a straight loop with fewer than three corners, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body |

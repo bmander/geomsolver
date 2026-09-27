@@ -108,9 +108,16 @@ pub enum K {
     CircleOnSphereFixed,
     Midpoint3,
     Symmetric3,
+    // P4: a point on a cone, a cone's half-angle stated and free, and two cones touching
+    ConeOn,
+    HalfAngle,
+    HalfAngleFree,
+    ConeCone,
+    // a mate between two solved views' offsets
+    Mate,
 }
 
-pub const N_KERNELS: usize = 80;
+pub const N_KERNELS: usize = 85;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3006,6 +3013,216 @@ fn symmetric3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
+/* -- P4: cones and cylinders -------------------------------------------------------------------
+ *
+ * A cylinder's relations reuse the kernels a sphere's do — a point on it is `point_line3_free`
+ * (its distance from the axis, stated as the radius column), a line touching it `line_line3_free`
+ * (the common perpendicular with the axis), its radius `radius`.  A cone's are new: a point on
+ * it, its half-angle (an angle row of degree 0, the radius kernel's arithmetic), and two cones
+ * touching at a point.  Their derivatives are taken by `Dual`, a forward-mode number carrying
+ * the gradient in every column of the block — exact, and one expression for the residual and its
+ * row, where the hand-derived chains of the kernels above would be a page of vector calculus to
+ * get wrong. */
+
+/// A number and its gradient in the `N` columns of one block.
+#[derive(Clone, Copy)]
+struct Dual<const N: usize> {
+    v: f64,
+    g: [f64; N],
+}
+
+impl<const N: usize> Dual<N> {
+    fn var(v: f64, i: usize) -> Self {
+        let mut g = [0.0; N];
+        g[i] = 1.0;
+        Dual { v, g }
+    }
+    fn map(self, v: f64, d: f64) -> Self {
+        Dual { v, g: self.g.map(|x| x * d) }
+    }
+    fn sqrt(self) -> Self {
+        let s = self.v.max(0.0).sqrt();
+        // no gradient where the root is zero: a caller asking there is on a degenerate figure
+        self.map(s, if s > 0.0 { 0.5 / s } else { 0.0 })
+    }
+    fn sin(self) -> Self {
+        self.map(self.v.sin(), self.v.cos())
+    }
+    fn cos(self) -> Self {
+        self.map(self.v.cos(), -self.v.sin())
+    }
+}
+
+impl<const N: usize> std::ops::Add for Dual<N> {
+    type Output = Self;
+    fn add(self, o: Self) -> Self {
+        let mut g = self.g;
+        for (a, b) in g.iter_mut().zip(o.g) {
+            *a += b;
+        }
+        Dual { v: self.v + o.v, g }
+    }
+}
+
+impl<const N: usize> std::ops::Sub for Dual<N> {
+    type Output = Self;
+    fn sub(self, o: Self) -> Self {
+        let mut g = self.g;
+        for (a, b) in g.iter_mut().zip(o.g) {
+            *a -= b;
+        }
+        Dual { v: self.v - o.v, g }
+    }
+}
+
+impl<const N: usize> std::ops::Mul for Dual<N> {
+    type Output = Self;
+    fn mul(self, o: Self) -> Self {
+        let mut g = [0.0; N];
+        for k in 0..N {
+            g[k] = self.g[k] * o.v + self.v * o.g[k];
+        }
+        Dual { v: self.v * o.v, g }
+    }
+}
+
+impl<const N: usize> std::ops::Div for Dual<N> {
+    type Output = Self;
+    fn div(self, o: Self) -> Self {
+        let q = self.v / o.v;
+        let mut g = [0.0; N];
+        for k in 0..N {
+            g[k] = (self.g[k] - q * o.g[k]) / o.v;
+        }
+        Dual { v: q, g }
+    }
+}
+
+type V3<const N: usize> = [Dual<N>; 3];
+
+fn dvec<const N: usize>(v: &[f64], at: usize) -> V3<N> {
+    [0, 1, 2].map(|t| Dual::var(v[at + t], at + t))
+}
+
+fn dsub<const N: usize>(a: V3<N>, b: V3<N>) -> V3<N> {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn ddot<const N: usize>(a: V3<N>, b: V3<N>) -> Dual<N> {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn dcross<const N: usize>(a: V3<N>, b: V3<N>) -> V3<N> {
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+}
+
+/// The unit vector along `a`; a vector shorter than `MIN_LINE_LEN` is divided by that instead,
+/// as every kernel above guards a degenerate line.
+fn dunit<const N: usize>(a: V3<N>) -> V3<N> {
+    let l = ddot(a, a).sqrt();
+    let l = if l.v > MIN_LINE_LEN { l } else { Dual { v: MIN_LINE_LEN, g: [0.0; N] } };
+    a.map(|x| x / l)
+}
+
+/// A cone at a point X, read in X's meridian half-plane: the unit axis ê (apex A toward B), the
+/// height `h = (X − A)·ê`, the distance ρ from the axis and the unit radial direction û.
+struct Meridian<const N: usize> {
+    e: V3<N>,
+    h: Dual<N>,
+    rho: Dual<N>,
+    u: V3<N>,
+}
+
+fn meridian<const N: usize>(x: V3<N>, a: V3<N>, b: V3<N>) -> Meridian<N> {
+    let e = dunit(dsub(b, a));
+    let w = dsub(x, a);
+    let h = ddot(w, e);
+    let radial = dsub(w, e.map(|t| t * h));
+    let rho = ddot(radial, radial).sqrt();
+    let u = dunit(radial);
+    Meridian { e, h, rho, u }
+}
+
+/// `ρ cos α − h sin α` over (X, A, B, α): how far X stands from the cone's generator in its
+/// meridian half-plane — zero on the nappe the axis points into, a length.
+fn cone_gap(v: &[f64]) -> Dual<10> {
+    let m = meridian::<10>(dvec(v, 0), dvec(v, 3), dvec(v, 6));
+    let al = Dual::<10>::var(v[9], 9);
+    m.rho * al.cos() - m.h * al.sin()
+}
+
+/// Columns of `cone_on`: (X, A, B, α) — a point's hidden point, the axis's two, the cone's
+/// half-angle.  `ρ cos α − h sin α`, degree 1.
+fn cone_on_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        r[i] = cone_gap(&v[10 * i..10 * i + 10]).v;
+    }
+}
+
+fn cone_on_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let d = cone_gap(&v[10 * i..10 * i + 10]);
+        j[10 * i..10 * i + 10].copy_from_slice(&d.g);
+    }
+}
+
+pub const N_PAR_CONE_CONE: usize = 17;
+
+/// Two cones at M: the second's surface normal against the first's generator and circle
+/// directions there.  Over (M, A₁, B₁, α₁, A₂, B₂, α₂).  A cone's outward normal at a point of
+/// its meridian is `û cos α − ê sin α`, its generator `ê cos α + û sin α` and its circle `ê × û`.
+fn cone_contact(v: &[f64]) -> [Dual<N_PAR_CONE_CONE>; 2] {
+    const N: usize = N_PAR_CONE_CONE;
+    let x = dvec::<N>(v, 0);
+    let (m1, m2) = (meridian(x, dvec(v, 3), dvec(v, 6)), meridian(x, dvec(v, 10), dvec(v, 13)));
+    let (a1, a2) = (Dual::<N>::var(v[9], 9), Dual::<N>::var(v[16], 16));
+    let (c1, s1, c2, s2) = (a1.cos(), a1.sin(), a2.cos(), a2.sin());
+    let normal = [0, 1, 2].map(|t| m2.u[t] * c2 - m2.e[t] * s2);
+    let generator = [0, 1, 2].map(|t| m1.e[t] * c1 + m1.u[t] * s1);
+    let circle = dcross(m1.e, m1.u);
+    [ddot(normal, generator), ddot(normal, circle)]
+}
+
+/// Columns of `cone_cone`: (M, A₁, B₁, α₁, A₂, B₂, α₂).  Two rows, degree 0: the second cone's
+/// normal at M square to the first's two tangent directions there — one tangent plane at M.
+fn cone_cone_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_CONE_CONE * i;
+        let d = cone_contact(&v[o..o + N_PAR_CONE_CONE]);
+        r[2 * i] = d[0].v;
+        r[2 * i + 1] = d[1].v;
+    }
+}
+
+fn cone_cone_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_CONE_CONE * i;
+        let d = cone_contact(&v[o..o + N_PAR_CONE_CONE]);
+        let jo = 2 * N_PAR_CONE_CONE * i;
+        j[jo..jo + N_PAR_CONE_CONE].copy_from_slice(&d[0].g);
+        j[jo + N_PAR_CONE_CONE..jo + 2 * N_PAR_CONE_CONE].copy_from_slice(&d[1].g);
+    }
+}
+
+/* -- P4: a mate between solved views ------------------------------------------------------- */
+
+const MATE_J: &[f64] = &[1.0, -1.0];
+
+/// Columns of `mate`: (d_f, d_g), K = (gap).  `d_f − d_g − gap`: a placed view's offset along
+/// the normal it shares with the view it bears on, held at that view's offset and the gap between
+/// the two faces' ordinates.  Degree 1.
+fn mate_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        r[i] = v[2 * i] - v[2 * i + 1] - k[i];
+    }
+}
+
+fn mate_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        j[2 * i..2 * i + 2].copy_from_slice(MATE_J);
+    }
+}
+
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
     Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
@@ -3087,6 +3304,11 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "circle_on_sphere_fixed", n_res: 3, n_par: 8, degree: 1, n_const: 6, res: circle_on_sphere_fixed_res, jac: circle_on_sphere_fixed_jac, const_jac: None },
     Kernel { name: "midpoint3", n_res: 3, n_par: 9, degree: 1, n_const: 0, res: midpoint3_res, jac: midpoint3_jac, const_jac: None },
     Kernel { name: "symmetric3", n_res: 3, n_par: 12, degree: 1, n_const: 0, res: symmetric3_res, jac: symmetric3_jac, const_jac: None },
+    Kernel { name: "cone_on", n_res: 1, n_par: 10, degree: 1, n_const: 0, res: cone_on_res, jac: cone_on_jac, const_jac: None },
+    Kernel { name: "half_angle", n_res: 1, n_par: 1, degree: 0, n_const: 1, res: radius_res, jac: radius_jac, const_jac: Some(RADIUS_J) },
+    Kernel { name: "half_angle_free", n_res: 1, n_par: 2, degree: 0, n_const: 2, res: radius_free_res, jac: radius_free_jac, const_jac: None },
+    Kernel { name: "cone_cone", n_res: 2, n_par: N_PAR_CONE_CONE, degree: 0, n_const: 0, res: cone_cone_res, jac: cone_cone_jac, const_jac: None },
+    Kernel { name: "mate", n_res: 1, n_par: 2, degree: 1, n_const: 1, res: mate_res, jac: mate_jac, const_jac: Some(MATE_J) },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

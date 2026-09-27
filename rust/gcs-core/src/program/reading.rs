@@ -94,6 +94,8 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
                 | CKind::EqualRadius
                 | CKind::AnnularDistance
                 | CKind::SphereRadius
+                | CKind::ConeAngle
+                | CKind::CylinderRadius
                 | CKind::DragTarget
                 | CKind::FrameUnit
                 | CKind::FrameAlign

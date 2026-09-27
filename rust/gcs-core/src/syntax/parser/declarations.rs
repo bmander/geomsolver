@@ -101,6 +101,8 @@ struct AttParts {
     offset: Option<Arg>,
     u: Option<[Arg; 3]>,
     v: Option<[Arg; 3]>,
+    /// `o: (x, y, z)` beside `u:` and `v:` (P4)
+    o: Option<[Arg; 3]>,
     /// `fold: along l` (P2a)
     along: Option<Ref>,
     /// `attitude: free`, at the clause
@@ -113,7 +115,7 @@ struct AttParts {
 
 /// The labels a plane's brackets may carry beside its children.
 fn attitude_label(l: &str) -> bool {
-    matches!(l, "from" | "fold" | "u" | "v" | "offset" | "attitude" | "through")
+    matches!(l, "from" | "fold" | "u" | "v" | "o" | "offset" | "attitude" | "through")
 }
 
 /// The keys a plane's `hint(…)` clause may carry beside its datum's scalars: a seed for each
@@ -198,6 +200,10 @@ fn attitude_of(p: AttParts) -> Result<(Attitude, Position), String> {
         }
         return Ok((Attitude::Along { plane, line }, position));
     }
+    if p.o.is_some() && (p.u.is_none() || p.v.is_none()) {
+        return Err("`o:` says where a basis given outright stands: say `u:` and `v:` too".into());
+    }
+    let o = p.o;
     let a: Result<Attitude, String> = match (p.from, p.fold, p.offset, p.u, p.v) {
         (None, None, None, None, None) => Ok(Attitude::Page),
         // **`from:` says which plane it is derived from; `fold:` and `offset:` say how.**  0.10
@@ -206,7 +212,7 @@ fn attitude_of(p: AttParts) -> Result<(Attitude, Position), String> {
         // which is what a stack is written in (§6.10) and what one `against` states.
         (Some(plane), Some(fold), None, None, None) => Ok(Attitude::From { plane, fold }),
         (Some(plane), None, offset, None, None) => Ok(Attitude::Offset { plane, offset }),
-        (None, None, None, Some(u), Some(v)) => Ok(Attitude::Basis { u, v }),
+        (None, None, None, Some(u), Some(v)) => Ok(Attitude::Basis { u, v, o }),
         (None, Some(_), _, None, None) => Err("`fold` folds from a plane: say `from:` too".into()),
         (None, _, Some(_), None, None) => {
             Err("`offset` stands a plane off another: say `from:` too".into())
@@ -837,7 +843,11 @@ impl<'a> P<'a> {
                 parts.through = Some(self.refr()?);
             }
             _ => {
-                let slot = if label == "u" { &mut parts.u } else { &mut parts.v };
+                let slot = match label {
+                    "u" => &mut parts.u,
+                    "v" => &mut parts.v,
+                    _ => &mut parts.o,
+                };
                 if slot.is_some() {
                     return twice(self);
                 }

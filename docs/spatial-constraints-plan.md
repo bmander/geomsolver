@@ -12,7 +12,7 @@ executable result and an exit gate, and every phase leaves the existing corpus b
 
 - **Scope is general 3D sketching.** Views are solved. The relations are spatial distance,
   point–line and skew line–line distance, angle, parallel, perpendicular, coincidence in space,
-  a point or line on a plane, and spatial circles and spheres. Cones and cylinders come later.
+  a point or line on a plane, and spatial circles and spheres; cones and cylinders are P4's.
 - **The app solves and shows only.** Views and the glass box display solved geometry. There are
   no new tools and no new picking.
 - **Nothing 3D is an unknown *after* the sketch stratum.** That replaces "nothing
@@ -440,6 +440,99 @@ pitch plane, and `fixtures::gear::bevel` designs are unchanged.
   plane's normal offset in a lifted program.
 
 ## P4 — Cones and cylinders, and `against` with solved views
+
+### P4 — cones, cylinders, mates with solved views, and `o:` (done)
+
+- **Spelling.** `cone gc(axis: gax) hint(half: 60deg)` and `cylinder c(axis: ax) hint(r: 10)`:
+  the brackets are what each is made of — a line already drawn in some view, never minted, a
+  cone's apex its start and its axis running toward its end — and the one number each owns is a
+  seed (`hint(half: …)` in degrees, held in radians; `hint(r: …)`) that a relation states
+  (`angle(60deg) gc`, `radius(10) c`) or a solve finds. No other freedom: the surface is where
+  its axis is. `EntKind::Cone`/`Cylinder` (last in the enum, FFI kind ids 17 and 18, labels `n`
+  and `y`), one struct `AxialE { axis, param, class }`, `Sketch::cones`/`cylinders`, built by
+  `program::entities::build_axial` after the spheres, in `primitives()`, JSON (`"cones"`,
+  `"cylinders"`, only when there is one) and the graft. No sheet glyph; `scene3d` draws each as
+  two circles square to the axis and four rulings. `Sketch::seed_value` is the one place a
+  half-angle is turned back into degrees, for a writeback and a lifted program.
+- **Words and kernels** (85 kernels, 76 kinds). `p on k` (`ConeOn`, new `cone_on`:
+  `ρ cos α − h sin α` over the point's, the apex's and the axis end's hidden points and α — the
+  point's distance from the generator in its meridian half-plane, degree 1, zero only on the
+  nappe the axis points into); `p on c` (`CylinderOn`, `point_line3_free` at (1, 0), the radius
+  the free column); `angle(θ) k` (`ConeAngle`, new `half_angle`/`half_angle_free`, the radius
+  arithmetic at degree 0); `radius(r) c` (`CylinderRadius`, `radius`/`radius_free`);
+  `c tangent l` (`CylinderTangentLine`, `line_line3_free` at (±1, 0), the side an inferred `sign`
+  read off the seed as a skew distance's is; parallel lines refused, and E065 when they come out
+  parallel); `k1 tangent(M) k2` (`ConeTangentCone`, new `cone_cone`, 17 columns: the second cone's
+  normal at M square to the first's generator and circle there, two rows of degree 0 — one
+  tangent plane at M; `M on k1` and `M on k2` are stated beside it, as an on-circle is beside a
+  tangency at a named end). `tangent` now reads an unlabelled entity in its parentheses, as
+  `symmetry` does. The new kernels take their Jacobians by a forward-mode `Dual<N>` in
+  `kernels.rs` rather than hand-derived chains. A line on a cone or a cylinder (a generator) is
+  refused with the spelling that says it of the line's points; a cone against a line, the
+  cylinder written second, a half-angle on a cylinder and two cones with no point are refused at
+  the word (E040); an axis that is not a line, or none, is E103.
+- **The hypoid, named.** `tests/fixtures/hypoid_named_cones.sv`: P stated with M grounded on it;
+  the gear's axial plane G is P folded square about its vertical axis and the gear's apex on P
+  (so P is the gear cone's tangent plane at M); the pinion's axial plane Q is `attitude: free,
+  through: M`, its turn held by `horizontal pax`; the cones named, `angle(60deg) gc`, `M on gc`,
+  `M on pc`, `gc tangent(M) pc`, and the radii, shaft angle and offset as in P3. It solves to DOF
+  0 (39 params, 39 equations, rank 39), and against P3's fold construction the gear and pinion
+  pitch angles, the offset angle, |MO|, |MA| and |OA| agree within 1.3e-11 (Γ = 60°,
+  γ = 29.564957707°, ε = 10.722102067°, |MA| = 97.282181449). The pinion's apex comes out on P
+  (1e-11) with nothing saying so, and the two cones' normals at M are parallel and P's.
+- **`against` with solved views.** `program::solids::claims::place` reads each plane's **attitude
+  root** (through `from:` clauses with no fold). A mate where either plane is solved needs the two
+  to share a root — then they are parallel whatever the solve does, and the placed plane turns
+  with its datum (a `HingeParallel` from P2a where its parent is solved). Where the datum's
+  offset is held (a solved fold about the shared origin) the placed plane is stood off by the
+  faces' gap exactly as a stated one is; where it is an unknown (`offset: free`, `through:`), the
+  placed plane's offset is freed and held by a new `CKind::Mate` row, `d_f − d_g − gap` (kernel
+  `mate`, degree 1), recorded against the `against` statement and never written as a relation.
+  Views that turn apart are E066 naming both; so is a placed plane that follows a solved offset
+  and has views derived from it (P2a's E064, one statement later). Stated-only mates take the
+  path they always did, byte for byte.
+- **`o:` and the lift.** `u: (…), v: (…), o: (x, y, z)` gives where a basis given outright stands
+  (`Attitude::Basis::o`, three lengths; alone a syntax error). `to_program` writes it for a stated
+  plane whose origin is off the shared origin — a stand-off, a mate, a view folded from one,
+  whose origin is off its own normal — and a view whose offset is solved writes only the
+  in-plane part there, its place along the normal being its `hint(offset: …)`.
+- **Tests.** `tests/spatial_surfaces.rs` (new): each entity's fields and freedoms; each word's
+  kind; a point on a cylinder its radius off the axis and on a cone at its half-angle (and on the
+  right nappe), a free half-angle found by a point, a line touching a cylinder at its radius; the
+  named hypoid against P3's; JSON, a lifted program and a half-angle written back in degrees; the
+  glass box; the refusals; a mate on a `through:` view following it to where a stated offset puts
+  it (with the row counted in the rank), a mate in a view with a solved fold turning with it, and
+  views that turn apart refused; and a lifted stand-off and fold-from-stand-off keeping their
+  origins. `refusals.rs` and `jacobians.rs` rows for every new kind, kernel and twin.
+  `spatial_lang.rs`'s old E066 test now reads the stack's E083 (a view whose offset is solved is
+  not a placed plane).
+
+## Status
+
+The feature is complete as planned. A view is a workplane whose attitude and offset may be
+solved (`fold: beta`, `fold: along l`, `attitude: free`, `offset: free`, `through: M`); a
+relation between entities drawn in different views is the relation in space, inferred from the
+views with the role rule for datum points; spheres, cones and cylinders are surfaces a relation
+can name; and a hypoid's pitch cones can be stated either by construction (P3) or by naming the
+cones and their contact (P4), with the same answer. Every corpus report, drawing and export
+golden is byte-identical to main at every phase.
+
+What remains open:
+
+- **A line on a cone or a cylinder** (a generator) as one relation, and a sphere tangent to a
+  circle; both are refused with the spelling that says them of points.
+- **Two cones touching with no point named**, and cones touching along a common generator with
+  a shared apex (the bevel pitch cones): stated at a point of the generator, `tangent(M)` is
+  rank-deficient there, since its generator row vanishes identically once M is on both cones.
+- **Mates between views that turn apart**, which would need a parallelism row beside the offset
+  row; refused (E066).
+- **Decomposition.** Every spatial kind is `unsupported` in `cgraph`, so documents with views
+  in space drag on the numeric path.
+- **The app** solves and shows only: there are no tools for drawing cones, cylinders or solved
+  views, and no picking in the glass box.
+- A datum point read in a view it is not drawn in stays refused (E062, P3).
+- `to_program` does not lift solids, faces or `against`, so a lifted document keeps a mate's
+  result (the placed plane's pose) and not the statement.
 
 ## Documentation in every phase
 

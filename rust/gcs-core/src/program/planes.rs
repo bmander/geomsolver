@@ -199,12 +199,20 @@ fn basis_of<'a>(
                 _ => Some(crate::plane::Basis::page()),
             }
         }
-        Attitude::Basis { u, v } => {
-            let mut vals = [[0.0; 3]; 2];
+        Attitude::Basis { u, v, o } => {
+            let mut vals = [[0.0; 3]; 3];
             let mut ok = true;
-            for (k, (name, triple)) in [("u", u), ("v", v)].into_iter().enumerate() {
+            let at = o.as_ref();
+            let triples = [("u", Some(u)), ("v", Some(v)), ("o", at)];
+            for (k, (name, triple)) in triples.into_iter().enumerate() {
+                let Some(triple) = triple else { continue };
+                // a direction's components are numbers, and where it stands is three lengths
+                let dim = match k {
+                    2 => crate::units::Dim::LENGTH,
+                    _ => crate::units::Dim::SCALAR,
+                };
                 for (i, a) in triple.iter().enumerate() {
-                    match number(a, crate::units::Dim::SCALAR, name) {
+                    match number(a, dim, name) {
                         Ok(x) => vals[k][i] = x,
                         Err(m) => {
                             fail(diags, Code::E103, arg_span(a).unwrap_or(st.span), m);
@@ -213,7 +221,10 @@ fn basis_of<'a>(
                     }
                 }
             }
-            let b = ok.then(|| crate::plane::Basis::explicit(vals[0], vals[1])).flatten();
+            let b = ok
+                .then(|| crate::plane::Basis::explicit(vals[0], vals[1]))
+                .flatten()
+                .map(|b| crate::plane::Basis { o: vals[2], ..b });
             if ok && b.is_none() {
                 fail(
                     diags,

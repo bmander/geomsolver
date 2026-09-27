@@ -159,7 +159,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         let mut missing = false;
         for (i, p) in sk.own_params(parent).iter().enumerate() {
             if omit_radius { continue; }
-            let v = sk.params[*p as usize].value;
+            let v = sk.seed_value(parent, *p);
             let text = d.seed_text.get(i).and_then(|t| t.as_ref());
             let (sp, miss) = one(v, text, d.seed_spans.get(i).copied().unwrap_or_default());
             mine.extend(sp);
@@ -221,7 +221,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         let mut pose = d.seed.clone();
         for (i, p) in sk.own_params(parent).iter().enumerate() {
             if let Some(v) = pose.get_mut(i) {
-                *v = sk.params[*p as usize].value;
+                *v = sk.seed_value(parent, *p);
             }
         }
         // the clause, as the pose the solve arrived at; empty when the kind owns no scalar at

@@ -175,6 +175,26 @@ pub enum CKind {
     /// Two points each the other's image in a line, in space: the half turn about the line — the
     /// mirror in it, which is what `symmetry` means on a page, read one dimension up (P3).
     Symmetric3,
+    /// **A point on a cone** (P4), `p on k`: the point's distance from the cone's generator in
+    /// its meridian half-plane, `ρ cos α − h sin α` (ρ its distance from the axis, h its height
+    /// along it from the apex) — a length, zero on the nappe the axis points into.
+    ConeOn,
+    /// A point on a cylinder, `p on c`: its distance from the axis, stated as the radius column
+    /// (`point_line3`'s free twin at (m, c) = (1, 0), `SphereTangentLine`'s bargain).
+    CylinderOn,
+    /// `angle(θ) k`: a cone's half-angle, the kind's own Param, degree 0.
+    ConeAngle,
+    /// `radius(r) c`: a cylinder's radius, `radius`'s kernel over the cylinder's own Param.
+    CylinderRadius,
+    /// `c tangent l`: a line touching a cylinder — its common perpendicular with the axis is the
+    /// radius (`line_line3`'s free twin, the side read off the seed as a skew distance's is).
+    CylinderTangentLine,
+    /// `k1 tangent(M) k2`: two cones touching at a point with one tangent plane there — the
+    /// second's surface normal at M square to both of the first's tangent directions (its
+    /// generator and its circle), two rows of degree 0.  That M is on each is said by `M on k`
+    /// beside it, as a tangency at a named end leaves the on-circle to its own statement.  What a
+    /// hypoid's pitch cones do at the mean point.
+    ConeTangentCone,
     /// `fold: along l` — the child contains a line drawn in its parent, folded square to the
     /// parent about it: the hinge over a half-angle rotor `(hc, hs)` of the constraint's own,
     /// held to the unit circle and to the line's bearing (`kernels::hinge_along_res`).  Net
@@ -186,6 +206,11 @@ pub enum CKind {
     /// (`kernels::project_free_res`).  The same statement as `Project` — the word, the operands
     /// and the inferred planes — and the twin `Sketch::add` picks when a view it reads is solved.
     ProjectSolved,
+    /// **A mate between solved views** (P4): `f against g` where the two faces' planes share an
+    /// attitude and the datum's offset is solved — the placed plane's offset unknown held at the
+    /// datum's plus the gap between the faces' ordinates, `d_f − d_g − gap = 0`.  Stated by the
+    /// elaborator from the `against` statement and never written as a relation, as a hinge is.
+    Mate,
     /// The **gauges** and the **orientation predicates** (spec §9.2, §9.6; issue #47, item 5):
     /// statements written as every other constraint is — an operator, its operands, a class, a
     /// placement — and settled through the same table, but **applied by the elaborator rather
@@ -225,7 +250,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 69] = [
+pub const ALL_KINDS: [CKind; 76] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -295,6 +320,13 @@ pub const ALL_KINDS: [CKind; 69] = [
     CKind::CircleOnSphereFixed,
     CKind::Midpoint3,
     CKind::Symmetric3,
+    CKind::ConeOn,
+    CKind::CylinderOn,
+    CKind::ConeAngle,
+    CKind::CylinderRadius,
+    CKind::CylinderTangentLine,
+    CKind::ConeTangentCone,
+    CKind::Mate,
 ];
 
 /// `along:` says which axis a run or a rise is measured on.  It is the one selector that fills no
@@ -330,7 +362,7 @@ pub const ALONG: [(&str, CKind); 9] = [
 /// cannot be made from the kinds alone.  `None` is "this word does not relate those two", which
 /// the caller reports with the kinds in it.
 pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option<String>) -> Option<CKind> {
-    use EntKind::{Arc, Circle, Curve, Line, Plane, Point, Sphere, Spline};
+    use EntKind::{Arc, Circle, Cone, Curve, Cylinder, Line, Plane, Point, Sphere, Spline};
     let round = |k: EntKind| matches!(k, Circle | Arc);
     if matches!(sel("along").as_deref(), Some("u" | "v" | "n")) && (word != "distance" || (a, b) != (Point, Plane)) {
         return None;
@@ -344,6 +376,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             // in space whatever view the point is in: a plane is a place, not a picture (P2b)
             (Point, Plane) => CKind::PointOnPlane,
             (Point, Sphere) => CKind::SphereOn,
+            (Point, Cone) => CKind::ConeOn,
+            (Point, Cylinder) => CKind::CylinderOn,
             (k, Sphere) if round(k) => CKind::CircleOnSphere,
             (Line, Plane) => CKind::LineOnPlane,
             _ => return None,
@@ -380,6 +414,9 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             // a sphere touches a line or a sphere in space; a circle is P3's
             (Sphere, Line) => CKind::SphereTangentLine,
             (Sphere, Sphere) => CKind::SphereTangentSphere,
+            // a line touching a cylinder, and two cones touching at the point in the parentheses
+            (Cylinder, Line) => CKind::CylinderTangentLine,
+            (Cone, Cone) => CKind::ConeTangentCone,
             _ => return None,
         },
         "equal" => match (a, b) {
@@ -442,6 +479,9 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
         ("vertical", Line) => CKind::Vertical,
         ("radius", Circle | Arc) => CKind::Radius,
         ("radius", EntKind::Sphere) => CKind::SphereRadius,
+        ("radius", EntKind::Cylinder) => CKind::CylinderRadius,
+        // a cone's half-angle: the one prefix `angle`, since between two lines it is infix
+        ("angle", EntKind::Cone) => CKind::ConeAngle,
         ("distance", Line) => CKind::Distance,
         _ => return None,
     })
@@ -564,6 +604,9 @@ pub enum SpecKind {
     Plane,
     /// A sphere (P2b): a centre drawn in a view and a radius, on no sheet.
     Sphere,
+    /// A cone and a cylinder (P4): an axis drawn in a view and a number each owns.
+    Cone,
+    Cylinder,
     /// One of an entity's own numbers, named by its field — `c.r`, `p.x` — the operand of
     /// `fix`.  Filled from a reference like an entity slot and resolved by the gauge's own
     /// rule, never by `follow`, since a field is not a child.
@@ -603,6 +646,8 @@ impl SpecKind {
             | SpecKind::Curve
             | SpecKind::Plane
             | SpecKind::Sphere
+            | SpecKind::Cone
+            | SpecKind::Cylinder
             | SpecKind::Scalar
             | SpecKind::Float
             | SpecKind::Int
@@ -624,6 +669,8 @@ impl SpecKind {
                 | SpecKind::Curve
                 | SpecKind::Plane
                 | SpecKind::Sphere
+                | SpecKind::Cone
+                | SpecKind::Cylinder
         )
     }
 
@@ -652,6 +699,8 @@ impl SpecKind {
             SpecKind::Curve => "curve",
             SpecKind::Plane => "plane",
             SpecKind::Sphere => "sphere",
+            SpecKind::Cone => "cone",
+            SpecKind::Cylinder => "cylinder",
             SpecKind::Scalar => "scalar",
             SpecKind::Length => "length",
             SpecKind::Angle => "angle",
@@ -735,11 +784,18 @@ impl CKind {
             CKind::LineOnPlaneFixed => "LineOnPlaneFixed",
             CKind::SphereRadius => "SphereRadius",
             CKind::SphereTangentLine => "SphereTangentLine",
+            CKind::ConeOn => "ConeOn",
+            CKind::CylinderOn => "CylinderOn",
+            CKind::ConeAngle => "ConeAngle",
+            CKind::CylinderRadius => "CylinderRadius",
+            CKind::CylinderTangentLine => "CylinderTangentLine",
+            CKind::ConeTangentCone => "ConeTangentCone",
             CKind::SphereTangentSphere => "SphereTangentSphere",
             CKind::Hinge => "Hinge",
             CKind::HingeParallel => "HingeParallel",
             CKind::HingeAlong => "HingeAlong",
             CKind::ProjectSolved => "ProjectSolved",
+            CKind::Mate => "Mate",
             CKind::Ground => "Ground",
             CKind::Fix => "Fix",
             CKind::Ccw => "Ccw",
@@ -874,6 +930,16 @@ impl CKind {
             CKind::LineOnPlane | CKind::LineOnPlaneFixed => &[("line", S::Line), ("plane", S::Plane)],
             CKind::SphereRadius => &[("sphere", S::Sphere), ("r", S::Length)],
             CKind::SphereTangentLine => &[("sphere", S::Sphere), ("line", S::Line)],
+            CKind::ConeOn => &[("p", S::Point), ("cone", S::Cone)],
+            CKind::CylinderOn => &[("p", S::Point), ("cylinder", S::Cylinder)],
+            CKind::ConeAngle => &[("cone", S::Cone), ("theta", S::Angle)],
+            CKind::CylinderRadius => &[("cylinder", S::Cylinder), ("r", S::Length)],
+            // which side of the axis the line passes, read off the seed as a skew distance's is
+            CKind::CylinderTangentLine => {
+                &[("cylinder", S::Cylinder), ("line", S::Line), ("sign", S::Int)]
+            }
+            // the contact point stands in the parentheses, as `symmetry`'s line does
+            CKind::ConeTangentCone => &[("k1", S::Cone), ("k2", S::Cone), ("at", S::Point)],
             // outside or inside, read off the seed when nobody says, as two circles' is
             CKind::SphereTangentSphere => {
                 &[("s1", S::Sphere), ("s2", S::Sphere), ("external", S::Bool)]
@@ -894,6 +960,8 @@ impl CKind {
             CKind::Project | CKind::ProjectSolved => {
                 &[("a", S::Point), ("b", S::Point), ("pa", S::Plane), ("pb", S::Plane)]
             }
+            // the plane a mate places, the one it bears on, and the faces' ordinates' difference
+            CKind::Mate => &[("plane", S::Plane), ("datum", S::Plane), ("gap", S::Float)],
             CKind::Ground => &[("p", S::Point)],
             // one of an entity's own numbers, named by its field: `fix c.r`
             CKind::Fix => &[("x", S::Scalar)],
@@ -1016,6 +1084,10 @@ impl CKind {
             CKind::LineOnPlane | CKind::LineOnPlaneFixed => ("on", Infix),
             CKind::SphereRadius => ("radius", Prefix),
             CKind::SphereTangentLine | CKind::SphereTangentSphere => ("tangent", Infix),
+            CKind::ConeOn | CKind::CylinderOn => ("on", Infix),
+            CKind::ConeAngle => ("angle", Prefix),
+            CKind::CylinderRadius => ("radius", Prefix),
+            CKind::CylinderTangentLine | CKind::ConeTangentCone => ("tangent", Infix),
             CKind::DragTarget
             | CKind::FrameUnit
             | CKind::FrameAlign
@@ -1025,7 +1097,9 @@ impl CKind {
             // a hinge is a plane's brackets, never a relation anybody writes
             | CKind::Hinge
             | CKind::HingeParallel
-            | CKind::HingeAlong => return None,
+            | CKind::HingeAlong
+            // nor is a mate's row: the `against` statement is the solids' word
+            | CKind::Mate => return None,
         })
     }
 
@@ -1039,6 +1113,7 @@ impl CKind {
             (CKind::TangentLineCircleAt, 2) => Arg::Str("p1".to_string()),
             (CKind::TangentLineCircle, 2) => Arg::Str("left".to_string()),
             (CKind::LineLine3, 3) => Arg::Int(1),
+            (CKind::CylinderTangentLine, 2) => Arg::Int(1),
             (CKind::SphereTangentSphere, 2) => Arg::Bool(true),
             _ => match self.spec()[i].1 {
                 SpecKind::Int => Arg::Int(0),
@@ -1110,6 +1185,7 @@ impl CKind {
                     | (CKind::TangentCircleCircle, 2)
                     | (CKind::Project | CKind::ProjectSolved, 2 | 3)
                     | (CKind::LineLine3, 3)
+                    | (CKind::CylinderTangentLine, 2)
                     | (CKind::SphereTangentSphere, 2)
             )
     }
@@ -1153,6 +1229,7 @@ impl CKind {
                 | CKind::PointLine3
                 | CKind::LineLine3
                 | CKind::SphereRadius
+                | CKind::CylinderRadius
         )
     }
 
@@ -1278,11 +1355,19 @@ impl CKind {
             // the screen hunts (its centre is not also held to the line)
             | CKind::SphereTangentLine
             | CKind::SphereTangentSphere
+            // and the cones' and cylinders': distances and angles in space, regular at a contact
+            | CKind::ConeOn
+            | CKind::CylinderOn
+            | CKind::ConeAngle
+            | CKind::CylinderRadius
+            | CKind::CylinderTangentLine
+            | CKind::ConeTangentCone
             // a view turned from another, and the projector rule in space: algebra, no contact
             | CKind::Hinge
             | CKind::HingeParallel
             | CKind::HingeAlong
             | CKind::ProjectSolved
+            | CKind::Mate
             | CKind::Ground
             | CKind::Fix
             | CKind::Ccw
@@ -1397,10 +1482,20 @@ impl CKind {
             // twin of `point_line3` at (m, c) = (1, 0)
             CKind::SphereTangentLine => K::PointLine3Free,
             CKind::SphereTangentSphere => K::SphereSphere,
+            CKind::ConeOn => K::ConeOn,
+            // the point's distance from the axis, stated as the radius column
+            CKind::CylinderOn => K::PointLine3Free,
+            CKind::ConeAngle => K::HalfAngle,
+            CKind::CylinderRadius => K::Radius,
+            // the common perpendicular with the axis, stated as the radius column turned to the
+            // seed's side
+            CKind::CylinderTangentLine => K::LineLine3Free,
+            CKind::ConeTangentCone => K::ConeCone,
             // a stood-off plane is a hinge whose turn is the identity
             CKind::Hinge | CKind::HingeParallel => K::Hinge,
             CKind::HingeAlong => K::HingeAlong,
             CKind::ProjectSolved => K::ProjectFree,
+            CKind::Mate => K::Mate,
             CKind::Ground | CKind::Fix | CKind::Ccw | CKind::Cw => {
                 panic!("{:?} is a gauge: applied by the elaborator, it has no kernel", self)
             }
@@ -1454,6 +1549,8 @@ impl CKind {
             CKind::PointPlaneDistance => K::PointPlaneDistanceFree,
             CKind::PointPlaneDistanceFixed => K::PointPlaneDistanceFixedFree,
             CKind::SphereRadius => K::RadiusFree,
+            CKind::CylinderRadius => K::RadiusFree,
+            CKind::ConeAngle => K::HalfAngleFree,
             // `fold: beta`: the fold is the document's free variable
             CKind::Hinge => K::HingeFree,
             CKind::Coincident
@@ -1504,9 +1601,14 @@ impl CKind {
             | CKind::CircleOnSphereFixed
             | CKind::Midpoint3
             | CKind::Symmetric3
+            | CKind::ConeOn
+            | CKind::CylinderOn
+            | CKind::CylinderTangentLine
+            | CKind::ConeTangentCone
             | CKind::HingeParallel
             | CKind::HingeAlong
             | CKind::ProjectSolved
+            | CKind::Mate
             | CKind::Ground
             | CKind::Fix
             | CKind::Ccw
@@ -1551,6 +1653,10 @@ impl CKind {
                 | CKind::CircleOnSphereFixed
                 | CKind::Midpoint3
                 | CKind::Symmetric3
+                | CKind::ConeOn
+                | CKind::CylinderOn
+                | CKind::CylinderTangentLine
+                | CKind::ConeTangentCone
         )
     }
 
@@ -2237,7 +2343,15 @@ impl Constraint {
             }
             CKind::SphereRadius => vec![self.args[1].num()],
             // `point_line3_free` at (m, c) = (1, 0): the stated number is the radius column
-            CKind::SphereTangentLine => vec![1.0, 0.0],
+            CKind::SphereTangentLine | CKind::CylinderOn => vec![1.0, 0.0],
+            CKind::ConeAngle | CKind::CylinderRadius => vec![self.args[1].num()],
+            // the gap between the two faces' ordinates along the planes' shared normal
+            CKind::Mate => vec![self.args[2].num()],
+            // `line_line3_free` at (m, c) = (±1, 0): the radius, turned to the seed's side
+            CKind::CylinderTangentLine => {
+                let s = if matches!(self.args[2], Arg::Int(s) if s < 0) { -1.0 } else { 1.0 };
+                vec![s, 0.0]
+            }
             // outside, or inside with the larger radius positive as the radii stand now
             CKind::SphereTangentSphere => {
                 if matches!(self.args[2], Arg::Bool(false)) {
@@ -2446,6 +2560,13 @@ impl Constraint {
             }
             // both images' hidden points, then both views' quaternions
             CKind::ProjectSolved => [self.lifted_columns(sk), att_q(2), att_q(3)].concat(),
+            // the two planes' offsets along their shared normal
+            CKind::Mate => {
+                let d = |i: usize| {
+                    sk.planes[e(i).i()].att.as_ref().expect("a mate between solved views").d
+                };
+                vec![d(0), d(1)]
+            }
             // the hidden point, the view point, its datum's origin and rotor — and, over a
             // solved view, its quaternion and offset: the kernels' 14 and 9 columns
             CKind::Lift | CKind::LiftFixed => {
@@ -2498,6 +2619,20 @@ impl Constraint {
             CKind::SphereRadius => vec![rad(0)],
             CKind::SphereTangentLine => [self.lifted_columns(sk), vec![rad(0)]].concat(),
             CKind::SphereTangentSphere => [self.lifted_columns(sk), vec![rad(0), rad(1)]].concat(),
+            // the hidden points, then the number each cone or cylinder owns: its half-angle or
+            // its radius, after its axis's two ends
+            CKind::ConeOn | CKind::CylinderOn => {
+                [self.lifted_columns(sk), vec![sk.axial(e(1)).param]].concat()
+            }
+            CKind::ConeAngle | CKind::CylinderRadius => vec![sk.axial(e(0)).param],
+            CKind::CylinderTangentLine => {
+                [self.lifted_columns(sk), vec![sk.axial(e(0)).param]].concat()
+            }
+            CKind::ConeTangentCone => {
+                let x = self.lifted_columns(sk);
+                let (k1, k2) = (sk.axial(e(0)).param, sk.axial(e(1)).param);
+                [x[0..9].to_vec(), vec![k1], x[9..15].to_vec(), vec![k2]].concat()
+            }
             // the point and the centre in space, the radius, and the view's quaternion
             CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed => {
                 let ps = self.lifted_columns(sk);
@@ -2527,6 +2662,10 @@ impl Constraint {
             let l = &sk.lines[e(i).i()];
             [l.p1 as usize, l.p2 as usize]
         };
+        let axis = |i: usize| {
+            let l = &sk.lines[sk.axial(e(i)).axis as usize];
+            [l.p1 as usize, l.p2 as usize]
+        };
         match self.kind {
             CKind::Coincident3 | CKind::Distance3 => vec![e(0).i(), e(1).i()],
             CKind::PointLine3 => [vec![e(0).i()], ends(1).to_vec()].concat(),
@@ -2542,6 +2681,10 @@ impl Constraint {
                 vec![sk.round_center(e(0)), sk.round_center(e(1))]
             }
             CKind::Midpoint3 => [vec![e(0).i()], ends(1).to_vec()].concat(),
+            // a cone's or a cylinder's axis, apex first
+            CKind::ConeOn | CKind::CylinderOn => [vec![e(0).i()], axis(1).to_vec()].concat(),
+            CKind::CylinderTangentLine => [axis(0), ends(1)].concat(),
+            CKind::ConeTangentCone => [vec![e(2).i()], axis(0).to_vec(), axis(1).to_vec()].concat(),
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
             CKind::ProjectSolved => vec![e(0).i(), e(1).i()],
             _ => [ends(0), ends(1)].concat(),
@@ -2752,8 +2895,14 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                 }
             }
             // a line in space needs a direction, and two of them a common perpendicular
-            let lines: Vec<EntRef> =
+            let mut lines: Vec<EntRef> =
                 c.entities().into_iter().filter(|e| e.kind == EntKind::Line).collect();
+            // a cone's or a cylinder's axis is a line in space too, and needs its direction
+            for e in c.entities() {
+                if matches!(e.kind, EntKind::Cone | EntKind::Cylinder) {
+                    lines.insert(0, EntRef::line(sk.axial(e).axis as usize));
+                }
+            }
             for &l in &lines {
                 let ln = &sk.lines[l.i()];
                 let [a, b] = [ln.p1, ln.p2].map(|p| sk.world_point(p as usize));
@@ -2777,7 +2926,9 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                     crate::io::entity_name(args[1].ent())
                 ));
             }
-            if k == CKind::LineLine3 && skew_seed(sk, lines[0], lines[1]).is_none() {
+            if matches!(k, CKind::LineLine3 | CKind::CylinderTangentLine)
+                && skew_seed(sk, lines[0], lines[1]).is_none()
+            {
                 return Err(format!(
                     "{} and {} are parallel in space, and parallel lines have no common \
                      perpendicular to measure",
@@ -2816,6 +2967,10 @@ pub fn infer_value(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Option<A
     match (kind, i) {
         (CKind::LineLine3, 3) => {
             skew_seed(sk, args[0].ent(), args[1].ent()).map(|s| Arg::Int(s as i64))
+        }
+        (CKind::CylinderTangentLine, 2) => {
+            let axis = EntRef::line(sk.axial(args[0].ent()).axis as usize);
+            skew_seed(sk, axis, args[1].ent()).map(|s| Arg::Int(s as i64))
         }
         // whichever of touching outside and inside the two spheres already stand nearer, as two
         // circles' is read on the page
@@ -2928,6 +3083,8 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::Curve => ent == EntKind::Curve,
         SpecKind::Plane => ent == EntKind::Plane,
         SpecKind::Sphere => ent == EntKind::Sphere,
+        SpecKind::Cone => ent == EntKind::Cone,
+        SpecKind::Cylinder => ent == EntKind::Cylinder,
         _ => false,
     }
 }

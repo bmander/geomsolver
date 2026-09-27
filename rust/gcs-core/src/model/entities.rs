@@ -77,6 +77,12 @@ pub enum EntKind {
     /// view is a circle only square on.  Its relations (`p on s`, `radius`, `tangent`) are in
     /// space and read its centre's lift.  Last in the enum so every kind's id stays what it was.
     Sphere,
+    /// **A cone** (P4): an axis line drawn in some view — the apex its start, the axis running
+    /// toward its end — and a half-angle it owns, like a sphere's radius.  No picture on any
+    /// sheet; its relations (`p on k`, `angle`, `tangent`) are in space and read the axis's lifts.
+    Cone,
+    /// **A cylinder** (P4): an axis line drawn in some view and a radius it owns.
+    Cylinder,
 }
 
 impl EntKind {
@@ -99,6 +105,8 @@ impl EntKind {
             EntKind::Vertex => "vertex",
             EntKind::Edge => "edge",
             EntKind::Sphere => "sphere",
+            EntKind::Cone => "cone",
+            EntKind::Cylinder => "cylinder",
         }
     }
 
@@ -121,6 +129,8 @@ impl EntKind {
             "vertex" => EntKind::Vertex,
             "edge" => EntKind::Edge,
             "sphere" => EntKind::Sphere,
+            "cone" => EntKind::Cone,
+            "cylinder" => EntKind::Cylinder,
             _ => return None,
         })
     }
@@ -138,6 +148,9 @@ impl EntKind {
             EntKind::Point => &[("x", S), ("y", S)],
             EntKind::Line => &[("p1", C), ("p2", C)],
             EntKind::Circle | EntKind::Sphere => &[("center", C), ("r", S)],
+            // the axis is a line, the one child that is not a point: the apex is its start
+            EntKind::Cone => &[("axis", C), ("half", S)],
+            EntKind::Cylinder => &[("axis", C), ("r", S)],
             EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
             EntKind::Spline => &[("ctrl", L)],
             // a plane's attitude is not a field: a Scalar is a number a solve may write back,
@@ -182,6 +195,8 @@ impl EntKind {
             EntKind::Point
             | EntKind::Circle
             | EntKind::Sphere
+            | EntKind::Cone
+            | EntKind::Cylinder
             | EntKind::Spline
             | EntKind::Plane
             | EntKind::Curve
@@ -212,6 +227,8 @@ impl EntKind {
             EntKind::Plane => {
                 [pt("origin"), pt("toward"), vec![format!("{n}.c"), format!("{n}.s")]].concat()
             }
+            // a surface in space is no formal a curve is written over
+            EntKind::Cone | EntKind::Cylinder => return None,
             EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => return None,
         })
     }
@@ -238,6 +255,8 @@ impl EntKind {
             // its centre is a point of whatever view the declaration is in
             | EntKind::Sphere
             => true,
+            // built over a line already drawn in its view, as a face is over its edges
+            EntKind::Cone | EntKind::Cylinder => false,
         }
     }
 
@@ -258,6 +277,8 @@ impl EntKind {
             | EntKind::Curve
             | EntKind::Face
             | EntKind::Sphere
+            | EntKind::Cone
+            | EntKind::Cylinder
             | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => None,
         }
     }
@@ -279,7 +300,9 @@ impl EntKind {
             | EntKind::Plane
             | EntKind::Curve
             // solved, owning its radius — a figure of the drawing stratum, not a reading of one
-            | EntKind::Sphere => false,
+            | EntKind::Sphere
+            | EntKind::Cone
+            | EntKind::Cylinder => false,
         }
     }
 
@@ -373,6 +396,15 @@ pub struct CircleE {
 pub struct SphereE {
     pub center: u32,
     pub radius: u32,
+    pub class: Classes,
+}
+
+/// A cone or a cylinder (P4): its axis, a drawn line — a cone's apex is the line's start — and
+/// the number it owns, a Param: a cone's half-angle (radians) or a cylinder's radius.
+#[derive(Clone, Debug)]
+pub struct AxialE {
+    pub axis: u32,
+    pub param: u32,
     pub class: Classes,
 }
 

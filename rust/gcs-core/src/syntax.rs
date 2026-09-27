@@ -745,8 +745,10 @@ pub enum Attitude {
     /// A plane parallel to `plane`, displaced along its normal. An absent offset
     /// leaves placement to stack relations (§6.10).
     Offset { plane: Ref, offset: Option<Arg> },
-    /// `u: (0.6, 0.8, 0), v: (0, 0, 1)` — six dimensionless `Arg::Dim`s.
-    Basis { u: [Arg; 3], v: [Arg; 3] },
+    /// `u: (0.6, 0.8, 0), v: (0, 0, 1)` — six dimensionless `Arg::Dim`s — and, optionally,
+    /// `o: (0, 0, 12)`, where in space the basis stands (three lengths, P4): what a stated plane
+    /// that stands off the shared origin is lifted as, since `u:` and `v:` say only how it turns.
+    Basis { u: [Arg; 3], v: [Arg; 3], o: Option<[Arg; 3]> },
     /// `from: front, fold: along l` **[P2a]** — folded square to `front` about a line drawn in
     /// it: the view contains `l`, and follows it as the solve moves it.
     Along { plane: Ref, line: Ref },
@@ -829,7 +831,9 @@ impl Attitude {
             Attitude::Page | Attitude::Along { .. } | Attitude::Free { .. } => Vec::new(),
             Attitude::From { fold, .. } => vec![fold],
             Attitude::Offset { offset, .. } => offset.iter_mut().collect(),
-            Attitude::Basis { u, v } => u.iter_mut().chain(v.iter_mut()).collect(),
+            Attitude::Basis { u, v, o } => {
+                u.iter_mut().chain(v.iter_mut()).chain(o.iter_mut().flatten()).collect()
+            }
         }
     }
 }

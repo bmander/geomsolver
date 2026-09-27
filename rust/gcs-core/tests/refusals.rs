@@ -396,8 +396,9 @@ fn a_direction_and_a_sense_are_words() {
 }
 
 /// Views solved for (P2a): a fold along a line of another view and a position stated twice are
-/// E064, `against` on a solved view is E066, and two solved views a projection relates that come
-/// out parallel are E065 — after the solve, where no stated number could have said so.
+/// E064, `against` between views that turn apart is E066, and two solved views a projection
+/// relates that come out parallel are E065 — after the solve, where no stated number could have
+/// said so.
 #[test]
 fn a_solved_view_the_model_cannot_hold_is_refused() {
     let views = "point o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\nplane front(origin: o, toward: t)\n";
@@ -439,6 +440,41 @@ fn a_word_across_views_with_no_meaning_in_space_is_refused() {
     // (and since P3, the midpoint and the mirror in a line)
     for stmt in ["a horizontal la.p1", "a distance(4, along: y) la.p1", "a distance(8) b", "la angle(40) lb",
                  "a symmetry(lb) la.p1", "a midpoint lb"] {
+        let (_, d) = read(&format!("{views}{stmt}\n"));
+        assert!(d.is_empty(), "{stmt}: {d:?}");
+    }
+}
+
+/// Cones and cylinders (P4) take the words they have kernels for and say so for the rest: a
+/// line on either (a generator) is said of its points, two cones touch at a point the statement
+/// names, and each is built about a line already drawn in a view.
+#[test]
+fn what_a_cone_or_a_cylinder_cannot_say_is_refused() {
+    let views = "point o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\n\
+                 plane front(origin: o, toward: t)\n\
+                 point o2 hint(x: 100, y: 0)\npoint t2 hint(x: 140, y: 0)\n\
+                 plane side(origin: o2, toward: t2, from: front, fold: 90deg)\n\
+                 point a hint(x: 5, y: 5) in front\n\
+                 line la(hint(x: 0, y: 0), hint(x: 0, y: 20)) in front\n\
+                 line lb(hint(x: 100, y: 0), hint(x: 120, y: 9)) in side\n\
+                 cone k(axis: la) hint(half: 30deg)\ncone k2(axis: lb) hint(half: 20deg)\n\
+                 cylinder c(axis: la) hint(r: 5)\n";
+    for (stmt, code, needle) in [
+        ("lb on k", "E040", "a line on a cone or a cylinder"),
+        ("lb on c", "E040", "a line on a cone or a cylinder"),
+        ("k tangent lb", "E040", "a line touches a cylinder"),
+        ("lb tangent c", "E040", "the cylinder first"),
+        ("k tangent k2", "E040", "names it"),
+        ("angle(20deg) c", "E040", "does not apply to a cylinder"),
+        ("radius(-2) c", "E040", "magnitude"),
+        ("cone bad(axis: a)", "E103", "axis is a line"),
+        ("cylinder bad", "E103", "built about a line"),
+    ] {
+        let (_, d) = read(&format!("{views}{stmt}\n"));
+        assert!(d.iter().any(|m| m.starts_with(code) && m.contains(needle)), "{stmt}: {d:?}");
+    }
+    for stmt in ["a on k", "a on c", "radius(4) c", "angle(25deg) k", "c tangent lb",
+                 "point m hint(x: 3, y: 3) in front\nk tangent(m) k2"] {
         let (_, d) = read(&format!("{views}{stmt}\n"));
         assert!(d.is_empty(), "{stmt}: {d:?}");
     }

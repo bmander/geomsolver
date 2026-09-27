@@ -252,8 +252,8 @@ line top(b,c)
 line axis(d,c)
 line bottom(d,a)
 face profile(side,top,axis,bottom)
-solid cylinder(profile,about: axis)
-surface wall(cylinder,side)
+solid drum(profile,about: axis)
+surface wall(drum,side)
 ");
     let s = RevolvedSurface::named(&e.sketch,0).unwrap();
     let [p,d,dd] = s.generating_profile_jet_bounds(gcs_core::interval::Interval::new(0.,1.).unwrap()).unwrap();

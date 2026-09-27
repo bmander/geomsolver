@@ -37,6 +37,15 @@ out of user-facing names. The cylinder preview keeps `cyl:` for its `.svd` refer
 
 
 
+**Cones and cylinders (P4, `docs/spatial-constraints-plan.md`):** `cone k(axis: l) hint(half:
+30deg)` and `cylinder c(axis: l) hint(r: 10)` are built about a line drawn in a view (a cone's
+apex is its start) and own one Param each (a half-angle in radians, written in degrees:
+`Sketch::seed_value`). Words: `p on k|c`, `angle(θ) k`, `radius(r) c`, `c tangent l`,
+`k1 tangent(M) k2` (one tangent plane at M; `M on` each stated beside it). New kernels use the
+forward-mode `Dual<N>` in `kernels.rs`. `against` with solved views works when the planes share an
+attitude root (`from:` with no fold); a solved datum offset makes a `CKind::Mate` row. `o:` beside
+`u:`/`v:` is where a stated basis stands, which `to_program` writes for a stand-off plane.
+
 **Closed components:** model dependencies enter through arguments, including standard datums.
 Visible component definitions and built-in functions/constants remain callable. Component scopes
 contain only their own formals and declarations; repetitions share that lexical scope.

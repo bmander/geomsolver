@@ -64,6 +64,10 @@ pub(super) fn build(
     if d.kind == EntKind::Curve {
         return build_curve(sk, res, d, st, diags, prog, insts);
     }
+    // and a cone's and a cylinder's is a line (P4), which no walk over points can mint
+    if matches!(d.kind, EntKind::Cone | EntKind::Cylinder) {
+        return build_axial(sk, res, d, st, diags);
+    }
     // a seed named by a place (`hint(at: k, bearing: b)`) is a point's; every other kind has
     // a scalar of its own the clause seeds by name
     if d.seed_at.is_some() && d.kind != EntKind::Point {
@@ -319,6 +323,7 @@ pub(super) fn build(
             pi
         }
         EntKind::Curve => unreachable!("a curve is built before this walk"),
+        EntKind::Cone | EntKind::Cylinder => unreachable!("built by `build_axial`"),
     };
     let e = EntRef::new(d.kind, idx);
     set_class(sk, e, d.class.clone());
@@ -349,6 +354,88 @@ pub(super) fn build(
         }
     }
     Some(e)
+}
+
+/// **A cone or a cylinder** (P4): `cone k(axis: l) hint(half: 30deg)`, `cylinder c(axis: l)
+/// hint(r: 10)`.  What it is made of is a line already drawn in some view — a cone's apex is the
+/// line's start and its axis runs toward the end — and it owns one number, a half-angle or a
+/// radius, which a relation states (`angle(30deg) k`, `radius(10) c`) or a solve finds.  The
+/// axis is never minted: a line nothing names is a line in no view, and a surface about it would
+/// be nowhere in space.  A half-angle is written in degrees and held in radians, the way every
+/// angle the kernels read is.
+fn build_axial(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    st: &Stmt,
+    diags: &mut Vec<Diag>,
+) -> Option<EntRef> {
+    let what = d.kind.as_str();
+    let fail = |diags: &mut Vec<Diag>, span: Span, message: String| {
+        diags.push(Diag { code: Code::E103, span, stmt: Some(st.id), message });
+    };
+    let refs: Vec<&crate::syntax::Ref> = d
+        .children
+        .iter()
+        .flatten()
+        .filter_map(|k| match k {
+            Kid::Ref(r) => Some(r),
+            _ => None,
+        })
+        .collect();
+    let written: usize = d.children.iter().map(|g| g.len()).sum();
+    let [r] = refs[..] else {
+        fail(diags, st.span, format!(
+            "a {what} is built about a line already drawn in a view: `{what} k(axis: l)`"
+        ));
+        return None;
+    };
+    if written != 1 {
+        fail(diags, st.span, format!("a {what} is built from one line, its axis"));
+        return None;
+    }
+    let Some(e) = res.lookup(r) else {
+        diags.push(Diag {
+            code: Code::E101,
+            span: r.span,
+            stmt: Some(st.id),
+            message: format!("no such entity: `{}`", r.root.text),
+        });
+        return None;
+    };
+    let e = match follow_building(sk, res, e, r) {
+        Ok(e) => e,
+        Err(msg) => {
+            diags.push(Diag { code: Code::E040, span: r.span, stmt: Some(st.id), message: msg });
+            return None;
+        }
+    };
+    if e.kind != EntKind::Line {
+        fail(diags, r.span, format!(
+            "`{}` is a {}, and a {what}'s axis is a line",
+            r.root.text,
+            e.kind.as_str()
+        ));
+        return None;
+    }
+    if let Some(Some(t)) = d.seed_text.first() {
+        let span = d.seed_spans.first().copied().unwrap_or(st.span);
+        fail(diags, span, format!("`{t}`: a {what}'s seed is a number"));
+        return None;
+    }
+    let wrote = d.seed_explicit.first().copied().unwrap_or(false);
+    let seed = d.seed.first().copied().unwrap_or(0.0);
+    let show = shown(sk, d);
+    let idx = match d.kind {
+        EntKind::Cone => {
+            let deg = if wrote { seed } else { 30.0 };
+            sk.cone(e.i(), deg.to_radians(), &show)
+        }
+        _ => sk.cylinder(e.i(), if wrote { seed } else { UNSEEDED_RADIUS }, &show),
+    };
+    let out = EntRef::new(d.kind, idx);
+    set_class(sk, out, d.class.clone());
+    Some(out)
 }
 
 /// Defer geometric seed expressions until all declarations have initial values.
@@ -500,6 +587,8 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Curve => sk.curves[e.i()].class = c,
         EntKind::Circle => sk.circles[e.i()].class = c,
         EntKind::Sphere => sk.spheres[e.i()].class = c,
+        EntKind::Cone => sk.cones[e.i()].class = c,
+        EntKind::Cylinder => sk.cylinders[e.i()].class = c,
         EntKind::Arc => sk.arcs[e.i()].class = c,
         EntKind::Spline => sk.splines[e.i()].class = c,
         EntKind::Plane => sk.planes[e.i()].frame.class = c,

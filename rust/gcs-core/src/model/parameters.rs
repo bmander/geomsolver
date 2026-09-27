@@ -104,6 +104,9 @@ impl Sketch {
             EntKind::Point => self.point_params(e.i()).to_vec(),
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Sphere => vec![self.spheres[e.i()].radius],
+            EntKind::Cylinder => vec![self.cylinders[e.i()].param],
+            // a half-angle is an angle, and a unit's conversion leaves it alone
+            EntKind::Cone => Vec::new(),
             EntKind::Arc => vec![self.arcs[e.i()].radius],
             // the rotor `(c, s)` is a unit vector — a direction, and scaling it would only
             // break `frame_unit`.  A frame's one length is `frame_align`'s chord, which is a
@@ -163,6 +166,23 @@ impl Sketch {
         }
     }
 
+    /// One of `e`'s own params as its declaration's `hint(…)` writes it: the value, except a
+    /// cone's half-angle, held in radians as every angle the kernels read and written in degrees
+    /// as every angle a document states.  What a writeback and a lifted program both spell.
+    pub fn seed_value(&self, e: EntRef, p: u32) -> f64 {
+        let v = self.params[p as usize].value;
+        if e.kind == EntKind::Cone { v.to_degrees() } else { v }
+    }
+
+    /// A cone's or a cylinder's axis and the number it owns (P4).
+    pub fn axial(&self, e: EntRef) -> &AxialE {
+        match e.kind {
+            EntKind::Cone => &self.cones[e.i()],
+            EntKind::Cylinder => &self.cylinders[e.i()],
+            _ => panic!("not a cone or a cylinder"),
+        }
+    }
+
     /// Params of any primitive, in the model's canonical order.
     pub fn entity_params(&self, e: EntRef) -> Vec<u32> {
         match e.kind {
@@ -180,6 +200,11 @@ impl Sketch {
                 let c = &self.spheres[e.i()];
                 let p = &self.points[c.center as usize];
                 vec![p.x, p.y, c.radius]
+            }
+            // the axis's ends, then the number the kind owns
+            EntKind::Cone | EntKind::Cylinder => {
+                let a = self.axial(e);
+                [self.line_params(a.axis as usize).to_vec(), vec![a.param]].concat()
             }
             EntKind::Arc => {
                 let a = &self.arcs[e.i()];
@@ -238,6 +263,7 @@ impl Sketch {
             EntKind::Point => self.point_params(e.i()).to_vec(),
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Sphere => vec![self.spheres[e.i()].radius],
+            EntKind::Cone | EntKind::Cylinder => vec![self.axial(e).param],
             EntKind::Arc => vec![self.arcs[e.i()].radius],
             EntKind::Plane => {
                 let f = self.frame_of(e);

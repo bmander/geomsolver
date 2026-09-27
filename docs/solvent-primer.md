@@ -215,15 +215,16 @@ fix c.r                             line1 tangent(side: -1) circle1
 
 | word | fixity | operands |
 |---|---|---|
-| `on` | infix | a point to a line, circle, arc, spline or curve; a point or a line to a **plane**, and a point or a circle to a **sphere**, in space (1.13); between two **solids** it is not a constraint at all but the body rule (1.14) |
+| `on` | infix | a point to a line, circle, arc, spline or curve; a point or a line to a **plane**, a point or a circle to a **sphere**, and a point to a **cone** or a **cylinder**, in space (1.13); between two **solids** it is not a constraint at all but the body rule (1.14) |
 | `distance` | infix | two points (`along: x` / `along: y` for the run and the rise, signed first to second, or `along: right \| left \| up \| down` to say the direction in a word); a point and a line, or two lines (a magnitude — `side: left \| right` pins which side, and without one the seed picks); two concentric circles or arcs (the radial gap); a point and a datum (`along: u` / `along: v` for signed local ordinates, `along: n` for the signed distance along the plane's normal, in space) |
 | `distance` | prefix | a line: the distance between its own ends |
-| `tangent` | infix | a line and a circle or arc (`at: p1` / `p2` for a tangency at that end; `side: left \| right` says which side of the line the centre is); two circles or arcs (`external: true/false`); an arc and a line (`at: start` / `end`); a spline or a curve and a line; a sphere and a line or a sphere, in space (the sphere first) |
+| `tangent` | infix | a line and a circle or arc (`at: p1` / `p2` for a tangency at that end; `side: left \| right` says which side of the line the centre is); two circles or arcs (`external: true/false`); an arc and a line (`at: start` / `end`); a spline or a curve and a line; a sphere and a line or a sphere, a cylinder and a line, in space (the sphere or the cylinder first); two cones at a point, `k1 tangent(M) k2` |
 | `equal` | infix | two lines (length), or two circles or arcs (radius) |
 | `curvature` | infix | a spline or a curve and a circle or arc: the circle becomes the osculating circle there. Refused on a traced curve |
 | `horizontal`, `vertical` | prefix / infix | a line, or a pair of points with no line drawn between them |
 | `angle` | infix | two lines; a bare number is degrees, and `sense: cw` turns it the other way |
-| `radius` | prefix | a circle, an arc or a sphere |
+| `angle` | prefix | a cone: its half-angle |
+| `radius` | prefix | a circle, an arc, a sphere or a cylinder |
 | `coincident`, `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines |
@@ -633,7 +634,11 @@ free` is three freedoms and `offset: free` one; `through: m` stands the plane wh
 another view is. A view folded from a solved one follows it. A point drawn in a view is that
 view's lift of it, and `project` over a solved view is the projector rule in space. A seed for a
 stated quantity is E040; a position stated twice or a fold along a line of another view is E064;
-views that come out parallel under a `project` are E065; `against` with a solved view is E066.
+views that come out parallel under a `project` are E065. `against` works with solved views where
+the two faces' planes turn together — one derived `from:` the other, or both from one, with no
+fold: the placed plane turns with its datum and stands off it by the faces' gap, and where the
+datum's offset is itself solved (`offset: free`, `through:`) the gap is a row of the solve. Two
+views that turn apart are E066.
 `solventc --where side` reports a solved view's `side.u.x` … `side.o.z`, and a report names what
 is left free as `side.attitude` and `side.offset`.
 
@@ -663,6 +668,29 @@ radius, on no sheet (the glass box draws it as three great circles). `radius(12)
 on the sphere — its centre on the circle's axis, and the radii and the gap a right triangle —
 which is what a gear blank's toe or heel circle is to its end sphere. `s tangent k` is refused: a
 circle and a sphere may touch at a point or all the way round.
+
+**A cone and a cylinder** are built about a line already drawn in a view, and each owns one
+number, as a sphere owns its radius:
+
+```
+cone gc(axis: gax) hint(half: 60deg)
+cylinder bore(axis: ax) hint(r: 8)
+```
+
+A cone's apex is its axis's start and it opens toward the end; its half-angle is written in
+degrees and held in radians. `angle(60deg) gc` and `radius(8) bore` state the numbers; `p on gc`
+puts a point on the nappe the axis points into (its distance from the generator in its meridian
+half-plane, `ρ cos α − h sin α`) and `p on bore` a point its radius off the axis; `bore tangent l`
+makes a line touch the cylinder (the common perpendicular with the axis is the radius, the side
+read off the seed). `gc tangent(M) pc` says two cones touch at M with one tangent plane there —
+the second's normal square to both of the first's tangent directions; `M on gc` and `M on pc` say
+M is on them, as an on-circle stands beside a tangency at a named end. A line on either (a
+generator) is not a relation yet and says so: state it of the line's points. Neither is on a
+sheet; the glass box draws each as two circles square to the axis and four rulings.
+
+**`o:` says where a basis given outright stands.** `u: (…), v: (…), o: (0, -12, 0)` is the basis
+at that origin in space. A lifted program writes it for a stated plane that stands off the shared
+origin — a stand-off, a mate, a view folded from one — which `u:` and `v:` alone would lose.
 
 ### 1.14 Faces, solids and derived views
 
@@ -1603,6 +1631,61 @@ generator — the common pitch plane is by construction. The pitch radii, the sh
 offset are four conditions; the gear's pitch angle (60°) is the fifth the cones need, and the
 pinion's apex and pitch angle follow (ε = 10.72°, γ = 29.56°). `tests/spatial_lang.rs` checks
 every one of those against the lifted geometry.
+
+### 2.13 The same pitch cones, named: DOF 0, well
+
+```
+unit mm
+param module = 4mm
+param Rg = 48 * module / 2
+param Rp = 24 * module / 2
+param E = 20mm
+
+point o hint(x: 0, y: 0)
+point t hint(x: 40, y: 0)
+plane P(origin: o, toward: t)
+ground o
+ground t
+point M hint(x: 0, y: 0) in P
+ground M
+
+// the gear's axial plane, square to P about its vertical axis; the pinion's, solved, through M
+point og hint(x: 0, y: 200)
+point tg hint(x: 40, y: 200)
+plane G(origin: og, toward: tg, from: P, fold: 90deg)
+ground og
+ground tg
+point oq hint(x: 0, y: -200)
+point tq hint(x: 40, y: -200)
+plane Q(origin: oq, toward: tq, attitude: free, through: M) hint(u: (0.1618, -0.4935, -0.8546), v: (0.0918, 0.8698, -0.4847))
+
+line gax(hint(x: 110.85, y: 200), hint(x: 50.85, y: 303.9)) in G
+line pax(hint(x: -84.62, y: -248), hint(x: -4.62, y: -248)) in Q
+gax.p1 on P
+gax.p1 distance(120) gax.p2
+pax.p1 distance(80) pax.p2
+horizontal pax
+
+cone gc(axis: gax) hint(half: 60deg)
+cone pc(axis: pax) hint(half: 30deg)
+angle(60deg) gc
+M on gc
+M on pc
+gc tangent(M) pc
+
+M distance(Rg) gax
+M distance(Rp) pax
+gax angle(90deg) pax
+gax distance(E) pax
+```
+
+It solves to `39 params, 39 equations, structural rank 39; DOF 0`. The pitch cones are named
+and the contact is stated rather than built: the gear's apex on P makes P the gear cone's tangent
+plane at M, and `gc tangent(M) pc` makes it the pinion's, so the pinion's apex comes out on P with
+nothing saying so. `horizontal pax` holds the pinion view's own turn, which is the one freedom a
+free view drawn about a line and a point has left. `tests/spatial_surfaces.rs` solves this and
+2.12 and finds the same hypoid: Γ = 60°, γ = 29.564957707°, ε = 10.722102067°, |MA| = 97.282181449,
+every one within 2e-11.
 
 ---
 

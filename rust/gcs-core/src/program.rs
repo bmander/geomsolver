@@ -278,6 +278,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
         EntKind::Spline,
         EntKind::Plane,
         EntKind::Sphere,
+        EntKind::Cone,
+        EntKind::Cylinder,
         EntKind::Curve,
     ] {
         for st in &body {

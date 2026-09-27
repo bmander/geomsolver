@@ -112,6 +112,14 @@ macro_rules! undrawn {
             | CKind::SphereRadius
             | CKind::SphereTangentLine
             | CKind::SphereTangentSphere
+            // nor is a cone or a cylinder
+            | CKind::ConeOn
+            | CKind::CylinderOn
+            | CKind::ConeAngle
+            | CKind::CylinderRadius
+            | CKind::CylinderTangentLine
+            | CKind::ConeTangentCone
+            | CKind::Mate
             // a view's hinge is its declaration's, and a projection in space draws what
             // `project` draws: nothing
             | CKind::Hinge

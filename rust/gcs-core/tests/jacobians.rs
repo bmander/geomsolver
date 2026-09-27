@@ -71,6 +71,11 @@ fn all_constraints(seed: u32) -> Sketch {
     let sa = EntRef::new(gcs_core::model::EntKind::Sphere, sk.sphere(cpc, rng.uniform(1.0, 11.0), "sa"));
     let sb = EntRef::new(gcs_core::model::EntKind::Sphere, sk.sphere(cpb, rng.uniform(1.0, 11.0), "sb"));
     let (me1, me2) = (EntRef::line(m1), EntRef::line(m2));
+    // and a cone about each of those lines and a cylinder about the first (P4)
+    use gcs_core::model::EntKind::{Cone, Cylinder};
+    let kn1 = EntRef::new(Cone, sk.cone(m1, rng.uniform(0.3, 1.2), "kn1"));
+    let kn2 = EntRef::new(Cone, sk.cone(m2, rng.uniform(0.3, 1.2), "kn2"));
+    let cy = EntRef::new(Cylinder, sk.cylinder(m1, rng.uniform(1.0, 11.0), "cy"));
     // a view hinged to the solved one, its quaternion knocked about too, and a line drawn in the
     // solved view for a fold to be taken along (P2a)
     let (ho, ht) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
@@ -202,6 +207,16 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::CircleOnSphere, vec![e(EntRef::circle(kb)), e(sa)]),
         Constraint::new(CKind::Midpoint3, vec![e(qe), e(me1)]),
         Constraint::new(CKind::Symmetric3, vec![e(pe), e(qe), e(fold_line)]),
+        // P4: the cones' and the cylinder's words, and a mate between two solved views
+        Constraint::new(CKind::ConeOn, vec![e(qe), e(kn1)]),
+        Constraint::new(CKind::ConeOn, vec![e(pe), e(kn2)]),
+        Constraint::new(CKind::CylinderOn, vec![e(qe), e(cy)]),
+        Constraint::new(CKind::ConeAngle, vec![e(kn1), Arg::Num(0.6)]),
+        Constraint::new(CKind::CylinderRadius, vec![e(cy), Arg::Num(2.0)]),
+        Constraint::new(CKind::CylinderTangentLine, vec![e(cy), e(me2), Arg::Int(1)]),
+        Constraint::new(CKind::CylinderTangentLine, vec![e(cy), e(me2), Arg::Int(-1)]),
+        Constraint::new(CKind::ConeTangentCone, vec![e(kn1), e(kn2), e(EntRef::point(dp))]),
+        Constraint::new(CKind::Mate, vec![e(EntRef::plane(pc)), e(hpe), Arg::Num(1.5)]),
         // the hinges, and a projection over a solved view — its stated partner given held
         // unknowns at the add
         Constraint::new(CKind::Hinge, vec![e(hpe), e(phe), Arg::Num(0.8)]),
@@ -241,6 +256,8 @@ fn all_constraints(seed: u32) -> Sketch {
         fx(CKind::PointPlaneDistance, vec![e(qe), e(EntRef::plane(pc))], "n3 + 1", 1.2),
         fx(CKind::PointPlaneDistance, vec![e(EntRef::point(lc)), e(EntRef::plane(pb))], "-2 * n4", 0.5),
         fx(CKind::SphereRadius, vec![e(sb)], "rs", 3.0),
+        fx(CKind::ConeAngle, vec![e(kn2)], "2 * ka", 0.5),
+        fx(CKind::CylinderRadius, vec![e(cy)], "kr - 1", 3.0),
     ];
     // the two intrinsic PointOnCircle constraints the arc brought with it stay in the sketch
     sk.constraints.clear();

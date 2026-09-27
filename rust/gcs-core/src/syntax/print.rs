@@ -309,7 +309,13 @@ fn attitude_only(a: &Attitude, triple: &dyn Fn(&[Arg; 3]) -> String) -> Vec<Stri
             }
             parts
         }
-        Attitude::Basis { u, v } => vec![format!("u: {}", triple(u)), format!("v: {}", triple(v))],
+        Attitude::Basis { u, v, o } => {
+            let mut parts = vec![format!("u: {}", triple(u)), format!("v: {}", triple(v))];
+            if let Some(o) = o {
+                parts.push(format!("o: {}", triple(o)));
+            }
+            parts
+        }
     }
 }
 
@@ -639,7 +645,7 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
             continue;
         }
         // nor is a skew distance's side: the word is `distance`, and the side is the seed's
-        if kind == CKind::LineLine3 && i == 3 {
+        if (kind == CKind::LineLine3 && i == 3) || (kind == CKind::CylinderTangentLine && i == 2) {
             continue;
         }
         // a selector nobody wrote is not written: the empty word is what an omitted `side:` or

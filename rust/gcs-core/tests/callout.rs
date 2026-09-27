@@ -113,7 +113,9 @@ fn every_dimension_is_drawn() {
     // one; a hinge's fold is its plane's brackets, and is drawn as the view it folds; and a
     // sphere is on no sheet, so its radius is drawn on none
     let mut want: Vec<CKind> = ALL_KINDS.iter().copied()
-        .filter(|k| k.has_dimension() && !k.spatial() && !k.hinge() && *k != CKind::SphereRadius)
+        .filter(|k| k.has_dimension() && !k.spatial() && !k.hinge())
+        // nor are a cone's or a cylinder's (P4)
+        .filter(|k| !matches!(k, CKind::SphereRadius | CKind::ConeAngle | CKind::CylinderRadius))
         .collect();
     want.sort();
     assert_eq!(drawn, want, "the fixture is missing a dimensioned kind");

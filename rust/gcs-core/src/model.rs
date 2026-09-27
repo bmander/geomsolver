@@ -25,7 +25,8 @@ mod topology;
 mod attitude;
 
 pub use entities::{
-    Param, EntKind, Field, EntRef, PointE, LineE, CircleE, SphereE, ArcE, SplineE, FrameE, PlaneE, Att,
+    Param, EntKind, Field, EntRef, PointE, LineE, CircleE, SphereE, AxialE, ArcE, SplineE, FrameE,
+    PlaneE, Att,
     LiftE,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Home, whole};
@@ -51,6 +52,9 @@ pub struct Sketch {
     pub circles: Vec<CircleE>,
     /// The spheres (P2b), appended last of the drawn kinds; empty in every document before them.
     pub spheres: Vec<SphereE>,
+    /// The cones and cylinders (P4), after the spheres; empty in every document before them.
+    pub cones: Vec<AxialE>,
+    pub cylinders: Vec<AxialE>,
     pub arcs: Vec<ArcE>,
     pub splines: Vec<SplineE>,
     pub planes: Vec<PlaneE>,
@@ -167,6 +171,8 @@ impl Sketch {
             EntKind::Line => self.lines[e.i()].class.clone(),
             EntKind::Circle => self.circles[e.i()].class.clone(),
             EntKind::Sphere => self.spheres[e.i()].class.clone(),
+            EntKind::Cone => self.cones[e.i()].class.clone(),
+            EntKind::Cylinder => self.cylinders[e.i()].class.clone(),
             EntKind::Arc => self.arcs[e.i()].class.clone(),
             EntKind::Spline => self.splines[e.i()].class.clone(),
             EntKind::Plane => self.planes[e.i()].frame.class.clone(),
@@ -192,6 +198,8 @@ impl Sketch {
             EntKind::Line => self.lines.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Circle => self.circles.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Sphere => self.spheres.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Cone => self.cones.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Cylinder => self.cylinders.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Arc => self.arcs.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Spline => self.splines.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Plane => self.planes.get_mut(e.i()).map(|x| &mut x.frame.class),

@@ -26,7 +26,11 @@ pub fn to_program(sk: &Sketch) -> Program {
     // a hinge is a solved view's own statement, and so is the row a fold `along` a line puts
     // its first end in the view by: both are spelled by the plane's clauses (`lift_view`)
     let along = along_rows(sk);
-    for c in sk.user_constraints().into_iter().filter(|c| !c.kind.hinge() && !along.contains(&c.id)) {
+    // and a mate's row is its `against` statement's, and solids are not lifted (P4)
+    let lifted = |c: &&Constraint| {
+        !c.kind.hinge() && c.kind != CKind::Mate && !along.contains(&c.id)
+    };
+    for c in sk.user_constraints().into_iter().filter(lifted) {
         p.push(StmtKind::Relation(lift_relation(sk, c)));
     }
     // a datum point the page-placement gauge holds is not grounded: the lifted views are solved
@@ -90,7 +94,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
             Field::Scalar => {}
         }
     }
-    let seed: Vec<f64> = sk.own_params(e).iter().map(|&p| sk.params[p as usize].value).collect();
+    let seed: Vec<f64> = sk.own_params(e).iter().map(|&p| sk.seed_value(e, p)).collect();
     // a knot vector prints only when it is not the one a control polygon of that length would
     // get anyway: it is document data, and most of it says nothing
     let knots = match e.kind {
@@ -179,16 +183,27 @@ fn lift_attitude(sk: &Sketch, e: EntRef) -> Attitude {
     if e.kind != EntKind::Plane {
         return Attitude::Page;
     }
-    let b = sk.basis(e.i());
+    lift_attitude_at(sk, e, sk.basis(e.i()).o)
+}
+
+/// The same, standing at `o` rather than where the plane does — for a view whose offset is
+/// solved, which carries its place along the normal in `hint(offset: …)` and only the rest here.
+fn lift_attitude_at(sk: &Sketch, e: EntRef, o: [f64; 3]) -> Attitude {
+    let b = crate::plane::Basis { o, ..sk.basis(e.i()) };
     let page = crate::plane::Basis::page();
     let same = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
-    if same(b.u, page.u) && same(b.v, page.v) {
+    // **where it stands, as well as how it turns** (P4): a plane stood off the shared origin — by
+    // an `offset:`, a mate, a fold from one that was — keeps its origin through the lift, as
+    // `o:`; one at the origin writes nothing new, so a lifted page view is `Page` as before
+    let at_origin = b.o.iter().all(|x| *x == 0.0);
+    if same(b.u, page.u) && same(b.v, page.v) && at_origin {
         return Attitude::Page;
     }
     let dim = |x: f64| Arg::Dim { text: num(x), span: Span::default() };
     Attitude::Basis {
         u: [dim(b.u[0]), dim(b.u[1]), dim(b.u[2])],
         v: [dim(b.v[0]), dim(b.v[1]), dim(b.v[2])],
+        o: (!at_origin).then(|| [dim(b.o[0]), dim(b.o[1]), dim(b.o[2])]),
     }
 }
 
@@ -250,6 +265,16 @@ fn lift_view(sk: &Sketch, e: EntRef) -> Option<(Attitude, PlaneSolve)> {
             hints.push(hint("u", triple(b.u)));
             hints.push(hint("v", triple(b.v)));
             Attitude::Free { span: Span::default() }
+        }
+        // where it stands along the normal is the offset's hint below, so only the origin's part
+        // in its own plane is the basis's
+        None if d_free => {
+            let n = b.normal();
+            let k = crate::plane::dot(n, b.o);
+            let rest = [0, 1, 2].map(|t| b.o[t] - k * n[t]);
+            // what is left of an origin on the normal is roundoff, and says nothing
+            let tiny = crate::space::norm(rest) <= 1e-12 * (1.0 + k.abs());
+            lift_attitude_at(sk, e, if tiny { [0.0; 3] } else { rest })
         }
         None => lift_attitude(sk, e),
     };

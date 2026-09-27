@@ -203,7 +203,7 @@ pub(super) fn solids(
     // plane's normal is the sweep's own number and does not depend on where the plane stands, so
     // the walk can be done on the statements alone — and every reader below (a view, a mesh, a
     // claim) resolves its term lazily and therefore sees the planes placed.
-    place(sk, res, body, skip, diags);
+    place(sk, res, map, body, skip, diags);
 
     // -- the pictures the document asks for (§6.11) ---------------------------
     for st in body {

@@ -101,9 +101,10 @@ fn every_constraint_type_is_printable() {
         if kind == CKind::DragTarget {
             continue; // soft, and never in a document — `user_constraints` filters it
         }
-        if kind.hinge() {
+        if kind.hinge() || kind == CKind::Mate {
             // a hinge is a solved view's own statement, written in its plane's brackets
-            // (`fold: beta`, `fold: along l`); `tests/spatial_lang.rs` prints those
+            // (`fold: beta`, `fold: along l`); `tests/spatial_lang.rs` prints those — and a mate's
+            // row is its `against` statement's, which a lifted program does not carry
             continue;
         }
         if matches!(kind, CKind::PointOnCurve | CKind::CurveTangentLine | CKind::CurveCurvature) {
@@ -388,6 +389,9 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let pb = sk.plane(da, db, gcs_core::plane::Basis::page().fold(0.0), "top");
     // two spheres, about a point of each view
     let (sa, sb) = (sk.sphere(q, 6.0, "sa"), sk.sphere(s, 4.0, "sb"));
+    // two cones and a cylinder, about the second line and the first (P4)
+    let (ka, kb) = (sk.cone(l2, 0.5, "ka"), sk.cone(l1, 0.25, "kb"));
+    let cy = sk.cylinder(l2, 7.0, "cy");
     // a projection over stated views is `Project`, and comes back as the twin its views feed
     if matches!(kind, CKind::Project | CKind::ProjectSolved) {
         sk.set_plane(p, Some(pa));
@@ -424,8 +428,15 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let mut used_line = false;
     let mut used_circle = false;
     let mut used_sphere = false;
+    let mut used_cone = false;
     for (i, (_, k)) in spec.iter().enumerate() {
         args.push(match k {
+            SpecKind::Cone if used_cone => Arg::Ent(EntRef::new(EntKind::Cone, kb)),
+            SpecKind::Cone => {
+                used_cone = true;
+                Arg::Ent(EntRef::new(EntKind::Cone, ka))
+            }
+            SpecKind::Cylinder => Arg::Ent(EntRef::new(EntKind::Cylinder, cy)),
             SpecKind::Sphere if used_sphere => Arg::Ent(EntRef::new(EntKind::Sphere, sb)),
             SpecKind::Sphere => {
                 used_sphere = true;

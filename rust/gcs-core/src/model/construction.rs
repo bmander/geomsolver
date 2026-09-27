@@ -103,6 +103,22 @@ impl Sketch {
         self.spheres.len() - 1
     }
 
+    /// A cone about a drawn line — its apex the line's start — its half-angle a Param (radians).
+    pub fn cone(&mut self, axis: usize, half: f64, name: &str) -> usize {
+        let a = self.param(half, false, &format!("{name}.half"));
+        let class = Classes::default();
+        self.cones.push(AxialE { axis: axis as u32, param: a as u32, class });
+        self.cones.len() - 1
+    }
+
+    /// A cylinder about a drawn line, its radius a Param like a sphere's.
+    pub fn cylinder(&mut self, axis: usize, radius: f64, name: &str) -> usize {
+        let r = self.param(radius, false, &format!("{name}.r"));
+        let class = Classes::default();
+        self.cylinders.push(AxialE { axis: axis as u32, param: r as u32, class });
+        self.cylinders.len() - 1
+    }
+
     /// An arc plus its two intrinsic `PointOnCircle` constraints.
     pub fn arc(&mut self, center: usize, start: usize, end: usize, name: &str) -> usize {
         let (cx, cy) = self.point_xy(center);
