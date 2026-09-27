@@ -168,7 +168,9 @@ Ordered by what they unlock.
    circle, replacing the quarter-pitch angle and `crown_teeth`.
 5. **Motion ratios from solved geometry**, or post-solve contexts (motions, extents) reading
    measured lengths: safe for the same reason as change 2, and removes `crown_teeth` from the
-   ratios.
+   ratios. *Motions done*: `ratio: length(a) / distance(p, l)` and the rest (primer 1.14);
+   `tests/measurements.rs` checks the measured rolls against `1 / sin(pinion_angle)` and
+   `-1 / sin(gear_angle)` on the bevel pair. Extents still refuse a measurement (E107).
 6. **Angle equality as a word**, `a equal angle b`, where a shared free variable does it now
    but reads as a trick.
 

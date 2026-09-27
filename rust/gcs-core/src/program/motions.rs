@@ -1,7 +1,7 @@
 //! Compile named rigid motions with forward references and explicit dependency diagnostics.
 use super::{resolve::{follow_building,Resolver},Code,Diag,Made,SourceMap};
 use crate::{ir::{Decl,Operation,Statement},model::{EntKind,EntRef,MotionDef,MotionE,Sketch},
-    syntax::{Arg,MotionSpec,Ref,StmtId},units::Dim};
+    measure::{Measured,MotionMeasure,MotionSlot},syntax::{Arg,MotionSpec,Ref,StmtId},units::Dim};
 use std::collections::{BTreeMap,BTreeSet};
 
 struct Builder<'a> {
@@ -22,9 +22,33 @@ impl Builder<'_> {
         self.build(&r.root.text)
     }
 
+    /// A number written as a measurement of the drawing (`length(a) / length(b)`): compiled
+    /// against the entities its names denote, and worked out whenever the motion is read.
+    fn measured(&self, a: &Option<Arg>, slot: MotionSlot) -> Result<Option<MotionMeasure>,String> {
+        let Some(Arg::Dim {text,..}) = a else { return Ok(None); };
+        if crate::expr::measurement_in(text,self.sk.units).is_none() { return Ok(None); }
+        let (sk,res) = (&*self.sk,&*self.res);
+        let value = Measured::compile(text,sk.units,slot.dim(),slot.label(),|name| {
+            // the flattener wrote the name absolute: the longest head the resolver knows is the
+            // declaration, and what follows it is a path into what that declaration made
+            let segs: Vec<&str> = name.split('.').collect();
+            let k = (1..=segs.len()).rev().find(|&k| res.of.contains_key(&segs[..k].join(".")))
+                .ok_or_else(|| format!("no such entity: `{name}`"))?;
+            let r = Ref {root:crate::syntax::Name::new(&segs[..k].join(".")),
+                path:segs[k..].iter().map(|f| crate::syntax::Seg::Field(crate::syntax::Name::new(*f))).collect(),
+                span:Default::default()};
+            let e = res.lookup(&r).ok_or_else(|| format!("no such entity: `{name}`"))?;
+            follow_building(sk,res,e,&r)
+        })?;
+        Ok(Some(MotionMeasure {slot,value}))
+    }
+
     fn number(&self, a: &Option<Arg>, default: f64, dim: Dim, label: &str) -> Result<f64,String> {
         let Some(a) = a else { return Ok(default); };
         let Arg::Dim {text,..} = a else { return Err(format!("motion `{label}` needs a number")); };
+        // measured, it has no number until the motion is read (`MotionE::rotation`); what stands
+        // here is never read, and NaN says so to anything that would
+        if crate::expr::measurement_in(text,self.sk.units).is_some() { return Ok(f64::NAN); }
         let a = crate::flatten::value_aff(text,&BTreeMap::new(),self.sk.units)?;
         a.dim.require(dim,label)?;
         let value = a.number().ok_or_else(|| format!("motion `{label}` must be bound"))?;
@@ -41,6 +65,7 @@ impl Builder<'_> {
         self.visiting.insert(name.to_string());
         let (st,d) = self.decls[name];
         let result = (|| {
+            let mut measured = Vec::new();
             let def = match d.motion.as_ref().ok_or("a motion needs its defining relationship")? {
                 MotionSpec::Rotation {axis,ratio,phase,advance} => {
                     let e = self.res.lookup(axis)
@@ -49,6 +74,9 @@ impl Builder<'_> {
                     if e.kind != EntKind::Line || e.i() >= self.sk.lines.len() {
                         return Err("a motion rotates about a directed line".into());
                     }
+                    measured.extend(self.measured(ratio,MotionSlot::Ratio)?);
+                    measured.extend(self.measured(phase,MotionSlot::Phase)?);
+                    measured.extend(self.measured(advance,MotionSlot::Advance)?);
                     MotionDef::Rotation {axis:e.idx,
                         ratio:self.number(ratio,1.,Dim::SCALAR,"ratio")?,
                         phase:self.number(phase,0.,Dim::ANGLE,"phase")?.to_radians(),
@@ -61,8 +89,10 @@ impl Builder<'_> {
                     if e.kind != EntKind::Line || e.i() >= self.sk.lines.len() {
                         return Err("a motion translates along a directed line".into());
                     }
+                    let advance = Some(advance.clone());
+                    measured.extend(self.measured(&advance,MotionSlot::Advance)?);
                     MotionDef::Translation {axis:e.idx,
-                        advance:self.number(&Some(advance.clone()),0.,Dim::LENGTH,"advance")?}
+                        advance:self.number(&advance,0.,Dim::LENGTH,"advance")?}
                 }
                 MotionSpec::Relative {source,observer} => MotionDef::Relative {
                     source:self.dependency(source)? as u32,observer:self.dependency(observer)? as u32,
@@ -76,7 +106,7 @@ impl Builder<'_> {
             if height > 64 { return Err("motion dependencies exceed 64 levels".into()); }
             self.heights.push(height);
             let i = self.sk.motions.len();
-            self.sk.motions.push(MotionE {def,name:name.to_string(),class:d.class.clone()});
+            self.sk.motions.push(MotionE {def,name:name.to_string(),class:d.class.clone(),measured});
             let e = EntRef::new(EntKind::Motion,i);
             self.res.of.insert(name.to_string(),e);
             self.map.bind(name,e,d.name.named());

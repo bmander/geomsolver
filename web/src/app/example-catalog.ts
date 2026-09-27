@@ -14,6 +14,13 @@ const projects: Example[] = [{
     + 'its blank at every index. Edit the tooth counts, module, offset or spiral angle in '
     + 'configuration.sv; the solids refine in the background — open the glass box (⌘B) to watch.',
   target: { kind: 'directory', path: 'spiral_bevel', entry: 'gears.sv' },
+}, {
+  label: 'Pin wheel, generated · swept solid', key: 'lantern_generation',
+  description: 'A pinion rolls against a wheel blank and its one pin cuts a tooth space. The roll\'s '
+    + 'ratio is measured off the drawing after the solve (the wheel\'s pitch radius over the '
+    + 'pinion\'s), so edit either radius and the cut is re-timed; open the glass box (⌘B) to watch '
+    + 'it refine.',
+  target: { kind: 'file', path: 'lantern_generation.sv' },
 }];
 
 export function exampleCases(): Example[] {

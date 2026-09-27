@@ -84,6 +84,7 @@ mod solid_examples;
 mod geometry_semantics;
 mod solid_lang;
 mod loft;
+mod measurements;
 mod solid_motion;
 mod solid_sweep;
 mod space;

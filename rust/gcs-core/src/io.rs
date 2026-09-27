@@ -988,8 +988,25 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         face_map[i] = Some(dst.faces.len() - 1);
         made.push(EntRef::face(dst.faces.len() - 1));
     }
+    // what a motion's measured number reads, renumbered: the drawn kinds a measurement takes
+    let measured_ent = |e: EntRef| -> Option<EntRef> {
+        match e.kind {
+            EntKind::Point => pt_index(e.i()).map(EntRef::point),
+            EntKind::Line => line_map[e.i()].map(EntRef::line),
+            EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
+            EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
+            EntKind::Sphere => sphere_map[e.i()].map(|i| EntRef::new(EntKind::Sphere, i)),
+            EntKind::Cylinder => cylinder_map[e.i()].map(|i| EntRef::new(EntKind::Cylinder, i)),
+            _ => None,
+        }
+    };
+    let measured_of = |m: &crate::model::MotionE| -> Option<Vec<crate::measure::MotionMeasure>> {
+        m.measured.iter().map(|x| x.value.remap(measured_ent)
+            .map(|value| crate::measure::MotionMeasure {slot:x.slot,value})).collect()
+    };
     let mut retained: Vec<bool> = src.motions.iter().enumerate().map(|(i,m)| {
-        keep(EntRef::new(EntKind::Motion,i)) && match m.def {
+        // a motion goes with what it measures, as a constraint goes with its entities
+        keep(EntRef::new(EntKind::Motion,i)) && measured_of(m).is_some() && match m.def {
             crate::model::MotionDef::Rotation {axis,..} | crate::model::MotionDef::Translation {axis,..} =>
                 line_map[axis as usize].is_some(),
             crate::model::MotionDef::Relative {..} => true,
@@ -1027,7 +1044,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     observer:motion_map[observer as usize].unwrap() as u32,
                 },
         };
-        dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone()});
+        let measured = measured_of(m).expect("a retained motion keeps what it measures");
+        dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone(),measured});
         made.push(EntRef::new(EntKind::Motion,next));
     }
     // Allocate the retained graph before remapping it: extent targets and Boolean operands

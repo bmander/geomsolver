@@ -304,6 +304,17 @@ A dimension may be an expression: `+ - * / ^`, parentheses, `pi`, and `sqrt`, `a
 `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `ln`, `log`, `floor`, `ceil`, `round`,
 `min`, `max`, `hypot`. **Trigonometry is in degrees.**
 
+Four more calls **measure the solved drawing**: `length(l)` (a line's, or an arc's, in space),
+`radius(c)` (a circle, arc, sphere or cylinder), `distance(a, b)` (two points, or a point and a
+line produced) and `angle(l1, l2)` (between two lines' directions, 0° to 180°). Their arguments are
+names of geometry, never numbers. A length reads as a `Length` in a document with a `unit` line and
+an angle as an `Angle`, so `length(a) / length(b)` is a plain ratio. They stand only where a number
+is read *after* the solve, which today is a motion's `ratio:`, `phase:` and `advance:` (1.14);
+everywhere else the number is needed before there is a solve to measure, and a measurement there
+is **E107**: a `param` (it feeds constraints), a seed (it is where the solve starts), a
+constraint's own number (it is what the solve solves for) and a solid's extent or placement angle
+(settled at elaboration).
+
 A dimension may be **named** and read elsewhere:
 
 ```
@@ -890,6 +901,58 @@ motion plunge(along: spindle, advance: 20mm)
 A motion can be private or passed through a `motion` component formal. Core and browser
 evaluation use radians and return exact position and velocity per radian. A motion family
 does not move the sketch itself.
+
+**A motion's numbers may measure the solved drawing** (1.6). A motion is read after the solve
+(by a placement, a sweep, an envelope, a mesh), so its `ratio:`, `phase:` and `advance:` may be
+written over what the solve decided, and a generating ratio is then read off the pitch geometry
+instead of typed beside it:
+
+```sv
+unit mm
+point o hint(x: 0, y: 0)
+point z hint(x: 0, y: 1)
+ground o
+ground z
+line axis(o, z)
+point c hint(x: 0, y: -2)
+point d hint(x: 25, y: -2)
+ground c
+horizontal line wheel_radius(c, d)
+c distance(30mm) d
+point e hint(x: 0, y: -4)
+point f hint(x: 12, y: -4)
+ground e
+horizontal line pinion_radius(e, f)
+e distance(10mm) f
+motion wheel(about: axis)
+motion pinion(about: axis, ratio: -length(wheel_radius) / length(pinion_radius))
+```
+
+```
+$ solventc measured.sv
+measured.sv: solved
+  4 params, 4 equations, structural rank 4; DOF 0; 2 components: DOF 0, 0; 2 rigid cluster(s) in the distance graph
+```
+
+The measurement adds no unknown and no equation: the ledger is the drawing's alone. `pinion`
+turns at −3 (30 as solved over 10, not 25 over 12 as seeded), and it is worked out afresh each
+time the motion is read, so editing `30mm` re-times it with nothing else touched; a mesh cached on
+the motion (`solid::reads`) reads the number and is rebuilt. Inside a component the measured names
+resolve like any reference (`one.wheel_radius`), and a motion goes with a line it measures when
+that line is deleted. The slot's dimension is checked when the motion is built, and reading the
+same measurement where the solve has not happened is refused:
+
+```
+$ solventc wrong.sv            # motion bad(about: axis, ratio: length(wheel_radius))
+wrong.sv:19:1: error[E080]: `ratio` is Scalar, and this is Length
+$ solventc refused.sv          # param k = length(wheel_radius)
+refused.sv:19:11: error[E107]: `k`: `length(wheel_radius)` measures the solved drawing, and only a motion's `ratio:`, `phase:` and `advance:` are read after the solve; a param, a seed, a constraint's number and a solid's extent are needed before it
+```
+
+`rust/examples/lantern_generation.sv` is the worked case: a pinion rolls against a wheel blank at
+`-length(wheel_radius) / length(pinion_radius)`, and the one pin it carries cuts a tooth space
+(`solventc lantern_generation.sv --stl out.stl --stl-backend mesh` meshes it in a couple of
+seconds). Edit either pitch radius and the roll, and so the cut, follows.
 
 Name its generated envelope with:
 

@@ -38,6 +38,47 @@ fn rescope_seeds(
     d.seed_names = names.into_iter().collect();
 }
 
+/// A post-solve number's measurements (`length(gen_g)`), each argument resolved to the absolute
+/// name of what it denotes by the same `lookup` every reference goes through, and written back
+/// into the text: a formal reads as its actual and a name inside a block copy as that copy's
+/// (`side.#282.0.small`, which the expression lexer reads as one name for this reason).
+#[allow(clippy::too_many_arguments)]
+fn rescope_measures(
+    text: &mut String,
+    span: Span,
+    sc: &Scope,
+    names_seen: &BTreeSet<String>,
+    alias: &BTreeMap<String, String>,
+    units: Units,
+    bad: &mut Vec<(Span, String)>,
+) {
+    let Ok(p) = expr::parse_in(text, units) else { return };
+    let mut to: BTreeMap<String, String> = BTreeMap::new();
+    for (_, args) in p.body.measures() {
+        for a in args {
+            if to.contains_key(&a) {
+                continue;
+            }
+            let segs: Vec<&str> = a.split('.').collect();
+            let r = Ref {
+                root: Name { text: segs[0].to_string(), span },
+                path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
+                span,
+            };
+            match lookup(&r, sc, names_seen, alias, units) {
+                Some((abs, rest)) => {
+                    let full = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
+                    to.insert(a, full);
+                }
+                None => bad.push((span, missing_ref(&r, sc, names_seen, alias, units))),
+            }
+        }
+    }
+    if !to.is_empty() {
+        *text = super::values::map_measured(text, |w| to.get(w).cloned());
+    }
+}
+
 /// One kept seed text — see `rescope_seeds`: each dotted name in it, resolved.
 #[allow(clippy::too_many_arguments)]
 fn rescope_text(
@@ -396,6 +437,13 @@ fn rewrite(
             }
             if let Some(motion) = d.motion.as_mut() {
                 for r in motion.refs_mut() { fix(r, bad); }
+                // a number that measures the drawing names geometry as a reference does, in
+                // the scope it was written in; the sheet reads it by absolute name
+                for a in motion.args_mut() {
+                    if let crate::syntax::Arg::Dim { text, span } = a {
+                        rescope_measures(text, *span, sc, names, alias, units, bad);
+                    }
+                }
             }
             if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) =
                 d.curve.as_mut()

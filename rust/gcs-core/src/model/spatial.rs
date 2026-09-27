@@ -354,6 +354,42 @@ pub struct MotionE {
     pub def: MotionDef,
     pub name: String,
     pub class: Classes,
+    /// The numbers written as measurements of the drawing (`ratio: length(a) / length(b)`),
+    /// worked out whenever the motion is read and standing in for `def`'s own: see
+    /// `MotionE::rotation`.  Empty for every motion whose numbers are plain.
+    pub measured: Vec<crate::measure::MotionMeasure>,
+}
+
+impl MotionE {
+    /// A rotation's `(ratio, phase, advance)` — phase in radians — on the drawing as it now
+    /// stands: `def`'s numbers, with each one written as a measurement worked out afresh.  The
+    /// one reader of a rotation's numbers, so a snapshot and a cache key cannot disagree.
+    pub fn rotation(&self, sk: &crate::model::Sketch) -> Result<(f64, f64, f64), String> {
+        let MotionDef::Rotation { ratio, phase, advance, .. } = self.def else {
+            return Err(format!("`{}` is not a rotation", self.name));
+        };
+        let mut out = (ratio, phase, advance);
+        for m in &self.measured {
+            let v = m.value.value(sk).map_err(|e| format!("`{}`: {e}", self.name))?;
+            match m.slot {
+                crate::measure::MotionSlot::Ratio => out.0 = v,
+                crate::measure::MotionSlot::Phase => out.1 = v.to_radians(),
+                crate::measure::MotionSlot::Advance => out.2 = v,
+            }
+        }
+        Ok(out)
+    }
+
+    /// A translation's advance, likewise.
+    pub fn advance(&self, sk: &crate::model::Sketch) -> Result<f64, String> {
+        let MotionDef::Translation { advance, .. } = self.def else {
+            return Err(format!("`{}` is not a translation", self.name));
+        };
+        match self.measured.iter().find(|m| m.slot == crate::measure::MotionSlot::Advance) {
+            Some(m) => m.value.value(sk).map_err(|e| format!("`{}`: {e}", self.name)),
+            None => Ok(advance),
+        }
+    }
 }
 
 impl SolidE {
