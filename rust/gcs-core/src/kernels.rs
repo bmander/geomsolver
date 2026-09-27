@@ -115,9 +115,13 @@ pub enum K {
     ConeCone,
     // a mate between two solved views' offsets
     Mate,
+    // two directed angles equal, and an arc's length along itself stated and free
+    EqualAngle,
+    ArcLength,
+    ArcLengthFree,
 }
 
-pub const N_KERNELS: usize = 85;
+pub const N_KERNELS: usize = 88;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3218,6 +3222,97 @@ fn mate_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
+/// (l1, l2, l3, l4 — each a line's four coordinates), K = (s): `wrap(∠(l1→l2) − s·∠(l3→l4))`.
+///
+/// Two of `angle`'s bearings-differences and one wrap, so it is `angle`'s statement with the
+/// second pair's angle where the number was: directed and on the full turn, degree 0, and the
+/// gradient `angle_gap_jac` already writes for each pair — the second pair's scaled by `−s`.  One
+/// wrap over the whole difference rather than one per pair, so two angles a lap apart are the
+/// same angle, as `angle(30)` and `angle(390)` are.
+fn equal_angle_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 16 * i;
+        let (d12, c12) = dot_cross(&v[o..]);
+        let (d34, c34) = dot_cross(&v[o + 8..]);
+        r[i] = wrap_turn(c12.atan2(d12) - k[i] * c34.atan2(d34));
+    }
+}
+
+fn equal_angle_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 16 * i;
+        angle_gap_jac(&v[o..], &mut j[o..o + 8]);
+        let mut second = [0.0; 8];
+        angle_gap_jac(&v[o + 8..], &mut second);
+        for (c, g) in second.iter().enumerate() {
+            j[o + 8 + c] = -k[i] * g;
+        }
+    }
+}
+
+/// An arc's sweep counter-clockwise from its start to its end, in (0, 2π] — the reading
+/// `Sketch::arc_angles` takes, so the kernel and the drawing agree about which way round the arc
+/// runs — and its gradient in the centre's, the start's and the end's columns.
+///
+/// The sweep is a difference of two bearings about the centre, so, as in `angle_gap_jac`, each
+/// end sees only its own radius vector: `∂θ/∂e = (−w_y, w_x)/|w|²` for the end and the negation of
+/// the same form for the start, with the centre carrying minus both.  The cut at a full turn is
+/// where the arc closes up on itself, which no drawing is solved towards.
+fn arc_sweep(v: &[f64]) -> (f64, [f64; 6]) {
+    const TURN: f64 = 2.0 * std::f64::consts::PI;
+    const MIN_LEN_SQ: f64 = MIN_LINE_LEN * MIN_LINE_LEN;
+    let (ux, uy) = (v[2] - v[0], v[3] - v[1]);
+    let (wx, wy) = (v[4] - v[0], v[5] - v[1]);
+    let mut th = wy.atan2(wx) - uy.atan2(ux);
+    if th <= 0.0 {
+        th += TURN;
+    }
+    let iu = 1.0 / (ux * ux + uy * uy).max(MIN_LEN_SQ);
+    let iw = 1.0 / (wx * wx + wy * wy).max(MIN_LEN_SQ);
+    let (sx, sy) = (uy * iu, -ux * iu);
+    let (ex, ey) = (-wy * iw, wx * iw);
+    (th, [-(sx + ex), -(sy + ey), sx, sy, ex, ey])
+}
+
+/// (cx,cy,sx,sy,ex,ey,r), K = (L): `r·θ − L`, θ the arc's own sweep
+fn arc_length_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        r[i] = v[o + 6] * arc_sweep(&v[o..]).0 - k[i];
+    }
+}
+
+fn arc_length_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        let (th, g) = arc_sweep(&v[o..]);
+        for c in 0..6 {
+            j[o + c] = v[o + 6] * g[c];
+        }
+        j[o + 6] = th;
+    }
+}
+
+/// (cx,cy,sx,sy,ex,ey,r,a), K = (m,c): `r·θ − (m·a + c)`
+fn arc_length_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        r[i] = v[o + 6] * arc_sweep(&v[o..]).0 - free_dim(v, k, i, o + 7).0;
+    }
+}
+
+fn arc_length_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let (th, g) = arc_sweep(&v[o..]);
+        for c in 0..6 {
+            j[o + c] = v[o + 6] * g[c];
+        }
+        j[o + 6] = th;
+        j[o + 7] = -k[2 * i];
+    }
+}
+
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
     Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
@@ -3304,6 +3399,9 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "half_angle_free", n_res: 1, n_par: 2, degree: 0, n_const: 2, res: radius_free_res, jac: radius_free_jac, const_jac: None },
     Kernel { name: "cone_cone", n_res: 2, n_par: N_PAR_CONE_CONE, degree: 0, n_const: 0, res: cone_cone_res, jac: cone_cone_jac, const_jac: None },
     Kernel { name: "mate", n_res: 1, n_par: 2, degree: 1, n_const: 1, res: mate_res, jac: mate_jac, const_jac: Some(MATE_J) },
+    Kernel { name: "equal_angle", n_res: 1, n_par: 16, degree: 0, n_const: 1, res: equal_angle_res, jac: equal_angle_jac, const_jac: None },
+    Kernel { name: "arc_length", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: arc_length_res, jac: arc_length_jac, const_jac: None },
+    Kernel { name: "arc_length_free", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: arc_length_free_res, jac: arc_length_free_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

@@ -211,6 +211,7 @@ radius(25) circle1                  point1 distance(80) point2
 distance(6) line1                   point1 symmetry(line1) point2
 ground p1                           l1 angle(30) l2
 fix c.r                             line1 tangent(side: -1) circle1
+length(40) arc1                     l1 angle(l3, l4) l2
 ```
 
 | word | fixity | operands |
@@ -222,9 +223,10 @@ fix c.r                             line1 tangent(side: -1) circle1
 | `equal` | infix | two lines (length), or two circles or arcs (radius) |
 | `curvature` | infix | a spline or a curve and a circle or arc: the circle becomes the osculating circle there. Refused on a traced curve |
 | `horizontal`, `vertical` | prefix / infix | a line, or a pair of points with no line drawn between them |
-| `angle` | infix | two lines; a bare number is degrees, and `sense: cw` turns it the other way |
+| `angle` | infix | two lines; a bare number is degrees, and `sense: cw` turns it the other way. With a second pair of lines in the parentheses instead of a number, `l1 angle(l3, l4) l2`, the angle is **equal to** the angle from `l3` to `l4` (directed; `sense: cw` makes it that angle's mirror image) |
 | `angle` | prefix | a cone: its half-angle |
 | `radius` | prefix | a circle, an arc, a sphere or a cylinder |
+| `length` | prefix | an arc: its length along itself, radius times sweep (a magnitude) |
 | `coincident`, `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines |
@@ -233,7 +235,8 @@ fix c.r                             line1 tangent(side: -1) circle1
 | `ccw(a, b, c)`, `cw(a, b, c)` | a call | all three in the parentheses: the predicate is about the triangle |
 
 One word covers several constraints, told apart by the **kinds of its operands** (`on` is five,
-`distance` six, `tangent` six) or by **fixity** (`horizontal` on a line versus between two points).
+`distance` six, `tangent` six), by **fixity** (`horizontal` on a line versus between two points),
+or by **what stands in its parentheses** (`angle` with a number, or with a second pair of lines).
 
 **Across views the same word means space** (1.13). When a relation's operands are drawn in
 different views it is the relation between their places in space — no selector says so:
@@ -271,6 +274,9 @@ Every direction in the language is a **word**, and the sign behind it is stated 
 | `a distance(60, along: right) b` | the same, with the direction said: `left`, `up`, `down` too |
 | `l1 angle(30) l2` | 30° **counter-clockwise** from `l1`'s direction to `l2`'s |
 | `l1 angle(30, sense: cw) l2` | 30° clockwise — the same as `angle(-30)`, said in the open |
+| `l1 angle(l3, l4) l2` | the angle from `l1` to `l2` **equals** the angle from `l3` to `l4`, both counter-clockwise |
+| `l1 angle(l3, l4, sense: cw) l2` | it equals that angle turned the other way: the **mirror image** |
+| `length(40) a` | 40 along arc `a`, counter-clockwise from its `start` to its `end` |
 | `l tangent(side: left) c` | the circle's centre lies left of `l` |
 | `ccw(a, b, c)` | `c` is left of the ray `a → b` |
 | `p distance(5, along: n) P` | `p` stands 5 along plane `P`'s **normal** (towards its viewer) from it, in space |
@@ -287,6 +293,25 @@ are how a *drawing* should say it.
 **`angle` is directed**: the full-turn angle from `l1`'s direction (`p1` to `p2`) to `l2`'s,
 counter-clockwise positive. It pins which side, not just the tilt, so a bearing needs no
 orientation predicate. Swapping the lines or reversing one's endpoints changes the reading.
+
+**An angle may be stated as another angle.** `l1 angle(l3, l4) l2` says the angle from `l1` to
+`l2` is the angle from `l3` to `l4`, with no number: a bisector is `ab angle(ad, ac) ad`, a
+reflection `incoming angle(mirror, outgoing) mirror`. Both angles are read as `angle` reads one —
+directed, counter-clockwise from the first line's direction, on the full turn — so the equality
+is directed too; `sense: cw` equates the first with the *negative* of the second, which is what
+a mirror image is. The spelling is the operator grammar's own: the word between two operands,
+everything else in the parentheses, and a kind states at most one number, so two items there
+can only be the second pair (two numbers there are refused). It replaces the shared free
+variable the same statement used to need (`ab angle(beta) ad` beside `ad angle(beta) ac`, two
+W111s and an unknown nobody wanted to name) with one row and nothing to solve for. Across views
+it is **E062**: it relates two turns on a page, and `angle`'s reading in space is unsigned.
+
+**An arc's length is `length(L) a`**: the radius times the arc's sweep, counter-clockwise from
+its `start` to its `end` (in `(0°, 360°]`), so a chain that should be measured the long way
+round goes round counter-clockwise. It is a magnitude (a negative one is refused), may be
+written in terms of a free variable like any dimension, and is drawn as an arc concentric with
+the one it measures, its number marked `⌒`. Only an arc takes it: a line's length is `distance`,
+and a whole circle has no ends to measure between.
 
 **A slot the constraint owns** (a contact's curve parameter) is normally omitted. Seed it with a
 trailing `p on s hint(t: 0.4)`; **pin** it with `p on(t == 0.4) s`, a stated number in the
@@ -318,7 +343,8 @@ the same body — a param or a dimension, either way — is declared twice (E001
 only in where the number is edited: a `param` in the source, a named dimension on the drawing.
 
 A name nothing defines is a **free variable**: one unknown of the sketch, tying together every
-dimension that reads it (the CLI reports it as W111). The tie must be affine in one free name
+dimension that reads it (the CLI reports it as W111). Where all it ties is two angles, say so
+instead: `l1 angle(l3, l4) l2` (1.5) states the equality with no unknown at all. The tie must be affine in one free name
 (`a`, `a / 2`, `2 * a + 5`); `a * a`, `sin(a)` and two free names in one dimension are errors.
 Inside a component the unknown is the **instance's own** — `t1.w`, `t2.w` — the same rule as a
 formal left unbound (1.8), so a component cannot reach into the document that draws it by
@@ -1686,6 +1712,58 @@ nothing saying so. `horizontal pax` holds the pinion view's own turn, which is t
 free view drawn about a line and a point has left. `tests/spatial_surfaces.rs` solves this and
 2.12 and finds the same hypoid: Γ = 60°, γ = 29.564957707°, ε = 10.722102067°, |MA| = 97.282181449,
 every one within 2e-11.
+
+### 2.14 An arc placed by its length: DOF 0, well
+
+```
+point o hint(x: 0, y: 0)
+point s hint(x: 10, y: 0)
+point e hint(x: 3, y: 9)
+
+arc a(o, s, e)
+radius(10) a
+length(5 * pi) a        // a quarter of the circumference: the sweep is 90°
+o horizontal s
+ground o
+```
+
+It solves to `5 params, 5 equations, structural rank 5; DOF 0`, with `e.x = 5.8506e-16` and
+`e.y = 10`: the end straight above the centre, from a seed that was not. `length(15 * pi) a` puts
+it straight below, since the sweep is read counter-clockwise from `start` to `end`. The case
+library's `belt_wrap.sv` does the useful version: an open belt closed as one tangent chain over
+two pulleys, with `length(wrap) big` in place of a centre distance. It solves to `12 params, 12
+equations, structural rank 12; DOF 0`, the second pulley at `c2.x = 66.0205` for a wrap of 90 on
+a radius of 25 (π + 2·asin(15 / 66.0205) = 3.6 rad).
+
+### 2.15 A bisector, stated as two equal angles: DOF 0, well
+
+```
+point a hint(x: 0, y: 0)
+point b hint(x: 40, y: 0)
+point c hint(x: 10, y: 30)
+point d hint(x: 25, y: 10)
+
+line ab(a, b)
+line ac(a, c)
+line ad(a, d)
+horizontal ab
+ab angle(60deg) ac
+a distance(40) b
+a distance(30) c
+a distance(20) d
+
+ab angle(ad, ac) ad     // the angle from ab to ad is the angle from ad to ac
+ground a
+```
+
+It solves to `6 params, 6 equations, structural rank 6; DOF 0`, with `d.x = 17.3205` and
+`d.y = 10`: `ad` at 30°. Written the old way, `ab angle(beta) ad` and `ad angle(beta) ac`, the
+same drawing is `7 params, 7 equations` with two `warning[W111]: \`beta\` is a free variable: the
+solver answers for it` — one more unknown, stated only to be equated away. `ab angle(ab, ac,
+sense: cw) ad` puts `ad` at −60° instead, `ac`'s mirror image in `ab`. The case library's
+`reflection.sv` is the law of reflection in one statement, `incoming angle(m, outgoing) m`, with
+the classical proof (the source's image, the strike and the target collinear) a `claim` the
+diagnosis judges a theorem.
 
 ---
 

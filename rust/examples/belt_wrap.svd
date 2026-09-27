@@ -1,0 +1,8 @@
+// Presentation of belt_wrap.sv. Model geometry is independent of this drawing.
+model m from "belt_wrap.sv"
+
+sheet drawing {
+  size A3
+  sketch source(m) at (120mm, 150mm)
+  dimensions in source
+}

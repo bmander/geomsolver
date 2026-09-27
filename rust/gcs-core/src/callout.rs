@@ -62,6 +62,8 @@ macro_rules! undrawn {
             | CKind::Vertical
             | CKind::Parallel
             | CKind::Perpendicular
+            // two angles made equal state no number, so there is nothing to write on the figure
+            | CKind::EqualAngle
             | CKind::EqualLength
             | CKind::PointOnLine
             | CKind::PointOnCircle
@@ -490,6 +492,11 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
             let (corner, d1, _) = corner_of(sk, c)?;
             Some(Frame::Polar { o: corner, th0: d1.1.atan2(d1.0) })
         }
+        // about the arc's own centre from its own start, as a radius on it is
+        CKind::ArcLength => {
+            let e = c.args[0].ent();
+            Some(Frame::Polar { o: sk.point_xy(sk.round_center(e)), th0: sweep_start(sk, e) })
+        }
         undrawn!() => None,
     }
 }
@@ -741,6 +748,7 @@ impl Pen<'_> {
             CKind::Radius => self.radius(c),
             CKind::AnnularDistance => self.annular(c),
             CKind::Angle => self.angle(c),
+            CKind::ArcLength => self.arc_length(c),
             undrawn!() => None,
         }
     }
@@ -1084,6 +1092,48 @@ impl Pen<'_> {
             }
         }
         k.anchor = along(corner, ray(am), place.1);
+        self.seal(&mut k);
+        Some(k)
+    }
+
+    /// An arc's length along itself: a dimension arc concentric with it, standing off the rim
+    /// and swept exactly as far as the arc is — start to end, counter-clockwise — with an
+    /// extension line out of each end and the number over the middle, marked `⌒` the way a
+    /// drawing marks an arc length apart from the chord it would otherwise be read as.  The
+    /// angular dimension's figure about the arc's centre, measured as a length.
+    fn arc_length(&mut self, c: &Constraint) -> Option<Callout> {
+        let e = c.args[0].ent();
+        let text = claimed(c, format!("⌒{}", dimension_text(c)?));
+        let ctr = self.center(e);
+        let rim = self.sk.radius_value(e).abs();
+        let (a0, a1) = self.sk.arc_angles(e.i());
+        let (tw, th) = (self.px(FONT_PX * text_em(&text)), self.px(FONT_PX));
+        // the label rides outside the dimension arc, clear of it by its own half extent there
+        let half = |am: f64| 0.5 * (th * am.sin().abs() + tw * am.cos().abs());
+        // left where it fell, over the middle of the sweep — turned off it as a second leader
+        // out of the same centre is, so a radius on the same arc keeps its own place
+        let place = self.placed(c).unwrap_or_else(|| {
+            let t = self.auto_ray(e);
+            (t, rim + self.px(OFFSET_PX + TEXT_GAP_PX) + half(a0 + t))
+        });
+        let am = a0 + place.0;
+        let r = (place.1 - self.px(TEXT_GAP_PX) - half(am)).max(self.px(ARC_MIN_PX * 0.4));
+        let mut k = Callout::new(c.id, CalloutKind::Angular, &text);
+        k.place = place;
+        k.arcs.push(CArc { c: ctr, r, a0, a1 });
+        // heads tangent to the dimension arc, each facing out of the sweep
+        for (t, back) in [(a0, -1.0), (a1, 1.0)] {
+            k.arrows.push(Arrow { at: along(ctr, ray(t), r), dir: mul(perp(ray(t)), back) });
+        }
+        // an extension line out of each end of the arc to the dimension arc, clear of the rim
+        // by the gap and past the dimension arc by the overshoot, on whichever side it stands
+        let s = if r >= rim { 1.0 } else { -1.0 };
+        let gap = self.px(GAP_PX).min((r - rim).abs());
+        for t in [a0, a1] {
+            let d = ray(t);
+            k.thin.push(Seg(along(ctr, d, rim + s * gap), along(ctr, d, r + s * self.px(OVER_PX))));
+        }
+        k.anchor = along(ctr, ray(am), place.1);
         self.seal(&mut k);
         Some(k)
     }

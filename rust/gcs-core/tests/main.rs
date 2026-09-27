@@ -13,6 +13,7 @@ mod common;
 mod evaluated_solid;
 mod renderer;
 
+mod angle_and_arc_words;
 mod anonymous;
 mod callout;
 mod chain;
