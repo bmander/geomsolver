@@ -111,10 +111,15 @@ fn cross_view_audit() {
         an ordinate from the view's own datum");
 }
 
+/// The documents written to be read in space — the app's spatial demos — which the audit's
+/// corpus predates: each of them states relations across views on purpose.
+const IN_SPACE: &[&str] = &["skew_axes.sv", "hypoid_pitch_cones.sv", "sphere_cone_cylinder.sv"];
+
 /// **The gate the audit became**: with a relation across views meaning space, every
 /// one of the corpus's 215 relations whose points carry different memberships still reads the
 /// 2D kind it always did — the role rule reads each as sheet layout or as an ordinate in one view
-/// — and no document is refused for one.
+/// — and no document is refused for one.  The spatial demos are the exception, and they are
+/// held to the opposite: each does read in space.
 #[test]
 fn every_cross_membership_relation_in_the_corpus_keeps_its_reading() {
     let mut across = 0;
@@ -124,6 +129,10 @@ fn every_cross_membership_relation_in_the_corpus_keeps_its_reading() {
                 "{name}: {:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
         if !e.ok() { continue; }
         let sk = &e.sketch;
+        if IN_SPACE.contains(&name.as_str()) {
+            assert!(sk.user_constraints().iter().any(|c| c.kind.spatial()), "{name} reads in space");
+            continue;
+        }
         for c in sk.user_constraints() {
             assert!(!c.kind.spatial() || c.kind == CKind::ProjectSolved,
                     "{name}: {} reads in space", gcs_core::io::describe_with(c, &|r| e.map.name_of(r).cloned()));

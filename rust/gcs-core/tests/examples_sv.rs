@@ -138,3 +138,37 @@ fn no_document_writes_a_seed_the_old_way() {
         }
     }
 }
+
+/// **The spatial demos** — documents the app opens as files rather than as cases, since they are
+/// looked at in the glass box and have no sheet — hold what their headers say: the unknowns, the
+/// equations and the freedom left.
+#[test]
+fn the_spatial_demos_are_what_they_say() {
+    let demos: &[(&str, &str, (usize, usize), i64, State)] = &[
+        ("skew_axes", include_str!("../../examples/skew_axes.sv"), (29, 29), 0, State::Well),
+        (
+            "hypoid_pitch_cones",
+            include_str!("../../examples/hypoid_pitch_cones.sv"),
+            (39, 39),
+            0,
+            State::Well,
+        ),
+        (
+            "sphere_cone_cylinder",
+            include_str!("../../examples/sphere_cone_cylinder.sv"),
+            (51, 50),
+            1,
+            State::Under,
+        ),
+    ];
+    for &(key, src, counts, dof, status) in demos {
+        let (prog, errs, linked) = gcs_core::library::parse_linked(src);
+        assert!(errs.is_empty() && linked.is_empty(), "{key}: {errs:?} {linked:?}");
+        let mut e = gcs_core::program::elaborate(&prog);
+        assert!(e.ok(), "{key}: {:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+        let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+        assert!(r.success, "{key} solves");
+        let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+        assert_eq!(((d.n_params, d.n_equations), d.dof, d.status), (counts, dof, status), "{key}");
+    }
+}

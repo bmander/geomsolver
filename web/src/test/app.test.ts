@@ -1823,3 +1823,32 @@ test('fit includes the bare throttle model automatic projection', () => {
   view.derived.clear();
   view.doc.dispose();
 });
+
+/** The spatial demos the menu offers as files: each opens, solves, and folds into the glass box
+ *  with its surfaces drawn there; and the one freedom the sphere demo leaves — a point of the side
+ *  view on the ball — drags, staying on the ball. */
+test('the spatial demos open, fold into the glass box, and the point on the ball drags', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const files: Record<string, string> =
+    JSON.parse(await readFile(new URL('../examples/sources.json', import.meta.url), 'utf8'));
+  for (const name of ['skew_axes', 'hypoid_pitch_cones', 'sphere_cone_cylinder']) {
+    const view = docView(files[`${name}.sv`]);
+    assert.ok(view.doc.ok, `${name}: ${JSON.stringify(view.doc.diagnostics)}`);
+    assert.ok(solve(view.sketch).success, `${name} solves`);
+    view.setOverview(true);
+    assert.equal(view.overview, true, `${name} has views to fold`);
+    assert.ok(view.scene().items.some((i) => i.part === 'drawn'), `${name} draws in the box`);
+    view.setOverview(false);
+    if (name !== 'sphere_cone_cylinder') continue;
+    // the side view is the plane x = 0, drawn with its datum at (150, 0) and up as up; the ball
+    // is 12 about (-8, 0, 38)
+    const pb = pointNamed(view, 'pb');
+    const onBall = ([x, y]: [number, number]) => Math.hypot(8, x - 150, y - 38);
+    const before = pb.xy;
+    assert.ok(Math.abs(onBall(before) - 12) < 1e-6, `pb on the ball: ${onBall(before)}`);
+    const at = view.w2s(...before);
+    drag(view, at, [at[0] + 10, at[1] - 25]);
+    assert.notDeepEqual(pb.xy, before, 'the point moved');
+    assert.ok(Math.abs(onBall(pb.xy) - 12) < 1e-6, `and is still on the ball: ${onBall(pb.xy)}`);
+  }
+});

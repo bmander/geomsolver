@@ -1,7 +1,8 @@
 # Solvent: a primer for agents
 
 Models are `.sv` files; authored presentation is a separate [Solvent Drawing (`.svd`)](solvent-drawing.md).
-`class`, `style`, output requests, and callout placements are no longer model syntax.
+`class`, `style`, view and section requests, and callout placements are drawing syntax, not model
+syntax (1.11).
 
 Solvent is the language a drawing in this project *is*. You do not place geometry; you declare
 entities and state what must be true of them, and the solver finds coordinates satisfying every
@@ -56,20 +57,29 @@ Callout selection and placement belong in `.svd`, independently of model constra
 ```
 use NAME[.NAME...]                      bring in a module's components and params   (1.12)
 unit NAME                               what the document's numbers are in          (1.6)
-param NAME = EXPR                       a number worked out while elaborating
-KIND [NAME][(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)] [knots [...]]
-     [in REF]           an entity declaration; every part is optional (1.4)
+param NAME = EXPR                       a number worked out while elaborating       (1.6)
+group NAME(LABEL: VALUE, ...)           numbers and geometry passed as one argument (1.8)
+[private] [construction] KIND [NAME][(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)]
+     [knots [...]] [in REF]             an entity declaration; every part is optional (1.4)
 point NAME = (XEXPR, YEXPR)             a computed point, drawn only as a curve      (1.9)
 plane [NAME](origin: R, toward: R[, from: R, fold: E | , from: R, offset: E
-                                      | , u: (E,E,E), v: (E,E,E)])
-                                        the datum, and a view with an attitude    (1.13)
+                                      | , u: (E,E,E), v: (E,E,E)[, o: (E,E,E)]])
+                                        the datum, and a view with a stated attitude (1.13)
+plane NAME(origin: R, toward: R, from: R, fold: NAME | fold: along LINE | ..., through: R
+           | attitude: free[, offset: free]) [hint(fold: E | u: .., v: ..)]
+                                        a view the solve places                     (1.13)
+sphere NAME(center: R) | cone NAME(axis: LINE) | cylinder NAME(axis: LINE)  [hint(...)]
+                                        a surface in space, on no sheet             (1.13)
 in REF { statement* }                   every declaration inside is drawn in that plane
+NAME = CHAIN                            a chain, named as one traversal             (1.14)
 face NAME(EDGE, ..., holes: LOOP, ...)  a planar region with optional holes        (1.14)
-solid NAME(FACE, SWEEP...)              that face swept: depth:/from:/to:, about:   (1.14)
+solid NAME(FACE, SWEEP...)              that face swept: depth:/from:/to:/through:, about:, along:
 solid NAME(SOLID)                       a body, made of a stock
-surface NAME(SOLID, edge: EDGE)         an exact analytic patch of a revolution
-REF on REF  |  REF through REF          material added to, or taken from, a body    (1.14)
-section(SOLID, at: REF) in REF          the same, cut at a plane
+solid NAME(SOLID, under: MOTION, at: E | from: E, to: E)   placed by, or swept through, a motion
+REF on REF | REF cut REF | REF bound REF   material added to, taken from, kept within a body
+REF.FACE against REF.FACE               a mate: the placed part's plane stands off the other's
+surface | motion | envelope | patch | seam | vertex | edge NAME(...)
+                                        named spatial geometry, read after the solve (1.14)
 WORD[(ARGS)] REF  |  REF WORD[(ARGS)] REF
      [hint(SLOT: E, ...)]
                                         a constraint, prefix or infix               (1.5)
@@ -77,13 +87,15 @@ claim CONSTRAINT                        judged, never solved for                
 ground REF                              pin both coordinates of a point
 fix REF.FIELD                           pin one scalar: fix c.r
 ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation
-[NAME:] Component(ARGS) [in REF]   an instance                      (1.8)
+[NAME:] Component(ARGS) [in REF]        an instance                                 (1.8)
 component NAME(FORMALS) { statement* }  a definition
-repeat N [as i] { ... }                 N copies, unrelated
+repeat N [as i] { ... }                 N copies, unrelated                         (1.7)
 cycle N [as i] { ... }                  N copies that close; `next` and `prev` are in scope
-repeat e in CHAIN [as i] { ... }        a copy per edge of a named chain, `e` that edge (1.7)
+repeat e in CHAIN [as i] { ... }        a copy per edge of a named chain, `e` that edge
+cycle e in CHAIN [as i] { ... }         the same over a closed chain, closing
 curve NAME = INSTANCE.POINT over FORMAL in (A, B)          a curve                  (1.9)
 curve NAME = Component(ARGS).POINT over FORMAL in (A, B)
+preview { statement* }                  drawn when the file is opened, not when it is `use`d (1.4)
 ```
 
 A reference is `name`, `name.field`, or `name[expr]`, the copy of a repeated statement (the
@@ -102,6 +114,9 @@ reaches into copy 0's instance `cyl`.
 | `spline` | control points, all named | | |
 | `plane` | `origin`, `toward` | `c`, `s` (unit rotor, never seeded by hand), plus a constant basis in space | |
 | `curve` | its arguments | | |
+| `sphere` | `center` | `r` | |
+| `cone` | `axis` (a line; its start is the apex) | `half`, the half-angle | |
+| `cylinder` | `axis` (a line) | `r` | |
 
 **Seeds.** Every scalar is seeded by name in the trailing clause: `point p hint(x: 0, y: 0)`,
 `circle c(center: o) hint(r: 25)`, `arc a(center: c, start: s, end: e) hint(r: 5)`. Keys come in
@@ -126,8 +141,8 @@ dimension. Name a point yourself when several statements mention it. A spline is
 all of this: its control points must be declared points and every one must be named
 (`spline s(k0, k1, k2, k3)`), so `spline s` alone is an error.
 
-**The element's own name is optional too.** `line`, `line(p1, p2)`, `point hint(x: 3, y: 4)`,
-`arc(center: c)` and `line` are all statements. The token after the kind
+**The element's own name is optional too.** `line`, `line(p1, p2)`, `point hint(x: 3, y: 4)` and
+`arc(center: c)` are all statements. The token after the kind
 keyword decides, so a word that may follow a declaration (an element keyword, a constraint word,
 `hint`, `knots`, `class`, `at`, `close`, `in`) cannot be a declaration's name. When the source
 must later reference an anonymous element (a constraint applied from the app, say), a name is
@@ -145,14 +160,15 @@ change what a document says.
 
 A **plane** is the datum: an origin, a point it is turned toward, and a unit rotor slaved to the
 chord between them, drawn as a small datum glyph and adding no freedom. One with no attitude
-written is a view of the page (1.13). Its use on the sheet is `f.angle`, the bearing in degrees,
-which a traced component or a hint may read (1.9). There is no separate `frame`: the word is refused.
+written is a view of the page (1.13). Hints and traced components may read `f.angle`, the
+bearing in degrees (1.9), or `f.c` and `f.s`, the dimensionless cosine and sine of its starting
+direction. There is no separate `frame`: the word is refused.
 
 Use a datum to state **signed local coordinates**. Its u axis points from `origin` to `toward`,
 and v points to the left of u:
 
 ```sv
-point p
+point p                          // f is a plane: a datum
 p distance(20mm, along: u) f
 p distance(-3mm, along: v) f
 ```
@@ -194,11 +210,8 @@ u axis, so use `std.up` for this cylinder's upright pose. Keep `cyl:` when a dra
 statement references its members. The datum argument does not imply `in`: unassigned geometry
 stays on the page, or write `in std.front` to assign membership explicitly.
 
-
-
-Hints can read `f.c` and `f.s`, the dimensionless cosine and sine of its starting direction,
-or `f.angle`. When a numeric formal is left unbound, hints use a provisional zero for it while
-constraints retain the unknown. This does not make a hint a constraint or fix the resulting point.
+When a numeric formal is left unbound, hints use a provisional zero for it while constraints
+retain the unknown. This does not make a hint a constraint or fix the resulting point.
 
 ### 1.5 Constraints
 
@@ -235,9 +248,10 @@ length(40) arc1                     l1 angle(l3, l4) l2
 | `ground`, `fix` | prefix | pin both coordinates of a point, or one scalar |
 | `ccw(a, b, c)`, `cw(a, b, c)` | a call | all three in the parentheses: the predicate is about the triangle |
 
-One word covers several constraints, told apart by the **kinds of its operands** (`on` is five,
-`distance` six, `tangent` six), by **fixity** (`horizontal` on a line versus between two points),
-or by **what stands in its parentheses** (`angle` with a number, or with a second pair of lines).
+One word covers several constraints, told apart by the **kinds of its operands** (the `on`,
+`distance` and `tangent` rows above), by **fixity** (`horizontal` on a line versus between two
+points), or by **what stands in its parentheses** (`angle` with a number, or with a second pair
+of lines).
 
 **Across views the same word means space** (1.13). When a relation's operands are drawn in
 different views it is the relation between their places in space — no selector says so:
@@ -300,12 +314,11 @@ orientation predicate. Swapping the lines or reversing one's endpoints changes t
 reflection `incoming angle(mirror, outgoing) mirror`. Both angles are read as `angle` reads one —
 directed, counter-clockwise from the first line's direction, on the full turn — so the equality
 is directed too; `sense: cw` equates the first with the *negative* of the second, which is what
-a mirror image is. The spelling is the operator grammar's own: the word between two operands,
-everything else in the parentheses, and a kind states at most one number, so two items there
-can only be the second pair (two numbers there are refused). It replaces the shared free
-variable the same statement used to need (`ab angle(beta) ad` beside `ad angle(beta) ac`, two
-W111s and an unknown nobody wanted to name) with one row and nothing to solve for. Across views
-it is **E062**: it relates two turns on a page, and `angle`'s reading in space is unsigned.
+a mirror image is. A kind states at most one number, so two items in the parentheses can only be
+the second pair (two numbers there are refused). It is one equation and no unknown, where the
+same tie through a shared free variable (`ab angle(beta) ad` beside `ad angle(beta) ac`) is two
+equations and an unknown (2.15). Across views it is **E062**: it relates two turns on a page, and
+`angle`'s reading in space is unsigned.
 
 **An arc's length is `length(L) a`**: the radius times the arc's sweep, counter-clockwise from
 its `start` to its `end` (in `(0°, 360°]`), so a chain that should be measured the long way
@@ -335,7 +348,7 @@ Four more calls **measure the solved drawing**: `length(l)` (a line's, or an arc
 line produced) and `angle(l1, l2)` (between two lines' directions, 0° to 180°). Their arguments are
 names of geometry, never numbers. A length reads as a `Length` in a document with a `unit` line and
 an angle as an `Angle`, so `length(a) / length(b)` is a plain ratio. They stand only where a number
-is read *after* the solve, which today is a motion's `ratio:`, `phase:` and `advance:` (1.14);
+is read *after* the solve, which is a motion's `ratio:`, `phase:` and `advance:` (1.14);
 everywhere else the number is needed before there is a solve to measure, and a measurement there
 is **E107**: a `param` (it feeds constraints), a seed (it is where the solve starts), a
 constraint's own number (it is what the solve solves for) and a solid's extent or placement angle
@@ -356,8 +369,9 @@ only in where the number is edited: a `param` in the source, a named dimension o
 
 A name nothing defines is a **free variable**: one unknown of the sketch, tying together every
 dimension that reads it (the CLI reports it as W111). Where all it ties is two angles, say so
-instead: `l1 angle(l3, l4) l2` (1.5) states the equality with no unknown at all. The tie must be affine in one free name
-(`a`, `a / 2`, `2 * a + 5`); `a * a`, `sin(a)` and two free names in one dimension are errors.
+instead: `l1 angle(l3, l4) l2` (1.5) states the equality with no unknown at all. The tie must be
+affine in one free name (`a`, `a / 2`, `2 * a + 5`); `a * a`, `sin(a)` and two free names in one
+dimension are errors.
 Inside a component the unknown is the **instance's own** — `t1.w`, `t2.w` — the same rule as a
 formal left unbound (1.8), so a component cannot reach into the document that draws it by
 writing a name the document happens to define.
@@ -590,8 +604,7 @@ individual members when constructing a curve.
 Everything an instance makes is
 reachable by dotted name (`c.p`, `t0.e`, `five.s[0].p1`, and a dimension named inside it as
 `t0.w`) — there is no export list, and passing
-one instance's entity to another as an argument makes the two one entity. (`port` is retired;
-a document that writes one is told what to write instead.)
+one instance's entity to another as an argument makes the two one entity.
 
 The V-twin example distinguishes shared design inputs from private derived dimensions.
 Its bore, throw, rod length, piston height, and wall thickness determine the cylinder mouth,
@@ -664,6 +677,17 @@ where the solve landed; enforcing it would have cost a freedom). Use it for the 
 drawn to illustrate: the altitudes concur, the traced path is straight. A claim may not own an
 unknown, so claiming a curve contact or binding a free variable in a claim is an error.
 
+Three words make claims about solids (1.14) and nothing else: `claim bore inside stock`,
+`claim disc clear(2mm) cyl` and `claim head fits(0.15mm) trap`. The report gives the
+measurement, not only a verdict, and a claim decided within the faceting of a round face is
+**undecided**, a third answer. Written of the plate in 1.14:
+
+```
+  claim bore inside stock — undecided, measured 0 (interval [-0.0006000000000000001, 0.0006000000000000001])
+    unresolved: containment is within curved-faceting uncertainty
+  claim bore clear(2mm) stock — refuted, measured -9.998802553815926 (interval [-10.000001258983422, -9.99760384864843])
+```
+
 ### 1.11 Presentation
 
 Use a [Solvent Drawing](solvent-drawing.md) for styles, views, paper layout, and annotations.
@@ -674,7 +698,8 @@ its callout belongs to the drawing.
 
 ```
 use engine.dims          // engine/dims.sv beside the document, else the library compiled in
-use std                  // the standard library: ThreeViews (1.13), Ellipse (1.9), Polygon and Hex
+use std                  // the datums std.front, std.up, std.origin (1.4); ThreeViews (2.10),
+                         // CenteredRectangle (1.8), Ellipse (1.9), Polygon and Hex
 use hardware             // fasteners and fittings by name: hexbolt14_af, brg608_od, oring014_cs, …
 ```
 
@@ -708,8 +733,8 @@ views, so the whole design of a connecting rod is one module (`engine/conrod.sv`
 
 The standard library lays out the three views once (2.10).
 
-**A view may be solved for** (spec §6.7 [0.23]). A plane is fixed unless its brackets name an
-unknown, and `hint(…)` seeds only those:
+**A view may be solved for.** A plane is fixed unless its brackets name an unknown, and `hint(…)`
+seeds only those (2.11 and 2.13 are worked cases):
 
 ```
 plane side(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
@@ -728,9 +753,9 @@ views that come out parallel under a `project` are E065. `against` works with so
 the two faces' planes turn together — one derived `from:` the other, or both from one, with no
 fold: the placed plane turns with its datum and stands off it by the faces' gap, and where the
 datum's offset is itself solved (`offset: free`, `through:`) the gap is a row of the solve. Two
-views that turn apart are E066.
-`solventc --where side` reports a solved view's `side.u.x` … `side.o.z`, and a report names what
-is left free as `side.attitude` and `side.offset`.
+views that turn apart are E066 (the mate itself is 1.14).
+`solventc --where side` reports a solved view's `side.u.x` … `side.o.z`, and a report lists what
+is left free on a line of its own: `free views: side.attitude, side.offset`.
 
 **The workplane rule, in one place.** A point drawn `in` a view is that view's lift of it into
 space; a point with no membership is on the page, which has no place in space. A relation reads
@@ -744,8 +769,7 @@ in (a view's own points are on it already, E061).
 membership says nothing about what they mean. So a datum point is read by what it is related to:
 beside only other datum points it is sheet **layout**, on the page (`o distance(120) o2`); beside
 points of the view it is the datum of, it is that view's (`o2 distance(15) b` with `b` in that
-view: an ordinate); otherwise, where its membership puts it. Every cross-membership relation the
-corpus had before reads as it did (`tests/cross_view_audit.rs`).
+view: an ordinate); otherwise, where its membership puts it.
 
 **A solved view's place on the sheet is held silently.** Where a solved view's picture sits on the
 page (its datum's origin and toward) is presentation: those points are held where they were drawn
@@ -757,7 +781,8 @@ radius, on no sheet (the glass box draws it as three great circles). `radius(12)
 `s tangent l` and `s tangent s2` are all in space. `k on s` puts a whole circle drawn in a view
 on the sphere — its centre on the circle's axis, and the radii and the gap a right triangle —
 which is what a gear blank's toe or heel circle is to its end sphere. `s tangent k` is refused: a
-circle and a sphere may touch at a point or all the way round.
+circle and a sphere may touch at a point or all the way round. A sphere's centre is its only
+child, so `sphere s(p)` says the same.
 
 **A cone and a cylinder** are built about a line already drawn in a view, and each owns one
 number, as a sphere owns its radius:
@@ -777,6 +802,9 @@ the second's normal square to both of the first's tangent directions; `M on gc` 
 M is on them, as an on-circle stands beside a tangency at a named end. A line on either (a
 generator) is not a relation yet and says so: state it of the line's points. Neither is on a
 sheet; the glass box draws each as two circles square to the axis and four rulings.
+`sphere_cone_cylinder.sv` puts one of each beside two views — a line tangent to a cylinder, a
+point on a sphere, two cones touching at a point — and `hypoid_pitch_cones.sv` is 2.13, both
+in the app's example menu.
 
 **`o:` says where a basis given outright stands.** `u: (…), v: (…), o: (0, -12, 0)` is the basis
 at that origin in space. A lifted program writes it for a stated plane that stands off the shared
@@ -835,6 +863,8 @@ solid block(sec, depth: 30mm)
 ```
 
 ```
+$ solventc block.sv --where block.volume
+block.sv: solved
   6 params, 6 equations, structural rank 6; DOF 0; 2 rigid cluster(s) in the distance graph
   block.volume = 72000
 ```
@@ -842,8 +872,9 @@ solid block(sec, depth: 30mm)
 Six unknowns and six equations: the count is the rectangle's own, and the face and the solid added
 nothing to it. The edges are given in traversal order and each must share a point with the next; a
 **circle is a whole loop by itself**, so `face hole_f(hole)` is a face and a circle among lines is
-refused. A face has no inner loops, because a hole is not a hole in a face — it is a solid
-that `cut`s the body.
+refused. A section's inner loops are its `holes:` (above); a hole *through a part* is usually
+better written as a solid that `cut`s the body (below), which keeps the section simple and names
+the bore's wall.
 
 **Name the chain where you draw it.** A contour can bind its whole traversal, so no second
 statement needs to list its edges again:
@@ -863,7 +894,8 @@ requires a closed loop, so use `face(trail, -> close)` to supply the missing clo
 finish the original chain with `-> line da(d, a) -> close`. Every joint in a named chain must
 carry `->`; its prefix and joint constraints work just as in an unnamed chain. Anonymous links
 also work: `profile = line -> line -> line -> close` names a triangle, whose dimensions and pose
-remain to be constrained. Named chains can stand in plane blocks and repeated components.
+remain to be constrained. Named chains can stand in plane blocks and repeated components, and
+`repeat e in profile { … }` makes a copy of a block per edge (1.7).
 
 **A face closes itself.** The brackets hold a *walk*, and a **point** in the list is a corner the
 walk goes straight to and straight on from; `-> close` — the chain's own word — seals the run back
@@ -942,6 +974,8 @@ it adds no unknowns and has no 2D drawing glyph. It can be public or private and
 a `surface` component formal. `solid` and `edge` are its dependency fields. Evaluation uses
 normalized edge and revolution parameters, both from 0 to 1. Tangent orientation follows
 the declared traversal; it does not decide which side of the surface contains material.
+A surface for every edge of a named profile is one block, `repeat e in rack.profile { surface
+s(crown, edge: e) }` (1.7), which is how `spiral_bevel/verification.sv` names its flanks.
 
 Write `from:` and `to:` angles to retain part of the generating revolution:
 
@@ -1033,6 +1067,14 @@ refused.sv:19:11: error[E107]: `k`: `length(wheel_radius)` measures the solved d
 (`solventc lantern_generation.sv --stl out.stl --stl-backend mesh` meshes it in a couple of
 seconds). Edit either pitch radius and the roll, and so the cut, follows.
 
+**A motion moves a solid.** `solid indexed(tool, under: indexing, at: 90deg)` is one copy of a
+solid at the motion's pose for a constant angle (`solid_indexed_pattern.sv` repeats it round a
+circle); `solid removal(tool, under: turn, from: -75deg, to: 75deg)` is the union of the tool's
+material over the whole interval, a continuous sweep and not a row of copies (`swept_torus.sv`,
+`lantern_generation.sv`). `at:` and `from:`/`to:` are exclusive, a sweep of a sweep is refused,
+and a swept solid is a Boolean operand a body may only `cut`. It is meshed from its material
+field (`docs/field-meshing.md`), which the app refines in the background.
+
 Name its generated envelope with:
 
 ```sv
@@ -1059,8 +1101,8 @@ patch bounded(flank, inside: tip_body, inside: heel_body,
 Each condition names a solid and includes its boundary. All conditions must hold. The
 current analytic evaluator accepts full revolutions with line or circular profile edges,
 including holes. Its point queries use the curves themselves and explicit numerical
-tolerances. A patch still needs a selected branch and oriented boundary loops before it can
-participate in checked closed-solid assembly; those capabilities are the next step.
+tolerances. A patch selects no branch and orients no boundary loop, so it does not join a checked
+closed solid.
 
 Where two generated faces meet tangentially at a shared vertex of their source profile,
 name their common characteristic once:
@@ -1072,8 +1114,7 @@ seam flank_join(flank_region, transition_region)
 The operands can be envelopes or trimmed patches of envelopes. They must share the source
 revolution, generating motion and one actual profile vertex. The evaluator checks tangency
 after solving and checks both faces when finding a seam point. This lets a flank and its
-root fillet refer to the same boundary geometry. Oriented uses of these curves in closed
-face loops are still needed for solid assembly.
+root fillet refer to the same boundary geometry.
 
 An envelope also meets a finite boundary surface along a named seam:
 
@@ -1099,8 +1140,8 @@ meets a generating junction with a boundary on one of its faces. The core checks
 defining face and its material conditions; a loose seam-coincidence tolerance cannot
 substitute for a tighter boundary-incidence check. A vertex owns no planar coordinates.
 Repeated uses share its declared identity, while separately declared coincident vertices
-remain distinct. Local evaluation and root finding do not yet choose a globally unique
-branch or assemble the surrounding faces into an analytic solid.
+remain distinct. Local evaluation and root finding choose no globally unique branch and
+assemble no analytic solid from the surrounding faces.
 
 Give a seam finite extent between those corners:
 
@@ -1111,11 +1152,10 @@ edge toe_span(toe_edge, from: join_toe, to: tip_toe, along: shaft_axis)
 `along` supplies a geometric slicing direction. A fraction from zero to one selects a
 plane perpendicular to that line between the endpoint projections; the evaluator solves
 for the seam point in that plane. It checks actual curved geometry and reuses the named
-corners at the ends. The evaluator currently checks local slices, so global branch
-uniqueness, turning points and curve approximation bounds still need validation before
-analytic solid assembly.
+corners at the ends. It checks local slices, and certifies no global branch uniqueness,
+turning point or curve approximation bound.
 
-An ordered finite-edge loop can now name its analytic support:
+An ordered finite-edge loop can name its analytic support:
 
 ```sv
 face working(toe_span, tip_span, heel_span, join_span, on: flank_region)
@@ -1125,8 +1165,8 @@ face transition(round_toe_span, join_span, round_heel_span, root_span, on: fille
 Both faces share `join_span` and traverse it in opposite directions. Each edge must
 belong to the exact named support, and the loop closes through shared corner identities.
 The face reader maps boundary parameters into that support's chart and checks incidence.
-An `on:` face is spatial and cannot be extruded as a planar profile. These boundary
-declarations still need interior and closed-solid validation; see
+An `on:` face is spatial and cannot be extruded as a planar profile. A closed boundary walk
+is not validated as a disk or assembled into a solid; see
 [Analytic face boundaries](analytic-face-boundaries.md).
 
 ```
@@ -1156,18 +1196,20 @@ solid ring(sec, about: ax)
 ```
 
 ```
+$ solventc ring.sv --where ring.volume
+ring.sv: solved
   10 params, 10 equations, structural rank 10; DOF 0; 2 components: DOF 0, 0; 3 rigid cluster(s) in the distance graph
-  ring.volume = 1809.55
+  ring.volume = 1809.45
 ```
 
 Pappus, from the source: a 4 × 6 section whose centroid stands 12 from the axis is
-`2π · 12 · 24 = 1809.557`. Write `solid ring(sec, about: ax, sweep: 90deg)` and the report says
-`452.387`, a quarter of it, with `ring.start.area` and `ring.end.area` both 24 — the face itself,
-at each end of the turn. Round faces are read as fine polygons, so every volume here is exact to
+`2π · 12 · 24 = 1809.557`, and the faceted turn comes to 1809.45. Write `solid ring(sec, about:
+ax, sweep: 90deg)` and the report says `452.364`, a quarter of it, with `ring.start.area` and
+`ring.end.area` both 24 — the face itself, at each end of the turn. Round faces are read as fine polygons, so every volume here is exact to
 that faceting and not beyond it.
 
 **The body rule** is one sentence: a body is its **stock, plus everything `on` it, minus everything
-that `cut`s it**. Add to the plate above:
+that `cut`s it, within everything that `bound`s it**. Add to the plate above:
 
 ```
 point o hint(x: 30, y: 20)
@@ -1184,11 +1226,13 @@ bore cut body
 ```
 
 ```
+$ solventc plate.sv --where body.volume
+plate.sv: solved
   9 params, 9 equations, structural rank 9; DOF 0; 3 components: DOF 0, 0, 0; 2 rigid cluster(s) in the distance graph
-  body.volume = 69643.8
+  body.volume = 69644.2
 ```
 
-`72000 − π · 5² · 30 = 69643.81`. Swap the last two lines — `bore cut body` before the `solid
+`72000 − π · 5² · 30 = 69643.8`, and the faceted bore takes a little less. Swap the last two lines — `bore cut body` before the `solid
 body(stock)` it belongs to — and the number is the same, because both sides of the rule are *sets*
 and a set has no order.
 
@@ -1205,7 +1249,6 @@ The extent includes the target's stock and additions in both directions along th
 normal, ignoring other cutters. It follows the solved geometry and placement. The constructor
 alone creates the cutter; the infix statement removes its material from the body. For a blind
 pocket, keep an explicit `depth:` or `from:`/`to:` extent and apply it with the same `cut` word.
-Old Boolean `X through B` statements are now written `X cut B`.
 
 **`bound` keeps what lies within.** The third side of the body rule is the intersection:
 `tip bound body` keeps of the body only what is inside `tip`. A rim is a sphere within a cone,
@@ -1218,7 +1261,7 @@ toe cut body
 ```
 
 Difference and intersection commute, so `cut` and `bound` statements need no order between them;
-union comes first, as before.
+union comes first.
 
 Being sets is also the one thing you have to write out. A boss standing in the floor of a pocket is
 **not** `pocket cut body` and `boss on body`: that is stock ∪ boss − pocket, and the pocket eats
@@ -1244,40 +1287,51 @@ solid body(shell)
 boss on body
 ```
 
-`shell.volume` is `72000 − π · 15² · 10 ≈ 64931.5` and `body.volume` is that plus
-`π · 5² · 6 ≈ 65402.7`; written flat on one body it comes out 64931.5, the boss gone. The extra
+`shell.volume` reports 64931.8 (`72000 − π · 15² · 10 = 64931.4`, faceted) and `body.volume`
+65403, that plus `π · 5² · 6`; written flat on one body it comes out 64931.8, the boss gone. The extra
 name is honest rather than a limitation: `shell` is exactly what a history calls "the body as of
 step 2", and this is the language letting you say it.
 
+**Where a part stands is what it bears against.** `k.far against m.near` says two caps touch. The
+part `k` is drawn in a *placed* plane, written `from:` another with neither `fold:` nor `offset:`
+(`plane back(origin: o, toward: q, from: front)`), and the mate works out its offset: two faces in
+contact are at the same point along the normal they share, so a stack of parts keeps its numbers
+in step by itself. A mate is between the caps a sweep makes; a side face runs the whole depth and
+is refused (E082, "a mate is between the caps a sweep makes"), and a placed plane needs exactly
+one mate (E083, "`back` is a plane nothing places: write `offset:` or state one `against`"). A
+mate across solved views is 1.13's.
+
 **What the report says.** `--where body` is the reader's only picture of an object no view of the
 sheet shows whole: the volume, the surface area, the box it stands in, and each face's area under
-the name the document wrote it by — `near` and `far` for a prism's caps, `start`/`end` for a
-partial revolution, and otherwise the drawn edge that side was swept from.
+the name the document wrote it by, through the operand it came from — `near` and `far` for a
+prism's caps, `start`/`end` for a partial revolution, and otherwise the drawn edge that side was
+swept from.
 
 ```
 $ build/solventc plate.sv --where body
 plate.sv: solved
   9 params, 9 equations, structural rank 9; DOF 0; 3 components: DOF 0, 0, 0; 2 rigid cluster(s) in the distance graph
-  body.ab.area = 1800
   body.area = 11585.4
-  body.bc.area = 1200
+  body.bore.hole.area = 942.44
   body.bounds.x0 = 0
   body.bounds.x1 = 60
   body.bounds.y0 = 0
   body.bounds.y1 = 30
   body.bounds.z0 = 0
   body.bounds.z1 = 40
-  body.cd.area = 1800
-  body.da.area = 1200
-  body.far.area = 2321.46
-  body.hole.area = 942.474
-  body.near.area = 2321.46
-  body.volume = 69643.8
+  body.stock.ab.area = 1800
+  body.stock.bc.area = 1200
+  body.stock.cd.area = 1800
+  body.stock.da.area = 1200
+  body.stock.far.area = 2321.47
+  body.stock.near.area = 2321.47
+  body.volume = 69644.2
 ```
 
-`body.hole.area` is `2π · 5 · 30`: the bore's wall, named by the circle it was swept from. A face
-a boolean ate leaves a name the document still writes and no area under it. `--stl PATH` writes one
-solid as binary STL for a printer; `--solid NAME` says which, and without it the only Boolean root is selected automatically. Multiple roots require a selection.
+`body.bore.hole.area` is `2π · 5 · 30`, faceted: the bore's wall, named by the circle it was swept
+from, under the cutter it came from. A face a boolean ate leaves a name the document still writes
+and no area under it. `--stl PATH` writes one solid as binary STL for a printer; `--solid NAME`
+says which, and without it the only Boolean root is selected automatically.
 
 **Views, derived.** A `.svd` file selects solved model solids and projects them with its own
 viewing directions, positions, and scales. See [Solvent Drawing](solvent-drawing.md) and
@@ -1296,7 +1350,7 @@ preview {
 The disc and piston additionally place their pin at `R` or `L` from `std.origin`: those
 endpoints describe physical dimensions as well as a datum's direction.
 
-**Every part of that engine is now written this way** — `vtwin/components/piston.sv`, `disc.sv`,
+**Every part of that engine is written this way** — `vtwin/components/piston.sv`, `disc.sv`,
 `flywheel.sv`, `throttle.sv` and the plate in `frame.sv` beside the cylinder — and what each one
 turned out to *be* is worth reading, because the shape of the statement follows from where the
 part's own axis lies relative to its section. The piston is a **turn**: its left-hand profile
@@ -1312,35 +1366,22 @@ sectioned on its mid-plane because the set screw runs through it, and the plate 
 because the plenum, the boss, the vents and the coupling's hole are all centred there. Sectioned
 on a face instead, half of each of those would have been in fresh air.
 
-**And the dimensions, asked for too.** A sheet may ask the machine for the callouts that follow
-from the object:
-
-```
-```
-
-It gives the part's **overall extents** in that view — one along each of the view's own axes,
-measured between the faces that bound them and stood clear of the outline — and the **diameter**
-of every round feature that view sees square on. Nothing is placed by hand: they go through the
-same layout engine every stated dimension goes through, so a generated dimension stands off a
-stated one because neither knows the other is different. Adding the line to the sheet above puts
-`60`, `40` and `⌀16` on the front view and `40` and `30` on the right, and the document says
-nothing about where any of them go.
-
-A generated dimension is a **reading of the drawing and not a statement in it**: it adds no
-equation, no unknown and no freedom, it cannot be dragged or edited, and it reads the *solved*
-pose — so it says what the part came to and follows an edit without being one.
-
-What it will not do is guess. Which datum a stack is measured from, which fit is critical, what
-is a reference and what controls the drawing are the design, and those a sheet still states the
-way it always did. This is only the part that was never a decision.
+**And the dimensions.** A sheet may ask for the callouts that follow from the object —
+`dimensions in front` in the `.svd` ([Solvent Drawing](solvent-drawing.md)): the part's overall
+extents in that view and the diameter of every round feature the view sees square on, laid out by
+the same engine as every stated dimension. A generated dimension is a **reading of the drawing and
+not a statement in it**: it adds no equation, no unknown and no freedom, cannot be dragged or
+edited, and reads the *solved* pose. Which datum a stack is measured from, which fit is critical
+and what is a reference are the design, and a sheet still states those.
 
 **What is refused, and why.**
 
 | written | reported |
 |---|---|
-| `face bad(ab, zz, cd, da)` | E080 — "`zz` and `cd` share no point: a face is a loop, walked in order" |
+| `face bad(ab, cd, bc, da)` | E080 — "`ab` and `cd` share no point: a face is a loop, walked in order" |
+| `face bad(a, bc, d, -> close)` | E080 — "`bc` meets neither of its neighbours: a face is a loop, walked in order" |
 | `face bad(ab, hole)` | E080 — "a circle is a whole loop: it stands in a face by itself" |
-| `face bad(a, b)` | E080 — "a face is bounded by lines, arcs and circles, and `a` is a point" |
+| `face bad(a, b)` | E080 — "`b` and `a` share no point: a face is a loop, and one that does not come back to where it started closes with `-> close`" |
 | `solid bad(ab, depth: 3mm)` | E080 — "a swept solid is written over a face, and this is a line" |
 | `solid bad(sec)`, `sec` a face | E080 — "a body is made of solids, and this is a face" |
 | `solid bad(sec, from: 0mm, to: 0mm)` | E080 — "a prism swept nowhere is no solid" |
@@ -1705,17 +1746,18 @@ gax angle(90deg) pax      // the shaft angle, in space
 gax distance(17.5) pax    // the offset: the common perpendicular, in space
 ```
 
-`solventc` reports `warning[W111]: \`beta\` is a free variable: the solver answers for it`, then
+`solventc` reports ``warning[W111]: `beta` is a free variable: the solver answers for it``, then
 `solved`, `27 params, 27 equations, structural rank 27; DOF 0`, and `--where pax` gives
 `pax.p1.y = 17.5`, `pax.p2.y = 17.5`. The two axes are drawn in different views, so `angle` and
 `distance` between them are relations in space (1.5): the unsigned angle between their
 directions and the common-perpendicular distance. The fold `beta` and the pinion axis's height in
 its view are the two unknowns they settle (the fold comes out at 0°: the side view is the top
-view, and the pinion's axis lies in it 17.5 behind the gear's, crossing it square). No datum point is grounded: both views' place on
-the sheet is held silently (1.13), and a `ground o2` would change nothing but make the hold a
-statement. Without the offset the same document reports `27 params, 26 equations, structural rank
-26; DOF 1` — the pinion axis may slide along the common perpendicular. `tests/spatial_lang.rs`
-holds this document against an independent reading of the solved axes.
+view, and the pinion's axis lies in it 17.5 behind the gear's, crossing it square). No datum
+point is grounded: both views' place on the sheet is held silently (1.13), and a `ground o2`
+would change nothing but make the hold a statement. Without the offset the same document reports `27 params, 26 equations, structural rank
+26; DOF 1` — the pinion axis may slide along the common perpendicular. At a shaft angle of 60° the
+fold comes out at 30°. `tests/spatial_lang.rs` holds this document against an independent reading
+of the solved axes; `skew_axes.sv` is it with a shaft about each axis, in the app's example menu.
 
 ### 2.12 A hypoid's pitch cones through the mean point: DOF 0, well
 
@@ -1827,7 +1869,8 @@ plane at M, and `gc tangent(M) pc` makes it the pinion's, so the pinion's apex c
 nothing saying so. `horizontal pax` holds the pinion view's own turn, which is the one freedom a
 free view drawn about a line and a point has left. `tests/spatial_surfaces.rs` solves this and
 2.12 and finds the same hypoid: Γ = 60°, γ = 29.564957707°, ε = 10.722102067°, |MA| = 97.282181449,
-every one within 2e-11.
+every one within 2e-11. `hypoid_pitch_cones.sv` is this document in the app's example menu, where
+the glass box shows the two cones touching on P.
 
 ### 2.14 An arc placed by its length: DOF 0, well
 
@@ -1873,10 +1916,10 @@ ground a
 ```
 
 It solves to `6 params, 6 equations, structural rank 6; DOF 0`, with `d.x = 17.3205` and
-`d.y = 10`: `ad` at 30°. Written the old way, `ab angle(beta) ad` and `ad angle(beta) ac`, the
-same drawing is `7 params, 7 equations` with two `warning[W111]: \`beta\` is a free variable: the
-solver answers for it` — one more unknown, stated only to be equated away. `ab angle(ab, ac,
-sense: cw) ad` puts `ad` at −60° instead, `ac`'s mirror image in `ab`. The case library's
+`d.y = 10`: `ad` at 30°. Written with a shared free variable, `ab angle(beta) ad` and
+`ad angle(beta) ac`, the same drawing is `7 params, 7 equations` with two
+``warning[W111]: `beta` is a free variable: the solver answers for it`` — one more unknown,
+stated only to be equated away. `ab angle(ab, ac, sense: cw) ad` puts `ad` at −60° instead, `ac`'s mirror image in `ab`. The case library's
 `reflection.sv` is the law of reflection in one statement, `incoming angle(m, outgoing) m`, with
 the classical proof (the source's image, the strike and the target collinear) a `claim` the
 diagnosis judges a theorem.
@@ -1893,8 +1936,14 @@ diagnosis judges a theorem.
 6. On `conflict`, read the minimal set: it names the statements that disagree, not the whole
    drawing. On `over`, find the dimension already implied by the others. On `under`, ask what can
    still move.
+7. Prefer a word to an unknown: two equal angles are `l1 angle(l3, l4) l2`, an arc's extent is
+   `length(L) a`, and a motion's ratio may measure the drawing (1.6) rather than repeat a number.
+8. In space, draw each thing in the view that shows it true and relate across views with the
+   ordinary words (1.5); let the solve place a view (1.13) rather than computing its attitude, and
+   read where it went with `--where VIEW`.
 
 The documents in `rust/examples/` are the worked corpus, each with a header saying what it is for.
 `rect_fillets.sv` is the best first read, `gear_trace.sv` the deepest,
-`vtwin/components/cylinder.sv` the one to read for solids (1.14), and `engine.sv` with its `engine/` modules
-the largest.
+`vtwin/components/cylinder.sv` the one to read for solids (1.14), `skew_axes.sv`,
+`hypoid_pitch_cones.sv` and `sphere_cone_cylinder.sv` the ones for layouts in space (1.13), and
+`engine.sv` with its `engine/` modules the largest.
