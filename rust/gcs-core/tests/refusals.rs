@@ -420,6 +420,63 @@ fn a_direction_and_a_sense_are_words() {
     assert_eq!(gcs_core::io::dimension_text(&sk.user_constraints()[0]).as_deref(), Some("-30°"));
 }
 
+/// The word says which way whether the number is stated or a free variable's: `side: right`
+/// over `k`, a name nothing defines, is the right-hand side wherever the point was seeded, as it
+/// is over 30 — the free twin reads the word's sign as the stated kernel does.  It used to drop
+/// it, and the point stayed on whichever side its seed was.
+#[test]
+fn a_free_dimension_keeps_its_word() {
+    // `k` is 30, stated by a rise whose sign is arithmetic
+    const AXIS: &str = "unit mm\n\
+                        point a hint(x: 0, y: 0)\n\
+                        point b hint(x: 40, y: 0)\n\
+                        point q hint(x: 0, y: 30)\n\
+                        line ax(a, b)\n\
+                        ground a\n\
+                        ground b\n\
+                        ground q\n\
+                        a distance(k, along: up) q\n";
+    let at = |src: &str, i: usize| {
+        let (e, d) = read(src);
+        // the one thing said is that `k` is free
+        assert!(d.iter().all(|m| m.starts_with("W111")), "{d:?}");
+        let mut sk = e.sketch;
+        assert!(solve(&mut sk, SolveOpts::default()).success);
+        sk.point_xy(i)
+    };
+    // each read with the number stated and with it free, seeded either side: one answer
+    // a point from a line, a line from a line, and a run
+    let cases = [
+        "point p hint(x: 10, y: {y})\np distance({d}, side: {w}) ax\n",
+        "line l(hint(x: 0, y: {y}), hint(x: 40, y: {y}))\nl distance({d}, side: {w}) ax\n\
+         horizontal l\nl.p1 distance(0, along: x) a\n",
+        "point p hint(x: {y}, y: 5)\na distance({d}, along: {w}) p\n",
+    ];
+    for (k, case) in cases.iter().enumerate() {
+        let words = if k == 2 { ["left", "right"] } else { ["right", "left"] };
+        for w in words {
+            let place = |d: &str, y: i32| {
+                let src = case.replace("{y}", &y.to_string()).replace("{d}", d).replace("{w}", w);
+                let (x, yy) = at(&format!("{AXIS}{src}"), 3);
+                if k == 2 { x } else { yy }
+            };
+            let stated = place("30", 3);
+            assert!((stated.abs() - 30.0).abs() < 1e-6, "{case} {w}: {stated}");
+            for y in [3, -3] {
+                assert!((place("30", y) - stated).abs() < 1e-6, "{case} {w}, stated, seeded at {y}");
+                assert!((place("k", y) - stated).abs() < 1e-6, "{case} {w}, free, seeded at {y}");
+            }
+        }
+    }
+    // and an angle's sense: `t` is 30 degrees, by a line grounded there
+    let lines = "unit mm\npoint o hint(x: 0, y: 0)\npoint p hint(x: 10, y: 0)\n\
+                 point q hint(x: 7, y: 7)\npoint r hint(x: 8.660254037844387, y: 5)\n\
+                 line l1(o, p)\nline l2(o, q)\nline l3(o, r)\nground o\nground p\nground r\n\
+                 l1 angle(t) l3\n";
+    let (x, y) = at(&format!("{lines}l1 angle(t, sense: cw) l2\n"), 2);
+    assert!(y < 0.0 && (y.atan2(x).to_degrees() + 30.0).abs() < 1e-6, "({x}, {y})");
+}
+
 /// Views solved for: a fold along a line of another view and a position stated twice are
 /// E064, `against` between views that turn apart is E066, and two solved views a projection
 /// relates that come out parallel are E065 — after the solve, where no stated number could have

@@ -2237,8 +2237,13 @@ impl Constraint {
         // else, which is why this is one branch and not eight
         if let Some(f) = self.free {
             // a skew distance compares a signed gap against the number turned to the seed's
-            // side, and turning (m, c) with it keeps the twin's kernel sign-blind
-            let s = if self.kind == CKind::LineLine3 { self.skew_sign() } else { 1.0 };
+            // side, and turning (m, c) with it keeps the twin's kernel sign-blind; and a word
+            // that says which way — `side:`, `along:`, `sense:` — turns them as it turns a
+            // stated number below, or `side: right` over a free `k` meant the left
+            let s = match self.kind {
+                CKind::LineLine3 => self.skew_sign(),
+                _ => self.side().unwrap_or(1.0),
+            };
             // a stated plane's distance keeps its normal and offset beside the map
             if self.kind == CKind::PointPlaneDistanceFixed {
                 return [stated_plane(sk, self.args[1].ent().i()).to_vec(), vec![f.m, f.c]].concat();
