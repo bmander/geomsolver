@@ -1,8 +1,10 @@
 // Step 5, generation. Every roll shares the crown's angle, and each member turns
-// at the ratio its pitch cone rolls on the crown: its cone distance over its pitch
-// radius at M, read off the pitch triangles after the solve. Indexing is one member
-// angle; the crown's neighbour is one crown pitch round, four quarter pitches of
-// the mean pitch circle.
+// at the crown's tooth count over its own, 2R / m over N, so both stay conjugate
+// through the one crown: read off the gear's triangle after the solve, its
+// hypotenuse R over the gear's pitch radius, and over its short leg, N_p m / 2, for
+// the pinion. The pinion's own cone, solved off the bevel, rolls at another ratio.
+// Indexing is one member angle; the crown's neighbour is one crown pitch round,
+// four quarter pitches of the mean pitch circle.
 use std
 use design
 use views

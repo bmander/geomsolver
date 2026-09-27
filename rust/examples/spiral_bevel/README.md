@@ -16,9 +16,10 @@ pinion apex; N, the normal section, along the trace normal C → M.
 
 **Step 1, the requirements: `design.sv`** over **`configuration.sv`.** The configuration
 states the tooth counts, the mean module, the shafts (at 90°, and the offset between them, the
-length of their common perpendicular), the pressure shift and the crown's spiral angle; the design group adds the pressure angle, the cutter radius and face width in
-proportion to the mean cone distance, the depths in normal modules (addendum, dedendum, base,
-tip rounding, back), the two members' generating rolls and the gear space cutter's reach. The
+length of their common perpendicular), the pressure shift and the crown's spiral angle; the
+design group adds the pressure angle, the cutter radius and face width in proportion to the
+mean cone distance, the depths in normal modules (addendum, dedendum, base, tip rounding,
+back), the two members' generating rolls and the gear space cutter's reach. The
 normal module is the one number with a cosine in it, and the trace checks it. Zero offset is a
 bevel pair with a common apex; the configured pair is a hypoid 25 mm off, whose 12.5-degree
 shift and 25-degree spiral design out the undercut a symmetric rack develops past about 15 mm
@@ -87,8 +88,8 @@ inner one indexed a crown pitch round, closed at a cap standing clear of every b
 turns at the crown's tooth count over its own, `N_c / N` with `N_c = 2R / m`, measured off the
 gear's triangle after the solve (its hypotenuse R over the gear's pitch radius, and over the
 short leg `N_p m / 2` for the pinion, whose own solved cone rolls at another ratio off the
-bevel), so both members stay conjugate through the common crown; the generating motions are the crown roll relative to each member's. Indexing is one
-member angle; the crown's neighbour is one crown pitch round.
+bevel), so both members stay conjugate through the common crown; the generating motions are
+the crown roll relative to each member's. Indexing is one member angle; the crown's neighbour is one crown pitch round.
 
 **The layout: `layout.sv`.** `HypoidLayout(front, design)` composes steps 2–5 in the four
 views and publishes each member's limits and motions as a group.

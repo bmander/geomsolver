@@ -517,6 +517,10 @@ can name; and a hypoid's pitch cones can be stated either by construction (P3) o
 cones and their contact (P4), with the same answer. Every corpus report, drawing and export
 golden is byte-identical to main at every phase.
 
+The spiral-bevel example is now a true hypoid on it: its pinion's axial view is folded along
+the pinion's generator (P3), and the shafts are stated square and `offset` apart
+([layout plan](spiral-bevel-layout-plan.md#the-true-hypoid)).
+
 What remains open:
 
 - **A line on a cone or a cylinder** (a generator) as one relation, and a sphere tangent to a
