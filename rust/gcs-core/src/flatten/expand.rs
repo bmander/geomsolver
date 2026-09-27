@@ -170,6 +170,9 @@ impl<'a> Walk<'a> {
                     for a in d2.attitude.args_mut() {
                         self.settle_arg(a, vals, scope);
                     }
+                    for a in d2.plane.args_mut() {
+                        self.settle_arg(a, vals, scope);
+                    }
                     // and a solid's sweep, which is written in the same little language
                     if let Some(sw) = d2.sweep.as_mut() {
                         for a in sw.args_mut() {

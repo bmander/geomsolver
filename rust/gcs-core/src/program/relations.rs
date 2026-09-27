@@ -52,17 +52,52 @@ pub(crate) fn settle(
                 return Err((w.word.span, format!("`{word}` needs to know what its operands are")));
             };
             crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).ok_or_else(|| {
-                let m = format!(
+                let mut m = format!(
                     "`{word}` does not relate a {} to a {}",
                     named(Some(a)),
                     named(Some(b))
                 );
+                // a sphere touches a line or a sphere; a circle against one says two things
+                if word == "tangent" && (a == EntKind::Sphere || b == EntKind::Sphere) {
+                    m.push_str(": a sphere is tangent to a line or to another sphere, with the \
+                                sphere written first");
+                    if matches!(a, EntKind::Circle | EntKind::Arc)
+                        || matches!(b, EntKind::Circle | EntKind::Arc)
+                    {
+                        m.push_str(". A circle and a sphere may touch at a point or all the \
+                                    way round, so the word does not say which: a circle lying \
+                                    on the sphere is `c on s`");
+                    }
+                }
+                // a cone or a cylinder takes the words it has kernels for, and says so
+                let axial = |k: EntKind| matches!(k, EntKind::Cone | EntKind::Cylinder);
+                if axial(a) || axial(b) {
+                    m.push_str(match word {
+                        "on" if a == EntKind::Line => ": a line on a cone or a cylinder (a \
+                            generator) is not a relation yet; say it of the line's points — its \
+                            start at the apex and its end `on` the cone, or both ends `on` the \
+                            cylinder and the line `parallel` to the axis",
+                        "on" => ": a point is `on` a cone or a cylinder",
+                        "tangent" => ": a line touches a cylinder (`c tangent l`, the cylinder \
+                            first), and two cones touch at a point (`k1 tangent(M) k2`)",
+                        _ => ": a cone takes `on`, `angle` and `tangent`, and a cylinder `on`, \
+                            `radius` and `tangent`",
+                    });
+                }
                 (w.word.span, m)
             })?
         }
         // only a gauge word is written as a call, and those were settled above
         Fixity::Call => return Err((w.word.span, format!("`{word}` is not a call"))),
     };
+    // two cones touch at a named point: without one there is no place to read their normals
+    if kind == CKind::ConeTangentCone
+        && !w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Ent(_)))
+    {
+        return Err((w.word.span, "two cones touch at a point, and the statement names it: \
+                                  `k1 tangent(M) k2`, with `M on k1` and `M on k2` beside it"
+            .to_string()));
+    }
     Ok((kind, w.assemble(kind)?))
 }
 
@@ -178,6 +213,23 @@ pub(super) fn constrain(
             }
         }
     }
+    // **across views, a word means the relation in space**: the operands' views, read by
+    // the role rule (`reading`), decide it, and the statement is the kind in space from here on —
+    // or refused, where the word has no meaning there or a selector says nothing there
+    let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args) {
+        Ok(None) => (ckind, spec, args, left_out),
+        Ok(Some((k, a, l))) => (k, k.spec(), a, l),
+        Err((selector, message)) => {
+            let key = ["side", "sense"].into_iter().find_map(|k| r.written.and_then(|w| w.key_span(k)));
+            diags.push(Diag {
+                code: if selector { Code::E040 } else { Code::E062 },
+                span: if selector { key.unwrap_or(st.span) } else { st.span },
+                stmt: Some(st.id),
+                message,
+            });
+            return None;
+        }
+    };
     // a magnitude stated negative: the kernel would square the sign away and the drawing show
     // the positive, so the document and the drawing would disagree about what the thing is
     // **A number that says which way is a word** (§9.2, issue #48 item 4).  Where the sign was a

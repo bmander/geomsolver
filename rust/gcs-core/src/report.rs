@@ -232,6 +232,17 @@ pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f
             if e.kind == crate::model::EntKind::Plane {
                 let v = |i: usize| sk.params[params[i] as usize].value;
                 out.insert(format!("{n}.angle"), v(5).atan2(v(4)).to_degrees());
+                // **and where a solved view stands in space**: its axes, its normal and its
+                // origin, as the solve left them — only for a view the solve moves, so a stated
+                // one's record is as it always was
+                if sk.planes[e.i()].att.is_some() {
+                    let b = sk.basis(e.i());
+                    for (key, w) in [("u", b.u), ("v", b.v), ("n", b.normal()), ("o", b.o)] {
+                        for (axis, x) in ["x", "y", "z"].iter().zip(w) {
+                            out.insert(format!("{n}.{key}.{axis}"), x);
+                        }
+                    }
+                }
             }
         }
     }

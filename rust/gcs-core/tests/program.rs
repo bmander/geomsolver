@@ -101,6 +101,12 @@ fn every_constraint_type_is_printable() {
         if kind == CKind::DragTarget {
             continue; // soft, and never in a document — `user_constraints` filters it
         }
+        if kind.hinge() || kind == CKind::Mate {
+            // a hinge is a solved view's own statement, written in its plane's brackets
+            // (`fold: beta`, `fold: along l`); `tests/spatial_lang.rs` prints those — and a mate's
+            // row is its `against` statement's, which a lifted program does not carry
+            continue;
+        }
         if matches!(kind, CKind::PointOnCurve | CKind::CurveTangentLine | CKind::CurveCurvature) {
             // a curve's contacts print, but the curve they name lifts as an instance of a
             // component the sketch does not hold the text of, so there is nothing for them to
@@ -120,8 +126,10 @@ fn every_constraint_type_is_printable() {
             p.text()
         );
         let back = e.sketch.user_constraints();
+        // a statement that reads a view's attitude comes back as the twin its view can feed —
+        // `Lift` over a stated view is `LiftFixed` — which is one statement in two kernels
         assert!(
-            back.iter().any(|b| b.kind == kind),
+            back.iter().any(|b| b.kind.attitude_twin(false) == kind.attitude_twin(false)),
             "{} did not come back\n{}",
             kind.name(),
             p.text()
@@ -331,6 +339,7 @@ fn a_name_declared_twice_is_an_error() {
             seed_at: None,
             seed_names: Vec::new(),
             attitude: Default::default(),
+            plane: Default::default(),
             sweep: None,
             motion: None, angular_span: None,
             membership: Default::default(),
@@ -369,13 +378,33 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let sp = sk.spline(&ctrl).expect("four control points make a curve");
     // two planes, the page's and the top's, with `p` and `q` as images on them: what a
     // projection is inferred from
-    let pa = sk.plane(r, s, gcs_core::plane::Basis::page(), "front");
-    let pb = sk.plane(r, s, gcs_core::plane::Basis::page().fold(0.0), "top");
-    if kind == CKind::Project {
+    // a relation in space reads its datum points by their role, so there the views are drawn
+    // from datum points of their own, and none of them is drawn in a view
+    let (da, db) = if kind.spatial() {
+        (sk.point(-40.0, 0.0, false, "da"), sk.point(-10.0, 0.0, false, "db"))
+    } else {
+        (r, s)
+    };
+    let pa = sk.plane(da, db, gcs_core::plane::Basis::page(), "front");
+    let pb = sk.plane(da, db, gcs_core::plane::Basis::page().fold(0.0), "top");
+    // two spheres, about a point of each view
+    let (sa, sb) = (sk.sphere(q, 6.0, "sa"), sk.sphere(s, 4.0, "sb"));
+    // two cones and a cylinder, about the second line and the first
+    let (ka, kb) = (sk.cone(l2, 0.5, "ka"), sk.cone(l1, 0.25, "kb"));
+    let cy = sk.cylinder(l2, 7.0, "cy");
+    // a projection over stated views is `Project`, and comes back as the twin its views feed
+    if matches!(kind, CKind::Project | CKind::ProjectSolved) {
         sk.set_plane(p, Some(pa));
         sk.set_plane(q, Some(pb));
         let c = Constraint::project(&sk, EntRef::point(p), EntRef::point(q)).unwrap();
         return (sk, c);
+    }
+    // a relation in space reads where views put its points, so each point it names is drawn in
+    // one — two views, so a line from one to the other runs across them
+    if kind.spatial() {
+        for (x, v) in [(p, pa), (q, pb), (r, pa), (s, pb)] {
+            sk.set_plane(x, Some(v));
+        }
     }
     let arg = |k: SpecKind| -> Arg {
         match k {
@@ -384,6 +413,9 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             SpecKind::Circle | SpecKind::CircleOrArc => Arg::Ent(EntRef::circle(c1)),
             SpecKind::Arc => Arg::Ent(EntRef::arc(a1)),
             SpecKind::Spline => Arg::Ent(EntRef::spline(sp)),
+            // a point of `front` is on `front` by construction: a relation in space names the
+            // other view
+            SpecKind::Plane if kind.spatial() => Arg::Ent(EntRef::plane(pb)),
             SpecKind::Plane => Arg::Ent(EntRef::plane(pa)),
             SpecKind::Length => Arg::Num(12.0),
             SpecKind::Angle => Arg::Num(0.5),
@@ -395,8 +427,21 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let mut used_point = false;
     let mut used_line = false;
     let mut used_circle = false;
+    let mut used_sphere = false;
+    let mut used_cone = false;
     for (i, (_, k)) in spec.iter().enumerate() {
         args.push(match k {
+            SpecKind::Cone if used_cone => Arg::Ent(EntRef::new(EntKind::Cone, kb)),
+            SpecKind::Cone => {
+                used_cone = true;
+                Arg::Ent(EntRef::new(EntKind::Cone, ka))
+            }
+            SpecKind::Cylinder => Arg::Ent(EntRef::new(EntKind::Cylinder, cy)),
+            SpecKind::Sphere if used_sphere => Arg::Ent(EntRef::new(EntKind::Sphere, sb)),
+            SpecKind::Sphere => {
+                used_sphere = true;
+                Arg::Ent(EntRef::new(EntKind::Sphere, sa))
+            }
             // a constraint relates *distinct* entities, so the second of a pair is a different one
             SpecKind::Point if used_point => Arg::Ent(EntRef::point(q)),
             SpecKind::Point => {

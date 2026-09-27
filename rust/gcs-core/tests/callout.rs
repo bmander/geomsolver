@@ -109,7 +109,14 @@ fn every_dimension_is_drawn() {
     // stops the build there; this is the other half — that the arm someone wrote actually draws.
     let mut drawn: Vec<CKind> = sk_kinds(&all_dimensions());
     drawn.sort();
-    let mut want: Vec<CKind> = ALL_KINDS.iter().copied().filter(|k| k.has_dimension()).collect();
+    // a relation in space states a number of no one view, and has no figure on one; a hinge's
+    // fold is its plane's brackets, and is drawn as the view it folds; and a sphere is on no
+    // sheet, so its radius is drawn on none
+    let mut want: Vec<CKind> = ALL_KINDS.iter().copied()
+        .filter(|k| k.has_dimension() && !k.spatial() && !k.hinge())
+        // nor are a cone's or a cylinder's
+        .filter(|k| !matches!(k, CKind::SphereRadius | CKind::ConeAngle | CKind::CylinderRadius))
+        .collect();
     want.sort();
     assert_eq!(drawn, want, "the fixture is missing a dimensioned kind");
 

@@ -92,6 +92,33 @@ impl Sketch {
         self.circles.len() - 1
     }
 
+    /// A sphere about a drawn point, its radius a Param like a circle's.
+    pub fn sphere(&mut self, center: usize, radius: f64, name: &str) -> usize {
+        let r = self.param(radius, false, &format!("{name}.r"));
+        self.spheres.push(SphereE {
+            center: center as u32,
+            radius: r as u32,
+            class: Classes::default(),
+        });
+        self.spheres.len() - 1
+    }
+
+    /// A cone about a drawn line — its apex the line's start — its half-angle a Param (radians).
+    pub fn cone(&mut self, axis: usize, half: f64, name: &str) -> usize {
+        let a = self.param(half, false, &format!("{name}.half"));
+        let class = Classes::default();
+        self.cones.push(AxialE { axis: axis as u32, param: a as u32, class });
+        self.cones.len() - 1
+    }
+
+    /// A cylinder about a drawn line, its radius a Param like a sphere's.
+    pub fn cylinder(&mut self, axis: usize, radius: f64, name: &str) -> usize {
+        let r = self.param(radius, false, &format!("{name}.r"));
+        let class = Classes::default();
+        self.cylinders.push(AxialE { axis: axis as u32, param: r as u32, class });
+        self.cylinders.len() - 1
+    }
+
     /// An arc plus its two intrinsic `PointOnCircle` constraints.
     pub fn arc(&mut self, center: usize, start: usize, end: usize, name: &str) -> usize {
         let (cx, cy) = self.point_xy(center);
@@ -142,10 +169,49 @@ impl Sketch {
         name: &str,
     ) -> usize {
         let frame = self.datum(origin, toward, name);
-        self.planes.push(PlaneE { frame, basis });
+        self.planes.push(PlaneE { frame, basis, att: None });
         let pi = self.planes.len() - 1;
         self.slave(EntRef::plane(pi));
         pi
+    }
+
+    /// Plane `i`'s attitude in space.  The one reader: every consumer outside the model asks
+    /// here and never reads the field, so an attitude that comes to be solved for rather than
+    /// stated changes this function and no caller (`docs/spatial-constraints-plan.md`).
+    ///
+    /// A **solved** view (`att`) is read off its unknowns: `u = R(q)·e₁`, `v = R(q)·e₂` and
+    /// `o = R(q)·(a, b, d)`, with `R` the rotation of `q / |q|` — so a `q` a solve has not yet
+    /// brought back to the unit sphere still reads as an orthonormal basis.  While the unknowns
+    /// hold exactly the numbers they were minted at (`Att::seat`) the stored basis is the answer,
+    /// which is what makes freeing a view move nothing.
+    pub fn basis(&self, i: usize) -> crate::plane::Basis {
+        let p = &self.planes[i];
+        let Some(a) = &p.att else { return p.basis };
+        let now = self.att_values(a);
+        if now.iter().zip(&a.seat).all(|(x, y)| x.to_bits() == y.to_bits()) {
+            return p.basis;
+        }
+        let q = [now[0], now[1], now[2], now[3]];
+        match crate::plane::quat_rotate(q, [a.ab[0], a.ab[1], now[4]]) {
+            Some(o) => crate::plane::from_quat(q, o).unwrap_or(p.basis),
+            // a quaternion of no length names no attitude: the last one stated stands
+            None => p.basis,
+        }
+    }
+
+    /// Stand plane `i`'s origin at `o`, its directions untouched — the one writer after
+    /// elaboration built the plane, which is what `against` and a derived offset do.  A solved
+    /// view is re-seated on the new basis, so its unknowns say the same thing.
+    pub fn set_plane_origin(&mut self, i: usize, o: [f64; 3]) {
+        self.planes[i].basis.o = o;
+        self.seat_attitude(i);
+    }
+
+    /// Replace plane `i`'s whole stated attitude — for a caller that holds a sketch and turns
+    /// its views in space (the tests that move a part rigidly), never for a solve.
+    pub fn set_basis(&mut self, i: usize, b: crate::plane::Basis) {
+        self.planes[i].basis = b;
+        self.seat_attitude(i);
     }
 
     /// The rotor's two params, seeded from the chord — the half of `frame` a plane shares.
@@ -312,6 +378,19 @@ impl Sketch {
     /// dimension whose definition has not been grafted yet briefly a free variable — allocating
     /// an unknown the next pass immediately retires.
     pub(crate) fn add_quiet(&mut self, mut c: Constraint) -> u32 {
+        // the twin its planes can feed, decided before anything is minted for it: a projection
+        // over a solved view reads both views' quaternions, so a stated one is given held
+        // unknowns first (`Sketch::solve_projection`'s rule, for a statement not yet added)
+        let reads = c.attitudes_read(self);
+        if !reads.is_empty() {
+            let solved = reads.iter().any(|&v| self.planes[v].att.is_some());
+            c.kind = c.kind.attitude_twin(solved);
+            if c.kind == crate::constraints::CKind::ProjectSolved {
+                for v in reads {
+                    self.hold_attitude(v);
+                }
+            }
+        }
         if c.id == 0 {
             self.next_cid += 1;
             c.id = self.next_cid;
@@ -319,6 +398,13 @@ impl Sketch {
             self.next_cid = self.next_cid.max(c.id);
         }
         let id = c.id;
+        // a relation in space reads the hidden points its drawn operands lift to, so they are
+        // minted here — after the id, so a constraint that arrived carrying one keeps it — and
+        // the statement takes the twin its plane can feed; a point on no view has no lift, and
+        // `constraints::validate` is where that is refused
+        for p in c.lifted_points(self) {
+            self.lift_point(p);
+        }
         for (i, name) in c.kind.param_slots() {
             if matches!(c.args[i], Arg::Param(_)) {
                 continue;   // already allocated (a constraint moved between sketches)

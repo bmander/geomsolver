@@ -84,7 +84,9 @@ fn projection_inputs_follow_view_poses_and_cutting_planes() {
     assert_ne!(moved, before);
     assert_ne!(gcs_core::report::derived_json(&e.sketch, UNIT), picture);
     // This is a spatial offset, not a parameter of the 2D drawing.
-    e.sketch.planes[2].basis.o[2] += 2.0;
+    let mut o = e.sketch.basis(2).o;
+    o[2] += 2.0;
+    e.sketch.set_plane_origin(2, o);
     assert_ne!(hidden::inputs(&e.sketch), moved);
 }
 

@@ -119,7 +119,7 @@ fn spatial_faces_reject_wrong_support_identity_open_loops_and_planar_sweep_use()
         "face bad(left_low,middle_edge,right_low,bottom_edge,on: axis)",
         "face bad(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,on: first_envelope)",
         "face bad(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,-> close)",
-        "face bad(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,holes: sphere)",
+        "face bad(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,holes: globe)",
         "solid bad(lower_face,depth: 1mm)",
         "solid bad(lower_face,about: axis)",
         "solid bad(lower_face,along: axis)",

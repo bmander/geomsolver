@@ -446,11 +446,25 @@ pub unsafe extern "C" fn gcs_sketch_plane(
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plane_basis(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {
     guard(-1, move || {
-        let b = &sk(h).planes[idx as usize].basis;
+        let b = sk(h).basis(idx as usize);
         for (i, x) in b.u.iter().chain(b.v.iter()).enumerate() {
             *out.add(i) = *x;
         }
         6
+    })
+}
+
+/// A plane's whole frame in space: nine doubles, `u`, `v` and then its origin `o` — the solved
+/// one, for a view whose attitude or offset the drawing solves for, where six were not
+/// enough to say where the view stands.  Returns how many were written.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_plane_frame3(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {
+    guard(-1, move || {
+        let b = sk(h).basis(idx as usize);
+        for (i, x) in b.u.iter().chain(b.v.iter()).chain(b.o.iter()).enumerate() {
+            *out.add(i) = *x;
+        }
+        9
     })
 }
 
@@ -1080,6 +1094,9 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Seam => 13,
         EntKind::Vertex => 14,
         EntKind::Edge => 15,
+        EntKind::Sphere => 16,
+        EntKind::Cone => 17,
+        EntKind::Cylinder => 18,
     }
 }
 
@@ -1100,6 +1117,9 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         13 => EntKind::Seam,
         14 => EntKind::Vertex,
         15 => EntKind::Edge,
+        16 => EntKind::Sphere,
+        17 => EntKind::Cone,
+        18 => EntKind::Cylinder,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)
@@ -3730,7 +3750,7 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
                         }
                     } else {
                         match (triple(a.get("u")), triple(a.get("v"))) {
-                            (Some(u), Some(v)) => Attitude::Basis { u, v },
+                            (Some(u), Some(v)) => Attitude::Basis { u, v, o: None },
                             _ => {
                                 set_error("a plane's attitude is `from`/`fold` or `u`/`v`");
                                 return std::ptr::null_mut();

@@ -255,7 +255,7 @@ fn a_selector_that_says_nothing_is_refused() {
     assert!(d.iter().any(|m| m == "E040: `distance` takes no `sied`"), "{d:?}");
     // `along` fills no slot — it chooses the kind — so it is the one key checked by name
     let (_, d) = read(&format!("{PAIR}a distance(40, along: z) b\n"));
-    let want = "E040: `along` is `x`, `y`, `u`, `v`, `right`, `left`, `up` or `down`, not `z`";
+    let want = "E040: `along` is `x`, `y`, `u`, `v`, `n`, `right`, `left`, `up` or `down`, not `z`";
     assert!(d.iter().any(|m| m == want), "{d:?}");
     assert!(read(&format!("{PAIR}a distance(40, along: x) b\n")).1.is_empty());
 
@@ -393,4 +393,89 @@ fn a_direction_and_a_sense_are_words() {
     let (x, y) = sk.point_xy(2);
     assert!(y < 0.0 && (y.atan2(x).to_degrees() + 30.0).abs() < 1e-6, "({x}, {y})");
     assert_eq!(gcs_core::io::dimension_text(&sk.user_constraints()[0]).as_deref(), Some("-30°"));
+}
+
+/// Views solved for: a fold along a line of another view and a position stated twice are
+/// E064, `against` between views that turn apart is E066, and two solved views a projection
+/// relates that come out parallel are E065 — after the solve, where no stated number could have
+/// said so.
+#[test]
+fn a_solved_view_the_model_cannot_hold_is_refused() {
+    let views = "point o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\nplane front(origin: o, toward: t)\n";
+    let (_, d) = read(&format!("{views}line l(hint(x: 0, y: 0), hint(x: 5, y: 5))\nplane s(origin: o, toward: t, from: front, fold: along l)\n"));
+    assert!(d.iter().any(|m| m.starts_with("E064") && m.contains("not drawn in")), "{d:?}");
+    let (_, d) = read(&format!("{views}point m hint(x: 1, y: 2) in front\nplane s(origin: o, toward: t, from: front, offset: 4, through: m)\n"));
+    assert!(d.iter().any(|m| m.starts_with("E064") && m.contains("stated twice")), "{d:?}");
+    let (_, d) = read(&format!("{views}plane s(origin: o, toward: t, from: front, fold: 10deg) hint(fold: 5deg)\n"));
+    assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("the fold is stated")), "{d:?}");
+    let (e, d) = read(&format!("{views}plane q(origin: o, toward: t, attitude: free) hint(u: (1, 0, 0), v: (0, 0, 1))\npoint a hint(x: 3, y: 4) in front\npoint b hint(x: 3, y: 4) in q\na project b\n"));
+    assert!(d.is_empty(), "a projection between a stated and a solved view is not refused as written: {d:?}");
+    let after = gcs_core::program::solid_diagnostics(&e.sketch, &e.map);
+    assert!(after.iter().any(|x| x.code.as_str() == "E065"), "{after:?}");
+}
+
+/// Across views a word means space: a word with no meaning there is E062, a selector that
+/// names a page direction is E040, and a point on the page has no place in space to be related
+/// from — while the same words inside one view are what they always were.
+#[test]
+fn a_word_across_views_with_no_meaning_in_space_is_refused() {
+    let views = "point o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\nplane front(origin: o, toward: t)\n\
+                 point o2 hint(x: 100, y: 0)\npoint t2 hint(x: 140, y: 0)\n\
+                 plane side(origin: o2, toward: t2, from: front, fold: 90deg)\n\
+                 point a hint(x: 5, y: 5) in front\npoint b hint(x: 110, y: 5) in side\n\
+                 line la(hint(x: 0, y: 0), hint(x: 20, y: 5)) in front\n\
+                 line lb(hint(x: 100, y: 0), hint(x: 120, y: 9)) in side\n";
+    for (stmt, code, needle) in [
+        ("a horizontal b", "E062", "no meaning in space"),
+        ("a vertical b", "E062", "no meaning in space"),
+        ("a distance(4, along: y) b", "E062", "no meaning in space"),
+        ("la angle(30, sense: cw) lb", "E040", "unsigned"),
+        ("la distance(3, side: right) lb", "E040", "no sides"),
+        ("point pg hint(x: 1, y: 1)\npg coincident b", "E062", "on the page"),
+    ] {
+        let (_, d) = read(&format!("{views}{stmt}\n"));
+        assert!(d.iter().any(|m| m.starts_with(code) && m.contains(needle)), "{stmt}: {d:?}");
+    }
+    // within one view the page's words stand, and across views the ones space has are accepted,
+    // the midpoint and the mirror in a line among them
+    for stmt in ["a horizontal la.p1", "a distance(4, along: y) la.p1", "a distance(8) b", "la angle(40) lb",
+                 "a symmetry(lb) la.p1", "a midpoint lb"] {
+        let (_, d) = read(&format!("{views}{stmt}\n"));
+        assert!(d.is_empty(), "{stmt}: {d:?}");
+    }
+}
+
+/// Cones and cylinders take the words they have kernels for and say so for the rest: a
+/// line on either (a generator) is said of its points, two cones touch at a point the statement
+/// names, and each is built about a line already drawn in a view.
+#[test]
+fn what_a_cone_or_a_cylinder_cannot_say_is_refused() {
+    let views = "point o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\n\
+                 plane front(origin: o, toward: t)\n\
+                 point o2 hint(x: 100, y: 0)\npoint t2 hint(x: 140, y: 0)\n\
+                 plane side(origin: o2, toward: t2, from: front, fold: 90deg)\n\
+                 point a hint(x: 5, y: 5) in front\n\
+                 line la(hint(x: 0, y: 0), hint(x: 0, y: 20)) in front\n\
+                 line lb(hint(x: 100, y: 0), hint(x: 120, y: 9)) in side\n\
+                 cone k(axis: la) hint(half: 30deg)\ncone k2(axis: lb) hint(half: 20deg)\n\
+                 cylinder c(axis: la) hint(r: 5)\n";
+    for (stmt, code, needle) in [
+        ("lb on k", "E040", "a line on a cone or a cylinder"),
+        ("lb on c", "E040", "a line on a cone or a cylinder"),
+        ("k tangent lb", "E040", "a line touches a cylinder"),
+        ("lb tangent c", "E040", "the cylinder first"),
+        ("k tangent k2", "E040", "names it"),
+        ("angle(20deg) c", "E040", "does not apply to a cylinder"),
+        ("radius(-2) c", "E040", "magnitude"),
+        ("cone bad(axis: a)", "E103", "axis is a line"),
+        ("cylinder bad", "E103", "built about a line"),
+    ] {
+        let (_, d) = read(&format!("{views}{stmt}\n"));
+        assert!(d.iter().any(|m| m.starts_with(code) && m.contains(needle)), "{stmt}: {d:?}");
+    }
+    for stmt in ["a on k", "a on c", "radius(4) c", "angle(25deg) k", "c tangent lb",
+                 "point m hint(x: 3, y: 3) in front\nk tangent(m) k2"] {
+        let (_, d) = read(&format!("{views}{stmt}\n"));
+        assert!(d.is_empty(), "{stmt}: {d:?}");
+    }
 }

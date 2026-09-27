@@ -82,8 +82,8 @@ fn boundary_seams_roundtrip_copy_delete_and_preserve_private_dependencies() {
         ground south\nground north\n\
         arc rim(center: o,start: south,end: north)\n\
         radius(sqrt(9.25) * 1mm) rim\nline diameter(north,south)\n\
-        solid sphere(face(rim,diameter),about: diameter)\n\
-        surface wall(sphere,rim)\nseam boundary_edge(first_envelope,wall)\n")).program;
+        solid ball(face(rim,diameter),about: diameter)\n\
+        surface wall(ball,rim)\nseam boundary_edge(first_envelope,wall)\n")).program;
     let text = syntax::render_flat(&mut flat).unwrap().to_string();
     assert!(read(&solved(&text)).evaluate([0.5,0.,0.1],tolerance()).is_ok());
     let edge = e.map.ent_named("boundary_edge").unwrap();

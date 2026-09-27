@@ -203,7 +203,7 @@ pub(super) fn solids(
     // plane's normal is the sweep's own number and does not depend on where the plane stands, so
     // the walk can be done on the statements alone — and every reader below (a view, a mesh, a
     // claim) resolves its term lazily and therefore sees the planes placed.
-    place(sk, res, body, skip, diags);
+    place(sk, res, map, body, skip, diags);
 
     // -- the pictures the document asks for (§6.11) ---------------------------
     for st in body {
@@ -256,7 +256,7 @@ pub(super) fn solids(
         // **a section is drawn in a view parallel to the cut**, or the true shape it shows is
         // not the shape it is a section of
         if let Some(a) = at {
-            let (pa, pb) = (sk.planes[a as usize].basis, sk.planes[plane as usize].basis);
+            let (pa, pb) = (sk.basis(a as usize), sk.basis(plane as usize));
             if crate::plane::fold_line(&pa, &pb).is_some() {
                 say(
                     Code::E084,

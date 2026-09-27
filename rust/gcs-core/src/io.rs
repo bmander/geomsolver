@@ -150,6 +150,14 @@ pub fn seed_omitted(
             args[i] = Arg::Ent(crate::constraints::infer_entity(sk, kind, args, i)?);
         }
     }
+    // and a number the geometry decides — a skew distance's side — once the entities are in
+    for i in 0..args.len() {
+        if left_out(i) {
+            if let Some(a) = crate::constraints::infer_value(sk, kind, args, i) {
+                args[i] = a;
+            }
+        }
+    }
     crate::constraints::validate(sk, kind, args)
 }
 
@@ -189,7 +197,9 @@ fn remap_early(
         EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
         // a curve is never another curve's argument: nothing in the language says so, and a
         // face and a solid are built after every curve, so neither is one either
-        EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => None,
+        // nor a sphere: a curve is written over drawn figures, and a sphere is on no sheet
+        EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => None,
     }
 }
 
@@ -229,6 +239,18 @@ pub fn to_json(sk: &Sketch) -> Json {
             ])
         })
         .collect();
+    let spheres: Vec<Json> = sk
+        .spheres
+        .iter()
+        .map(|c| {
+            object([
+                ("center", (c.center as i64).into()),
+                ("r", sk.params[c.radius as usize].value.into()),
+                ("fixed", sk.params[c.radius as usize].fixed.into()),
+                ("class", class_json(&c.class)),
+            ])
+        })
+        .collect();
     let arcs: Vec<Json> = sk
         .arcs
         .iter()
@@ -257,20 +279,46 @@ pub fn to_json(sk: &Sketch) -> Json {
     let planes: Vec<Json> = sk
         .planes
         .iter()
-        .map(|p| {
+        .enumerate()
+        .map(|(i, p)| {
             let f = &p.frame;
+            let b = sk.basis(i);
             let v3 = |a: [f64; 3]| Json::Arr(a.iter().map(|&x| Json::Num(x)).collect());
-            object([
+            let mut o = object([
                 ("origin", (f.origin as i64).into()),
                 ("toward", (f.toward as i64).into()),
                 ("c", sk.params[f.c as usize].value.into()),
                 ("s", sk.params[f.s as usize].value.into()),
                 ("cfixed", sk.params[f.c as usize].fixed.into()),
                 ("sfixed", sk.params[f.s as usize].fixed.into()),
-                ("u", v3(p.basis.u)),
-                ("v", v3(p.basis.v)),
+                ("u", v3(b.u)),
+                ("v", v3(b.v)),
                 ("class", class_json(&f.class)),
-            ])
+            ]);
+            // where the plane stands in space, which an `offset:` or an `against` moved it to;
+            // written only when it stands off the origin, so a view's record is as it was
+            if b.o != [0.0; 3] {
+                o.set("o", v3(b.o));
+            }
+            // a solved view's unknowns, only where the view is solved: every plane a document
+            // states writes exactly the record it always did
+            if let Some(a) = &p.att {
+                let g = |k: u32| &sk.params[k as usize];
+                let mut att = object([
+                    ("q", Json::Arr(a.q.iter().map(|&k| Json::Num(g(k).value)).collect())),
+                    ("qfixed", a.q.iter().all(|&k| g(k).fixed).into()),
+                    ("d", g(a.d).value.into()),
+                    ("dfixed", g(a.d).fixed.into()),
+                    ("ab", Json::Arr(a.ab.iter().map(|&x| Json::Num(x)).collect())),
+                ]);
+                // held by a hinge statement rather than a unit row of its own — the hinge is a
+                // constraint of the document's and travels as one
+                if a.hinged {
+                    att.set("hinged", true.into());
+                }
+                o.set("att", att);
+            }
+            o
         })
         .collect();
     let user = sk.user_constraints();
@@ -320,6 +368,32 @@ pub fn to_json(sk: &Sketch) -> Json {
             ("centerline", Json::Bool(roles.centerline)),
         ])).collect::<Vec<_>>();
     if !roles.is_empty() { doc.set("roles", Json::Arr(roles)); }
+    // only when there is one, so a document with no sphere dumps exactly as it always has
+    if !spheres.is_empty() { doc.set("spheres", Json::Arr(spheres)); }
+    // and the cones and the cylinders, likewise only when there is one
+    for (key, list) in [("cones", &sk.cones), ("cylinders", &sk.cylinders)] {
+        let own = if key == "cones" { "half" } else { "r" };
+        let v: Vec<Json> = list
+            .iter()
+            .map(|a| {
+                object([
+                    ("axis", (a.axis as i64).into()),
+                    (own, sk.params[a.param as usize].value.into()),
+                    ("fixed", sk.params[a.param as usize].fixed.into()),
+                    ("class", class_json(&a.class)),
+                ])
+            })
+            .collect();
+        if !v.is_empty() {
+            doc.set(key, Json::Arr(v));
+        }
+    }
+    // the page-placement gauge's holds, by point index — only when there is one, and
+    // derived again by an elaboration, but a document loaded from this has no source to derive
+    // them from: without it a writeback would read the hold as a `ground`
+    if !sk.page_held.is_empty() {
+        doc.set("page_held", Json::Arr(sk.page_held.iter().map(|&p| Json::Int(p as i64)).collect()));
+    }
     doc
 }
 
@@ -418,6 +492,8 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.params[sp].fixed = f.get("sfixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.planes[pi].frame.class = read_class(f);
     }
+    // the planes a `"frames"` table made come first, so a plane record's index is past them
+    let np_planes = sk.planes.len();
     for (k, p) in d.get("planes").unwrap_or(&empty).arr().iter().enumerate() {
         let g = |key: &str| index(p.get(key).map(|v| v.as_i64()).unwrap_or(0), np, key);
         let v3 = |key: &str| -> [f64; 3] {
@@ -426,6 +502,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         };
         let basis = crate::plane::Basis::explicit(v3("u"), v3("v"))
             .ok_or_else(|| format!("plane {k}: u and v do not span a plane"))?;
+        let basis = crate::plane::Basis { o: v3("o"), ..basis };
         let pi = sk.plane(g("origin")?, g("toward")?, basis, "");
         let f = &sk.planes[pi].frame;
         let (cp, sp) = (f.c as usize, f.s as usize);
@@ -439,6 +516,38 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.params[sp].fixed = p.get("sfixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.planes[pi].frame.class = read_class(p);
     }
+    // the spheres after the planes, `primitives()`'s order, so a sphere's radius is where an
+    // elaboration puts it
+    for c in d.get("spheres").unwrap_or(&empty).arr() {
+        let centre = c.get("center").map(|v| v.as_i64()).unwrap_or(0);
+        let centre = index(centre, np, "sphere.center")?;
+        let ci = sk.sphere(centre, c.get("r").map(|v| v.as_f64()).unwrap_or(0.0), "");
+        let rp = sk.spheres[ci].radius as usize;
+        sk.params[rp].fixed = c.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
+        sk.spheres[ci].class = read_class(c);
+    }
+    // the cones and the cylinders after the spheres, each about a line already read
+    let nl = sk.lines.len();
+    for (key, kind) in [("cones", EntKind::Cone), ("cylinders", EntKind::Cylinder)] {
+        let own = if kind == EntKind::Cone { "half" } else { "r" };
+        for c in d.get(key).unwrap_or(&empty).arr() {
+            let axis = c.get("axis").map(|v| v.as_i64()).unwrap_or(0);
+            let axis = index(axis, nl, "axis")?;
+            let v = c.get(own).map(|v| v.as_f64()).unwrap_or(0.0);
+            let ci = match kind {
+                EntKind::Cone => sk.cone(axis, v, ""),
+                _ => sk.cylinder(axis, v, ""),
+            };
+            let e = EntRef::new(kind, ci);
+            let rp = sk.axial(e).param as usize;
+            sk.params[rp].fixed = c.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
+            let class = read_class(c);
+            match kind {
+                EntKind::Cone => sk.cones[ci].class = class,
+                _ => sk.cylinders[ci].class = class,
+            }
+        }
+    }
     // memberships once the planes exist to be members of: a point's `"plane"` names one by
     // index, and the point was read before any plane was
     for (i, pt) in d.get("points").unwrap_or(&empty).arr().iter().enumerate() {
@@ -447,6 +556,23 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
                 sk.set_plane(i, Some(index(v.as_i64(), sk.planes.len(), "point.plane")?));
             }
         }
+    }
+    // a solved view's unknowns once its members are in, since what one unit of its quaternion is
+    // worth is read off them; the intrinsic row is minted with it, never read
+    for (k, p) in d.get("planes").unwrap_or(&empty).arr().iter().enumerate() {
+        let Some(a) = p.get("att") else { continue };
+        let nums = |key: &str, n: usize| -> Result<Vec<f64>, String> {
+            let v: Vec<f64> = a.get(key).map(|v| v.arr()).unwrap_or_default().iter()
+                .map(|x| x.as_f64()).collect();
+            if v.len() == n && v.iter().all(|x| x.is_finite()) { Ok(v) }
+            else { Err(format!("plane {k}: att.{key} is not {n} numbers")) }
+        };
+        let (q, ab) = (nums("q", 4)?, nums("ab", 2)?);
+        let dv = a.get("d").map(|v| v.as_f64()).unwrap_or(0.0);
+        let flag = |key: &str| a.get(key).map(|v| v.as_bool()).unwrap_or(false);
+        let pi = np_planes + k;
+        sk.restore_attitude(pi, [q[0], q[1], q[2], q[3]], flag("qfixed"), dv, flag("dfixed"),
+                            [ab[0], ab[1]], flag("hinged"));
     }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
@@ -468,6 +594,14 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
                 args.push(kind.default_arg(i));
             } else {
                 args.push(arg_from_json(&sk, *k, &raw[i])?);
+            }
+        }
+        // …but a slot the core reads off the geometry is never a slot a document predates: a
+        // relation in space written without its skew side has it inferred, as a `null` does,
+        // rather than defaulted to a side the drawing may not stand on
+        if kind.spatial() {
+            for i in (raw.len()..spec.len()).take_while(|&i| kind.infers_arg(i)) {
+                args.push(kind.default_arg(i));
             }
         }
         seed_omitted(&sk, kind, &mut args, |i| omitted(raw.get(i)))?;
@@ -527,6 +661,14 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             }
         }
     }
+    // a hold is only the gauge's while its point is held: a document that says a point is held
+    // and not fixed says nothing, and an index past the points is refused as untrusted input
+    for v in d.get("page_held").unwrap_or(&empty).arr() {
+        let p = index(v.as_i64(), sk.points.len(), "page_held")?;
+        if sk.point_fixed(p) {
+            sk.page_held.insert(p as u32);
+        }
+    }
     for item in d.get("roles").unwrap_or(&empty).arr() {
         let entity = item.get("entity").ok_or("geometry role needs an entity")?.arr();
         if entity.len() != 2 { return Err("geometry role entity must be [kind, index]".into()); }
@@ -577,6 +719,13 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         }
     }
     let pt_index = |i: usize| pt_map[i];
+    // a held datum point is still the gauge's in the copy: fixed like any held point, and not
+    // a `ground` a writeback would spell
+    for &p in &src.page_held {
+        if let Some(n) = pt_map[p as usize] {
+            dst.page_held.insert(n as u32);
+        }
+    }
     for &i in &keep_pts {
         let (x, y) = src.point_xy(i);
         let n = dst.point(x + offset.0, y + offset.1, src.point_fixed(i),
@@ -667,7 +816,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         else {
             continue;
         };
-        let ni = dst.plane(o, t, p.basis, "");
+        let ni = dst.plane(o, t, src.basis(i), "");
         let (nc, ns) = (dst.planes[ni].frame.c as usize, dst.planes[ni].frame.s as usize);
         dst.params[nc].value = src.params[f.c as usize].value;
         dst.params[ns].value = src.params[f.s as usize].value;
@@ -677,11 +826,69 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         plane_map[i] = Some(ni);
         made.push(EntRef::plane(ni));
     }
+    let mut sphere_map: Vec<Option<usize>> = vec![None; src.spheres.len()];
+    for i in 0..src.spheres.len() {
+        if !keep(EntRef::new(EntKind::Sphere, i)) {
+            continue;
+        }
+        let c = &src.spheres[i];
+        let Some(centre) = pt_index(c.center as usize) else { continue };
+        let ni = dst.sphere(centre, src.params[c.radius as usize].value, "");
+        let rp = dst.spheres[ni].radius as usize;
+        dst.params[rp].fixed = src.params[c.radius as usize].fixed;
+        dst.spheres[ni].class = c.class.clone();
+        sphere_map[i] = Some(ni);
+        made.push(EntRef::new(EntKind::Sphere, ni));
+    }
+    // the cones and the cylinders after the spheres, each following its axis across
+    let mut axial_maps: [Vec<Option<usize>>; 2] =
+        [vec![None; src.cones.len()], vec![None; src.cylinders.len()]];
+    for (m, kind) in [EntKind::Cone, EntKind::Cylinder].into_iter().enumerate() {
+        for i in 0..src.count(kind) {
+            let e = EntRef::new(kind, i);
+            if !keep(e) {
+                continue;
+            }
+            let a = src.axial(e);
+            let Some(axis) = line_map[a.axis as usize] else { continue };
+            let v = src.params[a.param as usize].value;
+            let ni = match kind {
+                EntKind::Cone => dst.cone(axis, v, ""),
+                _ => dst.cylinder(axis, v, ""),
+            };
+            let ne = EntRef::new(kind, ni);
+            let np = dst.axial(ne).param as usize;
+            dst.params[np].fixed = src.params[a.param as usize].fixed;
+            let class = a.class.clone();
+            match kind {
+                EntKind::Cone => dst.cones[ni].class = class,
+                _ => dst.cylinders[ni].class = class,
+            }
+            axial_maps[m][i] = Some(ni);
+            made.push(ne);
+        }
+    }
+    let [cone_map, cylinder_map] = axial_maps;
     // a membership follows its plane across, and a plane that did not come — deleted, or
     // missing a point — takes the memberships that named it with it
     for i in 0..src.points.len() {
         if let (Some(ni), Some(p)) = (pt_index(i), src.plane_of(i)) {
             dst.set_plane(ni, plane_map[p]);
+        }
+    }
+    // a solved view comes across solved — its unknowns and constants, re-minted with their
+    // intrinsic row once its members are in — and a hidden point comes with the view point it
+    // lifts, seeded where that point lifts to now
+    for (i, p) in src.planes.iter().enumerate() {
+        if let (Some(ni), Some(a)) = (plane_map[i], &p.att) {
+            let g = |k: u32| &src.params[k as usize];
+            dst.restore_attitude(ni, a.q.map(|k| g(k).value), a.q.iter().all(|&k| g(k).fixed),
+                                 g(a.d).value, g(a.d).fixed, a.ab, a.hinged);
+        }
+    }
+    for l in &src.lifts {
+        if let Some(ni) = pt_index(l.point as usize) {
+            dst.lift_point(ni);
         }
     }
     // curves last: a curve's arguments may be of any other kind, so every map it reads has to
@@ -1026,6 +1233,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Point => pt_index(e.i()).map(EntRef::point),
             EntKind::Line => line_map[e.i()].map(EntRef::line),
             EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
+            EntKind::Sphere => sphere_map[e.i()].map(|i| EntRef::new(EntKind::Sphere, i)),
+            EntKind::Cone => cone_map[e.i()].map(|i| EntRef::new(EntKind::Cone, i)),
+            EntKind::Cylinder => cylinder_map[e.i()].map(|i| EntRef::new(EntKind::Cylinder, i)),
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
             EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
@@ -1270,6 +1480,24 @@ impl Part {
             }
             for (a, b) in sketch.entity_params(m).into_iter().zip(sk.entity_params(s)) {
                 params.push((a as usize, b as usize));
+            }
+            // a solved view's unknowns are no entity's params, and move with the view
+            let att = |x: &Sketch, e: EntRef| match e.kind {
+                EntKind::Plane => x.planes[e.i()].att.clone(),
+                _ => None,
+            };
+            if let (Some(a), Some(b)) = (att(&sketch, m), att(sk, s)) {
+                for (x, y) in a.q.iter().chain([&a.d]).zip(b.q.iter().chain([&b.d])) {
+                    params.push((*x as usize, *y as usize));
+                }
+            }
+        }
+        // and a hidden point moves with the view point it lifts
+        for l in &sk.lifts {
+            if let Some(k) = to_part[l.point as usize].and_then(|p| sketch.lift_of(p)) {
+                for (x, y) in sketch.lifts[k].x.iter().zip(&l.x) {
+                    params.push((*x as usize, *y as usize));
+                }
             }
         }
         // the free variables came along by name: the rebuild allocated the part's own unknown

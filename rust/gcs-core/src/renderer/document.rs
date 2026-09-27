@@ -45,9 +45,9 @@ fn render(sk: &Sketch, si: usize, plane_i: Option<usize>, unit: f64, section: Op
 /// The plane a picture is drawn in, and the pose that puts it on the page.  `None` is the page
 /// itself, which is what a document with no `plane` statement draws in.
 pub(crate) fn view_frame(sk: &Sketch, plane_i: Option<usize>) -> (Basis, (f64, f64, (f64, f64))) {
-    match plane_i.and_then(|i| sk.planes.get(i)) {
-        Some(p) => (
-            p.basis,
+    match plane_i.and_then(|i| sk.planes.get(i).map(|p| (i, p))) {
+        Some((i, p)) => (
+            sk.basis(i),
             (
                 sk.params[p.frame.c as usize].value,
                 sk.params[p.frame.s as usize].value,

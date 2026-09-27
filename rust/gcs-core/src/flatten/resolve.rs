@@ -384,7 +384,10 @@ fn rewrite(
                     _ => fix(r, bad),
                 }
             }
-            if let Some(r) = d.attitude.plane_ref_mut() {
+            for r in d.attitude.refs_mut() {
+                fix(r, bad);
+            }
+            if let crate::syntax::Position::Through(r) = &mut d.plane.position {
                 fix(r, bad);
             }
             // a revolution's axis is a line of the body like any other name it writes

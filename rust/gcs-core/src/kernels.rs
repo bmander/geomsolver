@@ -62,9 +62,62 @@ pub enum K {
     CoordinateV,
     CoordinateUFree,
     CoordinateVFree,
+    // a solved view's quaternion on the unit sphere, and a hidden point held at the lift of
+    // its view point over a solved view and over a stated one
+    QuatUnit,
+    Lift,
+    LiftFixed,
+    // the relations in space, over the hidden points views lift to: each dimension with its
+    // free twin beside it, and the two that read a plane in its solved and stated forms
+    Coincident3,
+    Distance3,
+    Distance3Free,
+    PointLine3,
+    PointLine3Free,
+    LineLine3,
+    LineLine3Free,
+    Angle3,
+    Angle3Free,
+    Perpendicular3,
+    Parallel3,
+    PointOnPlane,
+    PointOnPlaneFixed,
+    PointOnCircle3,
+    PointOnCircle3Fixed,
+    // a view folded from a solved one: its quaternion tied to its parent's by a stated
+    // fold, a solved one, or a line drawn in the parent — and a projection between two views
+    // either of which is solved
+    Hinge,
+    HingeFree,
+    HingeAlong,
+    ProjectFree,
+    // a point on a line in space, true lengths equal, a point's signed distance along a
+    // plane's normal (its stated-plane form is `point_on_plane_fixed`), and the sphere's own two
+    PointOnLine3,
+    EqualLength3,
+    PointPlaneDistance,
+    PointPlaneDistanceFree,
+    PointPlaneDistanceFixedFree,
+    SphereOn,
+    SphereSphere,
+    LineOnPlane,
+    LineOnPlaneFixed,
+    // a circle drawn in a view on a sphere, over the view solved and stated, and the
+    // midpoint and the mirror in a line, in space
+    CircleOnSphere,
+    CircleOnSphereFixed,
+    Midpoint3,
+    Symmetric3,
+    // a point on a cone, a cone's half-angle stated and free, and two cones touching
+    ConeOn,
+    HalfAngle,
+    HalfAngleFree,
+    ConeCone,
+    // a mate between two solved views' offsets
+    Mate,
 }
 
-pub const N_KERNELS: usize = 45;
+pub const N_KERNELS: usize = 85;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -1770,6 +1823,1401 @@ fn coordinate_jac<const V: bool, const FREE: bool>(n: usize, v: &[f64], k: &[f64
     }
 }
 
+/// Columns of `quat_unit`: (w, x, y, z).
+///
+/// `r = |q|² − 1`, `frame_unit` one dimension up: dimensionless, judged absolute, degree 0.  The
+/// `lift` reads the direction of `q` only, so this row is the whole of what fixes its length.
+fn quat_unit_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 4 * i;
+        r[i] = v[o] * v[o] + v[o + 1] * v[o + 1] + v[o + 2] * v[o + 2] + v[o + 3] * v[o + 3] - 1.0;
+    }
+}
+
+fn quat_unit_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 4 * i;
+        for t in 0..4 {
+            j[o + t] = 2.0 * v[o + t];
+        }
+    }
+}
+
+/// Columns of `lift`: (X, Y, Z, px, py, ox, oy, c, s, qw, qx, qy, qz, d) — the hidden point, the
+/// view point, its datum's origin and rotor, and the view's quaternion and offset.  Constants:
+/// (a, b), the in-plane part of the view's origin (`model::Att`).
+pub const N_PAR_LIFT: usize = 14;
+
+/// `X − R(q)·(a + a′, b + b′, d) = 0`, with `(a′, b′) = plane::in_view(c, s, o, p)` — the point
+/// as the draughtsman measured it on its view, stood up in space by the view's solved attitude
+/// (`plane::lift_q`, the one statement of it).  Three signed displacements: degree 1.
+fn lift_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_LIFT * i;
+        let (a, b) =
+            crate::plane::in_view(v[o + 7], v[o + 8], (v[o + 5], v[o + 6]), (v[o + 3], v[o + 4]));
+        let q = quat_at(v, o + 9);
+        let w = [k[2 * i] + a, k[2 * i + 1] + b, v[o + 13]];
+        let l = crate::plane::lift_q(q, w).map_or([f64::NAN; 3], |(l, _, _)| l);
+        for t in 0..3 {
+            r[3 * i + t] = v[o + t] - l[t];
+        }
+    }
+}
+
+fn lift_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_LIFT * i;
+        let (px, py, ox, oy, c, s) = (v[o + 3], v[o + 4], v[o + 5], v[o + 6], v[o + 7], v[o + 8]);
+        let (dx, dy) = (px - ox, py - oy);
+        let (a, b) = crate::plane::in_view(c, s, (ox, oy), (px, py));
+        let q = quat_at(v, o + 9);
+        let w = [k[2 * i] + a, k[2 * i + 1] + b, v[o + 13]];
+        let jo = 3 * N_PAR_LIFT * i;
+        let Some((_, rm, dq)) = crate::plane::lift_q(q, w) else {
+            j[jo..jo + 3 * N_PAR_LIFT].fill(f64::NAN);
+            continue;
+        };
+        for t in 0..3 {
+            let row = &mut j[jo + t * N_PAR_LIFT..jo + (t + 1) * N_PAR_LIFT];
+            // ∂L/∂(a′, b′) are the view's u and v
+            lift_view_row(row, t, (rm[t][0], rm[t][1]), (c, s), (dx, dy));
+            for m in 0..4 {
+                row[9 + m] = -dq[t][m];
+            }
+            row[13] = -rm[t][2];
+        }
+    }
+}
+
+/// Row `t` of a lift's Jacobian over the columns the two lifts share — the hidden point, the
+/// view point, its datum's origin and rotor — with the rest zeroed: `(gu, gv)` is component `t` of
+/// the view's u and v, `∂L/∂(a′, b′)`, and the view coordinates' own derivatives are `in_view`'s,
+/// a′ = c·dx + s·dy, b′ = −s·dx + c·dy, with `(dx, dy)` the view point less the datum's origin.
+fn lift_view_row(row: &mut [f64], t: usize, (gu, gv): (f64, f64), (c, s): (f64, f64),
+                 (dx, dy): (f64, f64)) {
+    row.fill(0.0);
+    row[t] = 1.0;
+    row[3] = -(gu * c - gv * s);
+    row[4] = -(gu * s + gv * c);
+    row[5] = -row[3];
+    row[6] = -row[4];
+    row[7] = -(gu * dx + gv * dy);
+    row[8] = -(gu * dy - gv * dx);
+}
+
+/// Columns of `lift_fixed`: (X, Y, Z, px, py, ox, oy, c, s).  Constants: the stated basis
+/// (u, v, o), nine numbers.
+pub const N_PAR_LIFT_FIXED: usize = 9;
+
+/// `X − (o + a′·u + b′·v) = 0` — `lift`'s statement over a view whose attitude is document data,
+/// which is `plane::Basis::lift` exactly.  Degree 1.
+fn lift_fixed_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_LIFT_FIXED * i;
+        let kb = &k[9 * i..9 * i + 9];
+        let (a, b) =
+            crate::plane::in_view(v[o + 7], v[o + 8], (v[o + 5], v[o + 6]), (v[o + 3], v[o + 4]));
+        for t in 0..3 {
+            r[3 * i + t] = v[o + t] - (kb[6 + t] + a * kb[t] + b * kb[3 + t]);
+        }
+    }
+}
+
+fn lift_fixed_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_LIFT_FIXED * i;
+        let kb = &k[9 * i..9 * i + 9];
+        let (dx, dy, c, s) = (v[o + 3] - v[o + 5], v[o + 4] - v[o + 6], v[o + 7], v[o + 8]);
+        let jo = 3 * N_PAR_LIFT_FIXED * i;
+        for t in 0..3 {
+            let row = &mut j[jo + t * N_PAR_LIFT_FIXED..jo + (t + 1) * N_PAR_LIFT_FIXED];
+            lift_view_row(row, t, (kb[t], kb[3 + t]), (c, s), (dx, dy));
+        }
+    }
+}
+
+/* -- relations in space ------------------------------------------------------
+ *
+ * What a relation between two views says (`docs/spatial-constraints-plan.md`).  Every one
+ * reads the **hidden points** a view point lifts to (`model::LiftE`), three columns each, and
+ * never a view's attitude — the `lift` rows are where a drawn point and its place in space are
+ * tied together, so a relation here is plain vector algebra over points in space.  The two that
+ * read a *plane* rather than points (a point on a plane, the plane row of a circle) read its
+ * quaternion and offset where the view is solved and its normal as constants where it is
+ * stated, which is `lift`/`lift_fixed`'s split again.
+ */
+
+use crate::space::{cross as cross3, dot as dot3, norm as norm3, sub as sub3};
+
+#[inline]
+fn at3(v: &[f64], o: usize) -> [f64; 3] {
+    [v[o], v[o + 1], v[o + 2]]
+}
+
+/// A solved view's quaternion, four columns from `o`.
+#[inline]
+fn quat_at(v: &[f64], o: usize) -> crate::plane::Quat {
+    [v[o], v[o + 1], v[o + 2], v[o + 3]]
+}
+
+/// `|d|` and the unit vector along `d`, or zero where `d` has no length — the gradient of a
+/// distance in space, which has none at its own centre.
+#[inline]
+fn length_and_unit(d: [f64; 3]) -> (f64, [f64; 3]) {
+    let l = norm3(d);
+    (l, if l > 0.0 { d.map(|t| t / l) } else { [0.0; 3] })
+}
+
+/// Columns of `coincident3`: (X, Y) — two hidden points.  `X − Y = 0`: three signed
+/// displacements, degree 1.  The same point in space, whatever views its two images are in.
+fn coincident3_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 6 * i;
+        for t in 0..3 {
+            r[3 * i + t] = v[o + t] - v[o + 3 + t];
+        }
+    }
+}
+
+fn coincident3_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let jo = 18 * i;
+        j[jo..jo + 18].fill(0.0);
+        for t in 0..3 {
+            j[jo + 6 * t + t] = 1.0;
+            j[jo + 6 * t + 3 + t] = -1.0;
+        }
+    }
+}
+
+/// `|X − Y|²` and its gradient in (X, Y).
+#[inline]
+fn dist3_sq(v: &[f64], j: &mut [f64]) -> f64 {
+    let d = sub3(at3(v, 0), at3(v, 3));
+    for t in 0..3 {
+        j[t] = 2.0 * d[t];
+        j[3 + t] = -2.0 * d[t];
+    }
+    dot3(d, d)
+}
+
+/// Columns of `distance3`: (X, Y), K = (d).  `|X − Y|² − d²` — the true length between two
+/// points drawn in different views, `distance`'s form one dimension up: degree 2.
+fn distance3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 6];
+    for i in 0..n {
+        r[i] = dist3_sq(&v[6 * i..], &mut g) - k[i] * k[i];
+    }
+}
+
+fn distance3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 6 * i;
+        dist3_sq(&v[o..], &mut j[o..o + 6]);
+    }
+}
+
+/// (X, Y, a), K = (m, c): `|X − Y|² − d²`, d = m·a + c.
+fn distance3_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 6];
+    for i in 0..n {
+        let o = 7 * i;
+        let (d, _) = free_dim(v, k, i, o + 6);
+        r[i] = dist3_sq(&v[o..], &mut g) - d * d;
+    }
+}
+
+fn distance3_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        let (d, m) = free_dim(v, k, i, o + 6);
+        dist3_sq(&v[o..], &mut j[o..o + 6]);
+        j[o + 6] = -2.0 * d * m;
+    }
+}
+
+/// How far the hidden point X stands from the infinite line through A and B, and its gradient in
+/// (X, A, B): `|(X − A) × (B − A)| / |B − A|`.  A magnitude — in space a point has no side of a
+/// line to be on — so the gradient is taken as zero exactly on the line, where the norm has none:
+/// "on the line" is two equations, and one row cannot say it (that is `on`'s business).
+fn point_line3_gap(v: &[f64], j: &mut [f64]) -> f64 {
+    let (x, a, b) = (at3(v, 0), at3(v, 3), at3(v, 6));
+    let (w, e) = (sub3(x, a), sub3(b, a));
+    let c = cross3(w, e);
+    let (lc, le) = (norm3(c), norm3(e).max(MIN_LINE_LEN));
+    let g = lc / le;
+    let ch = if lc > 0.0 { c.map(|t| t / lc) } else { [0.0; 3] };
+    // ∂|c|/∂w = e × ĉ and ∂|c|/∂e = ĉ × w, with w = X − A and e = B − A
+    let (gw, ce) = (cross3(e, ch), cross3(ch, w));
+    for t in 0..3 {
+        let gw = gw[t] / le;
+        let ge = ce[t] / le - g * e[t] / (le * le);
+        j[t] = gw;
+        j[3 + t] = -gw - ge;
+        j[6 + t] = ge;
+    }
+    g
+}
+
+/// Columns of `point_line3`: (X, A, B), K = (d).  The distance from a point to a line drawn in
+/// another view, `|(X − A) × (B − A)| / |B − A| − d`: a length, degree 1.
+fn point_line3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 9];
+    for i in 0..n {
+        r[i] = point_line3_gap(&v[9 * i..], &mut g) - k[i];
+    }
+}
+
+fn point_line3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        point_line3_gap(&v[o..], &mut j[o..o + 9]);
+    }
+}
+
+/// (X, A, B, a), K = (m, c): the same, d = m·a + c.
+fn point_line3_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 9];
+    for i in 0..n {
+        let o = 10 * i;
+        r[i] = point_line3_gap(&v[o..], &mut g) - free_dim(v, k, i, o + 9).0;
+    }
+}
+
+fn point_line3_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 10 * i;
+        point_line3_gap(&v[o..], &mut j[o..o + 9]);
+        j[o + 9] = -k[2 * i];
+    }
+}
+
+/// The **signed** common-perpendicular distance between two lines in space and its gradient in
+/// (A, B, C, D): `(e₁ × e₂)·(C − A) / |e₁ × e₂|`, e₁ = B − A and e₂ = D − C.  Signed, and not
+/// its magnitude, because the magnitude has a crease where the lines meet, which is exactly where
+/// a skew distance of zero asks a solve to go; which sign is the constraint's, read off the seed
+/// when it was stated and folded into the number it compares against (`Constraint::consts_on`).
+/// Parallel lines have no common perpendicular, which is refused where it is stated.
+fn skew_gap(v: &[f64], j: &mut [f64]) -> f64 {
+    let (a, b, c, d) = (at3(v, 0), at3(v, 3), at3(v, 6), at3(v, 9));
+    let (e1, e2, w) = (sub3(b, a), sub3(d, c), sub3(c, a));
+    let m = cross3(e1, e2);
+    let l = norm3(m).max(MIN_LINE_LEN * MIN_LINE_LEN);
+    let mh = m.map(|t| t / l);
+    let s = dot3(m, w) / l;
+    // s = N/L: ∂N/∂e₁ = e₂ × w, ∂N/∂e₂ = w × e₁, ∂N/∂w = m; ∂L/∂e₁ = e₂ × m̂, ∂L/∂e₂ = m̂ × e₁
+    let (n1, l1, n2, l2) = (cross3(e2, w), cross3(e2, mh), cross3(w, e1), cross3(mh, e1));
+    for t in 0..3 {
+        let g1 = (n1[t] - s * l1[t]) / l;
+        let g2 = (n2[t] - s * l2[t]) / l;
+        j[t] = -g1 - mh[t];
+        j[3 + t] = g1;
+        j[6 + t] = -g2 + mh[t];
+        j[9 + t] = g2;
+    }
+    s
+}
+
+/// Columns of `line_line3`: (A, B, C, D) — two lines' hidden endpoints — K = (d), the stated
+/// distance already turned to the side the seed was on.  `s − d`: a length, degree 1.
+fn line_line3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 12];
+    for i in 0..n {
+        r[i] = skew_gap(&v[12 * i..], &mut g) - k[i];
+    }
+}
+
+fn line_line3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        skew_gap(&v[o..], &mut j[o..o + 12]);
+    }
+}
+
+/// (A, B, C, D, a), K = (m, c): `s − (m·a + c)`, the sign folded into m and c.
+fn line_line3_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 12];
+    for i in 0..n {
+        let o = 13 * i;
+        r[i] = skew_gap(&v[o..], &mut g) - free_dim(v, k, i, o + 12).0;
+    }
+}
+
+fn line_line3_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 13 * i;
+        skew_gap(&v[o..], &mut j[o..o + 12]);
+        j[o + 12] = -k[2 * i];
+    }
+}
+
+/// The cosine of the angle between two lines' directions in space, `â·b̂` with a = B − A and
+/// b = D − C, and its gradient in (A, B, C, D).  Directed by each line's p1 → p2, so it runs
+/// through the whole half turn and says nothing about a sense: in space there is no side of the
+/// page to turn toward.
+fn cos3(v: &[f64], j: &mut [f64]) -> f64 {
+    let (a, b) = (sub3(at3(v, 3), at3(v, 0)), sub3(at3(v, 9), at3(v, 6)));
+    let (la, lb) = (norm3(a).max(MIN_LINE_LEN), norm3(b).max(MIN_LINE_LEN));
+    let (ah, bh) = (a.map(|t| t / la), b.map(|t| t / lb));
+    let cs = dot3(ah, bh);
+    for t in 0..3 {
+        let ga = (bh[t] - cs * ah[t]) / la;
+        let gb = (ah[t] - cs * bh[t]) / lb;
+        j[t] = -ga;
+        j[3 + t] = ga;
+        j[6 + t] = -gb;
+        j[9 + t] = gb;
+    }
+    cs
+}
+
+/// Columns of `angle3`: (A, B, C, D), K = (θ) in radians.  `â·b̂ − cos θ`: the unsigned angle,
+/// 0 to half a turn, stated by its cosine — dimensionless, degree 0, `angle`'s rationale.  Its
+/// gradient in θ vanishes at 0 and half a turn, where the lines are parallel and an angle
+/// between them is better said as `parallel3`.
+fn angle3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 12];
+    for i in 0..n {
+        r[i] = cos3(&v[12 * i..], &mut g) - k[i].cos();
+    }
+}
+
+fn angle3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        cos3(&v[o..], &mut j[o..o + 12]);
+    }
+}
+
+/// (A, B, C, D, a), K = (m, c): `â·b̂ − cos(m·a + c)`.
+fn angle3_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 12];
+    for i in 0..n {
+        let o = 13 * i;
+        r[i] = cos3(&v[o..], &mut g) - free_dim(v, k, i, o + 12).0.cos();
+    }
+}
+
+fn angle3_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 13 * i;
+        cos3(&v[o..], &mut j[o..o + 12]);
+        let (th, m) = free_dim(v, k, i, o + 12);
+        j[o + 12] = th.sin() * m;
+    }
+}
+
+/// Columns of `perpendicular3`: (A, B, C, D).  `â·b̂ = 0`, normalised so a long line and a short
+/// one weigh alike: degree 0.
+fn perpendicular3_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 12];
+    for i in 0..n {
+        r[i] = cos3(&v[12 * i..], &mut g);
+    }
+}
+
+fn perpendicular3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        cos3(&v[o..], &mut j[o..o + 12]);
+    }
+}
+
+/// Columns of `parallel3`: (A, B, C, D), K = (e₁, e₂) — two unit vectors perpendicular to the
+/// first line's direction as it stood when the system was compiled or last refreshed.
+///
+/// Two lines in space are parallel when `â × b̂ = 0`, which is three rows of rank two: the cross
+/// product is perpendicular to a, so it has only two components to lose.  Stating all three
+/// would be a dependent row at every solution; stating two fixed components would be singular
+/// wherever a turns onto one of them.  So the two are taken *across* a, as constants
+/// (`Constraint::consts_on`, re-read by `System::refresh_consts`): `(â × b̂)·e_k = 0`.  Near a
+/// solution â × b̂ lies in the plane of e₁ and e₂, and the rows are regular there.  Degree 0.
+fn parallel3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        let (a, b) = (sub3(at3(v, o + 3), at3(v, o)), sub3(at3(v, o + 9), at3(v, o + 6)));
+        let p = norm3(a).max(MIN_LINE_LEN) * norm3(b).max(MIN_LINE_LEN);
+        let x = cross3(a, b);
+        for t in 0..2 {
+            r[2 * i + t] = dot3(x, at3(k, 6 * i + 3 * t)) / p;
+        }
+    }
+}
+
+fn parallel3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        let (a, b) = (sub3(at3(v, o + 3), at3(v, o)), sub3(at3(v, o + 9), at3(v, o + 6)));
+        let (la, lb) = (norm3(a).max(MIN_LINE_LEN), norm3(b).max(MIN_LINE_LEN));
+        let p = la * lb;
+        let x = cross3(a, b);
+        for t in 0..2 {
+            let e = at3(k, 6 * i + 3 * t);
+            let r = dot3(x, e) / p;
+            // N = (a × b)·e: ∂N/∂a = b × e, ∂N/∂b = e × a; P = |a||b|
+            let (na, nb) = (cross3(b, e), cross3(e, a));
+            let row = &mut j[24 * i + 12 * t..24 * i + 12 * (t + 1)];
+            for s in 0..3 {
+                let ga = na[s] / p - r * a[s] / (la * la);
+                let gb = nb[s] / p - r * b[s] / (lb * lb);
+                row[s] = -ga;
+                row[3 + s] = ga;
+                row[6 + s] = -gb;
+                row[9 + s] = gb;
+            }
+        }
+    }
+}
+
+/// A solved view's normal, `R(q)·e₃`, and its derivative in q — `plane::lift_q` of the unit
+/// normal, the one statement of the rotation.
+#[inline]
+fn quat_normal(q: [f64; 4]) -> Option<([f64; 3], [[f64; 4]; 3])> {
+    crate::plane::lift_q(q, [0.0, 0.0, 1.0]).map(|(nv, _, dq)| (nv, dq))
+}
+
+/// Columns of `point_on_plane`: (X, qw, qx, qy, qz, d) — a hidden point, and a solved plane's
+/// quaternion and offset.  `n(q)·X − d = 0`: every lift of the plane's own points has `n·L = d`
+/// exactly, since L = R(q)·(a, b, d), so this says X is on the plane wherever in it.  Degree 1.
+pub const N_PAR_POINT_ON_PLANE: usize = 8;
+
+fn point_on_plane_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; N_PAR_POINT_ON_PLANE];
+    for i in 0..n {
+        r[i] = plane_gap(&v[N_PAR_POINT_ON_PLANE * i..], &mut g);
+    }
+}
+
+fn point_on_plane_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_POINT_ON_PLANE * i;
+        plane_gap(&v[o..], &mut j[o..o + N_PAR_POINT_ON_PLANE]);
+    }
+}
+
+/// Columns of `point_on_plane_fixed`: (X), K = (n, h) — a stated plane's normal and its origin
+/// along it.  `n·X − h = 0`, `point_on_plane` with the attitude as constants.  Degree 1.
+fn point_on_plane_fixed_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let kk = &k[4 * i..];
+        r[i] = dot3(at3(kk, 0), at3(v, 3 * i)) - kk[3];
+    }
+}
+
+fn point_on_plane_fixed_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        j[3 * i..3 * i + 3].copy_from_slice(&k[4 * i..4 * i + 3]);
+    }
+}
+
+/// The two rows of a hidden point on a circle drawn in a view — the circle's centre lifted to C,
+/// its radius r and its view's normal n — and their gradients in (X, C, r), with the plane row's
+/// dot against n handed back for the q columns: `|X − C| − r` and `n·(X − C)`.
+///
+/// The radius row is the **magnitude** form, not the squared one the page's `point_on_circle`
+/// uses: a kernel has one degree and the plane row is a length, so the radius row is stated as a
+/// length too — which is also the better-conditioned of the two, having a unit gradient wherever
+/// X is off the centre.  Both rows degree 1.
+fn circle3_rows(v: &[f64], nv: [f64; 3], j0: &mut [f64], j1: &mut [f64]) -> ([f64; 2], [f64; 3]) {
+    let d = sub3(at3(v, 0), at3(v, 3));
+    let (l, u) = length_and_unit(d);
+    for t in 0..3 {
+        j0[t] = u[t];
+        j0[3 + t] = -u[t];
+        j1[t] = nv[t];
+        j1[3 + t] = -nv[t];
+    }
+    j0[6] = -1.0;
+    j1[6] = 0.0;
+    ([l - v[6], dot3(nv, d)], d)
+}
+
+/// Columns of `point_on_circle3`: (X, C, r, qw, qx, qy, qz) — the circle's view solved, its
+/// normal read off the quaternion.  Two rows, net two equations: on the sphere of the circle's
+/// radius about its centre, and on its plane.
+pub const N_PAR_POINT_ON_CIRCLE3: usize = 11;
+
+fn point_on_circle3_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    let (mut j0, mut j1) = ([0.0; 7], [0.0; 7]);
+    for i in 0..n {
+        let o = N_PAR_POINT_ON_CIRCLE3 * i;
+        let q = quat_at(v, o + 7);
+        let Some((nv, _)) = quat_normal(q) else {
+            r[2 * i..2 * i + 2].fill(f64::NAN);
+            continue;
+        };
+        let (rows, _) = circle3_rows(&v[o..], nv, &mut j0, &mut j1);
+        r[2 * i..2 * i + 2].copy_from_slice(&rows);
+    }
+}
+
+fn point_on_circle3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    const W: usize = N_PAR_POINT_ON_CIRCLE3;
+    for i in 0..n {
+        let o = W * i;
+        let jo = 2 * W * i;
+        let q = quat_at(v, o + 7);
+        let Some((nv, dq)) = quat_normal(q) else {
+            j[jo..jo + 2 * W].fill(f64::NAN);
+            continue;
+        };
+        let (j0, j1) = j[jo..jo + 2 * W].split_at_mut(W);
+        let (_, d) = circle3_rows(&v[o..], nv, j0, j1);
+        for m in 0..4 {
+            j0[7 + m] = 0.0;
+            j1[7 + m] = (0..3).map(|t| d[t] * dq[t][m]).sum();
+        }
+    }
+}
+
+/// Columns of `point_on_circle3_fixed`: (X, C, r), K = (n) — the circle's view stated.
+fn point_on_circle3_fixed_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (mut j0, mut j1) = ([0.0; 7], [0.0; 7]);
+    for i in 0..n {
+        let (rows, _) = circle3_rows(&v[7 * i..], at3(k, 3 * i), &mut j0, &mut j1);
+        r[2 * i..2 * i + 2].copy_from_slice(&rows);
+    }
+}
+
+fn point_on_circle3_fixed_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let (j0, j1) = j[14 * i..14 * i + 14].split_at_mut(7);
+        circle3_rows(&v[7 * i..], at3(k, 3 * i), j0, j1);
+    }
+}
+
+/* -- hinges and the projection between solved views ------------------------------------------
+ *
+ * A view folded from a *solved* view (`docs/spatial-constraints-plan.md`) is not a constant
+ * of the document: its attitude follows its parent's, turned by the fold.  `Basis::fold(θ)` is
+ * the rotation `Rz(θ)·Rx(−90°)` in the parent's own axes — `u = cos θ·u_P + sin θ·v_P`,
+ * `v = −n_P` — so the child's quaternion is the parent's times that one, `q_P ⊗ q_rel(θ)`, and a
+ * hinge is the four rows saying so.  No unit row on the child: a product of unit quaternions is
+ * one.  The fold is a constant (`hinge`, and the identity for a plane stood off its parent), the
+ * document's free variable (`hinge_free`), or the bearing of a line drawn in the parent
+ * (`hinge_along`, over a half-angle rotor of its own).
+ */
+
+/// `qz(θ) ⊗ qx(−90°)` and its derivative in θ: the turn a fold at bearing θ is, in the parent's
+/// own axes (`plane::fold_rotor`, the one statement of it).
+#[inline]
+fn fold_rel(theta: f64) -> ([f64; 4], [f64; 4]) {
+    let (s, c) = (0.5 * theta).sin_cos();
+    let d = crate::plane::fold_turn(-0.5 * s, 0.5 * c);
+    (crate::plane::fold_rotor(theta), d)
+}
+
+/// The four hinge rows `q_c − q_p ⊗ k` and their Jacobian in (q_c, q_p), written into `j` at
+/// `stride` per row.
+#[inline]
+fn hinge_rows(v: &[f64], k: [f64; 4], r: &mut [f64], j: Option<(&mut [f64], usize)>) {
+    let qp = quat_at(v, 4);
+    let p = crate::plane::quat_mul(qp, k);
+    for t in 0..4 {
+        r[t] = v[t] - p[t];
+    }
+    if let Some((j, stride)) = j {
+        for m in 0..4 {
+            let mut e = [0.0; 4];
+            e[m] = 1.0;
+            let d = crate::plane::quat_mul(e, k);
+            for t in 0..4 {
+                j[t * stride + m] = if t == m { 1.0 } else { 0.0 };
+                j[t * stride + 4 + m] = -d[t];
+            }
+        }
+    }
+}
+
+/// Columns of `hinge`: (q_c, q_p) — the child view's quaternion and its parent's.  Constants:
+/// `q_rel`, the fold's turn (`fold_rel`) or the identity for a plane stood off its parent.  Four
+/// dimensionless rows, degree 0.
+fn hinge_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let kk = [k[4 * i], k[4 * i + 1], k[4 * i + 2], k[4 * i + 3]];
+        hinge_rows(&v[8 * i..], kk, &mut r[4 * i..4 * i + 4], None);
+    }
+}
+
+fn hinge_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let mut r = [0.0; 4];
+    for i in 0..n {
+        let kk = [k[4 * i], k[4 * i + 1], k[4 * i + 2], k[4 * i + 3]];
+        hinge_rows(&v[8 * i..], kk, &mut r, Some((&mut j[32 * i..32 * i + 32], 8)));
+    }
+}
+
+/// Columns of `hinge_free`: (q_c, q_p, a), K = (m, c) — the fold the document's free variable
+/// `a` makes, θ = m·a + c (radians).
+fn hinge_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let (th, _) = free_dim(v, k, i, o + 8);
+        hinge_rows(&v[o..], fold_rel(th).0, &mut r[4 * i..4 * i + 4], None);
+    }
+}
+
+fn hinge_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let mut r = [0.0; 4];
+    for i in 0..n {
+        let o = 9 * i;
+        let (th, m) = free_dim(v, k, i, o + 8);
+        let (rel, drel) = fold_rel(th);
+        let jo = 36 * i;
+        hinge_rows(&v[o..], rel, &mut r, Some((&mut j[jo..jo + 36], 9)));
+        let d = crate::plane::quat_mul(quat_at(v, o + 4), drel);
+        for t in 0..4 {
+            j[jo + 9 * t + 8] = -d[t] * m;
+        }
+    }
+}
+
+/// Columns of `hinge_along`: (q_c, q_p, hc, hs, c, s, p1x, p1y, p2x, p2y) — the child view, its
+/// parent, the fold's half-angle rotor, the parent datum's rotor and the line's two ends.
+pub const N_PAR_HINGE_ALONG: usize = 16;
+
+/// `fold: along l` — the child view contains the direction of a line drawn in its parent.  Six
+/// rows, all dimensionless (degree 0): the four hinge rows over `q_rel = qz(h) ⊗ qx(−90°)` with
+/// `qz(h) = (hc, 0, 0, hs)`, the rotor on the unit circle, and the fold's bearing along the line,
+/// `(cos θ, sin θ) × Rᵀ(c, s)(p2 − p1) / |p2 − p1| = 0` with `cos θ = hc² − hs²`,
+/// `sin θ = 2·hc·hs` — the line read in its view, `plane::in_view`'s rotation.  Either way along
+/// the line is a solution, and the seed picks one; where the line crosses the fold is the
+/// `point_on_plane` row the elaborator states beside it.
+fn hinge_along_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    const W: usize = N_PAR_HINGE_ALONG;
+    for i in 0..n {
+        let o = W * i;
+        let (hc, hs) = (v[o + 8], v[o + 9]);
+        let rel = crate::plane::fold_turn(hc, hs);
+        hinge_rows(&v[o..], rel, &mut r[6 * i..6 * i + 4], None);
+        r[6 * i + 4] = hc * hc + hs * hs - 1.0;
+        r[6 * i + 5] = along_row(&v[o..], None);
+    }
+}
+
+/// The bearing row of `hinge_along` and, when asked, its gradient over the 16 columns.
+fn along_row(v: &[f64], g: Option<&mut [f64]>) -> f64 {
+    let (hc, hs, c, s) = (v[8], v[9], v[10], v[11]);
+    let (dx, dy) = (v[14] - v[12], v[15] - v[13]);
+    let l = dx.hypot(dy).max(MIN_LINE_LEN);
+    let (ex, ey) = (c * dx + s * dy, -s * dx + c * dy);
+    let (cc, ss) = (hc * hc - hs * hs, 2.0 * hc * hs);
+    let nn = cc * ey - ss * ex;
+    if let Some(g) = g {
+        g[..8].fill(0.0);
+        g[8] = (2.0 * hc * ey - 2.0 * hs * ex) / l;
+        g[9] = (-2.0 * hs * ey - 2.0 * hc * ex) / l;
+        g[10] = (cc * dy - ss * dx) / l;
+        g[11] = (-cc * dx - ss * dy) / l;
+        let gx = (cc * -s - ss * c) / l - nn * dx / (l * l * l);
+        let gy = (cc * c - ss * s) / l - nn * dy / (l * l * l);
+        g[12] = -gx;
+        g[13] = -gy;
+        g[14] = gx;
+        g[15] = gy;
+    }
+    nn / l
+}
+
+fn hinge_along_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    const W: usize = N_PAR_HINGE_ALONG;
+    let mut r = [0.0; 4];
+    for i in 0..n {
+        let o = W * i;
+        let jo = 6 * W * i;
+        let rows = &mut j[jo..jo + 6 * W];
+        rows.fill(0.0);
+        let (hc, hs) = (v[o + 8], v[o + 9]);
+        let rel = crate::plane::fold_turn(hc, hs);
+        hinge_rows(&v[o..], rel, &mut r, Some((&mut rows[..4 * W], W)));
+        // ∂(q_p ⊗ qz(h) ⊗ x)/∂h: q_p ⊗ (∂qz ⊗ x), each of ∂qz a unit quaternion's axis — the
+        // turn being linear in its rotor
+        let qp = quat_at(v, o + 4);
+        let dc = crate::plane::quat_mul(qp, crate::plane::fold_turn(1.0, 0.0));
+        let ds = crate::plane::quat_mul(qp, crate::plane::fold_turn(0.0, 1.0));
+        for t in 0..4 {
+            rows[t * W + 8] = -dc[t];
+            rows[t * W + 9] = -ds[t];
+        }
+        rows[4 * W + 8] = 2.0 * hc;
+        rows[4 * W + 9] = 2.0 * hs;
+        along_row(&v[o..], Some(&mut rows[5 * W..6 * W]));
+    }
+}
+
+/// Columns of `project_free`: (X_A, X_B, q_A, q_B) — the two images' hidden points and the two
+/// views' quaternions.
+pub const N_PAR_PROJECT_FREE: usize = 14;
+
+/// **The projector rule in space**: `(n_A × n_B)·(X_A − X_B) = 0`, with `n = R(q)·e₃`.  Two
+/// images of one point differ by something in the span of the two normals — each is the point
+/// less its depth along its own view's normal — so their difference has nothing along the fold
+/// line `n_A × n_B` the views share.  Unnormalised, so it reads the stated `project` times the
+/// sine between the views, and vanishes with it where they come out parallel (E065, after the
+/// solve).  What `project` compiles to wherever either view is solved; degree 1.
+fn project_free_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_PROJECT_FREE * i;
+        let qa = quat_at(v, o + 6);
+        let qb = quat_at(v, o + 10);
+        r[i] = match (quat_normal(qa), quat_normal(qb)) {
+            (Some((na, _)), Some((nb, _))) => {
+                dot3(cross3(na, nb), sub3(at3(v, o), at3(v, o + 3)))
+            }
+            _ => f64::NAN,
+        };
+    }
+}
+
+fn project_free_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    const W: usize = N_PAR_PROJECT_FREE;
+    for i in 0..n {
+        let o = W * i;
+        let row = &mut j[o..o + W];
+        let qa = quat_at(v, o + 6);
+        let qb = quat_at(v, o + 10);
+        let (Some((na, da)), Some((nb, db))) = (quat_normal(qa), quat_normal(qb)) else {
+            row.fill(f64::NAN);
+            continue;
+        };
+        let w = sub3(at3(v, o), at3(v, o + 3));
+        let m = cross3(na, nb);
+        // m·w = n_A·(n_B × w) = n_B·(w × n_A)
+        let (ga, gb) = (cross3(nb, w), cross3(w, na));
+        for t in 0..3 {
+            row[t] = m[t];
+            row[3 + t] = -m[t];
+        }
+        for k in 0..4 {
+            row[6 + k] = (0..3).map(|t| ga[t] * da[t][k]).sum();
+            row[10 + k] = (0..3).map(|t| gb[t] * db[t][k]).sum();
+        }
+    }
+}
+
+/* -- the rest of the spatial words, and the sphere ---------------------------------------------
+ *
+ * A point on a line in space, two lines of equal true length, a point's signed distance from a
+ * plane (`distance(along: n)`), and a sphere's two relations of its own: a point on it and two
+ * spheres touching.  A sphere's radius and its tangency to a line reuse `radius` and
+ * `point_line3_free` (the line's distance from the centre, stated as the radius column). */
+
+/// Columns of `point_on_line3`: (X, A, B), K = (e₁, e₂) — two unit vectors across the line as it
+/// stood when the system was compiled or last refreshed (`parallel3`'s device).  "On the line"
+/// is two equations, and the magnitude `|w × e|/|e|` has no gradient where it holds, so the two
+/// are stated as components: `((X − A) × (B − A))·e_k / |B − A| = 0`.  Degree 1.
+fn point_on_line3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let (w, e) = (sub3(at3(v, o), at3(v, o + 3)), sub3(at3(v, o + 6), at3(v, o + 3)));
+        let le = norm3(e).max(MIN_LINE_LEN);
+        let c = cross3(w, e);
+        for t in 0..2 {
+            r[2 * i + t] = dot3(c, at3(k, 6 * i + 3 * t)) / le;
+        }
+    }
+}
+
+fn point_on_line3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let (w, e) = (sub3(at3(v, o), at3(v, o + 3)), sub3(at3(v, o + 6), at3(v, o + 3)));
+        let le = norm3(e).max(MIN_LINE_LEN);
+        let c = cross3(w, e);
+        for t in 0..2 {
+            let kk = at3(k, 6 * i + 3 * t);
+            let r = dot3(c, kk) / le;
+            // N = (w × e)·k = w·(e × k) = e·(k × w)
+            let (gw, ge) = (cross3(e, kk), cross3(kk, w));
+            let row = &mut j[18 * i + 9 * t..18 * i + 9 * (t + 1)];
+            for s in 0..3 {
+                let gw = gw[s] / le;
+                let ge = ge[s] / le - r * e[s] / (le * le);
+                row[s] = gw;
+                row[3 + s] = -gw - ge;
+                row[6 + s] = ge;
+            }
+        }
+    }
+}
+
+/// Columns of `equal_length3`: (A, B, C, D).  `|B − A|² − |D − C|²`, the true lengths of two
+/// lines drawn in different views; degree 2, `equal_length`'s form one dimension up.
+fn equal_length3_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        let (a, b) = (sub3(at3(v, o + 3), at3(v, o)), sub3(at3(v, o + 9), at3(v, o + 6)));
+        r[i] = dot3(a, a) - dot3(b, b);
+    }
+}
+
+fn equal_length3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        let (a, b) = (sub3(at3(v, o + 3), at3(v, o)), sub3(at3(v, o + 9), at3(v, o + 6)));
+        let row = &mut j[o..o + 12];
+        for s in 0..3 {
+            row[s] = -2.0 * a[s];
+            row[3 + s] = 2.0 * a[s];
+            row[6 + s] = 2.0 * b[s];
+            row[9 + s] = -2.0 * b[s];
+        }
+    }
+}
+
+/// `n(q)·X − d` and its gradient in (X, q, d): a hidden point's signed distance along a solved
+/// plane's normal — `point_on_plane`'s row, and `point_plane_distance`'s less the number.
+fn plane_gap(v: &[f64], row: &mut [f64]) -> f64 {
+    let q = quat_at(v, 3);
+    let Some((nv, dq)) = quat_normal(q) else {
+        row[..8].fill(f64::NAN);
+        return f64::NAN;
+    };
+    row[..3].copy_from_slice(&nv);
+    for m in 0..4 {
+        row[3 + m] = (0..3).map(|t| v[t] * dq[t][m]).sum();
+    }
+    row[7] = -1.0;
+    dot3(nv, at3(v, 0)) - v[7]
+}
+
+/// Columns of `point_plane_distance`: (X, qw, qx, qy, qz, d), K = (D).  `distance(along: n)`
+/// over a solved plane: the point stands D along the normal from it.  Degree 1.
+fn point_plane_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 8];
+    for i in 0..n {
+        r[i] = plane_gap(&v[8 * i..], &mut g) - k[i];
+    }
+}
+
+fn point_plane_distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        plane_gap(&v[8 * i..], &mut j[8 * i..8 * i + 8]);
+    }
+}
+
+/// (X, q, d, a), K = (m, c): the same, D = m·a + c.
+fn point_plane_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 8];
+    for i in 0..n {
+        let o = 9 * i;
+        r[i] = plane_gap(&v[o..], &mut g) - free_dim(v, k, i, o + 8).0;
+    }
+}
+
+fn point_plane_distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        plane_gap(&v[o..], &mut j[o..o + 8]);
+        j[o + 8] = -k[2 * i];
+    }
+}
+
+/// Columns of `point_plane_distance_fixed_free`: (X, a), K = (n, h, m, c) — a stated plane's
+/// normal and its origin along it, and the free variable's (m, c).  `n·X − h − (m·a + c)`; the
+/// stated number over a stated plane needs no kernel of its own, being `point_on_plane_fixed`
+/// with D folded into h.
+fn point_plane_distance_fixed_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let (o, kk) = (4 * i, &k[6 * i..6 * i + 6]);
+        r[i] = dot3(at3(kk, 0), at3(v, o)) - kk[3] - (kk[4] * v[o + 3] + kk[5]);
+    }
+}
+
+fn point_plane_distance_fixed_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let kk = &k[6 * i..6 * i + 6];
+        j[4 * i..4 * i + 3].copy_from_slice(&kk[..3]);
+        j[4 * i + 3] = -kk[4];
+    }
+}
+
+/// Columns of `sphere_on`: (X, C, r).  `|X − C| − r`, a point in some view on a sphere about a
+/// centre drawn in another: the magnitude, degree 1, with a unit gradient wherever X is off C.
+fn sphere_on_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        r[i] = norm3(sub3(at3(v, o), at3(v, o + 3))) - v[o + 6];
+    }
+}
+
+fn sphere_on_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        let (_, u) = length_and_unit(sub3(at3(v, o), at3(v, o + 3)));
+        for t in 0..3 {
+            j[o + t] = u[t];
+            j[o + 3 + t] = -u[t];
+        }
+        j[o + 6] = -1.0;
+    }
+}
+
+/// Columns of `sphere_sphere`: (C₁, C₂, r₁, r₂), K = (a, b).  `|C₁ − C₂| − (a·r₁ + b·r₂)`: two
+/// spheres touching outside (a = b = 1) or inside (one of them −1, whichever the seed makes
+/// positive), degree 1.
+fn sphere_sphere_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let l = norm3(sub3(at3(v, o), at3(v, o + 3)));
+        r[i] = l - (k[2 * i] * v[o + 6] + k[2 * i + 1] * v[o + 7]);
+    }
+}
+
+fn sphere_sphere_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let (_, u) = length_and_unit(sub3(at3(v, o), at3(v, o + 3)));
+        for t in 0..3 {
+            j[o + t] = u[t];
+            j[o + 3 + t] = -u[t];
+        }
+        j[o + 6] = -k[2 * i];
+        j[o + 7] = -k[2 * i + 1];
+    }
+}
+
+/// Columns of `line_on_plane`: (A, B, qw, qx, qy, qz, d) — a line's two hidden ends on a solved
+/// plane, `point_on_plane`'s row once for each end.  Degree 1.
+fn line_on_plane_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 11 * i;
+        let q = quat_at(v, o + 6);
+        for t in 0..2 {
+            r[2 * i + t] = quat_normal(q)
+                .map_or(f64::NAN, |(nv, _)| dot3(nv, at3(v, o + 3 * t)) - v[o + 10]);
+        }
+    }
+}
+
+fn line_on_plane_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 11 * i;
+        let q = quat_at(v, o + 6);
+        let rows = &mut j[22 * i..22 * i + 22];
+        let Some((nv, dq)) = quat_normal(q) else {
+            rows.fill(f64::NAN);
+            continue;
+        };
+        rows.fill(0.0);
+        for t in 0..2 {
+            let row = &mut rows[11 * t..11 * (t + 1)];
+            row[3 * t..3 * t + 3].copy_from_slice(&nv);
+            for m in 0..4 {
+                row[6 + m] = (0..3).map(|s| v[o + 3 * t + s] * dq[s][m]).sum();
+            }
+            row[10] = -1.0;
+        }
+    }
+}
+
+/// Columns of `line_on_plane_fixed`: (A, B), K = (n, h) — the same over a stated plane.
+fn line_on_plane_fixed_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let kk = &k[4 * i..];
+        for t in 0..2 {
+            r[2 * i + t] = dot3(at3(kk, 0), at3(v, 6 * i + 3 * t)) - kk[3];
+        }
+    }
+}
+
+fn line_on_plane_fixed_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let rows = &mut j[12 * i..12 * i + 12];
+        rows.fill(0.0);
+        for t in 0..2 {
+            rows[6 * t + 3 * t..6 * t + 3 * t + 3].copy_from_slice(&k[4 * i..4 * i + 3]);
+        }
+    }
+}
+
+/* -- a circle on a sphere, and the midpoint and the mirror in space ------------------------ */
+
+/// The three rows of a circle on a sphere — the circle's centre lifted to C, its radius r and its
+/// view's in-plane axes u and v; the sphere's centre S and radius R — and their gradients in
+/// (C, S, r, R), with the two axis rows' `S − C` handed back for the q columns:
+/// `u·(S − C)`, `v·(S − C)` (the sphere's centre on the circle's axis) and `√(|S − C|² + r²) − R`
+/// (every point of the circle at R from it).  All degree 1; the third has a gradient wherever the
+/// circle has a radius.
+fn circle_sphere_rows(v: &[f64], u: [f64; 3], w: [f64; 3], j: [&mut [f64]; 3]) -> ([f64; 3], [f64; 3]) {
+    let d = sub3(at3(v, 3), at3(v, 0));
+    let r = v[6];
+    let l = (dot3(d, d) + r * r).sqrt();
+    let [j0, j1, j2] = j;
+    for t in 0..3 {
+        j0[t] = -u[t];
+        j0[3 + t] = u[t];
+        j1[t] = -w[t];
+        j1[3 + t] = w[t];
+        let g = if l > 0.0 { d[t] / l } else { 0.0 };
+        j2[t] = -g;
+        j2[3 + t] = g;
+    }
+    j0[6] = 0.0;
+    j0[7] = 0.0;
+    j1[6] = 0.0;
+    j1[7] = 0.0;
+    j2[6] = if l > 0.0 { r / l } else { 0.0 };
+    j2[7] = -1.0;
+    ([dot3(u, d), dot3(w, d), l - v[7]], d)
+}
+
+/// Columns of `circle_on_sphere`: (C, S, r, R, qw, qx, qy, qz) — the circle's view solved, its
+/// axes read off the quaternion.  Three rows, net three equations.
+pub const N_PAR_CIRCLE_ON_SPHERE: usize = 12;
+
+fn quat_axes(q: [f64; 4]) -> Option<([[f64; 3]; 2], [[[f64; 4]; 3]; 2])> {
+    let (u, _, du) = crate::plane::lift_q(q, [1.0, 0.0, 0.0])?;
+    let (w, _, dw) = crate::plane::lift_q(q, [0.0, 1.0, 0.0])?;
+    Some(([u, w], [du, dw]))
+}
+
+fn circle_on_sphere_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    const W: usize = N_PAR_CIRCLE_ON_SPHERE;
+    let mut scratch = [0.0; 3 * W];
+    for i in 0..n {
+        let o = W * i;
+        let q = quat_at(v, o + 8);
+        let Some(([u, w], _)) = quat_axes(q) else {
+            r[3 * i..3 * i + 3].fill(f64::NAN);
+            continue;
+        };
+        let (a, rest) = scratch.split_at_mut(W);
+        let (b, c) = rest.split_at_mut(W);
+        let (rows, _) = circle_sphere_rows(&v[o..], u, w, [a, b, c]);
+        r[3 * i..3 * i + 3].copy_from_slice(&rows);
+    }
+}
+
+fn circle_on_sphere_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    const W: usize = N_PAR_CIRCLE_ON_SPHERE;
+    for i in 0..n {
+        let o = W * i;
+        let jo = 3 * W * i;
+        let q = quat_at(v, o + 8);
+        let Some(([u, w], [du, dw])) = quat_axes(q) else {
+            j[jo..jo + 3 * W].fill(f64::NAN);
+            continue;
+        };
+        let (a, rest) = j[jo..jo + 3 * W].split_at_mut(W);
+        let (b, c) = rest.split_at_mut(W);
+        let (_, d) = circle_sphere_rows(&v[o..], u, w, [&mut *a, &mut *b, &mut *c]);
+        for m in 0..4 {
+            a[8 + m] = (0..3).map(|t| d[t] * du[t][m]).sum();
+            b[8 + m] = (0..3).map(|t| d[t] * dw[t][m]).sum();
+            c[8 + m] = 0.0;
+        }
+    }
+}
+
+/// Columns of `circle_on_sphere_fixed`: (C, S, r, R), K = (u, v) — the circle's view stated.
+fn circle_on_sphere_fixed_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut scratch = [0.0; 24];
+    for i in 0..n {
+        let (a, rest) = scratch.split_at_mut(8);
+        let (b, c) = rest.split_at_mut(8);
+        let (rows, _) = circle_sphere_rows(&v[8 * i..], at3(k, 6 * i), at3(k, 6 * i + 3), [a, b, c]);
+        r[3 * i..3 * i + 3].copy_from_slice(&rows);
+    }
+}
+
+fn circle_on_sphere_fixed_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let (a, rest) = j[24 * i..24 * i + 24].split_at_mut(8);
+        let (b, c) = rest.split_at_mut(8);
+        circle_sphere_rows(&v[8 * i..], at3(k, 6 * i), at3(k, 6 * i + 3), [a, b, c]);
+    }
+}
+
+/// Columns of `midpoint3`: (X, A, B).  `X − (A + B)/2`, three rows, degree 1 — a point drawn in
+/// one view the midpoint of a line drawn in another, in space.
+fn midpoint3_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        for t in 0..3 {
+            r[3 * i + t] = v[o + t] - 0.5 * (v[o + 3 + t] + v[o + 6 + t]);
+        }
+    }
+}
+
+fn midpoint3_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let jo = 27 * i;
+        j[jo..jo + 27].fill(0.0);
+        for t in 0..3 {
+            j[jo + 9 * t + t] = 1.0;
+            j[jo + 9 * t + 3 + t] = -0.5;
+            j[jo + 9 * t + 6 + t] = -0.5;
+        }
+    }
+}
+
+/// Columns of `symmetric3`: (P, Q, A, B).  `Q + P − 2F`, F the foot of P on the line through A
+/// and B: Q is P turned half way round the line, which in the plane of the page is its mirror in
+/// it.  Three rows, degree 1, a unit gradient in Q.
+fn symmetric3_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        let (p, q, a, b) = (at3(v, o), at3(v, o + 3), at3(v, o + 6), at3(v, o + 9));
+        let e = sub3(b, a);
+        let le = norm3(e);
+        if le == 0.0 {
+            r[3 * i..3 * i + 3].fill(f64::NAN);
+            continue;
+        }
+        let eh = e.map(|t| t / le);
+        let s = dot3(sub3(p, a), eh);
+        for t in 0..3 {
+            r[3 * i + t] = q[t] + p[t] - 2.0 * a[t] - 2.0 * s * eh[t];
+        }
+    }
+}
+
+fn symmetric3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        let jo = 36 * i;
+        let (p, a, b) = (at3(v, o), at3(v, o + 6), at3(v, o + 9));
+        let e = sub3(b, a);
+        let le = norm3(e);
+        if le == 0.0 {
+            j[jo..jo + 36].fill(f64::NAN);
+            continue;
+        }
+        let eh = e.map(|t| t / le);
+        let w = sub3(p, a);
+        let s = dot3(w, eh);
+        // d(s ê) = ê êᵀ dw + (ê wᵀ + s I) P de / |e|, P = I − ê êᵀ; G = (ê wᵀ + s I) P / |e|
+        let proj = |x: usize, y: usize| (if x == y { 1.0 } else { 0.0 }) - eh[x] * eh[y];
+        let g = |x: usize, y: usize| -> f64 {
+            (0..3).map(|z| (eh[x] * w[z] + if x == z { s } else { 0.0 }) * proj(z, y)).sum::<f64>() / le
+        };
+        for x in 0..3 {
+            let row = &mut j[jo + 12 * x..jo + 12 * x + 12];
+            for y in 0..3 {
+                let id = if x == y { 1.0 } else { 0.0 };
+                let ee = eh[x] * eh[y];
+                let gxy = g(x, y);
+                row[y] = id - 2.0 * ee;
+                row[3 + y] = id;
+                row[6 + y] = -2.0 * id + 2.0 * ee + 2.0 * gxy;
+                row[9 + y] = -2.0 * gxy;
+            }
+        }
+    }
+}
+
+/* -- cones and cylinders -----------------------------------------------------------------------
+ *
+ * A cylinder's relations reuse the kernels a sphere's do — a point on it is `point_line3_free`
+ * (its distance from the axis, stated as the radius column), a line touching it `line_line3_free`
+ * (the common perpendicular with the axis), its radius `radius`.  A cone's are new: a point on
+ * it, its half-angle (an angle row of degree 0, the radius kernel's arithmetic), and two cones
+ * touching at a point.  Their derivatives are taken by `Dual`, a forward-mode number carrying
+ * the gradient in every column of the block — exact, and one expression for the residual and its
+ * row, where the hand-derived chains of the kernels above would be a page of vector calculus to
+ * get wrong. */
+
+/// A number and its gradient in the `N` columns of one block.
+#[derive(Clone, Copy)]
+struct Dual<const N: usize> {
+    v: f64,
+    g: [f64; N],
+}
+
+impl<const N: usize> Dual<N> {
+    fn var(v: f64, i: usize) -> Self {
+        let mut g = [0.0; N];
+        g[i] = 1.0;
+        Dual { v, g }
+    }
+    fn map(self, v: f64, d: f64) -> Self {
+        Dual { v, g: self.g.map(|x| x * d) }
+    }
+    fn sqrt(self) -> Self {
+        let s = self.v.max(0.0).sqrt();
+        // no gradient where the root is zero: a caller asking there is on a degenerate figure
+        self.map(s, if s > 0.0 { 0.5 / s } else { 0.0 })
+    }
+    fn sin(self) -> Self {
+        self.map(self.v.sin(), self.v.cos())
+    }
+    fn cos(self) -> Self {
+        self.map(self.v.cos(), -self.v.sin())
+    }
+}
+
+impl<const N: usize> std::ops::Add for Dual<N> {
+    type Output = Self;
+    fn add(self, o: Self) -> Self {
+        let mut g = self.g;
+        for (a, b) in g.iter_mut().zip(o.g) {
+            *a += b;
+        }
+        Dual { v: self.v + o.v, g }
+    }
+}
+
+impl<const N: usize> std::ops::Sub for Dual<N> {
+    type Output = Self;
+    fn sub(self, o: Self) -> Self {
+        let mut g = self.g;
+        for (a, b) in g.iter_mut().zip(o.g) {
+            *a -= b;
+        }
+        Dual { v: self.v - o.v, g }
+    }
+}
+
+impl<const N: usize> std::ops::Mul for Dual<N> {
+    type Output = Self;
+    fn mul(self, o: Self) -> Self {
+        let mut g = [0.0; N];
+        for k in 0..N {
+            g[k] = self.g[k] * o.v + self.v * o.g[k];
+        }
+        Dual { v: self.v * o.v, g }
+    }
+}
+
+impl<const N: usize> std::ops::Div for Dual<N> {
+    type Output = Self;
+    fn div(self, o: Self) -> Self {
+        let q = self.v / o.v;
+        let mut g = [0.0; N];
+        for k in 0..N {
+            g[k] = (self.g[k] - q * o.g[k]) / o.v;
+        }
+        Dual { v: q, g }
+    }
+}
+
+type V3<const N: usize> = [Dual<N>; 3];
+
+fn dvec<const N: usize>(v: &[f64], at: usize) -> V3<N> {
+    [0, 1, 2].map(|t| Dual::var(v[at + t], at + t))
+}
+
+fn dsub<const N: usize>(a: V3<N>, b: V3<N>) -> V3<N> {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn ddot<const N: usize>(a: V3<N>, b: V3<N>) -> Dual<N> {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn dcross<const N: usize>(a: V3<N>, b: V3<N>) -> V3<N> {
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+}
+
+/// The unit vector along `a`; a vector shorter than `MIN_LINE_LEN` is divided by that instead,
+/// as every kernel above guards a degenerate line.
+fn dunit<const N: usize>(a: V3<N>) -> V3<N> {
+    let l = ddot(a, a).sqrt();
+    let l = if l.v > MIN_LINE_LEN { l } else { Dual { v: MIN_LINE_LEN, g: [0.0; N] } };
+    a.map(|x| x / l)
+}
+
+/// A cone at a point X, read in X's meridian half-plane: the unit axis ê (apex A toward B), the
+/// height `h = (X − A)·ê`, the distance ρ from the axis and the unit radial direction û.
+struct Meridian<const N: usize> {
+    e: V3<N>,
+    h: Dual<N>,
+    rho: Dual<N>,
+    u: V3<N>,
+}
+
+fn meridian<const N: usize>(x: V3<N>, a: V3<N>, b: V3<N>) -> Meridian<N> {
+    let e = dunit(dsub(b, a));
+    let w = dsub(x, a);
+    let h = ddot(w, e);
+    let radial = dsub(w, e.map(|t| t * h));
+    let rho = ddot(radial, radial).sqrt();
+    let u = dunit(radial);
+    Meridian { e, h, rho, u }
+}
+
+/// `ρ cos α − h sin α` over (X, A, B, α): how far X stands from the cone's generator in its
+/// meridian half-plane — zero on the nappe the axis points into, a length.
+fn cone_gap(v: &[f64]) -> Dual<10> {
+    let m = meridian::<10>(dvec(v, 0), dvec(v, 3), dvec(v, 6));
+    let al = Dual::<10>::var(v[9], 9);
+    m.rho * al.cos() - m.h * al.sin()
+}
+
+/// Columns of `cone_on`: (X, A, B, α) — a point's hidden point, the axis's two, the cone's
+/// half-angle.  `ρ cos α − h sin α`, degree 1.
+fn cone_on_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        r[i] = cone_gap(&v[10 * i..10 * i + 10]).v;
+    }
+}
+
+fn cone_on_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let d = cone_gap(&v[10 * i..10 * i + 10]);
+        j[10 * i..10 * i + 10].copy_from_slice(&d.g);
+    }
+}
+
+pub const N_PAR_CONE_CONE: usize = 17;
+
+/// Two cones at M: the second's surface normal against the first's generator and circle
+/// directions there.  Over (M, A₁, B₁, α₁, A₂, B₂, α₂).  A cone's outward normal at a point of
+/// its meridian is `û cos α − ê sin α`, its generator `ê cos α + û sin α` and its circle `ê × û`.
+fn cone_contact(v: &[f64]) -> [Dual<N_PAR_CONE_CONE>; 2] {
+    const N: usize = N_PAR_CONE_CONE;
+    let x = dvec::<N>(v, 0);
+    let (m1, m2) = (meridian(x, dvec(v, 3), dvec(v, 6)), meridian(x, dvec(v, 10), dvec(v, 13)));
+    let (a1, a2) = (Dual::<N>::var(v[9], 9), Dual::<N>::var(v[16], 16));
+    let (c1, s1, c2, s2) = (a1.cos(), a1.sin(), a2.cos(), a2.sin());
+    let normal = [0, 1, 2].map(|t| m2.u[t] * c2 - m2.e[t] * s2);
+    let generator = [0, 1, 2].map(|t| m1.e[t] * c1 + m1.u[t] * s1);
+    let circle = dcross(m1.e, m1.u);
+    [ddot(normal, generator), ddot(normal, circle)]
+}
+
+/// Columns of `cone_cone`: (M, A₁, B₁, α₁, A₂, B₂, α₂).  Two rows, degree 0: the second cone's
+/// normal at M square to the first's two tangent directions there — one tangent plane at M.
+fn cone_cone_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_CONE_CONE * i;
+        let d = cone_contact(&v[o..o + N_PAR_CONE_CONE]);
+        r[2 * i] = d[0].v;
+        r[2 * i + 1] = d[1].v;
+    }
+}
+
+fn cone_cone_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_CONE_CONE * i;
+        let d = cone_contact(&v[o..o + N_PAR_CONE_CONE]);
+        let jo = 2 * N_PAR_CONE_CONE * i;
+        j[jo..jo + N_PAR_CONE_CONE].copy_from_slice(&d[0].g);
+        j[jo + N_PAR_CONE_CONE..jo + 2 * N_PAR_CONE_CONE].copy_from_slice(&d[1].g);
+    }
+}
+
+/* -- a mate between solved views ----------------------------------------------------------- */
+
+const MATE_J: &[f64] = &[1.0, -1.0];
+
+/// Columns of `mate`: (d_f, d_g), K = (gap).  `d_f − d_g − gap`: a placed view's offset along
+/// the normal it shares with the view it bears on, held at that view's offset and the gap between
+/// the two faces' ordinates.  Degree 1.
+fn mate_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        r[i] = v[2 * i] - v[2 * i + 1] - k[i];
+    }
+}
+
+fn mate_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        j[2 * i..2 * i + 2].copy_from_slice(MATE_J);
+    }
+}
+
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
     Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
@@ -1816,6 +3264,46 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coordinate_v", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: coordinate_res::<true, false>, jac: coordinate_jac::<true, false>, const_jac: None },
     Kernel { name: "coordinate_u_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: coordinate_res::<false, true>, jac: coordinate_jac::<false, true>, const_jac: None },
     Kernel { name: "coordinate_v_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: coordinate_res::<true, true>, jac: coordinate_jac::<true, true>, const_jac: None },
+    Kernel { name: "quat_unit", n_res: 1, n_par: 4, degree: 0, n_const: 0, res: quat_unit_res, jac: quat_unit_jac, const_jac: None },
+    Kernel { name: "lift", n_res: 3, n_par: N_PAR_LIFT, degree: 1, n_const: 2, res: lift_res, jac: lift_jac, const_jac: None },
+    Kernel { name: "lift_fixed", n_res: 3, n_par: N_PAR_LIFT_FIXED, degree: 1, n_const: 9, res: lift_fixed_res, jac: lift_fixed_jac, const_jac: None },
+    Kernel { name: "coincident3", n_res: 3, n_par: 6, degree: 1, n_const: 0, res: coincident3_res, jac: coincident3_jac, const_jac: None },
+    Kernel { name: "distance3", n_res: 1, n_par: 6, degree: 2, n_const: 1, res: distance3_res, jac: distance3_jac, const_jac: None },
+    Kernel { name: "distance3_free", n_res: 1, n_par: 7, degree: 2, n_const: 2, res: distance3_free_res, jac: distance3_free_jac, const_jac: None },
+    Kernel { name: "point_line3", n_res: 1, n_par: 9, degree: 1, n_const: 1, res: point_line3_res, jac: point_line3_jac, const_jac: None },
+    Kernel { name: "point_line3_free", n_res: 1, n_par: 10, degree: 1, n_const: 2, res: point_line3_free_res, jac: point_line3_free_jac, const_jac: None },
+    Kernel { name: "line_line3", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: line_line3_res, jac: line_line3_jac, const_jac: None },
+    Kernel { name: "line_line3_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: line_line3_free_res, jac: line_line3_free_jac, const_jac: None },
+    Kernel { name: "angle3", n_res: 1, n_par: 12, degree: 0, n_const: 1, res: angle3_res, jac: angle3_jac, const_jac: None },
+    Kernel { name: "angle3_free", n_res: 1, n_par: 13, degree: 0, n_const: 2, res: angle3_free_res, jac: angle3_free_jac, const_jac: None },
+    Kernel { name: "perpendicular3", n_res: 1, n_par: 12, degree: 0, n_const: 0, res: perpendicular3_res, jac: perpendicular3_jac, const_jac: None },
+    Kernel { name: "parallel3", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: parallel3_res, jac: parallel3_jac, const_jac: None },
+    Kernel { name: "point_on_plane", n_res: 1, n_par: N_PAR_POINT_ON_PLANE, degree: 1, n_const: 0, res: point_on_plane_res, jac: point_on_plane_jac, const_jac: None },
+    Kernel { name: "point_on_plane_fixed", n_res: 1, n_par: 3, degree: 1, n_const: 4, res: point_on_plane_fixed_res, jac: point_on_plane_fixed_jac, const_jac: None },
+    Kernel { name: "point_on_circle3", n_res: 2, n_par: N_PAR_POINT_ON_CIRCLE3, degree: 1, n_const: 0, res: point_on_circle3_res, jac: point_on_circle3_jac, const_jac: None },
+    Kernel { name: "point_on_circle3_fixed", n_res: 2, n_par: 7, degree: 1, n_const: 3, res: point_on_circle3_fixed_res, jac: point_on_circle3_fixed_jac, const_jac: None },
+    Kernel { name: "hinge", n_res: 4, n_par: 8, degree: 0, n_const: 4, res: hinge_res, jac: hinge_jac, const_jac: None },
+    Kernel { name: "hinge_free", n_res: 4, n_par: 9, degree: 0, n_const: 2, res: hinge_free_res, jac: hinge_free_jac, const_jac: None },
+    Kernel { name: "hinge_along", n_res: 6, n_par: N_PAR_HINGE_ALONG, degree: 0, n_const: 0, res: hinge_along_res, jac: hinge_along_jac, const_jac: None },
+    Kernel { name: "project_free", n_res: 1, n_par: N_PAR_PROJECT_FREE, degree: 1, n_const: 0, res: project_free_res, jac: project_free_jac, const_jac: None },
+    Kernel { name: "point_on_line3", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_line3_res, jac: point_on_line3_jac, const_jac: None },
+    Kernel { name: "equal_length3", n_res: 1, n_par: 12, degree: 2, n_const: 0, res: equal_length3_res, jac: equal_length3_jac, const_jac: None },
+    Kernel { name: "point_plane_distance", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: point_plane_distance_res, jac: point_plane_distance_jac, const_jac: None },
+    Kernel { name: "point_plane_distance_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: point_plane_distance_free_res, jac: point_plane_distance_free_jac, const_jac: None },
+    Kernel { name: "point_plane_distance_fixed_free", n_res: 1, n_par: 4, degree: 1, n_const: 6, res: point_plane_distance_fixed_free_res, jac: point_plane_distance_fixed_free_jac, const_jac: None },
+    Kernel { name: "sphere_on", n_res: 1, n_par: 7, degree: 1, n_const: 0, res: sphere_on_res, jac: sphere_on_jac, const_jac: None },
+    Kernel { name: "sphere_sphere", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: sphere_sphere_res, jac: sphere_sphere_jac, const_jac: None },
+    Kernel { name: "line_on_plane", n_res: 2, n_par: 11, degree: 1, n_const: 0, res: line_on_plane_res, jac: line_on_plane_jac, const_jac: None },
+    Kernel { name: "line_on_plane_fixed", n_res: 2, n_par: 6, degree: 1, n_const: 4, res: line_on_plane_fixed_res, jac: line_on_plane_fixed_jac, const_jac: None },
+    Kernel { name: "circle_on_sphere", n_res: 3, n_par: N_PAR_CIRCLE_ON_SPHERE, degree: 1, n_const: 0, res: circle_on_sphere_res, jac: circle_on_sphere_jac, const_jac: None },
+    Kernel { name: "circle_on_sphere_fixed", n_res: 3, n_par: 8, degree: 1, n_const: 6, res: circle_on_sphere_fixed_res, jac: circle_on_sphere_fixed_jac, const_jac: None },
+    Kernel { name: "midpoint3", n_res: 3, n_par: 9, degree: 1, n_const: 0, res: midpoint3_res, jac: midpoint3_jac, const_jac: None },
+    Kernel { name: "symmetric3", n_res: 3, n_par: 12, degree: 1, n_const: 0, res: symmetric3_res, jac: symmetric3_jac, const_jac: None },
+    Kernel { name: "cone_on", n_res: 1, n_par: 10, degree: 1, n_const: 0, res: cone_on_res, jac: cone_on_jac, const_jac: None },
+    Kernel { name: "half_angle", n_res: 1, n_par: 1, degree: 0, n_const: 1, res: radius_res, jac: radius_jac, const_jac: Some(RADIUS_J) },
+    Kernel { name: "half_angle_free", n_res: 1, n_par: 2, degree: 0, n_const: 2, res: radius_free_res, jac: radius_free_jac, const_jac: None },
+    Kernel { name: "cone_cone", n_res: 2, n_par: N_PAR_CONE_CONE, degree: 0, n_const: 0, res: cone_cone_res, jac: cone_cone_jac, const_jac: None },
+    Kernel { name: "mate", n_res: 1, n_par: 2, degree: 1, n_const: 1, res: mate_res, jac: mate_jac, const_jac: Some(MATE_J) },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

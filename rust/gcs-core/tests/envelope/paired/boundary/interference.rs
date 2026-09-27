@@ -207,6 +207,7 @@ fn assembled_rim_sections_through_one_tooth_period() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 60 s: the mating rim at every sampled mesh phase")]
 fn assembled_boundaries_stay_outside_the_exact_mating_rim_at_sampled_mesh_phases() {
     let pair = Pair::read([24,48],2.);
     let result = scan::run(&pair,32,8,32,0.);

@@ -274,6 +274,14 @@ impl System {
                 let span = spans.get(&c.id).copied();
                 let ps = c.params_on(sk, span);
                 debug_assert_eq!(ps.len(), kn.n_par, "{:?} params", c.kind);
+                // a held view's unit row reads only held unknowns: the view's own algebra, true
+                // by construction and no equation the drawing answers for.  A stated view a solved
+                // one reads is given such unknowns (`Sketch::hold_attitude`), and counted, its row
+                // would stand in the ledger as an equation over the rank.  Not hard, so no count
+                // or rank sees it.
+                let held = c.intrinsic
+                    && c.kind == crate::constraints::CKind::QuatUnit
+                    && ps.iter().all(|&p| col_of[p as usize] < 0);
                 for p in ps {
                     gidx.push(p as i32);
                 }
@@ -284,7 +292,7 @@ impl System {
                 slot_of.insert(c.id, (blocks.len(), i));
                 cids.push(c.id);
                 for _ in 0..kn.n_res {
-                    hard.push(!c.soft);
+                    hard.push(!c.soft && !held);
                 }
             }
             blocks.push(Block { kid, count: nb, row0, gidx, consts, cids: bcids, jac_off: joff });

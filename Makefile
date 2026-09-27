@@ -13,6 +13,7 @@ CARGO := cargo
 # Set TEST_JOBS=1 to run them serially (GNU Make 3.81 does not retain -j1 in MAKEFLAGS).
 TEST_JOBS ?= $(if $(filter -j%,$(MAKEFLAGS)),,2)
 OCCT ?= 0
+comma := ,
 # `.sv` too, and `rust/examples/` with them: every case in the library is a Solvent document
 # compiled in with `include_str!`, so a document is source.  Left out of this list, editing one
 # rebuilt nothing — the tests read the file from disk and passed while the browser went on
@@ -26,7 +27,7 @@ WASM_TARGET := wasm32-unknown-unknown
 HOST := $(shell rustc -vV | sed -n 's/^host: //p')
 RELEASE := $(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-ffi
 
-.PHONY: all wasm solventc release test test-rust test-web bench fmt clippy clean
+.PHONY: all wasm solventc release test test-rust test-web test-slow bench fmt clippy clean
 
 all: build/libgcs$(EXT)
 
@@ -79,6 +80,12 @@ test-rust: all
 
 test-web: wasm
 	cd web && npm test
+
+# The slow tier as well (tests of twenty seconds to a few minutes, `feature = "slow"`): the gear
+# pair's whole-member verifications and, with `OCCT=1`, a native tooth space. Run it before a
+# change to the gear example or the native export lands, not on every edit.
+test-slow: all
+	$(CARGO) test --manifest-path rust/Cargo.toml --features gcs-core/slow,gcs-cli/slow$(if $(filter 1,$(OCCT)),$(comma)gcs-cli/occt,)
 
 bench: wasm
 	$(CARGO) run --manifest-path rust/Cargo.toml --release -p gcs-core --bin bench

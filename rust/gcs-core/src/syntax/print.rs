@@ -270,9 +270,30 @@ fn dim(a: &Arg) -> String {
 }
 
 /// A plane's attitude, as its bracket list spells it after the children.
-fn attitude_parts(a: &Attitude) -> Vec<String> {
+fn attitude_parts(a: &Attitude, solve: &crate::syntax::PlaneSolve) -> Vec<String> {
     let triple = |t: &[Arg; 3]| format!("({}, {}, {})", dim(&t[0]), dim(&t[1]), dim(&t[2]));
+    let mut parts = attitude_only(a, &triple);
+    match &solve.position {
+        crate::syntax::Position::Stated => {}
+        crate::syntax::Position::Free(_) => parts.push("offset: free".to_string()),
+        crate::syntax::Position::Through(r) => {
+            let mut s = String::from("through: ");
+            write_ref(&mut s, r);
+            parts.push(s);
+        }
+    }
+    parts
+}
+
+fn attitude_only(a: &Attitude, triple: &dyn Fn(&[Arg; 3]) -> String) -> Vec<String> {
     match a {
+        Attitude::Along { plane, line } => {
+            let (mut s, mut l) = (String::from("from: "), String::from("fold: along "));
+            write_ref(&mut s, plane);
+            write_ref(&mut l, line);
+            vec![s, l]
+        }
+        Attitude::Free { .. } => vec!["attitude: free".to_string()],
         Attitude::Page => Vec::new(),
         Attitude::From { plane, fold } => {
             let mut s = String::from("from: ");
@@ -288,7 +309,13 @@ fn attitude_parts(a: &Attitude) -> Vec<String> {
             }
             parts
         }
-        Attitude::Basis { u, v } => vec![format!("u: {}", triple(u)), format!("v: {}", triple(v))],
+        Attitude::Basis { u, v, o } => {
+            let mut parts = vec![format!("u: {}", triple(u)), format!("v: {}", triple(v))];
+            if let Some(o) = o {
+                parts.push(format!("o: {}", triple(o)));
+            }
+            parts
+        }
     }
 }
 
@@ -385,7 +412,7 @@ pub(crate) fn decl_args(d: &Decl) -> String {
         }
     }
     // a plane's attitude is what it is made of too, and no solve moves it
-    parts.extend(attitude_parts(&d.attitude));
+    parts.extend(attitude_parts(&d.attitude, &d.plane));
     if let Some(sweep) = &d.sweep {
         parts.extend(sweep_parts(sweep));
     }
@@ -497,6 +524,14 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
         scalar += 1;
         parts.push(format!("{name}: {text}"));
     }
+    // and a plane's seeds for what its brackets made unknowns, in the order written
+    for h in &d.plane.hints {
+        let v = match h.args.as_slice() {
+            [a] => dim(a),
+            args => format!("({})", args.iter().map(dim).collect::<Vec<_>>().join(", ")),
+        };
+        parts.push(format!("{}: {v}", h.key.text));
+    }
     hint_of(&parts)
 }
 
@@ -596,6 +631,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
             CKind::VerticalDistance => parens.push("along: y".to_string()),
             CKind::CoordinateU => parens.push("along: u".to_string()),
             CKind::CoordinateV => parens.push("along: v".to_string()),
+            CKind::PointPlaneDistance | CKind::PointPlaneDistanceFixed => {
+                parens.push("along: n".to_string())
+            }
             _ => {}
         }
     }
@@ -604,6 +642,11 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         // an entity slot the core infers — a projection's planes — is never spelled: the
         // source writes two points, and a lifted statement carries what the core filled in
         if sk.is_entity() && kind.infers_arg(i) {
+            continue;
+        }
+        // nor is a skew distance's side (or a cylinder's tangency's, which is one): the word
+        // is `distance`, and the side is the seed's `sign`
+        if *name == "sign" && kind.infers_arg(i) {
             continue;
         }
         // a selector nobody wrote is not written: the empty word is what an omitted `side:` or

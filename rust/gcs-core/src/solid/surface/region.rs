@@ -161,7 +161,7 @@ impl RevolvedRegion {
             .collect::<Result<Vec<_>,_>>()?;
         let first = &patches.first().and_then(|p| p.first()).ok_or("empty profile")?.0;
         let origin = first.origin; let axis = first.axis;
-        let basis = face.plane()?.map(|p| sk.planes[p as usize].basis).unwrap_or(Basis::page());
+        let basis = face.plane()?.map(|p| sk.basis(p as usize)).unwrap_or(Basis::page());
         let normal = plane::cross(basis.u,basis.v);
         let radial = plane::cross(axis,normal);
         let coords = |p| [plane::dot(p,radial),plane::dot(p,axis)];

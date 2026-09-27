@@ -150,7 +150,7 @@ claim a project b
 #[test]
 fn a_fold_chain_gives_the_bases() {
     let e = read(&format!("{VIEWS}plane aux(origin: o, toward: q, from: top, fold: 30deg)\n"));
-    let b = |n: usize| e.sketch.planes[n].basis;
+    let b = |n: usize| e.sketch.basis(n);
     let near = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
     assert_eq!(b(0), Basis::page());
     assert!(near(b(1).u, [1.0, 0.0, 0.0]) && near(b(1).v, [0.0, 1.0, 0.0]));
@@ -166,10 +166,10 @@ plane aux(from: top, fold: tilt)
 plane top(from: front, fold: 0deg)
 plane front
 ");
-    assert!(near(e.sketch.planes[0].basis.u, [c, s, 0.0]));
+    assert!(near(e.sketch.basis(0).u, [c, s, 0.0]));
     // and an explicit basis is orthonormalised on the way in
     let e = read("plane p(u: (2, 0, 0), v: (1, 0, 3))\n");
-    assert!(near(e.sketch.planes[0].basis.v, [0.0, 0.0, 1.0]));
+    assert!(near(e.sketch.basis(0).v, [0.0, 0.0, 1.0]));
 }
 
 #[test]
@@ -597,13 +597,13 @@ x1: V(base, a: 0deg)
 x2: V(base, a: 90deg)
 ");
     let near = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
-    let b = |n: &str| e.sketch.planes[e.map.ent_named(n).unwrap().i()].basis;
+    let b = |n: &str| e.sketch.basis(e.map.ent_named(n).unwrap().i());
     assert!(near(b("x1.v").u, [1.0, 0.0, 0.0]), "{:?}", b("x1.v"));
     assert!(near(b("x2.v").u, [0.0, 0.0, 1.0]), "the 90° copy folds its own way: {:?}", b("x2.v"));
     // and a plane in a `cycle`, where the fold is the binder
     let e = read("plane base\ncycle 3 as i { plane w(from: base, fold: i * 30deg) }\n");
     assert_eq!(e.sketch.planes.len(), 4);
-    let us: Vec<f64> = e.sketch.planes[1..].iter().map(|p| p.basis.u[2]).collect();
+    let us: Vec<f64> = (1..e.sketch.planes.len()).map(|p| e.sketch.basis(p).u[2]).collect();
     assert!(us[0] < us[1] && us[1] < us[2], "each copy folds further: {us:?}");
 }
 
@@ -652,4 +652,24 @@ fn an_instance_in_plane_resolves_in_the_callers_scope() {
         "E101",
         "`nowhere`",
     );
+}
+
+/// Where a plane stands along its normal is document data like its directions, so a record of
+/// the sketch carries it: a derived offset survives `dumps`/`loads` and the graft, and a view
+/// standing at the origin writes no `"o"` at all, so its record is what it always was.
+#[test]
+fn an_offset_plane_keeps_its_origin_through_json_and_the_graft() {
+    let e = read("unit mm\nplane p\npoint a hint(x: 5, y: 0)\npoint b hint(x: 30, y: 0)\n\
+        plane q(origin: a, toward: b, from: p, offset: 12mm)\n");
+    let q = e.map.ent_named("q").unwrap().i();
+    let b = e.sketch.basis(q);
+    assert!((b.along_normal() - 12.0).abs() < 1e-12, "stood off by the offset: {b:?}");
+    let text = io::dumps(&e.sketch, Some(1));
+    assert_eq!(text.matches("\"o\"").count(), 1, "only the plane off the origin writes one");
+    let back = io::loads(&text).unwrap();
+    assert_eq!(back.basis(q), b);
+    let pts = [e.map.ent_named("a").unwrap(), e.map.ent_named("b").unwrap()];
+    let copied = io::copy(&e.sketch, &[pts[0], pts[1], EntRef::plane(q)]);
+    assert_eq!(copied.planes.len(), 1);
+    assert_eq!(copied.basis(0), b);
 }

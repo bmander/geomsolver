@@ -23,7 +23,10 @@ fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
     match e.kind {
         // never picked and never dimensioned: what a 2D statement may name is the drawing, and
         // a face or a solid is evaluated after the drawing is solved (§6.9)
-        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => f64::MAX,
+        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
+        // a sphere is on no sheet: its centre is what is picked of it (a cone or a cylinder: its
+        // axis)
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => f64::MAX,
         // a curve has no idealised form a dimension could mean beyond the curve itself, so this
         // measurement and `point_to_drawn`'s are the same one
         EntKind::Curve => polyline_distance(&sk.curve_polyline(e.i()), px, py),
@@ -60,7 +63,10 @@ fn point_to_line(sk: &Sketch, px: f64, py: f64, line: usize) -> f64 {
 /// line is infinite, an arc is the whole circle it lies on — which is not what a pointer hits.
 pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
     match e.kind {
-        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => f64::MAX,
+        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
+        // a sphere is on no sheet: its centre is what is picked of it (a cone or a cylinder: its
+        // axis)
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => f64::MAX,
         EntKind::Curve => polyline_distance(&sk.curve_polyline(e.i()), px, py),
         EntKind::Line => {
             let l = &sk.lines[e.i()];
@@ -146,7 +152,8 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Spline => 3,
         EntKind::Curve => 4,
         // never measured against anything: a face and a solid are not on the sheet
-        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => 5,
+        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => 5,
         // last, so any pair with a datum in it puts the datum second and one arm catches it
         EntKind::Plane => 6,
     }

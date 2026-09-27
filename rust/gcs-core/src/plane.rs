@@ -1,10 +1,10 @@
 //! The 3D attitude of a `plane`, and the fold line two planes share.
 //!
 //! A multiview drawing is several 2D pictures of one object on one sheet, each on a stated
-//! plane in space (Solvent §6.7).  Nothing three-dimensional is ever solved for: a plane's
-//! attitude is a constant of the document, and what it buys is the *projector rule* of
-//! descriptive geometry — two images of one point agree on their coordinate along the fold
-//! line their planes share, and on nothing else.  That rule is `fold_line`, and `Project`'s
+//! plane in space (Solvent §6.7).  A stated plane's attitude is a constant of the document (a
+//! solved one is a quaternion of unknowns, `Quat` below), and what it buys is the *projector
+//! rule* of descriptive geometry — two images of one point agree on their coordinate along the
+//! fold line their planes share, and on nothing else.  That rule is `fold_line`, and `Project`'s
 //! kernel is the one equation it comes to.
 //!
 //! An attitude is an orthonormal basis `(u, v)` of the plane with `n = u × v` toward the
@@ -168,6 +168,136 @@ pub fn on_page(c: f64, s: f64, o: (f64, f64), p: (f64, f64)) -> (f64, f64) {
 pub fn fold_line(a: &Basis, b: &Basis) -> Option<([f64; 2], [f64; 2])> {
     let d = unit(cross(a.normal(), b.normal()))?;
     Some(([dot(a.u, d), dot(a.v, d)], [dot(b.u, d), dot(b.v, d)]))
+}
+
+/// A quaternion `(w, x, y, z)`: the attitude of a **solved** view (`model::Att`).
+///
+/// Only the direction of one is read — every function here rotates by `q / |q|` — so a `q` a
+/// solve has not yet brought back to the unit sphere still names a rotation, and the intrinsic
+/// `quat_unit` row is what gauges its length.  The rotation carries the page's axes onto the
+/// view's: `R(q)·e₁ = u`, `R(q)·e₂ = v`, `R(q)·e₃ = n`.
+pub type Quat = [f64; 4];
+
+/// `a ⊗ b`, the rotation `b` then `a`.
+pub fn quat_mul(a: Quat, b: Quat) -> Quat {
+    [
+        a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+        a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+        a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+        a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+    ]
+}
+
+/// `qx(−90°)`: the tilt a fold stands a view up by — `e₂ → −e₃`, `e₃ → e₂` — before it is
+/// turned to its bearing.  The second factor of every `fold_turn`.
+const FOLD_TILT: Quat =
+    [std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2, 0.0, 0.0];
+
+/// **What a fold is, as a turn in the parent's own axes**: `qz(θ) ⊗ qx(−90°)`, the rotation
+/// `Basis::fold(θ)` makes — `u = cos θ·u_P + sin θ·v_P`, `v = −n_P` — so a view folded from a
+/// solved parent has the quaternion `q_P ⊗ fold_rotor(θ)`.  The one statement of it: the
+/// elaborator seeds a hinge with it and the `hinge` kernels hold one to it
+/// (`tests/spatial_lang.rs` holds it to `Basis::fold`).
+pub fn fold_rotor(theta: f64) -> Quat {
+    let (s, c) = (0.5 * theta).sin_cos();
+    fold_turn(c, s)
+}
+
+/// The same fold over its half-angle rotor `(hc, hs)` = `(cos θ/2, sin θ/2)`: `qz ⊗ qx(−90°)`
+/// with `qz = (hc, 0, 0, hs)`.  Linear in the rotor, so it is also its own derivative in each
+/// component — which is how the `hinge` kernels differentiate a fold, and how `fold: along l`
+/// reads one whose rotor is two unknowns.
+pub fn fold_turn(hc: f64, hs: f64) -> Quat {
+    quat_mul([hc, 0.0, 0.0, hs], FOLD_TILT)
+}
+
+/// The homogeneous rotation matrix `M(q)` — `|q|²` times the rotation — row-major.  One
+/// expression, read through `quat_matrix` by `quat_rotate`, `from_quat` and `lift_q`, so the
+/// basis a view is read with and the row a solve holds it by are the same arithmetic.
+fn quat_m(q: Quat) -> [[f64; 3]; 3] {
+    let [w, x, y, z] = q;
+    [
+        [w * w + x * x - y * y - z * z, 2.0 * (x * y - w * z), 2.0 * (x * z + w * y)],
+        [2.0 * (x * y + w * z), w * w - x * x + y * y - z * z, 2.0 * (y * z - w * x)],
+        [2.0 * (x * z - w * y), 2.0 * (y * z + w * x), w * w - x * x - y * y + z * z],
+    ]
+}
+
+/// The rotation `q` names, `M(q) / |q|²`, row-major: its columns are `u`, `v` and `n`.  `None`
+/// for a `q` of no length, which names none.
+pub fn quat_matrix(q: Quat) -> Option<[[f64; 3]; 3]> {
+    let n = q.iter().map(|x| x * x).sum::<f64>();
+    (n > 0.0 && n.is_finite()).then(|| quat_m(q).map(|row| row.map(|x| x / n)))
+}
+
+/// `R(q)·a`.
+pub fn quat_rotate(q: Quat, a: [f64; 3]) -> Option<[f64; 3]> {
+    let r = quat_matrix(q)?;
+    Some([0, 1, 2].map(|i| r[i][0] * a[0] + r[i][1] * a[1] + r[i][2] * a[2]))
+}
+
+/// The unit quaternion turning the page's axes onto `b`'s — `u`, `v`, `n` as the columns of the
+/// rotation — with `w ≥ 0` (Shepperd's choice of the largest pivot, so no branch divides by a
+/// small number).  `b` is taken to be orthonormal, which every stored basis is.
+pub fn to_quat(b: &Basis) -> Quat {
+    let n = b.normal();
+    // r[i][j]: component i of column j
+    let r = [[b.u[0], b.v[0], n[0]], [b.u[1], b.v[1], n[1]], [b.u[2], b.v[2], n[2]]];
+    let t = r[0][0] + r[1][1] + r[2][2];
+    let q = if t > 0.0 {
+        let s = (t + 1.0).sqrt() * 2.0;
+        [s / 4.0, (r[2][1] - r[1][2]) / s, (r[0][2] - r[2][0]) / s, (r[1][0] - r[0][1]) / s]
+    } else if r[0][0] > r[1][1] && r[0][0] > r[2][2] {
+        let s = (1.0 + r[0][0] - r[1][1] - r[2][2]).sqrt() * 2.0;
+        [(r[2][1] - r[1][2]) / s, s / 4.0, (r[0][1] + r[1][0]) / s, (r[0][2] + r[2][0]) / s]
+    } else if r[1][1] > r[2][2] {
+        let s = (1.0 + r[1][1] - r[0][0] - r[2][2]).sqrt() * 2.0;
+        [(r[0][2] - r[2][0]) / s, (r[0][1] + r[1][0]) / s, s / 4.0, (r[1][2] + r[2][1]) / s]
+    } else {
+        let s = (1.0 + r[2][2] - r[0][0] - r[1][1]).sqrt() * 2.0;
+        [(r[1][0] - r[0][1]) / s, (r[0][2] + r[2][0]) / s, (r[1][2] + r[2][1]) / s, s / 4.0]
+    };
+    let l = q.iter().map(|x| x * x).sum::<f64>().sqrt();
+    let sign = if q[0] < 0.0 { -1.0 } else { 1.0 };
+    q.map(|x| sign * x / l)
+}
+
+/// The basis `q` names, standing at `o`: `u = R(q)·e₁`, `v = R(q)·e₂`.  `None` for a `q` of
+/// no length.
+pub fn from_quat(q: Quat, o: [f64; 3]) -> Option<Basis> {
+    let r = quat_matrix(q)?;
+    Some(Basis { u: [r[0][0], r[1][0], r[2][0]], v: [r[0][1], r[1][1], r[2][1]], o })
+}
+
+/// **The lift of a solved view**: `L = R(q)·w` for `w = (a, b, d)` — a point's in-plane
+/// coordinates and the view's offset along its normal — with the rotation `R` and `∂L/∂q`
+/// (row-major, 3 × 4).  The one statement of it: the `lift` kernel reads its residual and its
+/// columns here, and `Sketch::basis` reads the same `R`, so the view a solve holds and the view
+/// a reader sees cannot come apart.  `R` is `M(q)/|q|²`, so `∂L/∂q` has no component along `q`
+/// itself — the length of `q` is `quat_unit`'s business, not the lift's.  `None` for a `q` of
+/// no length.
+pub fn lift_q(q: Quat, w: [f64; 3]) -> Option<([f64; 3], [[f64; 3]; 3], [[f64; 4]; 3])> {
+    let r = quat_matrix(q)?;
+    let n = q.iter().map(|x| x * x).sum::<f64>();
+    let mul =
+        |m: [[f64; 3]; 3]| [0, 1, 2].map(|i| m[i][0] * w[0] + m[i][1] * w[1] + m[i][2] * w[2]);
+    let l = mul(r);
+    let [qw, qx, qy, qz] = q;
+    // ∂M/∂q_k, each linear in q
+    let dm = [
+        [[qw, -qz, qy], [qz, qw, -qx], [-qy, qx, qw]],
+        [[qx, qy, qz], [qy, -qx, -qw], [qz, qw, -qx]],
+        [[-qy, qx, qw], [qx, qy, qz], [-qw, qz, -qy]],
+        [[-qz, -qw, qx], [qw, -qz, qy], [qx, qy, qz]],
+    ];
+    let mut dq = [[0.0; 4]; 3];
+    for (k, m) in dm.iter().enumerate() {
+        let g = mul(m.map(|row| row.map(|x| 2.0 * x)));
+        for i in 0..3 {
+            dq[i][k] = (g[i] - 2.0 * q[k] * l[i]) / n;
+        }
+    }
+    Some((l, r, dq))
 }
 
 /// The length of a plane glyph's tick, in screen pixels — a datum mark, sized like a callout's

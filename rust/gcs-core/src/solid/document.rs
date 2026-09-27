@@ -112,9 +112,10 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
     }
     if let Some(p) = plane {
         if let Some(pl) = sk.planes.get(p as usize) {
-            v.extend(pl.basis.u);
-            v.extend(pl.basis.v);
-            v.extend(pl.basis.o);
+            let basis = sk.basis(p as usize);
+            v.extend(basis.u);
+            v.extend(basis.v);
+            v.extend(basis.o);
             v.push(sk.params[pl.frame.c as usize].value);
             v.push(sk.params[pl.frame.s as usize].value);
             let o = sk.point_xy(pl.frame.origin as usize);

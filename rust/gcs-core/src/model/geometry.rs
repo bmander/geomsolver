@@ -57,6 +57,7 @@ impl Sketch {
         match e.kind {
             EntKind::Circle => self.circles[e.i()].center as usize,
             EntKind::Arc => self.arcs[e.i()].center as usize,
+            EntKind::Sphere => self.spheres[e.i()].center as usize,
             _ => panic!("not a round entity"),
         }
     }
@@ -69,11 +70,10 @@ impl Sketch {
     pub fn world_point(&self, i: usize) -> [f64;3] {
         let p = self.point_xy(i);
         if let Some(i) = self.plane_of(i) {
-            let pl = &self.planes[i];
-            let f = &pl.frame;
+            let f = &self.planes[i].frame;
             let q = crate::plane::in_view(self.params[f.c as usize].value,
                 self.params[f.s as usize].value,self.point_xy(f.origin as usize),p);
-            pl.basis.lift(q.0,q.1)
+            self.basis(i).lift(q.0,q.1)
         } else { crate::plane::Basis::page().lift(p.0,p.1) }
     }
 
@@ -134,6 +134,15 @@ impl Sketch {
             }
             EntKind::Point => {
                 let (x, y) = self.point_xy(e.i());
+                (x, y, x, y)
+            }
+            // on no sheet: its axis is drawn, in whichever view it is in
+            EntKind::Cone | EntKind::Cylinder => {
+                self.bounds(EntRef::line(self.axial(e).axis as usize))
+            }
+            // on no sheet: only its centre is drawn, in whichever view it is in
+            EntKind::Sphere => {
+                let (x, y) = self.point_xy(self.spheres[e.i()].center as usize);
                 (x, y, x, y)
             }
             EntKind::Line => {

@@ -47,7 +47,7 @@ impl Guide {
                     return Err("an arc guide's center and endpoints must share a plane".into());
                 }
                 g.center = point(sk, arc.center as usize);
-                g.axis = plane.map_or(Basis::page(), |i| sk.planes[i].basis).normal();
+                g.axis = plane.map_or(Basis::page(), |i| sk.basis(i)).normal();
                 let radius = sub(start, g.center);
                 let r = norm(radius);
                 let declared = sk.params[arc.radius as usize].value.abs();
@@ -110,8 +110,8 @@ pub(super) fn reads(sk: &Sketch, guide: EntRef, v: &mut Vec<f64>) {
             v.extend([e.idx as f64, sk.plane_of(e.i()).map_or(-1.0, |p| p as f64)]);
             v.extend(point(sk, e.i()));
             if let Some(p) = sk.plane_of(e.i()) {
-                v.extend(sk.planes[p].basis.u);
-                v.extend(sk.planes[p].basis.v);
+                v.extend(sk.basis(p).u);
+                v.extend(sk.basis(p).v);
             }
         }
     }

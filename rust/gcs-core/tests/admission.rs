@@ -175,6 +175,7 @@ fn a_hypoid_pinion_with_undercut_is_refused() {
 /// At 20 degrees with a symmetric rack no tool point touches the blank twice; the flank's
 /// generated surface folds, and the fold is what refuses it. Split 7.5 degrees, it does not.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 22 s: admission of two gear designs")]
 fn a_folding_flank_is_refused_and_balanced_pressure_angles_admit_it() {
     let r = refused(pinion(20.,0.,35.));
     assert!(matches!(r.condition,Condition::Fold | Condition::Crossing),"{r}");

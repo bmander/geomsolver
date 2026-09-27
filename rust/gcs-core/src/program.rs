@@ -8,6 +8,8 @@ mod diagnostics;
 mod entities;
 mod lift;
 mod planes;
+mod views;
+mod reading;
 mod relations;
 mod resolve;
 mod solids;
@@ -49,6 +51,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
                 stmt:site.map(|s| s.stmt),message});
         }
     }
+    diags.extend(views::degenerate(sk, map));
     for i in 0..sk.envelopes.len() {
         if let Err(message) = crate::envelope::GeneratedEnvelope::named(sk,i) {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Envelope,i));
@@ -59,6 +62,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
     diags
 }
 pub use lift::{dumps, to_program};
+pub use reading::reading_views;
 pub use source_map::{public_path, Elaborated, InstPath, Made, Site, SourceMap};
 
 use crate::expr;
@@ -273,6 +277,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
         EntKind::Arc,
         EntKind::Spline,
         EntKind::Plane,
+        EntKind::Sphere,
+        EntKind::Cone,
+        EntKind::Cylinder,
         EntKind::Curve,
     ] {
         for st in &body {
@@ -352,6 +359,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // memberships, once every kind is built and before any constraint reads one: `point a in
     // top` names a plane built after the point, and `project` infers its planes from these
     memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
+    // views whose attitude or offset is solved for, once every membership is in and before any
+    // relation: a relation over a solved view is stated against its unknowns from the first
+    views::solve_planes(&mut sk, &res, &mut map, &body, &skip, &mut diags);
 
     // -- phase 3: constraints, in statement order
     for st in &body {
@@ -363,6 +373,10 @@ pub fn elaborate(p: &Program) -> Elaborated {
             }
         }
     }
+
+    // a solved view's place on the sheet is held where it was drawn, unless a statement says
+    // otherwise (the page-placement gauge)
+    reading::hold_page_placement(&mut sk);
 
     // -- phase 3b: faces, then solids (§6.8, §6.9).  **After every other kind and after the
     // constraints**, because a face is written over edges the drawing already has and a solid

@@ -22,9 +22,12 @@ mod parameters;
 mod geometry;
 mod measure;
 mod topology;
+mod attitude;
 
 pub use entities::{
-    Param, EntKind, Field, EntRef, PointE, LineE, CircleE, ArcE, SplineE, FrameE, PlaneE,
+    Param, EntKind, Field, EntRef, PointE, LineE, CircleE, SphereE, AxialE, ArcE, SplineE, FrameE,
+    PlaneE, Att,
+    LiftE,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Home, whole};
 pub use spatial::{
@@ -47,9 +50,17 @@ pub struct Sketch {
     pub points: Vec<PointE>,
     pub lines: Vec<LineE>,
     pub circles: Vec<CircleE>,
+    /// The spheres, appended last of the drawn kinds; empty in a document that declares none.
+    pub spheres: Vec<SphereE>,
+    /// The cones and cylinders, after the spheres; likewise.
+    pub cones: Vec<AxialE>,
+    pub cylinders: Vec<AxialE>,
     pub arcs: Vec<ArcE>,
     pub splines: Vec<SplineE>,
     pub planes: Vec<PlaneE>,
+    /// The hidden points in space a spatial relation reads — see `LiftE`.  Derived state,
+    /// re-minted rather than saved.
+    pub lifts: Vec<LiftE>,
     pub curves: Vec<CurveE>,
     /// The faces and solids the document names (§6.8, §6.9).  Built after every other kind,
     /// since a face is written over edges and a solid over faces and solids; evaluated after
@@ -73,6 +84,13 @@ pub struct Sketch {
     /// 2D claim, one stratum further out.
     pub solid_claims: Vec<SolidClaim>,
     pub solid_bearings: Vec<SolidBearing>,
+    /// The datum points the **page-placement gauge** holds: a solved view's origin and
+    /// toward, where no statement of the document names them.  Their params are `fixed`, so no
+    /// solve moves them and no ledger counts them; this set is what says the hold is the gauge's
+    /// and not a `ground`, so a writeback into the source never spells one.  (A lifted program
+    /// does ground them: it states every view, and over a stated view the gauge holds nothing.)
+    /// Derived state, set at elaboration and never written to a document.
+    pub page_held: std::collections::BTreeSet<u32>,
     /// The planes a **mate** places (§6.10): written `from: P` with neither `fold:` nor
     /// `offset:`, they say which plane they are parallel to and leave where they stand to one
     /// `against`.  Recorded here so the placement walk knows which offsets are its to write and
@@ -152,6 +170,9 @@ impl Sketch {
             EntKind::Point => Classes::default(),
             EntKind::Line => self.lines[e.i()].class.clone(),
             EntKind::Circle => self.circles[e.i()].class.clone(),
+            EntKind::Sphere => self.spheres[e.i()].class.clone(),
+            EntKind::Cone => self.cones[e.i()].class.clone(),
+            EntKind::Cylinder => self.cylinders[e.i()].class.clone(),
             EntKind::Arc => self.arcs[e.i()].class.clone(),
             EntKind::Spline => self.splines[e.i()].class.clone(),
             EntKind::Plane => self.planes[e.i()].frame.class.clone(),
@@ -176,6 +197,9 @@ impl Sketch {
             EntKind::Point => return,
             EntKind::Line => self.lines.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Circle => self.circles.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Sphere => self.spheres.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Cone => self.cones.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Cylinder => self.cylinders.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Arc => self.arcs.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Spline => self.splines.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Plane => self.planes.get_mut(e.i()).map(|x| &mut x.frame.class),

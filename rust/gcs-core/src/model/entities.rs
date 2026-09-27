@@ -35,8 +35,8 @@ pub enum EntKind {
     /// which is what a plain datum is.
     /// A point that says it is `in` the plane is an image of something on that plane, and
     /// `Project` between two such points is the one equation two images of one point share.
-    /// Nothing about the attitude is ever solved for — it is document data, like a spline's
-    /// knots — which is what keeps the whole engine planar.
+    /// A stated attitude is document data, like a spline's knots; only a view asked to be
+    /// solved (`Sketch::free_attitude`, which mints `PlaneE::att`) has unknowns in space.
     Plane,
     /// A curve written in the language: `C(u)` as an expression over the geometry it is drawn
     /// from.  Unlike every other kind it holds no coordinates of its own — it *is* the two
@@ -72,6 +72,17 @@ pub enum EntKind {
     Vertex,
     /// A finite directed portion of a spatial seam between named corners.
     Edge,
+    /// **A sphere** (`docs/spatial-constraints-plan.md`): a centre drawn in some view and a
+    /// radius it owns, like a circle's — but no picture on any sheet, since a sphere seen in a
+    /// view is a circle only square on.  Its relations (`p on s`, `radius`, `tangent`) are in
+    /// space and read its centre's lift.  Last in the enum so every kind's id stays what it was.
+    Sphere,
+    /// **A cone**: an axis line drawn in some view — the apex its start, the axis running
+    /// toward its end — and a half-angle it owns, like a sphere's radius.  No picture on any
+    /// sheet; its relations (`p on k`, `angle`, `tangent`) are in space and read the axis's lifts.
+    Cone,
+    /// **A cylinder**: an axis line drawn in some view and a radius it owns.
+    Cylinder,
 }
 
 impl EntKind {
@@ -93,6 +104,9 @@ impl EntKind {
             EntKind::Seam => "seam",
             EntKind::Vertex => "vertex",
             EntKind::Edge => "edge",
+            EntKind::Sphere => "sphere",
+            EntKind::Cone => "cone",
+            EntKind::Cylinder => "cylinder",
         }
     }
 
@@ -114,6 +128,9 @@ impl EntKind {
             "seam" => EntKind::Seam,
             "vertex" => EntKind::Vertex,
             "edge" => EntKind::Edge,
+            "sphere" => EntKind::Sphere,
+            "cone" => EntKind::Cone,
+            "cylinder" => EntKind::Cylinder,
             _ => return None,
         })
     }
@@ -130,7 +147,10 @@ impl EntKind {
         match self {
             EntKind::Point => &[("x", S), ("y", S)],
             EntKind::Line => &[("p1", C), ("p2", C)],
-            EntKind::Circle => &[("center", C), ("r", S)],
+            EntKind::Circle | EntKind::Sphere => &[("center", C), ("r", S)],
+            // the axis is a line, the one child that is not a point: the apex is its start
+            EntKind::Cone => &[("axis", C), ("half", S)],
+            EntKind::Cylinder => &[("axis", C), ("r", S)],
             EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
             EntKind::Spline => &[("ctrl", L)],
             // a plane's attitude is not a field: a Scalar is a number a solve may write back,
@@ -174,6 +194,9 @@ impl EntKind {
             EntKind::Arc => Some((1, 2)),
             EntKind::Point
             | EntKind::Circle
+            | EntKind::Sphere
+            | EntKind::Cone
+            | EntKind::Cylinder
             | EntKind::Spline
             | EntKind::Plane
             | EntKind::Curve
@@ -197,13 +220,15 @@ impl EntKind {
         Some(match self {
             EntKind::Point => vec![format!("{n}.x"), format!("{n}.y")],
             EntKind::Line => [pt("p1"), pt("p2")].concat(),
-            EntKind::Circle => [pt("center"), vec![format!("{n}.r")]].concat(),
+            EntKind::Circle | EntKind::Sphere => [pt("center"), vec![format!("{n}.r")]].concat(),
             EntKind::Arc => {
                 [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
             }
             EntKind::Plane => {
                 [pt("origin"), pt("toward"), vec![format!("{n}.c"), format!("{n}.s")]].concat()
             }
+            // a surface in space is no formal a curve is written over
+            EntKind::Cone | EntKind::Cylinder => return None,
             EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => return None,
         })
     }
@@ -227,7 +252,11 @@ impl EntKind {
             | EntKind::Circle
             | EntKind::Arc
             | EntKind::Spline
+            // its centre is a point of whatever view the declaration is in
+            | EntKind::Sphere
             => true,
+            // built over a line already drawn in its view, as a face is over its edges
+            EntKind::Cone | EntKind::Cylinder => false,
         }
     }
 
@@ -247,6 +276,9 @@ impl EntKind {
             | EntKind::Spline
             | EntKind::Curve
             | EntKind::Face
+            | EntKind::Sphere
+            | EntKind::Cone
+            | EntKind::Cylinder
             | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => None,
         }
     }
@@ -266,7 +298,11 @@ impl EntKind {
             | EntKind::Arc
             | EntKind::Spline
             | EntKind::Plane
-            | EntKind::Curve => false,
+            | EntKind::Curve
+            // solved, owning its radius — a figure of the drawing stratum, not a reading of one
+            | EntKind::Sphere
+            | EntKind::Cone
+            | EntKind::Cylinder => false,
         }
     }
 
@@ -354,6 +390,24 @@ pub struct CircleE {
     pub class: Classes,
 }
 
+/// A sphere: its centre, a drawn point, and its radius, a Param — a circle's fields with no
+/// plane to be drawn in (`EntKind::Sphere`).
+#[derive(Clone, Debug)]
+pub struct SphereE {
+    pub center: u32,
+    pub radius: u32,
+    pub class: Classes,
+}
+
+/// A cone or a cylinder: its axis, a drawn line — a cone's apex is the line's start — and
+/// the number it owns, a Param: a cone's half-angle (radians) or a cylinder's radius.
+#[derive(Clone, Debug)]
+pub struct AxialE {
+    pub axis: u32,
+    pub param: u32,
+    pub class: Classes,
+}
+
 /// CCW arc from `start` to `end` about `center`.  The radius is its own Param so Circle and Arc
 /// share every radius-based constraint; the two intrinsic constraints |start-center|² = r² and
 /// |end-center|² = r² are added by `Sketch::arc`.
@@ -401,5 +455,44 @@ pub struct FrameE {
 #[derive(Clone, Debug)]
 pub struct PlaneE {
     pub frame: FrameE,
-    pub basis: crate::plane::Basis,
+    pub(in crate::model) basis: crate::plane::Basis,
+    /// The attitude as **unknowns**, where the view is solved rather than stated (or read by one
+    /// that is) — `None` for every other plane a document states, so no parameter is minted and
+    /// nothing compiles differently (`Sketch::free_attitude`).
+    pub att: Option<Att>,
+}
+
+/// A view's attitude and normal offset as solver unknowns (`docs/spatial-constraints-plan.md`).
+///
+/// `q` is a quaternion (four Params, held to the unit sphere by the intrinsic `quat_unit` row)
+/// and `d` the offset along the view's normal (one Param, a length); the view's origin stands at
+/// `o = R(q)·(a, b, d)`, where `ab` are **constants** carrying the in-plane part of the origin
+/// the plane was minted at — in-plane translation is already the datum's own 2D freedom, so it
+/// is not a second unknown here.  Kept out of `entity_params`, `fields` and `scalar_names`: a
+/// traced tape's width and a report's table are the same whether or not a view is solved.
+#[derive(Clone, Debug)]
+pub struct Att {
+    pub q: [u32; 4],
+    pub d: u32,
+    pub ab: [f64; 2],
+    /// The values of `(q, d)` the stored basis is exact at.  A quaternion read back from a basis
+    /// does not rebuild it to the bit — `cos 45°` squared is not a half — so `Sketch::basis`
+    /// answers with the stored basis while the unknowns still hold exactly these numbers, and
+    /// freeing a view moves nothing any reader sees until a solve moves the view.
+    pub(in crate::model) seat: [f64; 5],
+    /// Held by a hinge to the view it is folded from (`CKind::Hinge`) rather than by a
+    /// `quat_unit` row of its own: a product of unit quaternions is one, and a second row saying
+    /// so would be a redundant equation at every solution.
+    pub hinged: bool,
+}
+
+/// A **hidden point in space**: the lift of one view point, held to it by an intrinsic `lift`
+/// row — three Params and three rows, so it adds no freedom.  What a spatial relation between
+/// two views reads, so its kernel sees three coordinates and never a view's attitude.
+/// Not an entity: nothing names it, draws it, picks it or saves it; it is minted on request
+/// (`Sketch::lift_point`), once per view point, and re-minted rather than stored.
+#[derive(Clone, Debug)]
+pub struct LiftE {
+    pub point: u32,
+    pub x: [u32; 3],
 }

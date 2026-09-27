@@ -19,10 +19,10 @@ component Sphere(origin: point,size: Length) {
 }
 point shifted hint(x: 0,y: 1)
 ground shifted
-sphere: Sphere(o,size: sqrt(9.25)*1mm)
+globe: Sphere(o,size: sqrt(9.25)*1mm)
 offset: Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
 join_cut: Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
-seam radial(first_envelope,sphere.wall)
+seam radial(first_envelope,globe.wall)
 seam offset_edge(first_envelope,offset.wall)
 seam join_edge(second_envelope,join_cut.wall)
 vertex corner(first: radial,second: offset_edge)
@@ -135,7 +135,7 @@ fn vertex_spelling_roundtrips_in_a_flat_program() {
 fn vertices_reject_unrelated_faces_duplicate_boundaries_and_wrong_operands() {
     for tail in [
         "vertex bad(radial,radial)",
-        "seam duplicate(first_envelope,sphere.wall)\nvertex bad(radial,duplicate)",
+        "seam duplicate(first_envelope,globe.wall)\nvertex bad(radial,duplicate)",
         "seam different(second_envelope,offset.wall)\nvertex bad(radial,different)",
         "vertex bad(shared,shared)",
         "seam other_join(second_envelope,first_envelope)\nvertex bad(shared,other_join)",

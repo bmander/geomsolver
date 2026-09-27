@@ -124,7 +124,9 @@ impl<'a> P<'a> {
         if !self.eat_p('(') {
             return Some(Vec::new());
         }
-        let takes_entity = word == "symmetry" || call_word(word);
+        // `symmetry`'s line and `tangent`'s contact point (two cones touching at M) stand in the
+        // parentheses unlabelled; `tangent` states no number, so nothing else is read there
+        let takes_entity = word == "symmetry" || word == "tangent" || call_word(word);
         let mut out = Vec::new();
         while !self.eat_p(')') {
             match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t.clone())) {

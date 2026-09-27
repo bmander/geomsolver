@@ -55,7 +55,7 @@ fn basis(name: &str, models: &BTreeMap<String, Model<'_>>, span: Span) -> Result
             let (_, path, model) = split(name, models, span)?;
             let e = model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Plane)
                 .ok_or_else(|| error(span, format!("`{name}` is not a model plane")))?;
-            return Ok(model.sketch.planes[e.i()].basis);
+            return Ok(model.sketch.basis(e.i()));
         }
     };
     Ok(Basis { u, v, o: [0.; 3] })
@@ -71,7 +71,7 @@ fn point(model: Model<'_>, path: &str, span: Span) -> Result<((f64, f64), [f64; 
         let f = &plane.frame;
         let local = crate::plane::in_view(sk.params[f.c as usize].value,
             sk.params[f.s as usize].value, sk.point_xy(f.origin as usize), p);
-        plane.basis.lift(local.0, local.1)
+        sk.basis(i).lift(local.0, local.1)
     } else { Basis::page().lift(p.0, p.1) };
     Ok((p, world))
 }

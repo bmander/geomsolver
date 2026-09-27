@@ -82,6 +82,50 @@ macro_rules! undrawn {
             | CKind::FrameUnit
             | CKind::FrameAlign
             | CKind::Project
+            | CKind::QuatUnit
+            | CKind::Lift
+            | CKind::LiftFixed
+            // a relation in space states a number of no one view, so it has no figure on one
+            | CKind::Coincident3
+            | CKind::Distance3
+            | CKind::PointLine3
+            | CKind::LineLine3
+            | CKind::Angle3
+            | CKind::Perpendicular3
+            | CKind::Parallel3
+            | CKind::PointOnPlane
+            | CKind::PointOnPlaneFixed
+            | CKind::PointOnCircle3
+            | CKind::PointOnCircle3Fixed
+            | CKind::PointOnLine3
+            | CKind::EqualLength3
+            | CKind::PointPlaneDistance
+            | CKind::PointPlaneDistanceFixed
+            // a sphere is on no sheet, so nothing about it is drawn on one
+            | CKind::SphereOn
+            | CKind::CircleOnSphere
+            | CKind::CircleOnSphereFixed
+            | CKind::Midpoint3
+            | CKind::Symmetric3
+            | CKind::LineOnPlane
+            | CKind::LineOnPlaneFixed
+            | CKind::SphereRadius
+            | CKind::SphereTangentLine
+            | CKind::SphereTangentSphere
+            // nor is a cone or a cylinder
+            | CKind::ConeOn
+            | CKind::CylinderOn
+            | CKind::ConeAngle
+            | CKind::CylinderRadius
+            | CKind::CylinderTangentLine
+            | CKind::ConeTangentCone
+            | CKind::Mate
+            // a view's hinge is its declaration's, and a projection in space draws what
+            // `project` draws: nothing
+            | CKind::Hinge
+            | CKind::HingeParallel
+            | CKind::HingeAlong
+            | CKind::ProjectSolved
             | CKind::Ground
             | CKind::Fix
             | CKind::Ccw
