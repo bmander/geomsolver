@@ -62,9 +62,14 @@ pub enum K {
     CoordinateV,
     CoordinateUFree,
     CoordinateVFree,
+    // a solved view's quaternion on the unit sphere, and a hidden point held at the lift of
+    // its view point over a solved view and over a stated one
+    QuatUnit,
+    Lift,
+    LiftFixed,
 }
 
-pub const N_KERNELS: usize = 45;
+pub const N_KERNELS: usize = 48;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -1770,6 +1775,121 @@ fn coordinate_jac<const V: bool, const FREE: bool>(n: usize, v: &[f64], k: &[f64
     }
 }
 
+/// Columns of `quat_unit`: (w, x, y, z).
+///
+/// `r = |q|² − 1`, `frame_unit` one dimension up: dimensionless, judged absolute, degree 0.  The
+/// `lift` reads the direction of `q` only, so this row is the whole of what fixes its length.
+fn quat_unit_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 4 * i;
+        r[i] = v[o] * v[o] + v[o + 1] * v[o + 1] + v[o + 2] * v[o + 2] + v[o + 3] * v[o + 3] - 1.0;
+    }
+}
+
+fn quat_unit_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 4 * i;
+        for t in 0..4 {
+            j[o + t] = 2.0 * v[o + t];
+        }
+    }
+}
+
+/// Columns of `lift`: (X, Y, Z, px, py, ox, oy, c, s, qw, qx, qy, qz, d) — the hidden point, the
+/// view point, its datum's origin and rotor, and the view's quaternion and offset.  Constants:
+/// (a, b), the in-plane part of the view's origin (`model::Att`).
+pub const N_PAR_LIFT: usize = 14;
+
+/// `X − R(q)·(a + a′, b + b′, d) = 0`, with `(a′, b′) = plane::in_view(c, s, o, p)` — the point
+/// as the draughtsman measured it on its view, stood up in space by the view's solved attitude
+/// (`plane::lift_q`, the one statement of it).  Three signed displacements: degree 1.
+fn lift_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_LIFT * i;
+        let (a, b) =
+            crate::plane::in_view(v[o + 7], v[o + 8], (v[o + 5], v[o + 6]), (v[o + 3], v[o + 4]));
+        let q = [v[o + 9], v[o + 10], v[o + 11], v[o + 12]];
+        let w = [k[2 * i] + a, k[2 * i + 1] + b, v[o + 13]];
+        let l = crate::plane::lift_q(q, w).map_or([f64::NAN; 3], |(l, _, _)| l);
+        for t in 0..3 {
+            r[3 * i + t] = v[o + t] - l[t];
+        }
+    }
+}
+
+fn lift_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_LIFT * i;
+        let (px, py, ox, oy, c, s) = (v[o + 3], v[o + 4], v[o + 5], v[o + 6], v[o + 7], v[o + 8]);
+        let (dx, dy) = (px - ox, py - oy);
+        let (a, b) = crate::plane::in_view(c, s, (ox, oy), (px, py));
+        let q = [v[o + 9], v[o + 10], v[o + 11], v[o + 12]];
+        let w = [k[2 * i] + a, k[2 * i + 1] + b, v[o + 13]];
+        let jo = 3 * N_PAR_LIFT * i;
+        let Some((_, rm, dq)) = crate::plane::lift_q(q, w) else {
+            j[jo..jo + 3 * N_PAR_LIFT].fill(f64::NAN);
+            continue;
+        };
+        for t in 0..3 {
+            let row = &mut j[jo + t * N_PAR_LIFT..jo + (t + 1) * N_PAR_LIFT];
+            row.fill(0.0);
+            row[t] = 1.0;
+            // ∂L/∂(a′, b′) are the view's u and v; the view coordinates' own derivatives are
+            // `in_view`'s: a′ = c·dx + s·dy, b′ = −s·dx + c·dy
+            let (gu, gv) = (rm[t][0], rm[t][1]);
+            row[3] = -(gu * c - gv * s);
+            row[4] = -(gu * s + gv * c);
+            row[5] = -row[3];
+            row[6] = -row[4];
+            row[7] = -(gu * dx + gv * dy);
+            row[8] = -(gu * dy - gv * dx);
+            for m in 0..4 {
+                row[9 + m] = -dq[t][m];
+            }
+            row[13] = -rm[t][2];
+        }
+    }
+}
+
+/// Columns of `lift_fixed`: (X, Y, Z, px, py, ox, oy, c, s).  Constants: the stated basis
+/// (u, v, o), nine numbers.
+pub const N_PAR_LIFT_FIXED: usize = 9;
+
+/// `X − (o + a′·u + b′·v) = 0` — `lift`'s statement over a view whose attitude is document data,
+/// which is `plane::Basis::lift` exactly.  Degree 1.
+fn lift_fixed_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_LIFT_FIXED * i;
+        let kb = &k[9 * i..9 * i + 9];
+        let (a, b) =
+            crate::plane::in_view(v[o + 7], v[o + 8], (v[o + 5], v[o + 6]), (v[o + 3], v[o + 4]));
+        for t in 0..3 {
+            r[3 * i + t] = v[o + t] - (kb[6 + t] + a * kb[t] + b * kb[3 + t]);
+        }
+    }
+}
+
+fn lift_fixed_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_LIFT_FIXED * i;
+        let kb = &k[9 * i..9 * i + 9];
+        let (dx, dy, c, s) = (v[o + 3] - v[o + 5], v[o + 4] - v[o + 6], v[o + 7], v[o + 8]);
+        let jo = 3 * N_PAR_LIFT_FIXED * i;
+        for t in 0..3 {
+            let row = &mut j[jo + t * N_PAR_LIFT_FIXED..jo + (t + 1) * N_PAR_LIFT_FIXED];
+            row.fill(0.0);
+            row[t] = 1.0;
+            let (gu, gv) = (kb[t], kb[3 + t]);
+            row[3] = -(gu * c - gv * s);
+            row[4] = -(gu * s + gv * c);
+            row[5] = -row[3];
+            row[6] = -row[4];
+            row[7] = -(gu * dx + gv * dy);
+            row[8] = -(gu * dy - gv * dx);
+        }
+    }
+}
+
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
     Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
@@ -1816,6 +1936,9 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coordinate_v", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: coordinate_res::<true, false>, jac: coordinate_jac::<true, false>, const_jac: None },
     Kernel { name: "coordinate_u_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: coordinate_res::<false, true>, jac: coordinate_jac::<false, true>, const_jac: None },
     Kernel { name: "coordinate_v_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: coordinate_res::<true, true>, jac: coordinate_jac::<true, true>, const_jac: None },
+    Kernel { name: "quat_unit", n_res: 1, n_par: 4, degree: 0, n_const: 0, res: quat_unit_res, jac: quat_unit_jac, const_jac: None },
+    Kernel { name: "lift", n_res: 3, n_par: N_PAR_LIFT, degree: 1, n_const: 2, res: lift_res, jac: lift_jac, const_jac: None },
+    Kernel { name: "lift_fixed", n_res: 3, n_par: N_PAR_LIFT_FIXED, degree: 1, n_const: 9, res: lift_fixed_res, jac: lift_fixed_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

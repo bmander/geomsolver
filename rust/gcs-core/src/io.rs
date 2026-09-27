@@ -278,6 +278,18 @@ pub fn to_json(sk: &Sketch) -> Json {
             if b.o != [0.0; 3] {
                 o.set("o", v3(b.o));
             }
+            // a solved view's unknowns, only where the view is solved: every plane a document
+            // states writes exactly the record it always did
+            if let Some(a) = &p.att {
+                let g = |k: u32| &sk.params[k as usize];
+                o.set("att", object([
+                    ("q", Json::Arr(a.q.iter().map(|&k| Json::Num(g(k).value)).collect())),
+                    ("qfixed", a.q.iter().all(|&k| g(k).fixed).into()),
+                    ("d", g(a.d).value.into()),
+                    ("dfixed", g(a.d).fixed.into()),
+                    ("ab", Json::Arr(a.ab.iter().map(|&x| Json::Num(x)).collect())),
+                ]));
+            }
             o
         })
         .collect();
@@ -426,6 +438,8 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.params[sp].fixed = f.get("sfixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.planes[pi].frame.class = read_class(f);
     }
+    // the planes a `"frames"` table made come first, so a plane record's index is past them
+    let np_planes = sk.planes.len();
     for (k, p) in d.get("planes").unwrap_or(&empty).arr().iter().enumerate() {
         let g = |key: &str| index(p.get(key).map(|v| v.as_i64()).unwrap_or(0), np, key);
         let v3 = |key: &str| -> [f64; 3] {
@@ -456,6 +470,23 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
                 sk.set_plane(i, Some(index(v.as_i64(), sk.planes.len(), "point.plane")?));
             }
         }
+    }
+    // a solved view's unknowns once its members are in, since what one unit of its quaternion is
+    // worth is read off them; the intrinsic row is minted with it, never read
+    for (k, p) in d.get("planes").unwrap_or(&empty).arr().iter().enumerate() {
+        let Some(a) = p.get("att") else { continue };
+        let nums = |key: &str, n: usize| -> Result<Vec<f64>, String> {
+            let v: Vec<f64> = a.get(key).map(|v| v.arr()).unwrap_or_default().iter()
+                .map(|x| x.as_f64()).collect();
+            if v.len() == n && v.iter().all(|x| x.is_finite()) { Ok(v) }
+            else { Err(format!("plane {k}: att.{key} is not {n} numbers")) }
+        };
+        let (q, ab) = (nums("q", 4)?, nums("ab", 2)?);
+        let dv = a.get("d").map(|v| v.as_f64()).unwrap_or(0.0);
+        let flag = |key: &str| a.get(key).map(|v| v.as_bool()).unwrap_or(false);
+        let pi = np_planes + k;
+        sk.restore_attitude(pi, [q[0], q[1], q[2], q[3]], flag("qfixed"), dv, flag("dfixed"),
+                            [ab[0], ab[1]]);
     }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
@@ -691,6 +722,21 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     for i in 0..src.points.len() {
         if let (Some(ni), Some(p)) = (pt_index(i), src.plane_of(i)) {
             dst.set_plane(ni, plane_map[p]);
+        }
+    }
+    // a solved view comes across solved — its unknowns and constants, re-minted with their
+    // intrinsic row once its members are in — and a hidden point comes with the view point it
+    // lifts, seeded where that point lifts to now
+    for (i, p) in src.planes.iter().enumerate() {
+        if let (Some(ni), Some(a)) = (plane_map[i], &p.att) {
+            let g = |k: u32| &src.params[k as usize];
+            dst.restore_attitude(ni, a.q.map(|k| g(k).value), a.q.iter().all(|&k| g(k).fixed),
+                                 g(a.d).value, g(a.d).fixed, a.ab);
+        }
+    }
+    for l in &src.lifts {
+        if let Some(ni) = pt_index(l.point as usize) {
+            dst.lift_point(ni);
         }
     }
     // curves last: a curve's arguments may be of any other kind, so every map it reads has to
@@ -1279,6 +1325,24 @@ impl Part {
             }
             for (a, b) in sketch.entity_params(m).into_iter().zip(sk.entity_params(s)) {
                 params.push((a as usize, b as usize));
+            }
+            // a solved view's unknowns are no entity's params, and move with the view
+            let att = |x: &Sketch, e: EntRef| match e.kind {
+                EntKind::Plane => x.planes[e.i()].att.clone(),
+                _ => None,
+            };
+            if let (Some(a), Some(b)) = (att(&sketch, m), att(sk, s)) {
+                for (x, y) in a.q.iter().chain([&a.d]).zip(b.q.iter().chain([&b.d])) {
+                    params.push((*x as usize, *y as usize));
+                }
+            }
+        }
+        // and a hidden point moves with the view point it lifts
+        for l in &sk.lifts {
+            if let Some(k) = to_part[l.point as usize].and_then(|p| sketch.lift_of(p)) {
+                for (x, y) in sketch.lifts[k].x.iter().zip(&l.x) {
+                    params.push((*x as usize, *y as usize));
+                }
             }
         }
         // the free variables came along by name: the rebuild allocated the part's own unknown

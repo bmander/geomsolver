@@ -82,6 +82,9 @@ macro_rules! undrawn {
             | CKind::FrameUnit
             | CKind::FrameAlign
             | CKind::Project
+            | CKind::QuatUnit
+            | CKind::Lift
+            | CKind::LiftFixed
             | CKind::Ground
             | CKind::Fix
             | CKind::Ccw

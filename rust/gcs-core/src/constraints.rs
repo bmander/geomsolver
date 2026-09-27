@@ -83,6 +83,16 @@ pub enum CKind {
     /// Signed ordinates of a point relative to a datum: u follows its rotor, v is left of it.
     CoordinateU,
     CoordinateV,
+    /// A solved view's quaternion held to the unit sphere: `|q|² = 1`.  Intrinsic — minted by
+    /// `Sketch::free_attitude` and nowhere else, `FrameUnit`'s form one dimension up.
+    QuatUnit,
+    /// A hidden point in space held at the lift of the view point it stands for, the view's
+    /// attitude read off its unknowns: `X − R(q)·(a + a′, b + b′, d) = 0`.  Three rows over the
+    /// hidden point's three Params, so net nothing.  Intrinsic, minted by `Sketch::lift_point`.
+    Lift,
+    /// The same over a *stated* view, whose basis is constants: `X − (o + a′·u + b′·v) = 0`.
+    /// Which twin a lift is follows the view's `att` alone, never its params' fixed flags.
+    LiftFixed,
     /// The **gauges** and the **orientation predicates** (spec §9.2, §9.6; issue #47, item 5):
     /// statements written as every other constraint is — an operator, its operands, a class, a
     /// placement — and settled through the same table, but **applied by the elaborator rather
@@ -122,7 +132,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 37] = [
+pub const ALL_KINDS: [CKind; 40] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -160,6 +170,9 @@ pub const ALL_KINDS: [CKind; 37] = [
     CKind::Project,
     CKind::CoordinateU,
     CKind::CoordinateV,
+    CKind::QuatUnit,
+    CKind::Lift,
+    CKind::LiftFixed,
 ];
 
 /// `along:` says which axis a run or a rise is measured on.  It is the one selector that fills no
@@ -557,6 +570,9 @@ impl CKind {
             CKind::Project => "Project",
             CKind::CoordinateU => "CoordinateU",
             CKind::CoordinateV => "CoordinateV",
+            CKind::QuatUnit => "QuatUnit",
+            CKind::Lift => "Lift",
+            CKind::LiftFixed => "LiftFixed",
             CKind::Ground => "Ground",
             CKind::Fix => "Fix",
             CKind::Ccw => "Ccw",
@@ -654,6 +670,11 @@ impl CKind {
             CKind::CoordinateU | CKind::CoordinateV => &[("p", S::Point), ("frame", S::Plane), ("d", S::Length)],
             CKind::FrameUnit => &[("frame", S::Plane)],
             CKind::FrameAlign => &[("frame", S::Plane), ("r", S::Param)],
+            CKind::QuatUnit => &[("plane", S::Plane)],
+            // the view point and its view: the hidden point is the lift's own, found by the
+            // point (`Sketch::lift_of`), and the plane is a real slot so a drag part, a
+            // deletion and the topology key follow it
+            CKind::Lift | CKind::LiftFixed => &[("p", S::Point), ("plane", S::Plane)],
             // the two planes are real slots — so the drag part, the topology key, the graft
             // and a deletion follow them — and inferred ones, so nobody writes them
             CKind::Project => {
@@ -760,7 +781,12 @@ impl CKind {
             CKind::Fix => ("fix", Prefix),
             CKind::Ccw => ("ccw", Call),
             CKind::Cw => ("cw", Call),
-            CKind::DragTarget | CKind::FrameUnit | CKind::FrameAlign => return None,
+            CKind::DragTarget
+            | CKind::FrameUnit
+            | CKind::FrameAlign
+            | CKind::QuatUnit
+            | CKind::Lift
+            | CKind::LiftFixed => return None,
         })
     }
 
@@ -970,6 +996,10 @@ impl CKind {
             | CKind::Project
             | CKind::CoordinateU
             | CKind::CoordinateV
+            // a view's own algebra, and a hidden point tied to the point it lifts: no contact
+            | CKind::QuatUnit
+            | CKind::Lift
+            | CKind::LiftFixed
             | CKind::Ground
             | CKind::Fix
             | CKind::Ccw
@@ -1047,6 +1077,9 @@ impl CKind {
             CKind::Project => K::Project,
             CKind::CoordinateU => K::CoordinateU,
             CKind::CoordinateV => K::CoordinateV,
+            CKind::QuatUnit => K::QuatUnit,
+            CKind::Lift => K::Lift,
+            CKind::LiftFixed => K::LiftFixed,
             CKind::Ground | CKind::Fix | CKind::Ccw | CKind::Cw => {
                 panic!("{:?} is a gauge: applied by the elaborator, it has no kernel", self)
             }
@@ -1120,6 +1153,9 @@ impl CKind {
             | CKind::FrameUnit
             | CKind::FrameAlign
             | CKind::Project
+            | CKind::QuatUnit
+            | CKind::Lift
+            | CKind::LiftFixed
             | CKind::Ground
             | CKind::Fix
             | CKind::Ccw
@@ -1703,6 +1739,14 @@ impl Constraint {
                     .expect("a projection between parallel planes is refused at the add");
                 vec![da[0], da[1], db[0], db[1]]
             }
+            // the in-plane part of the solved view's origin, a constant of its mint
+            CKind::Lift => sk.planes[self.args[1].ent().i()].att.as_ref().expect("a solved view")
+                .ab.to_vec(),
+            // the stated basis: u, v, o
+            CKind::LiftFixed => {
+                let b = sk.basis(self.args[1].ent().i());
+                [b.u, b.v, b.o].concat()
+            }
             _ => Vec::new(),
         }
     }
@@ -1875,6 +1919,21 @@ impl Constraint {
                     [sk.point_params(f.origin as usize).to_vec(), vec![f.c, f.s]].concat()
                 };
                 [pt(0), pt(1), datum(2), datum(3)].concat()
+            }
+            CKind::QuatUnit => sk.planes[e(0).i()].att.as_ref().expect("a solved view").q.to_vec(),
+            // the hidden point, the view point, its datum's origin and rotor — and, over a
+            // solved view, its quaternion and offset: the kernels' 14 and 9 columns
+            CKind::Lift | CKind::LiftFixed => {
+                let l = &sk.lifts[sk.lift_of(e(0).i()).expect("a lift's point has one")];
+                let f = sk.frame_of(e(1));
+                let origin = sk.point_params(f.origin as usize).to_vec();
+                let mut ps = [l.x.to_vec(), pt(0), origin, vec![f.c, f.s]].concat();
+                if self.kind == CKind::Lift {
+                    let a = sk.planes[e(1).i()].att.as_ref().expect("a solved view");
+                    ps.extend(a.q);
+                    ps.push(a.d);
+                }
+                ps
             }
             CKind::Ground | CKind::Fix | CKind::Ccw | CKind::Cw => {
                 unreachable!("{:?} is a gauge and is never in a sketch", self.kind)

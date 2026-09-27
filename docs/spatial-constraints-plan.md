@@ -209,6 +209,28 @@ closed-form fixtures in a new `tests/spatial.rs`:
 - the distance between two skew lines against its closed form;
 - an unconstrained free view reporting exactly 4 DOF.
 
+### P1a — the attitude and the lift (done)
+
+- `PlaneE::att: Option<Att { q, d, ab, seat }>`, minted by `Sketch::free_attitude(i)` with the
+  intrinsic `QuatUnit` row; `fix_attitude(i, bool)` is the params' fixed flags and
+  `restore_attitude` is what JSON and the graft use. `q`'s `Param::scale` is the farthest the
+  view's content (its origin's in-plane part, its offset, its member points) stands from the
+  point it turns about, never less than the datum's chord. `d` is a length (scale 1).
+- `Sketch::basis(i)` reads the stored basis while `(q, d)` hold the numbers they were minted at
+  (`Att::seat`, compared bitwise), and otherwise `R(q/|q|)` with `o = R·(a, b, d)`. A quaternion
+  read back from a basis does not rebuild it to the bit, and the seat is what keeps freeing a
+  view from moving any number a reader sees.
+- Hidden points are not an entity kind: `Sketch::lifts: Vec<LiftE { point, x }>`, minted by
+  `Sketch::lift_point(p)` once per view point, held by the intrinsic `Lift` (14 columns) or
+  `LiftFixed` (9 columns, the stated basis as constants). Their spec is the view point and its
+  plane, and the hidden point is found by the point, so a spatial relation will name drawn
+  points and read the lifts' columns. Freeing a view turns its `LiftFixed` rows into `Lift`
+  rows. A point on no view has no lift yet; the page lift and the role rule are P2's.
+- JSON writes `"att"` on a solved plane only; the rows and the hidden points are re-minted and
+  never written. The graft carries both, and a drag part maps their params.
+- Deferred to P1b: the spatial relation kernels and their `tests/spatial.rs` fixtures (the
+  tetrahedron, the skew lines).
+
 ## P2 — The language
 
 The plane clauses, inferred cross-view semantics, the word table, `sphere`, the diagnostics,

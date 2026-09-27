@@ -142,7 +142,7 @@ impl Sketch {
         name: &str,
     ) -> usize {
         let frame = self.datum(origin, toward, name);
-        self.planes.push(PlaneE { frame, basis });
+        self.planes.push(PlaneE { frame, basis, att: None });
         let pi = self.planes.len() - 1;
         self.slave(EntRef::plane(pi));
         pi
@@ -151,20 +151,40 @@ impl Sketch {
     /// Plane `i`'s attitude in space.  The one reader: every consumer outside the model asks
     /// here and never reads the field, so an attitude that comes to be solved for rather than
     /// stated changes this function and no caller (`docs/spatial-constraints-plan.md`).
+    ///
+    /// A **solved** view (`att`) is read off its unknowns: `u = R(q)·e₁`, `v = R(q)·e₂` and
+    /// `o = R(q)·(a, b, d)`, with `R` the rotation of `q / |q|` — so a `q` a solve has not yet
+    /// brought back to the unit sphere still reads as an orthonormal basis.  While the unknowns
+    /// hold exactly the numbers they were minted at (`Att::seat`) the stored basis is the answer,
+    /// which is what makes freeing a view move nothing.
     pub fn basis(&self, i: usize) -> crate::plane::Basis {
-        self.planes[i].basis
+        let p = &self.planes[i];
+        let Some(a) = &p.att else { return p.basis };
+        let now = self.att_values(a);
+        if now.iter().zip(&a.seat).all(|(x, y)| x.to_bits() == y.to_bits()) {
+            return p.basis;
+        }
+        let q = [now[0], now[1], now[2], now[3]];
+        match crate::plane::quat_rotate(q, [a.ab[0], a.ab[1], now[4]]) {
+            Some(o) => crate::plane::from_quat(q, o).unwrap_or(p.basis),
+            // a quaternion of no length names no attitude: the last one stated stands
+            None => p.basis,
+        }
     }
 
     /// Stand plane `i`'s origin at `o`, its directions untouched — the one writer after
-    /// elaboration built the plane, which is what `against` and a derived offset do.
+    /// elaboration built the plane, which is what `against` and a derived offset do.  A solved
+    /// view is re-seated on the new basis, so its unknowns say the same thing.
     pub fn set_plane_origin(&mut self, i: usize, o: [f64; 3]) {
         self.planes[i].basis.o = o;
+        self.seat_attitude(i);
     }
 
     /// Replace plane `i`'s whole stated attitude — for a caller that holds a sketch and turns
     /// its views in space (the tests that move a part rigidly), never for a solve.
     pub fn set_basis(&mut self, i: usize, b: crate::plane::Basis) {
         self.planes[i].basis = b;
+        self.seat_attitude(i);
     }
 
     /// The rotor's two params, seeded from the chord — the half of `frame` a plane shares.

@@ -43,6 +43,21 @@ fn all_constraints(seed: u32) -> Sketch {
     let pb = sk.plane(po2, pt2, gcs_core::plane::Basis::page().fold(0.7), "pb");
     sk.set_plane(p, Some(pa));
     sk.set_plane(q, Some(pb));
+    // a solved view, turned and stood off, with its quaternion knocked off the unit sphere and
+    // its offset moved — so the lift is checked where a solve passes, not only where it rests —
+    // and a hidden point on it and on a stated view
+    let (po3, pt3) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    let pc = sk.plane(po3, pt3, gcs_core::plane::Basis::page().fold(-0.4).offset(1.5), "pc");
+    sk.free_attitude(pc);
+    let att = sk.planes[pc].att.clone().unwrap();
+    for &k in att.q.iter().chain([&att.d]) {
+        sk.params[k as usize].value = rng.uniform(-1.0, 1.0);
+    }
+    let (lc, lq) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    sk.set_plane(lc, Some(pc));
+    sk.set_plane(lq, Some(pb));
+    sk.lift_point(lc).unwrap();
+    sk.lift_point(lq).unwrap();
 
     let (pe, qe) = (EntRef::point(p), EntRef::point(q));
     let (le1, le2) = (EntRef::line(l1), EntRef::line(l2));
@@ -118,6 +133,9 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::frame_unit(EntRef::plane(fr)),
         Constraint::frame_align(&sk, EntRef::plane(fr)),
         Constraint::project(&sk, pe, qe).expect("two images on two planes that fold"),
+        Constraint::new(CKind::QuatUnit, vec![e(EntRef::plane(pc))]),
+        Constraint::new(CKind::Lift, vec![e(EntRef::point(lc)), e(EntRef::plane(pc))]),
+        Constraint::new(CKind::LiftFixed, vec![e(EntRef::point(lq)), e(EntRef::plane(pb))]),
         // every dimension again with its number written in terms of a free variable, which is
         // an unknown of the sketch rather than a constant — one more column, and (m, c) where
         // the number was.  A different name each time, so no two of them are tied together, and

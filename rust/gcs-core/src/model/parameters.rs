@@ -40,6 +40,18 @@ impl Sketch {
                 lengths.push(f.param);
             }
         }
+        // a solved view's offset and a hidden point's coordinates are lengths no entity owns; the
+        // view's in-plane constants convert with them, and a moved offset leaves the seat, so
+        // the view is read off its (converted) unknowns from here on
+        for p in self.planes.iter_mut() {
+            if let Some(a) = p.att.as_mut() {
+                lengths.push(a.d);
+                a.ab = a.ab.map(|x| x * k);
+            }
+        }
+        for l in &self.lifts {
+            lengths.extend(l.x);
+        }
         lengths.sort_unstable();
         lengths.dedup();
         for i in lengths {

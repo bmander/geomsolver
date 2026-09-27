@@ -35,8 +35,8 @@ pub enum EntKind {
     /// which is what a plain datum is.
     /// A point that says it is `in` the plane is an image of something on that plane, and
     /// `Project` between two such points is the one equation two images of one point share.
-    /// Nothing about the attitude is ever solved for — it is document data, like a spline's
-    /// knots — which is what keeps the whole engine planar.
+    /// A stated attitude is document data, like a spline's knots; only a view asked to be
+    /// solved (`Sketch::free_attitude`, which mints `PlaneE::att`) has unknowns in space.
     Plane,
     /// A curve written in the language: `C(u)` as an expression over the geometry it is drawn
     /// from.  Unlike every other kind it holds no coordinates of its own — it *is* the two
@@ -402,4 +402,39 @@ pub struct FrameE {
 pub struct PlaneE {
     pub frame: FrameE,
     pub(in crate::model) basis: crate::plane::Basis,
+    /// The attitude as **unknowns**, where the view is solved rather than stated — `None` for
+    /// every plane a document states, which is every plane that elaborates today, so no
+    /// parameter is minted and nothing compiles differently (`Sketch::free_attitude`).
+    pub att: Option<Att>,
+}
+
+/// A view's attitude and normal offset as solver unknowns (`docs/spatial-constraints-plan.md`).
+///
+/// `q` is a quaternion (four Params, held to the unit sphere by the intrinsic `quat_unit` row)
+/// and `d` the offset along the view's normal (one Param, a length); the view's origin stands at
+/// `o = R(q)·(a, b, d)`, where `ab` are **constants** carrying the in-plane part of the origin
+/// the plane was minted at — in-plane translation is already the datum's own 2D freedom, so it
+/// is not a second unknown here.  Kept out of `entity_params`, `fields` and `scalar_names`: a
+/// traced tape's width and a report's table are the same whether or not a view is solved.
+#[derive(Clone, Debug)]
+pub struct Att {
+    pub q: [u32; 4],
+    pub d: u32,
+    pub ab: [f64; 2],
+    /// The values of `(q, d)` the stored basis is exact at.  A quaternion read back from a basis
+    /// does not rebuild it to the bit — `cos 45°` squared is not a half — so `Sketch::basis`
+    /// answers with the stored basis while the unknowns still hold exactly these numbers, and
+    /// freeing a view moves nothing any reader sees until a solve moves the view.
+    pub(in crate::model) seat: [f64; 5],
+}
+
+/// A **hidden point in space**: the lift of one view point, held to it by an intrinsic `lift`
+/// row — three Params and three rows, so it adds no freedom.  What a spatial relation between
+/// two views will read (P1b), so its kernel sees three coordinates and never a view's attitude.
+/// Not an entity: nothing names it, draws it, picks it or saves it; it is minted on request
+/// (`Sketch::lift_point`), once per view point, and re-minted rather than stored.
+#[derive(Clone, Debug)]
+pub struct LiftE {
+    pub point: u32,
+    pub x: [u32; 3],
 }
