@@ -499,3 +499,219 @@ two: Wing(front)
     assert_eq!(names.len(), 2, "{names:?}");
     assert_eq!(e.sketch.constraints.iter().filter(|c| c.kind == CKind::Hinge).count(), 2);
 }
+
+/* -- P2b: the words across views ----------------------------------------------------------- */
+
+/// The gate, written in words: the shaft angle and the offset are `angle` and `distance` between
+/// two axes drawn in different views, and so are relations in space.
+const AXES_IN_WORDS: &str = "\
+gax angle(90deg) pax
+gax distance(17.5) pax
+";
+
+#[test]
+fn the_gate_in_words_solves_the_fold() {
+    let e = read(&format!("{AXES}{AXES_IN_WORDS}"));
+    let mut sk = e.sketch.clone();
+    let kinds: Vec<CKind> = sk.user_constraints().iter().map(|c| c.kind).collect();
+    assert!(kinds.contains(&CKind::Angle3) && kinds.contains(&CKind::LineLine3), "{kinds:?}");
+    let r = solve(&mut sk, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
+    let ((a, b), (c, dd)) = (ends(&sk, line(&e, "gax")), ends(&sk, line(&e, "pax")));
+    let (e1, e2) = (sub(b, a), sub(dd, c));
+    assert!((dot(e1, e2) / (norm(e1) * norm(e2))).abs() < 1e-9);
+    let m = cross(e1, e2);
+    assert!((dot(m, sub(c, a)).abs() / norm(m) - 17.5).abs() < 1e-9);
+    // the same solve the Rust API's statements (P2a's gate) come to, point for point in space
+    let (ge, mut gk) = gate();
+    assert!(solve(&mut gk, SolveOpts::default()).success);
+    let (gc, gd) = ends(&gk, line(&ge, "pax"));
+    for (x, y) in [(c, gc), (dd, gd)] {
+        assert!(norm(sub(x, y)) < 1e-9, "{x:?} against {y:?}");
+    }
+    // and the statements round-trip through JSON as the kinds they settled to
+    let back = io::loads(&io::dumps(&sk, None)).expect("loads");
+    let kinds: Vec<CKind> = back.user_constraints().iter().map(|c| c.kind).collect();
+    assert!(kinds.contains(&CKind::Angle3) && kinds.contains(&CKind::LineLine3), "{kinds:?}");
+    assert_eq!(io::dumps(&back, None), io::dumps(&sk, None));
+    // and lifted to a program they are spelled in words, and read back in space
+    let lifted = gcs_core::program::to_program(&sk);
+    let text = lifted.text().to_string();
+    assert!(text.contains("angle(90") && text.contains("distance(17.5)"), "{text}");
+    let again = read(&text);
+    let kinds: Vec<CKind> = again.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    assert!(kinds.contains(&CKind::Angle3) && kinds.contains(&CKind::LineLine3), "{kinds:?}\n{text}");
+}
+
+/// Two stated views, square to each other, with a point, a line and a circle drawn in each.
+const TWO_VIEWS: &str = "\
+unit mm
+point o hint(x: 0, y: 0)
+point t hint(x: 40, y: 0)
+plane front(origin: o, toward: t)
+point o2 hint(x: 120, y: 0)
+point t2 hint(x: 160, y: 0)
+plane side(origin: o2, toward: t2, from: front, fold: 90deg)
+point a hint(x: 10, y: 20) in front
+point b hint(x: 130, y: 5) in side
+line la(hint(x: 0, y: 0), hint(x: 30, y: 10)) in front
+line lb(hint(x: 125, y: 3), hint(x: 150, y: 20)) in side
+circle cb(hint(x: 140, y: 10)) hint(r: 8) in side
+";
+
+/// The kind one statement over `TWO_VIEWS` settles to.
+fn settles(stmt: &str) -> CKind {
+    let e = read(&format!("{TWO_VIEWS}{stmt}\n"));
+    let cs = e.sketch.user_constraints();
+    assert_eq!(cs.len(), 1, "{stmt}: {:?}", cs.iter().map(|c| c.kind).collect::<Vec<_>>());
+    cs[0].kind
+}
+
+/// Every word that has a meaning in space means it across views, and the same word within one
+/// view is the 2D relation it always was.
+#[test]
+fn each_word_across_views_is_the_relation_in_space() {
+    for (stmt, kind) in [
+        ("a coincident b", CKind::Coincident3),
+        ("a distance(30) b", CKind::Distance3),
+        ("a distance(5) lb", CKind::PointLine3),
+        ("la distance(5) lb", CKind::LineLine3),
+        ("la angle(60deg) lb", CKind::Angle3),
+        ("la perpendicular lb", CKind::Perpendicular3),
+        ("la parallel lb", CKind::Parallel3),
+        ("la equal lb", CKind::EqualLength3),
+        ("a on lb", CKind::PointOnLine3),
+        ("a on cb", CKind::PointOnCircle3Fixed),
+        // a plane is a place in space whatever view the point is drawn in
+        ("a on side", CKind::PointOnPlaneFixed),
+        ("la on side", CKind::LineOnPlaneFixed),
+        ("a distance(5, along: n) side", CKind::PointPlaneDistanceFixed),
+        // within one view, the page's words
+        ("a distance(30) la.p1", CKind::Distance),
+        ("b on lb", CKind::PointOnLine),
+        ("la angle(60deg) la", CKind::Angle),
+    ] {
+        assert_eq!(settles(stmt), kind, "{stmt}");
+    }
+}
+
+/// A statement in space reads back as the word it was written with.
+#[test]
+fn a_relation_in_space_is_described_by_its_word() {
+    let e = read(&format!("{TWO_VIEWS}la distance(5) lb\na distance(3, along: n) side\n"));
+    let said: Vec<String> = e.sketch.user_constraints().iter()
+        .map(|c| io::describe_with(c, &|r| e.map.name_of(r).cloned())).collect();
+    assert_eq!(said, vec!["la distance(5) lb".to_string(), "a distance(3, along: n) side".to_string()]);
+}
+
+/// A plane's own datum points are read by their role: among themselves they are sheet layout, and
+/// beside a view's points they are that view's — never a relation in space.
+#[test]
+fn datum_points_are_read_by_their_role() {
+    // layout: two views' origins, on the page
+    assert_eq!(settles("o distance(120) o2"), CKind::Distance);
+    assert_eq!(settles("o distance(120, along: x) o2"), CKind::HorizontalDistance);
+    // an ordinate from the datum a view is drawn from, in that view
+    assert_eq!(settles("o2 distance(15) b"), CKind::Distance);
+    assert_eq!(settles("o distance(10, along: x) a"), CKind::HorizontalDistance);
+}
+
+fn refused_as(stmt: &str, code: &str, needle: &str, at: &str) {
+    refused(&format!("{TWO_VIEWS}{stmt}\n"), code, needle, at);
+}
+
+/// A word with no meaning in space, used across views, is refused and says so; a selector that
+/// names a page direction says nothing in space and is refused at its key.
+#[test]
+fn a_word_with_no_meaning_in_space_is_refused_across_views() {
+    refused_as("a horizontal b", "E062", "no meaning in space", "a horizontal b");
+    refused_as("a distance(5, along: x) b", "E062", "no meaning in space", "a distance(5, along: x) b");
+    refused_as("la tangent cb", "E062", "no meaning in space", "la tangent cb");
+    refused_as("a midpoint lb", "E062", "no meaning in space", "a midpoint lb");
+    refused_as("la angle(60deg, sense: cw) lb", "E040", "unsigned", "sense");
+    refused_as("a distance(5, side: left) lb", "E040", "magnitude", "side");
+    // a point on the page has no place in space, nor a datum point read beside another view
+    refused_as("point pg hint(x: 1, y: 1)\npg distance(5) b", "E062", "on the page", "pg distance(5) b");
+    refused_as("o2 distance(5) a", "E062", "on the page", "o2 distance(5) a");
+    // a point on its own view, and a sphere against a circle, which is still to come
+    refused_as("b on side", "E061", "every point of a view is on it", "b on side");
+}
+
+/// The gate's view points left ungrounded: a solved view's place on the sheet is held silently,
+/// so the ledger is still 0 and counts no freedom of where the picture sits.
+#[test]
+fn a_solved_views_page_placement_is_held_silently() {
+    let bare = AXES.replace("ground o\n", "").replace("ground t\n", "")
+        .replace("ground o2\n", "").replace("ground t2\n", "");
+    let e = read(&format!("{bare}{AXES_IN_WORDS}"));
+    let mut sk = e.sketch.clone();
+    assert_eq!(sk.page_held.len(), 4, "o, t, o2 and t2");
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
+    // the hold is the gauge's, not a `ground`: nothing is written back, and nothing is lifted
+    let ed = edit::commit_seeds(&e, &sk, &e.program);
+    assert!(!ed.text.contains("ground o"), "{}", ed.text);
+    // a free view alone is its attitude and its offset, and nothing of where it is drawn
+    let free = "point o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\n\
+                plane q(origin: o, toward: t, attitude: free, offset: free)\n";
+    let mut sk = read(free).sketch;
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 4, "{}", gcs_core::diagnose::summary(&d));
+    // until the document says something about the datum points: then they are its own
+    let mut sk = read(&format!("{free}o distance(40) t\n")).sketch;
+    assert!(sk.page_held.is_empty());
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 4 + 3, "{}", gcs_core::diagnose::summary(&d));
+}
+
+/// A stated view a solved one reads is given held unknowns, and its unit row is no equation the
+/// ledger counts: the gate reads as many equations as its rank.
+#[test]
+fn a_held_views_unit_row_is_not_counted() {
+    let e = read(&format!("{AXES}{AXES_IN_WORDS}"));
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.n_equations, d.structural_rank, "{}", gcs_core::diagnose::summary(&d));
+    assert_eq!(d.n_equations, d.n_params, "{}", gcs_core::diagnose::summary(&d));
+}
+
+/// A sphere about a centre drawn in one view: a point of another view on it, its radius, and its
+/// tangency to a line and to a second sphere, each in space.
+#[test]
+fn a_sphere_takes_its_words_in_space() {
+    let with = |stmt: &str| format!(
+        "{TWO_VIEWS}sphere s(hint(x: 140, y: 10)) hint(r: 12) in side\n\
+         sphere s2(hint(x: 10, y: 40)) hint(r: 5) in front\n{stmt}\n");
+    let kind = |stmt: &str| read(&with(stmt)).sketch.user_constraints()[0].kind;
+    assert_eq!(kind("a on s"), CKind::SphereOn);
+    assert_eq!(kind("radius(12) s"), CKind::SphereRadius);
+    assert_eq!(kind("s tangent la"), CKind::SphereTangentLine);
+    assert_eq!(kind("s tangent s2"), CKind::SphereTangentSphere);
+    refused(&with("s tangent cb"), "E040", "a sphere is tangent to a line or to another sphere", "tangent");
+    // and solved: the centre held, a point of the other view on it, and a line tangent to it
+    let e = read(&with("ground s.center\na on s\nground la.p1\nground la.p2\ns tangent la"));
+    let mut sk = e.sketch.clone();
+    let r = solve(&mut sk, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let s = e.map.ent_named("s").unwrap();
+    let c = sk.world_point(sk.round_center(s));
+    let rad = sk.radius_value(s);
+    let pa = sk.world_point(e.map.ent_named("a").unwrap().i());
+    assert!((norm(sub(pa, c)) - rad).abs() < 1e-9, "{} against {rad}", norm(sub(pa, c)));
+    let (l1, l2) = ends(&sk, line(&e, "la"));
+    let dl = sub(l2, l1);
+    let gap = norm(cross(sub(c, l1), dl)) / norm(dl);
+    assert!((gap - rad).abs() < 1e-9, "the line touches the sphere: {gap} against {rad}");
+    // on the sphere is one equation: a point of the other view keeps one of its two freedoms
+    let dof = |src: String| {
+        let mut sk = read(&src).sketch;
+        assert!(solve(&mut sk, SolveOpts::default()).success);
+        diagnose(&mut sk, DiagnoseOptions::default()).dof
+    };
+    let tied = "ground s.center\nground la.p1\nground la.p2\ns tangent la";
+    assert_eq!(dof(with(tied)) - dof(with(&format!("{tied}\na on s"))), 1);
+}

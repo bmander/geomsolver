@@ -320,6 +320,59 @@ without naming an intrinsic row.
   page-placement gauge, the primer's worked example, the FFI's `gcs_plane_frame3`, and lifting a
   solved view's clauses in `to_program`.
 
+### P2b — the words, the role rule, the sphere and the page gauge (done)
+
+- **Dispatch.** `program/reading.rs::in_space`, asked by `constrain` once the arguments resolve:
+  the points of each entity operand (a point, a line's ends, a circle's or arc's centre and
+  ends) are read in their views by the **role rule** (`reading_views`): a point that is no
+  plane's datum reads where its membership puts it; a datum point reads in a view another point
+  of the relation is drawn in when it is that view's datum, is on the page when the relation is
+  among datum points only (layout), and otherwise reads by membership. One view (or the page)
+  keeps the 2D kind. Across views: `coincident` → `Coincident3`, `distance` → `Distance3` /
+  `PointLine3` / `LineLine3` (side inferred), `angle` → `Angle3`, `perpendicular` / `parallel`
+  → `*3`, `equal` between lines → `EqualLength3` (new), `on` a line → `PointOnLine3` (new: two
+  rows across the line, `parallel3`'s refreshed constants, since the magnitude has no gradient
+  where it vanishes), `on` a circle → `PointOnCircle3`. `side:` and `sense:` are E040 at the
+  key; every other kind across views is **E062**, as is a relation across views naming a page
+  point or a datum point read in a view it is not drawn in. Radii (`radius`, `equal` circles, a
+  ring's width), `along: u`/`v` (a datum ordinate on the sheet, which `paired_references.sv` and
+  the V-twin frame use between views) and `project` are view-free.
+- **Words in space regardless of views**, from `infix_op`: `p on P` (`PointOnPlane`), `l on P`
+  (`LineOnPlane` / `…Fixed`, new, two rows), `p distance(d, along: n) P` (`PointPlaneDistance` /
+  `…Fixed`, new; `n` joins `ALONG`; the stated-plane form is `point_on_plane_fixed` with d folded
+  into the offset, and its free twin carries the plane's normal and offset beside (m, c)). A
+  view's own point or line on it is refused (E061: identically zero).
+- **Sphere.** `EntKind::Sphere` (last in the enum; FFI kind id 16), `SphereE { center, radius }`,
+  `sphere s(center: p) hint(r: …)`, built after planes, in `primitives()`, JSON (`"spheres"`, only
+  when there is one) and the graft. No sheet glyph (`svg`, `drawable`, `pick`); `scene3d` draws
+  three great circles about the centre's lift. Words: `radius(r) s` (`SphereRadius`, the radius
+  kernel), `p on s` (`SphereOn`, `sphere_on`), `s tangent l` (`SphereTangentLine`, `point_line3`'s
+  free twin at (m, c) = (1, 0)), `s tangent s2` (`SphereTangentSphere`, `sphere_sphere`,
+  `external` inferred). A sphere against a circle is refused with a message (P3). Test fixtures
+  that named things `sphere` were renamed (`globe`, `ball`); no corpus document did.
+- **Page gauge.** `reading::hold_page_placement` (after the relations) fixes the origin and toward
+  of every view with an `att` when every view they place has one and no non-intrinsic statement
+  names them (as an operand, an end or a centre) and they are not already held; they are recorded
+  in `Sketch::page_held`, which `edit::held_refs` skips so no `ground` is written back.
+  `to_program` still grounds them, since it lifts every view as stated. A free view alone reports
+  DOF 4 (`q.attitude`, `q.offset`), and 7 once `o distance(40) t` names its datum.
+- **Equations = rank.** A held view's `quat_unit` row whose columns are all fixed compiles as not
+  hard (`System::new`), so no count, rank or conflict search sees it: the gate reads 27 params, 27
+  equations, rank 27.
+- **FFI.** `gcs_plane_frame3` (u, v, o), and `Plane.frame3` in the binding. `to_program` still
+  lifts a solved view as a stated basis (P2a); lifting its clauses (`fold: beta` with its solved
+  seed) is deferred — the lifted text is a stated drawing of the same solved pose.
+- **Kernels** 76 (nine new), kinds 65. **Tests:** `spatial_lang.rs` — the hypoid axes in words
+  (`gax angle(90deg) pax`, `gax distance(17.5) pax`) solve to DOF 0, agree with P2a's Rust-API
+  gate point for point, round-trip through JSON and through a lifted program; each word across
+  views, within one view, and in space on a plane; the role rule; the refusals; the page gauge
+  (DOF 0 with no datum grounded; a free view 4; 7 once named); equations = rank; the sphere's four
+  words and a solve against closed forms. `cross_view_audit.rs` asserts the corpus's 215
+  cross-membership relations settle to 2D kinds and read in one view or the page, with no E062
+  anywhere. `refusals.rs` and `jacobians.rs` rows for every new kernel and twin.
+- **Deferred to P3:** sphere–circle tangency; a `midpoint` or `symmetry` in space; a datum point
+  read in a view it is not drawn in (refused); lifting solved-view clauses.
+
 ## P3 — Circles, spheres, tangency and `through:`
 
 **Exit:** in a hypoid pitch-cone fixture, the pinion cone touches the gear's at M with a common

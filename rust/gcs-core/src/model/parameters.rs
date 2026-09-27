@@ -103,6 +103,7 @@ impl Sketch {
             EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
             EntKind::Point => self.point_params(e.i()).to_vec(),
             EntKind::Circle => vec![self.circles[e.i()].radius],
+            EntKind::Sphere => vec![self.spheres[e.i()].radius],
             EntKind::Arc => vec![self.arcs[e.i()].radius],
             // the rotor `(c, s)` is a unit vector — a direction, and scaling it would only
             // break `frame_unit`.  A frame's one length is `frame_align`'s chord, which is a
@@ -157,6 +158,7 @@ impl Sketch {
         match e.kind {
             EntKind::Circle => self.circles[e.i()].radius as usize,
             EntKind::Arc => self.arcs[e.i()].radius as usize,
+            EntKind::Sphere => self.spheres[e.i()].radius as usize,
             _ => panic!("not a round entity"),
         }
     }
@@ -171,6 +173,11 @@ impl Sketch {
             EntKind::Line => self.line_params(e.i()).to_vec(),
             EntKind::Circle => {
                 let c = &self.circles[e.i()];
+                let p = &self.points[c.center as usize];
+                vec![p.x, p.y, c.radius]
+            }
+            EntKind::Sphere => {
+                let c = &self.spheres[e.i()];
                 let p = &self.points[c.center as usize];
                 vec![p.x, p.y, c.radius]
             }
@@ -230,6 +237,7 @@ impl Sketch {
         match e.kind {
             EntKind::Point => self.point_params(e.i()).to_vec(),
             EntKind::Circle => vec![self.circles[e.i()].radius],
+            EntKind::Sphere => vec![self.spheres[e.i()].radius],
             EntKind::Arc => vec![self.arcs[e.i()].radius],
             EntKind::Plane => {
                 let f = self.frame_of(e);

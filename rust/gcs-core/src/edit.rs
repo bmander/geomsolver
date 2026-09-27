@@ -1578,7 +1578,8 @@ fn gauge_key(r: &syntax::Relation) -> Option<(String, Option<String>)> {
 fn held_refs(sk: &Sketch, ours: &dyn Fn(EntRef) -> bool) -> Vec<(EntRef, Option<&'static str>)> {
     let mut out = Vec::new();
     for i in 0..sk.points.len() {
-        if sk.point_fixed(i) && ours(EntRef::point(i)) {
+        // a datum point the page-placement gauge holds was never grounded by anybody
+        if sk.point_fixed(i) && ours(EntRef::point(i)) && !sk.page_held.contains(&(i as u32)) {
             out.push((EntRef::point(i), None));
         }
     }

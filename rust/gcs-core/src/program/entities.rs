@@ -247,6 +247,11 @@ pub(super) fn build(
             let r = if wrote(0) { seed(0) } else { UNSEEDED_RADIUS };
             sk.circle(kids[0], r, &show)
         }
+        // a circle's two fields, and no view to be drawn in: only its centre is anybody's
+        EntKind::Sphere => {
+            let r = if wrote(0) { seed(0) } else { UNSEEDED_RADIUS };
+            sk.sphere(kids[0], r, &show)
+        }
         EntKind::Arc => {
             // `arc` adds the two intrinsic `PointOnCircle`s here and nowhere else, and computes a
             // radius from the geometry that a *written* seed then replaces
@@ -494,6 +499,7 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Line => sk.lines[e.i()].class = c,
         EntKind::Curve => sk.curves[e.i()].class = c,
         EntKind::Circle => sk.circles[e.i()].class = c,
+        EntKind::Sphere => sk.spheres[e.i()].class = c,
         EntKind::Arc => sk.arcs[e.i()].class = c,
         EntKind::Spline => sk.splines[e.i()].class = c,
         EntKind::Plane => sk.planes[e.i()].frame.class = c,

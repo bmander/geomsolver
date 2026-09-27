@@ -91,9 +91,20 @@ pub enum K {
     HingeFree,
     HingeAlong,
     ProjectFree,
+    // P2b: a point on a line in space, true lengths equal, a point's signed distance along a
+    // plane's normal (its stated-plane form is `point_on_plane_fixed`), and the sphere's own two
+    PointOnLine3,
+    EqualLength3,
+    PointPlaneDistance,
+    PointPlaneDistanceFree,
+    PointPlaneDistanceFixedFree,
+    SphereOn,
+    SphereSphere,
+    LineOnPlane,
+    LineOnPlaneFixed,
 }
 
-pub const N_KERNELS: usize = 67;
+pub const N_KERNELS: usize = 76;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2571,6 +2582,248 @@ fn project_free_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
+/* -- P2b: the rest of the spatial words, and the sphere ----------------------------------------
+ *
+ * A point on a line in space, two lines of equal true length, a point's signed distance from a
+ * plane (`distance(along: n)`), and a sphere's two relations of its own: a point on it and two
+ * spheres touching.  A sphere's radius and its tangency to a line reuse `radius` and
+ * `point_line3_free` (the line's distance from the centre, stated as the radius column). */
+
+/// Columns of `point_on_line3`: (X, A, B), K = (e₁, e₂) — two unit vectors across the line as it
+/// stood when the system was compiled or last refreshed (`parallel3`'s device).  "On the line"
+/// is two equations, and the magnitude `|w × e|/|e|` has no gradient where it holds, so the two
+/// are stated as components: `((X − A) × (B − A))·e_k / |B − A| = 0`.  Degree 1.
+fn point_on_line3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let (w, e) = (sub3(at3(v, o), at3(v, o + 3)), sub3(at3(v, o + 6), at3(v, o + 3)));
+        let le = norm3(e).max(MIN_LINE_LEN);
+        let c = cross3(w, e);
+        for t in 0..2 {
+            r[2 * i + t] = dot3(c, at3(k, 6 * i + 3 * t)) / le;
+        }
+    }
+}
+
+fn point_on_line3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let (w, e) = (sub3(at3(v, o), at3(v, o + 3)), sub3(at3(v, o + 6), at3(v, o + 3)));
+        let le = norm3(e).max(MIN_LINE_LEN);
+        let c = cross3(w, e);
+        for t in 0..2 {
+            let kk = at3(k, 6 * i + 3 * t);
+            let r = dot3(c, kk) / le;
+            // N = (w × e)·k = w·(e × k) = e·(k × w)
+            let (gw, ge) = (cross3(e, kk), cross3(kk, w));
+            let row = &mut j[18 * i + 9 * t..18 * i + 9 * (t + 1)];
+            for s in 0..3 {
+                let gw = gw[s] / le;
+                let ge = ge[s] / le - r * e[s] / (le * le);
+                row[s] = gw;
+                row[3 + s] = -gw - ge;
+                row[6 + s] = ge;
+            }
+        }
+    }
+}
+
+/// Columns of `equal_length3`: (A, B, C, D).  `|B − A|² − |D − C|²`, the true lengths of two
+/// lines drawn in different views; degree 2, `equal_length`'s form one dimension up.
+fn equal_length3_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        let (a, b) = (sub3(at3(v, o + 3), at3(v, o)), sub3(at3(v, o + 9), at3(v, o + 6)));
+        r[i] = dot3(a, a) - dot3(b, b);
+    }
+}
+
+fn equal_length3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 12 * i;
+        let (a, b) = (sub3(at3(v, o + 3), at3(v, o)), sub3(at3(v, o + 9), at3(v, o + 6)));
+        let row = &mut j[o..o + 12];
+        for s in 0..3 {
+            row[s] = -2.0 * a[s];
+            row[3 + s] = 2.0 * a[s];
+            row[6 + s] = 2.0 * b[s];
+            row[9 + s] = -2.0 * b[s];
+        }
+    }
+}
+
+/// `n(q)·X − d − D` and its gradient in (X, q, d): a hidden point's signed distance along a
+/// solved plane's normal, `point_on_plane` stood off by D.
+fn plane_gap(v: &[f64], row: &mut [f64]) -> f64 {
+    let q = [v[3], v[4], v[5], v[6]];
+    let Some((nv, dq)) = quat_normal(q) else {
+        row[..8].fill(f64::NAN);
+        return f64::NAN;
+    };
+    row[..3].copy_from_slice(&nv);
+    for m in 0..4 {
+        row[3 + m] = (0..3).map(|t| v[t] * dq[t][m]).sum();
+    }
+    row[7] = -1.0;
+    dot3(nv, at3(v, 0)) - v[7]
+}
+
+/// Columns of `point_plane_distance`: (X, qw, qx, qy, qz, d), K = (D).  `distance(along: n)`
+/// over a solved plane: the point stands D along the normal from it.  Degree 1.
+fn point_plane_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 8];
+    for i in 0..n {
+        r[i] = plane_gap(&v[8 * i..], &mut g) - k[i];
+    }
+}
+
+fn point_plane_distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        plane_gap(&v[8 * i..], &mut j[8 * i..8 * i + 8]);
+    }
+}
+
+/// (X, q, d, a), K = (m, c): the same, D = m·a + c.
+fn point_plane_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 8];
+    for i in 0..n {
+        let o = 9 * i;
+        r[i] = plane_gap(&v[o..], &mut g) - free_dim(v, k, i, o + 8).0;
+    }
+}
+
+fn point_plane_distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        plane_gap(&v[o..], &mut j[o..o + 8]);
+        j[o + 8] = -k[2 * i];
+    }
+}
+
+/// Columns of `point_plane_distance_fixed_free`: (X, a), K = (n, h, m, c) — a stated plane's
+/// normal and its origin along it, and the free variable's (m, c).  `n·X − h − (m·a + c)`; the
+/// stated number over a stated plane needs no kernel of its own, being `point_on_plane_fixed`
+/// with D folded into h.
+fn point_plane_distance_fixed_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let (o, kk) = (4 * i, &k[6 * i..6 * i + 6]);
+        r[i] = dot3(at3(kk, 0), at3(v, o)) - kk[3] - (kk[4] * v[o + 3] + kk[5]);
+    }
+}
+
+fn point_plane_distance_fixed_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let kk = &k[6 * i..6 * i + 6];
+        j[4 * i..4 * i + 3].copy_from_slice(&kk[..3]);
+        j[4 * i + 3] = -kk[4];
+    }
+}
+
+/// Columns of `sphere_on`: (X, C, r).  `|X − C| − r`, a point in some view on a sphere about a
+/// centre drawn in another: the magnitude, degree 1, with a unit gradient wherever X is off C.
+fn sphere_on_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        r[i] = norm3(sub3(at3(v, o), at3(v, o + 3))) - v[o + 6];
+    }
+}
+
+fn sphere_on_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        let d = sub3(at3(v, o), at3(v, o + 3));
+        let l = norm3(d);
+        let u = if l > 0.0 { d.map(|t| t / l) } else { [0.0; 3] };
+        for t in 0..3 {
+            j[o + t] = u[t];
+            j[o + 3 + t] = -u[t];
+        }
+        j[o + 6] = -1.0;
+    }
+}
+
+/// Columns of `sphere_sphere`: (C₁, C₂, r₁, r₂), K = (a, b).  `|C₁ − C₂| − (a·r₁ + b·r₂)`: two
+/// spheres touching outside (a = b = 1) or inside (one of them −1, whichever the seed makes
+/// positive), degree 1.
+fn sphere_sphere_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let l = norm3(sub3(at3(v, o), at3(v, o + 3)));
+        r[i] = l - (k[2 * i] * v[o + 6] + k[2 * i + 1] * v[o + 7]);
+    }
+}
+
+fn sphere_sphere_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let d = sub3(at3(v, o), at3(v, o + 3));
+        let l = norm3(d);
+        let u = if l > 0.0 { d.map(|t| t / l) } else { [0.0; 3] };
+        for t in 0..3 {
+            j[o + t] = u[t];
+            j[o + 3 + t] = -u[t];
+        }
+        j[o + 6] = -k[2 * i];
+        j[o + 7] = -k[2 * i + 1];
+    }
+}
+
+
+/// Columns of `line_on_plane`: (A, B, qw, qx, qy, qz, d) — a line's two hidden ends on a solved
+/// plane, `point_on_plane`'s row once for each end.  Degree 1.
+fn line_on_plane_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 11 * i;
+        let q = [v[o + 6], v[o + 7], v[o + 8], v[o + 9]];
+        for t in 0..2 {
+            r[2 * i + t] = quat_normal(q)
+                .map_or(f64::NAN, |(nv, _)| dot3(nv, at3(v, o + 3 * t)) - v[o + 10]);
+        }
+    }
+}
+
+fn line_on_plane_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 11 * i;
+        let q = [v[o + 6], v[o + 7], v[o + 8], v[o + 9]];
+        let rows = &mut j[22 * i..22 * i + 22];
+        let Some((nv, dq)) = quat_normal(q) else {
+            rows.fill(f64::NAN);
+            continue;
+        };
+        rows.fill(0.0);
+        for t in 0..2 {
+            let row = &mut rows[11 * t..11 * (t + 1)];
+            row[3 * t..3 * t + 3].copy_from_slice(&nv);
+            for m in 0..4 {
+                row[6 + m] = (0..3).map(|s| v[o + 3 * t + s] * dq[s][m]).sum();
+            }
+            row[10] = -1.0;
+        }
+    }
+}
+
+/// Columns of `line_on_plane_fixed`: (A, B), K = (n, h) — the same over a stated plane.
+fn line_on_plane_fixed_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let kk = &k[4 * i..];
+        for t in 0..2 {
+            r[2 * i + t] = dot3(at3(kk, 0), at3(v, 6 * i + 3 * t)) - kk[3];
+        }
+    }
+}
+
+fn line_on_plane_fixed_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let rows = &mut j[12 * i..12 * i + 12];
+        rows.fill(0.0);
+        for t in 0..2 {
+            rows[6 * t + 3 * t..6 * t + 3 * t + 3].copy_from_slice(&k[4 * i..4 * i + 3]);
+        }
+    }
+}
+
+
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
     Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
@@ -2639,6 +2892,15 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "hinge_free", n_res: 4, n_par: 9, degree: 0, n_const: 2, res: hinge_free_res, jac: hinge_free_jac, const_jac: None },
     Kernel { name: "hinge_along", n_res: 6, n_par: N_PAR_HINGE_ALONG, degree: 0, n_const: 0, res: hinge_along_res, jac: hinge_along_jac, const_jac: None },
     Kernel { name: "project_free", n_res: 1, n_par: N_PAR_PROJECT_FREE, degree: 1, n_const: 0, res: project_free_res, jac: project_free_jac, const_jac: None },
+    Kernel { name: "point_on_line3", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_line3_res, jac: point_on_line3_jac, const_jac: None },
+    Kernel { name: "equal_length3", n_res: 1, n_par: 12, degree: 2, n_const: 0, res: equal_length3_res, jac: equal_length3_jac, const_jac: None },
+    Kernel { name: "point_plane_distance", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: point_plane_distance_res, jac: point_plane_distance_jac, const_jac: None },
+    Kernel { name: "point_plane_distance_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: point_plane_distance_free_res, jac: point_plane_distance_free_jac, const_jac: None },
+    Kernel { name: "point_plane_distance_fixed_free", n_res: 1, n_par: 4, degree: 1, n_const: 6, res: point_plane_distance_fixed_free_res, jac: point_plane_distance_fixed_free_jac, const_jac: None },
+    Kernel { name: "sphere_on", n_res: 1, n_par: 7, degree: 1, n_const: 0, res: sphere_on_res, jac: sphere_on_jac, const_jac: None },
+    Kernel { name: "sphere_sphere", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: sphere_sphere_res, jac: sphere_sphere_jac, const_jac: None },
+    Kernel { name: "line_on_plane", n_res: 2, n_par: 11, degree: 1, n_const: 0, res: line_on_plane_res, jac: line_on_plane_jac, const_jac: None },
+    Kernel { name: "line_on_plane_fixed", n_res: 2, n_par: 6, degree: 1, n_const: 4, res: line_on_plane_fixed_res, jac: line_on_plane_fixed_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

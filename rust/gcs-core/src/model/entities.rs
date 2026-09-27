@@ -72,6 +72,11 @@ pub enum EntKind {
     Vertex,
     /// A finite directed portion of a spatial seam between named corners.
     Edge,
+    /// **A sphere** (`docs/spatial-constraints-plan.md`, P2b): a centre drawn in some view and a
+    /// radius it owns, like a circle's — but no picture on any sheet, since a sphere seen in a
+    /// view is a circle only square on.  Its relations (`p on s`, `radius`, `tangent`) are in
+    /// space and read its centre's lift.  Last in the enum so every kind's id stays what it was.
+    Sphere,
 }
 
 impl EntKind {
@@ -93,6 +98,7 @@ impl EntKind {
             EntKind::Seam => "seam",
             EntKind::Vertex => "vertex",
             EntKind::Edge => "edge",
+            EntKind::Sphere => "sphere",
         }
     }
 
@@ -114,6 +120,7 @@ impl EntKind {
             "seam" => EntKind::Seam,
             "vertex" => EntKind::Vertex,
             "edge" => EntKind::Edge,
+            "sphere" => EntKind::Sphere,
             _ => return None,
         })
     }
@@ -130,7 +137,7 @@ impl EntKind {
         match self {
             EntKind::Point => &[("x", S), ("y", S)],
             EntKind::Line => &[("p1", C), ("p2", C)],
-            EntKind::Circle => &[("center", C), ("r", S)],
+            EntKind::Circle | EntKind::Sphere => &[("center", C), ("r", S)],
             EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
             EntKind::Spline => &[("ctrl", L)],
             // a plane's attitude is not a field: a Scalar is a number a solve may write back,
@@ -174,6 +181,7 @@ impl EntKind {
             EntKind::Arc => Some((1, 2)),
             EntKind::Point
             | EntKind::Circle
+            | EntKind::Sphere
             | EntKind::Spline
             | EntKind::Plane
             | EntKind::Curve
@@ -197,7 +205,7 @@ impl EntKind {
         Some(match self {
             EntKind::Point => vec![format!("{n}.x"), format!("{n}.y")],
             EntKind::Line => [pt("p1"), pt("p2")].concat(),
-            EntKind::Circle => [pt("center"), vec![format!("{n}.r")]].concat(),
+            EntKind::Circle | EntKind::Sphere => [pt("center"), vec![format!("{n}.r")]].concat(),
             EntKind::Arc => {
                 [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
             }
@@ -227,6 +235,8 @@ impl EntKind {
             | EntKind::Circle
             | EntKind::Arc
             | EntKind::Spline
+            // its centre is a point of whatever view the declaration is in
+            | EntKind::Sphere
             => true,
         }
     }
@@ -247,6 +257,7 @@ impl EntKind {
             | EntKind::Spline
             | EntKind::Curve
             | EntKind::Face
+            | EntKind::Sphere
             | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => None,
         }
     }
@@ -266,7 +277,9 @@ impl EntKind {
             | EntKind::Arc
             | EntKind::Spline
             | EntKind::Plane
-            | EntKind::Curve => false,
+            | EntKind::Curve
+            // solved, owning its radius — a figure of the drawing stratum, not a reading of one
+            | EntKind::Sphere => false,
         }
     }
 
@@ -349,6 +362,15 @@ pub struct LineE {
 
 #[derive(Clone, Debug)]
 pub struct CircleE {
+    pub center: u32,
+    pub radius: u32,
+    pub class: Classes,
+}
+
+/// A sphere: its centre, a drawn point, and its radius, a Param — a circle's fields with no
+/// plane to be drawn in (`EntKind::Sphere`).
+#[derive(Clone, Debug)]
+pub struct SphereE {
     pub center: u32,
     pub radius: u32,
     pub class: Classes,

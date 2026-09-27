@@ -454,6 +454,20 @@ pub unsafe extern "C" fn gcs_plane_basis(h: *mut Sketch, idx: i32, out: *mut f64
     })
 }
 
+/// A plane's whole frame in space: nine doubles, `u`, `v` and then its origin `o` — the solved
+/// one, for a view whose attitude or offset the drawing solves for (P2b), where six were not
+/// enough to say where the view stands.  Returns how many were written.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_plane_frame3(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {
+    guard(-1, move || {
+        let b = sk(h).basis(idx as usize);
+        for (i, x) in b.u.iter().chain(b.v.iter()).chain(b.o.iter()).enumerate() {
+            *out.add(i) = *x;
+        }
+        9
+    })
+}
+
 /// The datum glyph a plane is drawn as, in world coordinates: eight doubles, two segments as
 /// `x1 y1 x2 y2` each — the chord, then the tick.  Laid out by the core for a callout's reason,
 /// so the canvas and the SVG export stroke one figure and not two.
@@ -1080,6 +1094,7 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Seam => 13,
         EntKind::Vertex => 14,
         EntKind::Edge => 15,
+        EntKind::Sphere => 16,
     }
 }
 
@@ -1100,6 +1115,7 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         13 => EntKind::Seam,
         14 => EntKind::Vertex,
         15 => EntKind::Edge,
+        16 => EntKind::Sphere,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)

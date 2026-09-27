@@ -30,6 +30,11 @@ pub enum Code {
     /// a `project` the model refuses: a point on no plane, both on one, or parallel planes
     /// (§6.7) — the core's own words, given a span
     E061,
+    /// a word across views that has no meaning in space (P2b): `horizontal`, a run or a rise, a
+    /// tangency, a midpoint or a symmetry between entities drawn in different views; an ordinate
+    /// `along: u`/`v` of a point drawn in another view; or a relation across views naming a point
+    /// on the page, or a datum point the role rule reads in a view it is not drawn in
+    E062,
     /// a solved view the model cannot hold (§6.7, P2a): a fold taken along a line not drawn in
     /// the view it folds from, a position stated twice (`offset:` or a fold `along` beside
     /// `offset: free` or `through:`), `through:` a point of the plane itself, or a view derived
@@ -86,6 +91,7 @@ impl Code {
             Code::E041 => "E041",
             Code::E060 => "E060",
             Code::E061 => "E061",
+            Code::E062 => "E062",
             Code::E064 => "E064",
             Code::E065 => "E065",
             Code::E066 => "E066",

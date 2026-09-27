@@ -44,10 +44,10 @@ component Sphere(origin: point,size: Length) {
 }
 point shifted hint(x: 0,y: 1)
 ground shifted
-sphere: Sphere(o,size: sqrt(9.25)*1mm)
+globe: Sphere(o,size: sqrt(9.25)*1mm)
 offset: Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
 join_cut: Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
-seam radial(first_envelope,sphere.wall)
+seam radial(first_envelope,globe.wall)
 seam offset_edge(first_envelope,offset.wall)
 seam join_edge(second_envelope,join_cut.wall)
 vertex corner(first: radial,second: offset_edge)

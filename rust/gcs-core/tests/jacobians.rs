@@ -67,6 +67,9 @@ fn all_constraints(seed: u32) -> Sketch {
     sk.set_plane(cpb, Some(pb));
     let kc = sk.circle(cpc, rng.uniform(1.0, 11.0), "kc");
     let kb = sk.circle(cpb, rng.uniform(1.0, 11.0), "kb");
+    // and a sphere about each of those centres (P2b), one in a solved view and one in a stated
+    let sa = EntRef::new(gcs_core::model::EntKind::Sphere, sk.sphere(cpc, rng.uniform(1.0, 11.0), "sa"));
+    let sb = EntRef::new(gcs_core::model::EntKind::Sphere, sk.sphere(cpb, rng.uniform(1.0, 11.0), "sb"));
     let (me1, me2) = (EntRef::line(m1), EntRef::line(m2));
     // a view hinged to the solved one, its quaternion knocked about too, and a line drawn in the
     // solved view for a fold to be taken along (P2a)
@@ -178,6 +181,21 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::PointOnPlane, vec![e(EntRef::point(lc)), e(EntRef::plane(pb))]),
         Constraint::new(CKind::PointOnCircle3, vec![e(qe), e(EntRef::circle(kc))]),
         Constraint::new(CKind::PointOnCircle3, vec![e(pe), e(EntRef::circle(kb))]),
+        // the rest of the words in space (P2b): a point on a line and true lengths, a point's
+        // distance along a plane's normal and a line on a plane — each over a solved plane and a
+        // stated one, `Sketch::add` picking the twin — and the sphere's four
+        Constraint::new(CKind::PointOnLine3, vec![e(qe), e(me1)]),
+        Constraint::two_line(CKind::EqualLength3, me1, me2),
+        Constraint::new(CKind::PointPlaneDistance, vec![e(qe), e(EntRef::plane(pc)), Arg::Num(1.2)]),
+        Constraint::new(CKind::PointPlaneDistance, vec![e(EntRef::point(lc)), e(EntRef::plane(pb)), Arg::Num(-0.8)]),
+        Constraint::new(CKind::LineOnPlane, vec![e(me2), e(EntRef::plane(pc))]),
+        Constraint::new(CKind::LineOnPlane, vec![e(me1), e(EntRef::plane(pb))]),
+        Constraint::new(CKind::SphereOn, vec![e(qe), e(sa)]),
+        Constraint::new(CKind::SphereOn, vec![e(pe), e(sb)]),
+        Constraint::new(CKind::SphereRadius, vec![e(sa), Arg::Num(2.0)]),
+        Constraint::new(CKind::SphereTangentLine, vec![e(sa), e(me2)]),
+        Constraint::new(CKind::SphereTangentSphere, vec![e(sa), e(sb), Arg::Bool(true)]),
+        Constraint::new(CKind::SphereTangentSphere, vec![e(sb), e(sa), Arg::Bool(false)]),
         // the hinges, and a projection over a solved view — its stated partner given held
         // unknowns at the add
         Constraint::new(CKind::Hinge, vec![e(hpe), e(phe), Arg::Num(0.8)]),
@@ -214,6 +232,9 @@ fn all_constraints(seed: u32) -> Sketch {
         },
         fx(CKind::Angle3, vec![e(me1), e(me2)], "t3 + 0.5", 0.9),
         fx(CKind::Hinge, vec![e(hpe), e(phe)], "2 * f3 - 10", 0.4),
+        fx(CKind::PointPlaneDistance, vec![e(qe), e(EntRef::plane(pc))], "n3 + 1", 1.2),
+        fx(CKind::PointPlaneDistance, vec![e(EntRef::point(lc)), e(EntRef::plane(pb))], "-2 * n4", 0.5),
+        fx(CKind::SphereRadius, vec![e(sb)], "rs", 3.0),
     ];
     // the two intrinsic PointOnCircle constraints the arc brought with it stay in the sketch
     sk.constraints.clear();
@@ -306,7 +327,10 @@ fn every_dimension_can_be_written_free() {
         let Some(free) = k.free_kernel() else { continue };
         let (stated, free) = (kernels::kernel(k.kernel()), kernels::kernel(free));
         assert_eq!(free.n_par, stated.n_par + 1, "{k:?}");
-        assert_eq!(free.n_const, 2, "{k:?}");          // the affine map, m and c
+        // the affine map, m and c — and a stated plane's distance keeps the plane's normal and
+        // offset beside it, which its stated form carries in the one constant it folds D into
+        let beside = if k == CKind::PointPlaneDistanceFixed { 4 } else { 0 };
+        assert_eq!(free.n_const, 2 + beside, "{k:?}");
         assert_eq!(free.n_res, stated.n_res, "{k:?}");
         assert_eq!(free.degree, stated.degree, "{k:?}");
     }

@@ -625,6 +625,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
             CKind::VerticalDistance => parens.push("along: y".to_string()),
             CKind::CoordinateU => parens.push("along: u".to_string()),
             CKind::CoordinateV => parens.push("along: v".to_string()),
+            CKind::PointPlaneDistance | CKind::PointPlaneDistanceFixed => {
+                parens.push("along: n".to_string())
+            }
             _ => {}
         }
     }
@@ -633,6 +636,10 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         // an entity slot the core infers — a projection's planes — is never spelled: the
         // source writes two points, and a lifted statement carries what the core filled in
         if sk.is_entity() && kind.infers_arg(i) {
+            continue;
+        }
+        // nor is a skew distance's side: the word is `distance`, and the side is the seed's
+        if kind == CKind::LineLine3 && i == 3 {
             continue;
         }
         // a selector nobody wrote is not written: the empty word is what an omitted `side:` or

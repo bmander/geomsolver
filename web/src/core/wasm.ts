@@ -100,6 +100,7 @@ export interface Abi {
                    uz: number, vx: number, vy: number, vz: number,
                    name: number, nameLen: number): number;
   gcs_plane_basis(h: number, idx: number, out: number): number;
+  gcs_plane_frame3(h: number, idx: number, out: number): number;
   gcs_plane_glyph(h: number, idx: number, unit: number, out: number): number;
   gcs_point_plane(h: number, idx: number): number;
   gcs_point_set_plane(h: number, idx: number, plane: number): number;

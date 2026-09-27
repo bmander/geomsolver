@@ -215,15 +215,15 @@ fix c.r                             line1 tangent(side: -1) circle1
 
 | word | fixity | operands |
 |---|---|---|
-| `on` | infix | a point to a line, circle, arc, spline or curve; between two **solids** it is not a constraint at all but the body rule (1.14) |
-| `distance` | infix | two points (`along: x` / `along: y` for the run and the rise, signed first to second, or `along: right \| left \| up \| down` to say the direction in a word); a point and a line, or two lines (a magnitude — `side: left \| right` pins which side, and without one the seed picks); two concentric circles or arcs (the radial gap); a point and a datum (`along: u` / `along: v` for signed local ordinates) |
+| `on` | infix | a point to a line, circle, arc, spline or curve; a point or a line to a **plane**, and a point to a **sphere**, in space (1.13); between two **solids** it is not a constraint at all but the body rule (1.14) |
+| `distance` | infix | two points (`along: x` / `along: y` for the run and the rise, signed first to second, or `along: right \| left \| up \| down` to say the direction in a word); a point and a line, or two lines (a magnitude — `side: left \| right` pins which side, and without one the seed picks); two concentric circles or arcs (the radial gap); a point and a datum (`along: u` / `along: v` for signed local ordinates, `along: n` for the signed distance along the plane's normal, in space) |
 | `distance` | prefix | a line: the distance between its own ends |
-| `tangent` | infix | a line and a circle or arc (`at: p1` / `p2` for a tangency at that end; `side: left \| right` says which side of the line the centre is); two circles or arcs (`external: true/false`); an arc and a line (`at: start` / `end`); a spline or a curve and a line |
+| `tangent` | infix | a line and a circle or arc (`at: p1` / `p2` for a tangency at that end; `side: left \| right` says which side of the line the centre is); two circles or arcs (`external: true/false`); an arc and a line (`at: start` / `end`); a spline or a curve and a line; a sphere and a line or a sphere, in space (the sphere first) |
 | `equal` | infix | two lines (length), or two circles or arcs (radius) |
 | `curvature` | infix | a spline or a curve and a circle or arc: the circle becomes the osculating circle there. Refused on a traced curve |
 | `horizontal`, `vertical` | prefix / infix | a line, or a pair of points with no line drawn between them |
 | `angle` | infix | two lines; a bare number is degrees, and `sense: cw` turns it the other way |
-| `radius` | prefix | a circle or an arc |
+| `radius` | prefix | a circle, an arc or a sphere |
 | `coincident`, `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines |
@@ -233,6 +233,23 @@ fix c.r                             line1 tangent(side: -1) circle1
 
 One word covers several constraints, told apart by the **kinds of its operands** (`on` is five,
 `distance` six, `tangent` six) or by **fixity** (`horizontal` on a line versus between two points).
+
+**Across views the same word means space** (1.13). When a relation's operands are drawn in
+different views it is the relation between their places in space — no selector says so:
+
+| written across views | means |
+|---|---|
+| `a coincident b` | the same point in space |
+| `a distance(30) b` | the true length between them |
+| `a distance(5) l` / `l1 distance(17.5) l2` | to the infinite line / along the common perpendicular — magnitudes |
+| `a on l`, `a on c` | on the line's infinite extension, on the circle in its own view |
+| `l1 angle(90deg) l2` | the angle between the two directions, **unsigned**, 0–180° |
+| `l1 parallel l2`, `perpendicular`, `equal` | directions, and true lengths |
+
+A word with no meaning in space (`horizontal`, `along: x`, `tangent` between drawn figures,
+`midpoint`, `symmetry`) is **E062** across views; `sense:` and `side:` name a turn and a side on a
+page and are **E040** there. A radius means the same in every view, and `along: u` / `v` is an
+ordinate on a datum as it stands on the sheet, wherever the point is drawn.
 
 **Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end;
 `line tangent circle` is the ordinary one. `a distance(80, along: x) b` is signed from `a` to `b`.
@@ -253,6 +270,7 @@ Every direction in the language is a **word**, and the sign behind it is stated 
 | `l1 angle(30, sense: cw) l2` | 30° clockwise — the same as `angle(-30)`, said in the open |
 | `l tangent(side: left) c` | the circle's centre lies left of `l` |
 | `ccw(a, b, c)` | `c` is left of the ray `a → b` |
+| `p distance(5, along: n) P` | `p` stands 5 along plane `P`'s **normal** (towards its viewer) from it, in space |
 
 **A distance measured from a line is a magnitude**: a negative one is refused, and which side is
 `side:`. A component that must work either way up takes a `Side` formal (`s: Side`, called as
@@ -614,10 +632,32 @@ another view is. A view folded from a solved one follows it. A point drawn in a 
 view's lift of it, and `project` over a solved view is the projector rule in space. A seed for a
 stated quantity is E040; a position stated twice or a fold along a line of another view is E064;
 views that come out parallel under a `project` are E065; `against` with a solved view is E066.
-The words for relations *between* views in space (`gax angle(90deg) pax`) come next (P2b); until
-then `Constraint::in_space` states them from Rust. `solventc --where side` reports a solved
-view's `side.u.x` … `side.o.z`, and a report names what is left free as `side.attitude` and
-`side.offset`.
+`solventc --where side` reports a solved view's `side.u.x` … `side.o.z`, and a report names what
+is left free as `side.attitude` and `side.offset`.
+
+**The workplane rule, in one place.** A point drawn `in` a view is that view's lift of it into
+space; a point with no membership is on the page, which has no place in space. A relation reads
+its operands' views: within one view it is the 2D relation, which the rigid lift makes the same
+statement; across views it is the relation in space (1.5), and naming a page point there is E062.
+`project` is the exception — it ties two drawn images of an undrawn point. `p on P`, `l on P` and
+`p distance(d, along: n) P` put a point or a line on a plane in space whatever view it is drawn
+in (a view's own points are on it already, E061).
+
+**The role rule.** A plane's own origin and toward place the view on the sheet, and their
+membership says nothing about what they mean. So a datum point is read by what it is related to:
+beside only other datum points it is sheet **layout**, on the page (`o distance(120) o2`); beside
+points of the view it is the datum of, it is that view's (`o2 distance(15) b` with `b` in that
+view: an ordinate); otherwise, where its membership puts it. Every cross-membership relation the
+corpus had before reads as it did (`tests/cross_view_audit.rs`).
+
+**A solved view's place on the sheet is held silently.** Where a solved view's picture sits on the
+page (its datum's origin and toward) is presentation: those points are held where they were drawn
+and the ledger does not count them, unless a statement names them. A free view with nothing else
+in it reports DOF 4 — its attitude and its offset — with no `ground` written.
+
+**A sphere** is `sphere s(center: p) hint(r: 12)`: a centre drawn in some view (`in side`) and a
+radius, on no sheet (the glass box draws it as three great circles). `radius(12) s`, `a on s`,
+`s tangent l` and `s tangent s2` are all in space; a sphere against a circle is still to come.
 
 ### 1.14 Faces, solids and derived views
 
@@ -1464,6 +1504,43 @@ up: 90)` declares the page as `views.front` and folds `views.right` and `views.t
 `views.right_origin` and `views.top_origin` the corner as those views see it; a drawing grounds
 `O` and writes its geometry `in views.top`. `bracket.sv` is the full case, with an auxiliary view
 folded at the bearing of an inclined face.
+
+### 2.11 Two skew axes at a stated shaft angle and offset: DOF 0, well
+
+```
+// two shafts at a stated angle and offset: the gear's axis drawn in the front view, the
+// pinion's in a view folded from it by a fold the drawing solves for
+unit mm
+point o hint(x: 0, y: 0)
+point t hint(x: 40, y: 0)
+plane front(origin: o, toward: t)
+line gax(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
+ground gax.p1
+ground gax.p2
+
+point o2 hint(x: 120, y: 0)
+point t2 hint(x: 160, y: 0)
+plane side(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
+line pax(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
+pax.p1 distance(0, along: u) side
+pax.p2 distance(60, along: u) side
+pax.p1 horizontal pax.p2
+
+gax angle(90deg) pax      // the shaft angle, in space
+gax distance(17.5) pax    // the offset: the common perpendicular, in space
+```
+
+`solventc` reports `warning[W111]: \`beta\` is a free variable: the solver answers for it`, then
+`solved`, `27 params, 27 equations, structural rank 27; DOF 0`, and `--where pax` gives
+`pax.p1.y = 17.5`, `pax.p2.y = 17.5`. The two axes are drawn in different views, so `angle` and
+`distance` between them are relations in space (1.5): the unsigned angle between their
+directions and the common-perpendicular distance. The fold `beta` and the pinion axis's height in
+its view are the two unknowns they settle (the fold comes out at 0°: the side view is the top
+view, and the pinion's axis lies in it 17.5 behind the gear's, crossing it square). No datum point is grounded: both views' place on
+the sheet is held silently (1.13), and a `ground o2` would change nothing but make the hold a
+statement. Without the offset the same document reports `27 params, 26 equations, structural rank
+26; DOF 1` — the pinion axis may slide along the common perpendicular. `tests/spatial_lang.rs`
+holds this document against an independent reading of the solved axes.
 
 ---
 

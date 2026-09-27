@@ -377,8 +377,17 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let sp = sk.spline(&ctrl).expect("four control points make a curve");
     // two planes, the page's and the top's, with `p` and `q` as images on them: what a
     // projection is inferred from
-    let pa = sk.plane(r, s, gcs_core::plane::Basis::page(), "front");
-    let pb = sk.plane(r, s, gcs_core::plane::Basis::page().fold(0.0), "top");
+    // a relation in space reads its datum points by their role, so there the views are drawn
+    // from datum points of their own, and none of them is drawn in a view
+    let (da, db) = if kind.spatial() {
+        (sk.point(-40.0, 0.0, false, "da"), sk.point(-10.0, 0.0, false, "db"))
+    } else {
+        (r, s)
+    };
+    let pa = sk.plane(da, db, gcs_core::plane::Basis::page(), "front");
+    let pb = sk.plane(da, db, gcs_core::plane::Basis::page().fold(0.0), "top");
+    // two spheres, about a point of each view
+    let (sa, sb) = (sk.sphere(q, 6.0, "sa"), sk.sphere(s, 4.0, "sb"));
     // a projection over stated views is `Project`, and comes back as the twin its views feed
     if matches!(kind, CKind::Project | CKind::ProjectSolved) {
         sk.set_plane(p, Some(pa));
@@ -400,6 +409,9 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             SpecKind::Circle | SpecKind::CircleOrArc => Arg::Ent(EntRef::circle(c1)),
             SpecKind::Arc => Arg::Ent(EntRef::arc(a1)),
             SpecKind::Spline => Arg::Ent(EntRef::spline(sp)),
+            // a point of `front` is on `front` by construction: a relation in space names the
+            // other view
+            SpecKind::Plane if kind.spatial() => Arg::Ent(EntRef::plane(pb)),
             SpecKind::Plane => Arg::Ent(EntRef::plane(pa)),
             SpecKind::Length => Arg::Num(12.0),
             SpecKind::Angle => Arg::Num(0.5),
@@ -411,8 +423,14 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let mut used_point = false;
     let mut used_line = false;
     let mut used_circle = false;
+    let mut used_sphere = false;
     for (i, (_, k)) in spec.iter().enumerate() {
         args.push(match k {
+            SpecKind::Sphere if used_sphere => Arg::Ent(EntRef::new(EntKind::Sphere, sb)),
+            SpecKind::Sphere => {
+                used_sphere = true;
+                Arg::Ent(EntRef::new(EntKind::Sphere, sa))
+            }
             // a constraint relates *distinct* entities, so the second of a pair is a different one
             SpecKind::Point if used_point => Arg::Ent(EntRef::point(q)),
             SpecKind::Point => {

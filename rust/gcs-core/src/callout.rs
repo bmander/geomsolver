@@ -97,6 +97,17 @@ macro_rules! undrawn {
             | CKind::PointOnPlaneFixed
             | CKind::PointOnCircle3
             | CKind::PointOnCircle3Fixed
+            | CKind::PointOnLine3
+            | CKind::EqualLength3
+            | CKind::PointPlaneDistance
+            | CKind::PointPlaneDistanceFixed
+            // a sphere is on no sheet, so nothing about it is drawn on one
+            | CKind::SphereOn
+            | CKind::LineOnPlane
+            | CKind::LineOnPlaneFixed
+            | CKind::SphereRadius
+            | CKind::SphereTangentLine
+            | CKind::SphereTangentSphere
             // a view's hinge is its declaration's, and a projection in space draws what
             // `project` draws: nothing
             | CKind::Hinge

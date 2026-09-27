@@ -622,7 +622,8 @@ Conventions:
   error about the operands for a mistake in the selector.  All three are E040 **at the key**
   (`Written::key_span`, since a selector's value carries no span of its own), and
   `report::registry_json` publishes each slot's words so a front end offers what the core accepts.
-  `tests/refusals.rs` is the gate.
+  `tests/refusals.rs` is the gate.  `along: n` (P2b) is the one entry naming no page
+  axis: a point's signed distance along a plane's normal, in space (`PointPlaneDistance`).
 - **A recorded root choice is one record of one triangle** (`decompose::branch_record`; issue #48,
   item 4).  Three points can be named six ways, and `ccw(a, b, c)` ("c left of a→b") is the same
   fact as `ccw(a, c, b)` with the sign turned — so a record is **canonical**: the point indices
@@ -1060,6 +1061,19 @@ Conventions:
   Not commutative (`same_args` swaps only the first two entity slots).  `cgraph` leaves it
   unsupported, so a multiview drawing drags on the numeric path.  `bracket.sv` is the case;
   `tests/plane.rs` and `tests/plane_lang.rs` are the gates.
+  **Across views a word means space** (P2b, `program/reading.rs`): after `constrain` resolves the
+  arguments, `in_space` reads each operand's points' views by the **role rule** — a plane's own
+  origin/toward is layout among datum points, its view's beside that view's points, otherwise its
+  membership — and where they differ maps the 2D kind to its twin in space (`Distance3`,
+  `PointLine3`, `LineLine3`, `Angle3`, `PointOnLine3`, `EqualLength3`, …) or refuses (E062, and
+  E040 for `side:`/`sense:`).  Radii, `along: u`/`v` and `project` are view-free.  `on`/`distance
+  (along: n)` to a plane, and the `sphere` kind's words, are spatial from `infix_op` itself.
+  `tests/cross_view_audit.rs` asserts the corpus's 215 cross-membership relations keep their 2D
+  kinds.  **A solved view's page placement is held silently**: `reading::hold_page_placement`
+  fixes a view-with-`att`'s datum points no statement names and records them in
+  `Sketch::page_held`, so `edit::held_refs` writes no `ground` for them; and a held view's
+  `quat_unit` row with no free column is compiled as not hard, so the ledger's equations equal
+  its rank.
 - A **`claim`** (Solvent §9.7) is a constraint-shaped statement that is *judged, never solved
   for*: **no** `System` compiles a row for it, and decomposition (`cgraph`), the drag-part walk
   (`io::Part`) and the witness's jitter all skip it, so a claim can never move geometry, weld two

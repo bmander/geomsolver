@@ -100,3 +100,53 @@ fn cross_view_audit() {
     println!("{total} relations across views in {docs} documents, {spatial} neither layout nor \
         an ordinate from the view's own datum");
 }
+
+/// **The gate the audit became** (P2b): with a relation across views now meaning space, every
+/// one of the corpus's 215 relations whose points carry different memberships still reads the
+/// 2D kind it always did — the role rule reads each as sheet layout or as an ordinate in one view
+/// — and no document is refused for one.
+#[test]
+fn every_cross_membership_relation_in_the_corpus_keeps_its_reading() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let mut files = Vec::new();
+    sources(&root, &mut files);
+    let mut across = 0;
+    for path in files {
+        let name = path.strip_prefix(&root).unwrap().to_string_lossy().to_string();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let (mut prog, errs) = gcs_core::syntax::parse(&text);
+        assert!(errs.is_empty(), "{name} does not parse");
+        let dir = path.parent().unwrap().to_path_buf();
+        let mut resolve = |m: &str| -> Option<String> {
+            gcs_core::modules::search_paths(m, &name).iter()
+                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
+                .or_else(|| gcs_core::library::resolve(m))
+        };
+        let _ = gcs_core::modules::link(&mut prog, &mut resolve);
+        let e = gcs_core::program::elaborate(&prog);
+        assert!(!e.diags.iter().any(|d| d.code.as_str() == "E062"),
+                "{name}: {:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
+        if !e.ok() { continue; }
+        let sk = &e.sketch;
+        for c in sk.user_constraints() {
+            assert!(!c.kind.spatial() || c.kind == CKind::ProjectSolved,
+                    "{name}: {} reads in space", gcs_core::io::describe_with(c, &|r| e.map.name_of(r).cloned()));
+            if c.kind == CKind::Project { continue; }
+            let pts: Vec<usize> = c.args.iter()
+                .filter_map(|a| if let Arg::Ent(r) = a { Some(*r) } else { None })
+                .flat_map(|r| points(sk, r)).collect();
+            let mut views: Vec<Option<usize>> = pts.iter().map(|&p| sk.plane_of(p)).collect();
+            views.sort();
+            views.dedup();
+            if views.len() < 2 { continue; }
+            across += 1;
+            // and the reading the dispatch made of it: one view, or the page
+            let mut read = gcs_core::program::reading_views(sk, &pts);
+            read.sort();
+            read.dedup();
+            assert_eq!(read.len(), 1, "{name}: {} reads across views",
+                       gcs_core::io::describe_with(c, &|r| e.map.name_of(r).cloned()));
+        }
+    }
+    assert_eq!(across, 215, "the P0 audit's count");
+}

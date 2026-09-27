@@ -255,7 +255,7 @@ fn a_selector_that_says_nothing_is_refused() {
     assert!(d.iter().any(|m| m == "E040: `distance` takes no `sied`"), "{d:?}");
     // `along` fills no slot — it chooses the kind — so it is the one key checked by name
     let (_, d) = read(&format!("{PAIR}a distance(40, along: z) b\n"));
-    let want = "E040: `along` is `x`, `y`, `u`, `v`, `right`, `left`, `up` or `down`, not `z`";
+    let want = "E040: `along` is `x`, `y`, `u`, `v`, `n`, `right`, `left`, `up` or `down`, not `z`";
     assert!(d.iter().any(|m| m == want), "{d:?}");
     assert!(read(&format!("{PAIR}a distance(40, along: x) b\n")).1.is_empty());
 
@@ -411,4 +411,34 @@ fn a_solved_view_the_model_cannot_hold_is_refused() {
     assert!(d.is_empty(), "a projection between a stated and a solved view is not refused as written: {d:?}");
     let after = gcs_core::program::solid_diagnostics(&e.sketch, &e.map);
     assert!(after.iter().any(|x| x.code.as_str() == "E065"), "{after:?}");
+}
+
+/// Across views a word means space (P2b): a word with no meaning there is E062, a selector that
+/// names a page direction is E040, and a point on the page has no place in space to be related
+/// from — while the same words inside one view are what they always were.
+#[test]
+fn a_word_across_views_with_no_meaning_in_space_is_refused() {
+    let views = "point o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\nplane front(origin: o, toward: t)\n\
+                 point o2 hint(x: 100, y: 0)\npoint t2 hint(x: 140, y: 0)\n\
+                 plane side(origin: o2, toward: t2, from: front, fold: 90deg)\n\
+                 point a hint(x: 5, y: 5) in front\npoint b hint(x: 110, y: 5) in side\n\
+                 line la(hint(x: 0, y: 0), hint(x: 20, y: 5)) in front\n\
+                 line lb(hint(x: 100, y: 0), hint(x: 120, y: 9)) in side\n";
+    for (stmt, code, needle) in [
+        ("a horizontal b", "E062", "no meaning in space"),
+        ("a vertical b", "E062", "no meaning in space"),
+        ("a distance(4, along: y) b", "E062", "no meaning in space"),
+        ("a symmetry(lb) la.p1", "E062", "no meaning in space"),
+        ("la angle(30, sense: cw) lb", "E040", "unsigned"),
+        ("la distance(3, side: right) lb", "E040", "no sides"),
+        ("point pg hint(x: 1, y: 1)\npg coincident b", "E062", "on the page"),
+    ] {
+        let (_, d) = read(&format!("{views}{stmt}\n"));
+        assert!(d.iter().any(|m| m.starts_with(code) && m.contains(needle)), "{stmt}: {d:?}");
+    }
+    // within one view the page's words stand, and across views the ones space has are accepted
+    for stmt in ["a horizontal la.p1", "a distance(4, along: y) la.p1", "a distance(8) b", "la angle(40) lb"] {
+        let (_, d) = read(&format!("{views}{stmt}\n"));
+        assert!(d.is_empty(), "{stmt}: {d:?}");
+    }
 }

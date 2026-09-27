@@ -28,6 +28,8 @@ pub fn to_program(sk: &Sketch) -> Program {
     for c in sk.user_constraints().into_iter().filter(|c| !c.kind.hinge()) {
         p.push(StmtKind::Relation(lift_relation(sk, c)));
     }
+    // a datum point the page-placement gauge holds is grounded here: the lifted view is stated
+    // (`lift_attitude`), and over a stated view the gauge holds nothing, so the hold is said
     for i in 0..sk.points.len() {
         if sk.point_fixed(i) {
             p.push(StmtKind::Relation(lift_gauge(&entity_name(EntRef::point(i)), None)));

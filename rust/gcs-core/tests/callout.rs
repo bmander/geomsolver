@@ -110,10 +110,11 @@ fn every_dimension_is_drawn() {
     let mut drawn: Vec<CKind> = sk_kinds(&all_dimensions());
     drawn.sort();
     // a relation in space states a number of no one view, and has no figure until P2 gives it
-    // one; a hinge's fold is its plane's brackets, and is drawn as the view it folds
-    let mut want: Vec<CKind> =
-        ALL_KINDS.iter().copied().filter(|k| k.has_dimension() && !k.spatial() && !k.hinge())
-            .collect();
+    // one; a hinge's fold is its plane's brackets, and is drawn as the view it folds; and a
+    // sphere is on no sheet, so its radius is drawn on none
+    let mut want: Vec<CKind> = ALL_KINDS.iter().copied()
+        .filter(|k| k.has_dimension() && !k.spatial() && !k.hinge() && *k != CKind::SphereRadius)
+        .collect();
     want.sort();
     assert_eq!(drawn, want, "the fixture is missing a dimensioned kind");
 

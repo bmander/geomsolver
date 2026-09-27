@@ -393,6 +393,17 @@ export class Plane extends Datum {
     });
   }
 
+  /** The whole frame in space — `u`, `v` and the origin `o` — as the solve left it: a view
+   *  whose attitude or offset is solved moves, and six numbers could not say where to. */
+  get frame3(): { u: [number, number, number]; v: [number, number, number];
+                  o: [number, number, number] } {
+    return withBuf(9, 8, (b) => {
+      core().gcs_plane_frame3(this.sketch.handle, this.index, b.ptr);
+      const x = b.f64;
+      return { u: [x[0], x[1], x[2]], v: [x[3], x[4], x[5]], o: [x[6], x[7], x[8]] };
+    });
+  }
+
   /** The datum figure this plane is drawn as, in world coordinates: the chord and the tick,
    *  as segments.  Laid out by the core at `unit` — the world length of one screen pixel —
    *  exactly as a dimension callout is, so a front end strokes the figure and derives none of

@@ -92,6 +92,17 @@ impl Sketch {
         self.circles.len() - 1
     }
 
+    /// A sphere about a drawn point, its radius a Param like a circle's.
+    pub fn sphere(&mut self, center: usize, radius: f64, name: &str) -> usize {
+        let r = self.param(radius, false, &format!("{name}.r"));
+        self.spheres.push(SphereE {
+            center: center as u32,
+            radius: r as u32,
+            class: Classes::default(),
+        });
+        self.spheres.len() - 1
+    }
+
     /// An arc plus its two intrinsic `PointOnCircle` constraints.
     pub fn arc(&mut self, center: usize, start: usize, end: usize, name: &str) -> usize {
         let (cx, cy) = self.point_xy(center);

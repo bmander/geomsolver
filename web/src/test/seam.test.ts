@@ -45,8 +45,8 @@ ground north
 arc rim(center: o,start: south,end: north)
 radius(sqrt(9.25) * 1mm) rim
 line diameter(north,south)
-solid sphere(face(rim,diameter),about: diameter)
-surface boundary(sphere,rim)
+solid ball(face(rim,diameter),about: diameter)
+surface boundary(ball,rim)
 seam sphere_edge(first_envelope,boundary)
 component Sphere(origin: point,size: Length) {
   private point south hint(x: origin.x,y: origin.y-size)

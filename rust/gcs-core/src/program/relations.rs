@@ -52,11 +52,16 @@ pub(crate) fn settle(
                 return Err((w.word.span, format!("`{word}` needs to know what its operands are")));
             };
             crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).ok_or_else(|| {
-                let m = format!(
+                let mut m = format!(
                     "`{word}` does not relate a {} to a {}",
                     named(Some(a)),
                     named(Some(b))
                 );
+                // a sphere touches a line or a sphere today; a circle in space is still to come
+                if word == "tangent" && (a == EntKind::Sphere || b == EntKind::Sphere) {
+                    m.push_str(" yet: a sphere is tangent to a line or to another sphere, with \
+                                the sphere written first");
+                }
                 (w.word.span, m)
             })?
         }
@@ -178,7 +183,24 @@ pub(super) fn constrain(
             }
         }
     }
-    // a magnitude stated negative: the kernel would square the sign away and the drawing show
+    // **across views, a word means the relation in space** (P2b): the operands' views, read by
+    // the role rule (`reading`), decide it, and the statement is the kind in space from here on —
+    // or refused, where the word has no meaning there or a selector says nothing there
+    let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args) {
+        Ok(None) => (ckind, spec, args, left_out),
+        Ok(Some((k, a, l))) => (k, k.spec(), a, l),
+        Err((selector, message)) => {
+            let key = ["side", "sense"].into_iter().find_map(|k| r.written.and_then(|w| w.key_span(k)));
+            diags.push(Diag {
+                code: if selector { Code::E040 } else { Code::E062 },
+                span: if selector { key.unwrap_or(st.span) } else { st.span },
+                stmt: Some(st.id),
+                message,
+            });
+            return None;
+        }
+    };
+
     // the positive, so the document and the drawing would disagree about what the thing is
     // **A number that says which way is a word** (§9.2, issue #48 item 4).  Where the sign was a
     // *convention about a side* — a distance measured from a line, which the kernel cannot tell

@@ -1,6 +1,16 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.23 — September 2026**
+**Specification, Draft 0.24 — September 2026**
+
+**[0.24] A relation across views is a relation in space.** The same words, with no selector:
+`gax angle(90deg) pax` between lines drawn in two views is the angle between them in space, and
+`gax distance(17.5) pax` their common-perpendicular distance (§9.2). A plane's own datum points
+are read by their **role** — beside other datum points they are sheet layout, beside a view's
+points they are that view's — so no statement written before this changes meaning. A word with
+no meaning in space across views is **E062**; `sense:` and `side:` there are E040. `p on P`,
+`l on P` and `p distance(d, along: n) P` relate a point or a line to a plane in space whatever
+view it is drawn in. A **sphere** (`sphere s(center: p) hint(r: …)`, §3.1) takes `radius`, `on`
+and `tangent` in space. A solved view's place on the sheet is held silently (§6.7).
 
 **[0.23] A view may be a workplane solved for.** A plane is fixed unless its brackets name an
 unknown (§6.7): `fold: beta` over a name nothing defines solves the fold, `fold: along l` folds
@@ -106,6 +116,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Point` | position in the plane | 2 |
 | `Line` | segment between two `Point`s; its infinite carrier is what constraints read **[0.2]** | 0 of its own (4 through its ends) |
 | `Circle` | center + radius | 3 |
+| `Sphere` | a center drawn in some view + a radius, on no sheet **[0.24]** | 3 (the center's 2 in its view, and `r`) |
 | `Plane` | the datum: origin + orientation **[0.6]**, and a **view** — a plane in space, given as a constant orthonormal basis `(u, v)` **[0.10]**; one with no attitude written is the page's **[0.15]** | 0 beyond its two points (§6.7) |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
 | `Face` | a planar profile (§6.8) or an ordered boundary on an explicit spatial support (§6.20) | 0 — it owns no parameter |
@@ -132,6 +143,8 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 |---|---|---|
 | `Circle` | `.center` | `Point` |
 | `Circle` | `.r` | `Length` |
+| `Sphere` | `.center` | `Point` — drawn in whichever view the declaration is `in` **[0.24]** |
+| `Sphere` | `.r` | `Length` **[0.24]** |
 | `Plane` | `.origin`, `.toward` | `Point` **[0.6]** |
 | `Plane` | `.c`, `.s` | `Scalar` **[0.6]** — the unit rotor |
 | `Plane` | `.angle` | `Angle` — derived, `atan2(s, c)`; readable in trace-block expressions **[0.6]** |
@@ -596,6 +609,7 @@ plane q(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 0),
 - `offset: free` makes the offset along the normal one unknown, seeded by `hint(offset: …)` from where the attitude alone stands the plane; `through: M` solves it so the point `M`, drawn in another view, is in the plane. A position is stated once: either beside a written `offset:`, beside `fold: along`, or `through:` a point of the plane itself is **E064**, as is a view derived from one whose own offset is solved.
 - A `hint` key for a quantity the brackets state is **E040** at the key. A bare `from:` still means a plane placed by `against` (§6.10), and `against` with a solved view is **E066** (deferred).
 - `a project b` between views either of which is solved is the projector rule in space, `(n_A × n_B)·(X_A − X_B) = 0` over the two images' points in space; two stated views keep the residual below, and are refused if parallel (E061). Two solved views that *come out* parallel are **E065** after the solve.
+- **[0.24] A solved view's place on the sheet is held silently.** Where a view's picture sits on the page — its datum's origin and toward — is presentation, not a freedom of the object: for a view whose attitude or offset is solved (or that a solved view reads), the datum points are held where they were drawn and §16's ledger does not count them, unless a statement names them (a relation, a gauge), when they are ordinary points. A free view's freedoms are then its attitude and its offset, and nothing else. Relations *between* views are §9.2's: a relation whose operands are drawn in different views is a relation in space.
 
 **A point says which plane it is on with `in`.** `point a in top` is a trailer of the declaration, order-free against `hint`, `knots` and `class`, and it applies to **every point the declaration mints or names**: `line l(a, b) in top` puts `a` and `b` on `top`, `circle c in right` its centre, `arc` and `spline` likewise. A membership moves nothing — it is a label, read only by `project` — and a point with none is simply on the page. A point put on two different planes by two declarations is **E060**; agreement is not an error. `frame`, `plane` and `curve` have no points of their own to put anywhere, and `in` on them is a syntax error. Inside a `ring` (§12.5) a plane is invariant: a membership or a fold referencing one is true of every copy alike.
 
@@ -1224,16 +1238,16 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `on` | infix | (point, line \| circle \| arc \| spline \| curve) — **four** constraints; **[0.18]** (solid, solid) — the body rule (§6.9), and no constraint at all |
+| `on` | infix | (point, line \| circle \| arc \| spline \| curve) — **four** constraints; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.18]** (solid, solid) — the body rule (§6.9), and no constraint at all |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
-| `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed local ordinates |
+| `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed local ordinates, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space |
 | `distance` | prefix | on a line: the distance between its own ends |
-| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line) — **five** |
+| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line) — **five**; **[0.24]** (sphere, line), (sphere, sphere), in space |
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
 | `curvature` | infix | (spline, circle), (curve, circle) |
 | `horizontal`, `vertical` | prefix / infix | a line; or a pair of points |
 | `angle` | infix | (line, line) |
-| `radius` | prefix | a circle or an arc |
+| `radius` | prefix | a circle or an arc; **[0.24]** a sphere |
 | `coincident`, `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `ground`, `fix` | prefix | the gauges (§13): a point, or one of an entity's own numbers by its field (`fix c.r`) |
@@ -1250,6 +1264,10 @@ The collapses are where the saving is: **`on` is five constraints, `distance` is
 **`ccw` and `cw` keep a call.** Under the general rule they would be `a ccw(c) b`, which reorders three points that are symmetric: the predicate is about the *triangle*, not about a pair with a decoration. The call is a third fixity of the same table — every operand in the parentheses — and not a statement kind of its own. **[0.15]** The gauges and the orientation predicates are entries of the operator table like every other constraint: read by the one relation grammar, so a class, a placement and the chain's lookahead treat them as any other word, and settled by the word alone, since `fix c.r` names a number and `ccw(a, b, c)` has no operand outside its parentheses. They hold parameters or record a root choice rather than adding an equation, so a `claim` on one is refused (E040): a claim is judged by rank, and they add no row.
 
 **[0.18] The body rule is written in this grammar and is not a constraint.** `boss on cyl`, `bore cut cyl` and **[0.22]** `tip bound cyl` are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. `on` is settled the way every word here is — by the kinds of its operands, one step further out than `p on c` — so nothing new is spelled for it; `cut` relates no geometry and has no residual to be settled into, and is read by the word alone. Neither is in the constraint library of §9.3, and neither may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a cut b` is refused where it is written, `cut` being no constraint word; a `claim` written on a body `on` asserts nothing, and an implementation SHOULD refuse it rather than accept a statement that says nothing (an implementation that instead drops the word MUST still apply the body rule, since the operands' kinds are what the statement means).
+
+**[0.24] Across views, the same word is the relation in space.** A relation's operands are read in the views their points are drawn in (§6.7), and when those differ the word means its relation between the points' lifts: `coincident`, `distance` between two points (the true length), a point and a line (to the infinite line) or two lines (the common perpendicular — a magnitude, its side the seed's), `on` a line or a circle, `angle` (unsigned, 0 to 180°), `parallel`, `perpendicular` and `equal` (true lengths). No selector says so. `sense:` and `side:` name a turn and a side *on a page* and are **E040** there; a word that has no meaning in space — `horizontal`, `vertical`, a run or a rise, `tangent` between drawn figures, `midpoint`, `symmetry`, a curve's contacts — is **E062**, as is a relation across views that names a point on the page (the page has no place in space) or a datum point read in a view it is not drawn in. A radius and a ring's width read only radii, which the lift carries unchanged, so they mean the same in any view; `along: u`/`v` measure against a datum as it stands on the sheet, wherever the point is drawn; and `project` relates two views by definition. Within one view nothing changes: the lift is rigid, so the 2D relation *is* the relation in space.
+
+**The role rule.** A plane's datum points — its origin and its toward — place the view on the sheet, and their membership says nothing about what they mean in a statement. A datum point is therefore read by what it is related to: beside only other datum points it is sheet **layout**, on the page; beside points of a view it is the datum of, it is that view's (an ordinate from the datum the view is drawn from); otherwise, where its membership puts it. Read this way no statement written before 0.24 changes its meaning.
 
 A chain (§6.6) is the same grammar: a **lone infix statement is a one-joint chain**, and what a chain adds is the corner — which end two links meet at — that an operator between two names cannot know.
 
@@ -1275,6 +1293,13 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `cw(a, b, c)` | (b−a) × (c−a) < 0 | 0 | |
 | `revolute(f1: Frame, f2: Frame)` | f1.origin − f2.origin | 2 | relative angle free |
 | `weld(f1: Frame, f2: Frame)` | f1.origin − f2.origin, f1.angle − f2.angle | 3 | triggers **W101** |
+| `on(p, P: Plane)` **[0.24]** | n_P·X − h_P | 1 | X the point's lift; in space whatever view `p` is in; `p` drawn in `P` is E061 |
+| `distance(p, P, along: n) == e` **[0.24]** | n_P·X − h_P − e | 1 | signed along `P`'s normal |
+| `on(L, P: Plane)` **[0.24]** | n_P·A − h_P, n_P·B − h_P | 2 | the line's two ends |
+| `on(p, S: Sphere)` **[0.24]** | ‖X − C‖ − S.r | 1 | C the centre's lift |
+| `tangent(S, L)` **[0.24]** | ‖(C − A) × (B − A)‖ / ‖B − A‖ − S.r | 1 | the line's distance from the centre, in space |
+| `tangent(S1, S2)` **[0.24]** | ‖C1 − C2‖ − (r1 + r2) *or* ‖C1 − C2‖ − \|r1 − r2\| | 1 | `external:` inferred from the seed, as two circles' is |
+| *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `on` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `on` a circle) | as listed | §9.2 |
 | `project(p, q)` **[0.10]** | d_A·Rᵀ(c_A, s_A)(p − o_A) − d_B·Rᵀ(c_B, s_B)(q − o_B) | 1 | the planes A, B inferred from `p`, `q`'s memberships; d the fold line they share, §6.7 |
 
 Implementations MAY extend this library. Extensions MUST document residuals and equation counts, and MUST classify each decoration as hint or constraint per P3.
@@ -1723,6 +1748,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |
 | E060 | a point put on two different planes (§6.7) **[0.10]** |
 | E061 | `project` refused: a point on no plane, both on one plane, or parallel planes (§6.7) **[0.10]** |
+| E062 | a word across views with no meaning in space (`horizontal`, a run or rise, `tangent` between drawn figures, `midpoint`, `symmetry`), or a relation across views naming a point on the page or a datum point read in a view it is not drawn in (§9.2) **[0.24]** |
 | E064 | a solved view the model cannot hold: `fold: along` a line not drawn in the parent, a position stated twice, `through:` a point of the plane itself, or a view derived from one whose offset is solved (§6.7) **[0.23]** |
 | E065 | a relation in space degenerate at the solve: views a `project` relates that came out parallel, lines whose skew distance is stated that came out parallel (§6.7) **[0.23]** |
 | E066 | `against` with a solved view (§6.10) — deferred **[0.23]** |
