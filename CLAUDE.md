@@ -1755,7 +1755,10 @@ Conventions:
   with no plane has nothing to fold, so a load or an edit that leaves none returns to the sheet
   (`swap`) and ⌘B on one says why it stays, since shown in the box such a drawing is a tilted,
   read-only, empty-looking sheet on which every tool click silently does nothing.
-- Slow tests are gated by `#[ignore]` (cargo).
+- Slow tests are gated by `#[ignore]` (cargo). The **slow tier** — tests of twenty seconds to a few
+  minutes that should still pass on every landing (the gear pair's whole-member verifications, a
+  native tooth space) — is `#[cfg_attr(not(feature = "slow"), ignore = "slow tier, …")]`, run by
+  `make test-slow` (`OCCT=1` for the native one); `make test` leaves it out.
 - **Measure compile time and test time separately**; the measurements and reproduction are in
   [`docs/build-performance.md`](docs/build-performance.md). `make test` still builds both release
   artefacts and runs every integration suite and documentation test. Release builds use

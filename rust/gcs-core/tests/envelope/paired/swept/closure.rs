@@ -40,6 +40,7 @@ impl GearSpace {
 }
 
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the neighbour-closed gear space")]
 fn neighbor_closed_gear_space_matches_selected_boundary_and_interior() {
     let pair = Pair::read([24,48],2.);
     let field = GearSpace::read(&pair);

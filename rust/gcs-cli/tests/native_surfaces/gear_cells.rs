@@ -86,6 +86,7 @@ fn single_space(member: &str,expected: f64) {
 }
 
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 170 s: a native pinion tooth space built and measured")]
 fn generic_sheet_reproduces_the_pinion_tooth_space() { single_space("pinion",120.708817); }
 
 /// Phase 1 of docs/generating-sweeps-plan.md: one pinion space through the

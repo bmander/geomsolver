@@ -248,6 +248,7 @@ fn positive_roll_cover_accepts_overlap_but_never_fills_a_gap() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: a coarse pinion sample into the rim")]
 fn isolated_coarse_pinion_sample_connects_continuously_into_the_rim() {
     let pair = Pair::read([24,48],2.);
     let mut member = Member::read(&pair,0);
@@ -334,6 +335,7 @@ fn functional_blanks_match_independent_spherical_and_conical_limits() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: whole members across every index")]
 fn complete_members_bound_material_across_flanks_blanks_and_indexing() {
     let pair = Pair::read([24,48],2.);
     let options = Options {value_tolerance:pair.module*1e-4,max_evaluations:100000};

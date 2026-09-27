@@ -111,6 +111,7 @@ fn explicit_functional_generator_matches_source_material_at_sampled_points() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 25 s: whole-roll bounds of both generators")]
 fn functional_pair_generators_have_whole_roll_bounds_without_error_assumptions() {
     let pair = Pair::read([24,48],2.);
     let cases: Vec<_> = (0..2).map(|member| sweep_probe(&pair,member)).collect();
