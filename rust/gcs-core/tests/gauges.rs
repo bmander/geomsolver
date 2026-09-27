@@ -93,8 +93,12 @@ fn lifted_and_coloured_as_relations() {
     let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(text.contains("ground p0"), "{text}");
     assert!(text.contains("fix c0.r"), "{text}");
-    // the key canonicalises the triple's order and keeps its sense
-    assert!(text.contains("ccw(p2, p1, p0)"), "{text}");
+    // the key canonicalises the triple's order and keeps its sense — and the call is printed
+    // in that order: printed back to front, `ccw(p2, p1, p0)` was the other turn, and the lifted
+    // text read back chose the other root
+    assert!(text.contains("ccw(p0, p1, p2)"), "{text}");
+    let again = read(&text);
+    assert_eq!(again.sketch.branches, e.sketch.branches, "{text}");
     let src = format!("{TRI}ground a\nccw(a, b, c)\n");
     let runs = highlight(&src);
     for w in ["ground", "ccw"] {

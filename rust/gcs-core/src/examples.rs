@@ -131,6 +131,18 @@ pub fn belt_tangency() -> Sketch {
     document(BELT_TANGENCY, "belt_tangency")
 }
 
+/// An open belt over two pulleys placed by the length it wraps the big one — `belt_wrap.sv`, the
+/// case for `length(L) arc`.
+pub fn belt_wrap() -> Sketch {
+    document(BELT_WRAP, "belt_wrap")
+}
+
+/// The law of reflection: the strike on a mirror placed by two angles stated equal, and the
+/// classical proof claimed — `reflection.sv`, the case for `l1 angle(l3, l4) l2`.
+pub fn reflection() -> Sketch {
+    document(REFLECTION, "reflection")
+}
+
 /// The Peaucellier–Lipkin cell, over the three lengths its document names — `peaucellier.sv`.
 /// The theorem is a theorem at any of them, which is what the arguments are for.
 pub fn peaucellier(arm: f64, side: f64, crank: f64) -> Sketch {
@@ -177,6 +189,8 @@ pub fn example(name: &str) -> Option<Sketch> {
         "zigzag" => zigzag(32, 3),
         "spline_follower" => spline_follower(),
         "belt_tangency" => belt_tangency(),
+        "belt_wrap" => belt_wrap(),
+        "reflection" => reflection(),
         "peaucellier" => peaucellier(100.0, 60.0, 40.0),
         "peaucellier_rail" => peaucellier_rail(),
         "jansen" => jansen(),
@@ -243,7 +257,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 40] = [
+pub const CASES: [(&str, &str, &str); 42] = [
     ("Mounting flange · solids", "solid_flange", "Annular extrusions, an added hub, and a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "A hollow square section swept along a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
@@ -269,6 +283,8 @@ pub const CASES: [(&str, &str, &str); 40] = [
     ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `claim distance == c = hypot(a, b)` is judged a theorem — edit a or b and it stays one"),
     ("Curve and follower", "spline_follower", "a cubic B-spline with a face held tangent to it and a point riding on it — drag a control point and the contact slides along the curve, across knots and all"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
+    ("Belt wrap · arc length", "belt_wrap", "an open belt over two pulleys, closed as one tangent chain, with nothing saying how far apart the pulleys are: `length(wrap) big` states the belt in contact with the big pulley — its radius times its sweep — and the centre distance follows.  Edit `wrap` and the second pulley moves"),
+    ("Law of reflection · equal angles", "reflection", "a ray from a source strikes a mirror and goes on to a target, the strike placed by `incoming angle(m, outgoing) m` — the angle from the incoming ray to the mirror stated as the angle from the mirror to the outgoing one, with no number.  The classical proof, that the source's image, the strike and the target are collinear, is a `claim` the diagnosis judges a theorem"),
     ("Spur gear (30 teeth)", "gear", "written as a Solvent program: the involute is a component with one computed point, a flank is that point over a roll, a tooth is two flanks, repeated round a cycle — open the Program panel (Edit ▸ Program) to read it"),
     ("Spur gear, traced (12 teeth)", "gear_trace", "the same wheel with the involute *traced* rather than computed: a component states the taut string — on the circle, perpendicular to the radius, as long as the arc unwound — and the flank is its far end as the string unwinds, every point of it the solver's"),
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
@@ -389,6 +405,8 @@ pub fn source(key: &str) -> Option<&'static str> {
         "altitudes" => Some(ALTITUDES),
         "parallels" => Some(PARALLELS),
         "belt_tangency" => Some(BELT_TANGENCY),
+        "belt_wrap" => Some(BELT_WRAP),
+        "reflection" => Some(REFLECTION),
         "rect_fillets" => Some(RECT_FILLETS),
         "slotted_link" => Some(SLOTTED_LINK),
         "rect_fillets_conflict" => Some(RECT_FILLETS_CONFLICT),
@@ -436,6 +454,8 @@ pub const IMPOSSIBLE_TRIANGLE: &str = include_str!("../../examples/impossible_tr
 pub const ALTITUDES: &str = include_str!("../../examples/altitudes.sv");
 pub const PARALLELS: &str = include_str!("../../examples/parallels.sv");
 pub const BELT_TANGENCY: &str = include_str!("../../examples/belt_tangency.sv");
+pub const BELT_WRAP: &str = include_str!("../../examples/belt_wrap.sv");
+pub const REFLECTION: &str = include_str!("../../examples/reflection.sv");
 pub const RECT_FILLETS: &str = include_str!("../../examples/rect_fillets.sv");
 pub const SLOTTED_LINK: &str = include_str!("../../examples/slotted_link.sv");
 pub const RECT_FILLETS_CONFLICT: &str = include_str!("../../examples/rect_fillets_conflict.sv");

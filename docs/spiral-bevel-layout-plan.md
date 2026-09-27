@@ -165,12 +165,15 @@ Ordered by what they unlock.
 3. **Iterating over a chain's edges**: `repeat e in rack.profile { surface s(crown, edge: e) … }`.
    Collapses most of `checks/faces.sv`.
 4. **An arc-length dimension**: `length(pi * m / 2) arc`, the circular pitch along the pitch
-   circle, replacing the quarter-pitch angle and `crown_teeth`.
+   circle, replacing the quarter-pitch angle and `crown_teeth`. *Done:* `length(L) a` on an
+   arc, its radius times its counter-clockwise sweep (primer 1.5, `belt_wrap.sv`).
 5. **Motion ratios from solved geometry**, or post-solve contexts (motions, extents) reading
    measured lengths: safe for the same reason as change 2, and removes `crown_teeth` from the
    ratios.
 6. **Angle equality as a word**, `a equal angle b`, where a shared free variable does it now
-   but reads as a trick.
+   but reads as a trick. *Done*, spelled `l1 angle(l3, l4) l2` — the angle from `l1` to `l2`
+   equals the angle from `l3` to `l4`, directed, `sense: cw` for the mirror image — since a
+   joint's `equal angle` already means two statements (primer 1.5, `reflection.sv`).
 
 ## Order of work
 

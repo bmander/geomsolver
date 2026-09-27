@@ -56,6 +56,14 @@ fn all_dimensions() -> Sketch {
         CKind::VerticalDistance,
         vec![Arg::Ent(EntRef::point(e)), Arg::Ent(EntRef::point(c)), Arg::Num(15.0)],
     ));
+    // a quarter arc, measured along itself
+    let (ac, a_s, a_e) = (
+        sk.point(220.0, 20.0, false, ""),
+        sk.point(240.0, 20.0, false, ""),
+        sk.point(220.0, 40.0, false, ""),
+    );
+    let arc = sk.arc(ac, a_s, a_e, "");
+    sk.add(Constraint::new(CKind::ArcLength, vec![Arg::Ent(EntRef::arc(arc)), Arg::Num(10.0 * PI)]));
     let f = sk.plane(a, c, gcs_core::plane::Basis::page(), "datum");
     for kind in [CKind::CoordinateU, CKind::CoordinateV] {
         sk.add(Constraint::new(kind, vec![Arg::Ent(EntRef::point(e)), Arg::Ent(EntRef::plane(f)), Arg::Num(12.0)]));

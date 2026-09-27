@@ -673,11 +673,13 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         }
     }
     // the third entity of `symmetry` goes in the parentheses with everything else that is not
-    // one of the two operands — and a call's operands all do
+    // one of the two operands — and a call's operands all do, as does the second pair of an
+    // angle made equal to another.  In spec order and ahead of any selector, which is where a
+    // reader writes them: `l1 angle(l3, l4, sense: cw) l2`
     let outside = if fixity == Fixity::Call { 0 } else { 2 };
-    while ents.len() > outside {
-        let extra = ents.pop().expect("more than two");
-        parens.push(extra);
+    if ents.len() > outside {
+        let extra: Vec<String> = ents.drain(outside..).collect();
+        parens.splice(0..0, extra);
     }
     let mut out = String::new();
     if fixity == Fixity::Infix && !ents.is_empty() {

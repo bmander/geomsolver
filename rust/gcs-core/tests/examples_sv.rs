@@ -20,6 +20,8 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("altitudes", (7, 6, 0, 0), 3, State::Under),
     ("parallels", (8, 4, 0, 0), 1, State::Under),
     ("belt_tangency", (4, 1, 2, 0), 0, State::Well),
+    ("belt_wrap", (6, 2, 0, 2), 0, State::Well),
+    ("reflection", (6, 4, 0, 0), 0, State::Well),
     ("rect_fillets", (12, 4, 0, 4), 0, State::Well),
     ("rect_fillets_under", (12, 4, 0, 4), 1, State::Under),
     ("rect_fillets_conflict", (12, 4, 0, 4), 0, State::Conflict),

@@ -90,6 +90,17 @@ pub(crate) fn settle(
         // only a gauge word is written as a call, and those were settled above
         Fixity::Call => return Err((w.word.span, format!("`{word}` is not a call"))),
     };
+    // **an angle stated as another angle** (`l1 angle(l3, l4) l2`): the second pair of lines
+    // stands in the parentheses where the number would, so the word between two lines is the
+    // equality whenever its parentheses hold entities.  A kind states at most one number, so a
+    // pair there can be nothing else — `op_args` has already read it as two references
+    let kind = if kind == CKind::Angle
+        && w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Ent(_)))
+    {
+        CKind::EqualAngle
+    } else {
+        kind
+    };
     // two cones touch at a named point: without one there is no place to read their normals
     if kind == CKind::ConeTangentCone
         && !w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Ent(_)))

@@ -1,0 +1,9 @@
+// Presentation of reflection.sv. Model geometry is independent of this drawing.
+model m from "reflection.sv"
+
+sheet drawing {
+  size A3
+  sketch source(m) at (100mm, 160mm)
+  style m.sight { color: #8a8a8a; dash: 7 4 }
+  dimensions in source
+}
