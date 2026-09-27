@@ -92,10 +92,10 @@ The six-hole indexed example passes native STEP and encoded STL checks. Its lega
 `--stl-backend mesh` triangulation still leaves unpaired edges; that separate regression
 is retained in `solid_motion.rs`.
 
-The [declarative bevel blank](rust/examples/spiral_bevel/blank.sv) uses the same export path:
+The [declarative bevel blank](rust/examples/spiral_bevel/blank/member.sv) uses the same export path:
 
 ```sh
-build/solventc rust/examples/spiral_bevel/blank.sv --solid blank.body --step blank.step
+build/solventc rust/examples/spiral_bevel/blank/member.sv --solid body --step blank.step
 ```
 
 STEP export requires a solved model with explicit length units, checks native validity

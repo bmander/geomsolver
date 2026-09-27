@@ -146,6 +146,14 @@ spiral_bevel/          (the app key stays; the file pane lists the steps)
    - `fixtures::gear` (its parameter names);
    - the app catalog entry, and `web/src/test/example-drawing.test.ts`;
    - `docs/spiral-bevel-design.md` and the example's README.
+
+   *Steps 2–4 done.* `gears.sv` is `HypoidPair` and `pair.sv` the layout with
+   `ReferenceFaces`; the old modules are gone. The step-2 gate became a regression:
+   `tests/hypoid_layout.rs` holds the layout to the old pair's quantities and material,
+   recorded at the twelve designs while both still elaborated
+   (`tests/fixtures/hypoid_layout*.tsv`). The mate's crown surfaces take the tooth's span
+   (its trace at 180°), and its flanks run base to join, so the checks read which end of a
+   flank meets its round, and which way a chart normal points, off the geometry.
 5. **The true hypoid**, once spatial constraints exist: state the shaft angle and E, solve the
    pitch cones, and re-record every number the configured design pins. Designs pinned at zero
    offset (`fixtures::gear::bevel`) must not change.

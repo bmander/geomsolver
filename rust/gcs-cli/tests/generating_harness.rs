@@ -341,15 +341,12 @@ fn fixtures() {
 /// The spiral-bevel project at a design, one tooth space per member.
 fn gear(name: &str,member: &str,offset: f64,shift: f64,spiral: f64,one: bool,arguments: &[&str],expect: Expect) -> Case {
     let dir = case_dir(name);
-    for entry in std::fs::read_dir(fixtures::gear::project()).unwrap() {
-        let path = entry.unwrap().path();
-        if path.extension().map_or(false,|e| e == "sv") { std::fs::copy(&path,dir.join(path.file_name().unwrap())).unwrap(); }
-    }
+    fixtures::gear::copy_project(&dir);
     let configuration = std::fs::read_to_string(dir.join("configuration.sv")).unwrap();
     std::fs::write(dir.join("configuration.sv"),fixtures::gear::design("configuration",configuration,offset,shift,spiral)).unwrap();
     if one {
-        let pair = std::fs::read_to_string(dir.join("matched_pair.sv")).unwrap();
-        std::fs::write(dir.join("matched_pair.sv"),fixtures::gear::one_space(&pair)).unwrap();
+        let pair = std::fs::read_to_string(dir.join("members.sv")).unwrap();
+        std::fs::write(dir.join("members.sv"),fixtures::gear::one_space(&pair)).unwrap();
     }
     Case {name:name.into(),dir,entry:"gears.sv".into(),solid:format!("pair.{member}.body"),
         arguments:arguments.iter().map(|a| a.to_string()).collect(),expect,truth:None,budget:Duration::from_secs(420)}

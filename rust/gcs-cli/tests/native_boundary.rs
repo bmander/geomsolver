@@ -153,7 +153,7 @@ fn native_cutter_edges_agree_with_the_independent_source_material() {
     let e = fixtures::gear::read(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base);
     let cad = native::Session::new().unwrap();
     let scale = e.sketch.units.length.unwrap().1;
-    for name in ["pair.reference.pinion_crown","pair.reference.gear_space.body"] {
+    for name in ["pair.reference.tooth.crown","pair.reference.gear_space.body"] {
         let id = e.map.ent_named(name).unwrap().i();
         let field = SpatialField::read(&e.sketch,id,1e-10).unwrap();
         let solid = cad.construct(&cad::recipe(&e.sketch,id).unwrap()).unwrap();

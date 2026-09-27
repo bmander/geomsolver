@@ -43,8 +43,9 @@ carry that relationship. The browser's `surfaceSample` API reads positions and e
 derivatives through the same core evaluator. This supplies generating surfaces to the
 envelope evaluator, but does not yet add a generated gear solid to the model.
 
-`boundaries.sv` defines reusable conical and spherical boundary components. The matched
-reference model declares spherical toe and heel at `R_mean ± face_width/2`, with the current
+`blank/cone.sv` and `blank/sphere.sv` define the conical and spherical boundary components,
+drawn in each member's axial view by `blank/member.sv`. The layout declares spherical toe and
+heel at `R_mean ± face_width/2`, with the current
 `face_width = 0.2 R_mean`. Each member has tip, root and back cones at signed pitch-normal
 offsets `+m_n`, `-1.25 m_n` and `-4 m_n`. A meridian's generator coordinate spans
 `[0.5 R_mean, 1.5 R_mean]`; the separately declared spheres set the actual face ends.
@@ -158,12 +159,13 @@ tests cover a band of ±0.15 mean module, not a complete root-to-tip tooth.
 
 ## Declarative root construction
 
-`rust/examples/spiral_bevel/reference.sv` now defines `RoundedRackSection` using ordinary
-lines, circular arcs, tangencies, flank angles, widths and datum distances. Its construction
+`rust/examples/spiral_bevel/crown/section.sv` defines `RackSection` using ordinary lines,
+circular arcs, tangencies, flank angles and depths from its two pitch points
+(`crown/rounding.sv` states the tip roundings every crown section shares). Its construction
 points stay private. Revolving its public profile produces the reference geometry, and
-`reference.svd` draws it. The source solves with zero degrees of freedom after its seeds
-are disturbed. The preview derives reference radius from two tooth counts and mean module;
-its tooth-section proportions are preliminary, pending the final thickness/backlash rule.
+`crown.svd` draws its preview. The source solves with zero degrees of freedom after its seeds
+are disturbed. The preview places the pitch line at 0.8 of the 24:48 pair's mean cone
+distance; in the layout (`crown/thickness.sv`) the pitch points follow from the tooth traces.
 
 The envelope tests read the actual solved `outer`, `outer_round` and `tip` patches through
 `RevolvedSurface`. They verify the conical and toroidal equations and their derivatives,
@@ -182,13 +184,13 @@ inserted after generating the tooth flank.
 The matching step distinguishes generating normals from material normals. Simply
 using the same oriented crown patch for both members establishes the velocity equation,
 but gives coincident normals, not the opposing outward normals required for contact.
-`paired_references.sv` now implements the circular reference section by pairing the pinion's
-outer flank with a reflected inner reference flank of pitch radius `Rc + width`, and
-the pinion's inner flank with a reflected outer reference flank of radius `Rc - width`.
-Reflecting the height direction reverses the pressure slope; exchanging inner and outer
-restores the same geometric cone with opposite boundary orientation. The reference axes
-must have the same spatial center. This uses separate reference sections for the two
-mating flanks. Tests read the actual source geometry for 24:48, 32:32 and 28:49 pairs at
+`crown/mate.sv` implements the circular reference section by pairing the pinion's outer
+flank with a mate section drawn on that same flank line one tooth's width outward, and the
+pinion's inner flank with one a tooth's width inward. Each mate section has its tip pointing
+the other way along the cutter's axis, which reverses the pressure slope; it walks its edges
+the other way round, which restores the same geometric cone with opposite boundary
+orientation. The two axes share one spatial center, and the mate's flanks lie on the tooth's
+by construction, so the two sections cannot be given different pressure angles. Tests read the actual source geometry for 24:48, 32:32 and 28:49 pairs at
 mean modules 0.2, 2 and 25.4. At three face stations and three active-flank heights they
 verify common positions, **opposite** oriented normals, equal generating roll, and zero
 normal component of the actual shaft-relative velocity. Both sides of both members in the

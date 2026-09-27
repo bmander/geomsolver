@@ -91,7 +91,7 @@ fn cell_bounds(pair: &Pair,member: usize,patch: &RevolvedSurface,u: [f64;2],rho:
 
 fn cover(pair: &Pair,member: usize,patch: &RevolvedSurface,rho: [f64;2]) -> Result<Vec<Cell>,String> {
     let domain = pair.domain(patch);
-    if domain[0] != [0.,1.] || ![[0.,0.5],[0.5,1.]].contains(&domain[1]) {
+    if domain[0] != [0.,1.] || domain[1][1]-domain[1][0] != 0.5 {
         return Err("the circular-crown proof needs the declared full meridian and source semicircle".into());
     }
     let mut pending = vec![([0.,1.],rho,0)];
@@ -177,7 +177,7 @@ fn area_factor_agrees_with_differentiating_the_full_generated_surface_map() {
                 // the resulting positions. No factor or roll-derivative formula is
                 // used in these finite differences.
                 let at = |u: f64,theta: f64| {
-                    let s = patch.at(u,(sign*theta/TAU).rem_euclid(1.)).unwrap();
+                    let s = patch.at(u,pair.chart_at(&patch,theta)).unwrap();
                     let n = cross(s.du,s.dv);
                     let p = s.position;
                     let a = n[2]*p[0]-p[2]*n[0];
@@ -190,7 +190,7 @@ fn area_factor_agrees_with_differentiating_the_full_generated_surface_map() {
                     for face in [0.9,1.,1.1] {
                         let rho = face*pair.rm;
                         let v = pair.analytic(member,&patch,u,rho).parameters[1];
-                        let theta = sign*v*TAU;
+                        let theta = pair.azimuth_at(&patch,v);
                         let factor = surface_factor(profile_bounds(&pair,&patch,[u,u]).unwrap(),
                             [scalar(pair.offset[0]),scalar(pair.offset[1])],
                             [scalar(theta.cos()),scalar(theta.sin())],

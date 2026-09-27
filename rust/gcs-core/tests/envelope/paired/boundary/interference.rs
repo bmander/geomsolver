@@ -78,7 +78,7 @@ impl<'a> ExactSection<'a> {
             let edge = if outer { "outer" } else { "inner" };
             let flank = pair.patch(member,side,edge);
             let round = pair.patch(member,side,&format!("{edge}_round"));
-            let join = if outer { 0. } else { 1. };
+            let join = 1.-Pair::flank_join(member,outer);
             // Independent scalar bracketing of the addendum intersection, using the
             // closed-form characteristic rather than the envelope's Newton equations.
             let mut lo = 0.; let mut hi = 1.;
@@ -248,6 +248,9 @@ fn contact_windows(pair: &Pair, output: Option<std::ffi::OsString>) {
             low += 1e-6*pair.module; high -= 1e-6*pair.module;
             assert!(high > low);
             check_contact_interval(&pair,&flanks[0].patch,[low,high],rho);
+            // the gear's chart normal turned to oppose the pinion's, as their crowns' material
+            // normals do: the mate's chart runs the other way round
+            let orient = pair.outward(&flanks[0].patch)*pair.outward(&flanks[1].patch);
             let at = |member: usize,h| {
                 let patch = &flanks[member].patch;
                 let a = patch.at(0.,patch.domain()[1][0]).unwrap();
@@ -277,10 +280,11 @@ fn contact_windows(pair: &Pair, output: Option<std::ffi::OsString>) {
                 let p = pi.point(a.contact.position); let g = gi.point(b.contact.position);
                 near(pair.body(0,phase).point(p),pair.body(1,phase).point(g),1e-7);
                 let pn = pair.body(0,phase).vector(pi.vector(a.contact.normal));
-                let gn = pair.body(1,phase).vector(gi.vector(b.contact.normal));
+                let bn = b.contact.normal.map(|x| orient*x);
+                let gn = pair.body(1,phase).vector(gi.vector(bn));
                 near(pn,gn.map(|v| -v),1e-8);
                 let local_positions = [p,g];
-                let local_normals = [pi.vector(a.contact.normal),gi.vector(b.contact.normal)];
+                let local_normals = [pi.vector(a.contact.normal),gi.vector(bn)];
                 let position = pair.body(0,phase).point(p);
                 let fraction = phase/period;
                 // At toe/heel and nearly at the tip an offset can cross a second

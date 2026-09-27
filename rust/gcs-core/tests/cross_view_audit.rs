@@ -121,10 +121,10 @@ const IN_SPACE: &[&str] = &["skew_axes.sv", "hypoid_pitch_cones.sv", "sphere_con
 /// rack section) do not, so it is held to neither reading.
 const LAYOUT: &[&str] = &["spiral_bevel/views.sv", "spiral_bevel/pitch/", "spiral_bevel/crown/",
     "spiral_bevel/blank/", "spiral_bevel/generation.sv", "spiral_bevel/layout.sv",
-    "spiral_bevel/members.sv", "spiral_bevel/gears_layout.sv"];
+    "spiral_bevel/members.sv", "spiral_bevel/gears.sv", "spiral_bevel/pair.sv"];
 
 /// **The gate the audit became**: with a relation across views meaning space, every
-/// one of the corpus's 215 relations whose points carry different memberships still reads the
+/// one of the corpus's 205 relations whose points carry different memberships still reads the
 /// 2D kind it always did — the role rule reads each as sheet layout or as an ordinate in one view
 /// — and no document is refused for one.  The spatial demos are the exception, and they are
 /// held to the opposite: each does read in space.  The spiral bevel's layout is written in
@@ -163,5 +163,7 @@ fn every_cross_membership_relation_in_the_corpus_keeps_its_reading() {
                        gcs_core::io::describe_with(c, &|r| e.map.name_of(r).cloned()));
         }
     }
-    assert_eq!(across, 215, "the P0 audit's count");
+    // 215 until the spiral bevel's layout replaced its pair: `gears.sv` and `pair.sv` each
+    // expanded five of them, and now read in space with the rest of `LAYOUT`
+    assert_eq!(across, 205, "the P0 audit's count");
 }

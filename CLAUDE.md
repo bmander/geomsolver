@@ -214,11 +214,14 @@ be `cut` for now. `bound` is a body word like `cut`, so it is no declaration nam
 bevel blank is `heel` bounded by `tip`, and the gear cutter the outer crown bounded by its
 indexed neighbour; the `A − (A − B)` intermediate is gone. The analytic faces the generating
 checks read live in `spiral_bevel/verification.sv` (`ReferenceFaces(refs)`), instantiated by
-`pair.sv` only; `gears.sv` elaborates the design alone. `configuration.sv`'s `offset_angle`
-turns the pinion about the crown normal at the mean point and enlarges it by the spiral-angle
-cosine ratio (a hypoid at nonzero), its cones and end spheres about its own apex in a turned,
-stood-off explicit-basis plane; `ConeBoundary`/`SphericalBoundary` take the apex as a point;
-the mesh export refuses a sectioned sheet whose boundary a placement carries inside the blank,
+`pair.sv` over `HypoidLayout` only; `gears.sv` (`HypoidPair`) elaborates the design alone. The
+layout's steps are modules (`design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
+`generation.sv`, `layout.sv`, `members.sv`; the example's README walks them), four views
+folded from the pitch plane through the mean point. `configuration.sv`'s `offset_angle` turns
+the pinion about the crown normal at the mean point and enlarges it by the spiral-angle cosine
+ratio (a hypoid at nonzero), its cones and end spheres about its own apex in its axial view;
+`tests/hypoid_layout.rs` holds the layout to the closed-form pair it replaced, recorded at
+twelve designs; the mesh export refuses a sectioned sheet whose boundary a placement carries inside the blank,
 and the CLI test readers zero the offset because the recorded volumes are the bevel pair's.
 **Continuous motion solids:** `solid removal(tool, under: generating, from: -30deg, to: 30deg)`
 uses finite increasing Angle bounds, converted to radians at elaboration. It means the union

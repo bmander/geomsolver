@@ -21,7 +21,7 @@ fn functional_profile_with_side(pair: &Pair,rack: &str,active: Option<ProfileSid
     -> (PlanarField,[f64;3],[f64;3],String) {
     let active = active.map(|side| match side { ProfileSide::Inner => "inner", ProfileSide::Outer => "outer" });
     let sk = &pair.model.sketch;
-    let axis_name = if rack == "pinion" { "pair.crown_front_axis" } else { "pair.crown_back_axis" };
+    let axis_name = if rack == "pinion" { "pair.tooth.axis" } else { "pair.mate.axis" };
     let axis = &sk.lines[pair.model.map.ent_named(axis_name).unwrap().i()];
     let origin = sk.world_point(axis.p1 as usize);
     let end = sk.world_point(axis.p2 as usize);
@@ -37,25 +37,36 @@ fn functional_profile_with_side(pair: &Pair,rack: &str,active: Option<ProfileSid
     };
     let mut planes = vec![];
     let mut fields = vec![];
+    let ends = |name: &str| {
+        let line = &sk.lines[pair.model.map.ent_named(&format!("pair.{}.{name}",Pair::section(rack))).unwrap().i()];
+        (coordinate(line.p1),coordinate(line.p2))
+    };
+    // Which way the profile is walked in (radius,height): the tooth's counterclockwise, and its
+    // mate's, drawn tip up in the view about an axis pointing the other way, clockwise — read
+    // off which side of the base the tip stands.
+    let ((a,b),(p,q)) = (ends("base"),ends("tip"));
+    let turn = ((b[0]-a[0])*((p[1]+q[1])/2.-a[1])-(b[1]-a[1])*((p[0]+q[0])/2.-a[0])).signum();
     for name in ["base","outer","tip","inner"] {
         if active.is_some_and(|side| (name == "outer" || name == "inner") && name != side) { continue; }
-        let line = &sk.lines[pair.model.map.ent_named(&format!("pair.{rack}.{name}")).unwrap().i()];
-        let a = coordinate(line.p1); let b = coordinate(line.p2);
-        // This profile is traversed counterclockwise in (radius,height).
-        let normal = [b[1]-a[1],a[0]-b[0]];
+        let (a,b) = ends(name);
+        // outward: to the right of a counterclockwise walk
+        let normal = [turn*(b[1]-a[1]),turn*(a[0]-b[0])];
         fields.push(PlanarField::half_plane(a,normal).unwrap());
         planes.push(format!("{{\"through\":{a:?},\"normal\":{normal:?}}}"));
     }
     let mut corners = vec![];
     for name in ["outer_round","inner_round"] {
         if active.is_some_and(|side| !name.starts_with(side)) { continue; }
-        let arc = &sk.arcs[pair.model.map.ent_named(&format!("pair.{rack}.{name}")).unwrap().i()];
+        let arc = &sk.arcs[pair.model.map.ent_named(&format!("pair.{}.{name}",Pair::section(rack))).unwrap().i()];
         let center = coordinate(arc.center);
         let radius = sk.params[arc.radius as usize].value;
         let [a,b] = [arc.start,arc.end].map(|id| {
             let p = coordinate(id); [p[0]-center[0],p[1]-center[1]]
         });
-        assert!(a[0]*b[1]-a[1]*b[0] > 0.,"this construction requires minor CCW corners");
+        // A minor corner, walked counterclockwise in (radius,height): the mate's arcs, drawn
+        // counterclockwise in the view about an axis pointing the other way, run clockwise here.
+        let [a,b] = if a[0]*b[1]-a[1]*b[0] > 0. { [a,b] } else { [b,a] };
+        assert!(a[0]*b[1]-a[1]*b[0] > 0.,"this construction requires minor corners");
         let n0 = [-a[1],a[0]]; let n1 = [b[1],-b[0]];
         let cap = PlanarField::disk(center,radius).unwrap()
             .union(PlanarField::half_plane(center,n0).unwrap()).unwrap()
@@ -89,7 +100,7 @@ fn explicit_functional_generator_matches_source_material_at_sampled_points() {
     let pair = Pair::read([24,48],2.);
     let mut count = 0;
     for rack in ["pinion","gear_outer","gear_inner"] {
-        let crown = pair.model.map.ent_named(&format!("pair.{rack}_crown")).unwrap();
+        let crown = pair.model.map.ent_named(&format!("pair.{}",Pair::crown(rack))).unwrap();
         let source = RevolvedRegion::read(&pair.model.sketch,crown.i(),pair.module*1e-10).unwrap();
         let (profile,origin,axis,_) = functional_profile(&pair,rack);
         let field = RevolvedField::new(profile,origin,axis).unwrap();
@@ -264,5 +275,5 @@ fn functional_motion_definition(pair: &Pair,member: usize) -> String {
         format!("{{\"origin\":{origin:?},\"axis\":{axis:?},\"ratio\":{ratio},\"phase\":{phase}}}")
     };
     format!("{{\"source\":{},\"observer\":{}}}",
-        rotation("pair.crown_roll"),rotation(&format!("pair.{member_name}_roll")))
+        rotation("pair.generation.crown_roll"),rotation(&format!("pair.generation.{member_name}_roll")))
 }

@@ -23,7 +23,7 @@ struct Blank {field:SpatialField,angular:SpatialField,definition:String,radii:[f
 
 fn blank_parts(pair: &Pair,member: usize) -> Blank {
     let name = ["pinion","gear"][member];
-    let (origin,axis) = axis(pair,&format!("pair.{name}_axis"));
+    let (origin,axis) = axis(pair,&format!("pair.{name}.axis"));
     let length = axis[0].hypot(axis[1]).hypot(axis[2]);
     let unit = axis.map(|v| v/length);
     let coordinates = |p: [f64;3]| {
@@ -99,10 +99,10 @@ impl Member {
             (SpatialField::from(field),definition)
         } else { let space = closure::GearSpace::read(pair); (space.field,space.definition) };
         let name = ["pinion","gear"][member];
-        let id = pair.model.map.ent_named(&format!("pair.{name}_roll")).unwrap().i();
+        let id = pair.model.map.ent_named(&format!("pair.generation.{name}_roll")).unwrap().i();
         let mut sk = pair.model.sketch.clone();
         let mut index_definitions = vec![];
-        let (origin,axis) = axis(pair,&format!("pair.{name}_axis"));
+        let (origin,axis) = axis(pair,&format!("pair.{name}.axis"));
         let indices: Vec<_> = (0..pair.teeth[member] as usize).map(|index| {
             let gcs_core::model::MotionDef::Rotation {ratio,phase,..} = &mut sk.motions[id].def else { panic!() };
             *ratio = 0.; *phase = TAU*index as f64/pair.teeth[member];

@@ -5,9 +5,9 @@ use gcs_core::{program,syntax,solve,solid::{RevolvedRegion,SweptField},interval:
 fn read(source: &str) -> program::Elaborated {
     let (mut p,errors) = syntax::parse(source);
     assert!(errors.is_empty(),"{errors:?}");
-    let mut resolver = |name: &str| if name == "boundaries" {
-        Some(include_str!("../../../examples/spiral_bevel/boundaries.sv").to_string())
-    } else { gcs_core::library::resolve(name) };
+    // the spiral bevel's modules, where a document uses one
+    let mut resolver = |name: &str| std::fs::read_to_string(fixtures::gear::project()
+        .join(format!("{}.sv",name.replace('.',"/")))).ok().or_else(|| gcs_core::library::resolve(name));
     assert!(gcs_core::modules::link(&mut p,&mut resolver).is_empty());
     let mut e = program::elaborate(&p);
     assert!(e.ok(),"{:?}",e.diags);
@@ -83,7 +83,7 @@ fn source_bodies_holes_and_nested_placements_keep_material_and_finite_support() 
 
 #[test]
 fn rounded_crown_source_matches_independent_analytic_material_queries() {
-    let e = read(include_str!("../../../examples/spiral_bevel/reference.sv"));
+    let e = read(include_str!("../../../examples/spiral_bevel/crown/section.sv"));
     let crown = e.map.ent_named("crown").unwrap().i();
     let source = RevolvedRegion::read(&e.sketch,crown,1e-10).unwrap();
     let field = field(&e,"crown");
@@ -124,14 +124,16 @@ fn major_arcs_and_reversed_edges_keep_their_finite_sector() {
     }
 }
 
+/// A member's blank as its own step draws it (`spiral_bevel/blank/member.sv`): the pitch
+/// generator 50 along the page's x from the apex, the face width 10 about its mean point.
 #[test]
 fn declarative_bevel_blank_reads_without_gear_names_or_coordinate_adapters() {
-    let e = read(include_str!("../../../examples/spiral_bevel/blank.sv"));
-    let blank = field(&e,"blank.body");
+    let e = read(include_str!("../../../examples/spiral_bevel/blank/member.sv"));
+    let blank = field(&e,"body");
     assert!(blank.support_bounds().unwrap().is_some());
-    let rm = 24_f64.hypot(48.); let delta = 24_f64.atan2(48.);
+    let rm = 50.;
     for radius in [0.8*rm,rm,1.2*rm] {
-        let p = [radius*delta.sin(),0.,radius*delta.cos()];
+        let p = [radius,0.,0.];
         let got = blank.bounds(point(p)).unwrap().bounds();
         assert!(if radius == rm { got[1] < 0. } else { got[0] > 0. },"{p:?}: {got:?}");
     }
@@ -169,7 +171,7 @@ fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
 
 #[test]
 fn profile_connectivity_uses_shared_source_vertices_at_rounded_junctions() {
-    let mut e = read(include_str!("../../../examples/spiral_bevel/reference.sv"));
+    let mut e = read(include_str!("../../../examples/spiral_bevel/crown/section.sv"));
     let crown = e.map.ent_named("crown").unwrap().i();
     // A tiny radius residual must not change the topology of shared endpoints.
     // The analytic field still uses the current radius, not a snapped curve.

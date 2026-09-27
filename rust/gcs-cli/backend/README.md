@@ -12,7 +12,7 @@ and build the optional CLI feature:
 
 ```sh
 make solventc OCCT=1
-build/solventc rust/examples/spiral_bevel/blank.sv --solid blank.body --step blank.step
+build/solventc rust/examples/spiral_bevel/blank/member.sv --solid body --step blank.step
 ```
 
 For another installation prefix, set `OCCT_ROOT` to the directory containing

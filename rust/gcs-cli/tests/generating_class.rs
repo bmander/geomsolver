@@ -22,17 +22,22 @@ fn read(offset: f64,shift: Option<f64>) -> program::Elaborated {
         .into_iter().filter_map(|(p,v)| v.map(|v| (p,v))).collect();
     fixtures::gear::read_configured_with(&mut |name,text| match name {
         "configuration" => fixtures::gear::configure(name,text,&design),
-        // `SOLVENT_CLASS_ROLL` (degrees) widens the pinion's roll: the negative
-        // control, a tool left in the blank and revisiting it.
         // `SOLVENT_CLASS_ONE`: the members with a single tooth space, as a one-space export has.
-        "matched_pair" if std::env::var("SOLVENT_CLASS_ONE").is_ok() => fixtures::gear::publish_blank(&fixtures::gear::one_space(&text),""),
-        "matched_pair" => fixtures::gear::publish_blank(&text.replace("roll_limit: 35deg",&format!("roll_limit: {}deg",
-            std::env::var("SOLVENT_CLASS_ROLL").unwrap_or("35".into()))),""),
-        // `SOLVENT_CLASS_TIP` scales the crown tooth's tip round (0.3 normal modules).
-        "paired_references" => match std::env::var("SOLVENT_CLASS_TIP") {
-            Ok(k) => text.replace("param transition_radius = 0.3 * normal_module",
-                &format!("param transition_radius = {k} * normal_module")),
-            Err(_) => text,
+        "members" if std::env::var("SOLVENT_CLASS_ONE").is_ok() => fixtures::gear::publish_blank(&fixtures::gear::one_space(&text),""),
+        "members" => fixtures::gear::publish_blank(&text,""),
+        "design" => {
+            // `SOLVENT_CLASS_ROLL` (degrees) widens the pinion's roll: the negative
+            // control, a tool left in the blank and revisiting it.
+            let text = match std::env::var("SOLVENT_CLASS_ROLL") {
+                Ok(roll) => fixtures::gear::roll(name,text,"pinion",roll.parse().unwrap()),
+                Err(_) => text,
+            };
+            // `SOLVENT_CLASS_TIP` scales the crown tooth's tip round (0.3 normal modules).
+            match std::env::var("SOLVENT_CLASS_TIP") {
+                Ok(k) => { assert!(text.contains("rounding: 0.3,"));
+                    text.replace("rounding: 0.3,",&format!("rounding: {k},")) }
+                Err(_) => text,
+            }
         },
         _ => text,
     })

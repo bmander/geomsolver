@@ -41,13 +41,9 @@ fn read_model(src: &str,teeth: [u32;2],module: f64) -> program::Elaborated {
         // The reference checks assume the common apex, so the offset is zero here.
         "configuration" => Some(format!("param pinion_teeth = {}\nparam gear_teeth = {}\n\
             param mean_module = {module}mm\nparam offset_angle = 0deg\nparam pressure_shift = 0deg\nparam spiral_angle = 35deg\n",teeth[0],teeth[1])),
-        "paired_references" => Some(include_str!("../../../examples/spiral_bevel/paired_references.sv").into()),
-        "verification" => Some(include_str!("../../../examples/spiral_bevel/verification.sv").into()),
-        "matched_pair" => Some(include_str!("../../../examples/spiral_bevel/matched_pair.sv").into()),
-        "cutters" => Some(include_str!("../../../examples/spiral_bevel/cutters.sv").into()),
-        "reference" => Some(include_str!("../../../examples/spiral_bevel/reference.sv").into()),
-        "boundaries" => Some(include_str!("../../../examples/spiral_bevel/boundaries.sv").into()),
-        _ => library::resolve(name),
+        // every other module is the project's own, a dotted name in a subdirectory
+        _ => std::fs::read_to_string(fixtures::gear::project().join(format!("{}.sv",name.replace('.',"/"))))
+            .ok().or_else(|| library::resolve(name)),
     });
     assert!(errors.is_empty() && link.is_empty(),"{errors:?} {link:?}");
     let mut model = program::elaborate(&p);
@@ -92,13 +88,13 @@ impl Pair {
         let rm = module*teeth[0].hypot(teeth[1])/2.;
         let theta = (35f64-90.).to_radians();
         let offset = [rm-0.8*rm*theta.cos(),-0.8*rm*theta.sin(),0.];
-        let motion_families = ["pair.pinion_generation","pair.gear_generation"].map(|name|
+        let motion_families = ["pair.generation.pinion_generation","pair.generation.gear_generation"].map(|name|
             gcs_core::motion::Family::read(&model.sketch,model.map.ent_named(name).unwrap().i()).unwrap());
         let read_boundary = |name: &str| RevolvedSurface::named(&model.sketch,
             model.map.ent_named(&format!("pair.{name}.wall")).unwrap().i()).unwrap();
-        let ends = ["toe","heel"].map(read_boundary);
+        let ends = ["toe","heel"].map(|end| read_boundary(&format!("gear_blank.{end}")));
         let limits = ["pinion","gear"].map(|member| ["tip","root","back"].map(|role|
-            read_boundary(&format!("{member}_{role}_boundary"))));
+            read_boundary(&format!("{member}_blank.{role}"))));
         let regions = model.sketch.patches.iter().enumerate().map(|(i,p)|
             (p.name.clone(),gcs_core::patch::TrimmedPatch::named(&model.sketch,i,module*1e-10).unwrap()))
             .collect();
@@ -166,6 +162,39 @@ impl Pair {
             assert!(flanks.insert(label,i).is_none(),"two flanks on {edge}");
         }
         Self {model,teeth,module,delta,rm,offset,motion_families,limits,ends,regions,seams,boundary_seams,surface_seams,corners,edges,faces,flanks,labels}
+    }
+
+    /// Where the layout keeps what the checks call a rack section, `pinion`, `gear_outer` or
+    /// `gear_inner`: the crown tooth's section and its mate's two.
+    fn section(rack: &str) -> &'static str {
+        match rack { "pinion" => "tooth.rack", "gear_outer" => "mate.outer", "gear_inner" => "mate.inner",
+            _ => panic!("no rack section `{rack}`") }
+    }
+
+    /// And the crown revolved from it.
+    fn crown(rack: &str) -> &'static str {
+        match rack { "pinion" => "tooth.crown", "gear_outer" => "mate.outer_crown",
+            "gear_inner" => "mate.inner_crown", _ => panic!("no rack section `{rack}`") }
+    }
+
+    /// The flank's `u` where it meets its round, which is also the round's where it meets the
+    /// tip: the crown tooth's section is walked counterclockwise about the cutter's axis, so its
+    /// outer flank ends at its round and its inner begins there, and its mate's the other way
+    /// round (`crown/mate.sv`).
+    fn flank_join(member: usize,outer: bool) -> f64 { if outer == (member == 0) { 1. } else { 0. } }
+
+    /// Which way a crown surface's chart normal points against its crown's material, +1 out of
+    /// it: a chart's normal follows its edge and its revolution, and the mate's run the other way
+    /// round, so the sign is read rather than assumed.
+    fn outward(&self,patch: &RevolvedSurface) -> f64 {
+        let crown = self.model.sketch.surfaces[self.flanks[self.label(patch)]].solid as usize;
+        let region = gcs_core::solid::RevolvedRegion::read(&self.model.sketch,crown,self.module*1e-10).unwrap();
+        let [from,to] = patch.domain()[1];
+        let s = patch.at(0.5,(from+to)/2.).unwrap();
+        let position = s.position;
+        let n = envelope::contact(s,Motion::identity()).unwrap().normal;
+        let p: [f64;3] = std::array::from_fn(|k| position[k]+1e-3*self.module*n[k]);
+        region.classify(p,0.).unwrap().signed_distance.signum()
     }
 
     fn patch(&self, member: usize, side: usize, edge: &str) -> RevolvedSurface {
@@ -309,7 +338,7 @@ fn finite_edges_follow_independent_characteristics_and_declared_axial_slices() {
                                 let angle = pair.delta[member]+(module*35f64.to_radians().cos()/rho).asin();
                                 assert!((actual[0].hypot(actual[1]).atan2(actual[2])-angle).abs() < 1e-8);
                             } else if role == "join" || role == "root" {
-                                assert_eq!(p.parameters[0],if outer { 1. } else { 0. });
+                                assert_eq!(p.parameters[0],Pair::flank_join(member,outer));
                             }
                         }
                     }
@@ -332,7 +361,7 @@ fn declared_boundary_seams_match_independent_spheres_and_tip_cones_across_sizes_
                     let edge = if outer { "outer" } else { "inner" };
                     let flank = pair.patch(member,side,edge);
                     let round = pair.patch(member,side,&format!("{edge}_round"));
-                    let join = if outer { 1. } else { 0. };
+                    let join = Pair::flank_join(member,outer);
                     for fraction in [0.9,1.,1.1] {
                         let rho = fraction*pair.rm;
                         // Independent scalar bracketing of the addendum cone on
@@ -400,7 +429,7 @@ fn declared_seams_agree_with_independent_characteristics_across_ratios_and_sizes
                         let seam = pair.seam(&flank,root);
                         let source = pair.patch(member,side,
                             &if root { format!("{edge}_round") } else { edge.into() });
-                        let u = if outer { 1. } else { 0. };
+                        let u = Pair::flank_join(member,outer);
                         assert_eq!(seam.endpoint_parameters(),[u,1.-u]);
                         for fraction in [0.9,1.,1.1] {
                             let rho = fraction*pair.rm;
@@ -433,6 +462,8 @@ fn declarative_mates_have_opposing_normals_and_exact_half_pitch_spacing() {
             for (side,edges) in [["outer","inner"],["inner","outer"]].iter().enumerate() {
                 let p = pair.patch(0,side,edges[0]);
                 let g = pair.patch(1,side,edges[1]);
+                // each normal out of its own crown's material
+                let (sp,sg) = (pair.outward(&p),pair.outward(&g));
                 for face in [0.9,1.,1.1] {
                     for height in [-0.2,0.,0.2] {
                         let a = pair.at_height(0,&p,height*module,face*pair.rm);
@@ -444,7 +475,7 @@ fn declarative_mates_have_opposing_normals_and_exact_half_pitch_spacing() {
                         near(ap,bp,module*1e-7);
                         let an = pair.body(0,t).vector(a.contact.normal);
                         let bn = pair.body(1,t).vector(b.contact.normal);
-                        near(an,bn.map(|x| -x),1e-7);
+                        near(an.map(|x| sp*x),bn.map(|x| -sg*x),1e-7);
                         // Actual shaft velocities, independent of the crown-envelope residual.
                         let av = pair.body(0,t).velocity(a.contact.position);
                         let bv = pair.body(1,t).velocity(b.contact.position);
@@ -478,7 +509,7 @@ fn both_members_have_tangent_generated_root_transitions_on_both_sides() {
             let flank = pair.patch(member,side,edge);
             let round = pair.patch(member,side,&format!("{edge}_round"));
             let tip = pair.patch(member,side,"tip");
-            let join = if outer { 0. } else { 1. };
+            let join = 1.-Pair::flank_join(member,outer);
             for face in [0.9,1.,1.1] {
                 let rho = face*pair.rm;
                 let a = pair.at(member,&flank,1.-join,rho);
@@ -543,7 +574,7 @@ fn declared_boundaries_match_independent_spheres_and_parallel_pitch_cones() {
                 gcs_core::solid::RevolvedRegion::read(&pair.model.sketch,
                     pair.model.sketch.surfaces[e.i()].solid as usize,module*1e-10).unwrap()
             };
-            for (name,fraction) in [("toe",0.9),("heel",1.1)] {
+            for (name,fraction) in [("gear_blank.toe",0.9),("gear_blank.heel",1.1)] {
                 let s = read(name);
                 let projector = s.projector().unwrap();
                 let region = material(name);
@@ -566,9 +597,9 @@ fn declared_boundaries_match_independent_spheres_and_parallel_pitch_cones() {
                 let member_name = if member == 0 { "pinion" } else { "gear" };
                 let d = pair.delta[member];
                 for (role,depth) in [("tip",1.),("root",-1.25),("back",-4.)] {
-                    let s = read(&format!("{member_name}_{role}_boundary"));
+                    let s = read(&format!("{member_name}_blank.{role}"));
                     let projector = s.projector().unwrap();
-                    let region = material(&format!("{member_name}_{role}_boundary"));
+                    let region = material(&format!("{member_name}_blank.{role}"));
                     for u in [0.,0.3,0.8,1.] {
                         for v in [0.,0.2,0.6,1.] {
                             let sample = s.at(u,v).unwrap();
@@ -629,7 +660,7 @@ fn named_boundary_intersections_find_tooth_corners_and_refuse_surface_continuati
                 if member == 0 && side == 0 && end == 0 {
                     // Same sphere equation, but a narrow angular patch away from the corner.
                     let mut sk = pair.model.sketch.clone();
-                    let e = pair.model.map.ent_named("pair.toe.wall").unwrap();
+                    let e = pair.model.map.ent_named("pair.gear_blank.toe.wall").unwrap();
                     let solid = sk.surfaces[e.i()].solid as usize;
                     let gcs_core::model::SolidDef::Revolve {sweep,..} = &mut sk.solids[solid].def else { unreachable!() };
                     sweep.value = 0.001;

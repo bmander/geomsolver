@@ -44,10 +44,23 @@ component RackSection(lp: point, rp: point, design: group) {
 
 preview {
   unit mm
-  group proportions(normal_module: 1.8mm, pressure: 20deg, shift: 10deg,
-                    base: 2, dedendum: 1.25, rounding: 0.3)
-  point rp hint(x: 3, y: 0)
-  std.origin distance(3mm, along: right) rp
+  // The 24:48 pair's crown at module 2, symmetric, revolved about the page's y axis at
+  // eight tenths of the cone distance; crown.svd draws it.
+  param pitch_radius = 0.8 * 2mm * hypot(24, 48) / 2
+  group proportions(normal_module: 2mm, pressure: 20deg, shift: 0deg,
+                    base: 1, dedendum: 1, rounding: 0.3)
+  point lp hint(x: pitch_radius - 1.3mm, y: 0)
+  point rp hint(x: pitch_radius + 1.3mm, y: 0)
+  std.origin distance(pitch_radius - 1.3mm, along: right) lp
+  std.origin distance(0mm, along: up) lp
+  std.origin distance(pitch_radius + 1.3mm, along: right) rp
   std.origin distance(0mm, along: up) rp
-  rack: RackSection(std.origin, rp, proportions)
+  rack: RackSection(lp, rp, proportions)
+  construction centerline line axis(std.origin, std.up.toward)
+  solid crown(rack.profile, about: axis)
+  surface outer(crown, rack.outer)
+  surface outer_round(crown, rack.outer_round)
+  surface inner(crown, rack.inner)
+  surface inner_round(crown, rack.inner_round)
+  surface tip(crown, rack.tip)
 }

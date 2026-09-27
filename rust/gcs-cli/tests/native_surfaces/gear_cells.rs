@@ -13,7 +13,7 @@ use std::f64::consts::PI;
 pub(super) fn read_gears_with(base: &Path,rewrite: &mut dyn FnMut(&str,String) -> String) -> program::Elaborated {
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     fixtures::gear::read_with(&source,base,&mut |name,text| {
-        let text = if name == "matched_pair" { fixtures::gear::publish_blank(&text,"  construction solid single(design.heel)\n  \
+        let text = if name == "members" { fixtures::gear::publish_blank(&text,"  construction solid single(design.heel)\n  \
             design.tip bound single\n  design.toe cut single\n  design.back cut single\n  removal cut single\n") } else { text };
         rewrite(name,text)
     })
@@ -180,7 +180,7 @@ fn a_cutter_with_a_motion_independent_contact_condition_is_refused() {
 fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     // The gear's cutter still overlaps its blank at 35 degrees of roll.
-    let e = read_gears_with(&base,&mut |name,text| if name == "matched_pair" { text.replace("roll_limit: 45deg","roll_limit: 35deg") } else { text });
+    let e = read_gears_with(&base,&mut |name,text| fixtures::gear::roll(name,text,"gear",35.));
     let removal = e.map.ent_named("pair.gear.removal").unwrap().i();
     let blank_id = e.map.ent_named("pair.gear.blank").unwrap().i();
     let cad = Cad::new();
