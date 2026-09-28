@@ -102,9 +102,11 @@ fn the_over_and_under_determined_parts_stand_apart() {
     assert_eq!(in_blocks + order.over_rows.len() + order.under_rows.len(), sys.hard_rows().len());
 }
 
+/// The configured hypoid's layout as recorded, with no backlash or tip relief; the relief's own
+/// geometry is `the_tip_relief_orders_whole`'s.
 #[test]
 fn the_hypoid_layout_is_117_blocks_15_deep() {
-    let e = fixtures::gear::read_as_configured();
+    let e = fixtures::gear::read_configured_with(&mut |name, text| fixtures::gear::design(name, text, 25., 12.5, 25.));
     let mut sys = System::new(&e.sketch);
     let order = sys.block_order();
     assert_eq!((sys.hard_rows().len(), sys.n_free), (358, 358));
@@ -136,6 +138,24 @@ fn the_hypoid_layout_is_117_blocks_15_deep() {
             }
         }
     }
+}
+
+/// The configured pair with its backlash and tip relief: the relief's chamfers, rounds and tops add
+/// blocks of their own, and the order is still square with nothing over or under-determined.
+#[test]
+fn the_tip_relief_orders_whole() {
+    let e = fixtures::gear::read_as_configured();
+    let mut sys = System::new(&e.sketch);
+    let order = sys.block_order();
+    let mut sizes = std::collections::BTreeMap::new();
+    for b in &order.blocks {
+        assert_eq!(b.rows.len(), b.cols.len());
+        *sizes.entry(b.rows.len()).or_insert(0) += 1;
+    }
+    println!("{} rows, {} free, {} blocks, {} deep, sizes {:?}", sys.hard_rows().len(), sys.n_free,
+        order.blocks.len(), order.depth(), sizes);
+    assert_eq!(sys.hard_rows().len(), sys.n_free);
+    assert!(order.over_rows.is_empty() && order.under_cols.is_empty());
 }
 
 /// A subset's residuals and Jacobian are the whole system's rows and columns, bit for bit: every

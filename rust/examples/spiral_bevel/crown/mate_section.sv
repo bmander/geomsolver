@@ -2,7 +2,8 @@
 // with its tip pointing the other way along the cutter's axis, so in N it walks its
 // edges the other way round from RackSection (base, inner, inner_round, tip,
 // outer_round, outer), and each flank carries the pressure angle of the tooth's
-// flank it lies on.
+// flank it lies on. Its walk is counter-clockwise too, and each flank stands a quarter
+// of the backlash outside the shared line, as the tooth's does (crown/section.sv).
 use std
 use crown.section
 use crown.rounding
@@ -39,8 +40,15 @@ component MateSection(lp: point, rp: point, inner_along: line, outer_along: line
             line outer(oj, bo) -> close
   inner_along angle(180deg) inner
   outer_along angle(180deg) outer
-  lp on inner
-  rp on outer
+  // Each flank a quarter of the backlash outside its shared line; with none, on it.
+  repeat design.lashed {
+    lp distance(design.backlash / 4, side: left) inner
+    rp distance(design.backlash / 4, side: left) outer
+  }
+  repeat 1 - design.lashed {
+    lp on inner
+    rp on outer
+  }
   rounding: TipRounding(pitch, base, tip, inner_round, outer_round, design,
     normal_module: normal_module)
 }
@@ -50,7 +58,7 @@ preview {
   // The preview crown section's outer mate: the tooth one width outward on its flanks.
   param pitch_radius = 0.8 * 2mm * hypot(24, 48) / 2
   group proportions(pressure: 20deg, shift: 0deg,
-                    base: 1, dedendum: 1, rounding: 0.3)
+                    base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0)
   point lp hint(x: pitch_radius - 1.3mm, y: 0)
   point rp hint(x: pitch_radius + 1.3mm, y: 0)
   point far hint(x: pitch_radius + 3.9mm, y: 0)

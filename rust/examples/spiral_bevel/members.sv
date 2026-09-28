@@ -19,7 +19,20 @@ component GeneratedMember(design: group, tool: solid, teeth: Int, roll_limit: An
   }
 }
 
-// The pair: each member's blank less its generator, swept at every tooth.
+// The tip relief (crown/relief.sv): a second cut on a member's `body`, its own sweep of
+// the relief `tool` under the member's generating motion and at every tooth index.
+component ReliefCut(body: solid, design: group, tool: solid, teeth: Int, roll_limit: Angle) {
+  private construction solid removal(tool, under: design.generation,
+    from: -roll_limit, to: roll_limit)
+  repeat teeth as i {
+    private construction solid indexed(removal, under: design.indexing,
+      at: i * 360deg / teeth)
+    indexed cut body
+  }
+}
+
+// The pair: each member's blank less its generator, swept at every tooth, and less its
+// tip relief where the design has one.
 component HypoidPair(front: plane, design: group) {
   private reference: HypoidLayout(front, design)
   pinion: GeneratedMember(reference.pinion_design, reference.tooth.crown,
@@ -28,6 +41,12 @@ component HypoidPair(front: plane, design: group) {
   // cutter clear of its blank at both limits.
   gear: GeneratedMember(reference.gear_design, reference.gear_space.body,
     teeth: design.gear_teeth, roll_limit: design.gear_roll)
+  repeat design.relieved {
+    pinion_relief: ReliefCut(pinion.body, reference.pinion_design,
+      reference.tooth_relief[0].body, teeth: design.pinion_teeth, roll_limit: design.pinion_roll)
+    gear_relief: ReliefCut(gear.body, reference.gear_design,
+      reference.space_relief[0].body, teeth: design.gear_teeth, roll_limit: design.gear_roll)
+  }
 }
 
 preview {

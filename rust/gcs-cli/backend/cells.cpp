@@ -188,6 +188,26 @@ int solvent_cad_solid_samples(Cad* cad,int id,double* output,int capacity,int me
                 if (((i+j+k)&1) != pass) continue;
                 consider(gp_Pnt(x0+(x1-x0)*(i+0.5)/n,y0+(y1-y0)*(j+0.5)/n,z0+(z1-z0)*(k+0.5)/n));
             }
+        // A sliver long against its thickness (a chamfer's wedge along a tooth) leaves every
+        // candidate above outside: step in again from its faces, finer, only then.
+        for (const double step: {diagonal*1e-3,diagonal*2e-4}) {
+            if (!inside.empty()) break;
+            for (TopExp_Explorer it(shape,TopAbs_FACE); it.More() && static_cast<int>(inside.size()) < measure; it.Next()) {
+                const TopoDS_Face face = TopoDS::Face(it.Current());
+                double u0,u1,v0,v1;
+                BRepTools::UVBounds(face,u0,u1,v0,v1);
+                BRepAdaptor_Surface surface(face);
+                for (const auto& [fu,fv]: {std::pair{0.5,0.5},{0.25,0.25},{0.75,0.75},{0.25,0.75},{0.75,0.25}}) {
+                    gp_Pnt p; gp_Vec du,dv;
+                    surface.D1(u0+(u1-u0)*fu,v0+(v1-v0)*fv,p,du,dv);
+                    gp_Vec n = du.Crossed(dv);
+                    if (n.Magnitude() <= 1e-12) continue;
+                    n.Normalize();
+                    if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+                    consider(p.Translated(n.Multiplied(-step)));
+                }
+            }
+        }
         if (inside.empty()) return 0;
         // Distance to the boundary against the whole shell at once: the extrema
         // solver culls faces by bounding box, where a face-by-face loop does not.

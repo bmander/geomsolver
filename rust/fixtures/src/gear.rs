@@ -14,15 +14,18 @@ pub fn module(name: &str) -> Option<String> { crate::module(&project(),name) }
 
 /// A `configuration` module of its own: the tooth counts, the mean module and the offset between
 /// the shafts in millimetres, the pressure shift and the crown's spiral in degrees, the shafts
-/// square.
+/// square, with no backlash and no tip relief.
 pub fn configuration(teeth: [u32;2],mean_module: f64,offset: f64,shift: f64,spiral: f64) -> String {
     format!("param pinion_teeth = {}\nparam gear_teeth = {}\nparam mean_module = {mean_module}mm\n\
         param shaft_angle = 90deg\nparam offset = {offset}mm\nparam pressure_shift = {shift}deg\n\
-        param spiral_angle = {spiral}deg\n",teeth[0],teeth[1])
+        param spiral_angle = {spiral}deg\nparam backlash = 0mm\nparam tip_relief = 0mm\n",teeth[0],teeth[1])
 }
 
-/// The `configuration` module with each named parameter set to a number: the offset in
-/// millimetres, every other in degrees. Its line is dropped wherever it stands and the value
+/// The parameters `configure` reads in millimetres; every other is in degrees.
+const LENGTHS: [&str;3] = ["offset","backlash","tip_relief"];
+
+/// The `configuration` module with each named parameter set to a number: the offset, the
+/// backlash and the tip relief in millimetres, every other in degrees. Its line is dropped wherever it stands and the value
 /// written at the end. Every other module unchanged.
 pub fn configure(name: &str,text: String,params: &[(&str,f64)]) -> String {
     if name != "configuration" { return text; }
@@ -30,15 +33,25 @@ pub fn configure(name: &str,text: String,params: &[(&str,f64)]) -> String {
     // `param offset` must not take a `param offset_…`: a name ends at a space or an `=`.
     let names = |l: &str| lines.iter().any(|p| l.trim_start().strip_prefix(p.as_str())
         .is_some_and(|rest| rest.starts_with([' ','='])));
-    let unit = |p: &str| if p == "offset" { "mm" } else { "deg" };
+    let unit = |p: &str| if LENGTHS.contains(&p) { "mm" } else { "deg" };
     text.lines().filter(|l| !names(l)).map(|l| format!("{l}\n")).collect::<String>()
         + &params.iter().map(|(p,v)| format!("param {p} = {v}{}\n",unit(p))).collect::<String>()
 }
 
 /// The gear design: the offset between the shafts in millimetres, the pressure shift and the
-/// crown's spiral angle in degrees.
+/// crown's spiral angle in degrees; with no backlash and no tip relief, the conjugate pair every
+/// number the suites recorded before the fabrication allowances was taken of (`fabricated` adds
+/// them).
 pub fn design(name: &str,text: String,offset: f64,shift: f64,spiral: f64) -> String {
-    configure(name,text,&[("offset",offset),("pressure_shift",shift),("spiral_angle",spiral)])
+    configure(name,text,&[("offset",offset),("pressure_shift",shift),("spiral_angle",spiral),
+        ("backlash",0.),("tip_relief",0.)])
+}
+
+/// `design` with the fabrication allowances: the normal backlash and the tip relief in
+/// millimetres.
+pub fn fabricated(name: &str,text: String,design: [f64;3],backlash: f64,tip_relief: f64) -> String {
+    configure(name,text,&[("offset",design[0]),("pressure_shift",design[1]),("spiral_angle",design[2]),
+        ("backlash",backlash),("tip_relief",tip_relief)])
 }
 
 /// The bevel pair: every recorded number in the suites was taken with the pinion axis through
@@ -75,7 +88,8 @@ pub fn roll(name: &str,text: String,member: &str,degrees: f64) -> String {
 }
 
 /// Copy the project's sources into `dir`, subdirectories and all, its configuration at a design
-/// (`design`: the offset in millimetres, the shift and the spiral in degrees).
+/// (`design`: the offset in millimetres, the shift and the spiral in degrees; no backlash or tip
+/// relief).
 pub fn copy_design(dir: &std::path::Path,offset: f64,shift: f64,spiral: f64) {
     fn walk(from: &std::path::Path,to: &std::path::Path) {
         std::fs::create_dir_all(to).unwrap();
@@ -97,7 +111,7 @@ pub fn read_configured_with(rewrite: &mut dyn FnMut(&str,String) -> String) -> p
     crate::read_beside(&source(),&project(),rewrite)
 }
 
-/// The pair as configured, offset and all.
+/// The pair as configured, offset, backlash and tip relief and all.
 pub fn read_as_configured() -> program::Elaborated { read_configured_with(&mut |_,text| text) }
 
 /// `source` with its modules read beside `base` as the bevel pair, then rewritten.
@@ -109,7 +123,8 @@ pub fn read_with(source: &str,base: &std::path::Path,rewrite: &mut dyn FnMut(&st
 pub fn read(source: &str,base: &std::path::Path) -> program::Elaborated { read_with(source,base,&mut |_,text| text) }
 
 /// The twelve designs the layout regression records (`tests/hypoid_layout.rs`), each a label and
-/// its `configuration` module: the configured hypoid, the bevel pair, the six-millimetre hypoid,
+/// its `configuration` module: the configured hypoid (with no backlash or tip relief, as it was
+/// recorded), the bevel pair, the six-millimetre hypoid,
 /// and the bevel pair at three tooth pairs and three modules — the sizes and ratios the
 /// paired-envelope checks read.
 pub fn designs() -> Vec<(String,String)> {

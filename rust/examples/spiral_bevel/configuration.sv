@@ -1,5 +1,6 @@
 // The pair's configuration: the teeth, the shafts and the crown, as a designer states
-// them (design.sv adds the proportions). Manufacturing choices belong outside this model.
+// them (design.sv adds the proportions), and the two fabrication allowances a shop needs.
+// Machine settings belong outside this model.
 param pinion_teeth = 24
 param gear_teeth = 48
 param mean_module = 2mm
@@ -17,3 +18,10 @@ param pressure_shift = 12.5deg
 // offset angle, the angle the pinion's pitch generator turns from the gear's in
 // the pitch plane, which the layout solves.
 param spiral_angle = 25deg
+// The normal backlash: the clearance between the pair's flanks, measured along their
+// normal with the other flanks touching. Each member's teeth are thinned by half of it, a
+// quarter on each flank (crown/section.sv); zero is the conjugate pair.
+param backlash = 0.05mm
+// The tip relief: every tooth's tip edges chamfered this far down the tooth by a
+// semi-topping cut beside the generating crown (crown/relief.sv); zero leaves them sharp.
+param tip_relief = 0.2mm

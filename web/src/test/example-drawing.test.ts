@@ -44,7 +44,7 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   assert.equal(gears.directory, 'spiral_bevel');
   for (const name of ['configuration', 'design', 'layout', 'members', 'generation', 'views',
     'pitch/gear', 'blank/member', 'crown/tooth', 'crown/mate', 'crown/mate_section',
-    'crown/reach', 'crown/space']) {
+    'crown/reach', 'crown/space', 'crown/relief']) {
     assert.ok(gears.files[`spiral_bevel/${name}.sv`], name);
   }
   const vtwin = await remote.drawing('vtwin');
