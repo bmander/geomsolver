@@ -35,21 +35,10 @@ fn off_line(p: V,o: V,d: V) -> f64 { norm(cross(sub(p,o),unit(d))) }
 struct Design { label: String, configuration: String }
 
 impl Design {
-    /// The configured pair with the offset, shift and spiral rewritten, as the suites do.
-    fn configured(label: &str,offset: f64,shift: f64,spiral: f64) -> Self {
-        let path = fixtures::gear::project().join("configuration.sv");
-        let text = std::fs::read_to_string(path).unwrap();
-        let configuration = fixtures::gear::design("configuration",text,offset,shift,spiral);
-        Design { label: label.into(), configuration }
-    }
     /// A design of its own (`fixtures::gear::configuration`).
     fn at(label: String,teeth: [u32;2],module: f64,offset: f64,shift: f64,spiral: f64) -> Self {
         let configuration = fixtures::gear::configuration(teeth,module,offset,shift,spiral);
         Design { label, configuration }
-    }
-    /// A size and ratio case of `tests/envelope/paired.rs`: the bevel pair at those teeth.
-    fn sized(teeth: [u32;2],module: f64) -> Self {
-        Design::at(format!("{}x{} m{module}",teeth[0],teeth[1]),teeth,module,0.,0.,35.)
     }
     /// The pair (`gears.sv`), its modules beside it, the configuration replaced.
     fn read(&self) -> Elaborated {
@@ -58,13 +47,11 @@ impl Design {
     }
 }
 
+/// The recorded designs (`fixtures::gear::designs`): the configured hypoid, the bevel pair, the
+/// six-millimetre hypoid and the nine sizes and ratios of `tests/envelope/paired.rs`.
 fn designs() -> Vec<Design> {
-    let mut all = vec![Design::configured("configured",25.,12.5,25.),
-        Design::configured("bevel",0.,0.,35.),Design::configured("hypoid6",5.7,0.,35.)];
-    for teeth in [[24,48],[32,32],[28,49]] {
-        for module in [0.2,2.,25.4] { all.push(Design::sized(teeth,module)); }
-    }
-    all
+    fixtures::gear::designs().into_iter().map(|(label,configuration)| Design { label,configuration })
+        .collect()
 }
 
 /// The pair names its layout under this; the members stand beside it.
@@ -468,9 +455,15 @@ fn off_recorded(reading: &Reading,rows: &[(String,Vec<f64>)],k: usize) -> (f64,S
 
 impl Design {
     /// The pair elaborated and not solved: where its seeds put it.
-    fn unsolved(&self) -> Elaborated {
-        fixtures::unsolved(&fixtures::gear::source(),&mut fixtures::beside(&fixtures::gear::project(),
-            &mut |name,text| if name == "configuration" { self.configuration.clone() } else { text }))
+    fn unsolved(&self) -> Elaborated { fixtures::gear::unsolved(&self.configuration) }
+    /// `sk`, this design's pair, started from the seeds the same layout computes at `f` times its
+    /// size (`scaled`): right in shape and wrong in size.
+    fn reseed(&self,sk: &mut gcs_core::model::Sketch,f: f64) {
+        let seeds = fixtures::gear::unsolved(&scaled(&self.configuration,f));
+        assert_eq!(sk.params.len(),seeds.sketch.params.len());
+        for (p,q) in sk.params.iter_mut().zip(&seeds.sketch.params) {
+            if !p.fixed { p.value = q.value; }
+        }
     }
 }
 
@@ -510,7 +503,7 @@ fn scaled(text: &str,f: f64) -> String {
 fn the_layout_solves_from_rough_seeds_in_block_order() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,rows) = recorded();
-    let opts = |blocks| SolveOpts {tol:1e-16,acceptance_tol:1e-12,blocks,..Default::default()};
+    let opts = |blocks| SolveOpts {blocks,..fixtures::accurate()};
     // starts from which the whole-system solve does not reach the recorded pair
     let mut whole_missed = 0;
     let mut configured_missed = std::collections::BTreeSet::new();
@@ -519,13 +512,8 @@ fn the_layout_solves_from_rough_seeds_in_block_order() {
         let mut e = design.unsolved();
         let start = e.sketch.clone();
         for f in [0.4,2.5] {
-            let seeds = Design { label: String::new(),configuration: scaled(&design.configuration,f) }
-                .unsolved();
             let mut rough = start.clone();
-            assert_eq!(rough.params.len(),seeds.sketch.params.len());
-            for (p,q) in rough.params.iter_mut().zip(&seeds.sketch.params) {
-                if !p.fixed { p.value = q.value; }
-            }
+            design.reseed(&mut rough,f);
             let mut line = format!("{:12} seeds x{f:3}",design.label);
             let mut whole = None;
             for mode in [BlockMode::Off,BlockMode::Rescue,BlockMode::First] {
@@ -536,7 +524,7 @@ fn the_layout_solves_from_rough_seeds_in_block_order() {
                     else { "FAILED" },res.method,res.max_residual);
                 if let Some((d,at)) = &off { line += &format!(", {d:.1e} off at {at}"); }
                 let label = format!("{} seeds x{f}, {mode:?}",design.label);
-                let bits = e.sketch.get_x().into_iter().map(f64::to_bits).collect::<Vec<_>>();
+                let bits = crate::common::bits(&e.sketch);
                 match (mode,&whole) {
                     (BlockMode::Off,_) => {
                         if !off.as_ref().is_some_and(|(d,_)| *d <= 1e-9) { whole_missed += 1; }
@@ -605,27 +593,24 @@ fn every_modules_preview_converges_as_solventc_solves_it() {
 /// start solved twice comes out the same to the bit.
 #[test]
 fn a_rough_start_solves_to_the_same_bits_twice() {
-    use gcs_core::solve::{self,SolveOpts};
+    use gcs_core::solve;
     let designs = designs();
     let design = &designs[5];
-    let seeds = Design { label: String::new(),configuration: scaled(&design.configuration,2.5) }.unsolved();
     let mut e = design.unsolved();
-    for (p,q) in e.sketch.params.iter_mut().zip(&seeds.sketch.params) { if !p.fixed { p.value = q.value; } }
-    let opts = SolveOpts {tol:1e-16,acceptance_tol:1e-12,..Default::default()};
+    design.reseed(&mut e.sketch,2.5);
     let (mut a,mut b) = (e.sketch.clone(),e.sketch.clone());
-    let (ra,rb) = (solve::solve(&mut a,opts),solve::solve(&mut b,opts));
+    let (ra,rb) = (solve::solve(&mut a,fixtures::accurate()),solve::solve(&mut b,fixtures::accurate()));
     assert!(ra.success && ra.method == "blocks","{ra:?}");
     assert_eq!((ra.nfev,ra.njev,ra.iterations),(rb.nfev,rb.njev,rb.iterations));
-    let bits = |x: Vec<f64>| x.into_iter().map(f64::to_bits).collect::<Vec<_>>();
-    assert_eq!(bits(a.get_x()),bits(b.get_x()));
+    assert_eq!(crate::common::bits(&a),crate::common::bits(&b));
 }
 
 /// A tool, not a check: which path each design's solve takes from the layout's own seeds — the
 /// whole-system DogLeg (`dogleg`), the block rescue (`blocks`) or the LM retry (`lm`) — under
 /// each `BlockMode`, how far from the recorded pair it lands, and how long it takes.
-/// `cargo test -p gcs-core --test core hypoid_layout::solve_paths -- --ignored --nocapture`.
 #[test]
-#[ignore = "a tool: prints each design's solve path"]
+#[ignore = "a tool: cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
+    hypoid_layout::solve_paths -- --ignored --nocapture"]
 fn solve_paths() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,rows) = recorded();
@@ -634,8 +619,7 @@ fn solve_paths() {
         for blocks in [BlockMode::Off,BlockMode::Rescue,BlockMode::First] {
             let mut e = design.unsolved();
             let clock = std::time::Instant::now();
-            let res = solve::solve(&mut e.sketch,
-                SolveOpts {tol:1e-16,acceptance_tol:1e-12,blocks,..Default::default()});
+            let res = solve::solve(&mut e.sketch,SolveOpts {blocks,..fixtures::accurate()});
             let ms = clock.elapsed().as_secs_f64()*1e3;
             line += &format!(" | {blocks:?}: {} {} ({:.1e}, {ms:.0} ms)",
                 if res.success { "solved" } else { "FAILED" },res.method,res.max_residual);
@@ -653,9 +637,9 @@ fn solve_paths() {
 /// solves it, against the block path held to 1e-12; it prints each design where the default
 /// solve does not converge to the same pose (a whole-system DogLeg that stalls just under the
 /// interactive acceptance counts as a success there), or where the block path fails.
-/// `cargo test -p gcs-core --test core hypoid_layout::design_sweep -- --ignored --nocapture`.
 #[test]
-#[ignore = "a tool: sweeps designs for where the default solve does not converge"]
+#[ignore = "a tool: cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
+    hypoid_layout::design_sweep -- --ignored --nocapture"]
 fn design_sweep() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (mut bad,mut n) = (0,0);
@@ -664,8 +648,7 @@ fn design_sweep() {
         let design = Design::at(String::new(),teeth,module,offset*module/2.,shift,spiral);
         let (mut a,mut b) = (design.unsolved(),design.unsolved());
         let ra = solve::solve(&mut a.sketch,SolveOpts::default());
-        let rb = solve::solve(&mut b.sketch,
-            SolveOpts {acceptance_tol:1e-12,tol:1e-16,blocks:BlockMode::First,..Default::default()});
+        let rb = solve::solve(&mut b.sketch,SolveOpts {blocks:BlockMode::First,..fixtures::accurate()});
         let diff = a.sketch.get_x().iter().zip(b.sketch.get_x()).map(|(x,y)| (x-y).abs())
             .fold(0.,f64::max)/b.sketch.extent();
         n += 1;

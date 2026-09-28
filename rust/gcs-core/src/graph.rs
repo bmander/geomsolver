@@ -278,18 +278,12 @@ pub fn dulmage_mendelsohn(adj: &[Vec<usize>], n_cols: usize) -> Dm {
 /// that reads no other — so the longest chain is the largest level.
 ///
 /// A row of the over- or under-determined part is in no block: it has no square partner to be
-/// solved against, and what it reads of the well part is read, not solved for.
+/// solved against, and what it reads of the well part is read, not solved for.  (`Blt`: the
+/// block lower-triangular form, as `Dm` is the decomposition.)
 #[derive(Clone, Debug, Default)]
 pub struct Blt {
     pub rows: Vec<Vec<usize>>,
     pub level: Vec<usize>,
-}
-
-impl Blt {
-    /// The longest chain of blocks, each reading the one before it.
-    pub fn depth(&self) -> usize {
-        self.level.iter().copied().max().unwrap_or(0)
-    }
 }
 
 pub fn blocks(adj: &[Vec<usize>], dm: &Dm) -> Blt {
@@ -336,7 +330,8 @@ pub fn blocks(adj: &[Vec<usize>], dm: &Dm) -> Blt {
             }
         }
     }
-    let first: Vec<usize> = comps.iter().map(|c| c.iter().map(|&v| well[v]).min().unwrap()).collect();
+    let first: Vec<usize> =
+        comps.iter().map(|c| c.iter().map(|&v| well[v]).min().unwrap()).collect();
     let mut waiting: Vec<usize> = needs.iter().map(|s| s.len()).collect();
     let mut ready: BTreeSet<(usize, usize)> =
         (0..comps.len()).filter(|&k| waiting[k] == 0).map(|k| (first[k], k)).collect();

@@ -123,7 +123,8 @@ pub struct System {
     ///
     /// **Every residual this system hands out is already divided by it**, and so is every row
     /// of the Jacobian — `residuals_into` and `compute_csr` are the two places a row is
-    /// produced, and both scale it there.  So the vector the solvers minimise is
+    /// produced (`subset_residuals` and `subset_csr` for some of the rows), and each scales it
+    /// there.  So the vector the solvers minimise is
     /// dimensionless: a degree-0 `angle` row (a bearing gap in radians, O(1)) sits beside a
     /// degree-2 `distance` row (a squared length, O(L²)) at equal weight.  Left raw, the
     /// dogleg's merit function, its ratio test and its Cauchy step all belonged to the length
@@ -211,7 +212,7 @@ impl BlockOrder {
 /// `row_scale` and `col_scale` — so a block solved through it is solved in the whole system's
 /// units, and a traced contact reads its constants at the address its memory is keyed by.
 pub struct Subset {
-    /// (kernel block, first instance, count, first local row, first local Jacobian value).
+    /// (kernel block, first instance, count, first local row, first local kernel Jacobian output).
     runs: Vec<(usize, usize, usize, usize, usize)>,
     /// Residual rows of the full vector, in the order they are evaluated (ascending).
     pub rows: Vec<usize>,
@@ -221,10 +222,143 @@ pub struct Subset {
     pub indices: Vec<i32>,
     /// The Jacobian's values over `indptr`/`indices`, as `System::subset_csr` last filled them.
     pub data: Vec<f64>,
-    ent_src: Vec<usize>,
-    ent_slot: Vec<usize>,
+    ent_src: Vec<i32>,
+    ent_slot: Vec<i32>,
     jdata: Vec<f64>,
     v: Vec<f64>,
+}
+
+impl Subset {
+    /// out (rows) <- J v (columns), from the values `System::subset_csr` last filled.
+    pub(crate) fn j_mul(&self, v: &[f64], out: &mut [f64]) {
+        csr_mul(&self.indptr, &self.indices, &self.data, v, out);
+    }
+
+    /// out (columns) <- Jᵀ v (rows), likewise.
+    pub(crate) fn jt_mul(&self, v: &[f64], out: &mut [f64]) {
+        out.iter_mut().for_each(|x| *x = 0.0);
+        for r in 0..self.rows.len() {
+            for p in self.indptr[r]..self.indptr[r + 1] {
+                out[self.indices[p as usize] as usize] += self.data[p as usize] * v[r];
+            }
+        }
+    }
+}
+
+/* -- evaluation, shared by the whole system and a subset of it -------------------------------- */
+// Each is one step both paths take, written once so a subset's numbers cannot drift from the
+// whole system's: the same values gathered, the same entries in the same order, the same sums.
+
+/// `v` <- the parameter values `gidx` names, in order: a kernel call's input.
+fn gather(v: &mut Vec<f64>, x: &[f64], gidx: &[i32]) {
+    v.clear();
+    v.extend(gidx.iter().map(|&g| x[g as usize]));
+}
+
+/// Fill `count` instances' Jacobian outputs, from the start of `out`, with the kernel's constant
+/// Jacobian where it has one — once, since nothing recomputes it.
+fn fill_const_jac(kn: Kernel, count: usize, out: &mut [f64]) {
+    if let Some(cj) = kn.const_jac {
+        let sz = kn.n_res * kn.n_par;
+        for i in 0..count {
+            out[i * sz..(i + 1) * sz].copy_from_slice(cj);
+        }
+    }
+}
+
+/// Push the Jacobian entries of `count` instances of `kn` over the parameters `gidx`, their first
+/// row `row0` and their first kernel output `src0`, as `(row * ncols + column, output)` in
+/// (instance, row, parameter) order; `col` is a parameter's column, or `None` where it has none.
+fn jac_entries(
+    es: &mut Vec<(i64, i32)>,
+    kn: Kernel,
+    gidx: &[i32],
+    count: usize,
+    row0: usize,
+    src0: usize,
+    ncols: i64,
+    col: impl Fn(i32) -> Option<i64>,
+) {
+    for i in 0..count {
+        for t in 0..kn.n_res {
+            for c in 0..kn.n_par {
+                let Some(col) = col(gidx[i * kn.n_par + c]) else { continue };
+                let row = (row0 + i * kn.n_res + t) as i64;
+                let src = (src0 + (i * kn.n_res + t) * kn.n_par + c) as i32;
+                es.push((row * ncols + col, src));
+            }
+        }
+    }
+}
+
+/// A CSR Jacobian's structure, and per entry the kernel output it reads and the value it adds to.
+struct Csr {
+    indptr: Vec<i32>,
+    indices: Vec<i32>,
+    ent_src: Vec<i32>,
+    ent_slot: Vec<i32>,
+}
+
+/// The structure of `n_rows` rows from `jac_entries`' list: sorted stably by position, so a
+/// column a row names twice is one value, summed in the order its entries were listed.
+fn csr_structure(mut es: Vec<(i64, i32)>, n_rows: usize, ncols: i64) -> Csr {
+    es.sort_by_key(|e| e.0);
+    let mut indptr = vec![0i32; n_rows + 1];
+    let mut indices: Vec<i32> = Vec::with_capacity(es.len());
+    let (mut ent_src, mut ent_slot) = (Vec::with_capacity(es.len()), Vec::with_capacity(es.len()));
+    for e in 0..es.len() {
+        if e == 0 || es[e].0 != es[e - 1].0 {
+            indices.push((es[e].0 % ncols) as i32);
+            indptr[(es[e].0 / ncols) as usize + 1] = indices.len() as i32;
+        }
+        ent_src.push(es[e].1);
+        ent_slot.push(indices.len() as i32 - 1);
+    }
+    for i in 1..indptr.len() {
+        if indptr[i] < indptr[i - 1] {
+            indptr[i] = indptr[i - 1];
+        }
+    }
+    Csr { indptr, indices, ent_src, ent_slot }
+}
+
+/// out <- J v, J the CSR over `indptr`, `indices` and `data`.
+pub(crate) fn csr_mul(indptr: &[i32], indices: &[i32], data: &[f64], v: &[f64], out: &mut [f64]) {
+    for i in 0..indptr.len() - 1 {
+        let mut s = 0.0;
+        for p in indptr[i]..indptr[i + 1] {
+            s += data[p as usize] * v[indices[p as usize] as usize];
+        }
+        out[i] = s;
+    }
+}
+
+/// `data` <- every entry's kernel output summed into its value.
+fn assemble(data: &mut [f64], jdata: &[f64], ent_src: &[i32], ent_slot: &[i32]) {
+    for v in data.iter_mut() {
+        *v = 0.0;
+    }
+    for e in 0..ent_src.len() {
+        data[ent_slot[e] as usize] += jdata[ent_src[e] as usize];
+    }
+}
+
+/// Each CSR value over its row's units and its column's scale — `row_scale` and `col_scale` of
+/// a row and a column of the CSR's own.
+fn to_units(
+    data: &mut [f64],
+    indptr: &[i32],
+    indices: &[i32],
+    row_scale: impl Fn(usize) -> f64,
+    col_scale: impl Fn(usize) -> f64,
+) {
+    for r in 0..indptr.len() - 1 {
+        let inv = 1.0 / row_scale(r);
+        for p in indptr[r]..indptr[r + 1] {
+            let p = p as usize;
+            data[p] *= inv / col_scale(indices[p] as usize);
+        }
+    }
 }
 
 /// Every kernel this system may evaluate: the static table, then one per curve definition the
@@ -366,57 +500,20 @@ impl System {
         let n_res = row0;
 
         let mut jdata = vec![0.0; joff.max(1)];
-        // constant Jacobians are filled once and never recomputed
         for b in &blocks {
-            let kn = table[b.kid];
-            if let Some(cj) = kn.const_jac {
-                let sz = kn.n_res * kn.n_par;
-                for i in 0..b.count {
-                    jdata[b.jac_off + i * sz..b.jac_off + (i + 1) * sz].copy_from_slice(cj);
-                }
-            }
+            fill_const_jac(table[b.kid], b.count, &mut jdata[b.jac_off..]);
         }
 
         // Jacobian structure: entry (block, i, res, par) -> (row, col), duplicates merged
         let ncols = n_free.max(1) as i64;
         let mut es: Vec<(i64, i32)> = Vec::with_capacity(joff);
         for b in &blocks {
-            let kn = table[b.kid];
-            for i in 0..b.count {
-                for t in 0..kn.n_res {
-                    for c in 0..kn.n_par {
-                        let col = col_of[b.gidx[i * kn.n_par + c] as usize];
-                        if col < 0 {
-                            continue;
-                        }
-                        let row = (b.row0 + i * kn.n_res + t) as i64;
-                        let src = (b.jac_off + (i * kn.n_res + t) * kn.n_par + c) as i32;
-                        es.push((row * ncols + col as i64, src));
-                    }
-                }
-            }
+            let col = |p: i32| (col_of[p as usize] >= 0).then(|| col_of[p as usize] as i64);
+            jac_entries(&mut es, table[b.kid], &b.gidx, b.count, b.row0, b.jac_off, ncols, col);
         }
-        es.sort_by_key(|e| e.0);
-        let ne = es.len();
-        let mut ent_src = vec![0i32; ne];
-        let mut ent_slot = vec![0i32; ne];
-        let mut csr_indices: Vec<i32> = Vec::with_capacity(ne);
-        let mut csr_indptr = vec![0i32; n_res + 1];
-        let mut nnz = 0usize;
-        for e in 0..ne {
-            if e == 0 || es[e].0 != es[e - 1].0 {
-                csr_indices.push((es[e].0 % ncols) as i32);
-                csr_indptr[(es[e].0 / ncols) as usize + 1] = nnz as i32 + 1;
-                nnz += 1;
-            }
-            ent_src[e] = es[e].1;
-            ent_slot[e] = nnz as i32 - 1;
-        }
-        for i in 1..=n_res {
-            if csr_indptr[i] < csr_indptr[i - 1] {
-                csr_indptr[i] = csr_indptr[i - 1];
-            }
-        }
+        let Csr { indptr: csr_indptr, indices: csr_indices, ent_src, ent_slot } =
+            csr_structure(es, n_res, ncols);
+        let nnz = csr_indices.len();
 
         let mut row_scale = vec![1.0; n_res];
         let mut jac_scale = vec![1.0; n_res];
@@ -558,12 +655,7 @@ impl System {
         let mut v: Vec<f64> = Vec::new();
         for b in &self.blocks {
             let kn = self.kernels[b.kid];
-            let len = b.count * kn.n_par;
-            v.clear();
-            v.reserve(len);
-            for t in 0..len {
-                v.push(self.x[b.gidx[t] as usize]);
-            }
+            gather(&mut v, &self.x, &b.gidx[..b.count * kn.n_par]);
             let rows = b.count * kn.n_res;
             (kn.res)(b.count, &v, &b.consts, &mut r[b.row0..b.row0 + rows]);
         }
@@ -589,12 +681,7 @@ impl System {
             if kn.const_jac.is_some() {
                 continue;
             }
-            let len = b.count * kn.n_par;
-            v.clear();
-            v.reserve(len);
-            for t in 0..len {
-                v.push(self.x[b.gidx[t] as usize]);
-            }
+            gather(&mut v, &self.x, &b.gidx[..b.count * kn.n_par]);
             let sz = b.count * kn.n_res * kn.n_par;
             (kn.jac)(b.count, &v, &b.consts, &mut self.jdata[b.jac_off..b.jac_off + sz]);
         }
@@ -603,22 +690,12 @@ impl System {
     /// Refill the Jacobian's CSR values at z (the structure never changes).
     pub fn compute_csr(&mut self, z: &[f64]) -> &[f64] {
         self.jac_blocks(z);
-        for v in self.csr_data.iter_mut() {
-            *v = 0.0;
-        }
-        for e in 0..self.ent_src.len() {
-            self.csr_data[self.ent_slot[e] as usize] += self.jdata[self.ent_src[e] as usize];
-        }
+        assemble(&mut self.csr_data, &self.jdata, &self.ent_src, &self.ent_slot);
         // dr/dz = (dr/dx) / col_scale: the same chain rule that turned x into z above — and the
         // row over its own units, as `residuals_into` hands the residual out
         if self.scaled || self.row_scaled {
-            for r in 0..self.n_res {
-                let inv = 1.0 / self.row_scale[r];
-                for p in self.csr_indptr[r]..self.csr_indptr[r + 1] {
-                    let p = p as usize;
-                    self.csr_data[p] *= inv / self.col_scale[self.csr_indices[p] as usize];
-                }
-            }
+            let (rs, cs) = (&self.row_scale, &self.col_scale);
+            to_units(&mut self.csr_data, &self.csr_indptr, &self.csr_indices, |r| rs[r], |c| cs[c]);
         }
         &self.csr_data
     }
@@ -865,12 +942,6 @@ impl System {
         (b, (row - self.blocks[b].row0) / self.kernels[self.blocks[b].kid].n_res)
     }
 
-    /// The id of the constraint a residual row belongs to.
-    pub fn cid_of_row(&self, row: usize) -> u32 {
-        let (b, i) = self.instance_of(row);
-        self.blocks[b].cids[i]
-    }
-
     /// The block-triangular order of the hard rows — see `BlockOrder`.  Worked out once per
     /// compile: `structure()`, `graph::dulmage_mendelsohn`, then `graph::blocks` over the
     /// matched square part.  A constraint's rows name the same columns, so they always fall in
@@ -883,7 +954,7 @@ impl System {
         let hard = self.hard_rows();
         let dm = crate::graph::dulmage_mendelsohn(&adj, self.n_free);
         let blt = crate::graph::blocks(&adj, &dm);
-        let mut order = BlockOrder { level: blt.level.clone(), ..BlockOrder::default() };
+        let mut order = BlockOrder { level: blt.level, ..BlockOrder::default() };
         for rows in &blt.rows {
             let mut cols: Vec<usize> = rows.iter().map(|&r| dm.mate_row[r] as usize).collect();
             cols.sort_unstable();
@@ -937,54 +1008,23 @@ impl System {
             joff += kn.n_res * kn.n_par;
         }
         let rows = self.rows_of(&inst);
-        let ncols = cols.len().max(1);
         // entries in the whole system's order — (instance, row, parameter) — so a column named
-        // twice sums in the same order; sorted stably by (row, column) as `new` sorts them
-        let mut es: Vec<(usize, usize)> = Vec::with_capacity(joff);
+        // twice sums in the same order, merged as `new` merges them
+        let ncols = cols.len().max(1) as i64;
+        let mut es: Vec<(i64, i32)> = Vec::with_capacity(joff);
+        let mut jdata = vec![0.0; joff];
         for &(b, i0, count, out0, joff0) in &runs {
             let blk = &self.blocks[b];
             let kn = self.kernels[blk.kid];
-            for i in 0..count {
-                for t in 0..kn.n_res {
-                    for c in 0..kn.n_par {
-                        let col = self.col_of[blk.gidx[(i0 + i) * kn.n_par + c] as usize];
-                        if col < 0 || local[col as usize] < 0 {
-                            continue;
-                        }
-                        let row = out0 + i * kn.n_res + t;
-                        let src = joff0 + (i * kn.n_res + t) * kn.n_par + c;
-                        es.push((row * ncols + local[col as usize] as usize, src));
-                    }
-                }
-            }
+            let gidx = &blk.gidx[i0 * kn.n_par..(i0 + count) * kn.n_par];
+            let col = |p: i32| {
+                let c = self.col_of[p as usize];
+                (c >= 0 && local[c as usize] >= 0).then(|| local[c as usize] as i64)
+            };
+            jac_entries(&mut es, kn, gidx, count, out0, joff0, ncols, col);
+            fill_const_jac(kn, count, &mut jdata[joff0..]);
         }
-        es.sort_by_key(|e| e.0);
-        let mut indptr = vec![0i32; rows.len() + 1];
-        let mut indices: Vec<i32> = Vec::with_capacity(es.len());
-        let (mut ent_src, mut ent_slot) = (Vec::with_capacity(es.len()), Vec::with_capacity(es.len()));
-        for e in 0..es.len() {
-            if e == 0 || es[e].0 != es[e - 1].0 {
-                indices.push((es[e].0 % ncols) as i32);
-                indptr[es[e].0 / ncols + 1] = indices.len() as i32;
-            }
-            ent_src.push(es[e].1);
-            ent_slot.push(indices.len() - 1);
-        }
-        for i in 1..indptr.len() {
-            if indptr[i] < indptr[i - 1] {
-                indptr[i] = indptr[i - 1];
-            }
-        }
-        let mut jdata = vec![0.0; joff];
-        for &(b, _, count, _, joff0) in &runs {
-            let kn = self.kernels[self.blocks[b].kid];
-            if let Some(cj) = kn.const_jac {
-                let sz = kn.n_res * kn.n_par;
-                for i in 0..count {
-                    jdata[joff0 + i * sz..joff0 + (i + 1) * sz].copy_from_slice(cj);
-                }
-            }
-        }
+        let Csr { indptr, indices, ent_src, ent_slot } = csr_structure(es, rows.len(), ncols);
         let data = vec![0.0; indices.len()];
         Subset { runs, rows, cols: cols.to_vec(), indptr, indices, data, ent_src, ent_slot, jdata,
             v: Vec::new() }
@@ -997,10 +1037,7 @@ impl System {
         for &(b, i0, count, out0, _) in &s.runs {
             let blk = &self.blocks[b];
             let kn = self.kernels[blk.kid];
-            s.v.clear();
-            for t in i0 * kn.n_par..(i0 + count) * kn.n_par {
-                s.v.push(self.x[blk.gidx[t] as usize]);
-            }
+            gather(&mut s.v, &self.x, &blk.gidx[i0 * kn.n_par..(i0 + count) * kn.n_par]);
             let k = &blk.consts[i0 * kn.n_const..(i0 + count) * kn.n_const];
             (kn.res)(count, &s.v, k, &mut out[out0..out0 + count * kn.n_res]);
         }
@@ -1021,28 +1058,15 @@ impl System {
             if kn.const_jac.is_some() {
                 continue;
             }
-            s.v.clear();
-            for t in i0 * kn.n_par..(i0 + count) * kn.n_par {
-                s.v.push(self.x[blk.gidx[t] as usize]);
-            }
+            gather(&mut s.v, &self.x, &blk.gidx[i0 * kn.n_par..(i0 + count) * kn.n_par]);
             let k = &blk.consts[i0 * kn.n_const..(i0 + count) * kn.n_const];
             let sz = count * kn.n_res * kn.n_par;
             (kn.jac)(count, &s.v, k, &mut s.jdata[joff0..joff0 + sz]);
         }
-        for v in s.data.iter_mut() {
-            *v = 0.0;
-        }
-        for e in 0..s.ent_src.len() {
-            s.data[s.ent_slot[e]] += s.jdata[s.ent_src[e]];
-        }
+        assemble(&mut s.data, &s.jdata, &s.ent_src, &s.ent_slot);
         if self.scaled || self.row_scaled {
-            for (k, &r) in s.rows.iter().enumerate() {
-                let inv = 1.0 / self.row_scale[r];
-                for p in s.indptr[k]..s.indptr[k + 1] {
-                    let p = p as usize;
-                    s.data[p] *= inv / self.col_scale[s.cols[s.indices[p] as usize]];
-                }
-            }
+            let (rs, cs, rows, cols) = (&self.row_scale, &self.col_scale, &s.rows, &s.cols);
+            to_units(&mut s.data, &s.indptr, &s.indices, |k| rs[rows[k]], |j| cs[cols[j]]);
         }
     }
 
@@ -1077,12 +1101,6 @@ impl System {
 
     /// out (m) <- J v (n), from the CSR values last computed.
     pub(crate) fn j_mul_sparse(&self, v: &[f64], out: &mut [f64]) {
-        for i in 0..self.n_res {
-            let mut s = 0.0;
-            for p in self.csr_indptr[i]..self.csr_indptr[i + 1] {
-                s += self.csr_data[p as usize] * v[self.csr_indices[p as usize] as usize];
-            }
-            out[i] = s;
-        }
+        csr_mul(&self.csr_indptr, &self.csr_indices, &self.csr_data, v, out);
     }
 }

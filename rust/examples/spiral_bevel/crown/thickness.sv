@@ -12,7 +12,7 @@ use pitch.trace
 // `generator` runs from the gear apex O to M, `normal` from C to M.
 component CrownThickness(p: plane, generator: line, normal: line, design: group) {
   // Seeds only, rough: the quarter pitch's ends straight across from M, and the trace
-  // circles a module either side of the trace's radius.
+  // circles seven tenths of a module either side of the cutter radius.
   param r = design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
   param rc = design.cutter_radius
   param ri = rc - 0.7 * design.module

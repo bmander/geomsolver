@@ -11,9 +11,11 @@
 
 use crate::constraints::{CKind, Constraint};
 use crate::curve;
+use crate::linalg::Mat;
 use crate::model::{increments, orientation, EntRef, Sketch};
 use crate::newton::{self, Info, Method, TrustRegion};
-use crate::system::System;
+use crate::sparse::Ata;
+use crate::system::{Subset, System, DENSE_MAX};
 
 #[derive(Clone, Debug)]
 pub struct SolveResult {
@@ -252,7 +254,8 @@ impl System {
         let order = self.block_order();
         let (mut nfev, mut njev) = (0, 0);
         if order.blocks.len() >= 2 {
-            let tol = newton::Tol { ftol: opts.tol, xtol: BLOCK_XTOL, gtol: 1e-16 / self.extent.max(1.0) };
+            let gtol = 1e-16 / self.extent.max(1.0);
+            let tol = newton::Tol { ftol: opts.tol, xtol: BLOCK_XTOL, gtol };
             let max_nfev = if opts.max_nfev <= 0 { 4 * opts.max_iter } else { opts.max_nfev };
             for b in &order.blocks {
                 let sub = self.subset(&b.instances, &b.cols);
@@ -347,20 +350,21 @@ impl System {
 /// regularized normal equations above.
 struct BlockTr<'a> {
     sys: &'a mut System,
-    sub: crate::system::Subset,
+    sub: Subset,
     z: Vec<f64>,
-    dense: Option<crate::linalg::Mat>,
-    ata: Option<crate::sparse::Ata>,
+    dense: Option<Mat>,
+    ata: Option<Ata>,
     rank: i32,
 }
 
 impl<'a> BlockTr<'a> {
-    fn new(sys: &'a mut System, sub: crate::system::Subset, z: &[f64]) -> BlockTr<'a> {
+    fn new(sys: &'a mut System, sub: Subset, z: &[f64]) -> BlockTr<'a> {
         let (m, n) = (sub.rows.len(), sub.cols.len());
-        let dense = (n <= crate::system::DENSE_MAX).then(|| crate::linalg::Mat::zeros(m, n));
+        let dense = (n <= DENSE_MAX).then(|| Mat::zeros(m, n));
         BlockTr { sys, sub, z: z.to_vec(), dense, ata: None, rank: -1 }
     }
 
+    /// The whole free vector with the block's own columns at `zb`.
     fn put(&mut self, zb: &[f64]) {
         for (k, &c) in self.sub.cols.iter().enumerate() {
             self.z[c] = zb[k];
@@ -368,7 +372,7 @@ impl<'a> BlockTr<'a> {
     }
 }
 
-impl newton::TrustRegion for BlockTr<'_> {
+impl TrustRegion for BlockTr<'_> {
     fn n(&self) -> usize {
         self.sub.cols.len()
     }
@@ -394,36 +398,20 @@ impl newton::TrustRegion for BlockTr<'_> {
         }
     }
     fn jt_mul(&mut self, v: &[f64], out: &mut [f64]) {
-        out.iter_mut().for_each(|x| *x = 0.0);
-        let s = &self.sub;
-        for r in 0..s.rows.len() {
-            for p in s.indptr[r]..s.indptr[r + 1] {
-                out[s.indices[p as usize] as usize] += s.data[p as usize] * v[r];
-            }
-        }
+        self.sub.jt_mul(v, out);
     }
     fn j_mul(&mut self, v: &[f64], out: &mut [f64]) {
-        let s = &self.sub;
-        for r in 0..s.rows.len() {
-            let mut acc = 0.0;
-            for p in s.indptr[r]..s.indptr[r + 1] {
-                acc += s.data[p as usize] * v[s.indices[p as usize] as usize];
-            }
-            out[r] = acc;
-        }
+        self.sub.j_mul(v, out);
     }
     fn gn_step(&mut self, r: &[f64], g: &[f64], p: &mut [f64]) {
         if let Some(j) = &self.dense {
-            let b = crate::linalg::Mat::from_vec(r.len(), 1, r.iter().map(|v| -v).collect());
-            let (x, rank) = crate::linalg::min_norm_lstsq(j, &b, 1e-12);
-            self.rank = rank as i32;
-            p.copy_from_slice(&x.data);
+            self.rank = newton::min_norm_step(j, r, p);
             return;
         }
         let s = &self.sub;
-        let ata = self.ata.get_or_insert_with(|| {
-            crate::sparse::Ata::new(s.rows.len(), s.cols.len(), &s.indptr, &s.indices)
-        });
+        let ata = self
+            .ata
+            .get_or_insert_with(|| Ata::new(s.rows.len(), s.cols.len(), &s.indptr, &s.indices));
         newton::normal_step(ata, &s.data, g, p);
     }
     fn rank(&self) -> i32 {

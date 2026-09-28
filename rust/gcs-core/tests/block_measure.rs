@@ -4,7 +4,7 @@
 //! (`SolveOpts::default()`, one `System` compiled per solve) with `BlockMode::Off`, `Rescue` and
 //! `First`:
 //!
-//! * `timing` — the median of several solves from the document's own seeds, per mode;
+//! * `timing` — the median of seven solves from the document's own seeds, per mode;
 //! * `robustness` — from the default solve's pose scaled about its centroid (by 0.5 and by 2) and
 //!   jittered (three seeded draws of up to a thousandth of the extent), how many starts each
 //!   mode solves, and — for a document with no freedom left, where the pose is determined — how
@@ -12,11 +12,11 @@
 //! * `blast_radius` — which documents' solved coordinates `First` changes, bit for bit, against
 //!   `Off` from the document's own seeds: what making `First` the default would re-record.
 //!
-//! `cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core block_measure -- --ignored
-//! --nocapture --test-threads 1` (one thread: the timings are wall-clock).
-use gcs_core::{library, model::Sketch, modules, program, rng::Rng, solve::{self, BlockMode, SolveOpts}, syntax};
-use std::path::{Path, PathBuf};
+//! Each test's `ignore` is its command; `timing` runs on one thread, its clocks being wall-clock.
+use gcs_core::{model::Sketch, rng::Rng, solve::{self, BlockMode, SolveOpts}};
 use std::time::Instant;
+
+use crate::common::{bits, with_blocks};
 
 const MODES: [BlockMode; 3] = [BlockMode::Off, BlockMode::Rescue, BlockMode::First];
 
@@ -25,69 +25,21 @@ struct Doc {
     sketch: Sketch,
 }
 
-fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in std::fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            walk(&path, out);
-        } else if path.extension().is_some_and(|e| e == "sv") {
-            out.push(path);
-        }
-    }
-}
-
-/// Every example document that elaborates, as solventc reads it (modules beside it, then in its
-/// ancestors, then the library), and the spiral-bevel designs.
+/// Every example document that elaborates, as solventc reads it (`fixtures::examples`), and the
+/// spiral-bevel designs.
 fn corpus() -> Vec<Doc> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
-    let mut files = Vec::new();
-    walk(&root, &mut files);
-    files.sort();
     let mut docs = Vec::new();
-    for f in files {
-        let name = f.strip_prefix(&root).unwrap().to_string_lossy().to_string();
-        let text = std::fs::read_to_string(&f).unwrap();
-        let (mut p, errs) = syntax::parse(&text);
-        let dir = f.parent().unwrap().to_path_buf();
-        let mut resolve = |m: &str| -> Option<String> {
-            modules::search_paths(m, &name).iter()
-                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-                .or_else(|| library::resolve(m))
-        };
-        let _ = modules::link(&mut p, &mut resolve);
-        let e = program::elaborate(&p);
-        if !errs.is_empty() || !e.ok() {
-            println!("skip {name}: does not elaborate");
-            continue;
+    for (name, e) in fixtures::examples() {
+        match e {
+            Some(e) if e.ok() => docs.push(Doc { name, sketch: e.sketch }),
+            _ => println!("skip {name}: does not elaborate"),
         }
-        docs.push(Doc { name, sketch: e.sketch });
     }
-    let project = fixtures::gear::project();
-    let designs: Vec<(String, String)> = {
-        let text = std::fs::read_to_string(project.join("configuration.sv")).unwrap();
-        let mut all = vec![
-            ("configured".to_string(), fixtures::gear::design("configuration", text.clone(), 25., 12.5, 25.)),
-            ("bevel".to_string(), fixtures::gear::bevel("configuration", text.clone())),
-            ("hypoid6".to_string(), fixtures::gear::hypoid6("configuration", text)),
-        ];
-        for teeth in [[24, 48], [32, 32], [28, 49]] {
-            for module in [0.2, 2., 25.4] {
-                all.push((format!("{}x{} m{module}", teeth[0], teeth[1]),
-                    fixtures::gear::configuration(teeth, module, 0., 0., 35.)));
-            }
-        }
-        all
-    };
-    for (label, configuration) in designs {
-        let e = fixtures::unsolved(&fixtures::gear::source(), &mut fixtures::beside(&project,
-            &mut |name, text| if name == "configuration" { configuration.clone() } else { text }));
-        docs.push(Doc { name: format!("spiral_bevel@{label}"), sketch: e.sketch });
+    for (label, configuration) in fixtures::gear::designs() {
+        let sketch = fixtures::gear::unsolved(&configuration).sketch;
+        docs.push(Doc { name: format!("spiral_bevel@{label}"), sketch });
     }
     docs
-}
-
-fn opts(blocks: BlockMode) -> SolveOpts {
-    SolveOpts { blocks, ..Default::default() }
 }
 
 fn median(mut v: Vec<f64>) -> f64 {
@@ -100,9 +52,10 @@ fn blocks_of(sk: &Sketch) -> usize {
 }
 
 #[test]
-#[ignore = "a tool: times the corpus under each BlockMode"]
+#[ignore = "a tool: cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
+    block_measure::timing -- --ignored --nocapture --test-threads 1"]
 fn timing() {
-    let reps: usize = std::env::var("REPS").ok().and_then(|r| r.parse().ok()).unwrap_or(7);
+    const REPS: usize = 7;
     let docs = corpus();
     let mut total = [0.0; 3];
     println!("doc\tparams\tblocks\toff_ms\trescue_ms\tfirst_ms\toff\trescue\tfirst");
@@ -113,10 +66,10 @@ fn timing() {
         for (k, mode) in MODES.iter().enumerate() {
             let mut times = Vec::new();
             let mut last = None;
-            for _ in 0..reps {
+            for _ in 0..REPS {
                 let mut sk = d.sketch.clone();
                 let clock = Instant::now();
-                let r = solve::solve(&mut sk, opts(*mode));
+                let r = solve::solve(&mut sk, with_blocks(*mode));
                 times.push(clock.elapsed().as_secs_f64() * 1e3);
                 last = Some(r);
             }
@@ -187,7 +140,8 @@ fn off(sk: &Sketch, reference: &Sketch) -> f64 {
 }
 
 #[test]
-#[ignore = "a tool: solves the corpus from perturbed starts under each BlockMode"]
+#[ignore = "a tool: cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
+    block_measure::robustness -- --ignored --nocapture"]
 fn robustness() {
     let docs = corpus();
     // per mode, over every document and over the determined ones: starts, solved, and (for the
@@ -215,7 +169,7 @@ fn robustness() {
             let (mut solved, mut same) = (0, 0);
             for (j, s) in starts.iter().enumerate() {
                 let mut sk = s.clone();
-                if solve::solve(&mut sk, opts(*mode)).success {
+                if solve::solve(&mut sk, with_blocks(*mode)).success {
                     solved += 1;
                     let on = off(&sk, &reference) <= 1e-6;
                     if on { same += 1; }
@@ -249,23 +203,24 @@ fn robustness() {
 }
 
 #[test]
-#[ignore = "a tool: which documents First would change, bit for bit"]
+#[ignore = "a tool: cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
+    block_measure::blast_radius -- --ignored --nocapture"]
 fn blast_radius() {
     let docs = corpus();
     let (mut same, mut changed) = (0, Vec::new());
     for d in &docs {
         let mut off_sk = d.sketch.clone();
-        let r_off = solve::solve(&mut off_sk, opts(BlockMode::Off));
+        let r_off = solve::solve(&mut off_sk, with_blocks(BlockMode::Off));
         let mut first_sk = d.sketch.clone();
-        let r_first = solve::solve(&mut first_sk, opts(BlockMode::First));
+        let r_first = solve::solve(&mut first_sk, with_blocks(BlockMode::First));
         let (a, b) = (off_sk.get_x(), first_sk.get_x());
-        let bits = a.iter().zip(&b).filter(|(x, y)| x.to_bits() != y.to_bits()).count();
-        if bits == 0 {
+        let differ = bits(&off_sk).iter().zip(bits(&first_sk)).filter(|(x, y)| **x != *y).count();
+        if differ == 0 {
             same += 1;
         } else {
             let worst = a.iter().zip(&b).map(|(x, y)| (x - y).abs()).fold(0., f64::max) / off_sk.extent();
             changed.push(format!("{}\t{} of {} params differ, worst {worst:.1e} of the extent; \
-                Off {} by {}, First {} by {}, {} blocks", d.name, bits, a.len(),
+                Off {} by {}, First {} by {}, {} blocks", d.name, differ, a.len(),
                 if r_off.success { "solved" } else { "FAILED" }, r_off.method,
                 if r_first.success { "solved" } else { "FAILED" }, r_first.method, blocks_of(&d.sketch)));
         }

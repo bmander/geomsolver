@@ -7,18 +7,9 @@
 use gcs_core::constraints::CKind;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::examples;
-use gcs_core::model::Sketch;
-use gcs_core::solve::{solve, BlockMode, SolveOpts};
+use gcs_core::solve::{solve, BlockMode};
 
-use crate::common::{build, ent};
-
-fn opts(blocks: BlockMode) -> SolveOpts {
-    SolveOpts { blocks, ..SolveOpts::default() }
-}
-
-fn bits(sk: &Sketch) -> Vec<u64> {
-    sk.get_x().into_iter().map(f64::to_bits).collect()
-}
+use crate::common::{bits, build, ent, with_blocks};
 
 /// A chain of triangles off a grounded point, the first side stated twice (an over-determined
 /// part), a point on nothing (under-determined columns) and a point on a circle about the last
@@ -50,7 +41,7 @@ fn the_polish_settles_the_over_and_under_determined_parts() {
     let mut start = e.sketch.clone();
     start.perturb(1.5, 11);
     let mut sk = start.clone();
-    let res = solve(&mut sk, opts(BlockMode::First));
+    let res = solve(&mut sk, with_blocks(BlockMode::First));
     assert!(res.success && res.method == "blocks", "{res:?}");
     // the free point is on no row: the minimum-norm polish leaves it where it was
     let f = sk.entity_params(ent(&e, "f"));
@@ -65,7 +56,7 @@ fn the_polish_settles_the_over_and_under_determined_parts() {
     assert_eq!((order.blocks.len(), order.over_rows.len(), order.under_rows.len()), (3, 3, 1));
     // and the same start, solved whole and rescued, comes to a solution too
     let mut sk = start.clone();
-    assert!(solve(&mut sk, opts(BlockMode::Rescue)).success);
+    assert!(solve(&mut sk, with_blocks(BlockMode::Rescue)).success);
 }
 
 /// A genuine conflict is not rescued: the block pass cannot solve it either, so the pose the
@@ -77,7 +68,8 @@ fn a_conflict_is_diagnosed_as_before() {
         "d distance(5) e");
     let e = build(&src);
     let (mut off, mut rescue) = (e.sketch.clone(), e.sketch.clone());
-    let (a, b) = (solve(&mut off, opts(BlockMode::Off)), solve(&mut rescue, opts(BlockMode::Rescue)));
+    let a = solve(&mut off, with_blocks(BlockMode::Off));
+    let b = solve(&mut rescue, with_blocks(BlockMode::Rescue));
     assert!(!a.success && !b.success);
     assert_eq!(a.method, b.method);
     assert_eq!(bits(&off), bits(&rescue));
@@ -100,16 +92,16 @@ fn a_conflict_is_diagnosed_as_before() {
 #[test]
 fn a_document_the_whole_solve_settles_is_not_touched() {
     for name in ["rect_fillets", "rect_fillets_conflict", "rect_fillets_under", "truss",
-        "truss_redundant", "truss_conflict", "truss_floating", "impossible_triangle", "polygon_chain",
-        "k33", "altitudes", "pythagoras", "spline_follower", "peaucellier", "jansen", "bracket"]
+        "truss_redundant", "truss_conflict", "truss_floating", "impossible_triangle",
+        "polygon_chain", "k33", "altitudes", "pythagoras", "spline_follower", "peaucellier", "jansen", "bracket"]
     {
         let sk = examples::example(name).unwrap();
         for jitter in [0.0, 2.0] {
             let (mut off, mut rescue) = (sk.clone(), sk.clone());
             off.perturb(jitter, 3);
             rescue.perturb(jitter, 3);
-            let a = solve(&mut off, opts(BlockMode::Off));
-            let b = solve(&mut rescue, opts(BlockMode::Rescue));
+            let a = solve(&mut off, with_blocks(BlockMode::Off));
+            let b = solve(&mut rescue, with_blocks(BlockMode::Rescue));
             if a.success || b.method != "blocks" {
                 assert_eq!(bits(&off), bits(&rescue), "{name} jittered {jitter}");
                 assert_eq!((a.success, &a.method), (b.success, &b.method), "{name}");

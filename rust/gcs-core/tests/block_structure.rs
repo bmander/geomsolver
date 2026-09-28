@@ -33,8 +33,8 @@ fn report(label: &str, e: &gcs_core::program::Elaborated) {
     for b in big.iter().take(8) {
         let mut parts: BTreeMap<String, usize> = BTreeMap::new();
         let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
-        let mut cids: Vec<u32> = b.rows.iter().map(|&r| sys.cid_of_row(r)).collect();
-        cids.sort(); cids.dedup();
+        let mut cids: Vec<u32> = b.instances.iter().map(|&(k, i)| sys.blocks[k].cids[i]).collect();
+        cids.sort();
         for cid in &cids {
             let con = by_id[cid];
             let text = io::describe_with(con, &name);

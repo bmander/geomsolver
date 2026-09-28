@@ -100,16 +100,22 @@ impl JacCtx {
     /// p <- the Gauss–Newton step solving J p ≈ −r (minimum norm on the dense path).
     fn gn_step(&mut self, sys: &mut System, r: &[f64], g: &[f64], p: &mut [f64]) {
         if self.dense {
-            let b = Mat::from_vec(self.m, 1, r.iter().map(|v| -v).collect());
-            let (x, rank) = min_norm_lstsq(&self.j, &b, 1e-12);
-            self.rank = rank as i32;
-            p.copy_from_slice(&x.data);
+            self.rank = min_norm_step(&self.j, r, p);
             return;
         }
         let values: Vec<f64> = sys.csr_values().to_vec();
         self.rank = -1;
         normal_step(sys.ata_mut(), &values, g, p);
     }
+}
+
+/// p <- the minimum-norm least-squares step solving J p ≈ −r, J dense — the dense path's
+/// Gauss–Newton step; returns J's numerical rank.
+pub(crate) fn min_norm_step(j: &Mat, r: &[f64], p: &mut [f64]) -> i32 {
+    let b = Mat::from_vec(r.len(), 1, r.iter().map(|v| -v).collect());
+    let (x, rank) = min_norm_lstsq(j, &b, 1e-12);
+    p.copy_from_slice(&x.data);
+    rank as i32
 }
 
 /// p <- the step solving the regularized normal equations (JᵀJ + εI) p = −g, J's values over

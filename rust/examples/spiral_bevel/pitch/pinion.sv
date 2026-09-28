@@ -19,8 +19,8 @@ use pitch.trace
 
 // `gear` is the GearCone, `foot` the trace's square from O to its heading.
 component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group) {
-  // Seeds only, rough: the bevel pinion's cone, its apex about the offset from O's
-  // foot along the hinge, aside and back from O.
+  // Seeds only, rough: A and V about the offset aside of O and back from it, and in Q
+  // the bevel pinion's cone with its apex stood the offset along its pitch line.
   param ct = sqrt(design.pinion_teeth^2 + design.gear_teeth^2)
   param r = design.module * ct / 2
   in p {

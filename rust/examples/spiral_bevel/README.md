@@ -97,8 +97,9 @@ bevel), so both members stay conjugate through the common crown; the generating 
 the crown roll relative to each member's. Indexing is one member angle; the crown's neighbour
 is one crown pitch round.
 
-**The layout: `layout.sv`.** `HypoidLayout(front, design)` composes steps 2–5 in the four
-views and publishes each member's limits and motions as a group.
+**The layout: `layout.sv`.** `HypoidLayout(front, design, normal_module)` composes steps 2–5
+in the four views and publishes each member's limits and motions as a group; its callers leave
+`normal_module` unbound, for the trace to construct.
 
 **The members: `members.sv`.** `GeneratedMember` is a blank less one continuous generating
 sweep of its crown at every tooth index; `HypoidPair` generates the pinion from the crown tooth

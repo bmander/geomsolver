@@ -107,3 +107,29 @@ pub fn read_with(source: &str,base: &std::path::Path,rewrite: &mut dyn FnMut(&st
 
 /// `source` with its modules read beside `base` as the bevel pair.
 pub fn read(source: &str,base: &std::path::Path) -> program::Elaborated { read_with(source,base,&mut |_,text| text) }
+
+/// The twelve designs the layout regression records (`tests/hypoid_layout.rs`), each a label and
+/// its `configuration` module: the configured hypoid, the bevel pair, the six-millimetre hypoid,
+/// and the bevel pair at three tooth pairs and three modules — the sizes and ratios the
+/// paired-envelope checks read.
+pub fn designs() -> Vec<(String,String)> {
+    let text = std::fs::read_to_string(project().join("configuration.sv")).unwrap();
+    let mut all = vec![
+        ("configured".to_string(),design("configuration",text.clone(),25.,12.5,25.)),
+        ("bevel".to_string(),bevel("configuration",text.clone())),
+        ("hypoid6".to_string(),hypoid6("configuration",text)),
+    ];
+    for teeth in [[24,48],[32,32],[28,49]] {
+        for module in [0.2,2.,25.4] {
+            all.push((format!("{}x{} m{module}",teeth[0],teeth[1]),configuration(teeth,module,0.,0.,35.)));
+        }
+    }
+    all
+}
+
+/// The pair (`gears.sv`) at a `configuration` module, elaborated and not solved: where its seeds
+/// put it.
+pub fn unsolved(configuration: &str) -> program::Elaborated {
+    crate::unsolved(&source(),&mut crate::beside(&project(),
+        &mut |name,text| if name == "configuration" { configuration.to_string() } else { text }))
+}
