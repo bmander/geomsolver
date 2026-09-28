@@ -127,3 +127,4 @@ fn every_file_is_a_module() {
 mod drawing;
 mod block_structure;
 mod block_order;
+mod block_solve;

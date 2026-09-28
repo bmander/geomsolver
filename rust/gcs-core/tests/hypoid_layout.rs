@@ -450,3 +450,121 @@ fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ra
         if offset > 0. { assert!((cone-ct/np).abs() > 1e-3,"{label}: {cone}"); }
     }
 }
+
+/// How far a reading is from the recorded column `k`: the worst difference, a length relative
+/// to the cone distance and an angle, a direction's component, a ratio or a phase as it is, and
+/// the quantity it is at.
+fn off_recorded(reading: &Reading,rows: &[(String,Vec<f64>)],k: usize) -> (f64,String) {
+    let scale = rows[0].1[k];
+    let mut worst = (0.,String::new());
+    for ((name,v),(recorded,values)) in reading.values.iter().zip(rows) {
+        assert_eq!(name,recorded);
+        let plain = ["angle","ratio","phase","axis."].iter().any(|w| name.contains(w));
+        let d = (v-values[k]).abs()/if plain { 1. } else { scale };
+        if !(d <= worst.0) { worst = (d,name.clone()); }
+    }
+    worst
+}
+
+impl Design {
+    /// The pair elaborated and not solved: where its seeds put it.
+    fn unsolved(&self) -> Elaborated {
+        fixtures::unsolved(&fixtures::gear::source(),&mut fixtures::beside(&fixtures::gear::project(),
+            &mut |name,text| if name == "configuration" { self.configuration.clone() } else { text }))
+    }
+}
+
+/// A configuration with its lengths — the mean module and the offset — scaled by `f`.
+fn scaled(text: &str,f: f64) -> String {
+    text.lines().map(|l| {
+        let t = l.trim_start();
+        match ["param mean_module","param offset"].iter().find(|p| t.starts_with(**p)
+            && t[p.len()..].trim_start().starts_with('=')) {
+            Some(_) => {
+                let eq = l.find('=').unwrap();
+                let v: f64 = l[eq+1..].trim().trim_end_matches("mm").trim().parse().unwrap();
+                format!("{}= {}mm\n",&l[..eq],v*f)
+            }
+            None => format!("{l}\n"),
+        }
+    }).collect()
+}
+
+/// **The layout solves from rough seeds in block-triangular order** (docs/block-triangular-solve-
+/// plan.md, phase 2).  Every design's equations, started from the seeds the same layout computes
+/// at two fifths and at two and a half times its size (the mean module and the offset scaled):
+/// right in shape and wrong in size, which is what a seed a person writes by eye is.  Solved as
+/// one system (DogLeg, then LM) the layout does not converge from there; solved block by block,
+/// each block from what the blocks before it made, and polished whole, it lands on the recorded
+/// pair to the 1e-9 the named-quantities gate asks.  `Rescue` — the default — is the pass after a
+/// failed DogLeg; `First` the pass before it: both are held to the recorded numbers.  A
+/// whole-system solve that does succeed from such a start is reported, not required to fail.
+#[test]
+fn the_layout_solves_from_rough_seeds_in_block_order() {
+    use gcs_core::solve::{self,BlockMode,SolveOpts};
+    let (_,rows) = recorded();
+    let opts = |blocks| SolveOpts {tol:1e-16,acceptance_tol:1e-12,blocks,..Default::default()};
+    let mut whole_failed = 0;
+    for (k,design) in designs().into_iter().enumerate() {
+        let r = rows[0].1[k];
+        let mut e = design.unsolved();
+        let start = e.sketch.clone();
+        for f in [0.4,2.5] {
+            let seeds = Design { label: String::new(),configuration: scaled(&design.configuration,f) }
+                .unsolved();
+            let mut rough = start.clone();
+            assert_eq!(rough.params.len(),seeds.sketch.params.len());
+            for (p,q) in rough.params.iter_mut().zip(&seeds.sketch.params) {
+                if !p.fixed { p.value = q.value; }
+            }
+            let mut line = format!("{:12} seeds x{f:3}",design.label);
+            let mut whole = None;
+            for mode in [BlockMode::Off,BlockMode::Rescue,BlockMode::First] {
+                e.sketch = rough.clone();
+                let res = solve::solve(&mut e.sketch,opts(mode));
+                let off = res.success.then(|| off_recorded(&read_pair(&e,r),&rows,k));
+                line += &format!(" | {mode:?}: {} by {} ({:.1e})",if res.success { "solved" }
+                    else { "FAILED" },res.method,res.max_residual);
+                if let Some((d,at)) = &off { line += &format!(", {d:.1e} off at {at}"); }
+                let label = format!("{} seeds x{f}, {mode:?}",design.label);
+                let bits = e.sketch.get_x().into_iter().map(f64::to_bits).collect::<Vec<_>>();
+                match (mode,&whole) {
+                    (BlockMode::Off,_) => {
+                        if !res.success { whole_failed += 1; }
+                        whole = Some((res.success,bits));
+                    }
+                    // a whole-system DogLeg that succeeds is never rescued: the same solve
+                    (BlockMode::Rescue,Some((true,x))) => assert!(&bits == x,"{label}"),
+                    _ => {
+                        assert!(res.success && res.method == "blocks","{label}: {res:?}");
+                        let (d,at) = off.unwrap();
+                        assert!(d <= 1e-9,"{label}: {d:e} off the recorded pair at {at}");
+                    }
+                }
+            }
+            println!("{line}");
+        }
+    }
+    // one start of the 24 does solve whole (32x32 m0.2 from 2.5 times its size), on another root
+    // of its mate section than the recorded pair's; the block pass from it finds the recorded one
+    assert!(whole_failed >= 23,"the whole-system solve failed from {whole_failed} rough starts of 24");
+}
+
+/// The block path decides nothing by the order its work happens to be done in: the same rough
+/// start solved twice comes out the same to the bit.
+#[test]
+fn a_rough_start_solves_to_the_same_bits_twice() {
+    use gcs_core::solve::{self,SolveOpts};
+    let designs = designs();
+    let design = &designs[5];
+    let seeds = Design { label: String::new(),configuration: scaled(&design.configuration,2.5) }.unsolved();
+    let mut e = design.unsolved();
+    for (p,q) in e.sketch.params.iter_mut().zip(&seeds.sketch.params) { if !p.fixed { p.value = q.value; } }
+    let opts = SolveOpts {tol:1e-16,acceptance_tol:1e-12,..Default::default()};
+    let (mut a,mut b) = (e.sketch.clone(),e.sketch.clone());
+    let (ra,rb) = (solve::solve(&mut a,opts),solve::solve(&mut b,opts));
+    assert!(ra.success && ra.method == "blocks","{ra:?}");
+    assert_eq!((ra.nfev,ra.njev,ra.iterations),(rb.nfev,rb.njev,rb.iterations));
+    let bits = |x: Vec<f64>| x.into_iter().map(f64::to_bits).collect::<Vec<_>>();
+    assert_eq!(bits(a.get_x()),bits(b.get_x()));
+}
