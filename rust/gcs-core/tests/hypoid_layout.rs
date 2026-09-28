@@ -561,9 +561,10 @@ fn the_layout_solves_from_rough_seeds_in_block_order() {
 /// Every module of the example opens: its `preview` solved as solventc solves it (the default
 /// options, an interactive acceptance of 1e-6) and **converged**, not merely under that
 /// acceptance.  Rough seeds make the difference: a whole-system DogLeg that runs out of
-/// iterations at a residual of 1e-7 is a success by the interactive measure, so the block rescue
-/// never runs and the preview draws a pose that is not the solution — which is what the crown
-/// previews did with tip seeds narrower than the tip (their tips all but vanished).
+/// iterations at a residual of 1e-7 is a success by the interactive measure, and until such a
+/// stop was rescued (docs/iteration-limit-rescue-plan.md) the preview drew a pose that is not the
+/// solution — which is what the crown previews did with tip seeds narrower than the tip (their
+/// tips all but vanished).
 #[test]
 fn every_modules_preview_converges_as_solventc_solves_it() {
     use gcs_core::solve::{self,SolveOpts};

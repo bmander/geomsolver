@@ -2277,8 +2277,14 @@ Conventions:
   would change half the corpus's bits and four documents' roots. Blocks run with `BLOCK_XTOL`
   1e-15 and are accepted at `acceptance_tol`. The spiral bevel relies on it: its normal module
   is constructed and its seeds are rough (C's stays exact), and `hypoid_layout.rs` holds rough
-  starts to the recorded pair. A DogLeg stopped by its iteration limit under the 1e-6
-  acceptance is a success and never rescued; the module previews are held to convergence.
+  starts to the recorded pair. The module previews are held to convergence.
+- **Settled** ([docs/iteration-limit-rescue-plan.md](docs/iteration-limit-rescue-plan.md)):
+  `SolveResult::settled` is `success && status != 4`. A DogLeg that runs out of iterations under
+  the acceptance is a success and can be 1e-3 of the extent off; with `retry`, `Rescue` and ≥2
+  blocks, `solve_compiled` runs the block pass from the stop (kept if it converges, status 0),
+  else from the start (kept if settled), else keeps the stop's pass if settled, else the stop bit
+  for bit. From the start alone it changes roots; from the stop alone it finishes stalls. A
+  failure is rescued as before; drags (`retry` off) never see it; status 3 never succeeded.
 - Nothing in the project is auto-formatted: there is no `rustfmt.toml`, and `cargo fmt` would
   reformat every file.  Match the surrounding style by hand (100 columns).
 - No LAPACK/BLAS: the QR, complete-orthogonal, SVD and LDLᵀ routines are ours, and
