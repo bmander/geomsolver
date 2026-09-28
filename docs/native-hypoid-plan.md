@@ -38,6 +38,83 @@ An independent measure of an exported file's accuracy, before anything else chan
 **Exit:** the current pinion's deviation distribution, recorded in this document; a test that the
 meter reads a known perturbation (a face offset by 20 µm) as 20 µm.
 
+#### Phase 1 — findings (2026-09-28)
+
+**The meter.** `gcs_core::solid::accuracy::Meter` reads a body's exact faces from the solved
+sketch and measures points against them by two routes that share nothing but the snapshot:
+
+- *analytic*: a blank face (cone, sphere: a turned line or arc) by its exact meridian projection;
+  a generated face as the envelope of one cutter face at one tooth index — the roll `t` where the
+  normal velocity at the point's foot on the rolled cutter vanishes (`n · v(f) = 0`), so the foot
+  is a critical point of the distance to the envelope. The roll is scanned in 64 steps and each
+  sign change refined by false position. A foot counts only on its finite cutter face, on the
+  cutter's own Boolean boundary (the gear's bounded crown) and within the blank; a blank face's
+  foot only on the blank's boundary and outside every cut. Off a convex edge, where each face's
+  foot lies beyond the other, the edge point is found by alternating projections. Tooth indices
+  are pruned by a table of cells the unindexed envelope passes through.
+- *field*: `MaterialField::reading`, exact below its cap. Near a smooth face it is the signed
+  distance; off a convex edge and deep inside a cut it is a lower bound.
+
+`solventc DOC --solid NAME --measure FILE.step|FILE.stl [--measure-samples N]` samples a STEP
+file's faces on a grid over each face's trim box (OCCT: `solvent_cad_read_step`,
+`solvent_cad_face_kind`, the existing `face_point`) or an STL's triangles (chosen by area; each
+gives its centroid, edge midpoints and corners), measures them on every core and prints the
+core's report: overall, generated against blank, by sample kind, by the file's face class, by
+exact face, the worst exported faces and locations, and where the routes differ most. Signed
+distances are positive outside the material.
+
+**Validation.** `tests/accuracy.rs` (core): exact contacts on the configured pinion's flanks (from
+the cutter's own contact chart, which the meter does not read) and exact blank points, offset
+0 and ±20 µm along the normal, read as the offset within 3e-14 mm (analytic) and 8e-10 mm
+(field). `gcs-cli/tests/native_measure.rs`: a pulley (planes, cylinders, cones, a groove cut), a
+sphere and a torus exported natively. Their STEP faces read as 0 on both routes (≤ 6e-13 mm); the
+STL's corners read their float32 rounding (≤ 1.0e-6 mm), its centroids the mesher's chordal sag
+(≤ 8.6 µm against the 10 µm deflection); every STL corner moved 20 µm along its normal reads
+20 µm within 1.3e-5 mm on both routes.
+
+**The pinion as exported today** (`--measure-samples 100000`; µm, max / p99 / mean of |d|):
+
+| exact face | native STEP (37,795 face points) | native STL (74,536) | field-meshed STL (46,060) |
+|---|---|---|---|
+| heel sphere | 0.000 / 0.000 / 0.000 | 8.40 / 7.36 / 2.46 | 579.3 / 334.3 / 18.8 |
+| tip cone | 0.000 / 0.000 / 0.000 | 9.75 / 9.34 / 1.53 | 12.15 / 11.83 / 3.70 |
+| toe sphere | 0.000 / 0.000 / 0.000 | 8.51 / 7.53 / 2.55 | 173.9 / 171.0 / 8.78 |
+| back cone | 0.000 / 0.000 / 0.000 | 8.69 / 8.69 / 2.70 | 83.8 / 70.4 / 14.5 |
+| outer flank | 0.001 / 0.001 / 0.000 | 8.86 / 7.14 / 1.29 | 642.4 / 163.9 / 9.41 |
+| outer fillet | 11.64 / 11.64 / 2.39 | 11.67 / 9.87 / 2.30 | 408.6 / 315.1 / 68.6 |
+| root (crown tip) | 0.218 / 0.218 / 0.200 | 1.90 / 1.74 / 0.50 | 618.4 / 431.3 / 86.5 |
+| inner fillet | 16.94 / 16.75 / 6.43 | 16.73 / 15.54 / 4.31 | 498.6 / 498.6 / 64.2 |
+| inner flank | 0.191 / 0.150 / 0.003 | 9.54 / 6.65 / 1.23 | 621.0 / 169.6 / 25.6 |
+| **all** | **16.94 / 14.20 / 0.76** | **16.73 / 10.20 / 1.97** | **642.4 / 285.7 / 23.7** |
+| routes differ, max / p99 | 0.000 / 0.000 | 0.74 / 0.002 | 240.6 / 4.3 |
+
+- The native STEP's cones and spheres are exact, and so are its generated flanks and root to
+  0.2 µm. The whole error is in the **fillets**: 11.6 µm (outer) and 16.9 µm (inner), the sheet
+  lying inside the exact material (signed mean −2.3 and −5.3 µm: over-cut), normals off by up to
+  9.1° and 15.3° (flanks 0.23°). One 73-row chart across the whole profile under-samples the
+  small fillet arcs; phase 3's refinement belongs in the section direction there. This is the
+  withheld-contact figure (16.5 µm) measured independently on the written file.
+- The native STL adds OCCT's chordal sag to the sheet's error: ≤ 9.7 µm on every face at the
+  0.01 mm deflection, the inner fillet's 16.7 µm again the worst (its corners alone read 16.6 µm,
+  the sheet's own error). Its centroids' normals are within 5.5° (p99), 24° at worst.
+- The field-meshed STL is about forty times coarser: 642 µm max, 286 µm p99, 24 µm mean.
+- The routes agree on every STEP sample and to 2 nm (p99) on the native STL; the 0.7 µm most
+  lies beside an edge. On the field mesh they part only where a sample is deep inside a cut
+  (0.2–0.6 mm), where the field reads the deepest single cutter pose, a lower bound.
+- Cost: 68 s for the STEP (28 s of OCCT face sampling), 85 s for the native STL, 55 s for the
+  field mesh, on 12 cores.
+
+**The gear** is refused natively; its field-meshed STL (72,436 samples) reads 360.7 / 111.4 / 10.9
+µm overall (generated 360.7 / 129.9 / 15.9, blank 323.8 / 27.0 / 5.3), the routes differing by
+9.6 µm at most (p99 1.7). By exact face: heel 323.8 / 28.3 / 7.45, tip 3.29 / 3.23 / 1.27, toe
+43.1 / 28.6 / 6.96, back 33.6 / 13.1 / 2.89; the outer crown's flank 94.6 / 94.6 / 16.9, fillet
+274.0 / 202.7 / 32.1 and root line (`close1`) 290.0 / 290.0 / 53.7; the bounding neighbour's
+flank 129.9 / 122.1 / 5.82, fillet 145.4 / 131.5 / 33.3 and root line 360.7 / 290.0 / 37.1.
+
+**Not claimed.** A generated face is not trimmed by the other cuts (another index or stretch of
+the roll), so a sample where two cuts meet may read short; the roll scan and the index cells are
+sampled; the field route is a lower bound off convex edges and deep in a cut.
+
 ### 2. Why the gear is refused
 
 Locate the 83° miss with the existing `where_a_sheet_misses_its_contacts` tool. Hypothesis: one
