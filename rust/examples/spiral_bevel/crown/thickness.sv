@@ -11,18 +11,15 @@ use pitch.trace
 
 // `generator` runs from the gear apex O to M, `normal` from C to M.
 component CrownThickness(p: plane, generator: line, normal: line, design: group) {
-  // Seeds only: the closed forms, so the sections drawn on the pitch points start solved.
-  param ct = sqrt(design.pinion_teeth^2 + design.gear_teeth^2)
-  param r = design.module * ct / 2
+  // Seeds only, rough: the quarter pitch's ends straight across from M, and the trace
+  // circles a module either side of the trace's radius.
+  param r = design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
   param rc = design.cutter_radius
-  param q = 90deg / ct
-  param cx = r - rc * sin(design.spiral)
-  param cy = rc * cos(design.spiral)
-  param ri = sqrt((r * cos(q) - cx)^2 + (r * sin(q) - cy)^2)
-  param ro = sqrt((r * cos(q) - cx)^2 + (r * sin(q) + cy)^2)
+  param ri = rc - 0.7 * design.module
+  param ro = rc + 0.7 * design.module
   in p {
-    point ahead_end hint(x: r * cos(q), y: r * sin(q))
-    point behind_end hint(x: r * cos(q), y: -r * sin(q))
+    point ahead_end hint(x: r, y: pi * design.module / 4)
+    point behind_end hint(x: r, y: -pi * design.module / 4)
     arc ahead(center: generator.p1, start: generator.p2, end: ahead_end) hint(r: r)
     arc behind(center: generator.p1, start: behind_end, end: generator.p2) hint(r: r)
     circle inner(center: normal.p1) hint(r: ri)

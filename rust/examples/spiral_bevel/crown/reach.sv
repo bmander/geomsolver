@@ -16,16 +16,9 @@ use crown.mate
 // there along the cutter's `axis`.
 component CutterReach(p: plane, n: plane, apex: point, normal: line, axis: line, reach: Length) {
   in p {
-    point beyond hint(x: apex.x + (apex.x - normal.p1.x) * reach
-        / sqrt((apex.x - normal.p1.x)^2 + (apex.y - normal.p1.y)^2),
-      y: apex.y + (apex.y - normal.p1.y) * reach
-        / sqrt((apex.x - normal.p1.x)^2 + (apex.y - normal.p1.y)^2))
-    point radial hint(x: normal.p1.x + (normal.p1.x - normal.p2.x)
-        * sqrt((beyond.x - normal.p1.x)^2 + (beyond.y - normal.p1.y)^2)
-        / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2),
-      y: normal.p1.y + (normal.p1.y - normal.p2.y)
-        * sqrt((beyond.x - normal.p1.x)^2 + (beyond.y - normal.p1.y)^2)
-        / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2))
+    // Seeds, rough: beyond the apex from C, and about as far again beyond C from M.
+    point beyond hint(x: 2 * apex.x - normal.p1.x, y: 2 * apex.y - normal.p1.y)
+    point radial hint(x: 3 * normal.p1.x - 2 * normal.p2.x, y: 3 * normal.p1.y - 2 * normal.p2.y)
     private line to_apex(normal.p1, apex)
     private line past(apex, beyond)
     private line reach_line(normal.p1, beyond)
@@ -36,9 +29,8 @@ component CutterReach(p: plane, n: plane, apex: point, normal: line, axis: line,
   normal angle(180deg) cap_radius
   cap_radius equal reach_line
   in n {
-    point foot hint(x: (radial.x * (normal.p2.x - normal.p1.x)
-        + radial.y * (normal.p2.y - normal.p1.y))
-      / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2), y: 0)
+    // Seed, rough: about twice the reach beyond the cutter's axis, away from M.
+    point foot hint(x: axis.p1.x - 2 * reach, y: 0)
     point end hint(x: foot.x, y: foot.y + axis.p2.y - axis.p1.y)
     line cap(foot, end)
   }
@@ -58,7 +50,10 @@ preview {
   n: FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
   tooth: CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
     hypoid_design) in n.view
+  // Alone, the tooth's depths are in the trace's normal module: K stands that far from MC.
+  trace.K distance(tooth.normal_module) trace.normal
   mate: CrownMate(tooth, hypoid_design) in n.view
+  trace.K distance(mate.normal_module) trace.normal
   reach: CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
     reach: hypoid_design.space_reach)
 }

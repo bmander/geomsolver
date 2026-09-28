@@ -55,7 +55,7 @@ folded by a stated angle through M; the layout does not need it.)
 ## The steps as geometry
 
 1. **Requirements** (`design.sv` over `configuration.sv`). One `group`: the tooth counts, the
-   module and the normal module, the shaft angle and offset, the spiral angle ψ, the pressure
+   module, the shaft angle and offset, the spiral angle ψ, the pressure
    angle and shift, the cutter radius, the face width, the depth factors (addendum, dedendum,
    base, tip rounding, back), the generating rolls and the space cutter's reach. Only numbers a
    designer states.
@@ -64,7 +64,10 @@ folded by a stated angle through M; the layout does not need it.)
      `M distance(Ng·m/2) F`, `O distance(Np·m/2) F`, a right angle at F. The pitch angle and the
      mean cone distance R follow; nothing states them.
    - *Tooth trace, in P.* C at the stated cutter radius from M, with MC at 90° − ψ to MO. The
-     trace is the circle about C through M.
+     trace is the circle about C through M. The normal module, which every depth is stated
+     in, is constructed here: the distance from MC of the point one module from M along MO
+     (an unknown of the solve, settled in one small block of the block-triangular order and
+     read downstream; docs/block-triangular-solve-plan.md, phase 3).
    - *Pinion cone, in P and Q.* The shaft angle and the offset distance E are stated, and the
      pinion's cone is solved to touch the gear's pitch plane along its generator through M
      ([the true hypoid](#the-true-hypoid)). What sizes it is the equal normal pitch,

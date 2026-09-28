@@ -12,7 +12,8 @@ use crown.section
 
 // Drawn in N (`in n`); `normal` runs from C to M in the pitch plane `p`, and
 // `inner` and `outer` are the pitch points there.
-component CrownTooth(p: plane, normal: line, inner: point, outer: point, design: group) {
+component CrownTooth(p: plane, normal: line, inner: point, outer: point, design: group,
+                     normal_module: Length) {
   // Seeds: a pitch-plane point's place along the trace normal is its x in N.
   point center hint(x: (normal.p1.x * (normal.p2.x - normal.p1.x)
       + normal.p1.y * (normal.p2.y - normal.p1.y))
@@ -28,7 +29,7 @@ component CrownTooth(p: plane, normal: line, inner: point, outer: point, design:
   normal.p1 project center
   inner project lp
   outer project rp
-  rack: RackSection(lp, rp, design)
+  rack: RackSection(lp, rp, design, normal_module: normal_module)
   // The cutter's axis, pointing out of the tooth's tip.
   line axis(center, top)
   rack.pitch angle(90deg) axis
@@ -46,4 +47,6 @@ preview {
   n: FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
   tooth: CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
     hypoid_design) in n.view
+  // Alone, the tooth's depths are in the trace's normal module: K stands that far from MC.
+  trace.K distance(tooth.normal_module) trace.normal
 }

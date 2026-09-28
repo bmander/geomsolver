@@ -7,11 +7,8 @@ use design
 use views
 
 component GearCone(p: plane, g: plane, design: group) {
-  // Seeds only: the closed forms the triangle solves to.
-  param ct = sqrt(design.pinion_teeth^2 + design.gear_teeth^2)
-  param r = design.module * ct / 2
-  param c = design.pinion_teeth / ct
-  param s = design.gear_teeth / ct
+  // Seeds only, rough: the triangle's foot on the side of OM its apex angle opens to.
+  param r = design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
   in p {
     point O hint(x: 0, y: 0)
     point M hint(x: r, y: 0)
@@ -22,9 +19,9 @@ component GearCone(p: plane, g: plane, design: group) {
   in g {
     point apex hint(x: 0, y: 0)
     point mean hint(x: r, y: 0)
-    point foot hint(x: r * c * c, y: r * c * s)
+    point foot hint(x: r / 4, y: r / 2)
     point top hint(x: 0, y: -r)
-    point mirror hint(x: r * (c * c - s * s), y: 2 * r * c * s)
+    point mirror hint(x: 0, y: r)
     line pitch_line(apex, mean)
     line to_apex(mean, apex)
     line to_foot(mean, foot)

@@ -6,11 +6,9 @@ use std
 
 // The face width along `generator` (apex -> mean point), centred on the mean point.
 component FaceSpan(generator: line, width: Length) {
-  // Seeds only: the generator's seeded direction, scaled to half the width.
-  point toe hint(x: generator.p2.x - width / 2 * (generator.p2.x - generator.p1.x)
-      / sqrt((generator.p2.x - generator.p1.x)^2 + (generator.p2.y - generator.p1.y)^2),
-    y: generator.p2.y - width / 2 * (generator.p2.y - generator.p1.y)
-      / sqrt((generator.p2.x - generator.p1.x)^2 + (generator.p2.y - generator.p1.y)^2))
+  // Seeds only, rough: a tenth of the generator back from the mean point.
+  point toe hint(x: generator.p2.x - (generator.p2.x - generator.p1.x) / 10,
+                 y: generator.p2.y - (generator.p2.y - generator.p1.y) / 10)
   point heel hint(x: 2 * generator.p2.x - toe.x, y: 2 * generator.p2.y - toe.y)
   line span(toe, heel)
   generator.p2 midpoint span
@@ -23,8 +21,7 @@ component SphericalBoundary(apex: point, generator: line, rim: point) {
   // Seeds: the rim turned a quarter either way about the apex.
   private point bottom hint(x: apex.x + rim.y - apex.y, y: apex.y - rim.x + apex.x)
   private point top hint(x: apex.x - rim.y + apex.y, y: apex.y + rim.x - apex.x)
-  private arc meridian(center: apex, start: bottom, end: top) hint(r:
-    sqrt((rim.x - apex.x)^2 + (rim.y - apex.y)^2))
+  private arc meridian(center: apex, start: bottom, end: top)
   private line diameter(top, bottom)
   apex on diameter
   generator angle(90deg, sense: cw) diameter

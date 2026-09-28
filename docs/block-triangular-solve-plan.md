@@ -120,10 +120,56 @@ during the block pass is handled by the same clamp-and-retry.
    example's report and sheet, every export: no document in them fails its whole-system DogLeg
    with two blocks or more and solves in blocks); the full suite with OCCT, the slow tier with
    OCCT, and the wasm build with the web suite, all green.
-3. **Use it.** In the spiral-bevel example: the normal module becomes a constructed length again
-   (no `cos`), and the seed formulas shrink to rough hints where the block solve makes them
-   unnecessary. Re-run the layout's regression and the slow tier; interference and exports
-   unchanged within mesh noise.
+3. **Use it.** *Done.* In the spiral-bevel example the normal module is a constructed length
+   again, and the seed formulas are rough hints wherever the block solve makes them unnecessary.
+   * *The normal module.* `design.sv` no longer states it (it was `mean_module *
+     cos(spiral_angle)`). `HypoidLayout(front, design, normal_module: Length)` is instantiated
+     with the formal unbound, so it is one unknown of the solve; `ToothTrace` constructs it
+     (`K distance(normal_module) normal`, the claim it used to be) and the depths read it through
+     the formals of `MemberLimits`, `CrownTooth`, `CrownMate`, `RackSection`, `MateSection` and
+     `TipRounding`. The layout is 358 equations in 117 blocks, 15 deep: the normal module is a
+     block of one row in the trace, read downstream. A module's preview that draws the crown ties
+     its sections' unknown to the trace's with the same row (`trace.K distance(tooth.normal_module)
+     trace.normal`), since a root instance's argument cannot name another instance's unknown.
+   * *The seeds.* Trigonometric code lines in the example went from 32 (29 seed-only, the design's
+     one `cos`, and two preview constants written with `hypot`) to 3: C's seed in `ToothTrace`
+     (below) and the two preview constants. Lines with `sqrt` went from 20 to 8 (the cone distance
+     in five seed `param`s and the design, and `CrownTooth`'s three projections onto the normal
+     view, which the crown sections are seeded from). Replaced by rough hints: the crown sections'
+     corners (in pitch widths, a flank leaning by its pressure angle in radians, a normal module
+     taken as 2/π of the pitch width), the tooth thickness (the quarter pitch straight across from
+     M, the trace circles 0.7 module either side of the cutter radius), the pinion's cone (apex
+     about the offset aside, the bevel pinion's axis), the gear's triangle foot, H, the cutter
+     reach, the face span, and the cone boundaries' feet and crossings (`hint(at:)` on the axis).
+   * *What had to stay.* C's exact seed: the normal view N is folded along MC and the crown
+     sections are seeded in it, so with C seeded roughly the whole-system solve at 44 of 480
+     designs stalled in a basin where a section's narrow tip collapses (`hypoid_layout::
+     design_sweep`), against 13 with it exact. The same sweep also found the failure mode that
+     rough seeds make common: a whole-system DogLeg that runs out of iterations at a residual of
+     1e-7 is a *success* by the interactive acceptance (1e-6), so the rescue never runs and the
+     drawing is a pose up to 1e-3 of the extent off the solution. The crown previews did exactly
+     this with tip seeds narrower than the tip; `every_modules_preview_converges_as_solventc_
+     solves_it` now holds every module's preview to a converged residual. At `HEAD` before this
+     phase (exact seeds, stated normal module) the sweep found 151 of 480 designs doing it; now 13:
+     seven stalls (24×48 at module 2, shift 7.5–12.5°), four designs 0.71 R off (13×40 at module
+     25.4, E 381 mm) where the block path fails too and the default rescue's polish is accepted at
+     4.9e-8, and two where the default solve is right and `First` is the one that fails.
+   * *Per design (the regression's twelve, held to 1e-12).* The whole-system DogLeg solves the
+     bevel pair, hypoid6 and the six module 0.2 and 2 sizes (8–16 ms under the test profile); the
+     block rescue solves the configured hypoid and the three module 25.4 sizes (36–37 ms, the
+     failing DogLeg included; 4 ms with `First`). Before, the DogLeg solved nine and the rescue the
+     three at module 25.4. Every design matches the recorded numbers to 1e-9 (worst 8.2e-11).
+   * *Rough-seed gate.* From the rough seeds at 0.4× and 2.5× size the block path still reaches the
+     recorded pair from 23 of 24 starts; the configured hypoid from 0.4× stops a few 1e-9 short in
+     a crown section's block (trust region collapsed) and is allowed to, one start of that design
+     only. The whole-system solve reaches the recorded pair from none (one lands on another root).
+   * *Gates.* The full suite with OCCT (1340 passed) and the slow tier with OCCT (1347), wasm and
+     the web suite (255); the corpus and fast goldens byte-identical to phase 2 outside the spiral
+     bevel. Its reports agree with phase 2's to 1.7e-9 relative (a space cutter's face area), its
+     field-meshed members' volumes to 1.4e-4 (pinion, 8260 → 8204 triangles) and 6.5e-5 (gear,
+     17184 → 17370), and the refined exports refuse at the same feature-curve balls. Measured off
+     the field meshes, the shafts are 90.000° apart and 24.992 mm off (25.001 before), and through
+     one gear pitch the members overlap by 0.44–1.15 mm³ (0.44–1.10 before).
 4. **Measure, then decide on block-first.** Time the hypoid solve and the corpus both ways. If
    solving in blocks first (then polishing) is faster or more robust across the corpus, making it
    the default is a separate decision: it would change solved coordinates at the ULP level in

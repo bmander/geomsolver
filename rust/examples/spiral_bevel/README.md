@@ -19,8 +19,8 @@ states the tooth counts, the mean module, the shafts (at 90°, and the offset be
 length of their common perpendicular), the pressure shift and the crown's spiral angle; the
 design group adds the pressure angle, the cutter radius and face width in proportion to the
 mean cone distance, the depths in normal modules (addendum, dedendum, base, tip rounding,
-back), the two members' generating rolls and the gear space cutter's reach. The
-normal module is the one number with a cosine in it, and the trace checks it. Zero offset is a
+back), the two members' generating rolls and the gear space cutter's reach. The normal
+module is not stated: the trace constructs it, and every depth reads it. Zero offset is a
 bevel pair with a common apex; the configured pair is a hypoid 25 mm off, whose 12.5-degree
 shift and 25-degree spiral design out the undercut a symmetric rack develops past about 15 mm
 of offset, chosen inside the generating-sweep class with margin
@@ -35,8 +35,10 @@ blank is drawn.
 
 **Step 2, the tooth trace: `pitch/trace.sv`.** The cutter centre C stands at the cutter
 radius from M, with MC at 90° less the spiral angle to MO. The trace is the circle about C
-through M; its heading, the tangent at M, meets the square dropped from O at H. A claim checks
-the normal module: a point one module from M along the generator stands that far from MC.
+through M; its heading, the tangent at M, meets the square dropped from O at H. The normal
+module is constructed here: it is how far from MC a point one module from M along the
+generator stands. `HypoidLayout` leaves its `normal_module` unbound, so it is one unknown of
+the solve, which the trace settles and every depth reads.
 
 **Step 2, the pinion's pitch cone: `pitch/pinion.sv`.** Solved against the gear's: its axis is
 square to the gear's and the offset from it, drawn in Q from the image of its apex A, a point

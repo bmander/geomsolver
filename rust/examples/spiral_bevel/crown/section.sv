@@ -5,41 +5,41 @@
 use std
 use crown.rounding
 
-component RackSection(lp: point, rp: point, design: group) {
-  // Seeds only: the closed forms, turned to where the pitch points are drawn.
-  param nm = design.normal_module
-  param outer_pressure = design.pressure - design.shift
-  param inner_pressure = design.pressure + design.shift
-  param th = design.dedendum * nm
-  param tr = design.rounding * nm
-  param bd = design.base * nm
-  param jo = th - tr * (1 - sin(outer_pressure))
-  param ji = th - tr * (1 - sin(inner_pressure))
-  param ro = jo * tan(outer_pressure) + tr * cos(outer_pressure)
-  param ri = ji * tan(inner_pressure) + tr * cos(inner_pressure)
-  private point bi hint(x: lp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * bd * tan(inner_pressure),
-                        y: lp.y - (rp.x - lp.x) / abs(rp.x - lp.x) * bd)
-  private point bo hint(x: rp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * bd * tan(outer_pressure),
-                        y: lp.y - (rp.x - lp.x) / abs(rp.x - lp.x) * bd)
-  private point oj hint(x: rp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * jo * tan(outer_pressure),
-                        y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * jo)
-  private point ot hint(x: rp.x - (rp.x - lp.x) / abs(rp.x - lp.x) * ro,
-                        y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * th)
-  private point it hint(x: lp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * ri,
-                        y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * th)
-  private point ij hint(x: lp.x + (rp.x - lp.x) / abs(rp.x - lp.x) * ji * tan(inner_pressure),
-                        y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * ji)
-  private point co hint(x: ot.x, y: lp.y + (rp.x - lp.x) / abs(rp.x - lp.x) * (th - tr))
-  private point ci hint(x: it.x, y: co.y)
+component RackSection(lp: point, rp: point, design: group, normal_module: Length) {
+  // Seeds only, rough, in pitch widths `rp.x - lp.x`: a normal module is about 2 / pi of
+  // one (the width is half a normal pitch), and its sign says which way the section is
+  // drawn (the tip on its left). Each flank leans by about its pressure angle in radians,
+  // and each end of the tip stands a rounding inside it.
+  param outer_lean = (design.pressure - design.shift) / 1rad
+  param inner_lean = (design.pressure + design.shift) / 1rad
+  param base_depth = design.base * 2 / pi
+  param tip_depth = design.dedendum * 2 / pi
+  param join_depth = (design.dedendum - design.rounding) * 2 / pi
+  param end_depth = (design.dedendum - design.rounding / 2) * 2 / pi
+  param corner = design.rounding * 2 / pi
+  private point bi hint(x: lp.x - (rp.x - lp.x) * base_depth * inner_lean,
+                        y: lp.y - (rp.x - lp.x) * base_depth)
+  private point bo hint(x: rp.x + (rp.x - lp.x) * base_depth * outer_lean, y: bi.y)
+  private point oj hint(x: rp.x - (rp.x - lp.x) * join_depth * outer_lean,
+                        y: lp.y + (rp.x - lp.x) * join_depth)
+  private point ot hint(x: rp.x - (rp.x - lp.x) * (end_depth * outer_lean + corner),
+                        y: lp.y + (rp.x - lp.x) * tip_depth)
+  private point it hint(x: lp.x + (rp.x - lp.x) * (end_depth * inner_lean + corner), y: ot.y)
+  private point ij hint(x: lp.x + (rp.x - lp.x) * join_depth * inner_lean, y: oj.y)
+  private point co hint(x: ot.x, y: oj.y)
+  private point ci hint(x: it.x, y: oj.y)
   construction line pitch(lp, rp)
   profile = line base(bi, bo) -> line outer(bo, oj) -> tangent
-            arc outer_round(center: co) hint(r: tr) -> tangent line tip(ot, it) -> tangent
-            arc inner_round(center: ci) hint(r: tr) -> tangent line inner(ij, bi) -> close
+            arc outer_round(center: co) hint(r: abs(ot.y - co.y)) -> tangent
+            line tip(ot, it) -> tangent
+            arc inner_round(center: ci) hint(r: abs(ot.y - co.y)) -> tangent
+            line inner(ij, bi) -> close
   base angle(90deg + design.pressure - design.shift) outer
   base angle(270deg - design.pressure - design.shift) inner
   lp on inner
   rp on outer
-  rounding: TipRounding(pitch, base, tip, outer_round, inner_round, design)
+  rounding: TipRounding(pitch, base, tip, outer_round, inner_round, design,
+    normal_module: normal_module)
 }
 
 preview {
@@ -47,7 +47,7 @@ preview {
   // The 24:48 pair's crown at module 2, symmetric, revolved about the page's y axis at
   // eight tenths of the cone distance; crown.svd draws it.
   param pitch_radius = 0.8 * 2mm * hypot(24, 48) / 2
-  group proportions(normal_module: 2mm, pressure: 20deg, shift: 0deg,
+  group proportions(pressure: 20deg, shift: 0deg,
                     base: 1, dedendum: 1, rounding: 0.3)
   point lp hint(x: pitch_radius - 1.3mm, y: 0)
   point rp hint(x: pitch_radius + 1.3mm, y: 0)
@@ -55,7 +55,7 @@ preview {
   std.origin distance(0mm, along: up) lp
   std.origin distance(pitch_radius + 1.3mm, along: right) rp
   std.origin distance(0mm, along: up) rp
-  rack: RackSection(lp, rp, proportions)
+  rack: RackSection(lp, rp, proportions, normal_module: 2mm)
   construction centerline line axis(std.origin, std.up.toward)
   solid crown(rack.profile, about: axis)
   surface outer(crown, rack.outer)
