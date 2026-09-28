@@ -10,6 +10,7 @@ use gcs_core::examples;
 use gcs_core::solve::{solve, BlockMode};
 
 use crate::common::{bits, build, ent, with_blocks};
+use gcs_core::model::Sketch;
 
 /// A chain of triangles off a grounded point, the first side stated twice (an over-determined
 /// part), a point on nothing (under-determined columns) and a point on a circle about the last
@@ -110,4 +111,46 @@ fn a_document_the_whole_solve_settles_is_not_touched() {
             }
         }
     }
+}
+
+/// A chain of `n` triangles off a grounded, levelled base: `2n + 1` two-row blocks in a line.
+fn chain(n: usize) -> String {
+    let mut s = String::from("point p0 hint(x: 0, y: 0)\npoint p1 hint(x: 10, y: 0)\nground p0\n\
+        p0 horizontal p1\np0 distance(10) p1\n");
+    for k in 2..n + 2 {
+        s += &format!("point p{k} hint(x: {}, y: {})\n", 5 * k, if k % 2 == 0 { 8 } else { 0 });
+        s += &format!("p{} distance(10) p{k}\np{} distance(10) p{k}\n", k - 2, k - 1);
+    }
+    s
+}
+
+/// **A solve that stops on its iteration limit is finished where it stopped**
+/// (docs/iteration-limit-rescue-plan.md).  A chain of twelve triangles seeded far off, given eight
+/// DogLeg iterations where it needs ten: the eighth leaves it under the interactive acceptance
+/// and short of the solution — a success on status 4, which is all a solve did before the rescue
+/// (`BlockMode::Off`).  By default that stop is not settled, and the block pass *from the stop*
+/// settles it on the solution the whole-system DogLeg was making for: the one it reaches given
+/// its hundred iterations.  The pass from the start — what the rescue after a failure runs — does
+/// not: each triangle solved alone from those seeds finds its other orientation.
+#[test]
+fn a_stop_on_the_iteration_limit_is_finished_where_it_stopped() {
+    use gcs_core::solve::SolveOpts;
+    let e = build(&chain(12));
+    let mut start = e.sketch.clone();
+    start.perturb(6.0, 7);
+    let far = |a: &Sketch, b: &Sketch| a.get_x().iter().zip(b.get_x()).map(|(x, y)| (x - y).abs())
+        .fold(0., f64::max) / b.extent();
+    let mut full = start.clone();
+    assert!(solve(&mut full, SolveOpts::default()).settled());
+    let short = SolveOpts { max_iter: 8, ..SolveOpts::default() };
+    let mut stop = start.clone();
+    let a = solve(&mut stop, SolveOpts { blocks: BlockMode::Off, ..short });
+    assert!(a.success && a.status == 4 && a.method == "dogleg" && far(&stop, &full) > 1e-7, "{a:?}");
+    let mut sk = start.clone();
+    let b = solve(&mut sk, short);
+    assert!(b.settled() && b.method == "blocks", "{b:?}");
+    assert!(far(&sk, &full) < 1e-12, "{:e} from the full solve", far(&sk, &full));
+    let mut from_start = start.clone();
+    solve(&mut from_start, SolveOpts { retry: false, blocks: BlockMode::First, ..short });
+    assert!(far(&from_start, &full) > 0.1, "{:e}", far(&from_start, &full));
 }

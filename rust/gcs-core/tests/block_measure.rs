@@ -20,14 +20,14 @@ use crate::common::{bits, with_blocks};
 
 const MODES: [BlockMode; 3] = [BlockMode::Off, BlockMode::Rescue, BlockMode::First];
 
-struct Doc {
-    name: String,
-    sketch: Sketch,
+pub(crate) struct Doc {
+    pub(crate) name: String,
+    pub(crate) sketch: Sketch,
 }
 
 /// Every example document that elaborates, as solventc reads it (`fixtures::examples`), and the
 /// spiral-bevel designs.
-fn corpus() -> Vec<Doc> {
+pub(crate) fn corpus() -> Vec<Doc> {
     let mut docs = Vec::new();
     for (name, e) in fixtures::examples() {
         match e {
@@ -86,7 +86,7 @@ fn timing() {
 
 /// Scale every free point coordinate about the free points' centroid by `f`, and every free
 /// radius by `f`.
-fn scaled(sk: &Sketch, f: f64) -> Sketch {
+pub(crate) fn scaled(sk: &Sketch, f: f64) -> Sketch {
     let mut out = sk.clone();
     let free: Vec<(u32, u32)> = sk.points.iter().map(|p| (p.x, p.y))
         .filter(|&(x, y)| !sk.params[x as usize].fixed || !sk.params[y as usize].fixed).collect();
@@ -109,7 +109,7 @@ fn scaled(sk: &Sketch, f: f64) -> Sketch {
 
 /// Jitter every free point coordinate by up to `amount` of the extent, and every free radius by
 /// up to `amount` of itself.
-fn jittered(sk: &Sketch, amount: f64, seed: u32) -> Sketch {
+pub(crate) fn jittered(sk: &Sketch, amount: f64, seed: u32) -> Sketch {
     let mut out = sk.clone();
     let mut rng = Rng::new(seed);
     let e = sk.extent();
@@ -128,7 +128,7 @@ fn jittered(sk: &Sketch, amount: f64, seed: u32) -> Sketch {
 
 /// How far `sk`'s points (in space, so that a view turned over with its drawing is the same
 /// pose) and radii are from `reference`'s, over the reference's extent.
-fn off(sk: &Sketch, reference: &Sketch) -> f64 {
+pub(crate) fn off(sk: &Sketch, reference: &Sketch) -> f64 {
     let e = reference.extent();
     let points = (0..reference.points.len()).map(|i| {
         let (a, b) = (sk.world_point(i), reference.world_point(i));

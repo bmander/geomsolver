@@ -39,6 +39,14 @@ pub struct SolveResult {
 }
 
 impl SolveResult {
+    /// The pose is a solve's answer: accepted, *and* stopped for a reason other than the
+    /// iteration limit.  A DogLeg still descending when its budget runs out can be under
+    /// `acceptance_tol` in an ill-conditioned direction and a thousandth of the extent from the
+    /// solution; it is a success, and not settled (docs/iteration-limit-rescue-plan.md).
+    pub fn settled(&self) -> bool {
+        self.success && self.status != 4
+    }
+
     pub fn plain(method: &str, success: bool, max_residual: f64, nfev: i32) -> SolveResult {
         SolveResult {
             success,
@@ -93,8 +101,9 @@ pub struct SolveOpts {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlockMode {
     /// After the whole-system DogLeg fails and before the LM retry (only with `retry`), kept
-    /// only if it solves.  A document the whole-system solve settles never sees it, so it
-    /// solves to the same bits it always did.
+    /// only if it solves; and after a DogLeg that succeeded on its iteration limit, kept only if
+    /// it settles (`SolveResult::settled`).  A document the whole-system solve settles never sees
+    /// it, so it solves to the same bits it always did.
     Rescue,
     /// Before the whole-system DogLeg — the block pass and its polish first, with the plain
     /// DogLeg and then LM as the retries.  For measuring; not the default.
@@ -197,6 +206,35 @@ impl System {
         };
         // the pose `self`'s x was last evaluated at is `z`'s, until a retry that is not kept
         let mut in_step = true;
+        // Accepted on the iteration limit: a DogLeg still descending when its budget ran out, whose
+        // residual is under the acceptance and whose pose can be a thousandth of the extent from
+        // the solution (docs/iteration-limit-rescue-plan.md).  The block pass runs first from the
+        // stop, and is kept if it converges there (status 0): that is the root the DogLeg was
+        // making for, finished.  One that stalls again (a step or gradient stop above the
+        // tolerance) says the stop is in a basin with no solution in it, and the pass runs from
+        // the start, as it does after a failure, kept if it settles; failing that the stalled
+        // finish is kept if *it* settled.  A stop none of it settles keeps its own pose, status
+        // and success, bit for bit.
+        if opts.retry && dogleg && opts.blocks == BlockMode::Rescue && res.success && !res.settled()
+            && self.block_order().blocks.len() >= 2
+        {
+            let mut z2 = z.clone();
+            let (res2, _) = self.blocks_then_polish(&mut z2, &opts);
+            if res2.settled() && res2.status == 0 {
+                (z, res) = (z2, res2);
+            } else {
+                let mut z3 = z0.clone();
+                let (res3, _) = self.blocks_then_polish(&mut z3, &opts);
+                if res3.settled() {
+                    (z, res) = (z3, res3);
+                } else {
+                    in_step = false;
+                    if res2.settled() {
+                        (z, res) = (z2, res2);
+                    }
+                }
+            }
+        }
         if opts.retry && dogleg && !res.success {
             // The block-triangular rescue: a system whose seeds are good only upstream of a block
             // can fail whole and solve in order, each block from what the blocks before it made.

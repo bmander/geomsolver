@@ -605,6 +605,87 @@ fn a_rough_start_solves_to_the_same_bits_twice() {
     assert_eq!(crate::common::bits(&a),crate::common::bits(&b));
 }
 
+/// **A solve that stops on its iteration limit is rescued** (docs/iteration-limit-rescue-plan.md).
+/// A design solved as solventc solves it and then jittered by a thousandth of its extent (the
+/// starts `block_measure` reads) is back under the interactive acceptance within the DogLeg's
+/// hundred iterations and not at its solution: without the block rescue (`BlockMode::Off`) the
+/// solve succeeds on status 4, short of the recorded pair.  By default that stop is not
+/// *settled*, the block rescue runs, and the pose it settles on is the recorded pair's to the
+/// 1e-9 the named-quantities gate asks.
+#[test]
+fn a_stop_on_the_iteration_limit_is_rescued_onto_the_recorded_pair() {
+    use gcs_core::solve::{self,BlockMode,SolveOpts};
+    let (_,rows) = recorded();
+    let designs = designs();
+    let k = designs.iter().position(|d| d.label == "24x48 m25.4").unwrap();
+    let mut e = designs[k].unsolved();
+    assert!(solve::solve(&mut e.sketch,SolveOpts::default()).settled());
+    let reference = e.sketch.clone();
+    for seed in 1..=3 {
+        let start = crate::block_measure::jittered(&reference,0.001,seed);
+        e.sketch = start.clone();
+        let stop = solve::solve(&mut e.sketch,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
+        let (short,_) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
+        assert!(stop.success && stop.status == 4 && short > 1e-9,"seed {seed}: {short:e} off, {stop:?}");
+        e.sketch = start;
+        let res = solve::solve(&mut e.sketch,SolveOpts::default());
+        assert!(res.settled() && res.method == "blocks","seed {seed}: {res:?}");
+        let (d,at) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
+        println!("seed {seed}: stopped {short:.1e} off, settled {d:.1e} off at {at}");
+        assert!(d <= 1e-9,"seed {seed}: {d:e} off the recorded pair at {at}");
+    }
+}
+
+/// **A stop in a basin with no solution is restarted in block order**: 24x48 at module 2 with
+/// the cutter shifted 12.5 degrees, one of the seven designs of the sweep whose whole-system
+/// DogLeg ran out of iterations under the interactive acceptance, a thousandth of the extent
+/// from the solution.  Finished from the stop, the block pass stalls again (a step stop well above
+/// the tolerance, in the basin where a crown section's narrow tip collapses); so the pass runs
+/// from the start, and the default solve lands where the block path held to 1e-12 does.
+#[test]
+fn a_stop_that_stalls_again_is_restarted_in_block_order() {
+    use gcs_core::solve::{self,BlockMode,SolveOpts};
+    let design = Design::at(String::new(),[24,48],2.,0.,12.5,20.);
+    let start = design.unsolved().sketch;
+    let mut stop = start.clone();
+    let a = solve::solve(&mut stop,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
+    assert!(a.success && a.status == 4 && a.method == "dogleg","{a:?}");
+    let mut finished = stop.clone();
+    let f = solve::solve(&mut finished,SolveOpts {retry:false,blocks:BlockMode::First,..SolveOpts::default()});
+    assert!(f.status != 0 && f.max_residual > 1e-12,"{f:?}");
+    let mut sk = start.clone();
+    let b = solve::solve(&mut sk,SolveOpts::default());
+    let mut held = start;
+    assert!(solve::solve(&mut held,SolveOpts {blocks:BlockMode::First,..fixtures::accurate()}).success);
+    let apart = |p: &gcs_core::model::Sketch| p.get_x().iter().zip(held.get_x()).map(|(x,y)| (x-y).abs())
+        .fold(0.,f64::max)/held.extent();
+    println!("stopped {:.1e} apart, finished from the stop {:.1e} apart ({f:?}), restarted {:.1e} apart",
+        apart(&stop),apart(&finished),apart(&sk));
+    assert!(b.settled() && b.method == "blocks" && b.max_residual < 1e-10,"{b:?}");
+    assert!(apart(&stop) > 1e-5 && apart(&sk) < 1e-8,"{:e} apart",apart(&sk));
+}
+
+/// **A stop the rescue cannot settle keeps its pose**: the bevel pair solved and then halved about
+/// its centroid succeeds on its iteration limit, and the block pass from there does not settle
+/// (its polish stops on the limit too, far off), so the default solve returns the stop exactly as
+/// a solve without the rescue does — the same bits, status, success and residual.
+#[test]
+fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
+    use gcs_core::solve::{self,BlockMode,SolveOpts};
+    let designs = designs();
+    let design = designs.iter().find(|d| d.label == "bevel").unwrap();
+    let mut reference = design.unsolved().sketch;
+    assert!(solve::solve(&mut reference,SolveOpts::default()).settled());
+    let start = crate::block_measure::scaled(&reference,0.5);
+    let (mut off,mut on) = (start.clone(),start);
+    let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
+    let b = solve::solve(&mut on,SolveOpts::default());
+    assert!(a.success && a.status == 4,"{a:?}");
+    assert_eq!(crate::common::bits(&off),crate::common::bits(&on));
+    assert_eq!((a.success,a.status,a.max_residual.to_bits(),a.nfev,a.iterations,a.method),
+        (b.success,b.status,b.max_residual.to_bits(),b.nfev,b.iterations,b.method));
+}
+
 /// A tool, not a check: which path each design's solve takes from the layout's own seeds — the
 /// whole-system DogLeg (`dogleg`), the block rescue (`blocks`) or the LM retry (`lm`) — under
 /// each `BlockMode`, how far from the recorded pair it lands, and how long it takes.
