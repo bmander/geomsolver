@@ -385,6 +385,11 @@ tolerance the sheet is unrefined), `a_tolerance_is_a_positive_length_for_a_nativ
 tier: `the_configured_gear_exports_natively` and `the_configured_pinion_exports_natively_within_its_tolerance`
 export each member at 10 µm and measure both files within it.
 
+**Gates.** Without `--tolerance` the corpus's reports and sheets, the fast goldens and both native
+gear logs (the pinion's STL byte for byte) are identical to phase 2's. The whole suite with the
+native kernel passes, and so does the slow tier (13.5 minutes; the two members' 10 µm exports and
+measurements 6.3 minutes of it).
+
 **Not claimed.** The withheld contacts and the sag check sample: a sheet's error between withheld
 contacts is bounded only to first order by the normal bar, and the STL's by its triangles' centroids
 and edge midpoints. The meter samples too, and by area. The tolerance is the nominal design's, not
