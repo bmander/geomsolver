@@ -265,6 +265,149 @@ pub fn dulmage_mendelsohn(adj: &[Vec<usize>], n_cols: usize) -> Dm {
     dm
 }
 
+/* -- block-triangular order of the well-determined part ---------------------- */
+
+/// The well-determined part of a DM decomposition, sorted into its strongly connected blocks.
+///
+/// Row `r` *reads* the row matched to each column it touches; a block is a set of rows that read
+/// one another round a cycle, and so must be solved together, while a row that only reads rows
+/// of earlier blocks is solved once they are.  `rows[k]` is block `k`'s rows (of `adj`,
+/// ascending), in a solve order: every block a block reads stands before it, and among blocks
+/// ready together the one holding the lowest row goes first, so the order is the document's
+/// wherever the structure leaves it free.  `level[k]` is how deep block `k` sits — 1 for a block
+/// that reads no other — so the longest chain is the largest level.
+///
+/// A row of the over- or under-determined part is in no block: it has no square partner to be
+/// solved against, and what it reads of the well part is read, not solved for.
+#[derive(Clone, Debug, Default)]
+pub struct Blt {
+    pub rows: Vec<Vec<usize>>,
+    pub level: Vec<usize>,
+}
+
+impl Blt {
+    /// The longest chain of blocks, each reading the one before it.
+    pub fn depth(&self) -> usize {
+        self.level.iter().copied().max().unwrap_or(0)
+    }
+}
+
+pub fn blocks(adj: &[Vec<usize>], dm: &Dm) -> Blt {
+    let well = &dm.well_rows;
+    let n = well.len();
+    let mut pos = vec![usize::MAX; adj.len()];
+    for (i, &r) in well.iter().enumerate() {
+        pos[r] = i;
+    }
+    // v reads w: the row matched to a column v touches, when that row is in the well part
+    let succ: Vec<Vec<usize>> = well
+        .iter()
+        .enumerate()
+        .map(|(v, &r)| {
+            let mut s: Vec<usize> = adj[r]
+                .iter()
+                .filter_map(|&c| {
+                    let m = dm.mate_col[c];
+                    (m >= 0 && pos[m as usize] != usize::MAX).then(|| pos[m as usize])
+                })
+                .filter(|&w| w != v)
+                .collect();
+            s.sort_unstable();
+            s.dedup();
+            s
+        })
+        .collect();
+    let comps = tarjan(&succ);
+    let mut comp_of = vec![0usize; n];
+    for (k, c) in comps.iter().enumerate() {
+        for &v in c {
+            comp_of[v] = k;
+        }
+    }
+    // the condensed graph, read as "k needs j": Kahn's walk, the lowest row first among ready
+    let mut needs: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); comps.len()];
+    let mut feeds: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); comps.len()];
+    for v in 0..n {
+        for &w in &succ[v] {
+            let (k, j) = (comp_of[v], comp_of[w]);
+            if k != j {
+                needs[k].insert(j);
+                feeds[j].insert(k);
+            }
+        }
+    }
+    let first: Vec<usize> = comps.iter().map(|c| c.iter().map(|&v| well[v]).min().unwrap()).collect();
+    let mut waiting: Vec<usize> = needs.iter().map(|s| s.len()).collect();
+    let mut ready: BTreeSet<(usize, usize)> =
+        (0..comps.len()).filter(|&k| waiting[k] == 0).map(|k| (first[k], k)).collect();
+    let mut level = vec![0usize; comps.len()];
+    let mut out = Blt::default();
+    while let Some((_, k)) = ready.pop_first() {
+        level[k] = 1 + needs[k].iter().map(|&j| level[j]).max().unwrap_or(0);
+        let mut rows: Vec<usize> = comps[k].iter().map(|&v| well[v]).collect();
+        rows.sort_unstable();
+        out.rows.push(rows);
+        out.level.push(level[k]);
+        for &f in &feeds[k] {
+            waiting[f] -= 1;
+            if waiting[f] == 0 {
+                ready.insert((first[f], f));
+            }
+        }
+    }
+    out
+}
+
+/// Strongly connected components of `succ` (Tarjan), iteratively, since a layout's chains are
+/// long enough to matter to a recursive walk's stack.
+fn tarjan(succ: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    let n = succ.len();
+    let (mut index, mut low, mut on) = (vec![usize::MAX; n], vec![0; n], vec![false; n]);
+    let (mut stack, mut out, mut next) = (Vec::new(), Vec::new(), 0);
+    for root in 0..n {
+        if index[root] != usize::MAX {
+            continue;
+        }
+        let mut work = vec![(root, 0usize)];
+        while let Some(&mut (v, ref mut k)) = work.last_mut() {
+            if *k == 0 {
+                index[v] = next;
+                low[v] = next;
+                next += 1;
+                stack.push(v);
+                on[v] = true;
+            }
+            if *k < succ[v].len() {
+                let w = succ[v][*k];
+                *k += 1;
+                if index[w] == usize::MAX {
+                    work.push((w, 0));
+                } else if on[w] {
+                    low[v] = low[v].min(index[w]);
+                }
+                continue;
+            }
+            work.pop();
+            if let Some(&(u, _)) = work.last() {
+                low[u] = low[u].min(low[v]);
+            }
+            if low[v] == index[v] {
+                let mut comp = Vec::new();
+                loop {
+                    let w = stack.pop().unwrap();
+                    on[w] = false;
+                    comp.push(w);
+                    if w == v {
+                        break;
+                    }
+                }
+                out.push(comp);
+            }
+        }
+    }
+    out
+}
+
 /* -- connected components of a bipartite graph ------------------------------- */
 
 pub struct BipComponents {
