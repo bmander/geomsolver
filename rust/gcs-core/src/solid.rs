@@ -57,6 +57,7 @@ mod surface;
 mod sweep_contacts;
 pub mod admission;
 pub mod agreement;
+pub mod accuracy;
 pub mod contracts;
 pub mod export;
 pub mod contact_trace;

@@ -3,6 +3,7 @@
 //! and WebAssembly have no OCCT dependency.
 pub mod progress;
 pub mod output;
+pub mod measure;
 #[cfg(feature="occt")]
 mod native;
 #[cfg(feature="occt")]

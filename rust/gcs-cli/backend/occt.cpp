@@ -248,6 +248,23 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
         return 0;
     });
 }
+// Read a STEP file's shape into the session, for a meter measuring what was written; nothing
+// is validated or repaired, since the file is what is being judged.
+int solvent_cad_read_step(Cad* cad,const char* path) noexcept {
+    return guarded(cad,[&] {
+        struct LogStream {
+            std::streambuf* old = std::cout.rdbuf(std::cerr.rdbuf());
+            ~LogStream() { std::cout.rdbuf(old); }
+        } log_stream;
+        if (!path) throw std::runtime_error("STEP read needs a path");
+        STEPControl_Reader reader;
+        if (reader.ReadFile(path) != IFSelect_RetDone || !reader.TransferRoots())
+            throw std::runtime_error(std::string("cannot read STEP file ")+path);
+        auto shape = reader.OneShape();
+        if (shape.IsNull()) throw std::runtime_error("STEP file holds no shape");
+        return cad->put(shape);
+    });
+}
 int solvent_cad_stl(Cad* cad,int id,const char* path) noexcept {
     return guarded(cad,[&] {
         cad->validated(id);

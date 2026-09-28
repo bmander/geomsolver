@@ -39,3 +39,8 @@ required-features = ["occt"]
 name = "native_boundary"
 path = "tests/native_boundary.rs"
 required-features = ["occt"]
+
+[[test]]
+name = "native_measure"
+path = "tests/native_measure.rs"
+required-features = ["occt"]

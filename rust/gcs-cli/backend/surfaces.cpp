@@ -4,6 +4,7 @@
 #include <GeomAPI_PointsToBSplineSurface.hxx>
 #include <Geom_BSplineSurface.hxx>
 #include <TColgp_Array2OfPnt.hxx>
+#include <BRepAdaptor_Surface.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass_FaceClassifier.hxx>
@@ -110,6 +111,14 @@ int solvent_cad_faces(Cad* cad,int source,int* output,int capacity) noexcept {
         if (!output || capacity < count) throw std::runtime_error("face buffer is too small");
         for (int i=1;i<=count;++i) output[i-1] = cad->put(faces(i));
         return count;
+    });
+}
+// The kind of a face's supporting surface: GeomAbs_SurfaceType's order (0 plane, 1 cylinder,
+// 2 cone, 3 sphere, 4 torus, 5 Bezier, 6 B-spline, 7 revolution, 8 extrusion, 9 offset, 10 other).
+int solvent_cad_face_kind(Cad* cad,int id) noexcept {
+    return guarded(cad,[&] {
+        const auto face = TopoDS::Face(cad->at(id));
+        return static_cast<int>(BRepAdaptor_Surface(face,false).GetType());
     });
 }
 }

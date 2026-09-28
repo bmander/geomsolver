@@ -23,6 +23,8 @@ extern "C" {
     fn solvent_cad_face_seams(cad: *mut c_void,face: c_int,axes: *mut c_int) -> c_int;
     fn solvent_cad_curve_point(cad: *mut c_void,edge: c_int,t: f64,output: *mut f64) -> c_int;
     fn solvent_cad_surface_feet(cad: *mut c_void,face: c_int,points: *const f64,count: c_int,output: *mut f64) -> c_int;
+    fn solvent_cad_read_step(cad: *mut c_void,path: *const c_char) -> c_int;
+    fn solvent_cad_face_kind(cad: *mut c_void,face: c_int) -> c_int;
 }
 
 /// One cell of a partition, its volume, and its deepest interior sample.
@@ -153,6 +155,15 @@ impl Session {
         let mut p = [0.;3];
         self.result(unsafe { solvent_cad_curve_point(self.0,edge,t,p.as_mut_ptr()) })?;
         Ok(p)
+    }
+    /// A STEP file's shape, read as it was written: nothing validated or repaired.
+    pub(crate) fn read_step(&self,path: &str) -> Result<c_int,String> {
+        let name = CString::new(path).map_err(|e| e.to_string())?;
+        self.result(unsafe { solvent_cad_read_step(self.0,name.as_ptr()) })
+    }
+    /// The kind of a face's supporting surface, in OCCT's `GeomAbs_SurfaceType` order.
+    pub(crate) fn face_kind(&self,face: c_int) -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_face_kind(self.0,face) })
     }
     /// For each point, the face's support normal (unoriented) at its nearest foot and the
     /// distance to it; None where no foot is found.

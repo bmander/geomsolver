@@ -46,6 +46,9 @@ solventc — check a Solvent document
                         core's Delaunay refinement, checked by the field-agreement probe)
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
+    --measure PATH      measure an exported STEP or STL against the solid's exact surface
+                        (repeatable; STEP requires a native OCCT build)
+    --measure-samples N about how many points to measure a file at (default 20000)
     --width PX          the SVG's page width in pixels (default 800)
     --sheet NAME        select a sheet in a .svd drawing (its page size sets SVG size)
     -h, --help          this
@@ -81,6 +84,9 @@ struct Opts {
     /// `--gltf PATH` — the object as a viewer opens it, every face named.
     gltf: Option<String>,
     solid: Option<String>,
+    /// `--measure PATH` — exported files to measure against the solid's exact surface.
+    measure: Vec<String>,
+    measure_samples: usize,
     /// An SVG has no screen, so the export must choose a `unit` — the world length of one screen
     /// pixel, which every constant size goes through.  A page width fixes it.
     width: f64,
@@ -101,6 +107,8 @@ impl Default for Opts {
             refine: false,
             gltf: None,
             solid: None,
+            measure: Vec::new(),
+            measure_samples: 20000,
             width: 800.0,
             sheet: None,
         }
@@ -161,6 +169,14 @@ fn main() -> ExitCode {
                     eprintln!("solventc: --solid needs a name");
                     return ExitCode::from(2);
                 }
+            },
+            "--measure" => match args.next() {
+                Some(p) => opts.measure.push(p),
+                None => { eprintln!("solventc: --measure needs a path"); return ExitCode::from(2); }
+            },
+            "--measure-samples" => match args.next().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n > 0) {
+                Some(n) => opts.measure_samples = n,
+                None => { eprintln!("solventc: --measure-samples needs a positive count"); return ExitCode::from(2); }
             },
             "--where" => match args.next() {
                 Some(n) => opts.wanted.push(n),
@@ -443,6 +459,15 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
                 },
                 Err(message) => { eprintln!("solventc: {message}"); code = 1; }
             }
+        }
+    }
+    // measured after anything written, so one run may export a file and measure it
+    for path in &opts.measure {
+        let lines = if r.success { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| cad::measure::report(&sk,i,path,opts.measure_samples)) }
+            else { Err("measuring an export requires a solved model".into()) };
+        match lines {
+            Ok(lines) => for l in lines { if opts.json { eprintln!("{l}"); } else { println!("{l}"); } },
+            Err(m) => { eprintln!("solventc: {m}"); code = 1; }
         }
     }
     let positions = opts.json.then(|| {
