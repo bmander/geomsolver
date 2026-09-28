@@ -100,10 +100,10 @@ pub struct SolveOpts {
 /// system of fewer than two blocks, where the pass would be the whole-system solve again.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlockMode {
-    /// After the whole-system DogLeg fails and before the LM retry (only with `retry`), kept
-    /// only if it solves; and after a DogLeg that succeeded on its iteration limit, kept only if
-    /// it settles (`SolveResult::settled`).  A document the whole-system solve settles never sees
-    /// it, so it solves to the same bits it always did.
+    /// After a whole-system DogLeg that did not settle (`SolveResult::settled`) and before the LM
+    /// retry, only with `retry`: kept only if it succeeds after a failure, and only if it settles
+    /// after a stop on the iteration limit (`System::block_rescue`).  A document the whole-system
+    /// solve settles never sees it, so it solves to the same bits it always did.
     Rescue,
     /// Before the whole-system DogLeg — the block pass and its polish first, with the plain
     /// DogLeg and then LM as the retries.  For measuring; not the default.
@@ -206,50 +206,12 @@ impl System {
         };
         // the pose `self`'s x was last evaluated at is `z`'s, until a retry that is not kept
         let mut in_step = true;
-        // Accepted on the iteration limit: a DogLeg still descending when its budget ran out, whose
-        // residual is under the acceptance and whose pose can be a thousandth of the extent from
-        // the solution (docs/iteration-limit-rescue-plan.md).  The block pass runs first from the
-        // stop, and is kept if it converges there (status 0): that is the root the DogLeg was
-        // making for, finished.  One that stalls again (a step or gradient stop above the
-        // tolerance) says the stop is in a basin with no solution in it, and the pass runs from
-        // the start, as it does after a failure, kept if it settles; failing that the stalled
-        // finish is kept if *it* settled.  A stop none of it settles keeps its own pose, status
-        // and success, bit for bit.
-        if opts.retry && dogleg && opts.blocks == BlockMode::Rescue && res.success && !res.settled()
-            && self.block_order().blocks.len() >= 2
-        {
-            let mut z2 = z.clone();
-            let (res2, _) = self.blocks_then_polish(&mut z2, &opts);
-            if res2.settled() && res2.status == 0 {
-                (z, res) = (z2, res2);
-            } else {
-                let mut z3 = z0.clone();
-                let (res3, _) = self.blocks_then_polish(&mut z3, &opts);
-                if res3.settled() {
-                    (z, res) = (z3, res3);
-                } else {
-                    in_step = false;
-                    if res2.settled() {
-                        (z, res) = (z2, res2);
-                    }
-                }
-            }
-        }
-        if opts.retry && dogleg && !res.success {
-            // The block-triangular rescue: a system whose seeds are good only upstream of a block
-            // can fail whole and solve in order, each block from what the blocks before it made.
-            // Kept only if it solves, so a failing document's pose — which the diagnosis reads —
-            // is the whole-system DogLeg's or LM's, as it was.
+        if opts.retry && dogleg && !res.settled() {
             // With fewer than two blocks the pass would be this DogLeg again, from the same start.
             if opts.blocks == BlockMode::Rescue && self.block_order().blocks.len() >= 2 {
-                let mut z2 = z0.clone();
-                let (res2, rel2) = self.blocks_then_polish(&mut z2, &opts);
-                if res2.success {
-                    (z, res, rel) = (z2, res2, rel2);
-                } else {
-                    in_step = false;
-                }
-            } else if opts.blocks == BlockMode::First {
+                in_step = self.block_rescue(&z0, &mut z, &mut res, &mut rel, &opts);
+            } else if opts.blocks == BlockMode::First && !res.success {
+                // `First` ran the block pass already: its retry is the plain DogLeg
                 let mut z2 = z0.clone();
                 let (res2, rel2) = self.minimise(&mut z2, Method::DogLeg, &opts);
                 if res2.success || rel2 < rel || rel.is_nan() {
@@ -281,6 +243,54 @@ impl System {
             sk.set_x(&x);
         }
         res
+    }
+
+    /// The block-triangular rescue of a whole-system DogLeg that did not settle: the block pass
+    /// and its polish, tried from one start after another, each kept only if it clears its own
+    /// bar.  A system whose seeds are good only upstream of a block can fail whole and solve in
+    /// order, each block from what the blocks before it made; and a DogLeg accepted on its
+    /// iteration limit, still descending in an ill-conditioned direction, can be a thousandth of
+    /// the extent from the solution (docs/iteration-limit-rescue-plan.md).  So:
+    ///
+    /// * **a failure** is tried from the start, kept if it succeeds;
+    /// * **a stop on the limit** is tried from the stop, kept if it converges there (status 0) —
+    ///   the root the DogLeg was making for, finished — and a pass that stalls again (a step or
+    ///   gradient stop above the tolerance) says the stop is in a basin with no solution in it,
+    ///   so it is tried from the start, kept if it settles.
+    ///
+    /// Nothing clearing its bar, the first pass that settled is kept; nothing settling, the
+    /// DogLeg's own pose, status and success stand bit for bit — a failing document's pose is
+    /// what the diagnosis reads.  Whether `self`'s x is still `z`'s is the answer: true exactly
+    /// when the pass kept is the last one run.
+    fn block_rescue(
+        &mut self,
+        z0: &[f64],
+        z: &mut Vec<f64>,
+        res: &mut SolveResult,
+        rel: &mut f64,
+        opts: &SolveOpts,
+    ) -> bool {
+        type Bar = fn(&SolveResult) -> bool;
+        let stop = z.clone();
+        let tries: Vec<(&[f64], Bar)> = if res.success {
+            vec![(&stop[..], |r| r.settled() && r.status == 0), (z0, SolveResult::settled)]
+        } else {
+            vec![(z0, |r| r.success)]
+        };
+        let mut passes = Vec::new();
+        for (from, bar) in tries {
+            let mut zb = from.to_vec();
+            let (rb, relb) = self.blocks_then_polish(&mut zb, opts);
+            if bar(&rb) {
+                (*z, *res, *rel) = (zb, rb, relb);
+                return true;
+            }
+            passes.push((zb, rb, relb));
+        }
+        if let Some(pass) = passes.into_iter().find(|(_, rb, _)| rb.settled()) {
+            (*z, *res, *rel) = pass;
+        }
+        false
     }
 
     /// The block pass from `z`, then the whole-system DogLeg from where it ends — the polish,

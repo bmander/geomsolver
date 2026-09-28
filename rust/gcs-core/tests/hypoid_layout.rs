@@ -493,7 +493,7 @@ fn scaled(text: &str,f: f64) -> String {
 /// failed DogLeg; `First` the pass before it: both are held to the recorded numbers.  A
 /// whole-system solve that does succeed from such a start is reported, not required to fail —
 /// and where it does, it lands on another root (so `Rescue`, which never second-guesses a
-/// success, lands there too).  The seeds scaled are the layout's own rough ones (phase 3), so
+/// settled success, lands there too).  The seeds scaled are the layout's own rough ones (phase 3), so
 /// the error compounds: at the configured hypoid — flanks at 7.5 and 32.5 degrees, the
 /// narrowest tips of any design — a crown section's block, started that far from the pitch
 /// points solved before it, can stop just short of the gate's 1e-12 (from two fifths of the
@@ -530,7 +530,7 @@ fn the_layout_solves_from_rough_seeds_in_block_order() {
                         if !off.as_ref().is_some_and(|(d,_)| *d <= 1e-9) { whole_missed += 1; }
                         whole = Some((res.success,bits));
                     }
-                    // a whole-system DogLeg that succeeds is never rescued: the same solve
+                    // a whole-system DogLeg that succeeds here comes out of `Rescue` the same solve
                     (BlockMode::Rescue,Some((true,x))) => assert!(&bits == x,"{label}"),
                     _ => {
                         let solved = res.success && res.method == "blocks";
@@ -606,9 +606,20 @@ fn a_rough_start_solves_to_the_same_bits_twice() {
     assert_eq!(crate::common::bits(&a),crate::common::bits(&b));
 }
 
+/// The design labelled `label`, by its index among `designs()` and solved as solventc solves it:
+/// the settled pose the rough starts below are made from.
+fn solved_design(label: &str) -> (usize,Elaborated) {
+    use gcs_core::solve::{self,SolveOpts};
+    let designs = designs();
+    let k = designs.iter().position(|d| d.label == label).unwrap();
+    let mut e = designs[k].unsolved();
+    assert!(solve::solve(&mut e.sketch,SolveOpts::default()).settled(),"{label}");
+    (k,e)
+}
+
 /// **A solve that stops on its iteration limit is rescued** (docs/iteration-limit-rescue-plan.md).
 /// A design solved as solventc solves it and then jittered by a thousandth of its extent (the
-/// starts `block_measure` reads) is back under the interactive acceptance within the DogLeg's
+/// jittered `common::rough_starts`) is back under the interactive acceptance within the DogLeg's
 /// hundred iterations and not at its solution: without the block rescue (`BlockMode::Off`) the
 /// solve succeeds on status 4, short of the recorded pair.  By default that stop is not
 /// *settled*, the block rescue runs, and the pose it settles on is the recorded pair's to the
@@ -617,13 +628,10 @@ fn a_rough_start_solves_to_the_same_bits_twice() {
 fn a_stop_on_the_iteration_limit_is_rescued_onto_the_recorded_pair() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,rows) = recorded();
-    let designs = designs();
-    let k = designs.iter().position(|d| d.label == "24x48 m25.4").unwrap();
-    let mut e = designs[k].unsolved();
-    assert!(solve::solve(&mut e.sketch,SolveOpts::default()).settled());
+    let (k,mut e) = solved_design("24x48 m25.4");
     let reference = e.sketch.clone();
     for seed in 1..=3 {
-        let start = crate::block_measure::jittered(&reference,0.001,seed);
+        let start = crate::common::jittered(&reference,0.001,seed);
         e.sketch = start.clone();
         let stop = solve::solve(&mut e.sketch,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
         let (short,_) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
@@ -658,8 +666,7 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
     let b = solve::solve(&mut sk,SolveOpts::default());
     let mut held = start;
     assert!(solve::solve(&mut held,SolveOpts {blocks:BlockMode::First,..fixtures::accurate()}).success);
-    let apart = |p: &gcs_core::model::Sketch| p.get_x().iter().zip(held.get_x()).map(|(x,y)| (x-y).abs())
-        .fold(0.,f64::max)/held.extent();
+    let apart = |p: &gcs_core::model::Sketch| crate::common::apart(p,&held);
     println!("stopped {:.1e} apart, finished from the stop {:.1e} apart ({f:?}), restarted {:.1e} apart",
         apart(&stop),apart(&finished),apart(&sk));
     assert!(b.settled() && b.method == "blocks" && b.max_residual < 1e-10,"{b:?}");
@@ -669,15 +676,12 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
 /// **A stop the rescue cannot settle keeps its pose**: the bevel pair solved and then halved about
 /// its centroid succeeds on its iteration limit, and the block pass from there does not settle
 /// (its polish stops on the limit too, far off), so the default solve returns the stop exactly as
-/// a solve without the rescue does — the same bits, status, success and residual.
+/// a solve without the rescue does — the same bits, status, success, residual, counts and method.
 #[test]
 fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
-    let designs = designs();
-    let design = designs.iter().find(|d| d.label == "bevel").unwrap();
-    let mut reference = design.unsolved().sketch;
-    assert!(solve::solve(&mut reference,SolveOpts::default()).settled());
-    let start = crate::block_measure::scaled(&reference,0.5);
+    let (_,reference) = solved_design("bevel");
+    let start = crate::common::scaled(&reference.sketch,0.5);
     let (mut off,mut on) = (start.clone(),start);
     let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
     let b = solve::solve(&mut on,SolveOpts::default());
@@ -731,8 +735,7 @@ fn design_sweep() {
         let (mut a,mut b) = (design.unsolved(),design.unsolved());
         let ra = solve::solve(&mut a.sketch,SolveOpts::default());
         let rb = solve::solve(&mut b.sketch,SolveOpts {blocks:BlockMode::First,..fixtures::accurate()});
-        let diff = a.sketch.get_x().iter().zip(b.sketch.get_x()).map(|(x,y)| (x-y).abs())
-            .fold(0.,f64::max)/b.sketch.extent();
+        let diff = crate::common::apart(&a.sketch,&b.sketch);
         n += 1;
         if !(ra.success && ra.max_residual < 1e-10 && diff < 1e-8) || !rb.success {
             bad += 1;

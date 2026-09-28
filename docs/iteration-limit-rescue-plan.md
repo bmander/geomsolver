@@ -37,10 +37,11 @@ the measurement showed it mattered.
 
 `tests/limit_measure.rs` (ignored; `cargo test --manifest-path rust/Cargo.toml -p gcs-core --test
 core limit_measure::limit_stops -- --ignored --nocapture`, about 70 s) reads the corpus
-`block_measure` reads — the 90 example documents that elaborate and the twelve recorded
-spiral-bevel designs, 102 in all (the three parameter-only modules skipped) — and starts each from
-its own seeds and from `block_measure::robustness`'s five starts (the default solution halved and
-doubled about its centroid, and jittered three times by up to 1e-3 of the extent), 597 starts.
+`block_measure` reads (`common::corpus`) — the 90 example documents that elaborate and the twelve
+recorded spiral-bevel designs, 102 in all (the three parameter-only modules skipped) — and starts
+each from its own seeds and from the five rough starts `block_measure::robustness` solves
+(`common::rough_starts`: the default solution halved and doubled about its centroid, and jittered
+three times by up to 1e-3 of the extent), 597 starts.
 Each is solved by the whole-system DogLeg alone, the first attempt of every one-shot solve.
 
 | start | starts | failed | status 0 | 1 | 2 | 3 | 4 |
@@ -100,17 +101,18 @@ rescue is both passes, in that order.
 ## Phase 2: the trigger
 
 `SolveResult::settled()` is `success && status != 4`. In `solve_compiled`, after the first
-attempt and only with `retry`, a DogLeg solve, `BlockMode::Rescue` and two blocks or more: a
-result that succeeded without settling runs the block pass and polish (`blocks_then_polish`)
+attempt and only with `retry`, a DogLeg solve, `BlockMode::Rescue` and two blocks or more, a
+result that did not settle goes to `System::block_rescue`, which tries the block pass and polish
+(`blocks_then_polish`) from one start after another. One that succeeded without settling is tried
 
 1. from the stop, kept if it converges (settled with status 0);
 2. otherwise from the start, kept if it settles;
 3. otherwise the stop's pass, kept if it settled (a stall, but not a limit stop);
 4. otherwise nothing is kept: the first result's pose, status, success and counts, bit for bit.
 
-A failed first result is rescued exactly as before (the block pass from the start, kept if it
-succeeds, then LM, kept if better). `BlockMode::First` and `Off`, and every solve with `retry` off
-— both halves of a drag — are untouched.
+A failed first result is rescued exactly as before: the block pass from the start (the same
+helper, with that one start), kept if it succeeds, then LM, kept if better. `BlockMode::First`
+and `Off`, and every solve with `retry` off — both halves of a drag — are untouched.
 
 Measured again with the rule in place (`limit_stops`'s `default` column), the 26 stops come out:
 
@@ -186,7 +188,9 @@ order).
 
 ## Files
 
-- `rust/gcs-core/src/solve.rs`: `SolveResult::settled`, the trigger in `solve_compiled`.
+- `rust/gcs-core/src/solve.rs`: `SolveResult::settled`, the trigger in `solve_compiled` and the
+  rule in `System::block_rescue`.
 - `rust/gcs-core/tests/limit_measure.rs`: the measurement (phase 1 and the `default` column).
-- `rust/gcs-core/tests/block_solve.rs`, `hypoid_layout.rs`, `drag.rs`: the tests above;
-  `block_measure.rs` shares its corpus and starts.
+- `rust/gcs-core/tests/block_solve.rs`, `hypoid_layout.rs`, `drag.rs`: the tests above.
+- `rust/gcs-core/tests/common/mod.rs`: the corpus, the rough starts and the distances that
+  `limit_measure`, `block_measure` and the tests above share.

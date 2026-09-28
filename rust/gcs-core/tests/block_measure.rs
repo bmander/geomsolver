@@ -13,42 +13,18 @@
 //!   `Off` from the document's own seeds: what making `First` the default would re-record.
 //!
 //! Each test's `ignore` is its command; `timing` runs on one thread, its clocks being wall-clock.
-use gcs_core::{model::Sketch, rng::Rng, solve::{self, BlockMode, SolveOpts}};
+use gcs_core::solve::{self, BlockMode, SolveOpts};
 use std::time::Instant;
 
-use crate::common::{bits, with_blocks};
+use crate::common::{
+    apart, bits, blocks_of, corpus, is_determined, off, rough_starts, with_blocks, ROUGH,
+};
 
 const MODES: [BlockMode; 3] = [BlockMode::Off, BlockMode::Rescue, BlockMode::First];
-
-pub(crate) struct Doc {
-    pub(crate) name: String,
-    pub(crate) sketch: Sketch,
-}
-
-/// Every example document that elaborates, as solventc reads it (`fixtures::examples`), and the
-/// spiral-bevel designs.
-pub(crate) fn corpus() -> Vec<Doc> {
-    let mut docs = Vec::new();
-    for (name, e) in fixtures::examples() {
-        match e {
-            Some(e) if e.ok() => docs.push(Doc { name, sketch: e.sketch }),
-            _ => println!("skip {name}: does not elaborate"),
-        }
-    }
-    for (label, configuration) in fixtures::gear::designs() {
-        let sketch = fixtures::gear::unsolved(&configuration).sketch;
-        docs.push(Doc { name: format!("spiral_bevel@{label}"), sketch });
-    }
-    docs
-}
 
 fn median(mut v: Vec<f64>) -> f64 {
     v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     v[v.len() / 2]
-}
-
-fn blocks_of(sk: &Sketch) -> usize {
-    gcs_core::system::System::new(sk).block_order().blocks.len()
 }
 
 #[test]
@@ -84,61 +60,6 @@ fn timing() {
     println!("TOTAL\t\t\t{:.1}\t{:.1}\t{:.1}", total[0], total[1], total[2]);
 }
 
-/// Scale every free point coordinate about the free points' centroid by `f`, and every free
-/// radius by `f`.
-pub(crate) fn scaled(sk: &Sketch, f: f64) -> Sketch {
-    let mut out = sk.clone();
-    let free: Vec<(u32, u32)> = sk.points.iter().map(|p| (p.x, p.y))
-        .filter(|&(x, y)| !sk.params[x as usize].fixed || !sk.params[y as usize].fixed).collect();
-    if free.is_empty() { return out; }
-    let n = free.len() as f64;
-    let cx = free.iter().map(|&(x, _)| sk.params[x as usize].value).sum::<f64>() / n;
-    let cy = free.iter().map(|&(_, y)| sk.params[y as usize].value).sum::<f64>() / n;
-    for &(x, y) in &free {
-        for (i, c) in [(x, cx), (y, cy)] {
-            let p = &mut out.params[i as usize];
-            if !p.fixed { p.value = c + f * (p.value - c); }
-        }
-    }
-    for r in sk.circles.iter().map(|c| c.radius).chain(sk.arcs.iter().map(|a| a.radius)) {
-        let p = &mut out.params[r as usize];
-        if !p.fixed { p.value *= f; }
-    }
-    out
-}
-
-/// Jitter every free point coordinate by up to `amount` of the extent, and every free radius by
-/// up to `amount` of itself.
-pub(crate) fn jittered(sk: &Sketch, amount: f64, seed: u32) -> Sketch {
-    let mut out = sk.clone();
-    let mut rng = Rng::new(seed);
-    let e = sk.extent();
-    for p in &sk.points {
-        for i in [p.x, p.y] {
-            let q = &mut out.params[i as usize];
-            if !q.fixed { q.value += rng.uniform(-amount, amount) * e; }
-        }
-    }
-    for r in sk.circles.iter().map(|c| c.radius).chain(sk.arcs.iter().map(|a| a.radius)) {
-        let q = &mut out.params[r as usize];
-        if !q.fixed { q.value *= 1. + rng.uniform(-amount, amount); }
-    }
-    out
-}
-
-/// How far `sk`'s points (in space, so that a view turned over with its drawing is the same
-/// pose) and radii are from `reference`'s, over the reference's extent.
-pub(crate) fn off(sk: &Sketch, reference: &Sketch) -> f64 {
-    let e = reference.extent();
-    let points = (0..reference.points.len()).map(|i| {
-        let (a, b) = (sk.world_point(i), reference.world_point(i));
-        (0..3).map(|k| (a[k] - b[k]).abs()).fold(0., f64::max)
-    });
-    let radii = reference.circles.iter().map(|c| c.radius).chain(reference.arcs.iter().map(|a| a.radius))
-        .map(|i| (sk.params[i as usize].value - reference.params[i as usize].value).abs());
-    points.chain(radii).fold(0., f64::max) / e
-}
-
 #[test]
 #[ignore = "a tool: cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
     block_measure::robustness -- --ignored --nocapture"]
@@ -157,25 +78,20 @@ fn robustness() {
             println!("{}\tno reference: the default solve fails", d.name);
             continue;
         }
-        let fixed = {
-            let mut sys = gcs_core::system::System::new(&reference);
-            let order = sys.block_order();
-            order.under_cols.is_empty()
-        };
-        let mut starts = vec![scaled(&reference, 0.5), scaled(&reference, 2.)];
-        for seed in 1..=3 { starts.push(jittered(&reference, 0.001, seed)); }
+        let fixed = is_determined(&reference);
+        let starts = rough_starts(&reference);
         let mut line = format!("{}\t{}\t{}", d.name, if fixed { "yes" } else { "no" }, starts.len());
         for (k, mode) in MODES.iter().enumerate() {
             let (mut solved, mut same) = (0, 0);
-            for (j, s) in starts.iter().enumerate() {
+            for (j, _, s) in &starts {
                 let mut sk = s.clone();
                 if solve::solve(&mut sk, with_blocks(*mode)).success {
                     solved += 1;
                     let on = off(&sk, &reference) <= 1e-6;
                     if on { same += 1; }
                     if fixed {
-                        kinds[k][j.min(2)][0] += 1;
-                        if on { kinds[k][j.min(2)][1] += 1; }
+                        kinds[k][*j][0] += 1;
+                        if on { kinds[k][*j][1] += 1; }
                     }
                 }
             }
@@ -196,7 +112,7 @@ fn robustness() {
         println!("TOTAL {mode:?}: {} starts, {} solved; determined documents: {} starts, {} solved, \
             {} on the reference root", total[k][0], total[k][1], determined[k][0], determined[k][1],
             determined[k][2]);
-        for (j, kind) in ["halved", "doubled", "jittered"].iter().enumerate() {
+        for (j, kind) in ROUGH.iter().enumerate() {
             println!("  {kind}: {} solved, {} on the reference root", kinds[k][j][0], kinds[k][j][1]);
         }
     }
@@ -213,12 +129,12 @@ fn blast_radius() {
         let r_off = solve::solve(&mut off_sk, with_blocks(BlockMode::Off));
         let mut first_sk = d.sketch.clone();
         let r_first = solve::solve(&mut first_sk, with_blocks(BlockMode::First));
-        let (a, b) = (off_sk.get_x(), first_sk.get_x());
-        let differ = bits(&off_sk).iter().zip(bits(&first_sk)).filter(|(x, y)| **x != *y).count();
+        let (a, b) = (bits(&off_sk), bits(&first_sk));
+        let differ = a.iter().zip(&b).filter(|(x, y)| x != y).count();
         if differ == 0 {
             same += 1;
         } else {
-            let worst = a.iter().zip(&b).map(|(x, y)| (x - y).abs()).fold(0., f64::max) / off_sk.extent();
+            let worst = apart(&first_sk, &off_sk);
             changed.push(format!("{}\t{} of {} params differ, worst {worst:.1e} of the extent; \
                 Off {} by {}, First {} by {}, {} blocks", d.name, differ, a.len(),
                 if r_off.success { "solved" } else { "FAILED" }, r_off.method,

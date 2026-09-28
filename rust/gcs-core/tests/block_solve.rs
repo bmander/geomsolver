@@ -1,16 +1,16 @@
 //! The block-triangular solve (`solve::BlockMode`): each strongly connected block of the equations
 //! minimised on its own in order, then one whole-system DogLeg from there.  As a rescue — the
-//! default — it runs only after the whole-system DogLeg fails and is kept only if it solves, so a
-//! document that solves, and one that cannot, come out as they did; `First` runs it before the
-//! DogLeg, which is how a document with over- and under-determined parts is seen through the
-//! polish here.  The spiral-bevel layout from rough seeds is `hypoid_layout.rs`'s gate.
+//! default — it runs only after a whole-system DogLeg that did not settle (a failure, or a stop on
+//! the iteration limit) and is kept only if it solves, so a document the DogLeg settles, and one
+//! that cannot be solved, come out as they did; `First` runs it before the DogLeg, which is how a
+//! document with over- and under-determined parts is seen through the polish here.  The
+//! spiral-bevel layout from rough seeds is `hypoid_layout.rs`'s gate.
 use gcs_core::constraints::CKind;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::examples;
-use gcs_core::solve::{solve, BlockMode};
+use gcs_core::solve::{solve, BlockMode, SolveOpts};
 
-use crate::common::{bits, build, ent, with_blocks};
-use gcs_core::model::Sketch;
+use crate::common::{apart, bits, build, ent, with_blocks};
 
 /// A chain of triangles off a grounded point, the first side stated twice (an over-determined
 /// part), a point on nothing (under-determined columns) and a point on a circle about the last
@@ -87,7 +87,7 @@ fn a_conflict_is_diagnosed_as_before() {
     assert_eq!(got, want);
 }
 
-/// Where the whole-system DogLeg solves, the rescue never runs: the library's cases — the
+/// Where the whole-system DogLeg settles, the rescue never runs: the library's cases — the
 /// conflicting, redundant and under-constrained ones among them — come out to the same bits.  A
 /// case the whole solve cannot settle may be rescued, and then it solves.
 #[test]
@@ -134,23 +134,21 @@ fn chain(n: usize) -> String {
 /// not: each triangle solved alone from those seeds finds its other orientation.
 #[test]
 fn a_stop_on_the_iteration_limit_is_finished_where_it_stopped() {
-    use gcs_core::solve::SolveOpts;
     let e = build(&chain(12));
     let mut start = e.sketch.clone();
     start.perturb(6.0, 7);
-    let far = |a: &Sketch, b: &Sketch| a.get_x().iter().zip(b.get_x()).map(|(x, y)| (x - y).abs())
-        .fold(0., f64::max) / b.extent();
     let mut full = start.clone();
     assert!(solve(&mut full, SolveOpts::default()).settled());
     let short = SolveOpts { max_iter: 8, ..SolveOpts::default() };
     let mut stop = start.clone();
     let a = solve(&mut stop, SolveOpts { blocks: BlockMode::Off, ..short });
-    assert!(a.success && a.status == 4 && a.method == "dogleg" && far(&stop, &full) > 1e-7, "{a:?}");
+    assert!(a.success && a.status == 4 && a.method == "dogleg", "{a:?}");
+    assert!(apart(&stop, &full) > 1e-7, "{:e} from the full solve", apart(&stop, &full));
     let mut sk = start.clone();
     let b = solve(&mut sk, short);
     assert!(b.settled() && b.method == "blocks", "{b:?}");
-    assert!(far(&sk, &full) < 1e-12, "{:e} from the full solve", far(&sk, &full));
+    assert!(apart(&sk, &full) < 1e-12, "{:e} from the full solve", apart(&sk, &full));
     let mut from_start = start.clone();
     solve(&mut from_start, SolveOpts { retry: false, blocks: BlockMode::First, ..short });
-    assert!(far(&from_start, &full) > 0.1, "{:e}", far(&from_start, &full));
+    assert!(apart(&from_start, &full) > 0.1, "{:e}", apart(&from_start, &full));
 }
