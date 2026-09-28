@@ -130,10 +130,10 @@ fn the_native_space_at_an_offset_against_its_field() {
     eprintln!("offset {offset}: {agree} side checks agree, {disagree} disagree ({:?})",started.elapsed());
 }
 
+/// It failed its fit contract (73 µm, 62 degrees) until a sheet's rows stopped before a margin
+/// column's leap (docs/native-hypoid-plan.md, Phase 2); two rows fewer, it fits within 3.5 µm.
 #[test]
-#[ignore = "the traced sheet (robustness step 3) fails this gear space's fit contract near the cutter's \
-    crease, the class B pleat of docs/generating-sweeps-robustness.md; the harness's gear rows are the \
-    native path's acceptance record, and field meshing (docs/field-meshing.md) is its replacement"]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 140 s: a native gear tooth space built and measured")]
 fn generic_sheet_reproduces_the_gear_tooth_space() { single_space("gear",117.137321); }
 
 /// A sphere swept about an axis parallel to its own is the degenerate case for

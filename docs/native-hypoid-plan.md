@@ -225,6 +225,13 @@ The meter (`--measure-samples 100000`; µm, max / p99 / mean of |d|):
   checks that neither leaps in its margin and that length rows are even in space.
 - The slow tier's `the_configured_gear_exports_natively` (`gcs-cli/tests/cli.rs`) exports the gear
   to STEP and STL through `solventc` and checks the shell and the field gate.
+- `generic_sheet_reproduces_the_gear_tooth_space` joins the slow tier; it was ignored before.
+  - The bevel gear's single space had the same cause 1. At the phase-1 commit its 73×39 sheet
+    missed by 73 µm and 61.6°.
+  - Trimmed to 71×39, the walk-length sheet fits within 3.5 µm and 1.24° and needs no length
+    rows.
+  - Its space is 117.135260 mm³ against the recorded 117.137321 (1.8 × 10⁻⁵), so the recorded
+    volume stands. 264 side checks agree with the field.
 
 ### 3. Precision to a stated tolerance
 
