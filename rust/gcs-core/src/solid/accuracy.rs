@@ -95,6 +95,9 @@ impl SampleKind {
         match self { SampleKind::Face => "face points",SampleKind::Vertex => "vertices",
             SampleKind::Midpoint => "edge midpoints",SampleKind::Centroid => "centroids" }
     }
+    /// Whether the sample's normal is its own face's there: a face point's and a triangle's
+    /// centroid's, not a vertex's or an edge midpoint's, which may stand on another face's edge.
+    pub fn own_normal(self) -> bool { matches!(self,SampleKind::Face | SampleKind::Centroid) }
 }
 
 /// A point of an exported boundary: where it is, the exporter's normal if it has one, and which
@@ -675,6 +678,19 @@ pub fn report(meter: &Meter,samples: &[Sample],measurements: &[Measurement],clas
         if let (Some(index),Some(roll)) = (a.placement,a.roll) { text += &format!(" at index {index}, roll {:.3}°",roll.to_degrees()); }
         out.push(text);
     }
+    // where the exporter's normal is farthest from the exact one, among samples whose own face is
+    // the one they are nearest (a vertex or an edge midpoint beside another face reads that one's)
+    let mut bent: Vec<(f64,usize)> = (0..samples.len()).filter(|&i| samples[i].kind.own_normal())
+        .filter_map(|i| normal_error(&samples[i],&measurements[i]).map(|e| (e,i))).collect();
+    bent.sort_by(|a,b| b.0.total_cmp(&a.0));
+    if bent.first().is_some_and(|b| b.0 > 0.) {
+        out.push("worst normals (mm):".into());
+        for &(e,i) in bent.iter().take(4) {
+            let (p,a) = (samples[i].position,measurements[i].analytic.unwrap());
+            out.push(format!("  ({:.4}, {:.4}, {:.4}) {} {}: {e:.2}° at {:.3} on {}",p[0]*millimetres,p[1]*millimetres,
+                p[2]*millimetres,samples[i].kind.name(),samples[i].face,um(a.distance),meter.surfaces[a.surface].name));
+        }
+    }
     let differ = |i: usize| measurements[i].analytic.map_or(f64::NAN,|a| (a.distance-measurements[i].field).abs());
     if let Some(i) = (0..samples.len()).filter(|&i| differ(i).is_finite()).max_by(|&a,&b| differ(a).total_cmp(&differ(b))) {
         let (p,a) = (samples[i].position,measurements[i].analytic.unwrap());
@@ -689,6 +705,28 @@ pub fn report(meter: &Meter,samples: &[Sample],measurements: &[Measurement],clas
             unmatched.len(),meter.options.reach*millimetres,p[0]*millimetres,p[1]*millimetres,p[2]*millimetres,um(measurements[i].field)));
     }
     out
+}
+
+/// The verdict against an export tolerance (model units): every exact face's farthest sample on
+/// the analytic route within it, and no sample unmatched; the line says which faces exceed it
+/// and by how much, or the worst face when none does.
+pub fn within(meter: &Meter,samples: &[Sample],measurements: &[Measurement],tolerance: f64,millimetres: f64) -> (bool,String) {
+    let um = |x: f64| x*millimetres*1e3;
+    let mut faces: Vec<(f64,&str,usize)> = meter.surfaces.iter().enumerate().filter_map(|(k,s)| {
+        let st = stats(samples,measurements,|i| measurements[i].analytic.is_some_and(|a| a.surface == k));
+        (st.count > 0).then_some((st.max,s.name.as_str(),st.count))
+    }).collect();
+    faces.sort_by(|a,b| b.0.total_cmp(&a.0));
+    let unmatched = measurements.iter().filter(|m| m.analytic.is_none()).count();
+    let over: Vec<String> = faces.iter().filter(|f| !(f.0 <= tolerance)).map(|f| format!("{} {:.3}",f.1,um(f.0))).collect();
+    let ok = over.is_empty() && unmatched == 0 && !faces.is_empty();
+    let text = if ok {
+        format!("tolerance {:.3} µm: every exact face within it, the worst {} at {:.3}",um(tolerance),faces[0].1,um(faces[0].0))
+    } else {
+        format!("tolerance {:.3} µm: exceeded on {} of {} exact faces ({}), {unmatched} samples unmatched",um(tolerance),over.len(),
+            faces.len(),over.join(", "))
+    };
+    (ok,text)
 }
 
 /// Samples of a triangle mesh: at most `triangles` triangles chosen by area (as the field

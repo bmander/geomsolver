@@ -46,6 +46,7 @@ The files beyond construction and export (`occt.cpp`) serve the generating-sweep
 
 - `sections.cpp` cuts a native cutter by meridian half-planes into the profile a swept sheet
   is sampled over.
+- `occt.cpp`'s `solvent_cad_stl` meshes at the caller's absolute and angular deflections.
 - `surfaces.cpp` interpolates a sheet's sample grid into a B-spline face
   (`solvent_cad_bspline_face_with`: uniform, chord-length or centripetal parameters), lists a
   shape's faces, and queries a bounded face in its own finite UV trim box
@@ -58,7 +59,8 @@ The files beyond construction and export (`occt.cpp`) serve the generating-sweep
   (15 doubles; negative convex, positive concave, zero smooth, read from the oriented face
   boundary). Seams keep both parameter curves; collapsed edges refuse tangent queries.
 - `trims.cpp` answers the remaining face and edge queries: a face's periodic seams, a point
-  on an edge's spatial curve, the support normals at many points' nearest feet, and a face's
+  on an edge's spatial curve, the support normals at many points' nearest feet (globally, or
+  from a guess of each foot: `solvent_cad_surface_feet_near`), and a face's
   outward normal at a point's projection.
 
 ```sh

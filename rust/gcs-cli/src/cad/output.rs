@@ -101,20 +101,34 @@ pub fn check_stl(stl: &[u8],what: &str) -> Result<(),String> {
 /// written, whichever backend built it: probes a little inside and outside the triangles of
 /// its STL (`gcs_core::solid::agreement`, millimetres), the check the traced-sheet
 /// arrangement failed while its volume and its shell passed. A disagreement refuses the export.
-/// First the mesh contract (`solid::contracts`): no cluster of microscopic triangles.
-pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8]) -> Result<(),ExportRefusal> {
+/// First the mesh contract (`solid::contracts`): no cluster of microscopic triangles. Held to a
+/// `tolerance`, the probes stand off as it says (`Tolerance::probe`); otherwise 0.1 mm.
+pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8],tolerance: Option<gcs_core::solid::export::Tolerance>)
+    -> Result<(),ExportRefusal> {
     use gcs_core::solid::{agreement,cad,contracts,MaterialField};
     let mesh = |message: String| ExportRefusal::at(Stage::Mesh,message);
     let refused = |message: String| ExportRefusal::at(Stage::Agreement,message);
     let scale = cad::millimetres(sk).map_err(mesh)?;
     let started = std::time::Instant::now();
     let (vertices,triangles) = agreement::stl_triangles(stl,scale).map_err(mesh)?;
-    let tiny = contracts::tiny_triangles(&vertices,&triangles,scale);
-    stage(&format!("mesh: {} of {} triangles under {} mm²",tiny.count,tiny.total,contracts::TINY_AREA));
-    if let Err(e) = tiny.verdict() { keep_rejected(stl); return Err(mesh(e)); }
+    let verdict = match tolerance {
+        None => {
+            let tiny = contracts::tiny_triangles(&vertices,&triangles,scale);
+            stage(&format!("mesh: {} of {} triangles under {} mm²",tiny.count,tiny.total,contracts::TINY_AREA));
+            tiny.verdict()
+        }
+        Some(t) => {
+            let tiny = contracts::tiny_triangles_under(&vertices,&triangles,scale,(t.deflection()/10.).powi(2));
+            stage(&format!("mesh: {} of {} triangles under {:.1e} mm², at most {} in a millimetre cube",tiny.count,tiny.total,
+                tiny.under,tiny.densest));
+            tiny.clustered()
+        }
+    };
+    if let Err(e) = verdict { keep_rejected(stl); return Err(mesh(e)); }
     mark(Stage::Mesh);
     let mut material = MaterialField::read(sk,body,cad::AXIS_TOLERANCE).map_err(refused)?.evaluator(cad::POSE_CACHE);
-    let options = agreement::Options {offset:0.1/scale,confirm:0.025/scale,value_tolerance:0.02/scale,..Default::default()};
+    let [offset,confirm,value_tolerance] = tolerance.map_or([0.1,0.025,0.02],|t| t.probe());
+    let options = agreement::Options {offset:offset/scale,confirm:confirm/scale,value_tolerance:value_tolerance/scale,..Default::default()};
     let total = (triangles.len()+(triangles.len()/options.triangles.max(1)).max(1)-1)/(triangles.len()/options.triangles.max(1)).max(1);
     stage(&format!("probing {total} of {} triangles against the material field",triangles.len()));
     let mut shown = 0;
@@ -124,9 +138,10 @@ pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8]) -> R
             stage(&format!("  {} of {total} triangles probed, {} disagree",r.probed_triangles,r.disagreements.len()));
         }
     }).map_err(refused)?;
-    stage(&format!("field agreement: {} of {} triangles probed {:.2} mm off each side, {} probes unresolved, \
+    let off = if tolerance.is_some() { format!("{:.4}",options.offset*scale) } else { format!("{:.2}",options.offset*scale) };
+    stage(&format!("field agreement: {} of {} triangles probed {off} mm off each side, {} probes unresolved, \
         {} withdrawn beside another face, {} disagree ({:?})",report.probed_triangles,report.triangles,
-        options.offset*scale,report.unresolved,report.withdrawn,report.disagreements.len(),started.elapsed()));
+        report.unresolved,report.withdrawn,report.disagreements.len(),started.elapsed()));
     if report.agrees() { mark(Stage::Agreement); return Ok(()); }
     keep_rejected(stl);
     for d in report.disagreements.iter().take(10) {

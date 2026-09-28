@@ -17,9 +17,9 @@ use super::*;
 use super::kernel::Cell;
 use gcs_core::{interval::{Interval,minimum::Options},model::{Sketch,SolidDef},motion::Family,
     solid::{admission::Admission,cad,contracts,MaterialEvaluator,MaterialField,ProbeState,SweepContacts}};
-use gcs_core::solid::contact_trace::{Band,Sample,Station,TraceError,Tracer};
+use gcs_core::solid::contact_trace::{Band,Layout,Sample,Station,TraceError,Tracer,Withheld,marked};
 pub(crate) use gcs_core::solid::contact_trace::{Inside,Rows,Sheet};
-use gcs_core::solid::export::{AtStage,ExportRefusal,Stage};
+use gcs_core::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use gcs_core::space::{sub,dot,cross,norm,scale as scaled,distance};
 use std::f64::consts::TAU;
 
@@ -30,9 +30,10 @@ fn unit(a: [f64;3]) -> Result<[f64;3],String> {
     Ok(a.map(|v| v/n))
 }
 
-/// The fit contract's bounds: how far the fitted sheet may pass from a withheld contact, and
-/// how far its normal may turn from the contact's. Gross, not the accuracy budget: they
-/// separate a fit that follows its contacts from one that does not.
+/// The fit contract's bounds without a stated tolerance: how far the fitted sheet may pass from a
+/// withheld contact, and how far its normal may turn from the contact's. Gross, not the accuracy
+/// budget: they separate a fit that follows its contacts from one that does not. A tolerance
+/// replaces them (`Tolerance::fit`, `Tolerance::turn`).
 const FIT_DISTANCE: f64 = 0.25;
 const FIT_TURN: f64 = 20.;
 /// How far the fitted face's own normal may turn between points a quarter of a cell apart in the
@@ -464,13 +465,26 @@ pub(crate) fn classify(session: &Session,partition: c_int,material: &mut Materia
 /// A sheet grid fitted as a native face and judged: the face, the grid, and its withheld error.
 pub(crate) type Fitted = (c_int,Sheet,f64);
 
+/// A fitted sheet's verdict at its withheld contacts: it fits (the face and its withheld error),
+/// or, held to a tolerance, it misses at the contacts marked, which a finer grid may mend.
+pub(crate) enum Judged { Fits(c_int,f64),Misses {over: Vec<bool>,refusal: ExportRefusal} }
+
+/// How many times a sheet's grid is refined toward its tolerance, and the most nodes it may
+/// have each way (the kernel interpolates at most 512): past either it is refused.
+const MOST_REFINEMENTS: usize = 4;
+const MOST_ROWS: usize = 480;
+const MOST_COLUMNS: usize = 400;
+
 /// The candidate sheet grid of one swept solid whose contacts enter the blank
 /// `inside` describes, widened until its boundary lies outside: the core traces
 /// (`solid::contact_trace`), the native cutter's sections are what it traces. Each row
 /// placement in turn is handed to `fitted`; the first it accepts is the sheet, and a sheet it
 /// refuses at the withheld contacts (a fit that misses or folds) passes to the next placement.
+/// Held to a `tolerance`, a sheet also withholds the middles of its cells' sides, and one that
+/// misses is refined where it misses (`contact_trace::marked`, `Grid::refined`) and fitted again,
+/// until it fits or its refinement budget is spent.
 pub(crate) fn swept_sheets(session: &Session,sk: &Sketch,swept: usize,inside: Inside,placements: &[Rows],
-    fitted: &mut dyn FnMut(Sheet) -> Result<Fitted,ExportRefusal>) -> Result<Fitted,ExportRefusal> {
+    tolerance: Option<Tolerance>,fitted: &mut dyn FnMut(&Sheet) -> Result<Judged,ExportRefusal>) -> Result<Fitted,ExportRefusal> {
     let SolidDef::Swept {source,..} = &sk.solids[swept].def else {
         return Err(ExportRefusal::at(Stage::Reach,format!("`{}` is not a continuous sweep",sk.solids[swept].name)));
     };
@@ -496,14 +510,12 @@ pub(crate) fn swept_sheets(session: &Session,sk: &Sketch,swept: usize,inside: In
         Ok(Station {length:profile.augmented_length(),window,sample:Box::new(move |s| session.sample(cutter,&profile,s))})
     };
     let band = Band {stations:reach.stations,radius:reach.radius};
-    let widened = |placement: Rows| -> Result<Sheet,String> {
-        let sheet_of = |margin: f64,station_margin: f64| -> Result<Sheet,String> {
-            Ok(tracer.sheet(&station_at,band,margin,station_margin,placement)?)
-        };
+    let widened = |placement: Rows| -> Result<(Layout,Sheet),String> {
         // The margins carry the sheet's edge out of the blank; then the grid must be one chart.
         let (mut margin,mut station_margin) = (1.,(reach.stations[1]-reach.stations[0])*0.15);
         for _ in 0..6 {
-            let sheet = sheet_of(margin,station_margin)?;
+            let layout = tracer.layout(&station_at,band,margin,station_margin,placement)?;
+            let sheet = layout.sheet(&layout.grid,Withheld::Centres)?;
             let edges = [(0..sheet.columns).map(|c| sheet.points[c]).collect::<Vec<_>>(),
                 (0..sheet.columns).map(|c| sheet.points[(sheet.rows-1)*sheet.columns+c]).collect(),
                 (0..sheet.rows).map(|r| sheet.points[r*sheet.columns]).collect(),
@@ -539,72 +551,237 @@ pub(crate) fn swept_sheets(session: &Session,sk: &Sketch,swept: usize,inside: In
                 return Err(format!("`{name}`: the sheet is not one regular chart: {fault}"));
             }
             stage(&format!("`{name}`: sheet {}x{}, one chart ({:?})",sheet.rows,sheet.columns,started.elapsed()));
-            return Ok(sheet);
+            return Ok((layout,sheet));
         }
         Err(format!("`{name}`: the candidate sheet cannot be widened out of the blank"))
     };
     let mut refused: Option<ExportRefusal> = None;
     for &placement in placements {
+        let by = match placement { Rows::Walk => "walk length", Rows::Length => "length in space" };
         if let Some(refusal) = &refused {
-            let by = match placement { Rows::Walk => "walk length", Rows::Length => "length in space" };
             stage(&format!("{}; placing the sheet's rows by {by} instead",refusal.message));
         }
-        let sheet = widened(placement).at(Stage::Sheet)?;
+        let (layout,first) = widened(placement).at(Stage::Sheet)?;
         mark(Stage::Sheet);
-        match fitted(sheet) {
-            Err(refusal) if refusal.stage == Stage::Withheld => refused = Some(refusal),
-            result => return result,
+        if tolerance.is_none() {
+            match fitted(&first) {
+                Ok(Judged::Fits(face,error)) => return Ok((face,first,error)),
+                Ok(Judged::Misses {refusal,..}) => refused = Some(refusal),
+                Err(refusal) if refusal.stage == Stage::Withheld => refused = Some(refusal),
+                Err(refusal) => return Err(refusal),
+            }
+            continue;
+        }
+        // Held to a tolerance: refined where it misses until it fits, or refused.
+        let mut grid = layout.grid.clone();
+        for round in 0.. {
+            let clock = std::time::Instant::now();
+            let sheet = layout.sheet(&grid,Withheld::Sides).map_err(String::from).at(Stage::Sheet)?;
+            stage(&format!("`{name}`: sheet {}x{} and {} withheld contacts read ({:?})",sheet.rows,sheet.columns,
+                sheet.withheld.len(),clock.elapsed()));
+            if let Some(fault) = sheet.chart_fault(inside).at(Stage::Sheet)? {
+                return Err(ExportRefusal::at(Stage::Sheet,format!("`{name}`: the refined sheet is not one regular chart: {fault}")));
+            }
+            let (over,mut refusal) = match fitted(&sheet) {
+                Ok(Judged::Fits(face,error)) => return Ok((face,sheet,error)),
+                Ok(Judged::Misses {over,refusal}) => (over,refusal),
+                Err(refusal) if refusal.stage == Stage::Withheld => { refused = Some(refusal); break }
+                Err(refusal) => return Err(refusal),
+            };
+            let (rows,columns) = marked(&sheet.sites,&over,sheet.rows,sheet.columns);
+            let next = grid.refined(&rows,&columns);
+            if round >= MOST_REFINEMENTS || next.rows.len() > MOST_ROWS || next.columns.len() > MOST_COLUMNS {
+                refusal.message = format!("{} with rows by {by}, after {round} refinements to {}x{} nodes (at most {MOST_REFINEMENTS} \
+                    refinements and {MOST_ROWS}x{MOST_COLUMNS} nodes)",refusal.message,sheet.rows,sheet.columns);
+                refused = Some(refusal);
+                break;
+            }
+            stage(&format!("`{name}`: refining the sheet where it misses: {} of {} row intervals and {} of {} column intervals \
+                split, {}x{} nodes",rows.iter().filter(|m| **m).count(),rows.len(),columns.iter().filter(|m| **m).count(),
+                columns.len(),next.rows.len(),next.columns.len()));
+            grid = next;
         }
     }
     Err(refused.unwrap_or_else(|| ExportRefusal::at(Stage::Sheet,format!("`{name}`: no row placement was offered"))))
 }
 
 /// The fit contract of a sheet grid fitted as a native face, judged where the face bounds the cut:
-/// in the blank, or within half a millimetre of it (`near`). At the centre of every cell the face
+/// in the blank, or within half a millimetre of it (`near`). At every withheld contact the face
 /// passes near the true contact there and its normal agrees with the contact's; and nowhere in the
 /// blank does its own normal turn back between points a quarter of a cell apart, a pleat the
-/// withheld contacts (one a cell) can straddle.
-fn judged(session: &Session,name: &str,sheet: Sheet,scale: f64,near: &dyn Fn([f64;3]) -> f64) -> Result<Fitted,ExportRefusal> {
-    let face = session.fit_sheet(&sheet.points,sheet.rows,sheet.columns).at(Stage::Fit)?;
-    stage(&format!("`{name}`: fitted the sheet; measuring {} withheld contacts against it",sheet.withheld.len()));
-    mark(Stage::Fit);
-    let held: Vec<([f64;3],[f64;3])> = sheet.withheld.iter().zip(&sheet.withheld_normals)
-        .filter(|(p,_)| near(**p) < 0.5).map(|(p,n)| (*p,*n)).collect();
-    let points: Vec<[f64;3]> = held.iter().map(|(p,_)| *p).collect();
-    let (mut error,mut turn,mut worst,mut turned) = (0_f64,0_f64,[0.;3],[0.;3]);
-    for ((p,n),found) in held.iter().zip(session.surface_feet(face,&points).at(Stage::Withheld)?) {
-        let Some((m,gap)) = found else { error = f64::INFINITY; worst = *p; continue };
-        let angle = dot(m,*n).abs().min(1.).acos().to_degrees();
-        if gap > error { error = gap; worst = *p; }
-        if angle > turn { turn = angle; turned = *p; }
-    }
-    stage(&format!("`{name}`: fitted sheet within {error:.2e} mm of the {} withheld contacts at the blank, normals within {turn:.2} degrees",
-        points.len()));
+/// withheld contacts (one a cell) can straddle. Without a tolerance the bars are gross (0.25 mm,
+/// 20°); held to one, the distance bar is its fit share and the normal bar follows from it, the gap
+/// and the node spacing at each contact (`Tolerance::turn`), and a miss is a verdict the caller may
+/// refine.
+fn judged(session: &Session,name: &str,sheet: &Sheet,scale: f64,near: &dyn Fn([f64;3]) -> f64,tolerance: Option<Tolerance>)
+    -> Result<Judged,ExportRefusal> {
     let at = |p: [f64;3]| p.map(|x| (x*1e3).round()/1e3);
-    if error > FIT_DISTANCE || turn > FIT_TURN {
-        let witness = if error > FIT_DISTANCE { worst } else { turned };
-        return Err(ExportRefusal {stage:Stage::Withheld,condition:None,witness:Some(witness.map(|x| x/scale)),
-            message:format!("`{name}`: the fitted sheet leaves its contacts: {error:.3} mm (at {:?}) and {turn:.1} degrees (at {:?}), \
-            against {FIT_DISTANCE} mm and {FIT_TURN} degrees",at(worst),at(turned))});
-    }
     let (nu,nv) = (4*(sheet.rows-1)+1,4*(sheet.columns-1)+1);
-    let grid = session.surface_grid(face,nu,nv).at(Stage::Withheld)?;
-    let (mut fold,mut folded) = (0_f64,[0.;3]);
-    for i in 0..nu { for j in 0..nv {
-        let (p,n) = grid[i*nv+j];
-        let beside = [(i+1 < nu).then(|| grid[(i+1)*nv+j]),(j+1 < nv).then(|| grid[i*nv+j+1])];
-        for (q,m) in beside.into_iter().flatten() {
-            let angle = dot(n,m).clamp(-1.,1.).acos().to_degrees();
-            if angle > fold && (near(p) < 0. || near(q) < 0.) { fold = angle; folded = p; }
+    let folds = |face: c_int| -> Result<Vec<([f64;3],[f64;3])>,ExportRefusal> {
+        let grid = session.surface_grid(face,nu,nv).at(Stage::Withheld)?;
+        let (mut fold,mut folded) = (0_f64,[0.;3]);
+        for i in 0..nu { for j in 0..nv {
+            let (p,n) = grid[i*nv+j];
+            let beside = [(i+1 < nu).then(|| grid[(i+1)*nv+j]),(j+1 < nv).then(|| grid[i*nv+j+1])];
+            for (q,m) in beside.into_iter().flatten() {
+                let angle = dot(n,m).clamp(-1.,1.).acos().to_degrees();
+                if angle > fold && (near(p) < 0. || near(q) < 0.) { fold = angle; folded = p; }
+            }
+        } }
+        if fold > FOLD_TURN {
+            return Err(ExportRefusal {stage:Stage::Withheld,condition:None,witness:Some(folded.map(|x| x/scale)),
+                message:format!("`{name}`: the fitted sheet folds in the blank: its normal turns {fold:.1} degrees between points a \
+                quarter of a cell apart (at {:?}), against {FOLD_TURN} degrees",at(folded))});
         }
-    } }
-    if fold > FOLD_TURN {
-        return Err(ExportRefusal {stage:Stage::Withheld,condition:None,witness:Some(folded.map(|x| x/scale)),
-            message:format!("`{name}`: the fitted sheet folds in the blank: its normal turns {fold:.1} degrees between points a \
-            quarter of a cell apart (at {:?}), against {FOLD_TURN} degrees",at(folded))});
+        Ok(grid)
+    };
+    let Some(tolerance) = tolerance else {
+        let face = session.fit_sheet(&sheet.points,sheet.rows,sheet.columns).at(Stage::Fit)?;
+        stage(&format!("`{name}`: fitted the sheet; measuring {} withheld contacts against it",sheet.withheld.len()));
+        mark(Stage::Fit);
+        let held: Vec<([f64;3],[f64;3])> = sheet.withheld.iter().zip(&sheet.withheld_normals)
+            .filter(|(p,_)| near(**p) < 0.5).map(|(p,n)| (*p,*n)).collect();
+        let points: Vec<[f64;3]> = held.iter().map(|(p,_)| *p).collect();
+        let (mut error,mut turn,mut worst,mut turned) = (0_f64,0_f64,[0.;3],[0.;3]);
+        for ((p,n),found) in held.iter().zip(session.surface_feet(face,&points).at(Stage::Withheld)?) {
+            let Some((m,gap)) = found else { error = f64::INFINITY; worst = *p; continue };
+            let angle = dot(m,*n).abs().min(1.).acos().to_degrees();
+            if gap > error { error = gap; worst = *p; }
+            if angle > turn { turn = angle; turned = *p; }
+        }
+        stage(&format!("`{name}`: fitted sheet within {error:.2e} mm of the {} withheld contacts at the blank, normals within {turn:.2} degrees",
+            points.len()));
+        if error > FIT_DISTANCE || turn > FIT_TURN {
+            let witness = if error > FIT_DISTANCE { worst } else { turned };
+            return Err(ExportRefusal {stage:Stage::Withheld,condition:None,witness:Some(witness.map(|x| x/scale)),
+                message:format!("`{name}`: the fitted sheet leaves its contacts: {error:.3} mm (at {:?}) and {turn:.1} degrees (at {:?}), \
+                against {FIT_DISTANCE} mm and {FIT_TURN} degrees",at(worst),at(turned))});
+        }
+        folds(face)?;
+        mark(Stage::Withheld);
+        return Ok(Judged::Fits(face,error));
+    };
+    let held: Vec<usize> = (0..sheet.withheld.len()).filter(|&i| near(sheet.withheld[i]) < 0.5).collect();
+    let points: Vec<[f64;3]> = held.iter().map(|&i| sheet.withheld[i]).collect();
+    let bar = tolerance.fit();
+    // One interpolation of the grid, judged: a fold refuses it outright (refining would not unfold
+    // it; another row placement may), otherwise every withheld contact is read against it.
+    let fitted = |parametrization: c_int| -> Result<Candidate,ExportRefusal> {
+        let clock = std::time::Instant::now();
+        let face = session.fit_sheet_with(&sheet.points,sheet.rows,sheet.columns,parametrization).at(Stage::Fit)?;
+        let grid = folds(face)?;
+        // Each contact's foot is searched from the nearest point of the fold check's grid, a quarter
+        // of a cell apart: a local search where a global one samples the whole face, and a local
+        // extremum is never nearer than the nearest foot, so a gap it reads is never too small. A
+        // foot farther than the bar is searched globally, so a miss is never a local search's.
+        let guesses = nearest_on(&grid,nu,nv,&points);
+        let feet = session.surface_feet_near(face,&points,&guesses,bar).at(Stage::Withheld)?;
+        // Distance first: a sheet is refined where it misses its contacts by distance, then where its
+        // normals turn past their bars once every distance holds. A normal's bar shrinks as its
+        // contact's gap nears the tolerance, so a contact missing by distance misses by normal too,
+        // and would mark the other direction for a miss the first already names.
+        let mut c = Candidate {face,parametrization,far:vec![false;sheet.withheld.len()],turned:vec![false;sheet.withheld.len()],
+            error:0.,worst:[0.;3],turn:(0.,f64::INFINITY,[0.;3]),distant:0,bent:0,spent:clock.elapsed()};
+        for (&i,found) in held.iter().zip(feet) {
+            let p = sheet.withheld[i];
+            let (gap,angle) = match found { Some((m,gap)) => (gap,dot(m,sheet.withheld_normals[i]).abs().min(1.).acos().to_degrees()),
+                None => (f64::INFINITY,180.) };
+            let limit = tolerance.turn(gap,sheet.spacing(sheet.sites[i]));
+            if gap > c.error { c.error = gap; c.worst = p; }
+            if angle-limit > c.turn.0-c.turn.1 { c.turn = (angle,limit,p); }
+            c.far[i] = gap > bar; c.turned[i] = angle > limit;
+            if (c.far[i] || c.turned[i]) && tracing() {
+                eprintln!("  parametrization {parametrization}: miss at site {:?}: {:.2} µm, {angle:.2} against {limit:.2} degrees, \
+                    spacing {:.4} mm, blank {:.3}, at {:?}",sheet.sites[i],gap*1e3,sheet.spacing(sheet.sites[i]),near(p),at(p));
+            }
+        }
+        (c.distant,c.bent) = (c.far.iter().filter(|m| **m).count(),c.turned.iter().filter(|m| **m).count());
+        // The fold check at a sixteenth of a cell, for where a fit creases between the quarter-cell
+        // points the check reads: the instrument that found the pinion's crease.
+        if tracing() {
+            let (fu,fv) = (16*(sheet.rows-1)+1,16*(sheet.columns-1)+1);
+            let fine = session.surface_grid(face,fu,fv).at(Stage::Withheld)?;
+            let mut turns: Vec<(f64,usize)> = Vec::new();
+            for i in 0..fu { for j in 0..fv {
+                let (p,n) = fine[i*fv+j];
+                for (q,m) in [(i+1 < fu).then(|| fine[(i+1)*fv+j]),(j+1 < fv).then(|| fine[i*fv+j+1])].into_iter().flatten() {
+                    let angle = dot(n,m).clamp(-1.,1.).acos().to_degrees();
+                    if angle > 5. && (near(p) < 0. || near(q) < 0.) { turns.push((angle,i*fv+j)); }
+                }
+            } }
+            turns.sort_by(|a,b| b.0.total_cmp(&a.0));
+            eprintln!("  parametrization {parametrization}: fine fold check: {} neighbours in the blank turn over 5 degrees",turns.len());
+            for (a,k) in turns.iter().take(8) {
+                eprintln!("    {a:.2} degrees at row {:.3} column {:.3}, {:?}",(k/fv) as f64/16.,(k%fv) as f64/16.,at(fine[*k].0));
+            }
+        }
+        stage(&format!("`{name}`: fitted sheet {}x{} ({}) within {:.2} µm of the {} withheld contacts at the blank (bar {:.2} µm), \
+            normals within their bars by {:.2} degrees at worst ({:.2} against {:.2}); {} miss by distance, {} by normal ({:?})",
+            sheet.rows,sheet.columns,["even","chord-length","centripetal"][parametrization as usize],c.error*1e3,points.len(),
+            bar*1e3,c.turn.1-c.turn.0,c.turn.0,c.turn.1,c.distant,c.bent,c.spent));
+        Ok(c)
+    };
+    // Both parametrizations interpolate the same exact contacts, and the withheld contacts say which
+    // follows them: chord-length parameters (a step's share of its column's length, averaged over
+    // the columns) stay consistent under refinement, since halving a step halves its share, but where
+    // a sheet's contacts crowd on one face and stretch round the next (the pinion's flank into its
+    // fillet) a column's own parameters depart from their average and the fit creased there, 31°
+    // between points a sixteenth of a cell apart; centripetal ones (the square root of each step)
+    // temper that departure, the pinion's first fit coming 7.6 µm from its contacts where chord
+    // length came 16.5 with no crease past 5°, but give a halved step √2 of its share, so a locally
+    // refined grid's parameters no longer match its spacing (the swept torus's fit went from 0.11 to
+    // 3.1 µm on three rows added). Neither holds everywhere; the better fit is the sheet.
+    let chosen = match (fitted(2),fitted(1)) {
+        (Err(fold),Err(_)) => return Err(fold),
+        (Ok(c),Err(_)) | (Err(_),Ok(c)) => c,
+        (Ok(a),Ok(b)) => if (b.distant,b.bent,b.error) < (a.distant,a.bent,a.error) { b } else { a },
+    };
+    mark(Stage::Fit);
+    let Candidate {face,far,turned,error,worst,turn,distant,bent,..} = chosen;
+    if distant+bent > 0 {
+        let witness = if distant > 0 { worst } else { turn.2 };
+        return Ok(Judged::Misses {over:if distant > 0 { far } else { turned },refusal:ExportRefusal {stage:Stage::Withheld,
+            condition:None,witness:Some(witness.map(|x| x/scale)),
+            message:format!("`{name}`: the fitted sheet misses {distant} of its {} withheld contacts by distance, {:.2} µm from one \
+            (at {:?}) against {:.2} µm, half the {} µm tolerance, and {bent} by normal, one {:.2} degrees off (at {:?}) against its \
+            {:.2}",points.len(),error*1e3,at(worst),bar*1e3,tolerance.millimetres*1e3,turn.0,at(turn.2),turn.1)}});
     }
+    stage(&format!("`{name}`: the {} fit holds",["even","chord-length","centripetal"][chosen.parametrization as usize]));
     mark(Stage::Withheld);
-    Ok((face,sheet,error))
+    Ok(Judged::Fits(face,error))
+}
+
+/// One interpolation of a sheet held to a tolerance and its reading at the withheld contacts: which
+/// miss by distance and which by normal, the worst gap and where, and the normal furthest past its
+/// own bar (turn, bar, where).
+struct Candidate {
+    face: c_int,parametrization: c_int,far: Vec<bool>,turned: Vec<bool>,error: f64,worst: [f64;3],
+    turn: (f64,f64,[f64;3]),distant: usize,bent: usize,spent: std::time::Duration,
+}
+
+/// For each point, the parameters (fractions of the UV box) of the nearest point of an `nu` x `nv`
+/// grid of a face's surface, found through cubes about as wide as the grid's steps; NaN where no
+/// grid point lies in the cubes about a point.
+fn nearest_on(grid: &[([f64;3],[f64;3])],nu: usize,nv: usize,points: &[[f64;3]]) -> Vec<[f64;2]> {
+    let mut steps: Vec<f64> = (0..nu*nv).filter(|k| k%nv+1 < nv && k/nv+1 < nu)
+        .flat_map(|k| [distance(grid[k].0,grid[k+1].0),distance(grid[k].0,grid[k+nv].0)]).collect();
+    steps.sort_by(f64::total_cmp);
+    let side = steps.get(steps.len()*19/20).copied().unwrap_or(1.).max(1e-9);
+    let cube = |p: [f64;3]| p.map(|x| (x/side).floor() as i64);
+    let mut cubes: std::collections::BTreeMap<[i64;3],Vec<usize>> = Default::default();
+    for (k,(p,_)) in grid.iter().enumerate() { cubes.entry(cube(*p)).or_default().push(k); }
+    points.iter().map(|&p| {
+        let c = cube(p);
+        let mut best = (f64::INFINITY,usize::MAX);
+        for d in 0..27 {
+            let key = [c[0]+d%3-1,c[1]+d/3%3-1,c[2]+d/9-1];
+            for &k in cubes.get(&key).map_or(&[][..],Vec::as_slice) {
+                let e = distance(grid[k].0,p);
+                if e < best.0 { best = (e,k); }
+            }
+        }
+        if best.1 == usize::MAX { [f64::NAN;2] } else { [(best.1/nv) as f64/(nu-1) as f64,(best.1%nv) as f64/(nv-1) as f64] }
+    }).collect()
 }
 
 /// The candidate sheet of one swept solid against a native blank: the roll must
@@ -613,8 +790,8 @@ fn judged(session: &Session,name: &str,sheet: Sheet,scale: f64,near: &dyn Fn([f6
 /// Where contacts reach the blank is asked of `field`, the same blank as the
 /// core's analytic field, not of the kernel: a point there is microseconds where
 /// the kernel's classifier took 30 ms, and this question only sizes the sheet.
-pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int,field: &gcs_core::solid::SpatialField)
-    -> Result<(c_int,Sheet,f64),ExportRefusal> {
+pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int,field: &gcs_core::solid::SpatialField,
+    tolerance: Option<Tolerance>) -> Result<(c_int,Sheet,f64),ExportRefusal> {
     let name = &sk.solids[swept].name;
     let scale = cad::millimetres(sk).at(Stage::Clearance)?;
     let clear = || -> Result<(),String> {
@@ -641,13 +818,14 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
     let near = |p: [f64;3]| field.value(p.map(|x| x/scale))*scale;
     // Rows by walk length first, the placement the bevel pair and the pinion were recorded with;
     // by length where that fit misses or folds.
-    swept_sheets(session,sk,swept,&inside,&[Rows::Walk,Rows::Length],&mut |sheet| judged(session,name,sheet,scale,&near))
+    swept_sheets(session,sk,swept,&inside,&[Rows::Walk,Rows::Length],tolerance,
+        &mut |sheet| judged(session,name,sheet,scale,&near,tolerance))
 }
 
 /// Construct a body whose cuts include continuous sweeps, which only its admission to the
 /// generating-sweep class allows. Returns the native solid handle in this session.
 pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,recipe: &cad::StaticRecipe,
-    admission: &Admission) -> Result<c_int,ExportRefusal> {
+    admission: &Admission,tolerance: Option<Tolerance>) -> Result<c_int,ExportRefusal> {
     if admission.body() != body {
         return Err(ExportRefusal::at(Stage::Admission,format!("`{}`: the admission presented is another body's",sk.solids[body].name)));
     }
@@ -660,7 +838,7 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
     for swept in distinct {
-        let (face,_,_) = swept_sheet(session,sk,swept,blank,&field)?;
+        let (face,_,_) = swept_sheet(session,sk,swept,blank,&field,tolerance)?;
         for cut in recipe.sweeps.iter().filter(|c| c.swept == swept) {
             tools.push(session.place(face,cut.pose,scale).at(Stage::Split)?);
         }
@@ -698,9 +876,9 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
 /// Native construction of a solid for export: the static recipe when it is
 /// complete, the swept path when the body cuts continuous sweeps and was admitted.
 pub(crate) fn construct_solid(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecipe,
-    admission: Option<&Admission>) -> Result<c_int,ExportRefusal> {
+    admission: Option<&Admission>,tolerance: Option<Tolerance>) -> Result<c_int,ExportRefusal> {
     if recipe.sweeps.is_empty() { return session.construct(&recipe.recipe).at(Stage::Blank); }
     let admission = admission.ok_or_else(|| ExportRefusal::at(Stage::Admission,format!("`{}`: a body with swept cuts is \
         built only once admitted to the generating-sweep class",sk.solids[solid].name)))?;
-    construct_swept_body(session,sk,solid,recipe,admission)
+    construct_swept_body(session,sk,solid,recipe,admission,tolerance)
 }

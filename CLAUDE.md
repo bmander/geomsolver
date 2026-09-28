@@ -104,7 +104,7 @@ Booleans, validates a STEP round trip, and preserves the old output on failure. 
 lofts and continuous generating-motion sweeps remain unsupported by this native host.
 Native builds default `--stl` to OCCT too; `--stl-backend mesh` selects the legacy path.
 Requesting STEP and STL together builds once, stages and checks both, then replaces each file.
-Native coordinates are mm. STL uses 0.01 mm absolute deflection and 0.2 rad angular control;
+Native coordinates are mm. STL uses 0.01 mm absolute deflection (half the `--tolerance`) and 0.2 rad angular control;
 these are meshing settings, not an end-to-end error bound. Every CAD face must be meshed,
 and `mesh::stl_shells` checks all exactly encoded components, including cavities, without
 welding. Validation failure preserves all old outputs; renames are individually atomic,
@@ -322,6 +322,28 @@ with `admission.rs::the_admission_grid`); tests with recorded numbers pin theirs
 gear rewrites and small sweep tools live in), and `tests/native_surfaces/gear_cells.rs` holds
 the recorded tooth-space volumes. `tests/generating_harness.rs` (ignored, minutes) locates each
 refusal by stage over fixtures, the gear controls and a 48-design sweep.
+**Export tolerance (phase 3, [plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]`
+(0.01 mm when no length follows; a bare number is in the document's unit; `um`, `mm`, `in`… name
+their own; a physical length whatever the unit) holds a native export for fabrication, and
+`solid::export::Tolerance` states every bar once: a fitted sheet within half of it at every
+withheld contact, now cell centres *and* side middles (`contact_trace::Withheld::Sides`, sites in
+half rows/columns), its normal within `atan(4 (tol − gap) / h)` (h the shortest adjacent cell side:
+the whole tolerance reached a quarter cell away, capped 20°), the STL meshed at half of it (angular
+kept) and then read for the sag every triangle has (`mesh_sag`) and meshed finer until that is
+within half (OCCT's deflection is a control, not a bound: 5 µm left 50 µm edges on the pinion's
+fillet, which the meter's by-area sampling missed), the mesh contract read by clusters
+(`TinyTriangles::clustered`), the field probed at max(2 tol, 2 µm). A sheet that misses is refined where it misses, distance first and normals only
+once every distance holds (`contact_trace::marked`, `Grid::refined`: split at the withheld
+coordinate, graded 2:1; `Layout` traces each station and reads each contact once), at most four
+times and 480×400 nodes, then refused with where and by how much. Each grid is fitted twice and the
+fit that follows its withheld contacts better is the sheet: centripetal parameters keep the pinion's
+fillet from creasing (chord length creased it 31° per sixteenth of a cell), chord length stays true
+under local refinement (centripetal gives a halved step √2 of its share). Feet are local searches from
+the fold grid (`surface_feet_near`; OCCT's global projection once put one 22 µm and 90° off). **The
+default is unchanged**: without `--tolerance` the gross bars stand and every export is
+byte-identical, since the corpus's goldens and recorded volumes are of it and a finer fit costs time
+nobody asked for; asking for a tolerance is what exporting for fabrication means. With it,
+`--measure` ends in `accuracy::within` and exits 1 when an exact face exceeds it.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference

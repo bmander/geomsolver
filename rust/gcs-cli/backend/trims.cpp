@@ -4,6 +4,8 @@
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
+#include <GeomAdaptor_Surface.hxx>
+#include <Extrema_GenLocateExtPS.hxx>
 #include <Geom_Curve.hxx>
 #include <Precision.hxx>
 #include <TopoDS.hxx>
@@ -95,6 +97,57 @@ int solvent_cad_surface_feet(Cad* cad,int id,const double* points,int count,doub
             n.Transform(chart.location.Transformation());
             row[0] = n.X(); row[1] = n.Y(); row[2] = n.Z();
             row[3] = projector.project.LowerDistance();
+        }
+        return 0;
+    });
+}
+
+// The same, each point starting from a guess of its foot: `guesses` holds u, v per point as
+// fractions of the face's UV box (NaN for none). The foot is the local extremum the guess leads
+// to, taken only if it is no farther than the guess itself and within `trust` of the point;
+// otherwise, or where the local search fails, the point is projected globally as
+// `solvent_cad_surface_feet` does. A local search is a few Newton steps where the global one
+// samples the whole surface.
+int solvent_cad_surface_feet_near(Cad* cad,int id,const double* points,const double* guesses,int count,double trust,
+    double* output) noexcept {
+    return guarded(cad,[&] {
+        if (!points || !guesses || !output || count < 0) throw std::runtime_error("surface feet need input and output buffers");
+        FaceProjector projector(cad,id);
+        const auto& chart = projector.chart;
+        GeomAdaptor_Surface adaptor(chart.surface);
+        Extrema_GenLocateExtPS local(adaptor,Precision::PConfusion(),Precision::PConfusion());
+        for (int i=0;i<count;++i) {
+            double* row = output+4*i;
+            gp_Pnt p(points[3*i],points[3*i+1],points[3*i+2]);
+            p.Transform(chart.location.Transformation().Inverted());
+            const double u0 = chart.a+(chart.b-chart.a)*guesses[2*i], v0 = chart.c+(chart.d-chart.c)*guesses[2*i+1];
+            double a = u0,b = v0,distance = -1;
+            if (std::isfinite(u0) && std::isfinite(v0)) try {
+                local.Perform(p,u0,v0);
+                if (local.IsDone()) {
+                    local.Point().Parameter(a,b);
+                    if (a >= chart.a-1e-9 && a <= chart.b+1e-9 && b >= chart.c-1e-9 && b <= chart.d+1e-9
+                        && local.SquareDistance() <= p.SquareDistance(chart.surface->Value(u0,v0))*(1+1e-12)
+                        && local.SquareDistance() <= trust*trust)
+                        distance = std::sqrt(local.SquareDistance());
+                }
+            } catch (const Standard_Failure&) { distance = -1; }
+            if (distance < 0) {
+                projector.project.Perform(p);
+                if (!projector.project.IsDone() || projector.project.NbPoints() < 1) {
+                    row[0] = row[1] = row[2] = 0; row[3] = std::numeric_limits<double>::quiet_NaN(); continue;
+                }
+                projector.project.LowerDistanceParameters(a,b);
+                distance = projector.project.LowerDistance();
+            }
+            gp_Pnt q; gp_Vec du,dv;
+            chart.surface->D1(a,b,q,du,dv);
+            gp_Vec n = du.Crossed(dv);
+            const double length = n.Magnitude();
+            if (length > 0) n.Divide(length);
+            n.Transform(chart.location.Transformation());
+            row[0] = n.X(); row[1] = n.Y(); row[2] = n.Z();
+            row[3] = distance;
         }
         return 0;
     });

@@ -68,7 +68,7 @@ fn single_space(member: &str,expected: f64) {
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
     let started = std::time::Instant::now();
-    let (face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&gcs_core::solid::SpatialField::read(&e.sketch,blank_id,1e-10).unwrap()).unwrap();
+    let (face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&gcs_core::solid::SpatialField::read(&e.sketch,blank_id,1e-10).unwrap(),None).unwrap();
     eprintln!("{member}: sheet {}x{} in {:?}, withheld error {error:e} mm",sheet.rows,sheet.columns,started.elapsed());
     assert!(error < 0.02,"withheld contact error {error}");
     let partition = cad.0.split_solid(blank,&[face]).unwrap();
@@ -110,7 +110,7 @@ fn the_native_space_at_an_offset_against_its_field() {
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
     let started = std::time::Instant::now();
-    let built = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&gcs_core::solid::SpatialField::read(&e.sketch,id("blank"),1e-10).unwrap());
+    let built = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&gcs_core::solid::SpatialField::read(&e.sketch,id("blank"),1e-10).unwrap(),None);
     let (face,sheet,error) = match built {
         Ok(b) => b,
         Err(refusal) => { eprintln!("offset {offset}: sheet refused: {refusal}"); return; }
@@ -173,7 +173,7 @@ fn a_cutter_with_a_motion_independent_contact_condition_is_refused() {
     // Nor can the construction be reached without an admission.
     let cad = Cad::new();
     let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,part_id).unwrap();
-    assert!(native::sweep_boundary::construct_solid(&cad.0,&e.sketch,part_id,&recipe,None).is_err());
+    assert!(native::sweep_boundary::construct_solid(&cad.0,&e.sketch,part_id,&recipe,None,None).is_err());
     let _ = PI;
 }
 
@@ -186,7 +186,7 @@ fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
     let blank_id = e.map.ent_named("pair.gear.blank").unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
-    let error = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&gcs_core::solid::SpatialField::read(&e.sketch,blank_id,1e-10).unwrap()).unwrap_err();
+    let error = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&gcs_core::solid::SpatialField::read(&e.sketch,blank_id,1e-10).unwrap(),None).unwrap_err();
     eprintln!("{error}");
     assert!(error.message.contains("leaves the cutter inside the blank") && error.message.contains("35.0 degrees"));
     assert_eq!(error.stage,gcs_core::solid::export::Stage::Clearance);
@@ -219,7 +219,7 @@ fn whole_member(member: &str,expected: f64) {
     let started = std::time::Instant::now();
     let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,body).unwrap();
     let admitted = gcs_core::solid::admission::admit_body(&e.sketch,body,&Default::default()).unwrap();
-    let part = native::sweep_boundary::construct_solid(&cad.0,&e.sketch,body,&recipe,Some(&admitted)).unwrap();
+    let part = native::sweep_boundary::construct_solid(&cad.0,&e.sketch,body,&recipe,Some(&admitted),None).unwrap();
     let volume = cad.0.volume(part).unwrap();
     eprintln!("{member}: {volume:.6} mm^3 against recorded {expected:.6} in {:?}",started.elapsed());
     assert!((volume-expected).abs() < 1e-3*expected);
@@ -283,7 +283,7 @@ fn where_a_sheet_misses_its_contacts() {
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
     let field = gcs_core::solid::SpatialField::read(&e.sketch,id("blank"),1e-10).unwrap();
-    let (_face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&field).unwrap();
+    let (_face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&field,None).unwrap();
     eprintln!("sheet {}x{}, withheld error {error:.4}",sheet.rows,sheet.columns);
     // Each grid cell's own normal (from its diagonals) against the contact normals at its
     // corners: a sheared or folded grid shows as cells where they disagree.
@@ -330,8 +330,8 @@ fn where_the_configured_gear_sheet_turns() {
     // `SOLVENT_INSPECT_ROWS=length`: rows placed by length; by walk length otherwise.
     use native::sweep_boundary::Rows;
     let placement = if std::env::var("SOLVENT_INSPECT_ROWS").is_ok_and(|v| v == "length") { Rows::Length } else { Rows::Walk };
-    let (face,sheet,_) = native::sweep_boundary::swept_sheets(&cad.0,sk,removal,&inside,&[placement],
-        &mut |sheet| Ok((cad.0.fit_sheet(&sheet.points,sheet.rows,sheet.columns).unwrap(),sheet,0.))).unwrap();
+    let (face,sheet,_) = native::sweep_boundary::swept_sheets(&cad.0,sk,removal,&inside,&[placement],None,
+        &mut |sheet| Ok(native::sweep_boundary::Judged::Fits(cad.0.fit_sheet(&sheet.points,sheet.rows,sheet.columns).unwrap(),0.))).unwrap();
     let gcs_core::model::SolidDef::Swept {source,motion,..} = &sk.solids[removal].def else { panic!() };
     let family = gcs_core::motion::Family::read(sk,*motion as usize).unwrap();
     let cutter = cad.0.construct(&gcs_core::solid::cad::recipe(sk,*source as usize).unwrap()).unwrap();

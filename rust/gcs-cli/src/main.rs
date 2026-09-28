@@ -46,6 +46,11 @@ solventc — check a Solvent document
                         core's Delaunay refinement, checked by the field-agreement probe)
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
+    --tolerance [LENGTH] export for fabrication: the native STEP/STL within LENGTH of the exact
+                        surface (default 0.01mm; a bare number is in the document's unit, and
+                        mm, um, cm, m, in and thou name their own); a swept body's sheets are
+                        refined into it, the STL meshed within it, and --measure judges by it.
+                        Without it the native export keeps its gross bars (no fabrication claim)
     --measure PATH      measure an exported STEP or STL against the solid's exact surface
                         (repeatable; STEP requires a native OCCT build)
     --measure-samples N about how many points to measure a file at (default 20000)
@@ -87,6 +92,9 @@ struct Opts {
     /// `--measure PATH` — exported files to measure against the solid's exact surface.
     measure: Vec<String>,
     measure_samples: usize,
+    /// `--tolerance` — the export's stated tolerance: a value and the millimetres its unit is
+    /// worth, `None` for the document's own unit (known only once the document is read).
+    tolerance: Option<(f64,Option<f64>)>,
     /// An SVG has no screen, so the export must choose a `unit` — the world length of one screen
     /// pixel, which every constant size goes through.  A page width fixes it.
     width: f64,
@@ -109,6 +117,7 @@ impl Default for Opts {
             solid: None,
             measure: Vec::new(),
             measure_samples: 20000,
+            tolerance: None,
             width: 800.0,
             sheet: None,
         }
@@ -118,7 +127,7 @@ impl Default for Opts {
 fn main() -> ExitCode {
     let mut opts = Opts::default();
     let mut paths: Vec<String> = Vec::new();
-    let mut args = std::env::args().skip(1);
+    let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--stl-backend" => match args.next().as_deref() {
@@ -174,6 +183,12 @@ fn main() -> ExitCode {
                 Some(p) => opts.measure.push(p),
                 None => { eprintln!("solventc: --measure needs a path"); return ExitCode::from(2); }
             },
+            // the value is optional: what follows is taken only when it reads as a length
+            "--tolerance" => match args.peek().map(|v| length(v)) {
+                Some(Some(Ok(t))) => { args.next(); opts.tolerance = Some(t); }
+                Some(Some(Err(m))) => { eprintln!("solventc: --tolerance: {m}"); return ExitCode::from(2); }
+                _ => opts.tolerance = Some((gcs_core::solid::export::Tolerance::FABRICATION.millimetres,Some(1.))),
+            },
             "--measure-samples" => match args.next().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n > 0) {
                 Some(n) => opts.measure_samples = n,
                 None => { eprintln!("solventc: --measure-samples needs a positive count"); return ExitCode::from(2); }
@@ -205,6 +220,11 @@ fn main() -> ExitCode {
     }
     if (opts.stl.is_some() || opts.step.is_some()) && paths.len() != 1 {
         eprintln!("solventc: --stl/--step writes one file, so it takes one document");
+        return ExitCode::from(2);
+    }
+    if opts.tolerance.is_some() && opts.measure.is_empty() && opts.step.is_none() && (opts.stl.is_none() || opts.refine || !opts.native_stl) {
+        eprintln!("solventc: --tolerance holds a native export (or a measurement) to it; give --step, --stl with the occt \
+            backend, or --measure");
         return ExitCode::from(2);
     }
     if opts.output.is_some() && paths.len() != 1 {
@@ -390,9 +410,12 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             }
             (true,Ok(i)) => {
                 let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(&sk,i));
-                if let Err(refusal) = cad::export(&sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl)) {
-                    refused(&mut e,i,refusal);
-                    code = 1;
+                match tolerance(&sk,opts) {
+                    Err(message) => { eprintln!("solventc: {message}"); code = 1; }
+                    Ok(t) => if let Err(refusal) = cad::export(&sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t) {
+                        refused(&mut e,i,refusal);
+                        code = 1;
+                    },
                 }
             }
         }
@@ -463,7 +486,10 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     }
     // measured after anything written, so one run may export a file and measure it
     for path in &opts.measure {
-        let lines = if r.success { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| cad::measure::report(&sk,i,path,opts.measure_samples)) }
+        let lines = if r.success { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| {
+            let t = tolerance(&sk,opts)?.map(|t| t.millimetres);
+            cad::measure::report(&sk,i,path,opts.measure_samples,t)
+        }) }
             else { Err("measuring an export requires a solved model".into()) };
         match lines {
             Ok(lines) => for l in lines { if opts.json { eprintln!("{l}"); } else { println!("{l}"); } },
@@ -581,6 +607,31 @@ fn refused(e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core:
     let site = e.map.site_of(gcs_core::model::EntRef::solid(solid));
     e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
         span:site.map(|s| s.span).unwrap_or_default(),stmt:site.map(|s| s.stmt),message:refusal.message});
+}
+
+/// A length as `--tolerance` takes it: a number, and the millimetres its unit is worth (`None`
+/// for none written, the document's own). `None` when the text is no length at all.
+fn length(text: &str) -> Option<Result<(f64,Option<f64>),String>> {
+    let split = text.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(text.len());
+    let (number,unit) = text.split_at(split);
+    let value: f64 = number.parse().ok()?;
+    let per = match unit {
+        "" => None,
+        "um" | "µm" => Some(1e-3),
+        u => match gcs_core::units::unit(u) {
+            Some(x) if x.dim == gcs_core::units::Dim::LENGTH => Some(x.per),
+            _ => return (!unit.contains('.') && !unit.contains('/')).then(|| Err(format!("`{unit}` is not a length unit"))),
+        },
+    };
+    Some(if value > 0. && value.is_finite() { Ok((value,per)) } else { Err("a tolerance is a positive length".into()) })
+}
+
+/// The export tolerance `--tolerance` asked for, in native millimetres: a bare number is in the
+/// document's unit.
+fn tolerance(sk: &Sketch,opts: &Opts) -> Result<Option<gcs_core::solid::export::Tolerance>,String> {
+    let Some((value,per)) = opts.tolerance else { return Ok(None) };
+    let per = match per { Some(p) => p, None => gcs_core::solid::cad::millimetres(sk)? };
+    gcs_core::solid::export::Tolerance::new(value*per).map(Some)
 }
 
 /// Which solid `--stl` writes.  Named, or the only one there is — a document with one part in it

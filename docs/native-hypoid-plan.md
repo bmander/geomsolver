@@ -16,6 +16,9 @@ builds nothing.
 - **Gear:** refused until phase 2. Its sheet (77×32) fitted the contacts within 60 µm, but its
   normals missed by 83° against the 20° bar. It now exports natively in about 3.5 minutes (see
   Phase 2's findings).
+- **Phase 3:** `solventc --tolerance 0.01mm` exports both members within 10 µm of the exact
+  surface, STEP and STL, by the meter (see Phase 3's findings); without it the gross bars below
+  still stand and every export is as it was.
 - **The bar is coarse:** `FIT_DISTANCE = 0.25` mm and `FIT_TURN = 20°` in
   `gcs-cli/src/cad/native/sweep_boundary.rs`. Passing it is not a fabrication claim for either
   member, and nothing measures the exported file against the exact surface.
@@ -245,6 +248,147 @@ The meter (`--measure-samples 100000`; µm, max / p99 / mean of |d|):
   fitted.
 
 **Exit:** both members' STEP within 10 µm by both meters, with the time it costs.
+
+#### Phase 3 — findings (2026-09-28)
+
+**The tolerance.** `solventc … --step F --stl G --tolerance [LENGTH]` holds a native export to a
+stated tolerance (0.01 mm when no length follows; a bare number is in the document's unit; `um`,
+`mm`, `cm`, `m`, `in`, `thou` name their own; it is a physical length, so a document in inches is
+held to the same 10 µm). Without it every export keeps the gross bars and is byte-identical to
+phase 2: the corpus's goldens and recorded volumes are of that export, and a finer fit costs time
+nobody asked for. Asking for a tolerance is what exporting for fabrication means. Every bar is
+stated once, in `solid::export::Tolerance`:
+
+- **Distance:** a fitted sheet within `tol/2` of every withheld contact (the fit share); the STL's
+  chordal sag has the other half, so STEP ≤ `tol/2` and STL ≤ sheet + sag ≤ `tol`.
+- **Normal:** `atan(4 (tol − gap) / h)`, capped at 20°, `h` the shortest side of the cells beside
+  the contact. Withheld contacts lie on a grid of half cells, so no point of the sheet is further
+  than a quarter cell from one along either direction; a sheet turned by `θ` there departs by about
+  `gap + tan θ · h/4` within that reach, and `θ` may not carry it past the whole tolerance. A pleat
+  fails it (the gear's 83° within 60 µm); a fit rounding a narrow strip where the exact normal turns
+  fast (a convex corner's fan, where the gap is 0 and the normal a few degrees off) does not. A
+  first derivation, `atan(π · fit / h)` from the interpolant's half-sine error profile, was too
+  tight: the pinion's fan rows sit exactly on the fit with normals 4–10° off, and chasing them split
+  column after column (131 columns, 9 minutes) without closing the gap.
+- **The fold check** (90° between quarter-cell points in the blank) stays, and a fold still passes
+  to the next row placement rather than being refined.
+- **STL:** meshed at `tol/2` deflection with the 0.2 rad angle kept, then read for the sag every
+  triangle actually has (`mesh_sag`: each triangle's centroid and edge midpoints against its face's
+  surface, by local search from their linear surface parameters) and meshed again finer until it
+  is within `tol/2`, at most four times. OCCT's deflection is a control, not a bound: at 5 µm the
+  pinion's mesh left 0.9 mm edges across its fillet 50 µm off the face, and the gear's 15 µm; the
+  tip cone's trimmed-edge chords sagged 7 µm, and a 0.05 rad angle mended the first but not the
+  second. The meter, sampling 14,000 triangles by area, had read those meshes as 14 µm (pinion) and
+  5.5 µm (gear): it can miss a few long edges among 300,000 triangles, which the sag check cannot.
+- **Mesh contract:** a triangle is microscopic under `(deflection/10)²` and a crumple is more than 100
+  of them in one millimetre cube. The count rule (100 in all) refused a 5 µm mesh's 2,741 slivers,
+  strung along every tooth's trimmed edges, at most 125 to a cube; phase 2's fold had 18,378 in one
+  place.
+- **Field agreement:** probes at `max(2 tol, 2 µm)`, confirm band half that, value tolerance a
+  quarter: a mesh within the tolerance leaves a probe twice it off at least the tolerance clear on
+  its own side. The floor is four times the largest vertex and edge tolerance the kernel has left on
+  a united member. At 10 µm: 0.02 mm, every probe resolved, none disagreeing, on both members.
+
+**Refinement.** A sheet held to a tolerance withholds contacts at the centre *and* the middle of
+each side of every cell (`contact_trace::Withheld::Sides`; sites in half rows and half columns), so
+a miss says which way a cell is under-sampled: a side down a column marks those rows, a side across a
+row those columns, a centre whose sides are clear both (`contact_trace::marked`). Distance misses
+refine first; normal misses only once every distance holds (a normal's bar shrinks as its gap nears
+the tolerance, so a distance miss is a normal miss too and would mark the other direction). The grid
+splits each marked interval at its withheld coordinate, which becomes a node, and grades so no
+interval is more than twice its neighbour (`Grid::refined`). The traced stations and every contact
+read are kept (`contact_trace::Layout`), so a refinement costs the new stations and contacts only:
+milliseconds. At most four refinements and 480×400 nodes; past either the placement is refused
+with where and by how much, and the next placement is tried.
+
+**Two parametrizations.** Each grid is interpolated with chord-length and with centripetal
+parameters, and the fit that follows its withheld contacts better is the sheet. Chord length stays
+true under local refinement (halving a step halves its share) but creases where a sheet's contacts
+crowd on one face and stretch round the next: refined, the pinion's chord-length fit held its
+contacts within 4.7 µm yet turned 31° between points a sixteenth of a cell apart at its fillet, and
+the meter read 54° there; with every row halved it folded. Centripetal parameters temper that (the
+pinion's first fit came 7.6 µm from its contacts against chord length's 16.5, with no crease past 5°)
+but give a halved step √2 of its share, so a locally refined grid no longer matches its spacing: the
+swept torus's centripetal fit went from 0.11 to 3.1 µm on three rows added, where chord length went
+to 0.10. Neither holds everywhere, and each costs a fit and a local foot search (milliseconds).
+
+**Feet.** A withheld contact's foot is now a local search from the nearest point of the fold
+check's grid (`solvent_cad_surface_feet_near`), taken only within the bar; otherwise the global
+projection. A local extremum is never nearer than the nearest foot, so a gap is never read too
+small. It took the feet from 13 s to 0.1 s a round, and it is more right: OCCT's global projection
+put one of the gear's length-row contacts 22.7 µm and 89.6° off a sheet the local search reads
+within 1.9 µm, and refining for it folded the sheet.
+
+**The configured pair at 10 µm** (`--measure-samples 100000`; µm, max / p99 / mean of |d|; normals
+max / p99 over face points and STL centroids, the samples whose normal is their own face's):
+
+| pinion | STEP (37,459 face points) | STL (99,995 samples) |
+|---|---|---|
+| heel sphere | 0 / 0 / 0 | 1.05 / 0.94 / 0.38 |
+| tip cone | 0 / 0 / 0 | 3.37 / 2.11 / 0.45 |
+| toe sphere | 0 / 0 / 0 | 1.11 / 0.94 / 0.38 |
+| back cone | 0 / 0 / 0 | 1.12 / 1.12 / 0.40 |
+| outer flank | 0.128 / 0.116 / 0.008 | 1.12 / 0.67 / 0.13 |
+| outer fillet | 1.15 / 1.15 / 0.33 | 3.66 / 1.94 / 0.47 |
+| root (crown tip) | 0.056 / 0.056 / 0.052 | 1.08 / 0.88 / 0.28 |
+| inner fillet | 3.37 / 3.17 / 0.96 | 3.94 / 3.22 / 0.98 |
+| inner flank | 0.434 / 0.333 / 0.012 | 1.24 / 1.03 / 0.21 |
+| **all** | **3.37 / 1.95 / 0.10**, normals 1.80° / 1.70° | **3.94 / 1.79 / 0.35**, centroid normals 4.48° / 1.58° |
+
+| gear | STEP (47,718 face points) | STL (99,995 samples) |
+|---|---|---|
+| heel sphere | 0 / 0 / 0 | 1.49 / 1.02 / 0.40 |
+| tip cone | 0 / 0 / 0 | 2.21 / 2.13 / 0.39 |
+| toe sphere | 0 / 0 / 0 | 1.29 / 1.02 / 0.40 |
+| back cone | 0 / 0 / 0 | 0.59 / 0.58 / 0.20 |
+| outer crown's flank | 0.517 / 0.231 / 0.010 | 1.32 / 1.06 / 0.22 |
+| outer crown's round (fillet) | 1.13 / 0.95 / 0.16 | 2.22 / 1.39 / 0.32 |
+| outer crown's tip (root) | 1.54 / 1.54 / 0.39 | 1.68 / 1.43 / 0.41 |
+| neighbour's flank | 0.707 / 0.433 / 0.013 | 1.27 / 1.02 / 0.18 |
+| neighbour's round (fillet) | 1.11 / 1.11 / 0.23 | 2.45 / 1.72 / 0.40 |
+| neighbour's tip (root) | 1.54 / 1.54 / 0.12 | 1.42 / 1.19 / 0.24 |
+| **all** | **1.54 / 0.81 / 0.04**, normals 1.72° / 1.00° | **2.45 / 1.21 / 0.29**, centroid normals 3.48° / 1.35° |
+
+- Every exact face is within 10 µm in both files of both members, and the routes agree (at most
+  1.3 µm apart, p99 0.001). The meter's verdict line says so, and `--measure … --tolerance` exits 1
+  when a face does not.
+- The pinion's fillets went from 11.6 / 16.9 µm (phase 1) to 1.15 / 3.37 µm, their normals from
+  9.1° / 15.3° to 1.8° / 1.7°. Its sheet: the 73×44 first grid, centripetal, missed 10 withheld
+  contacts (7.55 µm); one row interval split made it 74×44, within 3.76 µm and every normal bar.
+- The gear's length-row sheet (86×32) was within 1.91 µm at once under both parametrizations; its
+  walk-length sheet still folds.
+- Every STL triangle sags at most 3.36 µm (pinion, after a second meshing at 1.25 µm) and 2.69 µm
+  (gear, at 1.35 µm) from the written solid.
+- The large STL normal figures are vertices and edge midpoints on a face's edge, where the nearest
+  exact face is the other one, as in phase 2.
+
+**Cost** (12 cores; the sheet is single-threaded):
+
+| | export (STEP + STL) | STEP | STL | measuring STEP / STL (100,000 samples) |
+|---|---|---|---|---|
+| pinion | 182 s (phase 2: 93 s STL only) | 12.5 MB | 46.0 MB, 920,950 triangles | 69 s / 122 s |
+| gear | 294 s (phase 2: 215 s) | 26.9 MB | 61.4 MB, 1,227,890 triangles | 100 s / 97 s |
+
+The sheets cost seconds; the time added is the STL's second meshing (68–70 s, and 15 s for the
+first) and the fits' split and fuse, as before. The meshes are three and six times phase 2's: the
+deflection the sag check settles on (1.25–1.35 µm) is what OCCT's mesher needs for its few long
+edges to come within 5 µm, and it is paid everywhere. A mesher refining where it sags would not.
+
+**Tests.** Core (instant): `contact_trace::a_sheet_is_refined_where_its_withheld_contacts_miss`
+(the marking rule and the graded split) and
+`a_refined_sheet_reads_its_new_nodes_where_the_coarse_one_withheld_them` (the torus's layout: side
+sites where they say, a refined grid's new nodes exactly the contacts the coarse one withheld,
+every coarse node kept); `export_contracts::a_tolerance_mesh_contract_refuses_a_cluster_not_a_count`.
+CLI: `a_swept_export_is_refined_into_its_tolerance` (the swept torus at 0.1 µm: both first fits
+miss, it is refined until it holds, the meter reads both files within 0.1 µm, and without a
+tolerance the sheet is unrefined), `a_tolerance_is_a_positive_length_for_a_native_export`. Slow
+tier: `the_configured_gear_exports_natively` and `the_configured_pinion_exports_natively_within_its_tolerance`
+export each member at 10 µm and measure both files within it.
+
+**Not claimed.** The withheld contacts and the sag check sample: a sheet's error between withheld
+contacts is bounded only to first order by the normal bar, and the STL's by its triangles' centroids
+and edge midpoints. The meter samples too, and by area. The tolerance is the nominal design's, not
+the solve's or the shop's.
 
 ### 4. Fabrication features in the model
 

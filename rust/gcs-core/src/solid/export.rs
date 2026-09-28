@@ -96,3 +96,63 @@ pub trait AtStage<T> {
 impl<T,E: Into<String>> AtStage<T> for Result<T,E> {
     fn at(self,stage: Stage) -> Result<T,ExportRefusal> { self.map_err(|e| ExportRefusal::at(stage,e)) }
 }
+
+/// A native export's stated tolerance: how far the written surface may lie from the exact one,
+/// in native millimetres (a physical length, whatever unit the document is written in), and
+/// every bar that follows from it. Without one an export keeps its gross bars (a fit within
+/// 0.25 mm and 20°, the mesher's 0.01 mm deflection, the field probed 0.1 mm off), which separate
+/// a fit that follows its contacts from one that does not and are no fabrication claim.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Tolerance { pub millimetres: f64 }
+
+impl Tolerance {
+    /// The fabrication tolerance an export is held to when none is named: 10 µm.
+    pub const FABRICATION: Tolerance = Tolerance {millimetres:0.01};
+    /// The share of the tolerance a fitted sheet may use; the STL's chordal sag has the rest, so
+    /// the sheet (the STEP's surface) plus the sag (the STL's) stays within the tolerance.
+    pub const FIT_SHARE: f64 = 0.5;
+    /// The gross bar a fitted sheet's normal is never allowed past, in degrees.
+    pub const MOST_TURN: f64 = 20.;
+    /// The least distance the field is probed at off a mesh: four times the largest vertex and
+    /// edge tolerance the kernel has left on a united member (4.8e-4 mm), inside which a probe
+    /// could stand in the kernel's own tolerance band rather than on one side of the surface.
+    pub const LEAST_PROBE: f64 = 0.002;
+
+    pub fn new(millimetres: f64) -> Result<Tolerance,String> {
+        if millimetres.is_finite() && millimetres > 0. { Ok(Tolerance {millimetres}) }
+        else { Err(format!("an export tolerance must be a positive length, not {millimetres} mm")) }
+    }
+
+    /// How far a fitted sheet may pass from any withheld contact.
+    pub fn fit(&self) -> f64 { self.millimetres*Self::FIT_SHARE }
+
+    /// How far a fitted sheet's normal may turn from a withheld contact's, in degrees, where the
+    /// sheet passes `gap` from the contact and its nodes there are `spacing` apart (the shortest
+    /// side of the cells beside it). Withheld contacts lie on a grid of half cells, so no point of
+    /// the sheet is further than a quarter of a cell from one along either direction; a sheet
+    /// turned by `θ` there departs from the exact surface by about `gap + tan θ · spacing / 4`
+    /// within that reach, and `θ` may not carry it past the whole tolerance, the STEP's claim:
+    /// `tan θ ≤ 4 (tolerance − gap) / spacing`. A pleat between contacts (the gear's, phase 2,
+    /// turned 83° within 60 µm) fails it; a fit rounding a narrow strip where the exact normal
+    /// turns fast (a convex corner's fan, a small fillet), which is near in position and turned by
+    /// a few degrees, does not. Never past `MOST_TURN`, whatever the spacing.
+    pub fn turn(&self,gap: f64,spacing: f64) -> f64 {
+        let room = (self.millimetres-gap).max(0.);
+        (4.*room/spacing.max(1e-12)).atan().to_degrees().min(Self::MOST_TURN)
+    }
+
+    /// The STL mesher's absolute chordal deflection: the share of the tolerance the sheet does
+    /// not use.
+    pub fn deflection(&self) -> f64 { self.millimetres*(1.-Self::FIT_SHARE) }
+
+    /// The field-agreement probe, in millimetres: how far off each triangle a probe stands, the
+    /// band a triangle's centroid must read within to withdraw a one-sided disagreement, and the
+    /// value tolerance a probe's sign is read to. A mesh within the tolerance of the exact surface
+    /// leaves a probe twice the tolerance off at least the tolerance clear of it on its own side,
+    /// read to half the tolerance; a triangle within the tolerance of the surface is one lying
+    /// on it. Never nearer than `LEAST_PROBE`.
+    pub fn probe(&self) -> [f64;3] {
+        let offset = (2.*self.millimetres).max(Self::LEAST_PROBE);
+        [offset,offset/2.,offset/4.]
+    }
+}

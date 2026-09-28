@@ -84,8 +84,9 @@ pub fn measure(meter: &Meter,samples: &[Sample]) -> Vec<Measurement> {
 }
 
 /// Measure the file at `path` (STEP by its extension, otherwise binary STL) against `body`,
-/// and the report's lines.
-pub fn report(sk: &Sketch,body: usize,path: &str,most: usize) -> Result<Vec<String>,String> {
+/// and the report's lines; with a `tolerance` (native millimetres), the last says whether every
+/// exact face is within it, and an `Err` carries the report when one is not.
+pub fn report(sk: &Sketch,body: usize,path: &str,most: usize,tolerance: Option<f64>) -> Result<Vec<String>,String> {
     let millimetres = cad::millimetres(sk)?;
     let started = std::time::Instant::now();
     let meter = Meter::read(sk,body,Options::in_units(millimetres))?;
@@ -105,5 +106,10 @@ pub fn report(sk: &Sketch,body: usize,path: &str,most: usize) -> Result<Vec<Stri
     let measurements = measure(&meter,&samples.samples);
     let mut lines = vec![format!("{path}: measured against `{}`",sk.solids[body].name)];
     lines.extend(accuracy::report(&meter,&samples.samples,&measurements,&samples.classes,millimetres));
+    if let Some(t) = tolerance {
+        let (ok,line) = accuracy::within(&meter,&samples.samples,&measurements,t/millimetres,millimetres);
+        lines.push(line);
+        if !ok { return Err(lines.join("\n")); }
+    }
     Ok(lines)
 }

@@ -2,7 +2,7 @@
 //! about a skew axis through a post: the admitted small fixture, whose sections are circles a
 //! test can sample exactly, so the tracer is checked without a kernel and in seconds.
 use fixtures::{tools::{skew_post,torus},motions::{Observer,cradle_roll}};
-use gcs_core::solid::{SweepContacts,contact_trace::{Band,Extent,Rows,Sample,Station,Tracer,TraceError,STEP_TIME,charted}};
+use gcs_core::solid::{SweepContacts,contact_trace::{Band,Extent,Grid,Rows,Sample,Station,Tracer,TraceError,Withheld,STEP_TIME,charted,marked}};
 use std::f64::consts::{PI,TAU};
 
 type V = [f64;3];
@@ -137,4 +137,98 @@ fn a_sample_without_a_normal_is_degenerate() {
     let e = tracer.contacts(Sample {position:[4.,0.,2.],normal:[0.;3]},tracer.wide()).unwrap_err();
     assert!(matches!(e,TraceError::Degenerate(_)),"{e:?}");
     assert_eq!(e.to_string(),"degenerate normal");
+}
+
+/// Phase 3 of docs/native-hypoid-plan.md: a sheet held to a tolerance withholds the middles of its
+/// cells' sides as well as their centres, and is refined where they miss. A contact in the middle
+/// of a column's step between two rows marks those rows, one in the middle of a row's step marks
+/// those columns, and a centre whose sides are both clear marks both; the grid splits what is
+/// marked at the withheld coordinate, and grades so no interval is more than twice its neighbour.
+#[test]
+fn a_sheet_is_refined_where_its_withheld_contacts_miss() {
+    // Rows 0..=4 and columns 0..=3: sites in half steps.
+    let sites = [[1,0],[1,2],[3,1],[5,5],[7,3],[2,5]];
+    let over = [true,false,false,true,false,false];
+    // A side down column 0 between rows 0 and 1 marks row interval 0; the centre (5,5) of cell
+    // (2,2), whose sides were clear, marks row interval 2 and column interval 2.
+    assert_eq!(marked(&sites,&over,5,4),(vec![true,false,true,false],vec![false,false,true]));
+    // A side across row 1 between columns 2 and 3 marks column interval 2 alone, and a centre in a
+    // row a side has marked adds nothing.
+    let over = [true,false,false,false,false,true];
+    assert_eq!(marked(&sites,&over,5,4),(vec![true,false,false,false],vec![false,false,true]));
+    let sites = [[1,0],[1,1]];
+    assert_eq!(marked(&sites,&[true,true],2,2),(vec![true],vec![false]));
+
+    let even = |n: usize| -> (Vec<f64>,Vec<f64>) { ((0..n).map(|i| i as f64).collect(),(0..n-1).map(|i| i as f64+0.5).collect()) };
+    let ((rows,row_mids),(columns,column_mids)) = (even(5),even(4));
+    let grid = Grid {rows,row_mids,columns,column_mids};
+    // The withheld coordinate becomes a node, and each half gets its own middle.
+    let once = grid.refined(&[false,true,false,false],&[false,false,false]);
+    assert_eq!(once.rows,vec![0.,1.,1.5,2.,3.,4.]);
+    assert_eq!(once.row_mids,vec![0.5,1.25,1.75,2.5,3.5]);
+    assert_eq!((once.columns.clone(),once.column_mids.clone()),(grid.columns.clone(),grid.column_mids.clone()));
+    // Split again, the quarter intervals would sit beside whole ones: the neighbours split too.
+    let twice = once.refined(&[false,true,false,false,false],&[false;3]);
+    assert_eq!(twice.rows,vec![0.,0.5,1.,1.25,1.5,2.,3.,4.]);
+    for w in twice.rows.windows(3) { assert!((w[2]-w[1]) <= 2.*(w[1]-w[0])+1e-12 && (w[1]-w[0]) <= 2.*(w[2]-w[1])+1e-12,"{w:?}"); }
+    assert_eq!(twice.row_mids.len(),twice.rows.len()-1);
+    // Nothing marked, nothing moves.
+    assert_eq!(grid.refined(&[false;4],&[false;3]),grid);
+}
+
+/// The torus rolled through the post, laid out once and read on its first grid and a refined one:
+/// the sides' withheld contacts are where their sites say, a refined grid's new nodes are exactly
+/// the contacts the coarser grid withheld there, and every node of the coarser grid is kept.
+#[test]
+fn a_refined_sheet_reads_its_new_nodes_where_the_coarse_one_withheld_them() {
+    let sweep = sweep();
+    let inside = |points: &[V]| Ok(points.iter().map(in_post).collect());
+    let tracer = Tracer {sweep:&sweep,scale:1.,inside:&inside,debug:false};
+    let hits: Vec<f64> = (0..96).map(|k| TAU*(k as f64+0.5)/96.)
+        .filter(|&a| tracer.trace(&station(a),0.5,Extent::Blank).is_ok()).collect();
+    let band = Band {stations:[hits[0],*hits.last().unwrap()],radius:1.};
+    let at = |a: f64| Ok(station(a));
+    let layout = tracer.layout(&at,band,0.5,(band.stations[1]-band.stations[0])*0.15,Rows::Walk).unwrap();
+    let centres = layout.sheet(&layout.grid,Withheld::Centres).unwrap();
+    let coarse = layout.sheet(&layout.grid,Withheld::Sides).unwrap();
+    let (rows,columns) = (coarse.rows,coarse.columns);
+    // The centres are the centres-only sheet's, in its order.
+    let at_centres: Vec<V> = coarse.sites.iter().zip(&coarse.withheld).filter(|(s,_)| s[0]%2 == 1 && s[1]%2 == 1).map(|(_,p)| *p).collect();
+    assert_eq!(at_centres,centres.withheld);
+    assert!(centres.sites.iter().all(|s| s[0]%2 == 1 && s[1]%2 == 1));
+    assert_eq!(coarse.points,centres.points);
+    let count = |odd_row: bool,odd_column: bool| coarse.sites.iter().filter(|s| (s[0]%2 == 1) == odd_row && (s[1]%2 == 1) == odd_column).count();
+    assert_eq!(count(true,false),(rows-1)*columns);
+    assert!(count(false,true) > 0 && count(false,true) % rows == 0 && count(true,true) % (rows-1) == 0);
+    // A node station's side contact lies on its column between the nodes it is withheld between.
+    for (site,p) in coarse.sites.iter().zip(&coarse.withheld).filter(|(s,_)| s[0]%2 == 1 && s[1]%2 == 0) {
+        let (r,c) = (site[0]/2,site[1]/2);
+        let (a,b) = (coarse.points[r*columns+c],coarse.points[(r+1)*columns+c]);
+        assert!(distance(*p,a) <= distance(a,b)+1e-9 && distance(*p,b) <= distance(a,b)+1e-9);
+        assert!(coarse.spacing(*site) <= distance(a,b)+1e-12);
+    }
+    // Refine one row interval and one column interval.
+    let (r,c) = (rows/2,columns/2);
+    let mut marks = (vec![false;rows-1],vec![false;columns-1]);
+    marks.0[r] = true; marks.1[c] = true;
+    let grid = layout.grid.refined(&marks.0,&marks.1);
+    let fine = layout.sheet(&grid,Withheld::Sides).unwrap();
+    assert_eq!((fine.rows,fine.columns),(rows+1,columns+1));
+    let withheld_at = |site: [usize;2]| coarse.sites.iter().position(|s| *s == site).map(|i| coarse.withheld[i]);
+    // The new row: the coarse sheet's side contacts down every column (and its centres between).
+    for k in 0..=columns {
+        let new = fine.points[(r+1)*fine.columns+if k <= c { k } else { k+1 }];
+        if let Some(p) = withheld_at([2*r+1,2*k]) { assert_eq!(p,new); }
+    }
+    // The new column: the coarse sheet's mid station, at the rows its side contacts were at.
+    for k in 0..rows {
+        let new = fine.points[(if k <= r { k } else { k+1 })*fine.columns+c+1];
+        if let Some(p) = withheld_at([2*k,2*c+1]) { assert_eq!(p,new); }
+    }
+    // Every coarse node is still a node.
+    for i in 0..rows { for j in 0..columns {
+        let (fi,fj) = (if i <= r { i } else { i+1 },if j <= c { j } else { j+1 });
+        assert_eq!(coarse.points[i*columns+j],fine.points[fi*fine.columns+fj]);
+    } }
+    assert!(fine.chart_fault(&inside).unwrap().is_none());
 }

@@ -80,25 +80,93 @@ fn a_refined_mesh_the_field_refuses_leaves_the_old_output() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-/// The configured hypoid gear exports natively, STEP and STL, through the swept construction
-/// and its field-agreement gate. It was refused at the fit until the sheet's rows stopped before
-/// a margin column's leap into a far corner's fan (docs/native-hypoid-plan.md, Phase 2).
+/// Phase 3 of docs/native-hypoid-plan.md on the swept torus: held to 0.1 µm, the first sheet
+/// (24x24, 0.11 µm from its withheld contacts at best against a 0.05 µm bar) misses, is refined
+/// where it misses and fitted again until it holds, and the meter reads both files within the
+/// tolerance.
 #[cfg(feature="occt")]
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about three minutes: the configured gear exported natively")]
-fn the_configured_gear_exports_natively() {
-    let dir = std::env::temp_dir().join(format!("solventc-native-gear-{}",std::process::id()));
+fn a_swept_export_is_refined_into_its_tolerance() {
+    let dir = std::env::temp_dir().join(format!("solventc-tolerance-{}",std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let (stl,step) = (dir.join("gear.stl"),dir.join("gear.step"));
-    let result = run(&[&doc("spiral_bevel/gears.sv"),"--solid","pair.gear.body","--stl",stl.to_str().unwrap(),
-        "--step",step.to_str().unwrap(),"--no-diagnose"]);
+    let (stl,step) = (dir.join("part.stl"),dir.join("part.step"));
+    let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());
+    let result = run(&[&doc("swept_torus.sv"),"--stl",stl,"--step",step,"--tolerance","0.1um","--no-diagnose"]);
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert_eq!(result.status.code(),Some(0),"{stderr}");
-    assert!(stderr.contains("0 disagree"),"{stderr}");
-    gcs_core::mesh::stl_shells(&std::fs::read(&stl).unwrap()).unwrap();
-    assert!(std::fs::metadata(&step).unwrap().len() > 0);
+    let fits: Vec<&str> = stderr.lines().filter(|l| l.contains("withheld contacts at the blank (bar 0.05 µm)")).collect();
+    assert!(fits.len() >= 4,"{stderr}");
+    // Both parametrizations miss at first; the last fitted holds.
+    assert!(fits[..2].iter().all(|l| !l.contains("; 0 miss by distance, 0 by normal")),"{stderr}");
+    assert!(fits.last().unwrap().contains("; 0 miss by distance, 0 by normal"),"{stderr}");
+    assert!(stderr.contains("refining the sheet where it misses") && stderr.contains("fit holds"),"{stderr}");
+    assert!(stderr.contains("probed 0.0020 mm off each side") && stderr.contains("0 disagree"),"{stderr}");
+    for file in [step,stl] {
+        let measured = run(&[&doc("swept_torus.sv"),"--measure",file,"--tolerance","0.1um","--no-diagnose"]);
+        let stdout = String::from_utf8_lossy(&measured.stdout);
+        assert_eq!(measured.status.code(),Some(0),"{stdout}{}",String::from_utf8_lossy(&measured.stderr));
+        assert!(stdout.contains("tolerance 0.100 µm: every exact face within it"),"{stdout}");
+    }
+    // Without a tolerance the same sheet passes the gross bars as it is.
+    let gross = run(&[&doc("swept_torus.sv"),"--step",step,"--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&gross.stderr);
+    assert_eq!(gross.status.code(),Some(0),"{stderr}");
+    assert!(!stderr.contains("refining") && stderr.contains("fitted sheet within 2.19e-4 mm"),"{stderr}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_tolerance_is_a_positive_length_for_a_native_export() {
+    let output = run(&[&doc("swept_torus.sv"),"--tolerance","3furlongs","--step","x.step"]);
+    assert_eq!(output.status.code(),Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("`furlongs` is not a length unit"));
+    let output = run(&[&doc("swept_torus.sv"),"--tolerance","0mm","--step","x.step"]);
+    assert_eq!(output.status.code(),Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("a tolerance is a positive length"));
+    // It holds an export or a measurement to it, and means nothing to a document only checked.
+    let output = run(&[&doc("swept_torus.sv"),"--tolerance","--no-diagnose"]);
+    assert_eq!(output.status.code(),Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--tolerance holds a native export"));
+}
+
+/// One member of the configured hypoid pair exported natively for fabrication, STEP and STL at
+/// 10 µm, the field gate passed, and both files measured within 10 µm on every exact face.
+#[cfg(feature="occt")]
+fn fabricated(member: &str) {
+    let dir = std::env::temp_dir().join(format!("solventc-native-{member}-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (stl,step) = (dir.join(format!("{member}.stl")),dir.join(format!("{member}.step")));
+    let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());
+    let body = format!("pair.{member}.body");
+    let result = run(&[&doc("spiral_bevel/gears.sv"),"--solid",&body,"--stl",stl,"--step",step,"--tolerance","0.01mm","--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(0),"{stderr}");
+    assert!(stderr.contains("probed 0.0200 mm off each side") && stderr.contains("0 disagree"),"{stderr}");
+    gcs_core::mesh::stl_shells(&std::fs::read(stl).unwrap()).unwrap();
+    for file in [step,stl] {
+        let measured = run(&[&doc("spiral_bevel/gears.sv"),"--solid",&body,"--measure",file,"--tolerance","0.01mm","--no-diagnose"]);
+        let stdout = String::from_utf8_lossy(&measured.stdout);
+        assert_eq!(measured.status.code(),Some(0),"{stdout}{}",String::from_utf8_lossy(&measured.stderr));
+        assert!(stdout.contains("tolerance 10.000 µm: every exact face within it"),"{stdout}");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// The configured hypoid gear exports natively, STEP and STL, through the swept construction
+/// and its field-agreement gate, held to 10 µm. It was refused at the fit until the sheet's rows
+/// stopped before a margin column's leap into a far corner's fan (docs/native-hypoid-plan.md,
+/// Phase 2).
+#[cfg(feature="occt")]
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about six minutes: the configured gear exported at 10 µm and measured")]
+fn the_configured_gear_exports_natively() { fabricated("gear"); }
+
+/// The configured hypoid pinion at 10 µm: its fillets were 11.6 and 16.9 µm off at the gross bars
+/// (docs/native-hypoid-plan.md, Phase 1) and are refined into the tolerance.
+#[cfg(feature="occt")]
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about five minutes: the configured pinion exported at 10 µm and measured")]
+fn the_configured_pinion_exports_natively_within_its_tolerance() { fabricated("pinion"); }
 
 #[cfg(not(feature="occt"))]
 #[test]
