@@ -482,3 +482,37 @@ fn guards_are_renumbered_into_the_part_or_dropped() {
     d.move_to(&mut sk, None, x + 1.0, y);
     d.end();
 }
+
+/// **A drag is not rescued** (docs/iteration-limit-rescue-plan.md): its pull and polish run with
+/// `retry` off and deliberately short iteration caps, where stopping at the cap is the point, so
+/// the one-shot solve's rescue of a pose that stopped on its limit never reaches them.  Every
+/// frame of a `Drag` (the pull and polish alone) on three figures — a rectangle with fillets, a
+/// floating truss and the traced gear — is hashed, pose, status and success together, against
+/// the hash recorded before the rescue existed.
+#[test]
+fn pull_polish_frames_are_the_bits_they_were() {
+    // FNV-1a over 64-bit words
+    fn mix(h: &mut u64, w: u64) {
+        for b in w.to_le_bytes() {
+            *h ^= b as u64;
+            *h = h.wrapping_mul(0x100000001b3);
+        }
+    }
+    let mut h = 0xcbf29ce484222325u64;
+    let mut sketches = vec![(examples::rect_fillets(60., 40., 8., 0.), 0), (examples::truss_floating(6), 3),
+        (examples::gear_trace(), 0)];
+    for (sk, p) in &mut sketches {
+        solve(sk, SolveOpts::default());
+        let (x, y) = sk.point_xy(*p);
+        let mut d = Drag::new(sk, *p, x, y, Method::DogLeg, 1.0, Vec::new(), 0.05);
+        for &(tx, ty) in &circle_path(x, y, 0.2 * sk.extent(), 24) {
+            let r = d.move_to(sk, tx, ty);
+            mix(&mut h, r.status as u64);
+            mix(&mut h, r.success as u64);
+            for v in sk.get_x() { mix(&mut h, v.to_bits()); }
+        }
+        d.end(sk);
+    }
+    println!("pull/polish hash {h:#018x}");
+    assert_eq!(h, 0x877b5fff543dab07);
+}

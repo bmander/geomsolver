@@ -235,11 +235,9 @@ whole-system solve struggles, which is exactly where `Rescue` already runs it.
 
 ## Follow-ups
 
-- **An iteration-limit stop is not rescued.** A whole-system DogLeg that stops on its iteration
-  limit under the interactive acceptance (1e-6) is a success, and phase 3 found that to be the
-  commonest failure with rough seeds (the sweep's 13 of 480; the rescue never runs). Treating
-  that stop as a failure for the rescue's trigger is a narrow change worth measuring on its own;
-  `every_modules_preview_converges_as_solventc_solves_it` guards the example meanwhile.
+- **An iteration-limit stop is not rescued.** *Done* ([iteration-limit-rescue-plan.md](
+  iteration-limit-rescue-plan.md)): a status-4 success is not *settled*, and the block pass runs
+  from the stop and then from the start; the sweep's 13 of 480 became 6.
 - **A document that asks for `First`** (a hint in the source, or `solventc --blocks first`),
   where its author knows the layout is a long chain, as the spiral bevel is.
 - **A fine DM of the over-determined part** (phase 1's finding), so one redundant statement

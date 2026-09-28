@@ -1,11 +1,14 @@
 //! What the curve tests share: a document built or the test fails saying why, the involute's
 //! closed form, and the finite-difference check of a compiled system's Jacobian — what the
 //! spatial tests share: a document read or refused, and the arithmetic of lines in space — and
-//! what the block-solve tests share: a solve under one `BlockMode`, and a pose to the bit.
+//! what the block-solve tests and their measurements share: a solve under one `BlockMode`, a pose
+//! to the bit, the corpus they are measured over, the rough starts made from a solution, and how
+//! far one pose is from another.
 #![allow(dead_code)]
 
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::program::{elaborate, Elaborated};
+use gcs_core::rng::Rng;
 use gcs_core::solve::{BlockMode, SolveOpts};
 use gcs_core::space::{cross, norm, sub};
 use gcs_core::syntax::parse;
@@ -110,4 +113,115 @@ pub fn with_blocks(blocks: BlockMode) -> SolveOpts {
 /// Every parameter's value, bit for bit: what "the same pose" means when a path must not move it.
 pub fn bits(sk: &Sketch) -> Vec<u64> {
     sk.get_x().into_iter().map(f64::to_bits).collect()
+}
+
+/// How far `sk`'s parameters are from `reference`'s, the worst of them over the reference's
+/// extent.
+pub fn apart(sk: &Sketch, reference: &Sketch) -> f64 {
+    sk.get_x().iter().zip(reference.get_x()).map(|(x, y)| (x - y).abs()).fold(0., f64::max)
+        / reference.extent()
+}
+
+/// How far `sk`'s points (in space, so that a view turned over with its drawing is the same
+/// pose) and radii are from `reference`'s, over the reference's extent.
+pub fn off(sk: &Sketch, reference: &Sketch) -> f64 {
+    let e = reference.extent();
+    let points = (0..reference.points.len()).map(|i| {
+        let (a, b) = (sk.world_point(i), reference.world_point(i));
+        (0..3).map(|k| (a[k] - b[k]).abs()).fold(0., f64::max)
+    });
+    let radii = reference.circles.iter().map(|c| c.radius)
+        .chain(reference.arcs.iter().map(|a| a.radius))
+        .map(|i| (sk.params[i as usize].value - reference.params[i as usize].value).abs());
+    points.chain(radii).fold(0., f64::max) / e
+}
+
+/// A document the measurements read, by the name they print it under.
+pub struct Doc {
+    pub name: String,
+    pub sketch: Sketch,
+}
+
+/// Every example document that elaborates, as solventc reads it (`fixtures::examples`), and the
+/// spiral-bevel designs.
+pub fn corpus() -> Vec<Doc> {
+    let mut docs = Vec::new();
+    for (name, e) in fixtures::examples() {
+        match e {
+            Some(e) if e.ok() => docs.push(Doc { name, sketch: e.sketch }),
+            _ => println!("skip {name}: does not elaborate"),
+        }
+    }
+    for (label, configuration) in fixtures::gear::designs() {
+        let sketch = fixtures::gear::unsolved(&configuration).sketch;
+        docs.push(Doc { name: format!("spiral_bevel@{label}"), sketch });
+    }
+    docs
+}
+
+/// The kinds of rough start `rough_starts` makes, by the index it tags each with.
+pub const ROUGH: [&str; 3] = ["halved", "doubled", "jittered"];
+
+/// The rough starts the measurements solve from, made from a solution: halved and doubled about
+/// its centroid (`scaled`), and jittered by up to a thousandth of the extent with three seeds
+/// (`jittered`) — each tagged with its kind's index in `ROUGH` and labelled.
+pub fn rough_starts(solution: &Sketch) -> Vec<(usize, String, Sketch)> {
+    let mut starts =
+        vec![(0, "x0.5".into(), scaled(solution, 0.5)), (1, "x2".into(), scaled(solution, 2.))];
+    for seed in 1..=3 {
+        starts.push((2, format!("jitter{seed}"), jittered(solution, 0.001, seed)));
+    }
+    starts
+}
+
+/// Scale every free point coordinate about the free points' centroid by `f`, and every free
+/// radius by `f`.
+pub fn scaled(sk: &Sketch, f: f64) -> Sketch {
+    let mut out = sk.clone();
+    let free: Vec<(u32, u32)> = sk.points.iter().map(|p| (p.x, p.y))
+        .filter(|&(x, y)| !sk.params[x as usize].fixed || !sk.params[y as usize].fixed).collect();
+    if free.is_empty() { return out; }
+    let n = free.len() as f64;
+    let cx = free.iter().map(|&(x, _)| sk.params[x as usize].value).sum::<f64>() / n;
+    let cy = free.iter().map(|&(_, y)| sk.params[y as usize].value).sum::<f64>() / n;
+    for &(x, y) in &free {
+        for (i, c) in [(x, cx), (y, cy)] {
+            let p = &mut out.params[i as usize];
+            if !p.fixed { p.value = c + f * (p.value - c); }
+        }
+    }
+    for r in sk.circles.iter().map(|c| c.radius).chain(sk.arcs.iter().map(|a| a.radius)) {
+        let p = &mut out.params[r as usize];
+        if !p.fixed { p.value *= f; }
+    }
+    out
+}
+
+/// Jitter every free point coordinate by up to `amount` of the extent, and every free radius by
+/// up to `amount` of itself.
+pub fn jittered(sk: &Sketch, amount: f64, seed: u32) -> Sketch {
+    let mut out = sk.clone();
+    let mut rng = Rng::new(seed);
+    let e = sk.extent();
+    for p in &sk.points {
+        for i in [p.x, p.y] {
+            let q = &mut out.params[i as usize];
+            if !q.fixed { q.value += rng.uniform(-amount, amount) * e; }
+        }
+    }
+    for r in sk.circles.iter().map(|c| c.radius).chain(sk.arcs.iter().map(|a| a.radius)) {
+        let q = &mut out.params[r as usize];
+        if !q.fixed { q.value *= 1. + rng.uniform(-amount, amount); }
+    }
+    out
+}
+
+/// How many blocks `sk`'s equations have in their block-triangular order.
+pub fn blocks_of(sk: &Sketch) -> usize {
+    System::new(sk).block_order().blocks.len()
+}
+
+/// Whether `sk` has no freedom left: no column its block order leaves under-determined.
+pub fn is_determined(sk: &Sketch) -> bool {
+    System::new(sk).block_order().under_cols.is_empty()
 }
