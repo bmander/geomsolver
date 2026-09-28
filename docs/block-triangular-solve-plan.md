@@ -170,11 +170,69 @@ during the block pass is handled by the same clamp-and-retry.
      17184 → 17370), and the refined exports refuse at the same feature-curve balls. Measured off
      the field meshes, the shafts are 90.000° apart and 24.992 mm off (25.001 before), and through
      one gear pitch the members overlap by 0.44–1.15 mm³ (0.44–1.10 before).
-4. **Measure, then decide on block-first.** Time the hypoid solve and the corpus both ways. If
-   solving in blocks first (then polishing) is faster or more robust across the corpus, making it
-   the default is a separate decision: it would change solved coordinates at the ULP level in
-   every document, so every byte gate and exact-equality test would need re-recording (the
-   exact `assert_eq!`s in `drag.rs`, `decompose.rs`, `unseeded.rs`, `anonymous.rs`, `io.rs`).
+4. **Measure, then decide on block-first.** *Measured; the default is unchanged.* The corpus is
+   every example that elaborates (90 documents under `rust/examples/`, the three that are only
+   parameters skipped) and the regression's twelve spiral-bevel designs (`gears.sv` at each), 102
+   in all, each solved as solventc solves it (`SolveOpts::default()`, a `System` compiled per
+   solve). The tool is `tests/block_measure.rs` (ignored; `timing`, `robustness`, `blast_radius`).
+   *Timing.* Wall-clock medians of 7 solves per document and mode, under the test profile, three
+   runs (totals within 2% of each other); the machine's load average was 7–10 from a virtual
+   machine while `top` read the CPU 90% idle. In milliseconds:
+
+   | | Off | Rescue | First |
+   |---|---:|---:|---:|
+   | whole corpus (102) | 795–809 | 520–533 | 94–95 |
+   | spiral bevel (22 modules and 12 designs) | 725–740 | 447–454 | 48 |
+   | the rest (68) | 69–70 | 73–79 | 46–47 |
+   | `spiral_bevel@configured` (358 rows, 117 blocks) | 75.1 (fails) | 37.3 (blocks) | 2.5 |
+   | `spiral_bevel@bevel` | 14.3 | 14.9 | 1.8 |
+   | `gear.sv` (363, 123) | 19.2 | 19.2 | 7.2 |
+   | `gear_trace.sv` (147, 51) | 13.2 | 13.0 | 4.8 |
+   | `vtwin/assembly.sv` (680, 195) | 9.4 | 8.9 | 5.2 |
+   | `engine.sv` (1327, 671) | 8.2 | 8.5 | 10.4 |
+   | `truss200.sv` (800, 400) | 0.47 | 0.45 | 1.86 |
+   | `truss_conflict.sv` (fails every way) | 6.5 | 9.2 | 9.3 |
+
+   `First` is far faster where the whole-system solve works hard (the spiral bevel, 6–30×; the
+   gears and the V-twin assembly, 2–3×), and slower on the small and the easy: of the 49 documents
+   outside the spiral bevel with two blocks or more, 35 are more than 10% slower under `First` and
+   11 faster (the ordering and the per-block setup cost more than a DogLeg that converges in a few
+   iterations — `truss200`'s 400 two-row blocks, 4×). `Rescue` costs nothing where the DogLeg
+   succeeds and adds the pass to a document that fails anyway (`truss_conflict`, +40%).
+   *Robustness.* From each document's default solution, scaled about the free points' centroid by
+   0.5 and by 2 and jittered three times by up to 1e-3 of the extent (seeded), 495 starts; for the
+   85 documents with no freedom left (425 starts) a solve is on the reference root when every
+   point in space and every radius is within 1e-6 of the extent of the default solution:
+
+   | | solved (all 495) | solved (425 determined) | on the reference root | halved | doubled | jittered |
+   |---|---:|---:|---:|---:|---:|---:|
+   | Off | 464 | 396 | 349 | 61 | 58 | 230 |
+   | Rescue | 488 | 420 | 352 | 64 | 58 | 230 |
+   | First | 488 | 420 | 361 | 63 | 49 | 249 |
+
+   `Rescue` and `First` solve the same starts (24 more than `Off`, nearly all the spiral bevel's).
+   `First` returns to the reference root more often from a jittered start (249 against 230: each
+   block starts from its predecessors' answer, so a small perturbation stays small), and less
+   often from a doubled one (49 against 58: a block solved alone from a start twice the size
+   finds another root — the V-twin's bank, cylinder, frame and piston, the trusses).
+   *Blast radius.* Solved from their own seeds, `First` and `Off` agree to the bit in 51 of the
+   102 documents — those with fewer than two blocks, or whose DogLeg `First` never replaces —
+   and differ in 51. In 39 of those the difference is rounding (at most 1e-11 of the extent),
+   and in eight it is where the whole-system solve fails (the spiral bevel's layouts; there
+   `First` gives the rescue's answer). In four it is **another root**: `engine.sv` (683 of 1329
+   parameters, up to 0.48 of the extent), `k33.sv` (2.1), `laman.sv` (0.39) and
+   `vtwin/assembly.sv` (6.4e-3) — mechanisms and multiply realizable graphs whose own seeds pick a
+   root the whole-system solve finds and the block order does not.
+   *Recommendation.* Keep `Rescue` the default. `First` would change the bits of half the corpus
+   and the root of four documents (a different drawing, not a re-recorded ULP), make most small documents slower, and trade robustness to jitter for
+   robustness to scale; its speed matters only where the whole-system solve struggles, which is
+   exactly where `Rescue` already runs it. Two follow-ups the measurements point at instead:
+   (a) a whole-system DogLeg that stops on its iteration limit under the interactive acceptance
+   is accepted, and phase 3 found that to be the commonest failure with rough seeds (the sweep's
+   13 of 480; the rescue never runs) — treating that stop as a failure for the rescue's trigger
+   is a narrow change worth measuring on its own; (b) a document could ask for `First` (a hint in
+   the source, or `solventc --blocks first`) where its author knows the layout is a long chain,
+   as the spiral bevel is.
 
 ## Risks
 
@@ -193,5 +251,6 @@ during the block pass is handled by the same clamp-and-retry.
 - `rust/gcs-core/src/system.rs`: subset evaluation, `block_order`.
 - `rust/gcs-core/src/graph.rs`: `blocks` (Tarjan over the matched square part).
 - `rust/gcs-core/src/solve.rs`: the stage in `solve_compiled`; `BlockTr`.
-- `rust/gcs-core/tests/`: the seam, the ordering, the rough-seed hypoid test.
+- `rust/gcs-core/tests/`: the seam, the ordering, the rough-seed hypoid test; `block_measure.rs`
+  (phase 4's timing, robustness and blast-radius tools) and `hypoid_layout::design_sweep`.
 - `rust/examples/spiral_bevel/`: phase 3.

@@ -128,3 +128,4 @@ mod drawing;
 mod block_structure;
 mod block_order;
 mod block_solve;
+mod block_measure;
