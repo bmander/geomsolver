@@ -121,4 +121,20 @@ int solvent_cad_face_kind(Cad* cad,int id) noexcept {
         return static_cast<int>(BRepAdaptor_Surface(face,false).GetType());
     });
 }
+// A face's supporting surface on an even nu x nv grid over its UV box, row-major with u the
+// first: six doubles a point, position and oriented unit normal. No trim test, so it reads a
+// fitted sheet's whole chart quickly.
+int solvent_cad_surface_grid(Cad* cad,int id,int nu,int nv,double* output) noexcept {
+    return guarded(cad,[&] {
+        if (!output || nu < 2 || nv < 2) throw std::runtime_error("surface grid needs an output buffer and two points a side");
+        const auto face = TopoDS::Face(cad->at(id));
+        double a,b,c,d;
+        BRepTools::UVBounds(face,a,b,c,d);
+        for (double x: {a,b,c,d}) if (!std::isfinite(x) || Precision::IsInfinite(x))
+            throw std::runtime_error("surface grid needs finite face bounds");
+        for (int i=0;i<nu;++i) for (int j=0;j<nv;++j)
+            surface_sample(face,gp_Pnt2d(a+(b-a)*i/(nu-1),c+(d-c)*j/(nv-1)),true,output+6*(i*nv+j));
+        return 0;
+    });
+}
 }

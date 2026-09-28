@@ -88,6 +88,18 @@ pub struct Station<'a> {
 #[derive(Clone,Copy,Debug)]
 pub struct Band { pub stations: [f64;2],pub radius: f64 }
 
+/// Where a sheet's rows fall along each column's contact curve, between the same two unfolded
+/// walk lengths at its ends. `Walk`: at even unfolded walk lengths, one grid for every column.
+/// `Length`: at even lengths in space along each column's own curve. Where the envelope stretches
+/// unevenly along the profile (a cutter's round generating a long fillet beside a flank whose
+/// contacts crowd) and the stretch begins on different rows in different columns, walk-length rows
+/// give the columns chord-length parameters their average cannot follow, and the fitted face pleats
+/// between rows; length rows are even in every column. Where a column's curve runs far in space
+/// outside the blank, length rows leave its rows in the blank sparse against its neighbours', and
+/// walk-length rows are the ones that hold.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Rows { Walk,Length }
+
 /// A candidate sheet: contact positions on a row-major grid with the outward
 /// normal of the cutter at each contact, in native millimetres.
 #[derive(Debug)]
@@ -129,6 +141,21 @@ impl Sheet {
         }
         Ok(faults.first().map(|f| format!("{f} ({} such steps in the blank, over {} columns)",faults.len(),self.columns)))
     }
+}
+
+/// The rows `[first, last]` a sheet keeps of its resampled columns, given each column's contact
+/// times and whether each contact lies in the blank, row by row: every row holding a contact in
+/// the blank, and outward from those, rows while no column's contact time leaps between
+/// consecutive rows by `STEP_TIME` or more (the same root a turn away, or another root). A sheet
+/// with no contact in the blank keeps every row.
+pub fn charted(times: &[Vec<f64>],within: &[Vec<bool>]) -> [usize;2] {
+    let rows = times.first().map_or(0,Vec::len);
+    let held: Vec<usize> = (0..rows).filter(|&r| within.iter().any(|c| c[r])).collect();
+    let (Some(&low),Some(&high)) = (held.first(),held.last()) else { return [0,rows.saturating_sub(1)] };
+    let leaps = |r: usize| times.iter().any(|c| (c[r]-c[r-1]).abs() >= STEP_TIME);
+    let first = (1..=low).rev().find(|&r| leaps(r)).unwrap_or(0);
+    let last = (high+1..rows).find(|&r| leaps(r)).map_or(rows-1,|r| r-1);
+    [first,last]
 }
 
 /// A walk along a contact curve so far: its points, its length in the blank, how far it has run outside
@@ -358,6 +385,38 @@ impl Tracer<'_> {
         }).collect()
     }
 
+    /// A traced contact curve's positions between unfolded walk lengths `lo` and `hi`, ends included.
+    fn stretch(&self,station: &Station,curve: &[Point],lo: f64,hi: f64) -> Result<Vec<(f64,V)>,TraceError> {
+        let ends = self.along(station,curve,&[lo,hi])?;
+        let mut path = vec![(lo,ends[0].position)];
+        path.extend(curve.iter().filter(|p| p.tau > lo && p.tau < hi).map(|p| (p.tau,p.found.position)));
+        path.push((hi,ends[1].position));
+        Ok(path)
+    }
+
+    /// The length in space of a traced contact curve between unfolded walk lengths `lo` and `hi`.
+    fn length(&self,station: &Station,curve: &[Point],lo: f64,hi: f64) -> Result<f64,TraceError> {
+        let path = self.stretch(station,curve,lo,hi)?;
+        Ok(path.windows(2).map(|w| distance(w[0].1,w[1].1)).sum())
+    }
+
+    /// Contacts of a traced curve at fractions of its length in space between unfolded walk lengths
+    /// `lo` and `hi`: the walk length at each is interpolated along the curve's points.
+    fn at_lengths(&self,station: &Station,curve: &[Point],lo: f64,hi: f64,fractions: &[f64]) -> Result<Vec<Found>,TraceError> {
+        let path = self.stretch(station,curve,lo,hi)?;
+        let mut cumulative = vec![0.];
+        for w in path.windows(2) { cumulative.push(cumulative.last().unwrap()+distance(w[0].1,w[1].1)); }
+        let total = *cumulative.last().unwrap();
+        let taus: Vec<f64> = fractions.iter().map(|f| {
+            let l = f*total;
+            let k = cumulative.partition_point(|c| *c < l).clamp(1,path.len()-1);
+            let (a,b) = (cumulative[k-1],cumulative[k]);
+            let t = if b > a { ((l-a)/(b-a)).clamp(0.,1.) } else { 0. };
+            path[k-1].0+(path[k].0-path[k-1].0)*t
+        }).collect();
+        self.along(station,curve,&taus)
+    }
+
     /// Whether any contact of the station, within the declared roll, lies in the blank.
     fn reaches(&self,station: &Station) -> Result<bool,TraceError> {
         let h = ROW_SPACING/4.;
@@ -373,14 +432,14 @@ impl Tracer<'_> {
     }
 
     /// The candidate sheet over the band with the given margins, one chart of the envelope:
-    /// each column is a station's traced contact curve, resampled evenly by arc length, so a
-    /// fold of the time chart is walked through rather than jumped. A contact is withheld at the
+    /// each column is a station's traced contact curve, resampled evenly as `placement` says, so
+    /// a fold of the time chart is walked through rather than jumped. A contact is withheld at the
     /// centre of every cell (the mid-angle station's curve at each row's mid length). The band's
     /// ends first move outward until the station there has no contact in the blank within the
     /// declared roll anywhere on its loop, since the band was sampled coarsely. `station_at`
     /// is the host's section of the cutter at a station angle.
     pub fn sheet<'s>(&self,station_at: &dyn Fn(f64) -> Result<Station<'s>,TraceError>,band: Band,margin: f64,
-        station_margin: f64) -> Result<Sheet,TraceError> {
+        station_margin: f64,placement: Rows) -> Result<Sheet,TraceError> {
         let inside = self.inside;
         let step = (band.stations[1]-band.stations[0]).max(COLUMN_SPACING/band.radius);
         let [mut lo,mut hi] = band.stations;
@@ -433,14 +492,41 @@ impl Tracer<'_> {
         let taus: Vec<f64> = (0..rows).map(|r| lo_tau+(hi_tau-lo_tau)*r as f64/(rows-1) as f64).collect();
         let columns_data: Vec<Vec<Found>> = traces.iter().zip(&stations)
             .map(|(t,station)| self.along(station,&t.curve,&taus)).collect::<Result<_,_>>()?;
-        // Withheld: each mid-angle station over the same span, at mid rows.
+        // The rows run on outside the blank only while every column is still one chart: the fit's
+        // chord-length parameters are averaged over the columns, so one column's margin leaping to
+        // another root (a turn away, where a far corner's fan carries it) moves the parameters of
+        // every row, the ones in the blank included. Rows are trimmed back to before such a leap;
+        // a row holding a contact in the blank is never trimmed, the chart contract's to judge.
+        let within = inside(&columns_data.iter().flatten().map(|f| f.position).collect::<Vec<_>>())?;
+        let [first,last] = charted(&columns_data.iter().map(|c| c.iter().map(|f| f.time).collect()).collect::<Vec<Vec<f64>>>(),
+            &within.chunks(rows).map(<[bool]>::to_vec).collect::<Vec<_>>());
+        let middles: Vec<f64> = (0..rows-1).map(|r| lo_tau+(hi_tau-lo_tau)*(r as f64+0.5)/(rows-1) as f64)
+            .skip(first).take(last-first).collect();
+        let (lo_tau,hi_tau) = (if first == 0 { lo_tau } else { taus[first] },if last+1 == rows { hi_tau } else { taus[last] });
+        // The rows as placed: kept as resampled, or each column again at even lengths in space.
+        let (columns_data,rows) = match placement {
+            Rows::Walk => (columns_data.into_iter().map(|c| c[first..=last].to_vec()).collect::<Vec<_>>(),last-first+1),
+            Rows::Length => {
+                let longest = traces.iter().zip(&stations).map(|(t,s)| self.length(s,&t.curve,lo_tau,hi_tau))
+                    .collect::<Result<Vec<f64>,_>>()?.into_iter().fold(0_f64,f64::max);
+                let rows = ((longest/ROW_SPACING).ceil() as usize).clamp(24,240);
+                let fractions: Vec<f64> = (0..rows).map(|r| r as f64/(rows-1) as f64).collect();
+                (traces.iter().zip(&stations).map(|(t,s)| self.at_lengths(s,&t.curve,lo_tau,hi_tau,&fractions))
+                    .collect::<Result<Vec<_>,_>>()?,rows)
+            }
+        };
+        // Withheld: each mid-angle station over the same span, at mid rows placed the same way.
         let (mut withheld,mut withheld_normals) = (Vec::new(),Vec::new());
-        let middles: Vec<f64> = (0..rows-1).map(|r| lo_tau+(hi_tau-lo_tau)*(r as f64+0.5)/(rows-1) as f64).collect();
+        let halves: Vec<f64> = (0..rows-1).map(|r| (r as f64+0.5)/(rows-1) as f64).collect();
         for c in 0..columns-1 {
             let station = station_at(angle_of(c as f64+0.5))?;
             let extent = Extent::Span {lo:lo_tau,hi:hi_tau,beside:Some(beside(c))};
             let Ok(t) = self.trace(&station,margin,extent) else { continue };
-            for f in self.along(&station,&t.curve,&middles)? { withheld.push(f.position); withheld_normals.push(f.normal); }
+            let found = match placement {
+                Rows::Walk => self.along(&station,&t.curve,&middles)?,
+                Rows::Length => self.at_lengths(&station,&t.curve,lo_tau,hi_tau,&halves)?,
+            };
+            for f in found { withheld.push(f.position); withheld_normals.push(f.normal); }
         }
         let (mut points,mut normals,mut times) = (Vec::new(),Vec::new(),Vec::new());
         for r in 0..rows { for column in &columns_data {

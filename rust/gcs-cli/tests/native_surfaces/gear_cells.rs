@@ -306,3 +306,149 @@ fn where_a_sheet_misses_its_contacts() {
         eprintln!("  cell row {r} column {c}: {w:.1} degrees, in blank {}, at {:?}",field.value(p) < 0.,p.map(|x| (x*1e3).round()/1e3));
     }
 }
+
+/// Phase 2 of docs/native-hypoid-plan.md: where the configured gear's sheet leaves its withheld
+/// contacts. The cutter faces each node's source point lies on (by the motion's inverse at its
+/// contact time; two at a corner's fan), a few columns row by row; the withheld contacts in or near
+/// the blank against the fitted sheet, worst by normal turn, tallied by their cell's first node's
+/// faces; each column's chord-length row parameters against the average the interpolation uses;
+/// the fit under each parametrization; and any time leap between rows.
+#[test]
+#[ignore = "diagnostic, about 30 s: the configured gear's withheld contacts by cutter face"]
+fn where_the_configured_gear_sheet_turns() {
+    let e = fixtures::gear::read_configured_with(&mut |name,text| if name == "members" {
+        fixtures::gear::publish_blank(&text,"") } else { text });
+    // `SOLVENT_INSPECT_MEMBER`: the gear by default.
+    let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("gear".into());
+    let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();
+    let sk = &e.sketch;
+    let cad = Cad::new();
+    let field = gcs_core::solid::SpatialField::read(sk,id("blank"),1e-10).unwrap();
+    let scale = gcs_core::solid::cad::millimetres(sk).unwrap();
+    let inside = |points: &[[f64;3]]| Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect());
+    let removal = id("removal");
+    // `SOLVENT_INSPECT_ROWS=length`: rows placed by length; by walk length otherwise.
+    use native::sweep_boundary::Rows;
+    let placement = if std::env::var("SOLVENT_INSPECT_ROWS").is_ok_and(|v| v == "length") { Rows::Length } else { Rows::Walk };
+    let (face,sheet,_) = native::sweep_boundary::swept_sheets(&cad.0,sk,removal,&inside,&[placement],
+        &mut |sheet| Ok((cad.0.fit_sheet(&sheet.points,sheet.rows,sheet.columns).unwrap(),sheet,0.))).unwrap();
+    let gcs_core::model::SolidDef::Swept {source,motion,..} = &sk.solids[removal].def else { panic!() };
+    let family = gcs_core::motion::Family::read(sk,*motion as usize).unwrap();
+    let cutter = cad.0.construct(&gcs_core::solid::cad::recipe(sk,*source as usize).unwrap()).unwrap();
+    let faces = cad.0.faces(cutter).unwrap();
+    // The cutter point a contact came from, and the faces it lies on.
+    let source_of = |p: [f64;3],t: f64| -> [f64;3] {
+        scaled_point(family.at(t).unwrap().inverse().point(p.map(|x| x/scale)),scale)
+    };
+    let on = |q: [f64;3]| -> Vec<(usize,f64)> {
+        let mut d: Vec<(usize,f64)> = faces.iter().enumerate().map(|(k,&f)| (k,cad.0.face_normal(f,q).map(|x| x.1).unwrap_or(f64::INFINITY))).collect();
+        d.sort_by(|a,b| a.1.total_cmp(&b.1));
+        d.into_iter().filter(|x| x.1 < 1e-4).collect()
+    };
+    for (k,&f) in faces.iter().enumerate() {
+        let p = cad.0.face_point(f,0.5,0.5,1e-7).ok().flatten();
+        eprintln!("cutter face {k}: kind {} mid {:?}",cad.0.face_kind(f).unwrap(),p.map(|p| p.position.map(|x| (x*1e3).round()/1e3)));
+    }
+    let (rows,columns) = (sheet.rows,sheet.columns);
+    eprintln!("sheet {rows}x{columns}, {} withheld",sheet.withheld.len());
+    // The middle column's rows: which face each node's source lies on, its time, whether in the blank.
+    for c in [columns/4,columns/2,3*columns/4,columns-2,columns-1] {
+        eprintln!("column {c}:");
+        for r in 0..rows {
+            let k = r*columns+c;
+            let q = source_of(sheet.points[k],sheet.times[k]);
+            let step = if r > 0 { gcs_core::space::distance(sheet.points[k],sheet.points[k-columns]) } else { 0. };
+            eprintln!("  row {r:3}: faces {:?} time {:8.4} in {} step {step:.4} p {:?}",on(q).iter().map(|x| x.0).collect::<Vec<_>>(),
+                sheet.times[k],field.value(sheet.points[k].map(|x| x/scale)) < 0.,sheet.points[k].map(|x| (x*1e3).round()/1e3));
+        }
+    }
+    let feet = cad.0.surface_feet(face,&sheet.withheld).unwrap();
+    let mut rows_out = Vec::new();
+    for (i,(p,n)) in sheet.withheld.iter().zip(&sheet.withheld_normals).enumerate() {
+        let near = field.value(p.map(|x| x/scale));
+        if near >= 0.5/scale { continue; }
+        let Some((m,gap)) = feet[i] else { rows_out.push((180.,f64::INFINITY,i,near)); continue };
+        let angle = dot(m,*n).abs().min(1.).acos().to_degrees();
+        rows_out.push((angle,gap,i,near));
+    }
+    rows_out.sort_by(|a,b| b.0.total_cmp(&a.0));
+    let mut tally: std::collections::BTreeMap<Vec<usize>,(usize,usize,f64,f64)> = Default::default();
+    // Withheld contacts are the mid stations' curves at mid rows, rows-1 of them per column.
+    let place = |i: usize| (i%(rows-1),i/(rows-1));
+    for &(angle,gap,i,_) in &rows_out {
+        // No time is kept with a withheld contact: it is attributed to its cell's first node.
+        let (r,c) = place(i);
+        let k = r*columns+c;
+        let q = source_of(sheet.points[k],sheet.times[k]);
+        let key: Vec<usize> = on(q).iter().map(|x| x.0).collect();
+        let e = tally.entry(key).or_insert((0,0,0.,0.));
+        e.0 += 1; if angle > 20. { e.1 += 1; } e.2 = e.2.max(angle); e.3 = e.3.max(gap);
+    }
+    for &(angle,gap,i,near) in rows_out.iter().take(25) {
+        let (r,c) = place(i);
+        let (k,t) = (r*columns+c,sheet.times[r*columns+c]);
+        let q = source_of(sheet.points[k],t);
+        eprintln!("withheld row {r} column {c}: {angle:.2} degrees, gap {gap:.4} mm, blank value {near:.3}, node time {t:.4}, node faces {:?}, at {:?}",
+            on(q),sheet.withheld[i].map(|x| (x*1e3).round()/1e3));
+    }
+    for (k,(n,bad,angle,gap)) in &tally { eprintln!("faces {k:?}: {n} withheld, {bad} over 20 degrees, worst {angle:.2} degrees, gap {gap:.4}"); }
+    // Each column's own chord-length row parameters against their average over the columns, which is
+    // what the interpolation uses: how far (in rows) a column's node sits from where the fit puts it.
+    let own: Vec<Vec<f64>> = (0..columns).map(|c| {
+        let mut l = vec![0.];
+        for r in 1..rows { l.push(l[r-1]+gcs_core::space::distance(sheet.points[r*columns+c],sheet.points[(r-1)*columns+c])); }
+        let total = l[rows-1]; l.iter().map(|x| x/total).collect()
+    }).collect();
+    let mean: Vec<f64> = (0..rows).map(|r| own.iter().map(|o| o[r]).sum::<f64>()/columns as f64).collect();
+    let mut worst = (0.,0,0);
+    for c in 0..columns { for r in 1..rows-1 {
+        let d = (own[c][r]-mean[r]).abs()/(mean[r+1]-mean[r-1]).abs()*2.;
+        if d > worst.0 { worst = (d,r,c); }
+    } }
+    eprintln!("chord-length parameters: a column's node is at most {:.2} rows from the average parameter (row {} column {})",worst.0,worst.1,worst.2);
+    for c in [0,columns/4,columns/2,3*columns/4,columns-1] {
+        let steps: Vec<f64> = (1..rows).map(|r| own[c][r]-own[c][r-1]).collect();
+        let (lo,hi) = steps.iter().fold((f64::INFINITY,0_f64),|(l,h),s| (l.min(*s),h.max(*s)));
+        let jump = (1..steps.len()).map(|k| steps[k].max(steps[k-1])/steps[k].min(steps[k-1])).fold(0.,f64::max);
+        eprintln!("  column {c}: row steps {:.4} to {:.4} of its length, adjacent steps differ by up to {jump:.1}x",lo,hi);
+    }
+    for parametrization in [0,1,2] {
+        let f = cad.0.fit_sheet_with(&sheet.points,rows,columns,parametrization).unwrap();
+        let feet = cad.0.surface_feet(f,&sheet.withheld).unwrap();
+        let (mut gap,mut turn) = (0_f64,0_f64);
+        for (i,(p,n)) in sheet.withheld.iter().zip(&sheet.withheld_normals).enumerate() {
+            if field.value(p.map(|x| x/scale)) >= 0.5/scale { continue; }
+            let Some((m,g)) = feet[i] else { gap = f64::INFINITY; continue };
+            gap = gap.max(g); turn = turn.max(dot(m,*n).abs().min(1.).acos().to_degrees());
+        }
+        eprintln!("parametrization {parametrization}: withheld within {gap:.4} mm, normals within {turn:.2} degrees");
+    }
+    // Where a column's time leaps between rows: in the margin, the sheet's rows now stop before one.
+    let leaps: Vec<(usize,usize,f64)> = (0..columns).flat_map(|c| (1..rows).map(move |r| (r,c)))
+        .map(|(r,c)| (r,c,(sheet.times[r*columns+c]-sheet.times[(r-1)*columns+c]).abs())).filter(|x| x.2 >= 1.).collect();
+    eprintln!("time leaps of a radian or more between rows: {leaps:?}");
+    // Where the fitted face folds: its own normal turning by more than 60 degrees between
+    // neighbouring evaluations of a grid four times finer than the sheet's.
+    let (nu,nv) = (4*(rows-1)+1,4*(columns-1)+1);
+    let at: Vec<Option<native::kernel::FacePoint>> = (0..nu*nv).map(|k| cad.0.face_point(face,(k/nv) as f64/(nu-1) as f64,
+        (k%nv) as f64/(nv-1) as f64,1e-7).unwrap()).collect();
+    let (mut folds,mut in_blank) = (Vec::new(),0_f64);
+    for i in 0..nu { for j in 0..nv {
+        let Some(a) = &at[i*nv+j] else { continue };
+        for (di,dj) in [(1,0),(0,1)] {
+            if i+di >= nu || j+dj >= nv { continue }
+            let Some(b) = &at[(i+di)*nv+j+dj] else { continue };
+            let turn = dot(a.normal,b.normal).clamp(-1.,1.).acos().to_degrees();
+            if field.value(a.position.map(|x| x/scale)) < 0. { in_blank = in_blank.max(turn); }
+            if turn > 60. { folds.push((turn,i as f64/4.,j as f64/4.,a.position,field.value(a.position.map(|x| x/scale)))); }
+        }
+    } }
+    eprintln!("{} neighbouring evaluations of the fitted face turn over 60 degrees, {} of them in or within 0.5 mm of the blank",
+        folds.len(),folds.iter().filter(|f| f.4 < 0.5/scale).count());
+    eprintln!("in the blank, neighbouring evaluations turn by at most {in_blank:.2} degrees");
+    for (turn,r,c,p,v) in folds.iter().filter(|f| f.4 < 0.5/scale).take(30) {
+        eprintln!("  near row {r:.2} column {c:.2}: {turn:.1} degrees at {:?}, blank value {v:.3}",p.map(|x| (x*1e3).round()/1e3));
+    }
+}
+
+fn scaled_point(p: [f64;3],s: f64) -> [f64;3] { p.map(|x| x*s) }

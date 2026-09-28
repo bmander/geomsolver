@@ -301,7 +301,11 @@ time from `SweepContacts::at_point_normal_over` (a typed `PointContactError`), e
 contact curve traced and the sheet resampled by the core (`solid::contact_trace`, which the host
 feeds with section samples and nothing else), the sheet indexed by the declared motion, the
 blank split by the kernel (fuzzy 1e-5 mm), every cell judged by `MaterialEvaluator::probe`, the
-material cells fused. `UnifySameDomain` widens tolerances on vertices shared with its input, so
+material cells fused. A sheet's rows stop outside the blank before any column's time leaps
+(`contact_trace::charted`; OCCT averages chord-length parameters over the columns), and fall by
+walk length, or by length in space where that fit misses or folds (`contact_trace::Rows`; the fit
+contract scans the face a quarter cell apart). The configured gear takes the second
+(docs/native-hypoid-plan.md, Phase 2). `UnifySameDomain` widens tolerances on vertices shared with its input, so
 unify a copy. `solid::agreement` then probes the mesh 0.1 mm off each side against the material
 field (a one-sided disagreement is withdrawn only where the centroid reads on the boundary), and
 nothing is written unless it agrees: every backend's output goes through `cad::output::Staged`

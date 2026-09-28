@@ -25,6 +25,7 @@ extern "C" {
     fn solvent_cad_surface_feet(cad: *mut c_void,face: c_int,points: *const f64,count: c_int,output: *mut f64) -> c_int;
     fn solvent_cad_read_step(cad: *mut c_void,path: *const c_char) -> c_int;
     fn solvent_cad_face_kind(cad: *mut c_void,face: c_int) -> c_int;
+    fn solvent_cad_surface_grid(cad: *mut c_void,face: c_int,nu: c_int,nv: c_int,output: *mut f64) -> c_int;
 }
 
 /// One cell of a partition, its volume, and its deepest interior sample.
@@ -87,10 +88,15 @@ impl Session {
         self.result(unsafe { solvent_cad_place(self.0,source,matrix.as_ptr()) })
     }
     /// Interpolate a row-major grid of points as a B-spline face with chord-length
-    /// parameters, which keep uneven row spacing from overshooting.
+    /// parameters, which keep uneven row spacing from overshooting where the columns space
+    /// their rows alike: each row's parameter is averaged over the columns.
     pub(crate) fn fit_sheet(&self,points: &[[f64;3]],rows: usize,columns: usize) -> Result<c_int,String> {
+        self.fit_sheet_with(points,rows,columns,1)
+    }
+    /// The same with OCCT's parametrization by number: 0 even, 1 chord length, 2 centripetal.
+    pub(crate) fn fit_sheet_with(&self,points: &[[f64;3]],rows: usize,columns: usize,parametrization: c_int) -> Result<c_int,String> {
         if points.len() != rows*columns { return Err("sheet grid size mismatch".into()); }
-        self.result(unsafe { solvent_cad_bspline_face_with(self.0,points.as_ptr().cast(),rows as c_int,columns as c_int,1) })
+        self.result(unsafe { solvent_cad_bspline_face_with(self.0,points.as_ptr().cast(),rows as c_int,columns as c_int,parametrization) })
     }
     /// Section a solid by the half-plane through `origin` containing `axis` on the
     /// `side` direction: (edge handle, 1-based face index in `faces(solid)`)
@@ -164,6 +170,13 @@ impl Session {
     /// The kind of a face's supporting surface, in OCCT's `GeomAbs_SurfaceType` order.
     pub(crate) fn face_kind(&self,face: c_int) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_face_kind(self.0,face) })
+    }
+    /// A face's supporting surface on an even `nu` x `nv` grid over its UV box (u first): each
+    /// point's position and oriented unit normal, without a trim test.
+    pub(crate) fn surface_grid(&self,face: c_int,nu: usize,nv: usize) -> Result<Vec<([f64;3],[f64;3])>,String> {
+        let mut data = vec![0.;6*nu*nv];
+        self.result(unsafe { solvent_cad_surface_grid(self.0,face,nu as c_int,nv as c_int,data.as_mut_ptr()) })?;
+        Ok(data.chunks(6).map(|d| ([d[0],d[1],d[2]],[d[3],d[4],d[5]])).collect())
     }
     /// For each point, the face's support normal (unoriented) at its nearest foot and the
     /// distance to it; None where no foot is found.

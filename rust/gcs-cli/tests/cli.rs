@@ -80,6 +80,26 @@ fn a_refined_mesh_the_field_refuses_leaves_the_old_output() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// The configured hypoid gear exports natively, STEP and STL, through the swept construction
+/// and its field-agreement gate. It was refused at the fit until the sheet's rows stopped before
+/// a margin column's leap into a far corner's fan (docs/native-hypoid-plan.md, Phase 2).
+#[cfg(feature="occt")]
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about three minutes: the configured gear exported natively")]
+fn the_configured_gear_exports_natively() {
+    let dir = std::env::temp_dir().join(format!("solventc-native-gear-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (stl,step) = (dir.join("gear.stl"),dir.join("gear.step"));
+    let result = run(&[&doc("spiral_bevel/gears.sv"),"--solid","pair.gear.body","--stl",stl.to_str().unwrap(),
+        "--step",step.to_str().unwrap(),"--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(0),"{stderr}");
+    assert!(stderr.contains("0 disagree"),"{stderr}");
+    gcs_core::mesh::stl_shells(&std::fs::read(&stl).unwrap()).unwrap();
+    assert!(std::fs::metadata(&step).unwrap().len() > 0);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[cfg(not(feature="occt"))]
 #[test]
 fn explicit_native_stl_never_falls_back_when_occt_is_unavailable() {

@@ -13,8 +13,9 @@ builds nothing.
 - **Pinion:** exports natively in about 98 s. Its tooth-space sheet (73×44 samples, one chart)
   fits the withheld contacts within 16.5 µm, normals within 8.2°; field agreement probes 0.1 mm off
   each side and finds no disagreement.
-- **Gear:** refused. Its sheet (77×32) fits the contacts within 60 µm, but its normals miss by 83°
-  against the 20° bar.
+- **Gear:** refused until phase 2. Its sheet (77×32) fitted the contacts within 60 µm, but its
+  normals missed by 83° against the 20° bar. It now exports natively in about 3.5 minutes (see
+  Phase 2's findings).
 - **The bar is coarse:** `FIT_DISTANCE = 0.25` mm and `FIT_TURN = 20°` in
   `gcs-cli/src/cad/native/sweep_boundary.rs`. Passing it is not a fabrication claim for either
   member, and nothing measures the exported file against the exact surface.
@@ -124,6 +125,106 @@ distance. If confirmed, the construction makes one sheet per cutter face, each t
 Boolean, instead of one per cutter. Confirm the cause before choosing the fix.
 
 **Exit:** the gear exports natively at today's bar, and the meter reads it.
+
+#### Phase 2 — findings (2026-09-28)
+
+**Not the crease.** The gear's cutter has six faces: two cones (the outer crown's inner flank
+and the neighbour's outer flank), two tori (their rounds), and two planes. Both crowns' tips lie
+in the one plane square to the crown axis, and the indexing turns that plane into itself, so the
+two tips are one face and the Boolean leaves no crease between them. Every station's walk
+through the blank is flank, round, tip, round, flank, with no corner fan. The Boolean's creases
+are all far from the blank. The instrument is `where_the_configured_gear_sheet_turns`
+(`native_surfaces/gear_cells.rs`, ignored). It maps each node and withheld contact back to its
+cutter face through the motion's inverse at its contact time. It also compares each column's
+chord-length row parameters with the average the interpolation uses, fits the grid under each of
+OCCT's three parametrizations, and scans the fitted face for folds a quarter of a cell apart.
+
+**Cause 1: one margin column leapt, and moved every row's parameter.** The 83° withheld
+misses were in the blank (0.9–4 mm deep), at rows 29–33, on the outer crown's round, which
+generates the gear's root fillet. Their gaps were small (0.004–0.06 mm). The cause lay outside
+the blank:
+- The band's last station (column 31, wholly outside the blank) has a last row (76) whose
+  contact time jumps from 0.279 rad to 3.235 rad. That contact sits on the corner where the
+  neighbour's flank meets a far plane, 46.4 mm from row 75.
+- The chart contract rightly ignores steps outside the blank. But OCCT's chord-length
+  interpolation averages each row's parameter over all the columns, so this one column moved
+  every row. A column's own parameters sat up to 61 rows from the average.
+- The same grid fitted with even parameters misses by 22 µm and 6.1°. With that one row
+  dropped, the chord-length fit misses by 17.7 µm and 6.6°.
+
+**Cause 2: a pleat at the root fillet, between the withheld contacts.** With cause 1 removed, the
+fit passes today's bar. The export then failed at the STL shell check:
+- OCCT's mesh had 2,802,382 triangles. Of these, 2,202,118 were under 1 µm², 0.31 mm² in all,
+  and 18 were degenerate after float32 rounding.
+- The meter read one cluster of 18,378 of them (near (2, 46, −27) mm). It lies within 4.9 µm of
+  the outer crown's generated flank, with normals up to 175° off: a Z-fold.
+- The fold scan puts it at rows 25–27, where the outer crown's flank meets its round. In
+  walk-length rows, the flank's contacts crowd at 0.07 mm a row and the round's stretch to
+  0.55 mm, 7.5× between adjacent rows. That onset falls on row 28 in column 8, row 27 in column 16
+  and row 25 in column 24.
+- The averaged parameters cannot follow every column, and the fitted face turns 179.8° between
+  quarter-cell neighbours in the blank (144 such pairs in or near it). The withheld contacts, one
+  a cell, straddle it.
+- The pinion's walk-length sheet turns at most 30.1° this way.
+
+**The fix** (`solid::contact_trace`, `cad/native/sweep_boundary.rs`):
+- `contact_trace::charted` keeps a sheet's rows outward from those holding a contact in the
+  blank only until a column's time leaps a radian or more between rows. A row with a contact in
+  the blank is never trimmed. For the gear this drops row 76 (77×32 becomes 76×32). The pinion's
+  rows are untouched.
+- `contact_trace::Rows` says where a sheet's rows fall: by unfolded walk length (`Walk`, as
+  before) or at even lengths in space down each column's own curve (`Length`).
+- The fit contract gains a fold check. At points a quarter of a cell apart
+  (`solvent_cad_surface_grid`, no trim test), the face's normal may not turn more than 90° in the
+  blank. The withheld refusal now also says where its worst normal is.
+- The construction tries walk-length rows first, then length rows if that fit misses or folds:
+  - The gear's walk-length sheet passes the withheld bar (17.7 µm, 6.6°) but folds (179.8°).
+    Its length sheet, 86×32, fits within 1.9 µm and 1.17°, and turns at most 4.5° in the blank.
+  - Length rows are not general. On the pinion they fail: the pinion's margin columns run far
+    in space, so its 225 length rows fall sparsely in the blank against their neighbours
+    (29.6 µm, 90°, folds of 180°).
+  - The pinion therefore keeps walk-length rows, and its native STL is byte-identical.
+
+**The gear exported.** `solventc gears.sv --solid pair.gear.body --step … --stl …` takes 215 s
+on 12 cores (1.90 × 10¹² instructions). The walk-length sheet is refused for its fold at 8.6 s.
+The length sheet is split 48 ways into 49 cells in 96 s. Classification keeps 1 cell and removes
+48. The fused solid is 22,343.554 mm³ with 99 faces. The STL has 190,192 triangles, none under
+1 µm². Field agreement probes 1000 triangles 0.1 mm off each side: none unresolved, none
+disagreeing. STL alone takes 175 s.
+
+The meter (`--measure-samples 100000`; µm, max / p99 / mean of |d|):
+
+| exact face | native STEP (47,718 face points) | native STL (87,598) |
+|---|---|---|
+| heel sphere | 0.000 / 0.000 / 0.000 | 10.48 / 7.59 / 2.77 |
+| tip cone | 0.000 / 0.000 / 0.000 | 3.02 / 2.80 / 0.61 |
+| toe sphere | 0.000 / 0.000 / 0.000 | 9.05 / 7.40 / 2.68 |
+| back cone | 0.000 / 0.000 / 0.000 | 4.24 / 4.24 / 1.14 |
+| outer crown's flank | 0.482 / 0.219 / 0.011 | 9.48 / 8.32 / 1.62 |
+| outer crown's round (fillet) | 1.181 / 0.922 / 0.177 | 10.05 / 8.89 / 1.57 |
+| outer crown's tip (root, `close1`) | 1.106 / 1.106 / 0.352 | 8.05 / 5.48 / 0.63 |
+| neighbour's flank | 0.661 / 0.228 / 0.011 | 9.23 / 5.51 / 1.04 |
+| neighbour's round (fillet) | 1.061 / 1.061 / 0.228 | 10.26 / 9.09 / 1.73 |
+| neighbour's tip (root, `close1`) | 1.106 / 1.106 / 0.199 | 8.12 / 8.06 / 1.77 |
+| **all** | **1.181 / 0.800 / 0.043** | **10.48 / 7.56 / 1.75** |
+| routes differ, max / p99 | 0.000 / 0.000 | 0.915 / 0.007 |
+
+- The STEP's generated faces are within 1.2 µm of the exact envelope, normals within 2.3°.
+  The worst is on the outer crown's round, as the pinion's is on its fillets. Length rows sample
+  the fillets as densely as the flanks. The pinion's walk-length rows give its fillets 16.9 µm.
+- The STL adds OCCT's chordal sag, at most 10.5 µm, on the heel sphere. Its centroids' normals
+  are within 8.2° (3.4° p99). The large normal figures are at vertices and edge midpoints on a
+  face's edge, where the nearest exact face is the other one.
+- The field-meshed gear STL of phase 1 read 360.7 / 111.4 / 10.9 µm.
+- Measuring took 105 s for the STEP and 100 s for the STL.
+
+**Tests.**
+- `contact_trace::a_sheet_keeps_its_rows_only_while_the_margin_is_one_chart` (core, instant)
+  checks the trimming rule on grids of times.
+- `a_sheet_of_contact_curves_is_one_chart` now builds the torus fixture's sheet both ways. It
+  checks that neither leaps in its margin and that length rows are even in space.
+- The slow tier's `the_configured_gear_exports_natively` (`gcs-cli/tests/cli.rs`) exports the gear
+  to STEP and STL through `solventc` and checks the shell and the field gate.
 
 ### 3. Precision to a stated tolerance
 
