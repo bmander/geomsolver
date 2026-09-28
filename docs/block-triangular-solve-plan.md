@@ -66,20 +66,60 @@ during the block pass is handled by the same clamp-and-retry.
 
 ## Phases
 
-1. **The seam.** Subset residuals/Jacobian on `System`, with a test that a subset's rows and
-   entries equal the full system's rows and columns bit for bit. `graph::blocks` in the core,
-   tested on small documents with known block structure (a chain of triangles, a figure with a
-   cycle) and on the hypoid layout (116 blocks, depth 15). `tests/block_structure.rs` becomes a
-   thin report over it.
-   **Gate:** the corpus and export goldens byte-identical (nothing solves differently yet).
-2. **The block pass as a rescue stage.** `BlockTr`, the pass, the polish, wired between DogLeg and
-   LM.
-   **Gates:** the corpus and export goldens byte-identical (only failing solves take the new
-   path); the full and slow suites; a new test that the hypoid layout solves from *rough* seeds
-   (every seed formula replaced by a crude hint: the apexes near the origin, the mean point on
-   its axis) at all twelve recorded designs, where the whole-system solve fails, and lands on the
-   recorded numbers (`tests/fixtures/hypoid_layout.tsv`, 1e-9); a failing document (a genuine
-   conflict) still reports its conflict set as before.
+1. **The seam.** *Done.* `graph::blocks` (Tarjan over the matched square part; blocks in a
+   solve order by Kahn's walk of the condensed graph, the lowest row first among ready blocks)
+   and `System::block_order` (memoised per compile: each `SolveBlock` its full residual rows,
+   its matched columns and its (kernel block, instance) pairs; the over- and under-determined
+   parts beside them). `System::subset` / `subset_residuals` / `subset_csr` evaluate a subset
+   of instances against a subset of columns, the whole system's `row_scale` and `col_scale`,
+   contiguous instances one kernel call on the same slices. `tests/block_order.rs`: a chain of
+   triangles is four two-row blocks at levels 1–4; a closed linkage is one four-row block; a
+   free point is the under part and a length stated twice the over part; the hypoid layout is
+   116 blocks, 15 deep, sizes as measured, every block reading only earlier blocks' columns;
+   and every block's rows and Jacobian entries equal the whole evaluation's **bit for bit** on
+   the triangles, `gear_trace.sv` (traced contacts: a trace's consts are read at the address its
+   memory is keyed by), `hypoid_pitch_cones.sv` (spatial) and the layout (scaled rows and
+   columns). `tests/block_structure.rs` is a report over `block_order`.
+   *Finding:* the coarse DM puts every row a redundant row reaches — everything upstream of it —
+   in the over part, so one repeated statement downstream leaves nothing to order. A fine DM of
+   the over part would recover the blocks; not needed yet.
+2. **The block pass as a rescue stage.** *Done.* `BlockTr` (only the block's rows and columns,
+   the rest read from `z`; dense minimum-norm step up to `DENSE_MAX` columns, the regularized
+   normal equations above, `newton::normal_step` shared with the whole system's sparse path),
+   `blocks_then_polish` and `SolveOpts::blocks: BlockMode` — `Rescue` (default: after a failed
+   DogLeg, before LM, only with `retry`, only with at least two blocks, kept only if it solves),
+   `First` (the pass and polish before the whole-system DogLeg, which with LM becomes the
+   retry; for phase 4) and `Off`.
+   *Findings.* (a) A block held to the fixtures' 1e-12 with the whole solve's relative `xtol`
+   (1e-12) stops short: an `angle(180deg)` on a 1.6 mm line needs a step of a few 1e-12 mm to
+   take its last 4e-12 radians. Accepting blocks at 1e-6 instead does not help, since the
+   whole-system polish then stalls at ~1e-11 on the same `xtol` (from good seeds it passes over
+   that point in one quadratic step). Blocks therefore run with `BLOCK_XTOL` = 1e-15 and are
+   accepted at the caller's `acceptance_tol`. (b) The design's own seeds at module 25.4 already
+   defeat the whole-system DogLeg (LM rescued them before); the block rescue now solves them
+   first, within the same 1e-9 of the recorded numbers (8.1e-11 at worst).
+   (c) *The rough-seed gate* (`hypoid_layout::the_layout_solves_from_rough_seeds_in_block_order`):
+   each of the twelve designs started from the seeds the layout computes at 0.4× and 2.5× its
+   size (mean module and offset scaled — right in shape, wrong in size). The whole-system solve
+   (DogLeg then LM) fails from 23 of the 24 starts (max residual 6.5e-7 to 2.4e-2); the 24th
+   (32×32 m0.2 from 2.5×) solves on another root of the mate section, 2.3e-2 off. The block path
+   (`Rescue` and `First`) solves all 24 and lands on the recorded pair: worst 8.1e-11 (a length
+   over the cone distance, or an angle), against the gate's 1e-9. Under the test profile a rough
+   start solves in 30–40 ms as a rescue (the failing DogLeg included) and in about 5 ms with
+   `First`, where the failing whole-system DogLeg and LM take 45–75 ms. (d) What does not work: uniform random noise on every
+   unknown (5–50 %) lands blocks on other roots (the mate section's arcs), since a seed picks
+   the root; and removing every formula seed (the language's scattered unit-size starts) leaves
+   the gear's toe-sphere diameter block — its two ends started at one place — in the collapsed
+   basin. Phase 3's crude hints must keep each block's own start non-degenerate and on its
+   branch. (e) A genuine conflict is diagnosed as before (`tests/block_solve.rs`): the rescue
+   fails, is discarded, and the pose is the whole-system solve's to the bit; the minimal
+   conflict set is the three impossible lengths. Over- and under-determined parts go through the
+   polish (`First`): a free point stays exactly where it was, a repeated length and a point on a
+   circle are satisfied. The same rough start solves to the same bits twice.
+   *Gates (both phases):* the corpus and the fast export goldens byte-identical to `main` (every
+   example's report and sheet, every export: no document in them fails its whole-system DogLeg
+   with two blocks or more and solves in blocks); the full suite with OCCT, the slow tier with
+   OCCT, and the wasm build with the web suite, all green.
 3. **Use it.** In the spiral-bevel example: the normal module becomes a constructed length again
    (no `cos`), and the seed formulas shrink to rough hints where the block solve makes them
    unnecessary. Re-run the layout's regression and the slow tier; interference and exports

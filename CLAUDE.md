@@ -2264,6 +2264,20 @@ Conventions:
   in the solve path.  Every random draw comes from the seeded `rng::Rng`.
 - The trust-region loop is `newton::dogleg` over a `TrustRegion`; a new thing to minimise
   implements the trait rather than copying the loop.
+- **Block-triangular solve** ([docs/block-triangular-solve-plan.md](docs/block-triangular-solve-plan.md)):
+  `System::block_order` (memoised per compile) is the DM-matched square part sorted into
+  strongly connected blocks (`graph::blocks`, Tarjan, ties by lowest row), over/under parts
+  beside it — the coarse DM puts everything a redundant row reaches in the over part.
+  `System::subset` evaluates some instances against some columns, bit-identical to the whole
+  system (same kernels, slices, units; a trace's consts at their memo address), and `BlockTr`
+  minimises one block with `newton::dogleg`, never compiling a `System` per block.
+  `SolveOpts::blocks` (`BlockMode`): `Rescue` (default) runs the pass plus a whole-system
+  DogLeg polish after a failed DogLeg, before LM, only with ≥2 blocks, and keeps it only if it
+  solves — a solving or conflicting document is untouched; `First` runs it before the DogLeg
+  (measurement only). Blocks are accepted at `acceptance_tol` with `BLOCK_XTOL` 1e-15: the
+  default relative xtol stops a short line's 180° angle at 4e-12, and neither the block nor the
+  polish then reaches 1e-12. The hypoid layout from seeds at 0.4×/2.5× its size fails whole
+  (23/24) and solves in blocks onto the recorded pair (`hypoid_layout.rs`).
 - Nothing in the project is auto-formatted: there is no `rustfmt.toml`, and `cargo fmt` would
   reformat every file.  Match the surrounding style by hand (100 columns).
 - No LAPACK/BLAS: the QR, complete-orthogonal, SVD and LDLᵀ routines are ours, and
