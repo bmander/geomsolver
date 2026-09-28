@@ -19,32 +19,29 @@ use pitch.trace
 
 // `gear` is the GearCone, `foot` the trace's square from O to its heading.
 component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group) {
-  // Seeds only: the offset angle as if the offset were R sin of it, |MV| from it, and
-  // the virtual bevel pinion's cone.
+  // Seeds only, rough: A and V about the offset aside of O and back from it, and in Q
+  // the bevel pinion's cone with its apex stood the offset along its pitch line.
   param ct = sqrt(design.pinion_teeth^2 + design.gear_teeth^2)
   param r = design.module * ct / 2
-  param e = asin(design.offset / r)
-  param rp = r * cos(design.spiral) / cos(design.spiral + e)
-  param ex = r * cos(e)
   in p {
-    point A hint(x: r - rp * cos(e), y: rp * sin(e))
-    point V hint(x: r - rp * cos(e), y: rp * sin(e))
+    point A hint(x: -0.75 * design.offset, y: 1.25 * design.offset)
+    point V hint(x: -0.75 * design.offset, y: 1.25 * design.offset)
     line hinge(gear.M, A)
   }
   V on hinge
   V on foot
   in q {
-    point apex hint(x: rp - ex, y: 0)
-    point mean hint(x: -ex, y: 0)
-    point virtual hint(x: rp - ex, y: 0)
-    point tip hint(x: rp - ex - rp * design.gear_teeth / ct, y: -rp * design.pinion_teeth / ct)
-    point virtual_tip hint(x: rp - ex - rp * design.gear_teeth / ct,
-                           y: -rp * design.pinion_teeth / ct)
+    point apex hint(x: design.offset, y: 0)
+    point mean hint(x: -r, y: 0)
+    point virtual hint(x: design.offset, y: 0)
+    point tip hint(x: design.offset - r * design.gear_teeth / ct,
+                   y: -r * design.pinion_teeth / ct)
+    point virtual_tip hint(x: tip.x, y: tip.y)
     line pitch_line(apex, mean)
     line axis(apex, tip)
     line virtual_line(virtual, mean)
     line virtual_axis(virtual, virtual_tip)
-    circle pitch_radius(center: mean) hint(r: rp * design.pinion_teeth / ct)
+    circle pitch_radius(center: mean) hint(r: r * design.pinion_teeth / ct)
   }
   apex on p
   mean on p

@@ -2264,6 +2264,21 @@ Conventions:
   in the solve path.  Every random draw comes from the seeded `rng::Rng`.
 - The trust-region loop is `newton::dogleg` over a `TrustRegion`; a new thing to minimise
   implements the trait rather than copying the loop.
+- **Block-triangular solve** ([docs/block-triangular-solve-plan.md](docs/block-triangular-solve-plan.md)):
+  `System::block_order` (memoised per compile) is the DM-matched square part sorted into
+  strongly connected blocks (`graph::blocks`: Tarjan, then the lowest row first), over/under
+  parts beside it — the coarse DM puts everything a redundant row reaches in the over part.
+  `System::subset` evaluates some instances against some columns through the same helpers as
+  the whole system, so its numbers are the whole system's to the bit (a trace's consts at their
+  memo address); `BlockTr` minimises one block with `newton::dogleg`, compiling no `System`.
+  `SolveOpts::blocks`: `Rescue` (default) runs the pass and a whole-system DogLeg polish after a
+  failed DogLeg, before LM, only with `retry` and ≥2 blocks, kept only if it solves — a document
+  that solves or conflicts is untouched; `First` (before the DogLeg) is for measurement, and
+  would change half the corpus's bits and four documents' roots. Blocks run with `BLOCK_XTOL`
+  1e-15 and are accepted at `acceptance_tol`. The spiral bevel relies on it: its normal module
+  is constructed and its seeds are rough (C's stays exact), and `hypoid_layout.rs` holds rough
+  starts to the recorded pair. A DogLeg stopped by its iteration limit under the 1e-6
+  acceptance is a success and never rescued; the module previews are held to convergence.
 - Nothing in the project is auto-formatted: there is no `rustfmt.toml`, and `cargo fmt` would
   reformat every file.  Match the surrounding style by hand (100 columns).
 - No LAPACK/BLAS: the QR, complete-orthogonal, SVD and LDLᵀ routines are ours, and

@@ -50,7 +50,10 @@ preview {
   n: FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
   tooth: CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
     hypoid_design) in n.view
+  // Alone, the tooth's depths are in the trace's normal module: K stands that far from MC.
+  trace.K distance(tooth.normal_module) trace.normal
   mate: CrownMate(tooth, hypoid_design) in n.view
+  trace.K distance(mate.normal_module) trace.normal
   reach: CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
     reach: hypoid_design.space_reach)
   motion crown_neighbor(about: gear.crown_axis,

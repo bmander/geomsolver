@@ -125,3 +125,7 @@ fn every_file_is_a_module() {
     assert!(missing.is_empty(), "tests/main.rs does not declare {missing:?}");
 }
 mod drawing;
+mod block_structure;
+mod block_order;
+mod block_solve;
+mod block_measure;

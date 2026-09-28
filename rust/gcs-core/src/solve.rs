@@ -11,9 +11,11 @@
 
 use crate::constraints::{CKind, Constraint};
 use crate::curve;
+use crate::linalg::Mat;
 use crate::model::{increments, orientation, EntRef, Sketch};
-use crate::newton::{self, Info, Method};
-use crate::system::System;
+use crate::newton::{self, Info, Method, TrustRegion};
+use crate::sparse::Ata;
+use crate::system::{Subset, System, DENSE_MAX};
 
 #[derive(Clone, Debug)]
 pub struct SolveResult {
@@ -78,7 +80,35 @@ pub struct SolveOpts {
     /// the per-frame drag systems, whose cost per frame is bounded on purpose (and whose pull is
     /// a compromise that rarely "converges" by the hard rows' measure anyway).
     pub retry: bool,
+    /// Whether and when the equations are solved block by block, in their block-triangular
+    /// order (`System::block_order`), before a whole-system polish.  See `BlockMode`.
+    pub blocks: BlockMode,
 }
+
+/// When a solve takes the block-triangular path: each strongly connected block of the equations
+/// minimised on its own, in order, every column it does not own held where the blocks before it
+/// put them, and then one whole-system DogLeg from there (the *polish*, which also settles the
+/// over- and under-determined parts no block holds).  Only a DogLeg solve takes it, and never a
+/// system of fewer than two blocks, where the pass would be the whole-system solve again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockMode {
+    /// After the whole-system DogLeg fails and before the LM retry (only with `retry`), kept
+    /// only if it solves.  A document the whole-system solve settles never sees it, so it
+    /// solves to the same bits it always did.
+    Rescue,
+    /// Before the whole-system DogLeg — the block pass and its polish first, with the plain
+    /// DogLeg and then LM as the retries.  For measuring; not the default.
+    First,
+    /// Never.
+    Off,
+}
+
+/// The step, relative to the block's own unknowns, below which a block's minimisation stops
+/// (`newton::Tol::xtol`).  A block is accepted only at the caller's `acceptance_tol`, and its few
+/// columns make the whole solve's 1e-12 a coarse limit: an angle on a short line at 180° needs a
+/// step of a few 1e-12 mm to take its last 4e-12 radians, which that stops short of — as the
+/// whole-system polish does from there, with a norm the whole vector's size behind its `xtol`.
+const BLOCK_XTOL: f64 = 1e-15;
 
 impl Default for SolveOpts {
     fn default() -> SolveOpts {
@@ -92,6 +122,7 @@ impl Default for SolveOpts {
             dense: None,
             rehome: true,
             retry: true,
+            blocks: BlockMode::Rescue,
         }
     }
 }
@@ -157,28 +188,100 @@ impl System {
 
     fn solve_compiled(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
         let z0 = self.z0(sk);
+        let dogleg = opts.method == Method::DogLeg;
         let mut z = z0.clone();
-        let (mut res, rel) = self.minimise(&mut z, opts.method, &opts);
+        let (mut res, mut rel) = if dogleg && opts.blocks == BlockMode::First {
+            self.blocks_then_polish(&mut z, &opts)
+        } else {
+            self.minimise(&mut z, opts.method, &opts)
+        };
+        // the pose `self`'s x was last evaluated at is `z`'s, until a retry that is not kept
+        let mut in_step = true;
+        if opts.retry && dogleg && !res.success {
+            // The block-triangular rescue: a system whose seeds are good only upstream of a block
+            // can fail whole and solve in order, each block from what the blocks before it made.
+            // Kept only if it solves, so a failing document's pose — which the diagnosis reads —
+            // is the whole-system DogLeg's or LM's, as it was.
+            // With fewer than two blocks the pass would be this DogLeg again, from the same start.
+            if opts.blocks == BlockMode::Rescue && self.block_order().blocks.len() >= 2 {
+                let mut z2 = z0.clone();
+                let (res2, rel2) = self.blocks_then_polish(&mut z2, &opts);
+                if res2.success {
+                    (z, res, rel) = (z2, res2, rel2);
+                } else {
+                    in_step = false;
+                }
+            } else if opts.blocks == BlockMode::First {
+                let mut z2 = z0.clone();
+                let (res2, rel2) = self.minimise(&mut z2, Method::DogLeg, &opts);
+                if res2.success || rel2 < rel || rel.is_nan() {
+                    (z, res, rel, in_step) = (z2, res2, rel2, true);
+                } else {
+                    in_step = false;
+                }
+            }
+        }
         // DogLeg is a local method, and a squared kernel's full Gauss–Newton step can overshoot
         // clean out of the solution's basin — a rectangle carrying its redundant perpendiculars,
         // asked for its second side length, stalls in a residual minimum that is no solution.
         // LM's damping takes the gradient path and converges; the stall itself is a stationary
         // point, so the retry is from the start the first run had, and the better pose is kept.
-        if opts.retry && opts.method == Method::DogLeg && !res.success {
+        if opts.retry && dogleg && !res.success {
             let mut z2 = z0;
             let (res2, rel2) = self.minimise(&mut z2, Method::Lm, &opts);
             if res2.success || rel2 < rel || rel.is_nan() {
-                z = z2;
-                res = res2;
+                (z, res, in_step) = (z2, res2, true);
             } else {
-                let _ = self.residuals(&z); // the core's x back in step with the pose kept
+                in_step = false;
             }
+        }
+        if !in_step {
+            let _ = self.residuals(&z); // the core's x back in step with the pose kept
         }
         if opts.writeback {
             let x = self.full_x(&z);
             sk.set_x(&x);
         }
         res
+    }
+
+    /// The block pass from `z`, then the whole-system DogLeg from where it ends — the polish,
+    /// which is the result.  A block is accepted when its rows meet `acceptance_tol`; the first
+    /// that does not ends the pass, and the polish starts from the blocks solved so far (and
+    /// whatever that one's own minimisation made of it).  With fewer than two blocks there is no
+    /// order to exploit and this is the whole-system DogLeg alone.
+    fn blocks_then_polish(&mut self, z: &mut [f64], opts: &SolveOpts) -> (SolveResult, f64) {
+        let order = self.block_order();
+        let (mut nfev, mut njev) = (0, 0);
+        if order.blocks.len() >= 2 {
+            let gtol = 1e-16 / self.extent.max(1.0);
+            let tol = newton::Tol { ftol: opts.tol, xtol: BLOCK_XTOL, gtol };
+            let max_nfev = if opts.max_nfev <= 0 { 4 * opts.max_iter } else { opts.max_nfev };
+            for b in &order.blocks {
+                let sub = self.subset(&b.instances, &b.cols);
+                let mut zb: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
+                let mut t = BlockTr::new(self, sub, z);
+                let mut r = vec![0.0; t.m()];
+                t.residuals_into(&zb, &mut r);
+                let info = newton::dogleg(&mut t, &mut zb, &mut r, tol, opts.max_iter, max_nfev);
+                nfev += info.nfev;
+                njev += info.njev;
+                for (k, &c) in b.cols.iter().enumerate() {
+                    z[c] = zb[k];
+                }
+                // `dogleg` keeps `r` the residuals at `zb`; NaN fails the comparison
+                if !r.iter().all(|v| v.abs() < opts.acceptance_tol) {
+                    break;
+                }
+            }
+        }
+        let (mut res, rel) = self.minimise(z, Method::DogLeg, opts);
+        if nfev > 0 {
+            res.method = "blocks".into();
+            res.nfev += nfev;
+            res.njev += njev;
+        }
+        (res, rel)
     }
 
     /// One minimisation from `z`, updated in place, measured on the hard rows: the result and
@@ -238,6 +341,84 @@ impl System {
     }
 }
 
+/// One block of the block-triangular order as a `TrustRegion`: only its rows, only its columns,
+/// every other column read from the whole free vector `z` it was handed and held there.  Rows
+/// and columns keep the whole system's units (`System::subset`), so the block is minimised in
+/// the same dimensionless measure the whole solve uses, and no `System` is compiled for it —
+/// a compile forgets every traced contact's remembered pose.  The Gauss–Newton step is the
+/// whole system's by size: minimum norm on a dense matrix up to `DENSE_MAX` columns, the
+/// regularized normal equations above.
+struct BlockTr<'a> {
+    sys: &'a mut System,
+    sub: Subset,
+    z: Vec<f64>,
+    dense: Option<Mat>,
+    ata: Option<Ata>,
+    rank: i32,
+}
+
+impl<'a> BlockTr<'a> {
+    fn new(sys: &'a mut System, sub: Subset, z: &[f64]) -> BlockTr<'a> {
+        let (m, n) = (sub.rows.len(), sub.cols.len());
+        let dense = (n <= DENSE_MAX).then(|| Mat::zeros(m, n));
+        BlockTr { sys, sub, z: z.to_vec(), dense, ata: None, rank: -1 }
+    }
+
+    /// The whole free vector with the block's own columns at `zb`.
+    fn put(&mut self, zb: &[f64]) {
+        for (k, &c) in self.sub.cols.iter().enumerate() {
+            self.z[c] = zb[k];
+        }
+    }
+}
+
+impl TrustRegion for BlockTr<'_> {
+    fn n(&self) -> usize {
+        self.sub.cols.len()
+    }
+    fn m(&self) -> usize {
+        self.sub.rows.len()
+    }
+    fn residuals_into(&mut self, zb: &[f64], out: &mut [f64]) {
+        self.put(zb);
+        self.sys.subset_residuals(&mut self.sub, &self.z, out);
+    }
+    fn jacobian_at(&mut self, zb: &[f64]) {
+        self.put(zb);
+        self.sys.subset_csr(&mut self.sub, &self.z);
+        if let Some(j) = &mut self.dense {
+            let n = j.cols;
+            j.data.iter_mut().for_each(|v| *v = 0.0);
+            for r in 0..j.rows {
+                for p in self.sub.indptr[r]..self.sub.indptr[r + 1] {
+                    let p = p as usize;
+                    j.data[r * n + self.sub.indices[p] as usize] = self.sub.data[p];
+                }
+            }
+        }
+    }
+    fn jt_mul(&mut self, v: &[f64], out: &mut [f64]) {
+        self.sub.jt_mul(v, out);
+    }
+    fn j_mul(&mut self, v: &[f64], out: &mut [f64]) {
+        self.sub.j_mul(v, out);
+    }
+    fn gn_step(&mut self, r: &[f64], g: &[f64], p: &mut [f64]) {
+        if let Some(j) = &self.dense {
+            self.rank = newton::min_norm_step(j, r, p);
+            return;
+        }
+        let s = &self.sub;
+        let ata = self
+            .ata
+            .get_or_insert_with(|| Ata::new(s.rows.len(), s.cols.len(), &s.indptr, &s.indices));
+        newton::normal_step(ata, &s.data, g, p);
+    }
+    fn rank(&self) -> i32 {
+        self.rank
+    }
+}
+
 /// One-shot: compile and solve, writing the result back into the sketch.
 ///
 /// A sketch with curve contacts in it solves in rounds.  A compiled system names one span of a
@@ -281,6 +462,7 @@ const NO_REHOME: SolveOpts = SolveOpts {
     dense: None,
     rehome: false,
     retry: false,
+    blocks: BlockMode::Rescue,
 };
 
 const PULL_ITER: i32 = 4; // the pull is a soft compromise; polish makes it exact

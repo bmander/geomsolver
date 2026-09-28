@@ -1,22 +1,26 @@
 // Step 2, the tooth trace, in the pitch plane. The cutter centre C stands at the
 // cutter radius from M, with MC at 90deg - spiral to MO; the trace is the circle
 // about C through M, and its heading, the tangent at M, meets the square dropped
-// from O at H. The normal module is the module seen square to the trace, which the
-// claim checks: the distance from MC of a point one module from M along the
-// generator.
+// from O at H. The normal module is the module seen square to the trace: the
+// distance from MC of K, the point one module from M along the generator. A caller
+// leaves `normal_module` unbound, and this constructs it.
 use std
 use design
 use views
 use pitch.gear
 
-component ToothTrace(p: plane, generator: line, design: group) {
-  // Seeds only.
+component ToothTrace(p: plane, generator: line, design: group, normal_module: Length) {
+  // Seeds only. C's is exact, and kept so: the normal view N is folded along MC and the
+  // crown sections are seeded in it, so a rough C leaves their seeds far from where their
+  // pitch points solve, and the whole-system solve can then stall just under the
+  // interactive acceptance, a section's narrow tip collapsing. H's is rough: behind M, on
+  // its right.
   param r = design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
   param rc = design.cutter_radius
   in p {
     point C hint(x: r - rc * sin(design.spiral), y: rc * cos(design.spiral))
-    point H hint(x: r * sin(design.spiral)^2, y: -r * cos(design.spiral) * sin(design.spiral))
-    private point K hint(x: r - design.module, y: 0)
+    point H hint(x: r / 4, y: -r / 2)
+    point K hint(x: r - design.module, y: 0)
     line normal(C, generator.p2)
     line heading(generator.p2, H)
     line foot(generator.p1, H)
@@ -29,7 +33,7 @@ component ToothTrace(p: plane, generator: line, design: group) {
   foot perpendicular heading
   K on generator
   generator.p2 distance(design.module) K
-  claim K distance(design.normal_module) normal
+  K distance(normal_module) normal
 }
 
 preview {

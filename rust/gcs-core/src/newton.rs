@@ -11,6 +11,7 @@
 //! Reference: Nocedal & Wright ch. 4 & 10; PlaneGCS's DogLeg.
 
 use crate::linalg::{absmax, dot, lu_solve, min_norm_lstsq, norm, Mat};
+use crate::sparse::Ata;
 use crate::system::{System, DENSE_MAX};
 
 const EPS_REL: f64 = 1e-12;
@@ -99,37 +100,47 @@ impl JacCtx {
     /// p <- the Gauss–Newton step solving J p ≈ −r (minimum norm on the dense path).
     fn gn_step(&mut self, sys: &mut System, r: &[f64], g: &[f64], p: &mut [f64]) {
         if self.dense {
-            let b = Mat::from_vec(self.m, 1, r.iter().map(|v| -v).collect());
-            let (x, rank) = min_norm_lstsq(&self.j, &b, 1e-12);
-            self.rank = rank as i32;
-            p.copy_from_slice(&x.data);
+            self.rank = min_norm_step(&self.j, r, p);
             return;
         }
-        let n = self.n;
-        let mut work = vec![0.0; n];
-        {
-            let values: Vec<f64> = sys.csr_values().to_vec();
-            let ata = sys.ata_mut();
-            ata.fill(&values);
-            ata.diag(&mut work);
-        }
-        let mut dmax = 0.0f64;
-        for i in 0..n {
-            if work[i] > dmax {
-                dmax = work[i];
-            }
-        }
-        let mut eps = EPS_REL * dmax;
-        if eps <= 0.0 {
-            eps = 1e-30;
-        }
-        for i in 0..n {
-            work[i] = eps;
-            p[i] = -g[i];
-        }
+        let values: Vec<f64> = sys.csr_values().to_vec();
         self.rank = -1;
-        sys.ata_mut().solve(&work, p);
+        normal_step(sys.ata_mut(), &values, g, p);
     }
+}
+
+/// p <- the minimum-norm least-squares step solving J p ≈ −r, J dense — the dense path's
+/// Gauss–Newton step; returns J's numerical rank.
+pub(crate) fn min_norm_step(j: &Mat, r: &[f64], p: &mut [f64]) -> i32 {
+    let b = Mat::from_vec(r.len(), 1, r.iter().map(|v| -v).collect());
+    let (x, rank) = min_norm_lstsq(j, &b, 1e-12);
+    p.copy_from_slice(&x.data);
+    rank as i32
+}
+
+/// p <- the step solving the regularized normal equations (JᵀJ + εI) p = −g, J's values over
+/// the structure `ata` was built on — the sparse path's Gauss–Newton step, which keeps a
+/// rank-deficient system solvable.  ε is `EPS_REL` of JᵀJ's largest diagonal entry.
+pub(crate) fn normal_step(ata: &mut Ata, values: &[f64], g: &[f64], p: &mut [f64]) {
+    let n = p.len();
+    let mut work = vec![0.0; n];
+    ata.fill(values);
+    ata.diag(&mut work);
+    let mut dmax = 0.0f64;
+    for i in 0..n {
+        if work[i] > dmax {
+            dmax = work[i];
+        }
+    }
+    let mut eps = EPS_REL * dmax;
+    if eps <= 0.0 {
+        eps = 1e-30;
+    }
+    for i in 0..n {
+        work[i] = eps;
+        p[i] = -g[i];
+    }
+    ata.solve(&work, p);
 }
 
 /// What DogLeg needs of a system, so the trust-region loop is written once.

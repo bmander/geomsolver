@@ -1,10 +1,12 @@
 //! What the curve tests share: a document built or the test fails saying why, the involute's
-//! closed form, and the finite-difference check of a compiled system's Jacobian — and what the
-//! spatial tests share: a document read or refused, and the arithmetic of lines in space.
+//! closed form, and the finite-difference check of a compiled system's Jacobian — what the
+//! spatial tests share: a document read or refused, and the arithmetic of lines in space — and
+//! what the block-solve tests share: a solve under one `BlockMode`, and a pose to the bit.
 #![allow(dead_code)]
 
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::program::{elaborate, Elaborated};
+use gcs_core::solve::{BlockMode, SolveOpts};
 use gcs_core::space::{cross, norm, sub};
 use gcs_core::syntax::parse;
 use gcs_core::system::System;
@@ -96,4 +98,16 @@ pub fn unit(a: [f64; 3]) -> [f64; 3] {
 /// `p`'s distance from the line through `a` along `d`.
 pub fn off_line(p: [f64; 3], a: [f64; 3], d: [f64; 3]) -> f64 {
     norm(cross(sub(p, a), d)) / norm(d)
+}
+
+/* -- the block-solve tests' ----------------------------------------------------------------- */
+
+/// The default solve, as solventc runs it, with the block pass under `blocks`.
+pub fn with_blocks(blocks: BlockMode) -> SolveOpts {
+    SolveOpts { blocks, ..SolveOpts::default() }
+}
+
+/// Every parameter's value, bit for bit: what "the same pose" means when a path must not move it.
+pub fn bits(sk: &Sketch) -> Vec<u64> {
+    sk.get_x().into_iter().map(f64::to_bits).collect()
 }

@@ -15,19 +15,9 @@ component ConeSpan(generator: line, axis: line) {
   private line extent(near, far)
   near midpoint generator
   generator.p2 midpoint extent
-  // Seeds: where the square meets the axis, from the seeded directions,
-  // `(g . g) / (2 g . a)` axes out.
-  point near_cross hint(
-    x: axis.p1.x + (axis.p2.x - axis.p1.x)
-      * ((generator.p2.x - generator.p1.x)^2 + (generator.p2.y - generator.p1.y)^2)
-      / (2 * ((generator.p2.x - generator.p1.x) * (axis.p2.x - axis.p1.x)
-            + (generator.p2.y - generator.p1.y) * (axis.p2.y - axis.p1.y))),
-    y: axis.p1.y + (axis.p2.y - axis.p1.y)
-      * ((generator.p2.x - generator.p1.x)^2 + (generator.p2.y - generator.p1.y)^2)
-      / (2 * ((generator.p2.x - generator.p1.x) * (axis.p2.x - axis.p1.x)
-            + (generator.p2.y - generator.p1.y) * (axis.p2.y - axis.p1.y))))
-  point far_cross hint(x: 3 * near_cross.x - 2 * axis.p1.x,
-                       y: 3 * near_cross.y - 2 * axis.p1.y)
+  // Seeds, rough: on the axis at its far end.
+  point near_cross hint(at: axis.p2)
+  point far_cross hint(at: axis.p2)
   line near_rib(near, near_cross)
   line far_rib(far, far_cross)
   near_rib perpendicular generator
@@ -40,28 +30,16 @@ component ConeSpan(generator: line, axis: line) {
 // from the direction toward the axis: 0deg for the root and the back, 180deg for the tip.
 component ConeBoundary(generator: line, axis: line, offset: Length, lean: Angle) {
   private span: ConeSpan(generator, axis)
-  // Seeds: a step along each rib, toward the axis or away as `lean` says, and the feet of
-  // the ends on the axis.
+  // Seeds, rough: a step along each rib, toward the axis or away as `lean` says, and
+  // where each rib meets the axis for the feet of the ends.
   private point p hint(
     x: span.near.x + (1 - lean / 90deg) * (span.near_cross.x - span.near.x) / 20,
     y: span.near.y + (1 - lean / 90deg) * (span.near_cross.y - span.near.y) / 20)
   private point q hint(
     x: span.far.x + (1 - lean / 90deg) * (span.far_cross.x - span.far.x) / 20,
     y: span.far.y + (1 - lean / 90deg) * (span.far_cross.y - span.far.y) / 20)
-  private point a hint(
-    x: axis.p1.x + (axis.p2.x - axis.p1.x)
-      * ((p.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (p.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
-      / ((axis.p2.x - axis.p1.x)^2 + (axis.p2.y - axis.p1.y)^2),
-    y: axis.p1.y + (axis.p2.y - axis.p1.y)
-      * ((p.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (p.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
-      / ((axis.p2.x - axis.p1.x)^2 + (axis.p2.y - axis.p1.y)^2))
-  private point b hint(
-    x: axis.p1.x + (axis.p2.x - axis.p1.x)
-      * ((q.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (q.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
-      / ((axis.p2.x - axis.p1.x)^2 + (axis.p2.y - axis.p1.y)^2),
-    y: axis.p1.y + (axis.p2.y - axis.p1.y)
-      * ((q.x - axis.p1.x) * (axis.p2.x - axis.p1.x) + (q.y - axis.p1.y) * (axis.p2.y - axis.p1.y))
-      / ((axis.p2.x - axis.p1.x)^2 + (axis.p2.y - axis.p1.y)^2))
+  private point a hint(at: span.near_cross)
+  private point b hint(at: span.far_cross)
   private line near_lift(span.near, p)
   private line far_lift(span.far, q)
   span.near_rib angle(lean) near_lift
