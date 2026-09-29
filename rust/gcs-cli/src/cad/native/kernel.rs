@@ -25,7 +25,6 @@ extern "C" {
     fn solvent_cad_face_point(cad: *mut c_void,face: c_int,u: f64,v: f64,tolerance: f64,output: *mut f64) -> c_int;
     fn solvent_cad_face_seams(cad: *mut c_void,face: c_int,axes: *mut c_int) -> c_int;
     fn solvent_cad_curve_point(cad: *mut c_void,edge: c_int,t: f64,output: *mut f64) -> c_int;
-    fn solvent_cad_surface_feet(cad: *mut c_void,face: c_int,points: *const f64,count: c_int,output: *mut f64) -> c_int;
     fn solvent_cad_surface_feet_near(cad: *mut c_void,face: c_int,points: *const f64,guesses: *const f64,count: c_int,
         trust: f64,output: *mut f64) -> c_int;
     fn solvent_cad_read_step(cad: *mut c_void,path: *const c_char) -> c_int;
@@ -220,16 +219,10 @@ impl Session {
         self.result(unsafe { solvent_cad_surface_grid(self.0,face,nu as c_int,nv as c_int,data.as_mut_ptr()) })?;
         Ok(data.chunks(6).map(|d| ([d[0],d[1],d[2]],[d[3],d[4],d[5]])).collect())
     }
-    /// For each point, the face's support normal (unoriented) at its nearest foot and the
-    /// distance to it; None where no foot is found.
-    pub(crate) fn surface_feet(&self,face: c_int,points: &[[f64;3]]) -> Result<Vec<Option<([f64;3],f64)>>,String> {
-        let mut data = vec![0.;4*points.len()];
-        self.result(unsafe { solvent_cad_surface_feet(self.0,face,points.as_ptr().cast(),points.len() as c_int,data.as_mut_ptr()) })?;
-        Ok(feet(&data))
-    }
-    /// The same, each point's foot searched from a guess (`u`, `v` as fractions of the face's UV
-    /// box, NaN for none), falling back to the global search where the local one does not improve
-    /// on the guess or lands farther than `trust` (mm).
+    /// For each point, the face's support normal (unoriented) at its nearest foot and the distance
+    /// to it, None where no foot is found: each foot searched from a guess (`u`, `v` as fractions of
+    /// the face's UV box, NaN for none), falling back to the global search where the local one does
+    /// not improve on the guess or lands farther than `trust` (mm).
     pub(crate) fn surface_feet_near(&self,face: c_int,points: &[[f64;3]],guesses: &[[f64;2]],trust: f64)
         -> Result<Vec<Option<([f64;3],f64)>>,String> {
         if guesses.len() != points.len() { return Err("one guess a point".into()); }

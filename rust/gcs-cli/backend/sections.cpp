@@ -3,7 +3,6 @@
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
-#include <BRepCheck_Analyzer.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <TopExp.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
@@ -17,6 +16,7 @@
 #include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -26,14 +26,22 @@ extern "C" {
 // to the axis). Each row is [edge handle, face index]: the face the edge lies on
 // as its 1-based position in the solid's face enumeration (the order
 // solvent_cad_faces uses), which is stable across sections. Chaining the edges
-// into loops is the caller's. Count first with rows=null/capacity=0.
+// into loops is the caller's. Count first with rows=null/capacity=0: the section is cut then, and
+// the call that retrieves it with the same arguments is handed what that one cut.
 int solvent_cad_section(Cad* cad,int solid,const double* origin,const double* axis,const double* side,
     int* rows,int capacity) noexcept {
     return guarded(cad,[&] {
         if (!origin || !axis || !side) throw std::runtime_error("section needs an origin, axis and side");
+        const std::vector<double> key{double(solid),origin[0],origin[1],origin[2],axis[0],axis[1],axis[2],side[0],side[1],side[2]};
+        if (rows && key == cad->section_key) {
+            const int count = static_cast<int>(cad->section_rows.size()/2);
+            if (capacity < count) throw std::runtime_error("section buffer is too small");
+            std::copy(cad->section_rows.begin(),cad->section_rows.end(),rows);
+            cad->section_key.clear();
+            return count;
+        }
+        cad->validated(solid);
         const auto& shape = cad->at(solid);
-        if (shape.IsNull() || !BRepCheck_Analyzer(shape).IsValid())
-            throw std::runtime_error("section needs a valid solid");
         const gp_Pnt o(origin[0],origin[1],origin[2]);
         const gp_Dir a(axis[0],axis[1],axis[2]);
         gp_Vec s(side[0],side[1],side[2]);
@@ -99,9 +107,11 @@ int solvent_cad_section(Cad* cad,int solid,const double* origin,const double* ax
             }
         }
         const int count = static_cast<int>(kept.size());
-        if (!rows && capacity == 0) return count;
+        std::vector<int> made(2*kept.size());
+        for (int i=0;i<count;++i) { made[2*i] = cad->put(kept[i].first); made[2*i+1] = kept[i].second; }
+        if (!rows && capacity == 0) { cad->section_key = key; cad->section_rows = made; return count; }
         if (!rows || capacity < count) throw std::runtime_error("section buffer is too small");
-        for (int i=0;i<count;++i) { rows[2*i] = cad->put(kept[i].first); rows[2*i+1] = kept[i].second; }
+        std::copy(made.begin(),made.end(),rows);
         return count;
     });
 }

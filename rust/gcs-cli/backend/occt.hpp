@@ -23,6 +23,10 @@ struct Cad {
     // for the handles those solids are given when they are listed.
     TopTools_DataMapOfShapeReal measured;
     std::string error;
+    // The last section counted (`solvent_cad_section`): its arguments and its rows, handed to the
+    // call that retrieves it.
+    std::vector<double> section_key;
+    std::vector<int> section_rows;
     int put(const TopoDS_Shape& shape) {
         shapes.push_back(shape);
         valid.push_back(0);
