@@ -58,12 +58,6 @@
 #include <vector>
 #include <sstream>
 
-// Adaptive quadrature: the default fixed rule is inaccurate on spline faces.
-static double volume(const TopoDS_Shape& shape) {
-    GProp_GProps props;
-    BRepGProp::VolumeProperties(shape,props,1e-9,false,false);
-    return props.Mass();
-}
 
 // A kernel operation's time budget: the algorithm polls UserBreak and stops once it is past.
 // A split that grinds on near-tangent sheets is refused by name, not waited on. The budget is
@@ -99,8 +93,6 @@ static int united(Cad* cad,TopoDS_Shape result,const char* what) {
         if (debug) fprintf(stderr,"sector: %s: %s %.2f s\n",what,step,processor_seconds()-clock);
         clock = processor_seconds();
     };
-    if (!BRepCheck_Analyzer(result).IsValid()) throw std::runtime_error(std::string(what)+" is invalid before unification");
-    lap("checked");
     const double before = BRep_Tool::MaxTolerance(result,TopAbs_VERTEX);
     ShapeUpgrade_UnifySameDomain unify(BRepBuilderAPI_Copy(result).Shape(),true,true,false);
     unify.Build();
@@ -111,15 +103,17 @@ static int united(Cad* cad,TopoDS_Shape result,const char* what) {
         for (TopExp_Explorer it(result,TopAbs_FACE); it.More(); it.Next()) ++a;
         if (!unified.IsNull()) for (TopExp_Explorer it(unified,TopAbs_FACE); it.More(); it.Next()) ++b;
         fprintf(stderr,"sector: %s: %d faces, %d unified; vertex tolerance %.3g, %.3g unified; unified valid %d\n",what,a,b,before,
-            unified.IsNull() ? -1. : BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX),unified.IsNull() ? -1 : int(BRepCheck_Analyzer(unified).IsValid()));
+            unified.IsNull() ? -1. : BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX),unified.IsNull() ? -1 : int(valid(unified)));
     }
-    if (!unified.IsNull() && BRepCheck_Analyzer(unified).IsValid()
-        && BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX) <= before*1.001+1e-9) result = unified;
-    lap("checked the unified");
+    // The union checked once: the unified shape where it is kept, the union itself where not.
+    const bool kept = !unified.IsNull() && BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX) <= before*1.001+1e-9 && valid(unified);
+    if (kept) result = unified;
+    else if (!valid(result)) throw std::runtime_error(std::string(what)+" is invalid before unification");
+    lap("checked");
     int solids = 0;
     for (TopExp_Explorer it(result,TopAbs_SOLID); it.More(); it.Next()) { ++solids; result = it.Current(); }
     if (solids != 1) throw std::runtime_error(std::string(what)+" is not one connected solid");
-    const double v = validate(result);
+    const double v = validate(result,nullptr,true);
     lap("validated and measured");
     const int id = cad->put(result);
     cad->valid[static_cast<size_t>(id)] = 1;
@@ -145,13 +139,13 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
         if (!tools || count < 1 || count > 4096)
             throw std::runtime_error("solid split requires 1..4096 tools");
         auto& stock = cad->at(solid);
-        if (stock.IsNull() || !BRepCheck_Analyzer(stock).IsValid())
+        if (stock.IsNull() || !valid(stock))
             throw std::runtime_error("invalid stock solid");
         TopTools_ListOfShape objects,cutters;
         objects.Append(stock);
         for (int i=0;i<count;++i) {
             const auto& tool = cad->at(tools[i]);
-            if (tool.IsNull() || !BRepCheck_Analyzer(tool).IsValid())
+            if (tool.IsNull() || !valid(tool))
                 throw std::runtime_error("invalid split tool");
             cutters.Append(tool);
         }

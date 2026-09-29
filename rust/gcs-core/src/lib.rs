@@ -45,6 +45,7 @@ pub mod model;
 pub mod modules;
 pub mod newton;
 pub mod overview;
+pub mod par;
 pub mod plane;
 pub mod program;
 pub mod report;

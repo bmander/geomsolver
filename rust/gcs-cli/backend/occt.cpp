@@ -14,6 +14,11 @@
 #include <BRepCheck_ListOfStatus.hxx>
 #include <sstream>
 #include <BRepGProp.hxx>
+#include <BRepGProp_Domain.hxx>
+#include <BRepGProp_Face.hxx>
+#include <BRepGProp_Vinert.hxx>
+#include <OSD_Parallel.hxx>
+#include <TopoDS_Iterator.hxx>
 #include <BRepLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
@@ -36,6 +41,8 @@
 #include <TopoDS.hxx>
 #include <gp_Circ.hxx>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -44,12 +51,50 @@
 static gp_Pnt point(const double* p) { return gp_Pnt(p[0],p[1],p[2]); }
 static gp_Dir direction(const double* p) { return gp_Dir(p[0],p[1],p[2]); }
 static gp_Vec vector(const double* p) { return gp_Vec(p[0],p[1],p[2]); }
-// Adaptive quadrature: the fixed rule is off by parts per thousand on spline faces.
-static double volume(const TopoDS_Shape& shape) {
-    GProp_GProps props;
-    BRepGProp::VolumeProperties(shape,props,1e-9,false,false);
-    return props.Mass();
+// Adaptive quadrature: the fixed rule is off by parts per thousand on spline faces. It is
+// `BRepGProp::VolumeProperties(shape, props, 1e-9)` — each FORWARD or REVERSED face's flux about
+// the mean of the shape's vertices, summed in the explorer's order — with the faces integrated on
+// every core (each face's integration is independent of the others'), so the sum is the same number.
+double volume(const TopoDS_Shape& shape) {
+    // the kernel's system location: the mean of the shape's vertices as its explorer lists them
+    gp_XYZ sum(0,0,0);
+    int count = 0;
+    for (TopExp_Explorer it(shape,TopAbs_VERTEX); it.More(); it.Next(),++count) sum += BRep_Tool::Pnt(TopoDS::Vertex(it.Current())).XYZ();
+    if (count > 0) sum /= count;
+    const gp_Pnt origin(sum);
+    std::vector<TopoDS_Face> faces;
+    for (TopExp_Explorer it(shape,TopAbs_FACE); it.More(); it.Next()) {
+        const TopAbs_Orientation o = it.Current().Orientation();
+        if (o == TopAbs_FORWARD || o == TopAbs_REVERSED) faces.push_back(TopoDS::Face(it.Current()));
+    }
+    std::vector<double> mass(faces.size(),0.);
+    OSD_Parallel::For(0,static_cast<int>(faces.size()),[&](int i) {
+        BRepGProp_Face face;
+        face.Load(faces[static_cast<size_t>(i)]);
+        BRepGProp_Vinert flux;
+        flux.SetLocation(origin);
+        if (TopoDS_Iterator(faces[static_cast<size_t>(i)]).More()) {
+            BRepGProp_Domain domain(faces[static_cast<size_t>(i)]);
+            flux.Perform(face,domain,1e-9);
+        } else flux.Perform(face,1e-9);
+        mass[static_cast<size_t>(i)] = flux.Mass();
+    });
+    double total = 0;
+    for (const double m: mass) total += m;
+    // `SOLVENT_VOLUME_CHECK`: the kernel's own serial sum as well, which must be the same number.
+    if (std::getenv("SOLVENT_VOLUME_CHECK")) {
+        GProp_GProps props;
+        BRepGProp::VolumeProperties(shape,props,1e-9,false,false);
+        if (props.Mass() != total) {
+            fprintf(stderr,"volume: %.17g against the kernel's %.17g\n",total,props.Mass());
+            throw std::runtime_error("the parallel volume differs from the kernel's");
+        }
+    }
+    return total;
 }
+// The kernel's checker. (Its parallel mode is not used: in OCCT 7.9 it calls a valid pinion
+// invalid, and not every time.)
+bool valid(const TopoDS_Shape& shape) { return BRepCheck_Analyzer(shape).IsValid(); }
 // Name the first invalid sub-shape and its statuses, so a failed construction
 // says which face, edge or vertex the kernel objects to.
 std::string invalidity(const TopoDS_Shape& shape) {
@@ -77,9 +122,9 @@ std::string invalidity(const TopoDS_Shape& shape) {
     }
     return message.str();
 }
-double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record) {
+double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record,bool checked) {
     if (shape.IsNull()) throw std::runtime_error("native solid is null");
-    if (!BRepCheck_Analyzer(shape).IsValid())
+    if (!checked && !valid(shape))
         throw std::runtime_error("native solid is invalid:"+invalidity(shape));
     if (shape.ShapeType() == TopAbs_SOLID) {
         auto solid = TopoDS::Solid(shape);
@@ -240,14 +285,14 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
         if (reader.ReadFile(path) != IFSelect_RetDone || !reader.TransferRoots())
             throw std::runtime_error("STEP reimport failed");
         auto imported = reader.OneShape();
-        validate(imported);
+        const double after = validate(imported);
         // A reader may move the boundary within the tolerance the shape itself
         // carries, so the admissible volume change is that slack over the whole
         // surface; an analytic solid at kernel precision keeps the strict ratio.
         GProp_GProps surface;
         BRepGProp::SurfaceProperties(shape,surface);
         const double slack = BRep_Tool::MaxTolerance(shape,TopAbs_VERTEX)*surface.Mass();
-        const double before = cad->volume_of(id),after = volume(imported);
+        const double before = cad->volume_of(id);
         if (std::abs(before-after) > std::max(1e-9+1e-7*std::abs(before),slack))
             throw std::runtime_error("STEP round trip changed solid volume from "
                 +std::to_string(before)+" to "+std::to_string(after));
