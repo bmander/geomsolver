@@ -293,7 +293,147 @@ the corpus's parallel load and is identical run alone); the one native swept gol
 `swept_torus`'s default STL, changes bytes by design (its cutter is now sectioned once and turned),
 its volume (0.447407 mm³) and faces (3) the same.
 
-## Verification
+## Phase 5 — findings (2026-09-29)
+
+Profiled with `sample` and the stage trace; each change kept only where faces, volume, the meter, the
+field agreement and the pair check held. In the order of the pipeline:
+
+- **The admission, by structure.** Where every operand of the blank is a full revolution about one
+  line or a ball centred on a point of it (the end spheres, revolved about the generator, are balls),
+  read off the solid graph (`admission::structurally_alike`), and every later placement of every sweep
+  is the first turned about that line (both checked on the solved axes to 10⁻¹² of the blank's size;
+  the configured members are off by 1.9 × 10⁻¹³ and 1.7 × 10⁻¹³ against 4 × 10⁻¹⁰ and 6 × 10⁻¹⁰), the
+  blank is the same under every turn and each later placement's checks are the first's: the sampled
+  comparison (1.7 s on every core for the gear) is not run, and the evidence says which
+  (`Equivalence::Revolved`, else `Sampled` as before; the CLI line says "the rest turns of it about
+  the axis the blank is a revolution about"). The checks of the first placement read each tool face's
+  rows on every core, what samples say of their neighbours asked in order afterwards: the configured
+  members' evidence is the same to the digit (samples, contacts, spacing, least area factor), the
+  admission 2.9 s to 1.2–1.5 s (gear). Tests: the indexed ring admitted by its revolution; the same
+  ring bounded by a prism (no revolution of the graph) falls back to sampling and finds the same
+  evidence; the bevel pinion and both configured members take the structural path.
+- **The blank, by its meridian section.** Where every operand is a full revolution about one line
+  (or a ball centred on it), each operand's section is taken in one half-plane of the line, the
+  recipe's Booleans are taken of the sections and the region is turned once
+  (`Session::construct_meridian`, `solvent_cad_revolve_region`): 30–40 ms where the Booleans in
+  space took 1–3.7 s beside the sheets; any other recipe is built by its Booleans, with the reason
+  (`SOLVENT_BLANK=booleans` always). The sector's blank is that region turned again from the
+  half-plane its parameters start on. That blank meshes the pinion's two sides at the gross bar with
+  a seam point 11 µm from its partner's turn (the Boolean blank's sections: 5.6 µm), past the 10 µm
+  the pairing allowed: points move along the seam, on the same two surfaces, so the gross bar pairs
+  within 20 µm; and where a seam does not pair the sector is meshed again a tenth finer (never needed
+  by the members). Sectioning the meridian blank instead (`solvent_cad_revolved`) paired the gross
+  seam but left the 10 µm pinion's sides with 116 and 117 seam points: the sides' discretization
+  follows the blank's edges, not only its shape. Test: the ring's blank turned from its section is
+  its Booleans' (volume to 10⁻⁹, faces), and a prism-bounded ring is refused the section, by name.
+- **The sheets.** A layout's columns are sectioned, traced, resampled and measured on every core,
+  and a sheet's stations and contacts read side by side before the ordered pass assembles it (the
+  sheet, and the STEP, the same to the byte); the removal's first sheet 2.3 to 1.1 s. At a tolerance
+  the two parametrizations are fitted side by side. The gear's cutters (a crown bounded by its turned
+  neighbour) are still a 3D Boolean each, 1.0–1.4 s at the start of each sheet's thread, which now
+  bounds this phase; Booleans run their intersections in parallel with oriented boxes, which halved
+  the clearance (0.3–0.8 to 0.1–0.17 s) and left the cutters' Commons as they were. A prism,
+  revolution or placement is stored with the check and volume it was just given, not checked again.
+- **The split and the cells.** The partition's cells are checked and measured with the work shared:
+  every face checked once on every core, each cell's shell closed and oriented, every face's flux
+  integrated once and each cell's volume summed from its faces' fluxes (0.99 to 0.42 s, the gear).
+  A single kept cell is its own union with its partition's volume (0.47 s to 0.01 s). A cell whose
+  faces' candidates miss ten times running is a sliver, sampled along the rays between its faces at
+  once (interior samples 1.7 to 1.0–1.1 s). The split itself (1.8–2 s) is OCCT's.
+- **The union.** A copy's faces' flux is measured while the pattern's union is unified and checked.
+  (Deriving it as the sector's volume less its sides' flux moved the pinion's gross-bar volume by
+  1.1 × 10⁻⁵ — the sides' trims leave 6 × 10⁻⁴ mm gaps — and was dropped.)
+- **The STEP.** Written into memory and read back from the same bytes; the model's entities
+  formatted on every core, a writer of its own a run of them, the runs joined in order: the kernel's
+  text to the byte (`SOLVENT_STEP_TEXT_CHECK` formats it both ways and requires it; a CLI test does),
+  2.4–2.8 s to 0.4–0.6 s for the gear. Reading back without the kernel's repairs is not a check of the
+  file: the reading's sphere rings (and, at the pinion's gross bars, its sheet faces) come back
+  `UnorientableShape` until `ShapeFix` orients their wires, and repairing only those faces did not
+  mend the pinion's; the repairing read-back stays.
+- **The field agreement, a sector at a time.** Once the field reads alike under the turn at sampled
+  points, each probe is turned by whole pitches into one sector and read by the cuts not proved
+  positive over the box of a 96-cell grid it is in (`agreement::Sector`, `MaterialField::without_cuts`:
+  what is left out may only have added removal, so the field left is the same wherever an operand
+  left out is positive and nowhere higher — no verdict changes; a probe outside the boxes reads the
+  whole field where it stands). The gear's probes read 7–8 of its 98 cuts, the pinion's 11–12 of
+  50, the proofs 60–100 ms; the agreement 1.8–2.5 s to 1.1 s (gear). Test: the indexed ring read a
+  sector at a time decides every point's side and band as the whole field does (1,728 points, one
+  cut of six kept in any box).
+- **The STL.** Its shell check (1.2–1.5 s for the 10 µm pinion's 952k triangles) runs beside the
+  field agreement's reading of the same bytes, and numbers vertices and edges by sorting packed keys.
+
+**Against phase 4** (volumes in mm³; faces 147 and 291, one valid closed shell each):
+
+| | volume | phase 4 | relative |
+|---|---|---|---|
+| pinion | 14,642.071530 | 14,642.072074 | 3.7 × 10⁻⁸ |
+| pinion, 10 µm | 14,643.425980 | 14,643.425981 | 6.8 × 10⁻¹¹ |
+| gear | 22,261.889867 | 22,261.889875 | 3.6 × 10⁻¹⁰ |
+| gear, 10 µm | 22,261.892118 | 22,261.892118 | 0 |
+
+The field agreement finds no disagreement at either bar; the STLs pass the shell checks. The meter at
+10 µm (µm, max / p99 / mean): pinion STEP 1.37 / 1.09 / 0.02, STL 3.19 / 1.68 / 0.28; gear STEP
+0.69 / 0.22 / 0.01, STL 6.16 / 3.36 / 0.81 (phase 4: 5.00 / 3.35 / 0.81) — every exact face within the
+tolerance. The pair check: no overlap; flanks 24.6–25.7 µm facing the pinion's turn and 21.2–23.4 µm
+against it; normal backlash 41.6 and 47.8 µm with one pair closed; 90.00000° and 25.00000 mm — each
+within 0.1 µm of phase 4's.
+
+**Timings.** A run's load average counts its own threads (up to 20–40 runnable), so each export was
+run alone once the machine's one-minute load had fallen under 5 (the rest of this machine's work
+holds it at 3–5), phase 4's binary the same way just before (its recorded 11.7 / 13.7 / 19.5 /
+19.0 s were at load 4–9); two back-to-back runs of each, loaded (15–28 at their starts), beside:
+
+| seconds (quiet) | pinion | pinion, 10 µm | gear | gear, 10 µm |
+|---|---|---|---|---|
+| elaborate, solve | 0.41 | 0.56 | 0.43 | 0.45 |
+| admission ∥ blank ∥ sheets (phase 4: 3.97, 3.41, 5.88, 6.09) | 1.71 | 2.19 | 2.60 | 2.91 |
+| the side, the blank again, split the sector (2.86, 3.03, 2.92, 2.73) | 2.09 | 2.14 | 2.73 | 2.70 |
+| classify (1.15, 1.09, 1.69, 1.37) | 0.90 | 1.05 | 1.30 | 1.12 |
+| unite (1.10, 1.09, 2.06, 2.05) | 0.67 | 0.73 | 1.24 | 1.26 |
+| STEP ∥ (STL, field agreement) (3.36, 6.11, 6.84, 6.98) | 2.82 | 5.79 | 5.33 | 6.15 |
+| **total** | **8.60** | **12.46** | **13.64** | **14.59** |
+| phase 4, the same way | 12.88 | 15.15 | 19.89 | 19.67 |
+| loaded, best of two | 9.45 | 12.93 | 15.28 | 15.28 |
+| baseline (phase 1) | 349.2 | 492.4 | 662.6 | 801.1 |
+| **speedup** (quiet; loaded) | **41×; 37×** | **40×; 38×** | **49×; 43×** | **55×; 52×** |
+| instructions retired (× 10¹²; phase 4 0.28, 0.31, 0.40, 0.41) | 0.19 | 0.24 | 0.28 | 0.31 |
+| user time, s (all threads; phase 4 62, 66, 90, 91) | 41 | 54 | 61 | 70 |
+
+**Short of 100×: the floor.** The totals are 2.5, 2.5, 2.1 and 1.8 times the targets (3.5, 4.9, 6.6,
+8.0 s). What is left is OCCT's, serial or nearly, and each piece was measured:
+- **The STEP round trip** (the gear's files stage, 5.3–6.2 s): the transfer to STEP entities 0.4–0.6 s,
+  the text 0.4–0.6 s (from 2.4–2.8), parsing it back 1.2–1.5 s, transferring it back with the
+  reader's repairs 1.6–1.8 s (`ShapeFix` 1.0–1.1 s of it, and needed: without it the reading's sphere
+  rings and, at the pinion's gross bars, its sheet faces are `UnorientableShape`), then its check,
+  orientation and patterned volume 0.9 s. Only a writer and reader of our own (the text is formatted
+  in parallel already; parsing and transferring back are serial in OCCT) or a lighter verification of
+  the file would move it.
+- **The 10 µm pinion's mesh** (its files stage, 5.6–5.8 s): meshed at 5 µm it sags 30 µm (OCCT's
+  deflection is a control; the fillet's crowded parameters), so it is meshed again at 1.25 µm (2.2 s of
+  `BRepMesh` for one sector, 0.5 s of sag), 952k triangles written and checked. Meshing only the faces
+  that sag, or speculatively at both deflections side by side, would take about 1.5 s off.
+- **The cutters' Booleans**: the gear's two cutters (a crown bounded by its turned neighbour) are a
+  3D Common each, 1.0–1.4 s at the start of each sheet's thread, and bound the first stage (the
+  admission, 1.2–1.5 s, now runs beside them). Sectioning the two revolutions apart and intersecting
+  the sections in the plane would remove it.
+- **The sector's split** (1.8–2.0 s of `BRepAlgoAPI_Splitter`, a third of it
+  `GeomLib_CheckCurveOnSurface`'s particle swarm on the B-spline sheets and sides, which no option
+  of the kernel turns off), the cells' interior samples (0.7–1.0 s of OCCT's classifier and distances)
+  and the union's sewing, unification and check (1.2 s).
+
+**Tests and gates.** Core `tests/admission.rs`: the indexed ring admitted by its revolution, the same
+ring bounded by a prism by sampling with the same evidence; the configured members and the bevel
+pinion by their revolution; the indexed ring's field read a sector at a time decides as the whole
+field. CLI `tests/native_sector.rs`: the ring's blank from its meridian section is its Booleans'; a
+STEP formatted side by side is the kernel's text. The whole suite with the native kernel passes with
+no warnings (1,375 tests); the slow tier passes (1,388); the web tests pass (255, on a wasm build).
+Every corpus report and sheet is byte-identical to phase 2's (`crown/space.sv` timed out under the
+corpus's parallel load and is identical run alone), and every non-native golden is, but for the
+words of the STL stage's last line (it now says how long its shells took) and the admission's
+(which evidence stood for the later placements); the native swept golden, `swept_torus`'s default
+STL, changes bytes (its blank is its meridian section turned), its volume (0.447407 mm³), faces (3)
+and triangles (580) the same.
+
 ## Verification
 
 Every phase: the full and slow suites, the web suite, the corpus and non-native goldens
