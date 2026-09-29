@@ -8,7 +8,9 @@
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <Message_ProgressIndicator.hxx>
 #include <Message_ProgressScope.hxx>
+#include <chrono>
 #include <ctime>
+#include <thread>
 #include <cstdio>
 #include <cstdlib>
 #include <BRepBndLib.hxx>
@@ -96,10 +98,11 @@ static void check_algorithm(BRepAlgoAPI_BuilderAlgo& algorithm,const char* what)
 // tolerances on vertices it shares with its input, which would silently widen the union kept.
 static int united(Cad* cad,TopoDS_Shape result,const char* what,double known = std::numeric_limits<double>::quiet_NaN()) {
     const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
-    double clock = processor_seconds();
+    auto clock = std::chrono::steady_clock::now();
     const auto lap = [&](const char* step) {
-        if (debug) fprintf(stderr,"sector: %s: %s %.2f s\n",what,step,processor_seconds()-clock);
-        clock = processor_seconds();
+        const auto now = std::chrono::steady_clock::now();
+        if (debug) fprintf(stderr,"sector: %s: %s %.2f s\n",what,step,std::chrono::duration<double>(now-clock).count());
+        clock = now;
     };
     const double before = BRep_Tool::MaxTolerance(result,TopAbs_VERTEX);
     ShapeUpgrade_UnifySameDomain unify(BRepBuilderAPI_Copy(result).Shape(),true,true,false);
@@ -114,9 +117,15 @@ static int united(Cad* cad,TopoDS_Shape result,const char* what,double known = s
             unified.IsNull() ? -1. : BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX),unified.IsNull() ? -1 : int(valid(unified)));
     }
     // The union checked once: the unified shape where it is kept, the union itself where not.
-    const bool kept = !unified.IsNull() && BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX) <= before*1.001+1e-9 && valid(unified);
+    const auto checked = [](const TopoDS_Shape& shape) {
+        TopoDS_Shape one;
+        int solids = 0;
+        for (TopExp_Explorer it(shape,TopAbs_SOLID); it.More(); it.Next()) { ++solids; one = it.Current(); }
+        return solids == 1 ? valid_solid(one) : valid(shape);
+    };
+    const bool kept = !unified.IsNull() && BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX) <= before*1.001+1e-9 && checked(unified);
     if (kept) result = unified;
-    else if (!valid(result)) throw std::runtime_error(std::string(what)+" is invalid before unification");
+    else if (!checked(result)) throw std::runtime_error(std::string(what)+" is invalid before unification");
     lap("checked");
     int solids = 0;
     for (TopExp_Explorer it(result,TopAbs_SOLID); it.More(); it.Next()) { ++solids; result = it.Current(); }
@@ -159,12 +168,14 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
         // Oriented boxes cull face pairs the axis-aligned ones cannot (the tilted sheets):
         // a quarter of the split, and the same cells.
         // Its intersections on every core (`SOLVENT_PARALLEL_SPLIT=off`: one).
-        const char* parallel = std::getenv("SOLVENT_PARALLEL_SPLIT");
-        split.SetNonDestructive(true); split.SetRunParallel(!parallel || std::string(parallel) != "off"); split.SetUseOBB(Standard_True);
+        const char* serial = std::getenv("SOLVENT_PARALLEL_SPLIT");
+        const bool parallel = !serial || std::string(serial) != "off";
+        split.SetNonDestructive(true); split.SetRunParallel(parallel); split.SetUseOBB(Standard_True);
         if (fuzzy > 0) split.SetFuzzyValue(fuzzy);
         // The kernel polls the break only between its phases, so a stop can come well after the
-        // budget; the message says both.
-        const double budget = 15.+5.*count;
+        // budget; the message says both. Processor time is every thread's, so a split run on every
+        // core is given each core's budget.
+        const double budget = (15.+5.*count)*(parallel ? std::max(1u,std::thread::hardware_concurrency()) : 1u);
         const double started = processor_seconds();
         Handle(Deadline) deadline = new Deadline(budget);
         split.Build(deadline->Start());
@@ -573,10 +584,11 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
         const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
         const auto& source = cad->at(solid);
         const gp_Ax1 line(gp_Pnt(origin[0],origin[1],origin[2]),gp_Dir(axis[0],axis[1],axis[2]));
-        double clock = processor_seconds();
+        auto clock = std::chrono::steady_clock::now();
         const auto lap = [&](const char* step) {
-            if (debug) fprintf(stderr,"sector: pattern: %s %.2f s\n",step,processor_seconds()-clock);
-            clock = processor_seconds();
+            const auto now = std::chrono::steady_clock::now();
+            if (debug) fprintf(stderr,"sector: pattern: %s %.2f s\n",step,std::chrono::duration<double>(now-clock).count());
+            clock = now;
         };
         TopTools_IndexedMapOfShape faces;
         TopExp::MapShapes(source,TopAbs_FACE,faces);

@@ -19,6 +19,11 @@
 #include <BRepGProp_Vinert.hxx>
 #include <OSD_Parallel.hxx>
 #include <TopoDS_Iterator.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
+#include <NCollection_DataMap.hxx>
+#include <algorithm>
 #include <BRepLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
@@ -120,6 +125,36 @@ double area(const TopoDS_Shape& shape) {
 // The kernel's checker. (Its parallel mode is not used: in OCCT 7.9 it calls a valid pinion
 // invalid, and not every time.)
 bool valid(const TopoDS_Shape& shape) { return BRepCheck_Analyzer(shape).IsValid(); }
+
+// The kernel's checker over one closed solid of one shell, a face at a time on every core: each
+// face checked in its own analyzer (the face, its wires, and its edges and vertices on it), and
+// the shell closed and oriented — every edge but a degenerate one used once forward and once
+// reversed by the faces as the solid orients them. What the whole analyzer adds on one shell is
+// its closure and orientation, which this asks directly; `SOLVENT_FULL_CHECK` runs the whole one.
+bool valid_solid(const TopoDS_Shape& shape) {
+    if (std::getenv("SOLVENT_FULL_CHECK")) return valid(shape);
+    int shells = 0;
+    for (TopExp_Explorer it(shape,TopAbs_SHELL); it.More(); it.Next()) ++shells;
+    if (shells != 1 || shape.ShapeType() != TopAbs_SOLID) return valid(shape);
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(shape,TopAbs_FACE,faces);
+    std::vector<char> ok(static_cast<size_t>(faces.Extent()),0);
+    OSD_Parallel::For(0,faces.Extent(),[&](int i) { ok[static_cast<size_t>(i)] = BRepCheck_Analyzer(faces(i+1)).IsValid(); });
+    if (std::find(ok.begin(),ok.end(),0) != ok.end()) return false;
+    NCollection_DataMap<TopoDS_Shape,std::pair<int,int>,TopTools_ShapeMapHasher> uses;
+    for (TopExp_Explorer f(shape,TopAbs_FACE); f.More(); f.Next()) for (TopExp_Explorer e(f.Current(),TopAbs_EDGE); e.More(); e.Next()) {
+        const TopoDS_Edge edge = TopoDS::Edge(e.Current());
+        if (BRep_Tool::Degenerated(edge)) continue;
+        if (edge.Orientation() != TopAbs_FORWARD && edge.Orientation() != TopAbs_REVERSED) return false;
+        const TopoDS_Shape key = edge.Oriented(TopAbs_FORWARD);
+        if (!uses.IsBound(key)) uses.Bind(key,{0,0});
+        auto& count = uses.ChangeFind(key);
+        (edge.Orientation() == TopAbs_FORWARD ? count.first : count.second) += 1;
+    }
+    for (NCollection_DataMap<TopoDS_Shape,std::pair<int,int>,TopTools_ShapeMapHasher>::Iterator it(uses); it.More(); it.Next())
+        if (it.Value().first != 1 || it.Value().second != 1) return false;
+    return true;
+}
 // Name the first invalid sub-shape and its statuses, so a failed construction
 // says which face, edge or vertex the kernel objects to.
 std::string invalidity(const TopoDS_Shape& shape) {
@@ -467,7 +502,7 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
         const double before = cad->volume_of(id);
         // The reading checked and oriented as any solid is, and measured (a pattern's as one,
         // `patterned_volume`; `SOLVENT_STEP_CHECK` measures every face of it).
-        if (!valid(imported)) throw std::runtime_error("native solid is invalid:"+invalidity(imported));
+        if (!valid_solid(imported)) throw std::runtime_error("native solid is invalid:"+invalidity(imported));
         lap("checked");
         TopoDS_Shape oriented = imported;
         if (oriented.ShapeType() == TopAbs_SOLID) {

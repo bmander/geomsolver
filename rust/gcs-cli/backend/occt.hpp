@@ -88,6 +88,8 @@ double flux(const std::vector<TopoDS_Face>& faces,const gp_Pnt& origin);
 double area(const TopoDS_Shape& shape);
 // The kernel's checker.
 bool valid(const TopoDS_Shape& shape);
+// The same over one closed solid, its faces on every core (occt.cpp).
+bool valid_solid(const TopoDS_Shape& shape);
 
 // Raise `worst` to the chordal sag a meshed face has, and `at` to where (occt.cpp).
 void face_sag(const TopoDS_Face& face,double& worst,gp_Pnt& at);
