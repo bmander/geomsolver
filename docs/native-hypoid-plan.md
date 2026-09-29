@@ -19,9 +19,16 @@ builds nothing.
 - **Phase 3:** `solventc --tolerance 0.01mm` exports both members within 10 µm of the exact
   surface, STEP and STL, by the meter (see Phase 3's findings); without it the gross bars below
   still stand and every export is as it was.
-- **Phase 4:** the configured pair carries 0.05 mm of backlash and a 0.2 mm tip relief; both
-  members are admitted with both sweeps and export at 10 µm, STEP and STL, in 5.6 and 10.2
-  minutes (see Phase 4's findings).
+- **Phase 4:** the configured pair carries 0.05 mm of backlash, a 0.2 mm tip relief and a 0.2 mm
+  end relief (the tips' toe and heel edges); both members are admitted with both sweeps and export
+  at 10 µm, STEP and STL (see Phase 4's findings).
+- **Phase 5:** the fabrication files are `build/exports/hypoid-{pinion,gear}.{step,stl}`, every
+  exact face within 10 µm by the meter (STEP 2.75 and 1.44 µm, STL 3.94 and 6.16 µm at worst).
+- **Phase 6:** checked from the STLs alone, the shafts stand at 89.9997° and 25.0001 mm; through a
+  gear pitch the members never touch (21.3 µm apart at least), each flank pair is 21–26 µm apart
+  (half the backlash by design), and with one flank pair closed the other is 42–48 µm apart: the
+  stated 50 µm within the files' tolerance.
+- **Status: done.** Phases 1–6 are complete; what stays open is under each phase's "Not claimed".
 - **The bar is coarse:** `FIT_DISTANCE = 0.25` mm and `FIT_TURN = 20°` in
   `gcs-cli/src/cad/native/sweep_boundary.rs`. Passing it is not a fabrication claim for either
   member, and nothing measures the exported file against the exact surface.
@@ -540,9 +547,49 @@ limit (`--json`, 66 s alone where layout and pair took 27 s; elaborating and sol
 0.4 s either way, and the time is the diagnosis of the relief's added sections), and
 `crown/space.sv` passed it only while run beside them (25 s alone, as before).
 
-**Not claimed.** The relief chamfers the tooth tips' flank edges; the toe and heel ends of each
-tooth are not relieved. The chamfers are fitted to the tolerance, not exact analytic faces. The
+**Not claimed.** The tip relief chamfers the tooth tips' flank edges (the toe and heel ends
+followed; see below). The chamfers are fitted to the tolerance, not exact analytic faces. The
 backlash is the nominal design's: the clearance measured between the exported flanks is phase 6.
+
+#### Phase 4 — the toe and heel ends (2026-09-28)
+
+**The construction.** `configuration.sv` states an **end relief** of 0.2 mm (zero builds none of
+it: `repeat design.ends_relieved`). `blank/ends.sv`'s `EndChamfer` chamfers each member's two
+corners where the tip cone meets the toe and the heel sphere: the chamfer's end on the tip cone
+stands the relief farther along the cone distance toward the tooth (on the sphere through a face
+span narrower by the relief at each end), and its end on the sphere the relief down from the tip
+cone. Revolved about the member's axis the chamfer is a **cone band**, an exact blank face like
+the cones and spheres; `EndCut` takes from the body the ring whose section is the chamfer's
+triangle with a point beyond the corner, its two other sides outside the blank. Every tooth's
+tip land, flanks and tip relief end on the band at the toe and at the heel, so each tooth's tip
+is relieved at both its ends: the tip land's end edges, where the tip cone met the spheres.
+
+Every point of the section is placed without a root a seed must choose. The first spelling
+(`corner distance(size) along_tip`, and the same on the sphere) had two roots 0.4 mm apart, and
+the layout's rough seeds put the pinion's heel chamfer on the wrong side. Now each point meets a
+line and a circle about the apex whose other crossing lies across the apex, and the drop toward
+the generator is turned 0° from the corner's square to it. `gear_crowns::the_end_relief_chamfers_each_tip_corner`
+proves all four chamfers to 6.5e-14 mm, and that each ring takes a point of the blank exactly
+when it lies beyond the chamfer (220 cut, 2,484 kept over grids in the axial plane).
+
+**Not relieved: the flank ends down the tooth.** Where a flank meets a toe or heel sphere, from
+root to tip, the edge is not chamfered. A face that follows those edges would have to stand at a
+fixed angle to a generated flank along a curve on a sphere, which is different for the two
+flanks and turns with the spiral: no surface of revolution about the member's axis does it (the
+blank's faces are all such surfaces), and it is not the envelope of a crown face under the
+generating motion either, so it is neither a blank face nor a sweep of the class admission reads.
+It would need a third kind of cut (a per-tooth tool along each edge, placed by indexing), with a
+model of the edge the meter and the field could both read; that is not built.
+
+**Admission.** Unchanged: both configured members are admitted with the end relief in, the
+same margins as without it (J 0.694 / 1.449 pinion, 0.338 / 1.008 gear; `admission::the_admission_grid`
+now takes the end relief as a sixth number). The rings are static cuts of the blank and the
+blank is still a revolution, so one placement's checks serve every index.
+
+**The pair at 10 µm**, with backlash, tip relief and end relief: the files of phase 5 below. The
+pinion is 14,643.428 mm³ with 147 faces (phase 4: 14,645.084, 99), the gear 22,261.893 mm³ with
+291 (22,264.489, 195): each end chamfer is one face per tooth, and the rings took 1.66 and 2.60
+mm³. The chamfer bands read as exact in the STEP files and within 1.4 µm in the STLs.
 
 ### 5. Files
 
@@ -551,12 +598,165 @@ backlash is the nominal design's: the clearance measured between the exported fl
   shell checks and the meter.
 - Nothing is written unless both pass (the existing staged output).
 
+#### Phase 5 — findings (2026-09-28)
+
+**The commands** (README, "Making the pair"), one member at a time or both side by side:
+
+```sh
+make solventc OCCT=1
+mkdir -p build/exports
+build/solventc rust/examples/spiral_bevel/gears.sv --solid pair.pinion.body --tolerance \
+  --step build/exports/hypoid-pinion.step --stl build/exports/hypoid-pinion.stl --no-diagnose
+build/solventc rust/examples/spiral_bevel/gears.sv --solid pair.gear.body --tolerance \
+  --step build/exports/hypoid-gear.step --stl build/exports/hypoid-gear.stl --no-diagnose
+build/solventc rust/examples/spiral_bevel/gears.sv --solid pair.pinion.body --tolerance \
+  --measure build/exports/hypoid-pinion.step --measure-samples 400000 --no-diagnose
+```
+
+and the same `--measure` for each other file (the STLs at 100,000 samples). The output is staged:
+both files are written only after the shell checks (closure, the mesh contract, the sag) and the
+field agreement pass.
+
+**The files** (backlash 0.05 mm, tip relief 0.2 mm, end relief 0.2 mm; the two exports run side by
+side on 12 cores):
+
+| | STEP | STL | solid | export | split | classification | field agreement |
+|---|---|---|---|---|---|---|---|
+| pinion | 26.7 MB (26,715,687 B), 147 faces | 45.8 MB (45,751,484 B), 915,028 triangles | 14,643.428 mm³ | 479 s, 2.89 × 10¹² instructions | 48 sheets, 97 cells, 203 s | 1 kept, 96 removed, 97 s | 1,000 triangles at 0.02 mm, 0 disagree |
+| gear | 48.7 MB (48,742,966 B), 291 faces | 17.3 MB (17,298,584 B), 345,970 triangles | 22,261.893 mm³ | 708 s, 4.72 × 10¹² instructions | 96 sheets, 193 cells, 361 s | 1 kept, 192 removed, 220 s | 1,000 triangles at 0.02 mm, 0 disagree |
+
+Every sheet fitted at once (no refinement): the crowns' within 3.13 µm (pinion, 73×44) and the
+gear's length-row sheet after its walk-length sheet folded, as before; the reliefs' within 1.20 and
+1.68 µm. The pinion's STL was meshed twice (5 µm deflection sagged 31.3 µm across the tip cone's
+trimmed edge; at 1.25 µm, 3.94 µm), the gear's once (5.00 µm at 5 µm deflection). The STEP files
+are smaller than phase 4's (30.2 and 74.2 MB) although they carry more faces.
+
+**The meter** (µm, max / p99 / mean of |d|; normals max / p99 over face points and STL centroids;
+STEP at `--measure-samples 400000`, a 52×52 grid on each pinion face and 37×37 on each gear face;
+STL at 100,000 by area):
+
+| pinion | STEP (260,217 face points) | STL (99,995 samples) |
+|---|---|---|
+| heel sphere | 0 / 0 / 0 | 1.08 / 0.95 / 0.38 |
+| tip cone | 0 / 0 / 0 | 3.94 / 2.61 / 0.51 |
+| toe sphere | 0 / 0 / 0 | 1.05 / 0.95 / 0.38 |
+| back cone | 0 / 0 / 0 | 1.12 / 1.12 / 0.40 |
+| toe end band | 0 / 0 / 0 | 0.159 / 0.159 / 0.036 |
+| heel end band | 0 / 0 / 0 | 0.579 / 0.564 / 0.121 |
+| outer flank | 0.142 / 0.125 / 0.008 | 0.937 / 0.649 / 0.126 |
+| outer fillet | 2.29 / 2.24 / 0.47 | 2.95 / 2.55 / 0.56 |
+| root (crown tip) | 0.762 / 0.762 / 0.373 | 1.05 / 0.96 / 0.28 |
+| inner fillet | 2.75 / 2.69 / 0.86 | 3.23 / 2.62 / 0.63 |
+| inner flank | 0.152 / 0.096 / 0.004 | 1.23 / 1.06 / 0.20 |
+| tip relief, outer side | 0.002 / 0.002 / 0.000 | 0.412 / 0.306 / 0.051 |
+| tip relief, inner side | 0 / 0 / 0 | 1.04 / 0.96 / 0.15 |
+| **all** | **2.75 / 0.72 / 0.02**, normals 3.00° / 0.61° | **3.94 / 1.58 / 0.33**, centroid normals 4.85° / 1.51° |
+
+| gear | STEP (203,947 face points) | STL (94,374 samples) |
+|---|---|---|
+| heel sphere | 0 / 0 / 0 | 4.93 / 3.74 / 1.41 |
+| tip cone | 0 / 0 / 0 | 1.80 / 1.61 / 0.56 |
+| toe sphere | 0 / 0 / 0 | 4.75 / 3.73 / 1.40 |
+| back cone | 0 / 0 / 0 | 2.14 / 2.13 / 0.66 |
+| toe end band | 0 / 0 / 0 | 0.324 / 0.324 / 0.045 |
+| heel end band | 0 / 0 / 0 | 1.34 / 1.34 / 0.12 |
+| outer crown's flank | 0.172 / 0.107 / 0.005 | 4.79 / 3.60 / 0.68 |
+| outer crown's round (fillet) | 1.24 / 1.20 / 0.19 | 6.16 / 4.12 / 0.82 |
+| outer crown's tip (root) | 1.44 / 1.44 / 0.64 | 1.93 / 1.20 / 0.35 |
+| neighbour's flank | 0.992 / 0.704 / 0.021 | 4.38 / 3.95 / 0.65 |
+| neighbour's round (fillet) | 1.18 / 1.18 / 0.30 | 5.22 / 4.47 / 1.00 |
+| neighbour's tip (root) | 0.577 / 0.577 / 0.260 | 4.47 / 3.90 / 0.74 |
+| tip relief, outer side | 0.004 / 0.003 / 0.001 | 2.03 / 2.03 / 0.45 |
+| tip relief, inner side | 0 / 0 / 0 | 1.01 / 1.01 / 0.31 |
+| **all** | **1.44 / 0.57 / 0.02**, normals 1.40° / 0.57° | **6.16 / 3.74 / 0.90**, centroid normals 4.31° / 2.52° |
+
+- Every exact face of both members is within 10 µm in all four files, and the meter's verdict
+  says so (exit 0). The STEP files are within the fit's 5 µm share: the blank's faces and the end
+  bands exact, the generated faces within 2.75 µm (pinion) and 1.44 µm (gear). The routes agree to
+  0.9 µm on the STLs and to the digit on the STEPs.
+- The gear's STL is the coarser: meshed once at 5 µm, its mean is 0.90 µm against the pinion's 0.33,
+  and its worst sample (6.16 µm, the outer crown's fillet) is an edge midpoint, the sheet's 1.2 µm
+  plus the chord's sag. Its triangles' own sag check read 5.00 µm, at the bar.
+- Measuring took 2,078 s and 2,028 s for the STEPs at 400,000 samples and 479 s and 439 s for the
+  STLs, the four run side by side.
+
+**Not claimed.** As in phase 3: the withheld contacts, the sag check and the meter all sample.
+
 ### 6. The pair, checked from the files
 
 - Shaft angle and offset measured from the exported solids (90°, 25 mm).
 - An interference sweep through one pitch with both native meshes: no overlap, with the
   clearance between flanks equal to the stated backlash within the tolerance.
 - Optionally, the contact pattern at the mean point.
+
+#### Phase 6 — findings (2026-09-28)
+
+**The tool.** `gcs-cli/tests/pair_check.rs`, ignored:
+`cargo test --manifest-path rust/Cargo.toml -p gcs-cli --test pair_check -- --ignored --nocapture`
+(35 s on 12 cores; `SOLVENT_PAIR_DIR` reads the files from elsewhere). It reads the two STLs and
+nothing else of the design but its tooth ratio (48:24), and the model's axes to compare against:
+
+- **Shafts.** Each member's axis is the principal axis of its solid's inertia (the divergence
+  theorem over its triangles) whose moment stands apart from the other two, through its centroid;
+  24- and 48-fold symmetry make the other two equal (within 7.0e-7 and 3.7e-6, relative).
+- **Search.** At a pose the least distance between the meshes is found exactly under bounding
+  volumes: triangle against triangle (edge against edge, corner against face, and zero where an
+  edge pierces a face), the gear's boxes held still and the pinion's spheres carried by the pose.
+  A positive distance is no overlap, the two shells being closed and disjoint.
+- **Flanks.** The pinion's triangles are split by which way their normal faces its turn, keeping
+  those facing it or against it by at least a quarter (the blank's cones, spheres and end bands
+  face neither way, and are no flank). Each set's least distance to the gear is the clearance on
+  that flank pair, and its closest points give its lever: how fast the pinion's own turn closes it.
+- **Sweep.** The gear turns through one pitch (7.5°) in 30 steps, the pinion twice as far; the
+  sense is the one in which a half-degree turn leaves the flanks apart (21.6 µm; the other closes
+  them at once).
+- **Backlash.** The pinion turned alone, the gear held, by the least clearance over lever across
+  the pitch, brings one flank pair into touch; the other pair's least clearance then is the normal
+  backlash as `configuration.sv` states it, along the normal with the other flanks touching.
+- **Contact pattern.** With one pair touching, the pinion's flank triangles within a film of
+  marking compound (6.35 µm, a quarter thousandth of an inch) of the gear at some pose of the pitch.
+
+A fast self-test (`the_pair_search_reads_a_known_clearance`) reads a known 0.05 mm corner-face gap,
+an edge-edge gap, a pierce as zero, the film's edge, and a box's axis and volume.
+
+**The shafts** from the files: **89.99970°** and **25.00011 mm** (configured 90° and 25 mm). Each
+axis is within 2e-4° of the model's, each centroid within 1.3e-4 mm of it. The STLs' volumes are
+14,643.633 and 22,264.354 mm³ (the solids 14,643.428 and 22,261.893).
+
+**Through one gear pitch, as laid out** (µm; flanks facing the pinion's turn / facing against it):
+
+| gear | 0° | 0.75° | 1.5° | 2.25° | 3° | 3.75° | 4.5° | 5.25° | 6° | 6.75° | 7.5° |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| facing | 25.2 | 24.8 | 25.5 | 25.0 | 25.9 | 24.8 | 25.0 | 25.3 | 24.7 | 25.1 | 24.8 |
+| against | 21.8 | 21.3 | 22.5 | 22.3 | 23.0 | 22.5 | 23.0 | 22.9 | 22.7 | 21.9 | 21.8 |
+| sum | 47.0 | 46.1 | 48.0 | 47.3 | 49.0 | 47.4 | 48.0 | 48.2 | 47.4 | 47.0 | 46.6 |
+
+- **No overlap:** every triangle of each member stays at least **21.3 µm** from the other at
+  every pose, and the least is on the flanks.
+- **Flank clearance:** 24.7–25.9 µm on the flanks facing the pinion's turn and 21.3–23.4 µm on the
+  others, against the design's 25 µm on each (a quarter of the backlash inside each conjugate
+  flank, two flanks a pair). The files are within 3.9 µm (pinion) and 6.2 µm (gear) of the exact
+  surface, so a clearance between them is good to about 10 µm; both sides are within it, and the
+  pair's sum, 46–49 µm, is the backlash within 4 µm. The nearest points lie mid-face (79–81 mm from
+  the pinion's apex; the mean point is at 82.25) at a radius of about 32.7 mm.
+- **The normal backlash.** Closing the flanks facing the pinion's turn (the pinion turned 0.0639°
+  alone) leaves the others **41.7–44.2 µm** apart over the pitch; closing those (−0.0647°) leaves the
+  first **47.8–50.0 µm** apart. Both are the stated 50 µm within the tolerance. They differ because a
+  turn closes the two sides at different rates (levers 20.7 and 18.3 mm at the nearest points; the
+  pressure shift stands the two flanks at different pressure angles): closing one side by its
+  clearance opens the other by that clearance times the ratio of the levers, 24.7 × 18.3 / 20.7 +
+  21.3 ≈ 43.1 and 21.3 × 20.7 / 18.3 + 24.7 ≈ 48.8, as read. The touching pair reads 0–2.3 µm over the pitch: touch
+  within the files' tolerance, at 0 an edge at the heel just piercing.
+- **Contact pattern.** Under the film, the closed flanks facing the turn bear over 22.1 mm² and the
+  others over 31.0 mm², each from **76.9 to 87.6 mm** from the pinion's apex: the whole face width
+  (the toe and heel spheres are at 76.88 and 87.62 mm), at radii 31.8–36.0 and 30.3–37.5 mm. The pair
+  is generated from complementary crowns with no lengthwise ease-off, so its bearing is a line from
+  toe to heel and the tightest point sits at a tooth end (87.5 mm, the heel) once one side is closed.
+
+**Not claimed.** The sweep samples the pitch at 31 poses and the pattern at the same poses. The
+clearances are between the files' triangles, good to about twice the export tolerance. A full-face
+bearing is what this design is (no crowning); a shop's pair would localize it, and neither the
+tool nor the model says how. The flank ends down the tooth depth are not relieved (Phase 4).
 
 ## Risks
 

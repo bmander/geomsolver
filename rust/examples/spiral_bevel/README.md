@@ -146,19 +146,42 @@ its member's limits, and the seams, corners, edges and faces its face loop is bu
 independent generating-system checks (`gcs-core/tests/envelope/paired.rs`) read these; the
 exported bodies do not.
 
-## Export
+## Making the pair
+
+The fabrication files, each member's STEP (the master: exact cones, spheres and end bands, fitted
+generated faces) and its STL, both held to 10 µm of the exact surface:
 
 ```sh
 make solventc OCCT=1
-build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose
 mkdir -p build/exports
 for m in pinion gear; do
-  build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose --solid pair.$m.body \
-    --step build/exports/hypoid-$m.step --stl build/exports/hypoid-$m.stl --tolerance 0.01mm
-  build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose --solid pair.$m.body \
-    --measure build/exports/hypoid-$m.step --measure build/exports/hypoid-$m.stl --tolerance 0.01mm
+  build/solventc rust/examples/spiral_bevel/gears.sv --solid pair.$m.body --tolerance \
+    --step build/exports/hypoid-$m.step --stl build/exports/hypoid-$m.stl --no-diagnose
 done
+# every exact face within 10 µm, or exit 1
+for f in pinion.step pinion.stl gear.step gear.stl; do
+  build/solventc rust/examples/spiral_bevel/gears.sv --solid pair.${f%%.*}.body --tolerance \
+    --measure build/exports/hypoid-$f --no-diagnose
+done
+# the pair from the two STLs: shafts, overlap, flank clearance, backlash, contact pattern
+cargo test --manifest-path rust/Cargo.toml -p gcs-cli --test pair_check -- --ignored --nocapture
 ```
+
+Nothing is written unless the shell checks and the field agreement pass. The exports take about
+8 and 12 minutes (pinion, gear) on 12 cores; measuring a STEP takes longer than making it
+(`--measure-samples` sets how finely). As configured (backlash 0.05 mm, tip and end relief 0.2 mm;
+docs/native-hypoid-plan.md, phases 5 and 6):
+
+| | STEP | STL | worst exact face, STEP / STL |
+|---|---|---|---|
+| pinion | 26.7 MB, 147 faces | 45.8 MB, 915,028 triangles | 2.75 / 3.94 µm (a fillet / the tip cone) |
+| gear | 48.7 MB, 291 faces | 17.3 MB, 345,970 triangles | 1.44 / 6.16 µm (a root / a fillet) |
+
+The blank's cones, spheres and end bands are exact in the STEP files. Read from the STLs alone,
+the shafts stand at 89.9997° and 25.0001 mm; through one gear pitch the members stay at least
+21 µm apart, each flank pair 21–26 µm (half the backlash by design); with one flank pair turned
+into touch the other opens to 42–48 µm, the stated backlash within the files' tolerance, and the
+bearing runs the whole face width, toe to heel.
 
 The native path builds a member with swept cuts only for the generating-sweep class
 (`docs/generating-sweeps.md`): admission asks each swept cut its rows and refuses with the row
@@ -176,6 +199,6 @@ build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose \
 
 The explicit CLI selector can inspect private construction geometry; it does not grant access
 from other source components. The source is a common-crown construction with a stated backlash
-and tip relief, not a production acceptance result; see
+and tip and end relief, not a production acceptance result; see
 [the roadmap](../../../docs/spiral-bevel-roadmap.md) for the generating-system evidence and the
 outstanding engagement checks.

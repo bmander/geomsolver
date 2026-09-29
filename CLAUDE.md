@@ -323,10 +323,15 @@ gear rewrites and small sweep tools live in), and `tests/native_surfaces/gear_ce
 the recorded tooth-space volumes. `tests/generating_harness.rs` (ignored, minutes) locates each
 refusal by stage over fixtures, the gear controls and a 48-design sweep.
 The configured pair carries **backlash** (each crown's flanks a quarter of it off the lines tooth
-and mate share; zero keeps the old incidences through `repeat design.lashed`) and **tip relief**
-(`crown/relief.sv`: a second, semi-topping sweep per member, built only under `relieved`).
-`fixtures::gear::design` pins both to zero, as every recorded number was taken;
-`fixtures::gear::fabricated` sets them.
+and mate share; zero keeps the old incidences through `repeat design.lashed`), **tip relief**
+(`crown/relief.sv`: a second, semi-topping sweep per member, built only under `relieved`) and
+**end relief** (`blank/ends.sv`: an exact cone band chamfering the tip cone's corner with each end
+sphere, a static ring cut under `ends_relieved`; the flanks' own sphere edges are not relieved).
+`fixtures::gear::design` pins all three to zero, as every recorded number was taken;
+`fixtures::gear::fabricated` sets them. The fabrication files are `build/exports/hypoid-{pinion,gear}.{step,stl}`
+(README, "Making the pair"); `gcs-cli/tests/pair_check.rs` (ignored tool, ~35 s) checks the pair
+from the STLs alone: shafts from inertia, one gear pitch searched exactly for overlap and each flank
+pair's clearance, the backlash with the other flanks touching, and the contact pattern.
 **Export tolerance (phase 3, [plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]`
 (0.01 mm when no length follows; a bare number is in the document's unit; `um`, `mm`, `in`… name
 their own; a physical length whatever the unit) holds a native export for fabrication, and
