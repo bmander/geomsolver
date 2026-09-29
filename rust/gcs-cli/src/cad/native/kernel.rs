@@ -10,6 +10,7 @@ extern "C" {
         written: *mut c_int) -> c_int;
     fn solvent_cad_fuse(cad: *mut c_void,ids: *const c_int,count: c_int) -> c_int;
     fn solvent_cad_revolved(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,seam: *const f64) -> c_int;
+    fn solvent_cad_revolve_region(cad: *mut c_void,region: c_int,origin: *const f64,axis: *const f64) -> c_int;
     fn solvent_cad_pattern(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,angles: *const f64,count: c_int,
         sides: *const c_int,fuzzy: f64) -> c_int;
     fn solvent_cad_sector_mesh(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,deflection: f64,angular: f64,
@@ -130,6 +131,10 @@ impl Session {
     /// parameters starting on the half-plane towards `seam`.
     pub(crate) fn revolved(&self,solid: c_int,origin: [f64;3],axis: [f64;3],seam: [f64;3]) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_revolved(self.0,solid,origin.as_ptr(),axis.as_ptr(),seam.as_ptr()) })
+    }
+    /// A solid of revolution: a planar region turned a whole turn about a line in its plane.
+    pub(crate) fn revolve_region(&self,region: c_int,origin: [f64;3],axis: [f64;3]) -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_revolve_region(self.0,region,origin.as_ptr(),axis.as_ptr()) })
     }
     /// The box about some shapes, lower corner then upper (mm).
     pub(crate) fn bounds(&self,ids: &[c_int]) -> Result<[[f64;3];2],String> {

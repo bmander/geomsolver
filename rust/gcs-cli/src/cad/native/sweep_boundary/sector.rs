@@ -58,7 +58,8 @@ pub(super) fn debug_faces(session: &Session,what: &str,solid: c_int) {
 /// sweeps' fitted sheets, in the order of `distinct`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::StaticRecipe,blank: c_int,
-    field: &gcs_core::solid::SpatialField,distinct: &[usize],sheets: &[Fitted],scale: f64) -> Result<(c_int,Patterned),String> {
+    meridian: Option<super::super::Meridian>,field: &gcs_core::solid::SpatialField,distinct: &[usize],sheets: &[Fitted],scale: f64)
+    -> Result<(c_int,Patterned),String> {
     let started = std::time::Instant::now();
     let poses: Vec<Vec<Motion>> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).map(|c| c.pose).collect()).collect();
     let bounds = session.bounds(&[blank])?;
@@ -143,7 +144,17 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
     let whole = session.volume(blank)?;
     // its faces' parameters starting opposite the sector, so none of its faces crosses where they start
     let across = chosen.angle_at((chosen.span[0]+chosen.span[1])/2.)+indexing.pitch()/2.+std::f64::consts::PI;
-    let turned = session.revolved(blank,frame.origin,frame.axis,frame.radial(across))?;
+    // A blank built from its meridian region is that region turned again, from the half-plane its
+    // parameters are to start on; any other is sectioned by that half-plane first.
+    let turned = match meridian {
+        Some(m) => {
+            let seam = frame.radial(across);
+            let angle = dot(frame.axis,cross(m.seam,seam)).atan2(dot(m.seam,seam));
+            let region = session.place(m.region,super::super::turned_about(m.origin,m.axis,angle)?,1.)?;
+            session.revolve_region(region,frame.origin,frame.axis)?
+        }
+        None => session.revolved(blank,frame.origin,frame.axis,frame.radial(across))?,
+    };
     let again = session.volume(turned)?;
     if (again-whole).abs() > 1e-7*whole {
         return Err(format!("the blank turned about its axis again is {again:.9} mm³, not its {whole:.9} mm³"));

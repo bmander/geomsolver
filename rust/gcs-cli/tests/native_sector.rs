@@ -84,3 +84,41 @@ fn an_indexed_ring_meshed_as_one_sector_is_one_closed_shell() {
     assert_eq!(triangles,u32::from_le_bytes(sectored[80..84].try_into().unwrap()) as usize);
     assert!((mine-theirs).abs() <= 1e-3*theirs,"{mine} against {theirs}");
 }
+
+/// The ring's blank, every operand a revolution about the spindle, built as its meridian section
+/// turned once is the blank its Booleans build — its volume and its faces; the same ring bounded by
+/// a prism is no revolution, and its blank is left to its Booleans, with the reason.
+#[test]
+fn a_blank_of_revolutions_is_its_meridian_section_turned_and_any_other_its_booleans() {
+    let e = ring(6);
+    let body = fixtures::solid(&e,"part");
+    let recipe = cad::recipe_static(&e.sketch,body).unwrap();
+    let session = native::Session::new().unwrap();
+    let (turned,meridian) = session.construct_meridian(&recipe.recipe).unwrap().expect("the ring's blank is a revolution");
+    let booleans = session.construct(&recipe.recipe).unwrap();
+    let [a,b] = [turned,booleans].map(|s| session.volume(s).unwrap());
+    eprintln!("turned {a:.9} mm³, {} faces; Booleans {b:.9} mm³, {} faces; about {:?} along {:?}",session.faces(turned).unwrap().len(),
+        session.faces(booleans).unwrap().len(),meridian.origin,meridian.axis);
+    assert!((a-b).abs() <= 1e-9*b,"{a} against {b}");
+    assert_eq!(session.faces(turned).unwrap().len(),session.faces(booleans).unwrap().len());
+    let boxed = fixtures::read(&format!("{}{}construction solid removal(tool, under: turn, from: -35deg, to: 35deg)\n{}\
+private point b0 hint(x: -5, y: 1)
+private point b1 hint(x: 5, y: 1)
+private point b2 hint(x: 5, y: 3)
+private point b3 hint(x: -5, y: 3)
+ground b0
+ground b1
+ground b2
+ground b3
+private line bb(b0, b1)
+private line bw(b1, b2)
+private line bt(b2, b3)
+private line ba(b3, b0)
+construction solid holder(face(bb, bw, bt, ba), from: -5mm, to: 5mm)
+holder bound part
+",sphere(2.),cradle_roll(2.5,Observer::Parallel),indexed_ring(6,3.5,4.2,1.7,2.3)));
+    let recipe = cad::recipe_static(&boxed.sketch,fixtures::solid(&boxed,"part")).unwrap();
+    let why = session.construct_meridian(&recipe.recipe).unwrap().expect_err("a prism bounds the ring");
+    eprintln!("{why}");
+    assert!(why.contains("prism"),"{why}");
+}

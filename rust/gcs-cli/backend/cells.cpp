@@ -1010,6 +1010,41 @@ int solvent_cad_revolved(Cad* cad,int solid,const double* origin,const double* a
     });
 }
 
+// A solid of revolution made by turning a planar region (a face, or faces a Boolean of meridian
+// sections left) once about the line (`origin`, `axis`) in its plane: the region's faces merged on
+// their plane first, each turned a whole turn, and the turns united — the blank of a member whose
+// every operand is a revolution about one line, from the Boolean of their meridian sections
+// (docs/native-speed-plan.md). The faces' parameters start where the region lies.
+int solvent_cad_revolve_region(Cad* cad,int region,const double* origin,const double* axis) noexcept {
+    return guarded(cad,[&] {
+        const gp_Ax1 line(gp_Pnt(origin[0],origin[1],origin[2]),gp_Dir(axis[0],axis[1],axis[2]));
+        ShapeUpgrade_UnifySameDomain unify(cad->at(region),true,true,false);
+        unify.Build();
+        const TopoDS_Shape merged = unify.Shape().IsNull() ? cad->at(region) : unify.Shape();
+        TopoDS_Shape result;
+        int faces = 0;
+        for (TopExp_Explorer it(merged,TopAbs_FACE); it.More(); it.Next()) {
+            ++faces;
+            BRepPrimAPI_MakeRevol turned(it.Current(),line,2*M_PI,true);
+            if (!turned.IsDone()) throw std::runtime_error("turning a meridian region failed");
+            if (result.IsNull()) result = turned.Shape();
+            else {
+                BRepAlgoAPI_Fuse fuse(result,turned.Shape());
+                check_algorithm(fuse,"turned regions' union");
+                result = fuse.Shape();
+            }
+        }
+        if (!faces) throw std::runtime_error("the meridian region is empty");
+        // one solid, as a revolution of one face is
+        int solids = 0;
+        TopoDS_Shape one;
+        for (TopExp_Explorer it(result,TopAbs_SOLID); it.More(); it.Next()) { ++solids; one = it.Current(); }
+        if (solids != 1) throw std::runtime_error("the meridian region turns into "+std::to_string(solids)+" solids");
+        const double volume = validate(one);
+        return cad->put(one,true,volume);
+    });
+}
+
 // Classify many points against one solid: 0 outside, 1 inside, 2 within
 // tolerance of the boundary. One classifier serves the whole batch, since its
 // construction dominates a single query on spline-bounded solids.

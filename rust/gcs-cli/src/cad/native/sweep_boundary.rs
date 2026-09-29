@@ -308,18 +308,35 @@ fn sheet_beside(session: &Session,cut: &SweptCut,blank: &dyn Fn() -> Result<c_in
 
 /// The blank as the sheets are built beside it: made once, on a thread of its own, and awaited by
 /// each sheet for its clearance alone. `None` once made is a blank that could not be.
-struct Awaited { made: std::sync::Mutex<Option<Option<c_int>>>,ready: std::sync::Condvar }
+struct Awaited { made: std::sync::Mutex<Option<Option<Blank>>>,ready: std::sync::Condvar }
+
+/// A static blank: its solid, and — built as its meridian region turned — that region.
+#[derive(Clone,Copy)]
+pub(crate) struct Blank { pub solid: c_int,pub meridian: Option<super::Meridian> }
 
 impl Awaited {
     fn new() -> Awaited { Awaited {made:std::sync::Mutex::new(None),ready:std::sync::Condvar::new()} }
-    fn set(&self,blank: Option<c_int>) {
+    fn set(&self,blank: Option<Blank>) {
         *self.made.lock().unwrap_or_else(|e| e.into_inner()) = Some(blank);
         self.ready.notify_all();
     }
-    fn get(&self) -> Result<c_int,ExportRefusal> {
+    fn blank(&self) -> Result<Blank,ExportRefusal> {
         let mut made = self.made.lock().unwrap_or_else(|e| e.into_inner());
         while made.is_none() { made = self.ready.wait(made).unwrap_or_else(|e| e.into_inner()); }
         made.expect("waited for").ok_or_else(|| ExportRefusal::at(Stage::Blank,"the static blank was not built"))
+    }
+    fn get(&self) -> Result<c_int,ExportRefusal> { self.blank().map(|b| b.solid) }
+}
+
+/// A static blank built: as its meridian region turned where every operand is a revolution about one
+/// line (`Session::construct_meridian`), by its recipe's Booleans otherwise; and how.
+fn blank_of(session: &Session,recipe: &gcs_core::json::Json) -> Result<(Blank,String),String> {
+    match session.construct_meridian(recipe) {
+        Ok(Ok((solid,meridian))) => Ok((Blank {solid,meridian:Some(meridian)},", its meridian section turned about its axis".into())),
+        Ok(Err(why)) | Err(why) => {
+            let solid = session.construct(recipe)?;
+            Ok((Blank {solid,meridian:None},format!(", by its Booleans ({why})")))
+        }
     }
 }
 
@@ -372,14 +389,15 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     // all are done.
     let field_ref = &field;
     // The blank built beside the sheets, which await it for their clearance alone.
-    let built = || -> Result<(c_int,Vec<Fitted>),ExportRefusal> {
+    let built = || -> Result<(Blank,Vec<Fitted>),ExportRefusal> {
         let awaited = Awaited::new();
         let awaited = &awaited;
         let mut tasks: Vec<Box<dyn FnOnce() -> Result<Option<Fitted>,ExportRefusal>+Send+'_>> = vec![Box::new(move || {
-            let blank = session.construct(&recipe.recipe).at(Stage::Blank);
-            awaited.set(blank.as_ref().ok().copied());
-            blank?;
-            stage(&format!("`{name}`: static blank of {operations} operations"));
+            let started = std::time::Instant::now();
+            let blank = blank_of(session,&recipe.recipe).at(Stage::Blank);
+            awaited.set(blank.as_ref().ok().map(|b| b.0));
+            let (_,how) = blank?;
+            stage(&format!("`{name}`: static blank of {operations} operations{how} ({:?})",started.elapsed()));
             mark(Stage::Blank);
             Ok(None)
         })];
@@ -388,7 +406,7 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
         let mut done = side_by_side(tasks,Result::is_err).into_iter();
         done.next().expect("the blank's task")?;
         let sheets = done.map(|sheet| sheet.map(|s| s.expect("a sheet"))).collect::<Result<Vec<_>,_>>()?;
-        Ok((awaited.get()?,sheets))
+        Ok((awaited.blank()?,sheets))
     };
     let (blank,sheets) = match admitted {
         Admitted::Already(_) => built()?,
@@ -398,8 +416,9 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
             built?
         }
     };
+    let (blank,meridian) = (blank.solid,blank.meridian);
     if asked == Construction::Sector {
-        match sector::construct(session,sk,body,recipe,blank,&field,&distinct,&sheets,scale) {
+        match sector::construct(session,sk,body,recipe,blank,meridian,&field,&distinct,&sheets,scale) {
             Ok((solid,sector)) => return Ok(Built {solid,how:Construction::Sector,sector:Some(sector)}),
             Err(reason) => stage(&format!("`{}` is built whole: the sector construction does not apply ({reason})",
                 sk.solids[body].name)),
