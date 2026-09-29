@@ -53,6 +53,13 @@
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <algorithm>
+#include <array>
+#include <cstring>
+#include <tuple>
+#include <BRepMesh_IncrementalMesh.hxx>
+#include <OSD_Parallel.hxx>
+#include <Poly_Triangulation.hxx>
+#include <Poly_PolygonOnTriangulation.hxx>
 #include <limits>
 #include <cmath>
 #include <vector>
@@ -493,6 +500,31 @@ static std::vector<TopoDS_Face> into_one_period(const TopoDS_Face& face,const gp
     return parts;
 }
 
+// Which of a sector's faces (`faces`) lie on one of its two sides (`sides`, two shapes), and on
+// which: 0 or 1 where every sample of the face is within `fuzzy` of that side's surface, -1 else.
+static std::vector<int> sector_sides(Cad* cad,const TopTools_IndexedMapOfShape& faces,const int* sides,double fuzzy) {
+    std::vector<std::pair<int,Handle(Geom_Surface)>> side_surfaces;
+    for (int i=0;i<2;++i) for (TopExp_Explorer it(cad->at(sides[i]),TopAbs_FACE); it.More(); it.Next())
+        side_surfaces.emplace_back(i,BRep_Tool::Surface(TopoDS::Face(it.Current())));
+    const auto side_of = [&](const TopoDS_Face& face) {
+        double u0,u1,v0,v1;
+        BRepTools::UVBounds(face,u0,u1,v0,v1);
+        const Handle(Geom_Surface) own = BRep_Tool::Surface(face);
+        for (const auto& [which,surface]: side_surfaces) {
+            bool all = true;
+            for (const auto& [fu,fv]: {std::pair{0.5,0.5},{0.2,0.3},{0.8,0.7},{0.3,0.8}}) {
+                GeomAPI_ProjectPointOnSurf foot(own->Value(u0+(u1-u0)*fu,v0+(v1-v0)*fv),surface);
+                if (!foot.NbPoints() || foot.LowerDistance() > fuzzy) { all = false; break; }
+            }
+            if (all) return which;
+        }
+        return -1;
+    };
+    std::vector<int> side(faces.Extent());
+    for (int i=0;i<faces.Extent();++i) side[i] = side_of(TopoDS::Face(faces(i+1)));
+    return side;
+}
+
 // One solid and its copies turned by `angles` about the line (`origin`, `axis`), united: the
 // sectors of an indexed body, each meeting the next on a face both carry (docs/native-speed-plan.md).
 // The faces on the two sides (`sides`: every sample of the face within `fuzzy` of one of theirs) are
@@ -510,28 +542,9 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
             if (debug) fprintf(stderr,"sector: pattern: %s %.2f s\n",step,processor_seconds()-clock);
             clock = processor_seconds();
         };
-        // which of the sector's faces lie on a side, and on which
-        std::vector<Handle(Geom_Surface)> side_surfaces;
-        for (int i=0;i<2;++i) for (TopExp_Explorer it(cad->at(sides[i]),TopAbs_FACE); it.More(); it.Next())
-            side_surfaces.push_back(BRep_Tool::Surface(TopoDS::Face(it.Current())));
-        const auto side_of = [&](const TopoDS_Face& face) {
-            double u0,u1,v0,v1;
-            BRepTools::UVBounds(face,u0,u1,v0,v1);
-            const Handle(Geom_Surface) own = BRep_Tool::Surface(face);
-            for (size_t i=0;i<side_surfaces.size();++i) {
-                bool all = true;
-                for (const auto& [fu,fv]: {std::pair{0.5,0.5},{0.2,0.3},{0.8,0.7},{0.3,0.8}}) {
-                    GeomAPI_ProjectPointOnSurf foot(own->Value(u0+(u1-u0)*fu,v0+(v1-v0)*fv),side_surfaces[i]);
-                    if (!foot.NbPoints() || foot.LowerDistance() > fuzzy) { all = false; break; }
-                }
-                if (all) return static_cast<int>(i);
-            }
-            return -1;
-        };
         TopTools_IndexedMapOfShape faces;
         TopExp::MapShapes(source,TopAbs_FACE,faces);
-        std::vector<int> side(faces.Extent());
-        for (int i=0;i<faces.Extent();++i) side[i] = side_of(TopoDS::Face(faces(i+1)));
+        const std::vector<int> side = sector_sides(cad,faces,sides,fuzzy);
         if (std::count(side.begin(),side.end(),0) != 1 || std::count(side.begin(),side.end(),1) != 1)
             throw std::runtime_error("the sector does not carry one face on each side");
         // a ring's piece: a face of revolution meeting both sides
@@ -603,6 +616,201 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
         if (!BRepLib::OrientClosedSolid(made)) throw std::runtime_error("the sewn sectors are not closed");
         lap("sewn");
         return united(cad,made,"pattern union");
+    });
+}
+
+// Mesh a sector's material (the source `solvent_cad_pattern` turns) afresh, its faces on every
+// core, at an absolute `deflection` (mm) and an `angular` one (radians), and read the chordal sag
+// its faces have, the two sides' (`sides`, found as the pattern finds them) left out, since their
+// triangles are no part of the pattern's mesh. `output`: the sag (mm) and where; none, no sag read.
+int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,double deflection,double angular,
+    double* output) noexcept {
+    return guarded(cad,[&] {
+        if (!sides) throw std::runtime_error("a sector's mesh needs its sides");
+        if (!std::isfinite(deflection) || deflection <= 0 || !std::isfinite(angular) || angular <= 0)
+            throw std::runtime_error("meshing needs a positive deflection and angle");
+        cad->validated(piece);
+        auto& shape = cad->at(piece);
+        BRepTools::Clean(shape);
+        BRepMesh_IncrementalMesh mesher(shape,deflection,false,angular,true);
+        if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        if (!output) return 0;
+        TopTools_IndexedMapOfShape faces;
+        TopExp::MapShapes(shape,TopAbs_FACE,faces);
+        const std::vector<int> side = sector_sides(cad,faces,sides,fuzzy);
+        std::vector<double> worst(faces.Extent(),0.);
+        std::vector<gp_Pnt> at(faces.Extent());
+        OSD_Parallel::For(0,faces.Extent(),[&](int i) {
+            if (side[static_cast<size_t>(i)] < 0) face_sag(TopoDS::Face(faces(i+1)),worst[static_cast<size_t>(i)],at[static_cast<size_t>(i)]);
+        });
+        output[0] = 0;
+        for (int i=0;i<faces.Extent();++i) if (worst[static_cast<size_t>(i)] > output[0]) {
+            output[0] = worst[static_cast<size_t>(i)]; output[1] = at[static_cast<size_t>(i)].X();
+            output[2] = at[static_cast<size_t>(i)].Y(); output[3] = at[static_cast<size_t>(i)].Z();
+        }
+        return 0;
+    });
+}
+
+// The binary STL of a sector meshed by `solvent_cad_sector_mesh` and turned `count` times by
+// `pitch` about the line (`origin`, `axis`): every triangle but the sides', copy k's the sector's
+// turned by k pitches. A copy meets its neighbour on the neighbour's side, and there the two write
+// one set of points: each node where a face meets one side is paired, one to one, with the nearest
+// turn of a node where a face meets the other (the sides being a pitch's turn of each other) —
+// within `reach` (mm) and a quarter of the least spacing between the seam's points, or the call
+// refuses — and a copy writes such a node as its partner turned
+// into the neighbouring copy, computed as that copy computes it, so the copies share their seam
+// points bit for bit and close into one shell. The mesher discretizes the two sides' edges alike
+// but not always at the same places along them (the split cuts each side's edges on its own); the
+// partner's turn is on the same two surfaces, so the move is along the seam. `output` gets the
+// farthest a node is moved to its partner (mm). Returns the triangles written.
+int solvent_cad_sector_stl(Cad* cad,int piece,const int* sides,double fuzzy,const double* origin,const double* axis,
+    int count,double pitch,double reach,const char* path,double* output) noexcept {
+    return guarded(cad,[&] {
+        if (!sides || !origin || !axis || !path || !output || count < 1 || !std::isfinite(pitch) || !(reach > 0))
+            throw std::runtime_error("a sector's STL needs its sides, an axis, a count, a pitch, a reach, a path and an output");
+        const auto& shape = cad->at(piece);
+        const gp_Ax1 line(gp_Pnt(origin[0],origin[1],origin[2]),gp_Dir(axis[0],axis[1],axis[2]));
+        TopTools_IndexedMapOfShape faces;
+        TopExp::MapShapes(shape,TopAbs_FACE,faces);
+        const std::vector<int> side = sector_sides(cad,faces,sides,fuzzy);
+        TopTools_IndexedDataMapOfShapeListOfShape by_edge;
+        TopExp::MapShapesAndAncestors(shape,TopAbs_EDGE,TopAbs_FACE,by_edge);
+        // Every kept face's nodes (placed), its triangles wound outward, and which side each node is
+        // on (-1 for neither).
+        struct Mesh { std::vector<gp_Pnt> nodes; std::vector<int> on; std::vector<std::array<int,3>> triangles; };
+        std::vector<Mesh> meshes;
+        std::vector<gp_Pnt> seam[2];
+        for (int i=0;i<faces.Extent();++i) {
+            if (side[static_cast<size_t>(i)] >= 0) continue;
+            const TopoDS_Face face = TopoDS::Face(faces(i+1));
+            TopLoc_Location location;
+            const auto triangulation = BRep_Tool::Triangulation(face,location);
+            if (triangulation.IsNull() || triangulation->NbTriangles() == 0) throw std::runtime_error("a sector's face is not meshed");
+            const gp_Trsf placed = location.Transformation();
+            Mesh mesh;
+            for (int n=1;n<=triangulation->NbNodes();++n) mesh.nodes.push_back(triangulation->Node(n).Transformed(placed));
+            mesh.on.assign(mesh.nodes.size(),-1);
+            for (TopExp_Explorer e(face,TopAbs_EDGE); e.More(); e.Next()) {
+                int s = -1;
+                for (const auto& other: by_edge.FindFromKey(e.Current())) {
+                    const int j = faces.FindIndex(other)-1;
+                    if (j >= 0 && side[static_cast<size_t>(j)] >= 0) s = side[static_cast<size_t>(j)];
+                }
+                if (s < 0) continue;
+                TopLoc_Location at;
+                const auto polygon = BRep_Tool::PolygonOnTriangulation(TopoDS::Edge(e.Current()),triangulation,at);
+                if (polygon.IsNull()) throw std::runtime_error("a sector's seam edge has no polygon on its face's mesh");
+                for (int k=1;k<=polygon->NbNodes();++k) {
+                    const int n = polygon->Node(k)-1;
+                    if (mesh.on[static_cast<size_t>(n)] < 0) { mesh.on[static_cast<size_t>(n)] = s; seam[s].push_back(mesh.nodes[static_cast<size_t>(n)]); }
+                }
+            }
+            const bool reversed = face.Orientation() == TopAbs_REVERSED;
+            for (int t=1;t<=triangulation->NbTriangles();++t) {
+                int a,b,c; triangulation->Triangle(t).Get(a,b,c);
+                if (reversed) std::swap(b,c);
+                mesh.triangles.push_back({a-1,b-1,c-1});
+            }
+            meshes.push_back(std::move(mesh));
+        }
+        // The seam points, each once (a node where faces meet is in each face's mesh).
+        const auto distinct = [](std::vector<gp_Pnt>& points) {
+            std::sort(points.begin(),points.end(),[](const gp_Pnt& p,const gp_Pnt& q) {
+                return std::make_tuple(p.X(),p.Y(),p.Z()) < std::make_tuple(q.X(),q.Y(),q.Z()); });
+            points.erase(std::unique(points.begin(),points.end(),[](const gp_Pnt& p,const gp_Pnt& q) {
+                return p.X() == q.X() && p.Y() == q.Y() && p.Z() == q.Z(); }),points.end());
+        };
+        distinct(seam[0]); distinct(seam[1]);
+        if (seam[0].size() != seam[1].size() || seam[0].empty())
+            throw std::runtime_error("the sector's mesh has "+std::to_string(seam[0].size())+" points on one side and "
+                +std::to_string(seam[1].size())+" on the other");
+        // Which way a pitch turns the first side onto the second, and each second-side point's partner.
+        const auto turn = [&](double angle) { gp_Trsf t; if (angle != 0) t.SetRotation(line,angle); return t; };
+        // A partner nearer than a quarter of the nearest two seam points are to each other is no
+        // other point's: the pairing is the seam's own order, whatever the mesher did along it.
+        double spacing = 1e300;
+        for (size_t v=0;v<seam[0].size();++v) for (size_t u=v+1;u<seam[0].size();++u) spacing = std::min(spacing,seam[0][v].Distance(seam[0][u]));
+        reach = std::min(reach,spacing/4);
+        int sense = 0;
+        double moved[2] = {0,0};
+        std::vector<size_t> partner(seam[1].size());
+        for (const int trial: {1,-1}) {
+            const gp_Trsf by = turn(trial*pitch);
+            std::vector<gp_Pnt> turned(seam[0].size());
+            for (size_t v=0;v<seam[0].size();++v) turned[v] = seam[0][v].Transformed(by);
+            std::vector<char> taken(seam[0].size(),0);
+            bool all = true;
+            double& most = moved[trial > 0 ? 0 : 1];
+            for (size_t w=0;w<seam[1].size() && all;++w) {
+                double best = 1e300; size_t found = 0;
+                for (size_t v=0;v<seam[0].size();++v) {
+                    const double d = turned[v].Distance(seam[1][w]);
+                    if (d < best) { best = d; found = v; }
+                }
+                most = std::max(most,best);
+                if (best > reach || taken[found]) all = false;
+                else { taken[found] = 1; partner[w] = found; }
+            }
+            if (all) { sense = trial; output[0] = most; break; }
+        }
+        if (!sense) {
+            std::ostringstream message;
+            message << "the sector's mesh points on its two sides are not a pitch's turn of each other within " << reach
+                << " mm (" << seam[0].size() << " points a side; one " << moved[0] << " mm from its nearest partner turned one way, "
+                << moved[1] << " the other)";
+            throw std::runtime_error(message.str());
+        }
+        // A node at a second-side seam point, in whichever face's mesh (a face meeting the side at a
+        // corner only has one too): that point's index, or none.
+        const auto index_of = [&](const gp_Pnt& p) {
+            const auto it = std::lower_bound(seam[1].begin(),seam[1].end(),p,[](const gp_Pnt& a,const gp_Pnt& b) {
+                return std::make_tuple(a.X(),a.Y(),a.Z()) < std::make_tuple(b.X(),b.Y(),b.Z()); });
+            if (it == seam[1].end() || it->X() != p.X() || it->Y() != p.Y() || it->Z() != p.Z()) return seam[1].size();
+            return static_cast<size_t>(it-seam[1].begin());
+        };
+        std::vector<gp_Trsf> copies(static_cast<size_t>(count));
+        for (int k=0;k<count;++k) copies[static_cast<size_t>(k)] = turn(k*pitch);
+        size_t triangles = 0;
+        for (const auto& mesh: meshes) triangles += mesh.triangles.size();
+        triangles *= static_cast<size_t>(count);
+        if (triangles > 0xffffffffu) throw std::runtime_error("too many triangles for a binary STL");
+        std::vector<char> bytes(84+50*triangles,0);
+        const uint32_t n32 = static_cast<uint32_t>(triangles);
+        std::memcpy(bytes.data()+80,&n32,4);
+        std::vector<std::vector<size_t>> second(meshes.size());
+        for (size_t m=0;m<meshes.size();++m) for (const auto& p: meshes[m].nodes) second[m].push_back(index_of(p));
+        size_t at = 84;
+        for (int k=0;k<count;++k) for (size_t m=0;m<meshes.size();++m) {
+            const auto& mesh = meshes[m];
+            // each node of this copy, as float32
+            std::vector<std::array<float,3>> written(mesh.nodes.size());
+            for (size_t n=0;n<mesh.nodes.size();++n) {
+                gp_Pnt p = mesh.nodes[n];
+                const gp_Trsf* by = &copies[static_cast<size_t>(k)];
+                if (const size_t w = second[m][n]; w < seam[1].size()) {
+                    p = seam[0][partner[w]];
+                    by = &copies[static_cast<size_t>(((k+sense)%count+count)%count)];
+                }
+                if (by->Form() != gp_Identity) p.Transform(*by);
+                written[n] = {static_cast<float>(p.X()),static_cast<float>(p.Y()),static_cast<float>(p.Z())};
+            }
+            for (const auto& t: mesh.triangles) {
+                const auto& a = written[static_cast<size_t>(t[0])];
+                const auto& b = written[static_cast<size_t>(t[1])];
+                const auto& c = written[static_cast<size_t>(t[2])];
+                gp_Vec normal = gp_Vec(b[0]-a[0],b[1]-a[1],b[2]-a[2]).Crossed(gp_Vec(c[0]-a[0],c[1]-a[1],c[2]-a[2]));
+                if (normal.Magnitude() > 0) normal.Normalize();
+                const float row[12] = {float(normal.X()),float(normal.Y()),float(normal.Z()),a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]};
+                std::memcpy(bytes.data()+at,row,48);
+                at += 50;
+            }
+        }
+        std::FILE* file = std::fopen(path,"wb");
+        if (!file) throw std::runtime_error(std::string("cannot write ")+path);
+        const size_t written = std::fwrite(bytes.data(),1,bytes.size(),file);
+        if (std::fclose(file) != 0 || written != bytes.size()) throw std::runtime_error(std::string("STL write failed: ")+path);
+        return static_cast<int>(std::min<size_t>(triangles,0x7fffffff));
     });
 }
 

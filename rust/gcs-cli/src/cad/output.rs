@@ -126,18 +126,10 @@ pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8],toler
     };
     if let Err(e) = verdict { keep_rejected(stl); return Err(mesh(e)); }
     mark(Stage::Mesh);
-    let mut material = MaterialField::read(sk,body,cad::AXIS_TOLERANCE).map_err(refused)?.evaluator(cad::POSE_CACHE);
+    let field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE).map_err(refused)?;
     let [offset,confirm,value_tolerance] = tolerance.map_or([0.1,0.025,0.02],|t| t.probe());
     let options = agreement::Options {offset:offset/scale,confirm:confirm/scale,value_tolerance:value_tolerance/scale,..Default::default()};
-    let total = (triangles.len()+(triangles.len()/options.triangles.max(1)).max(1)-1)/(triangles.len()/options.triangles.max(1)).max(1);
-    stage(&format!("probing {total} of {} triangles against the material field",triangles.len()));
-    let mut shown = 0;
-    let report = agreement::of_triangles_observed(&vertices,&triangles,&mut material,&options,&mut |r| {
-        if r.probed_triangles >= shown+total.div_ceil(10) {
-            shown = r.probed_triangles;
-            stage(&format!("  {} of {total} triangles probed, {} disagree",r.probed_triangles,r.disagreements.len()));
-        }
-    }).map_err(refused)?;
+    let report = agreement::of_triangles_parallel(&vertices,&triangles,&field,cad::POSE_CACHE,&options).map_err(refused)?;
     let off = if tolerance.is_some() { format!("{:.4}",options.offset*scale) } else { format!("{:.2}",options.offset*scale) };
     stage(&format!("field agreement: {} of {} triangles probed {off} mm off each side, {} probes unresolved, \
         {} withdrawn beside another face, {} disagree ({:?})",report.probed_triangles,report.triangles,

@@ -58,7 +58,7 @@ pub(super) fn debug_faces(session: &Session,what: &str,solid: c_int) {
 /// sweeps' fitted sheets, in the order of `distinct`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::StaticRecipe,blank: c_int,
-    field: &gcs_core::solid::SpatialField,distinct: &[usize],sheets: &[Fitted],scale: f64) -> Result<c_int,String> {
+    field: &gcs_core::solid::SpatialField,distinct: &[usize],sheets: &[Fitted],scale: f64) -> Result<(c_int,Patterned),String> {
     let started = std::time::Instant::now();
     let poses: Vec<Vec<Motion>> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).map(|c| c.pose).collect()).collect();
     let bounds = session.bounds(&[blank])?;
@@ -194,5 +194,5 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         return Err(format!("the sectors united are {volume:.6} mm³, not {n} times {one:.6}"));
     }
     mark(Stage::Fuse);
-    Ok(part)
+    Ok((part,Patterned {piece,sides:[side,other],fuzzy:FUZZY,origin:frame.origin,axis:frame.axis,count:n,pitch:indexing.pitch()}))
 }

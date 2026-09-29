@@ -1,6 +1,7 @@
 #pragma once
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Face.hxx>
+#include <gp_Pnt.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopTools_DataMapOfShapeReal.hxx>
 #include <Standard_Failure.hxx>
@@ -57,6 +58,9 @@ double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record = nullpt
 double volume(const TopoDS_Shape& shape);
 // The kernel's checker.
 bool valid(const TopoDS_Shape& shape);
+
+// Raise `worst` to the chordal sag a meshed face has, and `at` to where (occt.cpp).
+void face_sag(const TopoDS_Face& face,double& worst,gp_Pnt& at);
 
 // What the kernel's checker finds wrong with a shape, for a message.
 std::string invalidity(const TopoDS_Shape& shape);

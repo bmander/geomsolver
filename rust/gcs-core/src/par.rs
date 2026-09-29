@@ -18,8 +18,14 @@ pub fn map<T: Sync,R: Send>(items: &[T],f: impl Fn(&T) -> R + Sync) -> Vec<R> {
 
 /// `f(0), f(1), …, f(n - 1)`, in that order, spread over the cores as `map` is.
 pub fn indices<R: Send>(n: usize,f: impl Fn(usize) -> R + Sync) -> Vec<R> {
+    indices_with(n,|| (),|_,i| f(i))
+}
+
+/// The same, each thread given its own `state` (made by `init`, once a thread) to work with: a
+/// cache, say, whose contents change how fast `f` answers but never what.
+pub fn indices_with<S,R: Send>(n: usize,init: impl Fn() -> S + Sync,f: impl Fn(&mut S,usize) -> R + Sync) -> Vec<R> {
     let threads = threads().min(n);
-    if threads <= 1 { return (0..n).map(f).collect(); }
+    if threads <= 1 { let mut state = init(); return (0..n).map(|i| f(&mut state,i)).collect(); }
     #[cfg(target_arch = "wasm32")]
     { unreachable!("one thread on wasm") }
     #[cfg(not(target_arch = "wasm32"))]
@@ -31,10 +37,11 @@ pub fn indices<R: Send>(n: usize,f: impl Fn(usize) -> R + Sync) -> Vec<R> {
             for _ in 0..threads {
                 scope.spawn(|| {
                     let mut mine = Vec::new();
+                    let mut state = init();
                     loop {
                         let i = next.fetch_add(1,Ordering::Relaxed);
                         if i >= n { break; }
-                        mine.push((i,f(i)));
+                        mine.push((i,f(&mut state,i)));
                     }
                     done.lock().unwrap_or_else(|e| e.into_inner()).extend(mine);
                 });

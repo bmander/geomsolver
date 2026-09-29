@@ -66,7 +66,11 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         use gcs_core::solid::export::AtStage;
         let recipe = body.recipe.as_ref().map_err(Clone::clone).at(Stage::Blank)?;
         let session = native::Session::new().at(Stage::Blank)?;
-        let solid = native::sweep_boundary::construct_solid(&session,sk,body.index,recipe,body.admission.as_ref(),tolerance)?;
+        let built = native::sweep_boundary::construct_built(&session,sk,body.index,recipe,body.admission.as_ref(),tolerance)?;
+        let solid = built.solid;
+        // A body built as one sector patterned is meshed as that sector, its triangles turned into
+        // every copy (`SOLVENT_SECTOR_STL=off` meshes the patterned solid whole).
+        let sector = built.sector.filter(|_| std::env::var("SOLVENT_SECTOR_STL").map_or(true,|v| v != "off"));
         let mut staged = output::Staged::new();
         let utf8 = |p: &std::path::Path| p.to_str().map(str::to_owned).ok_or_else(|| "CAD path must be UTF-8".to_string());
         // The mesh's absolute chordal deflection (mm) and its angular one: the angle bounds how far a
@@ -78,13 +82,24 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         // mended the first and not the second). So a mesh held to a tolerance is read for the sag
         // every triangle has (`mesh_sag`) and meshed again, finer, until that is within its share.
         let mesh = |path: &str| -> Result<(),String> {
-            let Some(t) = tolerance else { return session.stl(solid,path) };
+            let Some(t) = tolerance else {
+                let Some(sector) = &sector else { return session.stl(solid,path) };
+                let started = std::time::Instant::now();
+                session.sector_mesh(sector,0.01,0.2,false)?;
+                let (triangles,moved) = session.sector_stl(sector,0.01,path)?;
+                stage(&format!("meshed one sector and turned it into {} copies: {triangles} triangles, seam points moved {:.3} µm \
+                    at most onto their partners ({:?})",sector.count,moved*1e3,started.elapsed()));
+                return Ok(());
+            };
             let mut deflection = t.deflection();
+            let what = if sector.is_some() { "one sector" } else { "the solid" };
             for round in 0.. {
                 let started = std::time::Instant::now();
-                session.remesh(solid,deflection,ANGULAR)?;
-                let (sag,at) = session.mesh_sag(solid)?;
-                stage(&format!("meshed at {:.2} µm deflection: it sags {:.2} µm at most, at {:?}, against {:.2} µm ({:?})",
+                let (sag,at) = match &sector {
+                    Some(sector) => session.sector_mesh(sector,deflection,ANGULAR,true)?.expect("a sag asked for"),
+                    None => { session.remesh(solid,deflection,ANGULAR)?; session.mesh_sag(solid)? }
+                };
+                stage(&format!("meshed {what} at {:.2} µm deflection: it sags {:.2} µm at most, at {:?}, against {:.2} µm ({:?})",
                     deflection*1e3,sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,started.elapsed()));
                 if sag <= t.deflection() { break }
                 if round+1 == MOST_MESHES {
@@ -94,7 +109,15 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                 // sag goes as the deflection where the mesher heeds it; never more than a quarter at once
                 deflection *= (0.8*t.deflection()/sag).max(0.25);
             }
-            session.stl_with(solid,path,deflection,ANGULAR)
+            match &sector {
+                Some(sector) => {
+                    let (triangles,moved) = session.sector_stl(sector,deflection,path)?;
+                    stage(&format!("turned the sector's mesh into {} copies: {triangles} triangles, seam points moved {:.3} µm at \
+                        most onto their partners",sector.count,moved*1e3));
+                    Ok(())
+                }
+                None => session.stl_with(solid,path,deflection,ANGULAR),
+            }
         };
         for (kind,stage_of,path) in [("step",Stage::Step,step),("stl",Stage::Stl,stl)] {
             let Some(path) = path else { continue };

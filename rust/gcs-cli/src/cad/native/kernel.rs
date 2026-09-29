@@ -11,6 +11,10 @@ extern "C" {
     fn solvent_cad_revolved(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,seam: *const f64) -> c_int;
     fn solvent_cad_pattern(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,angles: *const f64,count: c_int,
         sides: *const c_int,fuzzy: f64) -> c_int;
+    fn solvent_cad_sector_mesh(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,deflection: f64,angular: f64,
+        output: *mut f64) -> c_int;
+    fn solvent_cad_sector_stl(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,origin: *const f64,axis: *const f64,
+        count: c_int,pitch: f64,reach: f64,path: *const c_char,output: *mut f64) -> c_int;
     fn solvent_cad_solid_contains(cad: *mut c_void,id: c_int,points: *const f64,count: c_int,tolerance: f64,
         output: *mut c_int) -> c_int;
     fn solvent_cad_volume(cad: *mut c_void,id: c_int,output: *mut f64) -> c_int;
@@ -30,6 +34,20 @@ extern "C" {
     fn solvent_cad_read_step(cad: *mut c_void,path: *const c_char) -> c_int;
     fn solvent_cad_face_kind(cad: *mut c_void,face: c_int) -> c_int;
     fn solvent_cad_surface_grid(cad: *mut c_void,face: c_int,nu: c_int,nv: c_int,output: *mut f64) -> c_int;
+}
+
+/// A body built as one sector patterned (`sweep_boundary::sector`): the sector's material with its
+/// two side faces, the sides it was cut by, the fuzzy value they are found to, and the turn
+/// (`count` copies a `pitch` apart about the line through `origin`, mm, along `axis`).
+#[derive(Clone,Copy,Debug)]
+pub(crate) struct Patterned {
+    pub piece: c_int,
+    pub sides: [c_int;2],
+    pub fuzzy: f64,
+    pub origin: [f64;3],
+    pub axis: [f64;3],
+    pub count: usize,
+    pub pitch: f64,
 }
 
 /// One cell of a partition, its volume, and its deepest interior sample.
@@ -76,6 +94,25 @@ impl Session {
         -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_pattern(self.0,solid,origin.as_ptr(),axis.as_ptr(),angles.as_ptr(),angles.len() as c_int,
             sides.as_ptr(),fuzzy) })
+    }
+    /// Mesh a patterned body's sector afresh, at an absolute chordal `deflection` (mm) and an
+    /// `angular` one (radians), and, asked, the chordal sag its faces but the sides have (mm) and where.
+    pub(crate) fn sector_mesh(&self,sector: &Patterned,deflection: f64,angular: f64,sag: bool) -> Result<Option<(f64,[f64;3])>,String> {
+        let mut data = [0.;4];
+        self.result(unsafe { solvent_cad_sector_mesh(self.0,sector.piece,sector.sides.as_ptr(),sector.fuzzy,deflection,angular,
+            if sag { data.as_mut_ptr() } else { std::ptr::null_mut() }) })?;
+        Ok(sag.then(|| (data[0],[data[1],data[2],data[3]])))
+    }
+    /// The binary STL of a patterned body from its meshed sector: the sector's triangles but its
+    /// sides', turned into every copy, neighbouring copies sharing their seam points exactly, each
+    /// point of one side's seam moved to its partner's turn on the other side's, at most `reach`
+    /// (mm). Returns the triangles written and the farthest a seam point moved (mm).
+    pub(crate) fn sector_stl(&self,sector: &Patterned,reach: f64,path: &str) -> Result<(usize,f64),String> {
+        let name = CString::new(path).map_err(|e| e.to_string())?;
+        let mut moved = [0.];
+        let triangles = self.result(unsafe { solvent_cad_sector_stl(self.0,sector.piece,sector.sides.as_ptr(),sector.fuzzy,
+            sector.origin.as_ptr(),sector.axis.as_ptr(),sector.count as c_int,sector.pitch,reach,name.as_ptr(),moved.as_mut_ptr()) })?;
+        Ok((triangles as usize,moved[0]))
     }
     /// A solid of revolution about the line through `origin` (mm) along `axis`, made again by
     /// turning its meridian section about it, so that every face's frame is on that line, its

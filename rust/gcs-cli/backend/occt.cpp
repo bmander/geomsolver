@@ -158,6 +158,38 @@ double Cad::volume_of(int id) {
     return v;
 }
 
+// The chordal sag a meshed face actually has: over its triangles, the largest distance from a
+// point linear in a triangle (its centroid, its edges' midpoints) to the face's surface, found by a
+// local search from the surface parameters linear in the triangle; where that search fails, the
+// distance to the surface at those parameters, which is no smaller. Raises `worst` to it, with
+// where the linear point is.
+void face_sag(const TopoDS_Face& face,double& worst,gp_Pnt& at) {
+    TopLoc_Location location,placed;
+    auto triangles = BRep_Tool::Triangulation(face,location);
+    if (triangles.IsNull() || triangles->NbTriangles() == 0) throw std::runtime_error("mesh sag of an unmeshed face");
+    if (!triangles->HasUVNodes()) throw std::runtime_error("a face's triangulation has no surface parameters");
+    auto surface = BRep_Tool::Surface(face,placed);
+    GeomAdaptor_Surface adaptor(surface);
+    Extrema_GenLocateExtPS local(adaptor,Precision::PConfusion(),Precision::PConfusion());
+    const gp_Trsf mesh = location.Transformation(),support = placed.Transformation(),back = support.Inverted();
+    for (int t=1;t<=triangles->NbTriangles();++t) {
+        int n[3]; triangles->Triangle(t).Get(n[0],n[1],n[2]);
+        gp_Pnt p[3]; gp_Pnt2d uv[3];
+        for (int k=0;k<3;++k) { p[k] = triangles->Node(n[k]).Transformed(mesh); uv[k] = triangles->UVNode(n[k]); }
+        const double weights[4][3] = {{1./3,1./3,1./3},{0.5,0.5,0},{0,0.5,0.5},{0.5,0,0.5}};
+        for (const auto& w: weights) {
+            gp_XYZ linear(0,0,0); gp_XY param(0,0);
+            for (int k=0;k<3;++k) { linear += w[k]*p[k].XYZ(); param += w[k]*uv[k].XY(); }
+            const gp_Pnt point(linear),local_point = point.Transformed(back);
+            double d = surface->Value(param.X(),param.Y()).Distance(local_point);
+            try {
+                local.Perform(local_point,param.X(),param.Y());
+                if (local.IsDone()) d = std::min(d,std::sqrt(local.SquareDistance()));
+            } catch (const Standard_Failure&) {}
+            if (d > worst) { worst = d; at = point; }
+        }
+    }
+}
 extern "C" {
 Cad* solvent_cad_new() noexcept { try { return new Cad; } catch (...) { return nullptr; } }
 void solvent_cad_free(Cad* cad) noexcept { delete cad; }
@@ -330,43 +362,12 @@ int solvent_cad_remesh(Cad* cad,int id,double deflection,double angular) noexcep
         return 0;
     });
 }
-// The chordal sag a meshed shape actually has: over every face's triangles, the largest distance
-// from a point linear in a triangle (its centroid, its edges' midpoints) to the face's surface,
-// found by a local search from the surface parameters linear in the triangle; where that search
-// fails, the distance to the surface at those parameters, which is no smaller. `output`: that
-// distance (mm) and where the linear point is.
+// The sag of every face of a meshed shape (`face_sag`). `output`: the distance (mm) and where.
 int solvent_cad_mesh_sag(Cad* cad,int id,double* output) noexcept {
     return guarded(cad,[&] {
         if (!output) throw std::runtime_error("mesh sag needs an output buffer");
         double worst = 0; gp_Pnt at;
-        for (TopExp_Explorer it(cad->at(id),TopAbs_FACE); it.More(); it.Next()) {
-            const TopoDS_Face face = TopoDS::Face(it.Current());
-            TopLoc_Location location,placed;
-            auto triangles = BRep_Tool::Triangulation(face,location);
-            if (triangles.IsNull() || triangles->NbTriangles() == 0) throw std::runtime_error("mesh sag of an unmeshed face");
-            if (!triangles->HasUVNodes()) throw std::runtime_error("a face's triangulation has no surface parameters");
-            auto surface = BRep_Tool::Surface(face,placed);
-            GeomAdaptor_Surface adaptor(surface);
-            Extrema_GenLocateExtPS local(adaptor,Precision::PConfusion(),Precision::PConfusion());
-            const gp_Trsf mesh = location.Transformation(),support = placed.Transformation(),back = support.Inverted();
-            for (int t=1;t<=triangles->NbTriangles();++t) {
-                int n[3]; triangles->Triangle(t).Get(n[0],n[1],n[2]);
-                gp_Pnt p[3]; gp_Pnt2d uv[3];
-                for (int k=0;k<3;++k) { p[k] = triangles->Node(n[k]).Transformed(mesh); uv[k] = triangles->UVNode(n[k]); }
-                const double weights[4][3] = {{1./3,1./3,1./3},{0.5,0.5,0},{0,0.5,0.5},{0.5,0,0.5}};
-                for (const auto& w: weights) {
-                    gp_XYZ linear(0,0,0); gp_XY param(0,0);
-                    for (int k=0;k<3;++k) { linear += w[k]*p[k].XYZ(); param += w[k]*uv[k].XY(); }
-                    const gp_Pnt point(linear),local_point = point.Transformed(back);
-                    double d = surface->Value(param.X(),param.Y()).Distance(local_point);
-                    try {
-                        local.Perform(local_point,param.X(),param.Y());
-                        if (local.IsDone()) d = std::min(d,std::sqrt(local.SquareDistance()));
-                    } catch (const Standard_Failure&) {}
-                    if (d > worst) { worst = d; at = point; }
-                }
-            }
-        }
+        for (TopExp_Explorer it(cad->at(id),TopAbs_FACE); it.More(); it.Next()) face_sag(TopoDS::Face(it.Current()),worst,at);
         output[0] = worst; output[1] = at.X(); output[2] = at.Y(); output[3] = at.Z();
         return 0;
     });

@@ -15,7 +15,7 @@
 //! cutter's shape; an unresolved or mixed cell refuses the build. The cutter's sections are
 //! `sections`', and the fit contract a sheet passes before it is placed is `fit`'s.
 use super::*;
-use super::kernel::Cell;
+use super::kernel::{Cell,Patterned};
 use gcs_core::{interval::{Interval,minimum::Options},model::{Sketch,SolidDef},motion::Family,
     solid::{admission::Admission,cad,contracts,MaterialEvaluator,MaterialField,ProbeState,SweepContacts}};
 use gcs_core::solid::contact_trace::{Band,Layout,Sample,Station,TraceError,Tracer,Withheld,marked};
@@ -278,11 +278,20 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub(crate) enum Construction { Sector,Whole }
 
+/// A body constructed natively: the solid handle in its session, how it was built, and — built as
+/// one sector patterned — the sector it was patterned from.
+pub(crate) struct Built {
+    pub solid: c_int,
+    /// Read by the tests that build one body both ways.
+    #[cfg_attr(not(test),allow(dead_code))]
+    pub how: Construction,
+    pub sector: Option<Patterned>,
+}
+
 /// Construct a body whose cuts include continuous sweeps, which only its admission to the
-/// generating-sweep class allows: as `asked` where it applies, whole otherwise. Returns the native
-/// solid handle in this session, and how it was built.
+/// generating-sweep class allows: as `asked` where it applies, whole otherwise.
 pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,recipe: &cad::StaticRecipe,
-    admission: &Admission,tolerance: Option<Tolerance>,asked: Construction) -> Result<(c_int,Construction),ExportRefusal> {
+    admission: &Admission,tolerance: Option<Tolerance>,asked: Construction) -> Result<Built,ExportRefusal> {
     if admission.body() != body {
         return Err(ExportRefusal::at(Stage::Admission,format!("`{}`: the admission presented is another body's",sk.solids[body].name)));
     }
@@ -296,7 +305,7 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     let sheets = distinct.iter().map(|&swept| swept_sheet(session,sk,swept,blank,&field,tolerance)).collect::<Result<Vec<_>,_>>()?;
     if asked == Construction::Sector {
         match sector::construct(session,sk,body,recipe,blank,&field,&distinct,&sheets,scale) {
-            Ok(part) => return Ok((part,Construction::Sector)),
+            Ok((solid,sector)) => return Ok(Built {solid,how:Construction::Sector,sector:Some(sector)}),
             Err(reason) => stage(&format!("`{}` is built whole: the sector construction does not apply ({reason})",
                 sk.solids[body].name)),
         }
@@ -336,22 +345,37 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     let part = fused().at(Stage::Fuse)?;
     sector::debug_faces(session,"the body built whole",part);
     mark(Stage::Fuse);
-    Ok((part,Construction::Whole))
+    Ok(Built {solid:part,how:Construction::Whole,sector:None})
+}
+
+/// `construct_built`'s solid.
+#[cfg(test)]
+pub(crate) fn construct_solid(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecipe,
+    admission: Option<&Admission>,tolerance: Option<Tolerance>) -> Result<c_int,ExportRefusal> {
+    construct_built(session,sk,solid,recipe,admission,tolerance).map(|built| built.solid)
 }
 
 /// Native construction of a solid for export: the static recipe when it is
 /// complete, the swept path when the body cuts continuous sweeps and was admitted — as one sector
 /// where that applies, unless `SOLVENT_SECTOR=off` asks for the whole construction.
-pub(crate) fn construct_solid(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecipe,
-    admission: Option<&Admission>,tolerance: Option<Tolerance>) -> Result<c_int,ExportRefusal> {
+pub(crate) fn construct_built(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecipe,
+    admission: Option<&Admission>,tolerance: Option<Tolerance>) -> Result<Built,ExportRefusal> {
     let asked = if sector::wanted() { Construction::Sector } else { Construction::Whole };
-    construct_solid_as(session,sk,solid,recipe,admission,tolerance,asked).map(|(part,_)| part)
+    built_as(session,sk,solid,recipe,admission,tolerance,asked)
 }
 
-/// The same, built as `asked` where it applies; and how it was built.
+/// Built as `asked` where it applies; and how it was built.
+#[cfg(test)]
 pub(crate) fn construct_solid_as(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecipe,
     admission: Option<&Admission>,tolerance: Option<Tolerance>,asked: Construction) -> Result<(c_int,Construction),ExportRefusal> {
-    if recipe.sweeps.is_empty() { return session.construct(&recipe.recipe).at(Stage::Blank).map(|part| (part,Construction::Whole)); }
+    built_as(session,sk,solid,recipe,admission,tolerance,asked).map(|built| (built.solid,built.how))
+}
+
+fn built_as(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecipe,
+    admission: Option<&Admission>,tolerance: Option<Tolerance>,asked: Construction) -> Result<Built,ExportRefusal> {
+    if recipe.sweeps.is_empty() {
+        return session.construct(&recipe.recipe).at(Stage::Blank).map(|solid| Built {solid,how:Construction::Whole,sector:None});
+    }
     let admission = admission.ok_or_else(|| ExportRefusal::at(Stage::Admission,format!("`{}`: a body with swept cuts is \
         built only once admitted to the generating-sweep class",sk.solids[solid].name)))?;
     construct_swept_body(session,sk,solid,recipe,admission,tolerance,asked)

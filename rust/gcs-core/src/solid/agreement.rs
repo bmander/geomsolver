@@ -74,11 +74,47 @@ pub fn of_triangles_observed(vertices: &[V],triangles: &[[u32;3]],material: &mut
     let mut report = Agreement {triangles:triangles.len(),..Default::default()};
     for t in sample(vertices,triangles,options) {
         observe(&report);
+        report.add(probe(vertices,t,material,options)?);
+    }
+    Ok(report)
+}
+
+/// The same report, the triangles probed on every core, each thread reading `field` through an
+/// evaluator of its own (poses cached `cache` a sweep): what an evaluator has cached changes how
+/// fast it answers, never what, so the report is the one a single evaluator gives.
+pub fn of_triangles_parallel(vertices: &[V],triangles: &[[u32;3]],field: &super::MaterialField,cache: usize,options: &Options)
+    -> Result<Agreement,String> {
+    let chosen = sample(vertices,triangles,options);
+    let outcomes = crate::par::indices_with(chosen.len(),|| field.evaluator(cache),
+        |material,i| probe(vertices,chosen[i],material,options));
+    let mut report = Agreement {triangles:triangles.len(),..Default::default()};
+    for outcome in outcomes { report.add(outcome?); }
+    Ok(report)
+}
+
+/// What probing one triangle found.
+#[derive(Default)]
+struct Probed { probed: bool,probes: usize,unresolved: usize,withdrawn: bool,disagreements: Vec<Disagreement> }
+
+impl Agreement {
+    fn add(&mut self,p: Probed) {
+        self.probed_triangles += usize::from(p.probed);
+        self.probes += p.probes; self.unresolved += p.unresolved;
+        self.withdrawn += usize::from(p.withdrawn);
+        self.disagreements.extend(p.disagreements);
+    }
+}
+
+/// Probe one triangle: a point `offset` inside it and one outside, and, where one side alone
+/// disagrees, its centroid.
+fn probe(vertices: &[V],t: &[u32;3],material: &mut MaterialEvaluator,options: &Options) -> Result<Probed,String> {
+    let mut report = Probed::default();
+    {
         let [a,b,c] = t.map(|i| vertices[i as usize]);
         let n = cross(sub(b,a),sub(c,a));
         let length = norm(n);
-        if !(length > 0.) || !length.is_finite() { continue; }
-        report.probed_triangles += 1;
+        if !(length > 0.) || !length.is_finite() { return Ok(report); }
+        report.probed = true;
         let centroid: V = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
         // A probe asks only a sign, so every swept operand stops once its enclosure leaves
         // zero (a far sweep at once); the centroid asks only whether it lies within `confirm`.
@@ -106,7 +142,7 @@ pub fn of_triangles_observed(vertices: &[V],triangles: &[[u32;3]],material: &mut
         if found.len() == 1 {
             let band = Interval::new(-options.confirm,options.confirm).map_err(|e| format!("{e:?}"))?;
             let (_,[c_lo,c_hi]) = ask(0.,Stop::Decided(band),options.confirm/4.)?;
-            if c_lo >= -options.confirm && c_hi <= options.confirm { report.withdrawn += 1; continue; }
+            if c_lo >= -options.confirm && c_hi <= options.confirm { report.withdrawn = true; return Ok(report); }
         }
         report.disagreements.extend(found);
     }
