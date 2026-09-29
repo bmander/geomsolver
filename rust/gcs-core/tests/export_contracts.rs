@@ -69,8 +69,13 @@ fn a_tolerance_mesh_contract_refuses_a_cluster_not_a_count() {
 #[test]
 fn the_cell_contract_wants_one_congruent_removed_cell_per_placement() {
     let cell = |volume: f64| CellVolume {volume,point:[0.;3]};
-    assert!(contracts::cells(&[cell(10.)],&[cell(1.),cell(1.)],2).is_ok());
-    assert!(contracts::cells(&[cell(10.)],&[cell(1.)],2).unwrap_err().contains("removed 1 cells for 2"));
-    assert!(contracts::cells(&[cell(10.)],&[cell(1.),cell(1.1)],2).unwrap_err().contains("not congruent"));
-    assert!(contracts::cells(&[cell(1e-4)],&[cell(1.)],1).unwrap_err().contains("floor"));
+    assert!(contracts::cells(&[cell(10.)],&[cell(1.),cell(1.)],&[2]).is_ok());
+    assert!(contracts::cells(&[cell(10.)],&[cell(1.)],&[2]).unwrap_err().contains("removed 1 cells for 2"));
+    assert!(contracts::cells(&[cell(10.)],&[cell(1.),cell(1.1)],&[2]).unwrap_err().contains("not congruent"));
+    assert!(contracts::cells(&[cell(1e-4)],&[cell(1.)],&[1]).unwrap_err().contains("floor"));
+    // Two sweeps at the same two indices (a crown and its relief): classes of one cell an index.
+    let removed = [cell(1.),cell(0.2),cell(1.),cell(0.2),cell(0.5),cell(0.5)];
+    assert!(contracts::cells(&[cell(10.)],&removed,&[2,2]).is_ok());
+    assert!(contracts::cells(&[cell(10.)],&removed[..5],&[2,2]).unwrap_err().contains("1 of 0.5"));
+    assert!(contracts::cells(&[cell(10.)],&removed,&[2,3]).unwrap_err().contains("one count"));
 }

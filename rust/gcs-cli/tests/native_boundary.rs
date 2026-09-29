@@ -180,3 +180,28 @@ fn native_cutter_edges_agree_with_the_independent_source_material() {
         assert!(checked >= 18);
     }
 }
+
+/// A sliver cell, a chevron 4 µm thick across 45 mm, has no candidate a fixed step in from its
+/// faces reaches and no point of a grid over its box: its interior samples are the middles of
+/// rays along its faces' inward normals, inside and clear of the 0.2 µm the classifier needs.
+#[test]
+fn a_sliver_is_sampled_between_its_faces() {
+    let mut text = String::from("unit mm\n");
+    for (name,x,y) in [("a",0.,0.),("b",20.,10.),("c",40.,0.),("d",40.,0.004),("e",20.,10.004),("f",0.,0.004)] {
+        text += &format!("point {name} hint(x: {x}, y: {y})\nground {name}\n");
+    }
+    text += "solid sliver(face(a, b, c, d, e, f, -> close), depth: 10mm)\n";
+    let e = fixtures::gear::read(&text,Path::new("."));
+    let cad = native::Session::new().unwrap();
+    let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("sliver").unwrap().i()).unwrap()).unwrap();
+    let started = std::time::Instant::now();
+    let samples = cad.samples(solid,4,12).unwrap();
+    eprintln!("{} samples in {:?}: {samples:?}",samples.len(),started.elapsed());
+    assert_eq!(samples.len(),4);
+    let half = 0.004*(20f64/500f64.sqrt())/2.;
+    for (p,boundary) in &samples {
+        assert!(*boundary > 2e-4 && *boundary <= half+1e-7,"{p:?} {boundary}");
+    }
+    let points: Vec<[f64;3]> = samples.iter().map(|s| s.0).collect();
+    assert!(cad.solid_contains(solid,&points,1e-7).unwrap().iter().all(|&s| s == 1));
+}

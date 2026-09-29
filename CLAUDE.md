@@ -322,6 +322,11 @@ with `admission.rs::the_admission_grid`); tests with recorded numbers pin theirs
 gear rewrites and small sweep tools live in), and `tests/native_surfaces/gear_cells.rs` holds
 the recorded tooth-space volumes. `tests/generating_harness.rs` (ignored, minutes) locates each
 refusal by stage over fixtures, the gear controls and a 48-design sweep.
+The configured pair carries **backlash** (each crown's flanks a quarter of it off the lines tooth
+and mate share; zero keeps the old incidences through `repeat design.lashed`) and **tip relief**
+(`crown/relief.sv`: a second, semi-topping sweep per member, built only under `relieved`).
+`fixtures::gear::design` pins both to zero, as every recorded number was taken;
+`fixtures::gear::fabricated` sets them.
 **Export tolerance (phase 3, [plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]`
 (0.01 mm when no length follows; a bare number is in the document's unit; `um`, `mm`, `in`… name
 their own; a physical length whatever the unit) holds a native export for fabrication, and

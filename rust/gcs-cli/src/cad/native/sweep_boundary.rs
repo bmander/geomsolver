@@ -432,6 +432,7 @@ pub(crate) fn classify(session: &Session,partition: c_int,material: &mut Materia
         if samples.is_empty() { return Err(format!("a cell of volume {volume} has no interior sample")); }
         let cell = Cell {solid,point:samples[0].0,volume};
         let mut verdict = None;
+        let deepest = samples[0];
         for (point,boundary) in samples {
             let distance = (boundary*0.5).min(0.05);
             if distance <= 1e-4 { continue; }
@@ -446,16 +447,20 @@ pub(crate) fn classify(session: &Session,partition: c_int,material: &mut Materia
                 state => return Err(format!("the material at {point:?} ({boundary:.3} mm from a cell boundary) is {state:?}")),
             };
             match verdict {
-                None => verdict = Some(inside),
-                Some(previous) if previous != inside => return Err(format!(
-                    "a cell of volume {} reads both material and removed: a sheet did not separate it",cell.volume)),
+                None => verdict = Some((inside,point)),
+                Some((previous,at)) if previous != inside => return Err(format!(
+                    "a cell of volume {} reads both material and removed: a sheet did not separate it \
+                    ({} at {:?}, {} at {:?})",cell.volume,if previous { "material" } else { "removed" },
+                    at.map(|x| (x*1e4).round()/1e4),if inside { "material" } else { "removed" },
+                    point.map(|x| (x*1e4).round()/1e4))),
                 _ => {}
             }
         }
         match verdict {
-            Some(true) => kept.push(cell),
-            Some(false) => removed.push(cell),
-            None => return Err(format!("a cell of volume {} has no sample clear of its boundary",cell.volume)),
+            Some((true,_)) => kept.push(cell),
+            Some((false,_)) => removed.push(cell),
+            None => return Err(format!("a cell of volume {} has no sample clear of its boundary (the deepest {:.1e} mm in, at {:?})",
+                cell.volume,deepest.1,deepest.0.map(|x| (x*1e4).round()/1e4))),
         }
     }
     stage(&format!("classification: interior samples {sampling:.1} s, {probes} field probes {probing:.1} s"));
@@ -837,7 +842,7 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     let mut tools = Vec::new();
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
-    for swept in distinct {
+    for &swept in &distinct {
         let (face,_,_) = swept_sheet(session,sk,swept,blank,&field,tolerance)?;
         for cut in recipe.sweeps.iter().filter(|c| c.swept == swept) {
             tools.push(session.place(face,cut.pose,scale).at(Stage::Split)?);
@@ -855,7 +860,8 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
         stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),started.elapsed()));
         if kept.is_empty() { return Err("no cell of the blank is material".into()); }
         let volumes = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();
-        contracts::cells(&volumes(&kept),&volumes(&removed),recipe.sweeps.len())?;
+        let placements: Vec<usize> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).count()).collect();
+        contracts::cells(&volumes(&kept),&volumes(&removed),&placements)?;
         Ok((kept,removed))
     };
     let (kept,_) = classified().at(Stage::Classify)?;
