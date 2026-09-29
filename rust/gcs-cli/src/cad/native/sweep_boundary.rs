@@ -29,6 +29,8 @@ use std::f64::consts::TAU;
 mod sections;
 #[path="sweep_boundary/fit.rs"]
 mod fit;
+#[path="sweep_boundary/sector.rs"]
+mod sector;
 use fit::{Judged,judged};
 
 /// `SOLVENT_TRACE_DEBUG=1` prints where a station's contact curve ends, leaves the root window or
@@ -283,13 +285,20 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     let (field,_) = gcs_core::solid::admission::static_remainder(sk,body,cad::AXIS_TOLERANCE).at(Stage::Blank)?;
     stage(&format!("`{}`: static blank of {} operations",sk.solids[body].name,recipe.recipe.get("nodes").unwrap().arr().len()));
     mark(Stage::Blank);
-    let mut tools = Vec::new();
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
-    for &swept in &distinct {
-        let (face,_,_) = swept_sheet(session,sk,swept,blank,&field,tolerance)?;
+    let sheets = distinct.iter().map(|&swept| swept_sheet(session,sk,swept,blank,&field,tolerance)).collect::<Result<Vec<_>,_>>()?;
+    if sector::wanted() {
+        match sector::construct(session,sk,body,recipe,blank,&field,&distinct,&sheets,scale) {
+            Ok(part) => return Ok(part),
+            Err(reason) => stage(&format!("`{}` is built whole: the sector construction does not apply ({reason})",
+                sk.solids[body].name)),
+        }
+    }
+    let mut tools = Vec::new();
+    for (&swept,(face,_,_)) in distinct.iter().zip(&sheets) {
         for cut in recipe.sweeps.iter().filter(|c| c.swept == swept) {
-            tools.push(session.place(face,cut.pose,scale).at(Stage::Split)?);
+            tools.push(session.place(*face,cut.pose,scale).at(Stage::Split)?);
         }
     }
     let started = std::time::Instant::now();
@@ -319,6 +328,7 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
         Ok(part)
     };
     let part = fused().at(Stage::Fuse)?;
+    sector::debug_faces(session,"the body built whole",part);
     mark(Stage::Fuse);
     Ok(part)
 }

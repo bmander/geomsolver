@@ -52,7 +52,7 @@ static double volume(const TopoDS_Shape& shape) {
 }
 // Name the first invalid sub-shape and its statuses, so a failed construction
 // says which face, edge or vertex the kernel objects to.
-static std::string invalidity(const TopoDS_Shape& shape) {
+std::string invalidity(const TopoDS_Shape& shape) {
     BRepCheck_Analyzer analyzer(shape);
     std::ostringstream message;
     for (TopAbs_ShapeEnum kind: {TopAbs_SOLID,TopAbs_SHELL,TopAbs_FACE,TopAbs_WIRE,TopAbs_EDGE,TopAbs_VERTEX}) {

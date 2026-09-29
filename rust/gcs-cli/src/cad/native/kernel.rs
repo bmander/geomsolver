@@ -8,6 +8,9 @@ extern "C" {
     fn solvent_cad_solids(cad: *mut c_void,source: c_int,output: *mut c_int,capacity: c_int) -> c_int;
     fn solvent_cad_solid_samples(cad: *mut c_void,id: c_int,output: *mut f64,capacity: c_int,measure: c_int) -> c_int;
     fn solvent_cad_fuse(cad: *mut c_void,ids: *const c_int,count: c_int) -> c_int;
+    fn solvent_cad_revolved(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64) -> c_int;
+    fn solvent_cad_pattern(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,angles: *const f64,count: c_int,
+        sides: *const c_int,fuzzy: f64) -> c_int;
     fn solvent_cad_solid_contains(cad: *mut c_void,id: c_int,points: *const f64,count: c_int,tolerance: f64,
         output: *mut c_int) -> c_int;
     fn solvent_cad_volume(cad: *mut c_void,id: c_int,output: *mut f64) -> c_int;
@@ -66,6 +69,25 @@ impl Session {
     }
     pub(crate) fn fuse(&self,ids: &[c_int]) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_fuse(self.0,ids.as_ptr(),ids.len() as c_int) })
+    }
+    /// A solid and its copies turned by `angles` about the line through `origin` (mm) along `axis`,
+    /// united: its faces on `sides` left out and the rest of every copy sewn to `fuzzy` (mm), no face
+    /// intersected.
+    pub(crate) fn pattern(&self,solid: c_int,origin: [f64;3],axis: [f64;3],angles: &[f64],sides: [c_int;2],fuzzy: f64)
+        -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_pattern(self.0,solid,origin.as_ptr(),axis.as_ptr(),angles.as_ptr(),angles.len() as c_int,
+            sides.as_ptr(),fuzzy) })
+    }
+    /// A solid of revolution about the line through `origin` (mm) along `axis`, made again by
+    /// turning its meridian section about it, so that every face's frame is on that line.
+    pub(crate) fn revolved(&self,solid: c_int,origin: [f64;3],axis: [f64;3]) -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_revolved(self.0,solid,origin.as_ptr(),axis.as_ptr()) })
+    }
+    /// The box about some shapes, lower corner then upper (mm).
+    pub(crate) fn bounds(&self,ids: &[c_int]) -> Result<[[f64;3];2],String> {
+        let mut b = [0.;6];
+        self.result(unsafe { solvent_cad_bounds(self.0,ids.as_ptr(),ids.len() as c_int,b.as_mut_ptr()) })?;
+        Ok([[b[0],b[1],b[2]],[b[3],b[4],b[5]]])
     }
     /// Per point: 0 outside, 1 inside, 2 within `tolerance` of the boundary.
     pub(crate) fn solid_contains(&self,solid: c_int,points: &[[f64;3]],tolerance: f64) -> Result<Vec<c_int>,String> {

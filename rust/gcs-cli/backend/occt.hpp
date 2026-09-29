@@ -47,3 +47,6 @@ template<class F> int guarded(Cad* cad,F fn) noexcept {
 // Throws unless the shape is a valid closed solid of positive volume; returns that volume.
 // Each solid's volume is recorded in `record` when one is given.
 double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record = nullptr);
+
+// What the kernel's checker finds wrong with a shape, for a message.
+std::string invalidity(const TopoDS_Shape& shape);
