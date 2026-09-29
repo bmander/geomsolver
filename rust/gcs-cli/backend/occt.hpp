@@ -5,6 +5,7 @@
 #include <gp_Ax1.hxx>
 #include <deque>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <TopTools_ListOfShape.hxx>
 #include <TopTools_DataMapOfShapeReal.hxx>
@@ -55,7 +56,26 @@ struct Cad {
         axis = it->second.first; copies = it->second.second;
         return true;
     }
+    // A pattern's union made and not yet checked (`solvent_cad_pattern`), what its check
+    // (`solvent_cad_pattern_check`) needs kept under its handle until then (cells.cpp).
+    struct Pending;
+    void set_pending(int id,std::shared_ptr<Pending> pending) { const std::lock_guard<std::mutex> hold(lock); pendings[id] = std::move(pending); }
+    std::shared_ptr<Pending> take_pending(int id) {
+        const std::lock_guard<std::mutex> hold(lock);
+        const auto it = pendings.find(id);
+        if (it == pendings.end()) return nullptr;
+        auto pending = it->second;
+        pendings.erase(it);
+        return pending;
+    }
+    // A stored shape found valid by a check of its own, with its volume.
+    void set_checked(int id,double volume) {
+        const std::lock_guard<std::mutex> hold(lock);
+        valid.at(static_cast<size_t>(id)) = 1;
+        volumes.at(static_cast<size_t>(id)) = volume;
+    }
 private:
+    std::map<int,std::shared_ptr<Pending>> pendings;
     std::mutex lock;
     std::deque<TopoDS_Shape> shapes;
     std::deque<char> valid;

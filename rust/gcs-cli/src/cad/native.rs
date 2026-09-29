@@ -28,7 +28,7 @@ extern "C" {
     fn solvent_cad_transform(cad: *mut c_void,source: c_int,matrix: *const f64) -> c_int;
     fn solvent_cad_bounds(cad: *mut c_void,ids: *const c_int,count: c_int,out: *mut f64) -> c_int;
     fn solvent_cad_validate(cad: *mut c_void,id: c_int) -> c_int;
-    fn solvent_cad_step(cad: *mut c_void,id: c_int,path: *const c_char,full: c_int) -> c_int;
+    fn solvent_cad_step(cad: *mut c_void,id: c_int,path: *const c_char,full: c_int,unchecked: c_int) -> c_int;
     fn solvent_cad_brep_summary(cad: *mut c_void,id: c_int,output: *mut f64,capacity: c_int) -> c_int;
     fn solvent_cad_stl(cad: *mut c_void,id: c_int,path: *const c_char,deflection: f64,angular: f64) -> c_int;
     fn solvent_cad_remesh(cad: *mut c_void,id: c_int,deflection: f64,angular: f64) -> c_int;

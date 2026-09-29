@@ -14,6 +14,7 @@ extern "C" {
     fn solvent_cad_revolve_region(cad: *mut c_void,region: c_int,origin: *const f64,axis: *const f64) -> c_int;
     fn solvent_cad_pattern(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,angles: *const f64,count: c_int,
         sides: *const c_int,fuzzy: f64) -> c_int;
+    fn solvent_cad_pattern_check(cad: *mut c_void,id: c_int) -> c_int;
     fn solvent_cad_sector_mesh(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,deflection: f64,angular: f64,
         output: *mut f64) -> c_int;
     fn solvent_cad_sector_stl(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,origin: *const f64,axis: *const f64,
@@ -106,11 +107,16 @@ impl Session {
     }
     /// A solid and its copies turned by `angles` about the line through `origin` (mm) along `axis`,
     /// united: its faces on `sides` left out and the rest of every copy sewn to `fuzzy` (mm), no face
-    /// intersected.
+    /// intersected. Unchecked: `pattern_check` checks and measures it, and gives the handle to keep.
     pub(crate) fn pattern(&self,solid: c_int,origin: [f64;3],axis: [f64;3],angles: &[f64],sides: [c_int;2],fuzzy: f64)
         -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_pattern(self.0,solid,origin.as_ptr(),axis.as_ptr(),angles.as_ptr(),angles.len() as c_int,
             sides.as_ptr(),fuzzy) })
+    }
+    /// A pattern's union checked and measured: its handle, or another where the union unified does
+    /// not check and the union as it was sewn does.
+    pub(crate) fn pattern_check(&self,made: c_int) -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_pattern_check(self.0,made) })
     }
     /// Mesh a patterned body's sector afresh, at an absolute chordal `deflection` (mm) and an
     /// `angular` one (radians), and, asked, the chordal sag its faces but the sides have (mm) and where.
@@ -211,14 +217,22 @@ impl Session {
         self.step_verified(solid,path,step_check::verification())
     }
     pub(crate) fn step_verified(&self,solid: c_int,path: &str,how: step_check::Verification) -> Result<String,String> {
+        self.result(unsafe { solvent_cad_validate(self.0,solid) })?;
+        self.step_written(solid,path,how,false)
+    }
+    /// The same of a pattern's union that is being checked beside it (`pattern_check`), which the
+    /// file's light verification does not wait for: written from the union as it is stored.
+    pub(crate) fn step_beside_check(&self,solid: c_int,path: &str) -> Result<String,String> {
+        self.step_written(solid,path,step_check::Verification::Light,true)
+    }
+    fn step_written(&self,solid: c_int,path: &str,how: step_check::Verification,unchecked: bool) -> Result<String,String> {
         let name = CString::new(path).map_err(|e| e.to_string())?;
         let full = how == step_check::Verification::Full;
-        self.result(unsafe { solvent_cad_validate(self.0,solid) })?;
         let started = std::time::Instant::now();
         // the solid's summary read while the kernel writes the file
         let (written,summary) = std::thread::scope(|scope| {
             let summary = scope.spawn(|| self.brep_summary(solid));
-            let written = self.result(unsafe { solvent_cad_step(self.0,solid,name.as_ptr(),c_int::from(full)) });
+            let written = self.result(unsafe { solvent_cad_step(self.0,solid,name.as_ptr(),c_int::from(full),c_int::from(unchecked)) });
             (written,summary.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
         });
         written?;

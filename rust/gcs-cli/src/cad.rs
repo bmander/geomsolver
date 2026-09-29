@@ -98,147 +98,173 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         progress::start();
         let recipe = body.recipe.as_ref().map_err(Clone::clone).at(Stage::Blank)?;
         let session = native::Session::new().at(Stage::Blank)?;
-        // A body with swept cuts not yet admitted is admitted beside its blank and sheets.
-        let built = if body.swept() && body.admission.is_none() {
-            native::sweep_boundary::construct_admitting(&session,sk,body.index,recipe,&|| admitted(sk,body.index),tolerance)?
-        } else { native::sweep_boundary::construct_built(&session,sk,body.index,recipe,body.admission.as_ref(),tolerance)? };
-        let solid = built.solid;
-        // An indexed body's field agreement reads each probe turned into one sector.
-        let indexed = built.sector.as_ref().map(|s| (s.origin,s.axis,s.count));
-        // A body built as one sector patterned is meshed as that sector, its triangles turned into
-        // every copy (`SOLVENT_SECTOR_STL=off` meshes the patterned solid whole).
-        let sector = built.sector.filter(|_| std::env::var("SOLVENT_SECTOR_STL").map_or(true,|v| v != "off"));
+        // A body with swept cuts not yet admitted is admitted beside its blank and sheets; built as one
+        // sector patterned and verified lightly, its union is checked beside its files (below).
+        let defer = native::step_check::verification() == native::step_check::Verification::Light;
+        let admitting = body.swept() && body.admission.is_none();
+        let build = |defer: bool,whole: bool| if admitting {
+            native::sweep_boundary::construct_admitting(&session,sk,body.index,recipe,&|| admitted(sk,body.index),tolerance,defer,whole)
+        } else { native::sweep_boundary::construct_built(&session,sk,body.index,recipe,body.admission.as_ref(),tolerance) };
         let mut staged = output::Staged::new();
         let utf8 = |p: &std::path::Path| p.to_str().map(str::to_owned).ok_or_else(|| "CAD path must be UTF-8".to_string());
-        // The mesh's absolute chordal deflection (mm) and its angular one: the angle bounds how far a
-        // facet's normal turns from its neighbours' and so is kept whatever the tolerance; the
-        // deflection is the distance the tolerance is about. The mesher's deflection is a control
-        // and not a bound: at 5 µm the pinion's mesh left 0.9 mm edges across its fillet, whose
-        // centripetal parameters crowd it into a narrow band of the face's chart, 50 µm off the
-        // face, and chords of the tip cone's trimmed edges 7 µm off it (a finer angle, 0.05 rad,
-        // mended the first and not the second). So a mesh held to a tolerance is read for the sag
-        // every triangle has (`mesh_sag`) and meshed again, finer, until that is within its share.
-        // The sector's mesh turned into its copies, its seam points paired within `reach`; where the
-        // mesher put the two sides' points unlike each other (the pairing refused), meshed again a tenth
-        // finer, at most `SEAM_TRIES` times, each finer mesh's sag read again where a `bar` holds it.
-        let turned_copies = |sector: &native::kernel::Patterned,mut deflection: f64,angular: f64,reach: f64,bar: Option<f64>,path: &str|
-            -> Result<(usize,f64,f64),String> {
-            for tries in 1.. {
-                match session.sector_stl(sector,reach,path) {
-                    Ok((triangles,moved)) => return Ok((triangles,moved,deflection)),
-                    Err(e) if e.starts_with("the sector's mesh") && tries < SEAM_TRIES => {
-                        deflection *= 0.9;
-                        stage(&format!("the sector's seams did not pair ({e}); meshing it again at {:.2} µm",deflection*1e3));
-                        match (session.sector_mesh(sector,deflection,angular,bar.is_some())?,bar) {
-                            (Some((sag,at)),Some(bar)) if sag > bar => return Err(format!("the mesh sags {:.2} µm at {:?} meshed \
-                                again for its seams, against {:.2} µm",sag*1e3,at.map(|x| (x*1e3).round()/1e3),bar*1e3)),
-                            _ => {}
-                        }
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
-            unreachable!("the tries end in a return")
-        };
-        let mesh = |path: &str| -> Result<(),String> {
-            let Some(t) = tolerance else {
-                let Some(sector) = &sector else { return session.stl(solid,path) };
-                let started = std::time::Instant::now();
-                session.sector_mesh(sector,0.01,0.2,false)?;
-                let (triangles,moved,_) = turned_copies(sector,0.01,0.2,GROSS_SEAM,None,path)?;
-                stage(&format!("meshed one sector and turned it into {} copies: {triangles} triangles, seam points moved {:.3} µm \
-                    at most onto their partners ({:?})",sector.count,moved*1e3,started.elapsed()));
-                return Ok(());
-            };
-            let mut deflection = t.deflection();
-            let what = if sector.is_some() { "one sector" } else { "the solid" };
-            for round in 0.. {
-                let started = std::time::Instant::now();
-                let (sag,at) = match &sector {
-                    Some(sector) => session.sector_mesh(sector,deflection,ANGULAR,true)?.expect("a sag asked for"),
-                    None => { session.remesh(solid,deflection,ANGULAR)?; session.mesh_sag(solid)? }
-                };
-                stage(&format!("meshed {what} at {:.2} µm deflection: it sags {:.2} µm at most, at {:?}, against {:.2} µm ({:?})",
-                    deflection*1e3,sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,started.elapsed()));
-                if sag <= t.deflection() { break }
-                if round+1 == MOST_MESHES {
-                    return Err(format!("the mesh still sags {:.2} µm at {:?} after {MOST_MESHES} meshings, against {:.2} µm, half \
-                        the {} µm tolerance",sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,t.millimetres*1e3));
-                }
-                // sag goes as the deflection where the mesher heeds it; never more than a quarter at once
-                deflection *= (0.8*t.deflection()/sag).max(0.25);
-            }
-            match &sector {
-                Some(sector) => {
-                    let started = std::time::Instant::now();
-                    let (triangles,moved,_) = turned_copies(sector,deflection,ANGULAR,deflection,Some(t.deflection()),path)?;
-                    stage(&format!("turned the sector's mesh into {} copies: {triangles} triangles, seam points moved {:.3} µm at \
-                        most onto their partners ({:?})",sector.count,moved*1e3,started.elapsed()));
-                    Ok(())
-                }
-                None => session.stl_with(solid,path,deflection,ANGULAR),
-            }
-        };
         let step_file = step.map(|path| staged.file(path,"step").and_then(|t| utf8(&t))).transpose().at(Stage::Step)?;
         let stl_file = stl.map(|path| staged.file(path,"stl").and_then(|t| utf8(&t))).transpose().at(Stage::Stl)?;
         // A swept body is judged on the STL being written when there is one, meshed once.
         let scratch = if body.swept() && stl_file.is_none() { Some(staged.scratch("stl").and_then(|t| utf8(&t)).at(Stage::Mesh)?) }
             else { None };
-        let write_step = || -> Result<(),ExportRefusal> {
-            let Some(file) = &step_file else { return Ok(()) };
-            let verified = session.step(solid,file).at(Stage::Step)?;
-            stage(&format!("staged the STEP output: {verified}"));
-            mark(Stage::Step);
-            Ok(())
-        };
-        let the_rest = || -> Result<(),ExportRefusal> {
-            // The STL written, then its shells checked beside the field agreement's reading of the same
-            // bytes, what each says said in that order.
-            let bytes = match &stl_file {
-                Some(file) => Some((|| -> Result<Vec<u8>,String> { mesh(file)?; std::fs::read(file).map_err(|e| e.to_string()) })()
-                    .at(Stage::Stl)?),
-                None => None,
+        // Every file of a body built: Ok(Some(reason)) where its sector's union, checked beside them,
+        // does not check (nothing is kept of them, and the body is built whole instead).
+        let files = |built: &native::sweep_boundary::Built| -> Result<Option<String>,ExportRefusal> {
+            let solid = built.solid;
+            // An indexed body's field agreement reads each probe turned into one sector.
+            let indexed = built.sector.as_ref().map(|s| (s.origin,s.axis,s.count));
+            // A body built as one sector patterned is meshed as that sector, its triangles turned into
+            // every copy (`SOLVENT_SECTOR_STL=off` meshes the patterned solid whole).
+            let sector = built.sector.filter(|_| std::env::var("SOLVENT_SECTOR_STL").map_or(true,|v| v != "off"));
+            // The mesh's absolute chordal deflection (mm) and its angular one: the angle bounds how far a
+            // facet's normal turns from its neighbours' and so is kept whatever the tolerance; the
+            // deflection is the distance the tolerance is about. The mesher's deflection is a control
+            // and not a bound: at 5 µm the pinion's mesh left 0.9 mm edges across its fillet, whose
+            // centripetal parameters crowd it into a narrow band of the face's chart, 50 µm off the
+            // face, and chords of the tip cone's trimmed edges 7 µm off it (a finer angle, 0.05 rad,
+            // mended the first and not the second). So a mesh held to a tolerance is read for the sag
+            // every triangle has (`mesh_sag`) and meshed again, finer, until that is within its share.
+            // The sector's mesh turned into its copies, its seam points paired within `reach`; where the
+            // mesher put the two sides' points unlike each other (the pairing refused), meshed again a tenth
+            // finer, at most `SEAM_TRIES` times, each finer mesh's sag read again where a `bar` holds it.
+            let turned_copies = |sector: &native::kernel::Patterned,mut deflection: f64,angular: f64,reach: f64,bar: Option<f64>,path: &str|
+                -> Result<(usize,f64,f64),String> {
+                for tries in 1.. {
+                    match session.sector_stl(sector,reach,path) {
+                        Ok((triangles,moved)) => return Ok((triangles,moved,deflection)),
+                        Err(e) if e.starts_with("the sector's mesh") && tries < SEAM_TRIES => {
+                            deflection *= 0.9;
+                            stage(&format!("the sector's seams did not pair ({e}); meshing it again at {:.2} µm",deflection*1e3));
+                            match (session.sector_mesh(sector,deflection,angular,bar.is_some())?,bar) {
+                                (Some((sag,at)),Some(bar)) if sag > bar => return Err(format!("the mesh sags {:.2} µm at {:?} meshed \
+                                    again for its seams, against {:.2} µm",sag*1e3,at.map(|x| (x*1e3).round()/1e3),bar*1e3)),
+                                _ => {}
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+                unreachable!("the tries end in a return")
             };
-            let check = || -> Result<(),ExportRefusal> {
-                let Some(bytes) = &bytes else { return Ok(()) };
-                let started = std::time::Instant::now();
-                output::check_stl(bytes,"native float32 STL validation failed").at(Stage::Stl)?;
-                stage(&format!("staged the STL output, its shells checked in {:?}",started.elapsed()));
-                mark(Stage::Stl);
+            let mesh = |path: &str| -> Result<(),String> {
+                let Some(t) = tolerance else {
+                    let Some(sector) = &sector else { return session.stl(solid,path) };
+                    let started = std::time::Instant::now();
+                    session.sector_mesh(sector,0.01,0.2,false)?;
+                    let (triangles,moved,_) = turned_copies(sector,0.01,0.2,GROSS_SEAM,None,path)?;
+                    stage(&format!("meshed one sector and turned it into {} copies: {triangles} triangles, seam points moved {:.3} µm \
+                        at most onto their partners ({:?})",sector.count,moved*1e3,started.elapsed()));
+                    return Ok(());
+                };
+                let mut deflection = t.deflection();
+                let what = if sector.is_some() { "one sector" } else { "the solid" };
+                for round in 0.. {
+                    let started = std::time::Instant::now();
+                    let (sag,at) = match &sector {
+                        Some(sector) => session.sector_mesh(sector,deflection,ANGULAR,true)?.expect("a sag asked for"),
+                        None => { session.remesh(solid,deflection,ANGULAR)?; session.mesh_sag(solid)? }
+                    };
+                    stage(&format!("meshed {what} at {:.2} µm deflection: it sags {:.2} µm at most, at {:?}, against {:.2} µm ({:?})",
+                        deflection*1e3,sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,started.elapsed()));
+                    if sag <= t.deflection() { break }
+                    if round+1 == MOST_MESHES {
+                        return Err(format!("the mesh still sags {:.2} µm at {:?} after {MOST_MESHES} meshings, against {:.2} µm, half \
+                            the {} µm tolerance",sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,t.millimetres*1e3));
+                    }
+                    // sag goes as the deflection where the mesher heeds it; never more than a quarter at once
+                    deflection *= (0.8*t.deflection()/sag).max(0.25);
+                }
+                match &sector {
+                    Some(sector) => {
+                        let started = std::time::Instant::now();
+                        let (triangles,moved,_) = turned_copies(sector,deflection,ANGULAR,deflection,Some(t.deflection()),path)?;
+                        stage(&format!("turned the sector's mesh into {} copies: {triangles} triangles, seam points moved {:.3} µm at \
+                            most onto their partners ({:?})",sector.count,moved*1e3,started.elapsed()));
+                        Ok(())
+                    }
+                    None => session.stl_with(solid,path,deflection,ANGULAR),
+                }
+            };
+
+            // The STEP, of the union as it was made where its check runs beside the writing.
+            let write_step = |solid: std::ffi::c_int,beside: bool| -> Result<(),ExportRefusal> {
+                let Some(file) = &step_file else { return Ok(()) };
+                let verified = if beside { session.step_beside_check(solid,file) } else { session.step(solid,file) }.at(Stage::Step)?;
+                stage(&format!("staged the STEP output: {verified}"));
+                mark(Stage::Step);
                 Ok(())
             };
-            let judge = || -> Result<(),ExportRefusal> {
-                if !body.swept() { return Ok(()) }
-                let owned;
-                let stl: &[u8] = match (&bytes,&scratch) {
-                    (Some(bytes),_) => bytes,
-                    (None,Some(path)) => {
-                        let meshed = || -> Result<Vec<u8>,String> {
-                            let started = std::time::Instant::now();
-                            mesh(path)?;
-                            let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-                            stage(&format!("meshed the solid for its field agreement ({:?})",started.elapsed()));
-                            Ok(bytes)
-                        };
-                        owned = meshed().at(Stage::Mesh)?;
-                        &owned
-                    }
-                    (None,None) => unreachable!("a swept body's mesh has a file"),
+            let the_rest = || -> Result<(),ExportRefusal> {
+                // The STL written, then its shells checked beside the field agreement's reading of the same
+                // bytes, what each says said in that order.
+                let bytes = match &stl_file {
+                    Some(file) => Some((|| -> Result<Vec<u8>,String> { mesh(file)?; std::fs::read(file).map_err(|e| e.to_string()) })()
+                        .at(Stage::Stl)?),
+                    None => None,
                 };
-                output::field_agreement(sk,body.index,stl,tolerance,indexed)
+                let check = || -> Result<(),ExportRefusal> {
+                    let Some(bytes) = &bytes else { return Ok(()) };
+                    let started = std::time::Instant::now();
+                    output::check_stl(bytes,"native float32 STL validation failed").at(Stage::Stl)?;
+                    stage(&format!("staged the STL output, its shells checked in {:?}",started.elapsed()));
+                    mark(Stage::Stl);
+                    Ok(())
+                };
+                let judge = || -> Result<(),ExportRefusal> {
+                    if !body.swept() { return Ok(()) }
+                    let owned;
+                    let stl: &[u8] = match (&bytes,&scratch) {
+                        (Some(bytes),_) => bytes,
+                        (None,Some(path)) => {
+                            let meshed = || -> Result<Vec<u8>,String> {
+                                let started = std::time::Instant::now();
+                                mesh(path)?;
+                                let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+                                stage(&format!("meshed the solid for its field agreement ({:?})",started.elapsed()));
+                                Ok(bytes)
+                            };
+                            owned = meshed().at(Stage::Mesh)?;
+                            &owned
+                        }
+                        (None,None) => unreachable!("a swept body's mesh has a file"),
+                    };
+                    output::field_agreement(sk,body.index,stl,tolerance,indexed)
+                };
+                let (checked,judged) = progress::beside(check,judge,Result::is_err);
+                checked?;
+                judged
             };
-            let (checked,judged) = progress::beside(check,judge,Result::is_err);
-            checked?;
-            judged
+
+            // A sector's union still to be checked is checked beside its STEP, and both beside the
+            // mesh; written again where the check keeps the union as it was sewn instead. Otherwise the
+            // STEP is written beside the mesh where the mesh is the sector's, not the solid's.
+            let checked_step = || -> Result<Option<String>,ExportRefusal> {
+                let Some(union) = &built.unchecked else { return write_step(solid,false).map(|_| None) };
+                let (checked,wrote) = progress::under(|| union.check(&session,solid),|| write_step(solid,true),Result::is_err);
+                let kept = match checked { Ok(kept) => kept, Err(reason) => return Ok(Some(reason)) };
+                if kept != solid { write_step(kept,false)?; } else { wrote?; }
+                Ok(None)
+            };
+            let (wrote,rest) = if sector.is_some() { progress::beside(checked_step,the_rest,|r| !matches!(r,Ok(None))) } else {
+                let wrote = checked_step();
+                let rest = if matches!(wrote,Ok(None)) { the_rest() } else { Ok(()) };
+                (wrote,rest)
+            };
+            if let Some(reason) = wrote? { return Ok(Some(reason)) }
+            rest?;
+            Ok(None)
         };
-        // The STEP is written beside the mesh where the mesh is the sector's, not the solid's.
-        let (wrote,rest) = if sector.is_some() { progress::beside(write_step,the_rest,Result::is_err) } else {
-            let wrote = write_step();
-            let rest = if wrote.is_ok() { the_rest() } else { Ok(()) };
-            (wrote,rest)
-        };
-        wrote?;
-        rest?;
+        let built = build(defer,false)?;
+        if let Some(reason) = files(&built)? {
+            stage(&format!("`{}` is built whole: its sector's union does not check ({reason})",sk.solids[body.index].name));
+            let whole = build(false,true)?;
+            if let Some(reason) = files(&whole)? { return Err(ExportRefusal::at(Stage::Fuse,reason)) }
+        }
         staged.commit().at(Stage::Written)?;
         mark(Stage::Written);
         Ok(())

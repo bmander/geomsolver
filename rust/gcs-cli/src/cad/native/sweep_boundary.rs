@@ -32,6 +32,7 @@ use sections::Cutter;
 mod fit;
 #[path="sweep_boundary/sector.rs"]
 mod sector;
+pub(crate) use sector::Union;
 use fit::{Judged,judged};
 
 /// `SOLVENT_TRACE_DEBUG=1` prints where a station's contact curve ends, leaves the root window or
@@ -355,13 +356,16 @@ fn blank_of(session: &Session,recipe: &gcs_core::json::Json) -> Result<(Blank,St
 pub(crate) enum Construction { Sector,Whole }
 
 /// A body constructed natively: the solid handle in its session, how it was built, and — built as
-/// one sector patterned — the sector it was patterned from.
+/// one sector patterned — the sector it was patterned from. Asked to defer it, a sector's union is
+/// left unchecked (`unchecked`), `solid` the union as it was made, for the caller to check.
 pub(crate) struct Built {
     pub solid: c_int,
     /// Read by the tests that build one body both ways.
     #[cfg_attr(not(test),allow(dead_code))]
     pub how: Construction,
     pub sector: Option<Patterned>,
+    #[cfg_attr(test,allow(dead_code))]
+    pub unchecked: Option<Union>,
 }
 
 /// How a body's admission to the generating-sweep class is presented to its construction: made
@@ -370,9 +374,11 @@ pub(crate) struct Built {
 pub(crate) enum Admitted<'a> { Already(&'a Admission),Beside(&'a dyn Fn() -> Result<Admission,ExportRefusal>) }
 
 /// Construct a body whose cuts include continuous sweeps, which only its admission to the
-/// generating-sweep class allows: as `asked` where it applies, whole otherwise.
+/// generating-sweep class allows: as `asked` where it applies, whole otherwise. `defer`: a sector's
+/// union is returned unchecked (`Built::unchecked`); otherwise it is checked, and a union that does
+/// not check is built whole.
 pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,recipe: &cad::StaticRecipe,
-    admitted: Admitted,tolerance: Option<Tolerance>,asked: Construction) -> Result<Built,ExportRefusal> {
+    admitted: Admitted,tolerance: Option<Tolerance>,asked: Construction,defer: bool) -> Result<Built,ExportRefusal> {
     let presented = |admission: &Admission| if admission.body() != body {
         Err(ExportRefusal::at(Stage::Admission,format!("`{}`: the admission presented is another body's",sk.solids[body].name)))
     } else { Ok(()) };
@@ -427,10 +433,16 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     };
     let (blank,meridian) = (blank.solid,blank.meridian);
     if asked == Construction::Sector {
+        let whole = |reason: String| stage(&format!("`{}` is built whole: the sector construction does not apply ({reason})",
+            sk.solids[body].name));
         match sector::construct(session,sk,body,recipe,blank,meridian,&field,&distinct,&sheets,scale) {
-            Ok((solid,sector)) => return Ok(Built {solid,how:Construction::Sector,sector:Some(sector)}),
-            Err(reason) => stage(&format!("`{}` is built whole: the sector construction does not apply ({reason})",
-                sk.solids[body].name)),
+            Ok((made,sector,union)) if defer => return Ok(Built {solid:made,how:Construction::Sector,sector:Some(sector),
+                unchecked:Some(union)}),
+            Ok((made,sector,union)) => match union.check(session,made) {
+                Ok(solid) => return Ok(Built {solid,how:Construction::Sector,sector:Some(sector),unchecked:None}),
+                Err(reason) => whole(reason),
+            },
+            Err(reason) => whole(reason),
         }
     }
     let mut tools = Vec::new();
@@ -468,7 +480,7 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     let part = fused().at(Stage::Fuse)?;
     sector::debug_faces(session,"the body built whole",part);
     mark(Stage::Fuse);
-    Ok(Built {solid:part,how:Construction::Whole,sector:None})
+    Ok(Built {solid:part,how:Construction::Whole,sector:None,unchecked:None})
 }
 
 /// `construct_built`'s solid.
@@ -497,19 +509,21 @@ pub(crate) fn construct_solid_as(session: &Session,sk: &Sketch,solid: usize,reci
 fn built_as(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecipe,
     admission: Option<&Admission>,tolerance: Option<Tolerance>,asked: Construction) -> Result<Built,ExportRefusal> {
     if recipe.sweeps.is_empty() {
-        return session.construct(&recipe.recipe).at(Stage::Blank).map(|solid| Built {solid,how:Construction::Whole,sector:None});
+        return session.construct(&recipe.recipe).at(Stage::Blank).map(|solid| Built {solid,how:Construction::Whole,sector:None,
+            unchecked:None});
     }
     let admission = admission.ok_or_else(|| ExportRefusal::at(Stage::Admission,format!("`{}`: a body with swept cuts is \
         built only once admitted to the generating-sweep class",sk.solids[solid].name)))?;
-    construct_swept_body(session,sk,solid,recipe,Admitted::Already(admission),tolerance,asked)
+    construct_swept_body(session,sk,solid,recipe,Admitted::Already(admission),tolerance,asked,false)
 }
 
 /// `construct_built` for a body not yet admitted: a body with swept cuts is admitted by `admit`
 /// while its blank and sheets are built beside it (`Admitted::Beside`), and refused, with nothing
-/// built kept, where the admission refuses.
+/// built kept, where the admission refuses. `defer`: a sector's union left unchecked
+/// (`construct_swept_body`); `whole`: built whole, whatever `SOLVENT_SECTOR` says.
 pub(crate) fn construct_admitting(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecipe,
-    admit: &dyn Fn() -> Result<Admission,ExportRefusal>,tolerance: Option<Tolerance>) -> Result<Built,ExportRefusal> {
+    admit: &dyn Fn() -> Result<Admission,ExportRefusal>,tolerance: Option<Tolerance>,defer: bool,whole: bool) -> Result<Built,ExportRefusal> {
     if recipe.sweeps.is_empty() { return built_as(session,sk,solid,recipe,None,tolerance,Construction::Whole); }
-    let asked = if sector::wanted() { Construction::Sector } else { Construction::Whole };
-    construct_swept_body(session,sk,solid,recipe,Admitted::Beside(admit),tolerance,asked)
+    let asked = if sector::wanted() && !whole { Construction::Sector } else { Construction::Whole };
+    construct_swept_body(session,sk,solid,recipe,Admitted::Beside(admit),tolerance,asked,defer)
 }

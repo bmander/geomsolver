@@ -651,7 +651,9 @@ static std::vector<double> brep_summary(const TopoDS_Shape& shape) {
 // A STEP file of a stored solid: transferred, its text formatted (`step_text`) and written, and —
 // `full` — read back as a consumer's reader takes it (its default repairs), checked and measured
 // against the solid. Without `full` the caller verifies the file against `solvent_cad_brep_summary`.
-int solvent_cad_step(Cad* cad,int id,const char* path,int full) noexcept {
+// `unchecked`: the caller checks the solid itself beside the writing (a pattern's union,
+// `solvent_cad_pattern_check`), and it is not validated here first.
+int solvent_cad_step(Cad* cad,int id,const char* path,int full,int unchecked) noexcept {
     return guarded(cad,[&] {
         // The CLI reserves stdout for its JSON/text report. Restore the stream
         // even if STEP construction throws; this host runs synchronously.
@@ -659,8 +661,8 @@ int solvent_cad_step(Cad* cad,int id,const char* path,int full) noexcept {
             std::streambuf* old = std::cout.rdbuf(std::cerr.rdbuf());
             ~LogStream() { std::cout.rdbuf(old); }
         } log_stream;
-        cad->validated(id);
-        auto& shape = cad->at(id);
+        if (!unchecked || full) cad->validated(id);
+        const TopoDS_Shape shape = cad->at(id);
         const bool debug = std::getenv("SOLVENT_STEP_DEBUG") != nullptr;
         auto clock = std::chrono::steady_clock::now();
         const auto lap = [&](const char* step) {

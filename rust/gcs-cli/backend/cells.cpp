@@ -102,6 +102,40 @@ static void check_algorithm(BRepAlgoAPI_BuilderAlgo& algorithm,const char* what)
 // to do so (it once left a 40 mm vertex tolerance). Unify a copy: the algorithm updates
 // tolerances on vertices it shares with its input, which would silently widen the union kept.
 // `known` is asked only once the union is checked, so a caller may work it out meanwhile.
+// The unified copy, where unifying widened no tolerance (null where it did, or failed).
+static TopoDS_Shape unification(const TopoDS_Shape& result,const char* what) {
+    const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
+    const auto clock = std::chrono::steady_clock::now();
+    const double before = BRep_Tool::MaxTolerance(result,TopAbs_VERTEX);
+    ShapeUpgrade_UnifySameDomain unify(BRepBuilderAPI_Copy(result).Shape(),true,true,false);
+    unify.Build();
+    TopoDS_Shape unified = unify.Shape();
+    if (debug) {
+        int a = 0,b = 0;
+        for (TopExp_Explorer it(result,TopAbs_FACE); it.More(); it.Next()) ++a;
+        if (!unified.IsNull()) for (TopExp_Explorer it(unified,TopAbs_FACE); it.More(); it.Next()) ++b;
+        fprintf(stderr,"sector: %s: unified %.2f s; %d faces, %d unified; vertex tolerance %.3g, %.3g unified\n",what,
+            std::chrono::duration<double>(std::chrono::steady_clock::now()-clock).count(),a,b,before,
+            unified.IsNull() ? -1. : BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX));
+    }
+    if (unified.IsNull() || BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX) > before*1.001+1e-9) return TopoDS_Shape();
+    return unified;
+}
+// A union checked: its one solid closed and valid (`valid_solid`), or the whole shape valid.
+static bool union_checked(const TopoDS_Shape& shape) {
+    TopoDS_Shape one;
+    int solids = 0;
+    for (TopExp_Explorer it(shape,TopAbs_SOLID); it.More(); it.Next()) { ++solids; one = it.Current(); }
+    return solids == 1 ? valid_solid(one) : valid(shape);
+}
+// The one solid a union is, or refused.
+static TopoDS_Shape the_solid(const TopoDS_Shape& shape,const char* what) {
+    TopoDS_Shape result;
+    int solids = 0;
+    for (TopExp_Explorer it(shape,TopAbs_SOLID); it.More(); it.Next()) { ++solids; result = it.Current(); }
+    if (solids != 1) throw std::runtime_error(std::string(what)+" is not one connected solid");
+    return result;
+}
 static int united(Cad* cad,TopoDS_Shape result,const char* what,const std::function<double()>& known) {
     const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
     auto clock = std::chrono::steady_clock::now();
@@ -110,32 +144,13 @@ static int united(Cad* cad,TopoDS_Shape result,const char* what,const std::funct
         if (debug) fprintf(stderr,"sector: %s: %s %.2f s\n",what,step,std::chrono::duration<double>(now-clock).count());
         clock = now;
     };
-    const double before = BRep_Tool::MaxTolerance(result,TopAbs_VERTEX);
-    ShapeUpgrade_UnifySameDomain unify(BRepBuilderAPI_Copy(result).Shape(),true,true,false);
-    unify.Build();
-    TopoDS_Shape unified = unify.Shape();
-    lap("unified");
-    if (debug) {
-        int a = 0,b = 0;
-        for (TopExp_Explorer it(result,TopAbs_FACE); it.More(); it.Next()) ++a;
-        if (!unified.IsNull()) for (TopExp_Explorer it(unified,TopAbs_FACE); it.More(); it.Next()) ++b;
-        fprintf(stderr,"sector: %s: %d faces, %d unified; vertex tolerance %.3g, %.3g unified; unified valid %d\n",what,a,b,before,
-            unified.IsNull() ? -1. : BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX),unified.IsNull() ? -1 : int(valid(unified)));
-    }
     // The union checked once: the unified shape where it is kept, the union itself where not.
-    const auto checked = [](const TopoDS_Shape& shape) {
-        TopoDS_Shape one;
-        int solids = 0;
-        for (TopExp_Explorer it(shape,TopAbs_SOLID); it.More(); it.Next()) { ++solids; one = it.Current(); }
-        return solids == 1 ? valid_solid(one) : valid(shape);
-    };
-    const bool kept = !unified.IsNull() && BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX) <= before*1.001+1e-9 && checked(unified);
+    const TopoDS_Shape unified = unification(result,what);
+    const bool kept = !unified.IsNull() && union_checked(unified);
     if (kept) result = unified;
-    else if (!checked(result)) throw std::runtime_error(std::string(what)+" is invalid before unification");
+    else if (!union_checked(result)) throw std::runtime_error(std::string(what)+" is invalid before unification");
     lap("checked");
-    int solids = 0;
-    for (TopExp_Explorer it(result,TopAbs_SOLID); it.More(); it.Next()) { ++solids; result = it.Current(); }
-    if (solids != 1) throw std::runtime_error(std::string(what)+" is not one connected solid");
+    result = the_solid(result,what);
     const double v = validate(result,nullptr,true,known());
     lap("validated and measured");
     return cad->put(result,true,v);
@@ -143,6 +158,17 @@ static int united(Cad* cad,TopoDS_Shape result,const char* what,const std::funct
 static int united(Cad* cad,TopoDS_Shape result,const char* what,double known = std::numeric_limits<double>::quiet_NaN()) {
     return united(cad,result,what,std::function<double()>([known] { return known; }));
 }
+
+// A pattern's union made but not yet checked: the union sewn (the shape stored is its unified copy
+// where unifying widened no tolerance, oriented, else this union itself), and its volume being
+// measured meanwhile.
+struct Cad::Pending {
+    TopoDS_Shape made;
+    bool unified;
+    std::shared_future<double> whole;
+    gp_Ax1 line;
+    int copies;
+};
 
 // A partition's cells checked and measured, the work shared out: every face the cells have checked
 // once, on every core, with its own analyzer (`valid_solid`'s face check), and each cell's shell
@@ -736,7 +762,9 @@ static std::vector<int> sector_sides(Cad* cad,const TopTools_IndexedMapOfShape& 
 // sectors of an indexed body, each meeting the next on a face both carry (docs/native-speed-plan.md).
 // The faces on the two sides (`sides`: every sample of the face within `fuzzy` of one of theirs) are
 // left out, and the rest of every copy sewn to `fuzzy` (mm) into one closed shell: no face is
-// intersected. The pieces of a ring are first moved into one period (`into_one_period`).
+// intersected. The pieces of a ring are first moved into one period (`into_one_period`). The union
+// is returned unchecked, for `solvent_cad_pattern_check` to check and measure, which a caller may
+// run beside other work on it (writing its file).
 int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* axis,const double* angles,int count,
     const int* sides,double fuzzy) noexcept {
     return guarded(cad,[&] {
@@ -836,29 +864,82 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
         lap("sewn");
         const gp_Lin axis_line(line);
         // A copy's faces' flux about a point of the axis, measured while the union is unified and
-        // checked, and waited for as it is stored.
-        std::future<double> each = std::async(std::launch::async,[&] {
-            return flux(kept,ElCLib::Value(ElCLib::Parameter(axis_line,middle),axis_line));
-        });
-        std::optional<double> whole;
-        const auto whole_of = [&] {
-            if (!whole) { whole = (count+1)*each.get(); lap("measured one copy"); }
-            return *whole;
-        };
+        // checked, and waited for as it is checked.
+        const gp_Pnt about = ElCLib::Value(ElCLib::Parameter(axis_line,middle),axis_line);
+        const int copies = count+1;
+        std::shared_future<double> whole = std::async(std::launch::async,[kept,about,copies] { return copies*flux(kept,about); }).share();
         // `SOLVENT_SECTOR_CHECK=full`: the united solid measured whole as well, which may differ by
         // the slack its tolerances leave the boundary (the sewing moves edges within them).
         if (std::getenv("SOLVENT_SECTOR_CHECK") && std::string(std::getenv("SOLVENT_SECTOR_CHECK")) == "full") {
             const double measured = volume(made);
             const double slack = std::max(1e-8*std::abs(measured),BRep_Tool::MaxTolerance(made,TopAbs_VERTEX)*area(made));
             if (debug) fprintf(stderr,"sector: pattern: %.12g mm3 measured whole, %.12g as %d copies of one (slack %.3g)\n",
-                measured,whole_of(),count+1,slack);
-            if (std::abs(measured-whole_of()) > slack)
-                throw std::runtime_error("the sectors united measure "+std::to_string(measured)+" mm3 whole and "+std::to_string(whole_of())
+                measured,whole.get(),copies,slack);
+            if (std::abs(measured-whole.get()) > slack)
+                throw std::runtime_error("the sectors united measure "+std::to_string(measured)+" mm3 whole and "+std::to_string(whole.get())
                     +" as copies of one");
         }
-        const int id = united(cad,made,"pattern union",std::function<double()>(whole_of));
-        cad->set_pattern(id,line,count+1);
+        // The union unified, and oriented as its check will leave it: a file may be written from it
+        // while it is checked (`solvent_cad_pattern_check`).
+        const TopoDS_Shape unified = unification(made,"pattern union");
+        TopoDS_Shape shape = made;
+        bool unifies = false;
+        if (!unified.IsNull()) {
+            TopoDS_Solid one = TopoDS::Solid(the_solid(unified,"pattern union"));
+            if (BRepLib::OrientClosedSolid(one)) { shape = one; unifies = true; }
+        }
+        lap("unified");
+        const int id = cad->put(shape);
+        cad->set_pattern(id,line,copies);
+        cad->set_pending(id,std::make_shared<Cad::Pending>(Cad::Pending {made,unifies,whole,line,copies}));
         return id;
+    });
+}
+
+// A pattern's union (`solvent_cad_pattern`) checked and measured: the handle it keeps, the unified
+// union's where that passes its check, or a new one of the union as it was sewn, where that does.
+int solvent_cad_pattern_check(Cad* cad,int id) noexcept {
+    return guarded(cad,[&] {
+        const auto pending = cad->take_pending(id);
+        if (!pending) throw std::runtime_error("no pattern's union waits for its check under this handle");
+        const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
+        auto clock = std::chrono::steady_clock::now();
+        const auto lap = [&](const char* step) {
+            const auto now = std::chrono::steady_clock::now();
+            if (debug) fprintf(stderr,"sector: pattern union: %s %.2f s\n",step,std::chrono::duration<double>(now-clock).count());
+            clock = now;
+        };
+        if (pending->unified) {
+            // (a copy of the handle: a file is written from the one stored meanwhile)
+            TopoDS_Shape shape = cad->at(id);
+            if (union_checked(shape)) {
+                lap("checked");
+                const TopAbs_Orientation was = shape.Orientation();
+                const double v = validate(shape,nullptr,true,pending->whole.get());
+                if (shape.Orientation() != was) throw std::runtime_error("the pattern's union was stored misoriented");
+                lap("validated and measured");
+                cad->set_checked(id,v);
+                return id;
+            }
+        }
+        if (!union_checked(pending->made)) throw std::runtime_error("pattern union is invalid before unification");
+        lap("checked as it was sewn");
+        TopoDS_Shape result = the_solid(pending->made,"pattern union");
+        const double v = validate(result,nullptr,true,pending->whole.get());
+        const int kept = cad->put(result,true,v);
+        cad->set_pattern(kept,pending->line,pending->copies);
+        return kept;
+    });
+}
+
+// A copy of a stored shape, sharing nothing with it: work on one (a mesh) may run beside work on the
+// other.
+int solvent_cad_copy(Cad* cad,int id) noexcept {
+    return guarded(cad,[&] {
+        BRepBuilderAPI_Copy copy(cad->at(id),true);
+        if (!copy.IsDone()) throw std::runtime_error("copying a shape failed");
+        double volume = cad->known_volume(id);
+        return cad->put(copy.Shape(),false,volume);
     });
 }
 
