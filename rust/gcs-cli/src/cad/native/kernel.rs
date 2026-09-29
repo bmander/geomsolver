@@ -15,6 +15,7 @@ extern "C" {
     fn solvent_cad_pattern(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,angles: *const f64,count: c_int,
         sides: *const c_int,fuzzy: f64) -> c_int;
     fn solvent_cad_pattern_check(cad: *mut c_void,id: c_int) -> c_int;
+    fn solvent_cad_copy(cad: *mut c_void,id: c_int) -> c_int;
     fn solvent_cad_sector_mesh(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,deflection: f64,interior: f64,angular: f64,
         output: *mut f64) -> c_int;
     fn solvent_cad_sector_stl(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,origin: *const f64,axis: *const f64,
@@ -113,6 +114,8 @@ impl Session {
         self.result(unsafe { solvent_cad_pattern(self.0,solid,origin.as_ptr(),axis.as_ptr(),angles.as_ptr(),angles.len() as c_int,
             sides.as_ptr(),fuzzy) })
     }
+    /// A copy of a shape sharing nothing with it, which may be worked on (meshed) beside it.
+    pub(crate) fn copy(&self,solid: c_int) -> Result<c_int,String> { self.result(unsafe { solvent_cad_copy(self.0,solid) }) }
     /// A pattern's union checked and measured: its handle, or another where the union unified does
     /// not check and the union as it was sewn does.
     pub(crate) fn pattern_check(&self,made: c_int) -> Result<c_int,String> {

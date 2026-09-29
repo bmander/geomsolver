@@ -54,13 +54,13 @@ pub(super) fn debug_faces(session: &Session,what: &str,solid: c_int) {
     eprintln!("sector: {what}: faces by kind {kinds:?}");
 }
 
-/// Build `body` as one sector patterned, or say why the premise fails: the union made (unchecked),
-/// the sector, and what the union's check needs. `sheets` are the distinct sweeps' fitted sheets, in
+/// Build `body` as one sector patterned, or say why the premise fails: the sector, and its union to
+/// be made and checked. `sheets` are the distinct sweeps' fitted sheets, in
 /// the order of `distinct`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::StaticRecipe,blank: c_int,
     meridian: Option<super::super::Meridian>,field: &gcs_core::solid::SpatialField,distinct: &[usize],sheets: &[Fitted],scale: f64)
-    -> Result<(c_int,Patterned,Union),String> {
+    -> Result<(Patterned,Union),String> {
     let started = std::time::Instant::now();
     let poses: Vec<Vec<Motion>> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).map(|c| c.pose).collect()).collect();
     let bounds = session.bounds(&[blank])?;
@@ -209,21 +209,26 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         let piece = session.fuse(&kept.iter().map(|c| c.solid).collect::<Vec<_>>())?;
         let one = session.volume(piece)?;
         debug_faces(session,"the sector's material",piece);
-        let angles: Vec<f64> = (1..n).map(|k| k as f64*indexing.pitch()).collect();
-        let made = session.pattern(piece,frame.origin,frame.axis,&angles,[side,other],FUZZY)?;
-        Ok((made,Patterned {piece,sides:[side,other],fuzzy:FUZZY,origin:frame.origin,axis:frame.axis,count:n,pitch:indexing.pitch()},
-            Union {one,count:n,clock}))
+        let sector = Patterned {piece,sides:[side,other],fuzzy:FUZZY,origin:frame.origin,axis:frame.axis,count:n,pitch:indexing.pitch()};
+        Ok((sector,Union {sector,one,clock}))
     })
 }
 
-/// A sector's material turned into its copies and united (`Session::pattern`), not yet checked: what
-/// its check (`Union::check`) needs, which a caller may run beside a file written from the union.
-pub(crate) struct Union { one: f64,count: usize,clock: std::time::Instant }
+/// A sector's material to be turned into its copies and united (`Union::make`, `Session::pattern`)
+/// and the union checked (`Union::check`), which a caller may run beside the files written from the
+/// union and the sector.
+pub(crate) struct Union { sector: Patterned,one: f64,clock: std::time::Instant }
 
 impl Union {
+    /// The sector and its copies united, unchecked.
+    pub(crate) fn make(&self,session: &Session) -> Result<c_int,String> {
+        let s = &self.sector;
+        let angles: Vec<f64> = (1..s.count).map(|k| k as f64*s.pitch).collect();
+        session.pattern(s.piece,s.origin,s.axis,&angles,s.sides,s.fuzzy)
+    }
     /// The union `made` checked and measured, against the sector's own volume: the solid to keep.
     pub(crate) fn check(&self,session: &Session,made: c_int) -> Result<c_int,String> {
-        let (n,one) = (self.count,self.one);
+        let (n,one) = (self.sector.count,self.one);
         let part = session.pattern_check(made)?;
         let volume = session.volume(part)?;
         debug_faces(session,"the sectors united",part);

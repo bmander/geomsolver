@@ -100,7 +100,8 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         let session = native::Session::new().at(Stage::Blank)?;
         // A body with swept cuts not yet admitted is admitted beside its blank and sheets; built as one
         // sector patterned and verified lightly, its union is checked beside its files (below).
-        let defer = native::step_check::verification() == native::step_check::Verification::Light;
+        let defer = native::step_check::verification() == native::step_check::Verification::Light
+            && std::env::var("SOLVENT_SECTOR_STL").map_or(true,|v| v != "off");
         let admitting = body.swept() && body.admission.is_none();
         let build = |defer: bool,whole: bool| if admitting {
             native::sweep_boundary::construct_admitting(&session,sk,body.index,recipe,&|| admitted(sk,body.index),tolerance,defer,whole)
@@ -112,8 +113,9 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         // A swept body is judged on the STL being written when there is one, meshed once.
         let scratch = if body.swept() && stl_file.is_none() { Some(staged.scratch("stl").and_then(|t| utf8(&t)).at(Stage::Mesh)?) }
             else { None };
-        // Every file of a body built: Ok(Some(reason)) where its sector's union, checked beside them,
-        // does not check (nothing is kept of them, and the body is built whole instead).
+        // Every file of a body built: Ok(Some(reason)) where its sector's union, made and checked beside
+        // them, cannot be made or does not check (nothing is kept of them, and the body is built whole
+        // instead).
         let files = |built: &native::sweep_boundary::Built| -> Result<Option<String>,ExportRefusal> {
             let solid = built.solid;
             // An indexed body's field agreement reads each probe turned into one sector.
@@ -121,6 +123,11 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             // A body built as one sector patterned is meshed as that sector, its triangles turned into
             // every copy (`SOLVENT_SECTOR_STL=off` meshes the patterned solid whole).
             let sector = built.sector.filter(|_| std::env::var("SOLVENT_SECTOR_STL").map_or(true,|v| v != "off"));
+            // A sector whose union is still to be made is meshed as a copy of it, beside the union's making.
+            let sector = match (&built.unchecked,sector) {
+                (Some(_),Some(s)) => Some(native::kernel::Patterned {piece:session.copy(s.piece).at(Stage::Mesh)?,..s}),
+                (_,sector) => sector,
+            };
             // The mesh's absolute chordal deflection (mm) and its angular one: the angle bounds how far a
             // facet's normal turns from its neighbours' and so is kept whatever the tolerance; the
             // deflection is the distance the tolerance is about. The mesher's deflection is a control
@@ -254,9 +261,10 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             // STEP is written beside the mesh where the mesh is the sector's, not the solid's.
             let checked_step = || -> Result<Option<String>,ExportRefusal> {
                 let Some(union) = &built.unchecked else { return write_step(solid,false).map(|_| None) };
-                let (checked,wrote) = progress::under(|| union.check(&session,solid),|| write_step(solid,true),Result::is_err);
+                let made = match union.make(&session) { Ok(made) => made, Err(reason) => return Ok(Some(reason)) };
+                let (checked,wrote) = progress::under(|| union.check(&session,made),|| write_step(made,true),Result::is_err);
                 let kept = match checked { Ok(kept) => kept, Err(reason) => return Ok(Some(reason)) };
-                if kept != solid { write_step(kept,false)?; } else { wrote?; }
+                if kept != made { write_step(kept,false)?; } else { wrote?; }
                 Ok(None)
             };
             let (wrote,rest) = if sector.is_some() { progress::beside(checked_step,the_rest,|r| !matches!(r,Ok(None))) } else {
@@ -270,7 +278,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         };
         let built = build(defer,false)?;
         if let Some(reason) = files(&built)? {
-            stage(&format!("`{}` is built whole: its sector's union does not check ({reason})",sk.solids[body.index].name));
+            stage(&format!("`{}` is built whole: the sector construction does not apply ({reason})",sk.solids[body.index].name));
             let whole = build(false,true)?;
             if let Some(reason) = files(&whole)? { return Err(ExportRefusal::at(Stage::Fuse,reason)) }
         }

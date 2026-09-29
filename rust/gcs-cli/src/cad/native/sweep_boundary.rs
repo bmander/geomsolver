@@ -357,7 +357,7 @@ pub(crate) enum Construction { Sector,Whole }
 
 /// A body constructed natively: the solid handle in its session, how it was built, and — built as
 /// one sector patterned — the sector it was patterned from. Asked to defer it, a sector's union is
-/// left unchecked (`unchecked`), `solid` the union as it was made, for the caller to check.
+/// left to the caller to make and check (`unchecked`), and `solid` is no handle (-1).
 pub(crate) struct Built {
     pub solid: c_int,
     /// Read by the tests that build one body both ways.
@@ -436,9 +436,9 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
         let whole = |reason: String| stage(&format!("`{}` is built whole: the sector construction does not apply ({reason})",
             sk.solids[body].name));
         match sector::construct(session,sk,body,recipe,blank,meridian,&field,&distinct,&sheets,scale) {
-            Ok((made,sector,union)) if defer => return Ok(Built {solid:made,how:Construction::Sector,sector:Some(sector),
+            Ok((sector,union)) if defer => return Ok(Built {solid:-1,how:Construction::Sector,sector:Some(sector),
                 unchecked:Some(union)}),
-            Ok((made,sector,union)) => match union.check(session,made) {
+            Ok((sector,union)) => match union.make(session).and_then(|made| union.check(session,made)) {
                 Ok(solid) => return Ok(Built {solid,how:Construction::Sector,sector:Some(sector),unchecked:None}),
                 Err(reason) => whole(reason),
             },

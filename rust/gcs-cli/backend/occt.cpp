@@ -57,6 +57,7 @@
 #include <StepData_Protocol.hxx>
 #include <XSControl_WorkSession.hxx>
 #include <thread>
+#include <atomic>
 #include <Standard_Failure.hxx>
 #include <StlAPI_Writer.hxx>
 #include <TopExp_Explorer.hxx>
@@ -498,6 +499,13 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
     return guarded(cad,[&] {
         TopTools_ListOfShape objects,tools;
         objects.Append(cad->at(a)); tools.Append(cad->at(b));
+        // `SOLVENT_DUMP_BOOLEAN=PREFIX`: each Boolean's operands written as BRep files, for a harness.
+        if (const char* dump = std::getenv("SOLVENT_DUMP_BOOLEAN")) {
+            static std::atomic<int> dumped{0};
+            const std::string prefix = std::string(dump)+std::to_string(dumped++)+"-"+std::to_string(operation_kind);
+            BRepTools::Write(cad->at(a),(prefix+"-a.brep").c_str());
+            BRepTools::Write(cad->at(b),(prefix+"-b.brep").c_str());
+        }
         TopoDS_Shape result;
         if (operation_kind == 1) {
             BRepAlgoAPI_Cut operation;

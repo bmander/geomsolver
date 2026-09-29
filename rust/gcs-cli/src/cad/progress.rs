@@ -117,6 +117,25 @@ fn trace(key: &str) {
     let at = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
     use std::io::Write;
     if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file,"{key}\t{at:.3}");
+        match processor() { Some(cpu) => { let _ = writeln!(file,"{key}\t{at:.3}\t{cpu:.3}"); }
+            None => { let _ = writeln!(file,"{key}\t{at:.3}"); } }
     }
+}
+
+/// The processor time the process has used, every thread's (seconds), where the platform says:
+/// a trace's third column, the work a stage did beside the time it took.
+fn processor() -> Option<f64> {
+    #[cfg(unix)]
+    {
+        #[repr(C)] struct Timeval { seconds: i64,micros: i64 }
+        #[repr(C)] struct Usage { user: Timeval,system: Timeval,rest: [i64;14] }
+        extern "C" { fn getrusage(who: i32,usage: *mut Usage) -> i32; }
+        let mut usage = Usage {user:Timeval {seconds:0,micros:0},system:Timeval {seconds:0,micros:0},rest:[0;14]};
+        // (a timeval's microseconds are 32 bits on macOS and padded to 64; read as the low half)
+        if unsafe { getrusage(0,&mut usage) } != 0 { return None }
+        let t = |v: &Timeval| v.seconds as f64+(v.micros & 0xffff_ffff) as f64*1e-6;
+        Some(t(&usage.user)+t(&usage.system))
+    }
+    #[cfg(not(unix))]
+    { None }
 }
