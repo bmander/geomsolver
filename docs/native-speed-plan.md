@@ -284,6 +284,15 @@ holds the load at 4–9, so what remains is work, not waiting. Measured, it is:
 - **Tracing the sheets** in the core (1.5–3.5 s a sweep, the gear's removal traced twice, its walk
   placement refused before its length one), and the cells' interior samples (~1 s, OCCT's classifier).
 
+**Tests and gates.** CLI `tests/native_sector.rs`: the indexed ring meshed as one sector turned is
+one closed shell enclosing the whole solid's mesh volume to 10⁻³; core `tests/par.rs`: `par` answers
+in order and keeps a state a thread. The whole suite with the native kernel passes with no warnings
+(1,371 tests); the slow tier passes (1,384); the web tests pass (255). Every corpus report and sheet
+and every non-native golden is byte-identical to phase 2's (`crown/space.sv` timed out once under
+the corpus's parallel load and is identical run alone); the one native swept golden,
+`swept_torus`'s default STL, changes bytes by design (its cutter is now sectioned once and turned),
+its volume (0.447407 mm³) and faces (3) the same.
+
 ## Verification
 ## Verification
 
