@@ -46,6 +46,7 @@ mod functional_solids;
 mod extruded_fields;
 mod patches;
 mod seams;
+mod sector;
 mod motions;
 mod generated_envelopes;
 mod examples_sv;

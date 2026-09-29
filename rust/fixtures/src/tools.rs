@@ -295,3 +295,29 @@ pub fn centred_post() -> String { post(3.,0.4,-2.,2.) }
 /// The post under the torus's cradle roll: at x = `x`, z in [0.5, 2], clear of the torus at both
 /// limits of a ±75° roll and of the torus turned on past them.
 pub fn skew_post(x: f64) -> String { post(x,0.4,0.5,2.) }
+
+/// A ring about the spindle, radii `inner` to `outer` and heights `low` to `high`, cut by the
+/// removal turned to `count` places evenly about the spindle: an indexed body, as a gear's teeth
+/// are, small enough to build whole in seconds.
+pub fn indexed_ring(count: usize,inner: f64,outer: f64,low: f64,high: f64) -> String {
+    format!("private point q0 hint(x: {inner}, y: {low})
+private point q1 hint(x: {outer}, y: {low})
+private point q2 hint(x: {outer}, y: {high})
+private point q3 hint(x: {inner}, y: {high})
+ground q0
+ground q1
+ground q2
+ground q3
+private line qb(q0, q1)
+private line qw(q1, q2)
+private line qt(q2, q3)
+private line qa(q3, q0)
+construction solid ring_blank(face(qb, qw, qt, qa), about: spindle)
+solid part(ring_blank)
+motion index(about: spindle)
+repeat {count} as i {{
+  solid indexed(removal, under: index, at: i * 360deg / {count})
+  indexed cut part
+}}
+")
+}

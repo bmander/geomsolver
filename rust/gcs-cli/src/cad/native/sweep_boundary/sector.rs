@@ -110,10 +110,6 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
     // The side, built and read back against the gaps and the material field.
     let (s,w) = sector::section_span(frame,chosen.slices,bounds,&inside)?;
     let (grid,rows) = chosen.grid(s,w,COLUMNS);
-    if std::env::var_os("SOLVENT_SECTOR_DEBUG").is_some() {
-        eprintln!("sector: span s {s:?} w {w:?}, {rows} rows; the grid itself: {:?}",chosen.clearance_of(&grid.iter().copied().filter(|&p| inside(p)).collect::<Vec<_>>()));
-        for &p in grid.iter().step_by(COLUMNS) { eprintln!("  row {:?}",chosen.frame.coordinates(chosen.slices,p).map(|x| (x*1e4).round()/1e4)); }
-    }
     let side = session.fit_sheet(&grid,rows,COLUMNS)?;
     let read: Vec<[f64;3]> = session.surface_grid(side,READ_BACK*rows,READ_BACK*COLUMNS)?.into_iter().map(|(p,_)| p).filter(|&p| inside(p)).collect();
     let clear = chosen.clearance_of(&read)?;
@@ -146,13 +142,14 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
     if (again-whole).abs() > 1e-7*whole {
         return Err(format!("the blank turned about its axis again is {again:.9} mm³, not its {whole:.9} mm³"));
     }
-    debug_faces(session,"the blank",blank);
-    debug_faces(session,"the blank turned again",turned);
+    let debug = std::env::var_os("SOLVENT_SECTOR_DEBUG").is_some();
+    if debug { eprintln!("sector: the blank made again about its axis ({:?})",clock.elapsed()); }
     let halves = session.split_solid(turned,&[side,other])?;
+    if debug { eprintln!("sector: the blank split by the sides ({:?})",clock.elapsed()); }
     let cells = session.solids(halves)?;
     let volumes = cells.iter().map(|&c| session.volume(c)).collect::<Result<Vec<_>,_>>()?;
     let share = whole/n as f64;
-    if std::env::var_os("SOLVENT_SECTOR_DEBUG").is_some() { eprintln!("sector: blank {whole:.6}, share {share:.6}, cells {volumes:.6?}"); }
+    if debug { eprintln!("sector: blank {whole:.6}, share {share:.6}, cells {volumes:.6?} ({:?})",clock.elapsed()); }
     let Some(wedge) = cells.iter().zip(&volumes).find(|(_,v)| (*v-share).abs() <= 1e-5*whole).map(|(c,_)| *c) else {
         return Err(format!("the sides split the blank ({whole:.6} mm³) into {} cells of {volumes:.6?} mm³, none its {share:.6} mm³ share",
             cells.len()));
