@@ -431,6 +431,10 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
             built?
         }
     };
+    // (`SOLVENT_STOP_AFTER=sheets`: a profiling harness stops the export here)
+    if std::env::var("SOLVENT_STOP_AFTER").is_ok_and(|v| v == "sheets") {
+        return Err(ExportRefusal::at(Stage::Split,"stopped after the sheets, as SOLVENT_STOP_AFTER asks"));
+    }
     let (blank,meridian) = (blank.solid,blank.meridian);
     if asked == Construction::Sector {
         let whole = |reason: String| stage(&format!("`{}` is built whole: the sector construction does not apply ({reason})",

@@ -176,16 +176,58 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                 // and 25% more triangles).
                 let (mut deflection,mut interior) = (t.deflection(),t.deflection());
                 let what = if sector.is_some() { "one sector" } else { "the solid" };
+                // Finer the second time by at most a quarter (a quarter where it sags past 3.2 times its
+                // share): a sector is meshed so, on a copy, beside its first meshing, the copy's meshing
+                // abandoned where the first holds; where it does not and a quarter is what its sag asks,
+                // the copy is the second round's (`SOLVENT_MESH_AHEAD=off` meshes a round at a time).
+                let bar = t.deflection();
+                let mut meshed = sector;
+                type Ahead = (native::kernel::Patterned,Result<Option<(f64,[f64;3])>,String>,std::time::Duration);
+                let mut ahead: Option<Ahead> = None;
+                let mut first: Option<(Result<Option<(f64,[f64;3])>,String>,std::time::Duration)> = None;
+                if let Some(s) = sector.filter(|_| std::env::var("SOLVENT_MESH_AHEAD").map_or(true,|v| v != "off")) {
+                    let copy = native::kernel::Patterned {piece:session.copy(s.piece)?,..s};
+                    let cancel = std::sync::atomic::AtomicI32::new(0);
+                    let (d,i) = (deflection*0.25,(interior*0.5).min(interior));
+                    let (mine,theirs) = std::thread::scope(|scope| {
+                        let theirs = scope.spawn(|| {
+                            let started = std::time::Instant::now();
+                            (session.sector_mesh_abandoned(&copy,d,i,ANGULAR,true,Some(&cancel)),started.elapsed())
+                        });
+                        let started = std::time::Instant::now();
+                        let mine = session.sector_mesh_with(&s,deflection,interior,ANGULAR,true);
+                        if mine.as_ref().is_ok_and(|r| r.is_some_and(|(sag,_)| sag <= bar)) {
+                            cancel.store(1,std::sync::atomic::Ordering::Relaxed);
+                        }
+                        let elapsed = started.elapsed();
+                        ((mine,elapsed),theirs.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
+                    });
+                    first = Some(mine);
+                    ahead = Some((copy,theirs.0,theirs.1));
+                }
                 for round in 0.. {
                     let started = std::time::Instant::now();
-                    let (sag,at) = match &sector {
-                        Some(sector) => session.sector_mesh_with(sector,deflection,interior,ANGULAR,true)?.expect("a sag asked for"),
-                        None => { session.remesh(solid,deflection,ANGULAR)?; session.mesh_sag(solid)? }
+                    let taken = match (round,first.take()) {
+                        (0,Some((result,elapsed))) => Some((result,elapsed)),
+                        _ => match ahead.take() {
+                            Some((copy,result,elapsed)) if round == 1 && deflection == t.deflection()*0.25 && result.is_ok() => {
+                                meshed = Some(copy); Some((result,elapsed))
+                            }
+                            _ => None,
+                        },
+                    };
+                    let (sag,at,elapsed) = match (taken,&meshed) {
+                        (Some((result,elapsed)),_) => { let (sag,at) = result?.expect("a sag asked for"); (sag,at,elapsed) }
+                        (None,Some(sector)) => {
+                            let (sag,at) = session.sector_mesh_with(sector,deflection,interior,ANGULAR,true)?.expect("a sag asked for");
+                            (sag,at,started.elapsed())
+                        }
+                        (None,None) => { session.remesh(solid,deflection,ANGULAR)?; let (sag,at) = session.mesh_sag(solid)?; (sag,at,started.elapsed()) }
                     };
                     let within = if interior != deflection { format!(" ({:.2} µm within its faces)",interior*1e3) } else { String::new() };
                     stage(&format!("meshed {what} at {:.2} µm deflection{within}: it sags {:.2} µm at most, at {:?}, against {:.2} µm ({:?})",
-                        deflection*1e3,sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,started.elapsed()));
-                    if sag <= t.deflection() { break }
+                        deflection*1e3,sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,elapsed));
+                    if sag <= bar { break }
                     if round+1 == MOST_MESHES {
                         return Err(format!("the mesh still sags {:.2} µm at {:?} after {MOST_MESHES} meshings, against {:.2} µm, half \
                             the {} µm tolerance",sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,t.millimetres*1e3));
@@ -195,6 +237,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                     deflection *= finer;
                     interior = if sector.is_some() { (interior*2.*finer).min(interior) } else { deflection };
                 }
+                let sector = meshed;
                 match &sector {
                     Some(sector) => {
                         let started = std::time::Instant::now();

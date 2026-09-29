@@ -17,7 +17,7 @@ extern "C" {
     fn solvent_cad_pattern_check(cad: *mut c_void,id: c_int) -> c_int;
     fn solvent_cad_copy(cad: *mut c_void,id: c_int) -> c_int;
     fn solvent_cad_sector_mesh(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,deflection: f64,interior: f64,angular: f64,
-        output: *mut f64) -> c_int;
+        output: *mut f64,cancel: *const c_int) -> c_int;
     fn solvent_cad_sector_stl(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,origin: *const f64,axis: *const f64,
         count: c_int,pitch: f64,reach: f64,path: *const c_char,output: *mut f64) -> c_int;
     fn solvent_cad_solid_contains(cad: *mut c_void,id: c_int,points: *const f64,count: c_int,tolerance: f64,
@@ -129,9 +129,14 @@ impl Session {
     /// The same, the faces' interiors meshed at their own chordal deflection (mm).
     pub(crate) fn sector_mesh_with(&self,sector: &Patterned,deflection: f64,interior: f64,angular: f64,sag: bool)
         -> Result<Option<(f64,[f64;3])>,String> {
+        self.sector_mesh_abandoned(sector,deflection,interior,angular,sag,None)
+    }
+    /// The same, abandoned (an error) once `cancel` is raised.
+    pub(crate) fn sector_mesh_abandoned(&self,sector: &Patterned,deflection: f64,interior: f64,angular: f64,sag: bool,
+        cancel: Option<&std::sync::atomic::AtomicI32>) -> Result<Option<(f64,[f64;3])>,String> {
         let mut data = [0.;4];
         self.result(unsafe { solvent_cad_sector_mesh(self.0,sector.piece,sector.sides.as_ptr(),sector.fuzzy,deflection,interior,angular,
-            if sag { data.as_mut_ptr() } else { std::ptr::null_mut() }) })?;
+            if sag { data.as_mut_ptr() } else { std::ptr::null_mut() },cancel.map_or(std::ptr::null(),|c| c.as_ptr().cast_const())) })?;
         Ok(sag.then(|| (data[0],[data[1],data[2],data[3]])))
     }
     /// The binary STL of a patterned body from its meshed sector: the sector's triangles but its

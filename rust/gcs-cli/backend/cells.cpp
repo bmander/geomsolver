@@ -948,9 +948,19 @@ int solvent_cad_copy(Cad* cad,int id) noexcept {
 // core, at an absolute `deflection` (mm) and an `angular` one (radians), and read the chordal sag
 // its faces have, the two sides' (`sides`, found as the pattern finds them) left out, since their
 // triangles are no part of the pattern's mesh. `output`: the sag (mm) and where; none, no sag read.
+// A meshing abandoned when the flag it is given is raised (`solvent_cad_sector_mesh`'s `cancel`).
+class Cancel: public Message_ProgressIndicator {
+    const int* flag;
+public:
+    explicit Cancel(const int* flag): flag(flag) {}
+    Standard_Boolean UserBreak() override { return __atomic_load_n(flag,__ATOMIC_RELAXED) != 0; }
+    void Show(const Message_ProgressScope&,const Standard_Boolean) override {}
+};
+
 // `interior`: the chordal deflection within its faces, where it differs from their edges'.
+// `cancel`: where not null, a flag that abandons the meshing when raised (the call then fails).
 int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,double deflection,double interior,double angular,
-    double* output) noexcept {
+    double* output,const int* cancel) noexcept {
     return guarded(cad,[&] {
         if (!sides) throw std::runtime_error("a sector's mesh needs its sides");
         if (!std::isfinite(deflection) || deflection <= 0 || !std::isfinite(angular) || angular <= 0)
@@ -965,7 +975,15 @@ int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,dou
         BRepTools::Clean(shape);
         const auto started = std::chrono::steady_clock::now();
         if (!std::isfinite(interior) || interior <= 0) throw std::runtime_error("meshing needs a positive interior deflection");
-        if (interior == deflection) {
+        if (cancel) {
+            IMeshTools_Parameters parameters;
+            parameters.Deflection = deflection; parameters.DeflectionInterior = interior;
+            parameters.Angle = angular; parameters.AngleInterior = angular; parameters.InParallel = true;
+            Handle(Cancel) abandon = new Cancel(cancel);
+            BRepMesh_IncrementalMesh mesher(shape,parameters,abandon->Start());
+            if (abandon->UserBreak()) throw std::runtime_error("the meshing was abandoned");
+            if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        } else if (interior == deflection) {
             BRepMesh_IncrementalMesh mesher(shape,deflection,false,angular,true);
             if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
         } else {
@@ -978,6 +996,7 @@ int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,dou
         if (std::getenv("SOLVENT_SECTOR_DEBUG")) fprintf(stderr,"sector: meshed at %g in %.2f s\n",deflection,
             std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count());
         if (!output) return 0;
+        if (cancel && __atomic_load_n(cancel,__ATOMIC_RELAXED)) throw std::runtime_error("the meshing was abandoned");
         TopTools_IndexedMapOfShape faces;
         TopExp::MapShapes(shape,TopAbs_FACE,faces);
         const std::vector<int> side = sector_sides(cad,faces,sides,fuzzy);
