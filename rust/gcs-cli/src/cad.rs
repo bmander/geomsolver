@@ -82,6 +82,8 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             native::sweep_boundary::construct_admitting(&session,sk,body.index,recipe,&|| admitted(sk,body.index),tolerance)?
         } else { native::sweep_boundary::construct_built(&session,sk,body.index,recipe,body.admission.as_ref(),tolerance)? };
         let solid = built.solid;
+        // An indexed body's field agreement reads each probe turned into one sector.
+        let indexed = built.sector.as_ref().map(|s| (s.origin,s.axis,s.count));
         // A body built as one sector patterned is meshed as that sector, its triangles turned into
         // every copy (`SOLVENT_SECTOR_STL=off` meshes the patterned solid whole).
         let sector = built.sector.filter(|_| std::env::var("SOLVENT_SECTOR_STL").map_or(true,|v| v != "off"));
@@ -171,7 +173,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                     })
                 };
                 let stl = meshed().at(Stage::Mesh)?;
-                output::field_agreement(sk,body.index,&stl,tolerance)?;
+                output::field_agreement(sk,body.index,&stl,tolerance,indexed)?;
             }
             Ok(())
         };

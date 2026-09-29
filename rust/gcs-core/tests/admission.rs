@@ -389,3 +389,51 @@ fn a_material_side_agrees_with_its_enclosure() {
     assert!(decided > 1000);
     assert_eq!(agreed,decided);
 }
+
+/// An indexed body's field read a sector at a time (`agreement::Sector`): every point turned into
+/// one sector and read by the cuts not proved clear of its box decides as the whole field does where
+/// it stands — its side, and whether it lies within a band of the boundary — over a grid of points
+/// in and about the ring cut at six indices, and fewer cuts are read than there are.
+#[test]
+fn an_indexed_field_read_a_sector_at_a_time_decides_as_the_whole_field() {
+    use gcs_core::interval::{Interval,minimum::{self,Stop}};
+    use gcs_core::solid::{agreement,MaterialField};
+    let source = format!("{}{}construction solid removal(tool, under: turn, from: -35deg, to: 35deg)\n{}",sphere(2.),
+        cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
+    let e = fixtures::read(&source);
+    let body = fixtures::solid(&e,"part");
+    let admitted = admission::admit_body(&e.sketch,body,&Options::default()).unwrap();
+    let admission::Equivalence::Revolved {origin,axis} = admitted.sweeps()[0].equivalence else { panic!("the ring is a revolution") };
+    let field = MaterialField::read(&e.sketch,body,1e-10).unwrap();
+    // points about the axis at every angle, over the ring's radii and heights and a little past them
+    let e1 = { let c = [axis[1],-axis[0],0.]; let n = (c[0]*c[0]+c[1]*c[1]).sqrt(); if n > 0.5 { c.map(|x| x/n) } else { [0.,axis[2],-axis[1]] } };
+    let e2 = [axis[1]*e1[2]-axis[2]*e1[1],axis[2]*e1[0]-axis[0]*e1[2],axis[0]*e1[1]-axis[1]*e1[0]];
+    let mut points = Vec::new();
+    for a in 0..36 { for r in 0..8 { for h in 0..6 {
+        let (angle,radius,height) = (std::f64::consts::TAU*(a as f64+0.37)/36.,3.35+0.13*r as f64,1.6+0.16*h as f64);
+        points.push(std::array::from_fn::<f64,3,_>(|k| origin[k]+axis[k]*height+radius*(angle.cos()*e1[k]+angle.sin()*e2[k])));
+    } } }
+    let options = agreement::Options::default();
+    let indexed = agreement::Indexed {origin,axis,count:6};
+    let sector = agreement::Sector::new(&field,indexed,&points,4096,&options).unwrap().expect("the ring reads alike under its turn");
+    eprintln!("{:?}",sector.folding);
+    assert!(sector.folding.kept < sector.folding.operands,"some cuts are proved clear of every box");
+    let mut state = sector.state();
+    let mut whole = field.evaluator(4096);
+    let band = Interval::new(-options.confirm,options.confirm).unwrap();
+    let (mut sides,mut bands) = ([0;3],[0;2]);
+    for &p in &points {
+        for (stop,tolerance) in [(Stop::Outside(Interval::ZERO),options.value_tolerance),(Stop::Decided(band),options.confirm/4.)] {
+            let full = whole.query(p.map(|x| Interval::point(x).unwrap()),stop,minimum::Options {value_tolerance:tolerance,
+                max_evaluations:options.max_evaluations},None).unwrap().value.bounds();
+            let read = sector.read(&mut state,p,stop,tolerance).unwrap();
+            let side = |b: [f64;2]| if b[0] > 0. { 0 } else if b[1] < 0. { 1 } else { 2 };
+            let within = |b: [f64;2]| b[0] >= -options.confirm && b[1] <= options.confirm;
+            assert_eq!(side(full),side(read),"{p:?}: {full:?} against {read:?}");
+            assert_eq!(within(full),within(read),"{p:?}: {full:?} against {read:?}");
+            if matches!(stop,Stop::Outside(_)) { sides[side(full)] += 1; } else { bands[usize::from(within(full))] += 1; }
+        }
+    }
+    eprintln!("sides (outside, inside, undecided) {sides:?}; within the band {bands:?}; {} read where they stand",state.whole);
+    assert!(sides[0] > 100 && sides[1] > 100 && bands[1] > 0);
+}

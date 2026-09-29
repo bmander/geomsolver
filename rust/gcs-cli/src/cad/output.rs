@@ -98,8 +98,10 @@ pub fn check_stl(stl: &[u8],what: &str) -> Result<(),String> {
 /// arrangement failed while its volume and its shell passed. A disagreement refuses the export.
 /// First the mesh contract (`solid::contracts`): no cluster of microscopic triangles. Held to a
 /// `tolerance`, the probes stand off as it says (`Tolerance::probe`); otherwise 0.1 mm.
-pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8],tolerance: Option<gcs_core::solid::export::Tolerance>)
-    -> Result<(),ExportRefusal> {
+/// An indexed body (`indexed`: its axis in millimetres and its count) is probed a sector at a time
+/// (`agreement::of_triangles_indexed`); `SOLVENT_AGREEMENT=whole` probes it as any other.
+pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8],tolerance: Option<gcs_core::solid::export::Tolerance>,
+    indexed: Option<([f64;3],[f64;3],usize)>) -> Result<(),ExportRefusal> {
     use gcs_core::solid::{agreement,cad,contracts,MaterialField};
     let mesh = |message: String| ExportRefusal::at(Stage::Mesh,message);
     let refused = |message: String| ExportRefusal::at(Stage::Agreement,message);
@@ -124,9 +126,20 @@ pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8],toler
     let field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE).map_err(refused)?;
     let [offset,confirm,value_tolerance] = tolerance.map_or([0.1,0.025,0.02],|t| t.probe());
     let options = agreement::Options {offset:offset/scale,confirm:confirm/scale,value_tolerance:value_tolerance/scale,..Default::default()};
-    let report = agreement::of_triangles_parallel(&vertices,&triangles,&field,cad::POSE_CACHE,&options).map_err(refused)?;
+    let indexed = indexed.filter(|_| std::env::var("SOLVENT_AGREEMENT").map_or(true,|v| v != "whole"));
+    let (report,how) = match indexed {
+        Some((origin,axis,count)) => {
+            let at = agreement::Indexed {origin:origin.map(|x| x/scale),axis,count};
+            let (report,folding) = agreement::of_triangles_indexed(&vertices,&triangles,&field,at,cad::POSE_CACHE,&options).map_err(refused)?;
+            (report,if folding.alike {
+                format!(", each turned into one sector and read there by {} of its {} cuts (the rest proved clear of {} boxes about it; \
+                    {} probes outside them read where they stand)",folding.kept,folding.operands,folding.cells,folding.whole)
+            } else { ", each where it stands (the field did not read alike turned by a pitch)".into() })
+        }
+        None => (agreement::of_triangles_parallel(&vertices,&triangles,&field,cad::POSE_CACHE,&options).map_err(refused)?,String::new()),
+    };
     let off = if tolerance.is_some() { format!("{:.4}",options.offset*scale) } else { format!("{:.2}",options.offset*scale) };
-    stage(&format!("field agreement: {} of {} triangles probed {off} mm off each side, {} probes unresolved, \
+    stage(&format!("field agreement: {} of {} triangles probed {off} mm off each side{how}, {} probes unresolved, \
         {} withdrawn beside another face, {} disagree ({:?})",report.probed_triangles,report.triangles,
         report.unresolved,report.withdrawn,report.disagreements.len(),started.elapsed()));
     if report.agrees() { mark(Stage::Agreement); return Ok(()); }
