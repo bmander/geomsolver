@@ -792,8 +792,11 @@ int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,dou
         cad->validated(piece);
         auto& shape = cad->at(piece);
         BRepTools::Clean(shape);
+        const auto started = std::chrono::steady_clock::now();
         BRepMesh_IncrementalMesh mesher(shape,deflection,false,angular,true);
         if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        if (std::getenv("SOLVENT_SECTOR_DEBUG")) fprintf(stderr,"sector: meshed at %g in %.2f s\n",deflection,
+            std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count());
         if (!output) return 0;
         TopTools_IndexedMapOfShape faces;
         TopExp::MapShapes(shape,TopAbs_FACE,faces);
