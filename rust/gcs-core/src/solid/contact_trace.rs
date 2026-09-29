@@ -13,7 +13,7 @@
 use super::SweepContacts;
 use super::sweep_contacts::PointContactError;
 use crate::space::{scale as scaled,distance};
-use std::{cell::RefCell,collections::BTreeMap,f64::consts::TAU,fmt,rc::Rc};
+use std::{cell::RefCell,collections::BTreeMap,f64::consts::TAU,fmt,sync::{Arc,Mutex}};
 
 type V = [f64;3];
 
@@ -75,15 +75,19 @@ pub struct Traced { pub curve: Vec<Point>,pub anchor: usize }
 pub enum Extent { Blank, Span {lo: f64,hi: f64,beside: Option<(f64,f64)>} }
 
 /// Whether points lie inside the blank, in native millimetres.
-pub type Inside<'a> = &'a dyn Fn(&[V]) -> Result<Vec<bool>,String>;
+pub type Inside<'a> = &'a (dyn Fn(&[V]) -> Result<Vec<bool>,String>+Sync);
 
 /// One section of the cutter as the host samples it: its augmented length (the period of its
 /// walk), the window of walk length its contacts are anchored in, and its sampler.
 pub struct Station<'a> {
     pub length: f64,
     pub window: [f64;2],
-    pub sample: Box<dyn Fn(f64) -> Result<Sample,TraceError>+'a>,
+    /// Called from several threads at once: a station's columns are traced side by side.
+    pub sample: Box<dyn Fn(f64) -> Result<Sample,TraceError>+Send+Sync+'a>,
 }
+
+/// How a host makes the station at an angle: called from several threads at once.
+pub type StationAt<'t,'s> = dyn Fn(f64) -> Result<Station<'s>,TraceError>+Sync+'t;
 
 /// The stations' band as a first coarse pass found it: its station angles, and the profile's
 /// mean distance from the axis, for column spacing.
@@ -455,7 +459,7 @@ impl Tracer<'_> {
 
     /// The candidate sheet over the band with the given margins, one chart of the envelope, on
     /// its first grid with a withheld contact at the centre of every cell: `layout`'s.
-    pub fn sheet<'s>(&self,station_at: &dyn Fn(f64) -> Result<Station<'s>,TraceError>,band: Band,margin: f64,
+    pub fn sheet<'s>(&self,station_at: &(dyn Fn(f64) -> Result<Station<'s>,TraceError>+Sync),band: Band,margin: f64,
         station_margin: f64,placement: Rows) -> Result<Sheet,TraceError> {
         let layout = self.layout(station_at,band,margin,station_margin,placement)?;
         layout.sheet(&layout.grid,Withheld::Centres)
@@ -470,7 +474,7 @@ impl Tracer<'_> {
     /// row's mid length). The band's ends first move outward until the station there has no
     /// contact in the blank within the declared roll anywhere on its loop, since the band was
     /// sampled coarsely. `station_at` is the host's section of the cutter at a station angle.
-    pub fn layout<'t,'s>(&'t self,station_at: &'t dyn Fn(f64) -> Result<Station<'s>,TraceError>,band: Band,margin: f64,
+    pub fn layout<'t,'s>(&'t self,station_at: &'t StationAt<'t,'s>,band: Band,margin: f64,
         station_margin: f64,placement: Rows) -> Result<Layout<'t,'s>,TraceError> {
         let inside = self.inside;
         let step = (band.stations[1]-band.stations[0]).max(COLUMN_SPACING/band.radius);
@@ -485,11 +489,13 @@ impl Tracer<'_> {
         let columns = ((span*band.radius/COLUMN_SPACING).ceil() as usize).clamp(24,200);
         let angle_of = |c: f64| lo-station_margin+span*c/(columns-1) as f64;
         // Pass 1: each station reaching the blank traced until it has left it by the margin; the
-        // union of their spans of unfolded walk length is the sheet's row range.
-        let stations: Vec<Station> = (0..columns).map(|c| station_at(angle_of(c as f64))).collect::<Result<_,_>>()?;
+        // union of their spans of unfolded walk length is the sheet's row range. The columns are
+        // sectioned and traced side by side, and what each says taken in their order.
+        let stations: Vec<Station> = crate::par::indices(columns,|c| station_at(angle_of(c as f64)))
+            .into_iter().collect::<Result<_,_>>()?;
         let mut first: Vec<Option<Traced>> = Vec::with_capacity(columns);
-        for station in &stations {
-            match self.trace(station,margin,Extent::Blank) {
+        for traced in crate::par::map(&stations,|station| self.trace(station,margin,Extent::Blank)) {
+            match traced {
                 Ok(t) => first.push(Some(t)),
                 Err(TraceError::Missed) => first.push(None),
                 Err(e) => return Err(e),
@@ -503,10 +509,10 @@ impl Tracer<'_> {
         // their nearest reaching neighbour.
         let nearest = |c: usize| *reached.iter().min_by_key(|&&k| k.abs_diff(c)).unwrap();
         let beside = |c: usize| { let t = first[nearest(c)].as_ref().unwrap(); let p = t.curve[t.anchor]; (p.s,p.found.time) };
-        let traces: Vec<Traced> = (0..columns).map(|c| {
+        let traces: Vec<Traced> = crate::par::indices(columns,|c| {
             let extent = Extent::Span {lo:lo_tau,hi:hi_tau,beside:if first[c].is_some() { None } else { Some(beside(c)) }};
             self.trace(&stations[c],margin,extent)
-        }).collect::<Result<_,_>>()?;
+        }).into_iter().collect::<Result<_,_>>()?;
         // The rows run over what every station's curve reached, which must still hold every
         // contact in the blank: a curve that ends first ends the chart inside the blank.
         let (lo_tau,hi_tau) = traces.iter().map(|t| (t.curve[0].tau,t.curve.last().unwrap().tau))
@@ -522,8 +528,8 @@ impl Tracer<'_> {
         }
         let rows = (((hi_tau-lo_tau)/ROW_SPACING).ceil() as usize).clamp(24,240);
         let taus: Vec<f64> = (0..rows).map(|r| lo_tau+(hi_tau-lo_tau)*r as f64/(rows-1) as f64).collect();
-        let columns_data: Vec<Vec<Found>> = traces.iter().zip(&stations)
-            .map(|(t,station)| self.along(station,&t.curve,&taus)).collect::<Result<_,_>>()?;
+        let columns_data: Vec<Vec<Found>> = crate::par::indices(columns,|c| self.along(&stations[c],&traces[c].curve,&taus))
+            .into_iter().collect::<Result<_,_>>()?;
         // The rows run on outside the blank only while every column is still one chart: the fit's
         // chord-length parameters are averaged over the columns, so one column's margin leaping to
         // another root (a turn away, where a far corner's fan carries it) moves the parameters of
@@ -539,8 +545,8 @@ impl Tracer<'_> {
         let (row_coordinates,row_mids) = match placement {
             Rows::Walk => (taus[first_row..=last].to_vec(),middles),
             Rows::Length => {
-                let longest = traces.iter().zip(&stations).map(|(t,s)| self.length(s,&t.curve,lo_tau,hi_tau))
-                    .collect::<Result<Vec<f64>,_>>()?.into_iter().fold(0_f64,f64::max);
+                let longest = crate::par::indices(columns,|c| self.length(&stations[c],&traces[c].curve,lo_tau,hi_tau))
+                    .into_iter().collect::<Result<Vec<f64>,_>>()?.into_iter().fold(0_f64,f64::max);
                 let rows = ((longest/ROW_SPACING).ceil() as usize).clamp(24,240);
                 ((0..rows).map(|r| r as f64/(rows-1) as f64).collect(),(0..rows-1).map(|r| (r as f64+0.5)/(rows-1) as f64).collect())
             }
@@ -553,10 +559,10 @@ impl Tracer<'_> {
                 for (tau,f) in taus.iter().zip(column) { nodes.insert((grid.columns[c].to_bits(),tau.to_bits()),f); }
             }
         }
-        let traced = stations.into_iter().zip(traces).enumerate().map(|(c,entry)| (grid.columns[c].to_bits(),Some(Rc::new(entry)))).collect();
+        let traced = stations.into_iter().zip(traces).enumerate().map(|(c,entry)| (grid.columns[c].to_bits(),Some(Arc::new(entry)))).collect();
         Ok(Layout {tracer:self,station_at,placement,margin,span:[lo_tau,hi_tau],
             beside:(0..columns).map(|c| (grid.columns[c],beside(c))).collect(),
-            stations:RefCell::new(traced),nodes:RefCell::new(nodes),grid})
+            stations:Mutex::new(traced),nodes:Mutex::new(nodes),grid})
     }
 }
 
@@ -639,7 +645,7 @@ pub enum Withheld { Centres,Sides }
 /// for) and every contact read once.
 pub struct Layout<'t,'s> {
     tracer: &'t Tracer<'t>,
-    station_at: &'t dyn Fn(f64) -> Result<Station<'s>,TraceError>,
+    station_at: &'t StationAt<'t,'s>,
     placement: Rows,
     margin: f64,
     /// The rows' ends, in unfolded walk length.
@@ -649,9 +655,9 @@ pub struct Layout<'t,'s> {
     /// the anchor of the one before it.
     beside: Vec<(f64,(f64,f64))>,
     /// Traced stations by angle; `None` where a withheld station could not be traced.
-    stations: RefCell<BTreeMap<u64,Option<Rc<(Station<'s>,Traced)>>>>,
+    stations: Mutex<BTreeMap<u64,Option<Arc<(Station<'s>,Traced)>>>>,
     /// Contacts read, by station angle and row coordinate.
-    nodes: RefCell<BTreeMap<(u64,u64),Found>>,
+    nodes: Mutex<BTreeMap<(u64,u64),Found>>,
     /// The first grid.
     pub grid: Grid,
 }
@@ -659,20 +665,21 @@ pub struct Layout<'t,'s> {
 impl<'s> Layout<'_,'s> {
     /// The station at `angle`, traced over the sheet's rows beside the anchor of the first grid's
     /// column before it; `None` where it cannot be traced.
-    fn station(&self,angle: f64) -> Result<Option<Rc<(Station<'s>,Traced)>>,TraceError> {
-        if let Some(entry) = self.stations.borrow().get(&angle.to_bits()) { return Ok(entry.clone()); }
+    fn station(&self,angle: f64) -> Result<Option<Arc<(Station<'s>,Traced)>>,TraceError> {
+        if let Some(entry) = self.stations.lock().unwrap_or_else(|e| e.into_inner()).get(&angle.to_bits()) { return Ok(entry.clone()); }
         let station = (self.station_at)(angle)?;
         let before = self.beside.partition_point(|b| b.0 <= angle).saturating_sub(1);
         let extent = Extent::Span {lo:self.span[0],hi:self.span[1],beside:Some(self.beside[before].1)};
-        let entry = self.tracer.trace(&station,self.margin,extent).ok().map(|t| Rc::new((station,t)));
-        self.stations.borrow_mut().insert(angle.to_bits(),entry.clone());
-        Ok(entry)
+        let entry = self.tracer.trace(&station,self.margin,extent).ok().map(|t| Arc::new((station,t)));
+        // two threads tracing one angle trace it alike; the first kept
+        let mut stations = self.stations.lock().unwrap_or_else(|e| e.into_inner());
+        Ok(stations.entry(angle.to_bits()).or_insert(entry).clone())
     }
 
     /// A station's contacts at row coordinates, each read once.
     fn at(&self,angle: f64,entry: &(Station<'s>,Traced),coordinates: &[f64]) -> Result<Vec<Found>,TraceError> {
         let key = angle.to_bits();
-        let missing: Vec<f64> = { let nodes = self.nodes.borrow();
+        let missing: Vec<f64> = { let nodes = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
             coordinates.iter().copied().filter(|x| !nodes.contains_key(&(key,x.to_bits()))).collect() };
         if !missing.is_empty() {
             let (station,traced) = entry;
@@ -680,10 +687,10 @@ impl<'s> Layout<'_,'s> {
                 Rows::Walk => self.tracer.along(station,&traced.curve,&missing)?,
                 Rows::Length => self.tracer.at_lengths(station,&traced.curve,self.span[0],self.span[1],&missing)?,
             };
-            let mut nodes = self.nodes.borrow_mut();
-            for (x,f) in missing.iter().zip(found) { nodes.insert((key,x.to_bits()),f); }
+            let mut nodes = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
+            for (x,f) in missing.iter().zip(found) { nodes.entry((key,x.to_bits())).or_insert(f); }
         }
-        let nodes = self.nodes.borrow();
+        let nodes = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
         Ok(coordinates.iter().map(|x| nodes[&(key,x.to_bits())]).collect())
     }
 
@@ -692,6 +699,18 @@ impl<'s> Layout<'_,'s> {
     /// station that cannot be traced withholds nothing.
     pub fn sheet(&self,grid: &Grid,withheld: Withheld) -> Result<Sheet,TraceError> {
         let (rows,columns) = (grid.rows.len(),grid.columns.len());
+        // Every station the sheet reads traced, and its contacts read, side by side first: what the
+        // pass below then reads is what it would have traced and read itself, one after another,
+        // and where a station fails here it fails there again, in order.
+        let asks: Vec<(f64,Vec<&[f64]>)> = grid.columns.iter().map(|&a| (a,if withheld == Withheld::Sides {
+            vec![&grid.rows[..],&grid.row_mids[..]] } else { vec![&grid.rows[..]] }))
+            .chain(grid.column_mids.iter().map(|&a| (a,if withheld == Withheld::Sides {
+                vec![&grid.row_mids[..],&grid.rows[..]] } else { vec![&grid.row_mids[..]] })))
+            .collect();
+        crate::par::map(&asks,|(angle,coordinates)| {
+            let Ok(Some(entry)) = self.station(*angle) else { return };
+            for c in coordinates { if self.at(*angle,&entry,c).is_err() { return } }
+        });
         let mut data = Vec::with_capacity(columns);
         for &angle in &grid.columns {
             let entry = self.station(angle)?.ok_or_else(|| TraceError::Failed(format!(
