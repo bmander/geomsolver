@@ -18,6 +18,7 @@
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepLib.hxx>
 #include <BRep_Builder.hxx>
+#include <Geom_BSplineSurface.hxx>
 #include <Geom_ElementarySurface.hxx>
 #include <Geom_Plane.hxx>
 #include <Geom_RectangularTrimmedSurface.hxx>
@@ -89,11 +90,11 @@ static void check_algorithm(BRepAlgoAPI_BuilderAlgo& algorithm,const char* what)
 }
 
 // A union made valid, its faces on one support merged where that costs nothing, and stored as
-// one closed solid with its volume. Unification is a simplification, not a requirement: keep the
+// one closed solid with its volume (`known`, where the caller has measured it another way). Unification is a simplification, not a requirement: keep the
 // union when merging faces on one support produces an invalid shape or has to widen a tolerance
 // to do so (it once left a 40 mm vertex tolerance). Unify a copy: the algorithm updates
 // tolerances on vertices it shares with its input, which would silently widen the union kept.
-static int united(Cad* cad,TopoDS_Shape result,const char* what) {
+static int united(Cad* cad,TopoDS_Shape result,const char* what,double known = std::numeric_limits<double>::quiet_NaN()) {
     const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
     double clock = processor_seconds();
     const auto lap = [&](const char* step) {
@@ -120,7 +121,7 @@ static int united(Cad* cad,TopoDS_Shape result,const char* what) {
     int solids = 0;
     for (TopExp_Explorer it(result,TopAbs_SOLID); it.More(); it.Next()) { ++solids; result = it.Current(); }
     if (solids != 1) throw std::runtime_error(std::string(what)+" is not one connected solid");
-    const double v = validate(result,nullptr,true);
+    const double v = validate(result,nullptr,true,known);
     lap("validated and measured");
     const int id = cad->put(result);
     cad->valid[static_cast<size_t>(id)] = 1;
@@ -415,6 +416,25 @@ static void reseat(const TopoDS_Face& face,const Handle(Geom_Surface)& surface,d
     builder.UpdateFace(face,surface,TopLoc_Location(),BRep_Tool::Tolerance(face));
 }
 
+// A face on a B-spline surface put on the surface cut down to the face's parameter box (and a
+// thousandth of the surface's range about it): `Geom_BSplineSurface::Segment` keeps the parameters,
+// so the face's pcurves stand as they are and the face is the same face, but a file writing it
+// carries the piece of the sheet the face uses, not the whole sheet the construction fitted.
+static void restrict_to_face(const TopoDS_Face& face) {
+    TopLoc_Location there;
+    const auto spline = Handle(Geom_BSplineSurface)::DownCast(basis(face,there));
+    if (spline.IsNull() || !there.IsIdentity() || spline->IsUPeriodic() || spline->IsVPeriodic()) return;
+    double u0,u1,v0,v1,U0,U1,V0,V1;
+    BRepTools::UVBounds(face,u0,u1,v0,v1);
+    spline->Bounds(U0,U1,V0,V1);
+    const double du = (U1-U0)*1e-3,dv = (V1-V0)*1e-3;
+    const double a = std::max(U0,u0-du),b = std::min(U1,u1+du),c = std::max(V0,v0-dv),d = std::min(V1,v1+dv);
+    if (!(a < b && c < d) || (a <= U0 && b >= U1 && c <= V0 && d >= V1)) return;
+    const auto cut = Handle(Geom_BSplineSurface)::DownCast(spline->Copy());
+    cut->Segment(a,b,c,d);
+    reseat(face,cut,0.);
+}
+
 // A copy of `source` turned by `angle` about `axis`, its faces of revolution about that line put back
 // on the source's own surfaces: turning a cone or a sphere about its own axis moves its parameters by
 // the angle and nothing else, so the copies' pieces of one blank face then share one surface, as the
@@ -572,8 +592,19 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
         // a face's pieces in neighbouring copies then continue one another's, where a piece a period
         // away would meet its neighbour on pcurves a period apart, and never merge.
         const TopoDS_Shape base = turned_copy(source,line,0.);
+        const gp_Pnt middle((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);
+        // Every copy's volume is the base's faces' but the sides' flux about a point of the axis,
+        // which a turn about the axis keeps: the sides are left out of the union and the rest of
+        // every copy is sewn as it is.
+        std::vector<TopoDS_Face> kept;
         {
-            const gp_Pnt middle((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);
+            TopTools_IndexedMapOfShape own;
+            TopExp::MapShapes(base,TopAbs_FACE,own);
+            for (int i=0;i<own.Extent();++i) if (side[static_cast<size_t>(i)] < 0) {
+                const TopoDS_Face face = TopoDS::Face(own(i+1));
+                restrict_to_face(face);
+                kept.push_back(face);
+            }
             for (TopExp_Explorer it(base,TopAbs_FACE); it.More(); it.Next()) {
                 const TopoDS_Face face = TopoDS::Face(it.Current());
                 if (!about(face,line)) continue;
@@ -615,7 +646,23 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
         TopoDS_Solid made = solid_of.Solid();
         if (!BRepLib::OrientClosedSolid(made)) throw std::runtime_error("the sewn sectors are not closed");
         lap("sewn");
-        return united(cad,made,"pattern union");
+        const gp_Lin axis_line(line);
+        const double each = flux(kept,ElCLib::Value(ElCLib::Parameter(axis_line,middle),axis_line)),whole = (count+1)*each;
+        lap("measured one copy");
+        // `SOLVENT_SECTOR_CHECK=full`: the united solid measured whole as well, which may differ by
+        // the slack its tolerances leave the boundary (the sewing moves edges within them).
+        if (std::getenv("SOLVENT_SECTOR_CHECK") && std::string(std::getenv("SOLVENT_SECTOR_CHECK")) == "full") {
+            const double measured = volume(made);
+            const double slack = std::max(1e-8*std::abs(measured),BRep_Tool::MaxTolerance(made,TopAbs_VERTEX)*area(made));
+            if (debug) fprintf(stderr,"sector: pattern: %.12g mm3 measured whole, %.12g as %d copies of one (slack %.3g)\n",
+                measured,whole,count+1,slack);
+            if (std::abs(measured-whole) > slack)
+                throw std::runtime_error("the sectors united measure "+std::to_string(measured)+" mm3 whole and "+std::to_string(whole)
+                    +" as copies of one");
+        }
+        const int id = united(cad,made,"pattern union",whole);
+        cad->patterns[id] = {line,count+1};
+        return id;
     });
 }
 

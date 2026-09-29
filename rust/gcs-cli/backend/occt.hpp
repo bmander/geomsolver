@@ -2,6 +2,8 @@
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Ax1.hxx>
+#include <map>
 #include <TopTools_ListOfShape.hxx>
 #include <TopTools_DataMapOfShapeReal.hxx>
 #include <Standard_Failure.hxx>
@@ -28,6 +30,8 @@ struct Cad {
     // call that retrieves it.
     std::vector<double> section_key;
     std::vector<int> section_rows;
+    // The solids `solvent_cad_pattern` made: the axis they are turned about and how many copies.
+    std::map<int,std::pair<gp_Ax1,int>> patterns;
     int put(const TopoDS_Shape& shape) {
         shapes.push_back(shape);
         valid.push_back(0);
@@ -51,11 +55,17 @@ template<class F> int guarded(Cad* cad,F fn) noexcept {
 
 // Throws unless the shape is a valid closed solid of positive volume; returns that volume.
 // Each solid's volume is recorded in `record` when one is given. `checked`: the caller has just
-// run the kernel's checker over this very shape, and it passed.
-double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record = nullptr,bool checked = false);
+// run the kernel's checker over this very shape, and it passed. `known`: the volume of the one
+// solid, which the caller has measured another way (NaN: measure it).
+double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record = nullptr,bool checked = false,
+    double known = std::numeric_limits<double>::quiet_NaN());
 
 // A solid's volume, adaptive to 1e-9 relative on each face, its faces integrated on every core.
 double volume(const TopoDS_Shape& shape);
+// The faces' flux about `origin`: the volume they bound when they close (occt.cpp).
+double flux(const std::vector<TopoDS_Face>& faces,const gp_Pnt& origin);
+// A shape's area, its faces measured on every core (occt.cpp).
+double area(const TopoDS_Shape& shape);
 // The kernel's checker.
 bool valid(const TopoDS_Shape& shape);
 

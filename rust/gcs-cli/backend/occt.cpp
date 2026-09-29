@@ -30,6 +30,10 @@
 #include <BRepTools.hxx>
 #include <Geom_Surface.hxx>
 #include <GeomAdaptor_Surface.hxx>
+#include <Geom_BSplineSurface.hxx>
+#include <Geom2d_Curve.hxx>
+#include <ElCLib.hxx>
+#include <gp_Lin.hxx>
 #include <Extrema_GenLocateExtPS.hxx>
 #include <Extrema_POnSurf.hxx>
 #include <Precision.hxx>
@@ -40,6 +44,7 @@
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <gp_Circ.hxx>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -61,12 +66,27 @@ double volume(const TopoDS_Shape& shape) {
     int count = 0;
     for (TopExp_Explorer it(shape,TopAbs_VERTEX); it.More(); it.Next(),++count) sum += BRep_Tool::Pnt(TopoDS::Vertex(it.Current())).XYZ();
     if (count > 0) sum /= count;
-    const gp_Pnt origin(sum);
     std::vector<TopoDS_Face> faces;
     for (TopExp_Explorer it(shape,TopAbs_FACE); it.More(); it.Next()) {
         const TopAbs_Orientation o = it.Current().Orientation();
         if (o == TopAbs_FORWARD || o == TopAbs_REVERSED) faces.push_back(TopoDS::Face(it.Current()));
     }
+    const double total = flux(faces,gp_Pnt(sum));
+    // `SOLVENT_VOLUME_CHECK`: the kernel's own serial sum as well, which must be the same number.
+    if (std::getenv("SOLVENT_VOLUME_CHECK")) {
+        GProp_GProps props;
+        BRepGProp::VolumeProperties(shape,props,1e-9,false,false);
+        if (props.Mass() != total) {
+            fprintf(stderr,"volume: %.17g against the kernel's %.17g\n",total,props.Mass());
+            throw std::runtime_error("the parallel volume differs from the kernel's");
+        }
+    }
+    return total;
+}
+// The faces' flux about `origin`, a third of the integral of (x - origin)·n over them: the
+// volume they bound when they close, each face integrated adaptively to 1e-9 relative on its own
+// core and the whole summed in the faces' order.
+double flux(const std::vector<TopoDS_Face>& faces,const gp_Pnt& origin) {
     std::vector<double> mass(faces.size(),0.);
     OSD_Parallel::For(0,static_cast<int>(faces.size()),[&](int i) {
         BRepGProp_Face face;
@@ -81,15 +101,20 @@ double volume(const TopoDS_Shape& shape) {
     });
     double total = 0;
     for (const double m: mass) total += m;
-    // `SOLVENT_VOLUME_CHECK`: the kernel's own serial sum as well, which must be the same number.
-    if (std::getenv("SOLVENT_VOLUME_CHECK")) {
+    return total;
+}
+// A shape's area, `BRepGProp::SurfaceProperties`' on each face, the faces on every core.
+double area(const TopoDS_Shape& shape) {
+    std::vector<TopoDS_Face> faces;
+    for (TopExp_Explorer it(shape,TopAbs_FACE); it.More(); it.Next()) faces.push_back(TopoDS::Face(it.Current()));
+    std::vector<double> each(faces.size(),0.);
+    OSD_Parallel::For(0,static_cast<int>(faces.size()),[&](int i) {
         GProp_GProps props;
-        BRepGProp::VolumeProperties(shape,props,1e-9,false,false);
-        if (props.Mass() != total) {
-            fprintf(stderr,"volume: %.17g against the kernel's %.17g\n",total,props.Mass());
-            throw std::runtime_error("the parallel volume differs from the kernel's");
-        }
-    }
+        BRepGProp::SurfaceProperties(faces[static_cast<size_t>(i)],props);
+        each[static_cast<size_t>(i)] = props.Mass();
+    });
+    double total = 0;
+    for (const double a: each) total += a;
     return total;
 }
 // The kernel's checker. (Its parallel mode is not used: in OCCT 7.9 it calls a valid pinion
@@ -122,7 +147,7 @@ std::string invalidity(const TopoDS_Shape& shape) {
     }
     return message.str();
 }
-double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record,bool checked) {
+double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record,bool checked,double known) {
     if (shape.IsNull()) throw std::runtime_error("native solid is null");
     if (!checked && !valid(shape))
         throw std::runtime_error("native solid is invalid:"+invalidity(shape));
@@ -134,7 +159,8 @@ double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record,bool che
     int count = 0;
     double total = 0;
     for (TopExp_Explorer it(shape,TopAbs_SOLID); it.More(); it.Next()) {
-        double v = volume(it.Current());
+        if (!std::isnan(known) && count > 0) throw std::runtime_error("a volume known for one solid given for several");
+        double v = std::isnan(known) ? volume(it.Current()) : known;
         if (!std::isfinite(v) || v <= 0) throw std::runtime_error("solid has no positive volume");
         if (record) record->Bind(it.Current(),v);
         total += v;
@@ -190,6 +216,95 @@ void face_sag(const TopoDS_Face& face,double& worst,gp_Pnt& at) {
         }
     }
 }
+// Whether `g` is `f` turned by `turn` as data, both faces on B-splines: the same orientation,
+// degrees, knots and multiplicities, `g`'s poles within `tolerance` (mm) of `f`'s turned and its
+// weights the same, and as many edges in the same order and orientation, each edge's pcurve taking
+// the same points of the parameter plane over the same range (each to its precision in a file,
+// below). A turn about a line keeps the flux
+// about any point of it, so `g` then bounds with the flux `f` does.
+static bool turned_spline_face(const TopoDS_Face& f,const TopoDS_Face& g,const gp_Trsf& turn,double tolerance) {
+    if (f.Orientation() != g.Orientation()) return false;
+    const auto x = Handle(Geom_BSplineSurface)::DownCast(BRep_Tool::Surface(f));
+    const auto y = Handle(Geom_BSplineSurface)::DownCast(BRep_Tool::Surface(g));
+    if (x.IsNull() || y.IsNull()) return false;
+    const auto near = [](double p,double q) { return std::abs(p-q) <= 1e-12*(1+std::abs(p)); };
+    if (x->UDegree() != y->UDegree() || x->VDegree() != y->VDegree() || x->NbUPoles() != y->NbUPoles()
+        || x->NbVPoles() != y->NbVPoles() || x->NbUKnots() != y->NbUKnots() || x->NbVKnots() != y->NbVKnots()
+        || x->IsURational() != y->IsURational() || x->IsVRational() != y->IsVRational()) return false;
+    for (int k=1;k<=x->NbUKnots();++k) if (!near(x->UKnot(k),y->UKnot(k)) || x->UMultiplicity(k) != y->UMultiplicity(k)) return false;
+    for (int k=1;k<=x->NbVKnots();++k) if (!near(x->VKnot(k),y->VKnot(k)) || x->VMultiplicity(k) != y->VMultiplicity(k)) return false;
+    for (int m=1;m<=x->NbUPoles();++m) for (int n=1;n<=x->NbVPoles();++n)
+        if (x->Pole(m,n).Transformed(turn).Distance(y->Pole(m,n)) > tolerance || !near(x->Weight(m,n),y->Weight(m,n))) return false;
+    std::vector<TopoDS_Edge> e,d;
+    for (TopExp_Explorer it(f,TopAbs_EDGE); it.More(); it.Next()) e.push_back(TopoDS::Edge(it.Current()));
+    for (TopExp_Explorer it(g,TopAbs_EDGE); it.More(); it.Next()) d.push_back(TopoDS::Edge(it.Current()));
+    if (e.size() != d.size()) return false;
+    for (size_t k=0;k<e.size();++k) {
+        if (e[k].Orientation() != d[k].Orientation()) return false;
+        double e0,e1,d0,d1;
+        const auto c = BRep_Tool::CurveOnSurface(e[k],f,e0,e1),h = BRep_Tool::CurveOnSurface(d[k],g,d0,d1);
+        // (a copy's edge ranges and pcurves are its own, set by the sewing and the writer within
+        // their precision: a billionth of the range, a ten-billionth of the parameter plane)
+        if (c.IsNull() || h.IsNull() || std::abs(e0-d0) > 1e-9*(1+std::abs(e1-e0)) || std::abs(e1-d1) > 1e-9*(1+std::abs(e1-e0)))
+            return false;
+        for (int m=0;m<=4;++m) {
+            const double at = e0+(e1-e0)*m/4;
+            if (c->Value(at).Distance(h->Value(at)) > 1e-10) return false;
+        }
+    }
+    return true;
+}
+
+// The volume of a solid that is `copies` turns of one sector about `axis` (a pattern, as a STEP
+// file's reading of one): each face on a B-spline that is an earlier such face turned about the axis
+// (`turned_spline_face`, within `tolerance` mm) bounds with that face's flux about a point of the
+// axis, and every other face is measured. The same number as measuring every face, to the
+// integration's precision, without integrating one sheet a copy.
+static double patterned_volume(const TopoDS_Shape& shape,const gp_Ax1& axis,int copies,double tolerance) {
+    std::vector<TopoDS_Face> faces;
+    for (TopExp_Explorer it(shape,TopAbs_FACE); it.More(); it.Next()) {
+        const TopAbs_Orientation o = it.Current().Orientation();
+        if (o == TopAbs_FORWARD || o == TopAbs_REVERSED) faces.push_back(TopoDS::Face(it.Current()));
+    }
+    // Each face on a B-spline paired with the first one it is a turn of, where there is one.
+    std::vector<int> twin(faces.size(),-1);
+    std::vector<size_t> firsts;
+    const double pitch = 2*M_PI/copies;
+    const gp_Lin line(axis);
+    for (size_t i=0;i<faces.size();++i) {
+        const auto y = Handle(Geom_BSplineSurface)::DownCast(BRep_Tool::Surface(faces[i]));
+        if (y.IsNull()) continue;
+        for (const size_t j: firsts) {
+            const auto x = Handle(Geom_BSplineSurface)::DownCast(BRep_Tool::Surface(faces[j]));
+            if (x->NbUPoles() != y->NbUPoles() || x->NbVPoles() != y->NbVPoles()) continue;
+            // the turn taking the first pole to the other's, a whole number of pitches
+            const gp_Pnt p = x->Pole(1,1),q = y->Pole(1,1);
+            const gp_Vec a(axis.Direction());
+            const gp_Vec rp = gp_Vec(ElCLib::Value(ElCLib::Parameter(line,p),line),p),rq = gp_Vec(ElCLib::Value(ElCLib::Parameter(line,q),line),q);
+            if (rp.Magnitude() <= tolerance || rq.Magnitude() <= tolerance) continue;
+            const double angle = std::atan2(a.Dot(rp.Crossed(rq)),rp.Dot(rq));
+            const double k = std::round(angle/pitch);
+            if (std::abs(angle-k*pitch) > 1e-6) continue;
+            gp_Trsf turn;
+            turn.SetRotation(axis,k*pitch);
+            if (turned_spline_face(faces[j],faces[i],turn,tolerance)) { twin[i] = static_cast<int>(j); break; }
+        }
+        if (twin[i] < 0) firsts.push_back(i);
+    }
+    std::vector<TopoDS_Face> measured;
+    std::vector<size_t> at(faces.size(),0);
+    for (size_t i=0;i<faces.size();++i) if (twin[i] < 0) { at[i] = measured.size(); measured.push_back(faces[i]); }
+    const gp_Pnt origin = axis.Location();
+    std::vector<double> mass(measured.size(),0.);
+    OSD_Parallel::For(0,static_cast<int>(measured.size()),[&](int i) {
+        mass[static_cast<size_t>(i)] = flux({measured[static_cast<size_t>(i)]},origin);
+    });
+    if (std::getenv("SOLVENT_STEP_DEBUG")) fprintf(stderr,"step: %zu of %zu faces measured, the rest turns of them\n",measured.size(),faces.size());
+    double total = 0;
+    for (size_t i=0;i<faces.size();++i) total += mass[at[twin[i] < 0 ? i : static_cast<size_t>(twin[i])]];
+    return total;
+}
+
 extern "C" {
 Cad* solvent_cad_new() noexcept { try { return new Cad; } catch (...) { return nullptr; } }
 void solvent_cad_free(Cad* cad) noexcept { delete cad; }
@@ -310,21 +425,50 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
         } log_stream;
         cad->validated(id);
         auto& shape = cad->at(id);
+        const bool debug = std::getenv("SOLVENT_STEP_DEBUG") != nullptr;
+        auto clock = std::chrono::steady_clock::now();
+        const auto lap = [&](const char* step) {
+            const auto now = std::chrono::steady_clock::now();
+            if (debug) fprintf(stderr,"step: %s %.2f s\n",step,std::chrono::duration<double>(now-clock).count());
+            clock = now;
+        };
         STEPControl_Writer writer;
-        if (writer.Transfer(shape,STEPControl_AsIs) != IFSelect_RetDone
-            || writer.Write(path) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
+        if (writer.Transfer(shape,STEPControl_AsIs) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
+        lap("transferred");
+        if (writer.Write(path) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
+        lap("written");
         STEPControl_Reader reader;
-        if (reader.ReadFile(path) != IFSelect_RetDone || !reader.TransferRoots())
-            throw std::runtime_error("STEP reimport failed");
+        if (reader.ReadFile(path) != IFSelect_RetDone) throw std::runtime_error("STEP reimport failed");
+        lap("read");
+        if (!reader.TransferRoots()) throw std::runtime_error("STEP reimport failed");
+        lap("transferred back");
         auto imported = reader.OneShape();
-        const double after = validate(imported);
+        const double before = cad->volume_of(id);
+        // The reading checked and oriented as any solid is, and measured (a pattern's as one,
+        // `patterned_volume`; `SOLVENT_STEP_CHECK` measures every face of it).
+        if (!valid(imported)) throw std::runtime_error("native solid is invalid:"+invalidity(imported));
+        lap("checked");
+        TopoDS_Shape oriented = imported;
+        if (oriented.ShapeType() == TopAbs_SOLID) {
+            auto solid = TopoDS::Solid(oriented);
+            if (!BRepLib::OrientClosedSolid(solid)) throw std::runtime_error("solid is open");
+            oriented = solid;
+        }
+        // A pattern's reading measured as one: its sheets' copies as turns of one.
+        const auto pattern = cad->patterns.find(id);
+        double after = std::nan("");
+        if (pattern != cad->patterns.end() && std::getenv("SOLVENT_STEP_CHECK") == nullptr && oriented.ShapeType() == TopAbs_SOLID) {
+            after = patterned_volume(oriented,pattern->second.first,pattern->second.second,1e-8);
+            if (!(after > 0)) throw std::runtime_error("solid has no positive volume");
+            if (debug) fprintf(stderr,"step: the reading measures %.12g as copies, %.12g whole; %.12g written\n",after,volume(oriented),before);
+        } else after = validate(imported,nullptr,true);
+        lap("measured");
+        if (std::abs(before-after) <= 1e-9+1e-7*std::abs(before)) return 0;
         // A reader may move the boundary within the tolerance the shape itself
         // carries, so the admissible volume change is that slack over the whole
         // surface; an analytic solid at kernel precision keeps the strict ratio.
-        GProp_GProps surface;
-        BRepGProp::SurfaceProperties(shape,surface);
-        const double slack = BRep_Tool::MaxTolerance(shape,TopAbs_VERTEX)*surface.Mass();
-        const double before = cad->volume_of(id);
+        const double slack = BRep_Tool::MaxTolerance(shape,TopAbs_VERTEX)*area(shape);
+        lap("area");
         if (std::abs(before-after) > std::max(1e-9+1e-7*std::abs(before),slack))
             throw std::runtime_error("STEP round trip changed solid volume from "
                 +std::to_string(before)+" to "+std::to_string(after));
