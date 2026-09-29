@@ -69,6 +69,7 @@ mod names;
 mod open_joint;
 mod order;
 mod overview;
+mod par;
 mod pick;
 mod plane_lang;
 mod plane;
