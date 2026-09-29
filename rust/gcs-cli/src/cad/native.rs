@@ -2,7 +2,7 @@
 //! and the swept construction over it. What is written, and whether, is `cad::output`'s.
 use gcs_core::json::Json;
 use std::{collections::BTreeMap,ffi::{c_char,c_int,c_void,CStr,CString}};
-pub(crate) use super::progress::{mark,stage};
+pub(crate) use super::progress::{mark,side_by_side,stage};
 
 #[path="native/kernel.rs"]
 pub(crate) mod kernel;
@@ -40,6 +40,10 @@ fn v(r: &Json,key: &str) -> [f64;3] {
 }
 
 pub(crate) struct Session(*mut c_void);
+// A session is called from several threads at once, each building its own shapes and reading
+// shared ones: the native side guards its tables and keeps each thread's last error
+// (`backend/occt.hpp`).
+unsafe impl Sync for Session {}
 impl Drop for Session { fn drop(&mut self) { unsafe { solvent_cad_free(self.0); } } }
 impl Session {
     pub(crate) fn new() -> Result<Self,String> {

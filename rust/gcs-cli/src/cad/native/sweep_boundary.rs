@@ -27,6 +27,7 @@ use std::f64::consts::TAU;
 
 #[path="sweep_boundary/sections.rs"]
 mod sections;
+use sections::Cutter;
 #[path="sweep_boundary/fit.rs"]
 mod fit;
 #[path="sweep_boundary/sector.rs"]
@@ -114,16 +115,11 @@ const MOST_COLUMNS: usize = 400;
 /// Held to a `tolerance`, a sheet also withholds the middles of its cells' sides, and one that
 /// misses is refined where it misses (`contact_trace::marked`, `Grid::refined`) and fitted again,
 /// until it fits or its refinement budget is spent.
-fn swept_sheets(session: &Session,sk: &Sketch,swept: usize,inside: Inside,placements: &[Rows],
+fn swept_sheets(session: &Session,cut: &SweptCut,cutter: &Cutter,inside: Inside,placements: &[Rows],
     tolerance: Option<Tolerance>,fitted: &mut dyn FnMut(&Sheet) -> Result<Judged,ExportRefusal>) -> Result<Fitted,ExportRefusal> {
-    let SolidDef::Swept {source,..} = &sk.solids[swept].def else {
-        return Err(ExportRefusal::at(Stage::Reach,format!("`{}` is not a continuous sweep",sk.solids[swept].name)));
-    };
-    let scale = cad::millimetres(sk).at(Stage::Reach)?;
-    let name = &sk.solids[swept].name;
-    let cutter = session.cutter(sk,*source as usize).at(Stage::Reach)?;
-    let sweep = SweepContacts::read(sk,swept,cad::AXIS_TOLERANCE).at(Stage::Reach)?;
-    let tracer = Tracer {sweep:&sweep,scale,inside,debug:tracing()};
+    let (scale,name) = (cut.scale,&cut.name);
+    let sweep = cut.contacts.as_ref().map_err(Clone::clone).at(Stage::Reach)?;
+    let tracer = Tracer {sweep,scale,inside,debug:tracing()};
     let started = std::time::Instant::now();
     let reach = session.reach(&cutter,&tracer).at(Stage::Reach)?;
     stage(&format!("`{name}`: contacts reach the blank over {:.1} degrees of stations and {} profile faces ({:?}: \
@@ -236,25 +232,55 @@ fn swept_sheets(session: &Session,sk: &Sketch,swept: usize,inside: Inside,placem
     Err(refused.unwrap_or_else(|| ExportRefusal::at(Stage::Sheet,format!("`{name}`: no row placement was offered"))))
 }
 
+/// A swept cut as its sheet is built: what the sketch says of it, read on the thread the sketch is
+/// on, so that the sheet can be built on another (the sweeps side by side).
+pub(crate) struct SweptCut {
+    name: String,
+    scale: f64,
+    /// The cutter's recipe, the motion and the declared roll's limits.
+    recipe: gcs_core::json::Json,
+    family: Family,
+    limits: [f64;2],
+    /// The contacts, whose failure to read is the reach's.
+    contacts: Result<SweepContacts,String>,
+}
+
+impl SweptCut {
+    pub(crate) fn read(sk: &Sketch,swept: usize) -> Result<SweptCut,ExportRefusal> {
+        let name = sk.solids[swept].name.clone();
+        let scale = cad::millimetres(sk).at(Stage::Clearance)?;
+        let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else {
+            return Err(ExportRefusal::at(Stage::Clearance,format!("`{name}` is not a continuous sweep")));
+        };
+        let recipe = cad::recipe(sk,*source as usize).at(Stage::Clearance)?;
+        let family = Family::read(sk,*motion as usize).at(Stage::Clearance)?;
+        let contacts = SweepContacts::read(sk,swept,cad::AXIS_TOLERANCE);
+        Ok(SweptCut {name,scale,recipe,family,limits:[from.value,to.value],contacts})
+    }
+}
+
+/// The candidate sheet of one swept solid against a native blank (`sheet_of`), read from the
+/// sketch here.
+#[cfg(test)]
+pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int,field: &gcs_core::solid::SpatialField,
+    tolerance: Option<Tolerance>) -> Result<Fitted,ExportRefusal> {
+    sheet_of(session,&SweptCut::read(sk,swept)?,blank,field,tolerance)
+}
+
 /// The candidate sheet of one swept solid against a native blank: the roll must
 /// carry the cutter clear of the blank at both limits (no caps on this path),
 /// and the grid is fitted as a native face with its withheld contact error.
 /// Where contacts reach the blank is asked of `field`, the same blank as the
 /// core's analytic field, not of the kernel: a point there is microseconds where
 /// the kernel's classifier took 30 ms, and this question only sizes the sheet.
-pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int,field: &gcs_core::solid::SpatialField,
+pub(crate) fn sheet_of(session: &Session,cut: &SweptCut,blank: c_int,field: &gcs_core::solid::SpatialField,
     tolerance: Option<Tolerance>) -> Result<Fitted,ExportRefusal> {
-    let name = &sk.solids[swept].name;
-    let scale = cad::millimetres(sk).at(Stage::Clearance)?;
+    let (name,scale) = (&cut.name,cut.scale);
+    let cutter = session.cutter(&cut.recipe).at(Stage::Clearance)?;
     let clear = || -> Result<(),String> {
-        let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else {
-            return Err(format!("`{name}` is not a continuous sweep"));
-        };
-        let cutter = session.cutter(sk,*source as usize)?;
-        let family = Family::read(sk,*motion as usize)?;
         let started = std::time::Instant::now();
-        for (label,limit) in [("start",from.value),("end",to.value)] {
-            let placed = session.place(cutter.solid,family.at(limit)?,scale)?;
+        for (label,limit) in [("start",cut.limits[0]),("end",cut.limits[1])] {
+            let placed = session.place(cutter.solid,cut.family.at(limit)?,scale)?;
             let overlap = session.common_volume(placed,blank)?;
             if overlap > 0. {
                 return Err(format!("`{name}`: the declared roll leaves the cutter inside the blank at its {label} \
@@ -270,7 +296,7 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
     let near = |p: [f64;3]| field.value(p.map(|x| x/scale))*scale;
     // Rows by walk length first, the placement the bevel pair and the pinion were recorded with;
     // by length where that fit misses or folds.
-    swept_sheets(session,sk,swept,&inside,&[Rows::Walk,Rows::Length],tolerance,
+    swept_sheets(session,cut,&cutter,&inside,&[Rows::Walk,Rows::Length],tolerance,
         &mut |sheet| judged(session,name,sheet,scale,&near,tolerance))
 }
 
@@ -303,7 +329,12 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     mark(Stage::Blank);
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
-    let sheets = distinct.iter().map(|&swept| swept_sheet(session,sk,swept,blank,&field,tolerance)).collect::<Result<Vec<_>,_>>()?;
+    // Each sweep's sheet on a thread of its own, what each says said in order once all are done.
+    let cuts = distinct.iter().map(|&swept| SweptCut::read(sk,swept)).collect::<Result<Vec<_>,_>>()?;
+    let field_ref = &field;
+    let tasks: Vec<Box<dyn FnOnce() -> Result<Fitted,ExportRefusal>+Send+'_>> = cuts.iter()
+        .map(|cut| Box::new(move || sheet_of(session,cut,blank,field_ref,tolerance)) as Box<dyn FnOnce() -> _+Send>).collect();
+    let sheets = side_by_side(tasks,Result::is_err).into_iter().collect::<Result<Vec<_>,_>>()?;
     if asked == Construction::Sector {
         match sector::construct(session,sk,body,recipe,blank,&field,&distinct,&sheets,scale) {
             Ok((solid,sector)) => return Ok(Built {solid,how:Construction::Sector,sector:Some(sector)}),

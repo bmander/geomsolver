@@ -123,10 +123,7 @@ static int united(Cad* cad,TopoDS_Shape result,const char* what,double known = s
     if (solids != 1) throw std::runtime_error(std::string(what)+" is not one connected solid");
     const double v = validate(result,nullptr,true,known);
     lap("validated and measured");
-    const int id = cad->put(result);
-    cad->valid[static_cast<size_t>(id)] = 1;
-    cad->volumes[static_cast<size_t>(id)] = v;
-    return id;
+    return cad->put(result,true,v);
 }
 
 extern "C" {
@@ -183,7 +180,9 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
         if (!cells) throw std::runtime_error("solid split produced no cells");
         TopoDS_Shape checked = result;
         // Every cell's volume is measured here; the cells, listed next, keep it.
-        validate(checked,&cad->measured);
+        TopTools_DataMapOfShapeReal measured;
+        validate(checked,&measured);
+        cad->record(measured);
         return cad->put(result);
     });
 }
@@ -197,9 +196,9 @@ int solvent_cad_solids(Cad* cad,int source,int* output,int capacity) noexcept {
         if (!output && capacity == 0) return count;
         if (!output || capacity < count) throw std::runtime_error("solid buffer is too small");
         for (int i=1;i<=count;++i) {
-            output[i-1] = cad->put(solids(i));
-            if (cad->measured.IsBound(solids(i)))
-                cad->volumes[static_cast<size_t>(output[i-1])] = cad->measured.Find(solids(i));
+            double volume = std::numeric_limits<double>::quiet_NaN();
+            cad->recorded(solids(i),volume);
+            output[i-1] = cad->put(solids(i),false,volume);
         }
         return count;
     });
@@ -678,7 +677,7 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
                     +" as copies of one");
         }
         const int id = united(cad,made,"pattern union",whole);
-        cad->patterns[id] = {line,count+1};
+        cad->set_pattern(id,line,count+1);
         return id;
     });
 }
@@ -963,7 +962,13 @@ int solvent_cad_tolerance(Cad* cad,int id,double* output) noexcept {
 int solvent_cad_common_volume(Cad* cad,int a,int b,double* output) noexcept {
     return guarded(cad,[&] {
         if (!output) throw std::runtime_error("common volume needs an output buffer");
-        BRepAlgoAPI_Common common(cad->at(a),cad->at(b));
+        // Non-destructively: the blank is read by every sweep's clearance, side by side.
+        BRepAlgoAPI_Common common;
+        TopTools_ListOfShape objects,tools;
+        objects.Append(cad->at(a)); tools.Append(cad->at(b));
+        common.SetArguments(objects); common.SetTools(tools);
+        common.SetNonDestructive(true);
+        common.Build();
         if (!common.IsDone()) throw std::runtime_error("Boolean intersection failed");
         output[0] = volume(common.Shape());
         return 0;

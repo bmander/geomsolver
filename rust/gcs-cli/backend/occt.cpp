@@ -171,18 +171,39 @@ double validate(TopoDS_Shape& shape,TopTools_DataMapOfShapeReal* record,bool che
 }
 
 void Cad::validated(int id) {
-    if (valid.at(static_cast<size_t>(id))) return;
+    {
+        const std::lock_guard<std::mutex> hold(lock);
+        if (valid.at(static_cast<size_t>(id))) return;
+    }
     // A single solid's volume is what `validate` just measured.
-    const double v = validate(at(id));
-    if (at(id).ShapeType() == TopAbs_SOLID) volumes[static_cast<size_t>(id)] = v;
+    TopoDS_Shape& shape = at(id);
+    const double v = validate(shape);
+    const std::lock_guard<std::mutex> hold(lock);
+    if (shape.ShapeType() == TopAbs_SOLID) volumes[static_cast<size_t>(id)] = v;
     valid[static_cast<size_t>(id)] = 1;
 }
-
 double Cad::volume_of(int id) {
-    double& v = volumes.at(static_cast<size_t>(id));
-    if (std::isnan(v)) v = volume(at(id));
+    {
+        const std::lock_guard<std::mutex> hold(lock);
+        const double v = volumes.at(static_cast<size_t>(id));
+        if (!std::isnan(v)) return v;
+    }
+    const double v = volume(at(id));
+    const std::lock_guard<std::mutex> hold(lock);
+    volumes[static_cast<size_t>(id)] = v;
     return v;
 }
+void Cad::record(const TopTools_DataMapOfShapeReal& volumes) {
+    const std::lock_guard<std::mutex> hold(lock);
+    for (TopTools_DataMapOfShapeReal::Iterator it(volumes); it.More(); it.Next()) measured.Bind(it.Key(),it.Value());
+}
+bool Cad::recorded(const TopoDS_Shape& solid,double& volume) {
+    const std::lock_guard<std::mutex> hold(lock);
+    if (!measured.IsBound(solid)) return false;
+    volume = measured.Find(solid);
+    return true;
+}
+std::string& last_error() { static thread_local std::string error; return error; }
 
 // The chordal sag a meshed face actually has: over its triangles, the largest distance from a
 // point linear in a triangle (its centroid, its edges' midpoints) to the face's surface, found by a
@@ -308,7 +329,7 @@ static double patterned_volume(const TopoDS_Shape& shape,const gp_Ax1& axis,int 
 extern "C" {
 Cad* solvent_cad_new() noexcept { try { return new Cad; } catch (...) { return nullptr; } }
 void solvent_cad_free(Cad* cad) noexcept { delete cad; }
-const char* solvent_cad_error(Cad* cad) noexcept { return cad->error.c_str(); }
+const char* solvent_cad_error(Cad*) noexcept { return last_error().c_str(); }
 
 int solvent_cad_line(Cad* cad,const double* a,const double* b) noexcept {
     return guarded(cad,[&] {
@@ -455,10 +476,11 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
             oriented = solid;
         }
         // A pattern's reading measured as one: its sheets' copies as turns of one.
-        const auto pattern = cad->patterns.find(id);
+        gp_Ax1 axis;
+        int copies = 0;
         double after = std::nan("");
-        if (pattern != cad->patterns.end() && std::getenv("SOLVENT_STEP_CHECK") == nullptr && oriented.ShapeType() == TopAbs_SOLID) {
-            after = patterned_volume(oriented,pattern->second.first,pattern->second.second,1e-8);
+        if (cad->pattern(id,axis,copies) && std::getenv("SOLVENT_STEP_CHECK") == nullptr && oriented.ShapeType() == TopAbs_SOLID) {
+            after = patterned_volume(oriented,axis,copies,1e-8);
             if (!(after > 0)) throw std::runtime_error("solid has no positive volume");
             if (debug) fprintf(stderr,"step: the reading measures %.12g as copies, %.12g whole; %.12g written\n",after,volume(oriented),before);
         } else after = validate(imported,nullptr,true);

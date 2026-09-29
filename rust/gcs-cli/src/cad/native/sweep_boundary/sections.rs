@@ -139,8 +139,8 @@ pub(super) struct Cutter { pub(super) solid: c_int,faces: Vec<c_int>,origin: [f6
 const FIRST_STATION: f64 = TAU*0.5/96.;
 
 impl Session {
-    pub(super) fn cutter(&self,sk: &Sketch,source: usize) -> Result<Cutter,String> {
-        let recipe = cad::recipe(sk,source)?;
+    pub(super) fn cutter(&self,recipe: &gcs_core::json::Json) -> Result<Cutter,String> {
+        let recipe = recipe.clone();
         let solid = self.construct(&recipe)?;
         let mut axes: Vec<([f64;3],[f64;3])> = Vec::new();
         for node in recipe.get("nodes").unwrap().arr() {

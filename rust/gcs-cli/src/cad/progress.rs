@@ -6,8 +6,43 @@ pub use gcs_core::solid::export::Stage;
 /// carries the time since the first, so a whole export reads as one timeline.
 static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 pub fn stage(message: &str) {
+    if held(|lines| lines.push(Said::Line(message.into()))) { return; }
     let at = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
     eprintln!("solventc: [{at:7.1} s] {message}");
+}
+
+/// What a task run beside others said, kept to be said once they are done.
+enum Said { Line(String),Trace(String) }
+
+std::thread_local! { static HELD: std::cell::RefCell<Option<Vec<Said>>> = const { std::cell::RefCell::new(None) }; }
+
+/// Keep what is said on this thread, if it is holding it.
+fn held(keep: impl FnOnce(&mut Vec<Said>)) -> bool {
+    HELD.with(|h| h.borrow_mut().as_mut().map(keep).is_some())
+}
+
+/// Run `tasks` side by side, each on a thread of its own, and say what each said, in the tasks'
+/// order, once all are done — up to and including the first whose result `failed`, as running them
+/// one after another would have. The results, in order.
+pub fn side_by_side<'a,T: Send>(tasks: Vec<Box<dyn FnOnce() -> T+Send+'a>>,failed: impl Fn(&T) -> bool) -> Vec<T> {
+    let done: Vec<(T,Vec<Said>)> = std::thread::scope(|scope| {
+        let running: Vec<_> = tasks.into_iter().map(|task| scope.spawn(move || {
+            HELD.with(|h| *h.borrow_mut() = Some(Vec::new()));
+            let result = task();
+            (result,HELD.with(|h| h.borrow_mut().take().unwrap_or_default()))
+        })).collect();
+        running.into_iter().map(|t| t.join().unwrap_or_else(|e| std::panic::resume_unwind(e))).collect()
+    });
+    let mut results = Vec::new();
+    let mut speaking = true;
+    for (result,said) in done {
+        if speaking {
+            for s in said { match s { Said::Line(m) => stage(&m), Said::Trace(k) => trace(&k) } }
+            speaking = !failed(&result);
+        }
+        results.push(result);
+    }
+    results
 }
 
 /// A stage completed, for a harness: with `SOLVENT_STAGE_TRACE` naming a file, one line
@@ -19,6 +54,7 @@ pub fn mark(stage: Stage) { trace(stage.key()); }
 pub fn refused(stage: Stage) { trace(&format!("refused:{}",stage.key())); }
 
 fn trace(key: &str) {
+    if held(|lines| lines.push(Said::Trace(key.into()))) { return; }
     let Ok(path) = std::env::var("SOLVENT_STAGE_TRACE") else { return };
     let at = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
     use std::io::Write;

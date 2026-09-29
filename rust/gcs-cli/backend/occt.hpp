@@ -3,7 +3,9 @@
 #include <TopoDS_Face.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Ax1.hxx>
+#include <deque>
 #include <map>
+#include <mutex>
 #include <TopTools_ListOfShape.hxx>
 #include <TopTools_DataMapOfShapeReal.hxx>
 #include <Standard_Failure.hxx>
@@ -18,38 +20,56 @@
 // A stored shape never changes, so what is learned of it is kept beside it: that it passed
 // `validate` (which may reorient it in place, once) and its volume, NaN until measured. A
 // member's solid is validated and measured once, not again by each output written from it.
+// A session may be called from several threads at once (a body's sweeps are built side by side):
+// its tables are guarded, a handle indexes a deque (whose elements stay where they are as it
+// grows), and each thread keeps its own last error. Threads share a shape only to read it: an
+// operation that would change its input (a Boolean's tolerances) is run non-destructively.
 struct Cad {
-    std::vector<TopoDS_Shape> shapes;
-    std::vector<char> valid;
-    std::vector<double> volumes;
-    // Volumes `validate` measured of solids inside a stored shape (a partition's cells),
-    // for the handles those solids are given when they are listed.
-    TopTools_DataMapOfShapeReal measured;
-    std::string error;
-    // The last section counted (`solvent_cad_section`): its arguments and its rows, handed to the
-    // call that retrieves it.
-    std::vector<double> section_key;
-    std::vector<int> section_rows;
-    // The solids `solvent_cad_pattern` made: the axis they are turned about and how many copies.
-    std::map<int,std::pair<gp_Ax1,int>> patterns;
-    int put(const TopoDS_Shape& shape) {
+    int put(const TopoDS_Shape& shape,bool checked = false,double volume = std::numeric_limits<double>::quiet_NaN()) {
+        const std::lock_guard<std::mutex> hold(lock);
         shapes.push_back(shape);
-        valid.push_back(0);
-        volumes.push_back(std::numeric_limits<double>::quiet_NaN());
+        valid.push_back(checked);
+        volumes.push_back(volume);
         return static_cast<int>(shapes.size()-1);
     }
-    TopoDS_Shape& at(int id) { return shapes.at(static_cast<size_t>(id)); }
+    TopoDS_Shape& at(int id) {
+        const std::lock_guard<std::mutex> hold(lock);
+        return shapes.at(static_cast<size_t>(id));
+    }
     // Validate a stored shape unless it already has been.
     void validated(int id);
     // The stored shape's volume, measured once.
     double volume_of(int id);
+    // Volumes `validate` measured of solids inside a stored shape (a partition's cells), kept for
+    // the handles those solids are given when they are listed; and one read back.
+    void record(const TopTools_DataMapOfShapeReal& volumes);
+    bool recorded(const TopoDS_Shape& solid,double& volume);
+    // The solids `solvent_cad_pattern` made: the axis they are turned about and how many copies.
+    void set_pattern(int id,const gp_Ax1& axis,int copies) { const std::lock_guard<std::mutex> hold(lock); patterns[id] = {axis,copies}; }
+    bool pattern(int id,gp_Ax1& axis,int& copies) {
+        const std::lock_guard<std::mutex> hold(lock);
+        const auto it = patterns.find(id);
+        if (it == patterns.end()) return false;
+        axis = it->second.first; copies = it->second.second;
+        return true;
+    }
+private:
+    std::mutex lock;
+    std::deque<TopoDS_Shape> shapes;
+    std::deque<char> valid;
+    std::deque<double> volumes;
+    TopTools_DataMapOfShapeReal measured;
+    std::map<int,std::pair<gp_Ax1,int>> patterns;
 };
+
+// The calling thread's last native error, which `guarded` sets.
+std::string& last_error();
 
 template<class F> int guarded(Cad* cad,F fn) noexcept {
     try { return fn(); }
-    catch (const Standard_Failure& e) { cad->error = e.GetMessageString(); }
-    catch (const std::exception& e) { cad->error = e.what(); }
-    catch (...) { cad->error = "unknown native CAD exception"; }
+    catch (const Standard_Failure& e) { last_error() = e.GetMessageString(); }
+    catch (const std::exception& e) { last_error() = e.what(); }
+    catch (...) { last_error() = "unknown native CAD exception"; }
     return -1;
 }
 

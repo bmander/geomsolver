@@ -20,6 +20,10 @@
 #include <cmath>
 #include <vector>
 
+// The last section a thread counted: its arguments and its rows, handed to the call that retrieves it.
+static thread_local std::vector<double> section_key;
+static thread_local std::vector<int> section_rows;
+
 extern "C" {
 // Section a solid by the plane through `origin` containing `axis`, keeping only
 // the edges on the half-plane whose in-plane direction is `side` (perpendicular
@@ -33,11 +37,11 @@ int solvent_cad_section(Cad* cad,int solid,const double* origin,const double* ax
     return guarded(cad,[&] {
         if (!origin || !axis || !side) throw std::runtime_error("section needs an origin, axis and side");
         const std::vector<double> key{double(solid),origin[0],origin[1],origin[2],axis[0],axis[1],axis[2],side[0],side[1],side[2]};
-        if (rows && key == cad->section_key) {
-            const int count = static_cast<int>(cad->section_rows.size()/2);
+        if (rows && key == section_key) {
+            const int count = static_cast<int>(section_rows.size()/2);
             if (capacity < count) throw std::runtime_error("section buffer is too small");
-            std::copy(cad->section_rows.begin(),cad->section_rows.end(),rows);
-            cad->section_key.clear();
+            std::copy(section_rows.begin(),section_rows.end(),rows);
+            section_key.clear();
             return count;
         }
         cad->validated(solid);
@@ -109,7 +113,7 @@ int solvent_cad_section(Cad* cad,int solid,const double* origin,const double* ax
         const int count = static_cast<int>(kept.size());
         std::vector<int> made(2*kept.size());
         for (int i=0;i<count;++i) { made[2*i] = cad->put(kept[i].first); made[2*i+1] = kept[i].second; }
-        if (!rows && capacity == 0) { cad->section_key = key; cad->section_rows = made; return count; }
+        if (!rows && capacity == 0) { section_key = key; section_rows = made; return count; }
         if (!rows || capacity < count) throw std::runtime_error("section buffer is too small");
         std::copy(made.begin(),made.end(),rows);
         return count;
