@@ -58,6 +58,8 @@ int solvent_cad_section(Cad* cad,int solid,const double* origin,const double* ax
         section.ComputePCurveOn1(false);
         section.Approximation(false);
         section.SetRunParallel(false);
+        // A cutter is sectioned at many stations side by side: the section leaves it as it is.
+        section.SetNonDestructive(true);
         section.Build();
         if (!section.IsDone() || section.HasErrors()) throw std::runtime_error("plane section failed");
         TopTools_IndexedMapOfShape faces;

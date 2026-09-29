@@ -227,6 +227,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         contacts.motion().normal_velocity(probe).map_err(|m| refuse(swept,Condition::Motion,m,None))?;
         Ok(contacts)
     }).collect();
+    let clock = std::time::Instant::now();
     let checks = crate::par::indices(order.len(),|k| -> Option<Result<(SweepEvidence,Reads),Error>> {
         let contacts = tools[k].as_ref().ok()?;
         let (swept,pose) = (order[k],by_sweep[&order[k]][0]);
@@ -237,6 +238,8 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         let (found,reads) = check.expect("a read tool is checked")?;
         Ok((contacts,found,reads))
     }).collect();
+    if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: checked in {:?}",clock.elapsed()); }
+    let clock = std::time::Instant::now();
     // Whether each later placement reads the blank as the first did, every point of it.
     let later: Vec<(usize,usize)> = first.iter().enumerate().filter(|(_,r)| r.is_ok())
         .flat_map(|(k,_)| (1..by_sweep[&order[k]].len()).map(move |p| (k,p))).collect();
@@ -245,6 +248,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         let Ok((_,_,reads)) = &first[k] else { unreachable!("only a checked sweep's placements are compared") };
         reads.points.iter().zip(&reads.inside).all(|(q,&i)| inside(*q) == i)
     });
+    if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: compared in {:?}",clock.elapsed()); }
     let mut admission = Admission {body:root,sweeps:Vec::new()};
     let mut alike = alike.into_iter();
     for (result,&swept) in first.into_iter().zip(&order) {

@@ -129,10 +129,10 @@ pub(super) struct Reach { pub(super) stations: [f64;2],pub(super) start: Anchor,
 /// one of revolution about the axis, and its section at any station is its section at `first`
 /// turned: `first` is sectioned once, the first time a station is asked for.
 pub(super) struct Cutter { pub(super) solid: c_int,faces: Vec<c_int>,origin: [f64;3],axis: [f64;3],side: [f64;3],
-    revolution: bool,first: std::cell::OnceCell<(f64,Vec<Loop>)>,
+    revolution: bool,first: std::sync::OnceLock<(f64,Vec<Loop>)>,
     /// Every other cutter's sections, by station angle: a sheet's rows placed a second way are
     /// traced over the stations the first placement sectioned.
-    sections: std::cell::RefCell<BTreeMap<u64,Vec<Loop>>> }
+    sections: std::sync::Mutex<BTreeMap<u64,Vec<Loop>>> }
 
 /// The station a solid of revolution is sectioned at: half a step of the reach's stations off the
 /// side, where a revolution's seam (in the plane of its profile) is not.
@@ -161,7 +161,7 @@ impl Session {
         let seed = if axis[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
         let side = unit(cross(cross(axis,seed),axis))?;
         let revolution = std::env::var("SOLVENT_SECTIONS").map_or(true,|v| v != "each") && of_revolution(&recipe,origin,axis);
-        Ok(Cutter {solid,faces:self.faces(solid)?,origin,axis,side,revolution,first:std::cell::OnceCell::new(),
+        Ok(Cutter {solid,faces:self.faces(solid)?,origin,axis,side,revolution,first:std::sync::OnceLock::new(),
             sections:Default::default()})
     }
 
@@ -184,10 +184,10 @@ impl Session {
     /// its axis is sectioned once, and every station is that section turned.
     pub(super) fn profile(&self,cutter: &Cutter,angle: f64) -> Result<Vec<Loop>,String> {
         if !cutter.revolution {
-            if let Some(loops) = cutter.sections.borrow().get(&angle.to_bits()) { return Ok(loops.clone()); }
+            if let Some(loops) = cutter.sections.lock().unwrap_or_else(|e| e.into_inner()).get(&angle.to_bits()) { return Ok(loops.clone()); }
             let loops = self.section_loops(cutter,angle)?;
             if std::env::var_os("SOLVENT_SECTION_COUNT").is_some() { eprintln!("section at {angle:.17}"); }
-            cutter.sections.borrow_mut().insert(angle.to_bits(),loops.clone());
+            cutter.sections.lock().unwrap_or_else(|e| e.into_inner()).insert(angle.to_bits(),loops.clone());
             return Ok(loops);
         }
         if cutter.first.get().is_none() {
@@ -328,14 +328,15 @@ impl Session {
         let mut order: Option<Vec<c_int>> = None;
         let (mut radius_sum,mut radius_count) = (0.,0);
         let (mut spent,mut queried) = ([0.;3],0);
+        // Half a step off the side: a revolution's seam lies in the plane of its profile, and
+        // a section plane containing a seam loses that face's section. Every station's section
+        // first, on every core.
+        let clock = std::time::Instant::now();
+        let mut sections = gcs_core::par::indices(stations,|c| self.profile(cutter,TAU*(c as f64+0.5)/stations as f64)).into_iter();
+        spent[0] += clock.elapsed().as_secs_f64();
         for c in 0..stations {
-            // Half a step off the side: a revolution's seam lies in the plane of its profile, and
-            // a section plane containing a seam loses that face's section.
-            let angle = TAU*(c as f64+0.5)/stations as f64;
             let mut hit_here = false;
-            let clock = std::time::Instant::now();
-            let loops = self.profile(cutter,angle)?;
-            spent[0] += clock.elapsed().as_secs_f64();
+            let loops = sections.next().expect("a section a station")?;
             for profile in &loops {
                 let total = profile.augmented_length();
                 let count = ((total/0.3).ceil() as usize).max(8);

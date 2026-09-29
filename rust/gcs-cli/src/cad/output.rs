@@ -57,11 +57,6 @@ impl Staged {
         Ok(self.directory(&std::env::temp_dir(),"solvent-agreement")?.join(format!("probe.{kind}")))
     }
 
-    /// The staged file of this extension, if one was asked for.
-    pub fn staged(&self,kind: &str) -> Option<&Path> {
-        self.files.iter().map(|(t,_)| t.as_path()).find(|t| t.extension().is_some_and(|e| e == kind))
-    }
-
     /// Rename every staged file into place.
     pub fn commit(self) -> Result<(),String> {
         for (temporary,output) in &self.files {

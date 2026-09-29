@@ -21,6 +21,28 @@ fn held(keep: impl FnOnce(&mut Vec<Said>)) -> bool {
     HELD.with(|h| h.borrow_mut().as_mut().map(keep).is_some())
 }
 
+/// Run `there` on a thread of its own beside `here` on this one, and say what each said, `there`'s
+/// first, once both are done — `here`'s only if `there` has not `failed`, as running them one
+/// after the other would. Both results.
+pub fn beside<A: Send,B>(there: impl FnOnce() -> A+Send,here: impl FnOnce() -> B,failed: impl Fn(&A) -> bool) -> (A,B) {
+    let ((a,said),(b,mine)) = std::thread::scope(|scope| {
+        let running = scope.spawn(move || {
+            HELD.with(|h| *h.borrow_mut() = Some(Vec::new()));
+            let result = there();
+            (result,HELD.with(|h| h.borrow_mut().take().unwrap_or_default()))
+        });
+        let before = HELD.with(|h| h.borrow_mut().replace(Vec::new()));
+        let b = here();
+        let mine = HELD.with(|h| std::mem::replace(&mut *h.borrow_mut(),before).unwrap_or_default());
+        (running.join().unwrap_or_else(|e| std::panic::resume_unwind(e)),(b,mine))
+    });
+    let speak = |said: Vec<Said>| for s in said { match s { Said::Line(m) => stage(&m), Said::Trace(k) => trace(&k) } };
+    let quiet = failed(&a);
+    speak(said);
+    if !quiet { speak(mine); }
+    (a,b)
+}
+
 /// Run `tasks` side by side, each on a thread of its own, and say what each said, in the tasks'
 /// order, once all are done — up to and including the first whose result `failed`, as running them
 /// one after another would have. The results, in order.

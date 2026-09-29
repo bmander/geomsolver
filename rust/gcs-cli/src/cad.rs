@@ -119,39 +119,56 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                 None => session.stl_with(solid,path,deflection,ANGULAR),
             }
         };
-        for (kind,stage_of,path) in [("step",Stage::Step,step),("stl",Stage::Stl,stl)] {
-            let Some(path) = path else { continue };
-            let written = |staged: &mut output::Staged| -> Result<(),String> {
-                let temporary = staged.file(path,kind)?;
-                if kind == "step" { session.step(solid,&utf8(&temporary)?)?; } else {
-                    mesh(&utf8(&temporary)?)?;
-                    let bytes = std::fs::read(&temporary).map_err(|e| e.to_string())?;
-                    output::check_stl(&bytes,"native float32 STL validation failed")?;
-                }
-                Ok(())
-            };
-            written(&mut staged).at(stage_of)?;
-            stage(&format!("staged the {} output",kind.to_uppercase()));
-            mark(stage_of);
-        }
+        let step_file = step.map(|path| staged.file(path,"step").and_then(|t| utf8(&t))).transpose().at(Stage::Step)?;
+        let stl_file = stl.map(|path| staged.file(path,"stl").and_then(|t| utf8(&t))).transpose().at(Stage::Stl)?;
         // A swept body is judged on the STL being written when there is one, meshed once.
-        if body.swept() {
-            let meshed = |staged: &mut output::Staged| -> Result<Vec<u8>,String> {
-                Ok(match staged.staged("stl") {
-                    Some(path) => std::fs::read(path).map_err(|e| e.to_string())?,
-                    None => {
-                        let path = staged.scratch("stl")?;
-                        let started = std::time::Instant::now();
-                        mesh(&utf8(&path)?)?;
-                        let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-                        stage(&format!("meshed the solid for its field agreement ({:?})",started.elapsed()));
-                        bytes
-                    }
-                })
-            };
-            let stl = meshed(&mut staged).at(Stage::Mesh)?;
-            output::field_agreement(sk,body.index,&stl,tolerance)?;
-        }
+        let scratch = if body.swept() && stl_file.is_none() { Some(staged.scratch("stl").and_then(|t| utf8(&t)).at(Stage::Mesh)?) }
+            else { None };
+        let write_step = || -> Result<(),ExportRefusal> {
+            let Some(file) = &step_file else { return Ok(()) };
+            session.step(solid,file).at(Stage::Step)?;
+            stage("staged the STEP output");
+            mark(Stage::Step);
+            Ok(())
+        };
+        let the_rest = || -> Result<(),ExportRefusal> {
+            if let Some(file) = &stl_file {
+                let written = || -> Result<(),String> {
+                    mesh(file)?;
+                    let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
+                    output::check_stl(&bytes,"native float32 STL validation failed")
+                };
+                written().at(Stage::Stl)?;
+                stage("staged the STL output");
+                mark(Stage::Stl);
+            }
+            if body.swept() {
+                let meshed = || -> Result<Vec<u8>,String> {
+                    Ok(match (&stl_file,&scratch) {
+                        (Some(file),_) => std::fs::read(file).map_err(|e| e.to_string())?,
+                        (None,Some(path)) => {
+                            let started = std::time::Instant::now();
+                            mesh(path)?;
+                            let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+                            stage(&format!("meshed the solid for its field agreement ({:?})",started.elapsed()));
+                            bytes
+                        }
+                        (None,None) => unreachable!("a swept body's mesh has a file"),
+                    })
+                };
+                let stl = meshed().at(Stage::Mesh)?;
+                output::field_agreement(sk,body.index,&stl,tolerance)?;
+            }
+            Ok(())
+        };
+        // The STEP is written beside the mesh where the mesh is the sector's, not the solid's.
+        let (wrote,rest) = if sector.is_some() { progress::beside(write_step,the_rest,Result::is_err) } else {
+            let wrote = write_step();
+            let rest = if wrote.is_ok() { the_rest() } else { Ok(()) };
+            (wrote,rest)
+        };
+        wrote?;
+        rest?;
         staged.commit().at(Stage::Written)?;
         mark(Stage::Written);
         Ok(())
