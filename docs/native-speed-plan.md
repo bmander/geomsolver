@@ -98,7 +98,7 @@ contact of each sweep's first placement in the blank (`gcs_core::solid::sector`)
 side is 0.449 mm clear of them at least, the gear's 0.530 mm, against a bar of 0.05 mm plus twice
 the sheets' fit error. The side is then built (22×9 nodes) and read back — 1,363 and 1,459 of its
 points in the blank, 0.380 and 0.504 mm clear — and the material field reads 151 and 145 of those
-at least 0.03 mm deep in the blank as material by a ball certificate. A cut's contacts all fall in
+at least half the margin deep in the blank as material by a ball certificate of that radius. A cut's contacts all fall in
 one sector, so the sector holds one placement of each sweep. The blank reads alike under a pitch's
 turn at 256 points, and the sides split it into the sector and the rest, the sector exactly the
 blank's share of volume (800.285375 and 595.382969 mm³). It is sampled, as the admission is, and
@@ -175,6 +175,13 @@ reaches the axis. CLI `tests/native_sector.rs` (11 s): a ring cut at six places 
 rolled about a parallel cradle (`fixtures::tools::indexed_ring`, `motions::cradle_roll`) built as
 one sector is the ring built whole — 15 faces each, 7.685469 against 7.685470 mm³, a closed mesh —
 and cut twice it is built whole.
+
+**Gates.** The whole suite with the native kernel passes with no warnings (1,331 core tests); the
+slow tier passes in 15.0 minutes (21.8 before: its two 10 µm member exports are the sector's now);
+the web tests pass (255). Every corpus report and sheet and every non-native golden is
+byte-identical to phase 6's (`crown/space.sv`'s 25 s report timed out once under the corpus's
+parallel load and was identical run alone). The native swept exports' bytes change; they are
+compared above by faces, volume, the meter, the field agreement and the pair check.
 
 ## Verification
 
