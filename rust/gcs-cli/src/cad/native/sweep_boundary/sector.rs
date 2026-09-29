@@ -114,19 +114,25 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
     let read: Vec<[f64;3]> = session.surface_grid(side,READ_BACK*rows,READ_BACK*COLUMNS)?.into_iter().map(|(p,_)| p).filter(|&p| inside(p)).collect();
     let clear = chosen.clearance_of(&read)?;
     if clear < margin { return Err(format!("the side as built passes {clear:.4} mm from a cut, under {margin:.4} mm")); }
-    let mut material = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?.evaluator(cad::POSE_CACHE);
+    let body_field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
     let radius = margin/2.;
     let deep: Vec<[f64;3]> = read.iter().copied().filter(|p| field.value(p.map(|x| x/scale))*scale < -radius).collect();
     let step = deep.len().div_ceil(PROBES).max(1);
+    let probed_at: Vec<[f64;3]> = deep.iter().copied().step_by(step).collect();
+    // each probe on its own core, an evaluator a thread; the first to fail, in order, is the reason
+    let probes = gcs_core::par::indices_with(probed_at.len(),|| body_field.evaluator(cad::POSE_CACHE),|material,i| {
+        material.probe(probed_at[i].map(|x| Interval::point(x/scale).unwrap()),[1.,0.,0.],radius/scale,
+            Options {value_tolerance:radius/scale/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
+    });
     let mut probed = 0;
-    for &p in deep.iter().step_by(step) {
-        let probe = material.probe(p.map(|x| Interval::point(x/scale).unwrap()),[1.,0.,0.],radius/scale,
-            Options {value_tolerance:radius/scale/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))?;
+    for (&p,probe) in probed_at.iter().zip(probes) {
+        let probe = probe?;
         if probe.state != ProbeState::InteriorBall {
             return Err(format!("the material field reads the side at {:?} as {:?}, not material",p.map(|x| (x*1e3).round()/1e3),probe.state));
         }
         probed += 1;
     }
+    let mut material = body_field.evaluator(cad::POSE_CACHE);
     stage(&format!("the side: {rows}x{COLUMNS} nodes, read back {clear:.4} mm clear of the cuts at {} points in the blank, \
         {probed} of them material by the field ({:?})",read.len(),started.elapsed()));
     // The blank between the side and its turn: its share of the blank's volume.

@@ -2,7 +2,7 @@
 //! and the swept construction over it. What is written, and whether, is `cad::output`'s.
 use gcs_core::json::Json;
 use std::{collections::BTreeMap,ffi::{c_char,c_int,c_void,CStr,CString}};
-pub(crate) use super::progress::{mark,side_by_side,stage,under};
+pub(crate) use super::progress::{holding,mark,side_by_side,stage,under};
 
 #[path="native/kernel.rs"]
 pub(crate) mod kernel;

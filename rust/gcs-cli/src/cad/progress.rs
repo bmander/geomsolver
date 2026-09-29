@@ -63,6 +63,22 @@ fn both<A: Send,B>(there: impl FnOnce() -> A+Send,here: impl FnOnce() -> B) -> (
 /// Say again what was held.
 fn speak(said: Vec<Said>) { for s in said { match s { Said::Line(m) => stage(&m), Said::Trace(k) => trace(&k) } } }
 
+/// What some work said, held back to be said later (`Held::say`).
+pub struct Held(Vec<Said>);
+
+impl Held {
+    /// Say it now: on to what this thread holds, or out where it holds nothing.
+    pub fn say(self) { speak(self.0) }
+}
+
+/// Run `work`, holding back what it says: its result, and what it said.
+pub fn holding<T>(work: impl FnOnce() -> T) -> (T,Held) {
+    let before = HELD.with(|h| h.borrow_mut().replace(Vec::new()));
+    let result = work();
+    let said = HELD.with(|h| std::mem::replace(&mut *h.borrow_mut(),before).unwrap_or_default());
+    (result,Held(said))
+}
+
 /// Run `tasks` side by side, each on a thread of its own, and say what each said, in the tasks'
 /// order, once all are done — up to and including the first whose result `failed`, as running them
 /// one after another would have. The results, in order.

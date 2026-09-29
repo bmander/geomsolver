@@ -259,12 +259,12 @@ impl SweptCut {
     }
 }
 
-/// The candidate sheet of one swept solid against a native blank (`sheet_of`), read from the
+/// The candidate sheet of one swept solid against a native blank (`sheet_beside`), read from the
 /// sketch here.
 #[cfg(test)]
 pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int,field: &gcs_core::solid::SpatialField,
     tolerance: Option<Tolerance>) -> Result<Fitted,ExportRefusal> {
-    sheet_of(session,&SweptCut::read(sk,swept)?,blank,field,tolerance)
+    sheet_beside(session,&SweptCut::read(sk,swept)?,&|| Ok(blank),field,tolerance)
 }
 
 /// The candidate sheet of one swept solid against a native blank: the roll must
@@ -273,10 +273,20 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
 /// Where contacts reach the blank is asked of `field`, the same blank as the
 /// core's analytic field, not of the kernel: a point there is microseconds where
 /// the kernel's classifier took 30 ms, and this question only sizes the sheet.
-pub(crate) fn sheet_of(session: &Session,cut: &SweptCut,blank: c_int,field: &gcs_core::solid::SpatialField,
-    tolerance: Option<Tolerance>) -> Result<Fitted,ExportRefusal> {
+/// The blank is awaited only for the clearance: the sheet is traced and fitted while the blank is
+/// built, then the clearance asked, and what the two said said in that order — only the
+/// clearance's where it refuses, as asking it first would have.
+fn sheet_beside(session: &Session,cut: &SweptCut,blank: &dyn Fn() -> Result<c_int,ExportRefusal>,
+    field: &gcs_core::solid::SpatialField,tolerance: Option<Tolerance>) -> Result<Fitted,ExportRefusal> {
     let (name,scale) = (&cut.name,cut.scale);
     let cutter = session.cutter(&cut.recipe).at(Stage::Clearance)?;
+    let inside = |points: &[[f64;3]]| Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect());
+    let near = |p: [f64;3]| field.value(p.map(|x| x/scale))*scale;
+    // Rows by walk length first, the placement the bevel pair and the pinion were recorded with;
+    // by length where that fit misses or folds.
+    let (sheet,said) = holding(|| swept_sheets(session,cut,&cutter,&inside,&[Rows::Walk,Rows::Length],tolerance,
+        &mut |sheet| judged(session,name,sheet,scale,&near,tolerance)));
+    let blank = blank()?;
     let clear = || -> Result<(),String> {
         let started = std::time::Instant::now();
         for (label,limit) in [("start",cut.limits[0]),("end",cut.limits[1])] {
@@ -292,12 +302,25 @@ pub(crate) fn sheet_of(session: &Session,cut: &SweptCut,blank: c_int,field: &gcs
     };
     clear().at(Stage::Clearance)?;
     mark(Stage::Clearance);
-    let inside = |points: &[[f64;3]]| Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect());
-    let near = |p: [f64;3]| field.value(p.map(|x| x/scale))*scale;
-    // Rows by walk length first, the placement the bevel pair and the pinion were recorded with;
-    // by length where that fit misses or folds.
-    swept_sheets(session,cut,&cutter,&inside,&[Rows::Walk,Rows::Length],tolerance,
-        &mut |sheet| judged(session,name,sheet,scale,&near,tolerance))
+    said.say();
+    sheet
+}
+
+/// The blank as the sheets are built beside it: made once, on a thread of its own, and awaited by
+/// each sheet for its clearance alone. `None` once made is a blank that could not be.
+struct Awaited { made: std::sync::Mutex<Option<Option<c_int>>>,ready: std::sync::Condvar }
+
+impl Awaited {
+    fn new() -> Awaited { Awaited {made:std::sync::Mutex::new(None),ready:std::sync::Condvar::new()} }
+    fn set(&self,blank: Option<c_int>) {
+        *self.made.lock().unwrap_or_else(|e| e.into_inner()) = Some(blank);
+        self.ready.notify_all();
+    }
+    fn get(&self) -> Result<c_int,ExportRefusal> {
+        let mut made = self.made.lock().unwrap_or_else(|e| e.into_inner());
+        while made.is_none() { made = self.ready.wait(made).unwrap_or_else(|e| e.into_inner()); }
+        made.expect("waited for").ok_or_else(|| ExportRefusal::at(Stage::Blank,"the static blank was not built"))
+    }
 }
 
 /// How a body with swept cuts is built: as one sector patterned round its indexing axis where the
@@ -348,14 +371,24 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     // The blank, then each sweep's sheet on a thread of its own, what each says said in order once
     // all are done.
     let field_ref = &field;
+    // The blank built beside the sheets, which await it for their clearance alone.
     let built = || -> Result<(c_int,Vec<Fitted>),ExportRefusal> {
-        let blank = session.construct(&recipe.recipe).at(Stage::Blank)?;
-        stage(&format!("`{name}`: static blank of {operations} operations"));
-        mark(Stage::Blank);
-        let tasks: Vec<Box<dyn FnOnce() -> Result<Fitted,ExportRefusal>+Send+'_>> = cuts.iter()
-            .map(|cut| Box::new(move || sheet_of(session,cut,blank,field_ref,tolerance)) as Box<dyn FnOnce() -> _+Send>).collect();
-        let sheets = side_by_side(tasks,Result::is_err).into_iter().collect::<Result<Vec<_>,_>>()?;
-        Ok((blank,sheets))
+        let awaited = Awaited::new();
+        let awaited = &awaited;
+        let mut tasks: Vec<Box<dyn FnOnce() -> Result<Option<Fitted>,ExportRefusal>+Send+'_>> = vec![Box::new(move || {
+            let blank = session.construct(&recipe.recipe).at(Stage::Blank);
+            awaited.set(blank.as_ref().ok().copied());
+            blank?;
+            stage(&format!("`{name}`: static blank of {operations} operations"));
+            mark(Stage::Blank);
+            Ok(None)
+        })];
+        tasks.extend(cuts.iter().map(|cut| Box::new(move || sheet_beside(session,cut,&|| awaited.get(),field_ref,tolerance).map(Some))
+            as Box<dyn FnOnce() -> _+Send>));
+        let mut done = side_by_side(tasks,Result::is_err).into_iter();
+        done.next().expect("the blank's task")?;
+        let sheets = done.map(|sheet| sheet.map(|s| s.expect("a sheet"))).collect::<Result<Vec<_>,_>>()?;
+        Ok((awaited.get()?,sheets))
     };
     let (blank,sheets) = match admitted {
         Admitted::Already(_) => built()?,
