@@ -193,8 +193,8 @@ static void validate_cells(TopoDS_Shape& partition,TopTools_DataMapOfShapeReal& 
     std::vector<char> ok(static_cast<size_t>(faces.Extent()),0);
     OSD_Parallel::For(0,faces.Extent(),[&](int i) { ok[static_cast<size_t>(i)] = BRepCheck_Analyzer(faces(i+1)).IsValid(); });
     if (std::find(ok.begin(),ok.end(),0) != ok.end()) throw std::runtime_error("native solid is invalid:"+invalidity(partition));
-    // each cell closed and consistently oriented
-    for (const auto& cell: cells) if (!valid_solid(cell)) throw std::runtime_error("native solid is invalid:"+invalidity(cell));
+    // each cell closed and consistently oriented (its faces checked above, each once)
+    for (const auto& cell: cells) if (!closed_and_oriented(cell)) throw std::runtime_error("native solid is invalid:"+invalidity(cell));
     // one point for every flux, as `volume` takes it: the mean of the partition's vertices
     gp_XYZ sum(0,0,0);
     int count = 0;

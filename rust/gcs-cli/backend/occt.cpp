@@ -155,6 +155,11 @@ bool valid_solid(const TopoDS_Shape& shape) {
     std::vector<char> ok(static_cast<size_t>(faces.Extent()),0);
     OSD_Parallel::For(0,faces.Extent(),[&](int i) { ok[static_cast<size_t>(i)] = BRepCheck_Analyzer(faces(i+1)).IsValid(); });
     if (std::find(ok.begin(),ok.end(),0) != ok.end()) return false;
+    return closed_and_oriented(shape);
+}
+// A solid's one shell closed and consistently oriented: every edge but a degenerate one used once
+// forward and once reversed by its faces as the solid orients them (`valid_solid`'s second half).
+bool closed_and_oriented(const TopoDS_Shape& shape) {
     NCollection_DataMap<TopoDS_Shape,std::pair<int,int>,TopTools_ShapeMapHasher> uses;
     for (TopExp_Explorer f(shape,TopAbs_FACE); f.More(); f.Next()) for (TopExp_Explorer e(f.Current(),TopAbs_EDGE); e.More(); e.Next()) {
         const TopoDS_Edge edge = TopoDS::Edge(e.Current());

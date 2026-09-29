@@ -114,6 +114,8 @@ bool valid(const TopoDS_Shape& shape);
 bool parallel_booleans();
 // The same over one closed solid, its faces on every core (occt.cpp).
 bool valid_solid(const TopoDS_Shape& shape);
+// Its closure and orientation alone, where its faces were checked already (occt.cpp).
+bool closed_and_oriented(const TopoDS_Shape& shape);
 
 // Raise `worst` to the chordal sag a meshed face has, and `at` to where (occt.cpp).
 void face_sag(const TopoDS_Face& face,double& worst,gp_Pnt& at);
