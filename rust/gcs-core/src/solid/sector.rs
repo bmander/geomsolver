@@ -174,6 +174,8 @@ impl Frame {
             Slices::Planes => add(self.origin,add(scale(self.axis,s),scale(radial,w))),
         }
     }
+    /// The direction square to the axis at angle `phi`.
+    pub fn radial(&self,phi: f64) -> V { add(scale(self.e1,phi.cos()),scale(self.e2,phi.sin())) }
     /// A point's distance from the axis.
     pub fn radius(&self,p: V) -> f64 {
         let d = sub(p,self.origin);

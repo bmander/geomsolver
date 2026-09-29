@@ -20,6 +20,7 @@
 #include <BRep_Builder.hxx>
 #include <Geom_ElementarySurface.hxx>
 #include <Geom_Plane.hxx>
+#include <Geom_RectangularTrimmedSurface.hxx>
 #include <Geom2d_Curve.hxx>
 #include <gp_Vec2d.hxx>
 #include <gp_Lin.hxx>
@@ -371,9 +372,17 @@ int solvent_cad_fuse(Cad* cad,const int* ids,int count) noexcept {
 
 // A face of revolution about `axis`: an elementary surface (not a plane) whose own axis is that
 // line, either way along it. Only these are carried onto one surface and one period.
+// The surface a face lies on, unwrapped from the trimming a split puts about a face crossing its seam.
+static Handle(Geom_Surface) basis(const TopoDS_Face& face,TopLoc_Location& there) {
+    Handle(Geom_Surface) surface = BRep_Tool::Surface(face,there);
+    while (auto trimmed = Handle(Geom_RectangularTrimmedSurface)::DownCast(surface)) surface = trimmed->BasisSurface();
+    return surface;
+}
+static Handle(Geom_Surface) basis(const TopoDS_Face& face) { TopLoc_Location there; return basis(face,there); }
+
 static bool about(const TopoDS_Face& face,const gp_Ax1& axis) {
     TopLoc_Location there;
-    const auto elementary = Handle(Geom_ElementarySurface)::DownCast(BRep_Tool::Surface(face,there));
+    const auto elementary = Handle(Geom_ElementarySurface)::DownCast(basis(face,there));
     if (elementary.IsNull() || elementary->IsKind(STANDARD_TYPE(Geom_Plane)) || !there.IsIdentity()) return false;
     const gp_Ax1 own = elementary->Position().Axis();
     return own.Direction().IsParallel(axis.Direction(),1e-12)
@@ -419,15 +428,15 @@ static TopoDS_Shape turned_copy(const TopoDS_Shape& source,const gp_Ax1& axis,do
     for (; from.More() && to.More(); from.Next(),to.Next()) {
         const TopoDS_Face original = TopoDS::Face(from.Current());
         if (!about(original,axis)) continue;
-        const Handle(Geom_Surface) surface = BRep_Tool::Surface(original);
+        const Handle(Geom_Surface) surface = basis(original);
         // which way the parameter runs about the axis: the turn is a shift of u by +angle or -angle
         double u0,u1,v0,v1;
         BRepTools::UVBounds(original,u0,u1,v0,v1);
         const gp_Pnt p = surface->Value(u0,v0).Transformed(turn);
-        double shift = 0;
+        double shift = std::nan("");
         for (const double sign: {1.,-1.})
             if (surface->Value(u0+sign*angle,v0).Distance(p) <= 1e-9*(1.+p.Distance(gp_Pnt(0,0,0)))) { shift = sign*angle; break; }
-        if (shift == 0) throw std::runtime_error("a turned face's parameters are not its surface's turned");
+        if (std::isnan(shift)) throw std::runtime_error("a turned face's parameters are not its surface's turned");
         reseat(TopoDS::Face(to.Current()),surface,shift);
     }
     return copy;
@@ -439,7 +448,7 @@ static TopoDS_Shape turned_copy(const TopoDS_Shape& source,const gp_Ax1& axis,do
 // as the blank's own face did. (Closed on the junction between two copies instead, the ring's
 // parameters would span more than a period, which the mesher does not read.)
 static std::vector<TopoDS_Face> into_one_period(const TopoDS_Face& face,const gp_Ax1& axis,double reach) {
-    const Handle(Geom_Surface) surface = BRep_Tool::Surface(face);
+    const Handle(Geom_Surface) surface = basis(face);
     const double period = 2*M_PI,slack = 1e-9;
     double u0,u1,v0,v1;
     BRepTools::UVBounds(face,u0,u1,v0,v1);
@@ -461,9 +470,14 @@ static std::vector<TopoDS_Face> into_one_period(const TopoDS_Face& face,const gp
     const gp_Pnt o = axis.Location();
     BRepBuilderAPI_MakePolygon polygon(o.Translated(-along),o.Translated(along),o.Translated(along+out),o.Translated(out-along),true);
     BRepBuilderAPI_MakeFace half(polygon.Wire(),true);
+    // The kernel finds no crossing on a face whose parameters run past the period's end, so the
+    // face is split on its surface turned half a turn (whose u is u - U + π there), and put back.
+    const Handle(Geom_Surface) turned = Handle(Geom_Surface)::DownCast(surface->Rotated(axis,M_PI));
+    const TopoDS_Face across = TopoDS::Face(BRepBuilderAPI_Copy(face,true).Shape());
+    reseat(across,turned,M_PI-U);
     BRepAlgoAPI_Splitter split;
     TopTools_ListOfShape objects,tools;
-    objects.Append(face); tools.Append(half.Face());
+    objects.Append(across); tools.Append(half.Face());
     split.SetArguments(objects); split.SetTools(tools);
     split.Build();
     check_algorithm(split,"a ring's piece at its seam");
@@ -473,10 +487,15 @@ static std::vector<TopoDS_Face> into_one_period(const TopoDS_Face& face,const gp
         double a0,a1,b0,b1;
         BRepTools::UVBounds(part,a0,a1,b0,b1);
         const TopoDS_Face own = TopoDS::Face(BRepBuilderAPI_Copy(part,true).Shape());
-        reseat(own,surface,0);
-        parts.push_back(moved(own,(a0+a1)/2 > U ? m1 : m0));
+        reseat(own,surface,U-M_PI);
+        parts.push_back(moved(own,(a0+a1)/2 > M_PI ? m1 : m0));
     }
-    if (parts.size() != 2) throw std::runtime_error("a ring's piece split at its seam into "+std::to_string(parts.size())+" faces");
+    if (parts.size() != 2) {
+        std::ostringstream message;
+        message << "a ring's piece (" << surface->DynamicType()->Name() << ", u " << u0 << " to " << u1 << ", v " << v0 << " to " << v1
+            << ") split at its seam (u " << U << ") into " << parts.size() << " faces";
+        throw std::runtime_error(message.str());
+    }
     return parts;
 }
 
@@ -541,9 +560,29 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
         double x0,y0,z0,x1,y1,z1;
         box.Get(x0,y0,z0,x1,y1,z1);
         const double reach = 4.*(std::hypot(std::hypot(x1-x0,y1-y0),z1-z0)+line.Location().Distance(gp_Pnt((x0+x1)/2,(y0+y1)/2,(z0+z1)/2)));
+        // The sector on its surfaces as the copies will be (a face a split left on a trimmed surface
+        // too), each face of revolution given the parameters within half a turn of the sector's middle:
+        // a face's pieces in neighbouring copies then continue one another's, where a piece a period
+        // away would meet its neighbour on pcurves a period apart, and never merge.
+        const TopoDS_Shape base = turned_copy(source,line,0.);
+        {
+            const gp_Pnt middle((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);
+            for (TopExp_Explorer it(base,TopAbs_FACE); it.More(); it.Next()) {
+                const TopoDS_Face face = TopoDS::Face(it.Current());
+                if (!about(face,line)) continue;
+                const Handle(Geom_Surface) surface = basis(face);
+                GeomAPI_ProjectPointOnSurf foot(middle,surface);
+                if (!foot.NbPoints()) throw std::runtime_error("the sector's middle has no foot on a face of revolution");
+                double uc,vc,u0,u1,v0,v1;
+                foot.LowerDistanceParameters(uc,vc);
+                BRepTools::UVBounds(face,u0,u1,v0,v1);
+                const double m = std::round(((u0+u1)/2-uc)/(2*M_PI));
+                if (m != 0) reseat(face,surface,-m*2*M_PI);
+            }
+        }
         BRepBuilderAPI_Sewing sewing(fuzzy);
         for (int k=0;k<=count;++k) {
-            const TopoDS_Shape copy = k == 0 ? source : turned_copy(source,line,angles[k-1]);
+            const TopoDS_Shape copy = k == 0 ? base : turned_copy(base,line,angles[k-1]);
             TopTools_IndexedMapOfShape own;
             TopExp::MapShapes(copy,TopAbs_FACE,own);
             if (own.Extent() != faces.Extent()) throw std::runtime_error("a turned copy has other faces than its source");
@@ -577,14 +616,15 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
 // section about that line: every face then carries its surface's own frame on the axis, so copies
 // turned about it are one parameterization apart by a turn of `u`, which is what lets faces of
 // neighbouring copies merge (a sphere built about another line through its centre would not).
-// The section is the solid's common with a half-plane bounded by the axis; the caller compares
-// the volumes.
-int solvent_cad_revolved(Cad* cad,int solid,const double* origin,const double* axis) noexcept {
+// The section is the solid's common with the half-plane bounded by the axis towards `seam`, which is
+// where the faces' parameters start; the caller compares the volumes.
+int solvent_cad_revolved(Cad* cad,int solid,const double* origin,const double* axis,const double* seam) noexcept {
     return guarded(cad,[&] {
         const auto& shape = cad->at(solid);
         const gp_Pnt o(origin[0],origin[1],origin[2]);
         const gp_Dir a(axis[0],axis[1],axis[2]);
-        const gp_Dir x = std::abs(a.X()) < 0.6 ? gp_Dir(gp_Vec(a).Crossed(gp_Vec(1,0,0))) : gp_Dir(gp_Vec(a).Crossed(gp_Vec(0,1,0)));
+        const gp_Vec towards(seam[0],seam[1],seam[2]);
+        const gp_Dir x(towards-gp_Vec(a)*towards.Dot(gp_Vec(a)));
         Bnd_Box box;
         BRepBndLib::Add(shape,box,false);
         double x0,y0,z0,x1,y1,z1;

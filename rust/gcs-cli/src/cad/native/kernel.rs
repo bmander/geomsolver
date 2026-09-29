@@ -8,7 +8,7 @@ extern "C" {
     fn solvent_cad_solids(cad: *mut c_void,source: c_int,output: *mut c_int,capacity: c_int) -> c_int;
     fn solvent_cad_solid_samples(cad: *mut c_void,id: c_int,output: *mut f64,capacity: c_int,measure: c_int) -> c_int;
     fn solvent_cad_fuse(cad: *mut c_void,ids: *const c_int,count: c_int) -> c_int;
-    fn solvent_cad_revolved(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64) -> c_int;
+    fn solvent_cad_revolved(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,seam: *const f64) -> c_int;
     fn solvent_cad_pattern(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,angles: *const f64,count: c_int,
         sides: *const c_int,fuzzy: f64) -> c_int;
     fn solvent_cad_solid_contains(cad: *mut c_void,id: c_int,points: *const f64,count: c_int,tolerance: f64,
@@ -79,9 +79,10 @@ impl Session {
             sides.as_ptr(),fuzzy) })
     }
     /// A solid of revolution about the line through `origin` (mm) along `axis`, made again by
-    /// turning its meridian section about it, so that every face's frame is on that line.
-    pub(crate) fn revolved(&self,solid: c_int,origin: [f64;3],axis: [f64;3]) -> Result<c_int,String> {
-        self.result(unsafe { solvent_cad_revolved(self.0,solid,origin.as_ptr(),axis.as_ptr()) })
+    /// turning its meridian section about it, so that every face's frame is on that line, its
+    /// parameters starting on the half-plane towards `seam`.
+    pub(crate) fn revolved(&self,solid: c_int,origin: [f64;3],axis: [f64;3],seam: [f64;3]) -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_revolved(self.0,solid,origin.as_ptr(),axis.as_ptr(),seam.as_ptr()) })
     }
     /// The box about some shapes, lower corner then upper (mm).
     pub(crate) fn bounds(&self,ids: &[c_int]) -> Result<[[f64;3];2],String> {

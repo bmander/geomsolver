@@ -137,9 +137,11 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
     let clock = std::time::Instant::now();
     let other = session.place(side,turn,scale)?;
     // The blank made again about the axis, so the copies' faces on it are one parameterization
-    // turned: its volume is the blank's.
+    // turned: its volume is the blank's
     let whole = session.volume(blank)?;
-    let turned = session.revolved(blank,frame.origin,frame.axis)?;
+    // its faces' parameters starting opposite the sector, so none of its faces crosses where they start
+    let across = chosen.angle_at((chosen.span[0]+chosen.span[1])/2.)+indexing.pitch()/2.+std::f64::consts::PI;
+    let turned = session.revolved(blank,frame.origin,frame.axis,frame.radial(across))?;
     let again = session.volume(turned)?;
     if (again-whole).abs() > 1e-7*whole {
         return Err(format!("the blank turned about its axis again is {again:.9} mm³, not its {whole:.9} mm³"));
