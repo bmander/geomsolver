@@ -52,6 +52,10 @@ fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
             format!(" ({checked} of {} placements checked, the rest {why})",s.placements.len())
         } else { String::new() };
         eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name);
+        if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() {
+            eprintln!("admission: `{}`: {} samples, {} contacts, spacing {:e}, least area factor {:e}, {} near double roots, {} near tangent pairs",
+                s.name,s.samples,s.contacts,s.spacing,s.least_area_factor,s.near_double_roots,s.near_tangent_pairs);
+        }
     }
     Ok(a)
 }

@@ -67,6 +67,9 @@
 #include <cmath>
 #include <vector>
 #include <sstream>
+#include <functional>
+#include <future>
+#include <optional>
 
 
 // A kernel operation's time budget: the algorithm polls UserBreak and stops once it is past.
@@ -96,7 +99,8 @@ static void check_algorithm(BRepAlgoAPI_BuilderAlgo& algorithm,const char* what)
 // union when merging faces on one support produces an invalid shape or has to widen a tolerance
 // to do so (it once left a 40 mm vertex tolerance). Unify a copy: the algorithm updates
 // tolerances on vertices it shares with its input, which would silently widen the union kept.
-static int united(Cad* cad,TopoDS_Shape result,const char* what,double known = std::numeric_limits<double>::quiet_NaN()) {
+// `known` is asked only once the union is checked, so a caller may work it out meanwhile.
+static int united(Cad* cad,TopoDS_Shape result,const char* what,const std::function<double()>& known) {
     const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
     auto clock = std::chrono::steady_clock::now();
     const auto lap = [&](const char* step) {
@@ -130,9 +134,12 @@ static int united(Cad* cad,TopoDS_Shape result,const char* what,double known = s
     int solids = 0;
     for (TopExp_Explorer it(result,TopAbs_SOLID); it.More(); it.Next()) { ++solids; result = it.Current(); }
     if (solids != 1) throw std::runtime_error(std::string(what)+" is not one connected solid");
-    const double v = validate(result,nullptr,true,known);
+    const double v = validate(result,nullptr,true,known());
     lap("validated and measured");
     return cad->put(result,true,v);
+}
+static int united(Cad* cad,TopoDS_Shape result,const char* what,double known = std::numeric_limits<double>::quiet_NaN()) {
+    return united(cad,result,what,std::function<double()>([known] { return known; }));
 }
 
 // A partition's cells checked and measured, the work shared out: every face the cells have checked
@@ -736,21 +743,28 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
         if (!BRepLib::OrientClosedSolid(made)) throw std::runtime_error("the sewn sectors are not closed");
         lap("sewn");
         const gp_Lin axis_line(line);
-        const double each = flux(kept,ElCLib::Value(ElCLib::Parameter(axis_line,middle),axis_line));
-        const double whole = (count+1)*each;
-        lap("measured one copy");
+        // A copy's faces' flux about a point of the axis, measured while the union is unified and
+        // checked, and waited for as it is stored.
+        std::future<double> each = std::async(std::launch::async,[&] {
+            return flux(kept,ElCLib::Value(ElCLib::Parameter(axis_line,middle),axis_line));
+        });
+        std::optional<double> whole;
+        const auto whole_of = [&] {
+            if (!whole) { whole = (count+1)*each.get(); lap("measured one copy"); }
+            return *whole;
+        };
         // `SOLVENT_SECTOR_CHECK=full`: the united solid measured whole as well, which may differ by
         // the slack its tolerances leave the boundary (the sewing moves edges within them).
         if (std::getenv("SOLVENT_SECTOR_CHECK") && std::string(std::getenv("SOLVENT_SECTOR_CHECK")) == "full") {
             const double measured = volume(made);
             const double slack = std::max(1e-8*std::abs(measured),BRep_Tool::MaxTolerance(made,TopAbs_VERTEX)*area(made));
             if (debug) fprintf(stderr,"sector: pattern: %.12g mm3 measured whole, %.12g as %d copies of one (slack %.3g)\n",
-                measured,whole,count+1,slack);
-            if (std::abs(measured-whole) > slack)
-                throw std::runtime_error("the sectors united measure "+std::to_string(measured)+" mm3 whole and "+std::to_string(whole)
+                measured,whole_of(),count+1,slack);
+            if (std::abs(measured-whole_of()) > slack)
+                throw std::runtime_error("the sectors united measure "+std::to_string(measured)+" mm3 whole and "+std::to_string(whole_of())
                     +" as copies of one");
         }
-        const int id = united(cad,made,"pattern union",whole);
+        const int id = united(cad,made,"pattern union",std::function<double()>(whole_of));
         cad->set_pattern(id,line,count+1);
         return id;
     });

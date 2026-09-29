@@ -314,6 +314,36 @@ impl Reads {
     /// Read the blank at `p`, and remember that it was read and what it said.
     fn read(&mut self,inside: &dyn Fn(V) -> bool,p: V) -> bool { let i = inside(p); self.points.push(p); self.inside.push(i); i }
     fn extend(&mut self,other: Reads) { self.points.extend(other.points); self.inside.extend(other.inside); }
+    /// Remember a read made elsewhere.
+    fn push(&mut self,p: V,inside: bool) { self.points.push(p); self.inside.push(inside); }
+}
+
+/// What one sample of a tool face says of itself alone, for the fine pass: its point, the rate of its
+/// contact condition, and — where its roots could be found — each root, whether it is in the blank,
+/// and for one that is, the generated surface's area factor there (`area_factor`).
+struct Sampled { s: SurfacePoint,rate: Option<crate::motion::NormalVelocity>,roots: Option<Vec<(TimedContact,bool,Option<f64>)>> }
+
+/// E3's area factor at a contact `t` of the tool point at (u, v) of face `patch`: the generated
+/// surface's oriented area factor on the same branch, by central differences, against the tool
+/// surface's own. None where a neighbouring root or point cannot be read, or the tool's own area
+/// vanishes.
+fn area_factor(surface: &super::surface::RevolvedSurface,patch: usize,
+    roots: &(dyn Fn(usize,f64,f64) -> Result<Vec<TimedContact>,String>+Sync),t: &TimedContact,u: f64,v: f64) -> Option<f64> {
+    let h = 1e-5;
+    let (ua,ub) = ((u-h).max(0.),(u+h).min(1.));
+    let near = |uu: f64,vv: f64| -> Option<V> {
+        roots(patch,uu,vv.rem_euclid(1.)).ok()?.into_iter()
+            .filter(|x| x.root.branch == t.root.branch)
+            .min_by(|a,b| (a.root.time-t.root.time).abs().total_cmp(&(b.root.time-t.root.time).abs()))
+            .map(|x| x.contact.position)
+    };
+    let (Some(fa),Some(fb),Some(ga),Some(gb)) = (near(ua,v),near(ub,v),near(u,v-h),near(u,v+h)) else { return None };
+    let at = |uu: f64,vv: f64| surface.at(uu,vv.rem_euclid(1.)).map(|s| s.position).ok();
+    let (Some(sa),Some(sb),Some(ta),Some(tb)) = (at(ua,v),at(ub,v),at(u,v-h),at(u,v+h)) else { return None };
+    let du = ub-ua;
+    let area = norm(cross(sub(sb,sa).map(|x| x/du),sub(tb,ta).map(|x| x/(2.*h))));
+    if area == 0. { return None; }
+    Some(dot(cross(sub(fb,fa).map(|x| x/du),sub(gb,ga).map(|x| x/(2.*h))),t.contact.normal)/area)
 }
 
 /// What the fine pass over one tool face found.
@@ -504,18 +534,28 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         let mut gaps: Vec<f64> = Vec::new();
         let mut least = f64::INFINITY;
         let mut signs: BTreeMap<(usize,usize),([usize;2],[Option<V>;2])> = BTreeMap::new();
-        let mut read = |p: V| own.read(inside,p);
         let surface = &c.patches()[patch];
         let (cu,cv) = (options.coarse_rows,options.coarse_columns);
         let mut reach = vec![false;cv];
-        for i in 0..=cu { for j in 0..cv {
-            let (u,v) = (i as f64/cu as f64,j as f64/cv as f64);
-            let Ok(s) = surface.at(u,v) else { continue };
-            if !on_tool(s.position) { continue; }
-            if let Ok(list) = roots(patch,u,v) {
-                if list.iter().any(|t| read(t.contact.position)) { reach[j] = true; }
+        // the coarse rows on every core, each its reads and which angles reach
+        for (row,reads) in crate::par::indices(cu+1,|i| {
+            let mut own = Reads::new();
+            let mut row = vec![false;cv];
+            for j in 0..cv {
+                let (u,v) = (i as f64/cu as f64,j as f64/cv as f64);
+                let Ok(s) = surface.at(u,v) else { continue };
+                if !on_tool(s.position) { continue; }
+                if let Ok(list) = roots(patch,u,v) {
+                    if list.iter().any(|t| own.read(inside,t.contact.position)) { row[j] = true; }
+                }
             }
-        }}
+            (row,own)
+        }) {
+            for (r,x) in reach.iter_mut().zip(row) { *r |= x; }
+            own.extend(reads);
+        }
+        let own = std::cell::RefCell::new(own);
+        let read = |p: V| own.borrow_mut().read(inside,p);
         // The shortest arc of the revolution holding every reaching angle, widened a step.
         let reached: Vec<usize> = (0..cv).filter(|&j| reach[j]).collect();
         let band = if reached.is_empty() { None } else {
@@ -535,19 +575,33 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         let mut previous: Vec<Option<V>> = vec![None;nv+1];
         // Each sample's contact equation, to find stationary points between samples.
         let mut equations: Vec<Option<([f64;5],V)>> = vec![None;nv+1];
-        for i in 0..=nu {
+        // What each sample says of itself alone — its point, the rate of its contact condition, its
+        // roots with whether each is in the blank, and each such root's area factor — worked out on
+        // every core a row at a time; what samples say of their neighbours is asked below, in order.
+        let sampled: Vec<Vec<Option<Sampled>>> = crate::par::indices(nu+1,|i| {
             let u = i as f64/nu as f64;
+            (0..=nv).map(|j| {
+                let v = v_at(j);
+                let s = surface.at(u,v).ok()?;
+                if !on_tool(s.position) { return None; }
+                let rate = c.motion().normal_velocity(s).ok();
+                let roots = roots(patch,u,v).ok().map(|list| list.into_iter().map(|t| {
+                    let within = inside(t.contact.position);
+                    let factor = if within { area_factor(surface,patch,&roots,&t,u,v) } else { None };
+                    (t,within,factor)
+                }).collect());
+                Some(Sampled {s,rate,roots})
+            }).collect()
+        });
+        for sampled in sampled {
             let mut row: Vec<Option<V>> = vec![None;nv+1];
             let mut here: Vec<Option<([f64;5],V)>> = vec![None;nv+1];
-            for j in 0..=nv {
-                let v = v_at(j);
-                let Ok(s) = surface.at(u,v) else { continue };
-                if !on_tool(s.position) { continue; }
+            for (j,sample) in sampled.into_iter().enumerate() {
+                let Some(Sampled {s,rate,roots:list}) = sample else { continue };
                 samples += 1;
                 // M2: where a point's contact condition does not change over the roll, the
                 // point is on the boundary at every time or at none, and its time is no
                 // parameter of the generated surface. A single rotation is that everywhere.
-                let rate = c.motion().normal_velocity(s).ok();
                 // M2 between samples: the equation is C + a cos + b sin in the roll. Where (a, b)
                 // turns right round between neighbours while roots exist on both sides, it passed
                 // through zero with C: a point between them is in contact at every time, as on a
@@ -596,36 +650,24 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
                         }
                     }
                 }
-                let list = match roots(patch,u,v) { Ok(l) => l, Err(_) => { near_double_roots += 1; continue } };
-                let found: Vec<&TimedContact> = list.iter().filter(|t| read(t.contact.position)).collect();
+                let Some(list) = list else { near_double_roots += 1; continue };
+                // every root read, as a pass over them reads them
+                for (t,within,_) in &list { own.borrow_mut().push(t.contact.position,*within); }
+                let found: Vec<&(TimedContact,bool,Option<f64>)> = list.iter().filter(|x| x.1).collect();
                 if found.len() > 1 {
                     return Err((Condition::Single,format!("a tool point touches the blank at roll {:.4} and again at {:.4}",
-                        found[0].root.time,found[1].root.time),Some(found[1].contact.position)));
+                        found[0].0.root.time,found[1].0.root.time),Some(found[1].0.contact.position)));
                 }
-                for t in found {
+                for &(t,_,factor) in found {
                     let hit = Hit {source:s.position,position:t.contact.position,normal:t.contact.normal};
                     row[j] = Some(hit.position);
                     for q in [previous[j],if j > 0 { row[j-1] } else { None }].into_iter().flatten() {
                         gaps.push(norm(sub(q,hit.position)));
                     }
                     hits.push((hit,patch,t.root.branch));
-                    // E3: the generated surface's oriented area factor on the same branch,
-                    // by central differences, against the tool surface's own.
-                    let h = 1e-5;
-                    let (ua,ub) = ((u-h).max(0.),(u+h).min(1.));
-                    let near = |uu: f64,vv: f64| -> Option<V> {
-                        roots(patch,uu,vv.rem_euclid(1.)).ok()?.into_iter()
-                            .filter(|x| x.root.branch == t.root.branch)
-                            .min_by(|a,b| (a.root.time-t.root.time).abs().total_cmp(&(b.root.time-t.root.time).abs()))
-                            .map(|x| x.contact.position)
-                    };
-                    let (Some(fa),Some(fb),Some(ga),Some(gb)) = (near(ua,v),near(ub,v),near(u,v-h),near(u,v+h)) else { continue };
-                    let at = |uu: f64,vv: f64| surface.at(uu,vv.rem_euclid(1.)).map(|s| s.position).ok();
-                    let (Some(sa),Some(sb),Some(ta),Some(tb)) = (at(ua,v),at(ub,v),at(u,v-h),at(u,v+h)) else { continue };
-                    let du = ub-ua;
-                    let area = norm(cross(sub(sb,sa).map(|x| x/du),sub(tb,ta).map(|x| x/(2.*h))));
-                    if area == 0. { continue; }
-                    let factor = dot(cross(sub(fb,fa).map(|x| x/du),sub(gb,ga).map(|x| x/(2.*h))),t.contact.normal)/area;
+                    // E3: the generated surface's oriented area factor on the same branch
+                    // (`area_factor`), against the tool surface's own.
+                    let Some(factor) = factor else { continue };
                     if factor.abs() < options.least_factor {
                         return Err((Condition::Fold,format!("the generated surface's area factor is {factor:.3e}"),Some(t.contact.position)));
                     }
@@ -642,7 +684,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
             previous = row;
             equations = here;
         }
-        Ok(Fine {reads:own,samples,near_double_roots,hits,gaps,least,signs})
+        Ok(Fine {reads:own.into_inner(),samples,near_double_roots,hits,gaps,least,signs})
     });
     let (mut samples,mut near_double_roots) = (0,0);
     let mut hits: Vec<(Hit,usize,usize)> = Vec::new();
