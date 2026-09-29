@@ -358,7 +358,16 @@ on the source's surfaces with their pcurves shifted by the turn, and a ring's pi
 period and split at the seam, so the rings close on an iso line (closed on a copy junction, a ring's
 parameters overran the period and the mesher left 0.1 mm chords). Any failed premise builds the body
 whole and says why; `SOLVENT_SECTOR=off` asks for that, `SOLVENT_SECTOR_DEBUG` narrates. Faces and
-volume are the whole construction's; the native exports' bytes are not.
+volume are the whole construction's; the native exports' bytes are not. **Speed (phases 3–4):** the
+STL is the sector's mesh turned into every copy, seam points shared bit for bit (`solvent_cad_sector_stl`;
+`SOLVENT_SECTOR_STL=off` meshes whole); sheet faces are written on B-splines cut to their parameter box;
+the pattern and its STEP reading are measured as copies of one (flux about the axis; `SOLVENT_SECTOR_CHECK=full`,
+`SOLVENT_STEP_CHECK` measure whole). Volumes, admission, sections, splits, cells, probes and the field
+agreement run on every core (`gcs_core::par`, serial on wasm, answers in order); the native session is
+thread-safe, the sweeps' sheets are built side by side and beside the blank and the admission, the STEP
+beside the mesh, each thread's lines said in order (`progress::side_by_side`/`beside`/`under`). A cutter
+of revolution is sectioned once and turned. OCCT's parallel `BRepCheck_Analyzer` is unreliable (a valid
+pinion came back invalid): `valid_solid` checks faces in separate analyzers. 12–20 s a member, from 6–13 min.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference

@@ -168,7 +168,8 @@ cargo test --manifest-path rust/Cargo.toml -p gcs-cli --test pair_check -- --ign
 ```
 
 Nothing is written unless the shell checks and the field agreement pass. The exports take about
-8 and 12 minutes (pinion, gear) on 12 cores; measuring a STEP takes longer than making it
+14 and 19 seconds (pinion, gear) on 12 cores (docs/native-speed-plan.md); measuring a file takes
+longer than making it
 (`--measure-samples` sets how finely). As configured (backlash 0.05 mm, tip and end relief 0.2 mm;
 docs/native-hypoid-plan.md, phases 5 and 6):
 

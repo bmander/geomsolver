@@ -105,7 +105,7 @@ These tracks were closed and deleted on 2026-09-25; git history keeps them.
 1. **Backend.** The native OCCT split-and-classify path (`cad/native/sweep_boundary.rs`)
    already exports the common-apex bevel pair from source alone. It agrees with the field on
    both sides of every sheet node and reproduces the recorded volumes. It is native-only and
-   takes 6–11 minutes per member. The one-core WASM target needs a kernel-free path
+   took 6–11 minutes per member (12–20 s since docs/native-speed-plan.md). The one-core WASM target needs a kernel-free path
    eventually. The plan builds on the OCCT path first and keeps the admission predicates
    in the core, so a later backend reuses them.
 2. **Supported offsets.** Whether the hypoid offsets the design needs satisfy E2–E4 is
