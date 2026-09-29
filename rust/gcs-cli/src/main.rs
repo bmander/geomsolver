@@ -366,11 +366,13 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     // nothing is written, so an earlier output stays as it was. The class is what the native
     // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
     // only the field, and is gated by the field-agreement probe instead.
+    // A native export admits the body itself, beside the first of its construction.
+    let native = cfg!(feature="occt") && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
     let mut body = None;
     if (step.is_some() || (stl.is_some() && !opts.refine)) && r.success {
         if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
             let mut b = cad::Body::read(&sk,i);
-            if b.swept() {
+            if b.swept() && !native {
                 if let Err(refusal) = b.admit(&sk) {
                     refused(&mut e,i,refusal);
                     code = 1;
@@ -413,6 +415,8 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
                 match tolerance(&sk,opts) {
                     Err(message) => { eprintln!("solventc: {message}"); code = 1; }
                     Ok(t) => if let Err(refusal) = cad::export(&sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t) {
+                        // refused admission, nothing is written (the mesh backend's STL included)
+                        if refusal.stage == cad::Stage::Admission { stl = None; }
                         refused(&mut e,i,refusal);
                         code = 1;
                     },

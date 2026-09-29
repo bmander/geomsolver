@@ -32,19 +32,24 @@ impl Body {
     /// Admit the body's sweeps to the generating-sweep class (docs/generating-sweeps.md): a
     /// refusal names the row it fails and a point where, and nothing is built.
     pub fn admit(&mut self,sk: &Sketch) -> Result<(),ExportRefusal> {
-        let a = admission::admit_body(sk,self.index,&admission::Options::default())?;
-        mark(Stage::Admission);
-        for s in a.sweeps() {
-            let checked = s.placements.iter().filter(|p| p.equivalent_to.is_none()).count();
-            let admission::Basis::Sampled {rows,columns} = s.basis;
-            let alike = if s.placements.len() > checked {
-                format!(" ({checked} of {} placements checked, the rest reading the blank alike)",s.placements.len())
-            } else { String::new() };
-            eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name);
-        }
-        self.admission = Some(a);
+        self.admission = Some(admitted(sk,self.index)?);
         Ok(())
     }
+}
+
+/// The body `index` admitted to the generating-sweep class, or its refusal; what was checked said.
+fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
+    let a = admission::admit_body(sk,index,&admission::Options::default())?;
+    mark(Stage::Admission);
+    for s in a.sweeps() {
+        let checked = s.placements.iter().filter(|p| p.equivalent_to.is_none()).count();
+        let admission::Basis::Sampled {rows,columns} = s.basis;
+        let alike = if s.placements.len() > checked {
+            format!(" ({checked} of {} placements checked, the rest reading the blank alike)",s.placements.len())
+        } else { String::new() };
+        eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name);
+    }
+    Ok(a)
 }
 
 /// The mesher's angular deflection (radians) held to a tolerance, and how many times a mesh is made
@@ -54,9 +59,10 @@ const ANGULAR: f64 = 0.2;
 #[cfg(feature="occt")]
 const MOST_MESHES: usize = 4;
 
-/// Build `body` natively once, stage and check every requested format, judge a swept body
-/// against its material field, then replace the outputs: a failure anywhere leaves them all
-/// as they were. Held to a `tolerance`, a swept body's sheets are refined into it, the STL is
+/// Build `body` natively once (admitting it first where it cuts sweeps and has not been, the
+/// admission beside the blank and the sheets), stage and check every requested format, judge a
+/// swept body against its material field, then replace the outputs: a failure anywhere leaves them
+/// all as they were. Held to a `tolerance`, a swept body's sheets are refined into it, the STL is
 /// meshed within the rest of it and the field is probed as near as it says; without one the
 /// export keeps its gross bars (`Tolerance`).
 pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,tolerance: Option<Tolerance>) -> Result<(),ExportRefusal> {
@@ -64,9 +70,13 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     {
         use progress::stage;
         use gcs_core::solid::export::AtStage;
+        progress::start();
         let recipe = body.recipe.as_ref().map_err(Clone::clone).at(Stage::Blank)?;
         let session = native::Session::new().at(Stage::Blank)?;
-        let built = native::sweep_boundary::construct_built(&session,sk,body.index,recipe,body.admission.as_ref(),tolerance)?;
+        // A body with swept cuts not yet admitted is admitted beside its blank and sheets.
+        let built = if body.swept() && body.admission.is_none() {
+            native::sweep_boundary::construct_admitting(&session,sk,body.index,recipe,&|| admitted(sk,body.index),tolerance)?
+        } else { native::sweep_boundary::construct_built(&session,sk,body.index,recipe,body.admission.as_ref(),tolerance)? };
         let solid = built.solid;
         // A body built as one sector patterned is meshed as that sector, its triangles turned into
         // every copy (`SOLVENT_SECTOR_STL=off` meshes the patterned solid whole).

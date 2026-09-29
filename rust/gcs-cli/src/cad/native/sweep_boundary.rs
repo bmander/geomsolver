@@ -315,26 +315,56 @@ pub(crate) struct Built {
     pub sector: Option<Patterned>,
 }
 
+/// How a body's admission to the generating-sweep class is presented to its construction: made
+/// already, or to be made (on this thread, which has the sketch) while the blank and the sheets are
+/// built beside it, none of which is kept if it refuses.
+pub(crate) enum Admitted<'a> { Already(&'a Admission),Beside(&'a dyn Fn() -> Result<Admission,ExportRefusal>) }
+
 /// Construct a body whose cuts include continuous sweeps, which only its admission to the
 /// generating-sweep class allows: as `asked` where it applies, whole otherwise.
 pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,recipe: &cad::StaticRecipe,
-    admission: &Admission,tolerance: Option<Tolerance>,asked: Construction) -> Result<Built,ExportRefusal> {
-    if admission.body() != body {
-        return Err(ExportRefusal::at(Stage::Admission,format!("`{}`: the admission presented is another body's",sk.solids[body].name)));
-    }
-    let scale = cad::millimetres(sk).at(Stage::Blank)?;
-    let blank = session.construct(&recipe.recipe).at(Stage::Blank)?;
-    let (field,_) = gcs_core::solid::admission::static_remainder(sk,body,cad::AXIS_TOLERANCE).at(Stage::Blank)?;
-    stage(&format!("`{}`: static blank of {} operations",sk.solids[body].name,recipe.recipe.get("nodes").unwrap().arr().len()));
-    mark(Stage::Blank);
-    let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
-    distinct.sort(); distinct.dedup();
-    // Each sweep's sheet on a thread of its own, what each says said in order once all are done.
-    let cuts = distinct.iter().map(|&swept| SweptCut::read(sk,swept)).collect::<Result<Vec<_>,_>>()?;
+    admitted: Admitted,tolerance: Option<Tolerance>,asked: Construction) -> Result<Built,ExportRefusal> {
+    let presented = |admission: &Admission| if admission.body() != body {
+        Err(ExportRefusal::at(Stage::Admission,format!("`{}`: the admission presented is another body's",sk.solids[body].name)))
+    } else { Ok(()) };
+    if let Admitted::Already(admission) = admitted { presented(admission)?; }
+    // What the sketch says of the blank and the cuts, read here; where it cannot be read, an
+    // admission to be made is made first, and its refusal is the one reported.
+    let read = || -> Result<(f64,gcs_core::solid::SpatialField,Vec<usize>,Vec<SweptCut>),ExportRefusal> {
+        let scale = cad::millimetres(sk).at(Stage::Blank)?;
+        let (field,_) = gcs_core::solid::admission::static_remainder(sk,body,cad::AXIS_TOLERANCE).at(Stage::Blank)?;
+        let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
+        distinct.sort(); distinct.dedup();
+        let cuts = distinct.iter().map(|&swept| SweptCut::read(sk,swept)).collect::<Result<Vec<_>,_>>()?;
+        Ok((scale,field,distinct,cuts))
+    };
+    let (scale,field,distinct,cuts) = match (read(),&admitted) {
+        (Ok(read),_) => read,
+        (Err(refusal),Admitted::Beside(admit)) => { presented(&admit()?)?; return Err(refusal) }
+        (Err(refusal),Admitted::Already(_)) => return Err(refusal),
+    };
+    let name = &sk.solids[body].name;
+    let operations = recipe.recipe.get("nodes").unwrap().arr().len();
+    // The blank, then each sweep's sheet on a thread of its own, what each says said in order once
+    // all are done.
     let field_ref = &field;
-    let tasks: Vec<Box<dyn FnOnce() -> Result<Fitted,ExportRefusal>+Send+'_>> = cuts.iter()
-        .map(|cut| Box::new(move || sheet_of(session,cut,blank,field_ref,tolerance)) as Box<dyn FnOnce() -> _+Send>).collect();
-    let sheets = side_by_side(tasks,Result::is_err).into_iter().collect::<Result<Vec<_>,_>>()?;
+    let built = || -> Result<(c_int,Vec<Fitted>),ExportRefusal> {
+        let blank = session.construct(&recipe.recipe).at(Stage::Blank)?;
+        stage(&format!("`{name}`: static blank of {operations} operations"));
+        mark(Stage::Blank);
+        let tasks: Vec<Box<dyn FnOnce() -> Result<Fitted,ExportRefusal>+Send+'_>> = cuts.iter()
+            .map(|cut| Box::new(move || sheet_of(session,cut,blank,field_ref,tolerance)) as Box<dyn FnOnce() -> _+Send>).collect();
+        let sheets = side_by_side(tasks,Result::is_err).into_iter().collect::<Result<Vec<_>,_>>()?;
+        Ok((blank,sheets))
+    };
+    let (blank,sheets) = match admitted {
+        Admitted::Already(_) => built()?,
+        Admitted::Beside(admit) => {
+            let (admission,built) = under(admit,built,Result::is_err);
+            presented(&admission?)?;
+            built?
+        }
+    };
     if asked == Construction::Sector {
         match sector::construct(session,sk,body,recipe,blank,&field,&distinct,&sheets,scale) {
             Ok((solid,sector)) => return Ok(Built {solid,how:Construction::Sector,sector:Some(sector)}),
@@ -410,5 +440,15 @@ fn built_as(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecip
     }
     let admission = admission.ok_or_else(|| ExportRefusal::at(Stage::Admission,format!("`{}`: a body with swept cuts is \
         built only once admitted to the generating-sweep class",sk.solids[solid].name)))?;
-    construct_swept_body(session,sk,solid,recipe,admission,tolerance,asked)
+    construct_swept_body(session,sk,solid,recipe,Admitted::Already(admission),tolerance,asked)
+}
+
+/// `construct_built` for a body not yet admitted: a body with swept cuts is admitted by `admit`
+/// while its blank and sheets are built beside it (`Admitted::Beside`), and refused, with nothing
+/// built kept, where the admission refuses.
+pub(crate) fn construct_admitting(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecipe,
+    admit: &dyn Fn() -> Result<Admission,ExportRefusal>,tolerance: Option<Tolerance>) -> Result<Built,ExportRefusal> {
+    if recipe.sweeps.is_empty() { return built_as(session,sk,solid,recipe,None,tolerance,Construction::Whole); }
+    let asked = if sector::wanted() { Construction::Sector } else { Construction::Whole };
+    construct_swept_body(session,sk,solid,recipe,Admitted::Beside(admit),tolerance,asked)
 }
