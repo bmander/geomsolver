@@ -45,7 +45,11 @@ fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
         let checked = s.placements.iter().filter(|p| p.equivalent_to.is_none()).count();
         let admission::Basis::Sampled {rows,columns} = s.basis;
         let alike = if s.placements.len() > checked {
-            format!(" ({checked} of {} placements checked, the rest reading the blank alike)",s.placements.len())
+            let why = match s.equivalence {
+                admission::Equivalence::Revolved {..} => "turns of it about the axis the blank is a revolution about",
+                admission::Equivalence::Sampled => "reading the blank alike",
+            };
+            format!(" ({checked} of {} placements checked, the rest {why})",s.placements.len())
         } else { String::new() };
         eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name);
     }

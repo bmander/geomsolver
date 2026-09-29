@@ -171,6 +171,42 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
     assert_eq!(s.placements.len(),24);
     assert_eq!(s.placements.iter().filter(|p| p.equivalent_to.is_none()).count(),1,
         "the blank is a revolution about the indexing axis, so one placement's checks serve all");
+    assert!(matches!(s.equivalence,admission::Equivalence::Revolved {..}),"proved by the solid graph: {:?}",s.equivalence);
+}
+
+/// A ring about the spindle cut at six indices: its blank a revolution about the line every
+/// placement turns about, so one placement's checks stand for all by the solid graph; the same ring
+/// bounded by a box that holds it whole is the same blank, but no revolution of the graph, and its
+/// placements are compared by sampling — and found alike. The verdicts are the same.
+#[test]
+fn an_indexed_ring_is_alike_by_its_revolution_and_a_boxed_ring_by_sampling() {
+    let ring = |extra: &str| format!("{}{}construction solid removal(tool, under: turn, from: -35deg, to: 35deg)\n{}{extra}",
+        sphere(2.),cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
+    let boxed = "private point b0 hint(x: -5, y: 1)
+private point b1 hint(x: 5, y: 1)
+private point b2 hint(x: 5, y: 3)
+private point b3 hint(x: -5, y: 3)
+ground b0
+ground b1
+ground b2
+ground b3
+private line bb(b0, b1)
+private line bw(b1, b2)
+private line bt(b2, b3)
+private line ba(b3, b0)
+construction solid holder(face(bb, bw, bt, ba), from: -5mm, to: 5mm)
+holder bound part
+";
+    let [revolved,sampled] = [ring(""),ring(boxed)].map(|source| admit(&source).unwrap());
+    let (a,b) = (&revolved.sweeps()[0],&sampled.sweeps()[0]);
+    assert!(matches!(a.equivalence,admission::Equivalence::Revolved {..}),"{:?}",a.equivalence);
+    assert_eq!(b.equivalence,admission::Equivalence::Sampled);
+    for s in [a,b] {
+        assert_eq!(s.placements.len(),6);
+        assert_eq!(s.placements.iter().filter(|p| p.equivalent_to.is_none()).count(),1);
+    }
+    assert_eq!((a.samples,a.contacts,a.near_double_roots,a.near_tangent_pairs),(b.samples,b.contacts,b.near_double_roots,b.near_tangent_pairs));
+    assert_eq!((a.spacing,a.least_area_factor),(b.spacing,b.least_area_factor));
 }
 
 /// The configured hypoid pinion, its backlash, tip relief and end relief in: the crown's sweep and
@@ -181,6 +217,8 @@ fn the_configured_hypoid_pinion_is_admitted() {
     let a = fabricated("pinion",[25.,12.5,25.],0.05,0.2,0.2).unwrap();
     assert_eq!(a.sweeps().len(),2);
     assert!(a.sweeps().iter().all(|s| s.least_area_factor > 0.1));
+    assert!(a.sweeps().iter().all(|s| matches!(s.equivalence,admission::Equivalence::Revolved {..})),
+        "the blank (its end spheres balls about the axis) proved alike under every index by the solid graph");
 }
 
 #[test]
@@ -189,6 +227,8 @@ fn the_configured_hypoid_gear_is_admitted() {
     let a = fabricated("gear",[25.,12.5,25.],0.05,0.2,0.2).unwrap();
     assert_eq!(a.sweeps().len(),2);
     assert!(a.sweeps().iter().all(|s| s.least_area_factor > 0.1));
+    assert!(a.sweeps().iter().all(|s| matches!(s.equivalence,admission::Equivalence::Revolved {..})),
+        "the blank (its end spheres balls about the axis) proved alike under every index by the solid graph");
 }
 
 #[test]

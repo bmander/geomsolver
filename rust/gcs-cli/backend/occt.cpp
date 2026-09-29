@@ -491,10 +491,27 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
         STEPControl_Writer writer;
         if (writer.Transfer(shape,STEPControl_AsIs) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
         lap("transferred");
-        if (writer.Write(path) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
+        // Written into memory and then to the file in one piece (the writer's file stream flushes a
+        // line at a time), and read back from the same bytes.
+        std::string text;
+        {
+            std::ostringstream out;
+            if (writer.WriteStream(out) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
+            text = std::move(out).str();
+        }
+        {
+            FILE* file = std::fopen(path,"wb");
+            if (!file) throw std::runtime_error(std::string("cannot write STEP file ")+path);
+            const size_t wrote = std::fwrite(text.data(),1,text.size(),file);
+            if (std::fclose(file) != 0 || wrote != text.size()) throw std::runtime_error(std::string("STEP write to ")+path+" failed");
+        }
         lap("written");
+        // Read back from the same bytes, as a consumer's reader takes them (its default repairs).
         STEPControl_Reader reader;
-        if (reader.ReadFile(path) != IFSelect_RetDone) throw std::runtime_error("STEP reimport failed");
+        {
+            std::istringstream in(text);
+            if (reader.ReadStream(path,in) != IFSelect_RetDone) throw std::runtime_error("STEP reimport failed");
+        }
         lap("read");
         if (!reader.TransferRoots()) throw std::runtime_error("STEP reimport failed");
         lap("transferred back");

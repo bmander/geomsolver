@@ -9,7 +9,7 @@
 //! between them. Material evaluation answers membership for every sweep, admitted or not; only
 //! boundary construction is restricted.
 use super::{SpatialField,SweepContacts,TimedContact,cad};
-use crate::{envelope::{Motion,SurfacePoint},model::{Sketch,SolidDef}};
+use crate::{envelope::{Motion,SurfacePoint},model::{EntKind,Sketch,SolidDef}};
 use std::{collections::BTreeMap,f64::consts::{PI,TAU},fmt};
 
 use crate::space::{sub,dot,cross,norm};
@@ -110,6 +110,22 @@ pub enum Basis { Sampled { rows: usize,columns: usize } }
 #[derive(Clone,Debug)]
 pub struct Placement { pub pose: Motion, pub equivalent_to: Option<usize> }
 
+/// How a sweep's later placements were found equivalent to its first.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum Equivalence {
+    /// From the solid graph: every operand of the blank is a full revolution about one line (a
+    /// point of it and its unit direction), and each later placement is the first turned about
+    /// that line, so the blank is the same under the turn and reads alike at every point.
+    Revolved { origin: V,axis: V },
+    /// Sampled: each later placement's blank read at every point the first placement's checks
+    /// read, and found alike there (or checked itself where it was not).
+    Sampled,
+}
+
+/// How near the lines and the turns must agree (relative to the blank's size) for the structural
+/// equivalence: the solver's own noise, not a modelling tolerance.
+const COINCIDENT: f64 = 1e-12;
+
 #[derive(Clone,Debug)]
 pub struct SweepEvidence {
     pub sweep: usize,
@@ -128,6 +144,8 @@ pub struct SweepEvidence {
     /// sheets touching tangentially, which is where a crossing begins.
     pub near_tangent_pairs: usize,
     pub basis: Basis,
+    /// How the later placements' checks were stood for by the first's.
+    pub equivalence: Equivalence,
 }
 
 /// A body admitted to the class, and the only way to have one: `admit_body` makes it, so a
@@ -166,6 +184,106 @@ pub fn static_remainder(sk: &Sketch,root: usize,axis_tolerance: f64) -> Result<(
         }
     }
     Ok((field,sweeps))
+}
+
+/// What a full revolution is the same under: every turn about its line (a point of it and a
+/// direction), or — a ball, its profile arcs of one circle about a point of the line and segments
+/// of the line itself — every turn about any line through that centre.
+#[derive(Clone,Copy,Debug)]
+enum Turns { Line(V,V),Ball(V) }
+
+/// What each operand of a static solid is the same under (`Turns`), or none where an operand is
+/// not a full revolution. `tolerance` (a length) is how near a point must be to count as on a line.
+fn revolution_turns(sk: &Sketch,id: usize,tolerance: f64) -> Option<Vec<Turns>> {
+    match &sk.solids[id].def {
+        SolidDef::Revolve {face,axis,sweep,..} => {
+            if (sweep.value.abs()-TAU).abs() > 1e-9 { return None; }
+            // the axis's two points lifted through the profile's frame, as the recipe lifts them
+            let p = super::face_poly(sk,*face as usize,super::REPORT_UNIT)?;
+            let lift = |i: usize| {
+                let q = crate::plane::in_view(p.pose.0,p.pose.1,p.pose.2,sk.point_xy(i));
+                p.basis.lift(q.0,q.1)
+            };
+            let line = &sk.lines[*axis as usize];
+            let (a,b) = (lift(line.p1 as usize),lift(line.p2 as usize));
+            let d = sub(b,a);
+            if !(norm(d) > 0.) { return None; }
+            let on_axis = |x: V| norm(cross(sub(x,a),d))/norm(d) <= tolerance;
+            // a ball: every edge an arc or circle of one circle centred on the axis, or a segment of it
+            let mut ball: Option<(V,f64)> = None;
+            let mut round = true;
+            for (edges,_) in sk.faces[*face as usize].boundaries() { for e in edges {
+                let circle = match e.kind {
+                    EntKind::Arc => { let c = &sk.arcs[e.i()]; Some((c.center,c.radius)) }
+                    EntKind::Circle => { let c = &sk.circles[e.i()]; Some((c.center,c.radius)) }
+                    EntKind::Line => { let l = &sk.lines[e.i()]; round &= on_axis(lift(l.p1 as usize)) && on_axis(lift(l.p2 as usize)); None }
+                    _ => { round = false; None }
+                };
+                if let Some((centre,radius)) = circle {
+                    let (c,r) = (lift(centre as usize),sk.params[radius as usize].value);
+                    round &= on_axis(c) && ball.is_none_or(|(k,q)| norm(sub(k,c)) <= tolerance && (q-r).abs() <= tolerance);
+                    ball.get_or_insert((c,r));
+                }
+            } }
+            Some(vec![match ball { Some((c,_)) if round => Turns::Ball(c),_ => Turns::Line(a,d) }])
+        }
+        SolidDef::Placed {source,motion,at} => {
+            let pose = crate::motion::Family::read(sk,*motion as usize).ok()?.at(at.value).ok()?;
+            Some(revolution_turns(sk,*source as usize,tolerance)?.into_iter().map(|t| match t {
+                Turns::Line(o,d) => Turns::Line(pose.point(o),pose.vector(d)),
+                Turns::Ball(c) => Turns::Ball(pose.point(c)),
+            }).collect())
+        }
+        SolidDef::Body {..} => {
+            let mut turns = Vec::new();
+            for o in sk.solids[id].operands() { turns.extend(revolution_turns(sk,o as usize,tolerance)?); }
+            Some(turns)
+        }
+        SolidDef::Prism {..} | SolidDef::Through {..} | SolidDef::Loft {..} | SolidDef::Swept {..} => None,
+    }
+}
+
+/// The blank of `root` (its stock, what is put on it, what bounds it and its static cuts) the same
+/// under every turn about one line — each operand a full revolution about it, or a ball centred on
+/// it — and every placement of every sweep a turn of the sweep's first about that line: then each
+/// later placement's checks read the blank exactly as the first's do (`Equivalence::Revolved`).
+/// `size` is the blank's, for the tolerance.
+fn structurally_alike(sk: &Sketch,root: usize,poses: &BTreeMap<usize,Vec<Motion>>,size: f64) -> Option<(V,V)> {
+    let SolidDef::Body {stock,on,through,bound} = &sk.solids[root].def else { return None };
+    let tolerance = COINCIDENT*size.max(1.);
+    let mut blank = vec![*stock];
+    blank.extend(on.iter().chain(bound));
+    for &c in through { if cad::swept_cut(sk,c as usize).ok()?.is_none() { blank.push(c); } }
+    let mut turns = Vec::new();
+    for &o in &blank { turns.extend(revolution_turns(sk,o as usize,tolerance)?); }
+    // the line: the first operand's that has one, every other line and every ball's centre on it
+    let (origin,axis) = turns.iter().find_map(|t| match *t { Turns::Line(o,d) => Some((o,d.map(|x| x/norm(d)))),_ => None })?;
+    let on_line = |x: V| norm(cross(sub(x,origin),axis)) <= tolerance;
+    for t in &turns {
+        let alike = match *t {
+            Turns::Line(o,d) => norm(cross(axis,d))/norm(d) <= COINCIDENT && on_line(o),
+            Turns::Ball(c) => on_line(c),
+        };
+        if !alike { return None; }
+    }
+    let far: V = std::array::from_fn(|k| origin[k]+size.max(1.)*axis[k]);
+    let mut worst = 0f64;
+    for placements in poses.values() {
+        let Some((first,rest)) = placements.split_first() else { continue };
+        let back = first.inverse();
+        for pose in rest {
+            let turn = back.then(*pose);
+            for x in [origin,far] { worst = worst.max(norm(sub(turn.point(x),x))); }
+            if worst > tolerance { return None; }
+        }
+    }
+    if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() {
+        let off = turns.iter().map(|t| match *t { Turns::Line(o,d) => (norm(cross(axis,d))/norm(d)*size).max(norm(cross(sub(o,origin),axis))),
+            Turns::Ball(c) => norm(cross(sub(c,origin),axis)) }).fold(0.,f64::max);
+        eprintln!("admission: the blank is {} revolutions about one line (off it by {off:.1e} at most) and every placement a turn \
+            about it (off by {worst:.1e}), against {tolerance:.1e}",turns.len());
+    }
+    Some((origin,axis))
 }
 
 /// T1, as a question about the tool's solid graph.
@@ -240,9 +358,15 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     }).collect();
     if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: checked in {:?}",clock.elapsed()); }
     let clock = std::time::Instant::now();
-    // Whether each later placement reads the blank as the first did, every point of it.
-    let later: Vec<(usize,usize)> = first.iter().enumerate().filter(|(_,r)| r.is_ok())
-        .flat_map(|(k,_)| (1..by_sweep[&order[k]].len()).map(move |p| (k,p))).collect();
+    // The blank a solid of revolution about the line every placement turns about: the later
+    // placements read it as the first does, proved by the solid graph. Otherwise, whether each
+    // later placement reads the blank as the first did, every point of it.
+    let size = field.support_bounds().ok().flatten().map_or(1.,|b| crate::space::box_centre_diagonal(&b).1);
+    let revolved = structurally_alike(sk,root,&by_sweep,size);
+    let later: Vec<(usize,usize)> = if revolved.is_some() { Vec::new() } else {
+        first.iter().enumerate().filter(|(_,r)| r.is_ok())
+            .flat_map(|(k,_)| (1..by_sweep[&order[k]].len()).map(move |p| (k,p))).collect()
+    };
     let alike = crate::par::map(&later,|&(k,p)| {
         let inside = inside_at(by_sweep[&order[k]][p]);
         let Ok((_,_,reads)) = &first[k] else { unreachable!("only a checked sweep's placements are compared") };
@@ -256,6 +380,14 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         let poses = &by_sweep[&swept];
         let mut placements = vec![Placement {pose:poses[0],equivalent_to:None}];
         let mut checked: Vec<(usize,Reads)> = vec![(0,reads)];
+        let mut found = found;
+        if let Some((origin,axis)) = revolved {
+            placements.extend(poses.iter().skip(1).map(|pose| Placement {pose:*pose,equivalent_to:Some(0)}));
+            found.sweep = swept; found.name = names[&swept].clone(); found.placements = placements;
+            found.equivalence = Equivalence::Revolved {origin,axis};
+            admission.sweeps.push(found);
+            continue;
+        }
         for (k,pose) in poses.iter().enumerate().skip(1) {
             if alike.next().expect("one answer a later placement") {
                 placements.push(Placement {pose:*pose,equivalent_to:Some(0)}); continue;
@@ -267,7 +399,6 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
             checked.push((k,reads));
             placements.push(Placement {pose:*pose,equivalent_to:None});
         }
-        let mut found = found;
         found.sweep = swept; found.name = names[&swept].clone(); found.placements = placements;
         admission.sweeps.push(found);
     }
@@ -559,5 +690,5 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
     }
     Ok((SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples,contacts:hits.len(),spacing,
         least_area_factor:least,near_double_roots,near_tangent_pairs,
-        basis:Basis::Sampled {rows:options.rows,columns:options.columns}},reads))
+        basis:Basis::Sampled {rows:options.rows,columns:options.columns},equivalence:Equivalence::Sampled},reads))
 }
