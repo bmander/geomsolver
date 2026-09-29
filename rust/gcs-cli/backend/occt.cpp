@@ -36,6 +36,13 @@
 #include <Geom_Surface.hxx>
 #include <GeomAdaptor_Surface.hxx>
 #include <Geom_BSplineSurface.hxx>
+#include <Geom_Plane.hxx>
+#include <Geom_ElementarySurface.hxx>
+#include <Geom_CylindricalSurface.hxx>
+#include <Geom_ConicalSurface.hxx>
+#include <Geom_SphericalSurface.hxx>
+#include <Geom_ToroidalSurface.hxx>
+#include <Geom_RectangularTrimmedSurface.hxx>
 #include <Geom2d_Curve.hxx>
 #include <ElCLib.hxx>
 #include <gp_Lin.hxx>
@@ -540,7 +547,111 @@ int solvent_cad_bounds(Cad* cad,const int* ids,int count,double* bounds) noexcep
 int solvent_cad_validate(Cad* cad,int id) noexcept {
     return guarded(cad,[&] { cad->validated(id); return 0; });
 }
-int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
+// What a STEP file written from a solid must say of it (`solvent_cad_brep_summary`): its counts
+// of solids, shells, faces, edges and vertices (those the writer writes), and each face in the order the solid's explorer lists them — the order the writer's
+// closed shell lists them in — with its orientation in the solid (1 reversed, and 2 more where its
+// elementary surface's placement is left-handed) and its surface: the kind
+// (`GeomAbs_SurfaceType`'s number), and for an elementary surface its placement (location, axis,
+// reference direction) and its radii and angle, for a B-spline its degrees, knots,
+// multiplicities, poles and weights (a periodic one as the writer makes it, not periodic).
+static std::vector<double> brep_summary(const TopoDS_Shape& shape) {
+    std::vector<double> out = {1};
+    TopTools_IndexedMapOfShape solids,shells,faces,edges;
+    TopExp::MapShapes(shape,TopAbs_SOLID,solids);
+    TopExp::MapShapes(shape,TopAbs_SHELL,shells);
+    TopExp::MapShapes(shape,TopAbs_FACE,faces);
+    TopExp::MapShapes(shape,TopAbs_EDGE,edges);
+    // The edges the writer writes: not a degenerate one, nor the seam of a face bounded by nothing
+    // else but degenerate edges (a whole sphere), which it writes as one vertex loop.
+    TopTools_IndexedMapOfShape unwritten;
+    for (int i=1;i<=faces.Extent();++i) {
+        const TopoDS_Face face = TopoDS::Face(faces(i));
+        bool degenerate = false,other = false;
+        for (TopExp_Explorer e(face,TopAbs_EDGE); e.More(); e.Next()) {
+            const TopoDS_Edge edge = TopoDS::Edge(e.Current());
+            if (BRep_Tool::Degenerated(edge)) degenerate = true;
+            else if (!BRep_Tool::IsClosed(edge,face)) other = true;
+        }
+        if (degenerate && !other) for (TopExp_Explorer e(face,TopAbs_EDGE); e.More(); e.Next()) unwritten.Add(e.Current());
+    }
+    // The vertices it writes: the written edges' ends, and one vertex for each face it writes as a
+    // vertex loop and nothing else.
+    int solid_edges = 0,natural = 0;
+    TopTools_IndexedMapOfShape ends;
+    for (int i=1;i<=edges.Extent();++i)
+        if (!BRep_Tool::Degenerated(TopoDS::Edge(edges(i))) && !unwritten.Contains(edges(i))) {
+            ++solid_edges;
+            TopExp::MapShapes(edges(i),TopAbs_VERTEX,ends);
+        }
+    for (int i=1;i<=faces.Extent();++i) {
+        bool written = false,loop = false;
+        for (TopExp_Explorer e(faces(i),TopAbs_EDGE); e.More(); e.Next()) (unwritten.Contains(e.Current()) ? loop : written) = true;
+        if (loop && !written) ++natural;
+    }
+    for (const double n: {solids.Extent(),shells.Extent(),faces.Extent(),solid_edges,ends.Extent()+natural}) out.push_back(n);
+    // a placement as the writer writes it: its location, axis and reference direction, either
+    // direction reversed where the writer reverses it (`axis`, `reference`)
+    const auto place = [&](const gp_Ax3& a,bool axis = false,bool reference = false) {
+        const gp_XYZ z = axis ? a.Direction().XYZ().Reversed() : a.Direction().XYZ();
+        const gp_XYZ x = reference ? a.XDirection().XYZ().Reversed() : a.XDirection().XYZ();
+        for (const gp_XYZ& v: {a.Location().XYZ(),z,x}) { out.push_back(v.X()); out.push_back(v.Y()); out.push_back(v.Z()); }
+    };
+    for (TopExp_Explorer it(shape,TopAbs_FACE); it.More(); it.Next()) {
+        const TopoDS_Face face = TopoDS::Face(it.Current());
+        Handle(Geom_Surface) surface = BRep_Tool::Surface(face);
+        while (true) {
+            const auto trimmed = Handle(Geom_RectangularTrimmedSurface)::DownCast(surface);
+            if (trimmed.IsNull()) break;
+            surface = trimmed->BasisSurface();
+        }
+        const int kind = GeomAdaptor_Surface(surface).GetType();
+        out.push_back(kind);
+        // (a surface on a left-handed placement is written on a right-handed one, its first parameter
+        // reversed, and the face's sense with it)
+        const auto elementary = Handle(Geom_ElementarySurface)::DownCast(surface);
+        const bool indirect = !elementary.IsNull() && !elementary->Position().Direct();
+        out.push_back((face.Orientation() == TopAbs_REVERSED ? 1 : 0)+(indirect ? 2 : 0));
+        const size_t count = out.size();
+        out.push_back(0);
+        // (a plane on a left-handed placement is written on its reference direction reversed)
+        if (const auto s = Handle(Geom_Plane)::DownCast(surface); !s.IsNull()) place(s->Position(),false,indirect);
+        else if (const auto s = Handle(Geom_CylindricalSurface)::DownCast(surface); !s.IsNull()) { place(s->Position()); out.push_back(s->Radius()); }
+        else if (const auto s = Handle(Geom_ConicalSurface)::DownCast(surface); !s.IsNull()) {
+            // (a cone opening against its axis is written about the axis reversed, its angle positive:
+            // the same points, both parameters reversed, so the face's sense is kept)
+            place(s->Position(),s->SemiAngle() < 0); out.push_back(s->RefRadius()); out.push_back(std::abs(s->SemiAngle()));
+        }
+        else if (const auto s = Handle(Geom_SphericalSurface)::DownCast(surface); !s.IsNull()) { place(s->Position()); out.push_back(s->Radius()); }
+        else if (const auto s = Handle(Geom_ToroidalSurface)::DownCast(surface); !s.IsNull()) {
+            place(s->Position()); out.push_back(s->MajorRadius()); out.push_back(s->MinorRadius());
+        }
+        else if (auto s = Handle(Geom_BSplineSurface)::DownCast(surface); !s.IsNull()) {
+            if (s->IsUPeriodic() || s->IsVPeriodic()) {
+                s = Handle(Geom_BSplineSurface)::DownCast(s->Copy());
+                if (s->IsUPeriodic()) s->SetUNotPeriodic();
+                if (s->IsVPeriodic()) s->SetVNotPeriodic();
+            }
+            const bool rational = s->IsURational() || s->IsVRational();
+            for (const double n: {s->UDegree(),s->VDegree(),s->NbUPoles(),s->NbVPoles(),s->NbUKnots(),s->NbVKnots()}) out.push_back(n);
+            out.push_back(rational ? 1 : 0);
+            for (int k=1;k<=s->NbUKnots();++k) out.push_back(s->UKnot(k));
+            for (int k=1;k<=s->NbUKnots();++k) out.push_back(s->UMultiplicity(k));
+            for (int k=1;k<=s->NbVKnots();++k) out.push_back(s->VKnot(k));
+            for (int k=1;k<=s->NbVKnots();++k) out.push_back(s->VMultiplicity(k));
+            for (int i=1;i<=s->NbUPoles();++i) for (int j=1;j<=s->NbVPoles();++j) {
+                const gp_Pnt p = s->Pole(i,j); out.push_back(p.X()); out.push_back(p.Y()); out.push_back(p.Z());
+            }
+            if (rational) for (int i=1;i<=s->NbUPoles();++i) for (int j=1;j<=s->NbVPoles();++j) out.push_back(s->Weight(i,j));
+        }
+        out[count] = static_cast<double>(out.size()-count-1);
+    }
+    return out;
+}
+
+// A STEP file of a stored solid: transferred, its text formatted (`step_text`) and written, and —
+// `full` — read back as a consumer's reader takes it (its default repairs), checked and measured
+// against the solid. Without `full` the caller verifies the file against `solvent_cad_brep_summary`.
+int solvent_cad_step(Cad* cad,int id,const char* path,int full) noexcept {
     return guarded(cad,[&] {
         // The CLI reserves stdout for its JSON/text report. Restore the stream
         // even if STEP construction throws; this host runs synchronously.
@@ -570,6 +681,7 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
             if (std::fclose(file) != 0 || wrote != text.size()) throw std::runtime_error(std::string("STEP write to ")+path+" failed");
         }
         lap("written");
+        if (!full) return 0;
         // Read back from the same bytes, as a consumer's reader takes them (its default repairs).
         STEPControl_Reader reader;
         {
@@ -611,6 +723,14 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
             throw std::runtime_error("STEP round trip changed solid volume from "
                 +std::to_string(before)+" to "+std::to_string(after));
         return 0;
+    });
+}
+// A stored shape's `brep_summary`, `capacity` doubles of it written to `output`: its length.
+int solvent_cad_brep_summary(Cad* cad,int id,double* output,int capacity) noexcept {
+    return guarded(cad,[&] {
+        const std::vector<double> summary = brep_summary(cad->at(id));
+        if (output) std::copy_n(summary.begin(),std::min(summary.size(),static_cast<size_t>(std::max(capacity,0))),output);
+        return static_cast<int>(summary.size());
     });
 }
 // Read a STEP file's shape into the session, for a meter measuring what was written; nothing

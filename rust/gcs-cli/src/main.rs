@@ -41,6 +41,9 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (requires a native OCCT build)
+    --verify-step HOW   light (default): the written file parsed and checked against the solid,
+                        its topology, surfaces and their numbers; full: that, and read back by
+                        the kernel, repaired as a reader would, checked and measured
     --stl-backend NAME  occt, mesh or refine; every solid defaults to occt when built in, a
                         body with swept cuts included (refine meshes the material field by the
                         core's Delaunay refinement, checked by the field-agreement probe)
@@ -139,6 +142,11 @@ fn main() -> ExitCode {
             "--step" => match args.next() {
                 Some(p) => opts.step = Some(p),
                 None => { eprintln!("solventc: --step needs a path"); return ExitCode::from(2); }
+            },
+            "--verify-step" => match args.next().as_deref() {
+                Some("light") => {}
+                Some("full") => cad::verify_step_fully(),
+                _ => { eprintln!("solventc: --verify-step needs light or full"); return ExitCode::from(2); }
             },
             "--sheet" => match args.next() {
                 Some(n) => opts.sheet = Some(n),

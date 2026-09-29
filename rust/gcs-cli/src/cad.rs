@@ -37,6 +37,13 @@ impl Body {
     }
 }
 
+/// Verify every STEP file written in full: the kernel's read-back as well as the light check
+/// (`--verify-step full`; `SOLVENT_STEP_VERIFY=full` asks the same).
+pub fn verify_step_fully() {
+    #[cfg(feature="occt")]
+    native::step_check::ask_full();
+}
+
 /// The body `index` admitted to the generating-sweep class, or its refusal; what was checked said.
 fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
     let a = admission::admit_body(sk,index,&admission::Options::default())?;
@@ -179,8 +186,8 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             else { None };
         let write_step = || -> Result<(),ExportRefusal> {
             let Some(file) = &step_file else { return Ok(()) };
-            session.step(solid,file).at(Stage::Step)?;
-            stage("staged the STEP output");
+            let verified = session.step(solid,file).at(Stage::Step)?;
+            stage(&format!("staged the STEP output: {verified}"));
             mark(Stage::Step);
             Ok(())
         };

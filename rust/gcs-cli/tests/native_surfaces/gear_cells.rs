@@ -226,7 +226,7 @@ fn whole_member(member: &str,expected: f64) {
     let out = std::env::temp_dir().join(format!("solvent-{member}-{}",std::process::id()));
     std::fs::create_dir_all(&out).unwrap();
     let (step,stl) = (out.join(format!("{member}.step")),out.join(format!("{member}.stl")));
-    cad.0.step(part,step.to_str().unwrap()).unwrap();
+    cad.0.step_verified(part,step.to_str().unwrap(),native::step_check::Verification::Full).unwrap();
     cad.0.stl(part,stl.to_str().unwrap()).unwrap();
     gcs_core::mesh::stl_shells(&std::fs::read(&stl).unwrap()).unwrap();
     eprintln!("exported {} and {}",step.display(),stl.display());

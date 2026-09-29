@@ -199,10 +199,44 @@ impl Session {
         self.result(unsafe { solvent_cad_tolerance(self.0,solid,t.as_mut_ptr()) })?;
         Ok(t)
     }
-    pub(crate) fn step(&self,solid: c_int,path: &str) -> Result<(),String> {
+    /// Write a solid's STEP file and verify it as `step_check::verification` says: its text parsed and
+    /// checked against the solid (`step_check::verify`), and — `Full` — read back by the kernel,
+    /// repaired as a consumer's reader repairs it, checked and measured. What was verified, said.
+    pub(crate) fn step(&self,solid: c_int,path: &str) -> Result<String,String> {
+        self.step_verified(solid,path,step_check::verification())
+    }
+    pub(crate) fn step_verified(&self,solid: c_int,path: &str,how: step_check::Verification) -> Result<String,String> {
         let name = CString::new(path).map_err(|e| e.to_string())?;
-        self.result(unsafe { solvent_cad_step(self.0,solid,name.as_ptr()) })?;
-        Ok(())
+        let full = how == step_check::Verification::Full;
+        self.result(unsafe { solvent_cad_validate(self.0,solid) })?;
+        let started = std::time::Instant::now();
+        // the solid's summary read while the kernel writes the file
+        let (written,summary) = std::thread::scope(|scope| {
+            let summary = scope.spawn(|| self.brep_summary(solid));
+            let written = self.result(unsafe { solvent_cad_step(self.0,solid,name.as_ptr(),c_int::from(full)) });
+            (written,summary.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
+        });
+        written?;
+        let wrote = started.elapsed();
+        let clock = std::time::Instant::now();
+        let text = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+        let text = std::str::from_utf8(&text).map_err(|_| "the STEP file is not UTF-8 text".to_string())?;
+        let verified = step_check::verify(text,&summary?).map_err(|e| {
+            // (`SOLVENT_KEEP_REJECTED`: the refused file kept beside where a refused mesh is)
+            if let Ok(kept) = std::env::var("SOLVENT_KEEP_REJECTED") { let _ = std::fs::write(format!("{kept}.step"),text); }
+            format!("the STEP file does not describe the solid: {e}")
+        })?;
+        Ok(format!("{} entities; {} faces ({} on B-splines), {} edges and {} vertices, each the solid's{} (written {:?}, verified {:?})",
+            verified.entities,verified.faces,verified.splines,verified.edges,verified.vertices,
+            if full { ", and read back by the kernel as the solid" } else { "" },wrote,clock.elapsed()))
+    }
+    /// What a STEP file of a stored solid must say of it (`solvent_cad_brep_summary`).
+    pub(crate) fn brep_summary(&self,solid: c_int) -> Result<step_check::Solid,String> {
+        let count = self.result(unsafe { solvent_cad_brep_summary(self.0,solid,std::ptr::null_mut(),0) })?;
+        let mut data = vec![0.;count as usize];
+        let actual = self.result(unsafe { solvent_cad_brep_summary(self.0,solid,data.as_mut_ptr(),count) })?;
+        if actual != count { return Err("the solid's summary changed between count and retrieval".into()); }
+        step_check::Solid::read(&data)
     }
     /// The mesh an export writes without a stated tolerance: 0.01 mm absolute deflection and
     /// 0.2 rad angular.

@@ -136,8 +136,24 @@ fn a_step_formatted_side_by_side_is_the_kernels_text() {
     let session = native::Session::new().unwrap();
     let built = construct_built(&session,&e.sketch,body,&recipe,Some(&admitted),None).unwrap();
     let path = std::env::temp_dir().join(format!("solvent-sector-{}-text.step",std::process::id()));
-    session.step(built.solid,path.to_str().unwrap()).unwrap();
+    let said = session.step(built.solid,path.to_str().unwrap()).unwrap();
+    eprintln!("{said}");
     let text = std::fs::read_to_string(&path).unwrap();
     let _ = std::fs::remove_file(&path);
     assert!(text.starts_with("ISO-10303-21;\nHEADER;") && text.trim_end().ends_with("END-ISO-10303-21;"),"{}",&text[..80.min(text.len())]);
+    // verified against the solid, its sheets' B-spline faces too; a sheet's pole moved a micron is refused
+    let solid = session.brep_summary(built.solid).unwrap();
+    let verified = native::step_check::verify(&text,&solid).unwrap();
+    assert!(verified.splines > 0 && verified.faces == solid.faces.len(),"{verified:?}");
+    let spline = text.find("B_SPLINE_SURFACE_WITH_KNOTS('',").unwrap();
+    let pole = spline+text[spline..].find("(#").unwrap()+1;
+    let digits = text[pole+1..].find(|c: char| !c.is_ascii_digit()).unwrap();
+    let point = text.find(&format!("\n{} = CARTESIAN_POINT('',(",&text[pole..pole+1+digits])).unwrap();
+    let number = text[point..].find("',(").unwrap()+point+3;
+    let comma = number+text[number..].find(',').unwrap();
+    let x: f64 = text[number..comma].parse().unwrap();
+    let moved = format!("{}{}{}",&text[..number],x+1e-3,&text[comma..]);
+    let e = native::step_check::verify(&moved,&solid).expect_err("a moved pole");
+    eprintln!("{e}");
+    assert!(e.contains("poles"),"{e}");
 }
