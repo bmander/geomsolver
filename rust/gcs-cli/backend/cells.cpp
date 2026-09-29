@@ -164,11 +164,8 @@ static void validate_cells(TopoDS_Shape& partition,TopTools_DataMapOfShapeReal& 
     std::vector<char> ok(static_cast<size_t>(faces.Extent()),0);
     OSD_Parallel::For(0,faces.Extent(),[&](int i) { ok[static_cast<size_t>(i)] = BRepCheck_Analyzer(faces(i+1)).IsValid(); });
     if (std::find(ok.begin(),ok.end(),0) != ok.end()) throw std::runtime_error("native solid is invalid:"+invalidity(partition));
-    // each cell closed and consistently oriented, then turned to hold its material (as `validate`)
-    for (auto& cell: cells) {
-        if (!valid_solid(cell)) throw std::runtime_error("native solid is invalid:"+invalidity(cell));
-        if (!BRepLib::OrientClosedSolid(cell)) throw std::runtime_error("solid is open");
-    }
+    // each cell closed and consistently oriented
+    for (const auto& cell: cells) if (!valid_solid(cell)) throw std::runtime_error("native solid is invalid:"+invalidity(cell));
     // one point for every flux, as `volume` takes it: the mean of the partition's vertices
     gp_XYZ sum(0,0,0);
     int count = 0;
@@ -189,12 +186,6 @@ static void validate_cells(TopoDS_Shape& partition,TopTools_DataMapOfShapeReal& 
         if (!std::isfinite(v) || v <= 0) throw std::runtime_error("solid has no positive volume");
         record.Bind(cell,v);
     }
-    // the cells, oriented, are the partition's
-    BRep_Builder builder;
-    TopoDS_Compound whole;
-    builder.MakeCompound(whole);
-    for (const auto& cell: cells) builder.Add(whole,cell);
-    partition = whole;
 }
 
 extern "C" {
@@ -296,7 +287,11 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
     BRepBndLib::Add(shape,box,false);
     double x0,y0,z0,x1,y1,z1;
     box.Get(x0,y0,z0,x1,y1,z1);
+    const auto started = std::chrono::steady_clock::now();
+    const auto since = [&] { return std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count(); };
+    std::string trail;
     BRepClass3d_SolidClassifier classify(shape);
+    trail += "classifier at "+std::to_string(since())+", ";
     std::vector<gp_Pnt> inside;
     const auto consider = [&](const gp_Pnt& p) {
         if (static_cast<int>(inside.size()) >= measure) return;
@@ -338,23 +333,33 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
     // fraction of the box, then a finer one. The classifier decides each candidate, and the
     // ray along the normal must not have left the cell before it: on a sliver the
     // classifier has put one point inside two cells of one partition.
+    // A cell that rules out this many candidates in a row is a sliver the step does not fit: the rays
+    // between its faces below find its inside at once, where each more candidate costs a ray.
+    const int sliver = 10;
     const auto from_faces = [&](const double step) {
-        for (TopExp_Explorer it(shape,TopAbs_FACE); it.More() && static_cast<int>(inside.size()) < measure; it.Next()) {
+        int missed = 0;
+        for (TopExp_Explorer it(shape,TopAbs_FACE); it.More() && static_cast<int>(inside.size()) < measure && missed < sliver; it.Next()) {
             const TopoDS_Face face = TopoDS::Face(it.Current());
             double u0,u1,v0,v1;
             BRepTools::UVBounds(face,u0,u1,v0,v1);
             BRepAdaptor_Surface surface(face);
             for (const auto& [fu,fv]: {std::pair{0.5,0.5},{0.25,0.25},{0.75,0.75},{0.25,0.75},{0.75,0.25}}) {
+                if (missed >= sliver) break;
                 gp_Pnt p; gp_Vec n;
                 if (!outward(face,surface,u0+(u1-u0)*fu,v0+(v1-v0)*fv,p,n)) continue;
                 // The ray first: on a sliver it rules out most candidates for less than
                 // a classification each.
-                if (static_cast<int>(inside.size()) >= measure || exit(p,n.Reversed(),face) <= step) continue;
+                if (static_cast<int>(inside.size()) >= measure) continue;
+                if (exit(p,n.Reversed(),face) <= step) { ++missed; continue; }
+                const size_t before = inside.size();
                 consider(p.Translated(n.Multiplied(-step)));
+                missed = inside.size() > before ? 0 : missed+1;
             }
         }
     };
+    trail += "rays at "+std::to_string(since())+", ";
     for (const double step: {diagonal*0.02,diagonal*0.005}) from_faces(step);
+    trail += "faces "+std::to_string(inside.size())+" at "+std::to_string(since());
     // Distance to the boundary against the whole shell at once: the extrema
     // solver culls faces by bounding box, where a face-by-face loop does not.
     TopoDS_Shape boundary;
@@ -378,6 +383,7 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
     const auto clear = [&] { return static_cast<int>(std::count_if(measured.begin(),measured.end(),
         [](const auto& m) { return m.first > 2e-4; })); };
     measure_all();
+    trail += ", measured "+std::to_string(measured.size())+" clear "+std::to_string(clear())+" at "+std::to_string(since());
     if (clear() < capacity) {
         for (TopExp_Explorer it(shape,TopAbs_FACE); it.More() && static_cast<int>(inside.size()) < measure; it.Next()) {
             const TopoDS_Face face = TopoDS::Face(it.Current());
@@ -397,6 +403,7 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
             }
         }
         measure_all();
+        trail += ", rays: clear "+std::to_string(clear())+" at "+std::to_string(since());
     }
     // A coarse grid visited in a spread order, so early candidates are far apart.
     const int n = 5;
@@ -410,6 +417,8 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
         }
         measure_all();
     }
+    trail += ", end clear "+std::to_string(clear())+" at "+std::to_string(since());
+    if (std::getenv("SOLVENT_CELL_DEBUG")) fprintf(stderr,"cell samples: %s\n",trail.c_str());
     if (measured.empty()) return 0;
     std::sort(measured.begin(),measured.end(),[](const auto& a,const auto& b) { return a.first > b.first; });
     int written = 0;
@@ -1091,6 +1100,7 @@ int solvent_cad_common_volume(Cad* cad,int a,int b,double* output) noexcept {
         objects.Append(cad->at(a)); tools.Append(cad->at(b));
         common.SetArguments(objects); common.SetTools(tools);
         common.SetNonDestructive(true);
+        common.SetRunParallel(parallel_booleans());
         common.Build();
         if (!common.IsDone()) throw std::runtime_error("Boolean intersection failed");
         output[0] = volume(common.Shape());

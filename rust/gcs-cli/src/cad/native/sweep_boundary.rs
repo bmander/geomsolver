@@ -279,13 +279,16 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
 fn sheet_beside(session: &Session,cut: &SweptCut,blank: &dyn Fn() -> Result<c_int,ExportRefusal>,
     field: &gcs_core::solid::SpatialField,tolerance: Option<Tolerance>) -> Result<Fitted,ExportRefusal> {
     let (name,scale) = (&cut.name,cut.scale);
+    let clock = std::time::Instant::now();
     let cutter = session.cutter(&cut.recipe).at(Stage::Clearance)?;
+    if std::env::var_os("SOLVENT_SECTOR_DEBUG").is_some() { eprintln!("sheet: `{name}`: the cutter built in {:?}",clock.elapsed()); }
     let inside = |points: &[[f64;3]]| Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect());
     let near = |p: [f64;3]| field.value(p.map(|x| x/scale))*scale;
     // Rows by walk length first, the placement the bevel pair and the pinion were recorded with;
     // by length where that fit misses or folds.
     let (sheet,said) = holding(|| swept_sheets(session,cut,&cutter,&inside,&[Rows::Walk,Rows::Length],tolerance,
         &mut |sheet| judged(session,name,sheet,scale,&near,tolerance)));
+    if std::env::var_os("SOLVENT_SECTOR_DEBUG").is_some() { eprintln!("sheet: `{name}`: the sheet fitted after {:?}",clock.elapsed()); }
     let blank = blank()?;
     let clear = || -> Result<(),String> {
         let started = std::time::Instant::now();

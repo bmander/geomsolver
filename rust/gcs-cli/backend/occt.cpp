@@ -245,6 +245,12 @@ bool Cad::recorded(const TopoDS_Shape& solid,double& volume) {
     return true;
 }
 std::string& last_error() { static thread_local std::string error; return error; }
+// A Boolean's intersections on every core (`SOLVENT_PARALLEL_BOOLEANS=off`: one): the cutters of a
+// body's sweeps are made, and the blank's clearance of them asked, side by side and each in parallel.
+bool parallel_booleans() {
+    static const bool on = [] { const char* v = std::getenv("SOLVENT_PARALLEL_BOOLEANS"); return !v || std::string(v) != "off"; }();
+    return on;
+}
 
 // The chordal sag a meshed face actually has: over its triangles, the largest distance from a
 // point linear in a triangle (its centroid, its edges' midpoints) to the face's surface, found by a
@@ -464,8 +470,8 @@ int solvent_cad_prism(Cad* cad,int face,const double* placement,const double* sw
         BRepBuilderAPI_Transform moved(cad->at(face),transform,true);
         BRepPrimAPI_MakePrism body(moved.Shape(),vector(sweep),true);
         auto shape = body.Shape();
-        validate(shape);
-        return cad->put(shape);
+        const double volume = validate(shape);
+        return cad->put(shape,true,shape.ShapeType() == TopAbs_SOLID ? volume : std::nan(""));
     });
 }
 int solvent_cad_revolve(Cad* cad,int face,const double* origin,const double* axis,double angle) noexcept {
@@ -474,8 +480,8 @@ int solvent_cad_revolve(Cad* cad,int face,const double* origin,const double* axi
         if (angle < 0) dir.Reverse();
         BRepPrimAPI_MakeRevol body(cad->at(face),gp_Ax1(point(origin),dir),std::abs(angle),true);
         auto shape = body.Shape();
-        validate(shape);
-        return cad->put(shape);
+        const double volume = validate(shape);
+        return cad->put(shape,true,shape.ShapeType() == TopAbs_SOLID ? volume : std::nan(""));
     });
 }
 // Booleans run with a 1e-5 mm fuzzy tolerance: near-coincident intersections
@@ -489,21 +495,21 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
         if (operation_kind == 1) {
             BRepAlgoAPI_Cut operation;
             operation.SetArguments(objects); operation.SetTools(tools);
-            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(false);
+            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
             operation.Build();
             if (!operation.IsDone()) throw std::runtime_error("Boolean cut failed");
             result = operation.Shape();
         } else if (operation_kind == 2) {
             BRepAlgoAPI_Common operation;
             operation.SetArguments(objects); operation.SetTools(tools);
-            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(false);
+            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
             operation.Build();
             if (!operation.IsDone()) throw std::runtime_error("Boolean intersection failed");
             result = operation.Shape();
         } else {
             BRepAlgoAPI_Fuse operation;
             operation.SetArguments(objects); operation.SetTools(tools);
-            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(false);
+            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
             operation.Build();
             if (!operation.IsDone()) throw std::runtime_error("Boolean union failed");
             result = operation.Shape();
@@ -518,8 +524,8 @@ int solvent_cad_transform(Cad* cad,int source,const double* matrix) noexcept {
             matrix[4],matrix[5],matrix[6],matrix[7],matrix[8],matrix[9],matrix[10],matrix[11]);
         BRepBuilderAPI_Transform moved(cad->at(source),pose,true);
         auto result = moved.Shape();
-        validate(result);
-        return cad->put(result);
+        const double volume = validate(result);
+        return cad->put(result,true,result.ShapeType() == TopAbs_SOLID ? volume : std::nan(""));
     });
 }
 int solvent_cad_bounds(Cad* cad,const int* ids,int count,double* bounds) noexcept {

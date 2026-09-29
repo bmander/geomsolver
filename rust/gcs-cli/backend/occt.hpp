@@ -90,6 +90,8 @@ double flux(const std::vector<TopoDS_Face>& faces,const gp_Pnt& origin);
 double area(const TopoDS_Shape& shape);
 // The kernel's checker.
 bool valid(const TopoDS_Shape& shape);
+// Whether Booleans run their intersections on every core (occt.cpp).
+bool parallel_booleans();
 // The same over one closed solid, its faces on every core (occt.cpp).
 bool valid_solid(const TopoDS_Shape& shape);
 

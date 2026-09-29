@@ -29,7 +29,7 @@ pub(super) enum Judged { Fits(c_int,f64),Misses {over: Vec<bool>,refusal: Export
 /// 20°); held to one, the distance bar is its fit share and the normal bar follows from it, the gap
 /// and the node spacing at each contact (`Tolerance::turn`), and a miss is a verdict the caller may
 /// refine.
-pub(super) fn judged(session: &Session,name: &str,sheet: &Sheet,scale: f64,near: &dyn Fn([f64;3]) -> f64,tolerance: Option<Tolerance>)
+pub(super) fn judged(session: &Session,name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn([f64;3]) -> f64+Sync),tolerance: Option<Tolerance>)
     -> Result<Judged,ExportRefusal> {
     let at = |p: [f64;3]| p.map(|x| (x*1e3).round()/1e3);
     let (nu,nv) = (4*(sheet.rows-1)+1,4*(sheet.columns-1)+1);
@@ -134,7 +134,8 @@ pub(super) fn judged(session: &Session,name: &str,sheet: &Sheet,scale: f64,near:
     // length came 16.5 with no crease past 5°, but give a halved step √2 of its share, so a locally
     // refined grid's parameters no longer match its spacing (the swept torus's fit went from 0.11 to
     // 3.1 µm on three rows added). Neither holds everywhere; the better fit is the sheet.
-    let chosen = match (fitted(2),fitted(1)) {
+    // the two fitted side by side, what each says said in that order
+    let chosen = match beside(|| fitted(2),|| fitted(1),|_| false) {
         (Err(fold),Err(_)) => return Err(fold),
         (Ok(c),Err(_)) | (Err(_),Ok(c)) => c,
         (Ok(a),Ok(b)) => if (b.distant,b.bent,b.error) < (a.distant,a.bent,a.error) { b } else { a },
