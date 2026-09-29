@@ -28,14 +28,15 @@ component ConeSpan(generator: line, axis: line) {
 
 // The meridian stands `offset` off `generator` along each rib of its span, turned `lean`
 // from the direction toward the axis: 0deg for the root and the back, 180deg for the tip.
+// Its ends, `p` and `q`, are public for the end relief (blank/ends.sv).
 component ConeBoundary(generator: line, axis: line, offset: Length, lean: Angle) {
   private span: ConeSpan(generator, axis)
   // Seeds, rough: a step along each rib, toward the axis or away as `lean` says, and
   // where each rib meets the axis for the feet of the ends.
-  private point p hint(
+  point p hint(
     x: span.near.x + (1 - lean / 90deg) * (span.near_cross.x - span.near.x) / 20,
     y: span.near.y + (1 - lean / 90deg) * (span.near_cross.y - span.near.y) / 20)
-  private point q hint(
+  point q hint(
     x: span.far.x + (1 - lean / 90deg) * (span.far_cross.x - span.far.x) / 20,
     y: span.far.y + (1 - lean / 90deg) * (span.far_cross.y - span.far.y) / 20)
   private point a hint(at: span.near_cross)

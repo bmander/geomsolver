@@ -32,7 +32,7 @@ component ReliefCut(body: solid, design: group, tool: solid, teeth: Int, roll_li
 }
 
 // The pair: each member's blank less its generator, swept at every tooth, and less its
-// tip relief where the design has one.
+// tip relief and its end relief where the design has them.
 component HypoidPair(front: plane, design: group) {
   private reference: HypoidLayout(front, design)
   pinion: GeneratedMember(reference.pinion_design, reference.tooth.crown,
@@ -46,6 +46,12 @@ component HypoidPair(front: plane, design: group) {
       reference.tooth_relief[0].body, teeth: design.pinion_teeth, roll_limit: design.pinion_roll)
     gear_relief: ReliefCut(gear.body, reference.gear_design,
       reference.space_relief[0].body, teeth: design.gear_teeth, roll_limit: design.gear_roll)
+  }
+  repeat design.ends_relieved {
+    pinion_ends: EndCut(pinion.body, reference.pinion_blank.toe_end[0].ring,
+      reference.pinion_blank.heel_end[0].ring)
+    gear_ends: EndCut(gear.body, reference.gear_blank.toe_end[0].ring,
+      reference.gear_blank.heel_end[0].ring)
   }
 }
 

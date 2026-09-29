@@ -11,7 +11,8 @@
 //! them (`crown/section.sv`): the crowns overlap by half the backlash across each shared line, so
 //! each generated flank is a quarter of it inside its conjugate one. Tip relief is a second cut
 //! beside each crown (`crown/relief.sv`) whose chamfer leaves the crown's flank at a kink, so the
-//! two cuts together are the crown turned there.
+//! two cuts together are the crown turned there. End relief chamfers the blank itself, the tip
+//! cone's corner with each end sphere (`blank/ends.sv`).
 use gcs_core::solid::MaterialField;
 
 /// The pinion's crown tooth and the gear's space cutter at a design, in their generating pose.
@@ -63,7 +64,7 @@ fn the_generating_crowns_mate_flank_on_flank_with_a_pressure_shift() {
 /// normal backlash and no tip relief.
 fn crowns_with_backlash(backlash: f64) -> (MaterialField,MaterialField) {
     let e = fixtures::gear::read_configured_with(&mut |name,text|
-        fixtures::gear::fabricated(name,text,[25.,12.5,25.],backlash,0.));
+        fixtures::gear::fabricated(name,text,[25.,12.5,25.],backlash,0.,0.));
     let read = |name: &str| MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10).unwrap();
     (read("pair.reference.tooth.crown"),read("pair.reference.gear_space.body"))
 }
@@ -197,10 +198,64 @@ fn the_tip_relief_turns_each_crown_flank_at_its_kink() {
 #[test]
 fn a_tip_relief_of_zero_cuts_nothing() {
     let relief_solids = |e: &gcs_core::program::Elaborated| e.sketch.solids.iter().filter(|s| s.name.contains("relief")).count();
-    let without = fixtures::gear::read_configured_with(&mut |name,text| fixtures::gear::fabricated(name,text,[25.,12.5,25.],0.05,0.));
+    let without = fixtures::gear::read_configured_with(&mut |name,text| fixtures::gear::fabricated(name,text,[25.,12.5,25.],0.05,0.,0.));
     assert_eq!(relief_solids(&without),0);
     // As configured: the two relief tools (three and four solids), a sweep of each, and a
     // placement at every tooth of each member.
     let with = fixtures::gear::read_as_configured();
     assert_eq!(relief_solids(&with),3+4+2+24+48);
+}
+
+/// End relief, proved on the blanks (`blank/ends.sv`, as configured): at each member's toe and heel
+/// the corner where the tip cone meets the sphere is chamfered the end relief each way, the
+/// chamfer's end on the tip cone that much farther along the cone distance toward the tooth and its
+/// end on the sphere that much down from the tip cone; and the ring each end cuts takes from the
+/// blank the corner beyond the chamfer and nothing else. In the member's axial plane about the
+/// corner, a point of the blank is in the ring exactly when it is on the corner's side of the
+/// chamfer.
+#[test]
+fn the_end_relief_chamfers_each_tip_corner() {
+    let e = fixtures::gear::read_as_configured();
+    let sk = &e.sketch;
+    let entity = |name: &str| e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i();
+    // An end's entities are one copy of the limits' `repeat`, named under the copy's key.
+    let copied = |limits: &str,end: &str,part: &str| e.map.names.values().flatten()
+        .find(|n| n.starts_with(limits) && n.ends_with(&format!(".{end}_end.{part}")))
+        .unwrap_or_else(|| panic!("no `{part}` of the {end} end of `{limits}`")).clone();
+    let world = |name: &str| sk.world_point(entity(name));
+    let field = |name: &str| MaterialField::read(sk,entity(name),1e-10).unwrap();
+    let value = |f: &MaterialField,p: [f64;3]| f.reading(p).value;
+    let sub = |a: [f64;3],b: [f64;3]| -> [f64;3] { std::array::from_fn(|k| a[k]-b[k]) };
+    let dist = |a: [f64;3],b: [f64;3]| { let d = sub(a,b); (d[0]*d[0]+d[1]*d[1]+d[2]*d[2]).sqrt() };
+    let size = 0.2;
+    let (mut worst,mut kept,mut cut): (f64,usize,usize) = (0.,0,0);
+    for member in ["pinion","gear"] {
+        let limits = format!("pair.reference.{member}_blank");
+        let apex = sk.world_point(sk.lines[entity(&format!("pair.reference.{member}.pitch_line"))].p1 as usize);
+        let solid = |part: &str| field(&format!("{limits}.{part}.carrier"));
+        let [heel,tip,toe,back] = ["heel","tip","toe","back"].map(solid);
+        // the blank before its ends are relieved: the heel within the tip, less the toe and the back
+        let blank = |p| value(&heel,p).max(value(&tip,p)).max(-value(&toe,p)).max(-value(&back,p));
+        for (end,sphere,inward) in [("toe",&toe,1.),("heel",&heel,-1.)] {
+            let at = |point: &str| world(&copied(&limits,end,point));
+            let (corner,along,down) = (at("corner"),at("along_tip"),at("down_end"));
+            let radius = dist(world(&format!("{limits}.span.{end}")),apex);
+            for p in [corner,down] { worst = worst.max((dist(p,apex)-radius).abs()).max(value(sphere,p).abs()); }
+            for p in [corner,along] { worst = worst.max(value(&tip,p).abs()); }
+            worst = worst.max((inward*(dist(along,apex)-radius)-size).abs()).max((value(&tip,down)+size).abs());
+            let ring = field(&copied(&limits,end,"ring"));
+            let (a,d) = (sub(along,corner),sub(down,corner));
+            for i in -15..=25 { for j in -15..=25 {
+                let (s,t) = (i as f64/10.+0.013,j as f64/10.+0.007);
+                let p: [f64;3] = std::array::from_fn(|k| corner[k]+s*a[k]+t*d[k]);
+                if blank(p) > -1e-6 || (s+t-1.).abs() < 1e-3 { continue; }
+                let (inside,beyond) = (value(&ring,p) < 0.,s+t < 1.);
+                assert_eq!(inside,beyond,"{member} {end} at ({s}, {t}): in the ring {inside}, beyond the chamfer {beyond}");
+                if inside { cut += 1; } else { kept += 1; }
+            }}
+        }
+    }
+    eprintln!("end relief: chamfers within {worst:.3e} mm; {cut} blank points cut by the rings, {kept} kept");
+    assert!(worst < 1e-9,"the end relief leaves its stated chamfer by {worst}");
+    assert!(cut > 20 && kept > 500);
 }

@@ -147,17 +147,19 @@ fn pinion(offset: f64,shift: f64,spiral: f64) -> Result<admission::Admission,Err
 
 /// `pinion`, or the gear.
 fn member(member: &str,offset: f64,shift: f64,spiral: f64) -> Result<admission::Admission,Error> {
-    fabricated(member,[offset,shift,spiral],0.,0.)
+    fabricated(member,[offset,shift,spiral],0.,0.,0.)
 }
 
-/// `member` with the fabrication allowances: the normal backlash and the tip relief in
-/// millimetres. A relieved member has two sweeps, its crown's and its relief's.
-fn fabricated(member: &str,design: [f64;3],backlash: f64,relief: f64) -> Result<admission::Admission,Error> {
-    let e = fixtures::gear::read_configured_with(&mut |name,text| fixtures::gear::fabricated(name,text,design,backlash,relief));
+/// `member` with the fabrication allowances: the normal backlash, the tip relief and the end
+/// relief in millimetres. A tip-relieved member has two sweeps, its crown's and its relief's; the
+/// end relief is two more static cuts of its blank.
+fn fabricated(member: &str,design: [f64;3],backlash: f64,relief: f64,ends: f64) -> Result<admission::Admission,Error> {
+    let e = fixtures::gear::read_configured_with(&mut |name,text|
+        fixtures::gear::fabricated(name,text,design,backlash,relief,ends));
     let started = std::time::Instant::now();
     let body = fixtures::solid(&e,&format!("pair.{member}.body"));
     let result = admission::admit_body(&e.sketch,body,&Options::default());
-    eprintln!("{member} at {design:?}, backlash {backlash}, relief {relief}: {:?}",started.elapsed());
+    eprintln!("{member} at {design:?}, backlash {backlash}, relief {relief}, ends {ends}: {:?}",started.elapsed());
     result
 }
 
@@ -171,18 +173,18 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
         "the blank is a revolution about the indexing axis, so one placement's checks serve all");
 }
 
-/// The configured hypoid pinion, its backlash and tip relief in: the crown's sweep and the
-/// relief's are both in the class, each with margin.
+/// The configured hypoid pinion, its backlash, tip relief and end relief in: the crown's sweep and
+/// the relief's are both in the class, each with margin.
 #[test]
 fn the_configured_hypoid_pinion_is_admitted() {
-    let a = fabricated("pinion",[25.,12.5,25.],0.05,0.2).unwrap();
+    let a = fabricated("pinion",[25.,12.5,25.],0.05,0.2,0.2).unwrap();
     assert_eq!(a.sweeps().len(),2);
     assert!(a.sweeps().iter().all(|s| s.least_area_factor > 0.1));
 }
 
 #[test]
 fn the_configured_hypoid_gear_is_admitted() {
-    let a = fabricated("gear",[25.,12.5,25.],0.05,0.2).unwrap();
+    let a = fabricated("gear",[25.,12.5,25.],0.05,0.2,0.2).unwrap();
     assert_eq!(a.sweeps().len(),2);
     assert!(a.sweeps().iter().all(|s| s.least_area_factor > 0.1));
 }
@@ -207,8 +209,8 @@ fn a_folding_flank_is_refused_and_balanced_pressure_angles_admit_it() {
 /// A tool, not a check: the pair's designs against the class, for choosing one inside it with
 /// margin. `SOLVENT_GRID='25/12.5/25;20/12.5/25/0.05/0.2' cargo test -p gcs-core --test core
 /// admission::the_admission_grid -- --ignored --nocapture` (each design offset/shift/spiral, the
-/// offset in millimetres, the rest in degrees, then optionally the backlash and the tip relief in
-/// millimetres, zero when left out) prints each member's verdict and margins, one line per sweep.
+/// offset in millimetres, the rest in degrees, then optionally the backlash, the tip relief and the
+/// end relief in millimetres, zero when left out) prints each member's verdict and margins, one line per sweep.
 /// The tables it chose the configured design from are in docs/spiral-bevel-layout-plan.md.
 #[test]
 #[ignore = "a tool: SOLVENT_GRID names the designs to admit"]
@@ -216,10 +218,10 @@ fn the_admission_grid() {
     let grid = std::env::var("SOLVENT_GRID").expect("SOLVENT_GRID");
     for design in grid.split(';').filter(|d| !d.trim().is_empty()) {
         let v: Vec<f64> = design.split('/').map(|x| x.trim().parse().unwrap()).collect();
-        let (backlash,relief) = (v.get(3).copied().unwrap_or(0.),v.get(4).copied().unwrap_or(0.));
+        let [backlash,relief,ends] = [3,4,5].map(|i| v.get(i).copied().unwrap_or(0.));
         for which in ["pinion","gear"] {
             let started = std::time::Instant::now();
-            let verdicts = match fabricated(which,[v[0],v[1],v[2]],backlash,relief) {
+            let verdicts = match fabricated(which,[v[0],v[1],v[2]],backlash,relief,ends) {
                 Ok(a) => a.sweeps().iter().map(|s| format!("admitted\t{}\tleast J {:.3}, {} near double roots, \
                     {} near tangent, {} contacts",s.name,s.least_area_factor,s.near_double_roots,s.near_tangent_pairs,
                     s.contacts)).collect(),
@@ -227,7 +229,7 @@ fn the_admission_grid() {
                 Err(Error::Unreadable(m)) => vec![format!("unreadable\t\t{m}")],
             };
             for verdict in verdicts {
-                println!("grid\t{}\t{}\t{}\t{backlash}\t{relief}\t{which}\t{verdict}\t{:.1} s",v[0],v[1],v[2],
+                println!("grid\t{}\t{}\t{}\t{backlash}\t{relief}\t{ends}\t{which}\t{verdict}\t{:.1} s",v[0],v[1],v[2],
                     started.elapsed().as_secs_f64());
             }
         }

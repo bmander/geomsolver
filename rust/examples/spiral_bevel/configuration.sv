@@ -1,5 +1,5 @@
 // The pair's configuration: the teeth, the shafts and the crown, as a designer states
-// them (design.sv adds the proportions), and the two fabrication allowances a shop needs.
+// them (design.sv adds the proportions), and the fabrication allowances a shop needs.
 // Machine settings belong outside this model.
 param pinion_teeth = 24
 param gear_teeth = 48
@@ -25,3 +25,6 @@ param backlash = 0.05mm
 // The tip relief: every tooth's tip edges chamfered this far down the tooth by a
 // semi-topping cut beside the generating crown (crown/relief.sv); zero leaves them sharp.
 param tip_relief = 0.2mm
+// The end relief: the tips' toe and heel edges, where the tip cone meets the toe and heel
+// spheres, chamfered this far along each (blank/ends.sv); zero leaves them sharp.
+param end_relief = 0.2mm

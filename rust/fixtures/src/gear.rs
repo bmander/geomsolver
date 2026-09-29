@@ -14,18 +14,19 @@ pub fn module(name: &str) -> Option<String> { crate::module(&project(),name) }
 
 /// A `configuration` module of its own: the tooth counts, the mean module and the offset between
 /// the shafts in millimetres, the pressure shift and the crown's spiral in degrees, the shafts
-/// square, with no backlash and no tip relief.
+/// square, with no backlash, no tip relief and no end relief.
 pub fn configuration(teeth: [u32;2],mean_module: f64,offset: f64,shift: f64,spiral: f64) -> String {
     format!("param pinion_teeth = {}\nparam gear_teeth = {}\nparam mean_module = {mean_module}mm\n\
         param shaft_angle = 90deg\nparam offset = {offset}mm\nparam pressure_shift = {shift}deg\n\
-        param spiral_angle = {spiral}deg\nparam backlash = 0mm\nparam tip_relief = 0mm\n",teeth[0],teeth[1])
+        param spiral_angle = {spiral}deg\nparam backlash = 0mm\nparam tip_relief = 0mm\n\
+        param end_relief = 0mm\n",teeth[0],teeth[1])
 }
 
 /// The parameters `configure` reads in millimetres; every other is in degrees.
-const LENGTHS: [&str;3] = ["offset","backlash","tip_relief"];
+const LENGTHS: [&str;4] = ["offset","backlash","tip_relief","end_relief"];
 
 /// The `configuration` module with each named parameter set to a number: the offset, the
-/// backlash and the tip relief in millimetres, every other in degrees. Its line is dropped wherever it stands and the value
+/// backlash and the tip and end reliefs in millimetres, every other in degrees. Its line is dropped wherever it stands and the value
 /// written at the end. Every other module unchanged.
 pub fn configure(name: &str,text: String,params: &[(&str,f64)]) -> String {
     if name != "configuration" { return text; }
@@ -39,19 +40,19 @@ pub fn configure(name: &str,text: String,params: &[(&str,f64)]) -> String {
 }
 
 /// The gear design: the offset between the shafts in millimetres, the pressure shift and the
-/// crown's spiral angle in degrees; with no backlash and no tip relief, the conjugate pair every
-/// number the suites recorded before the fabrication allowances was taken of (`fabricated` adds
-/// them).
+/// crown's spiral angle in degrees; with no backlash and no tip or end relief, the conjugate pair
+/// every number the suites recorded before the fabrication allowances was taken of (`fabricated`
+/// adds them).
 pub fn design(name: &str,text: String,offset: f64,shift: f64,spiral: f64) -> String {
     configure(name,text,&[("offset",offset),("pressure_shift",shift),("spiral_angle",spiral),
-        ("backlash",0.),("tip_relief",0.)])
+        ("backlash",0.),("tip_relief",0.),("end_relief",0.)])
 }
 
-/// `design` with the fabrication allowances: the normal backlash and the tip relief in
-/// millimetres.
-pub fn fabricated(name: &str,text: String,design: [f64;3],backlash: f64,tip_relief: f64) -> String {
+/// `design` with the fabrication allowances: the normal backlash, the tip relief and the end
+/// relief in millimetres.
+pub fn fabricated(name: &str,text: String,design: [f64;3],backlash: f64,tip_relief: f64,end_relief: f64) -> String {
     configure(name,text,&[("offset",design[0]),("pressure_shift",design[1]),("spiral_angle",design[2]),
-        ("backlash",backlash),("tip_relief",tip_relief)])
+        ("backlash",backlash),("tip_relief",tip_relief),("end_relief",end_relief)])
 }
 
 /// The bevel pair: every recorded number in the suites was taken with the pinion axis through

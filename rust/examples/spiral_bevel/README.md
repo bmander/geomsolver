@@ -20,9 +20,9 @@ length of their common perpendicular), the pressure shift and the crown's spiral
 design group adds the pressure angle, the cutter radius and face width in proportion to the
 mean cone distance, the depths in normal modules (addendum, dedendum, base, tip rounding,
 back), the two members' generating rolls and the gear space cutter's reach. The normal
-module is not stated: the trace constructs it, and every depth reads it. Two fabrication
-allowances close the configuration: the normal **backlash** (0.05 mm) and the **tip relief**
-(0.2 mm), each zero for the conjugate, sharp-tipped pair. Zero offset is a
+module is not stated: the trace constructs it, and every depth reads it. Three fabrication
+allowances close the configuration: the normal **backlash** (0.05 mm), the **tip relief**
+(0.2 mm) and the **end relief** (0.2 mm), each zero for the conjugate, sharp-edged pair. Zero offset is a
 bevel pair with a common apex; the configured pair is a hypoid 25 mm off, whose 12.5-degree
 shift and 25-degree spiral design out the undercut a symmetric rack develops past about 15 mm
 of offset, chosen inside the generating-sweep class with margin
@@ -61,9 +61,20 @@ distances along the pitch generator, each with a rib square to it that meets the
 axis or away, its caps square to the axis and its spine on the axis. Revolved, it is the tip,
 root or back cone.
 
+**Step 3, the end relief: `blank/ends.sv`.** Where the tip cone meets the toe sphere and the
+heel sphere, `EndChamfer` chamfers the corner the end relief each way: its end on the tip cone
+that far along the cone distance toward the tooth (a face span narrower by the relief at each
+end), its end on the sphere that far down from the tip cone. Revolved about the axis the chamfer
+is a cone band, and the ring `EndCut` takes from the blank is the chamfer's triangle with a
+point beyond the corner, its other sides outside the blank. Every tooth's tip land and flanks
+end on the band at both ends. It relieves the tips' toe and heel edges; the edges where a
+flank meets a sphere down the tooth's depth are not relieved (a revolved face cannot follow
+them, and a per-tooth chamfer is no blank face nor a generating sweep).
+
 **Step 3, the blank: `blank/member.sv`.** `MemberLimits` draws a member's five limits in its
-axial view; `MemberBlank` is the blank term: the heel sphere within the tip cone, less the
-toe and the back. The root cone bounds only the tooth regions the checks declare.
+axial view, and its two end chamfers where the design has them; `MemberBlank` is the blank
+term: the heel sphere within the tip cone, less the toe and the back. The root cone bounds
+only the tooth regions the checks declare.
 
 **Step 4, the tooth's thickness: `crown/thickness.sv`.** Two points on the mean pitch
 circle a quarter of the crown's circular pitch either side of M (arcs of length π m / 4 about
@@ -121,7 +132,8 @@ in the four views and publishes each member's limits and motions as a group; its
 
 **The members: `members.sv`.** `GeneratedMember` is a blank less one continuous generating
 sweep of its crown at every tooth index; `HypoidPair` generates the pinion from the crown tooth
-and the gear from its space cutter, and `ReliefCut` sweeps each member's relief the same way.
+and the gear from its space cutter, `ReliefCut` sweeps each member's tip relief the same way,
+and `EndCut` takes its end relief's rings.
 
 **The entry: `gears.sv`.** `pair: HypoidPair(std.front, hypoid_design)`. In the app it is the
 example `spiral_bevel` (`?example=spiral_bevel`): the glass box (⌘B) shows both members

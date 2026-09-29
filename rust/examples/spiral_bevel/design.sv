@@ -17,7 +17,8 @@ group hypoid_design(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   pinion_roll: 35deg, gear_roll: 45deg,
   space_reach: 1.1 * mean_cone_distance + mean_module,
   backlash: backlash, lashed: min(ceil(backlash / 1mm), 1),
-  tip_relief: tip_relief, relief_angle: 30deg, relieved: min(ceil(tip_relief / 1mm), 1))
+  tip_relief: tip_relief, relief_angle: 30deg, relieved: min(ceil(tip_relief / 1mm), 1),
+  end_relief: end_relief, ends_relieved: min(ceil(end_relief / 1mm), 1))
 
 preview {
   unit mm
