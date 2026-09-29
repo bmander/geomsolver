@@ -19,6 +19,9 @@ builds nothing.
 - **Phase 3:** `solventc --tolerance 0.01mm` exports both members within 10 µm of the exact
   surface, STEP and STL, by the meter (see Phase 3's findings); without it the gross bars below
   still stand and every export is as it was.
+- **Phase 4:** the configured pair carries 0.05 mm of backlash and a 0.2 mm tip relief; both
+  members are admitted with both sweeps and export at 10 µm, STEP and STL, in 5.6 and 10.2
+  minutes (see Phase 4's findings).
 - **The bar is coarse:** `FIT_DISTANCE = 0.25` mm and `FIT_TURN = 20°` in
   `gcs-cli/src/cad/native/sweep_boundary.rs`. Passing it is not a fabrication claim for either
   member, and nothing measures the exported file against the exact surface.
@@ -408,6 +411,138 @@ the solve's or the shop's.
 
 **Exit:** the configured pair with backlash and relief, both members admitted and exported at
 10 µm.
+
+#### Phase 4 — findings (2026-09-28)
+
+**The features.** `configuration.sv` states a normal **backlash** of 0.05 mm and a **tip relief**
+of 0.2 mm (README, steps 2–4). Backlash keeps the tooth and its mate on the flank lines they
+share and stands each crown's flanks a quarter of it outside them, so each generated flank lies a
+quarter inside its conjugate one and the pair's normal clearance is the backlash. The relief is a
+semi-topping cut of its own beside each crown (`crown/relief.sv`): a chamfer turned 30° from the
+flank at a kink the relief short of the member's tip, rounded into a top inside the crown, swept
+under the member's generating motion at every tooth. It is a second sweep rather than a kink in
+the crown's section because a concave corner inside one sweep trims two envelopes against each
+other (row T2); two sweeps meet in the kernel's Boolean instead. `gear_crowns.rs` proves both on
+the cutters to 1e-9 mm, and zero for either builds the old model (`repeat design.lashed`,
+`repeat design.relieved`), which is what every recorded number pins (`fixtures::gear::design`).
+Admission with both sweeps is recorded in `docs/spiral-bevel-layout-plan.md`: every design of the
+grid admitted, the configured one at J 0.694 / 1.449 (pinion, crown / relief) and 0.338 / 1.008
+(gear), the crowns' margins the conjugate pair's to the third decimal.
+
+**Two native refusals, and their fixes.** With the relief each member's blank is split by two
+sheets a tooth, and the arrangement is no longer one removed cell per placement:
+
+- **The cell contract** wanted one congruent removed cell per placement. The relief's sheet
+  crosses the crown's in every tooth space, so the removed cells fall into congruence classes (four
+  here: 96 of the pinion's 97 cells, 192 of the gear's 193). `contracts::cells` now takes each
+  sweep's placement count and asks for classes of exactly one cell an index; sweeps placed a
+  different number of times are refused rather than guessed about
+  (`export_contracts::the_cell_contract_wants_one_congruent_removed_cell_per_placement`).
+- **A sliver cell had no interior sample.** The gear's relief leaves a thin wedge of 0.04 mm³
+  along each tooth; no candidate a fixed step in from its faces was inside it, the grid over its
+  box missed it, and the deepest point found was 3.6 nm in, against the 0.2 µm a probe needs. On
+  such slivers the classifier was also seen to put one point inside two cells of one partition.
+  `solvent_cad_solid_samples`
+  (`backend/cells.cpp`) now finds where a ray along a face's inward normal next meets the shell
+  (`IntCurvesFace_ShapeIntersector`): a face candidate is kept only where that ray has not left the
+  cell before it, and when fewer samples than the caller probes are clear of the boundary, it takes
+  the middles of such rays from points inside each face's trimmed domain. The grid stays the last
+  resort. `native_boundary::a_sliver_is_sampled_between_its_faces` holds a chevron 4 µm thick
+  across 45 mm, which the old sampler found no point of.
+
+That sampling first cost the gear 1,600 s of classification on a busy machine (3.4 s a cell
+measured alone, mostly grid classifications that found nothing in a sliver). Asking the ray before the classifier (a ray that
+leaves the cell rules a candidate out for less than a classification) and running the grid only
+while fewer clear samples than the caller wants are in hand made it 0.65 s a cell for the pinion
+and 1.0 s for the gear. Only which interior points are probed changed; every verdict is the
+field's, as before. The split's time budget is now the process's processor time, so a machine busy
+with other work no longer refuses it (a parallel run had stopped the gear's split at 495 s).
+
+**The configured pair at 10 µm**, backlash 0.05 mm and relief 0.2 mm (µm, max / p99 / mean of |d|;
+normals max / p99). STEP at `--measure-samples 400000` (a grid of 63×63 on each of the pinion's
+99 faces, 45×45 on the gear's 195, so every face strip is sampled; the default 100,000 left the
+pinion's narrow root strip unsampled on its sheet's grid) and STL at 100,000 samples by area:
+
+| pinion | STEP (222,557 face points) | STL (99,995 samples) |
+|---|---|---|
+| heel sphere | 0 / 0 / 0 | 1.04 / 0.94 / 0.38 |
+| tip cone | 0 / 0 / 0 | 3.29 / 2.62 / 0.50 |
+| toe sphere | 0 / 0 / 0 | 1.10 / 0.94 / 0.38 |
+| back cone | 0 / 0 / 0 | 1.12 / 1.12 / 0.40 |
+| outer flank | 0.289 / 0.238 / 0.018 | 0.935 / 0.643 / 0.126 |
+| outer fillet | 2.97 / 2.91 / 0.59 | 2.73 / 2.13 / 0.49 |
+| root (crown tip) | 0.774 / 0.774 / 0.395 | 1.07 / 1.03 / 0.31 |
+| inner fillet | 2.78 / 2.67 / 0.60 | 3.09 / 2.45 / 0.62 |
+| inner flank | 0.435 / 0.088 / 0.004 | 1.24 / 1.06 / 0.20 |
+| relief chamfer, outer side | 0.002 / 0.002 / 0.000 | 0.436 / 0.321 / 0.046 |
+| relief chamfer, inner side | 0.000 / 0.000 / 0.000 | 1.02 / 0.94 / 0.14 |
+| **all** | **2.97 / 0.77 / 0.03**, normals 1.71° / 0.90° | **3.29 / 1.47 / 0.33** |
+
+| gear | STEP (135,497 face points) | STL (99,057 samples) |
+|---|---|---|
+| heel sphere | 0 / 0 / 0 | 3.89 / 2.84 / 1.09 |
+| tip cone | 0 / 0 / 0 | 1.83 / 1.74 / 0.52 |
+| toe sphere | 0 / 0 / 0 | 4.08 / 2.85 / 1.08 |
+| back cone | 0 / 0 / 0 | 1.63 / 1.63 / 0.54 |
+| outer crown's flank | 0.453 / 0.122 / 0.006 | 3.32 / 2.73 / 0.56 |
+| outer crown's round (fillet) | 1.36 / 1.10 / 0.18 | 4.79 / 3.23 / 0.66 |
+| outer crown's tip (root) | 1.76 / 1.76 / 0.44 | 2.45 / 1.58 / 0.45 |
+| neighbour's flank | 0.994 / 0.538 / 0.018 | 3.05 / 2.43 / 0.46 |
+| neighbour's round (fillet) | 1.01 / 1.01 / 0.21 | 4.40 / 3.42 / 0.79 |
+| neighbour's tip (root) | 1.76 / 1.22 / 0.24 | 3.41 / 3.28 / 0.57 |
+| relief chamfer, outer side | 0.003 / 0.002 / 0.001 | 1.55 / 1.54 / 0.39 |
+| relief chamfer, inner side | 0.000 / 0.000 / 0.000 | 0.767 / 0.762 / 0.234 |
+| **all** | **1.76 / 0.76 / 0.04**, normals 2.00° / 0.87° | **4.79 / 2.83 / 0.70** |
+
+- Every exact face of both members is within 10 µm in both files, STEP within the fit's 5 µm
+  share, and the two routes agree (at most 0.87 µm apart, p99 0.003). At the default 100,000 the
+  STEP maxima were 1.47 µm (pinion, no root samples) and 1.68 µm (gear), and the verdict the same.
+  The large STL normal figures are samples on a face's edge, as in phase 3.
+- The relief's chamfers are generated envelopes and fitted like the flanks, not exact faces: each
+  is nearly ruled, and its sheet (47×55 pinion, 50×56 gear, one chart, centripetal and chord
+  length respectively) holds its withheld contacts within 1.2 and 1.4 µm at once.
+- The crowns' sheets fitted at once too: the pinion's 73×44 within 3.13 µm (centripetal), the
+  gear's 86×32 within 2.14 µm after its first sheet folded, as in phase 3. No refinement ran.
+- Each member's STL was meshed twice: the pinion's first mesh sagged 31 µm (a long edge across the
+  tip cone's trimmed boundary) and the second, at 1.25 µm, sags 3.29 µm; the gear's 5.30 then
+  4.08 µm at 3.77 µm. Field agreement at 0.02 mm: 1,000 triangles each, none unresolved or
+  disagreeing.
+
+**Cost** (12 cores, the export single-threaded; each pair of measurements run side by side):
+
+| | export (STEP + STL) | split | classification | STEP | STL | measuring STEP / STL |
+|---|---|---|---|---|---|---|
+| pinion | 334 s (phase 3: 182 s) | 141 s, 48 sheets, 97 cells | 64 s | 30.2 MB, 99 faces | 44.6 MB, 892,762 triangles | 433 s / 412 s; 1,430 s at 400,000 |
+| gear | 613 s (phase 3: 294 s) | 278 s, 96 sheets, 193 cells | 199 s | 74.2 MB, 195 faces | 22.7 MB, 454,756 triangles | 316 s / 283 s; 1,281 s at 400,000 |
+
+The time added is the second sweep's: twice the sheets in the split and four times the cells to
+classify. The STEP files grew because every relief face carries its sheet's whole surface, and
+there are two a tooth. The volumes: pinion 14,645.084 mm³, gear 22,264.489 mm³.
+
+**Tests.** Fast: `export_contracts` (the cell classes), `native_boundary::a_sliver_is_sampled_between_its_faces`
+(the sliver, 13 ms). Slow tier: `the_configured_pinion_exports_natively_within_its_tolerance` and
+`the_configured_gear_exports_natively` now export the relieved, backlashed pair at 10 µm and
+measure both files within it. Every recorded number was taken at backlash and relief zero and
+pins them there (`fixtures::gear::design`), so none changed.
+
+**Gates.** The whole suite with the native kernel passes with no warnings, and so does the slow
+tier (the CLI's slow tests 16.4 minutes, the two members' 10 µm exports and measurements run side
+by side). Against phase 3, every corpus report and sheet, fast golden and log outside
+`spiral_bevel` is byte-identical. Within it, every difference is the design's: the crown
+sections' reports (`crown/tooth.sv`, `mate.sv`, `reach.sv`) carry the backlashed flanks;
+`configuration.sv` read alone reports its two new unitless lengths as it already reported
+`mean_module` and `offset`; the field-meshed members (exit 0) and the refine backend's refusal
+(exit 1, the same feature-protection refusal a few microns away) read the relieved pair; and the
+native exports at the gross bars remove the relief and the backlash (pinion 14,696.335 →
+14,643.592 mm³, 51 → 99 faces; gear 22,343.554 → 22,264.488 mm³, 99 → 195 faces; both agree with
+the field). `layout.sv`, `pair.sv` and the new `crown/relief.sv` now pass the corpus's 60 s
+limit (`--json`, 66 s alone where layout and pair took 27 s; elaborating and solving them is
+0.4 s either way, and the time is the diagnosis of the relief's added sections), and
+`crown/space.sv` passed it only while run beside them (25 s alone, as before).
+
+**Not claimed.** The relief chamfers the tooth tips' flank edges; the toe and heel ends of each
+tooth are not relieved. The chamfers are fitted to the tolerance, not exact analytic faces. The
+backlash is the nominal design's: the clearance measured between the exported flanks is phase 6.
 
 ### 5. Files
 
