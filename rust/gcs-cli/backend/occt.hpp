@@ -40,6 +40,8 @@ struct Cad {
     void validated(int id);
     // The stored shape's volume, measured once.
     double volume_of(int id);
+    // The stored shape's volume where it is known already (NaN where not).
+    double known_volume(int id) { const std::lock_guard<std::mutex> hold(lock); return volumes.at(static_cast<size_t>(id)); }
     // Volumes `validate` measured of solids inside a stored shape (a partition's cells), kept for
     // the handles those solids are given when they are listed; and one read back.
     void record(const TopTools_DataMapOfShapeReal& volumes);

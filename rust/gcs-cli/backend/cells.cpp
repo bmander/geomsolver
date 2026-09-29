@@ -135,6 +135,61 @@ static int united(Cad* cad,TopoDS_Shape result,const char* what,double known = s
     return cad->put(result,true,v);
 }
 
+// A partition's cells checked and measured, the work shared out: every face the cells have checked
+// once, on every core, with its own analyzer (`valid_solid`'s face check), and each cell's shell
+// closed and oriented; every face's flux about one point integrated once, on every core, and each
+// cell's volume the sum of its faces' fluxes signed by how the cell holds them — a face two cells
+// share bounds the one forward and the other reversed. The same checks and the same integrals,
+// each done once where `validate` did them once a cell. Throws as `validate` does; records each
+// cell's volume. `SOLVENT_FULL_CHECK` checks and measures the cells as `validate` does.
+static void validate_cells(TopoDS_Shape& partition,TopTools_DataMapOfShapeReal& record) {
+    if (std::getenv("SOLVENT_FULL_CHECK")) { validate(partition,&record); return; }
+    std::vector<TopoDS_Solid> cells;
+    for (TopExp_Explorer it(partition,TopAbs_SOLID); it.More(); it.Next()) cells.push_back(TopoDS::Solid(it.Current()));
+    if (cells.empty()) throw std::runtime_error("operation produced no solid");
+    for (const auto& cell: cells) {
+        int shells = 0;
+        for (TopExp_Explorer it(cell,TopAbs_SHELL); it.More(); it.Next()) ++shells;
+        if (shells != 1) { validate(partition,&record); return; }
+    }
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(partition,TopAbs_FACE,faces);
+    std::vector<char> ok(static_cast<size_t>(faces.Extent()),0);
+    OSD_Parallel::For(0,faces.Extent(),[&](int i) { ok[static_cast<size_t>(i)] = BRepCheck_Analyzer(faces(i+1)).IsValid(); });
+    if (std::find(ok.begin(),ok.end(),0) != ok.end()) throw std::runtime_error("native solid is invalid:"+invalidity(partition));
+    // each cell closed and consistently oriented, then turned to hold its material (as `validate`)
+    for (auto& cell: cells) {
+        if (!valid_solid(cell)) throw std::runtime_error("native solid is invalid:"+invalidity(cell));
+        if (!BRepLib::OrientClosedSolid(cell)) throw std::runtime_error("solid is open");
+    }
+    // one point for every flux, as `volume` takes it: the mean of the partition's vertices
+    gp_XYZ sum(0,0,0);
+    int count = 0;
+    for (TopExp_Explorer it(partition,TopAbs_VERTEX); it.More(); it.Next(),++count) sum += BRep_Tool::Pnt(TopoDS::Vertex(it.Current())).XYZ();
+    if (count > 0) sum /= count;
+    std::vector<TopoDS_Face> forward;
+    for (int i=1;i<=faces.Extent();++i) forward.push_back(TopoDS::Face(faces(i).Oriented(TopAbs_FORWARD)));
+    std::vector<double> mass(forward.size(),0.);
+    OSD_Parallel::For(0,static_cast<int>(forward.size()),[&](int i) { mass[static_cast<size_t>(i)] = flux({forward[static_cast<size_t>(i)]},gp_Pnt(sum)); });
+    for (const auto& cell: cells) {
+        double v = 0;
+        for (TopExp_Explorer it(cell,TopAbs_FACE); it.More(); it.Next()) {
+            const TopAbs_Orientation o = it.Current().Orientation();
+            if (o != TopAbs_FORWARD && o != TopAbs_REVERSED) continue;
+            const double m = mass[static_cast<size_t>(faces.FindIndex(it.Current())-1)];
+            v += o == TopAbs_FORWARD ? m : -m;
+        }
+        if (!std::isfinite(v) || v <= 0) throw std::runtime_error("solid has no positive volume");
+        record.Bind(cell,v);
+    }
+    // the cells, oriented, are the partition's
+    BRep_Builder builder;
+    TopoDS_Compound whole;
+    builder.MakeCompound(whole);
+    for (const auto& cell: cells) builder.Add(whole,cell);
+    partition = whole;
+}
+
 extern "C" {
 int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,double fuzzy) noexcept;
 // Partition one solid by faces or solids. Every cell is retained as a separate
@@ -194,7 +249,7 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
         const auto built = std::chrono::steady_clock::now();
         // Every cell's volume is measured here; the cells, listed next, keep it.
         TopTools_DataMapOfShapeReal measured;
-        validate(checked,&measured);
+        validate_cells(checked,measured);
         if (std::getenv("SOLVENT_SECTOR_DEBUG")) fprintf(stderr,"split: %d cells, built %.2f s, checked and measured %.2f s\n",cells,
             std::chrono::duration<double>(built-clock).count(),std::chrono::duration<double>(std::chrono::steady_clock::now()-built).count());
         cad->record(measured);
@@ -387,7 +442,9 @@ int solvent_cad_fuse(Cad* cad,const int* ids,int count) noexcept {
         if (!ids || count < 1 || count > 65536)
             throw std::runtime_error("fuse requires 1..65536 solids");
         TopoDS_Shape result;
-        if (count == 1) result = cad->at(ids[0]);
+        // one cell is its own union, and its volume, where it was measured with the partition, is known
+        double known = std::numeric_limits<double>::quiet_NaN();
+        if (count == 1) { result = cad->at(ids[0]); known = cad->known_volume(ids[0]); }
         else {
             TopTools_ListOfShape objects,tools;
             objects.Append(cad->at(ids[0]));
@@ -399,7 +456,7 @@ int solvent_cad_fuse(Cad* cad,const int* ids,int count) noexcept {
             check_algorithm(fuse,"cell union");
             result = fuse.Shape();
         }
-        return united(cad,result,"cell union");
+        return united(cad,result,"cell union",known);
     });
 }
 
@@ -679,7 +736,8 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
         if (!BRepLib::OrientClosedSolid(made)) throw std::runtime_error("the sewn sectors are not closed");
         lap("sewn");
         const gp_Lin axis_line(line);
-        const double each = flux(kept,ElCLib::Value(ElCLib::Parameter(axis_line,middle),axis_line)),whole = (count+1)*each;
+        const double each = flux(kept,ElCLib::Value(ElCLib::Parameter(axis_line,middle),axis_line));
+        const double whole = (count+1)*each;
         lap("measured one copy");
         // `SOLVENT_SECTOR_CHECK=full`: the united solid measured whole as well, which may differ by
         // the slack its tolerances leave the boundary (the sewing moves edges within them).
