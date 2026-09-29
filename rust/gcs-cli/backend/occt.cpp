@@ -44,6 +44,12 @@
 #include <Precision.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
+#include <StepData_StepModel.hxx>
+#include <StepData_StepWriter.hxx>
+#include <StepData_WriterLib.hxx>
+#include <StepData_Protocol.hxx>
+#include <XSControl_WorkSession.hxx>
+#include <thread>
 #include <Standard_Failure.hxx>
 #include <StlAPI_Writer.hxx>
 #include <TopExp_Explorer.hxx>
@@ -361,6 +367,63 @@ static double patterned_volume(const TopoDS_Shape& shape,const gp_Ax1& axis,int 
     return total;
 }
 
+// A STEP model's text, its entities formatted side by side: each thread formats a run of them in a
+// writer of its own over the one model (formatting an entity reads the model and writes only its
+// own lines), and the runs are joined in order between the header and the end, as the kernel's
+// writer lays them out one after another. `SOLVENT_STEP_SERIAL` has the kernel's writer write it
+// whole; `SOLVENT_STEP_TEXT_CHECK` has it write it as well and requires the same text.
+static std::string step_text(STEPControl_Writer& writer) {
+    const auto serial = [&] {
+        std::ostringstream out;
+        if (writer.WriteStream(out) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
+        return std::move(out).str();
+    };
+    if (std::getenv("SOLVENT_STEP_SERIAL")) return serial();
+    const Handle(StepData_StepModel) model = writer.Model();
+    const Handle(StepData_Protocol) protocol = Handle(StepData_Protocol)::DownCast(writer.WS()->Protocol());
+    if (model.IsNull() || protocol.IsNull()) return serial();
+    std::ostringstream out;
+    // (the header alone leaves out the exchange structure's first line)
+    out << "ISO-10303-21;\n";
+    {
+        StepData_StepWriter head(model);
+        head.SendModel(protocol,true);
+        head.SendData();
+        head.Print(out);
+    }
+    const int count = model->NbEntities();
+    const int runs = std::max(1,std::min(count,static_cast<int>(std::max(1u,std::thread::hardware_concurrency()))*4));
+    std::vector<std::string> texts(static_cast<size_t>(runs));
+    OSD_Parallel::For(0,runs,[&](int r) {
+        const int from = 1+static_cast<int>(static_cast<long long>(count)*r/runs),to = static_cast<int>(static_cast<long long>(count)*(r+1)/runs);
+        StepData_StepWriter run(model);
+        const StepData_WriterLib lib(protocol);
+        for (int i=from;i<=to;++i) run.SendEntity(i,lib);
+        std::ostringstream text;
+        run.Print(text);
+        texts[static_cast<size_t>(r)] = std::move(text).str();
+    });
+    for (const auto& text: texts) out << text;
+    {
+        StepData_StepWriter tail(model);
+        tail.EndSec();
+        tail.EndFile();
+        tail.Print(out);
+    }
+    std::string text = std::move(out).str();
+    if (std::getenv("SOLVENT_STEP_TEXT_CHECK")) {
+        const std::string whole = serial();
+        if (whole != text) {
+            size_t k = 0;
+            while (k < whole.size() && k < text.size() && whole[k] == text[k]) ++k;
+            fprintf(stderr,"step: the text formatted side by side differs from the kernel's at byte %zu of %zu/%zu: [%s] against [%s]\n",
+                k,text.size(),whole.size(),text.substr(k>40?k-40:0,120).c_str(),whole.substr(k>40?k-40:0,120).c_str());
+            throw std::runtime_error("the STEP text formatted side by side differs from the kernel's");
+        }
+    }
+    return text;
+}
+
 extern "C" {
 Cad* solvent_cad_new() noexcept { try { return new Cad; } catch (...) { return nullptr; } }
 void solvent_cad_free(Cad* cad) noexcept { delete cad; }
@@ -493,12 +556,7 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
         lap("transferred");
         // Written into memory and then to the file in one piece (the writer's file stream flushes a
         // line at a time), and read back from the same bytes.
-        std::string text;
-        {
-            std::ostringstream out;
-            if (writer.WriteStream(out) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
-            text = std::move(out).str();
-        }
+        const std::string text = step_text(writer);
         {
             FILE* file = std::fopen(path,"wb");
             if (!file) throw std::runtime_error(std::string("cannot write STEP file ")+path);

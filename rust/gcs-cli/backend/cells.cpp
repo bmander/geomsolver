@@ -177,6 +177,7 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
         // core is given each core's budget.
         const double budget = (15.+5.*count)*(parallel ? std::max(1u,std::thread::hardware_concurrency()) : 1u);
         const double started = processor_seconds();
+        const auto clock = std::chrono::steady_clock::now();
         Handle(Deadline) deadline = new Deadline(budget);
         split.Build(deadline->Start());
         if (deadline->UserBreak()) {
@@ -190,9 +191,12 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
         for (TopExp_Explorer it(result,TopAbs_SOLID); it.More(); it.Next()) ++cells;
         if (!cells) throw std::runtime_error("solid split produced no cells");
         TopoDS_Shape checked = result;
+        const auto built = std::chrono::steady_clock::now();
         // Every cell's volume is measured here; the cells, listed next, keep it.
         TopTools_DataMapOfShapeReal measured;
         validate(checked,&measured);
+        if (std::getenv("SOLVENT_SECTOR_DEBUG")) fprintf(stderr,"split: %d cells, built %.2f s, checked and measured %.2f s\n",cells,
+            std::chrono::duration<double>(built-clock).count(),std::chrono::duration<double>(std::chrono::steady_clock::now()-built).count());
         cad->record(measured);
         return cad->put(result);
     });
