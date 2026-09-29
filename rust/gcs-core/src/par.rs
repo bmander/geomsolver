@@ -52,3 +52,45 @@ pub fn indices_with<S,R: Send>(n: usize,init: impl Fn() -> S + Sync,f: impl Fn(&
         done.into_iter().map(|(_,r)| r).collect()
     }
 }
+
+/// `items.sort_unstable()`, the items sorted in runs on every core and the runs merged pairwise, the
+/// pairs of a round side by side: the same order, since equal items are indistinguishable to an
+/// order that is total (every item's key its whole value, as the callers' packed keys are).
+pub fn sort<T: Ord + Copy + Send + Sync>(items: &mut [T]) {
+    let threads = threads();
+    if threads <= 1 || items.len() < 1 << 16 { items.sort_unstable(); return; }
+    #[cfg(target_arch = "wasm32")]
+    { unreachable!("one thread on wasm") }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let runs = threads.next_power_of_two().min(64);
+        let size = items.len().div_ceil(runs);
+        std::thread::scope(|scope| { for run in items.chunks_mut(size) { scope.spawn(move || run.sort_unstable()); } });
+        // merge runs of `width` pairwise from `from` into `into`, until one run is left
+        let mut buffer = items.to_vec();
+        let (mut width,mut into_buffer) = (size,true);
+        while width < items.len() {
+            let (from,into): (&[T],&mut [T]) = if into_buffer { (&*items,&mut buffer[..]) } else { (&buffer[..],&mut *items) };
+            std::thread::scope(|scope| {
+                for (k,out) in into.chunks_mut(2*width).enumerate() {
+                    let start = k*2*width;
+                    let a = &from[start..(start+width).min(from.len())];
+                    let b = &from[(start+width).min(from.len())..(start+2*width).min(from.len())];
+                    scope.spawn(move || merge(a,b,out));
+                }
+            });
+            width *= 2;
+            into_buffer = !into_buffer;
+        }
+        if !into_buffer { items.copy_from_slice(&buffer); }
+    }
+}
+
+/// Two sorted runs merged into `out`, which is as long as both.
+#[cfg(not(target_arch = "wasm32"))]
+fn merge<T: Ord + Copy>(a: &[T],b: &[T],out: &mut [T]) {
+    let (mut i,mut j) = (0,0);
+    for slot in out.iter_mut() {
+        *slot = if j >= b.len() || (i < a.len() && a[i] <= b[j]) { i += 1; a[i-1] } else { j += 1; b[j-1] };
+    }
+}

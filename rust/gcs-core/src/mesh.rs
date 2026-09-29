@@ -413,11 +413,11 @@ pub fn stl_shells(bytes: &[u8]) -> Result<Vec<crate::topology::ClosedShell>,Stri
 /// `entry(key).or_insert(len)` gives walking them), and how many distinct keys there are: by sorting,
 /// where a map pays a search a key.
 /// Keys are at most 96 bits (and fewer than 2^32 of them), each sorted with its position packed
-/// below it.
+/// below it, on every core (`par::sort`).
 pub(crate) fn first_seen(keys: &[u128]) -> (Vec<usize>,usize) {
     assert!((keys.len() as u128) < 1 << 32 && keys.iter().all(|&k| k < 1 << 96),"first_seen takes 96-bit keys");
     let mut order: Vec<u128> = keys.iter().enumerate().map(|(i,&k)| k << 32 | i as u128).collect();
-    order.sort_unstable();
+    crate::par::sort(&mut order);
     let at = |packed: u128| (packed & 0xffff_ffff) as usize;
     // each run of equal keys led by its first appearance
     let mut first = vec![0usize;keys.len()];
@@ -430,7 +430,7 @@ pub(crate) fn first_seen(keys: &[u128]) -> (Vec<usize>,usize) {
         while j < order.len() && order[j] >> 32 == order[k] >> 32 { first[at(order[j])] = lead; j += 1; }
         k = j;
     }
-    leaders.sort_unstable();
+    crate::par::sort(&mut leaders);
     let mut number = vec![usize::MAX;keys.len()];
     for (n,&lead) in leaders.iter().enumerate() { number[lead] = n; }
     (first.iter().map(|&lead| number[lead]).collect(),leaders.len())

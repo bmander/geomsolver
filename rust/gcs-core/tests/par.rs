@@ -17,3 +17,16 @@ fn each_thread_keeps_its_own_state() {
     assert!(taken.iter().all(|&(_,seen)| seen >= 1));
     assert!(par::threads() >= 1);
 }
+
+#[test]
+fn a_sort_on_every_core_is_the_serial_sort() {
+    // a scrambled run of packed keys, long enough to be split, and lengths about the run's size
+    let mut rng = gcs_core::rng::Rng::new(7);
+    for n in [0,1,5,(1 << 16)-1,1 << 16,(1 << 16)+3,200_001,1 << 20] {
+        let keys: Vec<u128> = (0..n).map(|i| ((rng.uniform(0.,1e6) as u128) << 32) | i as u128 % 977).collect();
+        let (mut mine,mut serial) = (keys.clone(),keys);
+        par::sort(&mut mine);
+        serial.sort_unstable();
+        assert_eq!(mine,serial,"{n} keys");
+    }
+}
