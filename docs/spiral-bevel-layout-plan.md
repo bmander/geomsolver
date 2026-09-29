@@ -123,6 +123,7 @@ spiral_bevel/          (the app key; the file pane lists the steps)
   crown/mate.sv        CrownMate: the gear's generator
   crown/reach.sv       CutterReach: the space cutter's cap
   crown/space.sv       ComplementarySpace: the gear's space cutter
+  crown/relief.sv      ToothRelief and SpaceRelief: the tip relief's semi-topping cutters
   crown.svd            the crown section's sheet
   generation.sv        Generation: motions and indexing
   layout.sv            HypoidLayout(front, design): steps 2–5
@@ -267,6 +268,35 @@ Of the admitted designs, 25 / 12.5 / 30 has the widest margins, but its pinion's
 (below) is refused at the fitted sheet's normal check, where its neighbours 20 and 22.5 mm,
 25 / 11 / 30 and 25 / 12.5 / 25 all export; 25 / 12.5 / 25 keeps a native pinion, at the turned
 layout's spiral.
+
+**With backlash and tip relief** (docs/native-hypoid-plan.md, phase 4). The configured pair now
+carries 0.05 mm of normal backlash and a 0.2 mm tip relief (`configuration.sv`), and each member
+has two swept cuts: its crown's and its relief's (`crown/relief.sv`). `the_admission_grid` takes
+them as a fourth and fifth number (`offset/shift/spiral/backlash/relief`) and reports every sweep.
+Least area factor J, crown sweep / relief sweep; every design admitted, with no near double roots
+and no near tangent pairs:
+
+| spiral | shift | E (mm) | backlash / relief (mm) | pinion | gear |
+|---:|---:|---:|---|---|---|
+| 25 | 12.5 | 25 | 0 / 0 | J 0.694 | J 0.338 |
+| **25** | **12.5** | **25** | **0.05 / 0.2** | **J 0.694 / 1.449** | **J 0.338 / 1.008** |
+| 25 | 12.5 | 25 | 0.05 / 0.1 | J 0.694 / 1.449 | J 0.338 / 1.008 |
+| 25 | 12.5 | 25 | 0.1 / 0.4 | J 0.694 / 1.448 | J 0.339 / 1.008 |
+| 25 | 12.5 | 22.5 | 0.05 / 0.2 | J 0.790 / 1.382 | J 0.338 / 1.008 |
+| 25 | 12.5 | 27.5 | 0.05 / 0.2 | J 0.425 / 1.524 | J 0.338 / 1.008 |
+| 25 | 10 | 25 | 0.05 / 0.2 | J 0.376 / 1.437 | J 0.580 / 1.008 |
+| 25 | 11 | 25 | 0.05 / 0.2 | J 0.532 / 1.442 | J 0.503 / 1.008 |
+| 25 | 14 | 25 | 0.05 / 0.2 | J 0.807 / 1.455 | J 0.079 / 1.008 |
+| 20 | 12.5 | 25 | 0.05 / 0.2 | J 0.621 / 1.386 | J 0.241 / 1.008 |
+| 22.5 | 12.5 | 25 | 0.05 / 0.2 | J 0.660 / 1.417 | J 0.290 / 1.008 |
+| 27.5 | 12.5 | 25 | 0.05 / 0.2 | J 0.723 / 1.483 | J 0.386 / 1.008 |
+| 30 | 12.5 | 25 | 0.05 / 0.2 | J 0.744 / 1.520 | J 0.433 / 1.007 |
+
+The crowns' margins are the conjugate pair's to the third decimal: a flank offset by a
+twentieth of a millimetre moves the contact limits by nothing the grid resolves. The relief
+sweeps have the widest margins of any (J above 1): their chamfers are steep lines near the
+members' tips, far from the undercut the crown's tip round risks at the root. The configured
+design stays in the class with the margins it was chosen for.
 
 **Verified on the exports.** Measured off the field-meshed members' inertia axes, the shafts
 are 89.999° apart and 25.005 mm off. Turned through one gear pitch of conjugate rotation (gear

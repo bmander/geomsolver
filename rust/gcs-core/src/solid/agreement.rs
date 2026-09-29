@@ -116,10 +116,15 @@ pub fn of_triangles_observed(vertices: &[V],triangles: &[[u32;3]],material: &mut
 /// The triangles to probe: stratified by area (the one whose share of the cumulative area
 /// holds each of `options.triangles` evenly spaced marks, each at most once), or every n-th.
 fn sample<'a>(vertices: &[V],triangles: &'a [[u32;3]],options: &Options) -> Vec<&'a [u32;3]> {
+    chosen(vertices,triangles,options).into_iter().map(|i| &triangles[i]).collect()
+}
+
+/// `sample`'s choice, as indices into `triangles`.
+pub(crate) fn chosen(vertices: &[V],triangles: &[[u32;3]],options: &Options) -> Vec<usize> {
     let wanted = options.triangles.max(1);
     if !options.by_area {
         let step = (triangles.len()/wanted).max(1);
-        return triangles.iter().step_by(step).collect();
+        return (0..triangles.len()).step_by(step).collect();
     }
     let mut cumulative = Vec::with_capacity(triangles.len());
     let mut total = 0.;
@@ -135,7 +140,7 @@ fn sample<'a>(vertices: &[V],triangles: &'a [[u32;3]],options: &Options) -> Vec<
         cumulative.partition_point(|&c| c < mark).min(triangles.len()-1)
     }).collect();
     chosen.dedup();
-    chosen.into_iter().map(|i| &triangles[i]).collect()
+    chosen
 }
 
 /// The triangles of a binary STL, its coordinates divided by `scale` into model units.

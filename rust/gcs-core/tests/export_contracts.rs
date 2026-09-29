@@ -43,11 +43,39 @@ fn the_mesh_contract_refuses_a_cluster_of_microscopic_triangles() {
     assert_eq!(contracts::tiny_triangles(&vertices,&triangles,1e3).count,0);
 }
 
+/// Held to a tolerance the contract is about clusters: slivers strung along a mesh's edges, a few
+/// in each millimetre, pass however many there are in all; the same count in one millimetre is a
+/// crumpled patch.
+#[test]
+fn a_tolerance_mesh_contract_refuses_a_cluster_not_a_count() {
+    let sliver = |x: f64| [[x,0.,0.],[x+1e-3,0.,0.],[x,1e-5,0.]];
+    let strung: Vec<[[f64;3];3]> = (0..3*contracts::MOST_TINY).map(|k| sliver(0.1+k as f64)).collect();
+    let bunched: Vec<[[f64;3];3]> = (0..3*contracts::MOST_TINY).map(|k| sliver(0.1+k as f64*1e-3)).collect();
+    let mesh = |t: &[[[f64;3];3]]| -> (Vec<[f64;3]>,Vec<[u32;3]>) {
+        (t.iter().flatten().copied().collect(),(0..t.len() as u32).map(|k| [3*k,3*k+1,3*k+2]).collect())
+    };
+    let (v,t) = mesh(&strung);
+    let spread = contracts::tiny_triangles_under(&v,&t,1.,1e-7);
+    assert_eq!((spread.count,spread.densest),(3*contracts::MOST_TINY,1));
+    assert!(spread.verdict().is_err() && spread.clustered().is_ok());
+    let (v,t) = mesh(&bunched);
+    let cluster = contracts::tiny_triangles_under(&v,&t,1.,1e-7);
+    assert_eq!(cluster.densest,3*contracts::MOST_TINY);
+    assert!(cluster.clustered().unwrap_err().contains("crumpled or folded"));
+    // Over the area limit, nothing counts.
+    assert_eq!(contracts::tiny_triangles_under(&v,&t,1.,1e-9).count,0);
+}
+
 #[test]
 fn the_cell_contract_wants_one_congruent_removed_cell_per_placement() {
     let cell = |volume: f64| CellVolume {volume,point:[0.;3]};
-    assert!(contracts::cells(&[cell(10.)],&[cell(1.),cell(1.)],2).is_ok());
-    assert!(contracts::cells(&[cell(10.)],&[cell(1.)],2).unwrap_err().contains("removed 1 cells for 2"));
-    assert!(contracts::cells(&[cell(10.)],&[cell(1.),cell(1.1)],2).unwrap_err().contains("not congruent"));
-    assert!(contracts::cells(&[cell(1e-4)],&[cell(1.)],1).unwrap_err().contains("floor"));
+    assert!(contracts::cells(&[cell(10.)],&[cell(1.),cell(1.)],&[2]).is_ok());
+    assert!(contracts::cells(&[cell(10.)],&[cell(1.)],&[2]).unwrap_err().contains("removed 1 cells for 2"));
+    assert!(contracts::cells(&[cell(10.)],&[cell(1.),cell(1.1)],&[2]).unwrap_err().contains("not congruent"));
+    assert!(contracts::cells(&[cell(1e-4)],&[cell(1.)],&[1]).unwrap_err().contains("floor"));
+    // Two sweeps at the same two indices (a crown and its relief): classes of one cell an index.
+    let removed = [cell(1.),cell(0.2),cell(1.),cell(0.2),cell(0.5),cell(0.5)];
+    assert!(contracts::cells(&[cell(10.)],&removed,&[2,2]).is_ok());
+    assert!(contracts::cells(&[cell(10.)],&removed[..5],&[2,2]).unwrap_err().contains("1 of 0.5"));
+    assert!(contracts::cells(&[cell(10.)],&removed,&[2,3]).unwrap_err().contains("one count"));
 }

@@ -27,7 +27,9 @@ extern "C" {
     fn solvent_cad_bounds(cad: *mut c_void,ids: *const c_int,count: c_int,out: *mut f64) -> c_int;
     fn solvent_cad_validate(cad: *mut c_void,id: c_int) -> c_int;
     fn solvent_cad_step(cad: *mut c_void,id: c_int,path: *const c_char) -> c_int;
-    fn solvent_cad_stl(cad: *mut c_void,id: c_int,path: *const c_char) -> c_int;
+    fn solvent_cad_stl(cad: *mut c_void,id: c_int,path: *const c_char,deflection: f64,angular: f64) -> c_int;
+    fn solvent_cad_remesh(cad: *mut c_void,id: c_int,deflection: f64,angular: f64) -> c_int;
+    fn solvent_cad_mesh_sag(cad: *mut c_void,id: c_int,output: *mut f64) -> c_int;
 }
 
 // Recipes are built by the core in this process, not parsed from external JSON.
@@ -45,7 +47,10 @@ impl Session {
         if context.is_null() { Err("cannot allocate native CAD session".into()) }
         else { Ok(Self(context)) }
     }
+    /// The session's handle, for a test crate calling the backend's C ABI directly
+    /// (`tests/native_boundary.rs`); the binary's own test build has no use for it.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn as_ptr(&self) -> *mut c_void { self.0 }
     pub(crate) fn result(&self,id: c_int) -> Result<c_int,String> {
         if id < 0 {

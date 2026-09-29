@@ -4,6 +4,7 @@
 #include <GeomAPI_PointsToBSplineSurface.hxx>
 #include <Geom_BSplineSurface.hxx>
 #include <TColgp_Array2OfPnt.hxx>
+#include <BRepAdaptor_Surface.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass_FaceClassifier.hxx>
@@ -110,6 +111,30 @@ int solvent_cad_faces(Cad* cad,int source,int* output,int capacity) noexcept {
         if (!output || capacity < count) throw std::runtime_error("face buffer is too small");
         for (int i=1;i<=count;++i) output[i-1] = cad->put(faces(i));
         return count;
+    });
+}
+// The kind of a face's supporting surface: GeomAbs_SurfaceType's order (0 plane, 1 cylinder,
+// 2 cone, 3 sphere, 4 torus, 5 Bezier, 6 B-spline, 7 revolution, 8 extrusion, 9 offset, 10 other).
+int solvent_cad_face_kind(Cad* cad,int id) noexcept {
+    return guarded(cad,[&] {
+        const auto face = TopoDS::Face(cad->at(id));
+        return static_cast<int>(BRepAdaptor_Surface(face,false).GetType());
+    });
+}
+// A face's supporting surface on an even nu x nv grid over its UV box, row-major with u the
+// first: six doubles a point, position and oriented unit normal. No trim test, so it reads a
+// fitted sheet's whole chart quickly.
+int solvent_cad_surface_grid(Cad* cad,int id,int nu,int nv,double* output) noexcept {
+    return guarded(cad,[&] {
+        if (!output || nu < 2 || nv < 2) throw std::runtime_error("surface grid needs an output buffer and two points a side");
+        const auto face = TopoDS::Face(cad->at(id));
+        double a,b,c,d;
+        BRepTools::UVBounds(face,a,b,c,d);
+        for (double x: {a,b,c,d}) if (!std::isfinite(x) || Precision::IsInfinite(x))
+            throw std::runtime_error("surface grid needs finite face bounds");
+        for (int i=0;i<nu;++i) for (int j=0;j<nv;++j)
+            surface_sample(face,gp_Pnt2d(a+(b-a)*i/(nu-1),c+(d-c)*j/(nv-1)),true,output+6*(i*nv+j));
+        return 0;
     });
 }
 }

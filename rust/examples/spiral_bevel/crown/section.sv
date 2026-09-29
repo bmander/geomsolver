@@ -1,7 +1,14 @@
-// Step 4, the crown tooth's section, in the normal view: straight flanks through
-// the pitch points `lp` (inner) and `rp` (outer) at the pressure angle split by the
-// shift, a base and a tip at their depths, and the tip roundings. Revolved about
-// the cutter's axis the flanks are cones and the roundings tori.
+// Step 4, the crown tooth's section, in the normal view: straight flanks at the pressure
+// angle split by the shift, a base and a tip at their depths, and the tip roundings.
+// Revolved about the cutter's axis the flanks are cones and the roundings tori.
+//
+// The flank lines through the pitch points `lp` (inner) and `rp` (outer) are the ones the
+// tooth shares with its mate (crown/mate_section.sv); each flank stands a quarter of the
+// backlash outside its line, and so does the mate's. The two cutters then overlap by half the
+// backlash across each shared line, and since the envelope of an offset surface is the offset
+// of the envelope, each generated flank stands a quarter of the backlash inside its conjugate
+// one: the pair's normal clearance is half the backlash at each flank, the whole of it once
+// one flank pair touches. The walk is counter-clockwise, so the tooth lies left of both flanks.
 use std
 use crown.rounding
 
@@ -36,8 +43,15 @@ component RackSection(lp: point, rp: point, design: group, normal_module: Length
             line inner(ij, bi) -> close
   base angle(90deg + design.pressure - design.shift) outer
   base angle(270deg - design.pressure - design.shift) inner
-  lp on inner
-  rp on outer
+  // Each flank a quarter of the backlash outside its shared line; with none, on it.
+  repeat design.lashed {
+    lp distance(design.backlash / 4, side: left) inner
+    rp distance(design.backlash / 4, side: left) outer
+  }
+  repeat 1 - design.lashed {
+    lp on inner
+    rp on outer
+  }
   rounding: TipRounding(pitch, base, tip, outer_round, inner_round, design,
     normal_module: normal_module)
 }
@@ -48,7 +62,7 @@ preview {
   // eight tenths of the cone distance; crown.svd draws it.
   param pitch_radius = 0.8 * 2mm * hypot(24, 48) / 2
   group proportions(pressure: 20deg, shift: 0deg,
-                    base: 1, dedendum: 1, rounding: 0.3)
+                    base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0)
   point lp hint(x: pitch_radius - 1.3mm, y: 0)
   point rp hint(x: pitch_radius + 1.3mm, y: 0)
   std.origin distance(pitch_radius - 1.3mm, along: right) lp

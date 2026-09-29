@@ -14,6 +14,7 @@ use crown.tooth
 use crown.mate
 use crown.reach
 use crown.space
+use crown.relief
 use generation
 
 // `normal_module` is left unbound by the caller: the trace constructs it, and every
@@ -41,6 +42,13 @@ component HypoidLayout(front: plane, design: group, normal_module: Length) {
   generation: Generation(gear, pinion, thickness)
   construction gear_space: ComplementarySpace(mate.axis, mate.outer, mate.inner,
     generation.crown_neighbor, reach.cap) in n.view
+  // The tip relief's cutters, where the design asks for one (`relieved`, 1 or 0).
+  repeat design.relieved {
+    construction tooth_relief: ToothRelief(tooth, reach.cap, design,
+      normal_module: normal_module) in n.view
+    construction space_relief: SpaceRelief(mate.axis, mate.outer, mate.inner,
+      generation.crown_neighbor, reach.cap, design, normal_module: normal_module) in n.view
+  }
   group pinion_design(heel: pinion_blank.heel.wall.solid, toe: pinion_blank.toe.wall.solid,
     tip: pinion_blank.tip.wall.solid, root: pinion_blank.root.wall.solid,
     back: pinion_blank.back.wall.solid,

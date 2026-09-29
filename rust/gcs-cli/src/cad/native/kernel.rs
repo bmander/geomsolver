@@ -23,6 +23,11 @@ extern "C" {
     fn solvent_cad_face_seams(cad: *mut c_void,face: c_int,axes: *mut c_int) -> c_int;
     fn solvent_cad_curve_point(cad: *mut c_void,edge: c_int,t: f64,output: *mut f64) -> c_int;
     fn solvent_cad_surface_feet(cad: *mut c_void,face: c_int,points: *const f64,count: c_int,output: *mut f64) -> c_int;
+    fn solvent_cad_surface_feet_near(cad: *mut c_void,face: c_int,points: *const f64,guesses: *const f64,count: c_int,
+        trust: f64,output: *mut f64) -> c_int;
+    fn solvent_cad_read_step(cad: *mut c_void,path: *const c_char) -> c_int;
+    fn solvent_cad_face_kind(cad: *mut c_void,face: c_int) -> c_int;
+    fn solvent_cad_surface_grid(cad: *mut c_void,face: c_int,nu: c_int,nv: c_int,output: *mut f64) -> c_int;
 }
 
 /// One cell of a partition, its volume, and its deepest interior sample.
@@ -85,10 +90,16 @@ impl Session {
         self.result(unsafe { solvent_cad_place(self.0,source,matrix.as_ptr()) })
     }
     /// Interpolate a row-major grid of points as a B-spline face with chord-length
-    /// parameters, which keep uneven row spacing from overshooting.
+    /// parameters, which keep uneven row spacing from overshooting where the columns space
+    /// their rows alike: each row's parameter is averaged over the columns. A sheet held to a
+    /// tolerance is also fitted with centripetal parameters (`fit_sheet_with`, 2).
     pub(crate) fn fit_sheet(&self,points: &[[f64;3]],rows: usize,columns: usize) -> Result<c_int,String> {
+        self.fit_sheet_with(points,rows,columns,1)
+    }
+    /// The same with OCCT's parametrization by number: 0 even, 1 chord length, 2 centripetal.
+    pub(crate) fn fit_sheet_with(&self,points: &[[f64;3]],rows: usize,columns: usize,parametrization: c_int) -> Result<c_int,String> {
         if points.len() != rows*columns { return Err("sheet grid size mismatch".into()); }
-        self.result(unsafe { solvent_cad_bspline_face_with(self.0,points.as_ptr().cast(),rows as c_int,columns as c_int,1) })
+        self.result(unsafe { solvent_cad_bspline_face_with(self.0,points.as_ptr().cast(),rows as c_int,columns as c_int,parametrization) })
     }
     /// Section a solid by the half-plane through `origin` containing `axis` on the
     /// `side` direction: (edge handle, 1-based face index in `faces(solid)`)
@@ -118,9 +129,25 @@ impl Session {
         self.result(unsafe { solvent_cad_step(self.0,solid,name.as_ptr()) })?;
         Ok(())
     }
-    pub(crate) fn stl(&self,solid: c_int,path: &str) -> Result<(),String> {
+    /// The mesh an export writes without a stated tolerance: 0.01 mm absolute deflection and
+    /// 0.2 rad angular.
+    pub(crate) fn stl(&self,solid: c_int,path: &str) -> Result<(),String> { self.stl_with(solid,path,0.01,0.2) }
+    /// Mesh a shape afresh at an absolute chordal `deflection` (mm) and an `angular` one (radians).
+    pub(crate) fn remesh(&self,solid: c_int,deflection: f64,angular: f64) -> Result<(),String> {
+        self.result(unsafe { solvent_cad_remesh(self.0,solid,deflection,angular) }).map(|_| ())
+    }
+    /// The chordal sag a meshed shape has (mm), read at its triangles' centroids and edge midpoints
+    /// against each face's surface at the same parameters, and where it is largest.
+    pub(crate) fn mesh_sag(&self,solid: c_int) -> Result<(f64,[f64;3]),String> {
+        let mut data = [0.;4];
+        self.result(unsafe { solvent_cad_mesh_sag(self.0,solid,data.as_mut_ptr()) })?;
+        Ok((data[0],[data[1],data[2],data[3]]))
+    }
+    /// An STL meshed at an absolute chordal `deflection` (mm) and an `angular` one (radians); a
+    /// shape already meshed at least as finely keeps its mesh.
+    pub(crate) fn stl_with(&self,solid: c_int,path: &str,deflection: f64,angular: f64) -> Result<(),String> {
         let name = CString::new(path).map_err(|e| e.to_string())?;
-        self.result(unsafe { solvent_cad_stl(self.0,solid,name.as_ptr()) })?;
+        self.result(unsafe { solvent_cad_stl(self.0,solid,name.as_ptr(),deflection,angular) })?;
         Ok(())
     }
     pub(crate) fn faces(&self,source: c_int) -> Result<Vec<c_int>,String> {
@@ -154,11 +181,43 @@ impl Session {
         self.result(unsafe { solvent_cad_curve_point(self.0,edge,t,p.as_mut_ptr()) })?;
         Ok(p)
     }
+    /// A STEP file's shape, read as it was written: nothing validated or repaired.
+    pub(crate) fn read_step(&self,path: &str) -> Result<c_int,String> {
+        let name = CString::new(path).map_err(|e| e.to_string())?;
+        self.result(unsafe { solvent_cad_read_step(self.0,name.as_ptr()) })
+    }
+    /// The kind of a face's supporting surface, in OCCT's `GeomAbs_SurfaceType` order.
+    pub(crate) fn face_kind(&self,face: c_int) -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_face_kind(self.0,face) })
+    }
+    /// A face's supporting surface on an even `nu` x `nv` grid over its UV box (u first): each
+    /// point's position and oriented unit normal, without a trim test.
+    pub(crate) fn surface_grid(&self,face: c_int,nu: usize,nv: usize) -> Result<Vec<([f64;3],[f64;3])>,String> {
+        let mut data = vec![0.;6*nu*nv];
+        self.result(unsafe { solvent_cad_surface_grid(self.0,face,nu as c_int,nv as c_int,data.as_mut_ptr()) })?;
+        Ok(data.chunks(6).map(|d| ([d[0],d[1],d[2]],[d[3],d[4],d[5]])).collect())
+    }
     /// For each point, the face's support normal (unoriented) at its nearest foot and the
     /// distance to it; None where no foot is found.
     pub(crate) fn surface_feet(&self,face: c_int,points: &[[f64;3]]) -> Result<Vec<Option<([f64;3],f64)>>,String> {
         let mut data = vec![0.;4*points.len()];
         self.result(unsafe { solvent_cad_surface_feet(self.0,face,points.as_ptr().cast(),points.len() as c_int,data.as_mut_ptr()) })?;
-        Ok((0..points.len()).map(|i| data[4*i+3].is_finite().then(|| ([data[4*i],data[4*i+1],data[4*i+2]],data[4*i+3]))).collect())
+        Ok(feet(&data))
     }
+    /// The same, each point's foot searched from a guess (`u`, `v` as fractions of the face's UV
+    /// box, NaN for none), falling back to the global search where the local one does not improve
+    /// on the guess or lands farther than `trust` (mm).
+    pub(crate) fn surface_feet_near(&self,face: c_int,points: &[[f64;3]],guesses: &[[f64;2]],trust: f64)
+        -> Result<Vec<Option<([f64;3],f64)>>,String> {
+        if guesses.len() != points.len() { return Err("one guess a point".into()); }
+        let mut data = vec![0.;4*points.len()];
+        self.result(unsafe { solvent_cad_surface_feet_near(self.0,face,points.as_ptr().cast(),guesses.as_ptr().cast(),
+            points.len() as c_int,trust,data.as_mut_ptr()) })?;
+        Ok(feet(&data))
+    }
+}
+
+/// The feet the kernel wrote, four doubles a point: the normal and the distance, NaN for none.
+fn feet(data: &[f64]) -> Vec<Option<([f64;3],f64)>> {
+    data.chunks(4).map(|d| d[3].is_finite().then(|| ([d[0],d[1],d[2]],d[3]))).collect()
 }

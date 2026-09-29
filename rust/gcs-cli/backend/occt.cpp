@@ -22,6 +22,12 @@
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <Poly_Triangulation.hxx>
+#include <BRepTools.hxx>
+#include <Geom_Surface.hxx>
+#include <GeomAdaptor_Surface.hxx>
+#include <Extrema_GenLocateExtPS.hxx>
+#include <Extrema_POnSurf.hxx>
+#include <Precision.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
 #include <Standard_Failure.hxx>
@@ -248,13 +254,87 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
         return 0;
     });
 }
-int solvent_cad_stl(Cad* cad,int id,const char* path) noexcept {
+// Read a STEP file's shape into the session, for a meter measuring what was written; nothing
+// is validated or repaired, since the file is what is being judged.
+int solvent_cad_read_step(Cad* cad,const char* path) noexcept {
     return guarded(cad,[&] {
+        struct LogStream {
+            std::streambuf* old = std::cout.rdbuf(std::cerr.rdbuf());
+            ~LogStream() { std::cout.rdbuf(old); }
+        } log_stream;
+        if (!path) throw std::runtime_error("STEP read needs a path");
+        STEPControl_Reader reader;
+        if (reader.ReadFile(path) != IFSelect_RetDone || !reader.TransferRoots())
+            throw std::runtime_error(std::string("cannot read STEP file ")+path);
+        auto shape = reader.OneShape();
+        if (shape.IsNull()) throw std::runtime_error("STEP file holds no shape");
+        return cad->put(shape);
+    });
+}
+// Mesh a shape afresh at an absolute `deflection` (mm) and an `angular` one (radians), dropping
+// any triangulation it had, so a finer mesh replaces a coarser one.
+int solvent_cad_remesh(Cad* cad,int id,double deflection,double angular) noexcept {
+    return guarded(cad,[&] {
+        if (!std::isfinite(deflection) || deflection <= 0 || !std::isfinite(angular) || angular <= 0)
+            throw std::runtime_error("meshing needs a positive deflection and angle");
         cad->validated(id);
         auto& shape = cad->at(id);
-        // Absolute millimetres, matching the native construction recipe. These
-        // are tessellator controls, not an end-to-end geometry error certificate.
-        BRepMesh_IncrementalMesh mesher(shape,0.01,false,0.2,false);
+        BRepTools::Clean(shape);
+        BRepMesh_IncrementalMesh mesher(shape,deflection,false,angular,false);
+        if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        return 0;
+    });
+}
+// The chordal sag a meshed shape actually has: over every face's triangles, the largest distance
+// from a point linear in a triangle (its centroid, its edges' midpoints) to the face's surface,
+// found by a local search from the surface parameters linear in the triangle; where that search
+// fails, the distance to the surface at those parameters, which is no smaller. `output`: that
+// distance (mm) and where the linear point is.
+int solvent_cad_mesh_sag(Cad* cad,int id,double* output) noexcept {
+    return guarded(cad,[&] {
+        if (!output) throw std::runtime_error("mesh sag needs an output buffer");
+        double worst = 0; gp_Pnt at;
+        for (TopExp_Explorer it(cad->at(id),TopAbs_FACE); it.More(); it.Next()) {
+            const TopoDS_Face face = TopoDS::Face(it.Current());
+            TopLoc_Location location,placed;
+            auto triangles = BRep_Tool::Triangulation(face,location);
+            if (triangles.IsNull() || triangles->NbTriangles() == 0) throw std::runtime_error("mesh sag of an unmeshed face");
+            if (!triangles->HasUVNodes()) throw std::runtime_error("a face's triangulation has no surface parameters");
+            auto surface = BRep_Tool::Surface(face,placed);
+            GeomAdaptor_Surface adaptor(surface);
+            Extrema_GenLocateExtPS local(adaptor,Precision::PConfusion(),Precision::PConfusion());
+            const gp_Trsf mesh = location.Transformation(),support = placed.Transformation(),back = support.Inverted();
+            for (int t=1;t<=triangles->NbTriangles();++t) {
+                int n[3]; triangles->Triangle(t).Get(n[0],n[1],n[2]);
+                gp_Pnt p[3]; gp_Pnt2d uv[3];
+                for (int k=0;k<3;++k) { p[k] = triangles->Node(n[k]).Transformed(mesh); uv[k] = triangles->UVNode(n[k]); }
+                const double weights[4][3] = {{1./3,1./3,1./3},{0.5,0.5,0},{0,0.5,0.5},{0.5,0,0.5}};
+                for (const auto& w: weights) {
+                    gp_XYZ linear(0,0,0); gp_XY param(0,0);
+                    for (int k=0;k<3;++k) { linear += w[k]*p[k].XYZ(); param += w[k]*uv[k].XY(); }
+                    const gp_Pnt point(linear),local_point = point.Transformed(back);
+                    double d = surface->Value(param.X(),param.Y()).Distance(local_point);
+                    try {
+                        local.Perform(local_point,param.X(),param.Y());
+                        if (local.IsDone()) d = std::min(d,std::sqrt(local.SquareDistance()));
+                    } catch (const Standard_Failure&) {}
+                    if (d > worst) { worst = d; at = point; }
+                }
+            }
+        }
+        output[0] = worst; output[1] = at.X(); output[2] = at.Y(); output[3] = at.Z();
+        return 0;
+    });
+}
+// `deflection` is absolute millimetres, matching the native construction recipe, and `angular`
+// radians. These are tessellator controls, not an end-to-end geometry error certificate.
+int solvent_cad_stl(Cad* cad,int id,const char* path,double deflection,double angular) noexcept {
+    return guarded(cad,[&] {
+        if (!std::isfinite(deflection) || deflection <= 0 || !std::isfinite(angular) || angular <= 0)
+            throw std::runtime_error("STL meshing needs a positive deflection and angle");
+        cad->validated(id);
+        auto& shape = cad->at(id);
+        BRepMesh_IncrementalMesh mesher(shape,deflection,false,angular,false);
         if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
         for (TopExp_Explorer it(shape,TopAbs_FACE); it.More(); it.Next()) {
             TopLoc_Location location;

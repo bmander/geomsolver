@@ -34,7 +34,7 @@ pub fn export_refine(sk: &gcs_core::model::Sketch,solid: usize,path: &str) -> Re
     super::output::check_stl(&bytes,"the refined STL fails its shell check").at(Stage::Stl)?;
     staged.write(path,"stl",&bytes).at(Stage::Stl)?;
     super::mark(Stage::Stl);
-    super::output::field_agreement(sk,solid,&bytes)?;
+    super::output::field_agreement(sk,solid,&bytes,None)?;
     staged.commit().at(Stage::Written)?;
     super::mark(Stage::Written);
     Ok(())

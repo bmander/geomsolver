@@ -35,5 +35,5 @@ name = "core"
 path = "tests/main.rs"
 
 [features]
-# The slow tier: tests of a minute or more, run by `make test-slow`.
+# The slow tier: tests of ten seconds or more, run by `make test-slow`.
 slow = []

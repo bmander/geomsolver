@@ -6,12 +6,14 @@
 //! how. What is here: every root of a sampled point's contact equation, a station's contact
 //! curve traced through the plane of walk length and time (turning at a fold of the time chart,
 //! where the envelope carries on though the walk turns back), and the sheet whose columns are
-//! those curves, resampled, with a withheld contact at the centre of every cell. Positions are
-//! native millimetres, `scale` of them a model unit; the contact math runs in model units.
+//! those curves, resampled, with a withheld contact at the centre of every cell (and at the
+//! middles of its sides, for a sheet held to a tolerance and refined where its fit misses:
+//! `Layout`, `Grid`, `marked`). Positions are native millimetres, `scale` of them a model unit;
+//! the contact math runs in model units.
 use super::SweepContacts;
 use super::sweep_contacts::PointContactError;
 use crate::space::{scale as scaled,distance};
-use std::{cell::RefCell,collections::BTreeMap,f64::consts::TAU,fmt};
+use std::{cell::RefCell,collections::BTreeMap,f64::consts::TAU,fmt,rc::Rc};
 
 type V = [f64;3];
 
@@ -88,6 +90,18 @@ pub struct Station<'a> {
 #[derive(Clone,Copy,Debug)]
 pub struct Band { pub stations: [f64;2],pub radius: f64 }
 
+/// Where a sheet's rows fall along each column's contact curve, between the same two unfolded
+/// walk lengths at its ends. `Walk`: at even unfolded walk lengths, one grid for every column.
+/// `Length`: at even lengths in space along each column's own curve. Where the envelope stretches
+/// unevenly along the profile (a cutter's round generating a long fillet beside a flank whose
+/// contacts crowd) and the stretch begins on different rows in different columns, walk-length rows
+/// give the columns chord-length parameters their average cannot follow, and the fitted face pleats
+/// between rows; length rows are even in every column. Where a column's curve runs far in space
+/// outside the blank, length rows leave its rows in the blank sparse against its neighbours', and
+/// walk-length rows are the ones that hold.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Rows { Walk,Length }
+
 /// A candidate sheet: contact positions on a row-major grid with the outward
 /// normal of the cutter at each contact, in native millimetres.
 #[derive(Debug)]
@@ -98,9 +112,13 @@ pub struct Sheet {
     pub times: Vec<f64>,
     pub rows: usize,
     pub columns: usize,
-    /// Contacts at the centre of every grid cell, withheld from the fit, with their normals.
+    /// Contacts withheld from the fit (`Withheld`), with their normals.
     pub withheld: Vec<V>,
     pub withheld_normals: Vec<V>,
+    /// Where each withheld contact is, in half rows and half columns: `[2r+1, 2c+1]` the centre
+    /// of the cell after node `(r, c)`, `[2r+1, 2c]` the middle of column `c`'s step from row `r`,
+    /// `[2r, 2c+1]` the middle of row `r`'s step from column `c`.
+    pub sites: Vec<[usize;2]>,
 }
 
 impl Sheet {
@@ -129,6 +147,37 @@ impl Sheet {
         }
         Ok(faults.first().map(|f| format!("{f} ({} such steps in the blank, over {} columns)",faults.len(),self.columns)))
     }
+
+    /// The shortest side, in space, of the cells a withheld contact's site touches: the spacing
+    /// of the nodes the fit's error there is spread between.
+    pub fn spacing(&self,site: [usize;2]) -> f64 {
+        let cells = |i: usize,n: usize| -> Vec<usize> {
+            if i%2 == 1 { vec![i/2] } else { [(i/2).checked_sub(1),(i/2+1 < n).then_some(i/2)].into_iter().flatten().collect() }
+        };
+        let at = |r: usize,c: usize| self.points[r*self.columns+c];
+        let mut least = f64::INFINITY;
+        for r in cells(site[0],self.rows) { for c in cells(site[1],self.columns) {
+            for d in [distance(at(r,c),at(r+1,c)),distance(at(r,c+1),at(r+1,c+1)),distance(at(r,c),at(r,c+1)),distance(at(r+1,c),at(r+1,c+1))] {
+                least = least.min(d);
+            }
+        } }
+        least
+    }
+}
+
+/// The rows `[first, last]` a sheet keeps of its resampled columns, given each column's contact
+/// times and whether each contact lies in the blank, row by row: every row holding a contact in
+/// the blank, and outward from those, rows while no column's contact time leaps between
+/// consecutive rows by `STEP_TIME` or more (the same root a turn away, or another root). A sheet
+/// with no contact in the blank keeps every row.
+pub fn charted(times: &[Vec<f64>],within: &[Vec<bool>]) -> [usize;2] {
+    let rows = times.first().map_or(0,Vec::len);
+    let held: Vec<usize> = (0..rows).filter(|&r| within.iter().any(|c| c[r])).collect();
+    let (Some(&low),Some(&high)) = (held.first(),held.last()) else { return [0,rows.saturating_sub(1)] };
+    let leaps = |r: usize| times.iter().any(|c| (c[r]-c[r-1]).abs() >= STEP_TIME);
+    let first = (1..=low).rev().find(|&r| leaps(r)).unwrap_or(0);
+    let last = (high+1..rows).find(|&r| leaps(r)).map_or(rows-1,|r| r-1);
+    [first,last]
 }
 
 /// A walk along a contact curve so far: its points, its length in the blank, how far it has run outside
@@ -358,6 +407,38 @@ impl Tracer<'_> {
         }).collect()
     }
 
+    /// A traced contact curve's positions between unfolded walk lengths `lo` and `hi`, ends included.
+    fn stretch(&self,station: &Station,curve: &[Point],lo: f64,hi: f64) -> Result<Vec<(f64,V)>,TraceError> {
+        let ends = self.along(station,curve,&[lo,hi])?;
+        let mut path = vec![(lo,ends[0].position)];
+        path.extend(curve.iter().filter(|p| p.tau > lo && p.tau < hi).map(|p| (p.tau,p.found.position)));
+        path.push((hi,ends[1].position));
+        Ok(path)
+    }
+
+    /// The length in space of a traced contact curve between unfolded walk lengths `lo` and `hi`.
+    fn length(&self,station: &Station,curve: &[Point],lo: f64,hi: f64) -> Result<f64,TraceError> {
+        let path = self.stretch(station,curve,lo,hi)?;
+        Ok(path.windows(2).map(|w| distance(w[0].1,w[1].1)).sum())
+    }
+
+    /// Contacts of a traced curve at fractions of its length in space between unfolded walk lengths
+    /// `lo` and `hi`: the walk length at each is interpolated along the curve's points.
+    fn at_lengths(&self,station: &Station,curve: &[Point],lo: f64,hi: f64,fractions: &[f64]) -> Result<Vec<Found>,TraceError> {
+        let path = self.stretch(station,curve,lo,hi)?;
+        let mut cumulative = vec![0.];
+        for w in path.windows(2) { cumulative.push(cumulative.last().unwrap()+distance(w[0].1,w[1].1)); }
+        let total = *cumulative.last().unwrap();
+        let taus: Vec<f64> = fractions.iter().map(|f| {
+            let l = f*total;
+            let k = cumulative.partition_point(|c| *c < l).clamp(1,path.len()-1);
+            let (a,b) = (cumulative[k-1],cumulative[k]);
+            let t = if b > a { ((l-a)/(b-a)).clamp(0.,1.) } else { 0. };
+            path[k-1].0+(path[k].0-path[k-1].0)*t
+        }).collect();
+        self.along(station,curve,&taus)
+    }
+
     /// Whether any contact of the station, within the declared roll, lies in the blank.
     fn reaches(&self,station: &Station) -> Result<bool,TraceError> {
         let h = ROW_SPACING/4.;
@@ -372,15 +453,25 @@ impl Tracer<'_> {
         Ok(!held.is_empty() && (self.inside)(&held)?.iter().any(|b| *b))
     }
 
-    /// The candidate sheet over the band with the given margins, one chart of the envelope:
-    /// each column is a station's traced contact curve, resampled evenly by arc length, so a
-    /// fold of the time chart is walked through rather than jumped. A contact is withheld at the
-    /// centre of every cell (the mid-angle station's curve at each row's mid length). The band's
-    /// ends first move outward until the station there has no contact in the blank within the
-    /// declared roll anywhere on its loop, since the band was sampled coarsely. `station_at`
-    /// is the host's section of the cutter at a station angle.
+    /// The candidate sheet over the band with the given margins, one chart of the envelope, on
+    /// its first grid with a withheld contact at the centre of every cell: `layout`'s.
     pub fn sheet<'s>(&self,station_at: &dyn Fn(f64) -> Result<Station<'s>,TraceError>,band: Band,margin: f64,
-        station_margin: f64) -> Result<Sheet,TraceError> {
+        station_margin: f64,placement: Rows) -> Result<Sheet,TraceError> {
+        let layout = self.layout(station_at,band,margin,station_margin,placement)?;
+        layout.sheet(&layout.grid,Withheld::Centres)
+    }
+
+    /// The stations of a candidate sheet over the band with the given margins, traced once and
+    /// kept to evaluate the sheet on any grid over them (`Layout::sheet`): each column is a
+    /// station's traced contact curve, resampled evenly as `placement` says, so a fold of the
+    /// time chart is walked through rather than jumped. The first grid (`Layout::grid`) spaces
+    /// columns `COLUMN_SPACING` apart at the band's mean radius and rows `ROW_SPACING`; a
+    /// contact is withheld at the centre of every cell (the mid-angle station's curve at each
+    /// row's mid length). The band's ends first move outward until the station there has no
+    /// contact in the blank within the declared roll anywhere on its loop, since the band was
+    /// sampled coarsely. `station_at` is the host's section of the cutter at a station angle.
+    pub fn layout<'t,'s>(&'t self,station_at: &'t dyn Fn(f64) -> Result<Station<'s>,TraceError>,band: Band,margin: f64,
+        station_margin: f64,placement: Rows) -> Result<Layout<'t,'s>,TraceError> {
         let inside = self.inside;
         let step = (band.stations[1]-band.stations[0]).max(COLUMN_SPACING/band.radius);
         let [mut lo,mut hi] = band.stations;
@@ -433,19 +524,204 @@ impl Tracer<'_> {
         let taus: Vec<f64> = (0..rows).map(|r| lo_tau+(hi_tau-lo_tau)*r as f64/(rows-1) as f64).collect();
         let columns_data: Vec<Vec<Found>> = traces.iter().zip(&stations)
             .map(|(t,station)| self.along(station,&t.curve,&taus)).collect::<Result<_,_>>()?;
-        // Withheld: each mid-angle station over the same span, at mid rows.
-        let (mut withheld,mut withheld_normals) = (Vec::new(),Vec::new());
-        let middles: Vec<f64> = (0..rows-1).map(|r| lo_tau+(hi_tau-lo_tau)*(r as f64+0.5)/(rows-1) as f64).collect();
-        for c in 0..columns-1 {
-            let station = station_at(angle_of(c as f64+0.5))?;
-            let extent = Extent::Span {lo:lo_tau,hi:hi_tau,beside:Some(beside(c))};
-            let Ok(t) = self.trace(&station,margin,extent) else { continue };
-            for f in self.along(&station,&t.curve,&middles)? { withheld.push(f.position); withheld_normals.push(f.normal); }
+        // The rows run on outside the blank only while every column is still one chart: the fit's
+        // chord-length parameters are averaged over the columns, so one column's margin leaping to
+        // another root (a turn away, where a far corner's fan carries it) moves the parameters of
+        // every row, the ones in the blank included. Rows are trimmed back to before such a leap;
+        // a row holding a contact in the blank is never trimmed, the chart contract's to judge.
+        let within = inside(&columns_data.iter().flatten().map(|f| f.position).collect::<Vec<_>>())?;
+        let [first_row,last] = charted(&columns_data.iter().map(|c| c.iter().map(|f| f.time).collect()).collect::<Vec<Vec<f64>>>(),
+            &within.chunks(rows).map(<[bool]>::to_vec).collect::<Vec<_>>());
+        let middles: Vec<f64> = (0..rows-1).map(|r| lo_tau+(hi_tau-lo_tau)*(r as f64+0.5)/(rows-1) as f64)
+            .skip(first_row).take(last-first_row).collect();
+        let (lo_tau,hi_tau) = (if first_row == 0 { lo_tau } else { taus[first_row] },if last+1 == rows { hi_tau } else { taus[last] });
+        // The rows as placed: kept as resampled, or each column again at even lengths in space.
+        let (row_coordinates,row_mids) = match placement {
+            Rows::Walk => (taus[first_row..=last].to_vec(),middles),
+            Rows::Length => {
+                let longest = traces.iter().zip(&stations).map(|(t,s)| self.length(s,&t.curve,lo_tau,hi_tau))
+                    .collect::<Result<Vec<f64>,_>>()?.into_iter().fold(0_f64,f64::max);
+                let rows = ((longest/ROW_SPACING).ceil() as usize).clamp(24,240);
+                ((0..rows).map(|r| r as f64/(rows-1) as f64).collect(),(0..rows-1).map(|r| (r as f64+0.5)/(rows-1) as f64).collect())
+            }
+        };
+        let grid = Grid {rows:row_coordinates,row_mids,columns:(0..columns).map(|c| angle_of(c as f64)).collect(),
+            column_mids:(0..columns-1).map(|c| angle_of(c as f64+0.5)).collect()};
+        let mut nodes = BTreeMap::new();
+        if placement == Rows::Walk {
+            for (c,column) in columns_data.into_iter().enumerate() {
+                for (tau,f) in taus.iter().zip(column) { nodes.insert((grid.columns[c].to_bits(),tau.to_bits()),f); }
+            }
         }
-        let (mut points,mut normals,mut times) = (Vec::new(),Vec::new(),Vec::new());
-        for r in 0..rows { for column in &columns_data {
-            points.push(column[r].position); normals.push(column[r].normal); times.push(column[r].time);
+        let traced = stations.into_iter().zip(traces).enumerate().map(|(c,entry)| (grid.columns[c].to_bits(),Some(Rc::new(entry)))).collect();
+        Ok(Layout {tracer:self,station_at,placement,margin,span:[lo_tau,hi_tau],
+            beside:(0..columns).map(|c| (grid.columns[c],beside(c))).collect(),
+            stations:RefCell::new(traced),nodes:RefCell::new(nodes),grid})
+    }
+}
+
+/// Where a sheet's nodes lie and where its withheld contacts: the row coordinates (unfolded walk
+/// lengths for `Rows::Walk`, fractions of each column's length between the sheet's ends for
+/// `Rows::Length`) and the column station angles, each ascending, with the coordinate a withheld
+/// contact takes in each interval between them.
+#[derive(Clone,Debug,PartialEq)]
+pub struct Grid { pub rows: Vec<f64>,pub row_mids: Vec<f64>,pub columns: Vec<f64>,pub column_mids: Vec<f64> }
+
+/// How far one interval may be longer than its neighbour after a refinement: an interpolating
+/// spline through nodes whose spacing jumps by more rings in the long interval, and the
+/// refinement would chase its own ringing.
+const GRADING: f64 = 2.;
+
+impl Grid {
+    /// The grid with each marked interval (row intervals, then column intervals) split at its
+    /// withheld coordinate, which becomes a node (the contact withheld there, a node's), with a
+    /// withheld coordinate in the middle of each half; and further intervals split until none is
+    /// more than `GRADING` times as long as its neighbour.
+    pub fn refined(&self,rows: &[bool],columns: &[bool]) -> Grid {
+        let (r,rm) = split(&self.rows,&self.row_mids,rows);
+        let (c,cm) = split(&self.columns,&self.column_mids,columns);
+        Grid {rows:r,row_mids:rm,columns:c,column_mids:cm}
+    }
+}
+
+/// One direction of `Grid::refined`.
+fn split(nodes: &[f64],mids: &[f64],marked: &[bool]) -> (Vec<f64>,Vec<f64>) {
+    let mut marked = marked.to_vec();
+    let width = |i: usize,m: &[bool]| (nodes[i+1]-nodes[i]).abs()*if m[i] { 0.5 } else { 1. };
+    loop {
+        let mut changed = false;
+        for i in 0..marked.len() {
+            if marked[i] { continue }
+            let w = width(i,&marked);
+            let over = [i.checked_sub(1),(i+1 < marked.len()).then_some(i+1)].into_iter().flatten()
+                .any(|j| w > GRADING*width(j,&marked)*(1.+1e-9));
+            if over { marked[i] = true; changed = true; }
+        }
+        if !changed { break }
+    }
+    let (mut n,mut m) = (vec![nodes[0]],Vec::new());
+    for i in 0..mids.len() {
+        if marked[i] {
+            m.push(0.5*(nodes[i]+mids[i])); n.push(mids[i]);
+            m.push(0.5*(mids[i]+nodes[i+1]));
+        } else { m.push(mids[i]); }
+        n.push(nodes[i+1]);
+    }
+    (n,m)
+}
+
+/// Which intervals of a sheet's grid to refine, from its withheld contacts (`Sheet::sites`) and
+/// which of them miss the fit's bar: a contact at the middle of a column's step between two rows
+/// says the rows there are too far apart, one at the middle of a row's step between two columns
+/// that the columns are; one at a cell's centre whose sides said neither, that both are (a twist
+/// neither side's contact sees). Row intervals, then column intervals.
+pub fn marked(sites: &[[usize;2]],over: &[bool],rows: usize,columns: usize) -> (Vec<bool>,Vec<bool>) {
+    let (mut r,mut c) = (vec![false;rows.saturating_sub(1)],vec![false;columns.saturating_sub(1)]);
+    for (s,_) in sites.iter().zip(over).filter(|(_,o)| **o) {
+        match (s[0]%2,s[1]%2) { (1,0) => r[s[0]/2] = true, (0,1) => c[s[1]/2] = true, _ => {} }
+    }
+    let (sides_r,sides_c) = (r.clone(),c.clone());
+    for (s,_) in sites.iter().zip(over).filter(|(_,o)| **o) {
+        let (i,j) = (s[0]/2,s[1]/2);
+        if s[0]%2 == 1 && s[1]%2 == 1 && !sides_r[i] && !sides_c[j] { r[i] = true; c[j] = true; }
+    }
+    (r,c)
+}
+
+/// Which contacts a sheet withholds from its fit: one at the centre of every cell, or also one
+/// at the middle of each side of every cell (down each column between its rows, and across each
+/// row between its columns), which say which way a cell is under-sampled.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Withheld { Centres,Sides }
+
+/// A candidate sheet's traced stations, kept to evaluate the sheet on any grid over them: a
+/// station traced once (the first grid's, and each one a finer grid or a withheld contact asks
+/// for) and every contact read once.
+pub struct Layout<'t,'s> {
+    tracer: &'t Tracer<'t>,
+    station_at: &'t dyn Fn(f64) -> Result<Station<'s>,TraceError>,
+    placement: Rows,
+    margin: f64,
+    /// The rows' ends, in unfolded walk length.
+    span: [f64;2],
+    /// The first grid's column angles, each with the anchor (walk length and time) of the
+    /// station nearest it that reaches the blank: a station between two of them is traced from
+    /// the anchor of the one before it.
+    beside: Vec<(f64,(f64,f64))>,
+    /// Traced stations by angle; `None` where a withheld station could not be traced.
+    stations: RefCell<BTreeMap<u64,Option<Rc<(Station<'s>,Traced)>>>>,
+    /// Contacts read, by station angle and row coordinate.
+    nodes: RefCell<BTreeMap<(u64,u64),Found>>,
+    /// The first grid.
+    pub grid: Grid,
+}
+
+impl<'s> Layout<'_,'s> {
+    /// The station at `angle`, traced over the sheet's rows beside the anchor of the first grid's
+    /// column before it; `None` where it cannot be traced.
+    fn station(&self,angle: f64) -> Result<Option<Rc<(Station<'s>,Traced)>>,TraceError> {
+        if let Some(entry) = self.stations.borrow().get(&angle.to_bits()) { return Ok(entry.clone()); }
+        let station = (self.station_at)(angle)?;
+        let before = self.beside.partition_point(|b| b.0 <= angle).saturating_sub(1);
+        let extent = Extent::Span {lo:self.span[0],hi:self.span[1],beside:Some(self.beside[before].1)};
+        let entry = self.tracer.trace(&station,self.margin,extent).ok().map(|t| Rc::new((station,t)));
+        self.stations.borrow_mut().insert(angle.to_bits(),entry.clone());
+        Ok(entry)
+    }
+
+    /// A station's contacts at row coordinates, each read once.
+    fn at(&self,angle: f64,entry: &(Station<'s>,Traced),coordinates: &[f64]) -> Result<Vec<Found>,TraceError> {
+        let key = angle.to_bits();
+        let missing: Vec<f64> = { let nodes = self.nodes.borrow();
+            coordinates.iter().copied().filter(|x| !nodes.contains_key(&(key,x.to_bits()))).collect() };
+        if !missing.is_empty() {
+            let (station,traced) = entry;
+            let found = match self.placement {
+                Rows::Walk => self.tracer.along(station,&traced.curve,&missing)?,
+                Rows::Length => self.tracer.at_lengths(station,&traced.curve,self.span[0],self.span[1],&missing)?,
+            };
+            let mut nodes = self.nodes.borrow_mut();
+            for (x,f) in missing.iter().zip(found) { nodes.insert((key,x.to_bits()),f); }
+        }
+        let nodes = self.nodes.borrow();
+        Ok(coordinates.iter().map(|x| nodes[&(key,x.to_bits())]).collect())
+    }
+
+    /// The sheet on `grid` (the first grid, or one refined from it), withholding the contacts
+    /// `withheld` says. A node station that cannot be traced refuses the sheet; a withheld
+    /// station that cannot be traced withholds nothing.
+    pub fn sheet(&self,grid: &Grid,withheld: Withheld) -> Result<Sheet,TraceError> {
+        let (rows,columns) = (grid.rows.len(),grid.columns.len());
+        let mut data = Vec::with_capacity(columns);
+        for &angle in &grid.columns {
+            let entry = self.station(angle)?.ok_or_else(|| TraceError::Failed(format!(
+                "the sheet's station at {:.4} degrees could not be traced over its rows",angle.to_degrees())))?;
+            data.push(self.at(angle,&entry,&grid.rows)?);
+        }
+        let mut sheet = Sheet {points:Vec::new(),normals:Vec::new(),times:Vec::new(),rows,columns,
+            withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};
+        let mut hold = |f: Found,site: [usize;2]| {
+            sheet.withheld.push(f.position); sheet.withheld_normals.push(f.normal); sheet.sites.push(site);
+        };
+        // Each mid-angle station at mid rows (the cells' centres), and at the rows (the middles
+        // of the cells' sides across the columns).
+        for (c,&angle) in grid.column_mids.iter().enumerate() {
+            let Some(entry) = self.station(angle)? else { continue };
+            for (r,f) in self.at(angle,&entry,&grid.row_mids)?.into_iter().enumerate() { hold(f,[2*r+1,2*c+1]); }
+            if withheld == Withheld::Sides {
+                for (r,f) in self.at(angle,&entry,&grid.rows)?.into_iter().enumerate() { hold(f,[2*r,2*c+1]); }
+            }
+        }
+        // Each node station at mid rows: the middles of the cells' sides down the columns.
+        if withheld == Withheld::Sides {
+            for (c,&angle) in grid.columns.iter().enumerate() {
+                let entry = self.station(angle)?.expect("a node station is traced");
+                for (r,f) in self.at(angle,&entry,&grid.row_mids)?.into_iter().enumerate() { hold(f,[2*r+1,2*c]); }
+            }
+        }
+        for r in 0..rows { for column in &data {
+            sheet.points.push(column[r].position); sheet.normals.push(column[r].normal); sheet.times.push(column[r].time);
         } }
-        Ok(Sheet {points,normals,times,rows,columns,withheld,withheld_normals})
+        Ok(sheet)
     }
 }
