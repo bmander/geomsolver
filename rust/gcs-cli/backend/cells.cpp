@@ -61,6 +61,7 @@
 #include <cstring>
 #include <tuple>
 #include <BRepMesh_IncrementalMesh.hxx>
+#include <IMeshTools_Parameters.hxx>
 #include <OSD_Parallel.hxx>
 #include <Poly_Triangulation.hxx>
 #include <Poly_PolygonOnTriangulation.hxx>
@@ -947,7 +948,8 @@ int solvent_cad_copy(Cad* cad,int id) noexcept {
 // core, at an absolute `deflection` (mm) and an `angular` one (radians), and read the chordal sag
 // its faces have, the two sides' (`sides`, found as the pattern finds them) left out, since their
 // triangles are no part of the pattern's mesh. `output`: the sag (mm) and where; none, no sag read.
-int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,double deflection,double angular,
+// `interior`: the chordal deflection within its faces, where it differs from their edges'.
+int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,double deflection,double interior,double angular,
     double* output) noexcept {
     return guarded(cad,[&] {
         if (!sides) throw std::runtime_error("a sector's mesh needs its sides");
@@ -955,10 +957,24 @@ int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,dou
             throw std::runtime_error("meshing needs a positive deflection and angle");
         cad->validated(piece);
         auto& shape = cad->at(piece);
+        // `SOLVENT_DUMP_PIECE=PREFIX`: the sector and its sides written as BRep files, for a harness.
+        if (const char* dump = std::getenv("SOLVENT_DUMP_PIECE")) {
+            BRepTools::Write(shape,(std::string(dump)+"-piece.brep").c_str());
+            for (int i=0;i<2;++i) BRepTools::Write(cad->at(sides[i]),(std::string(dump)+"-side"+std::to_string(i)+".brep").c_str());
+        }
         BRepTools::Clean(shape);
         const auto started = std::chrono::steady_clock::now();
-        BRepMesh_IncrementalMesh mesher(shape,deflection,false,angular,true);
-        if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        if (!std::isfinite(interior) || interior <= 0) throw std::runtime_error("meshing needs a positive interior deflection");
+        if (interior == deflection) {
+            BRepMesh_IncrementalMesh mesher(shape,deflection,false,angular,true);
+            if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        } else {
+            IMeshTools_Parameters parameters;
+            parameters.Deflection = deflection; parameters.DeflectionInterior = interior;
+            parameters.Angle = angular; parameters.AngleInterior = angular; parameters.InParallel = true;
+            BRepMesh_IncrementalMesh mesher(shape,parameters);
+            if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        }
         if (std::getenv("SOLVENT_SECTOR_DEBUG")) fprintf(stderr,"sector: meshed at %g in %.2f s\n",deflection,
             std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count());
         if (!output) return 0;

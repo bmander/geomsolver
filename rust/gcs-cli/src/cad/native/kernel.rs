@@ -15,7 +15,7 @@ extern "C" {
     fn solvent_cad_pattern(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,angles: *const f64,count: c_int,
         sides: *const c_int,fuzzy: f64) -> c_int;
     fn solvent_cad_pattern_check(cad: *mut c_void,id: c_int) -> c_int;
-    fn solvent_cad_sector_mesh(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,deflection: f64,angular: f64,
+    fn solvent_cad_sector_mesh(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,deflection: f64,interior: f64,angular: f64,
         output: *mut f64) -> c_int;
     fn solvent_cad_sector_stl(cad: *mut c_void,piece: c_int,sides: *const c_int,fuzzy: f64,origin: *const f64,axis: *const f64,
         count: c_int,pitch: f64,reach: f64,path: *const c_char,output: *mut f64) -> c_int;
@@ -121,8 +121,13 @@ impl Session {
     /// Mesh a patterned body's sector afresh, at an absolute chordal `deflection` (mm) and an
     /// `angular` one (radians), and, asked, the chordal sag its faces but the sides have (mm) and where.
     pub(crate) fn sector_mesh(&self,sector: &Patterned,deflection: f64,angular: f64,sag: bool) -> Result<Option<(f64,[f64;3])>,String> {
+        self.sector_mesh_with(sector,deflection,deflection,angular,sag)
+    }
+    /// The same, the faces' interiors meshed at their own chordal deflection (mm).
+    pub(crate) fn sector_mesh_with(&self,sector: &Patterned,deflection: f64,interior: f64,angular: f64,sag: bool)
+        -> Result<Option<(f64,[f64;3])>,String> {
         let mut data = [0.;4];
-        self.result(unsafe { solvent_cad_sector_mesh(self.0,sector.piece,sector.sides.as_ptr(),sector.fuzzy,deflection,angular,
+        self.result(unsafe { solvent_cad_sector_mesh(self.0,sector.piece,sector.sides.as_ptr(),sector.fuzzy,deflection,interior,angular,
             if sag { data.as_mut_ptr() } else { std::ptr::null_mut() }) })?;
         Ok(sag.then(|| (data[0],[data[1],data[2],data[3]])))
     }

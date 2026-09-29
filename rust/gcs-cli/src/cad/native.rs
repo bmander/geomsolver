@@ -282,7 +282,11 @@ impl Session {
                 self.result(unsafe { solvent_cad_validate(self.0,id) })?;
                 Ok(id)
             };
+            let clock = std::time::Instant::now();
             let id = make().map_err(|e| format!("{}: {e}",field(node,"name").as_str()))?;
+            if std::env::var_os("SOLVENT_CONSTRUCT_DEBUG").is_some() {
+                eprintln!("construct: `{}` ({}) in {:?}",field(node,"name").as_str(),field(node,"kind").as_str(),clock.elapsed());
+            }
             shapes.insert(field(node,"id").as_i64(),id);
         }
         Ok(shapes[&field(recipe,"root").as_i64()])

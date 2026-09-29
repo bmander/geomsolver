@@ -132,15 +132,16 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             // The sector's mesh turned into its copies, its seam points paired within `reach`; where the
             // mesher put the two sides' points unlike each other (the pairing refused), meshed again a tenth
             // finer, at most `SEAM_TRIES` times, each finer mesh's sag read again where a `bar` holds it.
-            let turned_copies = |sector: &native::kernel::Patterned,mut deflection: f64,angular: f64,reach: f64,bar: Option<f64>,path: &str|
+            let turned_copies = |sector: &native::kernel::Patterned,mut deflection: f64,mut interior: f64,angular: f64,reach: f64,bar: Option<f64>,
+                path: &str|
                 -> Result<(usize,f64,f64),String> {
                 for tries in 1.. {
                     match session.sector_stl(sector,reach,path) {
                         Ok((triangles,moved)) => return Ok((triangles,moved,deflection)),
                         Err(e) if e.starts_with("the sector's mesh") && tries < SEAM_TRIES => {
-                            deflection *= 0.9;
+                            deflection *= 0.9; interior *= 0.9;
                             stage(&format!("the sector's seams did not pair ({e}); meshing it again at {:.2} µm",deflection*1e3));
-                            match (session.sector_mesh(sector,deflection,angular,bar.is_some())?,bar) {
+                            match (session.sector_mesh_with(sector,deflection,interior,angular,bar.is_some())?,bar) {
                                 (Some((sag,at)),Some(bar)) if sag > bar => return Err(format!("the mesh sags {:.2} µm at {:?} meshed \
                                     again for its seams, against {:.2} µm",sag*1e3,at.map(|x| (x*1e3).round()/1e3),bar*1e3)),
                                 _ => {}
@@ -156,20 +157,26 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                     let Some(sector) = &sector else { return session.stl(solid,path) };
                     let started = std::time::Instant::now();
                     session.sector_mesh(sector,0.01,0.2,false)?;
-                    let (triangles,moved,_) = turned_copies(sector,0.01,0.2,GROSS_SEAM,None,path)?;
+                    let (triangles,moved,_) = turned_copies(sector,0.01,0.01,0.2,GROSS_SEAM,None,path)?;
                     stage(&format!("meshed one sector and turned it into {} copies: {triangles} triangles, seam points moved {:.3} µm \
                         at most onto their partners ({:?})",sector.count,moved*1e3,started.elapsed()));
                     return Ok(());
                 };
-                let mut deflection = t.deflection();
+                // A sector meshed again finer has its edges made finer by what its sag asks and its faces'
+                // interiors by half as much: the sag the mesher leaves is mostly its edges' chords (the
+                // 10 µm pinion's fillet: 31 µm at 5 µm, 7.7 µm with only its edges at a quarter of that,
+                // under 4 µm with its interiors at half; at a quarter all through, the same within the bar
+                // and 25% more triangles).
+                let (mut deflection,mut interior) = (t.deflection(),t.deflection());
                 let what = if sector.is_some() { "one sector" } else { "the solid" };
                 for round in 0.. {
                     let started = std::time::Instant::now();
                     let (sag,at) = match &sector {
-                        Some(sector) => session.sector_mesh(sector,deflection,ANGULAR,true)?.expect("a sag asked for"),
+                        Some(sector) => session.sector_mesh_with(sector,deflection,interior,ANGULAR,true)?.expect("a sag asked for"),
                         None => { session.remesh(solid,deflection,ANGULAR)?; session.mesh_sag(solid)? }
                     };
-                    stage(&format!("meshed {what} at {:.2} µm deflection: it sags {:.2} µm at most, at {:?}, against {:.2} µm ({:?})",
+                    let within = if interior != deflection { format!(" ({:.2} µm within its faces)",interior*1e3) } else { String::new() };
+                    stage(&format!("meshed {what} at {:.2} µm deflection{within}: it sags {:.2} µm at most, at {:?}, against {:.2} µm ({:?})",
                         deflection*1e3,sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,started.elapsed()));
                     if sag <= t.deflection() { break }
                     if round+1 == MOST_MESHES {
@@ -177,12 +184,14 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                             the {} µm tolerance",sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,t.millimetres*1e3));
                     }
                     // sag goes as the deflection where the mesher heeds it; never more than a quarter at once
-                    deflection *= (0.8*t.deflection()/sag).max(0.25);
+                    let finer = (0.8*t.deflection()/sag).max(0.25);
+                    deflection *= finer;
+                    interior = if sector.is_some() { (interior*2.*finer).min(interior) } else { deflection };
                 }
                 match &sector {
                     Some(sector) => {
                         let started = std::time::Instant::now();
-                        let (triangles,moved,_) = turned_copies(sector,deflection,ANGULAR,deflection,Some(t.deflection()),path)?;
+                        let (triangles,moved,_) = turned_copies(sector,deflection,interior,ANGULAR,deflection,Some(t.deflection()),path)?;
                         stage(&format!("turned the sector's mesh into {} copies: {triangles} triangles, seam points moved {:.3} µm at \
                             most onto their partners ({:?})",sector.count,moved*1e3,started.elapsed()));
                         Ok(())
