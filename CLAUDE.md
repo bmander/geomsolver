@@ -375,7 +375,7 @@ otherwise `Sampled`, as before); such a blank is its meridian section turned onc
 body's field agreement turns each probe into one sector and reads the cuts not proved positive over its
 box (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whole`); a STEP model's
 entities are formatted on every core, the kernel's text to the byte (`SOLVENT_STEP_TEXT_CHECK`); a
-sheet's stations are traced side by side. 9–17 s a member on a loaded machine; the floor is OCCT's
+sheet's stations are traced side by side. 8.6–14.6 s a member (40–55×); the floor is OCCT's
 STEP transfer, parse and repairing read-back, its Boolean split and the cutters' Booleans.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
