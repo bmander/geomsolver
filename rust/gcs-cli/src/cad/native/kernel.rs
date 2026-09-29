@@ -6,7 +6,8 @@ use super::*;
 extern "C" {
     fn solvent_cad_split_solid(cad: *mut c_void,solid: c_int,tools: *const c_int,count: c_int) -> c_int;
     fn solvent_cad_solids(cad: *mut c_void,source: c_int,output: *mut c_int,capacity: c_int) -> c_int;
-    fn solvent_cad_solid_samples(cad: *mut c_void,id: c_int,output: *mut f64,capacity: c_int,measure: c_int) -> c_int;
+    fn solvent_cad_solids_samples(cad: *mut c_void,ids: *const c_int,count: c_int,output: *mut f64,capacity: c_int,measure: c_int,
+        written: *mut c_int) -> c_int;
     fn solvent_cad_fuse(cad: *mut c_void,ids: *const c_int,count: c_int) -> c_int;
     fn solvent_cad_revolved(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,seam: *const f64) -> c_int;
     fn solvent_cad_pattern(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,angles: *const f64,count: c_int,
@@ -79,10 +80,20 @@ impl Session {
     /// Up to `capacity` interior points of the cell with their measured distance
     /// to its boundary, farthest first, measured on at most `measure` spread
     /// candidates.
+    #[cfg(test)]
     pub(crate) fn samples(&self,solid: c_int,capacity: usize,measure: usize) -> Result<Vec<([f64;3],f64)>,String> {
-        let mut data = vec![0.;4*capacity];
-        let count = self.result(unsafe { solvent_cad_solid_samples(self.0,solid,data.as_mut_ptr(),capacity as c_int,measure as c_int) })?;
-        Ok((0..count as usize).map(|i| ([data[4*i],data[4*i+1],data[4*i+2]],data[4*i+3])).collect())
+        Ok(self.samples_of(&[solid],capacity,measure)?.pop().unwrap_or_default())
+    }
+    /// `samples` of several cells, each cell on its own core.
+    pub(crate) fn samples_of(&self,solids: &[c_int],capacity: usize,measure: usize) -> Result<Vec<Vec<([f64;3],f64)>>,String> {
+        let mut data = vec![0.;4*capacity*solids.len()];
+        let mut written = vec![0 as c_int;solids.len()];
+        self.result(unsafe { solvent_cad_solids_samples(self.0,solids.as_ptr(),solids.len() as c_int,data.as_mut_ptr(),capacity as c_int,
+            measure as c_int,written.as_mut_ptr()) })?;
+        Ok(written.iter().enumerate().map(|(k,&n)| (0..n as usize).map(|i| {
+            let d = &data[4*(capacity*k+i)..];
+            ([d[0],d[1],d[2]],d[3])
+        }).collect()).collect())
     }
     pub(crate) fn fuse(&self,ids: &[c_int]) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_fuse(self.0,ids.as_ptr(),ids.len() as c_int) })

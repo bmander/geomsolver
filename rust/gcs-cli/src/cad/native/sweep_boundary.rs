@@ -52,12 +52,13 @@ pub(crate) fn classify(session: &Session,partition: c_int,material: &mut Materia
     let (mut kept,mut removed) = (Vec::new(),Vec::new());
     let (mut sampling,mut probing,mut probes) = (0.,0.,0);
     // Each cell's volume was measured when the partition was validated; its point is the
-    // deepest interior sample measured here.
-    for solid in session.solids(partition)? {
+    // deepest interior sample measured here, every cell's on its own core.
+    let solids = session.solids(partition)?;
+    let clock = std::time::Instant::now();
+    let sampled = session.samples_of(&solids,4,12)?;
+    sampling += clock.elapsed().as_secs_f64();
+    for (solid,samples) in solids.into_iter().zip(sampled) {
         let volume = session.volume(solid)?;
-        let clock = std::time::Instant::now();
-        let samples = session.samples(solid,4,12)?;
-        sampling += clock.elapsed().as_secs_f64();
         if samples.is_empty() { return Err(format!("a cell of volume {volume} has no interior sample")); }
         let cell = Cell {solid,point:samples[0].0,volume};
         let mut verdict = None;
