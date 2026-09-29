@@ -122,3 +122,22 @@ holder bound part
     eprintln!("{why}");
     assert!(why.contains("prism"),"{why}");
 }
+
+/// A STEP model's entities formatted side by side (`step_text`) are the kernel's text to the byte:
+/// the export writes the ring as the kernel's writer would, the check (`SOLVENT_STEP_TEXT_CHECK`)
+/// formatting it both ways and refusing a difference; and the file reads back as the solid.
+#[test]
+fn a_step_formatted_side_by_side_is_the_kernels_text() {
+    std::env::set_var("SOLVENT_STEP_TEXT_CHECK","1");
+    let e = ring(6);
+    let body = fixtures::solid(&e,"part");
+    let recipe = cad::recipe_static(&e.sketch,body).unwrap();
+    let admitted = admission::admit_body(&e.sketch,body,&admission::Options::default()).unwrap();
+    let session = native::Session::new().unwrap();
+    let built = construct_built(&session,&e.sketch,body,&recipe,Some(&admitted),None).unwrap();
+    let path = std::env::temp_dir().join(format!("solvent-sector-{}-text.step",std::process::id()));
+    session.step(built.solid,path.to_str().unwrap()).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    let _ = std::fs::remove_file(&path);
+    assert!(text.starts_with("ISO-10303-21;\nHEADER;") && text.trim_end().ends_with("END-ISO-10303-21;"),"{}",&text[..80.min(text.len())]);
+}

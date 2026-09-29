@@ -367,7 +367,16 @@ agreement run on every core (`gcs_core::par`, serial on wasm, answers in order);
 thread-safe, the sweeps' sheets are built side by side and beside the blank and the admission, the STEP
 beside the mesh, each thread's lines said in order (`progress::side_by_side`/`beside`/`under`). A cutter
 of revolution is sectioned once and turned. OCCT's parallel `BRepCheck_Analyzer` is unreliable (a valid
-pinion came back invalid): `valid_solid` checks faces in separate analyzers. 12–20 s a member, from 6–13 min.
+pinion came back invalid): `valid_solid` checks faces in separate analyzers. **Phase 5:** the admission
+proves the placements alike from the solid graph when every blank operand is a full revolution about the
+indexing line or a ball centred on it (`admission::Equivalence::Revolved`, 1e-12 of the blank's size;
+otherwise `Sampled`, as before); such a blank is its meridian section turned once
+(`Session::construct_meridian`, `solvent_cad_revolve_region`; `SOLVENT_BLANK=booleans`); an indexed
+body's field agreement turns each probe into one sector and reads the cuts not proved positive over its
+box (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whole`); a STEP model's
+entities are formatted on every core, the kernel's text to the byte (`SOLVENT_STEP_TEXT_CHECK`); a
+sheet's stations are traced side by side. 9–17 s a member on a loaded machine; the floor is OCCT's
+STEP transfer, parse and repairing read-back, its Boolean split and the cutters' Booleans.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference
