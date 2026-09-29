@@ -6,6 +6,7 @@ use super::*;
 extern "C" {
     fn solvent_cad_split_solid(cad: *mut c_void,solid: c_int,tools: *const c_int,count: c_int) -> c_int;
     fn solvent_cad_solids(cad: *mut c_void,source: c_int,output: *mut c_int,capacity: c_int) -> c_int;
+    fn solvent_cad_fused_tools(cad: *mut c_void,tools: *const c_int,count: c_int) -> c_int;
     fn solvent_cad_solids_samples(cad: *mut c_void,ids: *const c_int,count: c_int,output: *mut f64,capacity: c_int,measure: c_int,
         written: *mut c_int) -> c_int;
     fn solvent_cad_fuse(cad: *mut c_void,ids: *const c_int,count: c_int) -> c_int;
@@ -70,6 +71,10 @@ pub(crate) struct FacePoint {
 impl Session {
     pub(crate) fn split_solid(&self,solid: c_int,tools: &[c_int]) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_split_solid(self.0,solid,tools.as_ptr(),tools.len() as c_int) })
+    }
+    /// Split tools split by each other, as one tool: a split by it does not intersect them again.
+    pub(crate) fn fused_tools(&self,tools: &[c_int]) -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_fused_tools(self.0,tools.as_ptr(),tools.len() as c_int) })
     }
     pub(crate) fn solids(&self,source: c_int) -> Result<Vec<c_int>,String> {
         let count = self.result(unsafe { solvent_cad_solids(self.0,source,std::ptr::null_mut(),0) })?;

@@ -6,6 +6,7 @@
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BOPAlgo_GlueEnum.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
+#include <BRepAlgoAPI_BuilderAlgo.hxx>
 #include <Message_ProgressIndicator.hxx>
 #include <Message_ProgressScope.hxx>
 #include <chrono>
@@ -206,6 +207,7 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
     return guarded(cad,[&] {
         if (!tools || count < 1 || count > 4096)
             throw std::runtime_error("solid split requires 1..4096 tools");
+        const auto checking = std::chrono::steady_clock::now();
         auto& stock = cad->at(solid);
         if (stock.IsNull() || !valid(stock))
             throw std::runtime_error("invalid stock solid");
@@ -257,10 +259,28 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
         // Every cell's volume is measured here; the cells, listed next, keep it.
         TopTools_DataMapOfShapeReal measured;
         validate_cells(checked,measured);
-        if (std::getenv("SOLVENT_SECTOR_DEBUG")) fprintf(stderr,"split: %d cells, built %.2f s, checked and measured %.2f s\n",cells,
+        if (std::getenv("SOLVENT_SECTOR_DEBUG")) fprintf(stderr,"split: its inputs checked in %.2f s; %d cells, built %.2f s, checked and measured %.2f s\n",
+            std::chrono::duration<double>(clock-checking).count(),cells,
             std::chrono::duration<double>(built-clock).count(),std::chrono::duration<double>(std::chrono::steady_clock::now()-built).count());
         cad->record(measured);
         return cad->put(result);
+    });
+}
+
+// Split tools split by each other (the general fuse of them, as the split would intersect them), as
+// one shape: a split by it skips the tools' intersections with each other, which are then made
+// here, beside other work (docs/native-speed-plan.md, phase 6). Same fuzzy value as the split.
+int solvent_cad_fused_tools(Cad* cad,const int* tools,int count) noexcept {
+    return guarded(cad,[&] {
+        if (!tools || count < 2 || count > 4096) throw std::runtime_error("fusing split tools needs 2..4096 of them");
+        TopTools_ListOfShape arguments;
+        for (int i=0;i<count;++i) arguments.Append(cad->at(tools[i]));
+        BRepAlgoAPI_BuilderAlgo fuse;
+        fuse.SetArguments(arguments);
+        fuse.SetNonDestructive(true); fuse.SetRunParallel(parallel_booleans()); fuse.SetUseOBB(Standard_True); fuse.SetFuzzyValue(1e-5);
+        fuse.Build();
+        check_algorithm(fuse,"the split tools' fuse");
+        return cad->put(fuse.Shape());
     });
 }
 

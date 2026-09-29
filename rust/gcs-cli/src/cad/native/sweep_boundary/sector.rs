@@ -108,69 +108,6 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
     if chosen.clearance < margin {
         return Err(format!("the cuts leave a gap of {:.4} mm between neighbours at least, under the {margin:.4} mm the side keeps",chosen.clearance));
     }
-    // The side, built and read back against the gaps and the material field.
-    let (s,w) = sector::section_span(frame,chosen.slices,bounds,&inside)?;
-    let (grid,rows) = chosen.grid(s,w,COLUMNS);
-    let side = session.fit_sheet(&grid,rows,COLUMNS)?;
-    let read: Vec<[f64;3]> = session.surface_grid(side,READ_BACK*rows,READ_BACK*COLUMNS)?.into_iter().map(|(p,_)| p).filter(|&p| inside(p)).collect();
-    let clear = chosen.clearance_of(&read)?;
-    if clear < margin { return Err(format!("the side as built passes {clear:.4} mm from a cut, under {margin:.4} mm")); }
-    let body_field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
-    let radius = margin/2.;
-    let deep: Vec<[f64;3]> = read.iter().copied().filter(|p| field.value(p.map(|x| x/scale))*scale < -radius).collect();
-    let step = deep.len().div_ceil(PROBES).max(1);
-    let probed_at: Vec<[f64;3]> = deep.iter().copied().step_by(step).collect();
-    // each probe on its own core, an evaluator a thread; the first to fail, in order, is the reason
-    let probes = gcs_core::par::indices_with(probed_at.len(),|| body_field.evaluator(cad::POSE_CACHE),|material,i| {
-        material.probe(probed_at[i].map(|x| Interval::point(x/scale).unwrap()),[1.,0.,0.],radius/scale,
-            Options {value_tolerance:radius/scale/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
-    });
-    let mut probed = 0;
-    for (&p,probe) in probed_at.iter().zip(probes) {
-        let probe = probe?;
-        if probe.state != ProbeState::InteriorBall {
-            return Err(format!("the material field reads the side at {:?} as {:?}, not material",p.map(|x| (x*1e3).round()/1e3),probe.state));
-        }
-        probed += 1;
-    }
-    stage(&format!("the side: {rows}x{COLUMNS} nodes, read back {clear:.4} mm clear of the cuts at {} points in the blank, \
-        {probed} of them material by the field ({:?})",read.len(),started.elapsed()));
-    // The blank between the side and its turn: its share of the blank's volume.
-    let clock = std::time::Instant::now();
-    let other = session.place(side,turn,scale)?;
-    // The blank made again about the axis, so the copies' faces on it are one parameterization
-    // turned: its volume is the blank's
-    let whole = session.volume(blank)?;
-    // its faces' parameters starting opposite the sector, so none of its faces crosses where they start
-    let across = chosen.angle_at((chosen.span[0]+chosen.span[1])/2.)+indexing.pitch()/2.+std::f64::consts::PI;
-    // A blank built from its meridian region is that region turned again, from the half-plane its
-    // parameters are to start on; any other is sectioned by that half-plane first.
-    let turned = match meridian {
-        Some(m) => {
-            let seam = frame.radial(across);
-            let angle = dot(frame.axis,cross(m.seam,seam)).atan2(dot(m.seam,seam));
-            let region = session.place(m.region,super::super::turned_about(m.origin,m.axis,angle)?,1.)?;
-            session.revolve_region(region,frame.origin,frame.axis)?
-        }
-        None => session.revolved(blank,frame.origin,frame.axis,frame.radial(across))?,
-    };
-    let again = session.volume(turned)?;
-    if (again-whole).abs() > 1e-7*whole {
-        return Err(format!("the blank turned about its axis again is {again:.9} mm³, not its {whole:.9} mm³"));
-    }
-    let debug = std::env::var_os("SOLVENT_SECTOR_DEBUG").is_some();
-    if debug { eprintln!("sector: the blank made again about its axis ({:?})",clock.elapsed()); }
-    let halves = session.split_solid(turned,&[side,other])?;
-    if debug { eprintln!("sector: the blank split by the sides ({:?})",clock.elapsed()); }
-    let cells = session.solids(halves)?;
-    let volumes = cells.iter().map(|&c| session.volume(c)).collect::<Result<Vec<_>,_>>()?;
-    let share = whole/n as f64;
-    if debug { eprintln!("sector: blank {whole:.6}, share {share:.6}, cells {volumes:.6?} ({:?})",clock.elapsed()); }
-    let Some(wedge) = cells.iter().zip(&volumes).find(|(_,v)| (*v-share).abs() <= 1e-5*whole).map(|(c,_)| *c) else {
-        return Err(format!("the sides split the blank ({whole:.6} mm³) into {} cells of {volumes:.6?} mm³, none its {share:.6} mm³ share",
-            cells.len()));
-    };
-    if cells.len() != 2 { return Err(format!("the sides split the blank into {} cells, not two",cells.len())); }
     // The placements whose cuts fall in the sector: one of each sweep.
     let mut tools = Vec::new();
     for (k,points) in cuts.iter().enumerate() {
@@ -182,33 +119,108 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         let j = indexing.indices[k].iter().position(|&i| i == index).ok_or("no placement in the sector")?;
         tools.push(session.place(sheets[k].0,poses[k][j],scale)?);
     }
-    let partition = session.split_solid(wedge,&tools)?;
-    stage(&format!("split the blank by the sides into the sector of {share:.6} mm³, and it by {} sheets into {} cells ({:?})",
-        tools.len(),session.solids(partition)?.len(),clock.elapsed()));
-    mark(Stage::Split);
-    let clock = std::time::Instant::now();
-    let (kept,removed) = classify(session,partition,&body_field)?;
-    stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),clock.elapsed()));
-    if kept.is_empty() { return Err("no cell of the sector is material".into()); }
-    let volumes = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();
-    contracts::cells(&volumes(&kept),&volumes(&removed),&vec![1;distinct.len()])?;
-    mark(Stage::Classify);
-    let clock = std::time::Instant::now();
-    let piece = session.fuse(&kept.iter().map(|c| c.solid).collect::<Vec<_>>())?;
-    let one = session.volume(piece)?;
-    debug_faces(session,"the sector's material",piece);
-    let angles: Vec<f64> = (1..n).map(|k| k as f64*indexing.pitch()).collect();
-    let part = session.pattern(piece,frame.origin,frame.axis,&angles,[side,other],FUZZY)?;
-    let volume = session.volume(part)?;
-    debug_faces(session,"the sectors united",part);
-    let [vertex,edge,_] = session.tolerances(part)?;
-    stage(&format!("united the material: {volume:.6} mm³, {} faces, tolerances {vertex:.1e}/{edge:.1e} mm, {n} sectors of {one:.6} mm³ \
-        ({:?})",session.faces(part)?.len(),clock.elapsed()));
-    // The sector's own measure carries its two sides, spline faces whose trims the split leaves
-    // within the sheets' tolerance (6e-4 mm) of meeting: a part in 1e5 of its volume.
-    if (volume-n as f64*one).abs() > 1e-4*volume {
-        return Err(format!("the sectors united are {volume:.6} mm³, not {n} times {one:.6}"));
-    }
-    mark(Stage::Fuse);
-    Ok((part,Patterned {piece,sides:[side,other],fuzzy:FUZZY,origin:frame.origin,axis:frame.axis,count:n,pitch:indexing.pitch()}))
+    // Their sheets split by each other on a thread of their own while the side and the sector's blank
+    // are made: the sector's split then skips the sheets' intersection with each other, the longest
+    // of its intersections — where every sheet fits its contacts as a fabrication export holds it (its
+    // fit share of 10 µm). A looser sheet (the pinion's at the gross bars, 15 µm) carries 0.6 µm
+    // tolerances into the union, and intersected apart they moved its volume by 2.7e-6 of itself.
+    // `SOLVENT_SECTOR_FUSE=off` splits by the sheets as they are.
+    let fusing = tools.len() > 1 && sheets.iter().all(|s| s.2 <= Tolerance::FABRICATION.fit())
+        && std::env::var("SOLVENT_SECTOR_FUSE").map_or(true,|v| v != "off");
+    std::thread::scope(|scope| {
+        let fused = fusing.then(|| scope.spawn(|| session.fused_tools(&tools)));
+        // The side, built and read back against the gaps and the material field.
+        let (s,w) = sector::section_span(frame,chosen.slices,bounds,&inside)?;
+        let (grid,rows) = chosen.grid(s,w,COLUMNS);
+        let side = session.fit_sheet(&grid,rows,COLUMNS)?;
+        let read: Vec<[f64;3]> = session.surface_grid(side,READ_BACK*rows,READ_BACK*COLUMNS)?.into_iter().map(|(p,_)| p).filter(|&p| inside(p)).collect();
+        let clear = chosen.clearance_of(&read)?;
+        if clear < margin { return Err(format!("the side as built passes {clear:.4} mm from a cut, under {margin:.4} mm")); }
+        let body_field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
+        let radius = margin/2.;
+        let deep: Vec<[f64;3]> = read.iter().copied().filter(|p| field.value(p.map(|x| x/scale))*scale < -radius).collect();
+        let step = deep.len().div_ceil(PROBES).max(1);
+        let probed_at: Vec<[f64;3]> = deep.iter().copied().step_by(step).collect();
+        // each probe on its own core, an evaluator a thread; the first to fail, in order, is the reason
+        let probes = gcs_core::par::indices_with(probed_at.len(),|| body_field.evaluator(cad::POSE_CACHE),|material,i| {
+            material.probe(probed_at[i].map(|x| Interval::point(x/scale).unwrap()),[1.,0.,0.],radius/scale,
+                Options {value_tolerance:radius/scale/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
+        });
+        let mut probed = 0;
+        for (&p,probe) in probed_at.iter().zip(probes) {
+            let probe = probe?;
+            if probe.state != ProbeState::InteriorBall {
+                return Err(format!("the material field reads the side at {:?} as {:?}, not material",p.map(|x| (x*1e3).round()/1e3),probe.state));
+            }
+            probed += 1;
+        }
+        stage(&format!("the side: {rows}x{COLUMNS} nodes, read back {clear:.4} mm clear of the cuts at {} points in the blank, \
+            {probed} of them material by the field ({:?})",read.len(),started.elapsed()));
+        // The blank between the side and its turn: its share of the blank's volume.
+        let clock = std::time::Instant::now();
+        let other = session.place(side,turn,scale)?;
+        // The blank made again about the axis, so the copies' faces on it are one parameterization
+        // turned: its volume is the blank's
+        let whole = session.volume(blank)?;
+        // its faces' parameters starting opposite the sector, so none of its faces crosses where they start
+        let across = chosen.angle_at((chosen.span[0]+chosen.span[1])/2.)+indexing.pitch()/2.+std::f64::consts::PI;
+        // A blank built from its meridian region is that region turned again, from the half-plane its
+        // parameters are to start on; any other is sectioned by that half-plane first.
+        let turned = match meridian {
+            Some(m) => {
+                let seam = frame.radial(across);
+                let angle = dot(frame.axis,cross(m.seam,seam)).atan2(dot(m.seam,seam));
+                let region = session.place(m.region,super::super::turned_about(m.origin,m.axis,angle)?,1.)?;
+                session.revolve_region(region,frame.origin,frame.axis)?
+            }
+            None => session.revolved(blank,frame.origin,frame.axis,frame.radial(across))?,
+        };
+        let again = session.volume(turned)?;
+        if (again-whole).abs() > 1e-7*whole {
+            return Err(format!("the blank turned about its axis again is {again:.9} mm³, not its {whole:.9} mm³"));
+        }
+        let debug = std::env::var_os("SOLVENT_SECTOR_DEBUG").is_some();
+        if debug { eprintln!("sector: the blank made again about its axis ({:?})",clock.elapsed()); }
+        let halves = session.split_solid(turned,&[side,other])?;
+        if debug { eprintln!("sector: the blank split by the sides ({:?})",clock.elapsed()); }
+        let cells = session.solids(halves)?;
+        let volumes = cells.iter().map(|&c| session.volume(c)).collect::<Result<Vec<_>,_>>()?;
+        let share = whole/n as f64;
+        if debug { eprintln!("sector: blank {whole:.6}, share {share:.6}, cells {volumes:.6?} ({:?})",clock.elapsed()); }
+        let Some(wedge) = cells.iter().zip(&volumes).find(|(_,v)| (*v-share).abs() <= 1e-5*whole).map(|(c,_)| *c) else {
+            return Err(format!("the sides split the blank ({whole:.6} mm³) into {} cells of {volumes:.6?} mm³, none its {share:.6} mm³ share",
+                cells.len()));
+        };
+        if cells.len() != 2 { return Err(format!("the sides split the blank into {} cells, not two",cells.len())); }
+        let tool = match fused { Some(fused) => vec![fused.join().unwrap_or_else(|e| std::panic::resume_unwind(e))?],None => tools.clone() };
+        let partition = session.split_solid(wedge,&tool)?;
+        stage(&format!("split the blank by the sides into the sector of {share:.6} mm³, and it by {} sheets into {} cells ({:?})",
+            tools.len(),session.solids(partition)?.len(),clock.elapsed()));
+        mark(Stage::Split);
+        let clock = std::time::Instant::now();
+        let (kept,removed) = classify(session,partition,&body_field)?;
+        stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),clock.elapsed()));
+        if kept.is_empty() { return Err("no cell of the sector is material".into()); }
+        let volumes = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();
+        contracts::cells(&volumes(&kept),&volumes(&removed),&vec![1;distinct.len()])?;
+        mark(Stage::Classify);
+        let clock = std::time::Instant::now();
+        let piece = session.fuse(&kept.iter().map(|c| c.solid).collect::<Vec<_>>())?;
+        let one = session.volume(piece)?;
+        debug_faces(session,"the sector's material",piece);
+        let angles: Vec<f64> = (1..n).map(|k| k as f64*indexing.pitch()).collect();
+        let part = session.pattern(piece,frame.origin,frame.axis,&angles,[side,other],FUZZY)?;
+        let volume = session.volume(part)?;
+        debug_faces(session,"the sectors united",part);
+        let [vertex,edge,_] = session.tolerances(part)?;
+        stage(&format!("united the material: {volume:.6} mm³, {} faces, tolerances {vertex:.1e}/{edge:.1e} mm, {n} sectors of {one:.6} mm³ \
+            ({:?})",session.faces(part)?.len(),clock.elapsed()));
+        // The sector's own measure carries its two sides, spline faces whose trims the split leaves
+        // within the sheets' tolerance (6e-4 mm) of meeting: a part in 1e5 of its volume.
+        if (volume-n as f64*one).abs() > 1e-4*volume {
+            return Err(format!("the sectors united are {volume:.6} mm³, not {n} times {one:.6}"));
+        }
+        mark(Stage::Fuse);
+        Ok((part,Patterned {piece,sides:[side,other],fuzzy:FUZZY,origin:frame.origin,axis:frame.axis,count:n,pitch:indexing.pitch()}))
+    })
 }
