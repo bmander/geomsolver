@@ -2,7 +2,6 @@
 //! are identities supplied by the caller, never coordinates welded by tolerance.
 //! This establishes connectivity and manifoldness, not geometric embedding,
 //! surface incidence, self-intersection freedom, outward normals or export error.
-use std::collections::BTreeMap;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Direction { Forward, Reverse }
@@ -156,21 +155,20 @@ impl ClosedShell {
     /// Index identities determine shared edges. This adapter performs no coordinate
     /// welding, T-junction repair or geometry checks on the supplied triangles.
     pub fn from_triangles(vertices: usize,triangles: &[[usize;3]]) -> Result<Self,Error> {
-        let mut edge_ids = BTreeMap::new();
-        let mut edges = vec![];
-        let mut faces = Vec::with_capacity(triangles.len());
+        // every side of every triangle, in order, its edge numbered as it first appears
+        let mut ends = Vec::with_capacity(3*triangles.len());
         for (face,&[a,b,c]) in triangles.iter().enumerate() {
             if a == b || b == c || c == a { return Err(Error::DegenerateTriangle {face}); }
-            let mut uses = Vec::with_capacity(3);
-            for (a,b) in [(a,b),(b,c),(c,a)] {
-                let ends = [a.min(b),a.max(b)];
-                let edge = *edge_ids.entry(ends).or_insert_with(|| {
-                    let e = edges.len(); edges.push(ends); e
-                });
-                uses.push(EdgeUse {edge,direction:if a < b { Direction::Forward } else { Direction::Reverse }});
-            }
-            faces.push(Face {loops:vec![uses]});
+            for (a,b) in [(a,b),(b,c),(c,a)] { ends.push([a.min(b),a.max(b)]); }
         }
+        // (vertex numbers past 48 bits, which no memory holds, would not pack)
+        if ends.iter().flatten().any(|&v| v >= 1 << 48) { return Err(Error::UnusedVertices); }
+        let (numbers,count) = crate::mesh::first_seen(&ends.iter().map(|&[a,b]| (a as u128) << 48 | b as u128).collect::<Vec<_>>());
+        let mut edges = vec![[0;2];count];
+        for (k,&e) in numbers.iter().enumerate() { edges[e] = ends[k]; }
+        let faces = triangles.iter().enumerate().map(|(face,&[a,b,c])| Face {loops:vec![[(a,b),(b,c),(c,a)].iter().enumerate()
+            .map(|(k,&(a,b))| EdgeUse {edge:numbers[3*face+k],direction:if a < b { Direction::Forward } else { Direction::Reverse }})
+            .collect()]}).collect();
         Self::new(vertices,edges,faces)
     }
 

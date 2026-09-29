@@ -385,40 +385,68 @@ pub fn stl_shells(bytes: &[u8]) -> Result<Vec<crate::topology::ClosedShell>,Stri
     }
     let mut seen = vec![false;triangles.len()];
     let mut shells = Vec::new();
+    // each shell's vertices numbered as its walk first meets them: a vertex's number, and the shell
+    // it was given it in
+    let mut local = vec![(usize::MAX,0usize);vertices];
     for start in 0..triangles.len() {
         if seen[start] { continue; }
+        let shell = shells.len();
+        let mut count = 0;
         let mut pending = vec![start];
-        let mut local = BTreeMap::new();
         let mut faces = Vec::new();
         while let Some(i) = pending.pop() {
             if seen[i] { continue; }
             seen[i] = true;
             faces.push(triangles[i].map(|v| {
                 pending.append(&mut incident[v]);
-                let next = local.len();
-                *local.entry(v).or_insert(next)
+                if local[v].1 != shell || local[v].0 == usize::MAX { local[v] = (count,shell); count += 1; }
+                local[v].0
             }));
         }
-        shells.push(crate::topology::ClosedShell::from_triangles(local.len(),&faces)
+        shells.push(crate::topology::ClosedShell::from_triangles(count,&faces)
             .map_err(|e| format!("invalid binary STL shell topology: {e:?}"))?);
     }
     Ok(shells)
 }
 
+/// Each key's number in the order the keys first appear (the numbering an ordered map's
+/// `entry(key).or_insert(len)` gives walking them), and how many distinct keys there are: by sorting,
+/// where a map pays a search a key.
+/// Keys are at most 96 bits (and fewer than 2^32 of them), each sorted with its position packed
+/// below it.
+pub(crate) fn first_seen(keys: &[u128]) -> (Vec<usize>,usize) {
+    assert!(keys.len() < 1 << 32 && keys.iter().all(|&k| k < 1 << 96),"first_seen takes 96-bit keys");
+    let mut order: Vec<u128> = keys.iter().enumerate().map(|(i,&k)| k << 32 | i as u128).collect();
+    order.sort_unstable();
+    let at = |packed: u128| (packed & 0xffff_ffff) as usize;
+    // each run of equal keys led by its first appearance
+    let mut first = vec![0usize;keys.len()];
+    let mut leaders = Vec::new();
+    let mut k = 0;
+    while k < order.len() {
+        let lead = at(order[k]);
+        leaders.push(lead);
+        let mut j = k;
+        while j < order.len() && order[j] >> 32 == order[k] >> 32 { first[at(order[j])] = lead; j += 1; }
+        k = j;
+    }
+    leaders.sort_unstable();
+    let mut number = vec![usize::MAX;keys.len()];
+    for (n,&lead) in leaders.iter().enumerate() { number[lead] = n; }
+    (first.iter().map(|&lead| number[lead]).collect(),leaders.len())
+}
+
 fn stl_indices(bytes: &[u8]) -> Result<(usize,Vec<[usize;3]>),String> {
-    let mut vertices = std::collections::BTreeMap::new();
-    let mut triangles = vec![];
+    let mut keys = vec![];
     for p in stl_points(bytes)? {
         if p.iter().flatten().any(|x| !x.is_finite()) || degenerate(p[0],p[1],p[2]) {
             return Err("binary STL has a nonfinite or degenerate triangle".into());
         }
-        triangles.push(p.map(|p| {
-            let key = p.map(|v| if v == 0. { 0 } else { (v as f32).to_bits() });
-            let next = vertices.len();
-            *vertices.entry(key).or_insert(next)
-        }));
+        keys.extend(p.map(|p| p.map(|v| if v == 0. { 0 } else { (v as f32).to_bits() }))
+            .map(|[x,y,z]| (x as u128) << 64 | (y as u128) << 32 | z as u128));
     }
-    Ok((vertices.len(),triangles))
+    let (numbers,count) = first_seen(&keys);
+    Ok((count,numbers.chunks_exact(3).map(|t| [t[0],t[1],t[2]]).collect()))
 }
 
 // -- the mesh a viewer wants --------------------------------------------------------------------
