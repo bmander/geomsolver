@@ -18,7 +18,7 @@ use super::*;
 use super::kernel::{Cell,Patterned};
 use gcs_core::{interval::{Interval,minimum::Options},model::{Sketch,SolidDef},motion::Family,
     solid::{admission::Admission,cad,contracts,MaterialField,ProbeState,SweepContacts}};
-use gcs_core::solid::contact_trace::{Band,Layout,Sample,Station,TraceError,Tracer,Withheld,marked};
+use gcs_core::solid::contact_trace::{Band,Columns,Layout,Sample,Station,TraceError,Tracer,Withheld,marked};
 pub(crate) use gcs_core::solid::contact_trace::{Inside,Sheet};
 use gcs_core::solid::contact_trace::Rows;
 use gcs_core::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
@@ -144,11 +144,20 @@ fn swept_sheets(session: &Session,cut: &SweptCut,cutter: &Cutter,inside: Inside,
         Ok(Station {length:profile.augmented_length(),window,sample:Box::new(move |s| session.sample(cutter,&profile,s))})
     };
     let band = Band {stations:reach.stations,radius:reach.radius};
+    // The columns traced at a pair of margins, which a second row placement at the same margins lays
+    // out again without tracing them again.
+    let columns: std::cell::RefCell<Option<((f64,f64),Columns)>> = std::cell::RefCell::new(None);
     let widened = |placement: Rows| -> Result<(Layout,Sheet),String> {
         // The margins carry the sheet's edge out of the blank; then the grid must be one chart.
         let (mut margin,mut station_margin) = (1.,(reach.stations[1]-reach.stations[0])*0.15);
         for _ in 0..6 {
-            let layout = tracer.layout(&station_at,band,margin,station_margin,placement)?;
+            let layout = {
+                let mut traced = columns.borrow_mut();
+                if !traced.as_ref().is_some_and(|(at,_)| *at == (margin,station_margin)) {
+                    *traced = Some(((margin,station_margin),tracer.columns(&station_at,band,margin,station_margin)?));
+                }
+                traced.as_ref().expect("traced").1.layout(placement)?
+            };
             let sheet = layout.sheet(&layout.grid,Withheld::Centres)?;
             let edges = [(0..sheet.columns).map(|c| sheet.points[c]).collect::<Vec<_>>(),
                 (0..sheet.columns).map(|c| sheet.points[(sheet.rows-1)*sheet.columns+c]).collect(),

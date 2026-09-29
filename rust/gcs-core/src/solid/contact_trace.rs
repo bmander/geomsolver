@@ -476,6 +476,14 @@ impl Tracer<'_> {
     /// sampled coarsely. `station_at` is the host's section of the cutter at a station angle.
     pub fn layout<'t,'s>(&'t self,station_at: &'t StationAt<'t,'s>,band: Band,margin: f64,
         station_margin: f64,placement: Rows) -> Result<Layout<'t,'s>,TraceError> {
+        self.columns(station_at,band,margin,station_margin)?.layout(placement)
+    }
+
+    /// A sheet's columns traced and read at even walk lengths (`layout`'s first part), which every
+    /// row placement is laid out from (`Columns::layout`): a second placement of the same columns
+    /// traces nothing again.
+    pub fn columns<'t,'s>(&'t self,station_at: &'t StationAt<'t,'s>,band: Band,margin: f64,
+        station_margin: f64) -> Result<Columns<'t,'s>,TraceError> {
         let inside = self.inside;
         let step = (band.stations[1]-band.stations[0]).max(COLUMN_SPACING/band.radius);
         let [mut lo,mut hi] = band.stations;
@@ -541,28 +549,58 @@ impl Tracer<'_> {
         let middles: Vec<f64> = (0..rows-1).map(|r| lo_tau+(hi_tau-lo_tau)*(r as f64+0.5)/(rows-1) as f64)
             .skip(first_row).take(last-first_row).collect();
         let (lo_tau,hi_tau) = (if first_row == 0 { lo_tau } else { taus[first_row] },if last+1 == rows { hi_tau } else { taus[last] });
+        let beside = (0..columns).map(|c| (angle_of(c as f64),beside(c))).collect();
+        let stations = stations.into_iter().zip(traces).map(Arc::new).collect();
+        Ok(Columns {tracer:self,station_at,margin,angles:(0..columns).map(|c| angle_of(c as f64)).collect(),
+            column_mids:(0..columns-1).map(|c| angle_of(c as f64+0.5)).collect(),stations,beside,taus,columns_data,first_row,last,middles,
+            span:[lo_tau,hi_tau]})
+    }
+}
+
+/// A sheet's columns traced (`Tracer::columns`): each station and its contact curve, the contacts
+/// read at the rows' even walk lengths, and the rows kept in the chart.
+pub struct Columns<'t,'s> {
+    tracer: &'t Tracer<'t>,
+    station_at: &'t StationAt<'t,'s>,
+    margin: f64,
+    angles: Vec<f64>,
+    column_mids: Vec<f64>,
+    stations: Vec<Arc<(Station<'s>,Traced)>>,
+    beside: Vec<(f64,(f64,f64))>,
+    taus: Vec<f64>,
+    columns_data: Vec<Vec<Found>>,
+    first_row: usize,
+    last: usize,
+    middles: Vec<f64>,
+    span: [f64;2],
+}
+
+impl<'t,'s> Columns<'t,'s> {
+    /// The columns laid out with their rows placed as `placement` says.
+    pub fn layout(&self,placement: Rows) -> Result<Layout<'t,'s>,TraceError> {
+        let (tracer,columns) = (self.tracer,self.angles.len());
+        let (taus,first_row,last) = (&self.taus,self.first_row,self.last);
+        let [lo_tau,hi_tau] = self.span;
         // The rows as placed: kept as resampled, or each column again at even lengths in space.
         let (row_coordinates,row_mids) = match placement {
-            Rows::Walk => (taus[first_row..=last].to_vec(),middles),
+            Rows::Walk => (taus[first_row..=last].to_vec(),self.middles.clone()),
             Rows::Length => {
-                let longest = crate::par::indices(columns,|c| self.length(&stations[c],&traces[c].curve,lo_tau,hi_tau))
+                let longest = crate::par::indices(columns,|c| tracer.length(&self.stations[c].0,&self.stations[c].1.curve,lo_tau,hi_tau))
                     .into_iter().collect::<Result<Vec<f64>,_>>()?.into_iter().fold(0_f64,f64::max);
                 let rows = ((longest/ROW_SPACING).ceil() as usize).clamp(24,240);
                 ((0..rows).map(|r| r as f64/(rows-1) as f64).collect(),(0..rows-1).map(|r| (r as f64+0.5)/(rows-1) as f64).collect())
             }
         };
-        let grid = Grid {rows:row_coordinates,row_mids,columns:(0..columns).map(|c| angle_of(c as f64)).collect(),
-            column_mids:(0..columns-1).map(|c| angle_of(c as f64+0.5)).collect()};
+        let grid = Grid {rows:row_coordinates,row_mids,columns:self.angles.clone(),column_mids:self.column_mids.clone()};
         let mut nodes = BTreeMap::new();
         if placement == Rows::Walk {
-            for (c,column) in columns_data.into_iter().enumerate() {
-                for (tau,f) in taus.iter().zip(column) { nodes.insert((grid.columns[c].to_bits(),tau.to_bits()),f); }
+            for (c,column) in self.columns_data.iter().enumerate() {
+                for (tau,f) in taus.iter().zip(column) { nodes.insert((grid.columns[c].to_bits(),tau.to_bits()),*f); }
             }
         }
-        let traced = stations.into_iter().zip(traces).enumerate().map(|(c,entry)| (grid.columns[c].to_bits(),Some(Arc::new(entry)))).collect();
-        Ok(Layout {tracer:self,station_at,placement,margin,span:[lo_tau,hi_tau],
-            beside:(0..columns).map(|c| (grid.columns[c],beside(c))).collect(),
-            stations:Mutex::new(traced),nodes:Mutex::new(nodes),grid})
+        let traced = self.stations.iter().enumerate().map(|(c,entry)| (grid.columns[c].to_bits(),Some(entry.clone()))).collect();
+        Ok(Layout {tracer,station_at:self.station_at,placement,margin:self.margin,span:[lo_tau,hi_tau],
+            beside:self.beside.clone(),stations:Mutex::new(traced),nodes:Mutex::new(nodes),grid})
     }
 }
 
