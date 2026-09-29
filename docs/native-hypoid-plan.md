@@ -753,6 +753,19 @@ axis is within 2e-4° of the model's, each centroid within 1.3e-4 mm of it. The 
   is generated from complementary crowns with no lengthwise ease-off, so its bearing is a line from
   toe to heel and the tightest point sits at a tooth end (87.5 mm, the heel) once one side is closed.
 
+**Gates** (end relief through phase 6). The whole suite with the native kernel passes with no
+warnings (1,327 core tests), the slow tier passes (21.8 minutes, the two members' 10 µm exports
+and measurements with the end relief in), and so do the web tests (255). Against phase 4, every
+corpus report and sheet, fast golden and log outside `spiral_bevel` is byte-identical. Within it
+every difference is the end relief's: `configuration.sv` read alone reports its new unitless
+length as it reports the others (exit 1, as before); the new `blank/ends.sv` reports (its preview
+draws the chamfers alone, 1 s; `blank/member.sv`'s preview cuts them, and times out as it did);
+the field-meshed members (exit 0) carry the bands; the refine backend still refuses both members
+(exit 1), the pinion at feature protection a few millimetres from where it did and the gear now past
+protection, at the agreement gate (40 of 2,000 probes); and the native exports at the gross bars
+carry the bands (pinion 14,643.592 → 14,642.075 mm³, 99 → 147 faces; gear 22,264.488 → 22,261.890
+mm³, 195 → 291 faces; both agree with the field).
+
 **Not claimed.** The sweep samples the pitch at 31 poses and the pattern at the same poses. The
 clearances are between the files' triangles, good to about twice the export tolerance. A full-face
 bearing is what this design is (no crowning); a shop's pair would localize it, and neither the

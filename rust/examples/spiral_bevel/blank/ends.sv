@@ -102,6 +102,7 @@ component EndCut(body: solid, toe: solid, heel: solid) {
   heel cut body
 }
 
+// The two chamfers in a member's axial view; blank/member.sv's preview cuts them from a blank.
 preview {
   unit mm
   point mean hint(x: 50, y: 0)
@@ -122,8 +123,4 @@ preview {
     size: 0.5mm)
   heel_end: EndChamfer(std.origin, span.heel, inner.heel, generator, tip.p, tip.q, axis,
     size: 0.5mm)
-  solid body(heel.wall.solid)
-  tip.wall.solid bound body
-  toe.wall.solid cut body
-  ends: EndCut(body, toe_end.ring, heel_end.ring)
 }
