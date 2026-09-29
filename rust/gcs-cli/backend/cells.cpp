@@ -6,7 +6,6 @@
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <Message_ProgressIndicator.hxx>
 #include <Message_ProgressScope.hxx>
-#include <chrono>
 #include <ctime>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
@@ -143,9 +142,9 @@ int solvent_cad_solids(Cad* cad,int source,int* output,int capacity) noexcept {
 // Interior points of a cell with their true distance to its boundary, best
 // first. The classifier's tolerance test only looks along its ray, so it is not
 // a distance; the extrema solver against the shell is. Candidates are stepped in
-// from the cell's faces, then taken from a bounded grid over the box, classified
-// at a small tolerance, and the distance is measured for at most `measure` spread
-// candidates. No centroid: integrating a spline cell for it cost seconds, and the
+// from the cell's faces, then taken halfway along rays between its faces, then
+// from a bounded grid over the box, classified at a small tolerance, and the
+// distance is measured for at most `measure` spread candidates. No centroid: integrating a spline cell for it cost seconds, and the
 // cell's volume is measured once already where the partition is listed. Each
 // output row is x, y, z, distance.
 int solvent_cad_solid_samples(Cad* cad,int id,double* output,int capacity,int measure) noexcept {
@@ -167,6 +166,18 @@ int solvent_cad_solid_samples(Cad* cad,int id,double* output,int capacity,int me
             if (classify.State() == TopAbs_IN) inside.push_back(p);
         };
         const double diagonal = std::hypot(std::hypot(x1-x0,y1-y0),z1-z0);
+        // A face's point at (u, v) and its outward unit normal there; false where the surface is
+        // singular.
+        const auto outward = [](const TopoDS_Face& face,const BRepAdaptor_Surface& surface,double u,double v,
+            gp_Pnt& p,gp_Vec& n) {
+            gp_Vec du,dv;
+            surface.D1(u,v,p,du,dv);
+            n = du.Crossed(dv);
+            if (n.Magnitude() <= 1e-12) return false;
+            n.Normalize();
+            if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+            return true;
+        };
         // Where a ray from a point of `face` along its inward normal next meets the shell, if it
         // does: the points before it are inside the cell by geometry alone. The face it starts
         // on is met again within its own tolerance, which a split leaves at tens of nanometres.
@@ -196,12 +207,8 @@ int solvent_cad_solid_samples(Cad* cad,int id,double* output,int capacity,int me
                 BRepTools::UVBounds(face,u0,u1,v0,v1);
                 BRepAdaptor_Surface surface(face);
                 for (const auto& [fu,fv]: {std::pair{0.5,0.5},{0.25,0.25},{0.75,0.75},{0.25,0.75},{0.75,0.25}}) {
-                    gp_Pnt p; gp_Vec du,dv;
-                    surface.D1(u0+(u1-u0)*fu,v0+(v1-v0)*fv,p,du,dv);
-                    gp_Vec n = du.Crossed(dv);
-                    if (n.Magnitude() <= 1e-12) continue;
-                    n.Normalize();
-                    if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+                    gp_Pnt p; gp_Vec n;
+                    if (!outward(face,surface,u0+(u1-u0)*fu,v0+(v1-v0)*fv,p,n)) continue;
                     // The ray first: on a sliver it rules out most candidates for less than
                     // a classification each.
                     if (static_cast<int>(inside.size()) >= measure || exit(p,n.Reversed(),face) <= step) continue;
@@ -243,12 +250,8 @@ int solvent_cad_solid_samples(Cad* cad,int id,double* output,int capacity,int me
                 for (int i=0;i<5 && static_cast<int>(inside.size()) < measure;++i) for (int j=0;j<5;++j) {
                     const double u = u0+(u1-u0)*(i+0.5)/5, v = v0+(v1-v0)*(j+0.5)/5;
                     if (domain.Perform(gp_Pnt2d(u,v)) != TopAbs_IN) continue;
-                    gp_Pnt p; gp_Vec du,dv;
-                    surface.D1(u,v,p,du,dv);
-                    gp_Vec n = du.Crossed(dv);
-                    if (n.Magnitude() <= 1e-12) continue;
-                    n.Normalize();
-                    if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+                    gp_Pnt p; gp_Vec n;
+                    if (!outward(face,surface,u,v,p,n)) continue;
                     const double first = exit(p,n.Reversed(),face);
                     if (first >= Precision::Infinite()) continue;
                     inside.push_back(p.Translated(n.Multiplied(-0.5*first)));

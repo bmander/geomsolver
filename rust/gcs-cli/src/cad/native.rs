@@ -47,7 +47,10 @@ impl Session {
         if context.is_null() { Err("cannot allocate native CAD session".into()) }
         else { Ok(Self(context)) }
     }
+    /// The session's handle, for a test crate calling the backend's C ABI directly
+    /// (`tests/native_boundary.rs`); the binary's own test build has no use for it.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn as_ptr(&self) -> *mut c_void { self.0 }
     pub(crate) fn result(&self,id: c_int) -> Result<c_int,String> {
         if id < 0 {

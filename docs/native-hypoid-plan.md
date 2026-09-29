@@ -10,12 +10,10 @@ builds nothing.
 
 ## Where it stands
 
-- **Pinion:** exports natively in about 98 s. Its tooth-space sheet (73×44 samples, one chart)
-  fits the withheld contacts within 16.5 µm, normals within 8.2°; field agreement probes 0.1 mm off
-  each side and finds no disagreement.
-- **Gear:** refused until phase 2. Its sheet (77×32) fitted the contacts within 60 µm, but its
-  normals missed by 83° against the 20° bar. It now exports natively in about 3.5 minutes (see
-  Phase 2's findings).
+- **Status: done.** Phases 1–6 are complete; what stays open is under each phase's "Not claimed".
+- **Phases 1–2:** an accuracy meter (`solid::accuracy`, `solventc --measure`) reads an export
+  against the exact surface two ways; the gear, refused before, exports natively in about 3.5
+  minutes (see Phase 2's findings).
 - **Phase 3:** `solventc --tolerance 0.01mm` exports both members within 10 µm of the exact
   surface, STEP and STL, by the meter (see Phase 3's findings); without it the gross bars below
   still stand and every export is as it was.
@@ -28,10 +26,18 @@ builds nothing.
   gear pitch the members never touch (21.3 µm apart at least), each flank pair is 21–26 µm apart
   (half the backlash by design), and with one flank pair closed the other is 42–48 µm apart: the
   stated 50 µm within the files' tolerance.
-- **Status: done.** Phases 1–6 are complete; what stays open is under each phase's "Not claimed".
-- **The bar is coarse:** `FIT_DISTANCE = 0.25` mm and `FIT_TURN = 20°` in
-  `gcs-cli/src/cad/native/sweep_boundary.rs`. Passing it is not a fabrication claim for either
-  member, and nothing measures the exported file against the exact surface.
+
+## Where it started
+
+- **Pinion:** exported natively in about 98 s. Its tooth-space sheet (73×44 samples, one chart)
+  fitted the withheld contacts within 16.5 µm, normals within 8.2°; field agreement probed 0.1 mm
+  off each side and found no disagreement.
+- **Gear:** refused. Its sheet (77×32) fitted the contacts within 60 µm, but its normals missed by
+  83° against the 20° bar.
+- **The bar was coarse:** `FIT_DISTANCE = 0.25` mm and `FIT_TURN = 20°` (now in
+  `gcs-cli/src/cad/native/sweep_boundary/fit.rs`, still the bars without a tolerance). Passing it
+  was no fabrication claim for either member, and nothing measured the exported file against the
+  exact surface.
 - **The cutters differ:** the pinion is cut by one revolved crown tooth; the gear by the space
   between two mate teeth, `outer_crown` bounded by its indexed neighbour
   (`crown/space.sv`) — a Boolean with a crease.
@@ -146,11 +152,12 @@ and the neighbour's outer flank), two tori (their rounds), and two planes. Both 
 in the one plane square to the crown axis, and the indexing turns that plane into itself, so the
 two tips are one face and the Boolean leaves no crease between them. Every station's walk
 through the blank is flank, round, tip, round, flank, with no corner fan. The Boolean's creases
-are all far from the blank. The instrument is `where_the_configured_gear_sheet_turns`
-(`native_surfaces/gear_cells.rs`, ignored). It maps each node and withheld contact back to its
-cutter face through the motion's inverse at its contact time. It also compares each column's
-chord-length row parameters with the average the interpolation uses, fits the grid under each of
-OCCT's three parametrizations, and scans the fitted face for folds a quarter of a cell apart.
+are all far from the blank. The instrument was `where_the_configured_gear_sheet_turns`
+(`native_surfaces/gear_cells.rs`, ignored; removed once the cause was fixed, git history keeps it).
+It mapped each node and withheld contact back to its
+cutter face through the motion's inverse at its contact time. It also compared each column's
+chord-length row parameters with the average the interpolation uses, fitted the grid under each of
+OCCT's three parametrizations, and scanned the fitted face for folds a quarter of a cell apart.
 
 **Cause 1: one margin column leapt, and moved every row's parameter.** The 83° withheld
 misses were in the blank (0.9–4 mm deep), at rows 29–33, on the outer crown's round, which
@@ -783,10 +790,18 @@ tool nor the model says how. The flank ends down the tooth depth are not relieve
 
 ## Files
 
-- `rust/gcs-cli/src/cad/native/sweep_boundary.rs`, `backend/*.cpp`: per-face sheets, adaptive fit,
-  tolerance.
-- `rust/gcs-cli/src/main.rs`: `--tolerance`.
-- A meter: core (envelope and field distances) plus a CLI or test harness reading STEP/STL.
-- `rust/examples/spiral_bevel/`: `design.sv`/`configuration.sv` (backlash, relief), `crown/`
-  (the offset mate), `blank/` (relief faces).
-- Tests: the meter, the gear export, the pair checks (slow tier for whole-member exports).
+- The meter: `rust/gcs-core/src/solid/accuracy.rs`; its samples and `--measure`,
+  `rust/gcs-cli/src/cad/measure.rs`.
+- The tolerance: `solid::export::Tolerance`; `solid/contact_trace.rs` (`charted`, `Rows`, `Layout`,
+  `Grid`, `marked`); `solid/contracts.rs` (`TinyTriangles::clustered`, cells per sweep);
+  `rust/gcs-cli/src/cad/native/sweep_boundary.rs` (row placement and refinement) and
+  `sweep_boundary/fit.rs` (the fit contract); `cad.rs` (the STL meshed to its sag);
+  `backend/*.cpp` (`remesh`, `mesh_sag`, `surface_grid`, `surface_feet_near`, `read_step`,
+  `face_kind`, sliver sampling); `rust/gcs-cli/src/main.rs` (`--tolerance`, `--measure`,
+  `--measure-samples`).
+- The model: `rust/examples/spiral_bevel/` — `configuration.sv` and `design.sv` (the allowances),
+  `crown/section.sv` and `crown/mate_section.sv` (backlash), `crown/relief.sv` (tip relief),
+  `blank/ends.sv` (end relief), `layout.sv` and `members.sv`.
+- Tests: core `accuracy.rs`, `contact_trace.rs`, `gear_crowns.rs`, `export_contracts.rs`,
+  `admission.rs`, `block_order.rs`; CLI `native_measure.rs`, `cli.rs` (the slow tier's two 10 µm
+  exports), `native_surfaces/gear_cells.rs`, `native_boundary.rs`, and the tool `pair_check.rs`.

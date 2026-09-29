@@ -132,7 +132,7 @@ impl Tolerance {
     /// the sheet is further than a quarter of a cell from one along either direction; a sheet
     /// turned by `θ` there departs from the exact surface by about `gap + tan θ · spacing / 4`
     /// within that reach, and `θ` may not carry it past the whole tolerance, the STEP's claim:
-    /// `tan θ ≤ 4 (tolerance − gap) / spacing`. A pleat between contacts (the gear's, phase 2,
+    /// `tan θ ≤ 4 (tolerance − gap) / spacing`. A pleat between contacts (the gear's first sheet,
     /// turned 83° within 60 µm) fails it; a fit rounding a narrow strip where the exact normal
     /// turns fast (a convex corner's fan, a small fillet), which is near in position and turned by
     /// a few degrees, does not. Never past `MOST_TURN`, whatever the spacing.

@@ -104,7 +104,7 @@ Booleans, validates a STEP round trip, and preserves the old output on failure. 
 lofts and continuous generating-motion sweeps remain unsupported by this native host.
 Native builds default `--stl` to OCCT too; `--stl-backend mesh` selects the legacy path.
 Requesting STEP and STL together builds once, stages and checks both, then replaces each file.
-Native coordinates are mm. STL uses 0.01 mm absolute deflection (half the `--tolerance`) and 0.2 rad angular control;
+Native coordinates are mm. STL uses 0.01 mm absolute deflection and 0.2 rad angular control;
 these are meshing settings, not an end-to-end error bound. Every CAD face must be meshed,
 and `mesh::stl_shells` checks all exactly encoded components, including cavities, without
 welding. Validation failure preserves all old outputs; renames are individually atomic,
@@ -305,13 +305,13 @@ material cells fused. A sheet's rows stop outside the blank before any column's 
 (`contact_trace::charted`; OCCT averages chord-length parameters over the columns), and fall by
 walk length, or by length in space where that fit misses or folds (`contact_trace::Rows`; the fit
 contract scans the face a quarter cell apart). The configured gear takes the second
-(docs/native-hypoid-plan.md, Phase 2). `UnifySameDomain` widens tolerances on vertices shared with its input, so
-unify a copy. `solid::agreement` then probes the mesh 0.1 mm off each side against the material
-field (a one-sided disagreement is withdrawn only where the centroid reads on the boundary), and
-nothing is written unless it agrees: every backend's output goes through `cad::output::Staged`
-(staged beside the target, checked, renamed), and native swept construction takes the core's
-`admission::Admission`, which only `admit_body` makes. The mesh and cell contracts are the
-core's (`solid::contracts`), and every refusal, from admission to the gate, is one
+(docs/native-hypoid-plan.md). `UnifySameDomain` widens tolerances on vertices shared with its
+input, so unify a copy. `solid::agreement` then probes the mesh 0.1 mm off each side against the
+material field (a one-sided disagreement is withdrawn only where the centroid reads on the
+boundary), and nothing is written unless it agrees: every backend's output goes through
+`cad::output::Staged` (staged beside the target, checked, renamed), and native swept construction
+takes the core's `admission::Admission`, which only `admit_body` makes. The mesh and cell
+contracts are the core's (`solid::contracts`), and every refusal, from admission to the gate, is one
 `solid::export::ExportRefusal` — its `Stage` (the keys `SOLVENT_STAGE_TRACE` records, with a
 `refused:` line for the stage refused at), the class row and a witness when known — reported at
 the solid's statement. The refine backend's features are `solid::blank_features`, read off the
@@ -324,36 +324,28 @@ the recorded tooth-space volumes. `tests/generating_harness.rs` (ignored, minute
 refusal by stage over fixtures, the gear controls and a 48-design sweep.
 The configured pair carries **backlash** (each crown's flanks a quarter of it off the lines tooth
 and mate share; zero keeps the old incidences through `repeat design.lashed`), **tip relief**
-(`crown/relief.sv`: a second, semi-topping sweep per member, built only under `relieved`) and
-**end relief** (`blank/ends.sv`: an exact cone band chamfering the tip cone's corner with each end
-sphere, a static ring cut under `ends_relieved`; the flanks' own sphere edges are not relieved).
-`fixtures::gear::design` pins all three to zero, as every recorded number was taken;
-`fixtures::gear::fabricated` sets them. The fabrication files are `build/exports/hypoid-{pinion,gear}.{step,stl}`
-(README, "Making the pair"); `gcs-cli/tests/pair_check.rs` (ignored tool, ~35 s) checks the pair
-from the STLs alone: shafts from inertia, one gear pitch searched exactly for overlap and each flank
-pair's clearance, the backlash with the other flanks touching, and the contact pattern.
-**Export tolerance (phase 3, [plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]`
-(0.01 mm when no length follows; a bare number is in the document's unit; `um`, `mm`, `in`… name
-their own; a physical length whatever the unit) holds a native export for fabrication, and
-`solid::export::Tolerance` states every bar once: a fitted sheet within half of it at every
-withheld contact, now cell centres *and* side middles (`contact_trace::Withheld::Sides`, sites in
-half rows/columns), its normal within `atan(4 (tol − gap) / h)` (h the shortest adjacent cell side:
-the whole tolerance reached a quarter cell away, capped 20°), the STL meshed at half of it (angular
-kept) and then read for the sag every triangle has (`mesh_sag`) and meshed finer until that is
-within half (OCCT's deflection is a control, not a bound: 5 µm left 50 µm edges on the pinion's
-fillet, which the meter's by-area sampling missed), the mesh contract read by clusters
-(`TinyTriangles::clustered`), the field probed at max(2 tol, 2 µm). A sheet that misses is refined where it misses, distance first and normals only
-once every distance holds (`contact_trace::marked`, `Grid::refined`: split at the withheld
-coordinate, graded 2:1; `Layout` traces each station and reads each contact once), at most four
-times and 480×400 nodes, then refused with where and by how much. Each grid is fitted twice and the
-fit that follows its withheld contacts better is the sheet: centripetal parameters keep the pinion's
-fillet from creasing (chord length creased it 31° per sixteenth of a cell), chord length stays true
-under local refinement (centripetal gives a halved step √2 of its share). Feet are local searches from
-the fold grid (`surface_feet_near`; OCCT's global projection once put one 22 µm and 90° off). **The
-default is unchanged**: without `--tolerance` the gross bars stand and every export is
-byte-identical, since the corpus's goldens and recorded volumes are of it and a finer fit costs time
-nobody asked for; asking for a tolerance is what exporting for fabrication means. With it,
-`--measure` ends in `accuracy::within` and exits 1 when an exact face exceeds it.
+(`crown/relief.sv`: a second, semi-topping sweep per member, under `relieved`) and **end relief**
+(`blank/ends.sv`: a cone band chamfering the tip cone's corner with each end sphere, a static ring
+cut under `ends_relieved`). `fixtures::gear::design` pins all three to zero, as every recorded
+number was taken; `fixtures::gear::fabricated` sets them. The fabrication files are
+`build/exports/hypoid-{pinion,gear}.{step,stl}` (README, "Making the pair");
+`gcs-cli/tests/pair_check.rs` (ignored tool, ~35 s) checks the pair from the STLs alone: shafts
+from inertia, overlap and flank clearance over a gear pitch, backlash, contact pattern.
+**Export tolerance ([plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (0.01 mm
+when no length follows; a bare number is in the document's unit) holds a native export for
+fabrication, and `solid::export::Tolerance` states every bar once. A fitted sheet passes within half
+of it of every withheld contact (cell centres and side middles, `contact_trace::Withheld::Sides`),
+its normal within `Tolerance::turn`; one that misses is refined where it misses, distance first
+(`contact_trace::marked`, `Grid::refined`, graded 2:1; `Layout` reads each contact once), at most
+four times and 480×400 nodes. Each grid is fitted with chord-length and with centripetal
+parameters and the better fit is the sheet (`cad/native/sweep_boundary/fit.rs`); feet are local
+searches from the fold grid (`surface_feet_near`). The STL is meshed at half the tolerance and
+meshed finer until its measured sag (`mesh_sag`) is within that, since OCCT's deflection is a
+control and not a bound; the mesh contract counts clusters (`TinyTriangles::clustered`) and the
+field is probed at max(2 tol, 2 µm). `--measure FILE` reads an export against the exact surface
+(`solid::accuracy`: the analytic projection and the material field, two independent routes) and,
+with a tolerance, exits 1 when an exact face exceeds it. **Without `--tolerance` nothing changes**:
+the gross bars stand and every export is byte-identical to what it was before the flag.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference
@@ -1833,7 +1825,7 @@ Conventions:
   with no plane has nothing to fold, so a load or an edit that leaves none returns to the sheet
   (`swap`) and ⌘B on one says why it stays, since shown in the box such a drawing is a tilted,
   read-only, empty-looking sheet on which every tool click silently does nothing.
-- Slow tests are gated by `#[ignore]` (cargo). The **slow tier** — tests of twenty seconds to a few
+- Slow tests are gated by `#[ignore]` (cargo). The **slow tier** — tests of ten seconds to a few
   minutes that should still pass on every landing (the gear pair's whole-member verifications, a
   native tooth space) — is `#[cfg_attr(not(feature = "slow"), ignore = "slow tier, …")]`, run by
   `make test-slow` (`OCCT=1` for the native one); `make test` leaves it out.

@@ -1,5 +1,5 @@
 //! Measuring an exported file against the exact surface of the body it was exported from
-//! (`gcs_core::solid::accuracy`, docs/native-hypoid-plan.md phase 1). The samples are this
+//! (`gcs_core::solid::accuracy`, docs/native-hypoid-plan.md). The samples are this
 //! crate's to take — a STEP file's faces through the native kernel, an STL's triangles from its
 //! bytes — and every reading, and every word of the report, is the core's.
 #![cfg_attr(not(feature="occt"),allow(dead_code))]
@@ -58,7 +58,6 @@ pub fn measure(meter: &Meter,samples: &[Sample]) -> Vec<Measurement> {
     let chunk = samples.len().div_ceil(threads*16).max(1);
     let next = AtomicUsize::new(0);
     let done = Mutex::new((0_usize,0_usize));
-    let mut out: Vec<Option<Measurement>> = vec![None;samples.len()];
     let results = Mutex::new(Vec::new());
     std::thread::scope(|scope| {
         for _ in 0..threads {
@@ -77,10 +76,10 @@ pub fn measure(meter: &Meter,samples: &[Sample]) -> Vec<Measurement> {
             });
         }
     });
-    for (start,read) in results.into_inner().unwrap() {
-        for (k,m) in read.into_iter().enumerate() { out[start+k] = Some(m); }
-    }
-    out.into_iter().map(|m| m.expect("every sample measured")).collect()
+    // the chunks tile the samples: in order, they are every reading in the samples' order
+    let mut results = results.into_inner().unwrap();
+    results.sort_by_key(|(start,_)| *start);
+    results.into_iter().flat_map(|(_,read)| read).collect()
 }
 
 /// Measure the file at `path` (STEP by its extension, otherwise binary STL) against `body`,

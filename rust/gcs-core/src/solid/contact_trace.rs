@@ -6,8 +6,10 @@
 //! how. What is here: every root of a sampled point's contact equation, a station's contact
 //! curve traced through the plane of walk length and time (turning at a fold of the time chart,
 //! where the envelope carries on though the walk turns back), and the sheet whose columns are
-//! those curves, resampled, with a withheld contact at the centre of every cell. Positions are
-//! native millimetres, `scale` of them a model unit; the contact math runs in model units.
+//! those curves, resampled, with a withheld contact at the centre of every cell (and at the
+//! middles of its sides, for a sheet held to a tolerance and refined where its fit misses:
+//! `Layout`, `Grid`, `marked`). Positions are native millimetres, `scale` of them a model unit;
+//! the contact math runs in model units.
 use super::SweepContacts;
 use super::sweep_contacts::PointContactError;
 use crate::space::{scale as scaled,distance};
@@ -568,7 +570,7 @@ pub struct Grid { pub rows: Vec<f64>,pub row_mids: Vec<f64>,pub columns: Vec<f64
 /// How far one interval may be longer than its neighbour after a refinement: an interpolating
 /// spline through nodes whose spacing jumps by more rings in the long interval, and the
 /// refinement would chase its own ringing.
-pub const GRADING: f64 = 2.;
+const GRADING: f64 = 2.;
 
 impl Grid {
     /// The grid with each marked interval (row intervals, then column intervals) split at its

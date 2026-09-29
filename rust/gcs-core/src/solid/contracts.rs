@@ -58,8 +58,8 @@ impl TinyTriangles {
     /// The mesh contract held to a tolerance, whose finer mesh has more short edges for a
     /// tessellator to meet (along every trimmed edge of every tooth): a triangle is microscopic
     /// under a square a tenth of the mesher's deflection on a side, and a crumpled or folded patch
-    /// is more than `MOST_TINY` of them in one millimetre cube, where the fold phase 2 found put
-    /// eighteen thousand.
+    /// is more than `MOST_TINY` of them in one millimetre cube, where the gear's first folded sheet
+    /// put eighteen thousand.
     pub fn clustered(&self) -> Result<(),String> {
         if self.densest > MOST_TINY {
             return Err(format!("the mesh has {} triangles under {:.1e} mm² within the millimetre cube at {:?} ({} in all, {:.2e} mm²): \

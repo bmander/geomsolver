@@ -22,8 +22,8 @@ and WebAssembly have no OCCT dependency. A CLI built without the feature explain
 how to enable it when asked for STEP.
 
 Supported operations are extrusion, revolution and Boolean bodies with line/arc/circle
-profiles, holes and through cutters. Along-guide lofts and generating-motion sweeps
-remain unsupported. Models require explicit units and a successful solve, including
+profiles, holes and through cutters, and bodies with generating-motion sweeps of the admitted
+class (below). Along-guide lofts remain unsupported. Models require explicit units and a successful solve, including
 when `--allow-unsolved` is specified.
 
 The optional independent tests use Python's OCCT bindings only to read resulting STEP
@@ -46,13 +46,19 @@ The files beyond construction and export (`occt.cpp`) serve the generating-sweep
 
 - `sections.cpp` cuts a native cutter by meridian half-planes into the profile a swept sheet
   is sampled over.
-- `occt.cpp`'s `solvent_cad_stl` meshes at the caller's absolute and angular deflections.
+- `occt.cpp` also meshes at the caller's absolute and angular deflections (`solvent_cad_stl`,
+  `solvent_cad_remesh`), reads the chordal sag a mesh actually has against each face's surface
+  (`solvent_cad_mesh_sag`), and reads a STEP file back unrepaired for the accuracy meter
+  (`solvent_cad_read_step`).
 - `surfaces.cpp` interpolates a sheet's sample grid into a B-spline face
   (`solvent_cad_bspline_face_with`: uniform, chord-length or centripetal parameters), lists a
   shape's faces, and queries a bounded face in its own finite UV trim box
-  (`solvent_cad_face_point`: outside, inside or on a trim, with position and oriented normal).
-- `cells.cpp` splits the blank by the sheets (fuzzy), lists and samples the cells, fuses the
-  material ones and measures volumes; which cells are material is the caller's, from the field.
+  (`solvent_cad_face_point`: outside, inside or on a trim, with position and oriented normal),
+  its surface's kind (`solvent_cad_face_kind`) and its surface on an even grid over that box
+  with no trim test (`solvent_cad_surface_grid`, the fit contract's fold scan).
+- `cells.cpp` splits the blank by the sheets (fuzzy, within a processor-time budget), lists and
+  samples the cells (a sliver along rays between its faces), fuses the material ones and
+  measures volumes; which cells are material is the caller's, from the field.
 - `boundary.cpp` reads the actual topology of a constructed solid, Boolean edges included:
   rows of edge, both incident faces and seam/pole flags, and per edge a position, unit tangent,
   two outward material normals, their incidence discrepancies in mm and the signed dihedral
@@ -66,10 +72,13 @@ The files beyond construction and export (`occt.cpp`) serve the generating-sweep
 ```sh
 cargo test --manifest-path rust/Cargo.toml -p gcs-cli --features occt --test native_boundary -- --nocapture
 cargo test --manifest-path rust/Cargo.toml -p gcs-cli --features occt --test native_surfaces -- --nocapture
+cargo test --manifest-path rust/Cargo.toml -p gcs-cli --features occt --test native_measure -- --nocapture
 ```
 
 `native_boundary` checks the topology reader on a blind hole, a drilled cube, a sphere and a
-torus, and the gear cutters' edges against their independent source field; `native_surfaces`
-holds the generating-sweep construction's recorded tooth-space volumes and refusals.
+torus, the gear cutters' edges against their independent source field, and a sliver cell's
+interior samples; `native_surfaces` holds the generating-sweep construction's recorded
+tooth-space volumes and refusals; `native_measure` reads turned parts' STEP and STL exports
+against their exact surfaces (`solventc --measure`), and the same STL offset 20 µm as 20 µm.
 The candidate-construction bridge that preceded it (contact-chart fitting, pcurves, face
 splitting, endpoint caps) was removed on 2026-09-26; git history keeps it.

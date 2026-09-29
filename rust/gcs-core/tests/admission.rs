@@ -176,6 +176,7 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
 /// The configured hypoid pinion, its backlash, tip relief and end relief in: the crown's sweep and
 /// the relief's are both in the class, each with margin.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 14 s: the configured pinion's two sweeps admitted")]
 fn the_configured_hypoid_pinion_is_admitted() {
     let a = fabricated("pinion",[25.,12.5,25.],0.05,0.2,0.2).unwrap();
     assert_eq!(a.sweeps().len(),2);
@@ -183,6 +184,7 @@ fn the_configured_hypoid_pinion_is_admitted() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 14 s: the configured gear's two sweeps admitted")]
 fn the_configured_hypoid_gear_is_admitted() {
     let a = fabricated("gear",[25.,12.5,25.],0.05,0.2,0.2).unwrap();
     assert_eq!(a.sweeps().len(),2);

@@ -1,5 +1,5 @@
-//! The configured hypoid pair checked from its fabrication files (docs/native-hypoid-plan.md,
-//! Phase 6): the two STLs `solventc --tolerance` writes, read as triangles and nothing else.
+//! The configured hypoid pair checked from its fabrication files (docs/native-hypoid-plan.md):
+//! the two STLs `solventc --tolerance` writes, read as triangles and nothing else.
 //!
 //! - **The shafts.** Each member's axis is the axis of its solid's inertia (a body with N-fold
 //!   symmetry, N ≥ 3, is transversely isotropic about it), through its centroid; the shaft angle
@@ -127,25 +127,8 @@ fn axis(tris: &[Tri]) -> (V,V,f64,f64) {
 
 // --- exact distances between triangles (Ericson, Real-Time Collision Detection, 5.1) ---
 
-fn closest_on_triangle(p: V,[a,b,c]: Tri) -> V {
-    let (ab,ac,ap) = (sub(b,a),sub(c,a),sub(p,a));
-    let (d1,d2) = (dot(ab,ap),dot(ac,ap));
-    if d1 <= 0. && d2 <= 0. { return a; }
-    let bp = sub(p,b);
-    let (d3,d4) = (dot(ab,bp),dot(ac,bp));
-    if d3 >= 0. && d4 <= d3 { return b; }
-    let vc = d1*d4-d3*d2;
-    if vc <= 0. && d1 >= 0. && d3 <= 0. { return add(a,scale(ab,d1/(d1-d3))); }
-    let cp = sub(p,c);
-    let (d5,d6) = (dot(ab,cp),dot(ac,cp));
-    if d6 >= 0. && d5 <= d6 { return c; }
-    let vb = d5*d2-d1*d6;
-    if vb <= 0. && d2 >= 0. && d6 <= 0. { return add(a,scale(ac,d2/(d2-d6))); }
-    let va = d3*d6-d5*d4;
-    if va <= 0. && d4-d3 >= 0. && d5-d6 >= 0. { return add(b,scale(sub(c,b),(d4-d3)/((d4-d3)+(d5-d6)))); }
-    let denom = 1./(va+vb+vc);
-    add(a,add(scale(ab,vb*denom),scale(ac,vc*denom)))
-}
+/// The nearest point of a triangle to `p`.
+fn closest_on_triangle(p: V,[a,b,c]: Tri) -> V { gcs_core::space::closest_on_triangle(p,a,b,c).0 }
 
 /// The closest points of two segments.
 fn closest_segments(p1: V,q1: V,p2: V,q2: V) -> (V,V) {

@@ -36,7 +36,29 @@ struct FaceProjector {
         chart.surface->Bounds(u0,u1,v0,v1);
         project.Init(chart.surface,u0,u1,v0,v1,Precision::PConfusion());
     }
+    // The nearest foot of `p` (in the chart's frame) on the whole support: its parameters and its
+    // distance, false where the projection finds none.
+    bool nearest(const gp_Pnt& p,double& u,double& v,double& distance) {
+        project.Perform(p);
+        if (!project.IsDone() || project.NbPoints() < 1) return false;
+        project.LowerDistanceParameters(u,v);
+        distance = project.LowerDistance();
+        return true;
+    }
 };
+// One row of a surface-feet query: the support's unit normal (du x dv, no orientation) at the
+// foot's parameters, and the distance; a NaN distance where there is no foot.
+static void foot_row(const FaceChart& chart,double u,double v,double distance,double* row) {
+    gp_Pnt q; gp_Vec du,dv;
+    chart.surface->D1(u,v,q,du,dv);
+    gp_Vec n = du.Crossed(dv);
+    const double length = n.Magnitude();
+    if (length > 0) n.Divide(length);
+    n.Transform(chart.location.Transformation());
+    row[0] = n.X(); row[1] = n.Y(); row[2] = n.Z();
+    row[3] = distance;
+}
+static void no_foot(double* row) { row[0] = row[1] = row[2] = 0; row[3] = std::numeric_limits<double>::quiet_NaN(); }
 
 extern "C" {
 // Only a full period across the finite face box supplies opposite seam aliases.
@@ -84,19 +106,8 @@ int solvent_cad_surface_feet(Cad* cad,int id,const double* points,int count,doub
             double* row = output+4*i;
             gp_Pnt p(points[3*i],points[3*i+1],points[3*i+2]);
             p.Transform(chart.location.Transformation().Inverted());
-            projector.project.Perform(p);
-            if (!projector.project.IsDone() || projector.project.NbPoints() < 1) {
-                row[0] = row[1] = row[2] = 0; row[3] = std::numeric_limits<double>::quiet_NaN(); continue;
-            }
-            double a,b; projector.project.LowerDistanceParameters(a,b);
-            gp_Pnt q; gp_Vec du,dv;
-            chart.surface->D1(a,b,q,du,dv);
-            gp_Vec n = du.Crossed(dv);
-            const double length = n.Magnitude();
-            if (length > 0) n.Divide(length);
-            n.Transform(chart.location.Transformation());
-            row[0] = n.X(); row[1] = n.Y(); row[2] = n.Z();
-            row[3] = projector.project.LowerDistance();
+            double a,b,distance;
+            if (projector.nearest(p,a,b,distance)) foot_row(chart,a,b,distance,row); else no_foot(row);
         }
         return 0;
     });
@@ -132,22 +143,8 @@ int solvent_cad_surface_feet_near(Cad* cad,int id,const double* points,const dou
                         distance = std::sqrt(local.SquareDistance());
                 }
             } catch (const Standard_Failure&) { distance = -1; }
-            if (distance < 0) {
-                projector.project.Perform(p);
-                if (!projector.project.IsDone() || projector.project.NbPoints() < 1) {
-                    row[0] = row[1] = row[2] = 0; row[3] = std::numeric_limits<double>::quiet_NaN(); continue;
-                }
-                projector.project.LowerDistanceParameters(a,b);
-                distance = projector.project.LowerDistance();
-            }
-            gp_Pnt q; gp_Vec du,dv;
-            chart.surface->D1(a,b,q,du,dv);
-            gp_Vec n = du.Crossed(dv);
-            const double length = n.Magnitude();
-            if (length > 0) n.Divide(length);
-            n.Transform(chart.location.Transformation());
-            row[0] = n.X(); row[1] = n.Y(); row[2] = n.Z();
-            row[3] = distance;
+            if (distance < 0 && !projector.nearest(p,a,b,distance)) { no_foot(row); continue; }
+            foot_row(chart,a,b,distance,row);
         }
         return 0;
     });

@@ -92,7 +92,7 @@ impl Session {
     /// Interpolate a row-major grid of points as a B-spline face with chord-length
     /// parameters, which keep uneven row spacing from overshooting where the columns space
     /// their rows alike: each row's parameter is averaged over the columns. A sheet held to a
-    /// tolerance is fitted with centripetal parameters (`fit_sheet_with`, 2).
+    /// tolerance is also fitted with centripetal parameters (`fit_sheet_with`, 2).
     pub(crate) fn fit_sheet(&self,points: &[[f64;3]],rows: usize,columns: usize) -> Result<c_int,String> {
         self.fit_sheet_with(points,rows,columns,1)
     }
@@ -202,7 +202,7 @@ impl Session {
     pub(crate) fn surface_feet(&self,face: c_int,points: &[[f64;3]]) -> Result<Vec<Option<([f64;3],f64)>>,String> {
         let mut data = vec![0.;4*points.len()];
         self.result(unsafe { solvent_cad_surface_feet(self.0,face,points.as_ptr().cast(),points.len() as c_int,data.as_mut_ptr()) })?;
-        Ok((0..points.len()).map(|i| data[4*i+3].is_finite().then(|| ([data[4*i],data[4*i+1],data[4*i+2]],data[4*i+3]))).collect())
+        Ok(feet(&data))
     }
     /// The same, each point's foot searched from a guess (`u`, `v` as fractions of the face's UV
     /// box, NaN for none), falling back to the global search where the local one does not improve
@@ -213,6 +213,11 @@ impl Session {
         let mut data = vec![0.;4*points.len()];
         self.result(unsafe { solvent_cad_surface_feet_near(self.0,face,points.as_ptr().cast(),guesses.as_ptr().cast(),
             points.len() as c_int,trust,data.as_mut_ptr()) })?;
-        Ok((0..points.len()).map(|i| data[4*i+3].is_finite().then(|| ([data[4*i],data[4*i+1],data[4*i+2]],data[4*i+3]))).collect())
+        Ok(feet(&data))
     }
+}
+
+/// The feet the kernel wrote, four doubles a point: the normal and the distance, NaN for none.
+fn feet(data: &[f64]) -> Vec<Option<([f64;3],f64)>> {
+    data.chunks(4).map(|d| d[3].is_finite().then(|| ([d[0],d[1],d[2]],d[3]))).collect()
 }

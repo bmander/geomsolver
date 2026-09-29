@@ -1,5 +1,5 @@
 //! How far an exported boundary lies from the exact one: each sample point's distance to a
-//! body's exact surface, read two independent ways (docs/native-hypoid-plan.md, phase 1).
+//! body's exact surface, read two independent ways (docs/native-hypoid-plan.md).
 //!
 //! **The analytic route** knows what the surface is made of. A blank face is a turned line or
 //! arc, and its distance is the exact meridian projection (`SurfaceProjector`). A generated face
@@ -33,7 +33,7 @@ use super::{cad,RevolvedSurface,SpatialField,SurfaceProjector,SweepContacts,Mate
 use crate::envelope::Motion;
 use crate::model::{EntKind,Sketch,SolidDef};
 use crate::motion::Family;
-use crate::space::{add,sub,scale,dot,cross,norm,distance,normalised};
+use crate::space::{add,sub,scale,dot,norm,distance,normalised,triangle_normal};
 use std::collections::BTreeSet;
 
 type V = [f64;3];
@@ -97,7 +97,7 @@ impl SampleKind {
     }
     /// Whether the sample's normal is its own face's there: a face point's and a triangle's
     /// centroid's, not a vertex's or an edge midpoint's, which may stand on another face's edge.
-    pub fn own_normal(self) -> bool { matches!(self,SampleKind::Face | SampleKind::Centroid) }
+    fn own_normal(self) -> bool { matches!(self,SampleKind::Face | SampleKind::Centroid) }
 }
 
 /// A point of an exported boundary: where it is, the exporter's normal if it has one, and which
@@ -136,6 +136,13 @@ pub struct Meter {
 }
 
 const PARAMETER_SLACK: f64 = 1e-9;
+
+impl Face {
+    /// Whether a projection's parameters lie on the finite face, to `PARAMETER_SLACK`.
+    fn covers(&self,[u,v]: [f64;2]) -> bool {
+        (-PARAMETER_SLACK..=1.+PARAMETER_SLACK).contains(&u) && v >= self.v[0]-PARAMETER_SLACK && v <= self.v[1]+PARAMETER_SLACK
+    }
+}
 
 fn surface_face(surface: &RevolvedSurface,index: usize) -> Result<Face,String> {
     Ok(Face {surface:index,projector:surface.projector()?,v:surface.domain()[1],side:1.})
@@ -253,7 +260,6 @@ impl Meter {
     }
 
     pub fn surfaces(&self) -> &[Surface] { &self.surfaces }
-    pub fn options(&self) -> Options { self.options }
 
     /// Both readings of one point.
     pub fn measure(&self,p: V) -> Measurement { Measurement {analytic:self.nearest(p),field:self.field(p)} }
@@ -341,8 +347,7 @@ impl Meter {
                 let s = &self.sweeps[sweep];
                 let (pose,inverse) = s.placements[placement];
                 let q = inverse.point(x);
-                let motion = s.contacts.motion();
-                let at = |t: f64| -> Option<(Motion,V)> { let m = motion.at(t).ok()?; Some((m,m.inverse().point(q))) };
+                let at = |t: f64| s.posed(q,t);
                 let [t0,t1] = s.contacts.domain();
                 let h = (t1-t0)/self.options.roll_steps.max(2) as f64;
                 let seed = roll?;
@@ -386,9 +391,7 @@ impl Meter {
     fn blank_face(&self,index: usize,face: &Face,p: V) -> Option<Candidate> {
         let pr = face.projector.project(p).ok()?;
         if pr.signed_residual.abs() > self.options.reach { return None; }
-        let [u,v] = pr.parameters;
-        let on = (-PARAMETER_SLACK..=1.+PARAMETER_SLACK).contains(&u)
-            && v >= face.v[0]-PARAMETER_SLACK && v <= face.v[1]+PARAMETER_SLACK;
+        let on = face.covers(pr.parameters);
         let foot = sub(p,scale(pr.normal,pr.signed_residual));
         let side = face.side;
         let trimmed = !on || self.blank.value(foot).abs() > self.options.trim;
@@ -405,8 +408,7 @@ impl Meter {
                 if !sweep.near(q) { continue; }
                 let [t0,t1] = sweep.contacts.domain();
                 let steps = self.options.roll_steps.max(2);
-                let motion = sweep.contacts.motion();
-                let at = |t: f64| -> Option<(Motion,V)> { let m = motion.at(t).ok()?; Some((m,m.inverse().point(q))) };
+                let at = |t: f64| sweep.posed(q,t);
                 let mut previous: Vec<Option<(f64,f64)>> = vec![None;sweep.faces.len()];
                 for i in 0..=steps {
                     let t = t0+(t1-t0)*i as f64/steps as f64;
@@ -461,9 +463,7 @@ impl Meter {
     fn envelope_point(&self,sweep: &Sweep,index: usize,k: usize,(t,m,x,pr): (f64,Motion,V,super::SurfaceProjection),
         placement: usize,pose: Motion) -> Option<Candidate> {
         let face = &sweep.faces[k];
-        let [u,v] = pr.parameters;
-        if !(-PARAMETER_SLACK..=1.+PARAMETER_SLACK).contains(&u)
-            || v < face.v[0]-PARAMETER_SLACK || v > face.v[1]+PARAMETER_SLACK { return None; }
+        if !face.covers(pr.parameters) { return None; }
         let s = pr.signed_residual;
         if s.abs() > self.options.reach { return None; }
         let f = sub(x,scale(pr.normal,s));
@@ -499,6 +499,13 @@ fn trial(face: &Face,m: &Motion,x: V) -> Option<(f64,super::SurfaceProjection)> 
 fn key(p: V,cell: f64) -> [i64;3] { p.map(|x| (x/cell).floor() as i64) }
 
 impl Sweep {
+    /// The generating motion's pose at roll `t`, and the point `q` of the sweep's own frame in the
+    /// cutter's frame there.
+    fn posed(&self,q: V,t: f64) -> Option<(Motion,V)> {
+        let m = self.contacts.motion().at(t).ok()?;
+        Some((m,m.inverse().point(q)))
+    }
+
     /// Whether a point in the sweep's own frame is within a cell of the tabulated envelope.
     fn near(&self,q: V) -> bool {
         let [i,j,k] = key(q,self.cell);
@@ -549,25 +556,25 @@ impl Sweep {
 
 /// Distribution of one route's readings over some samples, in model units.
 #[derive(Clone,Copy,Debug,Default)]
-pub struct Stats {
-    pub count: usize,
+struct Stats {
+    count: usize,
     /// Samples no exact face was found within reach of (analytic route).
-    pub unmatched: usize,
-    pub max: f64,
-    pub p99: f64,
-    pub mean: f64,
+    unmatched: usize,
+    max: f64,
+    p99: f64,
+    mean: f64,
     /// The mean of the signed distances: an offset reads here, where faceting reads both ways.
-    pub signed_mean: f64,
-    pub field_max: f64,
-    pub field_p99: f64,
+    signed_mean: f64,
+    field_max: f64,
+    field_p99: f64,
     /// The routes' difference over matched samples.
-    pub agreement_max: f64,
-    pub agreement_p99: f64,
+    agreement_max: f64,
+    agreement_p99: f64,
     /// The exporter's normal against the exact one, degrees (NaN where no sample has one).
-    pub normal_max: f64,
-    pub normal_p99: f64,
+    normal_max: f64,
+    normal_p99: f64,
     /// The sample the analytic route reads farthest.
-    pub worst: Option<usize>,
+    worst: Option<usize>,
 }
 
 fn percentile(values: &mut [f64],fraction: f64) -> f64 {
@@ -577,14 +584,14 @@ fn percentile(values: &mut [f64],fraction: f64) -> f64 {
 }
 
 /// The exporter's normal against the exact one at the nearest face, in degrees.
-pub fn normal_error(sample: &Sample,measurement: &Measurement) -> Option<f64> {
+fn normal_error(sample: &Sample,measurement: &Measurement) -> Option<f64> {
     let (n,a) = (sample.normal?,measurement.analytic?);
     let c = dot(normalised(n)?,a.normal).clamp(-1.,1.);
     Some(c.acos().to_degrees())
 }
 
 /// The distribution over the samples `which` picks.
-pub fn stats(samples: &[Sample],measurements: &[Measurement],which: impl Fn(usize) -> bool) -> Stats {
+fn stats(samples: &[Sample],measurements: &[Measurement],which: impl Fn(usize) -> bool) -> Stats {
     let (mut analytic,mut field,mut agreement,mut normal) = (Vec::new(),Vec::new(),Vec::new(),Vec::new());
     let mut s = Stats {max:0.,..Default::default()};
     let mut signed = 0.;
@@ -623,6 +630,7 @@ pub fn stats(samples: &[Sample],measurements: &[Measurement],which: impl Fn(usiz
 /// `millimetres` is the model's length unit in millimetres.
 pub fn report(meter: &Meter,samples: &[Sample],measurements: &[Measurement],classes: &[String],millimetres: f64) -> Vec<String> {
     let um = |x: f64| x*millimetres*1e3;
+    let mm = |p: V| format!("({:.4}, {:.4}, {:.4})",p[0]*millimetres,p[1]*millimetres,p[2]*millimetres);
     let line = |label: &str,s: &Stats| {
         let mut text = format!("{label:<34} {:>7} samples  max {:>9.3}  p99 {:>9.3}  mean {:>8.3}  signed mean {:>8.3}  \
             field max {:>9.3}  routes differ max {:>8.3} p99 {:>8.3}",
@@ -673,8 +681,8 @@ pub fn report(meter: &Meter,samples: &[Sample],measurements: &[Measurement],clas
     for &i in order.iter().take(6) {
         let (p,m) = (samples[i].position,measurements[i]);
         let a = m.analytic.unwrap();
-        let mut text = format!("  ({:.4}, {:.4}, {:.4}) {} {}: analytic {:.3}, field {:.3} on {}",p[0]*millimetres,p[1]*millimetres,
-            p[2]*millimetres,samples[i].kind.name(),samples[i].face,um(a.distance),um(m.field),meter.surfaces[a.surface].name);
+        let mut text = format!("  {} {} {}: analytic {:.3}, field {:.3} on {}",mm(p),samples[i].kind.name(),samples[i].face,
+            um(a.distance),um(m.field),meter.surfaces[a.surface].name);
         if let (Some(index),Some(roll)) = (a.placement,a.roll) { text += &format!(" at index {index}, roll {:.3}°",roll.to_degrees()); }
         out.push(text);
     }
@@ -687,22 +695,21 @@ pub fn report(meter: &Meter,samples: &[Sample],measurements: &[Measurement],clas
         out.push("worst normals (mm):".into());
         for &(e,i) in bent.iter().take(4) {
             let (p,a) = (samples[i].position,measurements[i].analytic.unwrap());
-            out.push(format!("  ({:.4}, {:.4}, {:.4}) {} {}: {e:.2}° at {:.3} on {}",p[0]*millimetres,p[1]*millimetres,
-                p[2]*millimetres,samples[i].kind.name(),samples[i].face,um(a.distance),meter.surfaces[a.surface].name));
+            out.push(format!("  {} {} {}: {e:.2}° at {:.3} on {}",mm(p),samples[i].kind.name(),samples[i].face,um(a.distance),
+                meter.surfaces[a.surface].name));
         }
     }
     let differ = |i: usize| measurements[i].analytic.map_or(f64::NAN,|a| (a.distance-measurements[i].field).abs());
     if let Some(i) = (0..samples.len()).filter(|&i| differ(i).is_finite()).max_by(|&a,&b| differ(a).total_cmp(&differ(b))) {
         let (p,a) = (samples[i].position,measurements[i].analytic.unwrap());
-        out.push(format!("the routes differ most at ({:.4}, {:.4}, {:.4}), {} {}: analytic {:.3} on {}, field {:.3}",
-            p[0]*millimetres,p[1]*millimetres,p[2]*millimetres,samples[i].kind.name(),samples[i].face,um(a.distance),
-            meter.surfaces[a.surface].name,um(measurements[i].field)));
+        out.push(format!("the routes differ most at {}, {} {}: analytic {:.3} on {}, field {:.3}",mm(p),samples[i].kind.name(),
+            samples[i].face,um(a.distance),meter.surfaces[a.surface].name,um(measurements[i].field)));
     }
     let unmatched: Vec<usize> = (0..samples.len()).filter(|&i| measurements[i].analytic.is_none()).collect();
     if let Some(&i) = unmatched.first() {
         let p = samples[i].position;
-        out.push(format!("{} samples unmatched within {:.3} mm, the first at ({:.4}, {:.4}, {:.4}), field {:.3}",
-            unmatched.len(),meter.options.reach*millimetres,p[0]*millimetres,p[1]*millimetres,p[2]*millimetres,um(measurements[i].field)));
+        out.push(format!("{} samples unmatched within {:.3} mm, the first at {}, field {:.3}",unmatched.len(),
+            meter.options.reach*millimetres,mm(p),um(measurements[i].field)));
     }
     out
 }
@@ -738,7 +745,7 @@ pub fn mesh_samples(vertices: &[V],triangles: &[[u32;3]],most: usize) -> Vec<Sam
     for index in super::agreement::chosen(vertices,triangles,&options) {
         let (face,t) = (index as u32,triangles[index]);
         let [a,b,c] = t.map(|i| vertices[i as usize]);
-        let normal = normalised(cross(sub(b,a),sub(c,a)));
+        let normal = triangle_normal(a,b,c);
         let mut push = |position,kind| out.push(Sample {position,normal,face,class:0,kind});
         push(scale(add(add(a,b),c),1./3.),SampleKind::Centroid);
         for (p,q) in [(a,b),(b,c),(c,a)] { push(scale(add(p,q),0.5),SampleKind::Midpoint); }
