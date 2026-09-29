@@ -66,6 +66,16 @@ fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
 const ANGULAR: f64 = 0.2;
 #[cfg(feature="occt")]
 const MOST_MESHES: usize = 4;
+/// How many times a sector is meshed for its seams to pair before the export is refused.
+#[cfg(feature="occt")]
+const SEAM_TRIES: usize = 4;
+/// How far along its seam a point of a mesh without a tolerance (0.01 mm deflection) may be moved onto
+/// its partner (mm): the two sides are meshed apart, and at that deflection the mesher has placed a
+/// side's points 5.6 and 11 µm from their partners' turns; along the seam, where both lie on the same
+/// two surfaces, such a move adds nothing to the mesh's distance from them. A quarter of the seam's
+/// least spacing still bounds it.
+#[cfg(feature="occt")]
+const GROSS_SEAM: f64 = 0.02;
 
 /// Build `body` natively once (admitting it first where it cuts sweeps and has not been, the
 /// admission beside the blank and the sheets), stage and check every requested format, judge a
@@ -101,12 +111,34 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         // face, and chords of the tip cone's trimmed edges 7 µm off it (a finer angle, 0.05 rad,
         // mended the first and not the second). So a mesh held to a tolerance is read for the sag
         // every triangle has (`mesh_sag`) and meshed again, finer, until that is within its share.
+        // The sector's mesh turned into its copies, its seam points paired within `reach`; where the
+        // mesher put the two sides' points unlike each other (the pairing refused), meshed again a tenth
+        // finer, at most `SEAM_TRIES` times, each finer mesh's sag read again where a `bar` holds it.
+        let turned_copies = |sector: &native::kernel::Patterned,mut deflection: f64,angular: f64,reach: f64,bar: Option<f64>,path: &str|
+            -> Result<(usize,f64,f64),String> {
+            for tries in 1.. {
+                match session.sector_stl(sector,reach,path) {
+                    Ok((triangles,moved)) => return Ok((triangles,moved,deflection)),
+                    Err(e) if e.starts_with("the sector's mesh") && tries < SEAM_TRIES => {
+                        deflection *= 0.9;
+                        stage(&format!("the sector's seams did not pair ({e}); meshing it again at {:.2} µm",deflection*1e3));
+                        match (session.sector_mesh(sector,deflection,angular,bar.is_some())?,bar) {
+                            (Some((sag,at)),Some(bar)) if sag > bar => return Err(format!("the mesh sags {:.2} µm at {:?} meshed \
+                                again for its seams, against {:.2} µm",sag*1e3,at.map(|x| (x*1e3).round()/1e3),bar*1e3)),
+                            _ => {}
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            unreachable!("the tries end in a return")
+        };
         let mesh = |path: &str| -> Result<(),String> {
             let Some(t) = tolerance else {
                 let Some(sector) = &sector else { return session.stl(solid,path) };
                 let started = std::time::Instant::now();
                 session.sector_mesh(sector,0.01,0.2,false)?;
-                let (triangles,moved) = session.sector_stl(sector,0.01,path)?;
+                let (triangles,moved,_) = turned_copies(sector,0.01,0.2,GROSS_SEAM,None,path)?;
                 stage(&format!("meshed one sector and turned it into {} copies: {triangles} triangles, seam points moved {:.3} µm \
                     at most onto their partners ({:?})",sector.count,moved*1e3,started.elapsed()));
                 return Ok(());
@@ -132,7 +164,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             match &sector {
                 Some(sector) => {
                     let started = std::time::Instant::now();
-                    let (triangles,moved) = session.sector_stl(sector,deflection,path)?;
+                    let (triangles,moved,_) = turned_copies(sector,deflection,ANGULAR,deflection,Some(t.deflection()),path)?;
                     stage(&format!("turned the sector's mesh into {} copies: {triangles} triangles, seam points moved {:.3} µm at \
                         most onto their partners ({:?})",sector.count,moved*1e3,started.elapsed()));
                     Ok(())
