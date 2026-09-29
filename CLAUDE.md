@@ -344,8 +344,21 @@ meshed finer until its measured sag (`mesh_sag`) is within that, since OCCT's de
 control and not a bound; the mesh contract counts clusters (`TinyTriangles::clustered`) and the
 field is probed at max(2 tol, 2 µm). `--measure FILE` reads an export against the exact surface
 (`solid::accuracy`: the analytic projection and the material field, two independent routes) and,
-with a tolerance, exits 1 when an exact face exceeds it. **Without `--tolerance` nothing changes**:
-the gross bars stand and every export is byte-identical to what it was before the flag.
+with a tolerance, exits 1 when an exact face exceeds it. Without `--tolerance` the gross bars stand.
+**One sector, sewn round ([plan](docs/native-speed-plan.md)):** a body whose swept cuts are turns of
+one placement about one axis (`solid::sector::indexing`), from a blank alike under the turn, is built
+as one sector (`cad/native/sweep_boundary/sector.rs`): its side runs midway across the gaps the cuts'
+contacts leave between neighbours in each slice (`sector::Boundary`, sliced by spheres about the
+blank's sphere centres or planes square to the axis; a spiral tooth space turns across its face by
+most of a pitch, so no flat half-plane clears it), is read back against the gaps and the field, and
+with its turn by a pitch splits the blank (made again about the axis, `solvent_cad_revolved`, its
+parameters starting opposite the sector) into the sector, whose own sheets split it. Its material
+is turned round and sewn (`solvent_cad_pattern`, no face intersected): faces of revolution are put
+on the source's surfaces with their pcurves shifted by the turn, and a ring's pieces moved into one
+period and split at the seam, so the rings close on an iso line (closed on a copy junction, a ring's
+parameters overran the period and the mesher left 0.1 mm chords). Any failed premise builds the body
+whole and says why; `SOLVENT_SECTOR=off` asks for that, `SOLVENT_SECTOR_DEBUG` narrates. Faces and
+volume are the whole construction's; the native exports' bytes are not.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference
