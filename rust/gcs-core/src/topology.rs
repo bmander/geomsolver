@@ -162,7 +162,7 @@ impl ClosedShell {
             for (a,b) in [(a,b),(b,c),(c,a)] { ends.push([a.min(b),a.max(b)]); }
         }
         // (vertex numbers past 48 bits, which no memory holds, would not pack)
-        if ends.iter().flatten().any(|&v| v >= 1 << 48) { return Err(Error::UnusedVertices); }
+        if ends.iter().flatten().any(|&v| v as u128 >= 1 << 48) { return Err(Error::UnusedVertices); }
         let (numbers,count) = crate::mesh::first_seen(&ends.iter().map(|&[a,b]| (a as u128) << 48 | b as u128).collect::<Vec<_>>());
         let mut edges = vec![[0;2];count];
         for (k,&e) in numbers.iter().enumerate() { edges[e] = ends[k]; }

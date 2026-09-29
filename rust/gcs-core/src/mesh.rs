@@ -415,7 +415,7 @@ pub fn stl_shells(bytes: &[u8]) -> Result<Vec<crate::topology::ClosedShell>,Stri
 /// Keys are at most 96 bits (and fewer than 2^32 of them), each sorted with its position packed
 /// below it.
 pub(crate) fn first_seen(keys: &[u128]) -> (Vec<usize>,usize) {
-    assert!(keys.len() < 1 << 32 && keys.iter().all(|&k| k < 1 << 96),"first_seen takes 96-bit keys");
+    assert!((keys.len() as u128) < 1 << 32 && keys.iter().all(|&k| k < 1 << 96),"first_seen takes 96-bit keys");
     let mut order: Vec<u128> = keys.iter().enumerate().map(|(i,&k)| k << 32 | i as u128).collect();
     order.sort_unstable();
     let at = |packed: u128| (packed & 0xffff_ffff) as usize;
