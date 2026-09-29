@@ -70,6 +70,7 @@
 #include <functional>
 #include <future>
 #include <optional>
+#include <memory>
 
 
 // A kernel operation's time budget: the algorithm polls UserBreak and stops once it is past.
@@ -216,6 +217,14 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
                 throw std::runtime_error("invalid split tool");
             cutters.Append(tool);
         }
+        // `SOLVENT_DUMP_SPLIT=DIR`: the stock and the tools written as BRep files, for a harness.
+        if (const char* dump = std::getenv("SOLVENT_DUMP_SPLIT")) {
+            static int dumped = 0;
+            const std::string prefix = std::string(dump)+"/split"+std::to_string(dumped++);
+            BRepTools::Write(stock,(prefix+"-stock.brep").c_str());
+            int k = 0;
+            for (const auto& tool: cutters) BRepTools::Write(tool,(prefix+"-tool"+std::to_string(k++)+".brep").c_str());
+        }
         BRepAlgoAPI_Splitter split;
         split.SetArguments(objects); split.SetTools(cutters);
         // Oriented boxes cull face pairs the axis-aligned ones cannot (the tilted sheets):
@@ -280,6 +289,8 @@ int solvent_cad_solids(Cad* cad,int source,int* output,int capacity) noexcept {
 // distance is measured for at most `measure` spread candidates. No centroid: integrating a spline cell for it cost seconds, and the
 // cell's volume is measured once already where the partition is listed. Each
 // output row is x, y, z, distance.
+// The candidates are taken one after another (each classifier and ray intersector a cell builds costs
+// more than the few candidates it takes), the distances measured on every core.
 static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,int measure) {
     if (shape.IsNull() || shape.ShapeType() != TopAbs_SOLID)
         throw std::runtime_error("solid samples need one solid");
@@ -290,15 +301,56 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
     const auto started = std::chrono::steady_clock::now();
     const auto since = [&] { return std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count(); };
     std::string trail;
-    BRepClass3d_SolidClassifier classify(shape);
-    trail += "classifier at "+std::to_string(since())+", ";
-    std::vector<gp_Pnt> inside;
-    const auto consider = [&](const gp_Pnt& p) {
-        if (static_cast<int>(inside.size()) >= measure) return;
-        classify.Perform(p,Precision::Confusion());
-        if (classify.State() == TopAbs_IN) inside.push_back(p);
+    // What the cell is asked with: a classifier, and rays against its shell.
+    struct Probe {
+        BRepClass3d_SolidClassifier classify;
+        IntCurvesFace_ShapeIntersector rays;
+        explicit Probe(const TopoDS_Shape& solid): classify(solid) { rays.Load(solid,Precision::Confusion()); }
     };
     const double diagonal = std::hypot(std::hypot(x1-x0,y1-y0),z1-z0);
+    // Whether a point is inside the cell: by the parity of rays from it in fixed directions, each read
+    // only where every crossing is a clean one (through a face's interior, not tangent, not at the
+    // point itself), three that agree deciding; a point they do not decide, the kernel's classifier's
+    // (50-70 ms a point on a cell of spline faces, where a ray is a millisecond or two).
+    // `SOLVENT_CELL_CLASSIFIER=kernel`: the kernel's always; `=check`: both, a disagreement refused.
+    static const char* which = std::getenv("SOLVENT_CELL_CLASSIFIER");
+    const bool kernel_only = which && std::string(which) == "kernel",checking = which && std::string(which) == "check";
+    static const gp_Dir directions[6] = {gp_Dir(0.2672612,0.5345225,0.8017837),gp_Dir(-0.7071068,0.4082483,0.5773503),
+        gp_Dir(0.3015113,-0.9045340,0.3015113),gp_Dir(0.8164966,0.4082483,-0.4082483),gp_Dir(-0.4364358,-0.2182179,-0.8728716),
+        gp_Dir(0.5698029,-0.3798686,-0.7287361)};
+    int by_rays = 0,by_kernel = 0;
+    const auto kernel = [&](Probe& probe,const gp_Pnt& p) {
+        ++by_kernel;
+        probe.classify.Perform(p,Precision::Confusion());
+        return probe.classify.State() == TopAbs_IN;
+    };
+    const auto parity = [&](Probe& probe,const gp_Pnt& p) -> int {
+        int votes[2] = {0,0},read = 0;
+        for (const gp_Dir& d: directions) {
+            probe.rays.Perform(gp_Lin(p,d),0.,Precision::Infinite());
+            if (!probe.rays.IsDone()) continue;
+            bool clean = true;
+            for (int k=1;k<=probe.rays.NbPnt() && clean;++k)
+                clean = probe.rays.State(k) == TopAbs_IN && probe.rays.Transition(k) != IntCurveSurface_Tangent
+                    && probe.rays.WParameter(k) > diagonal*1e-7;
+            if (!clean) continue;
+            ++votes[probe.rays.NbPnt() & 1];
+            if (++read == 3) break;
+        }
+        return read == 3 && (votes[0] == 3 || votes[1] == 3) ? votes[1] == 3 : -1;
+    };
+    const auto inside_of = [&](Probe& probe,const gp_Pnt& p) {
+        if (kernel_only) return kernel(probe,p);
+        const int rays = parity(probe,p);
+        if (checking) {
+            const bool k = kernel(probe,p);
+            if (rays >= 0 && (rays == 1) != k) throw std::runtime_error("a cell's rays and the kernel's classifier disagree at a point");
+            return k;
+        }
+        if (rays >= 0) { ++by_rays; return rays == 1; }
+        return kernel(probe,p);
+    };
+    std::vector<gp_Pnt> inside;
     // A face's point at (u, v) and its outward unit normal there; false where the surface is
     // singular.
     const auto outward = [](const TopoDS_Face& face,const BRepAdaptor_Surface& surface,double u,double v,
@@ -314,19 +366,20 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
     // Where a ray from a point of `face` along its inward normal next meets the shell, if it
     // does: the points before it are inside the cell by geometry alone. The face it starts
     // on is met again within its own tolerance, which a split leaves at tens of nanometres.
-    IntCurvesFace_ShapeIntersector rays;
-    rays.Load(shape,Precision::Confusion());
-    const auto exit = [&](const gp_Pnt& p,const gp_Vec& inward,const TopoDS_Face& face) {
+    const auto exit = [&](Probe& probe,const gp_Pnt& p,const gp_Vec& inward,const TopoDS_Face& face) {
         double first = Precision::Infinite();
         const double own = 10.*BRep_Tool::Tolerance(face);
-        rays.Perform(gp_Lin(p,gp_Dir(inward)),diagonal*1e-7,Precision::Infinite());
-        if (rays.IsDone()) for (int k=1;k<=rays.NbPnt();++k) {
-            const double w = rays.WParameter(k);
-            if (w <= own && rays.Face(k).IsSame(face)) continue;
+        probe.rays.Perform(gp_Lin(p,gp_Dir(inward)),diagonal*1e-7,Precision::Infinite());
+        if (probe.rays.IsDone()) for (int k=1;k<=probe.rays.NbPnt();++k) {
+            const double w = probe.rays.WParameter(k);
+            if (w <= own && probe.rays.Face(k).IsSame(face)) continue;
             first = std::min(first,w);
         }
         return first;
     };
+    std::vector<TopoDS_Face> faces;
+    for (TopExp_Explorer it(shape,TopAbs_FACE); it.More(); it.Next()) faces.push_back(TopoDS::Face(it.Current()));
+    const int count = static_cast<int>(faces.size());
     // A little inward from points of each face, along its inward normal: nearly always
     // inside, where a thin cell leaves most of a grid over its box outside and each miss
     // costs a classification (32 ms each on a tooth space's spline faces). The step is a
@@ -336,42 +389,50 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
     // A cell that rules out this many candidates in a row is a sliver the step does not fit: the rays
     // between its faces below find its inside at once, where each more candidate costs a ray.
     const int sliver = 10;
+    const double steps[2] = {diagonal*0.02,diagonal*0.005};
+    const std::pair<double,double> fractions[5] = {{0.5,0.5},{0.25,0.25},{0.75,0.75},{0.25,0.75},{0.75,0.25}};
+    // one classifier and one ray intersector for the cell, which taking the candidates in turn needs
+    Probe probe(shape);
+    const auto consider = [&](const gp_Pnt& p) {
+        if (static_cast<int>(inside.size()) >= measure) return;
+        if (inside_of(probe,p)) inside.push_back(p);
+    };
     const auto from_faces = [&](const double step) {
         int missed = 0;
-        for (TopExp_Explorer it(shape,TopAbs_FACE); it.More() && static_cast<int>(inside.size()) < measure && missed < sliver; it.Next()) {
-            const TopoDS_Face face = TopoDS::Face(it.Current());
+        for (int f=0;f<count && static_cast<int>(inside.size()) < measure && missed < sliver;++f) {
+            const TopoDS_Face& face = faces[static_cast<size_t>(f)];
             double u0,u1,v0,v1;
             BRepTools::UVBounds(face,u0,u1,v0,v1);
             BRepAdaptor_Surface surface(face);
-            for (const auto& [fu,fv]: {std::pair{0.5,0.5},{0.25,0.25},{0.75,0.75},{0.25,0.75},{0.75,0.25}}) {
+            for (const auto& [fu,fv]: fractions) {
                 if (missed >= sliver) break;
                 gp_Pnt p; gp_Vec n;
                 if (!outward(face,surface,u0+(u1-u0)*fu,v0+(v1-v0)*fv,p,n)) continue;
                 // The ray first: on a sliver it rules out most candidates for less than
                 // a classification each.
                 if (static_cast<int>(inside.size()) >= measure) continue;
-                if (exit(p,n.Reversed(),face) <= step) { ++missed; continue; }
+                if (exit(probe,p,n.Reversed(),face) <= step) { ++missed; continue; }
                 const size_t before = inside.size();
                 consider(p.Translated(n.Multiplied(-step)));
                 missed = inside.size() > before ? 0 : missed+1;
             }
         }
     };
-    trail += "rays at "+std::to_string(since())+", ";
-    for (const double step: {diagonal*0.02,diagonal*0.005}) from_faces(step);
+    for (const double step: steps) from_faces(step);
     trail += "faces "+std::to_string(inside.size())+" at "+std::to_string(since());
     // Distance to the boundary against the whole shell at once: the extrema
-    // solver culls faces by bounding box, where a face-by-face loop does not.
+    // solver culls faces by bounding box, where a face-by-face loop does not. Each on its own core.
     TopoDS_Shape boundary;
     for (TopExp_Explorer it(shape,TopAbs_SHELL); it.More(); it.Next()) { boundary = it.Current(); break; }
     if (boundary.IsNull()) throw std::runtime_error("cell has no shell");
     std::vector<std::pair<double,gp_Pnt>> measured;
     const auto measure_all = [&] {
-        for (const auto& p: inside) {
-            BRepExtrema_DistShapeShape distance(BRepBuilderAPI_MakeVertex(p).Vertex(),boundary);
-            if (!distance.IsDone() || distance.NbSolution() < 1) continue;
-            measured.emplace_back(distance.Value(),p);
-        }
+        std::vector<double> d(inside.size(),std::nan(""));
+        OSD_Parallel::For(0,static_cast<int>(inside.size()),[&](int i) {
+            BRepExtrema_DistShapeShape distance(BRepBuilderAPI_MakeVertex(inside[static_cast<size_t>(i)]).Vertex(),boundary);
+            if (distance.IsDone() && distance.NbSolution() >= 1) d[static_cast<size_t>(i)] = distance.Value();
+        });
+        for (size_t i=0;i<inside.size();++i) if (!std::isnan(d[i])) measured.emplace_back(d[i],inside[i]);
         inside.clear();
     };
     // A sliver long against its thickness (a chamfer's wedge along a tooth) leaves most
@@ -385,8 +446,8 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
     measure_all();
     trail += ", measured "+std::to_string(measured.size())+" clear "+std::to_string(clear())+" at "+std::to_string(since());
     if (clear() < capacity) {
-        for (TopExp_Explorer it(shape,TopAbs_FACE); it.More() && static_cast<int>(inside.size()) < measure; it.Next()) {
-            const TopoDS_Face face = TopoDS::Face(it.Current());
+        for (int f=0;f<count && static_cast<int>(inside.size()) < measure;++f) {
+            const TopoDS_Face& face = faces[static_cast<size_t>(f)];
             double u0,u1,v0,v1;
             BRepTools::UVBounds(face,u0,u1,v0,v1);
             BRepAdaptor_Surface surface(face);
@@ -396,7 +457,7 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
                 if (domain.Perform(gp_Pnt2d(u,v)) != TopAbs_IN) continue;
                 gp_Pnt p; gp_Vec n;
                 if (!outward(face,surface,u,v,p,n)) continue;
-                const double first = exit(p,n.Reversed(),face);
+                const double first = exit(probe,p,n.Reversed(),face);
                 if (first >= Precision::Infinite()) continue;
                 inside.push_back(p.Translated(n.Multiplied(-0.5*first)));
                 if (static_cast<int>(inside.size()) >= measure) break;
@@ -407,17 +468,19 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
     }
     // A coarse grid visited in a spread order, so early candidates are far apart.
     const int n = 5;
-    for (int pass=0;pass<2 && clear() < capacity;++pass) {
-        for (int i=0;i<n;++i) for (int j=0;j<n;++j) for (int k=0;k<n;++k) {
-            if (((i+j+k)&1) != pass) continue;
-            if (static_cast<int>(inside.size()) >= measure) break;
-            const gp_Pnt g(x0+(x1-x0)*(i+0.5)/n,y0+(y1-y0)*(j+0.5)/n,z0+(z1-z0)*(k+0.5)/n);
-            classify.Perform(g,Precision::Confusion());
-            if (classify.State() == TopAbs_IN) inside.push_back(g);
+    if (clear() < capacity) {
+        for (int pass=0;pass<2 && clear() < capacity;++pass) {
+            for (int i=0;i<n;++i) for (int j=0;j<n;++j) for (int k=0;k<n;++k) {
+                if (((i+j+k)&1) != pass) continue;
+                if (static_cast<int>(inside.size()) >= measure) break;
+                const gp_Pnt g(x0+(x1-x0)*(i+0.5)/n,y0+(y1-y0)*(j+0.5)/n,z0+(z1-z0)*(k+0.5)/n);
+                if (inside_of(probe,g)) inside.push_back(g);
+            }
+            measure_all();
         }
-        measure_all();
     }
     trail += ", end clear "+std::to_string(clear())+" at "+std::to_string(since());
+    trail += "; "+std::to_string(by_rays)+" points classified by rays, "+std::to_string(by_kernel)+" by the kernel";
     if (std::getenv("SOLVENT_CELL_DEBUG")) fprintf(stderr,"cell samples: %s\n",trail.c_str());
     if (measured.empty()) return 0;
     std::sort(measured.begin(),measured.end(),[](const auto& a,const auto& b) { return a.first > b.first; });

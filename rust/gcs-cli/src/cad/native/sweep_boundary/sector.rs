@@ -133,7 +133,6 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         }
         probed += 1;
     }
-    let mut material = body_field.evaluator(cad::POSE_CACHE);
     stage(&format!("the side: {rows}x{COLUMNS} nodes, read back {clear:.4} mm clear of the cuts at {} points in the blank, \
         {probed} of them material by the field ({:?})",read.len(),started.elapsed()));
     // The blank between the side and its turn: its share of the blank's volume.
@@ -188,7 +187,7 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         tools.len(),session.solids(partition)?.len(),clock.elapsed()));
     mark(Stage::Split);
     let clock = std::time::Instant::now();
-    let (kept,removed) = classify(session,partition,&mut material)?;
+    let (kept,removed) = classify(session,partition,&body_field)?;
     stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),clock.elapsed()));
     if kept.is_empty() { return Err("no cell of the sector is material".into()); }
     let volumes = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();

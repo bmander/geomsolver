@@ -17,7 +17,7 @@
 use super::*;
 use super::kernel::{Cell,Patterned};
 use gcs_core::{interval::{Interval,minimum::Options},model::{Sketch,SolidDef},motion::Family,
-    solid::{admission::Admission,cad,contracts,MaterialEvaluator,MaterialField,ProbeState,SweepContacts}};
+    solid::{admission::Admission,cad,contracts,MaterialField,ProbeState,SweepContacts}};
 use gcs_core::solid::contact_trace::{Band,Layout,Sample,Station,TraceError,Tracer,Withheld,marked};
 pub(crate) use gcs_core::solid::contact_trace::{Inside,Sheet};
 use gcs_core::solid::contact_trace::Rows;
@@ -47,17 +47,28 @@ fn tracing() -> bool {
 /// judged at several interior points with measured boundary distances; every
 /// point needs a ball certificate within that distance and all must agree, so
 /// an unresolved point or a cell that a leaking sheet failed to separate
-/// refuses the build instead of guessing.
-pub(crate) fn classify(session: &Session,partition: c_int,material: &mut MaterialEvaluator)
+/// refuses the build instead of guessing. The probes run on every core, an evaluator a thread,
+/// and are read in the cells' order, so the first refusal is the one the cells taken in turn give.
+pub(crate) fn classify(session: &Session,partition: c_int,field: &MaterialField)
     -> Result<(Vec<Cell>,Vec<Cell>),String> {
     let (mut kept,mut removed) = (Vec::new(),Vec::new());
-    let (mut sampling,mut probing,mut probes) = (0.,0.,0);
     // Each cell's volume was measured when the partition was validated; its point is the
     // deepest interior sample measured here, every cell's on its own core.
     let solids = session.solids(partition)?;
     let clock = std::time::Instant::now();
     let sampled = session.samples_of(&solids,4,12)?;
-    sampling += clock.elapsed().as_secs_f64();
+    let sampling = clock.elapsed().as_secs_f64();
+    // every sample far enough from its cell's boundary is probed, at half its distance (at most 0.05 mm)
+    let asked: Vec<([f64;3],f64)> = sampled.iter().flatten().map(|&(point,boundary)| (point,(boundary*0.5).min(0.05)))
+        .filter(|&(_,distance)| distance > 1e-4).collect();
+    let clock = std::time::Instant::now();
+    let answers = gcs_core::par::indices_with(asked.len(),|| field.evaluator(cad::POSE_CACHE),|material,i| {
+        let (point,distance) = asked[i];
+        material.probe(point.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
+            Options {value_tolerance:distance/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
+    });
+    let probing = clock.elapsed().as_secs_f64();
+    let mut answers = answers.into_iter();
     for (solid,samples) in solids.into_iter().zip(sampled) {
         let volume = session.volume(solid)?;
         if samples.is_empty() { return Err(format!("a cell of volume {volume} has no interior sample")); }
@@ -65,13 +76,8 @@ pub(crate) fn classify(session: &Session,partition: c_int,material: &mut Materia
         let mut verdict = None;
         let deepest = samples[0];
         for (point,boundary) in samples {
-            let distance = (boundary*0.5).min(0.05);
-            if distance <= 1e-4 { continue; }
-            let clock = std::time::Instant::now();
-            probes += 1;
-            let probe = material.probe(point.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
-                Options {value_tolerance:distance/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))?;
-            probing += clock.elapsed().as_secs_f64();
+            if (boundary*0.5).min(0.05) <= 1e-4 { continue; }
+            let probe = answers.next().expect("an answer a probe asked")?;
             let inside = match probe.state {
                 ProbeState::InteriorBall => true,
                 ProbeState::ExteriorBall => false,
@@ -94,7 +100,7 @@ pub(crate) fn classify(session: &Session,partition: c_int,material: &mut Materia
                 cell.volume,deepest.1,deepest.0.map(|x| (x*1e4).round()/1e4))),
         }
     }
-    stage(&format!("classification: interior samples {sampling:.1} s, {probes} field probes {probing:.1} s"));
+    stage(&format!("classification: interior samples {sampling:.1} s, {} field probes {probing:.1} s",asked.len()));
     Ok((kept,removed))
 }
 
@@ -440,8 +446,8 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     mark(Stage::Split);
     let started = std::time::Instant::now();
     let classified = || -> Result<(Vec<Cell>,Vec<Cell>),String> {
-        let mut material = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?.evaluator(cad::POSE_CACHE);
-        let (kept,removed) = classify(session,partition,&mut material)?;
+        let material = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
+        let (kept,removed) = classify(session,partition,&material)?;
         stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),started.elapsed()));
         if kept.is_empty() { return Err("no cell of the blank is material".into()); }
         let volumes = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();
