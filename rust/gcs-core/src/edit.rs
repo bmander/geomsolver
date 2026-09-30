@@ -136,7 +136,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             syntax::Kid::Ref(r) => {
                 !r.span.is_empty() && r.span.lo >= st.span.lo && r.span.hi <= st.span.hi
             }
-            syntax::Kid::Hint(_) | syntax::Kid::Face { .. } => true,
+            syntax::Kid::Hint(_) | syntax::Kid::Face { .. } | syntax::Kid::Trim { .. } => true,
         };
 
         // One seed at a time: where the source wrote it, the splice that records it; where it
@@ -171,7 +171,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // written back where it was declared; one it wrote nothing for at all was minted.
         for (j, &k) in kids.iter().enumerate() {
             let seed = match slot_kid(j) {
-                Some(syntax::Kid::Ref(_) | syntax::Kid::Face { .. }) => continue,
+                Some(syntax::Kid::Ref(_) | syntax::Kid::Face { .. } | syntax::Kid::Trim { .. }) => continue,
                 Some(syntax::Kid::Hint(s)) => Some(s),
                 None => None,
             };
@@ -258,7 +258,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
                 !matches!(st.chained, syntax::Chained::No)
                     || !d.children.iter().flatten().any(|kid| match kid {
                         syntax::Kid::Ref(r) => syntax::hidden(&r.root.text),
-                        syntax::Kid::Hint(_) | syntax::Kid::Face { .. } => false,
+                        syntax::Kid::Hint(_) | syntax::Kid::Face { .. } | syntax::Kid::Trim { .. } => false,
                     }),
                 "an unwritable reference outside a chain has nothing to re-thread its slot",
             );
@@ -882,7 +882,7 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
         }
         StmtKind::Decl(d) => {
             for g in &d.children {
-                for r in g.iter().filter_map(|k| k.as_ref()) {
+                for r in g.iter().flat_map(|k| k.refs()) {
                     look(r);
                 }
             }

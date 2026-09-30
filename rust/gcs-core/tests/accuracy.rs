@@ -99,3 +99,37 @@ fn a_blank_offset_reads_as_its_offset() {
     reads_offsets(&meter,&points,false);
 }
 
+
+/// A body with no swept cut is read through its exact B-rep: an offset of the cam's spline side
+/// (`solid_spline`) reads as that offset on the analytic route (the B-rep's extrusion) and on the
+/// field's (the spline as chords).
+#[test]
+fn a_static_spline_face_offset_reads_as_its_offset() {
+    let (_,e) = fixtures::examples().into_iter().find(|(n,_)| n == "solid_spline.sv").unwrap();
+    let mut sk = e.unwrap().sketch;
+    gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
+    let body = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "cam").unwrap();
+    let meter = Meter::read(&sk,body,Options::in_units(1.)).unwrap();
+    let b = gcs_core::brep::recipe::build(&cad::recipe(&sk,body).unwrap()).unwrap();
+    let face = b.faces.iter().find(|f| f.surface.kind() == "extrusion").unwrap();
+    // the side's parameters: along the spline, and across the depth its loop spans
+    let vs: Vec<f64> = face.loops[0].iter().flat_map(|c| b.uv_ends(face,c)).map(|uv| uv[1]).collect();
+    let (v0,v1) = (vs.iter().copied().fold(f64::INFINITY,f64::min),vs.iter().copied().fold(f64::NEG_INFINITY,f64::max));
+    let mut worst = [0_f64;2];
+    for i in 1..20 { for j in 1..6 {
+        let (u,v) = (i as f64/20.,v0+(v1-v0)*j as f64/6.);
+        let p = face.surface.point([u,v]);
+        let n = face.surface.normal([u,v]).unwrap();
+        let n = if face.reversed { scale(n,-1.) } else { n };
+        for offset in OFFSETS {
+            let m = meter.measure(add(p,scale(n,offset)));
+            let a = m.analytic.unwrap();
+            assert_eq!(meter.surfaces()[a.surface].name.split(' ').next(),Some("extrusion"));
+            worst[0] = worst[0].max((a.distance-offset).abs());
+            worst[1] = worst[1].max((m.field-offset).abs());
+        }
+    } }
+    // the field reads the spline's chords, within `CHORD_SLACK` of the profile's reach of it
+    let slack = gcs_core::solid::CHORD_SLACK*(1.+36.);
+    assert!(worst[0] < 1e-9 && worst[1] <= slack,"offsets misread: {worst:?} (slack {slack:e})");
+}

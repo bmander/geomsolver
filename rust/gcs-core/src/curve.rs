@@ -483,8 +483,7 @@ pub fn interpolating_ctrl(
     pts: &[(f64, f64)],
 ) -> Option<(Vec<(f64, f64)>, Vec<f64>, Vec<f64>)> {
     let m = pts.len();
-    let p = DEGREE;
-    if m < p + 1 || pts.iter().any(|q| !q.0.is_finite() || !q.1.is_finite()) {
+    if m < DEGREE + 1 || pts.iter().any(|q| !q.0.is_finite() || !q.1.is_finite()) {
         return None;
     }
     // chord-length parameters: points that are far apart get more of the curve
@@ -499,6 +498,20 @@ pub fn interpolating_ctrl(
         t[k] = t[k - 1] + chords[k - 1] / total;
     }
     t[m - 1] = 1.0;
+    interpolating_ctrl_at(pts, t)
+}
+
+/// `interpolating_ctrl` at parameters the caller chose (increasing, from 0 to 1): what a fit
+/// whose parameter must follow another curve's asks for.
+pub fn interpolating_ctrl_at(
+    pts: &[(f64, f64)],
+    t: Vec<f64>,
+) -> Option<(Vec<(f64, f64)>, Vec<f64>, Vec<f64>)> {
+    let m = pts.len();
+    let p = DEGREE;
+    if m < p + 1 || t.len() != m || pts.iter().any(|q| !q.0.is_finite() || !q.1.is_finite()) {
+        return None;
+    }
     // averaged knots: each interior knot is the mean of the p parameters it spans, which is
     // what keeps the collocation system well conditioned
     let mut u = vec![0.0; p + 1];

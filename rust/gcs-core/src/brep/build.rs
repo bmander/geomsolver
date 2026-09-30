@@ -1,7 +1,7 @@
 //! The primitives, built with their topology whole: a profile swept along its normal (a prism)
 //! or turned about a line in its plane (a revolution), from the loops of lines, arcs and circles
 //! the CAD recipe carries (`solid::cad::recipe`).
-use super::geom::{BSpline,Curve,Frame,Rigid,Surface,Uv,V};
+use super::geom::{BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
 use std::sync::Arc;
 use super::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::json::Json;
@@ -165,7 +165,7 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                 Curve::Circle(f,r) => (Surface::Cylinder(f,r),!s.forward(),s.t[0],s.t[1]),
                 // C(u) + v n: the step's tangent turned clockwise about n is its normal
                 Curve::BSpline(_) => (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
-                Curve::Ellipse(..) | Curve::Traced(..) => unreachable!("a profile has only lines, circles and splines"),
+                Curve::Ellipse(..) | Curve::Traced(..) | Curve::Iso(..) => unreachable!("a profile has only lines, circles and splines"),
             };
             // the side's parameters along the walk step, for the step's edge parameter
             let u_at = |t: f64| match s.curve { Curve::Line {..} => (t-s.t[0]).abs(),_ => t };
@@ -353,29 +353,35 @@ pub enum Guide { Line { start: V,delta: V },Arc { center: V,axis: V,start: V,ang
 
 /// A section swept along a guide, or lofted from it to a second section at the guide's end (Solvent
 /// §6.9: the start section square to the guide at its start, the end square to it at its end).
-/// Without an end section a line's sweep is a prism and an arc's a revolution about its axis; a
-/// loft along a line joins each start edge to the end edge written in the same place, by the
-/// ruled surface between them.
+/// Without an end section a line's sweep is a prism and an arc's a revolution about its axis; with
+/// one, each start edge is joined to the end edge written in its place (`ruled`).
 pub fn loft(start: &Profile,end: Option<&Profile>,guide: &Guide) -> Result<Brep,String> {
     match (guide,end) {
         (Guide::Line {delta,..},None) => prism(start,0.,dot(*delta,unit(start.normal))),
         (Guide::Arc {center,axis,angle,..},None) => revolve(start,*center,*axis,*angle),
-        (Guide::Arc {..},Some(_)) => Err("a loft between two sections along an arc: not built yet".into()),
-        (Guide::Line {delta,..},Some(end)) => ruled(start,end,*delta),
+        (Guide::Line {delta,..},Some(end)) => ruled(start,end,Carry::Line {delta:*delta}),
+        (Guide::Arc {center,axis,angle,..},Some(end)) =>
+            ruled(start,end,Carry::Arc {center:*center,axis:unit(*axis),angle:*angle}),
     }
 }
 
-/// The loft of `start` to `end` along the line `delta`: every point of a start edge joined to the
-/// point of the end edge written in its place at the same fraction along it (an arc's by angle),
-/// which for edges that are parallel lines is a plane and for coaxial circles and arcs a cone or a
-/// cylinder; anything twisted is refused by name, not yet built.
-fn ruled(start: &Profile,end: &Profile,delta: V) -> Result<Brep,String> {
+/// The loft of `start` to `end` as `carry` takes the section along its guide: every point of a
+/// start edge joined to the point of the end edge written in its place at the same fraction of its
+/// own parameter (an arc's by angle), blended while carried (`Blend`). Carried along a line, edges
+/// that are coplanar lines join in a plane and coaxial circles and arcs in step in a cone or a
+/// cylinder, and the rails between them are straight; everything else is a `Blend`, and turned
+/// about an axis the rails are its iso-curves.
+fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
     let n = unit(start.normal);
-    let e = unit(delta);
-    let tol = 1e-9*(start.size()+end.size()+norm(delta));
+    // what carries the end section back to the start, and the direction a line carries along
+    let (back,line) = match carry {
+        Carry::Line {delta} => (Rigid {r:Rigid::identity().r,t:scale(delta,-1.)},Some(unit(delta))),
+        Carry::Arc {center,axis,angle} => (Rigid::turn(center,axis,-angle),None),
+    };
+    let tol = 1e-9*(start.size()+end.size()+norm(sub(end.origin,start.origin)));
     let frame = Frame::about(start.origin,n);
     let starts = walks(start,&|q| { let l = frame.local(q); [l[0],l[1]] })?;
-    let ends = walks(end,&|q| { let l = frame.local(sub(q,delta)); [l[0],l[1]] })?;
+    let ends = walks(end,&|q| { let l = frame.local(back.point(q)); [l[0],l[1]] })?;
     if starts.len() != ends.len() { return Err("a loft's sections must have as many holes".into()) }
     let mut b = Brep::default();
     let (mut start_loops,mut end_loops) = (Vec::new(),Vec::new());
@@ -385,12 +391,14 @@ fn ruled(start: &Profile,end: &Profile,delta: V) -> Result<Brep,String> {
         // the end's steps in the start walk's order, by source edge
         let mut ew: Vec<Seg> = sw.iter().map(|s| ew.iter().find(|x| x.source == s.source).cloned()
             .ok_or("a loft's sections must have their edges written in corresponding order")).collect::<Result<_,_>>()?;
-        // a whole circle is joined radially: the end's starts where the start's does, seen from the axis
+        // a whole circle is joined radially: the end's starts where the start's does, seen from the
+        // start circle's centre with the end carried back to it
         if m == 1 {
             if let (Curve::Circle(fa,_),Curve::Circle(fb,rb)) = (&sw[0].curve,&ew[0].curve) {
+                let fb = fb.moved(&back);
                 let d = sub(sw[0].start(),fa.o);
-                let d = unit(sub(d,scale(e,dot(d,e))));
-                let t0 = Curve::Circle(*fb,*rb).inverse(add(fb.o,scale(d,*rb)));
+                let d = unit(sub(d,scale(fa.z,dot(d,fa.z))));
+                let t0 = Curve::Circle(fb,*rb).inverse(add(fb.o,scale(d,*rb)));
                 ew[0].t = if ew[0].forward() { [t0,t0+TAU] } else { [t0+TAU,t0] };
             }
         }
@@ -407,10 +415,16 @@ fn ruled(start: &Profile,end: &Profile,delta: V) -> Result<Brep,String> {
         };
         let se: Vec<u32> = (0..m).map(|k| curve_edge(&mut b,&sw[k],&pv,k)).collect();
         let ee: Vec<u32> = (0..m).map(|k| curve_edge(&mut b,&ew[k],&qv,k)).collect();
+        let blend = |k: usize| Blend {a:sw[k].curve.clone(),ta:sw[k].t,b:ew[k].curve.moved(&back),tb:ew[k].t,carry,
+            closed:m == 1 && matches!(sw[k].curve,Curve::Circle(..)) && matches!(ew[k].curve,Curve::Circle(..))};
+        // the rails, each where an edge of the start section begins: straight along a line, the
+        // blend's own iso-curve turned about an axis
         let rails: Vec<u32> = (0..m).map(|k| {
             let (p,q) = (sw[k].start(),ew[k].start());
-            let l = distance(p,q);
-            b.edge(EdgeCurve::Curve(Curve::Line {p,d:unit(sub(q,p))}),[0.,l],[pv[k],qv[k]])
+            match line {
+                Some(_) => b.edge(EdgeCurve::Curve(Curve::Line {p,d:unit(sub(q,p))}),[0.,distance(p,q)],[pv[k],qv[k]]),
+                None => b.edge(EdgeCurve::Curve(Curve::Iso(std::sync::Arc::new(blend(k)),0.)),[0.,1.],[pv[k],qv[k]]),
+            }
         }).collect();
         for k in 0..m {
             let (a,z) = (&sw[k],&ew[k]);
@@ -419,53 +433,39 @@ fn ruled(start: &Profile,end: &Profile,delta: V) -> Result<Brep,String> {
             let mid = (a.t[0]+a.t[1])/2.;
             let d = scale(a.curve.tangent(mid),if a.forward() { 1. } else { -1. });
             let outward = cross(d,n);
-            let (surface,rim) = match (&a.curve,&z.curve) {
-                (Curve::Line {..},Curve::Line {..}) => {
-                    let (p0,p1,q0,q1) = (a.start(),a.end(),z.start(),z.end());
-                    let mut normal = cross(sub(p1,p0),sub(q0,p0));
-                    if norm(normal) <= tol*tol { normal = cross(sub(p1,p0),sub(q1,p0)); }
-                    let normal = unit(normal);
-                    if dot(sub(q1,p0),normal).abs() > 1e3*tol || dot(sub(q0,p0),normal).abs() > 1e3*tol {
-                        return Err("a loft joins two lines that twist (a ruled face that is not a plane): not built yet".into())
-                    }
-                    let normal = if dot(normal,outward) < 0. { scale(normal,-1.) } else { normal };
-                    (Surface::Plane(Frame::new(p0,normal,sub(p1,p0))),false)
+            let (surface,mut l) = match line.and_then(|e| analytic_ruled(a,z,e,outward,tol)) {
+                Some((surface,rim)) => {
+                    let at = |p: V| surface.inverse(p);
+                    // the face's parameters at each corner, the rails at the arc's start (u = 0) and end
+                    let e = line.unwrap();
+                    let turn = if rim { (a.t[1]-a.t[0])*dot(match &a.curve { Curve::Circle(f,_) => f.z,_ => e },e) } else { 0. };
+                    let corner = |p: V,u_end: bool| { let mut uv = at(p); if rim { uv[0] = if u_end { turn } else { 0. }; } uv };
+                    let (u_p0,u_p1,u_q0,u_q1) = (corner(a.start(),false),corner(a.end(),true),corner(z.start(),false),corner(z.end(),true));
+                    let pc = |x: Uv,y: Uv| Pcurve::Inverse {a:x,b:y};
+                    let edge_uv = |s: &Seg,first: Uv,last: Uv| if s.forward() { pc(first,last) } else { pc(last,first) };
+                    (surface,vec![
+                        Coedge {edge:se[k],reversed:!a.forward(),pcurve:edge_uv(a,u_p0,u_p1)},
+                        Coedge {edge:rails[k1],reversed:false,pcurve:pc(u_p1,u_q1)},
+                        Coedge {edge:ee[k],reversed:z.forward(),pcurve:edge_uv(z,u_q0,u_q1)},
+                        Coedge {edge:rails[k],reversed:true,pcurve:pc(u_p0,u_q0)},
+                    ])
                 }
-                (Curve::Circle(fa,ra),Curve::Circle(fb,rb)) => {
-                    // coaxial along the guide, and joined at the same angles
-                    let h = dot(sub(fb.o,fa.o),e);
-                    let off = norm(sub(sub(fb.o,fa.o),scale(e,h)));
-                    let (pa,pz) = (a.start(),z.start());
-                    let radial = |p: V,c: V| { let d = sub(p,c); unit(sub(d,scale(e,dot(d,e)))) };
-                    let aligned = |sa: V,sz: V| norm(cross(radial(sa,fa.o),radial(sz,fb.o))) <= 1e-9
-                        && dot(radial(sa,fa.o),radial(sz,fb.o)) > 0.;
-                    if norm(cross(fa.z,e)) > 1e-9 || norm(cross(fb.z,e)) > 1e-9 || off > 1e3*tol || h <= 0.
-                        || !aligned(pa,pz) || !aligned(a.end(),z.end()) || !aligned(a.curve.point(mid),z.curve.point((z.t[0]+z.t[1])/2.)) {
-                        return Err("a loft joins two arcs that are not coaxial and in step (a twisted ruled face): not built yet".into())
-                    }
-                    let f = Frame::new(fa.o,e,radial(pa,fa.o));
-                    let surface = if (ra-rb).abs() <= tol { Surface::Cylinder(f,*ra) } else { Surface::Cone(f,*ra,((rb-ra)/h).atan()) };
-                    (surface,true)
+                None => {
+                    // S(u, v) with u along the walk: an edge runs u forward where it is walked forward
+                    let along = |s: &Seg,v: f64| if s.forward() { Pcurve::Line {a:[0.,v],b:[1.,v]} } else { Pcurve::Line {a:[1.,v],b:[0.,v]} };
+                    (Surface::Blend(frame,std::sync::Arc::new(blend(k))),vec![
+                        Coedge {edge:se[k],reversed:!a.forward(),pcurve:along(a,0.)},
+                        Coedge {edge:rails[k1],reversed:false,pcurve:Pcurve::Line {a:[1.,0.],b:[1.,1.]}},
+                        Coedge {edge:ee[k],reversed:z.forward(),pcurve:along(z,1.)},
+                        Coedge {edge:rails[k],reversed:true,pcurve:Pcurve::Line {a:[0.,0.],b:[0.,1.]}},
+                    ])
                 }
-                (Curve::BSpline(_),_) | (_,Curve::BSpline(_)) => return Err("a loft joins a spline (a ruled face of splines): not built yet".into()),
-                _ => return Err("a loft joins a line to an arc (a ruled face that is not a plane or a cone): not built yet".into()),
             };
-            let at = |p: V| surface.inverse(p);
-            // the face's parameters at each corner, the rails at the arc's start (u = 0) and end
-            let turn = if rim { (a.t[1]-a.t[0])*dot(match &a.curve { Curve::Circle(f,_) => f.z,_ => e },e) } else { 0. };
-            let corner = |p: V,u_end: bool| { let mut uv = at(p); if rim { uv[0] = if u_end { turn } else { 0. }; } uv };
-            let (u_p0,u_p1,u_q0,u_q1) = (corner(a.start(),false),corner(a.end(),true),corner(z.start(),false),corner(z.end(),true));
-            let pc = |x: Uv,y: Uv| Pcurve::Inverse {a:x,b:y};
-            let edge_uv = |s: &Seg,first: Uv,last: Uv| if s.forward() { pc(first,last) } else { pc(last,first) };
-            let mut l = vec![
-                Coedge {edge:se[k],reversed:!a.forward(),pcurve:edge_uv(a,u_p0,u_p1)},
-                Coedge {edge:rails[k1],reversed:false,pcurve:pc(u_p1,u_q1)},
-                Coedge {edge:ee[k],reversed:z.forward(),pcurve:edge_uv(z,u_q0,u_q1)},
-                Coedge {edge:rails[k],reversed:true,pcurve:pc(u_p0,u_q0)},
-            ];
-            let reversed = match surface {
+            let reversed = match &surface {
                 Surface::Plane(_) => false,
-                _ => dot(surface.normal_raw(at(a.curve.point(mid))),outward) < 0.,
+                // u along the walk, so the walk's middle is u = ½
+                Surface::Blend(..) => dot(surface.normal_raw([0.5,0.]),outward) < 0.,
+                _ => dot(surface.normal_raw(surface.inverse(a.curve.point(mid))),outward) < 0.,
             };
             let face = Face {surface,reversed,loops:vec![],name:String::new()};
             let ccw = b.loop_area(&face,&l) > 0.;
@@ -475,7 +475,13 @@ fn ruled(start: &Profile,end: &Profile,delta: V) -> Result<Brep,String> {
         start_loops.push((0..m).map(|k| use_of(se[k],&sw[k],true,on_plane())).collect::<Vec<_>>());
         end_loops.push((0..m).map(|k| use_of(ee[k],&ew[k],true,on_plane())).collect::<Vec<_>>());
     }
-    // the caps: the start's material toward the guide, the end's behind it
+    // the caps: the start's material toward the guide, the end's behind it. The guide leaves the
+    // start along the way the carry moves the section (read at one of its corners, off any axis)
+    let corner = starts[0][0].start();
+    let forward = {
+        let step = sub(carry.at(corner,1e-6),corner);
+        if dot(n,step) < 0. { scale(n,-1.) } else { n }
+    };
     let cap = |origin: V,normal: V,outward: V,loops: Vec<Vec<Coedge>>,name: &str,b: &Brep| {
         let surface = Surface::Plane(Frame::about(origin,normal));
         let reversed = dot(normal,outward) < 0.;
@@ -487,9 +493,41 @@ fn ruled(start: &Profile,end: &Profile,delta: V) -> Result<Brep,String> {
         }).collect();
         Face {loops,..face}
     };
-    let start_cap = cap(start.origin,n,scale(e,-1.),start_loops,"start",&b);
-    let end_cap = cap(end.origin,unit(end.normal),e,end_loops,"end",&b);
+    let start_cap = cap(start.origin,n,scale(forward,-1.),start_loops,"start",&b);
+    let end_cap = cap(end.origin,unit(end.normal),carry.dir(forward,1.),end_loops,"end",&b);
     b.faces.push(start_cap);
     b.faces.push(end_cap);
     Ok(b)
+}
+
+/// The analytic face joining a start edge to its end edge along the line `e`, where there is one
+/// (and whether its parameters run round an axis): a plane for coplanar lines, a cone or cylinder
+/// for coaxial circles and arcs in step.
+fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64) -> Option<(Surface,bool)> {
+    match (&a.curve,&z.curve) {
+        (Curve::Line {..},Curve::Line {..}) => {
+            let (p0,p1,q0,q1) = (a.start(),a.end(),z.start(),z.end());
+            let mut normal = cross(sub(p1,p0),sub(q0,p0));
+            if norm(normal) <= tol*tol { normal = cross(sub(p1,p0),sub(q1,p0)); }
+            let normal = crate::space::normalised(normal)?;
+            if dot(sub(q1,p0),normal).abs() > 1e3*tol || dot(sub(q0,p0),normal).abs() > 1e3*tol { return None }
+            let normal = if dot(normal,outward) < 0. { scale(normal,-1.) } else { normal };
+            Some((Surface::Plane(Frame::new(p0,normal,sub(p1,p0))),false))
+        }
+        (Curve::Circle(fa,ra),Curve::Circle(fb,rb)) => {
+            // coaxial along the guide, and joined at the same angles
+            let h = dot(sub(fb.o,fa.o),e);
+            let off = norm(sub(sub(fb.o,fa.o),scale(e,h)));
+            let radial = |p: V,c: V| { let d = sub(p,c); unit(sub(d,scale(e,dot(d,e)))) };
+            let aligned = |sa: V,sz: V| norm(cross(radial(sa,fa.o),radial(sz,fb.o))) <= 1e-9
+                && dot(radial(sa,fa.o),radial(sz,fb.o)) > 0.;
+            let mid = (a.t[0]+a.t[1])/2.;
+            if norm(cross(fa.z,e)) > 1e-9 || norm(cross(fb.z,e)) > 1e-9 || off > 1e3*tol || h <= 0.
+                || !aligned(a.start(),z.start()) || !aligned(a.end(),z.end())
+                || !aligned(a.curve.point(mid),z.curve.point((z.t[0]+z.t[1])/2.)) { return None }
+            let f = Frame::new(fa.o,e,radial(a.start(),fa.o));
+            Some((if (ra-rb).abs() <= tol { Surface::Cylinder(f,*ra) } else { Surface::Cone(f,*ra,((rb-ra)/h).atan()) },true))
+        }
+        _ => None,
+    }
 }

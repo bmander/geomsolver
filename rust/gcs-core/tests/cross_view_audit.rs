@@ -129,6 +129,7 @@ fn every_cross_membership_relation_in_the_corpus_keeps_its_reading() {
         }
     }
     // 215 until the spiral bevel's layout replaced its pair: `gears.sv` and `pair.sv` each
-    // expanded five of them, and now read in space with the rest of `LAYOUT`
-    assert_eq!(across, 205, "the P0 audit's count");
+    // expanded five of them, and now read in space with the rest of `LAYOUT`; then 207, the
+    // lofts `solid_twist` and `solid_bend` each holding a section's centre to `std.origin`
+    assert_eq!(across, 207, "the P0 audit's count");
 }

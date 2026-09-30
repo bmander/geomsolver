@@ -17,6 +17,8 @@ pub fn edge_ends(sk: &Sketch, e: EntRef) -> Option<(u32, u32)> {
                 && k[k.len() - 1 - d..].iter().all(|&x| x == k[k.len() - 1]))
                 .then(|| (s.ctrl[0], *s.ctrl.last().unwrap()))
         }
+        // a curve has ends where a face trimmed it to two points held on it
+        EntKind::Curve => sk.curves.get(e.i())?.trim.map(|t| (t.from, t.to)),
         _ => None,
     }
 }

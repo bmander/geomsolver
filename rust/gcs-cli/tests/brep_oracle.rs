@@ -69,16 +69,18 @@ fn every_node_the_kernel_builds_is_occts() {
                 let through_splines = n.get("kind").unwrap().as_str() == "through"
                     && n.get("sources").unwrap().arr().iter().any(|s| ours.get(&s.as_i64()).is_some_and(swept));
                 // OCCT integrates a face swept from a spline (its adaptive rule asked for 1e-9) to a few
-                // parts in ten million, where this kernel's Gauss rule is exact on each knot span
-                // (`tests/brep.rs` holds it to the closed forms)
-                let bar = if through_splines { 1e-3 } else if swept(&b) { 1e-6 } else { 1e-7 };
+                // parts in a million, where this kernel's Gauss rule is exact on each knot span: on
+                // `solid_tooth` fitted within 1e-7 mm this kernel meets the involute's closed form to
+                // 1e-9 and OCCT is 4e-8 off; fitted within 1e-4 mm, OCCT is 2e-6 off (`tests/brep.rs`
+                // and `brep_census.rs` hold this kernel to the closed forms)
+                let bar = if through_splines { 1e-3 } else if swept(&b) { 1e-5 } else { 1e-7 };
                 if rel >= bar { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
                 // faces by the kind of their surface (OCCT's `GeomAbs_SurfaceType` order): OCCT may split
                 // a plane along a line where another face only touches it, which this kernel does not
                 let kinds = |ks: &mut Vec<i32>| { ks.sort(); ks.clone() };
                 let our_kinds = kinds(&mut b.faces.iter().map(|f| match f.surface {
                     Surface::Plane(_) => 0,Surface::Cylinder(..) => 1,Surface::Cone(..) => 2,Surface::Sphere(..) => 3,Surface::Torus(..) => 4,
-                    Surface::Revolution(..) => 7,Surface::Extrusion(..) => 8,
+                    Surface::Revolution(..) => 7,Surface::Extrusion(..) => 8,Surface::Blend(..) => 6,
                 }).collect());
                 let their_kinds = kinds(&mut session.faces(theirs).unwrap().into_iter().map(|g| session.face_kind(g).unwrap()).collect());
                 if our_kinds != their_kinds {
@@ -86,6 +88,7 @@ fn every_node_the_kernel_builds_is_occts() {
                         && their_kinds.iter().filter(|&&k| k == 0).count() > our_kinds.iter().filter(|&&k| k == 0).count();
                     if extra_planes { eprintln!("  (OCCT splits a plane along a line it only touches: {their_kinds:?} against our {our_kinds:?})"); }
                     else { failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}")); continue }
+                }
                 }
                 let whole = n.get("kind").unwrap().as_str() == "body" || id == root_id;
                 if whole && !b.pinches().is_empty() {
@@ -122,7 +125,6 @@ fn every_node_the_kernel_builds_is_occts() {
                         Err(err) => { failures.push(format!("{label}: not meshed: {err}")); continue }
                     }
                     bodies += 1;
-                }
                 }
                 // the object itself against the core's faceted kernel, cut as it cuts a mesh (its sagitta a
                 // small fraction of the object's diagonal): to its faceting, a part in 200

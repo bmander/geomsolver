@@ -905,6 +905,15 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 None => whole = false,
             }
         }
+        // a trim follows its curve and both its points, or goes with them (it is minted after
+        // the curve it trims, so that curve's place is already known)
+        let trim = match cv.trim {
+            None => None,
+            Some(t) => match (curve_map.get(t.of as usize).copied().flatten(), pt_index(t.from as usize), pt_index(t.to as usize)) {
+                (Some(of), Some(from), Some(to)) => Some(crate::model::Trim { of: of as u32, from: from as u32, to: to as u32 }),
+                _ => { whole = false; None }
+            },
+        };
         if !whole || !keep(EntRef::new(EntKind::Curve, i)) {
             continue;
         }
@@ -935,6 +944,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             home: cv.home.clone(),
             pose: crate::model::whole(pose, cv.pose.len()),
             class: cv.class.clone(),
+            trim,
         });
         curve_map[i] = Some(dst.curves.len() - 1);
         made.push(EntRef::new(EntKind::Curve, dst.curves.len() - 1));

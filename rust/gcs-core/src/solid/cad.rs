@@ -191,6 +191,46 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
         ("root",root.into()),("nodes",Json::Arr(nodes))]),sweeps})
 }
 
+/// How near its curve a fitted stretch must pass (millimetres).
+pub const FIT_MM: f64 = 1e-4;
+
+/// The cubic B-spline through a curve's samples (Piegl and Tiller's global interpolation,
+/// `curve::interpolating_ctrl_at`) in the curve's own coordinates, over its interval from first
+/// end to second, its parameter the fraction of the curve's at every sample (so a loft pairs the
+/// fit where it pairs the curve): the samples doubled until every sample halfway between two it
+/// passes through is within `tol` of it, measured by projecting that sample onto the fit. The
+/// poles, the knots and the error measured; `None` past 4096 samples.
+pub fn fit_curve(sk: &Sketch,i: usize,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
+    use crate::brep::nurbs::BSpline;
+    let (a,b) = sk.curve_domain(i);
+    let (lo,hi) = (a.min(b),a.max(b));
+    let mut n = 8;
+    loop {
+        let mut fine = sk.curve_sweep(i,lo,hi,2*n);
+        if a > b { fine.reverse(); }
+        let through: Vec<(f64,f64)> = fine.iter().step_by(2).copied().collect();
+        let fractions = (0..=n).map(|k| k as f64/n as f64).collect();
+        let (ctrl,knots,t) = crate::curve::interpolating_ctrl_at(&through,fractions)?;
+        let s = BSpline::new(crate::curve::DEGREE,knots.clone(),ctrl.iter().map(|&(x,y)| [x,y,0.]).collect()).ok()?;
+        // each halfway sample's distance to the fit, from the fit's own halfway parameter
+        let err = (0..n).map(|k| {
+            let q = [fine[2*k+1].0,fine[2*k+1].1,0.];
+            let mut u = (t[k]+t[k+1])/2.;
+            for _ in 0..8 {
+                let (x,d,dd) = s.d2(u);
+                let e = crate::space::sub(x,q);
+                let h = crate::space::dot(d,d)+crate::space::dot(e,dd);
+                if !(h > 0.) { break }
+                u = (u-crate::space::dot(e,d)/h).clamp(t[k],t[k+1]);
+            }
+            crate::space::distance(s.point(u),q)
+        }).fold(0.,f64::max);
+        if err <= tol { return Some((ctrl,knots,err)) }
+        n *= 2;
+        if n > 2048 { return None }
+    }
+}
+
 fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
     let face = &sk.faces[index];
     let p = super::face_poly(sk,index,super::REPORT_UNIT).ok_or("invalid CAD profile")?;
@@ -231,7 +271,17 @@ fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
                     ("knots",Json::Arr(sp.knots.iter().map(|&k| k.into()).collect())),
                     ("poles",Json::Arr(sp.ctrl.iter().map(|&c| vector(lift(sk.point_xy(c as usize)))).collect()))])
             }
-            _ => return Err(format!("`{}`: CAD profiles currently require lines, arcs, circles or splines",face.name)),
+            EntKind::Curve => {
+                // a stretch of a traced or formula curve: the cubic B-spline through it, fitted
+                // until it is within `FIT_MM` of the curve, and what the fit measured
+                let (poles,knots,err) = fit_curve(sk,e.i(),FIT_MM/scale)
+                    .ok_or_else(|| format!("`{}`: a curve in its profile could not be fitted within {FIT_MM} mm",face.name))?;
+                object([("kind","bspline".into()),("degree",crate::curve::DEGREE.into()),
+                    ("knots",Json::Arr(knots.iter().map(|&k| k.into()).collect())),
+                    ("poles",Json::Arr(poles.iter().map(|&c| vector(lift(c))).collect())),
+                    ("fit",(err*scale).into())])
+            }
+            _ => return Err(format!("`{}`: CAD profiles currently require lines, arcs, circles, splines or stretches of curves",face.name)),
         })
     };
     let loops = face.boundaries().map(|(edges,_)|

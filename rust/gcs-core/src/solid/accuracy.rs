@@ -24,6 +24,12 @@
 //! is the deepest a single pose of the cutter reaches. The two routes share the solved snapshot
 //! and nothing else: no projection, root or sweep search of one is read by the other.
 //!
+//! **A body with no swept cut** is read through the Rust kernel's exact B-rep of its CAD recipe
+//! (`Exact`): the foot on each face where it lies within the face, else the nearest point of an
+//! edge, signed by the B-rep's own classification of the point. That B-rep holds a stretch of a
+//! traced or formula curve as the B-spline the recipe fits within `cad::FIT_MM` of it; the field
+//! route reads the curve itself (as chords within `CHORD_SLACK` of the profile's reach).
+//!
 //! What this does not claim: a generated face is not trimmed by the other cuts (another index,
 //! another stretch of the roll), so a sample where two cuts meet may be measured to one's
 //! continuation inside the other, which reads short. The search is sampled (the roll's scan,
@@ -124,9 +130,58 @@ struct Sweep {
     cell: f64,
 }
 
+/// A body with no swept cut, as the Rust kernel's exact B-rep of its CAD recipe (millimetres,
+/// `mm` of them a model unit).
+#[derive(Clone,Debug)]
+struct Exact { located: crate::brep::query::Located<'static>,mm: f64 }
+
+impl Exact {
+    fn read(sk: &Sketch,body: usize) -> Result<Self,String> {
+        let b = crate::brep::recipe::build(&cad::recipe(sk,body)?)?;
+        let tol = 1e-9*b.size().max(1.);
+        Ok(Self {located:crate::brep::query::Located::owned(b,tol),mm:cad::millimetres(sk)?})
+    }
+    fn names(&self) -> Vec<Surface> {
+        self.located.b.faces.iter().enumerate().map(|(i,f)| Surface {generated:false,
+            name:if f.name.is_empty() { format!("{} {i}",f.surface.kind()) } else { f.name.clone() }}).collect()
+    }
+    /// The nearest point of the boundary: a face's foot within its trims, or an edge's.
+    fn nearest(&self,p: V) -> Option<Nearest> {
+        use crate::brep::{query::Place,topo::EdgeCurve};
+        let b = &self.located.b;
+        let q = p.map(|x| x*self.mm);
+        let mut best: Option<(f64,usize,V,V)> = None;
+        let mut keep = |d: f64,face: usize,foot: V,normal: V| if best.is_none_or(|b| d < b.0) { best = Some((d,face,foot,normal)) };
+        for (fi,f) in b.faces.iter().enumerate() {
+            let uv = f.surface.inverse(q);
+            let foot = f.surface.point(uv);
+            if self.located.face_place(fi,foot) == Place::Out { continue }
+            let Some(n) = f.surface.normal(uv) else { continue };
+            let n = if f.reversed { scale(n,-1.) } else { n };
+            keep(distance(q,foot),fi,foot,n);
+        }
+        for (ei,e) in b.edges.iter().enumerate() {
+            let EdgeCurve::Curve(c) = &e.curve else { continue };
+            let mut t = c.inverse(q);
+            if let Some(period) = c.period() { while t < e.t[0] { t += period; } }
+            let foot = c.point(t.clamp(e.t[0],e.t[1]));
+            let Some(face) = b.faces.iter().position(|f| f.loops.iter().flatten().any(|u| u.edge as usize == ei)) else { continue };
+            let d = distance(q,foot);
+            keep(d,face,foot,crate::space::normalised(sub(q,foot)).unwrap_or([0.;3]));
+        }
+        let (d,face,foot,normal) = best?;
+        // signed as the field is: positive outside, by the boundary's own ray classification
+        let outside = match self.located.solid_place(q) { Place::Out => true,Place::In => false,Place::On => return Some(Nearest {
+            distance:0.,surface:face,foot:foot.map(|x| x/self.mm),normal,placement:None,roll:None}) };
+        let normal = if outside == (dot(normal,sub(q,foot)) >= 0.) { normal } else { scale(normal,-1.) };
+        Some(Nearest {distance:if outside { d } else { -d }/self.mm,surface:face,foot:foot.map(|x| x/self.mm),normal,placement:None,roll:None})
+    }
+}
+
 /// The two routes over one body's solved snapshot. Re-read after the model changes.
 #[derive(Clone,Debug)]
 pub struct Meter {
+    exact: Option<Exact>,
     surfaces: Vec<Surface>,
     blank: SpatialField,
     faces: Vec<Face>,
@@ -223,6 +278,12 @@ impl Meter {
             }
             _ => { statics.push(body as u32); read(body as u32)? }
         };
+        // a body with no swept cut: its exact B-rep is the analytic route
+        if cuts.is_empty() {
+            let exact = Exact::read(sk,body)?;
+            let field = MaterialField::read(sk,body,tol)?;
+            return Ok(Self {surfaces:exact.names(),exact:Some(exact),blank,faces:Vec::new(),sweeps:Vec::new(),field,options})
+        }
         let mut surfaces = Vec::new();
         let mut faces = Vec::new();
         let mut turned = Vec::new();
@@ -256,7 +317,7 @@ impl Meter {
         let sphere = blank.support_bounds().map_err(field_error)?.map(|b| crate::space::box_centre_diagonal(&b));
         for s in &mut sweeps { s.tabulate(sphere,&options)?; }
         let field = MaterialField::read(sk,body,tol)?;
-        Ok(Self {surfaces,blank,faces,sweeps,field,options})
+        Ok(Self {exact:None,surfaces,blank,faces,sweeps,field,options})
     }
 
     pub fn surfaces(&self) -> &[Surface] { &self.surfaces }
@@ -275,6 +336,7 @@ impl Meter {
     /// within its trims, or — where a point stands off a convex edge, so that its foot on each
     /// face lies beyond the other — the nearest point of the edge the two faces share.
     pub fn nearest(&self,p: V) -> Option<Nearest> {
+        if let Some(exact) = &self.exact { return exact.nearest(p).filter(|n| n.distance.abs() <= self.options.reach) }
         let mut candidates = Vec::new();
         for (i,face) in self.faces.iter().enumerate() {
             if let Some(mut c) = self.blank_face(i,face,p) {

@@ -21,7 +21,7 @@ pub enum Ssi {
 
 /// A meridian: a surface of revolution's section in the half-plane `ρ ≥ 0` of its axis, in
 /// `(ρ, z)` with `z` measured along the shared axis from a shared origin.
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone,Debug)]
 enum Meridian {
     /// `z = h`: a plane square to the axis.
     Level(f64),
@@ -29,6 +29,51 @@ enum Meridian {
     Line { p: [f64;2],d: [f64;2] },
     /// A circle about `c` of radius `r`.
     Circle { c: [f64;2],r: f64 },
+    /// A B-spline turned about the axis, and the point and direction that axis runs through.
+    Spline(std::sync::Arc<super::nurbs::BSpline>,V,V),
+}
+
+impl Meridian {
+    /// A signed distance in `(ρ, z)` whose zero set is this meridian (not a spline's).
+    fn implicit(&self,[r,z]: [f64;2]) -> f64 {
+        match *self {
+            Meridian::Level(h) => z-h,
+            Meridian::Line {p,d} => (r-p[0])*d[1]-(z-p[1])*d[0],
+            Meridian::Circle {c,r: rad} => (r-c[0]).hypot(z-c[1])-rad,
+            Meridian::Spline(..) => unreachable!("a spline meridian has no closed-form distance"),
+        }
+    }
+}
+
+/// Where a spline meridian crosses or touches another (not a spline), in `(ρ, z)`: every sign
+/// change of the other's distance along it, refined, and every sampled minimum of its size that
+/// comes within `tol`.
+fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
+    let rz = |t: f64| { let q = sub(s.point(t),o); let h = dot(q,z); [norm(sub(q,scale(z,h))),h] };
+    let g = |t: f64| other.implicit(rz(t));
+    let [a,b] = s.domain();
+    let mut cuts = vec![a];
+    cuts.extend(s.breaks([a,b]));
+    cuts.push(b);
+    let mut ts: Vec<f64> = Vec::new();
+    for w in cuts.windows(2) { for j in 0..32 { ts.push(w[0]+(w[1]-w[0])*j as f64/32.); } }
+    ts.push(b);
+    let gs: Vec<f64> = ts.iter().map(|&t| g(t)).collect();
+    let mut out: Vec<[f64;2]> = Vec::new();
+    let push = |p: [f64;2],out: &mut Vec<[f64;2]>| if !out.iter().any(|q| (q[0]-p[0]).hypot(q[1]-p[1]) <= tol) { out.push(p) };
+    for i in 0..ts.len()-1 {
+        let (x,y) = (gs[i],gs[i+1]);
+        if x.abs() <= tol { push(rz(ts[i]),&mut out); }
+        if x.abs() > tol && y.abs() > tol && (x < 0.) != (y < 0.) {
+            let t = crate::roots::bracketed_root(|t| Some(g(t)),ts[i],x,ts[i+1],y,1e-15*(b-a));
+            push(rz(t),&mut out);
+        } else if i+2 < ts.len() && y.abs() < x.abs() && y.abs() < gs[i+2].abs() && (x < 0.) == (y < 0.) && y.abs() > tol {
+            let (t,v) = crate::roots::brent(&|t| g(t).abs(),ts[i],ts[i+2],1e-15*(b-a),200,|_,_| false);
+            if v <= tol { push(rz(t),&mut out); }
+        }
+    }
+    if gs[ts.len()-1].abs() <= tol { push(rz(b),&mut out); }
+    out
 }
 
 /// A surface's meridian about the axis through `o` along the unit `z`, where it is a surface of
@@ -49,7 +94,8 @@ fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
             Some(Meridian::Line {p:[r,height(f.o)],d:[a.sin(),a.cos()*sign]})
         }
         Surface::Torus(_,big,r) => Some(Meridian::Circle {c:[big,height(f.o)],r}),
-        Surface::Extrusion(..) | Surface::Revolution(..) => None,
+        Surface::Revolution(_,ref c) => match &**c { Curve::BSpline(b) => Some(Meridian::Spline(b.clone(),o,z)),_ => None },
+        Surface::Extrusion(..) | Surface::Blend(..) => None,
     }
 }
 
@@ -80,6 +126,7 @@ fn cross2(a: Meridian,b: Meridian,tol: f64) -> Option<Vec<[f64;2]>> {
         [-bb-root,-bb+root].iter().map(|s| [p[0]+s*d[0],p[1]+s*d[1]]).collect()
     };
     let pts = match (a,b) {
+        (Spline(..),_) | (_,Spline(..)) => unreachable!("a spline meridian is crossed by `spline_cross`"),
         (Level(h),Level(k)) => return if (h-k).abs() <= tol { None } else { Some(vec![]) },
         (Level(h),Line {p,d}) | (Line {p,d},Level(h)) => line_line([0.,h],[1.,0.],p,d)?,
         (Level(h),Circle {c,r}) | (Circle {c,r},Level(h)) => line_circle([0.,h],[1.,0.],c,r),
@@ -120,6 +167,10 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
             norm(sub(apex(f,r,a1),apex(g,s,a2))) <= tol && (a1.abs()-a2.abs()).abs() <= 1e-12
                 && dot(opens(f,a1),opens(g,a2)) > 0.
         }
+        // a curve swept along one direction, or turned about one axis, as the other is (a face
+        // of the same profile, copied or cut): the same curve and the same line
+        (Surface::Extrusion(_,c),Surface::Extrusion(_,d)) => parallel && c == d,
+        (Surface::Revolution(_,c),Surface::Revolution(_,d)) => parallel && on_axis && c == d,
         _ => false,
     }
 }
@@ -144,7 +195,15 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
     for (s,t) in [(a,b),(b,a)] {
         let Some((o,z)) = axis_of(s,t) else { continue };
         let (Some(ma),Some(mb)) = (meridian(s,o,z,tol),meridian(t,o,z,tol)) else { continue };
-        let Some(points) = cross2(ma,mb,tol) else { return Ssi::Same };
+        let points = match (&ma,&mb) {
+            // two spline meridians have no closed-form crossing: traced
+            (Meridian::Spline(..),Meridian::Spline(..)) => continue,
+            (Meridian::Spline(sp,o,z),m) | (m,Meridian::Spline(sp,o,z)) => spline_cross(sp,*o,*z,m,tol),
+            _ => {
+                let Some(points) = cross2(ma,mb,tol) else { return Ssi::Same };
+                points
+            }
+        };
         let mut out = Vec::new();
         for [rho,h] in points {
             // a circle of no radius is a point on the axis: a touch, not a curve

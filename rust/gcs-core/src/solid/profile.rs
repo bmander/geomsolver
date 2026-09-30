@@ -18,6 +18,9 @@ pub struct FacePoly {
     pub basis: Basis,
     /// The plane's page pose: rotor and origin, for `in_view`/`on_page`.
     pub pose: (f64, f64, (f64, f64)),
+    /// Per edge in `names`, a spline's or a curve's own parameter where the walk enters and
+    /// leaves it — what a loft pairs such an edge by (`loft::pair`); `None` for the rest.
+    pub curved: Vec<Option<(EntRef, [f64; 2])>>,
 }
 
 impl FacePoly {
@@ -80,7 +83,8 @@ impl FacePoly {
         for i in 0..n {
             of.push(self.of[(n - 1 - i + n - 1) % n]);
         }
-        FacePoly { pts, of, names: self.names.clone(), basis: self.basis, pose: self.pose }
+        let curved = self.curved.iter().map(|c| c.map(|(e, [a, b])| (e, [b, a]))).collect();
+        FacePoly { pts, of, names: self.names.clone(), basis: self.basis, pose: self.pose, curved }
     }
 
     pub fn lift(&self, i: usize) -> [f64; 3] {
@@ -142,12 +146,14 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
             of.push((0, true));
         }
         let pts = pts.into_iter().map(view).collect();
-        let poly = tidy_poly(FacePoly { pts, of, names, basis, pose });
+        let curved = vec![None; names.len()];
+        let poly = tidy_poly(FacePoly { pts, of, names, basis, pose, curved });
         return poly.valid().then(|| poly.ccw());
     }
 
     // otherwise: every edge in traversal order, each starting where the last one ended
     let mut at: Option<u32> = None;
+    let mut curved = vec![None; names.len()];
     for (i, e) in edges.iter().enumerate() {
         let (a, b) = crate::model::edge_ends(sk, *e)?;
         // which end this edge is entered by: the one the walk is standing on
@@ -166,14 +172,34 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
             Some(_) => return None,
         };
         walk_edge(sk, *e, from, to, i, unit, &mut pts, &mut of)?;
+        if let Some(c) = curved.get_mut(i) { *c = curved_span(sk, *e, from); }
         at = Some(to);
     }
     if pts.len() < 3 {
         return None;
     }
     let pts = pts.into_iter().map(view).collect();
-    let poly = tidy_poly(FacePoly { pts, of, names, basis, pose });
+    let poly = tidy_poly(FacePoly { pts, of, names, basis, pose, curved });
     poly.valid().then(|| poly.ccw())
+}
+
+/// A spline's or a curve's parameter where a walk entering it at `from` enters and leaves it.
+fn curved_span(sk: &Sketch, e: EntRef, from: u32) -> Option<(EntRef, [f64; 2])> {
+    let (a, b) = match e.kind {
+        EntKind::Spline => (crate::curve::domain(sk, e.i()), sk.splines[e.i()].ctrl[0] == from),
+        EntKind::Curve => (sk.curve_domain(e.i()), sk.curves[e.i()].trim?.from == from),
+        _ => return None,
+    };
+    let ((lo, hi), forward) = (a, b);
+    Some((e, if forward { [lo, hi] } else { [hi, lo] }))
+}
+
+/// Where a spline or a curve is at its parameter `t`, on the page.
+pub(super) fn curved_point(sk: &Sketch, e: EntRef, t: f64) -> (f64, f64) {
+    match e.kind {
+        EntKind::Spline => crate::curve::point_at(sk, e.i(), t),
+        _ => sk.curve_point(e.i(), t),
+    }
 }
 
 /// A zero-length side is no side: two coincident vertices would give a facet with no normal and
@@ -244,6 +270,22 @@ fn walk_edge(
                 of.push((idx, true));
             }
             // the first vertex of an arc is a real corner, not a chord joint
+            if let Some(last) = of.len().checked_sub(ring.len() - 1) {
+                of[last].1 = ring.len() > 2;
+            }
+            Some(())
+        }
+        EntKind::Curve => {
+            // a face's stretch of a curve, from `from` to `to` in its own sense, chords within
+            // the sheet's flatness
+            let t = sk.curves[e.i()].trim?;
+            let mut ring: Vec<(f64, f64)> = sk.curve_polyline_within(e.i(), crate::curve::flatness(unit))
+                .into_iter().map(|(_, p)| p).collect();
+            if t.from != from { ring.reverse(); }
+            for p in ring.iter().take(ring.len() - 1) {
+                pts.push(*p);
+                of.push((idx, true));
+            }
             if let Some(last) = of.len().checked_sub(ring.len() - 1) {
                 of[last].1 = ring.len() > 2;
             }

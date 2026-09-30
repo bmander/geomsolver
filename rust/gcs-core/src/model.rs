@@ -29,7 +29,7 @@ pub use entities::{
     PlaneE, Att,
     LiftE,
 };
-pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Home, whole};
+pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Home, Trim, whole};
 pub use spatial::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,

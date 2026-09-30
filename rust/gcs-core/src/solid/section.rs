@@ -81,7 +81,7 @@ fn boundaries_touch(sk: &Sketch, a: &[EntRef], b: &[EntRef]) -> bool {
         for &b in b {
             if a.kind == EntKind::Line && b.kind == EntKind::Line { continue; }
             // a spline has no closed form here: its chords, tested by `loops_touch`, decide
-            if a.kind == EntKind::Spline || b.kind == EntKind::Spline { continue; }
+            if matches!(a.kind, EntKind::Spline | EntKind::Curve) || matches!(b.kind, EntKind::Spline | EntKind::Curve) { continue; }
             let (a, b) = if a.kind == EntKind::Line { (b, a) } else { (a, b) };
             let (c, r) = round(a);
             if b.kind == EntKind::Line {

@@ -638,5 +638,6 @@ fn curve_entity(
         home,
         pose,
         class: d.class.clone(),
+        trim: None,
     }))
 }

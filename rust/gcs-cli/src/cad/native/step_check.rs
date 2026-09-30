@@ -266,10 +266,16 @@ impl Solid {
     pub(crate) fn of(b: &gcs_core::brep::topo::Brep) -> Solid {
         use gcs_core::brep::{geom::Surface,topo::EdgeCurve};
         let faces = b.faces.iter().map(|f| {
+            // a loft's face is written as the B-spline fitted to it
+            if let Surface::Blend(_,bl) = &f.surface {
+                let numbers = gcs_core::brep::step::net_numbers(&gcs_core::brep::step::blend_net(bl));
+                return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
+            }
             let (frame,scalars) = gcs_core::brep::step::written(&f.surface);
             let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,
                 Surface::Cone(..) => CONE,Surface::Sphere(..) => SPHERE,Surface::Torus(..) => TORUS,
-                Surface::Revolution(..) => REVOLUTION,Surface::Extrusion(..) => EXTRUSION };
+                Surface::Revolution(..) => REVOLUTION,Surface::Extrusion(..) => EXTRUSION,
+                Surface::Blend(..) => BSPLINE };
             let mut numbers: Vec<f64> = frame.o.iter().chain(&frame.z).chain(&frame.x).copied().collect();
             numbers.extend(scalars);
             Face {kind,reversed:f.reversed,indirect:false,numbers}

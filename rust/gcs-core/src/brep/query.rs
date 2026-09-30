@@ -56,7 +56,7 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
     if fs[n].abs() <= tol { push(t1,false,&mut roots); }
     // a swept curve's implicit runs on past its ends along their tangents (and steps across the
     // normal there): a root off the surface itself is that extension's, not the surface's
-    if matches!(surface,Surface::Extrusion(..) | Surface::Revolution(..)) {
+    if matches!(surface,Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..)) {
         roots.retain(|&(t,_)| {
             let p = curve.point(t);
             distance(p,surface.point(surface.inverse(p))) <= tol.max(1e-9*(1.+norm(p)))
@@ -65,9 +65,11 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
     Meets::At(roots)
 }
 
-/// A boundary with its faces' loops drawn in their parameters, for classifying points against it.
+/// A boundary with its faces' loops drawn in their parameters, for classifying points against it —
+/// borrowing the boundary, or owning it where it is kept (`Located::owned`).
+#[derive(Clone,Debug)]
 pub struct Located<'a> {
-    pub b: &'a Brep,
+    pub b: std::borrow::Cow<'a,Brep>,
     pub tol: f64,
     /// How far each loop's polygon may stray from its edges (a length): points farther than this
     /// from every edge are classified by the polygon's winding, nearer ones by the side of the
@@ -80,6 +82,11 @@ pub struct Located<'a> {
 }
 
 impl<'a> Located<'a> {
+    /// A located boundary that keeps its own copy.
+    pub fn owned(b: Brep,tol: f64) -> Located<'static> {
+        let (tol,coarse,polys,boxes) = { let l = Located::new(&b,tol); (l.tol,l.coarse,l.polys,l.boxes) };
+        Located {b:std::borrow::Cow::Owned(b),tol,coarse,polys,boxes}
+    }
     pub fn new(b: &'a Brep,tol: f64) -> Located<'a> {
         let coarse = (1e-4*b.size()).max(tol*8.);
         let mut polys = Vec::new();
@@ -111,7 +118,7 @@ impl<'a> Located<'a> {
             polys.push(loops);
             boxes.push(bx);
         }
-        Located {b,tol,coarse,polys,boxes}
+        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,polys,boxes}
     }
 
     /// The parameters of a point of face `fi`'s surface, on the branch of its periods its loops

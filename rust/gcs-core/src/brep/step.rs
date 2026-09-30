@@ -43,6 +43,18 @@ impl Out {
                 let v = self.add(format!("VECTOR('',#{d},1.)"));
                 return self.add(format!("SURFACE_OF_LINEAR_EXTRUSION('',#{c},#{v})"))
             }
+            Surface::Blend(_,b) => {
+                let net = blend_net(b);
+                let rows: Vec<String> = net.poles.iter().map(|col| {
+                    let ids: Vec<String> = col.iter().map(|&p| format!("#{}",self.point(p))).collect();
+                    format!("({})",ids.join(","))
+                }).collect();
+                let (uk,vk) = (super::nurbs::distinct(&net.uknots),super::nurbs::distinct(&net.vknots));
+                let list = |k: &[(f64,usize)],f: &dyn Fn(&(f64,usize)) -> String| k.iter().map(f).collect::<Vec<_>>().join(",");
+                return self.add(format!("B_SPLINE_SURFACE_WITH_KNOTS('',{},{},({}),.UNSPECIFIED.,.F.,.F.,.F.,({}),({}),({}),({}),.UNSPECIFIED.)",
+                    net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
+                    list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0))))
+            }
             Surface::Revolution(f,c) => {
                 let c = self.swept(c);
                 let (o,z) = (self.point(f.o),self.direction(f.z));
@@ -66,7 +78,7 @@ impl Out {
                 let a = self.placement(&f);
                 self.add(format!("TOROIDAL_SURFACE('',#{a},{},{})",real(big),real(r)))
             }
-            Surface::Extrusion(..) | Surface::Revolution(..) => unreachable!(),
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) => unreachable!(),
         }
     }
     /// The curve a swept surface sweeps (a B-spline, as a profile gives one).
@@ -107,6 +119,29 @@ fn samples(c: &Curve,t: [f64;2],tol: f64,off: &dyn Fn(f64,f64) -> f64) -> Vec<f6
     out
 }
 
+/// How near its exact surface or curve a loft's face or rail is written (millimetres): the file
+/// carries a B-spline fitted within this, its parameters the exact geometry's.
+pub const FIT: f64 = 1e-6;
+
+/// A loft face's B-spline, fitted within `FIT`: cubic across the section, and cubic along the guide
+/// where it turns or linear where it runs straight (a blend carried along a line is linear in `v`).
+pub fn blend_net(b: &super::geom::Blend) -> super::nurbs::Net {
+    let (dv,nv) = match b.carry { super::geom::Carry::Line {..} => (1,1),super::geom::Carry::Arc {..} => (3,4) };
+    super::nurbs::fit_net(&|u,v| b.d1([u,v]).0,3,dv,8,nv,FIT).expect("a loft face's fit").0
+}
+
+/// A B-spline surface's numbers as a reader of the file compares them: its degrees, the size of
+/// its net, its distinct knots' counts, whether rational, the knots and their multiplicities along
+/// `u` then `v`, then its poles by `u` then `v`.
+pub fn net_numbers(net: &super::nurbs::Net) -> Vec<f64> {
+    let (uk,vk) = (super::nurbs::distinct(&net.uknots),super::nurbs::distinct(&net.vknots));
+    let mut out = vec![net.du as f64,net.dv as f64,net.poles.len() as f64,net.poles[0].len() as f64,uk.len() as f64,vk.len() as f64,0.];
+    out.extend(uk.iter().map(|k| k.0)); out.extend(uk.iter().map(|k| k.1 as f64));
+    out.extend(vk.iter().map(|k| k.0)); out.extend(vk.iter().map(|k| k.1 as f64));
+    for col in &net.poles { for p in col { out.extend(p); } }
+    out
+}
+
 /// A degree-one B-spline through `pts` with the knots `ts` (its parameter the curve's own).
 fn bspline(o: &mut Out,pts: &[String],ts: &[f64]) -> usize {
     let n = pts.len();
@@ -125,7 +160,7 @@ pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
         Surface::Cone(f,r,a) => (if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f },vec![r,a.abs()]),
         Surface::Sphere(f,r) => (f,vec![r]),
         Surface::Torus(f,big,r) => (f,vec![big,r]),
-        Surface::Extrusion(f,_) | Surface::Revolution(f,_) => (f,vec![]),
+        Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) => (f,vec![]),
     }
 }
 
@@ -244,6 +279,12 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> String {
             Curve::BSpline(bs) => {
                 let ids: Vec<String> = bs.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
                 spline(&mut o,bs.degree,&ids,&bs.knots)
+            }
+            // a loft's rail: the cubic through it, fitted within `FIT`, its parameter the rail's
+            Curve::Iso(bl,u) => {
+                let (fit,_) = super::nurbs::fit_curve(&|v| bl.d1([*u,v]).0,3,8,FIT).expect("a rail's fit");
+                let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
+                spline(&mut o,fit.degree,&ids,&fit.knots)
             }
             Curve::Traced(_) => {
                 let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::space::lerp(c.point(a),c.point(z),0.5)));

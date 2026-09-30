@@ -386,12 +386,31 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     let s = loft(&elbow,None,&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],start:[bend,0.,0.],angle:PI/2.}).unwrap();
     s.check(1e-8).unwrap();
     close(volume(&s),(18.*18.-14.*14.)*bend*PI/2.);
-    // a twisted loft is refused by name, as is one between two sections along an arc
+    // a twisted loft, a square to a diamond: each section the polygon of its corners' mixture, of
+    // an area quadratic in the height, so Simpson's rule is exact
+    let shoelace = |p: &[[f64;2]]| (0..p.len()).map(|i| { let (a,b) = (p[i],p[(i+1)%p.len()]); a[0]*b[1]-a[1]*b[0] }).sum::<f64>()/2.;
+    let (sq,dia) = ([[-6.,-6.],[6.,-6.],[6.,6.],[-6.,6.]],[[0.,-8.],[8.,0.],[0.,8.],[-8.,0.]]);
+    let mix = |t: f64| (0..4).map(|k| [sq[k][0]*(1.-t)+dia[k][0]*t,sq[k][1]*(1.-t)+dia[k][1]*t]).collect::<Vec<_>>();
     let turned = Profile {origin:[0.,0.,h],normal:XY,loops:vec![poly(&[[0.,-8.,h],[8.,0.,h],[0.,8.,h],[-8.,0.,h]])]};
-    let e = loft(&Profile {loops:vec![square([0.;3],6.,0.)],..section(0.,a,a-w)},Some(&turned),&Guide::Line {start:[0.;3],delta:[0.,0.,h]}).unwrap_err();
-    assert!(e.contains("twist") && e.contains("not built yet"),"{e}");
-    let e = loft(&elbow,Some(&elbow),&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],start:[bend,0.,0.],angle:PI/2.}).unwrap_err();
-    assert!(e.contains("not built yet"),"{e}");
+    let s = loft(&Profile {loops:vec![square([0.;3],6.,0.)],..section(0.,a,a-w)},Some(&turned),&Guide::Line {start:[0.;3],delta:[0.,0.,h]}).unwrap();
+    s.check(1e-8).unwrap();
+    assert!(s.faces.iter().any(|f| f.surface.kind() == "blend"));
+    close(volume(&s),h/6.*(shoelace(&mix(0.))+4.*shoelace(&mix(0.5))+shoelace(&mix(1.))));
+    // an elbow narrowing as it bends: the section blended while it turns, so the volume is the
+    // turn times the integral of the section's first moment about the axis, a cubic in the blend
+    let moment = |p: &[[f64;2]]| (0..p.len()).map(|i| { let (a,b) = (p[i],p[(i+1)%p.len()]);
+        (a[0]+b[0])*(a[0]*b[1]-b[0]*a[1]) }).sum::<f64>()/6.;
+    let ring2 = |half: f64| [[bend-half,-half],[bend+half,-half],[bend+half,half],[bend-half,half]];
+    let blend2 = |o: f64,i: f64,t: f64| {
+        let m = |p: [[f64;2];4],q: [[f64;2];4]| (0..4).map(|k| [p[k][0]*(1.-t)+q[k][0]*t,p[k][1]*(1.-t)+q[k][1]*t]).collect::<Vec<_>>();
+        moment(&m(ring2(9.),ring2(o)))-moment(&m(ring2(7.),ring2(i)))
+    };
+    let narrow = Profile {origin:[0.,bend,0.],normal:[1.,0.,0.],loops:vec![
+        poly(&ring2(6.).map(|q| [0.,q[0],q[1]])),poly(&ring2(4.).map(|q| [0.,q[0],q[1]]))]};
+    let s = loft(&elbow,Some(&narrow),&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],start:[bend,0.,0.],angle:PI/2.}).unwrap();
+    s.check(1e-8).unwrap();
+    let want = PI/2./6.*(blend2(6.,4.,0.)+4.*blend2(6.,4.,0.5)+blend2(6.,4.,1.));
+    assert!((volume(&s)-want).abs() <= 1e-9*want,"{} against {want}",volume(&s));
 }
 
 fn dump(b: &gcs_core::brep::topo::Brep) {
@@ -446,6 +465,13 @@ fn splines_swept_and_turned_are_their_closed_forms() {
     if let Err(e) = r.check(1e-8) { dump(&r); panic!("{e}") }
     // (a traced edge is integrated to its central difference's ~1e-10 of its speed)
     assert!((volume(&r)-area).abs() <= 1e-8*area,"{} against {area}",volume(&r));
+    // two prisms of the plate overlapping in depth share their spline side, one surface
+    let (lower,upper) = (prism(&plate,0.,3.).unwrap(),prism(&plate,2.,5.).unwrap());
+    for (op,want) in [(Op::Union,5.*area),(Op::Common,area),(Op::Cut,2.*area)] {
+        let r = boolean(&lower,&upper,op,1e-9).unwrap_or_else(|e| panic!("{op:?}: {e}"));
+        r.check(1e-8).unwrap_or_else(|e| panic!("{op:?}: {e}"));
+        close(volume(&r),want);
+    }
     // a rod standing on the spline edge: the disk's share of the plate, by Green's theorem round
     // the spline inside the disk and the circle's arc inside the plate
     let (c,rr) = { let p = lobe.point(0.5); ([p[0],p[1]],1.5) };
@@ -473,16 +499,26 @@ fn splines_swept_and_turned_are_their_closed_forms() {
     close(volume(&v),pappus(1.));
     // a quarter turn is a quarter of it
     close(volume(&revolve(&vase,[0.;3],[0.,0.,1.],PI/2.).unwrap()),pappus(1.)/4.);
-    // cut level at half height, where the wall's parameter is a half, a plane meeting it traced
+    // cut level at half height, where the wall's parameter is a half: a plane square to the axis
+    // meets it in a circle, found where the meridian crosses the plane's level
     let r = boolean(&v,&block([-30.,-30.,18.],[30.,30.,40.]),Op::Cut,1e-9).unwrap();
     r.check(1e-8).unwrap();
-    assert!((volume(&r)-pappus(0.5)).abs() <= 1e-8*pappus(0.5),"{} against {}",volume(&r),pappus(0.5));
+    assert!(r.edges.iter().any(|e| matches!(&e.curve,gcs_core::brep::topo::EdgeCurve::Curve(c) if c.kind() == "circle")));
+    close(volume(&r),pappus(0.5));
     // halved by a plane through its axis, which meets it in its own meridians
     let r = boolean(&v,&block([0.,-30.,-5.],[30.,30.,40.]),Op::Common,1e-9).unwrap();
     r.check(1e-8).unwrap();
     assert!((volume(&r)-pappus(1.)/2.).abs() <= 1e-8*pappus(1.),"{} against {}",volume(&r),pappus(1.)/2.);
+    // lofted to itself at half the size along z: every section the plate scaled by 1 − t/2, so the
+    // volume is h A ∫(1 − t/2)² dt = 7 h A / 12; the lines join in planes, the splines in a blend
+    let half = cubic(&lobe.poles.iter().map(|p| [p[0]/2.,p[1]/2.,6.]).collect::<Vec<_>>(),&[0.4]);
+    let top = Profile {origin:[0.,0.,6.],normal:XY,loops:vec![vec![line([0.,0.,6.],[5.,0.,6.]),spline(&half),line([0.,5.,6.],[0.,0.,6.])]]};
+    let lofted = gcs_core::brep::build::loft(&plate,Some(&top),&gcs_core::brep::build::Guide::Line {start:[0.;3],delta:[0.,0.,6.]}).unwrap();
+    lofted.check(1e-9).unwrap();
+    assert!(lofted.faces.iter().any(|f| f.surface.kind() == "blend") && lofted.faces.iter().filter(|f| f.surface.kind() == "plane").count() == 4);
+    assert!((volume(&lofted)-7.*6.*area/12.).abs() <= 1e-9*area,"{} against {}",volume(&lofted),7.*6.*area/12.);
     // meshed closed, within the bar, enclosing the same volume to the bar's order
-    for (what,s) in [("plate",&b),("vase",&v)] {
+    for (what,s) in [("plate",&b),("vase",&v),("lofted",&lofted)] {
         let m = mesh(s,0.01,0.2).unwrap_or_else(|e| panic!("{what}: {e}"));
         assert!(m.sag <= 0.01,"{what}: sags {}",m.sag);
         gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&m.triangles(),what)).unwrap_or_else(|e| panic!("{what}: {e}"));

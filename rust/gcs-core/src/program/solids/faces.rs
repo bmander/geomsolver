@@ -89,29 +89,37 @@ fn build_loop(
     span: Span,
     diags: &mut Vec<Diag>,
 ) -> Option<(crate::model::FaceLoop, Option<u32>)> {
-    let mut fail = |span: Span, m: String| {
-        diags.push(Diag { code: Code::E080, span, stmt: Some(stmt), message: m });
+    let mut report = |code: Code, span: Span, m: String| {
+        diags.push(Diag { code, span, stmt: Some(stmt), message: m });
     };
-    let mut refs = Vec::new();
+    // each item: a reference, or a curve with the two points its stretch runs between
+    let mut refs: Vec<(&crate::syntax::Ref, Option<[&crate::syntax::Ref; 2]>)> = Vec::new();
     for k in kids {
-        let Kid::Ref(r) = k else {
-            fail(span, "a face names the edges it is bounded by; a seed places a point".into());
-            return None;
+        let r = match k {
+            Kid::Ref(r) => r,
+            Kid::Trim { curve, from, to, .. } => {
+                refs.push((curve, Some([from, to])));
+                continue;
+            }
+            _ => {
+                report(Code::E080, span, "a face names the edges it is bounded by; a seed places a point".into());
+                return None;
+            }
         };
         let chain = res.chains.get(&r.root.text).filter(|_| r.path.is_empty());
         let count = chain.map_or(1, |c| c.links.len());
         if count > crate::flatten::MAX_FLAT.saturating_sub(refs.len()) {
-            fail(span, "a face expands to too many chain edges".into());
+            report(Code::E080, span, "a face expands to too many chain edges".into());
             return None;
         }
         if let Some(c) = chain {
-            refs.extend(&c.links);
+            refs.extend(c.links.iter().map(|l| (l, None)));
         } else {
-            refs.push(r);
+            refs.push((r, None));
         }
     }
     if refs.is_empty() {
-        fail(span, "a face is a loop of edges: `face f(ab, bc, cd, da)`".into());
+        report(Code::E080, span, "a face is a loop of edges: `face f(ab, bc, cd, da)`".into());
         return None;
     }
     // what one item of the walk is: an edge, or a corner the loop goes straight to
@@ -119,19 +127,60 @@ fn build_loop(
         entity: EntRef,
         name: String,
     }
-    let reserved: BTreeSet<&str> = refs.iter().map(|r| boundary_name(r)).collect();
+    let reserved: BTreeSet<&str> = refs.iter().map(|(r, _)| boundary_name(r)).collect();
     let mut anonymous = 0;
     let mut items: Vec<Item> = Vec::with_capacity(refs.len());
-    for r in &refs {
-        let Some(e) = res.lookup(r).and_then(|e| super::super::resolve::follow(sk, e, &r.path).ok()) else {
-            diags.push(Diag {
-                code: Code::E101,
-                span: r.span,
-                stmt: Some(stmt),
-                message: format!("no such entity: `{}`", r.root.text),
-            });
-            return None;
+    let mut trimmed: BTreeSet<u32> = BTreeSet::new();
+    let entity = |sk: &Sketch, r: &crate::syntax::Ref| {
+        res.lookup(r).and_then(|e| super::super::resolve::follow(sk, e, &r.path).ok())
+            .ok_or_else(|| (r.span, format!("no such entity: `{}`", r.root.text)))
+    };
+    for &(r, trim) in &refs {
+        let mut e = match entity(sk, r) {
+            Ok(e) => e,
+            Err((sp, m)) => { report(Code::E101, sp, m); return None }
         };
+        // `flank from p to q`: the stretch of a curve between two points its contacts hold
+        // on it, minted as a curve of its own (hidden, as a closing line is) whose ends the
+        // walk can meet
+        if let Some([from, to]) = trim {
+            let (p, q) = match (entity(sk, from), entity(sk, to)) {
+                (Ok(p), Ok(q)) => (p, q),
+                (Err((sp, m)), _) | (_, Err((sp, m))) => { report(Code::E101, sp, m); return None }
+            };
+            if e.kind != EntKind::Curve {
+                report(Code::E080, r.span, format!("`{} from … to …` runs along a curve, and `{}` is a {}",
+                    r.root.text, r.root.text, e.kind.as_str()));
+                return None;
+            }
+            for (x, xr) in [(p, from), (q, to)] {
+                if x.kind != EntKind::Point {
+                    report(Code::E080, xr.span, format!("a stretch of `{}` runs between points, and `{}` is a {}",
+                        r.root.text, xr.root.text, x.kind.as_str()));
+                    return None;
+                }
+                if sk.contact_param(x.idx, e.idx).is_none() {
+                    report(Code::E080, xr.span, format!("`{}` is not held on `{}`: a face runs along a curve \
+                        between points on it, so write `{} on {}`", xr.root.text, r.root.text,
+                        xr.root.text, r.root.text));
+                    return None;
+                }
+            }
+            if p == q {
+                report(Code::E080, r.span, format!("`{}` runs from `{}` to itself", r.root.text, from.root.text));
+                return None;
+            }
+            if !trimmed.insert(e.idx) {
+                report(Code::E080, r.span, format!("`{}` bounds this face twice: one stretch of a curve \
+                    is one edge", r.root.text));
+                return None;
+            }
+            let mut cv = sk.curves[e.i()].clone();
+            cv.trim = Some(crate::model::Trim { of: e.idx, from: p.idx, to: q.idx });
+            cv.class = Classes::one("closure");
+            sk.curves.push(cv);
+            e = EntRef::new(EntKind::Curve, sk.curves.len() - 1);
+        }
         // **the leaf, not the absolute name.**  By the time a face is built the flattener has
         // rewritten `lid` into `cyl.lid`, and a face path is already prefixed by the solid it
         // belongs to — so keeping the whole thing spells `cyl.body.block.cyl.lid`, saying
@@ -146,12 +195,18 @@ fn build_loop(
             EntKind::Line | EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Point => {
                 items.push(Item { entity: e, name });
             }
+            EntKind::Curve if trim.is_some() => items.push(Item { entity: e, name }),
+            EntKind::Curve => {
+                report(Code::E080, r.span, format!("a curve runs on past where a face needs it: name the stretch, \
+                    `{} from p to q`, between two points held on it", r.root.text));
+                return None;
+            }
             _ => {
-                fail(
+                report(Code::E080, 
                     r.span,
                     format!(
-                        "a face is bounded by lines, arcs, circles and splines and turns at points, \
-                         and `{}` is a {}",
+                        "a face is bounded by lines, arcs, circles, splines and stretches of \
+                         curves, and turns at points; `{}` is a {}",
                         r.root.text,
                         e.kind.as_str()
                     ),
@@ -163,7 +218,7 @@ fn build_loop(
     // **a circle is a loop by itself, and may not stand in one**
     let lone_circle = items.len() == 1 && items[0].entity.kind == EntKind::Circle;
     if !lone_circle && items.iter().any(|i| i.entity.kind == EntKind::Circle) {
-        fail(span, "a circle is a whole loop: it stands in a face by itself".into());
+        report(Code::E080, span, "a circle is a whole loop: it stands in a face by itself".into());
         return None;
     }
     // **the ends of each item**, which is what says whether two neighbours already meet.  A
@@ -177,7 +232,7 @@ fn build_loop(
             crate::model::edge_ends(sk, e)
         };
         let Some(pair) = pair else {
-            fail(span, format!("`{}` has no ends: a face is a loop, walked in order", it.name));
+            report(Code::E080, span, format!("`{}` has no ends: a face is a loop, walked in order", it.name));
             return None;
         };
         ends.push(pair);
@@ -185,8 +240,12 @@ fn build_loop(
     let n = items.len();
     // **one item is a loop only when it is a circle** — said here, so that a lone point or a
     // lone line is refused for what it is rather than as a gap between an item and itself
-    if n == 1 && !lone_circle {
-        fail(
+    // (an edge with two ends and the line `-> close` draws back across them is one: an arc and
+    // its chord, the stretch of a curve and its)
+    let chord = n == 1 && closed && !lone_circle && items[0].entity.kind != EntKind::Point
+        && ends[0].0 != ends[0].1;
+    if n == 1 && !lone_circle && !chord {
+        report(Code::E080, 
             span,
             format!(
                 "`{}` is not a loop by itself: a face is a loop of edges and the corners \
@@ -198,15 +257,16 @@ fn build_loop(
     }
     let contains = |i: usize, p: u32| ends[i].0 == p || ends[i].1 == p;
     // Whether each item shares an endpoint with its successor, including the wrap.
+    // (a lone edge closed by its chord is its own successor, and meets it only across the gap)
     let meets: Vec<bool> = (0..ends.len())
-        .map(|i| contains((i + 1) % n, ends[i].0) || contains((i + 1) % n, ends[i].1))
+        .map(|i| !chord && (contains((i + 1) % n, ends[i].0) || contains((i + 1) % n, ends[i].1)))
         .collect();
     // An edge with no meeting neighbour has two unstated readings.  Refuse it before
     // choosing directions, so inserting closing lines cannot choose a shape by accident.
     let walked = ends.len();
     for i in 0..walked {
-        if items[i].entity.kind != EntKind::Point && !meets[(i + n - 1) % n] && !meets[i] {
-            fail(
+        if !chord && items[i].entity.kind != EntKind::Point && !meets[(i + n - 1) % n] && !meets[i] {
+            report(Code::E080, 
                 span,
                 format!(
                     "`{}` meets neither of its neighbours: a face is a loop, walked in order",
@@ -246,7 +306,7 @@ fn build_loop(
     let walk = match orient(false).or_else(|_| orient(true)) {
         Ok(walk) => walk,
         Err(i) => {
-            fail(
+            report(Code::E080, 
                 span,
                 format!(
                     "`{}` and its neighbours share no point along the walk: a face must \
@@ -280,7 +340,7 @@ fn build_loop(
         // where a *point* is one of its sides
         if j == 0 {
             if !closed {
-                fail(
+                report(Code::E080, 
                     span,
                     format!(
                         "`{}` and `{}` share no point: a face is a loop, and one that does not \
@@ -291,7 +351,7 @@ fn build_loop(
                 return None;
             }
         } else if items[i].entity.kind != EntKind::Point && items[j].entity.kind != EntKind::Point {
-            fail(
+            report(Code::E080, 
                 span,
                 format!(
                     "`{}` and `{}` share no point: a face is a loop, walked in order",
@@ -309,7 +369,7 @@ fn build_loop(
     // **three corners, or a curve.**  A loop of straight runs between two points is a line
     // drawn twice, and a face with no area is a solid with no volume — worth saying here,
     // where there is a span, rather than letting the boundary evaluation quietly find nothing.
-    if !edges.iter().any(|e| matches!(e.kind, EntKind::Arc | EntKind::Circle)) {
+    if !edges.iter().any(|e| matches!(e.kind, EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Curve)) {
         let mut corners: Vec<u32> = edges
             .iter()
             .filter_map(|e| crate::model::edge_ends(sk, *e))
@@ -318,7 +378,7 @@ fn build_loop(
         corners.sort_unstable();
         corners.dedup();
         if corners.len() < 3 {
-            fail(span, "a face is a loop, and a straight one needs three corners".into());
+            report(Code::E080, span, "a face is a loop, and a straight one needs three corners".into());
             return None;
         }
     }
@@ -338,7 +398,7 @@ fn build_loop(
                         Some(i) => format!("view {i}"),
                         None => "the page".to_string(),
                     };
-                    fail(
+                    report(Code::E080, 
                         span,
                         format!(
                             "a face lies in one plane, and `{n}` is on {} where the loop is on {}",

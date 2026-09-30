@@ -78,6 +78,7 @@ impl From<syntax::Decl> for Decl {
                     syntax::Kid::Hint(s) => Kid::Hint(s),
                     syntax::Kid::Face { decl, span } =>
                         Kid::Face { decl: Box::new((*decl).into()), span },
+                    syntax::Kid::Trim { curve, from, to, span } => Kid::Trim { curve, from, to, span },
                 }).collect()
             }).collect(),
             seed_text: d.seed_text,

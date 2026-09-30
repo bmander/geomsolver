@@ -145,11 +145,15 @@ pub(super) struct Loft {
 
 /// Keep every source corner and tessellate each corresponding curve at the finer count.
 /// Shared angular samples avoid tiny slivers from overlaying two unrelated chord grids.
+/// A spline or a curve is paired by its own parameter, at the same fraction of it: `a_to` and
+/// `b_to` carry a point of either section's view into the coordinates its polygon now holds.
 fn pair(
+    sk: &Sketch,
     mut a: FacePoly,
     mut b: FacePoly,
     ac: &[Option<(f64, f64)>],
     bc: &[Option<(f64, f64)>],
+    b_to: &dyn Fn((f64, f64)) -> (f64, f64),
 ) -> Result<Pair, String> {
     fn edges(p: &mut FacePoly) -> Vec<Vec<usize>> {
         let n = p.pts.len();
@@ -217,10 +221,18 @@ fn pair(
         };
         let sa = sampler(&a, aa, ac);
         let sb = sampler(&b, bb, bc);
+        // a spline or a curve at the fraction of its own parameter, in its section's view and
+        // then wherever that section's polygon now stands
+        let curved = |p: &FacePoly, group: &[usize]| p.curved.get(p.of[group[0]].0).copied().flatten();
+        let (ca, cb) = (curved(&a, aa), curved(&b, bb));
+        let at = |p: &FacePoly, (e, [t0, t1]): (EntRef, [f64; 2]), t: f64| {
+            let q = super::profile::curved_point(sk, e, t0 + (t1 - t0) * t);
+            plane::in_view(p.pose.0, p.pose.1, p.pose.2, q)
+        };
         for i in 0..count {
             let t = i as f64 / count as f64;
-            ap.push(sa(t));
-            bp.push(sb(t));
+            ap.push(ca.map_or_else(|| sa(t), |c| at(&a, c, t)));
+            bp.push(cb.map_or_else(|| sb(t), |c| b_to(at(&b, c, t))));
             provenance.push(a.of[aa[0]]);
         }
     }
@@ -257,6 +269,8 @@ pub(super) fn prepare(
             "the start section must lie at the guide start, perpendicular to its tangent".into(),
         );
     }
+    // where a point of the end section's view stands once the section is carried back to the start
+    let mut end_basis_was: Option<Basis> = None;
     let ends = if let Some(f) = end {
         let mut polys = face_polys(sk, f as usize, unit)?;
         if polys.len() != start.len() {
@@ -271,6 +285,7 @@ pub(super) fn prepare(
                 "the end section must lie at the guide end, perpendicular to its tangent".into(),
             );
         }
+        end_basis_was = Some(end_basis);
         for p in &mut polys {
             p.pts = (0..p.pts.len())
                 .map(|i| {
@@ -312,7 +327,16 @@ pub(super) fn prepare(
         .into_iter()
         .zip(ends)
         .enumerate()
-        .map(|(i, (a, b))| pair(a, b, &ac[i], &bc[i]))
+        .map(|(i, (a, b))| {
+            let b_to = |q: (f64, f64)| match end_basis_was {
+                Some(eb) => {
+                    let w = sub(g.untransport(eb.lift(q.0, q.1)), basis.o);
+                    (dot(w, basis.u), dot(w, basis.v))
+                }
+                None => q,
+            };
+            pair(sk, a, b, &ac[i], &bc[i], &b_to)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     if pairs
         .iter()
@@ -344,8 +368,26 @@ pub(super) fn prepare(
     } else {
         std::f64::consts::TAU
     };
+    // a straight guide needs stations where a side twists: a quad whose fourth corner stands `h`
+    // off the plane of the other three is a ruled patch `h / 4` from either split into triangles,
+    // and `h / 4n` from the strip of `n` stations
+    let twist = |pair: &Pair| -> f64 {
+        let (a, b) = (&pair.start, &pair.end);
+        let n = a.pts.len();
+        let lift = |p: &FacePoly, i: usize, t: f64| {
+            let (x, y) = p.pts[i % n];
+            add(p.basis.lift(x, y), scaled(g.delta, t))
+        };
+        (0..n).map(|i| {
+            let (p0, p1, q0, q1) = (lift(a, i, 0.0), lift(a, i + 1, 0.0), lift(b, i, 1.0), lift(b, i + 1, 1.0));
+            let m = cross(sub(p1, p0), sub(q0, p0));
+            let l = norm(m);
+            if l > 0.0 { dot(m, sub(q1, p0)).abs() / l } else { 0.0 }
+        }).fold(0.0, f64::max)
+    };
     let steps = if g.angle == 0.0 {
-        1
+        let h = if end.is_some() { pairs.iter().map(twist).fold(0.0, f64::max) } else { 0.0 };
+        ((h / (4.0 * crate::curve::flatness(unit))).ceil() as usize).clamp(1, 2048)
     } else {
         ((g.angle / step.min(std::f64::consts::TAU / 64.0)).ceil() as usize).clamp(3, 2048)
     };
