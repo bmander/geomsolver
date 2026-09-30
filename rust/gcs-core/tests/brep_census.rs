@@ -1,0 +1,251 @@
+//! The corpus's solids as the Rust kernel's rung 1 will meet them (docs/rust-kernel-plan.md,
+//! phase 0 for the ladder): every object's CAD recipe, the analytic surfaces its operands bring,
+//! and every Boolean whose operands share a surface — a flush bore, a boss `on` its stock, a mate,
+//! coaxial cylinders of one radius. A report, ignored:
+//! `cargo test brep_census -- --ignored --nocapture`.
+use gcs_core::json::Json;
+use gcs_core::model::Sketch;
+use std::collections::BTreeMap;
+
+type V = [f64; 3];
+fn sub(a: V, b: V) -> V { [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
+fn dot(a: V, b: V) -> f64 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
+fn cross(a: V, b: V) -> V { [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]] }
+fn norm(a: V) -> f64 { dot(a, a).sqrt() }
+fn unit(a: V) -> V { let n = norm(a); [a[0] / n, a[1] / n, a[2] / n] }
+fn scale(a: V, s: f64) -> V { [a[0] * s, a[1] * s, a[2] * s] }
+fn add(a: V, b: V) -> V { [a[0] + b[0], a[1] + b[1], a[2] + b[2]] }
+fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] }
+
+/// An analytic surface an operand's boundary lies on.
+#[derive(Clone, Debug)]
+enum Surf {
+    Plane { n: V, d: f64 },
+    Cylinder { p: V, a: V, r: f64 },
+    Cone { apex: V, a: V, half: f64 },
+    Sphere { c: V, r: f64 },
+    Torus { c: V, a: V, major: f64, minor: f64 },
+    /// A `through:` cap, whose offset is known only after the solve.
+    Cap,
+}
+
+impl Surf {
+    fn kind(&self) -> &'static str {
+        match self {
+            Surf::Plane { .. } => "plane",
+            Surf::Cylinder { .. } => "cylinder",
+            Surf::Cone { .. } => "cone",
+            Surf::Sphere { .. } => "sphere",
+            Surf::Torus { .. } => "torus",
+            Surf::Cap => "cap",
+        }
+    }
+    fn moved(&self, m: &[f64]) -> Surf {
+        let v = |x: V| [m[0] * x[0] + m[1] * x[1] + m[2] * x[2], m[4] * x[0] + m[5] * x[1] + m[6] * x[2],
+            m[8] * x[0] + m[9] * x[1] + m[10] * x[2]];
+        let p = |x: V| add(v(x), [m[3], m[7], m[11]]);
+        match *self {
+            Surf::Plane { n, d } => { let n2 = v(n); Surf::Plane { n: n2, d: d + dot(n2, [m[3], m[7], m[11]]) } }
+            Surf::Cylinder { p: q, a, r } => Surf::Cylinder { p: p(q), a: v(a), r },
+            Surf::Cone { apex, a, half } => Surf::Cone { apex: p(apex), a: v(a), half },
+            Surf::Sphere { c, r } => Surf::Sphere { c: p(c), r },
+            Surf::Torus { c, a, major, minor } => Surf::Torus { c: p(c), a: v(a), major, minor },
+            Surf::Cap => Surf::Cap,
+        }
+    }
+    /// The same surface, to `tol` (mm).
+    fn same(&self, other: &Surf, tol: f64) -> bool {
+        let parallel = |a: V, b: V| norm(cross(unit(a), unit(b))) < 1e-9;
+        let on_axis = |p: V, q: V, a: V| norm(cross(sub(q, p), unit(a))) < tol;
+        match (self, other) {
+            (Surf::Plane { n, d }, Surf::Plane { n: m, d: e }) =>
+                parallel(*n, *m) && (d - e * dot(*n, *m).signum()).abs() < tol,
+            (Surf::Cylinder { p, a, r }, Surf::Cylinder { p: q, a: b, r: s }) =>
+                parallel(*a, *b) && on_axis(*p, *q, *a) && (r - s).abs() < tol,
+            (Surf::Cone { apex, a, half }, Surf::Cone { apex: b0, a: b, half: h }) =>
+                parallel(*a, *b) && norm(sub(*apex, *b0)) < tol && (half - h).abs() < 1e-9,
+            (Surf::Sphere { c, r }, Surf::Sphere { c: d, r: s }) => norm(sub(*c, *d)) < tol && (r - s).abs() < tol,
+            (Surf::Torus { c, a, major, minor }, Surf::Torus { c: d, a: b, major: m2, minor: n2 }) =>
+                parallel(*a, *b) && norm(sub(*c, *d)) < tol && (major - m2).abs() < tol && (minor - n2).abs() < tol,
+            _ => false,
+        }
+    }
+}
+
+/// The surfaces of a profile swept along its normal (`from`/`to` known or not).
+fn prism(profile: &Json, extent: Option<(f64, f64)>, out: &mut Vec<Surf>, edges: &mut BTreeMap<String, usize>) {
+    let n = unit(vec3(profile.get("normal").unwrap()));
+    let o = vec3(profile.get("origin").unwrap());
+    for l in profile.get("loops").unwrap().arr() {
+        for e in l.arr() {
+            match e.get("kind").unwrap().as_str() {
+                "line" => {
+                    *edges.entry("line".into()).or_default() += 1;
+                    let (s, t) = (vec3(e.get("start").unwrap()), vec3(e.get("end").unwrap()));
+                    let side = unit(cross(sub(t, s), n));
+                    out.push(Surf::Plane { n: side, d: dot(side, s) });
+                }
+                "circle" => {
+                    *edges.entry(if e.get("angles").is_some() { "arc" } else { "circle" }.into()).or_default() += 1;
+                    out.push(Surf::Cylinder { p: vec3(e.get("center").unwrap()), a: n,
+                        r: e.get("radius").unwrap().as_f64() });
+                }
+                k => panic!("edge {k}"),
+            }
+        }
+    }
+    match extent {
+        Some((from, to)) => for h in [from, to] { out.push(Surf::Plane { n, d: dot(n, add(o, scale(n, h))) }) },
+        None => { out.push(Surf::Cap); out.push(Surf::Cap) }
+    }
+}
+
+/// The surfaces of a profile turned about an axis in its plane.
+fn revolve(node: &Json, out: &mut Vec<Surf>, edges: &mut BTreeMap<String, usize>) {
+    let profile = node.get("profile").unwrap();
+    let o = vec3(node.get("origin").unwrap());
+    let a = unit(vec3(node.get("axis").unwrap()));
+    let angle = node.get("angle").unwrap().as_f64();
+    let rz = |p: V| { let z = dot(sub(p, o), a); (norm(sub(sub(p, o), scale(a, z))), z) };
+    const EPS: f64 = 1e-9;
+    for l in profile.get("loops").unwrap().arr() {
+        for e in l.arr() {
+            match e.get("kind").unwrap().as_str() {
+                "line" => {
+                    let ((r0, z0), (r1, z1)) = (rz(vec3(e.get("start").unwrap())), rz(vec3(e.get("end").unwrap())));
+                    if (r0 - r1).abs() < EPS && r0 < EPS {
+                        *edges.entry("line on the axis".into()).or_default() += 1;
+                    } else if (z0 - z1).abs() < EPS {
+                        *edges.entry("line square to the axis".into()).or_default() += 1;
+                        out.push(Surf::Plane { n: a, d: dot(a, o) + z0 });
+                    } else if (r0 - r1).abs() < EPS {
+                        *edges.entry("line along the axis".into()).or_default() += 1;
+                        out.push(Surf::Cylinder { p: o, a, r: r0 });
+                    } else {
+                        *edges.entry("line slanted to the axis".into()).or_default() += 1;
+                        let zapex = z0 - r0 * (z1 - z0) / (r1 - r0);
+                        out.push(Surf::Cone { apex: add(o, scale(a, zapex)), a,
+                            half: ((r1 - r0) / (z1 - z0)).abs().atan() });
+                    }
+                }
+                "circle" => {
+                    let c = vec3(e.get("center").unwrap());
+                    let (rc, zc) = rz(c);
+                    let r = e.get("radius").unwrap().as_f64();
+                    if rc < EPS {
+                        *edges.entry("arc centred on the axis".into()).or_default() += 1;
+                        out.push(Surf::Sphere { c, r });
+                    } else {
+                        *edges.entry("arc off the axis".into()).or_default() += 1;
+                        out.push(Surf::Torus { c: add(o, scale(a, zc)), a, major: rc, minor: r });
+                    }
+                }
+                k => panic!("edge {k}"),
+            }
+        }
+    }
+    if angle.abs() < std::f64::consts::TAU - 1e-12 {
+        *edges.entry("partial revolution".into()).or_default() += 1;
+        out.push(Surf::Cap);
+        out.push(Surf::Cap);
+    }
+}
+
+#[test]
+#[ignore]
+fn brep_census() {
+    let mut refusals: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut nodes: BTreeMap<String, usize> = BTreeMap::new();
+    let mut edges: BTreeMap<String, usize> = BTreeMap::new();
+    let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
+    let mut pairs: BTreeMap<String, usize> = BTreeMap::new();
+    let mut shared: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let (mut built, mut objects, mut docs) = (0, 0, 0);
+    for (name, e) in fixtures::examples() {
+        let Some(e) = e else { continue };
+        if !e.ok() { continue; }
+        let mut solved = e.sketch.clone();
+        gcs_core::solve::solve(&mut solved, gcs_core::solve::SolveOpts::default());
+        let sk: &Sketch = &solved;
+        let objs = gcs_core::overview::objects(sk);
+        if objs.is_empty() { continue; }
+        docs += 1;
+        for root in objs {
+            objects += 1;
+            let solid = sk.solids[root].name.clone();
+            let recipe = match gcs_core::solid::cad::recipe(sk, root) {
+                Ok(r) => r,
+                Err(err) => {
+                    let key = err.split('`').enumerate().map(|(i, s)| if i % 2 == 1 { "…" } else { s })
+                        .collect::<Vec<_>>().join("`");
+                    refusals.entry(key).or_default().push(format!("{name}: {solid}"));
+                    continue;
+                }
+            };
+            built += 1;
+            // every node's surfaces, operands' by id
+            let mut surfs: BTreeMap<i64, Vec<Surf>> = BTreeMap::new();
+            for node in recipe.get("nodes").unwrap().arr() {
+                let id = node.get("id").unwrap().as_i64();
+                let kind = node.get("kind").unwrap().as_str().to_string();
+                *nodes.entry(kind.clone()).or_default() += 1;
+                let mut out = Vec::new();
+                match kind.as_str() {
+                    "prism" => prism(node.get("profile").unwrap(), Some((node.get("from").unwrap().as_f64(),
+                        node.get("to").unwrap().as_f64())), &mut out, &mut edges),
+                    "through" => prism(node.get("profile").unwrap(), None, &mut out, &mut edges),
+                    "revolve" => revolve(node, &mut out, &mut edges),
+                    "placed" => {
+                        let m: Vec<f64> = node.get("matrix").unwrap().arr().iter().map(Json::as_f64).collect();
+                        out = surfs[&node.get("source").unwrap().as_i64()].iter().map(|s| s.moved(&m)).collect();
+                    }
+                    "body" => {
+                        let stock = node.get("stock").unwrap().as_i64();
+                        out = surfs[&stock].clone();
+                        let mut operands = vec![("stock", stock)];
+                        for op in ["on", "cut", "bound"] {
+                            for x in node.get(op).unwrap().arr() { operands.push((op, x.as_i64())); }
+                        }
+                        for (i, &(op, x)) in operands.iter().enumerate().skip(1) {
+                            // the operand's surfaces against everything before it
+                            let mine = &surfs[&x];
+                            let mut ks: Vec<&str> = mine.iter().map(Surf::kind).collect();
+                            ks.sort(); ks.dedup();
+                            let mut before: Vec<&Surf> = Vec::new();
+                            for &(_, y) in &operands[..i] { before.extend(surfs[&y].iter()); }
+                            let mut bk: Vec<&str> = before.iter().map(|s| s.kind()).collect();
+                            bk.sort(); bk.dedup();
+                            for a in &bk { for b in &ks {
+                                let (p, q) = if a <= b { (a, b) } else { (b, a) };
+                                *pairs.entry(format!("{p} × {q}")).or_default() += 1;
+                            } }
+                            for s in mine {
+                                if let Some(t) = before.iter().find(|t| s.same(t, 1e-6)) {
+                                    let _ = t;
+                                    shared.entry(format!("{op}: {}", s.kind())).or_default()
+                                        .push(format!("{name}: {}", node.get("name").unwrap().as_str()));
+                                }
+                            }
+                            out.extend(mine.iter().cloned());
+                        }
+                    }
+                    k => panic!("node {k}"),
+                }
+                for s in &out { if kind != "body" && kind != "placed" { *kinds.entry(s.kind().into()).or_default() += 1; } }
+                surfs.insert(id, out);
+            }
+        }
+    }
+    println!("{docs} documents with objects, {objects} objects, {built} with a CAD recipe\n");
+    println!("refused:");
+    for (k, v) in &refusals { println!("  {} × {k}\n      {}", v.len(), v.join("; ")); }
+    println!("\nrecipe nodes: {nodes:?}");
+    println!("profile edges: {edges:?}");
+    println!("primitive surfaces: {kinds:?}");
+    println!("\nsurface kinds meeting in a Boolean (operand against what came before, by body): {pairs:?}");
+    println!("\nshared surfaces (an operand's surface already among what came before):");
+    for (k, v) in &shared {
+        let mut v = v.clone(); v.dedup();
+        println!("  {} × {k}: {}", v.len(), v.join("; "));
+    }
+}
