@@ -402,6 +402,13 @@ pub(crate) fn decl_args(d: &Decl) -> String {
                         Kid::Ref(r) => write_ref(&mut s, r),
                         Kid::Hint(k) => s.push_str(&kid_seed_text(k)),
                         Kid::Face { decl, .. } => write_decl(&mut s, decl),
+                        Kid::Trim { curve, from, to, .. } => {
+                            write_ref(&mut s, curve);
+                            s.push_str(" from ");
+                            write_ref(&mut s, from);
+                            s.push_str(" to ");
+                            write_ref(&mut s, to);
+                        }
                     }
                     parts.push(s);
                 }

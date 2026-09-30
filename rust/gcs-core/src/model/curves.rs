@@ -89,6 +89,19 @@ pub struct CurveE {
     /// resolved).  Empty for an instance written in place, whose seeds start the trace.
     pub pose: Vec<(EntRef, usize)>,
     pub class: Classes,
+    /// A face's stretch of another curve (`flank from p to q`, §6.8): minted by the face, the
+    /// curve `of` over the parameters where `from` and `to` are held on it by their contacts, so
+    /// the interval follows the solve.  `None` for a curve the document wrote.
+    pub trim: Option<Trim>,
+}
+
+/// Where a trimmed curve runs: along curve `of`, from point `from` to point `to`, each held on
+/// it by a `PointOnCurve` whose parameter is the end of the stretch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Trim {
+    pub of: u32,
+    pub from: u32,
+    pub to: u32,
 }
 
 /// Where a curve's trace is anchored in the parameter: a number the instance gave the swept
@@ -146,8 +159,32 @@ impl Sketch {
         }
     }
 
+    /// The interval a curve is drawn over: the one written, or for a trim the parameters of its
+    /// two points' contacts, from `from` to `to` — decreasing where the stretch runs against
+    /// the curve's own sense.
     pub fn curve_domain(&self, i: usize) -> (f64, f64) {
-        self.curves[i].domain
+        let cv = &self.curves[i];
+        match cv.trim {
+            Some(t) => match (self.contact_param(t.from, t.of), self.contact_param(t.to, t.of)) {
+                (Some(a), Some(b)) => (a, b),
+                _ => cv.domain,
+            },
+            None => cv.domain,
+        }
+    }
+
+    /// Where along curve `curve` point `p` is held: the parameter of the first acting
+    /// `PointOnCurve` between them.
+    pub fn contact_param(&self, p: u32, curve: u32) -> Option<f64> {
+        use crate::constraints::{Arg, CKind};
+        self.constraints.iter().filter(|c| c.kind == CKind::PointOnCurve && c.acts()).find_map(|c| {
+            match c.args.as_slice() {
+                [Arg::Ent(a), Arg::Ent(k), Arg::Param(t), ..]
+                    if a.kind == EntKind::Point && a.idx == p && k.kind == EntKind::Curve && k.idx == curve =>
+                    Some(self.params[*t as usize].value),
+                _ => None,
+            }
+        })
     }
 
     /// The parameter a curve's trace is anchored at — the drawing's unknown where the swept
@@ -212,30 +249,62 @@ impl Sketch {
                 return poly.clone();
             }
         }
-        let poly = self.curve_polyline_uncached(i, a, b);
+        // a trim may run against its curve's sense: swept the curve's way, then read backwards
+        let poly = if a <= b { self.curve_polyline_uncached(i, a, b) } else {
+            let mut p = self.curve_polyline_uncached(i, b, a);
+            p.reverse();
+            p
+        };
         self.polyline_cache.borrow_mut().insert(i, (key, poly.clone()));
         poly
     }
 
-    fn curve_polyline_uncached(&self, i: usize, a: f64, b: f64) -> Vec<(f64, f64)> {
+    /// The curve over its interval as chords no further than `tol` from it, with each sample's
+    /// parameter: the samples doubled until every chord's middle sample is within `tol` of the
+    /// chord (a user-written curve has no basis to refine against, so uniform is the honest
+    /// start), at most `1 << 14` chords. Runs from the interval's first end to its second.
+    pub fn curve_polyline_within(&self, i: usize, tol: f64) -> Vec<(f64, (f64, f64))> {
+        let (a, b) = self.curve_domain(i);
+        let (lo, hi) = (a.min(b), a.max(b));
+        let mut n = CURVE_STEPS;
+        let fine = loop {
+            let fine = self.curve_sweep(i, lo, hi, 2 * n);
+            let off = (0..n).map(|k| {
+                let (p, q, m) = (fine[2 * k], fine[2 * k + 2], fine[2 * k + 1]);
+                let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+                let l = dx.hypot(dy);
+                if l > 0.0 { ((m.0 - p.0) * dy - (m.1 - p.1) * dx).abs() / l }
+                else { (m.0 - p.0).hypot(m.1 - p.1) }
+            }).fold(0.0, f64::max);
+            n *= 2;
+            if off <= tol || n >= 1 << 14 { break fine }
+        };
+        let mut out: Vec<(f64, (f64, f64))> = fine.into_iter().enumerate()
+            .map(|(k, p)| (lo + (hi - lo) * k as f64 / n as f64, p)).collect();
+        if a > b { out.reverse(); }
+        out
+    }
+
+    /// `n` chords of the curve over `[a, b]`, the same walk the polyline takes.
+    pub(crate) fn curve_sweep(&self, i: usize, a: f64, b: f64, n: usize) -> Vec<(f64, f64)> {
         let d = &self.curve_defs[self.curves[i].def as usize];
         match &d.body {
             CurveBody::Exprs { x: tx, y: ty } => {
                 let mut s = crate::tape::Scratch::new();
-                (0..=CURVE_STEPS)
-                    .map(|k| {
-                        let u = a + (b - a) * k as f64 / CURVE_STEPS as f64;
-                        let x = self.curve_vars(i, u);
-                        (tx.eval(&x, &mut s).v, ty.eval(&x, &mut s).v)
-                    })
-                    .collect()
+                (0..=n).map(|k| {
+                    let x = self.curve_vars(i, a + (b - a) * k as f64 / n as f64);
+                    (tx.eval(&x, &mut s).v, ty.eval(&x, &mut s).v)
+                }).collect()
             }
             CurveBody::Trace(l) => MODEL_LOCUS.with(|s| {
                 let pose = self.curve_pose(i);
                 let anchor = crate::locus::Anchor { u: self.curve_home(i), pose: pose.as_deref() };
-                crate::locus::sweep(&l.flat, &self.curve_vars(i, a), a, b, CURVE_STEPS, anchor,
-                                    &mut s.borrow_mut())
+                crate::locus::sweep(&l.flat, &self.curve_vars(i, a), a, b, n, anchor, &mut s.borrow_mut())
             }),
         }
+    }
+
+    fn curve_polyline_uncached(&self, i: usize, a: f64, b: f64) -> Vec<(f64, f64)> {
+        self.curve_sweep(i, a, b, CURVE_STEPS)
     }
 }

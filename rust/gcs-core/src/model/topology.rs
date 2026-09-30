@@ -8,6 +8,17 @@ pub fn edge_ends(sk: &Sketch, e: EntRef) -> Option<(u32, u32)> {
     match e.kind {
         EntKind::Line => Some((sk.lines.get(e.i())?.p1, sk.lines.get(e.i())?.p2)),
         EntKind::Arc => Some((sk.arcs.get(e.i())?.start, sk.arcs.get(e.i())?.end)),
+        // a spline passes through its end control points where its knots are clamped
+        EntKind::Spline => {
+            let s = sk.splines.get(e.i())?;
+            let k = &s.knots;
+            let d = crate::curve::DEGREE;
+            (s.ctrl.len() > d && k.len() > 2 * d && k[..=d].iter().all(|&x| x == k[0])
+                && k[k.len() - 1 - d..].iter().all(|&x| x == k[k.len() - 1]))
+                .then(|| (s.ctrl[0], *s.ctrl.last().unwrap()))
+        }
+        // a curve has ends where a face trimmed it to two points held on it
+        EntKind::Curve => sk.curves.get(e.i())?.trim.map(|t| (t.from, t.to)),
         _ => None,
     }
 }

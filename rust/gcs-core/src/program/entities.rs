@@ -125,7 +125,8 @@ pub(super) fn build(
         for kid in group {
             let r = match kid {
                 Kid::Ref(r) => r,
-                Kid::Face { .. } => return None, // only solids accept inline sections
+                // only solids accept inline sections, and only a face's loop runs along a curve
+                Kid::Face { .. } | Kid::Trim { .. } => return None,
                 Kid::Hint(seed) => {
                     // a list slot has no arity, so it has no dotted path to be named by, and a
                     // point nothing can name is a point nothing can constrain or drag

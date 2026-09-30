@@ -55,6 +55,7 @@ fn involute_sketch() -> (Sketch, usize) {
         home: gcs_core::model::Home::At(0.0),
         pose: Vec::new(),
         class: gcs_core::style::Classes::one("construction"),
+        trim: None,
     });
     let p = sk.point(20.0, 20.0, false, "p");
     sk.add(Constraint::new(
@@ -187,6 +188,7 @@ fn two_curve_families_get_their_own_kernels() {
         home: gcs_core::model::Home::At(0.0),
         pose: Vec::new(),
         class: gcs_core::style::Classes::one("construction"),
+        trim: None,
     });
     let q = sk.point(0.0, 30.0, false, "q");
     sk.add(Constraint::new(

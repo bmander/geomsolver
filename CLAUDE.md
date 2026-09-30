@@ -380,12 +380,12 @@ box (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whol
 entities are formatted on every core, the kernel's text to the byte (`SOLVENT_STEP_TEXT_CHECK`); a
 sheet's stations are traced side by side. 8.6–14.6 s a member (40–55×); the floor is OCCT's
 STEP transfer, parse and repairing read-back, its Boolean split and the cutters' Booleans.
-**The Rust B-rep kernel** ([plan](docs/rust-kernel-plan.md), rung 1; clean-room — OCCT is LGPL
+**The Rust B-rep kernel** ([plan](docs/rust-kernel-plan.md), rungs 1–2; clean-room — OCCT is LGPL
 and this repo MIT, so its code is never translated, only its behaviour and conventions studied):
 `gcs_core::brep` — `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed
 distances; lines, circles, ellipses, `Traced` intersections read by pulling a chord onto both
 surfaces), `topo` (`Brep`: loops of oriented uses with pcurves, degenerate poles; `check`,
-`pinches`), `build` (prisms and revolutions of line/arc/circle profiles), `props` (volume by Green's
+`pinches`), `build` (prisms, revolutions and lofts of line/arc/circle/spline profiles), `props` (volume by Green's
 theorem round each face's loops), `query`, `ssi` (closed forms, else traced; under a degree refused
 by name), `boolean` (split, arrange in each face's parameters, classify, assemble; faces on one
 surface and tangent touches handled), `mesh` (constrained Delaunay in scaled parameters, refined to
@@ -399,6 +399,15 @@ Rung 1 is done: every corpus solid with a recipe agrees with OCCT (volume 1e-9, 
 but for named refusals of designs that touch themselves — surfaces meeting under 1° (the crown
 cutters' fillet tori touch; the gear's phase needs measured tolerances for them) and pinches.
 An explicit `--kernel occt` / `--stl-backend occt` in a build without OCCT still refuses.
+Rung 2 is done ([plan](docs/rust-kernel-plan.md)): clamped spline profiles (`Curve::BSpline`,
+`brep::nurbs`; `Surface::Extrusion`/`Revolution`, written as STEP's surfaces of linear extrusion and
+revolution); a face's stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, fitted
+within `cad::FIT_MM` for the recipe); lofts of any edge pairs along a line or an arc
+(`Surface::Blend` and its `Curve::Iso` rails, STEP-fitted within `step::FIT`), paired at the same
+fraction of each edge's parameter. A swept surface's signed distance runs on past its curve's ends,
+so `curve_surface` drops roots off the surface. The meter reads a static body through this kernel's
+B-rep (`accuracy::Exact`) and a field taking splines as chords within `CHORD_SLACK`. A midpoint
+flatness test misses a cubic's S-bend, so edge sampling and `curve::tessellate` test quarter points.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference

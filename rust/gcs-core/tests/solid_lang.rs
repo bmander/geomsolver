@@ -1171,3 +1171,55 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
         assert_eq!(e.sketch.solids.iter().filter(|s| s.name.starts_with("thr.")).count(), 5);
     }
 }
+
+/// A parabola `y = x²` about `o`, as a formula curve, with `a` and `b` held on it at `x = ∓1`.
+const PARABOLA: &str = "\
+unit mm
+component Par(o: point, u: Length) {
+  point p = (o.x + u, o.y + u * u / 1mm)
+}
+point o hint(x: 0mm, y: 0mm)
+ground o
+curve k = Par(o).p over u in (-2mm, 2mm)
+point a hint(x: -1mm, y: 1mm)
+point b hint(x: 1mm, y: 1mm)
+point c hint(x: 0mm, y: 3mm)
+ground c
+a on k hint(t: -1)
+b on k hint(t: 1)
+fix a.x
+fix b.x
+";
+
+#[test]
+fn a_face_runs_along_the_stretch_of_a_curve_between_two_points_held_on_it() {
+    // the parabola from a to b and the chord back: 2 − 2/3 across, 3 deep
+    let e = read(&format!("{PARABOLA}solid s(face(k from a to b, -> close), depth: 3mm)\n"));
+    let v = volume(&e, "s");
+    assert!((v - 4.0).abs() < 2e-3, "{v}");
+    // the exact kernel reads the stretch as a B-spline fitted within `FIT_MM` of the curve
+    let mut sk = e.sketch.clone();
+    gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
+    let root = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "s").unwrap();
+    let recipe = gcs_core::solid::cad::recipe(&sk, root).unwrap();
+    let b = gcs_core::brep::recipe::build(&recipe).unwrap();
+    b.check(1e-9).unwrap();
+    let exact = gcs_core::brep::props::volume(&b);
+    assert!((exact - 4.0).abs() <= 3.0 * 2.0 * 3.0 * gcs_core::solid::cad::FIT_MM, "{exact}");
+    // either way round, and printed as written
+    let back = read(&format!("{PARABOLA}solid s(face(k from b to a, -> close), depth: 3mm)\n"));
+    assert!((volume(&back, "s") - 4.0).abs() < 2e-3);
+    let (prog, _) = parse("face f(k from a to b, -> close)\n");
+    let mut text = String::new();
+    gcs_core::syntax::write_stmt_to(&mut text, &prog.stmts().next().unwrap().kind).unwrap();
+    assert!(text.contains("f(k from a to b, -> close)"), "{text}");
+}
+
+#[test]
+fn a_curve_in_a_face_is_a_stretch_between_points_held_on_it() {
+    refused(&format!("{PARABOLA}face f(k, -> close)\n"), Code::E080, "name the stretch");
+    refused(&format!("{PARABOLA}face f(k from a to c, -> close)\n"), Code::E080, "`c` is not held on `k`");
+    refused(&format!("{PARABOLA}face f(k from a to a, -> close)\n"), Code::E080, "to itself");
+    refused(&format!("{PARABOLA}line l(a, c)\nface f(l from a to c, -> close)\n"), Code::E080, "runs along a curve");
+    refused(&format!("{PARABOLA}face f(k from a to b, k from b to a)\n"), Code::E080, "twice");
+}

@@ -49,19 +49,38 @@ fn every_node_the_kernel_builds_is_occts() {
                 if let Err(err) = b.check(tol*10.) { failures.push(format!("{label}: {err}")); continue }
                 let sub = object([("schema",1.into()),("units","mm".into()),("root",id.into()),
                     ("nodes",Json::Arr(nodes[..=i].to_vec()))]);
-                let theirs = session.construct(&sub).unwrap_or_else(|err| panic!("{label}: OCCT: {err}"));
-                let (v,w) = (volume(&b),session.volume(theirs).unwrap());
-                let (faces,their_faces) = (b.faces.len(),session.faces(theirs).unwrap().len());
+                let (v,faces) = (volume(&b),b.faces.len());
+                // OCCT builds no lofts: for one (and what is built of it) the faceted kernel is the reference
+                let theirs = match session.construct(&sub) {
+                    Ok(t) => Some(t),
+                    Err(err) if err.contains("along-guide lofts") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no lofts)"); None }
+                    Err(err) => panic!("{label}: OCCT: {err}"),
+                };
+                if let Some(theirs) = theirs {
+                let w = session.volume(theirs).unwrap();
+                let their_faces = session.faces(theirs).unwrap().len();
                 let rel = (v-w).abs()/w.abs();
                 eprintln!("{label}: {v:.9} mm³ against {w:.9}, {rel:e}; {faces} faces against {their_faces}");
                 worst = worst.max(rel);
-                // a `through` prism's extent is its sources' box, which OCCT widens by its tolerances
-                if rel >= 1e-7 { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
+                // a `through` prism's extent is its sources' box, which OCCT widens by its tolerances and,
+                // about a spline face, takes from its poles, where this kernel samples the face: the
+                // prism's depth is then a little different and nothing cut by it is
+                let swept = |b: &gcs_core::brep::topo::Brep| b.faces.iter().any(|f| matches!(f.surface,Surface::Extrusion(..) | Surface::Revolution(..)));
+                let through_splines = n.get("kind").unwrap().as_str() == "through"
+                    && n.get("sources").unwrap().arr().iter().any(|s| ours.get(&s.as_i64()).is_some_and(swept));
+                // OCCT integrates a face swept from a spline (its adaptive rule asked for 1e-9) to a few
+                // parts in a million, where this kernel's Gauss rule is exact on each knot span: on
+                // `solid_tooth` fitted within 1e-7 mm this kernel meets the involute's closed form to
+                // 1e-9 and OCCT is 4e-8 off; fitted within 1e-4 mm, OCCT is 2e-6 off (`tests/brep.rs`
+                // and `brep_census.rs` hold this kernel to the closed forms)
+                let bar = if through_splines { 1e-3 } else if swept(&b) { 1e-5 } else { 1e-7 };
+                if rel >= bar { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
                 // faces by the kind of their surface (OCCT's `GeomAbs_SurfaceType` order): OCCT may split
                 // a plane along a line where another face only touches it, which this kernel does not
                 let kinds = |ks: &mut Vec<i32>| { ks.sort(); ks.clone() };
                 let our_kinds = kinds(&mut b.faces.iter().map(|f| match f.surface {
                     Surface::Plane(_) => 0,Surface::Cylinder(..) => 1,Surface::Cone(..) => 2,Surface::Sphere(..) => 3,Surface::Torus(..) => 4,
+                    Surface::Revolution(..) => 7,Surface::Extrusion(..) => 8,Surface::Blend(..) => 6,
                 }).collect());
                 let their_kinds = kinds(&mut session.faces(theirs).unwrap().into_iter().map(|g| session.face_kind(g).unwrap()).collect());
                 if our_kinds != their_kinds {
@@ -70,10 +89,12 @@ fn every_node_the_kernel_builds_is_occts() {
                     if extra_planes { eprintln!("  (OCCT splits a plane along a line it only touches: {their_kinds:?} against our {our_kinds:?})"); }
                     else { failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}")); continue }
                 }
-                if n.get("kind").unwrap().as_str() == "body" && !b.pinches().is_empty() {
+                }
+                let whole = n.get("kind").unwrap().as_str() == "body" || id == root_id;
+                if whole && !b.pinches().is_empty() {
                     // a solid touching itself at a point has no manifold file (OCCT's export of one refuses too)
                     refused.push(format!("{label}: pinches at {:?}",b.pinches()[0]));
-                } else if n.get("kind").unwrap().as_str() == "body" {
+                } else if whole {
                     // our STEP, parsed back and checked against our solid face by face
                     let text = gcs_core::brep::step::write(&b,"oracle",1e-5);
                     if let Err(err) = native::step_check::verify(&text,&native::step_check::Solid::of(&b)) {

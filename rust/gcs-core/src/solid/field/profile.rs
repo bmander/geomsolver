@@ -161,9 +161,19 @@ fn convex(edges: &[Edge],direction: f64) -> Result<PlanarField,String> {
     }
     // Convex material lies in the convex hull of its boundary, hence this disk
     // contains it strictly. It also bounds profiles made solely of half-planes.
-    let mut field = PlanarField::disk([0.;2],radius*2.).map_err(failure)?;
-    for constraint in constraints { field = field.intersection(constraint).map_err(failure)?; }
-    Ok(field)
+    // Intersected pairwise, a balanced tree: a loop of many chords (a spline's) stays well
+    // within a field's depth, where one after another it would not.
+    let mut level = vec![PlanarField::disk([0.;2],radius*2.).map_err(failure)?];
+    level.extend(constraints);
+    while level.len() > 1 {
+        let mut next = Vec::with_capacity(level.len().div_ceil(2));
+        let mut it = level.into_iter();
+        while let Some(a) = it.next() {
+            next.push(match it.next() { Some(b) => a.intersection(b).map_err(failure)?,None => a });
+        }
+        level = next;
+    }
+    Ok(level.pop().expect("a convex field has its bounding disk"))
 }
 
 // One wall's distance, enclosed over a box by interval arithmetic. A segment is

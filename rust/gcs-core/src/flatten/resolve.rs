@@ -394,14 +394,14 @@ fn rewrite(
                 for kid in g.iter_mut() {
                     // a seeded slot names nothing, so there is nothing in it to rescope
                     match kid {
-                        crate::syntax::Kid::Ref(r) => fix(r, bad),
+                        crate::syntax::Kid::Ref(_) | crate::syntax::Kid::Trim { .. } => {
+                            for r in kid.refs_mut() { fix(r, bad); }
+                        }
                         crate::syntax::Kid::Face { decl: face, .. } => {
                             // An inline section reads the same scope as its solid. Its loop
-                            // contains only references or seeds, never another section.
+                            // contains references, trims or seeds, never another section.
                             for k in face.children.iter_mut().flatten() {
-                                if let crate::syntax::Kid::Ref(r) = k {
-                                    fix(r, bad);
-                                }
+                                for r in k.refs_mut() { fix(r, bad); }
                             }
                         }
                         crate::syntax::Kid::Hint(_) => {}

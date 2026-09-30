@@ -308,7 +308,13 @@ fn refine(
     let m = 0.5 * (a + b);
     let pm = eval_on(sk, i, span, m).p;
     let (cx, cy) = (0.5 * (pa.0 + pb.0), 0.5 * (pa.1 + pb.1));
-    if depth == 0 || (pm.0 - cx).hypot(pm.1 - cy) <= tol {
+    // the quarter points as well: a cubic is symmetric about its inflection, so one centred on
+    // the stretch has its middle exactly on the chord however far the rest of it strays
+    let quarters = || [0.25, 0.75].iter().all(|&f| {
+        let (q, c) = (eval_on(sk, i, span, a + (b - a) * f).p, (pa.0 + (pb.0 - pa.0) * f, pa.1 + (pb.1 - pa.1) * f));
+        (q.0 - c.0).hypot(q.1 - c.1) <= tol
+    });
+    if depth == 0 || ((pm.0 - cx).hypot(pm.1 - cy) <= tol && quarters()) {
         out.push(pb);
         return;
     }
@@ -477,8 +483,7 @@ pub fn interpolating_ctrl(
     pts: &[(f64, f64)],
 ) -> Option<(Vec<(f64, f64)>, Vec<f64>, Vec<f64>)> {
     let m = pts.len();
-    let p = DEGREE;
-    if m < p + 1 || pts.iter().any(|q| !q.0.is_finite() || !q.1.is_finite()) {
+    if m < DEGREE + 1 || pts.iter().any(|q| !q.0.is_finite() || !q.1.is_finite()) {
         return None;
     }
     // chord-length parameters: points that are far apart get more of the curve
@@ -493,6 +498,20 @@ pub fn interpolating_ctrl(
         t[k] = t[k - 1] + chords[k - 1] / total;
     }
     t[m - 1] = 1.0;
+    interpolating_ctrl_at(pts, t)
+}
+
+/// `interpolating_ctrl` at parameters the caller chose (increasing, from 0 to 1): what a fit
+/// whose parameter must follow another curve's asks for.
+pub fn interpolating_ctrl_at(
+    pts: &[(f64, f64)],
+    t: Vec<f64>,
+) -> Option<(Vec<(f64, f64)>, Vec<f64>, Vec<f64>)> {
+    let m = pts.len();
+    let p = DEGREE;
+    if m < p + 1 || t.len() != m || pts.iter().any(|q| !q.0.is_finite() || !q.1.is_finite()) {
+        return None;
+    }
     // averaged knots: each interior knot is the mean of the p parameters it spans, which is
     // what keeps the collocation system well conditioned
     let mut u = vec![0.0; p + 1];

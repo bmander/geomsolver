@@ -967,13 +967,33 @@ pub enum Kid<D = Decl> {
     Hint(KidSeed),
     /// `solid block(face(a, b, c, -> close), depth: t)` — a private section.
     Face { decl: Box<D>, span: Span },
+    /// `face tooth(root, flank from p to q, tip)` — the stretch of a curve between two points
+    /// held on it (`p on flank`), a face's edge (§6.8).  Only a face's loop holds one.
+    Trim { curve: Ref, from: Ref, to: Ref, span: Span },
 }
 
 impl<D> Kid<D> {
+    /// The one reference a slot holds, where it holds exactly one — a name, not a trim.
     pub fn as_ref(&self) -> Option<&Ref> {
         match self {
             Kid::Ref(r) => Some(r),
-            Kid::Hint(_) | Kid::Face { .. } => None,
+            Kid::Hint(_) | Kid::Face { .. } | Kid::Trim { .. } => None,
+        }
+    }
+    /// Every reference the slot names: a trim names its curve and both points, and a walk
+    /// asking what a statement depends on must see all three.
+    pub fn refs(&self) -> Vec<&Ref> {
+        match self {
+            Kid::Ref(r) => vec![r],
+            Kid::Trim { curve, from, to, .. } => vec![curve, from, to],
+            Kid::Hint(_) | Kid::Face { .. } => Vec::new(),
+        }
+    }
+    pub fn refs_mut(&mut self) -> Vec<&mut Ref> {
+        match self {
+            Kid::Ref(r) => vec![r],
+            Kid::Trim { curve, from, to, .. } => vec![curve, from, to],
+            Kid::Hint(_) | Kid::Face { .. } => Vec::new(),
         }
     }
 }

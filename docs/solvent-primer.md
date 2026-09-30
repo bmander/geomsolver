@@ -919,6 +919,35 @@ are edges listed out of order. For the same reason an edge standing between two 
 `face bad(a, bc, d, -> close)` could be walked `b`-first or `c`-first, and nothing there says
 which — so an edge takes its direction from a neighbour it actually meets.
 
+**A curve stands in a face as a stretch.** A spline whose knots are clamped ends at its first and
+last control points, so it is an edge like any other. A curve (1.9) has no end points of its own,
+so a face names the stretch of it between two points held on it by their contacts — `k from a to
+b` — and the stretch follows the solve as the contacts do. A single edge closed by `-> close` is a
+loop with its chord:
+
+```
+unit mm
+component Par(o: point, u: Length) {
+  point p = (o.x + u, o.y + u * u / 1mm)
+}
+point o hint(x: 0mm, y: 0mm)
+ground o
+curve k = Par(o).p over u in (-2mm, 2mm)
+point a hint(x: -1mm, y: 1mm)
+point b hint(x: 1mm, y: 1mm)
+a on k hint(t: -1)
+b on k hint(t: 1)
+fix a.x
+fix b.x
+solid cap(face(k from a to b, -> close), depth: 3mm)
+```
+
+`4 params, 4 equations; DOF 0`, and `cap` is the parabola's cap, 4/3 across and 3 deep: 4 mm³. A
+curve named without `from … to …`, a point with no `on` holding it to the curve, and a stretch from a
+point to itself are each refused where they are written. `examples/solid_tooth.sv` is an involute
+gear tooth written this way, its flanks the stretches `gear.Flank` holds between the root and the
+tip.
+
 **A solid** is that face swept along its normal, along a guide, or about an axis.
 
 **A face may be written where it is used.** A section needed by one sweep can go directly in its

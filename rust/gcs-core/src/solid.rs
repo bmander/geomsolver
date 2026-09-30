@@ -44,7 +44,7 @@ pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles
 pub(crate) use document::{evaluation_operands,operand_paths};
 use document::{frame_origin,resolve_at};
 mod field;
-pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError};
+pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError,CHORD_SLACK};
 pub use field::{MaterialField,MaterialEvaluator,MaterialBounds,MaterialSweepQuery,SIDE_EVALUATIONS};
 pub use field::{OperandId,Query,Reading,Source,Want,Resolution,crease};
 pub use field::{MaterialProbe,ProbeState};

@@ -50,6 +50,32 @@ impl Snapshot {
 /// A planar face's basis and its loops as exact lines, arcs and circles in the
 /// plane's own view coordinates: the same reading the faceted kernel tessellates
 /// from, without the tessellation. The outer loop comes first, then each hole.
+/// A spline or a stretch of a curve has no closed form here and enters as chords
+/// within `CHORD_SLACK` of the loop's size of it, its ends the exact points its
+/// neighbours share: the field is exact for those chords (the conversion from the
+/// solved curve is not certified, as a solved line's is not).
+/// How near its curve a profile's chord passes, a share of the profile's reach.
+pub const CHORD_SLACK: f64 = 1e-7;
+
+/// A curve from `a` to `b` as chords whose middles and quarters lie within `tol` of it (a cubic
+/// bends through its middle symmetrically, so the quarters are asked too), from 32 pieces.
+fn within(at: &dyn Fn(f64) -> (f64,f64),a: f64,b: f64,tol: f64) -> Vec<(f64,f64)> {
+    let off = |p: (f64,f64),q: (f64,f64),m: (f64,f64)| {
+        let (dx,dy) = (q.0-p.0,q.1-p.1);
+        let l = dx.hypot(dy);
+        if l > 0. { ((m.0-p.0)*dy-(m.1-p.1)*dx).abs()/l } else { (m.0-p.0).hypot(m.1-p.1) }
+    };
+    let mut out = vec![at(a)];
+    let mut stack: Vec<(f64,f64,u32)> = (0..32).rev().map(|k| (a+(b-a)*k as f64/32.,a+(b-a)*(k+1) as f64/32.,0)).collect();
+    while let Some((x,z,depth)) = stack.pop() {
+        let (p,q) = (at(x),at(z));
+        let strays = [0.25,0.5,0.75].iter().any(|&f| off(p,q,at(x+(z-x)*f)) > tol);
+        if depth < 30 && strays { let m = (x+z)/2.; stack.push((m,z,depth+1)); stack.push((x,m,depth+1)); }
+        else { out.push(q); }
+    }
+    out
+}
+
 fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> {
     let f = sk.faces.get(face).ok_or("no such face")?;
     let (basis,pose) = match f.plane()? {
@@ -60,14 +86,33 @@ fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> 
         }
         None => (Basis::page(),(1.,0.,(0.,0.))),
     };
-    let view = |i: u32| {
-        let (a,b) = plane::in_view(pose.0,pose.1,pose.2,sk.point_xy(i as usize));
-        [a,b]
+    let at = |q: (f64,f64)| { let (a,b) = plane::in_view(pose.0,pose.1,pose.2,q); [a,b] };
+    let view = |i: u32| at(sk.point_xy(i as usize));
+    // how near its curve a chord must pass: a share of the whole face's reach
+    let reach = f.boundaries().flat_map(|(edges,_)| edges.iter().flat_map(|&e| sk.children(e)))
+        .filter(|c| c.kind == EntKind::Point).map(|c| { let q = view(c.idx); q[0].abs().max(q[1].abs()) })
+        .fold(0_f64,f64::max);
+    let slack = CHORD_SLACK*(1.+reach);
+    let chords = |pts: Vec<(f64,f64)>,ends: [u32;2]| -> Vec<Edge> {
+        let mut pts: Vec<[f64;2]> = pts.into_iter().map(at).collect();
+        let n = pts.len();
+        if n >= 2 { pts[0] = view(ends[0]); pts[n-1] = view(ends[1]); }
+        pts.windows(2).map(|w| Edge::Line {a:w[0],b:w[1],axis:false}).collect()
     };
     let loops = f.boundaries().map(|(edges,_)| edges.iter().map(|e| Ok(match e.kind {
+        EntKind::Spline => {
+            let sp = &sk.splines[e.i()];
+            let (a,b) = crate::curve::domain(sk,e.i());
+            return Ok(chords(within(&|t| crate::curve::point_at(sk,e.i(),t),a,b,slack),[sp.ctrl[0],*sp.ctrl.last().unwrap()]))
+        }
+        EntKind::Curve => {
+            let t = sk.curves[e.i()].trim.ok_or("material fields read a curve only where a face trims it")?;
+            let pts = sk.curve_polyline_within(e.i(),slack).into_iter().map(|(_,q)| q).collect();
+            return Ok(chords(pts,[t.from,t.to]))
+        }
         EntKind::Line => {
             let l = &sk.lines[e.i()];
-            Edge::Line {a:view(l.p1),b:view(l.p2),axis:false}
+            vec![Edge::Line {a:view(l.p1),b:view(l.p2),axis:false}]
         }
         EntKind::Arc => {
             let arc = &sk.arcs[e.i()];
@@ -79,17 +124,17 @@ fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> 
             let mut sweep = angle(ends[1])-start;
             while sweep <= 0. { sweep += TAU; }
             let radius = (ends[0][0]-center[0]).hypot(ends[0][1]-center[1]);
-            Edge::Arc {center,radius,start,sweep,ends}
+            vec![Edge::Arc {center,radius,start,sweep,ends}]
         }
         EntKind::Circle => {
             let c = &sk.circles[e.i()];
             let center = view(c.center);
             let radius = sk.params[c.radius as usize].value.abs();
-            Edge::Arc {center,radius,start:0.,sweep:TAU,ends:[[center[0]+radius,center[1]];2]}
+            vec![Edge::Arc {center,radius,start:0.,sweep:TAU,ends:[[center[0]+radius,center[1]];2]}]
         }
-        _ => return Err("material fields read planar lines, arcs and circles as profile edges"
-            .to_string()),
-    })).collect::<Result<Vec<_>,String>>()).collect::<Result<Vec<_>,_>>()?;
+        _ => return Err("material fields read planar lines, arcs, circles, splines and stretches of curves \
+            as profile edges".to_string()),
+    })).collect::<Result<Vec<Vec<Edge>>,String>>().map(|l| l.concat())).collect::<Result<Vec<_>,_>>()?;
     Ok((basis,loops))
 }
 

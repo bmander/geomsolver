@@ -480,7 +480,23 @@ impl<'a> P<'a> {
                                 let decl = self.decl(EntKind::Face)?;
                                 Kid::Face { span: decl.list_span, decl: Box::new(decl) }
                             }
-                            None => Kid::Ref(self.refr()?),
+                            None => {
+                                let r = self.refr()?;
+                                // `flank from p to q`: the stretch of a curve a face runs along
+                                if kind == EntKind::Face && self.peek_word("from") {
+                                    let lo = r.span.lo as usize;
+                                    self.i += 1;
+                                    let from = self.refr()?;
+                                    if !self.eat_word("to") {
+                                        self.fail("a face's curve runs `from` one point `to` another:                                                    `flank from p to q`");
+                                        return None;
+                                    }
+                                    let to = self.refr()?;
+                                    Kid::Trim { curve: r, from, to, span: Span::new(lo, self.prev_hi()) }
+                                } else {
+                                    Kid::Ref(r)
+                                }
+                            }
                         };
                         let slot = if kind == EntKind::Face {
                             if label.as_deref() == Some("on") { 2 } else { usize::from(in_holes) }

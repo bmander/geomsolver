@@ -5,6 +5,7 @@ use crate::interval::{Error,Interval as I};
 mod profile;
 mod spatial;
 mod document;
+pub use document::CHORD_SLACK;
 pub use spatial::SpatialField;
 mod swept;
 pub use swept::{SweptField,SweepEvaluator,SweepError,SIDE_EVALUATIONS};

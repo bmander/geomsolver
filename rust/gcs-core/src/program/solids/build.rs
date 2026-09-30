@@ -47,7 +47,7 @@ pub(super) fn build_solid(
                     return None;
                 }
             },
-            Kid::Hint(_) => {
+            Kid::Hint(_) | Kid::Trim { .. } => {
                 diags.push(Diag {
                     code: Code::E080,
                     span: st.span,

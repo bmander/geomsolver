@@ -274,13 +274,38 @@ fn brep_body_debug() {
             eprintln!("  edge {i}: {kind} {:?} from {:?} to {:?}",e.t,b.vertices[e.v[0] as usize].p,b.vertices[e.v[1] as usize].p);
         }
     };
+    // the solid meshed, timed, with any triangle of no area named
+    let report = |solid: &Brep| {
+        if std::env::var_os("BREP_DUMP").is_some() { eprintln!("result:"); dump(solid); }
+        let started = std::time::Instant::now();
+        match gcs_core::brep::mesh::mesh(solid,0.01,0.2) {
+            Ok(m) => {
+                eprintln!("meshed: {} triangles, sag {} ({:?})",m.tris.len(),m.sag,started.elapsed());
+                for t in &m.tris {
+                    let [a,b,c] = t.map(|i| m.pts[i as usize]);
+                    // as an STL writes it, in single precision
+                    let f = |p: [f64;3]| p.map(|x| x as f32 as f64);
+                    if gcs_core::space::triangle_normal(f(a),f(b),f(c)).is_none() { eprintln!("  a triangle of no area (in f32): {a:?} {b:?} {c:?}"); }
+                }
+            }
+            Err(err) => {
+                eprintln!("NOT MESHED: {err}");
+                dump(solid);
+                for (i,f) in solid.faces.iter().enumerate() {
+                    eprintln!("  face {i} loops in parameters: {:?}",f.loops.iter().map(|l| l.iter().map(|c| solid.uv_ends(f,c)[0]).collect::<Vec<_>>()).collect::<Vec<_>>());
+                }
+            }
+        }
+    };
     let mut built: std::collections::BTreeMap<i64,Brep> = Default::default();
     let names: std::collections::BTreeMap<i64,String> = r.get("nodes").unwrap().arr().iter()
         .map(|n| (n.get("id").unwrap().as_i64(),n.get("name").unwrap().as_str().to_string())).collect();
     for n in r.get("nodes").unwrap().arr() {
         let id = n.get("id").unwrap().as_i64();
         if n.get("kind").unwrap().as_str() != "body" {
-            built.insert(id,gcs_core::brep::recipe::node(n,&built).unwrap());
+            let b = gcs_core::brep::recipe::node(n,&built).unwrap();
+            if id == r.get("root").unwrap().as_i64() { report(&b); }
+            built.insert(id,b);
             continue
         }
         let mut solid = built[&n.get("stock").unwrap().as_i64()].clone();
@@ -299,18 +324,37 @@ fn brep_body_debug() {
                 solid = next;
             }
         }
-        if std::env::var_os("BREP_DUMP").is_some() { eprintln!("result:"); dump(&solid); }
-        match gcs_core::brep::mesh::mesh(&solid,0.01,0.2) {
-            Ok(m) => eprintln!("meshed: {} triangles, sag {}",m.tris.len(),m.sag),
-            Err(err) => {
-                eprintln!("NOT MESHED: {err}");
-                dump(&solid);
-                for (i,f) in solid.faces.iter().enumerate() {
-                    eprintln!("  face {i} loops in parameters: {:?}",f.loops.iter().map(|l| l.iter().map(|c| solid.uv_ends(f,c)[0]).collect::<Vec<_>>()).collect::<Vec<_>>());
-                }
-            }
-        }
+        report(&solid);
         built.insert(id,solid);
     }
     eprintln!("built");
+}
+
+/// `solid_tooth`: one involute tooth, its flanks stretches of `gear.Flank`'s involutes between the
+/// root circle and the tip. An involute of base radius `Rb` has `x y' − y x' = Rb² u²`, so each
+/// flank encloses `Rb² (u1³ − u0³) / 6` about the centre (Green's theorem), and the crown and the
+/// line across the root their cross products. The exact kernel reads each flank as the B-spline
+/// fitted within `FIT_MM`, which bounds its error by the flanks' length times the depth.
+#[test]
+fn an_involute_tooth_is_its_closed_form() {
+    let (_,e) = fixtures::examples().into_iter().find(|(n,_)| n == "solid_tooth.sv").unwrap();
+    let mut sk = e.unwrap().sketch;
+    gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
+    let root = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "tooth").unwrap();
+    let b = gcs_core::brep::recipe::build(&gcs_core::solid::cad::recipe(&sk,root).unwrap()).unwrap();
+    b.check(1e-9).unwrap();
+    let (n,m,phi,depth) = (40.,2.,25f64.to_radians(),5.);
+    let (r,rb) = (m*n/2.,m*n/2.*phi.cos());
+    let half = (90./n).to_radians()+phi.tan()-phi;
+    let (u0,u1) = (((r-1.25*m)/rb).powi(2)-1.,((r+m)/rb).powi(2)-1.);
+    let (u0,u1) = (u0.sqrt(),u1.sqrt());
+    let inv = |ph: f64,u: f64| [rb*((u+ph).cos()+u*(u+ph).sin()),rb*((u+ph).sin()-u*(u+ph).cos())];
+    let cross = |a: [f64;2],b: [f64;2]| (a[0]*b[1]-a[1]*b[0])/2.;
+    let area = 2.*rb*rb*(u1.powi(3)-u0.powi(3))/6.+cross(inv(-half,u1),inv(half,-u1))+cross(inv(half,-u0),inv(-half,u0));
+    let flank = rb*(u1*u1-u0*u0)/2.;
+    let v = gcs_core::brep::props::volume(&b);
+    assert!((v-area.abs()*depth).abs() <= 2.*flank*depth*gcs_core::solid::cad::FIT_MM,"{v} against {}",area.abs()*depth);
+    // and the faceted kernel, to its faceting
+    let facets = sk.evaluated_solid(root,gcs_core::solid::ApproximationPolicy::Mesh).unwrap().volume();
+    assert!((facets-v).abs() <= 5e-3*v,"{facets} against {v}");
 }
