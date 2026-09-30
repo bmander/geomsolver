@@ -1,5 +1,6 @@
 //! The CAD recipe (`solid::cad::recipe`) built by this kernel: the same millimetre-valued DAG the
 //! native host is handed, node by node, so the two kernels can be held to each other.
+use super::boolean::{boolean,Op};
 use super::build::{prism,revolve,Profile};
 use super::geom::{Rigid,V};
 use super::topo::Brep;
@@ -11,7 +12,10 @@ fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(fo
 
 /// One node of a recipe built from the nodes before it; `Err` names what this kernel does not
 /// build yet.
-pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> {
+pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_named(n,built,&BTreeMap::new()) }
+
+/// `node`, naming each operand in what it says.
+pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>) -> Result<Brep,String> {
     let kind = field(n,"kind")?.as_str();
     let source = |k: &str| -> Result<&Brep,String> {
         built.get(&field(n,k)?.as_i64()).ok_or(format!("recipe: `{k}` not built before its user"))
@@ -44,7 +48,21 @@ pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> {
             let pad = diagonal.sqrt()*4e-5;
             prism(&profile,from-pad,to+pad)
         }
-        "body" => Err("Booleans are not built by this kernel yet".into()),
+        "body" => {
+            // the stock, plus everything on it, minus everything that cuts it, within everything
+            // that bounds it — in that order, as the native host combines them
+            let mut solid = source("stock")?.clone();
+            for (key,op) in [("on",Op::Union),("cut",Op::Cut),("bound",Op::Common)] {
+                for x in field(n,key)?.arr() {
+                    let operand = built.get(&x.as_i64()).ok_or(format!("recipe: an operand not built before its body"))?;
+                    let tol = 1e-9*solid.size().max(operand.size());
+                    let name = built_names.get(&x.as_i64()).cloned().unwrap_or_default();
+                    solid = boolean(&solid,operand,op,tol).map_err(|e| format!("{key} `{name}`: {e}"))?;
+                    solid.check(10.*tol).map_err(|e| format!("{key} `{name}`: {e}"))?;
+                }
+            }
+            Ok(solid)
+        }
         k => Err(format!("recipe: a node of kind `{k}`")),
     }
 }

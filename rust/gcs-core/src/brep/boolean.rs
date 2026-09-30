@@ -22,6 +22,7 @@ struct Pool { pts: Vec<V>,tol: f64,grid: crate::space::Grid }
 impl Pool {
     fn new(tol: f64) -> Pool { Pool {pts:Vec::new(),tol,grid:crate::space::Grid::new(4.*tol)} }
     fn at(&mut self,p: V) -> u32 {
+        assert!(p.iter().all(|x| x.is_finite() && x.abs() < 1e12),"a vertex at {p:?}");
         let mut found = None;
         let pts = &self.pts;
         let tol = self.tol;
@@ -123,16 +124,39 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
     }
     // 2. every pair of faces: their surfaces' curves, kept where they lie in both faces
     let mut ssi_edges: Vec<(usize,usize,usize)> = Vec::new(); // (edge, face of A, face of B)
+    // faces of the two on one surface: each splits the other with its boundary
+    let mut same_pairs: Vec<(usize,usize)> = Vec::new();
     for fa in 0..a.faces.len() {
         for fb in 0..b.faces.len() {
             if !overlap(&boxes[0][fa],&boxes[1][fb],pad) { continue }
             let (sa,sb) = (&a.faces[fa].surface,&b.faces[fb].surface);
             let curves = match intersect(sa,sb,tol) {
                 Ssi::Curves(cs) => cs,
-                Ssi::Same => return Err(format!("faces on one surface ({} and {}) are not combined yet",sa.kind(),sb.kind())),
+                Ssi::Same => { same_pairs.push((fa,fb)); continue }
                 Ssi::Traced => return Err(format!("a {} and a {} meet in a curve with no closed form, not traced yet",sa.kind(),sb.kind())),
             };
+            let reach = [boxes[0][fa].0,boxes[0][fa].1,boxes[1][fb].0,boxes[1][fb].1];
             for c in curves {
+                // a curve that comes nowhere near both faces (a far crossing of two nearly parallel
+                // meridians) leaves nothing on them
+                let (lo,hi): (V,V) = (std::array::from_fn(|k| reach[0][k].max(reach[2][k])-pad),
+                    std::array::from_fn(|k| reach[1][k].min(reach[3][k])+pad));
+                let far = match c {
+                    // a line misses the box both faces share: clipped by its slabs to nothing
+                    super::geom::Curve::Line {p,d} => {
+                        let (mut t0,mut t1) = (f64::NEG_INFINITY,f64::INFINITY);
+                        for k in 0..3 {
+                            if d[k].abs() < 1e-300 { if p[k] < lo[k] || p[k] > hi[k] { t0 = 1.; t1 = 0.; } continue }
+                            let (a,z) = ((lo[k]-p[k])/d[k],(hi[k]-p[k])/d[k]);
+                            t0 = t0.max(a.min(z)); t1 = t1.min(a.max(z));
+                        }
+                        t0 > t1
+                    }
+                    // a closed curve far larger than the faces (a far crossing of nearly parallel meridians)
+                    _ => c.speed() > 1e3*(1.+norm(crate::space::sub(hi,lo)))
+                        && !(0..256).any(|j| { let q = c.point(TAU*j as f64/256.); (0..3).all(|k| q[k] >= lo[k] && q[k] <= hi[k]) }),
+                };
+                if far { continue }
                 let mut ts: Vec<(f64,u32)> = Vec::new();
                 for &v in on_face[1][fb].iter().chain(&on_face[0][fa]) {
                     let p = pool.pts[v as usize];
@@ -240,44 +264,75 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
                     on.push(r);
                 }
             } }
-            // the curves the other solid's faces leave on this one, both ways round
+            // an edge the other solid leaves across this face: both ways round, its parameters
+            // walked from its middle out, each step unwrapped from the last
+            let internal = |r: u32,halves: &mut Vec<Half>,on: &mut Vec<u32>| {
+                if on.contains(&r) { return }
+                on.push(r);
+                let w = out[r as usize];
+                let EdgeCurve::Curve(c) = w.curve else { return };
+                let n = 32;
+                let mid = (w.t[0]+w.t[1])/2.;
+                let start = loc.uv(fi,c.point(mid));
+                let walk = |to: f64| {
+                    let mut uv = start;
+                    for j in 1..=n {
+                        let t = mid+(to-mid)*j as f64/n as f64;
+                        uv = unwrap(f.surface.inverse(c.point(t)),uv,f.surface.periods());
+                    }
+                    uv
+                };
+                let (ua,ub) = (walk(w.t[0]),walk(w.t[1]));
+                let pcurve = Pcurve::Inverse {a:ua,b:ub};
+                halves.push(Half {edge:r,along:true,pcurve:pcurve.clone(),from:ua,to:ub});
+                halves.push(Half {edge:r,along:false,pcurve,from:ub,to:ua});
+            };
             for &(e,x,y) in &ssi_edges {
                 if (if s == 0 { x } else { y }) != fi { continue }
-                for &(piece,_) in &pieces[e] {
-                    let (r,_) = rep[piece as usize];
-                    if on.contains(&r) { continue }
-                    on.push(r);
-                    let w = out[r as usize];
-                    let EdgeCurve::Curve(c) = w.curve else { continue };
-                    // the parameters from the middle out, each step unwrapped from the last
-                    let n = 32;
-                    let mid = (w.t[0]+w.t[1])/2.;
-                    let start = loc.uv(fi,c.point(mid));
-                    let walk = |to: f64| {
-                        let mut uv = start;
-                        for j in 1..=n {
-                            let t = mid+(to-mid)*j as f64/n as f64;
-                            uv = unwrap(f.surface.inverse(c.point(t)),uv,f.surface.periods());
-                        }
-                        uv
-                    };
-                    let (ua,ub) = (walk(w.t[0]),walk(w.t[1]));
-                    let pcurve = Pcurve::Inverse {a:ua,b:ub};
-                    halves.push(Half {edge:r,along:true,pcurve:pcurve.clone(),from:ua,to:ub});
-                    halves.push(Half {edge:r,along:false,pcurve,from:ub,to:ua});
-                }
+                for &(piece,_) in &pieces[e] { internal(rep[piece as usize].0,&mut halves,&mut on); }
+            }
+            // a face of the other on this one's surface: its boundary's pieces inside this face
+            for &(x,y) in &same_pairs {
+                let (mine,theirs) = if s == 0 { (x,y) } else { (y,x) };
+                if mine != fi { continue }
+                let other = 1-s;
+                for l in &solids[other].faces[theirs].loops { for c in l {
+                    for &(piece,_) in &pieces[first_edge[other]+c.edge as usize] {
+                        let r = rep[piece as usize].0;
+                        let w = out[r as usize];
+                        if matches!(w.curve,EdgeCurve::Degenerate) { continue }
+                        if loc.face_place(fi,w.point((w.t[0]+w.t[1])/2.,&pool)) == Place::In { internal(r,&mut halves,&mut on); }
+                    }
+                } }
             }
             for piece in split(f,&halves,&out,&pool)? {
                 // place a point inside the piece against the other solid
                 let p = f.surface.point(inside(&piece,f,&out,&pool)?);
                 let place = located[1-s].solid_place(p);
-                if place == Place::On {
-                    return Err(format!("a piece of a {} lies on the other solid's boundary",f.surface.kind()))
-                }
-                let keep = match (op,s,place) {
+                let keep = if place == Place::On {
+                    // on a face of the other on the same surface: kept once, from A, where the two
+                    // face the same way and the operation keeps that side
+                    let other = 1-s;
+                    let partner = (0..solids[other].faces.len()).find(|&g| {
+                        super::ssi::same(&f.surface,&solids[other].faces[g].surface,tol)
+                            && located[other].face_place(g,p) == Place::In
+                    });
+                    let Some(g) = partner else {
+                        let near: Vec<String> = (0..solids[other].faces.len()).filter(|&g| solids[other].faces[g].surface.implicit(p).abs() <= tol)
+                            .map(|g| format!("{} {:?} same {}",solids[other].faces[g].surface.kind(),located[other].face_place(g,p),
+                                super::ssi::same(&f.surface,&solids[other].faces[g].surface,tol))).collect();
+                        return Err(format!("a piece of a {} touches the other solid's boundary at {p:?} ({})",f.surface.kind(),near.join(", ")))
+                    };
+                    let normal = |face: &Face| {
+                        let n = face.surface.normal_raw(face.surface.inverse(p));
+                        if face.reversed { crate::space::scale(n,-1.) } else { n }
+                    };
+                    let alike = crate::space::dot(normal(f),normal(&solids[other].faces[g])) > 0.;
+                    s == 0 && match op { Op::Union | Op::Common => alike,Op::Cut => !alike }
+                } else { match (op,s,place) {
                     (Op::Union,_,Place::Out) | (Op::Cut,0,Place::Out) | (Op::Cut,1,Place::In) | (Op::Common,_,Place::In) => true,
                     _ => false,
-                };
+                } };
                 if !keep { continue }
                 let flip = op == Op::Cut && s == 1;
                 let loops: Vec<Vec<Coedge>> = piece.iter().map(|cycle| {
@@ -397,8 +452,13 @@ fn split(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<Vec<Vec<V
     let areas: Vec<f64> = polys.iter().map(|p| area(p)).collect();
     let mut pieces: Vec<(usize,Vec<usize>)> = (0..cycles.len()).filter(|&i| areas[i] > 0.).map(|i| (i,vec![i])).collect();
     for i in (0..cycles.len()).filter(|&i| areas[i] <= 0.) {
-        // a hole goes in the smallest outer cycle about it
-        let probe = polys[i][0];
+        // a hole goes in the smallest outer cycle about the ground just to its left, where its
+        // material is (a point on the hole itself may be on its twin, a piece it bounds)
+        let (p0,p1) = (polys[i][0],polys[i][1]);
+        let d = [p1[0]-p0[0],p1[1]-p0[1]];
+        let len = d[0].hypot(d[1]).max(1e-300);
+        let eps = 1e-6*len;
+        let probe = [(p0[0]+p1[0])/2.-eps*d[1]/len,(p0[1]+p1[1])/2.+eps*d[0]/len];
         let mut host: Option<usize> = None;
         for (k,(o,_)) in pieces.iter().enumerate() {
             if winding(&polys[*o],probe) != 0 && host.is_none_or(|h| areas[*o] < areas[pieces[h].0]) { host = Some(k); }

@@ -242,3 +242,32 @@ fn a_pocket_and_a_bore() {
     r.check(1e-8).unwrap();
     close(volume(&r),2./3.*PI*1.5f64.powi(3));
 }
+
+#[test]
+fn booleans_of_faces_on_one_surface() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let a = block([0.,0.,0.],[4.,4.,4.]);
+    let cases: Vec<(&str,gcs_core::brep::topo::Brep,Op,f64)> = vec![
+        // a pocket flush with the top, and one flush with a side as well
+        ("flush pocket",block([1.,1.,2.],[3.,3.,4.]),Op::Cut,64.-8.),
+        ("corner notch",block([2.,2.,2.],[4.,4.,4.]),Op::Cut,64.-8.),
+        // a boss standing on the top, and one flush with a side
+        ("boss",block([1.,1.,4.],[3.,3.,6.]),Op::Union,64.+8.),
+        ("side-flush boss",block([2.,0.,4.],[4.,2.,6.]),Op::Union,64.+8.),
+        // two blocks sharing a face whole
+        ("stacked",block([0.,0.,4.],[4.,4.,6.]),Op::Union,64.+32.),
+        // a bore flush through both faces, and a blind one flush with the top
+        ("flush bore",rod([2.,2.,0.],1.,[0.,4.]),Op::Cut,64.-4.*PI),
+        ("blind bore",rod([2.,2.,0.],1.,[1.,4.]),Op::Cut,64.-3.*PI),
+        ("flush rod",rod([2.,2.,0.],1.,[0.,4.]),Op::Common,4.*PI),
+        ("overlapping",block([2.,1.,0.],[6.,3.,4.]),Op::Union,64.+8.*4.-2.*2.*4.),
+    ];
+    for (what,b,op,want) in cases {
+        let r = boolean(&a,&b,op,1e-9).unwrap_or_else(|e| panic!("{what}: {e}"));
+        r.check(1e-8).unwrap_or_else(|e| panic!("{what}: {e}"));
+        let v = volume(&r);
+        assert!((v-want).abs() <= 1e-10*want,"{what}: {v} against {want}");
+    }
+}
+
+
