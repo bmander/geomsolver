@@ -1,7 +1,7 @@
 //! The CAD recipe (`solid::cad::recipe`) built by this kernel: the same millimetre-valued DAG the
 //! native host is handed, node by node, so the two kernels can be held to each other.
 use super::boolean::{boolean,Op};
-use super::build::{prism,revolve,Profile};
+use super::build::{loft,prism,revolve,Guide,Profile};
 use super::geom::{Rigid,V};
 use super::topo::Brep;
 use crate::json::Json;
@@ -24,6 +24,17 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
         "prism" => prism(&Profile::from_json(field(n,"profile")?)?,field(n,"from")?.as_f64(),field(n,"to")?.as_f64()),
         "revolve" => revolve(&Profile::from_json(field(n,"profile")?)?,vec3(field(n,"origin")?),
             vec3(field(n,"axis")?),field(n,"angle")?.as_f64()),
+        "loft" => {
+            let g = field(n,"guide")?;
+            let guide = match field(g,"kind")?.as_str() {
+                "line" => Guide::Line {start:vec3(field(g,"start")?),delta:vec3(field(g,"delta")?)},
+                "arc" => Guide::Arc {center:vec3(field(g,"center")?),axis:vec3(field(g,"axis")?),start:vec3(field(g,"start")?),
+                    angle:field(g,"angle")?.as_f64()},
+                k => return Err(format!("recipe: a guide of kind `{k}`")),
+            };
+            let end = n.get("end").map(Profile::from_json).transpose()?;
+            loft(&Profile::from_json(field(n,"profile")?)?,end.as_ref(),&guide)
+        }
         "placed" => {
             let m: Vec<f64> = field(n,"matrix")?.arr().iter().map(Json::as_f64).collect();
             Ok(source("source")?.moved(&Rigid::from_rows(&m)))

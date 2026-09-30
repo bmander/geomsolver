@@ -123,6 +123,8 @@ impl Session {
                 (lo-pad,hi+pad)
             }
             "revolve" => (0.,0.),
+            "loft" => return Err("native CAD export does not yet support along-guide lofts; the core's kernel builds them \
+                (`--kernel rust`)".into()),
             _ => return Err("unsupported CAD primitive".into()),
         };
         let mut solid = None;

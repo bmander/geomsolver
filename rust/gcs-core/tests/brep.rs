@@ -359,3 +359,37 @@ fn meshes_are_closed_and_within_their_sag() {
     }
 }
 
+
+#[test]
+fn lofts_and_guided_sweeps_are_their_closed_forms() {
+    use gcs_core::brep::build::{loft,Guide};
+    let square = |c: V,half: f64,z: f64| poly(&[[c[0]-half,c[1]-half,z],[c[0]+half,c[1]-half,z],[c[0]+half,c[1]+half,z],[c[0]-half,c[1]+half,z]]);
+    let section = |z: f64,outer: f64,inner: f64| Profile {origin:[0.,0.,z],normal:XY,loops:vec![square([0.;3],outer,z),square([0.;3],inner,z)]};
+    let (h,a,b0,w) = (40.,12.,6.,2.);
+    // a hollow square frustum: each side a plane; the prismoidal formula, outer less inner
+    let frustum = |a: f64,b: f64| h/3.*(4.*a*a+4.*b*b+4.*a*b);
+    let s = loft(&section(0.,a,a-w),Some(&section(h,b0,b0-w)),&Guide::Line {start:[0.;3],delta:[0.,0.,h]}).unwrap();
+    s.check(1e-8).unwrap();
+    close(volume(&s),frustum(a,b0)-frustum(a-w,b0-w));
+    // a round reducer: a cone frustum with a hole
+    let ring = |z: f64,r: f64,hole: f64| Profile {origin:[0.,0.,z],normal:XY,loops:vec![
+        vec![arc([0.,0.,z],r,XY,[1.,0.,0.],None)],vec![arc([0.,0.,z],hole,XY,[0.,1.,0.],None)]]};
+    let s = loft(&ring(0.,10.,4.),Some(&ring(h,6.,3.)),&Guide::Line {start:[0.;3],delta:[0.,0.,h]}).unwrap();
+    s.check(1e-8).unwrap();
+    let cone = |r: f64,q: f64| PI*h/3.*(r*r+r*q+q*q);
+    close(volume(&s),cone(10.,6.)-cone(4.,3.));
+    // a square elbow: its section turned a quarter about the bend's axis (Pappus)
+    let bend = 30.;
+    let elbow = Profile {origin:[bend,0.,0.],normal:XZ,loops:vec![
+        poly(&[[bend-9.,0.,-9.],[bend+9.,0.,-9.],[bend+9.,0.,9.],[bend-9.,0.,9.]]),
+        poly(&[[bend-7.,0.,-7.],[bend+7.,0.,-7.],[bend+7.,0.,7.],[bend-7.,0.,7.]])]};
+    let s = loft(&elbow,None,&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],start:[bend,0.,0.],angle:PI/2.}).unwrap();
+    s.check(1e-8).unwrap();
+    close(volume(&s),(18.*18.-14.*14.)*bend*PI/2.);
+    // a twisted loft is refused by name, as is one between two sections along an arc
+    let turned = Profile {origin:[0.,0.,h],normal:XY,loops:vec![poly(&[[0.,-8.,h],[8.,0.,h],[0.,8.,h],[-8.,0.,h]])]};
+    let e = loft(&Profile {loops:vec![square([0.;3],6.,0.)],..section(0.,a,a-w)},Some(&turned),&Guide::Line {start:[0.;3],delta:[0.,0.,h]}).unwrap_err();
+    assert!(e.contains("twist") && e.contains("not built yet"),"{e}");
+    let e = loft(&elbow,Some(&elbow),&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],start:[bend,0.,0.],angle:PI/2.}).unwrap_err();
+    assert!(e.contains("not built yet"),"{e}");
+}

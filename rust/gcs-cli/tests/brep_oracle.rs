@@ -49,9 +49,16 @@ fn every_node_the_kernel_builds_is_occts() {
                 if let Err(err) = b.check(tol*10.) { failures.push(format!("{label}: {err}")); continue }
                 let sub = object([("schema",1.into()),("units","mm".into()),("root",id.into()),
                     ("nodes",Json::Arr(nodes[..=i].to_vec()))]);
-                let theirs = session.construct(&sub).unwrap_or_else(|err| panic!("{label}: OCCT: {err}"));
-                let (v,w) = (volume(&b),session.volume(theirs).unwrap());
-                let (faces,their_faces) = (b.faces.len(),session.faces(theirs).unwrap().len());
+                let (v,faces) = (volume(&b),b.faces.len());
+                // OCCT builds no lofts: for one (and what is built of it) the faceted kernel is the reference
+                let theirs = match session.construct(&sub) {
+                    Ok(t) => Some(t),
+                    Err(err) if err.contains("along-guide lofts") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no lofts)"); None }
+                    Err(err) => panic!("{label}: OCCT: {err}"),
+                };
+                if let Some(theirs) = theirs {
+                let w = session.volume(theirs).unwrap();
+                let their_faces = session.faces(theirs).unwrap().len();
                 let rel = (v-w).abs()/w.abs();
                 eprintln!("{label}: {v:.9} mm³ against {w:.9}, {rel:e}; {faces} faces against {their_faces}");
                 worst = worst.max(rel);
@@ -70,10 +77,11 @@ fn every_node_the_kernel_builds_is_occts() {
                     if extra_planes { eprintln!("  (OCCT splits a plane along a line it only touches: {their_kinds:?} against our {our_kinds:?})"); }
                     else { failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}")); continue }
                 }
-                if n.get("kind").unwrap().as_str() == "body" && !b.pinches().is_empty() {
+                let whole = n.get("kind").unwrap().as_str() == "body" || id == root_id;
+                if whole && !b.pinches().is_empty() {
                     // a solid touching itself at a point has no manifold file (OCCT's export of one refuses too)
                     refused.push(format!("{label}: pinches at {:?}",b.pinches()[0]));
-                } else if n.get("kind").unwrap().as_str() == "body" {
+                } else if whole {
                     // our STEP, parsed back and checked against our solid face by face
                     let text = gcs_core::brep::step::write(&b,"oracle",1e-5);
                     if let Err(err) = native::step_check::verify(&text,&native::step_check::Solid::of(&b)) {
@@ -104,6 +112,7 @@ fn every_node_the_kernel_builds_is_occts() {
                         Err(err) => { failures.push(format!("{label}: not meshed: {err}")); continue }
                     }
                     bodies += 1;
+                }
                 }
                 // the object itself against the core's faceted kernel, cut as it cuts a mesh (its sagitta a
                 // small fraction of the object's diagonal): to its faceting, a part in 200

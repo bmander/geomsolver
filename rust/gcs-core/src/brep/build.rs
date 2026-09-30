@@ -1,7 +1,7 @@
 //! The primitives, built with their topology whole: a profile swept along its normal (a prism)
 //! or turned about a line in its plane (a revolution), from the loops of lines, arcs and circles
 //! the CAD recipe carries (`solid::cad::recipe`).
-use super::geom::{Curve,Frame,Rigid,Surface,V};
+use super::geom::{Curve,Frame,Rigid,Surface,Uv,V};
 use super::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::json::Json;
 use crate::space::{add,cross,distance,dot,norm,scale,sub};
@@ -59,15 +59,16 @@ impl Profile {
     }
 }
 
-/// One step of a walk: a curve from `t[0]` to `t[1]` (either way round).
+/// One step of a walk: a curve from `t[0]` to `t[1]` (either way round), and which of its loop's
+/// edges (in written order) it is.
 #[derive(Clone,Debug)]
-pub struct Seg { pub curve: Curve,pub t: [f64;2] }
+pub struct Seg { pub curve: Curve,pub t: [f64;2],pub source: usize }
 
 impl Seg {
     pub fn start(&self) -> V { self.curve.point(self.t[0]) }
     pub fn end(&self) -> V { self.curve.point(self.t[1]) }
     pub fn forward(&self) -> bool { self.t[1] > self.t[0] }
-    fn reversed(&self) -> Seg { Seg {curve:self.curve.clone(),t:[self.t[1],self.t[0]]} }
+    fn reversed(&self) -> Seg { Seg {curve:self.curve.clone(),t:[self.t[1],self.t[0]],source:self.source} }
     /// The edge's parameters, increasing.
     pub fn span(&self) -> [f64;2] { if self.forward() { self.t } else { [self.t[1],self.t[0]] } }
     fn samples(&self,n: usize) -> impl Iterator<Item = V> + '_ {
@@ -81,12 +82,12 @@ pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,
     let tol = 1e-9*p.size();
     let mut out = Vec::new();
     for (li,l) in p.loops.iter().enumerate() {
-        let segs: Vec<Seg> = l.iter().map(|e| match *e {
+        let segs: Vec<Seg> = l.iter().enumerate().map(|(source,e)| match *e {
             ProfileEdge::Line {a,b} => {
                 let d = sub(b,a);
-                Seg {curve:Curve::Line {p:a,d:unit(d)},t:[0.,norm(d)]}
+                Seg {curve:Curve::Line {p:a,d:unit(d)},t:[0.,norm(d)],source}
             }
-            ProfileEdge::Arc {frame,r,span} => Seg {curve:Curve::Circle(frame,r),t:span.unwrap_or([0.,TAU])},
+            ProfileEdge::Arc {frame,r,span} => Seg {curve:Curve::Circle(frame,r),t:span.unwrap_or([0.,TAU]),source},
         }).collect();
         if segs.iter().any(|s| (s.t[1]-s.t[0]).abs() <= tol) { return Err(format!("loop {li} has an edge of no length")) }
         let mut used = vec![false;segs.len()];
@@ -322,5 +323,152 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
         let fx = turn.vector(x);
         b.faces.push(Face {surface:Surface::Plane(Frame::new(origin,cross(fx,z),fx)),reversed:true,loops:cap1,name:"end".into()});
     }
+    Ok(b)
+}
+
+/// What a loft follows: a line (its start and the step to its end), or an arc (its centre, the
+/// axis it turns about right-handedly, its start and the angle it turns through).
+#[derive(Clone,Copy,Debug)]
+pub enum Guide { Line { start: V,delta: V },Arc { center: V,axis: V,start: V,angle: f64 } }
+
+/// A section swept along a guide, or lofted from it to a second section at the guide's end (Solvent
+/// §6.9: the start section square to the guide at its start, the end square to it at its end).
+/// Without an end section a line's sweep is a prism and an arc's a revolution about its axis; a
+/// loft along a line joins each start edge to the end edge written in the same place, by the
+/// ruled surface between them.
+pub fn loft(start: &Profile,end: Option<&Profile>,guide: &Guide) -> Result<Brep,String> {
+    match (guide,end) {
+        (Guide::Line {delta,..},None) => prism(start,0.,dot(*delta,unit(start.normal))),
+        (Guide::Arc {center,axis,angle,..},None) => revolve(start,*center,*axis,*angle),
+        (Guide::Arc {..},Some(_)) => Err("a loft between two sections along an arc: not built yet".into()),
+        (Guide::Line {delta,..},Some(end)) => ruled(start,end,*delta),
+    }
+}
+
+/// The loft of `start` to `end` along the line `delta`: every point of a start edge joined to the
+/// point of the end edge written in its place at the same fraction along it (an arc's by angle),
+/// which for edges that are parallel lines is a plane and for coaxial circles and arcs a cone or a
+/// cylinder; anything twisted is refused by name, not yet built.
+fn ruled(start: &Profile,end: &Profile,delta: V) -> Result<Brep,String> {
+    let n = unit(start.normal);
+    let e = unit(delta);
+    let tol = 1e-9*(start.size()+end.size()+norm(delta));
+    let frame = Frame::about(start.origin,n);
+    let starts = walks(start,&|q| { let l = frame.local(q); [l[0],l[1]] })?;
+    let ends = walks(end,&|q| { let l = frame.local(sub(q,delta)); [l[0],l[1]] })?;
+    if starts.len() != ends.len() { return Err("a loft's sections must have as many holes".into()) }
+    let mut b = Brep::default();
+    let (mut start_loops,mut end_loops) = (Vec::new(),Vec::new());
+    for (li,(sw,ew)) in starts.iter().zip(&ends).enumerate() {
+        let m = sw.len();
+        if ew.len() != m { return Err(format!("a loft's loop {li} has {} edges at its start and {} at its end",m,ew.len())) }
+        // the end's steps in the start walk's order, by source edge
+        let mut ew: Vec<Seg> = sw.iter().map(|s| ew.iter().find(|x| x.source == s.source).cloned()
+            .ok_or("a loft's sections must have their edges written in corresponding order")).collect::<Result<_,_>>()?;
+        // a whole circle is joined radially: the end's starts where the start's does, seen from the axis
+        if m == 1 {
+            if let (Curve::Circle(fa,_),Curve::Circle(fb,rb)) = (&sw[0].curve,&ew[0].curve) {
+                let d = sub(sw[0].start(),fa.o);
+                let d = unit(sub(d,scale(e,dot(d,e))));
+                let t0 = Curve::Circle(*fb,*rb).inverse(add(fb.o,scale(d,*rb)));
+                ew[0].t = if ew[0].forward() { [t0,t0+TAU] } else { [t0+TAU,t0] };
+            }
+        }
+        for k in 0..m {
+            if distance(ew[k].end(),ew[(k+1)%m].start()) > 1e3*tol {
+                return Err("a loft's sections must have their edges written in corresponding order".into())
+            }
+        }
+        let pv: Vec<u32> = sw.iter().map(|s| b.vertex(s.start())).collect();
+        let qv: Vec<u32> = ew.iter().map(|s| b.vertex(s.start())).collect();
+        let curve_edge = |b: &mut Brep,s: &Seg,v: &[u32],k: usize| {
+            let ends = [v[k],v[(k+1)%m]];
+            b.edge(EdgeCurve::Curve(s.curve.clone()),s.span(),if s.forward() { ends } else { [ends[1],ends[0]] })
+        };
+        let se: Vec<u32> = (0..m).map(|k| curve_edge(&mut b,&sw[k],&pv,k)).collect();
+        let ee: Vec<u32> = (0..m).map(|k| curve_edge(&mut b,&ew[k],&qv,k)).collect();
+        let rails: Vec<u32> = (0..m).map(|k| {
+            let (p,q) = (sw[k].start(),ew[k].start());
+            let l = distance(p,q);
+            b.edge(EdgeCurve::Curve(Curve::Line {p,d:unit(sub(q,p))}),[0.,l],[pv[k],qv[k]])
+        }).collect();
+        for k in 0..m {
+            let (a,z) = (&sw[k],&ew[k]);
+            let k1 = (k+1)%m;
+            // outward, in the section's plane: right of a walk counter-clockwise about n
+            let mid = (a.t[0]+a.t[1])/2.;
+            let d = scale(a.curve.tangent(mid),if a.forward() { 1. } else { -1. });
+            let outward = cross(d,n);
+            let (surface,rim) = match (&a.curve,&z.curve) {
+                (Curve::Line {..},Curve::Line {..}) => {
+                    let (p0,p1,q0,q1) = (a.start(),a.end(),z.start(),z.end());
+                    let mut normal = cross(sub(p1,p0),sub(q0,p0));
+                    if norm(normal) <= tol*tol { normal = cross(sub(p1,p0),sub(q1,p0)); }
+                    let normal = unit(normal);
+                    if dot(sub(q1,p0),normal).abs() > 1e3*tol || dot(sub(q0,p0),normal).abs() > 1e3*tol {
+                        return Err("a loft joins two lines that twist (a ruled face that is not a plane): not built yet".into())
+                    }
+                    let normal = if dot(normal,outward) < 0. { scale(normal,-1.) } else { normal };
+                    (Surface::Plane(Frame::new(p0,normal,sub(p1,p0))),false)
+                }
+                (Curve::Circle(fa,ra),Curve::Circle(fb,rb)) => {
+                    // coaxial along the guide, and joined at the same angles
+                    let h = dot(sub(fb.o,fa.o),e);
+                    let off = norm(sub(sub(fb.o,fa.o),scale(e,h)));
+                    let (pa,pz) = (a.start(),z.start());
+                    let radial = |p: V,c: V| { let d = sub(p,c); unit(sub(d,scale(e,dot(d,e)))) };
+                    let aligned = |sa: V,sz: V| norm(cross(radial(sa,fa.o),radial(sz,fb.o))) <= 1e-9
+                        && dot(radial(sa,fa.o),radial(sz,fb.o)) > 0.;
+                    if norm(cross(fa.z,e)) > 1e-9 || norm(cross(fb.z,e)) > 1e-9 || off > 1e3*tol || h <= 0.
+                        || !aligned(pa,pz) || !aligned(a.end(),z.end()) || !aligned(a.curve.point(mid),z.curve.point((z.t[0]+z.t[1])/2.)) {
+                        return Err("a loft joins two arcs that are not coaxial and in step (a twisted ruled face): not built yet".into())
+                    }
+                    let f = Frame::new(fa.o,e,radial(pa,fa.o));
+                    let surface = if (ra-rb).abs() <= tol { Surface::Cylinder(f,*ra) } else { Surface::Cone(f,*ra,((rb-ra)/h).atan()) };
+                    (surface,true)
+                }
+                _ => return Err("a loft joins a line to an arc (a ruled face that is not a plane or a cone): not built yet".into()),
+            };
+            let at = |p: V| surface.inverse(p);
+            // the face's parameters at each corner, the rails at the arc's start (u = 0) and end
+            let turn = if rim { (a.t[1]-a.t[0])*dot(match &a.curve { Curve::Circle(f,_) => f.z,_ => e },e) } else { 0. };
+            let corner = |p: V,u_end: bool| { let mut uv = at(p); if rim { uv[0] = if u_end { turn } else { 0. }; } uv };
+            let (u_p0,u_p1,u_q0,u_q1) = (corner(a.start(),false),corner(a.end(),true),corner(z.start(),false),corner(z.end(),true));
+            let pc = |x: Uv,y: Uv| Pcurve::Inverse {a:x,b:y};
+            let edge_uv = |s: &Seg,first: Uv,last: Uv| if s.forward() { pc(first,last) } else { pc(last,first) };
+            let mut l = vec![
+                Coedge {edge:se[k],reversed:!a.forward(),pcurve:edge_uv(a,u_p0,u_p1)},
+                Coedge {edge:rails[k1],reversed:false,pcurve:pc(u_p1,u_q1)},
+                Coedge {edge:ee[k],reversed:z.forward(),pcurve:edge_uv(z,u_q0,u_q1)},
+                Coedge {edge:rails[k],reversed:true,pcurve:pc(u_p0,u_q0)},
+            ];
+            let reversed = match surface {
+                Surface::Plane(_) => false,
+                _ => dot(surface.normal_raw(at(a.curve.point(mid))),outward) < 0.,
+            };
+            let face = Face {surface,reversed,loops:vec![],name:String::new()};
+            let ccw = b.loop_area(&face,&l) > 0.;
+            if ccw == reversed { l = l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect(); }
+            b.faces.push(Face {loops:vec![l],..face});
+        }
+        start_loops.push((0..m).map(|k| use_of(se[k],&sw[k],true,on_plane())).collect::<Vec<_>>());
+        end_loops.push((0..m).map(|k| use_of(ee[k],&ew[k],true,on_plane())).collect::<Vec<_>>());
+    }
+    // the caps: the start's material toward the guide, the end's behind it
+    let cap = |origin: V,normal: V,outward: V,loops: Vec<Vec<Coedge>>,name: &str,b: &Brep| {
+        let surface = Surface::Plane(Frame::about(origin,normal));
+        let reversed = dot(normal,outward) < 0.;
+        let face = Face {surface,reversed,loops:vec![],name:name.into()};
+        let loops = loops.into_iter().enumerate().map(|(li,l)| {
+            let ccw = b.loop_area(&face,&l) > 0.;
+            // the outer loop turns with the face's sense, its holes against it
+            if (li == 0) != (ccw != reversed) { l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect() } else { l }
+        }).collect();
+        Face {loops,..face}
+    };
+    let start_cap = cap(start.origin,n,scale(e,-1.),start_loops,"start",&b);
+    let end_cap = cap(end.origin,unit(end.normal),e,end_loops,"end",&b);
+    b.faces.push(start_cap);
+    b.faces.push(end_cap);
     Ok(b)
 }

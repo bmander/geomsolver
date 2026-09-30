@@ -172,8 +172,15 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                         * if *sense == Sense::Cw { -1. } else { 1. }).into()),
                 ])
             }
-            SolidDef::Loft {..} => return Err(format!(
-                "`{}`: native CAD export does not yet support along-guide lofts",solid.name)),
+            SolidDef::Loft {face,end,guide} => {
+                // the start section, the end section (at the guide's end, where there is one) and the
+                // guide; each section's loops in written order, each loop's edges in written order —
+                // the order a loft pairs them in
+                let mut node = object([("kind","loft".into()),("profile",profile(sk,*face as usize,scale)?),
+                    ("guide",super::loft::guide_json(sk,*guide,scale)?)]);
+                if let Some(end) = end { node.set("end",profile(sk,*end as usize,scale)?); }
+                node
+            }
         };
         node.set("id",i.into());
         node.set("name",solid.name.clone().into());
