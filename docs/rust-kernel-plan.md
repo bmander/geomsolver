@@ -239,6 +239,47 @@ splines and lofts; nothing ever handed them to it.
   faces by kind equal OCCT's, the STEP read back by OCCT, the STL's shells and its sag within the
   bar; the core's facet volume (`tests/solid.rs`'s arithmetic) agrees to its own faceting.
 
+#### Rung 1 — progress (2026-09-29)
+
+Begun ahead of phases 1–5, since its solids need no fitted sheets and every piece it builds is
+one the gear needs too. In `gcs-core/src/brep/`:
+
+- **`geom`**: frames and rigid motions; plane, cylinder, cone, sphere and torus parameterised as
+  OCCT and STEP do, with closed-form inverses, signed distances and gradients; lines, circles,
+  ellipses and traced curves.
+- **`topo`**: vertices, edges, faces, loops of oriented uses with pcurves, degenerate poles, and a
+  check of every promise (loops closed in space and in parameters, pcurves on their surfaces,
+  loops turning with their face's sense, every edge used twice, once each way).
+- **`build`**: a profile of lines, arcs and circles swept or turned, full or partial, seams and
+  poles built whole. **`props`**: the volume as each face's flux turned into a line integral
+  round its loops (Green's theorem), nothing meshed. **`recipe`**: the CAD recipe's nodes.
+- **`query`**: a curve's roots on a surface; a point placed in, on or out of a face and a solid.
+- **`ssi`**: two surfaces' intersection in closed form (two planes; any two surfaces of
+  revolution about one axis, by their meridians; a plane with a cylinder or a sphere; parallel
+  cylinders), the same surface, or traced — marched along `∇a × ∇b` from where either face's
+  boundary crosses the other, read anywhere by pulling a chord onto both surfaces. Surfaces
+  meeting at under a degree are refused by name.
+- **`boolean`**: edges split where they cross the other's faces, faces intersected pairwise and
+  the curves kept where they lie in both, faces on one surface splitting each other, every face
+  split in its own parameters, pieces placed by a point inside them, the kept ones assembled on
+  shared edges. Tangent touches split nothing.
+
+**Where it stands.** Closed forms (`tests/brep.rs`): every primitive, Booleans of boxes in general
+position, pockets, bores, flush and blind faces, perpendicular rods and a pierced ball, to 1e-8 or
+better. The oracle (`gcs-cli tests/brep_oracle.rs`, every node of every corpus object's recipe
+built both ways): **176 nodes agree with OCCT** — every V-twin part, the throttle, the flange,
+the pulley, the tray, the pierced sphere, the spiral bevel's blank and tooth relief — volumes to
+1e-9 (traced intersections about 1e-11), face counts equal except where OCCT splits a cap along a
+line it only touches (three grub-screw bores tangent to their hubs). **Three crown bodies are
+refused by name**: their neighbouring fillet tori meet at 0.05° and 0.87°. The census
+(`tests/brep_census.rs`) found the corpus's shared faces all planar but one coaxial cylinder.
+
+**Still to do for the rung's gate:** the mesher and STL, the STEP writer (traced curves
+approximated by B-splines within the tolerance) and OCCT's read-back of it, the CLI's choice of
+kernel (`SOLVENT_KERNEL`), shallow intersections (a fuzzy merge, as OCCT's Booleans run with
+1e-5 mm), and speed (the oracle builds the whole corpus in about ten seconds, OCCT's time not
+yet measured beside it).
+
 ### Rung 2 (phase 7) — spline, curve and loft profiles
 
 - A spline edge extruded is a B-spline surface and revolved a surface of revolution, both exact.
