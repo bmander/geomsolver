@@ -308,7 +308,13 @@ fn refine(
     let m = 0.5 * (a + b);
     let pm = eval_on(sk, i, span, m).p;
     let (cx, cy) = (0.5 * (pa.0 + pb.0), 0.5 * (pa.1 + pb.1));
-    if depth == 0 || (pm.0 - cx).hypot(pm.1 - cy) <= tol {
+    // the quarter points as well: a cubic is symmetric about its inflection, so one centred on
+    // the stretch has its middle exactly on the chord however far the rest of it strays
+    let quarters = || [0.25, 0.75].iter().all(|&f| {
+        let (q, c) = (eval_on(sk, i, span, a + (b - a) * f).p, (pa.0 + (pb.0 - pa.0) * f, pa.1 + (pb.1 - pa.1) * f));
+        (q.0 - c.0).hypot(q.1 - c.1) <= tol
+    });
+    if depth == 0 || ((pm.0 - cx).hypot(pm.1 - cy) <= tol && quarters()) {
         out.push(pb);
         return;
     }

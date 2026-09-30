@@ -54,6 +54,14 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
         }
     }
     if fs[n].abs() <= tol { push(t1,false,&mut roots); }
+    // a swept curve's implicit runs on past its ends along their tangents (and steps across the
+    // normal there): a root off the surface itself is that extension's, not the surface's
+    if matches!(surface,Surface::Extrusion(..) | Surface::Revolution(..)) {
+        roots.retain(|&(t,_)| {
+            let p = curve.point(t);
+            distance(p,surface.point(surface.inverse(p))) <= tol.max(1e-9*(1.+norm(p)))
+        });
+    }
     Meets::At(roots)
 }
 

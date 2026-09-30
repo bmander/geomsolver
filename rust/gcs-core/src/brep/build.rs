@@ -1,7 +1,8 @@
 //! The primitives, built with their topology whole: a profile swept along its normal (a prism)
 //! or turned about a line in its plane (a revolution), from the loops of lines, arcs and circles
 //! the CAD recipe carries (`solid::cad::recipe`).
-use super::geom::{Curve,Frame,Rigid,Surface,Uv,V};
+use super::geom::{BSpline,Curve,Frame,Rigid,Surface,Uv,V};
+use std::sync::Arc;
 use super::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::json::Json;
 use crate::space::{add,cross,distance,dot,norm,scale,sub};
@@ -11,10 +12,11 @@ const TAU: f64 = std::f64::consts::TAU;
 fn unit(a: V) -> V { scale(a,1./norm(a)) }
 fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
 
-/// One edge of a profile: a line, or an arc (a whole circle where `span` is none) turning
-/// counter-clockwise about its frame's `z`, which is the profile's normal.
-#[derive(Clone,Copy,Debug)]
-pub enum ProfileEdge { Line { a: V,b: V },Arc { frame: Frame,r: f64,span: Option<[f64;2]> } }
+/// One edge of a profile: a line, an arc (a whole circle where `span` is none) turning
+/// counter-clockwise about its frame's `z`, which is the profile's normal, or a B-spline whose
+/// ends are its first and last poles.
+#[derive(Clone,Debug)]
+pub enum ProfileEdge { Line { a: V,b: V },Arc { frame: Frame,r: f64,span: Option<[f64;2]> },Spline(Arc<BSpline>) }
 
 /// A planar region: an outer loop and its holes, each a closed walk of edges (listed in any
 /// order and direction).
@@ -40,6 +42,12 @@ impl Profile {
                         });
                         ProfileEdge::Arc {frame,r:field(e,"radius")?.as_f64(),span}
                     }
+                    "bspline" => {
+                        let poles = field(e,"poles")?.arr().iter().map(vec3).collect();
+                        let knots = field(e,"knots")?.arr().iter().map(|k| k.as_f64()).collect();
+                        let degree = field(e,"degree")?.as_f64() as usize;
+                        ProfileEdge::Spline(Arc::new(BSpline::new(degree,knots,poles).map_err(|m| format!("profile: {m}"))?))
+                    }
                     k => return Err(format!("profile: an edge of kind `{k}`")),
                 });
             }
@@ -54,6 +62,7 @@ impl Profile {
         for l in &self.loops { for e in l { match *e {
             ProfileEdge::Line {a,b} => s = s.max(norm(sub(a,self.origin))).max(norm(sub(b,self.origin))),
             ProfileEdge::Arc {frame,r,..} => s = s.max(norm(sub(frame.o,self.origin))+r),
+            ProfileEdge::Spline(ref b) => for &q in &b.poles { s = s.max(norm(sub(q,self.origin))) },
         } } }
         s.max(1e-300)
     }
@@ -88,6 +97,7 @@ pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,
                 Seg {curve:Curve::Line {p:a,d:unit(d)},t:[0.,norm(d)],source}
             }
             ProfileEdge::Arc {frame,r,span} => Seg {curve:Curve::Circle(frame,r),t:span.unwrap_or([0.,TAU]),source},
+            ProfileEdge::Spline(ref b) => Seg {curve:Curve::BSpline(b.clone()),t:b.domain(),source},
         }).collect();
         if segs.iter().any(|s| (s.t[1]-s.t[0]).abs() <= tol) { return Err(format!("loop {li} has an edge of no length")) }
         let mut used = vec![false;segs.len()];
@@ -153,7 +163,9 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                     (Surface::Plane(Frame::new(s.start(),cross(d,n),d)),false,0.,distance(s.end(),s.start()))
                 }
                 Curve::Circle(f,r) => (Surface::Cylinder(f,r),!s.forward(),s.t[0],s.t[1]),
-                Curve::Ellipse(..) | Curve::Traced(..) => unreachable!("a profile has only lines and circles"),
+                // C(u) + v n: the step's tangent turned clockwise about n is its normal
+                Curve::BSpline(_) => (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
+                Curve::Ellipse(..) | Curve::Traced(..) => unreachable!("a profile has only lines, circles and splines"),
             };
             // the side's parameters along the walk step, for the step's edge parameter
             let u_at = |t: f64| match s.curve { Curve::Line {..} => (t-s.t[0]).abs(),_ => t };
@@ -177,7 +189,7 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
 
 /// What a profile step sweeps as it turns about the axis.
 #[derive(Clone,Copy,Debug,PartialEq)]
-enum Swept { Axis,Disk,Cylinder,Cone,Sphere,Torus }
+enum Swept { Axis,Disk,Cylinder,Cone,Sphere,Torus,Spline }
 
 /// The profile turned about the line through `origin` along `axis` by `angle` (right-handed; a
 /// negative angle turns the other way, and anything past a turn is a whole one).
@@ -196,6 +208,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
     let far = p.loops.iter().flatten().flat_map(|e| match *e {
         ProfileEdge::Line {a,b} => vec![a,b],
         ProfileEdge::Arc {frame,r,..} => vec![add(frame.o,scale(frame.x,r)),sub(frame.o,scale(frame.x,r))],
+        ProfileEdge::Spline(ref b) => b.poles.clone(),
     }).map(|q| dot(sub(q,origin),x)).fold(0.,|m: f64,v| if v.abs() > m.abs() { v } else { m });
     if far < 0. { x = scale(x,-1.); }
     let f = Frame::new(origin,z,x);
@@ -221,6 +234,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                 Curve::Line {..} if (r0-r1).abs() <= tol => Swept::Cylinder,
                 Curve::Line {..} => Swept::Cone,
                 Curve::Circle(c,_) if rz(c.o)[0].abs() <= tol => Swept::Sphere,
+                Curve::BSpline(_) => Swept::Spline,
                 _ => Swept::Torus,
             }
         }).collect();
@@ -261,6 +275,12 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                     let a = ((r1-r0)/(z1-z0)).atan();
                     (Surface::Cone(Frame {o:f.at([0.,0.,z0]),..f},r0,a),[a.cos(),-a.sin()],
                         { let c = s.curve.clone(); Box::new(move |t| (rz(c.point(t))[1]-z0)/a.cos()) })
+                }
+                Swept::Spline => {
+                    // C(v) turned by u: in (ρ, z) its normal is the tangent turned clockwise
+                    let d = { let l = f.dir_local(dq); [l[0],l[2]] };
+                    let l = d[0].hypot(d[1]);
+                    (Surface::Revolution(f,Arc::new(s.curve.clone())),[d[1]/l,-d[0]/l],Box::new(|t| t))
                 }
                 Swept::Sphere | Swept::Torus => {
                     let Curve::Circle(c,r) = s.curve.clone() else { unreachable!() };
@@ -309,7 +329,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                 l.push(use_of(last[k].unwrap(),&s,false,Pcurve::Line {a:[theta,va],b:[theta,vb]}));
                 l.push(rim(k,vs,true,&mut b));
             }
-            let ccw = b.loop_area(&Face {surface,reversed,loops:vec![],name:String::new()},&l) > 0.;
+            let ccw = b.loop_area(&Face {surface:surface.clone(),reversed,loops:vec![],name:String::new()},&l) > 0.;
             if ccw == reversed { l = l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect(); }
             b.faces.push(Face {surface,reversed,loops:vec![l],name:String::new()});
         }
@@ -427,6 +447,7 @@ fn ruled(start: &Profile,end: &Profile,delta: V) -> Result<Brep,String> {
                     let surface = if (ra-rb).abs() <= tol { Surface::Cylinder(f,*ra) } else { Surface::Cone(f,*ra,((rb-ra)/h).atan()) };
                     (surface,true)
                 }
+                (Curve::BSpline(_),_) | (_,Curve::BSpline(_)) => return Err("a loft joins a spline (a ruled face of splines): not built yet".into()),
                 _ => return Err("a loft joins a line to an arc (a ruled face that is not a plane or a cone): not built yet".into()),
             };
             let at = |p: V| surface.inverse(p);

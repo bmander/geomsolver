@@ -399,6 +399,12 @@ Rung 1 is done: every corpus solid with a recipe agrees with OCCT (volume 1e-9, 
 but for named refusals of designs that touch themselves — surfaces meeting under 1° (the crown
 cutters' fillet tori touch; the gear's phase needs measured tolerances for them) and pinches.
 An explicit `--kernel occt` / `--stl-backend occt` in a build without OCCT still refuses.
+Rung 2 so far: lofts along a line (ruled planes, cones, cylinders; twisted faces refused by name)
+and clamped spline profiles — `Curve::BSpline` (`brep::nurbs`), `Surface::Extrusion` and
+`Surface::Revolution` (written as STEP's surfaces of linear extrusion and revolution, as OCCT
+builds them). A swept surface's signed distance runs on past its curve's ends, so
+`curve_surface` drops roots off the surface; volumes split at knots; edge sampling and
+`curve::tessellate` test quarter points, since an S-bend's middle lies on its chord.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference

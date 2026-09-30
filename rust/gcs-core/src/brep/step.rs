@@ -36,6 +36,21 @@ impl Out {
         self.add(format!("AXIS2_PLACEMENT_3D('',#{o},#{z},#{x})"))
     }
     fn surface(&mut self,s: &Surface) -> usize {
+        match s {
+            Surface::Extrusion(f,c) => {
+                let c = self.swept(c);
+                let d = self.direction(f.z);
+                let v = self.add(format!("VECTOR('',#{d},1.)"));
+                return self.add(format!("SURFACE_OF_LINEAR_EXTRUSION('',#{c},#{v})"))
+            }
+            Surface::Revolution(f,c) => {
+                let c = self.swept(c);
+                let (o,z) = (self.point(f.o),self.direction(f.z));
+                let a = self.add(format!("AXIS1_PLACEMENT('',#{o},#{z})"));
+                return self.add(format!("SURFACE_OF_REVOLUTION('',#{c},#{a})"))
+            }
+            _ => {}
+        }
         match *s {
             Surface::Plane(f) => { let a = self.placement(&f); self.add(format!("PLANE('',#{a})")) }
             Surface::Cylinder(f,r) => { let a = self.placement(&f); self.add(format!("CYLINDRICAL_SURFACE('',#{a},{})",real(r))) }
@@ -51,8 +66,26 @@ impl Out {
                 let a = self.placement(&f);
                 self.add(format!("TOROIDAL_SURFACE('',#{a},{},{})",real(big),real(r)))
             }
+            Surface::Extrusion(..) | Surface::Revolution(..) => unreachable!(),
         }
     }
+    /// The curve a swept surface sweeps (a B-spline, as a profile gives one).
+    fn swept(&mut self,c: &Curve) -> usize {
+        let Curve::BSpline(b) = c else { unreachable!("a swept surface's curve is a profile's B-spline") };
+        let ids: Vec<String> = b.poles.iter().map(|&p| format!("#{}",self.point(p))).collect();
+        spline(self,b.degree,&ids,&b.knots)
+    }
+}
+
+/// A B-spline of `degree` through the poles `ids` over the full knot vector `knots` (written as
+/// its distinct knots and their multiplicities).
+fn spline(o: &mut Out,degree: usize,ids: &[String],knots: &[f64]) -> usize {
+    let mut distinct: Vec<(f64,usize)> = Vec::new();
+    for &k in knots { match distinct.last_mut() { Some((x,n)) if *x == k => *n += 1,_ => distinct.push((k,1)) } }
+    let mults: Vec<String> = distinct.iter().map(|d| d.1.to_string()).collect();
+    let ks: Vec<String> = distinct.iter().map(|d| real(d.0)).collect();
+    o.add(format!("B_SPLINE_CURVE_WITH_KNOTS('',{degree},({}),.UNSPECIFIED.,.F.,.F.,({}),({}),.UNSPECIFIED.)",
+        ids.join(","),mults.join(","),ks.join(",")))
 }
 
 /// The parameters of a stretch of a curve at which `at` (a point, in space or in a face's
@@ -86,12 +119,13 @@ fn bspline(o: &mut Out,pts: &[String],ts: &[f64]) -> usize {
 /// A surface as the file writes it: its placement (origin, axis, reference direction) and its
 /// numbers — a cone opening against its axis written about the reversed one.
 pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
-    match *s {
+    match s.clone() {
         Surface::Plane(f) => (f,vec![]),
         Surface::Cylinder(f,r) => (f,vec![r]),
         Surface::Cone(f,r,a) => (if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f },vec![r,a.abs()]),
         Surface::Sphere(f,r) => (f,vec![r]),
         Surface::Torus(f,big,r) => (f,vec![big,r]),
+        Surface::Extrusion(f,_) | Surface::Revolution(f,_) => (f,vec![]),
     }
 }
 
@@ -144,6 +178,11 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
             let dir = o.add(format!("DIRECTION('',({},{}))",real(x[0]),real(x[1])));
             let ax = o.add(format!("AXIS2_PLACEMENT_2D('',#{p},#{dir})"));
             o.add(format!("CIRCLE('',#{ax},{})",real(*r)))
+        }
+        // a plane's parameters are an affine image of space: a B-spline's poles carried over
+        (_,Surface::Plane(pl),Curve::BSpline(bs)) => {
+            let ids: Vec<String> = bs.poles.iter().map(|&q| { let l = pl.local(q); format!("#{}",p2(o,[l[0],l[1]])) }).collect();
+            spline(o,bs.degree,&ids,&bs.knots)
         }
         _ => {
             let off = |ta: f64,tz: f64| {
@@ -202,6 +241,10 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> String {
             }
             Curve::Circle(f,r) => { let a = o.placement(f); o.add(format!("CIRCLE('',#{a},{})",real(*r))) }
             Curve::Ellipse(f,a,bb) => { let p = o.placement(f); o.add(format!("ELLIPSE('',#{p},{},{})",real(*a),real(*bb))) }
+            Curve::BSpline(bs) => {
+                let ids: Vec<String> = bs.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
+                spline(&mut o,bs.degree,&ids,&bs.knots)
+            }
             Curve::Traced(_) => {
                 let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::space::lerp(c.point(a),c.point(z),0.5)));
                 let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",o.point(c.point(t)))).collect();

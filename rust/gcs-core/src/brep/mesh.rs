@@ -58,11 +58,20 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
     let edge = &b.edges[e];
     let EdgeCurve::Curve(c) = &edge.curve else { return vec![edge.t[0],edge.t[1]] };
     let mut out = vec![edge.t[0]];
-    let first = if edge.closed() { 3 } else { 1 };
-    let mut stack: Vec<(f64,f64,u32)> = (0..first).rev().map(|k| {
-        let w = (edge.t[1]-edge.t[0])/first as f64;
-        (edge.t[0]+w*k as f64,edge.t[0]+w*(k+1) as f64,0)
-    }).collect();
+    // the first pieces: a closed edge in three; a B-spline's every knot span in one more piece than
+    // its degree, since a midpoint test is blind to an S-bend whose chord's middle is on the curve
+    let mut cuts = vec![edge.t[0]];
+    let near = 1e-6*(edge.t[1]-edge.t[0]);
+    if let super::geom::Curve::BSpline(s) = c {
+        cuts.extend(s.breaks(edge.t).into_iter().filter(|&k| k-edge.t[0] > near && edge.t[1]-k > near));
+    }
+    cuts.push(edge.t[1]);
+    let each = match c { super::geom::Curve::BSpline(s) => s.degree+1,_ if edge.closed() => 3,_ => 1 };
+    let mut stack: Vec<(f64,f64,u32)> = cuts.windows(2).flat_map(|w| (0..each).map(move |k| {
+        let h = (w[1]-w[0])/each as f64;
+        (w[0]+h*k as f64,w[0]+h*(k+1) as f64,0)
+    })).collect();
+    stack.reverse();
     while let Some((a,z,depth)) = stack.pop() {
         let (pa,pz) = (c.point(a),c.point(z));
         let m = (a+z)/2.;
@@ -73,7 +82,13 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
         let off = distance(pm,add(pa,scale(chord,s)));
         let (ta,tz) = (c.tangent(a),c.tangent(z));
         let turn = (dot(ta,tz)/(norm(ta)*norm(tz)).max(1e-300)).clamp(-1.,1.).acos();
-        if depth < 40 && (off > bar || turn > angular) { stack.push((m,z,depth+1)); stack.push((a,m,depth+1)); }
+        // and the quarter points, which a stretch centred on an inflection cannot hide
+        let strays = || [0.25,0.75].iter().any(|&f| {
+            let q = c.point(a+(z-a)*f);
+            let s = if l2 > 0. { (dot(sub(q,pa),chord)/l2).clamp(0.,1.) } else { 0. };
+            distance(q,add(pa,scale(chord,s))) > bar
+        });
+        if depth < 40 && (off > bar || turn > angular || strays()) { stack.push((m,z,depth+1)); stack.push((a,m,depth+1)); }
         else { out.push(z); }
     }
     out

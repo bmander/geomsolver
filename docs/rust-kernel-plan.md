@@ -331,6 +331,45 @@ to look when speed matters.
   formula), each Boolean against OCCT given the same B-splines, and the meter reading the exact
   curve.
 
+#### Rung 2 — progress (2026-09-30)
+
+- **Lofts along a line** (`brep::build::loft`): with no end section a sweep is a prism along a line
+  or a revolution about an arc's axis; between two sections each start edge is joined to the end
+  edge written in its place by the ruled surface between them, which for parallel lines is a plane
+  and for coaxial circles and arcs in step a cone or cylinder. A twisted ruled face, and a loft
+  between two sections along an arc, are refused by name. `solid_loft` is the prismoidal
+  formula's 5120 mm³ exactly; OCCT builds no lofts, so the oracle takes the faceted kernel there.
+- **Spline profiles.** A face admits a clamped spline edge (its ends are its first and last poles:
+  `topology::edge_ends`); the faceted kernel walks its tessellation and the CAD recipe carries it
+  as a `bspline` edge (degree, full knot vector, poles). The kernel has `Curve::BSpline`
+  (`brep::nurbs`: Cox–de Boor with two derivatives, on the stack, degree ≤ 9) and two swept
+  surfaces, written as OCCT and STEP write them rather than as B-spline surfaces:
+  `Surface::Extrusion` (`C(u) + v z`, `SURFACE_OF_LINEAR_EXTRUSION`) and `Surface::Revolution`
+  (`C(v)` turned by `u`, `SURFACE_OF_REVOLUTION`), exact and compared with OCCT's faces by kind.
+  Their inverse is the curve's nearest point in the section through the point, and their signed
+  distance the distance to the tangent line at that foot — which runs on past the curve's ends,
+  so `query::curve_surface` keeps a root on a swept surface only where the surface itself is.
+  Green's-theorem volumes split at knots, where a spline's third derivative steps; a pcurve on a
+  plane is the spline's own poles carried into the plane's parameters.
+- **An S-bend hides from a midpoint test**: a cubic is symmetric about its inflection, so a stretch
+  centred on one has its middle exactly on its chord. The mesher's edge sampling now starts from
+  every knot span in degree + 1 pieces and also tests the quarter points, and `curve::tessellate`
+  (which draws a spline on the sheet and feeds the faceted kernel) tests the quarter points too —
+  before which the vase below meshed as a single chord and its faceted volume was 4% small.
+- `solid_spline` (a cam plate with a spline lobe, bored; a vase with a spline wall) is exact:
+  3366.807105 mm³ and 14282.577801 mm³, area by Green's theorem and Pappus. OCCT agrees on the
+  cam to 1e-15 and on the vase to 3.8e-7, which is OCCT's integration of a swept spline (asked for
+  1e-9), and a `through` prism over a spline face is sized by each kernel's own box (OCCT's from
+  its poles); the oracle states both bars. `tests/brep.rs` holds a two-span spline prism and a
+  vase to their closed forms, with Booleans traced across the new surfaces: a slab level with the
+  prism's caps, a rod standing on the spline edge (disk ∩ region by Green's theorem), the vase cut
+  at half height and halved through its axis; meshes closed within the bar. The mesher takes
+  0.7 s for the vase where OCCT takes 0.5 s.
+- Still to do: a traced or formula curve in a face (it has no end points of its own to walk
+  through — a language question first), splines in lofts and twisted ruled faces, lofts between
+  two sections along an arc, closed-form SSI for swept surfaces (a plane square to a revolution's
+  axis is traced today), and two faces on one swept surface (`ssi::same` reads them as different).
+
 ### Rung 3 (phase 8) — the app reads the exact solid
 
 - Everything that asks the faceted kernel (`csg.rs`, `mesh.rs`, `hidden.rs`) asks the B-rep

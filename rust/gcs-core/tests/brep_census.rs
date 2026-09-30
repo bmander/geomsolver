@@ -274,13 +274,38 @@ fn brep_body_debug() {
             eprintln!("  edge {i}: {kind} {:?} from {:?} to {:?}",e.t,b.vertices[e.v[0] as usize].p,b.vertices[e.v[1] as usize].p);
         }
     };
+    // the solid meshed, timed, with any triangle of no area named
+    let report = |solid: &Brep| {
+        if std::env::var_os("BREP_DUMP").is_some() { eprintln!("result:"); dump(solid); }
+        let started = std::time::Instant::now();
+        match gcs_core::brep::mesh::mesh(solid,0.01,0.2) {
+            Ok(m) => {
+                eprintln!("meshed: {} triangles, sag {} ({:?})",m.tris.len(),m.sag,started.elapsed());
+                for t in &m.tris {
+                    let [a,b,c] = t.map(|i| m.pts[i as usize]);
+                    // as an STL writes it, in single precision
+                    let f = |p: [f64;3]| p.map(|x| x as f32 as f64);
+                    if gcs_core::space::triangle_normal(f(a),f(b),f(c)).is_none() { eprintln!("  a triangle of no area (in f32): {a:?} {b:?} {c:?}"); }
+                }
+            }
+            Err(err) => {
+                eprintln!("NOT MESHED: {err}");
+                dump(solid);
+                for (i,f) in solid.faces.iter().enumerate() {
+                    eprintln!("  face {i} loops in parameters: {:?}",f.loops.iter().map(|l| l.iter().map(|c| solid.uv_ends(f,c)[0]).collect::<Vec<_>>()).collect::<Vec<_>>());
+                }
+            }
+        }
+    };
     let mut built: std::collections::BTreeMap<i64,Brep> = Default::default();
     let names: std::collections::BTreeMap<i64,String> = r.get("nodes").unwrap().arr().iter()
         .map(|n| (n.get("id").unwrap().as_i64(),n.get("name").unwrap().as_str().to_string())).collect();
     for n in r.get("nodes").unwrap().arr() {
         let id = n.get("id").unwrap().as_i64();
         if n.get("kind").unwrap().as_str() != "body" {
-            built.insert(id,gcs_core::brep::recipe::node(n,&built).unwrap());
+            let b = gcs_core::brep::recipe::node(n,&built).unwrap();
+            if id == r.get("root").unwrap().as_i64() { report(&b); }
+            built.insert(id,b);
             continue
         }
         let mut solid = built[&n.get("stock").unwrap().as_i64()].clone();
@@ -299,17 +324,7 @@ fn brep_body_debug() {
                 solid = next;
             }
         }
-        if std::env::var_os("BREP_DUMP").is_some() { eprintln!("result:"); dump(&solid); }
-        match gcs_core::brep::mesh::mesh(&solid,0.01,0.2) {
-            Ok(m) => eprintln!("meshed: {} triangles, sag {}",m.tris.len(),m.sag),
-            Err(err) => {
-                eprintln!("NOT MESHED: {err}");
-                dump(&solid);
-                for (i,f) in solid.faces.iter().enumerate() {
-                    eprintln!("  face {i} loops in parameters: {:?}",f.loops.iter().map(|l| l.iter().map(|c| solid.uv_ends(f,c)[0]).collect::<Vec<_>>()).collect::<Vec<_>>());
-                }
-            }
-        }
+        report(&solid);
         built.insert(id,solid);
     }
     eprintln!("built");

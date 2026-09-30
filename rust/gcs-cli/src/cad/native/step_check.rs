@@ -257,6 +257,8 @@ const CONE: u8 = 2;
 const SPHERE: u8 = 3;
 const TORUS: u8 = 4;
 const BSPLINE: u8 = 6;
+const REVOLUTION: u8 = 7;
+const EXTRUSION: u8 = 8;
 
 impl Solid {
     /// The solid a STEP file of the core's own B-rep must describe (`gcs_core::brep::step`): its
@@ -266,7 +268,8 @@ impl Solid {
         let faces = b.faces.iter().map(|f| {
             let (frame,scalars) = gcs_core::brep::step::written(&f.surface);
             let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,
-                Surface::Cone(..) => CONE,Surface::Sphere(..) => SPHERE,Surface::Torus(..) => TORUS };
+                Surface::Cone(..) => CONE,Surface::Sphere(..) => SPHERE,Surface::Torus(..) => TORUS,
+                Surface::Revolution(..) => REVOLUTION,Surface::Extrusion(..) => EXTRUSION };
             let mut numbers: Vec<f64> = frame.o.iter().chain(&frame.z).chain(&frame.x).copied().collect();
             numbers.extend(scalars);
             Face {kind,reversed:f.reversed,indirect:false,numbers}
@@ -464,7 +467,7 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
         Some(("B_SPLINE_SURFACE_WITH_KNOTS",v)) if v.len() == 13 => (&v[1..8],&v[8..12],None),
         Some(_) => {
             let name = e.parts[0].0;
-            let kind = match name { "SURFACE_OF_REVOLUTION" => 7,"SURFACE_OF_LINEAR_EXTRUSION" => 8,"OFFSET_SURFACE" => 9,"BEZIER_SURFACE" => 5,_ => 10 };
+            let kind = match name { "SURFACE_OF_REVOLUTION" => REVOLUTION,"SURFACE_OF_LINEAR_EXTRUSION" => EXTRUSION,"OFFSET_SURFACE" => 9,"BEZIER_SURFACE" => 5,_ => 10 };
             if kind != expected.kind { return Err(format!("#{r} is a {name}, the solid's surface kind {}",expected.kind)) }
             return Ok(false);
         }

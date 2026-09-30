@@ -224,7 +224,14 @@ fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
                 }
                 result
             }
-            _ => return Err(format!("`{}`: CAD profiles currently require lines, arcs or circles",face.name)),
+            EntKind::Spline => {
+                // a clamped cubic B-spline: its knots and its control points, lifted
+                let sp = &sk.splines[e.i()];
+                object([("kind","bspline".into()),("degree",crate::curve::DEGREE.into()),
+                    ("knots",Json::Arr(sp.knots.iter().map(|&k| k.into()).collect())),
+                    ("poles",Json::Arr(sp.ctrl.iter().map(|&c| vector(lift(sk.point_xy(c as usize)))).collect()))])
+            }
+            _ => return Err(format!("`{}`: CAD profiles currently require lines, arcs, circles or splines",face.name)),
         })
     };
     let loops = face.boundaries().map(|(edges,_)|

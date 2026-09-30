@@ -249,6 +249,19 @@ fn walk_edge(
             }
             Some(())
         }
+        EntKind::Spline => {
+            // walked from whichever end the loop arrives at; every chord joint a curve point
+            let mut ring = crate::curve::tessellate(sk, e.i(), unit);
+            if sk.splines[e.i()].ctrl[0] != from { ring.reverse(); }
+            for p in ring.iter().take(ring.len() - 1) {
+                pts.push(*p);
+                of.push((idx, true));
+            }
+            if let Some(last) = of.len().checked_sub(ring.len() - 1) {
+                of[last].1 = ring.len() > 2;
+            }
+            Some(())
+        }
         _ => None,
     }
 }

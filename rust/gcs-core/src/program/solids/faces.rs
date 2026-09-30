@@ -143,15 +143,15 @@ fn build_loop(
             leaf.to_string()
         };
         match e.kind {
-            EntKind::Line | EntKind::Arc | EntKind::Circle | EntKind::Point => {
+            EntKind::Line | EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Point => {
                 items.push(Item { entity: e, name });
             }
             _ => {
                 fail(
                     r.span,
                     format!(
-                        "a face is bounded by lines, arcs and circles and turns at points, and \
-                         `{}` is a {}",
+                        "a face is bounded by lines, arcs, circles and splines and turns at points, \
+                         and `{}` is a {}",
                         r.root.text,
                         e.kind.as_str()
                     ),

@@ -391,7 +391,7 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
                     l
                 }).collect();
                 for l in &loops { for c in l { used[c.edge as usize] = true; } }
-                kept.push(Face {surface:f.surface,reversed:f.reversed != flip,loops,name:f.name.clone()});
+                kept.push(Face {surface:f.surface.clone(),reversed:f.reversed != flip,loops,name:f.name.clone()});
             }
         }
     }

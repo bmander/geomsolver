@@ -3,6 +3,7 @@
 //! without meshing, and — as the plan's rungs land — combined, meshed and written as STEP.
 pub mod geom;
 pub mod mesh;
+pub mod nurbs;
 pub mod topo;
 pub mod boolean;
 pub mod build;

@@ -36,6 +36,10 @@
 #include <Geom_Surface.hxx>
 #include <GeomAdaptor_Surface.hxx>
 #include <Geom_BSplineSurface.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <TColgp_Array1OfPnt.hxx>
+#include <TColStd_Array1OfReal.hxx>
+#include <TColStd_Array1OfInteger.hxx>
 #include <Geom_Plane.hxx>
 #include <Geom_ElementarySurface.hxx>
 #include <Geom_CylindricalSurface.hxx>
@@ -461,6 +465,28 @@ int solvent_cad_circle(Cad* cad,const double* center,const double* normal,
         gp_Circ circle(gp_Ax2(point(center),direction(normal),direction(x)),radius);
         BRepBuilderAPI_MakeEdge edge(circle,start,end);
         if (!edge.IsDone()) throw std::runtime_error("profile arc failed");
+        return cad->put(edge.Edge());
+    });
+}
+// A non-rational B-spline profile edge: `count` poles (xyz each) and its full knot vector
+// (`count + degree + 1` values, repeated knots as they are), made distinct with multiplicities.
+extern "C" int solvent_cad_bspline(Cad* cad,int degree,int count,const double* poles,const double* knots) noexcept {
+    return guarded(cad,[&] {
+        if (degree < 1 || count <= degree) throw std::runtime_error("a B-spline edge needs more poles than its degree");
+        TColgp_Array1OfPnt points(1,count);
+        for (int i=0;i<count;++i) points.SetValue(i+1,gp_Pnt(poles[3*i],poles[3*i+1],poles[3*i+2]));
+        std::vector<double> distinct;
+        std::vector<int> multiplicity;
+        for (int i=0;i<count+degree+1;++i) {
+            if (!distinct.empty() && knots[i] == distinct.back()) { ++multiplicity.back(); }
+            else { distinct.push_back(knots[i]); multiplicity.push_back(1); }
+        }
+        TColStd_Array1OfReal values(1,(int)distinct.size());
+        TColStd_Array1OfInteger mults(1,(int)distinct.size());
+        for (size_t i=0;i<distinct.size();++i) { values.SetValue((int)i+1,distinct[i]); mults.SetValue((int)i+1,multiplicity[i]); }
+        Handle(Geom_BSplineCurve) curve = new Geom_BSplineCurve(points,values,mults,degree);
+        BRepBuilderAPI_MakeEdge edge(curve);
+        if (!edge.IsDone()) throw std::runtime_error("profile B-spline failed");
         return cad->put(edge.Edge());
     });
 }

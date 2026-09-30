@@ -43,7 +43,15 @@ pub fn volume(b: &Brep) -> f64 {
         let s = &f.surface;
         let [pu,pv] = s.periods();
         let g = |u: f64,v: f64| { let (x,su,sv) = s.d1([u,v]); dot(x,cross(su,sv)) };
-        let big_g = |u: f64,v: f64| gauss(0.,u,pieces(u,pu.is_some()),&mut |w| g(w,v));
+        // ∫_0^u, a stretch at a time between the surface's breaks in u
+        let big_g = |u: f64,v: f64| {
+            let cuts = s.breaks(0,[0.,u]);
+            if cuts.is_empty() { return gauss(0.,u,pieces(u,pu.is_some()),&mut |w| g(w,v)) }
+            let mut at = vec![0.];
+            if u >= 0. { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
+            at.push(u);
+            at.windows(2).map(|w| gauss(w[0],w[1],2,&mut |x| g(x,v))).sum::<f64>()
+        };
         for l in &f.loops {
             for c in l {
                 let e = &b.edges[c.edge as usize];
@@ -56,12 +64,14 @@ pub fn volume(b: &Brep) -> f64 {
                     let [u,v] = c.pcurve.at(t,e,s,&b.vertices);
                     big_g(u,v)*dv
                 };
-                let line = if let EdgeCurve::Curve(Curve::Traced(_)) = &e.curve {
-                    // a traced curve is smooth between its points: integrated a stretch at a time
+                let breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
+                let line = if !breaks.is_empty() {
+                    // smooth between its knots or points: integrated a stretch at a time
                     let mut cuts = vec![e.t[0]];
-                    cuts.extend((e.t[0].floor() as i64+1..=e.t[1].ceil() as i64-1).map(|k| k as f64));
+                    cuts.extend(breaks);
                     cuts.push(e.t[1]);
-                    cuts.windows(2).map(|w| gauss(w[0],w[1],1,&mut integrand)).sum()
+                    let each = if let EdgeCurve::Curve(Curve::Traced(_)) = &e.curve { 1 } else { 2 };
+                    cuts.windows(2).map(|w| gauss(w[0],w[1],each,&mut integrand)).sum()
                 } else { gauss(e.t[0],e.t[1],pieces(span,periodic),&mut integrand) };
                 total += if c.reversed { -line } else { line };
             }

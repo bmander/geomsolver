@@ -393,3 +393,99 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     let e = loft(&elbow,Some(&elbow),&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],start:[bend,0.,0.],angle:PI/2.}).unwrap_err();
     assert!(e.contains("not built yet"),"{e}");
 }
+
+fn dump(b: &gcs_core::brep::topo::Brep) {
+    use gcs_core::brep::topo::EdgeCurve;
+    for (i,f) in b.faces.iter().enumerate() {
+        eprintln!("  face {i} {} rev {}: {:?}",f.surface.kind(),f.reversed,f.loops.iter().map(|l| l.iter()
+            .map(|c| format!("{}{}",if c.reversed { "-" } else { "+" },c.edge)).collect::<Vec<_>>()).collect::<Vec<_>>());
+    }
+    for (i,e) in b.edges.iter().enumerate() {
+        let kind = match &e.curve { EdgeCurve::Curve(c) => c.kind(),_ => "pole" };
+        eprintln!("  edge {i}: {kind} {:?} from {:?} to {:?}",e.t,b.vertices[e.v[0] as usize].p,b.vertices[e.v[1] as usize].p);
+    }
+}
+
+/// A B-spline of degree three over `knots`' interior (clamped at 0 and 1) through `poles`.
+fn cubic(poles: &[V],interior: &[f64]) -> std::sync::Arc<gcs_core::brep::geom::BSpline> {
+    let mut knots = vec![0.;4];
+    knots.extend(interior);
+    knots.extend([1.;4]);
+    std::sync::Arc::new(gcs_core::brep::geom::BSpline::new(3,knots,poles.to_vec()).unwrap())
+}
+/// `∫ f` over each knot span of `s` by ten-point Gauss–Legendre (exact on a polynomial of degree
+/// nineteen or less, which every integrand here is between knots).
+fn over_spans(s: &gcs_core::brep::geom::BSpline,[a,b]: [f64;2],f: impl Fn(f64) -> f64) -> f64 {
+    const G: [(f64,f64);5] = [(0.1488743389816312,0.2955242247147529),(0.4333953941292472,0.2692667193099963),
+        (0.6794095682990244,0.2190863625159820),(0.8650633666889845,0.1494513491505806),(0.9739065285171717,0.0666713443086881)];
+    let mut cuts = vec![a];
+    cuts.extend(s.breaks([a,b]));
+    cuts.push(b);
+    cuts.windows(2).map(|w| {
+        let (m,h) = ((w[0]+w[1])/2.,(w[1]-w[0])/2.);
+        G.iter().map(|&(x,wt)| wt*(f(m-h*x)+f(m+h*x))).sum::<f64>()*h
+    }).sum()
+}
+
+#[test]
+fn splines_swept_and_turned_are_their_closed_forms() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    use gcs_core::brep::mesh::mesh;
+    let spline = |s: &std::sync::Arc<gcs_core::brep::geom::BSpline>| ProfileEdge::Spline(s.clone());
+    // a plate: a base, a spline of two spans round to the back, and the back
+    let lobe = cubic(&[[10.,0.,0.],[12.,8.,0.],[9.,13.,0.],[6.,14.,0.],[0.,10.,0.]],&[0.4]);
+    let plate = Profile {origin:[0.;3],normal:XY,loops:vec![vec![line([0.,0.,0.],[10.,0.,0.]),spline(&lobe),line([0.,10.,0.],[0.,0.,0.])]]};
+    // its area by Green's theorem: the lines through the origin enclose nothing
+    let area = over_spans(&lobe,[0.,1.],|t| { let (p,d,_) = lobe.d2(t); (p[0]*d[1]-p[1]*d[0])/2. });
+    let b = prism(&plate,0.,3.).unwrap();
+    b.check(1e-9).unwrap();
+    assert_eq!(b.faces.iter().filter(|f| f.surface.kind() == "extrusion").count(),1);
+    close(volume(&b),3.*area);
+    // sliced level with its caps, where the plane meets the extrusion in its spline, traced
+    let r = boolean(&b,&block([-5.,-5.,1.],[20.,20.,5.]),Op::Cut,1e-9).unwrap();
+    if let Err(e) = r.check(1e-8) { dump(&r); panic!("{e}") }
+    // (a traced edge is integrated to its central difference's ~1e-10 of its speed)
+    assert!((volume(&r)-area).abs() <= 1e-8*area,"{} against {area}",volume(&r));
+    // a rod standing on the spline edge: the disk's share of the plate, by Green's theorem round
+    // the spline inside the disk and the circle's arc inside the plate
+    let (c,rr) = { let p = lobe.point(0.5); ([p[0],p[1]],1.5) };
+    let off = |t: f64| { let p = lobe.point(t); (p[0]-c[0]).hypot(p[1]-c[1])-rr };
+    let root = |mut lo: f64,mut hi: f64| { for _ in 0..200 { let m = (lo+hi)/2.; if (off(m) < 0.) == (off(lo) < 0.) { lo = m } else { hi = m } } (lo+hi)/2. };
+    let (t1,t2) = (root(0.,0.5),root(0.5,1.));
+    let along = over_spans(&lobe,[t1,t2],|t| { let (p,d,_) = lobe.d2(t); (p[0]*d[1]-p[1]*d[0])/2. });
+    let angle = |t: f64| { let p = lobe.point(t); (p[1]-c[1]).atan2(p[0]-c[0]) };
+    // from where the spline leaves the disk round (counter-clockwise, the plate's side) to where it entered
+    let (a2,mut a1) = (angle(t2),angle(t1));
+    while a1 < a2 { a1 += TAU; }
+    let arc = (rr*rr*(a1-a2)+rr*c[0]*(a1.sin()-a2.sin())-rr*c[1]*(a1.cos()-a2.cos()))/2.;
+    let r = boolean(&b,&rod([c[0],c[1],0.],rr,[-1.,4.]),Op::Common,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    let want = 3.*(along+arc);
+    assert!((volume(&r)-want).abs() <= 1e-8*want,"{} against {want}",volume(&r));
+    // a vase: a foot, a spline wall and a rim, turned about z
+    let wall = cubic(&[[12.,0.,0.],[20.,0.,12.],[2.,0.,24.],[10.,0.,36.]],&[]);
+    let vase = Profile {origin:[0.;3],normal:XZ,loops:vec![vec![line([0.,0.,0.],[12.,0.,0.]),spline(&wall),
+        line([10.,0.,36.],[0.,0.,36.]),line([0.,0.,36.],[0.,0.,0.])]]};
+    let v = revolve(&vase,[0.;3],[0.,0.,1.],TAU).unwrap();
+    v.check(1e-9).unwrap();
+    // Pappus, as π ∮ ρ² dz: only the wall climbs
+    let pappus = |b: f64| PI*over_spans(&wall,[0.,b],|t| { let (p,d,_) = wall.d2(t); p[0]*p[0]*d[2] });
+    close(volume(&v),pappus(1.));
+    // a quarter turn is a quarter of it
+    close(volume(&revolve(&vase,[0.;3],[0.,0.,1.],PI/2.).unwrap()),pappus(1.)/4.);
+    // cut level at half height, where the wall's parameter is a half, a plane meeting it traced
+    let r = boolean(&v,&block([-30.,-30.,18.],[30.,30.,40.]),Op::Cut,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    assert!((volume(&r)-pappus(0.5)).abs() <= 1e-8*pappus(0.5),"{} against {}",volume(&r),pappus(0.5));
+    // halved by a plane through its axis, which meets it in its own meridians
+    let r = boolean(&v,&block([0.,-30.,-5.],[30.,30.,40.]),Op::Common,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    assert!((volume(&r)-pappus(1.)/2.).abs() <= 1e-8*pappus(1.),"{} against {}",volume(&r),pappus(1.)/2.);
+    // meshed closed, within the bar, enclosing the same volume to the bar's order
+    for (what,s) in [("plate",&b),("vase",&v)] {
+        let m = mesh(s,0.01,0.2).unwrap_or_else(|e| panic!("{what}: {e}"));
+        assert!(m.sag <= 0.01,"{what}: sags {}",m.sag);
+        gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&m.triangles(),what)).unwrap_or_else(|e| panic!("{what}: {e}"));
+        assert!((mesh_volume(&m)-volume(s)).abs() <= 2e-3*volume(s),"{what}: {} against {}",mesh_volume(&m),volume(s));
+    }
+}

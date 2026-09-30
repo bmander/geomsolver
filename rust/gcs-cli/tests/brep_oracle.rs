@@ -62,13 +62,23 @@ fn every_node_the_kernel_builds_is_occts() {
                 let rel = (v-w).abs()/w.abs();
                 eprintln!("{label}: {v:.9} mm³ against {w:.9}, {rel:e}; {faces} faces against {their_faces}");
                 worst = worst.max(rel);
-                // a `through` prism's extent is its sources' box, which OCCT widens by its tolerances
-                if rel >= 1e-7 { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
+                // a `through` prism's extent is its sources' box, which OCCT widens by its tolerances and,
+                // about a spline face, takes from its poles, where this kernel samples the face: the
+                // prism's depth is then a little different and nothing cut by it is
+                let swept = |b: &gcs_core::brep::topo::Brep| b.faces.iter().any(|f| matches!(f.surface,Surface::Extrusion(..) | Surface::Revolution(..)));
+                let through_splines = n.get("kind").unwrap().as_str() == "through"
+                    && n.get("sources").unwrap().arr().iter().any(|s| ours.get(&s.as_i64()).is_some_and(swept));
+                // OCCT integrates a face swept from a spline (its adaptive rule asked for 1e-9) to a few
+                // parts in ten million, where this kernel's Gauss rule is exact on each knot span
+                // (`tests/brep.rs` holds it to the closed forms)
+                let bar = if through_splines { 1e-3 } else if swept(&b) { 1e-6 } else { 1e-7 };
+                if rel >= bar { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
                 // faces by the kind of their surface (OCCT's `GeomAbs_SurfaceType` order): OCCT may split
                 // a plane along a line where another face only touches it, which this kernel does not
                 let kinds = |ks: &mut Vec<i32>| { ks.sort(); ks.clone() };
                 let our_kinds = kinds(&mut b.faces.iter().map(|f| match f.surface {
                     Surface::Plane(_) => 0,Surface::Cylinder(..) => 1,Surface::Cone(..) => 2,Surface::Sphere(..) => 3,Surface::Torus(..) => 4,
+                    Surface::Revolution(..) => 7,Surface::Extrusion(..) => 8,
                 }).collect());
                 let their_kinds = kinds(&mut session.faces(theirs).unwrap().into_iter().map(|g| session.face_kind(g).unwrap()).collect());
                 if our_kinds != their_kinds {

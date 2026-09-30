@@ -2,6 +2,8 @@
 //! parameterisations and closed-form inverses, and curves. Every surface is parameterised as
 //! OCCT (and STEP) parameterise it, so a face written out is the face read in.
 use crate::space::{add,cross,dot,norm,scale,sub};
+use std::sync::Arc;
+pub use super::nurbs::BSpline;
 
 pub type V = [f64;3];
 pub type Uv = [f64;2];
@@ -72,7 +74,7 @@ impl Rigid {
 }
 
 /// A surface and its natural parameterisation `S(u, v)`, with normal `S_u × S_v`.
-#[derive(Clone,Copy,Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum Surface {
     /// `o + u x + v y`.
     Plane(Frame),
@@ -85,21 +87,60 @@ pub enum Surface {
     Sphere(Frame,f64),
     /// `o + (R + r cos v)(cos u x + sin u y) + r sin v z`.
     Torus(Frame,f64,f64),
+    /// `C(u) + v z`: a curve lying in the plane through `o` square to `z`, swept along `z`.
+    Extrusion(Frame,Arc<Curve>),
+    /// `C(v)` turned by `u` about the axis through `o` along `z`: the curve lies in the half-plane
+    /// of `x` (`y = 0`, `x ≥ 0` in the frame).
+    Revolution(Frame,Arc<Curve>),
+}
+
+/// The signed distance from `(ρ, z)` to a curve drawn in the same half-plane (`meridian` its
+/// `(ρ, z)` at its parameter), its normal the tangent turned clockwise; the foot's parameter too.
+fn plane_side(c: &Curve,t: f64,p: [f64;2],meridian: &dyn Fn(V) -> [f64;2],along: &dyn Fn(V) -> [f64;2]) -> (f64,[f64;2]) {
+    let (x,d,_) = c.d2(t);
+    let [fr,fz] = meridian(x);
+    let [dr,dz] = along(d);
+    let l = dr.hypot(dz);
+    if !(l > 0.) { return ((p[0]-fr).hypot(p[1]-fz),[1.,0.]) }
+    let n = [dz/l,-dr/l];
+    ((p[0]-fr)*n[0]+(p[1]-fz)*n[1],n)
+}
+
+/// The least radius of curvature a planar curve has over its domain, sampled (infinite where it
+/// is straight), and never more than its extent.
+fn least_radius(c: &Curve) -> f64 {
+    let Curve::BSpline(b) = c else { return f64::INFINITY };
+    let [a,z] = b.domain();
+    let mut ts = vec![a];
+    let mut cuts = vec![a];
+    cuts.extend(b.breaks([a,z]));
+    cuts.push(z);
+    for w in cuts.windows(2) { for j in 1..=8 { ts.push(w[0]+(w[1]-w[0])*j as f64/8.); } }
+    let mut r = b.hull_length();
+    for t in ts {
+        let (_,d,dd) = b.d2(t);
+        let k = norm(cross(d,dd));
+        let s = norm(d);
+        if k > 0. { r = r.min(s*s*s/k); }
+    }
+    r.max(f64::MIN_POSITIVE)
 }
 
 impl Surface {
     pub fn frame(&self) -> &Frame {
         match self { Surface::Plane(f) | Surface::Cylinder(f,_) | Surface::Cone(f,_,_) | Surface::Sphere(f,_)
-            | Surface::Torus(f,_,_) => f }
+            | Surface::Torus(f,_,_) | Surface::Extrusion(f,_) | Surface::Revolution(f,_) => f }
     }
     pub fn kind(&self) -> &'static str {
         match self { Surface::Plane(_) => "plane",Surface::Cylinder(..) => "cylinder",Surface::Cone(..) => "cone",
-            Surface::Sphere(..) => "sphere",Surface::Torus(..) => "torus" }
+            Surface::Sphere(..) => "sphere",Surface::Torus(..) => "torus",Surface::Extrusion(..) => "extrusion",
+            Surface::Revolution(..) => "revolution" }
     }
     /// The periods in `u` and `v` (none where the parameter is not periodic).
     pub fn periods(&self) -> [Option<f64>;2] {
         match self {
-            Surface::Plane(_) => [None,None],
+            Surface::Plane(_) | Surface::Extrusion(..) => [None,None],
+            Surface::Revolution(..) => [Some(TAU),None],
             Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) => [Some(TAU),None],
             Surface::Torus(..) => [Some(TAU),Some(TAU)],
         }
@@ -107,6 +148,20 @@ impl Surface {
     /// `S`, `S_u`, `S_v`.
     pub fn d1(&self,[u,v]: Uv) -> (V,V,V) {
         let (su,cu) = u.sin_cos();
+        match self {
+            Surface::Extrusion(f,c) => {
+                let (x,d,_) = c.d2(u);
+                return (add(x,scale(f.z,v)),d,f.z)
+            }
+            Surface::Revolution(f,c) => {
+                let (x,d,_) = c.d2(v);
+                let (q,e) = (f.local(x),f.dir_local(d));
+                let turn = |q: V| [q[0]*cu-q[1]*su,q[0]*su+q[1]*cu,q[2]];
+                let r = turn(q);
+                return (f.at(r),f.dir([-r[1],r[0],0.]),f.dir(turn(e)))
+            }
+            _ => {}
+        }
         match *self {
             Surface::Plane(f) => (f.at([u,v,0.]),f.x,f.y),
             Surface::Cylinder(f,r) => (f.at([r*cu,r*su,v]),f.dir([-r*su,r*cu,0.]),f.z),
@@ -124,6 +179,7 @@ impl Surface {
                 let q = big+r*cv;
                 (f.at([q*cu,q*su,r*sv]),f.dir([-q*su,q*cu,0.]),f.dir([-r*sv*cu,-r*sv*su,r*cv]))
             }
+            Surface::Extrusion(..) | Surface::Revolution(..) => unreachable!(),
         }
     }
     pub fn point(&self,uv: Uv) -> V { self.d1(uv).0 }
@@ -140,6 +196,14 @@ impl Surface {
         let [x,y,z] = f.local(p);
         let u = if x == 0. && y == 0. { 0. } else { wrap(y.atan2(x)) };
         let rho = x.hypot(y);
+        match self {
+            Surface::Extrusion(_,c) => {
+                let t = c.inverse(f.at([x,y,0.]));
+                return [t,dot(sub(p,c.point(t)),f.z)]
+            }
+            Surface::Revolution(_,c) => return [u,c.inverse(f.at([rho,0.,z]))],
+            _ => {}
+        }
         match *self {
             Surface::Plane(_) => [x,y],
             Surface::Cylinder(..) => [u,z],
@@ -150,12 +214,14 @@ impl Surface {
             }
             Surface::Sphere(..) => [u,z.atan2(rho)],
             Surface::Torus(_,big,_) => [u,wrap(z.atan2(rho-big))],
+            Surface::Extrusion(..) | Surface::Revolution(..) => unreachable!(),
         }
     }
     /// A signed distance whose zero set is the surface (for a cone, the one sheet `ρ ≥ 0` its
     /// parameters reach), positive on the side its normal points to: exact for all but the cone,
     /// whose value is the distance to its generating line in the meridian half-plane.
     pub fn implicit(&self,p: V) -> f64 {
+        if let Some((d,_)) = self.swept_side(p) { return d }
         let [x,y,z] = self.frame().local(p);
         let rho = x.hypot(y);
         match *self {
@@ -164,10 +230,40 @@ impl Surface {
             Surface::Cone(_,r,a) => { let (sa,ca) = a.sin_cos(); (rho-r)*ca-z*sa }
             Surface::Sphere(_,r) => rho.hypot(z)-r,
             Surface::Torus(_,big,r) => (rho-big).hypot(z)-r,
+            Surface::Extrusion(..) | Surface::Revolution(..) => unreachable!(),
+        }
+    }
+    /// For a swept curve, the signed distance from `p` to the curve in the section through it —
+    /// the distance to the tangent line at the foot, as a cone's is to its generator — and that
+    /// distance's gradient.
+    fn swept_side(&self,p: V) -> Option<(f64,V)> {
+        match self {
+            Surface::Extrusion(f,c) => {
+                let [x,y,_] = f.local(p);
+                let t = c.inverse(f.at([x,y,0.]));
+                let loc = |q: V| { let l = f.local(q); [l[0],l[1]] };
+                let dir = |d: V| { let l = f.dir_local(d); [l[0],l[1]] };
+                // the section's (x, y) is right-handed about z, so S_u × z is the tangent turned clockwise
+                let (d,n) = plane_side(c,t,[x,y],&loc,&dir);
+                Some((d,f.dir([n[0],n[1],0.])))
+            }
+            Surface::Revolution(f,c) => {
+                let [x,y,z] = f.local(p);
+                let rho = x.hypot(y);
+                let t = c.inverse(f.at([rho,0.,z]));
+                let loc = |q: V| { let l = f.local(q); [l[0],l[2]] };
+                let dir = |d: V| { let l = f.dir_local(d); [l[0],l[2]] };
+                // in (ρ, z) the normal S_u × S_v is the tangent turned clockwise, as for a plane in (x, y)
+                let (d,n) = plane_side(c,t,[rho,z],&loc,&dir);
+                let radial = if rho > 0. { [x/rho,y/rho] } else { [1.,0.] };
+                Some((d,f.dir([n[0]*radial[0],n[0]*radial[1],n[1]])))
+            }
+            _ => None,
         }
     }
     /// The gradient of `implicit` (unit length wherever the surface's normal is defined).
     pub fn gradient(&self,p: V) -> V {
+        if let Some((_,g)) = self.swept_side(p) { return g }
         let f = self.frame();
         let [x,y,z] = f.local(p);
         let rho = x.hypot(y);
@@ -182,6 +278,7 @@ impl Surface {
                 let d = dr.hypot(dz);
                 if d > 0. { [radial[0]*dr/d,radial[1]*dr/d,dz/d] } else { [0.,0.,1.] }
             }
+            Surface::Extrusion(..) | Surface::Revolution(..) => unreachable!(),
         };
         f.dir(l)
     }
@@ -192,6 +289,7 @@ impl Surface {
             Surface::Plane(_) => f64::INFINITY,
             Surface::Cylinder(_,r) | Surface::Sphere(_,r) | Surface::Torus(_,_,r) => r,
             Surface::Cone(_,r,_) => r.max(f64::MIN_POSITIVE),
+            Surface::Extrusion(_,ref c) | Surface::Revolution(_,ref c) => least_radius(c),
         }
     }
     pub fn moved(&self,m: &Rigid) -> Surface {
@@ -201,12 +299,22 @@ impl Surface {
             Surface::Cone(f,r,a) => Surface::Cone(f.moved(m),r,a),
             Surface::Sphere(f,r) => Surface::Sphere(f.moved(m),r),
             Surface::Torus(f,big,r) => Surface::Torus(f.moved(m),big,r),
+            Surface::Extrusion(f,ref c) => Surface::Extrusion(f.moved(m),Arc::new(c.moved(m))),
+            Surface::Revolution(f,ref c) => Surface::Revolution(f.moved(m),Arc::new(c.moved(m))),
+        }
+    }
+    /// Where, strictly inside `[a, b]` of parameter `k` (0 for u, 1 for v), the surface stops
+    /// being smooth: its swept curve's knots.
+    pub fn breaks(&self,k: usize,span: [f64;2]) -> Vec<f64> {
+        match (self,k) {
+            (Surface::Extrusion(_,c),0) | (Surface::Revolution(_,c),1) => c.breaks(span),
+            _ => vec![],
         }
     }
     /// Whether the surface is one of revolution about its frame's `z` axis — every one but the
     /// plane, which is one about its normal through any point.
     pub fn axis(&self) -> Option<(V,V)> {
-        match self { Surface::Plane(_) => None,_ => { let f = self.frame(); Some((f.o,f.z)) } }
+        match self { Surface::Plane(_) | Surface::Extrusion(..) => None,_ => { let f = self.frame(); Some((f.o,f.z)) } }
     }
 }
 
@@ -269,16 +377,18 @@ pub enum Curve {
     Ellipse(Frame,f64,f64),
     /// A traced intersection, its parameter counting its points.
     Traced(std::sync::Arc<Traced>),
+    /// A non-rational B-spline over its knots' domain.
+    BSpline(Arc<BSpline>),
 }
 
 impl Curve {
     pub fn kind(&self) -> &'static str {
         match self { Curve::Line {..} => "line",Curve::Circle(..) => "circle",Curve::Ellipse(..) => "ellipse",
-            Curve::Traced(..) => "traced" }
+            Curve::Traced(..) => "traced",Curve::BSpline(..) => "bspline" }
     }
     pub fn period(&self) -> Option<f64> {
         match self {
-            Curve::Line {..} => None,
+            Curve::Line {..} | Curve::BSpline(..) => None,
             Curve::Traced(c) => c.closed.then(|| c.segments() as f64),
             _ => Some(TAU),
         }
@@ -287,6 +397,7 @@ impl Curve {
     pub fn d2(&self,t: f64) -> (V,V,V) {
         match *self {
             Curve::Traced(ref c) => { let (x,d) = c.d1(t); (x,d,[0.;3]) }
+            Curve::BSpline(ref b) => b.d2(t),
             Curve::Line {p,d} => (add(p,scale(d,t)),d,[0.;3]),
             Curve::Circle(f,r) => {
                 let (s,c) = t.sin_cos();
@@ -296,6 +407,16 @@ impl Curve {
                 let (s,c) = t.sin_cos();
                 (f.at([a*c,b*s,0.]),f.dir([-a*s,b*c,0.]),f.dir([-a*c,-b*s,0.]))
             }
+        }
+    }
+    /// Where, strictly inside `[a, b]`, the curve stops being smooth: a B-spline's knots, a traced
+    /// curve's points.
+    pub fn breaks(&self,[a,b]: [f64;2]) -> Vec<f64> {
+        let (a,b) = (a.min(b),a.max(b));
+        match self {
+            Curve::BSpline(s) => s.breaks([a,b]),
+            Curve::Traced(_) => (a.floor() as i64+1..=b.ceil() as i64-1).map(|k| k as f64).filter(|&k| k > a && k < b).collect(),
+            _ => vec![],
         }
     }
     pub fn point(&self,t: f64) -> V { self.d2(t).0 }
@@ -328,6 +449,31 @@ impl Curve {
                 }
                 if c.closed { t.rem_euclid(c.segments() as f64) } else { t }
             }
+            Curve::BSpline(ref b) => {
+                // the nearest of samples across every knot span, then Newton on (C − p)·C'
+                let [a,z] = b.domain();
+                let mut cuts = vec![a];
+                cuts.extend(b.breaks([a,z]));
+                cuts.push(z);
+                let mut best = (f64::INFINITY,a);
+                for w in cuts.windows(2) { for j in 0..=16 {
+                    let t = w[0]+(w[1]-w[0])*j as f64/16.;
+                    let d = crate::space::distance(b.point(t),p);
+                    if d < best.0 { best = (d,t); }
+                } }
+                let mut t = best.1;
+                for _ in 0..20 {
+                    let (x,d,dd) = b.d2(t);
+                    let e = sub(x,p);
+                    let g = dot(e,d);
+                    let h = dot(d,d)+dot(e,dd);
+                    if !(h > 0.) { break }
+                    let next = (t-g/h).clamp(a,z);
+                    if (next-t).abs() <= 1e-15*(z-a) { t = next; break }
+                    t = next;
+                }
+                t
+            }
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.atan2(x)) }
             Curve::Ellipse(f,a,b) => {
@@ -353,6 +499,10 @@ impl Curve {
         match *self {
             Curve::Line {..} => 1.,Curve::Circle(_,r) => r,Curve::Ellipse(_,a,b) => a.max(b),
             Curve::Traced(ref c) => c.pts.windows(2).map(|w| crate::space::distance(w[0],w[1])).fold(0.,f64::max),
+            Curve::BSpline(ref b) => {
+                let [a,z] = b.domain();
+                (0..=64).map(|j| norm(b.d2(a+(z-a)*j as f64/64.).1)).fold(0.,f64::max)
+            }
         }
     }
     pub fn moved(&self,m: &Rigid) -> Curve {
@@ -362,6 +512,7 @@ impl Curve {
             Curve::Ellipse(f,a,b) => Curve::Ellipse(f.moved(m),a,b),
             Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced {a:c.a.moved(m),b:c.b.moved(m),
                 pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
+            Curve::BSpline(ref b) => Curve::BSpline(Arc::new(BSpline {poles:b.poles.iter().map(|&p| m.point(p)).collect(),..(**b).clone()})),
         }
     }
 }

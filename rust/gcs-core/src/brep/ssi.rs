@@ -49,6 +49,7 @@ fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
             Some(Meridian::Line {p:[r,height(f.o)],d:[a.sin(),a.cos()*sign]})
         }
         Surface::Torus(_,big,r) => Some(Meridian::Circle {c:[big,height(f.o)],r}),
+        Surface::Extrusion(..) | Surface::Revolution(..) => None,
     }
 }
 
@@ -105,7 +106,7 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
     let (f,g) = (a.frame(),b.frame());
     let parallel = norm(cross(f.z,g.z)) <= 1e-12;
     let on_axis = norm(cross(sub(g.o,f.o),f.z)) <= tol;
-    match (*a,*b) {
+    match (a.clone(),b.clone()) {
         (Surface::Plane(_),Surface::Plane(_)) => parallel && dot(sub(g.o,f.o),f.z).abs() <= tol,
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) => parallel && on_axis && (r-s).abs() <= tol,
         (Surface::Sphere(_,r),Surface::Sphere(_,s)) => norm(sub(g.o,f.o)) <= tol && (r-s).abs() <= tol,
@@ -152,9 +153,9 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         }
         return Ssi::Curves(out)
     }
-    match (*a,*b) {
+    match (a.clone(),b.clone()) {
         (Surface::Plane(_),Surface::Cylinder(..)) | (Surface::Cylinder(..),Surface::Plane(_)) => {
-            let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,*b) } else { (g,*a) };
+            let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cylinder(c,r) = cy else { unreachable!() };
             let (n,h) = (pl.z,dot(pl.z,pl.o));
             let cos = dot(n,c.z);
@@ -178,7 +179,7 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             Ssi::Curves(vec![Curve::Ellipse(Frame::new(centre,cross(major,minor),major),r/cos.abs(),r)])
         }
         (Surface::Plane(_),Surface::Sphere(..)) | (Surface::Sphere(..),Surface::Plane(_)) => {
-            let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,*b) } else { (g,*a) };
+            let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Sphere(c,r) = sp else { unreachable!() };
             let dist = dot(pl.z,sub(c.o,pl.o));
             if dist.abs() > r+tol { return Ssi::Curves(vec![]) }
@@ -250,7 +251,7 @@ pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result
     };
     let shallow = |p: V| format!("a {} and a {} meet at {:.2}° at [{:.4}, {:.4}, {:.4}], nearly touching: their meeting is \
         ill-conditioned there, not built yet",a.kind(),b.kind(),norm(cross(a.gradient(p),b.gradient(p))).asin().to_degrees(),p[0],p[1],p[2]);
-    let probe = Traced {a:*a,b:*b,pts:vec![],closed:false};
+    let probe = Traced {a:a.clone(),b:b.clone(),pts:vec![],closed:false};
     let diag = norm(sub(hi,lo)).max(tol);
     let h0 = (a.feature().min(b.feature())/12.).min(diag/24.).max(diag*1e-4);
     let inside = |p: V,pad: f64| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad);
@@ -298,7 +299,7 @@ pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result
             back
         };
         if pts.len() < 2 { continue }
-        curves.push(Curve::Traced(std::sync::Arc::new(Traced {a:*a,b:*b,pts,closed})));
+        curves.push(Curve::Traced(std::sync::Arc::new(Traced {a:a.clone(),b:b.clone(),pts,closed})));
     }
     Ok(curves)
 }

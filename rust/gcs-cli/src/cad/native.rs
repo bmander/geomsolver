@@ -18,6 +18,7 @@ extern "C" {
     fn solvent_cad_free(cad: *mut c_void);
     fn solvent_cad_error(cad: *mut c_void) -> *const c_char;
     fn solvent_cad_line(cad: *mut c_void,a: *const f64,b: *const f64) -> c_int;
+    fn solvent_cad_bspline(cad: *mut c_void,degree: c_int,count: c_int,poles: *const f64,knots: *const f64) -> c_int;
     fn solvent_cad_circle(cad: *mut c_void,c: *const f64,n: *const f64,x: *const f64,
         radius: f64,start: f64,end: f64) -> c_int;
     fn solvent_cad_face(cad: *mut c_void,edges: *const c_int,count: c_int) -> c_int;
@@ -95,6 +96,11 @@ impl Session {
                     unsafe { solvent_cad_circle(self.0,v(edge,"center").as_ptr(),
                         v(edge,"normal").as_ptr(),v(edge,"x_dir").as_ptr(),
                         field(edge,"radius").as_f64(),start,end) }
+                }
+                "bspline" => {
+                    let poles: Vec<f64> = field(edge,"poles").arr().iter().flat_map(|p| p.arr().iter().map(Json::as_f64).collect::<Vec<_>>()).collect();
+                    let knots: Vec<f64> = field(edge,"knots").arr().iter().map(Json::as_f64).collect();
+                    unsafe { solvent_cad_bspline(self.0,field(edge,"degree").as_i64() as c_int,(poles.len()/3) as c_int,poles.as_ptr(),knots.as_ptr()) }
                 }
                 _ => return Err("unsupported CAD profile edge".into()),
             };
