@@ -202,7 +202,7 @@ fn build_loop(
                 return None;
             }
             _ => {
-                report(Code::E080, 
+                report(Code::E080,
                     r.span,
                     format!(
                         "a face is bounded by lines, arcs, circles, splines and stretches of \
@@ -245,7 +245,7 @@ fn build_loop(
     let chord = n == 1 && closed && !lone_circle && items[0].entity.kind != EntKind::Point
         && ends[0].0 != ends[0].1;
     if n == 1 && !lone_circle && !chord {
-        report(Code::E080, 
+        report(Code::E080,
             span,
             format!(
                 "`{}` is not a loop by itself: a face is a loop of edges and the corners \
@@ -266,7 +266,7 @@ fn build_loop(
     let walked = ends.len();
     for i in 0..walked {
         if !chord && items[i].entity.kind != EntKind::Point && !meets[(i + n - 1) % n] && !meets[i] {
-            report(Code::E080, 
+            report(Code::E080,
                 span,
                 format!(
                     "`{}` meets neither of its neighbours: a face is a loop, walked in order",
@@ -306,7 +306,7 @@ fn build_loop(
     let walk = match orient(false).or_else(|_| orient(true)) {
         Ok(walk) => walk,
         Err(i) => {
-            report(Code::E080, 
+            report(Code::E080,
                 span,
                 format!(
                     "`{}` and its neighbours share no point along the walk: a face must \
@@ -340,7 +340,7 @@ fn build_loop(
         // where a *point* is one of its sides
         if j == 0 {
             if !closed {
-                report(Code::E080, 
+                report(Code::E080,
                     span,
                     format!(
                         "`{}` and `{}` share no point: a face is a loop, and one that does not \
@@ -351,7 +351,7 @@ fn build_loop(
                 return None;
             }
         } else if items[i].entity.kind != EntKind::Point && items[j].entity.kind != EntKind::Point {
-            report(Code::E080, 
+            report(Code::E080,
                 span,
                 format!(
                     "`{}` and `{}` share no point: a face is a loop, walked in order",
@@ -398,7 +398,7 @@ fn build_loop(
                         Some(i) => format!("view {i}"),
                         None => "the page".to_string(),
                     };
-                    report(Code::E080, 
+                    report(Code::E080,
                         span,
                         format!(
                             "a face lies in one plane, and `{n}` is on {} where the loop is on {}",
@@ -417,6 +417,22 @@ fn build_loop(
 /// Read each boundary without allocating intermediate faces. `owner` is the containing
 /// declaration's name, so inline and named sections use the same relative source paths.
 pub(super) fn build_face(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    owner: &str,
+    stmt: StmtId,
+    span: Span,
+    diags: &mut Vec<Diag>,
+) -> Option<usize> {
+    // a face refused after its walk minted a curve's stretch leaves no stretch behind
+    let curves = sk.curves.len();
+    let built = build_face_whole(sk, res, d, owner, stmt, span, diags);
+    if built.is_none() { sk.curves.truncate(curves); }
+    built
+}
+
+fn build_face_whole(
     sk: &mut Sketch,
     res: &Resolver,
     d: &Decl,

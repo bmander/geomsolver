@@ -26,7 +26,8 @@
 //!
 //! **A body with no swept cut** is read through the Rust kernel's exact B-rep of its CAD recipe
 //! (`Exact`): the foot on each face where it lies within the face, else the nearest point of an
-//! edge, signed by the B-rep's own classification of the point. That B-rep holds a stretch of a
+//! edge, signed by the B-rep's own classification of the point. A body the kernel refuses by name
+//! falls back to its turned faces; a loft is not metered, its material field refusing it. That B-rep holds a stretch of a
 //! traced or formula curve as the B-spline the recipe fits within `cad::FIT_MM` of it; the field
 //! route reads the curve itself (as chords within `CHORD_SLACK` of the profile's reach).
 //!
@@ -278,11 +279,13 @@ impl Meter {
             }
             _ => { statics.push(body as u32); read(body as u32)? }
         };
-        // a body with no swept cut: its exact B-rep is the analytic route
+        // a body with no swept cut: its exact B-rep is the analytic route, where the kernel builds
+        // it (one it refuses by name is read through its turned faces, as before)
         if cuts.is_empty() {
-            let exact = Exact::read(sk,body)?;
-            let field = MaterialField::read(sk,body,tol)?;
-            return Ok(Self {surfaces:exact.names(),exact:Some(exact),blank,faces:Vec::new(),sweeps:Vec::new(),field,options})
+            if let Ok(exact) = Exact::read(sk,body) {
+                let field = MaterialField::read(sk,body,tol)?;
+                return Ok(Self {surfaces:exact.names(),exact:Some(exact),blank,faces:Vec::new(),sweeps:Vec::new(),field,options})
+            }
         }
         let mut surfaces = Vec::new();
         let mut faces = Vec::new();

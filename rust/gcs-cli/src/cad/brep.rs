@@ -38,7 +38,8 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     let mut staged = output::Staged::new();
     if let Some(path) = step {
         let started = std::time::Instant::now();
-        let text = brep::step::write(&solid,&name,tolerance.map_or(1e-4,|t| t.deflection()*0.1));
+        let text = brep::step::write(&solid,&name,tolerance.map_or(1e-4,|t| t.deflection()*0.1))
+            .map_err(|e| ExportRefusal::at(Stage::Step,e))?;
         // the file parsed back and checked against the solid: every reference, the topology's
         // counts, units, and each face's surface and its numbers
         let verified = step_check::verify(&text,&step_check::Solid::of(&solid))

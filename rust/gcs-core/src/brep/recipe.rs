@@ -27,9 +27,8 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
         "loft" => {
             let g = field(n,"guide")?;
             let guide = match field(g,"kind")?.as_str() {
-                "line" => Guide::Line {start:vec3(field(g,"start")?),delta:vec3(field(g,"delta")?)},
-                "arc" => Guide::Arc {center:vec3(field(g,"center")?),axis:vec3(field(g,"axis")?),start:vec3(field(g,"start")?),
-                    angle:field(g,"angle")?.as_f64()},
+                "line" => Guide::Line {delta:vec3(field(g,"delta")?)},
+                "arc" => Guide::Arc {center:vec3(field(g,"center")?),axis:vec3(field(g,"axis")?),angle:field(g,"angle")?.as_f64()},
                 k => return Err(format!("recipe: a guide of kind `{k}`")),
             };
             let end = n.get("end").map(Profile::from_json).transpose()?;

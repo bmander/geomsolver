@@ -148,6 +148,16 @@ fn cross2(a: Meridian,b: Meridian,tol: f64) -> Option<Vec<[f64;2]>> {
     Some(pts.into_iter().filter(|q| q[0] >= -tol).collect())
 }
 
+/// Whether two swept curves are one curve once `seen` takes out the motion that sweeps them: the
+/// same degree and knots and poles within `tol`, or else equal outright.
+fn same_curve(c: &Curve,d: &Curve,tol: f64,seen: &dyn Fn(V) -> V) -> bool {
+    match (c,d) {
+        (Curve::BSpline(a),Curve::BSpline(b)) => a.degree == b.degree && a.knots == b.knots
+            && a.poles.len() == b.poles.len() && a.poles.iter().zip(&b.poles).all(|(&p,&q)| norm(sub(seen(p),seen(q))) <= tol),
+        _ => c == d,
+    }
+}
+
 /// Whether two surfaces are the same surface, to `tol`.
 pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
     let (f,g) = (a.frame(),b.frame());
@@ -169,8 +179,12 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
         }
         // a curve swept along one direction, or turned about one axis, as the other is (a face
         // of the same profile, copied or cut): the same curve and the same line
-        (Surface::Extrusion(_,c),Surface::Extrusion(_,d)) => parallel && c == d,
-        (Surface::Revolution(_,c),Surface::Revolution(_,d)) => parallel && on_axis && c == d,
+        // (moved along the sweep, or turned about the axis, a B-spline's poles are where they were
+        // with that motion taken out: along the direction, or to their meridian (ρ, z))
+        (Surface::Extrusion(_,c),Surface::Extrusion(_,d)) => parallel
+            && same_curve(&c,&d,tol,&|p| sub(p,scale(f.z,dot(p,f.z)))),
+        (Surface::Revolution(_,c),Surface::Revolution(_,d)) => parallel && on_axis
+            && same_curve(&c,&d,tol,&|p| { let q = sub(p,f.o); let h = dot(q,f.z); [norm(sub(q,scale(f.z,h))),h,0.] }),
         _ => false,
     }
 }

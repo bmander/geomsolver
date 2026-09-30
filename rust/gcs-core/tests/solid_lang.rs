@@ -1222,4 +1222,7 @@ fn a_curve_in_a_face_is_a_stretch_between_points_held_on_it() {
     refused(&format!("{PARABOLA}face f(k from a to a, -> close)\n"), Code::E080, "to itself");
     refused(&format!("{PARABOLA}line l(a, c)\nface f(l from a to c, -> close)\n"), Code::E080, "runs along a curve");
     refused(&format!("{PARABOLA}face f(k from a to b, k from b to a)\n"), Code::E080, "twice");
+    // and a face refused after minting one stretch leaves no stretch behind
+    let (prog, _) = parse(&format!("{PARABOLA}face f(k from a to b, k from b to a)\n"));
+    assert_eq!(elaborate(&prog).sketch.curves.len(), 1);
 }

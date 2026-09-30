@@ -35,35 +35,35 @@ impl Out {
         let (o,z,x) = (self.point(f.o),self.direction(f.z),self.direction(f.x));
         self.add(format!("AXIS2_PLACEMENT_3D('',#{o},#{z},#{x})"))
     }
-    fn surface(&mut self,s: &Surface) -> usize {
+    fn surface(&mut self,s: &Surface) -> Result<usize,String> {
         match s {
             Surface::Extrusion(f,c) => {
                 let c = self.swept(c);
                 let d = self.direction(f.z);
                 let v = self.add(format!("VECTOR('',#{d},1.)"));
-                return self.add(format!("SURFACE_OF_LINEAR_EXTRUSION('',#{c},#{v})"))
+                return Ok(self.add(format!("SURFACE_OF_LINEAR_EXTRUSION('',#{c},#{v})")))
             }
             Surface::Blend(_,b) => {
-                let net = blend_net(b);
+                let net = blend_net(b)?;
                 let rows: Vec<String> = net.poles.iter().map(|col| {
                     let ids: Vec<String> = col.iter().map(|&p| format!("#{}",self.point(p))).collect();
                     format!("({})",ids.join(","))
                 }).collect();
                 let (uk,vk) = (super::nurbs::distinct(&net.uknots),super::nurbs::distinct(&net.vknots));
                 let list = |k: &[(f64,usize)],f: &dyn Fn(&(f64,usize)) -> String| k.iter().map(f).collect::<Vec<_>>().join(",");
-                return self.add(format!("B_SPLINE_SURFACE_WITH_KNOTS('',{},{},({}),.UNSPECIFIED.,.F.,.F.,.F.,({}),({}),({}),({}),.UNSPECIFIED.)",
+                return Ok(self.add(format!("B_SPLINE_SURFACE_WITH_KNOTS('',{},{},({}),.UNSPECIFIED.,.F.,.F.,.F.,({}),({}),({}),({}),.UNSPECIFIED.)",
                     net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
-                    list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0))))
+                    list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0)))))
             }
             Surface::Revolution(f,c) => {
                 let c = self.swept(c);
                 let (o,z) = (self.point(f.o),self.direction(f.z));
                 let a = self.add(format!("AXIS1_PLACEMENT('',#{o},#{z})"));
-                return self.add(format!("SURFACE_OF_REVOLUTION('',#{c},#{a})"))
+                return Ok(self.add(format!("SURFACE_OF_REVOLUTION('',#{c},#{a})")))
             }
             _ => {}
         }
-        match *s {
+        Ok(match *s {
             Surface::Plane(f) => { let a = self.placement(&f); self.add(format!("PLANE('',#{a})")) }
             Surface::Cylinder(f,r) => { let a = self.placement(&f); self.add(format!("CYLINDRICAL_SURFACE('',#{a},{})",real(r))) }
             Surface::Cone(f,r,a) => {
@@ -78,8 +78,8 @@ impl Out {
                 let a = self.placement(&f);
                 self.add(format!("TOROIDAL_SURFACE('',#{a},{},{})",real(big),real(r)))
             }
-            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) => unreachable!(),
-        }
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) => unreachable!("written above"),
+        })
     }
     /// The curve a swept surface sweeps (a B-spline, as a profile gives one).
     fn swept(&mut self,c: &Curve) -> usize {
@@ -92,8 +92,7 @@ impl Out {
 /// A B-spline of `degree` through the poles `ids` over the full knot vector `knots` (written as
 /// its distinct knots and their multiplicities).
 fn spline(o: &mut Out,degree: usize,ids: &[String],knots: &[f64]) -> usize {
-    let mut distinct: Vec<(f64,usize)> = Vec::new();
-    for &k in knots { match distinct.last_mut() { Some((x,n)) if *x == k => *n += 1,_ => distinct.push((k,1)) } }
+    let distinct = super::nurbs::distinct(knots);
     let mults: Vec<String> = distinct.iter().map(|d| d.1.to_string()).collect();
     let ks: Vec<String> = distinct.iter().map(|d| real(d.0)).collect();
     o.add(format!("B_SPLINE_CURVE_WITH_KNOTS('',{degree},({}),.UNSPECIFIED.,.F.,.F.,({}),({}),.UNSPECIFIED.)",
@@ -125,9 +124,14 @@ pub const FIT: f64 = 1e-6;
 
 /// A loft face's B-spline, fitted within `FIT`: cubic across the section, and cubic along the guide
 /// where it turns or linear where it runs straight (a blend carried along a line is linear in `v`).
-pub fn blend_net(b: &super::geom::Blend) -> super::nurbs::Net {
+/// Refused where no net the fit may grow to comes within `FIT`, rather than written further off.
+pub fn blend_net(b: &super::geom::Blend) -> Result<super::nurbs::Net,String> {
     let (dv,nv) = match b.carry { super::geom::Carry::Line {..} => (1,1),super::geom::Carry::Arc {..} => (3,4) };
-    super::nurbs::fit_net(&|u,v| b.d1([u,v]).0,3,dv,8,nv,FIT).expect("a loft face's fit").0
+    match super::nurbs::fit_net(&|u,v| b.d1([u,v]).0,3,dv,8,nv,FIT) {
+        Some((net,err)) if err <= FIT => Ok(net),
+        Some((_,err)) => Err(format!("a loft face is fitted no nearer than {err:.3e} mm to its surface, past the file's {FIT:e}")),
+        None => Err("a loft face could not be fitted (its surface is degenerate)".into()),
+    }
 }
 
 /// A B-spline surface's numbers as a reader of the file compares them: its degrees, the size of
@@ -238,7 +242,8 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
 }
 
 /// The solid as a STEP file, `name` its product's.
-pub fn write(b: &Brep,name: &str,tol: f64) -> String {
+/// Refused where a loft's face or rail cannot be fitted within `FIT`.
+pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
     let mut o = Out {text:String::new(),next:1};
     let context = o.add("APPLICATION_CONTEXT('core data for automotive mechanical design processes')".into());
     o.add(format!("APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,#{context})"));
@@ -264,10 +269,10 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> String {
     let vertices: Vec<usize> = b.vertices.iter().zip(&wanted).map(|(v,&w)| if w {
         let p = o.point(v.p); o.add(format!("VERTEX_POINT('',#{p})"))
     } else { 0 }).collect();
-    let surfaces: Vec<usize> = b.faces.iter().map(|f| o.surface(&f.surface)).collect();
+    let surfaces: Vec<usize> = b.faces.iter().map(|f| o.surface(&f.surface)).collect::<Result<_,_>>()?;
     let context2 = o.add("( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('2D SPACE','') )".into());
-    let edges: Vec<Option<usize>> = b.edges.iter().enumerate().map(|(ei,e)| {
-        let EdgeCurve::Curve(c) = &e.curve else { return None };
+    let edges: Vec<Option<usize>> = b.edges.iter().enumerate().map(|(ei,e)| -> Result<Option<usize>,String> {
+        let EdgeCurve::Curve(c) = &e.curve else { return Ok(None) };
         let curve = match c {
             Curve::Line {p,d} => {
                 let (p,d) = (o.point(*p),o.direction(*d));
@@ -282,7 +287,11 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> String {
             }
             // a loft's rail: the cubic through it, fitted within `FIT`, its parameter the rail's
             Curve::Iso(bl,u) => {
-                let (fit,_) = super::nurbs::fit_curve(&|v| bl.d1([*u,v]).0,3,8,FIT).expect("a rail's fit");
+                let fit = match super::nurbs::fit_curve(&|v| bl.d1([*u,v]).0,3,8,FIT) {
+                    Some((fit,err)) if err <= FIT => fit,
+                    Some((_,err)) => return Err(format!("a loft's rail is fitted no nearer than {err:.3e} mm, past the file's {FIT:e}")),
+                    None => return Err("a loft's rail could not be fitted (it is degenerate)".into()),
+                };
                 let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
                 spline(&mut o,fit.degree,&ids,&fit.knots)
             }
@@ -298,8 +307,8 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> String {
         let pcurves: Vec<String> = uses.iter().map(|&(fi,u)| format!("#{}",pcurve(&mut o,b,fi,u,surfaces[fi],context2,tol))).collect();
         let seam = uses.len() == 2 && uses[0].0 == uses[1].0;
         let geometry = o.add(format!("{}('',#{curve},({}),.PCURVE_S1.)",if seam { "SEAM_CURVE" } else { "SURFACE_CURVE" },pcurves.join(",")));
-        Some(o.add(format!("EDGE_CURVE('',#{},#{},#{geometry},.T.)",vertices[e.v[0] as usize],vertices[e.v[1] as usize])))
-    }).collect();
+        Ok(Some(o.add(format!("EDGE_CURVE('',#{},#{},#{geometry},.T.)",vertices[e.v[0] as usize],vertices[e.v[1] as usize]))))
+    }).collect::<Result<_,_>>()?;
     let mut faces = Vec::new();
     for (fi,f) in b.faces.iter().enumerate() {
         let surface = surfaces[fi];
@@ -321,6 +330,6 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> String {
     let origin = o.placement(&Frame {o:[0.;3],x:[1.,0.,0.],y:[0.,1.,0.],z:[0.,0.,1.]});
     let rep = o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{origin},#{solid}),#{gctx})"));
     o.add(format!("SHAPE_DEFINITION_REPRESENTATION(#{shape},#{rep})"));
-    format!("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('Solvent model'),'2;1');\nFILE_NAME('{name}','',(''),(''),'Solvent','Solvent','');\n\
-        FILE_SCHEMA(('AUTOMOTIVE_DESIGN {{ 1 0 10303 214 1 1 1 1 }}'));\nENDSEC;\nDATA;\n{}ENDSEC;\nEND-ISO-10303-21;\n",o.text)
+    Ok(format!("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('Solvent model'),'2;1');\nFILE_NAME('{name}','',(''),(''),'Solvent','Solvent','');\n\
+        FILE_SCHEMA(('AUTOMOTIVE_DESIGN {{ 1 0 10303 214 1 1 1 1 }}'));\nENDSEC;\nDATA;\n{}ENDSEC;\nEND-ISO-10303-21;\n",o.text))
 }

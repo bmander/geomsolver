@@ -108,6 +108,18 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
             let params = sk.entity_params(*e);
             v.push(params.len() as f64);
             v.extend(params.iter().map(|&p| sk.params[p as usize].value));
+            // a curve's stretch moves with more than its arguments: the contacts its interval is
+            // read from, the unknown its trace is anchored at, the pose it starts from, and the
+            // points it runs between (what `Sketch::curve_polyline` keys on, and the ends)
+            if e.kind == EntKind::Curve {
+                let (a, b) = sk.curve_domain(e.i());
+                v.extend(sk.curve_vars(e.i(), a));
+                v.extend([b, sk.curve_home(e.i())]);
+                v.extend(sk.curve_pose(e.i()).unwrap_or_default());
+                if let Some((p, q)) = ends {
+                    for i in [p, q] { let (x, y) = sk.point_xy(i as usize); v.extend([x, y]); }
+                }
+            }
         }
     }
     if let Some(p) = plane {
