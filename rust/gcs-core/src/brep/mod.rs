@@ -5,4 +5,6 @@ pub mod geom;
 pub mod topo;
 pub mod build;
 pub mod props;
+pub mod query;
+pub mod ssi;
 pub mod recipe;

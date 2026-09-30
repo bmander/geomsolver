@@ -9,32 +9,6 @@ use std::collections::BTreeMap;
 fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
 fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(format!("recipe: no `{k}`")) }
 
-/// A box about every point of the boundary: the corners of its faces' parameter boxes and a
-/// grid across each (for a face of revolution, the bulge between its edges), so it may be larger
-/// than the solid but is never smaller than its vertices and edges.
-pub fn bounds(b: &Brep) -> ([f64;3],[f64;3]) {
-    let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
-    let mut grow = |p: V| for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); };
-    for v in &b.vertices { grow(v.p); }
-    for f in &b.faces {
-        let (mut ulo,mut uhi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
-        for l in &f.loops { for c in l {
-            let e = &b.edges[c.edge as usize];
-            for j in 0..=16 {
-                let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/16.;
-                grow(e.point(t,&b.vertices));
-                let uv = c.pcurve.at(t,e,&f.surface,&b.vertices);
-                for k in 0..2 { ulo[k] = ulo[k].min(uv[k]); uhi[k] = uhi[k].max(uv[k]); }
-            }
-        } }
-        for i in 0..=16 { for j in 0..=16 {
-            let uv = [ulo[0]+(uhi[0]-ulo[0])*i as f64/16.,ulo[1]+(uhi[1]-ulo[1])*j as f64/16.];
-            grow(f.surface.point(uv));
-        } }
-    }
-    (lo,hi)
-}
-
 /// One node of a recipe built from the nodes before it; `Err` names what this kernel does not
 /// build yet.
 pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> {
@@ -57,7 +31,7 @@ pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> {
             let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
             for s in field(n,"sources")?.arr() {
                 let b = built.get(&s.as_i64()).ok_or("recipe: a `through` source not built before it")?;
-                let (a,z) = bounds(b);
+                let (a,z) = b.bounds();
                 for k in 0..3 { lo[k] = lo[k].min(a[k]); hi[k] = hi[k].max(z[k]); }
             }
             let (nrm,o) = (crate::space::scale(profile.normal,1./crate::space::norm(profile.normal)),profile.origin);

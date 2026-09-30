@@ -152,6 +152,29 @@ impl Surface {
             Surface::Torus(_,big,_) => [u,wrap(z.atan2(rho-big))],
         }
     }
+    /// A signed distance whose zero set is the surface (for a cone, the one sheet `ρ ≥ 0` its
+    /// parameters reach), positive on the side its normal points to: exact for all but the cone,
+    /// whose value is the distance to its generating line in the meridian half-plane.
+    pub fn implicit(&self,p: V) -> f64 {
+        let [x,y,z] = self.frame().local(p);
+        let rho = x.hypot(y);
+        match *self {
+            Surface::Plane(_) => z,
+            Surface::Cylinder(_,r) => rho-r,
+            Surface::Cone(_,r,a) => { let (sa,ca) = a.sin_cos(); (rho-r)*ca-z*sa }
+            Surface::Sphere(_,r) => rho.hypot(z)-r,
+            Surface::Torus(_,big,r) => (rho-big).hypot(z)-r,
+        }
+    }
+    /// The length over which the surface turns appreciably, for sampling a curve against it
+    /// (infinite for a plane).
+    pub fn feature(&self) -> f64 {
+        match *self {
+            Surface::Plane(_) => f64::INFINITY,
+            Surface::Cylinder(_,r) | Surface::Sphere(_,r) | Surface::Torus(_,_,r) => r,
+            Surface::Cone(_,r,_) => r.max(f64::MIN_POSITIVE),
+        }
+    }
     pub fn moved(&self,m: &Rigid) -> Surface {
         match *self {
             Surface::Plane(f) => Surface::Plane(f.moved(m)),
@@ -224,6 +247,11 @@ impl Curve {
                 wrap(t)
             }
         }
+    }
+    /// The curve's length per unit of parameter (its speed, where it is constant; an ellipse's
+    /// greatest).
+    pub fn speed(&self) -> f64 {
+        match *self { Curve::Line {..} => 1.,Curve::Circle(_,r) => r,Curve::Ellipse(_,a,b) => a.max(b) }
     }
     pub fn moved(&self,m: &Rigid) -> Curve {
         match *self {
