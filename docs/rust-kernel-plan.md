@@ -92,16 +92,56 @@ arithmetic; our own dense linear algebra. And in the CLI: the STEP parser and ve
 - **Geometry.** `enum Surface { Plane, Cone, Sphere, Cylinder, Torus, Revolution(profile),
   BSpline }` and `enum Curve { Line, Circle, BSpline }`, each evaluating position and first two
   derivatives; analytic surfaces keep their closed-form inverse (point → (u, v)).
-- **Tolerance model.** One `solid::export::Tolerance` states the bars, as today. Intersection
-  curves are traced to a fraction of it and fitted to B-splines within another fraction; the meter
-  reads the finished file, as today.
+- **Tolerance model.** Two tolerances, never one. The **export's bar** (`solid::export::Tolerance`,
+  as today: 10 µm) is what the finished file is held to, read by the meter. The **construction
+  tolerance** (OCCT's is its Boolean fuzzy value, 1e-5 mm) is what the kernel merges within while
+  it builds: vertices closer than it are one vertex, an edge shorter than it is none. An edge far
+  shorter than the bar but longer than the construction tolerance is an ordinary edge — the 10 µm
+  pinion has one of 0.5 µm (phase 0) — and rung 1's rule refusing an edge shorter than the bar
+  gives way to this. Intersection curves are traced to a fraction of the bar and fitted to
+  B-splines within another fraction, as before.
 - **Robustness.** Parameter-domain arrangements (a face split by its intersection curves) use
   exact 2D orientation (added beside `delaunay::predicates`) on polyline approximations whose
   distance to the true curves is bounded; the refinement of a curve near a crossing is driven by
   the predicate's doubt, not by a fixed count.
-- **The oracle.** A slow-tier harness builds each stage both ways and compares: volume to 1e-9,
-  face and edge counts, faces by surface kind, the STEP read back by OCCT, the meter. OCCT stays a
-  CLI feature for that harness only, until the last stage retires it from the export.
+- **The oracle.** A slow-tier harness builds each stage both ways and compares face and edge
+  counts, faces by surface kind, the STEP read back by OCCT and the meter. Volumes agree to 1e-9
+  where both kernels' surfaces are analytic; on B-spline and swept-spline faces OCCT's own
+  integration is off by 4e-8 to 2e-6 (rung 2), so there the gate is this kernel's volume against
+  closed forms where they exist, the meter, and OCCT's volume only to ~1e-5, as a gross check.
+  OCCT stays a CLI feature for that harness only, until the last stage retires it from the export.
+
+## Revisions after rungs 1–2 and phase 0 (2026-09-30)
+
+The ladder's first two rungs were climbed before the phases, and phase 0 measured the export. What
+they taught, and where the plan now says it:
+
+1. **Phase 1 is smaller, and has a risk the plan did not size: the mesher's speed.** The B-rep, the
+   STEP writer, the mesher and the volume exist (rungs 1–2); phase 1 is now B-spline surfaces, the
+   converter from OCCT's shape and per-edge tolerances. But the mesher's Delaunay insertion scans
+   every triangle for each point it adds, and the gear's STL is 776,000 triangles (16,000 a
+   sector, turned into the rest). Point location comes first (Phase 1).
+2. **Two tolerances.** A 0.5 µm edge in a correct 10 µm pinion means the B-rep merges within a
+   construction tolerance and measures its edges against it, and holds the file to the bar
+   separately (Design: tolerance model). The same model is what the crown cutters rung 1 refused
+   needed.
+3. **OCCT is no 1e-9 volume oracle on spline faces** (4e-8 to 2e-6 off where this kernel meets the
+   closed forms to 1e-9). The gates of phases 1, 3 and 4 read closed forms and the meter there,
+   and OCCT's volume only as a gross check (Design: the oracle).
+4. **Phase 4 is less risky than written.** Its intersections are three transversal kinds, never
+   under 17.8°: a sheet against the blank's cones and spheres (the contour in the sheet's domain
+   the phase already proposes) and two or three sheet × sheet curves. No general B-spline ×
+   B-spline intersection is needed for the gear (Phase 4).
+5. **Phase 3's cutters in 2D are required, not a nicety.** Every near-tangent pair the export
+   meets (tori at 0°) is in the cutters' construction, so the meridian-plane route must handle
+   tangent circles exactly; it also removes the cutters' plane sections, about 11 s of thread time
+   on the gear (Phase 3).
+6. **The faceted kernel drifts from the exact one.** Rung 2 found three places they disagreed
+   (splines lofted as chords, twisted lofts 26% light, loft pairing). Until rung 3 retires it, the
+   oracle compares the two on every root at a bar tied to the faceting rather than a flat 0.5%
+   (Rung 3).
+7. **The sizing was far too high.** Rungs 1–2 came to about 5,900 lines (4,500 of source) against
+   the 13–25k estimated for them (Sizing).
 
 ## Phases
 
@@ -125,20 +165,84 @@ the most OCCT for the least risk. Phase 0 measures before any code is committed 
 - **Exit:** a table per stage and per Boolean, here; a go/no-go on phase 4 and on each rung, with
   the estimated size of each.
 
+#### Phase 0 — done (2026-09-30)
+
+Measured by a probe in the native backend (`backend/probe.hpp`): with `SOLVENT_ABI_TRACE` naming a
+file, every entry point's time and thread, every Boolean's face pairs read from OCCT's own
+interference table (`BOPDS_InterfFF`: the pairs that met, each curve's length, the least angle
+between the two surfaces along it, OCCT's tangency flag), the exported shape's smallest face and
+edge, and each export stage marked when it completes on the same clock. `tools/abi_trace.py`
+turns a log into the tables below. Both members at the gross bar and at 10 µm, and the static
+goldens (`solid_flange`, `solid_pulley`, `solid_tray`, `solid_indexed_pattern`; `solid_elbow`
+and `solid_loft` are lofts, which OCCT never built and this kernel does since rung 2).
+
+**Where the time goes** (10 µm; a stage's native seconds summed over its threads):
+
+| stage | pinion, done at | pinion native | gear, done at | gear native | what |
+|---|---|---|---|---|---|
+| blank, reach, admission, sheets, fit, clearance | 3.9 s | 2.9 s | 4.4 s | 17.4 s | the cutters' meridian sections (`section`, 44 and 636 calls: 0.6 s and 10.8 s), point-in-solid, 80–190k `face_normal` |
+| **split** | 14.2 s | 8.8 s + 2.0 s (tools' fuse) | 13.7 s | 6.3 s + 2.4 s | the sector split by its sheets — half the export |
+| classify | 14.4 s | 0.2 s | 14.0 s | 0.2 s | ray parity |
+| fuse, mesh | 17.5 s | 4.9 s | 17.4 s | 5.3 s | the pattern, its check, the sector's mesh |
+| STEP | 16.3 s | 1.1 s | 20.0 s | 3.9 s | OCCT's writer |
+
+The statics take 0.1–0.2 s each, a third of it the STL.
+
+**What the Booleans meet.** The sector split (and the fuse of its tools) is the whole of phase
+4's vocabulary, and it is small and well conditioned:
+
+| surfaces meeting in the split | pinion curves | gear curves | least angle | shortest curve |
+|---|---|---|---|---|
+| B-spline sheet × cone (the blank's cones) | 20–25 | 20 | 25.5° / 27.0° | 2 µm (pinion, 10 µm) / 0.29 mm |
+| B-spline × sphere (the end spheres) | 8–11 | 8 | 37.5° / 59.5° | 60 µm / 4.5 mm |
+| B-spline × B-spline (removal × relief) | 2 | 3 | 17.8° / 25.7° | 22 mm / 4 mm |
+
+No pair in the split is tangent or under 17.8°; OCCT flagged no tangent faces anywhere. The
+near-tangent pairs the exports do meet (torus × torus and plane × torus at 0°, cone × plane at 7°)
+are all in the *cutters'* construction — the crown bounded by its turned neighbour (`body bound`),
+and the plane sections that read a cutter's meridian — which phase 3 does in the meridian plane in
+2D, and which rung 1 refuses in 3D. The other Booleans are the clearance commons (plane × cone,
+plane × sphere: the sector's half-planes), the seam's ring pieces (cone × plane) and the recipe's
+body cuts, which met nothing.
+
+**The smallest pieces.** Exported, the pinion has 147 faces (73 cones, 2 spheres, 72 B-splines)
+and the gear 291 (145, 2, 144); the smallest faces are 0.30 and 0.38 mm². The pinion's shortest
+edge at 10 µm is **0.5 µm** (8 µm at the gross bar), the gear's 13 µm — edges shorter than the
+export's own tolerance, which OCCT keeps (its split runs at a fuzzy 1e-5 mm) and rung 1's rule
+would refuse.
+
+**Go, with one finding.** Phase 4 is a go: its intersections are three transversal kinds, each a
+scalar contour in the sheet's domain against a surface of revolution about the member's axis
+(cone, sphere) or a well-conditioned sheet pair, a few dozen curves per member. The finding is the
+tolerance model: a construction tolerance (OCCT's 1e-5 mm) apart from the export's bar, so that
+a 0.5 µm edge is kept and merged within the construction tolerance rather than refused against the
+bar. The same model is what the crown cutters needed in rung 1, and phase 3's 2D cutters avoid the
+3D near-tangencies altogether. Phases 1–3 stand as planned: the pattern, the blank (a meridian
+region turned once — 0.05 s now), the sheets' fits (0.6–0.8 s) and the STEP writer (1–4 s) are
+each small. Rung 3 needs nothing from these numbers.
+
 ### Phase 1 — the B-rep, the STEP writer and the mesher, fed by OCCT
 
-- `brep/`: topology, geometry, evaluation; a converter from OCCT's finished shape (through the
-  existing `brep_summary`-style ABI, extended to curves, pcurves and B-spline data) into ours.
-- The STEP writer (AP214 `MANIFOLD_SOLID_BREP`/`ADVANCED_FACE`), checked by our parser and by
-  OCCT's read-back.
-- The mesher: constrained Delaunay in each face's parameter domain (2D, exact predicates), edges
-  discretised once and shared by both faces, refined until each triangle's **measured** sag is
-  within the bar — the bound OCCT's deflection never was; the sector's mesh turned into its copies
-  as today (`sector_stl`'s seam pairing becomes identity, since the copies share edges).
-- Volume by the divergence theorem over trimmed faces (Gauss quadrature in each face's domain).
-- **Gate:** for both members at both bars, our STEP of OCCT's shape verifies and reads back in
-  OCCT with the same volume (1e-9) and faces; our STL passes the shell checks and the meter within
-  the tolerance; the pair check unchanged within 0.1 µm. Time the file stages against phase 6's.
+What rungs 1–2 built stands (`brep/`: topology, geometry, the STEP writer checked by `step_check`,
+the mesher to a measured sag, volume by Green's theorem). What the gear adds:
+
+- **B-spline surfaces**: `Surface::BSpline` (tensor, non-rational, as the fitted sheets are), with
+  evaluation, its inverse by Newton from a grid, and its signed distance; and B-spline pcurves,
+  since OCCT's edges on a sheet carry arbitrary 2D curves in its parameters.
+- **The converter** from OCCT's finished shape into ours, through the `brep_summary`-style ABI
+  extended to surfaces' data (B-spline poles and knots), edge curves and pcurves.
+- **Per-edge tolerances** in the B-rep: each edge's measured gap between its 3D curve and its
+  pcurves' images, checked against the construction tolerance (Design), not one tolerance for all.
+- **The mesher's point location**: an insertion that walks to the triangle holding the point
+  instead of scanning every triangle, so a sector's 16,000 triangles (and the whole gear's
+  776,000, meshed whole as a check) take the time they should; measured against `BRepMesh`.
+  The sector's mesh turned into its copies as today (`sector_stl`'s seam pairing becomes
+  identity, since the copies share edges).
+- **Gate:** for both members at both bars, our STEP of OCCT's shape verifies (`step_check`) and
+  reads back in OCCT as a valid solid with the same faces and a volume within ~1e-5 (OCCT's
+  integration of sheets being no finer); our volume against OCCT's to its own integration's width;
+  our STL passes the shell checks and the meter within the tolerance; the pair check unchanged
+  within 0.1 µm. Time the file stages against phase 6's.
 
 ### Phase 2 — the pattern, built with shared topology
 
@@ -156,16 +260,21 @@ the most OCCT for the least risk. Phase 0 measures before any code is committed 
   `Plane`, `Cylinder`, `Torus` by the edge's relation to the axis).
 - The cutters' meridian profiles: a revolved cutter's section is its own profile; the gear's
   cutters (a crown bounded by its turned neighbour) are 2D Booleans of their profiles in the
-  common meridian plane where the neighbour's turn allows, otherwise refused by name.
+  common meridian plane. This route is **required**: every near-tangent pair the export meets
+  (the crowns' fillet tori at 0°, phase 0) is in these cutters, and in the plane they are two
+  circles tangent, which exact 2D predicates decide where a 3D intersection cannot. It also
+  replaces the cutters' plane sections (636 `section` calls on the gear, 11 s of thread time).
 - Sheet fitting (`fit.rs`'s chord-length and centripetal grids) and the sector sides' fits, by our
   least squares; projection and feet by Newton on the B-spline.
-- **Gate:** the blank's volume and faces equal OCCT's (1e-9); every sheet fits its withheld
+- **Gate:** the blank's volume and faces equal OCCT's (1e-9: all analytic); every sheet fits its withheld
   contacts as OCCT's did (the fit report the same to the bar); the exports unchanged by the oracle.
 
 ### Phase 4 — the sector's split
 
-The hard phase. The sector is the blank between two fitted sides, split by its sheets into cells,
-one kept (phase 6 of the speed plan: five cells, one material).
+The phase with the most code, though phase 0 made it smaller: the split meets only a sheet
+against the blank's cones and spheres and two or three sheet × sheet curves, all transversal
+(17.8° and up), a few dozen curves a member. The sector is the blank between two fitted sides,
+split by its sheets into cells, one kept (phase 6 of the speed plan: five cells, one material).
 
 - **Sheet × blank face.** Every blank face is a surface of revolution about the member's axis:
   a curve f(r, z) = 0 in the meridian plane. A sheet point S(u, v) is on it where
@@ -174,17 +283,17 @@ one kept (phase 6 of the speed plan: five cells, one material).
   continuation, refined by Newton, fitted as a pcurve in the sheet and a B-spline in space, with
   the blank face's pcurve read off by the closed-form inverse. No surface–surface machinery.
 - **Sheet × sheet and sheet × side** (the removal against the relief; each sheet against the two
-  sides): true B-spline/B-spline intersections, a handful per sector and well conditioned where
-  phase 0 says they are. Subdivision of the two control nets to seed, marching on the two surface
+  sides): true B-spline/B-spline intersections, two or three per member and at 17.8° or more
+  (phase 0). Subdivision of the two control nets to seed, marching on the two surface
   equations to trace (the DogLeg loop, as the seams already do), both pcurves kept.
 - **The arrangement.** Each face's domain split by its curves (exact 2D predicates), the pieces
   assembled into cells with shared edges, each cell classified by ray parity (as today) and the
   material cell kept by the field (`MaterialEvaluator::probe`, as today).
-- **Refusals.** A tangential or near-tangential intersection (the angle below a bar phase 0
-  sets), a curve that leaves its face's domain unexpectedly, an arrangement whose pieces do not
+- **Refusals.** A tangential or near-tangential intersection (the angle under a few degrees:
+  the split meets none under 17.8°), a curve that leaves its face's domain unexpectedly, an arrangement whose pieces do not
   close: each refused with a witness, the export falling back to OCCT while it exists.
-- **Gate:** both members at both bars built without OCCT: faces and volume equal OCCT's (volume
-  1e-9 relative; face counts and kinds equal), the field agreement and the meter pass, the STEP
+- **Gate:** both members at both bars built without OCCT: face counts and kinds equal OCCT's,
+  volume to OCCT's integration's width (~1e-5; phase 1), the field agreement and the meter pass, the STEP
   reads back in OCCT, the pair check within 0.1 µm; the 48-design harness
   (`generating_harness.rs`) refuses nothing OCCT built. Time it.
 
@@ -393,6 +502,11 @@ surface, and only a loft's blend is fitted.
 - **Gate:** every sheet's SVG, report and glTF against today's within the faceting (then
   replaced as the new record), `tests/derived.rs` and `tests/sheet.rs`, and the drag benchmarks
   (`make bench`) no slower.
+- **Until then**, two kernels answer the same question, and rung 2 found them disagreeing in
+  three places (splines lofted as chords, twisted lofts 26% light, loft pairing). The oracle
+  compares them on every root at a bar tied to the faceting's own sagitta rather than a flat 0.5%,
+  so a drift is found by a test and not by a closed form written later. Rung 3 is worth taking
+  before phase 5 if the app's answers matter more than the export's schedule.
 
 ### Outside the ladder — continuous sweeps in general
 
@@ -404,23 +518,25 @@ attempt at the rest and was removed. These solids stay on the field mesher — a
 material field, gated by the field agreement — and their STEP stays refused by name. A B-rep for
 them is a research plan of its own, not a rung of this one.
 
-## Sizing (to be replaced by phase 0's numbers)
+## Sizing (revised 2026-09-30, from what was built and measured)
 
-A first guess, in lines of Rust: the B-rep and geometry 3–5k; the STEP writer 1–2k; the mesher
-2–3k; mass properties, projection and classification 1–2k; fitting 1k; the pattern 1k; the blank
-and the cutters 1–2k; **the split 5–10k** — about 15–25k in all, a few months, with phase 4 half
-of the risk. Phases 1–3 are useful on their own: they remove the union, the mesher's workaround
-and the writer's time, and put a verified B-rep in the core even if phase 4 stops.
+The first guess was high. It put rungs 1–2 at 13–25k lines of Rust on top of 3–5k for the B-rep and
+geometry; the B-rep, geometry, Booleans, mesher, STEP writer, lofts and both rungs came to about
+5,900 lines (4,500 of source, 1,400 of tests and the oracle), because a traced intersection (a
+chord pulled onto both surfaces) served where general B-spline intersection was budgeted.
 
-The ladder: rung 1 another 5–10k (analytic intersections, coincident faces, degeneracy refusals),
-rung 2 another 8–15k (general B-spline intersection and its hardening), rung 3 3–5k plus the
-migration of every sheet's record — 30–50k in all to cover every static solid the language
-defines, and months of hardening past the gear. Each rung is decided on its own.
+What remains, on the same evidence: phase 1 1–2k (the B-spline surface and pcurves, the converter,
+per-edge tolerances, point location in the mesher); phase 2 about 1k; phase 3 1–2k (the 2D cutters
+and their tangencies, the fits); phase 4 2–4k (the contour tracer against surfaces of revolution,
+two or three sheet × sheet curves, the arrangement over B-spline faces, the construction-tolerance
+merging); phase 5 under 1k; rung 3 3–5k plus the migration of every sheet's record. Phase 4 is
+still the largest and the riskiest, but it is no longer half of everything.
 
 ## Verification
 
 Every phase: the full and slow suites, the web suite, the corpus and non-native goldens
-byte-identical; the native exports compared with OCCT's by the oracle (volume, faces by kind, the
-read-back), the meter at 10 µm, the field agreement, the pair check. Timings with instructions
+byte-identical; the native exports compared with OCCT's by the oracle (faces by kind, the
+read-back, the volume to 1e-9 on analytic faces and to OCCT's integration's width on spline ones),
+closed forms where they exist, the meter at 10 µm, the field agreement, the pair check. Timings with instructions
 retired, on a quiet machine, against phase 6 of `docs/native-speed-plan.md` (pinion 6.1 and
 9.8 s, gear 8.7 and 10.2 s).

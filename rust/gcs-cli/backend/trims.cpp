@@ -1,6 +1,7 @@
 #include <limits>
 // Queries of native faces and edges: seams, curve points, projections and normals.
 #include "occt.hpp"
+#include "probe.hpp"
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
@@ -64,6 +65,7 @@ extern "C" {
 // Only a full period across the finite face box supplies opposite seam aliases.
 // Spatial incidence is checked separately when a trace actually reaches them.
 int solvent_cad_face_seams(Cad* cad,int id,int* axes) noexcept {
+    SOLVENT_PROBE("solvent_cad_face_seams");
     return guarded(cad,[&] {
         if (!axes) throw std::runtime_error("seam query needs an output buffer");
         const FaceChart chart(cad,id);
@@ -78,6 +80,7 @@ int solvent_cad_face_seams(Cad* cad,int id,int* axes) noexcept {
 // Inspect the actual spatial curve carried by an edge (including its location),
 // with a normalized parameter over its finite range.
 int solvent_cad_curve_point(Cad* cad,int id,double t,double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_curve_point");
     return guarded(cad,[&] {
         if (!output || !std::isfinite(t) || t < 0 || t > 1)
             throw std::runtime_error("edge query needs a buffer and parameter in [0,1]");
@@ -104,6 +107,7 @@ int solvent_cad_curve_point(Cad* cad,int id,double t,double* output) noexcept {
 // global one samples the whole surface.
 int solvent_cad_surface_feet_near(Cad* cad,int id,const double* points,const double* guesses,int count,double trust,
     double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_surface_feet_near");
     return guarded(cad,[&] {
         if (!points || !guesses || !output || count < 0) throw std::runtime_error("surface feet need input and output buffers");
         FaceProjector projector(cad,id);
@@ -137,6 +141,7 @@ int solvent_cad_surface_feet_near(Cad* cad,int id,const double* points,const dou
 // with the projection's distance. No trim test: a point on a face's boundary
 // edge is on the face, whatever a classifier says within its tolerance.
 int solvent_cad_face_normal(Cad* cad,int id,const double* point,double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_face_normal");
     return guarded(cad,[&] {
         if (!point || !output) throw std::runtime_error("normal query needs input and output buffers");
         const FaceChart chart(cad,id);

@@ -1,6 +1,7 @@
 // Cell decomposition of a stock solid by candidate boundary sheets.
 // The kernel arranges; material selection is the caller's, from the source field.
 #include "occt.hpp"
+#include "probe.hpp"
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -89,6 +90,7 @@ public:
 };
 
 static void check_algorithm(BRepAlgoAPI_BuilderAlgo& algorithm,const char* what) {
+    probe::boolean(what,algorithm);
     if (!algorithm.IsDone() || algorithm.HasErrors()) {
         std::ostringstream message;
         message << what << " failed: ";
@@ -227,10 +229,12 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
 // (a gear tip cone against its blank sphere) at a stated cost far below the
 // export accuracy target; it is not a substitute for exact geometry.
 int solvent_cad_split_solid(Cad* cad,int solid,const int* tools,int count) noexcept {
+    SOLVENT_PROBE("solvent_cad_split_solid");
     return solvent_cad_split_solid_fuzzy(cad,solid,tools,count,1e-5);
 }
 // The same split with an explicit fuzzy tolerance.
 int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,double fuzzy) noexcept {
+    SOLVENT_PROBE("solvent_cad_split_solid_fuzzy");
     return guarded(cad,[&] {
         if (!tools || count < 1 || count > 4096)
             throw std::runtime_error("solid split requires 1..4096 tools");
@@ -298,6 +302,7 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
 // one shape: a split by it skips the tools' intersections with each other, which are then made
 // here, beside other work (docs/native-speed-plan.md, phase 6). Same fuzzy value as the split.
 int solvent_cad_fused_tools(Cad* cad,const int* tools,int count) noexcept {
+    SOLVENT_PROBE("solvent_cad_fused_tools");
     return guarded(cad,[&] {
         if (!tools || count < 2 || count > 4096) throw std::runtime_error("fusing split tools needs 2..4096 of them");
         TopTools_ListOfShape arguments;
@@ -313,6 +318,7 @@ int solvent_cad_fused_tools(Cad* cad,const int* tools,int count) noexcept {
 
 // Count first with output=null/capacity=0, then retrieve session-owned handles.
 int solvent_cad_solids(Cad* cad,int source,int* output,int capacity) noexcept {
+    SOLVENT_PROBE("solvent_cad_solids");
     return guarded(cad,[&] {
         TopTools_IndexedMapOfShape solids;
         TopExp::MapShapes(cad->at(source),TopAbs_SOLID,solids);
@@ -543,6 +549,7 @@ static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,in
 // `cell_samples` of several cells, each on its own core: `output` holds `capacity` rows of four a
 // cell, `written` how many of them each cell filled.
 int solvent_cad_solids_samples(Cad* cad,const int* ids,int count,double* output,int capacity,int measure,int* written) noexcept {
+    SOLVENT_PROBE("solvent_cad_solids_samples");
     return guarded(cad,[&] {
         if (!ids || !output || !written || count < 0 || capacity < 1 || measure < 1)
             throw std::runtime_error("solid samples need buffers and positive counts");
@@ -564,6 +571,7 @@ int solvent_cad_solids_samples(Cad* cad,const int* ids,int count,double* output,
 // from the split, so the union removes their common walls; faces lying on one
 // supporting surface are then merged. The result must be one valid closed solid.
 int solvent_cad_fuse(Cad* cad,const int* ids,int count) noexcept {
+    SOLVENT_PROBE("solvent_cad_fuse");
     return guarded(cad,[&] {
         if (!ids || count < 1 || count > 65536)
             throw std::runtime_error("fuse requires 1..65536 solids");
@@ -768,6 +776,7 @@ static std::vector<int> sector_sides(Cad* cad,const TopTools_IndexedMapOfShape& 
 // run beside other work on it (writing its file).
 int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* axis,const double* angles,int count,
     const int* sides,double fuzzy) noexcept {
+    SOLVENT_PROBE("solvent_cad_pattern");
     return guarded(cad,[&] {
         if (!angles || count < 1 || count > 4096) throw std::runtime_error("a pattern needs 1..4096 turns");
         const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
@@ -900,6 +909,7 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
 // A pattern's union (`solvent_cad_pattern`) checked and measured: the handle it keeps, the unified
 // union's where that passes its check, or a new one of the union as it was sewn, where that does.
 int solvent_cad_pattern_check(Cad* cad,int id) noexcept {
+    SOLVENT_PROBE("solvent_cad_pattern_check");
     return guarded(cad,[&] {
         const auto pending = cad->take_pending(id);
         if (!pending) throw std::runtime_error("no pattern's union waits for its check under this handle");
@@ -936,6 +946,7 @@ int solvent_cad_pattern_check(Cad* cad,int id) noexcept {
 // A copy of a stored shape, sharing nothing with it: work on one (a mesh) may run beside work on the
 // other.
 int solvent_cad_copy(Cad* cad,int id) noexcept {
+    SOLVENT_PROBE("solvent_cad_copy");
     return guarded(cad,[&] {
         BRepBuilderAPI_Copy copy(cad->at(id),true);
         if (!copy.IsDone()) throw std::runtime_error("copying a shape failed");
@@ -961,6 +972,7 @@ public:
 // `cancel`: where not null, a flag that abandons the meshing when raised (the call then fails).
 int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,double deflection,double interior,double angular,
     double* output,const int* cancel) noexcept {
+    SOLVENT_PROBE("solvent_cad_sector_mesh");
     return guarded(cad,[&] {
         if (!sides) throw std::runtime_error("a sector's mesh needs its sides");
         if (!std::isfinite(deflection) || deflection <= 0 || !std::isfinite(angular) || angular <= 0)
@@ -1028,6 +1040,7 @@ int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,dou
 // farthest a node is moved to its partner (mm). Returns the triangles written.
 int solvent_cad_sector_stl(Cad* cad,int piece,const int* sides,double fuzzy,const double* origin,const double* axis,
     int count,double pitch,double reach,const char* path,double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_sector_stl");
     return guarded(cad,[&] {
         if (!sides || !origin || !axis || !path || !output || count < 1 || !std::isfinite(pitch) || !(reach > 0))
             throw std::runtime_error("a sector's STL needs its sides, an axis, a count, a pitch, a reach, a path and an output");
@@ -1183,6 +1196,7 @@ int solvent_cad_sector_stl(Cad* cad,int piece,const int* sides,double fuzzy,cons
 // The section is the solid's common with the half-plane bounded by the axis towards `seam`, which is
 // where the faces' parameters start; the caller compares the volumes.
 int solvent_cad_revolved(Cad* cad,int solid,const double* origin,const double* axis,const double* seam) noexcept {
+    SOLVENT_PROBE("solvent_cad_revolved");
     return guarded(cad,[&] {
         const auto& shape = cad->at(solid);
         const gp_Pnt o(origin[0],origin[1],origin[2]);
@@ -1227,6 +1241,7 @@ int solvent_cad_revolved(Cad* cad,int solid,const double* origin,const double* a
 // every operand is a revolution about one line, from the Boolean of their meridian sections
 // (docs/native-speed-plan.md). The faces' parameters start where the region lies.
 int solvent_cad_revolve_region(Cad* cad,int region,const double* origin,const double* axis) noexcept {
+    SOLVENT_PROBE("solvent_cad_revolve_region");
     return guarded(cad,[&] {
         const gp_Ax1 line(gp_Pnt(origin[0],origin[1],origin[2]),gp_Dir(axis[0],axis[1],axis[2]));
         ShapeUpgrade_UnifySameDomain unify(cad->at(region),true,true,false);
@@ -1261,6 +1276,7 @@ int solvent_cad_revolve_region(Cad* cad,int region,const double* origin,const do
 // construction dominates a single query on spline-bounded solids.
 int solvent_cad_solid_contains(Cad* cad,int id,const double* points,int count,double tolerance,
     int* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_solid_contains");
     return guarded(cad,[&] {
         if (!points || !output || count < 1 || !std::isfinite(tolerance) || tolerance <= 0)
             throw std::runtime_error("solid classification needs points, an output buffer and positive tolerance");
@@ -1282,6 +1298,7 @@ int solvent_cad_solid_contains(Cad* cad,int id,const double* points,int count,do
 // Largest vertex, edge and face tolerance the kernel carries on the shape: the
 // geometric slack its topology claims, which any accuracy statement must include.
 int solvent_cad_tolerance(Cad* cad,int id,double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_tolerance");
     return guarded(cad,[&] {
         if (!output) throw std::runtime_error("tolerance needs an output buffer");
         const auto& shape = cad->at(id);
@@ -1294,6 +1311,7 @@ int solvent_cad_tolerance(Cad* cad,int id,double* output) noexcept {
 
 // Volume of the intersection of two shapes, without retaining it.
 int solvent_cad_common_volume(Cad* cad,int a,int b,double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_common_volume");
     return guarded(cad,[&] {
         if (!output) throw std::runtime_error("common volume needs an output buffer");
         // Non-destructively: the blank is read by every sweep's clearance, side by side.
@@ -1304,6 +1322,7 @@ int solvent_cad_common_volume(Cad* cad,int a,int b,double* output) noexcept {
         common.SetNonDestructive(true);
         common.SetRunParallel(parallel_booleans());
         common.Build();
+        probe::boolean("clearance common",common);
         if (!common.IsDone()) throw std::runtime_error("Boolean intersection failed");
         output[0] = volume(common.Shape());
         return 0;
@@ -1313,6 +1332,7 @@ int solvent_cad_common_volume(Cad* cad,int a,int b,double* output) noexcept {
 // Rigidly place any shape (a candidate sheet included) by a 3x4 row-major matrix.
 // Unlike solid placement this validates nothing beyond the transform itself.
 int solvent_cad_place(Cad* cad,int source,const double* matrix) noexcept {
+    SOLVENT_PROBE("solvent_cad_place");
     return guarded(cad,[&] {
         if (!matrix) throw std::runtime_error("placement needs a matrix");
         gp_Trsf pose;
@@ -1325,6 +1345,7 @@ int solvent_cad_place(Cad* cad,int source,const double* matrix) noexcept {
 }
 
 int solvent_cad_volume(Cad* cad,int id,double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_volume");
     return guarded(cad,[&] {
         if (!output) throw std::runtime_error("volume needs an output buffer");
         output[0] = cad->volume_of(id);

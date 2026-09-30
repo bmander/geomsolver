@@ -61,7 +61,7 @@ fn both<A: Send,B>(there: impl FnOnce() -> A+Send,here: impl FnOnce() -> B) -> (
 }
 
 /// Say again what was held.
-fn speak(said: Vec<Said>) { for s in said { match s { Said::Line(m) => stage(&m), Said::Trace(k) => trace(&k) } } }
+fn speak(said: Vec<Said>) { for s in said { match s { Said::Line(m) => stage(&m), Said::Trace(k) => trace_file(&k) } } }
 
 /// What some work said, held back to be said later (`Held::say`).
 pub struct Held(Vec<Said>);
@@ -112,6 +112,17 @@ pub fn mark(stage: Stage) { trace(stage.key()); }
 pub fn refused(stage: Stage) { trace(&format!("refused:{}",stage.key())); }
 
 fn trace(key: &str) {
+    // the stage on the native kernel's probe clock, when and on the thread it completes (phase 0's
+    // measurement, `backend/probe.hpp`) — not when a held line is said
+    #[cfg(feature="occt")]
+    if let Ok(key) = std::ffi::CString::new(key) {
+        extern "C" { fn solvent_cad_probe_mark(key: *const std::os::raw::c_char); }
+        unsafe { solvent_cad_probe_mark(key.as_ptr()) }
+    }
+    trace_file(key);
+}
+
+fn trace_file(key: &str) {
     if held(|lines| lines.push(Said::Trace(key.into()))) { return; }
     let Ok(path) = std::env::var("SOLVENT_STAGE_TRACE") else { return };
     let at = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
