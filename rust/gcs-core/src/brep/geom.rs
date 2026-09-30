@@ -291,7 +291,8 @@ impl Surface {
     pub fn normal_raw(&self,uv: Uv) -> V { let (_,su,sv) = self.d1(uv); cross(su,sv) }
     /// The unit normal, where it is defined.
     pub fn normal(&self,uv: Uv) -> Option<V> { crate::space::normalised(self.normal_raw(uv)) }
-    /// The parameters of the surface point nearest `p`, `u` in `[0, 2π)` where periodic. For a
+    /// The parameters of the surface point nearest `p`, `u` within its period where periodic
+    /// (`[0, 2π)`, or `[0, 1)` for a loft face running round). For a
     /// point on the surface this is exact to rounding; off it, the foot of the normal through it
     /// (on the axis, where every `u` is nearest, `u = 0`).
     pub fn inverse(&self,p: V) -> Uv {
@@ -323,8 +324,12 @@ impl Surface {
         }
     }
     /// A signed distance whose zero set is the surface (for a cone, the one sheet `ρ ≥ 0` its
-    /// parameters reach), positive on the side its normal points to: exact for all but the cone,
-    /// whose value is the distance to its generating line in the meridian half-plane.
+    /// parameters reach), positive on the side its normal points to: exact for the plane,
+    /// cylinder, sphere and torus. A cone's is the distance to its generating line in the meridian
+    /// half-plane; a swept curve's the distance to the tangent line at its foot, which runs on past
+    /// the curve's ends; a loft face's the distance along the normal at its nearest point, clamped
+    /// to the patch. Off a finite patch those extensions have zeros of their own, which is why
+    /// `query::curve_surface` keeps a swept surface's root only where the surface is.
     pub fn implicit(&self,p: V) -> f64 {
         if let Some((d,_)) = self.swept_side(p) { return d }
         let [x,y,z] = self.frame().local(p);
@@ -363,12 +368,18 @@ impl Surface {
                 let radial = if rho > 0. { [x/rho,y/rho] } else { [1.,0.] };
                 Some((d,f.dir([n[0]*radial[0],n[0]*radial[1],n[1]])))
             }
-            // a loft's face: the distance along the normal at the nearest point of the patch
+            // a loft's face: the distance along the normal at the nearest point of the patch — or,
+            // where the normal is not defined there (an edge's tangent vanishing), the normal a
+            // step toward the patch's middle, and failing that the direction to the point itself
             Surface::Blend(_,b) => {
                 let uv = b.inverse(p);
-                let (x,su,sv) = b.d1(uv);
-                let n = crate::space::normalised(cross(su,sv))?;
-                Some((dot(sub(p,x),n),n))
+                let x = b.d1(uv).0;
+                let normal = |uv: Uv| { let (_,su,sv) = b.d1(uv); crate::space::normalised(cross(su,sv)) };
+                let inward = [uv[0]+(0.5-uv[0])*1e-6,uv[1]+(0.5-uv[1])*1e-6];
+                let d = sub(p,x);
+                let n = normal(uv).or_else(|| normal(inward))
+                    .unwrap_or_else(|| crate::space::normalised(d).unwrap_or([0.,0.,1.]));
+                Some((dot(d,n),n))
             }
             _ => None,
         }
@@ -437,7 +448,8 @@ impl Surface {
             _ => vec![],
         }
     }
-    /// Whether the surface is one of revolution about its frame's `z` axis — every one but the
+    /// Whether the surface is one of revolution about its frame's `z` axis — every one but a swept
+    /// curve's extrusion, a loft face and the
     /// plane, which is one about its normal through any point.
     pub fn axis(&self) -> Option<(V,V)> {
         match self { Surface::Plane(_) | Surface::Extrusion(..) | Surface::Blend(..) => None,_ => { let f = self.frame(); Some((f.o,f.z)) } }

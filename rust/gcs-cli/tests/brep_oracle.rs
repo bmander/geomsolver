@@ -96,7 +96,10 @@ fn every_node_the_kernel_builds_is_occts() {
                     refused.push(format!("{label}: pinches at {:?}",b.pinches()[0]));
                 } else if whole {
                     // our STEP, parsed back and checked against our solid face by face
-                    let text = gcs_core::brep::step::write(&b,"oracle",1e-5);
+                    let text = match gcs_core::brep::step::write(&b,"oracle",1e-5) {
+                        Ok(text) => text,
+                        Err(err) => { failures.push(format!("{label}: not written as STEP: {err}")); continue }
+                    };
                     if let Err(err) = native::step_check::verify(&text,&native::step_check::Solid::of(&b)) {
                         failures.push(format!("{label}: our STEP does not describe it: {err}")); continue
                     }

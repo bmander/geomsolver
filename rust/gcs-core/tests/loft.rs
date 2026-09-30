@@ -377,3 +377,62 @@ fn an_opposite_end_plane_normal_does_not_twist_circular_sections() {
     assert!((after.volume() - before).abs() < 1e-7);
     assert_eq!(super::solid::unpaired(after.mesh()), 0);
 }
+
+/// Each start edge joins the end edge written in its place, in both kernels: an end section written
+/// the other way round is refused by the faceted kernel and the exact one alike, rather than lofted
+/// by one and refused by the other.
+#[test]
+fn an_end_section_written_the_other_way_round_is_refused_by_both_kernels() {
+    let square = |order: &str| format!("unit mm
+point o hint(x: 0, y: 0)
+point q hint(x: 1, y: 0)
+ground o
+ground q
+plane front(origin: o, toward: q)
+plane back(origin: o, toward: q, from: front, offset: -20mm)
+plane top(origin: o, toward: q, from: front, fold: 0deg)
+in top {{
+  point a hint(x: 0, y: 0)
+  point b hint(x: 0, y: 20)
+  ground a
+  ground b
+  line guide(a, b)
+}}
+in front {{
+  point s0 hint(x: -5, y: -5)
+  point s1 hint(x: 5, y: -5)
+  point s2 hint(x: 5, y: 5)
+  point s3 hint(x: -5, y: 5)
+  ground s0
+  ground s1
+  ground s2
+  ground s3
+}}
+in back {{
+  point e0 hint(x: -3, y: -3)
+  point e1 hint(x: 3, y: -3)
+  point e2 hint(x: 3, y: 3)
+  point e3 hint(x: -3, y: 3)
+  ground e0
+  ground e1
+  ground e2
+  ground e3
+}}
+solid body(face(s0, s1, s2, s3, -> close), face({order}, -> close), along: guide)
+");
+    let exact = |e: &program::Elaborated| {
+        let mut sk = e.sketch.clone();
+        gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
+        gcs_core::solid::cad::recipe(&sk, 0).and_then(|r| gcs_core::brep::recipe::build(&r))
+    };
+    // written alike, both build the frustum
+    let alike = read(&square("e0, e1, e2, e3"));
+    assert!(evaluated(&alike, "body").volume() > 0.);
+    assert!(exact(&alike).is_ok());
+    // written the other way round, both refuse it, saying why
+    let reversed = read(&square("e0, e3, e2, e1"));
+    let faceted = reversed.sketch.evaluated_solid(reversed.map.ent_named("body").unwrap().i(), Report);
+    assert!(faceted.as_ref().is_err_and(|e| e.contains("corresponding order")), "{:?}", faceted.map(|s| s.volume()));
+    let e = exact(&reversed).unwrap_err();
+    assert!(e.contains("corresponding order"), "{e}");
+}

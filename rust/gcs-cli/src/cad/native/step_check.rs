@@ -267,8 +267,9 @@ impl Solid {
         use gcs_core::brep::{geom::Surface,topo::EdgeCurve};
         let faces = b.faces.iter().map(|f| {
             // a loft's face is written as the B-spline fitted to it
+            // (one the writer could not fit was refused there, and has no numbers here)
             if let Surface::Blend(_,bl) = &f.surface {
-                let numbers = gcs_core::brep::step::net_numbers(&gcs_core::brep::step::blend_net(bl));
+                let numbers = gcs_core::brep::step::blend_net(bl).map(|n| gcs_core::brep::step::net_numbers(&n)).unwrap_or_default();
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
             }
             let (frame,scalars) = gcs_core::brep::step::written(&f.surface);

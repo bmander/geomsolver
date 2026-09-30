@@ -125,8 +125,7 @@ pub fn interpolate(pts: &[V],t: &[f64],degree: usize) -> Option<BSpline> {
     if degree == 0 || t.len() != m || t.windows(2).any(|w| !(w[1] > w[0])) { return None }
     let knots = averaged(t,degree);
     let s = BSpline {degree,knots,poles:vec![[0.;3];m]};
-    // the basis at each parameter: the curve through unit poles, one at a time, is too slow; the
-    // collocation matrix is read off by evaluating with each pole the unit vector in turn
+    // the collocation matrix: each parameter's basis functions, in the columns of its span
     let mut n = vec![0.;m*m];
     for (k,&tk) in t.iter().enumerate() {
         let span = s.span(tk.clamp(t[0],t[m-1]));
@@ -164,8 +163,6 @@ impl BSpline {
         }
         n
     }
-    /// The distinct knots and their multiplicities.
-    pub fn distinct_knots(&self) -> Vec<(f64,usize)> { distinct(&self.knots) }
 }
 
 pub fn distinct(knots: &[f64]) -> Vec<(f64,usize)> {

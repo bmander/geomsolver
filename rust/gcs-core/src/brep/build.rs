@@ -1,6 +1,7 @@
-//! The primitives, built with their topology whole: a profile swept along its normal (a prism)
-//! or turned about a line in its plane (a revolution), from the loops of lines, arcs and circles
-//! the CAD recipe carries (`solid::cad::recipe`).
+//! The primitives, built with their topology whole: a profile swept along its normal (a prism),
+//! turned about a line in its plane (a revolution), or lofted along a guide to a second section,
+//! from the loops of lines, arcs, circles and B-splines the CAD recipe carries
+//! (`solid::cad::recipe`).
 use super::geom::{BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
 use std::sync::Arc;
 use super::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
@@ -278,7 +279,6 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                 }
                 Swept::Spline => {
                     // C(v) turned by u: in (ρ, z) its normal is the tangent turned clockwise
-                    let d = { let l = f.dir_local(dq); [l[0],l[2]] };
                     let l = d[0].hypot(d[1]);
                     (Surface::Revolution(f,Arc::new(s.curve.clone())),[d[1]/l,-d[0]/l],Box::new(|t| t))
                 }
@@ -346,10 +346,11 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
     Ok(b)
 }
 
-/// What a loft follows: a line (its start and the step to its end), or an arc (its centre, the
-/// axis it turns about right-handedly, its start and the angle it turns through).
+/// What a loft follows: a line (the step from its start to its end), or an arc (its centre, the
+/// axis it turns about right-handedly and the angle it turns through). Where it starts is the
+/// start section's business, which the faceted kernel checks against it (`solid::loft`).
 #[derive(Clone,Copy,Debug)]
-pub enum Guide { Line { start: V,delta: V },Arc { center: V,axis: V,start: V,angle: f64 } }
+pub enum Guide { Line { delta: V },Arc { center: V,axis: V,angle: f64 } }
 
 /// A section swept along a guide, or lofted from it to a second section at the guide's end (Solvent
 /// §6.9: the start section square to the guide at its start, the end square to it at its end).
@@ -423,7 +424,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
             let (p,q) = (sw[k].start(),ew[k].start());
             match line {
                 Some(_) => b.edge(EdgeCurve::Curve(Curve::Line {p,d:unit(sub(q,p))}),[0.,distance(p,q)],[pv[k],qv[k]]),
-                None => b.edge(EdgeCurve::Curve(Curve::Iso(std::sync::Arc::new(blend(k)),0.)),[0.,1.],[pv[k],qv[k]]),
+                None => b.edge(EdgeCurve::Curve(Curve::Iso(Arc::new(blend(k)),0.)),[0.,1.],[pv[k],qv[k]]),
             }
         }).collect();
         for k in 0..m {
@@ -453,7 +454,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
                 None => {
                     // S(u, v) with u along the walk: an edge runs u forward where it is walked forward
                     let along = |s: &Seg,v: f64| if s.forward() { Pcurve::Line {a:[0.,v],b:[1.,v]} } else { Pcurve::Line {a:[1.,v],b:[0.,v]} };
-                    (Surface::Blend(frame,std::sync::Arc::new(blend(k))),vec![
+                    (Surface::Blend(frame,Arc::new(blend(k))),vec![
                         Coedge {edge:se[k],reversed:!a.forward(),pcurve:along(a,0.)},
                         Coedge {edge:rails[k1],reversed:false,pcurve:Pcurve::Line {a:[1.,0.],b:[1.,1.]}},
                         Coedge {edge:ee[k],reversed:z.forward(),pcurve:along(z,1.)},

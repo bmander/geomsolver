@@ -47,13 +47,6 @@ impl Snapshot {
     }
 }
 
-/// A planar face's basis and its loops as exact lines, arcs and circles in the
-/// plane's own view coordinates: the same reading the faceted kernel tessellates
-/// from, without the tessellation. The outer loop comes first, then each hole.
-/// A spline or a stretch of a curve has no closed form here and enters as chords
-/// within `CHORD_SLACK` of the loop's size of it, its ends the exact points its
-/// neighbours share: the field is exact for those chords (the conversion from the
-/// solved curve is not certified, as a solved line's is not).
 /// How near its curve a profile's chord passes, a share of the profile's reach.
 pub const CHORD_SLACK: f64 = 1e-7;
 
@@ -76,6 +69,13 @@ fn within(at: &dyn Fn(f64) -> (f64,f64),a: f64,b: f64,tol: f64) -> Vec<(f64,f64)
     out
 }
 
+/// A planar face's basis and its loops as exact lines, arcs and circles in the
+/// plane's own view coordinates: the same reading the faceted kernel tessellates
+/// from, without the tessellation. The outer loop comes first, then each hole.
+/// A spline or a stretch of a curve has no closed form here and enters as chords
+/// within `CHORD_SLACK` of the loop's size of it, its ends the exact points its
+/// neighbours share: the field is exact for those chords (the conversion from the
+/// solved curve is not certified, as a solved line's is not).
 fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> {
     let f = sk.faces.get(face).ok_or("no such face")?;
     let (basis,pose) = match f.plane()? {

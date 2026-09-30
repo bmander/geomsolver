@@ -198,8 +198,9 @@ pub const FIT_MM: f64 = 1e-4;
 /// `curve::interpolating_ctrl_at`) in the curve's own coordinates, over its interval from first
 /// end to second, its parameter the fraction of the curve's at every sample (so a loft pairs the
 /// fit where it pairs the curve): the samples doubled until every sample halfway between two it
-/// passes through is within `tol` of it, measured by projecting that sample onto the fit. The
-/// poles, the knots and the error measured; `None` past 4096 samples.
+/// passes through is within `tol` of it, measured by projecting that sample onto the fit. A
+/// trimmed stretch's first and last poles are its end points themselves, which its neighbours
+/// share. The poles, the knots and the error measured; `None` past 4096 samples.
 pub fn fit_curve(sk: &Sketch,i: usize,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
     use crate::brep::nurbs::BSpline;
     let (a,b) = sk.curve_domain(i);
@@ -208,7 +209,11 @@ pub fn fit_curve(sk: &Sketch,i: usize,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f6
     loop {
         let mut fine = sk.curve_sweep(i,lo,hi,2*n);
         if a > b { fine.reverse(); }
-        let through: Vec<(f64,f64)> = fine.iter().step_by(2).copied().collect();
+        let mut through: Vec<(f64,f64)> = fine.iter().step_by(2).copied().collect();
+        if let Some(t) = sk.curves[i].trim {
+            let last = through.len()-1;
+            (through[0],through[last]) = (sk.point_xy(t.from as usize),sk.point_xy(t.to as usize));
+        }
         let fractions = (0..=n).map(|k| k as f64/n as f64).collect();
         let (ctrl,knots,t) = crate::curve::interpolating_ctrl_at(&through,fractions)?;
         let s = BSpline::new(crate::curve::DEGREE,knots.clone(),ctrl.iter().map(|&(x,y)| [x,y,0.]).collect()).ok()?;

@@ -145,8 +145,9 @@ pub(super) struct Loft {
 
 /// Keep every source corner and tessellate each corresponding curve at the finer count.
 /// Shared angular samples avoid tiny slivers from overlaying two unrelated chord grids.
-/// A spline or a curve is paired by its own parameter, at the same fraction of it: `a_to` and
-/// `b_to` carry a point of either section's view into the coordinates its polygon now holds.
+/// A spline or a curve is paired by its own parameter, at the same fraction of it: `b_to` carries a
+/// point of the end section's view into the coordinates its polygon now holds (the start section's
+/// view is its own).
 fn pair(
     sk: &Sketch,
     mut a: FacePoly,
@@ -188,6 +189,11 @@ fn pair(
     let bg = edges(&mut b);
     if ag.len() != bg.len() || a.names.len() != b.names.len() {
         return Err("loft boundaries must have matching numbers of source edges (and holes in matching order)".into());
+    }
+    // each start edge joins the end edge written in its place: both walks, turned the same way,
+    // must meet their edges in one order (the exact kernel pairs them by that written index)
+    if ag.iter().zip(&bg).any(|(aa,bb)| a.of[aa[0]].0 != b.of[bb[0]].0) {
+        return Err("a loft's sections must have their edges written in corresponding order".into());
     }
     let mut ap = Vec::new();
     let mut bp = Vec::new();

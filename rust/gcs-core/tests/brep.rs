@@ -368,13 +368,13 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     let (h,a,b0,w) = (40.,12.,6.,2.);
     // a hollow square frustum: each side a plane; the prismoidal formula, outer less inner
     let frustum = |a: f64,b: f64| h/3.*(4.*a*a+4.*b*b+4.*a*b);
-    let s = loft(&section(0.,a,a-w),Some(&section(h,b0,b0-w)),&Guide::Line {start:[0.;3],delta:[0.,0.,h]}).unwrap();
+    let s = loft(&section(0.,a,a-w),Some(&section(h,b0,b0-w)),&Guide::Line {delta:[0.,0.,h]}).unwrap();
     s.check(1e-8).unwrap();
     close(volume(&s),frustum(a,b0)-frustum(a-w,b0-w));
     // a round reducer: a cone frustum with a hole
     let ring = |z: f64,r: f64,hole: f64| Profile {origin:[0.,0.,z],normal:XY,loops:vec![
         vec![arc([0.,0.,z],r,XY,[1.,0.,0.],None)],vec![arc([0.,0.,z],hole,XY,[0.,1.,0.],None)]]};
-    let s = loft(&ring(0.,10.,4.),Some(&ring(h,6.,3.)),&Guide::Line {start:[0.;3],delta:[0.,0.,h]}).unwrap();
+    let s = loft(&ring(0.,10.,4.),Some(&ring(h,6.,3.)),&Guide::Line {delta:[0.,0.,h]}).unwrap();
     s.check(1e-8).unwrap();
     let cone = |r: f64,q: f64| PI*h/3.*(r*r+r*q+q*q);
     close(volume(&s),cone(10.,6.)-cone(4.,3.));
@@ -383,7 +383,7 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     let elbow = Profile {origin:[bend,0.,0.],normal:XZ,loops:vec![
         poly(&[[bend-9.,0.,-9.],[bend+9.,0.,-9.],[bend+9.,0.,9.],[bend-9.,0.,9.]]),
         poly(&[[bend-7.,0.,-7.],[bend+7.,0.,-7.],[bend+7.,0.,7.],[bend-7.,0.,7.]])]};
-    let s = loft(&elbow,None,&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],start:[bend,0.,0.],angle:PI/2.}).unwrap();
+    let s = loft(&elbow,None,&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],angle:PI/2.}).unwrap();
     s.check(1e-8).unwrap();
     close(volume(&s),(18.*18.-14.*14.)*bend*PI/2.);
     // a twisted loft, a square to a diamond: each section the polygon of its corners' mixture, of
@@ -392,7 +392,7 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     let (sq,dia) = ([[-6.,-6.],[6.,-6.],[6.,6.],[-6.,6.]],[[0.,-8.],[8.,0.],[0.,8.],[-8.,0.]]);
     let mix = |t: f64| (0..4).map(|k| [sq[k][0]*(1.-t)+dia[k][0]*t,sq[k][1]*(1.-t)+dia[k][1]*t]).collect::<Vec<_>>();
     let turned = Profile {origin:[0.,0.,h],normal:XY,loops:vec![poly(&[[0.,-8.,h],[8.,0.,h],[0.,8.,h],[-8.,0.,h]])]};
-    let s = loft(&Profile {loops:vec![square([0.;3],6.,0.)],..section(0.,a,a-w)},Some(&turned),&Guide::Line {start:[0.;3],delta:[0.,0.,h]}).unwrap();
+    let s = loft(&Profile {loops:vec![square([0.;3],6.,0.)],..section(0.,a,a-w)},Some(&turned),&Guide::Line {delta:[0.,0.,h]}).unwrap();
     s.check(1e-8).unwrap();
     assert!(s.faces.iter().any(|f| f.surface.kind() == "blend"));
     close(volume(&s),h/6.*(shoelace(&mix(0.))+4.*shoelace(&mix(0.5))+shoelace(&mix(1.))));
@@ -407,7 +407,7 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     };
     let narrow = Profile {origin:[0.,bend,0.],normal:[1.,0.,0.],loops:vec![
         poly(&ring2(6.).map(|q| [0.,q[0],q[1]])),poly(&ring2(4.).map(|q| [0.,q[0],q[1]]))]};
-    let s = loft(&elbow,Some(&narrow),&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],start:[bend,0.,0.],angle:PI/2.}).unwrap();
+    let s = loft(&elbow,Some(&narrow),&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],angle:PI/2.}).unwrap();
     s.check(1e-8).unwrap();
     let want = PI/2./6.*(blend2(6.,4.,0.)+4.*blend2(6.,4.,0.5)+blend2(6.,4.,1.));
     assert!((volume(&s)-want).abs() <= 1e-9*want,"{} against {want}",volume(&s));
@@ -513,10 +513,26 @@ fn splines_swept_and_turned_are_their_closed_forms() {
     // volume is h A ∫(1 − t/2)² dt = 7 h A / 12; the lines join in planes, the splines in a blend
     let half = cubic(&lobe.poles.iter().map(|p| [p[0]/2.,p[1]/2.,6.]).collect::<Vec<_>>(),&[0.4]);
     let top = Profile {origin:[0.,0.,6.],normal:XY,loops:vec![vec![line([0.,0.,6.],[5.,0.,6.]),spline(&half),line([0.,5.,6.],[0.,0.,6.])]]};
-    let lofted = gcs_core::brep::build::loft(&plate,Some(&top),&gcs_core::brep::build::Guide::Line {start:[0.;3],delta:[0.,0.,6.]}).unwrap();
+    let lofted = gcs_core::brep::build::loft(&plate,Some(&top),&gcs_core::brep::build::Guide::Line {delta:[0.,0.,6.]}).unwrap();
     lofted.check(1e-9).unwrap();
     assert!(lofted.faces.iter().any(|f| f.surface.kind() == "blend") && lofted.faces.iter().filter(|f| f.surface.kind() == "plane").count() == 4);
     assert!((volume(&lofted)-7.*6.*area/12.).abs() <= 1e-9*area,"{} against {}",volume(&lofted),7.*6.*area/12.);
+    // a prism and a copy of it moved along its depth share their spline side: one surface,
+    // though the copy's curve stands elsewhere
+    let raised = b.moved(&Rigid {r:Rigid::identity().r,t:[0.,0.,2.]});
+    let r = boolean(&b,&raised,Op::Union,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    close(volume(&r),5.*area);
+    // a blend whose edges run opposite ways at the same pace has no u-tangent halfway along it:
+    // its side there is still a number and a direction, never a panic
+    let (p,q) = ([0.,0.,0.],[4.,0.,0.]);
+    let flat = gcs_core::brep::geom::Blend {a:gcs_core::brep::geom::Curve::Line {p,d:[1.,0.,0.]},ta:[0.,4.],
+        b:gcs_core::brep::geom::Curve::Line {p,d:[1.,0.,0.]},tb:[4.,0.],
+        carry:gcs_core::brep::geom::Carry::Line {delta:[0.,0.,2.]},closed:false};
+    let surface = gcs_core::brep::geom::Surface::Blend(Frame::about([0.;3],[0.,0.,1.]),std::sync::Arc::new(flat));
+    for probe in [[2.,0.5,1.],[1.,0.,1.],q] {
+        assert!(surface.implicit(probe).is_finite() && surface.gradient(probe).iter().all(|x| x.is_finite()));
+    }
     // meshed closed, within the bar, enclosing the same volume to the bar's order
     for (what,s) in [("plate",&b),("vase",&v),("lofted",&lofted)] {
         let m = mesh(s,0.01,0.2).unwrap_or_else(|e| panic!("{what}: {e}"));

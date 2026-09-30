@@ -260,27 +260,31 @@ impl Sketch {
     }
 
     /// The curve over its interval as chords no further than `tol` from it, with each sample's
-    /// parameter: the samples doubled until every chord's middle sample is within `tol` of the
-    /// chord (a user-written curve has no basis to refine against, so uniform is the honest
-    /// start), at most `1 << 14` chords. Runs from the interval's first end to its second.
+    /// parameter: the chords doubled until each one's quarter, middle and three-quarter samples lie
+    /// within `tol` of it (a cubic stretch centred on an inflection has its middle on its chord, so
+    /// the quarters are asked too). A user-written curve has no basis to refine against, so uniform
+    /// is the honest start. At the cap, `1 << 14` chords, the finest sampling is returned as it is.
+    /// Runs from the interval's first end to its second.
     pub fn curve_polyline_within(&self, i: usize, tol: f64) -> Vec<(f64, (f64, f64))> {
         let (a, b) = self.curve_domain(i);
         let (lo, hi) = (a.min(b), a.max(b));
-        let mut n = CURVE_STEPS;
-        let fine = loop {
-            let fine = self.curve_sweep(i, lo, hi, 2 * n);
-            let off = (0..n).map(|k| {
-                let (p, q, m) = (fine[2 * k], fine[2 * k + 2], fine[2 * k + 1]);
-                let (dx, dy) = (q.0 - p.0, q.1 - p.1);
-                let l = dx.hypot(dy);
-                if l > 0.0 { ((m.0 - p.0) * dy - (m.1 - p.1) * dx).abs() / l }
-                else { (m.0 - p.0).hypot(m.1 - p.1) }
-            }).fold(0.0, f64::max);
-            n *= 2;
-            if off <= tol || n >= 1 << 14 { break fine }
+        let off = |p: (f64, f64), q: (f64, f64), m: (f64, f64)| {
+            let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+            let l = dx.hypot(dy);
+            if l > 0.0 { ((m.0 - p.0) * dy - (m.1 - p.1) * dx).abs() / l } else { (m.0 - p.0).hypot(m.1 - p.1) }
         };
-        let mut out: Vec<(f64, (f64, f64))> = fine.into_iter().enumerate()
-            .map(|(k, p)| (lo + (hi - lo) * k as f64 / n as f64, p)).collect();
+        let mut n = CURVE_STEPS;
+        let (samples, count) = loop {
+            let fine = self.curve_sweep(i, lo, hi, 4 * n);
+            let worst = (0..n).flat_map(|k| (1..4).map(move |j| (k, j)))
+                .map(|(k, j)| off(fine[4 * k], fine[4 * k + 4], fine[4 * k + j]))
+                .fold(0.0, f64::max);
+            if worst <= tol { break (fine.into_iter().step_by(4).collect::<Vec<_>>(), n) }
+            if 4 * n >= 1 << 14 { break (fine, 4 * n) }
+            n *= 2;
+        };
+        let mut out: Vec<(f64, (f64, f64))> = samples.into_iter().enumerate()
+            .map(|(k, p)| (lo + (hi - lo) * k as f64 / count as f64, p)).collect();
         if a > b { out.reverse(); }
         out
     }

@@ -488,7 +488,7 @@ impl<'a> P<'a> {
                                     self.i += 1;
                                     let from = self.refr()?;
                                     if !self.eat_word("to") {
-                                        self.fail("a face's curve runs `from` one point `to` another:                                                    `flank from p to q`");
+                                        self.fail("a face's curve runs `from` one point `to` another: `flank from p to q`");
                                         return None;
                                     }
                                     let to = self.refr()?;
