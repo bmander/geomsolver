@@ -100,7 +100,10 @@ reads the solved pose and source geometry; face provenance follows the placed in
 `make solventc OCCT=1` enables native STEP export through a C ABI wrapper around OCCT C++.
 The Rust core supplies analytic construction data; the CLI owns native shapes and catches
 kernel exceptions. STEP export supports profiles, extrusions, revolutions, placements and
-Booleans, validates a STEP round trip, and preserves the old output on failure. Along-guide
+Booleans, and preserves the old output on failure. A written STEP is parsed back by our own
+checker (`native::step_check`: every reference, the topology's counts, units, and each face's
+surface and numbers against the solid's); `--verify-step full` (`SOLVENT_STEP_VERIFY=full`, the
+slow tier) also reads it back through the kernel with its repairs. Along-guide
 lofts and continuous generating-motion sweeps remain unsupported by this native host.
 Native builds default `--stl` to OCCT too; `--stl-backend mesh` selects the legacy path.
 Requesting STEP and STL together builds once, stages and checks both, then replaces each file.

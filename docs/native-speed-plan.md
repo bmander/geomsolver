@@ -8,6 +8,10 @@ symmetry and by never doing the same work twice; this plan does the same for the
 every face within the tolerance by the meter, field agreement, the pair check — and every
 export without `--tolerance` still correct (its bytes may change; its solid may not).
 
+**Where it ended (phase 6):** the pinion 349 → 6.1 s (57×), at 10 µm 492 → 9.8 s (51×); the gear
+663 → 8.7 s (77×), at 10 µm 801 → 10.2 s (78×), the files as good by every check. The project was
+stopped short of 100× once what remained was the kernel's serial split, union and meshing.
+
 ## Where the time goes (gear, 10 µm, 12 cores)
 
 | stage | time | share |
@@ -433,6 +437,121 @@ words of the STL stage's last line (it now says how long its shells took) and th
 (which evidence stood for the later placements); the native swept golden, `swept_torus`'s default
 STL, changes bytes (its blank is its meridian section turned), its volume (0.447407 mm³), faces (3)
 and triangles (580) the same.
+
+## Phase 6 — findings (2026-09-29): the project stopped here
+
+The last round took the floor phase 5 named apart where it was ours to take, and then the project
+was stopped: each change was now worth a few hundred milliseconds, and what is left is the kernel's
+own serial work (below). **Where it ended: 57×, 51×, 77× and 78×, short of the 100× goal.** In the
+order of the pipeline:
+
+- **The sheets.** A sheet whose first row placement is refused (the gear's removal) lays out its
+  second from the columns its first traced (`Tracer::columns`, `Columns::layout`), tracing nothing
+  again: the same sheets, the gear's files the same to the byte. A motion's pose composes its steps
+  by 3×3 products written out left to right rather than summed over an iterator (the same numbers:
+  an iterator's sum is −0.0 plus its terms in order), the hottest code of an export at a tenth of its
+  instructions: 9–11% fewer instructions retired, the files the same to the byte.
+- **The split.** Where every sheet fits its contacts within a fabrication export's fit share
+  (5 µm), the placed sheets are split by each other on a thread of their own while the side and the
+  sector's blank are made, and the sector is split by the one fused tool, which skips the sheets'
+  intersection with each other (0.4–0.55 s). The same five cells; the gear's volumes the same to
+  10⁻⁹, the 10 µm pinion's to 2.7 × 10⁻⁷. The pinion's gross sheets (15 µm) are not fused: intersected
+  apart they moved its union's volume by 2.7 × 10⁻⁶ (`SOLVENT_SECTOR_FUSE=off` splits by the sheets as
+  they are).
+- **The cells.** A candidate interior point is inside a cell where three rays in fixed directions,
+  each crossing only faces' interiors cleanly, agree on odd parity; a point they do not decide goes to
+  the kernel's classifier (50–70 ms a point on spline cells, a ray 1–2 ms). The samples are the same
+  points; classification 0.9–1.3 s to 0.3–0.5 s (`SOLVENT_CELL_CLASSIFIER=check` runs both and refuses
+  a disagreement — none on the members or the ring; `=kernel` keeps the old classifier). A
+  partition's faces are checked once, each cell asked only its closure and orientation.
+- **The STEP, verified by its own parser** (the user's choice: the lighter check by default). The
+  export writes its STEP and parses it back on every core (`native::step_check`): every entity
+  parses, every reference resolves, the topology walked from the shape representation has the
+  solid's counts (solids, shells, faces, edges, vertices, each edge used twice by the closed shell),
+  the units are mm and radians, and each face in the shell's order is on the solid's kind of surface
+  with its placement, radii and angle, or its B-spline degrees, knots, poles and weights, within a
+  relative billionth. 0.2–0.4 s where the kernel's read-back with its repairs took 3–4 s.
+  `--verify-step full` (`SOLVENT_STEP_VERIFY=full`) reads it back by the kernel as well, as before;
+  the slow tier's fabrication tests ask for that. Tests: the pulley's file passes and is refused with
+  a dangling reference, a missing face, a cone's angle moved by a part in a million and an entity that
+  does not parse; the sector's STEP, its sheets' B-spline faces too, is refused with a pole moved a
+  micron.
+- **The files beside the union.** The export takes the sector unpatterned: the pattern's union is
+  made (sewn, unified, oriented) and checked beside the STEP written from it, and the sector is meshed
+  as a copy (the same triangles to the byte) beside both, so the mesh, its shells and the field
+  agreement run while the copies are sewn. Where the unified union fails its check and the sewn one
+  passes, the STEP is written again from that; where neither does, the body is built whole, as
+  before. A full verification checks first, as before.
+- **The 10 µm pinion's mesh.** Its sector sags 31 µm at 5 µm, mostly its fillet's edge chords:
+  meshed again with its edges at 1.25 µm and its faces' interiors at 2.5 µm it sags 3.9 µm, 776k
+  triangles where a quarter all through made 945k, a fifth quicker. The second meshing is made
+  ahead, on a copy, beside the first, abandoned where the first holds (the gear's does), 0.7 s sooner
+  (`SOLVENT_MESH_AHEAD=off` meshes a round at a time). An STL's vertices and a shell's edges are
+  numbered by `par::sort`, packed keys sorted in runs on every core and merged pairwise.
+- **For profiling.** `SOLVENT_STAGE_TRACE` lines carry the process's processor time as a third
+  column; `SOLVENT_STOP_AFTER=sheets` ends an export after its sheets; `SOLVENT_DUMP_SPLIT`,
+  `SOLVENT_DUMP_PIECE` and `SOLVENT_DUMP_BOOLEAN` write a split's, a sector's or a Boolean's operands
+  as BRep files for a harness; `SOLVENT_CONSTRUCT_DEBUG` times each node a recipe builds.
+
+**Against phase 5** (volumes in mm³; faces 147 and 291, one valid closed shell each):
+
+| | volume | phase 5 | relative |
+|---|---|---|---|
+| pinion | 14,642.071530 | 14,642.071530 | 0 |
+| pinion, 10 µm | 14,643.429864 | 14,643.425980 | 2.7 × 10⁻⁷ (the fused sheets) |
+| gear | 22,261.889867 | 22,261.889867 | 0 |
+| gear, 10 µm | 22,261.892119 | 22,261.892118 | 4 × 10⁻¹¹ |
+
+The field agreement finds no disagreement at either bar; the STLs pass the shell checks. The meter at
+10 µm (µm, max / p99 / mean): pinion STEP 1.37 / 1.09 / 0.02 (unchanged), STL 3.92 / 2.12 / 0.46
+(phase 5: 3.19 / 1.68 / 0.28, the coarser interiors); gear STEP 0.69 / 0.22 / 0.01 (unchanged), STL
+5.74 / 3.41 / 0.82 (6.16 / 3.36 / 0.81) — every exact face within the tolerance. The pair check: no
+overlap; flanks 24.5–25.7 µm facing the pinion's turn and 21.4–23.8 µm against it; normal backlash
+41.8 and 47.9 µm (phase 5: 41.6 and 47.8) with one pair closed; 90.00000° and 25.00000 mm. The
+clearances moved by up to 0.4 µm where phase 5's moved by 0.1: the pinion's STL is another mesh of
+the same solid, and a clearance between meshes is good to about twice the tolerance.
+
+**Timings.** Each export alone once the one-minute load had fallen under 5, phase 5's binary run the
+same way just before each (its 9.80 / 12.68 / 13.92 / 15.62 s here against 8.60 / 12.46 / 13.64 /
+14.59 s recorded, this session's machine a little busier). The stages overlap, so each row is the
+time from the previous row's end to its own:
+
+| seconds (quiet; phase 5 beside) | pinion | pinion, 10 µm | gear | gear, 10 µm |
+|---|---|---|---|---|
+| admission ∥ blank ∥ sheets | 1.25 (1.73) | 1.62 (2.02) | 2.14 (2.60) | 2.22 (3.00) |
+| the side, the blank again, split the sector | 1.96 (2.57) | 2.67 (2.43) | 2.41 (2.69) | 2.56 (2.54) |
+| classify | 0.31 (1.04) | 0.28 (1.09) | 0.30 (1.30) | 0.46 (1.19) |
+| unite ∥ STEP ∥ (STL, field agreement) | 1.78 (3.51) | 4.59 (6.57) | 3.31 (6.81) | 4.44 (8.40) |
+| elaborate, solve, exit | 0.84 (0.96) | 0.59 (0.56) | 0.49 (0.52) | 0.53 (0.50) |
+| **total** | **6.13** (9.80) | **9.75** (12.68) | **8.65** (13.92) | **10.21** (15.62) |
+| baseline (phase 1) | 349.2 | 492.4 | 662.6 | 801.1 |
+| **speedup** | **57×** | **51×** | **77×** | **78×** |
+| instructions retired (× 10¹²; phase 5 0.19, 0.24, 0.28, 0.31) | 0.14 | 0.18 | 0.21 | 0.24 |
+| user time, s (all threads; phase 5 40, 51, 61, 75) | 31 | 42 | 49 | 62 |
+
+**What is left, and why the project stopped.** The totals are 1.7, 2.0, 1.3 and 1.3 times the
+targets (3.5, 4.9, 6.6, 8.0 s), and each remaining piece is the kernel's, serial or nearly:
+- **The sector's split**, 2.0–2.7 s of `BRepAlgoAPI_Splitter`, a third of it
+  `GeomLib_CheckCurveOnSurface`'s particle swarm on the B-spline sheets and sides, which no option of
+  the kernel turns off.
+- **The union**, 3.8 s for the gear (sewing 48 sectors, unifying and checking), now the gear's last
+  stage; the STEP (2.2 s written, 0.4 s verified), the mesh and the agreement finish inside it.
+- **The 10 µm pinion's mesh**, 1.3 s at 5 µm and 3.1 s at the finer bars (`BRepMesh`, the second
+  begun beside the first), then 1.3 s of shell checks on 776k triangles.
+- **The gear's cutters**, a 3D Common each (a crown bounded by its turned neighbour) at the start of
+  each sheet's thread; sectioning the two revolutions apart and intersecting the sections in the
+  plane would remove it.
+
+Beyond that the choices are a kernel of our own for the split and the union, or giving up checks
+the files are owed. Neither was worth it for the seconds that remain.
+
+**Tests and gates.** CLI `tests/native_measure.rs`: a STEP verified against its solid by its own
+parser, and refused corrupted four ways; `tests/native_sector.rs`: the sector's STEP, B-splines too,
+and refused with a moved pole; core `tests/par.rs`: `par::sort` is the serial sort about its split.
+The whole suite with the native kernel passes with no warnings (1,377 tests); the slow tier passes
+(1,390, the fabrication exports verified in full); the web tests pass (255, on a wasm build). Every
+corpus report and sheet, every golden's files and `swept_torus`'s native STL are byte-identical to
+phase 5's; the goldens' logs differ only in their timings.
 
 ## Verification
 
