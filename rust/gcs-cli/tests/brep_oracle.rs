@@ -1,7 +1,8 @@
 //! The Rust B-rep kernel held to OCCT (docs/rust-kernel-plan.md: OCCT as the test-only oracle):
 //! every node of every corpus object's CAD recipe that the kernel builds, built by both, the
-//! volumes equal and the boundary valid; every body also written as STEP by the kernel, read back
-//! by OCCT as a valid solid of the same volume, and meshed closed within its bar. A node the kernel refuses by name (an intersection it
+//! volumes equal, faces equal by kind and the boundary valid; every object against the core's
+//! faceted kernel; every body written as STEP and parsed back against itself (read back by OCCT as
+//! a valid solid with its faces, in the slow tier), and meshed closed within its bar. A node the kernel refuses by name (an intersection it
 //! does not trace yet) is counted, never passed over silently.
 #[path="../src/cad/native.rs"]
 #[allow(dead_code)]
@@ -9,7 +10,7 @@ mod native;
 #[path="../src/cad/progress.rs"]
 #[allow(dead_code)]
 mod progress;
-use gcs_core::brep::{props::volume,recipe};
+use gcs_core::brep::{geom::Surface,props::volume,recipe};
 use gcs_core::json::{object,Json};
 use std::collections::BTreeMap;
 
@@ -30,6 +31,7 @@ fn every_node_the_kernel_builds_is_occts() {
         gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
         for root in gcs_core::overview::objects(&sk) {
             let Ok(r) = gcs_core::solid::cad::recipe(&sk,root) else { continue };
+            let root_id = r.get("root").unwrap().as_i64();
             let nodes = r.get("nodes").unwrap().arr();
             let mut ours = BTreeMap::new();
             for (i,n) in nodes.iter().enumerate() {
@@ -55,7 +57,19 @@ fn every_node_the_kernel_builds_is_occts() {
                 worst = worst.max(rel);
                 // a `through` prism's extent is its sources' box, which OCCT widens by its tolerances
                 if rel >= 1e-7 { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
-                if faces != their_faces { eprintln!("  (faces differ)"); }
+                // faces by the kind of their surface (OCCT's `GeomAbs_SurfaceType` order): OCCT may split
+                // a plane along a line where another face only touches it, which this kernel does not
+                let kinds = |ks: &mut Vec<i32>| { ks.sort(); ks.clone() };
+                let our_kinds = kinds(&mut b.faces.iter().map(|f| match f.surface {
+                    Surface::Plane(_) => 0,Surface::Cylinder(..) => 1,Surface::Cone(..) => 2,Surface::Sphere(..) => 3,Surface::Torus(..) => 4,
+                }).collect());
+                let their_kinds = kinds(&mut session.faces(theirs).unwrap().into_iter().map(|g| session.face_kind(g).unwrap()).collect());
+                if our_kinds != their_kinds {
+                    let extra_planes = their_kinds.iter().filter(|&&k| k != 0).eq(our_kinds.iter().filter(|&&k| k != 0))
+                        && their_kinds.iter().filter(|&&k| k == 0).count() > our_kinds.iter().filter(|&&k| k == 0).count();
+                    if extra_planes { eprintln!("  (OCCT splits a plane along a line it only touches: {their_kinds:?} against our {our_kinds:?})"); }
+                    else { failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}")); continue }
+                }
                 if n.get("kind").unwrap().as_str() == "body" && !b.pinches().is_empty() {
                     // a solid touching itself at a point has no manifold file (OCCT's export of one refuses too)
                     refused.push(format!("{label}: pinches at {:?}",b.pinches()[0]));
@@ -90,6 +104,17 @@ fn every_node_the_kernel_builds_is_occts() {
                         Err(err) => { failures.push(format!("{label}: not meshed: {err}")); continue }
                     }
                     bodies += 1;
+                }
+                // the object itself against the core's faceted kernel, cut as it cuts a mesh (its sagitta a
+                // small fraction of the object's diagonal): to its faceting, a part in 200
+                if id == root_id {
+                    let scale = gcs_core::solid::cad::millimetres(&sk).unwrap();
+                    let facets = sk.evaluated_solid(root,gcs_core::solid::ApproximationPolicy::Mesh).map(|e| e.volume()*scale.powi(3));
+                    match facets {
+                        Ok(w) if ((v-w)/v).abs() < 5e-3 => {}
+                        Ok(w) => { failures.push(format!("{label}: the faceted kernel's volume {w} against {v}")); continue }
+                        Err(err) => eprintln!("  (not faceted: {err})"),
+                    }
                 }
                 ours.insert(id,b);
                 compared += 1;

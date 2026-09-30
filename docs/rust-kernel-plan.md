@@ -239,7 +239,7 @@ splines and lofts; nothing ever handed them to it.
   faces by kind equal OCCT's, the STEP read back by OCCT, the STL's shells and its sag within the
   bar; the core's facet volume (`tests/solid.rs`'s arithmetic) agrees to its own faceting.
 
-#### Rung 1 — progress (2026-09-29)
+#### Rung 1 — done (2026-09-30)
 
 Begun ahead of phases 1–5, since its solids need no fitted sheets and every piece it builds is
 one the gear needs too. In `gcs-core/src/brep/`:
@@ -288,10 +288,31 @@ to three minutes) where the accuracy meter finds every face of the same file on 
 surface. Two designs are refused because they pinch — the V-twin disc and flywheel, whose
 grub-screw holes end tangent to the hub bore — and OCCT's own export of them fails too.
 
-**Still to do for the rung's gate:** shallow intersections (the crown bodies' fillet tori meet
-at 0.05°: a point within the tolerance of both surfaces is then `tol / sin θ` off their meeting,
-which needs measured vertex and edge tolerances rather than one global one), and speed against
-OCCT, measured.
+**The gate, as it closed.** Of the corpus's 41 objects, 29 have a CAD recipe (the rest are
+swept, or lofts — rung 2); every one of their 176 recipe nodes the kernel builds agrees with
+OCCT's to 1e-9 in volume, with the same faces by kind, and every object with the core's faceted
+kernel to its faceting. Every body the kernel builds exports: its STEP parsed back against it,
+read back by OCCT as a valid solid with its faces (slow tier), its STL closed within its bar.
+What it refuses, it refuses by name, and each is a design that touches itself:
+- **Three crown bodies** (the spiral bevel's gear-space cutters, `crown/space.sv` and
+  `crown/relief.sv`): both crowns' fillet tori are tangent to one shared plane and their tangent
+  circles cross in it, so the tori touch each other there — their intersection has a singular
+  point. Lowering the limit only traced through it into an invalid boundary (0.05°, and the
+  relief's 0.87° falls to 0.34° at half a degree). The refusal names the angle and the place.
+  The gear (phase 4) needs these cutters, so the answer belongs there: measured vertex and edge
+  tolerances, merging within them as OCCT's Booleans do within 1e-5 mm.
+- **The V-twin disc and flywheel pinch** where their grub-screw holes end tangent to the hub
+  bore; OCCT's own export of both fails as well.
+- **Faces by kind** differ only where OCCT splits a cap along a line it only touches (the crank
+  disc's and flywheel's grub-screw caps): one plane more on OCCT's side.
+
+**Speed** (release, STEP and STL at 10 µm, best of two, each including the ~0.3 s the document
+takes to elaborate and solve): pulley 0.68 s against OCCT's 0.36 s, flange 0.80 / 0.54, tray
+0.40 / 0.38, indexed pattern 0.44 / 0.33, V-twin plate 1.68 / 0.73, cylinder 0.62 / 0.31,
+throttle 0.68 / 0.54, piston 0.40 / 0.32, the spiral bevel's blank 0.42 / 0.88, the pierced
+sphere 0.80 (OCCT's export of it fails its STEP check). Most of ours is the mesher (the plate:
+0.5 s built, 0.8 s meshed): its Delaunay insertion scans every triangle, and is the first place
+to look when speed matters.
 
 ### Rung 2 (phase 7) — spline, curve and loft profiles
 

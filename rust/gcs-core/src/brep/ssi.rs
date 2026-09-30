@@ -240,15 +240,16 @@ fn solve3(m: [V;3],rhs: V) -> V {
 pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result<Vec<Curve>,String> {
     use super::geom::Traced;
     // the sine of the angle the two meet at, below which a trace is ill-conditioned (a point
-    // within `tol` of both surfaces may be `tol / sin θ` off their meeting): refused, not traced
+    // within `tol` of both surfaces may be `tol / sin θ` off their meeting, and where they touch
+    // their meeting has a singular point): refused, not traced
     const SHALLOW: f64 = 0.0175; // one degree
     let tangent = |p: V| -> Option<V> {
         let t = cross(a.gradient(p),b.gradient(p));
         let n = norm(t);
         (n > SHALLOW).then(|| scale(t,1./n))
     };
-    let shallow = |p: V| format!("a {} and a {} meet at {:.2}° there, too shallow to trace: not built yet",a.kind(),b.kind(),
-        norm(cross(a.gradient(p),b.gradient(p))).asin().to_degrees());
+    let shallow = |p: V| format!("a {} and a {} meet at {:.2}° at [{:.4}, {:.4}, {:.4}], nearly touching: their meeting is \
+        ill-conditioned there, not built yet",a.kind(),b.kind(),norm(cross(a.gradient(p),b.gradient(p))).asin().to_degrees(),p[0],p[1],p[2]);
     let probe = Traced {a:*a,b:*b,pts:vec![],closed:false};
     let diag = norm(sub(hi,lo)).max(tol);
     let h0 = (a.feature().min(b.feature())/12.).min(diag/24.).max(diag*1e-4);

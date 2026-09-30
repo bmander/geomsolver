@@ -42,12 +42,20 @@ impl Body {
 /// own (`gcs_core::brep`) where asked (`--kernel rust`, `SOLVENT_KERNEL=rust`) or where it does not.
 static RUST_KERNEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Whether OCCT was asked for by name (`--kernel occt`, `--stl-backend occt`): a build without it
+/// then refuses rather than export by another kernel.
+static OCCT_ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Ask for the core's own kernel (`--kernel rust`).
 pub fn use_rust_kernel() { RUST_KERNEL.store(true,std::sync::atomic::Ordering::Relaxed); }
 
+/// Ask for OCCT by name.
+pub fn ask_occt() { OCCT_ASKED.store(true,std::sync::atomic::Ordering::Relaxed); }
+
 /// Whether the core's own kernel builds this export.
 pub fn rust_kernel() -> bool {
-    !cfg!(feature="occt") || RUST_KERNEL.load(std::sync::atomic::Ordering::Relaxed)
+    (!cfg!(feature="occt") && !OCCT_ASKED.load(std::sync::atomic::Ordering::Relaxed))
+        || RUST_KERNEL.load(std::sync::atomic::Ordering::Relaxed)
         || std::env::var("SOLVENT_KERNEL").is_ok_and(|v| v == "rust")
 }
 
@@ -346,6 +354,8 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     }
     #[cfg(not(feature="occt"))]
     {
-        unreachable!("a build without OCCT exports by the Rust kernel")
+        let _ = (sk,body,step,stl,tolerance);
+        Err(ExportRefusal::at(Stage::Blank,"CAD export by OCCT requires native OCCT support; build with `make solventc OCCT=1` \
+            or Cargo's `--features occt`, or export by the core's kernel (`--kernel rust`)"))
     }
 }

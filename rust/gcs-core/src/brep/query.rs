@@ -207,6 +207,3 @@ impl<'a> Located<'a> {
         Place::On
     }
 }
-
-/// Whether an edge is degenerate (a pole), which classifies nothing.
-pub fn degenerate(b: &Brep,e: u32) -> bool { matches!(b.edges[e as usize].curve,EdgeCurve::Degenerate) }

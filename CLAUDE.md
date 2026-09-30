@@ -395,6 +395,10 @@ static solid with it, checking its STEP by `step_check` against `Solid::of`. `gc
 tests/brep_oracle.rs` builds every corpus recipe node both ways (the slow tier reads our STEP back
 by OCCT); `tests/brep_census.rs` holds a census and `brep_body_debug`; `SOLVENT_BREP_DEBUG`
 narrates. OCCT's volume of a STEP it reads is good to ~1e-5, not a gate on our files' accuracy.
+Rung 1 is done: every corpus solid with a recipe agrees with OCCT (volume 1e-9, faces by kind),
+but for named refusals of designs that touch themselves — surfaces meeting under 1° (the crown
+cutters' fillet tori touch; the gear's phase needs measured tolerances for them) and pinches.
+An explicit `--kernel occt` / `--stl-backend occt` in a build without OCCT still refuses.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference

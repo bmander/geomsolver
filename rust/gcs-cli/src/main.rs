@@ -136,7 +136,7 @@ fn main() -> ExitCode {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--stl-backend" => match args.next().as_deref() {
-                Some("occt") => opts.native_stl = true,
+                Some("occt") => { opts.native_stl = true; cad::ask_occt(); }
                 Some("mesh") => opts.native_stl = false,
                 Some("refine") => opts.refine = true,
                 _ => { eprintln!("solventc: --stl-backend needs occt, mesh or refine"); return ExitCode::from(2); }
@@ -146,7 +146,7 @@ fn main() -> ExitCode {
                 None => { eprintln!("solventc: --step needs a path"); return ExitCode::from(2); }
             },
             "--kernel" => match args.next().as_deref() {
-                Some("occt") => {}
+                Some("occt") => cad::ask_occt(),
                 Some("rust") => { cad::use_rust_kernel(); opts.native_stl = true; }
                 _ => { eprintln!("solventc: --kernel needs occt or rust"); return ExitCode::from(2); }
             },

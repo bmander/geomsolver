@@ -49,25 +49,38 @@ impl WEdge {
 #[derive(Clone,Debug)]
 struct Half { edge: u32,along: bool,pcurve: Pcurve,from: Uv,to: Uv }
 
-/// A face's box in space, from its edges and a grid across its parameters.
+/// A face's box in space, from its edges and a grid across its parameters, grown by what the
+/// samples may miss between them (a quarter of the longest step bounds the bulge of an arc no more
+/// than a semicircle between two samples).
 fn face_box(b: &Brep,fi: usize) -> ([f64;3],[f64;3]) {
     let f = &b.faces[fi];
     let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
-    let mut grow = |p: V| for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); };
+    let mut step: f64 = 0.;
+    let mut grow = |p: V,last: &mut Option<V>| {
+        for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); }
+        if let Some(q) = *last { step = step.max(distance(p,q)); }
+        *last = Some(p);
+    };
     let (mut ulo,mut uhi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
     for l in &f.loops { for c in l {
         let e = &b.edges[c.edge as usize];
+        let mut last = None;
         for j in 0..=16 {
             let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/16.;
-            grow(e.point(t,&b.vertices));
+            grow(e.point(t,&b.vertices),&mut last);
             let uv = c.pcurve.at(t,e,&f.surface,&b.vertices);
             for k in 0..2 { ulo[k] = ulo[k].min(uv[k]); uhi[k] = uhi[k].max(uv[k]); }
         }
     } }
-    for i in 0..=8 { for j in 0..=8 {
-        grow(f.surface.point([ulo[0]+(uhi[0]-ulo[0])*i as f64/8.,ulo[1]+(uhi[1]-ulo[1])*j as f64/8.]));
-    } }
-    (lo,hi)
+    for i in 0..=8 {
+        let (mut row,mut column) = (None,None);
+        for j in 0..=8 {
+            grow(f.surface.point([ulo[0]+(uhi[0]-ulo[0])*i as f64/8.,ulo[1]+(uhi[1]-ulo[1])*j as f64/8.]),&mut row);
+            grow(f.surface.point([ulo[0]+(uhi[0]-ulo[0])*j as f64/8.,ulo[1]+(uhi[1]-ulo[1])*i as f64/8.]),&mut column);
+        }
+    }
+    let pad = step/4.;
+    (lo.map(|x| x-pad),hi.map(|x| x+pad))
 }
 
 fn overlap(a: &([f64;3],[f64;3]),b: &([f64;3],[f64;3]),pad: f64) -> bool {
@@ -113,8 +126,10 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
                 if !overlap(&ebox,&boxes[other][fi],pad+sag) { continue }
                 match curve_surface(&c,e.t,&f.surface,tol) {
                     Meets::Along => {}
-                    Meets::At(roots) => for (t,_) in roots {
+                    Meets::At(roots) => for (t,touch) in roots {
                         let q = c.point(t);
+                        if debug { eprintln!("brep: edge {i} of {} ({}) meets face {fi} ({}) at {q:?}{}: {:?}",["A","B"][s],c.kind(),
+                            f.surface.kind(),if touch { ", touching" } else { "" },located[other].face_place(fi,q)); }
                         if located[other].face_place(fi,q) == Place::Out { continue }
                         let v = pool.at(q);
                         cuts[we].push((t,v));
@@ -181,7 +196,10 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
                 for &v in on_face[1][fb].iter().chain(&on_face[0][fa]) {
                     let p = pool.pts[v as usize];
                     let t = c.inverse(p);
-                    if distance(c.point(t),p) <= 8.*tol && !ts.iter().any(|&(_,w)| w == v) { ts.push((t,v)); }
+                    // a point within the tolerance of both surfaces is that over the sine of the angle
+                    // they meet at off their meeting
+                    let sine = norm(crate::space::cross(sa.gradient(p),sb.gradient(p))).max(1e-4);
+                    if distance(c.point(t),p) <= 8.*tol/sine && !ts.iter().any(|&(_,w)| w == v) { ts.push((t,v)); }
                 }
                 let closed = c.period().is_some();
                 let period = c.period().unwrap_or(TAU);
