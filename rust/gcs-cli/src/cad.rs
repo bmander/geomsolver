@@ -8,6 +8,7 @@ pub mod measure;
 mod native;
 #[cfg(feature="occt")]
 pub mod field_mesh;
+pub mod brep;
 
 pub use progress::{mark,Stage};
 use gcs_core::{model::Sketch,solid::{admission::{self,Admission},cad,export::{ExportRefusal,Tolerance}}};
@@ -35,6 +36,27 @@ impl Body {
         self.admission = Some(admitted(sk,self.index)?);
         Ok(())
     }
+}
+
+/// Which kernel builds a static solid for STEP and STL: OCCT where the build has it, the core's
+/// own (`gcs_core::brep`) where asked (`--kernel rust`, `SOLVENT_KERNEL=rust`) or where it does not.
+static RUST_KERNEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether OCCT was asked for by name (`--kernel occt`, `--stl-backend occt`): a build without it
+/// then refuses rather than export by another kernel.
+static OCCT_ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Ask for the core's own kernel (`--kernel rust`).
+pub fn use_rust_kernel() { RUST_KERNEL.store(true,std::sync::atomic::Ordering::Relaxed); }
+
+/// Ask for OCCT by name.
+pub fn ask_occt() { OCCT_ASKED.store(true,std::sync::atomic::Ordering::Relaxed); }
+
+/// Whether the core's own kernel builds this export.
+pub fn rust_kernel() -> bool {
+    (!cfg!(feature="occt") && !OCCT_ASKED.load(std::sync::atomic::Ordering::Relaxed))
+        || RUST_KERNEL.load(std::sync::atomic::Ordering::Relaxed)
+        || std::env::var("SOLVENT_KERNEL").is_ok_and(|v| v == "rust")
 }
 
 /// Verify every STEP file written in full: the kernel's read-back as well as the light check
@@ -91,6 +113,7 @@ const GROSS_SEAM: f64 = 0.02;
 /// meshed within the rest of it and the field is probed as near as it says; without one the
 /// export keeps its gross bars (`Tolerance`).
 pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,tolerance: Option<Tolerance>) -> Result<(),ExportRefusal> {
+    if rust_kernel() { return brep::export(sk,body,step,stl,tolerance) }
     #[cfg(feature="occt")]
     {
         use progress::stage;
@@ -332,7 +355,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     #[cfg(not(feature="occt"))]
     {
         let _ = (sk,body,step,stl,tolerance);
-        Err(ExportRefusal::at(Stage::Blank,"CAD export requires native OCCT support; build with `make solventc OCCT=1` \
-            or Cargo's `--features occt`"))
+        Err(ExportRefusal::at(Stage::Blank,"CAD export by OCCT requires native OCCT support; build with `make solventc OCCT=1` \
+            or Cargo's `--features occt`, or export by the core's kernel (`--kernel rust`)"))
     }
 }

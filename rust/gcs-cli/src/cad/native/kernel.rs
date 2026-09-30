@@ -229,6 +229,11 @@ impl Session {
     pub(crate) fn step(&self,solid: c_int,path: &str) -> Result<String,String> {
         self.step_verified(solid,path,step_check::verification())
     }
+    /// OCCT's checker on a shape: a valid solid, or why not.
+    #[allow(dead_code)]
+    pub(crate) fn validate(&self,solid: c_int) -> Result<(),String> {
+        self.result(unsafe { solvent_cad_validate(self.0,solid) }).map(|_| ())
+    }
     pub(crate) fn step_verified(&self,solid: c_int,path: &str,how: step_check::Verification) -> Result<String,String> {
         self.result(unsafe { solvent_cad_validate(self.0,solid) })?;
         self.step_written(solid,path,how,false)

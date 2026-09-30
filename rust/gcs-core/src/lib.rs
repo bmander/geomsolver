@@ -9,6 +9,7 @@
 //! decomposition, witness analysis and solution management.  The TypeScript package is a thin
 //! binding over the flat C ABI in `gcs-ffi`; there is no second copy of any algorithm.
 pub mod callout;
+pub mod brep;
 pub mod cgraph;
 pub mod clear;
 pub mod complex;

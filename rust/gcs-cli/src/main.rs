@@ -41,6 +41,8 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (requires a native OCCT build)
+    --kernel NAME       occt or rust: which kernel builds a static solid's STEP and STL (occt where the
+                        build has it; rust, the core's own B-rep, otherwise or where asked)
     --verify-step HOW   light (default): the written file parsed and checked against the solid,
                         its topology, surfaces and their numbers; full: that, and read back by
                         the kernel, repaired as a reader would, checked and measured
@@ -134,7 +136,7 @@ fn main() -> ExitCode {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--stl-backend" => match args.next().as_deref() {
-                Some("occt") => opts.native_stl = true,
+                Some("occt") => { opts.native_stl = true; cad::ask_occt(); }
                 Some("mesh") => opts.native_stl = false,
                 Some("refine") => opts.refine = true,
                 _ => { eprintln!("solventc: --stl-backend needs occt, mesh or refine"); return ExitCode::from(2); }
@@ -142,6 +144,11 @@ fn main() -> ExitCode {
             "--step" => match args.next() {
                 Some(p) => opts.step = Some(p),
                 None => { eprintln!("solventc: --step needs a path"); return ExitCode::from(2); }
+            },
+            "--kernel" => match args.next().as_deref() {
+                Some("occt") => cad::ask_occt(),
+                Some("rust") => { cad::use_rust_kernel(); opts.native_stl = true; }
+                _ => { eprintln!("solventc: --kernel needs occt or rust"); return ExitCode::from(2); }
             },
             "--verify-step" => match args.next().as_deref() {
                 Some("light") => {}

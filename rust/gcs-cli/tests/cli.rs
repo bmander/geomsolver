@@ -453,3 +453,25 @@ fn issue51_invalid_claims_and_colliding_cap_names_are_diagnosed() {
             .is_empty());
     }
 }
+
+/// The core's own kernel exports a static solid in any build (`--kernel rust`): a bored block's
+/// STEP, parsed back against it, and its STL, closed and within the bar.
+#[test]
+fn the_rust_kernel_exports_a_static_solid() {
+    let dir = std::env::temp_dir().join(format!("solventc-rust-kernel-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let model = dir.join("model.sv");
+    let (stl,step) = (dir.join("model.stl"),dir.join("model.step"));
+    std::fs::write(&model,"unit mm\npoint o hint(x: 0,y: 0)\npoint b hint(x: 10,y: 0)\npoint a hint(x: 10,y: 6)\n\
+        point d hint(x: 0,y: 6)\nground o\nground b\nground a\nground d\npoint m hint(x: 5,y: 3)\nground m\n\
+        circle c(center: m) hint(r: 1)\nradius(1) c\n\
+        solid block(face(o, b, a, d, -> close), depth: 3)\nsolid bore(face(c), from: -5, to: 5)\nsolid body(block)\nbore cut body\n").unwrap();
+    let result = run(&[model.to_str().unwrap(),"--solid","body","--kernel","rust","--stl",stl.to_str().unwrap(),
+        "--step",step.to_str().unwrap(),"--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(0),"{stderr}");
+    assert!(stderr.contains("built the solid by the Rust kernel") && stderr.contains("each the solid's"),"{stderr}");
+    gcs_core::mesh::stl_shells(&std::fs::read(&stl).unwrap()).unwrap();
+    assert!(std::fs::read_to_string(&step).unwrap().starts_with("ISO-10303-21;"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
