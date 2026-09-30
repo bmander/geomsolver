@@ -191,3 +191,54 @@ fn surfaces_meet_in_curves_on_both() {
 }
 
 fn scale3(a: V,s: f64) -> V { [a[0]*s,a[1]*s,a[2]*s] }
+
+fn block(lo: V,hi: V) -> gcs_core::brep::topo::Brep {
+    let p = Profile {origin:[0.,0.,0.],normal:XY,loops:vec![poly(&[[lo[0],lo[1],0.],[hi[0],lo[1],0.],[hi[0],hi[1],0.],[lo[0],hi[1],0.]])]};
+    prism(&p,lo[2],hi[2]).unwrap()
+}
+fn rod(c: V,r: f64,z: [f64;2]) -> gcs_core::brep::topo::Brep {
+    prism(&Profile {origin:[0.,0.,0.],normal:XY,loops:vec![vec![arc([c[0],c[1],0.],r,XY,[1.,0.,0.],None)]]},z[0],z[1]).unwrap()
+}
+fn ball(c: V,r: f64) -> gcs_core::brep::topo::Brep {
+    let p = Profile {origin:c,normal:XZ,loops:vec![vec![arc(c,r,XZ,[1.,0.,0.],Some([-PI/2.,PI/2.])),
+        line([c[0],c[1],c[2]-r],[c[0],c[1],c[2]+r])]]};
+    revolve(&p,c,[0.,0.,1.],TAU).unwrap()
+}
+
+#[test]
+fn booleans_of_boxes_crossing_in_general_position() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let a = block([0.,0.,0.],[2.,2.,2.]);
+    let b = block([1.,0.5,1.5],[3.,2.5,3.5]);
+    let shared = 1.*1.5*0.5;
+    for (op,want) in [(Op::Union,16.-shared),(Op::Cut,8.-shared),(Op::Common,shared)] {
+        let r = boolean(&a,&b,op,1e-9).unwrap_or_else(|e| panic!("{op:?}: {e}"));
+        r.check(1e-8).unwrap_or_else(|e| panic!("{op:?}: {e}"));
+        close(volume(&r),want);
+    }
+}
+
+#[test]
+fn a_pocket_and_a_bore() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let a = block([0.,0.,0.],[4.,4.,4.]);
+    // a pocket from above
+    let r = boolean(&a,&block([1.,1.,2.],[3.,3.,6.]),Op::Cut,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    close(volume(&r),64.-8.);
+    // a bore straight through, and the rod it would leave
+    let bore = rod([2.,2.,0.],1.,[-1.,5.]);
+    let r = boolean(&a,&bore,Op::Cut,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    close(volume(&r),64.-4.*PI);
+    let r = boolean(&a,&bore,Op::Union,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    close(volume(&r),64.+2.*PI);
+    let r = boolean(&a,&bore,Op::Common,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    close(volume(&r),4.*PI);
+    // a ball half sunk in the top
+    let r = boolean(&a,&ball([2.,2.,4.],1.5),Op::Common,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    close(volume(&r),2./3.*PI*1.5f64.powi(3));
+}

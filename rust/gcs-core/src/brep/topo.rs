@@ -177,8 +177,9 @@ impl Brep {
                     if self.ends(c)[1] != self.ends(next)[0] {
                         return Err(format!("face {fi} ({}): loop {li} breaks after use {k}",f.name))
                     }
+                    // the same place, reached on the same branch of the surface's periods
                     let (a,b) = (self.uv_ends(f,c)[1],self.uv_ends(f,next)[0]);
-                    if (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-9 {
+                    if distance(f.surface.point(a),f.surface.point(b)) > tol || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
                         return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name))
                     }
                     let e = &self.edges[c.edge as usize];
