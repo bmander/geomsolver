@@ -22,6 +22,8 @@ fn every_node_the_kernel_builds_is_occts() {
     let mut refused: Vec<String> = Vec::new();
     let mut bodies = 0;
     for (name,e) in fixtures::examples() {
+        // `BREP_ORACLE_ONLY=name` runs one example
+        if std::env::var("BREP_ORACLE_ONLY").is_ok_and(|only| !name.contains(&only)) { continue }
         let Some(e) = e else { continue };
         if !e.ok() { continue }
         let mut sk = e.sketch.clone();
@@ -58,20 +60,26 @@ fn every_node_the_kernel_builds_is_occts() {
                     // a solid touching itself at a point has no manifold file (OCCT's export of one refuses too)
                     refused.push(format!("{label}: pinches at {:?}",b.pinches()[0]));
                 } else if n.get("kind").unwrap().as_str() == "body" {
-                    // our STEP, read back by OCCT: a valid solid of our volume (the slow tier: its traced
-                    // edges written within 1e-7 mm, the reading takes most of a minute)
-                    if cfg!(feature="slow") {
-                    let file = std::env::temp_dir().join(format!("solvent-brep-oracle-{}.step",std::process::id()));
-                    std::fs::write(&file,gcs_core::brep::step::write(&b,"oracle",1e-7)).unwrap();
-                    let read = session.read_step(file.to_str().unwrap());
-                    let _ = std::fs::remove_file(&file);
-                    match read.and_then(|r| session.validate(r).map(|_| r)).and_then(|r| session.volume(r)) {
-                        // with no pcurves in the file, OCCT's reader projects its own, and its volume is then
-                        // good to about 1e-5
-                        Ok(u) if ((u-v)/v).abs() < 5e-5 => {}
-                        Ok(u) => { failures.push(format!("{label}: our STEP reads back as {u} mm³ against {v}")); continue }
-                        Err(err) => { failures.push(format!("{label}: our STEP does not read back: {err}")); continue }
+                    // our STEP, parsed back and checked against our solid face by face
+                    let text = gcs_core::brep::step::write(&b,"oracle",1e-5);
+                    if let Err(err) = native::step_check::verify(&text,&native::step_check::Solid::of(&b)) {
+                        failures.push(format!("{label}: our STEP does not describe it: {err}")); continue
                     }
+                    // the slow tier: read back by OCCT as a valid solid with our faces. Its volume of the
+                    // reading is only a check against gross misreading: the meter finds the file's faces
+                    // on their surfaces exactly where OCCT's integration of it is 2e-4 off
+                    if cfg!(feature="slow") {
+                        let file = std::env::temp_dir().join(format!("solvent-brep-oracle-{}.step",std::process::id()));
+                        std::fs::write(&file,&text).unwrap();
+                        let read = session.read_step(file.to_str().unwrap());
+                        let _ = std::fs::remove_file(&file);
+                        let read = read.and_then(|r| session.validate(r).map(|_| r))
+                            .and_then(|r| Ok((session.volume(r)?,session.faces(r)?.len())));
+                        match read {
+                            Ok((u,n)) if n == faces && ((u-v)/v).abs() < 1e-3 => {}
+                            Ok((u,n)) => { failures.push(format!("{label}: our STEP reads back as {u} mm³ in {n} faces against {v} in {faces}")); continue }
+                            Err(err) => { failures.push(format!("{label}: our STEP does not read back: {err}")); continue }
+                        }
                     }
                     // our mesh: closed, within its bar
                     match gcs_core::brep::mesh::mesh(&b,0.01,0.2) {
@@ -88,10 +96,10 @@ fn every_node_the_kernel_builds_is_occts() {
             }
         }
     }
-    eprintln!("{compared} nodes compared, worst {worst:e}; {bodies} bodies written as STEP, read back by OCCT and meshed; not built: {skipped:?}");
+    eprintln!("{compared} nodes compared, worst {worst:e}; {bodies} bodies written as STEP and checked (read back by OCCT in the slow tier), and meshed; not built: {skipped:?}");
     for r in &refused { eprintln!("refused {r}"); }
     for f in &failures { eprintln!("FAILED {f}"); }
-    assert!(compared > 100,"{compared}");
+    assert!(compared > 100 || std::env::var_os("BREP_ORACLE_ONLY").is_some(),"{compared}");
     assert!(failures.is_empty(),"{} failures",failures.len());
     assert!(refused.len() <= 8,"{} refused",refused.len());
 }

@@ -230,6 +230,7 @@ impl Session {
         self.step_verified(solid,path,step_check::verification())
     }
     /// OCCT's checker on a shape: a valid solid, or why not.
+    #[allow(dead_code)]
     pub(crate) fn validate(&self,solid: c_int) -> Result<(),String> {
         self.result(unsafe { solvent_cad_validate(self.0,solid) }).map(|_| ())
     }

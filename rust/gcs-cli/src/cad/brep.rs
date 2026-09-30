@@ -1,8 +1,15 @@
 //! The export by the core's own kernel (docs/rust-kernel-plan.md, `--kernel rust`): a static solid
 //! built from its CAD recipe by `gcs_core::brep`, its STEP written and its STL meshed within the
-//! tolerance's deflection (the measured sag, not a control), each checked — the boundary valid, the
-//! STL's shells closed — and staged, so a failure anywhere leaves every output as it was.
+//! tolerance's deflection (the measured sag, not a control), each checked — the boundary valid and
+//! not pinched, the STEP parsed back against it (`step_check`), the STL's shells closed — and
+//! staged, so a failure anywhere leaves every output as it was.
 use super::{output,progress::stage,Body,ExportRefusal,Stage};
+#[cfg(feature="occt")]
+use super::native::step_check;
+#[cfg(not(feature="occt"))]
+#[path="native/step_check.rs"]
+#[allow(dead_code)]
+mod step_check;
 use gcs_core::brep;
 use gcs_core::model::Sketch;
 use gcs_core::solid::export::Tolerance;
@@ -32,8 +39,13 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     if let Some(path) = step {
         let started = std::time::Instant::now();
         let text = brep::step::write(&solid,&name,tolerance.map_or(1e-4,|t| t.deflection()*0.1));
+        // the file parsed back and checked against the solid: every reference, the topology's
+        // counts, units, and each face's surface and its numbers
+        let verified = step_check::verify(&text,&step_check::Solid::of(&solid))
+            .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the solid: {e}")))?;
         staged.write(path,"step",text.as_bytes()).map_err(|e| ExportRefusal::at(Stage::Step,e))?;
-        stage(&format!("staged the STEP output: {} faces ({:?})",solid.faces.len(),started.elapsed()));
+        stage(&format!("staged the STEP output: {} entities; {} faces, {} edges and {} vertices, each the solid's ({:?})",
+            verified.entities,verified.faces,verified.edges,verified.vertices,started.elapsed()));
     }
     if let Some(path) = stl {
         let started = std::time::Instant::now();

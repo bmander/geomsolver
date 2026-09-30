@@ -259,6 +259,24 @@ const TORUS: u8 = 4;
 const BSPLINE: u8 = 6;
 
 impl Solid {
+    /// The solid a STEP file of the core's own B-rep must describe (`gcs_core::brep::step`): its
+    /// counts, and each face's surface as that writer writes it.
+    pub(crate) fn of(b: &gcs_core::brep::topo::Brep) -> Solid {
+        use gcs_core::brep::{geom::Surface,topo::EdgeCurve};
+        let faces = b.faces.iter().map(|f| {
+            let (frame,scalars) = gcs_core::brep::step::written(&f.surface);
+            let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,
+                Surface::Cone(..) => CONE,Surface::Sphere(..) => SPHERE,Surface::Torus(..) => TORUS };
+            let mut numbers: Vec<f64> = frame.o.iter().chain(&frame.z).chain(&frame.x).copied().collect();
+            numbers.extend(scalars);
+            Face {kind,reversed:f.reversed,indirect:false,numbers}
+        }).collect();
+        // a pole's degenerate edge is not written, nor a vertex only it ends at
+        let written: Vec<&gcs_core::brep::topo::Edge> = b.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Curve(_))).collect();
+        let mut used = vec![false;b.vertices.len()];
+        for e in &written { for v in e.v { used[v as usize] = true; } }
+        Solid {solids:1,shells:1,edges:written.len(),vertices:used.iter().filter(|&&u| u).count(),faces}
+    }
     /// Read the kernel's summary.
     pub(crate) fn read(summary: &[f64]) -> Result<Solid,String> {
         let bad = || "a malformed solid summary".to_string();

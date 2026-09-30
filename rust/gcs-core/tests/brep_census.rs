@@ -299,6 +299,7 @@ fn brep_body_debug() {
                 solid = next;
             }
         }
+        if std::env::var_os("BREP_DUMP").is_some() { eprintln!("result:"); dump(&solid); }
         match gcs_core::brep::mesh::mesh(&solid,0.01,0.2) {
             Ok(m) => eprintln!("meshed: {} triangles, sag {}",m.tris.len(),m.sag),
             Err(err) => {

@@ -380,6 +380,21 @@ box (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whol
 entities are formatted on every core, the kernel's text to the byte (`SOLVENT_STEP_TEXT_CHECK`); a
 sheet's stations are traced side by side. 8.6–14.6 s a member (40–55×); the floor is OCCT's
 STEP transfer, parse and repairing read-back, its Boolean split and the cutters' Booleans.
+**The Rust B-rep kernel** ([plan](docs/rust-kernel-plan.md), rung 1; clean-room — OCCT is LGPL
+and this repo MIT, so its code is never translated, only its behaviour and conventions studied):
+`gcs_core::brep` — `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed
+distances; lines, circles, ellipses, `Traced` intersections read by pulling a chord onto both
+surfaces), `topo` (`Brep`: loops of oriented uses with pcurves, degenerate poles; `check`,
+`pinches`), `build` (prisms and revolutions of line/arc/circle profiles), `props` (volume by Green's
+theorem round each face's loops), `query`, `ssi` (closed forms, else traced; under a degree refused
+by name), `boolean` (split, arrange in each face's parameters, classify, assemble; faces on one
+surface and tangent touches handled), `mesh` (constrained Delaunay in scaled parameters, refined to
+a measured sag), `step` (AP214 with pcurves and seam curves), `recipe` (the CAD recipe's nodes).
+`solventc --kernel rust` / `SOLVENT_KERNEL=rust` (and every export of a build without OCCT) builds a
+static solid with it, checking its STEP by `step_check` against `Solid::of`. `gcs-cli
+tests/brep_oracle.rs` builds every corpus recipe node both ways (the slow tier reads our STEP back
+by OCCT); `tests/brep_census.rs` holds a census and `brep_body_debug`; `SOLVENT_BREP_DEBUG`
+narrates. OCCT's volume of a STEP it reads is good to ~1e-5, not a gate on our files' accuracy.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference

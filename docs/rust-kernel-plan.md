@@ -274,11 +274,24 @@ line it only touches (three grub-screw bores tangent to their hubs). **Three cro
 refused by name**: their neighbouring fillet tori meet at 0.05° and 0.87°. The census
 (`tests/brep_census.rs`) found the corpus's shared faces all planar but one coaxial cylinder.
 
-**Still to do for the rung's gate:** the mesher and STL, the STEP writer (traced curves
-approximated by B-splines within the tolerance) and OCCT's read-back of it, the CLI's choice of
-kernel (`SOLVENT_KERNEL`), shallow intersections (a fuzzy merge, as OCCT's Booleans run with
-1e-5 mm), and speed (the oracle builds the whole corpus in about ten seconds, OCCT's time not
-yet measured beside it).
+**Files (2026-09-30).** `brep::mesh` meshes a boundary within a *measured* sag (every edge
+sampled once in space, every face the constrained Delaunay triangulation of its loops in its
+scaled parameters, refined where the surface stands off a triangle by more than the bar);
+`brep::step` writes AP214 with every edge's pcurves (a seam's as a seam curve) and exact
+surfaces and curves, traced ones as B-splines within the tolerance. `solventc --kernel rust`
+(and any export of a build without OCCT) uses them for static solids, the STEP checked by the
+native export's own parser (`step_check`, against `Solid::of` the B-rep), the STL's shells
+checked. Every corpus body the kernel builds exports this way; the V-twin plate builds in 0.5 s
+and meshes at 5 µm in 0.8 s. **OCCT's reading is not the gate:** with pcurves most files read
+back exact to 1e-13, but OCCT integrates the volume of the spiral bevel's blank 2e-4 off (in two
+to three minutes) where the accuracy meter finds every face of the same file on its exact
+surface. Two designs are refused because they pinch — the V-twin disc and flywheel, whose
+grub-screw holes end tangent to the hub bore — and OCCT's own export of them fails too.
+
+**Still to do for the rung's gate:** shallow intersections (the crown bodies' fillet tori meet
+at 0.05°: a point within the tolerance of both surfaces is then `tol / sin θ` off their meeting,
+which needs measured vertex and edge tolerances rather than one global one), and speed against
+OCCT, measured.
 
 ### Rung 2 (phase 7) — spline, curve and loft profiles
 

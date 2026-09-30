@@ -1,8 +1,9 @@
 //! A B-rep written as STEP (ISO 10303-21, AP214's advanced B-rep): the product and units a
 //! reader expects (millimetres, radians), a manifold solid on one closed shell, its faces on
 //! their exact surfaces and its edges on their exact curves; a traced curve written as the
-//! B-spline of degree one through points within `tol` of it. No pcurves are written — a reader
-//! projects them, as it must for any file — and a pole's degenerate edge is left out of its loop.
+//! B-spline of degree one through points within `tol` of it; every edge's curve in each face that
+//! uses it (its pcurve, a seam's two) written beside it, so a reader need not project its own; and
+//! a pole's degenerate edge left out of its loop, as a reader rebuilds it.
 use super::geom::{Curve,Frame,Surface,V};
 use super::topo::{Brep,EdgeCurve};
 use crate::space::{distance,scale};
@@ -54,24 +55,112 @@ impl Out {
     }
 }
 
-/// The points of a stretch of a traced curve within `tol` of it: its own points between the ends,
-/// and more wherever a chord strays farther.
-fn polyline(c: &Curve,t: [f64;2],tol: f64) -> Vec<V> {
+/// The parameters of a stretch of a curve at which `at` (a point, in space or in a face's
+/// parameters) may be joined by chords whose middles map within `tol` of the curve (`off`
+/// measures that): a traced curve's own points between the ends, and more wherever a chord strays.
+fn samples(c: &Curve,t: [f64;2],tol: f64,off: &dyn Fn(f64,f64) -> f64) -> Vec<f64> {
     let mut ts: Vec<f64> = vec![t[0]];
-    ts.extend((t[0].floor() as i64+1..=t[1].ceil() as i64-1).map(|k| k as f64));
+    if let Curve::Traced(_) = c { ts.extend((t[0].floor() as i64+1..=t[1].ceil() as i64-1).map(|k| k as f64)); }
+    else { ts.extend((1..8).map(|k| t[0]+(t[1]-t[0])*k as f64/8.)); }
     ts.push(t[1]);
-    let mut out = vec![c.point(t[0])];
+    let mut out = vec![t[0]];
     for w in ts.windows(2) {
         let mut stack = vec![(w[0],w[1],0)];
         while let Some((a,z,depth)) = stack.pop() {
-            let (pa,pz) = (c.point(a),c.point(z));
-            let m = (a+z)/2.;
-            let chord = crate::space::lerp(pa,pz,0.5);
-            if depth < 24 && distance(c.point(m),chord) > tol { stack.push((m,z,depth+1)); stack.push((a,m,depth+1)); }
-            else { out.push(pz); }
+            if depth < 24 && off(a,z) > tol { let m = (a+z)/2.; stack.push((m,z,depth+1)); stack.push((a,m,depth+1)); }
+            else { out.push(z); }
         }
     }
     out
+}
+
+/// A degree-one B-spline through `pts` with the knots `ts` (its parameter the curve's own).
+fn bspline(o: &mut Out,pts: &[String],ts: &[f64]) -> usize {
+    let n = pts.len();
+    let knots: Vec<String> = ts.iter().map(|&t| real(t)).collect();
+    let mults: Vec<String> = (0..n).map(|k| if k == 0 || k == n-1 { "2".into() } else { "1".into() }).collect();
+    o.add(format!("B_SPLINE_CURVE_WITH_KNOTS('',1,({}),.UNSPECIFIED.,.F.,.F.,({}),({}),.UNSPECIFIED.)",
+        pts.join(","),mults.join(","),knots.join(",")))
+}
+
+/// A surface as the file writes it: its placement (origin, axis, reference direction) and its
+/// numbers — a cone opening against its axis written about the reversed one.
+pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
+    match *s {
+        Surface::Plane(f) => (f,vec![]),
+        Surface::Cylinder(f,r) => (f,vec![r]),
+        Surface::Cone(f,r,a) => (if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f },vec![r,a.abs()]),
+        Surface::Sphere(f,r) => (f,vec![r]),
+        Surface::Torus(f,big,r) => (f,vec![big,r]),
+    }
+}
+
+/// A face's parameters as STEP's surface reads them: the same, but on a cone written about its
+/// reversed axis, where both run the other way.
+fn step_uv(s: &Surface,uv: super::geom::Uv) -> [f64;2] {
+    match s { Surface::Cone(_,_,a) if *a < 0. => [-uv[0],-uv[1]],_ => uv }
+}
+
+/// A use's pcurve, as a STEP `PCURVE` on the face's surface: a line where it is one, a circle
+/// where a plane's edge is one turning the plane's way, otherwise the degree-one B-spline through
+/// its parameters at points chosen so each chord's middle maps within `tol` of the edge.
+fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,context2: usize,tol: f64) -> usize {
+    use super::topo::Pcurve;
+    let f = &b.faces[fi];
+    let e = &b.edges[u.edge as usize];
+    let EdgeCurve::Curve(c) = &e.curve else { unreachable!("a degenerate edge has no pcurve written") };
+    let at = |t: f64| step_uv(&f.surface,u.pcurve.at(t,e,&f.surface,&b.vertices));
+    let p2 = |o: &mut Out,p: [f64;2]| o.add(format!("CARTESIAN_POINT('',({},{}))",real(p[0]),real(p[1])));
+    let line = |o: &mut Out,origin: [f64;2],d: [f64;2]| {
+        let l = d[0].hypot(d[1]);
+        let p = p2(o,origin);
+        let dir = o.add(format!("DIRECTION('',({},{}))",real(d[0]/l),real(d[1]/l)));
+        let v = o.add(format!("VECTOR('',#{dir},{})",real(l)));
+        o.add(format!("LINE('',#{p},#{v})"))
+    };
+    let (a,z) = (at(e.t[0]),at(e.t[1]));
+    // a reader places a closed curve's vertices within its first period: the pcurve's parameter is
+    // the edge's moved there too (a traced curve is written over its own parameters, unmoved)
+    let shift = match c { Curve::Circle(..) | Curve::Ellipse(..) => (e.t[0]/std::f64::consts::TAU).floor()*std::f64::consts::TAU,_ => 0. };
+    // affine in the edge's parameter (a coaxial circle on a cylinder, a line along its axis)
+    let affine = (1..8).all(|k| {
+        let s = k as f64/8.;
+        let q = at(e.t[0]+(e.t[1]-e.t[0])*s);
+        (q[0]-(a[0]+s*(z[0]-a[0]))).abs().max((q[1]-(a[1]+s*(z[1]-a[1]))).abs()) <= 1e-12*(1.+a[0].abs().max(a[1].abs()))
+    });
+    let curve = match (&u.pcurve,&f.surface,c) {
+        // linear in the edge's parameter: a line through where it is at t = 0
+        (Pcurve::Line {..},_,_) | (_,_,_) if affine && (z[0]-a[0]).hypot(z[1]-a[1]) > 0. => {
+            let d = [(z[0]-a[0])/(e.t[1]-e.t[0]),(z[1]-a[1])/(e.t[1]-e.t[0])];
+            line(o,[a[0]-d[0]*(e.t[0]-shift),a[1]-d[1]*(e.t[0]-shift)],d)
+        }
+        (_,Surface::Plane(pl),Curve::Line {p,d}) => {
+            let (l,dl) = (pl.local(*p),pl.dir_local(*d));
+            line(o,[l[0],l[1]],[dl[0],dl[1]])
+        }
+        (_,Surface::Plane(pl),Curve::Circle(cf,r)) if crate::space::dot(cf.z,pl.z) > 0. => {
+            let (l,x) = (pl.local(cf.o),pl.dir_local(cf.x));
+            let p = p2(o,[l[0],l[1]]);
+            let dir = o.add(format!("DIRECTION('',({},{}))",real(x[0]),real(x[1])));
+            let ax = o.add(format!("AXIS2_PLACEMENT_2D('',#{p},#{dir})"));
+            o.add(format!("CIRCLE('',#{ax},{})",real(*r)))
+        }
+        _ => {
+            let off = |ta: f64,tz: f64| {
+                let (ua,uz) = (u.pcurve.at(ta,e,&f.surface,&b.vertices),u.pcurve.at(tz,e,&f.surface,&b.vertices));
+                distance(f.surface.point([(ua[0]+uz[0])/2.,(ua[1]+uz[1])/2.]),c.point((ta+tz)/2.))
+            };
+            let ts = samples(c,e.t,tol,&off);
+            if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+                eprintln!("step: a {} on a {} as {} points, ends {a:?} {z:?}, middle {:?}",c.kind(),f.surface.kind(),ts.len(),at((e.t[0]+e.t[1])/2.));
+            }
+            let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",p2(o,at(t)))).collect();
+            let knots: Vec<f64> = ts.iter().map(|t| t-shift).collect();
+            bspline(o,&ids,&knots)
+        }
+    };
+    let rep = o.add(format!("DEFINITIONAL_REPRESENTATION('',(#{curve}),#{context2})"));
+    o.add(format!("PCURVE('',#{surface},#{rep})"))
 }
 
 /// The solid as a STEP file, `name` its product's.
@@ -95,8 +184,15 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> String {
     let gctx = o.add(format!("( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#{uncertainty})) \
         GLOBAL_UNIT_ASSIGNED_CONTEXT((#{mm},#{rad},#{sr})) REPRESENTATION_CONTEXT('Context #1','3D Context with UNIT and UNCERTAINTY') )"));
     // the topology, bottom up
-    let vertices: Vec<usize> = b.vertices.iter().map(|v| { let p = o.point(v.p); o.add(format!("VERTEX_POINT('',#{p})")) }).collect();
-    let edges: Vec<Option<usize>> = b.edges.iter().map(|e| {
+    // only the vertices a written edge ends at (a pole's degenerate edge is not written)
+    let mut wanted = vec![false;b.vertices.len()];
+    for e in &b.edges { if let EdgeCurve::Curve(_) = e.curve { for v in e.v { wanted[v as usize] = true; } } }
+    let vertices: Vec<usize> = b.vertices.iter().zip(&wanted).map(|(v,&w)| if w {
+        let p = o.point(v.p); o.add(format!("VERTEX_POINT('',#{p})"))
+    } else { 0 }).collect();
+    let surfaces: Vec<usize> = b.faces.iter().map(|f| o.surface(&f.surface)).collect();
+    let context2 = o.add("( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('2D SPACE','') )".into());
+    let edges: Vec<Option<usize>> = b.edges.iter().enumerate().map(|(ei,e)| {
         let EdgeCurve::Curve(c) = &e.curve else { return None };
         let curve = match c {
             Curve::Line {p,d} => {
@@ -107,20 +203,22 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> String {
             Curve::Circle(f,r) => { let a = o.placement(f); o.add(format!("CIRCLE('',#{a},{})",real(*r))) }
             Curve::Ellipse(f,a,bb) => { let p = o.placement(f); o.add(format!("ELLIPSE('',#{p},{},{})",real(*a),real(*bb))) }
             Curve::Traced(_) => {
-                let pts = polyline(c,e.t,tol);
-                let ids: Vec<String> = pts.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                let n = pts.len();
-                let knots: Vec<String> = (0..n).map(|k| real(k as f64)).collect();
-                let mults: Vec<String> = (0..n).map(|k| if k == 0 || k == n-1 { "2".into() } else { "1".into() }).collect();
-                o.add(format!("B_SPLINE_CURVE_WITH_KNOTS('',1,({}),.UNSPECIFIED.,.F.,.F.,({}),({}),.UNSPECIFIED.)",
-                    ids.join(","),mults.join(","),knots.join(",")))
+                let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::space::lerp(c.point(a),c.point(z),0.5)));
+                let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",o.point(c.point(t)))).collect();
+                bspline(&mut o,&ids,&ts)
             }
         };
-        Some(o.add(format!("EDGE_CURVE('',#{},#{},#{curve},.T.)",vertices[e.v[0] as usize],vertices[e.v[1] as usize])))
+        // the edge's curve in each face that uses it: a seam's two in one face, or one in each
+        let uses: Vec<(usize,&super::topo::Coedge)> = b.faces.iter().enumerate()
+            .flat_map(|(fi,f)| f.loops.iter().flatten().filter(|c| c.edge as usize == ei).map(move |c| (fi,c))).collect();
+        let pcurves: Vec<String> = uses.iter().map(|&(fi,u)| format!("#{}",pcurve(&mut o,b,fi,u,surfaces[fi],context2,tol))).collect();
+        let seam = uses.len() == 2 && uses[0].0 == uses[1].0;
+        let geometry = o.add(format!("{}('',#{curve},({}),.PCURVE_S1.)",if seam { "SEAM_CURVE" } else { "SURFACE_CURVE" },pcurves.join(",")));
+        Some(o.add(format!("EDGE_CURVE('',#{},#{},#{geometry},.T.)",vertices[e.v[0] as usize],vertices[e.v[1] as usize])))
     }).collect();
     let mut faces = Vec::new();
-    for f in &b.faces {
-        let surface = o.surface(&f.surface);
+    for (fi,f) in b.faces.iter().enumerate() {
+        let surface = surfaces[fi];
         let mut bounds = Vec::new();
         for (li,l) in f.loops.iter().enumerate() {
             let mut uses: Vec<String> = Vec::new();
