@@ -1,5 +1,6 @@
 // Surface fitting through a grid, and bounded face queries.
 #include "occt.hpp"
+#include "probe.hpp"
 #include <Approx_ParametrizationType.hxx>
 #include <GeomAPI_PointsToBSplineSurface.hxx>
 #include <Geom_BSplineSurface.hxx>
@@ -57,6 +58,7 @@ extern "C" {
 // Parametrization 0 is uniform (isoparametric), 1 chord length, 2 centripetal.
 // Uniform parameters overshoot where sample spacing changes abruptly.
 int solvent_cad_bspline_face_with(Cad* cad,const double* points,int nu,int nv,int parametrization) noexcept {
+    SOLVENT_PROBE("solvent_cad_bspline_face_with");
     return guarded(cad,[&] {
         if (!points || nu < 2 || nv < 2 || nu > 512 || nv > 512)
             throw std::runtime_error("surface grid dimensions must lie in [2,512]");
@@ -83,6 +85,7 @@ int solvent_cad_bspline_face_with(Cad* cad,const double* points,int nu,int nv,in
 // Holes/outside regions return 0 and leave output untouched.
 // Returns 1 inside or 2 on a trim, with position and oriented unit normal.
 int solvent_cad_face_point(Cad* cad,int id,double u,double v,double tolerance,double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_face_point");
     return guarded(cad,[&] {
         if (!output || !std::isfinite(tolerance) || tolerance <= 0)
             throw std::runtime_error("face query needs an output buffer and positive tolerance");
@@ -103,6 +106,7 @@ int solvent_cad_face_point(Cad* cad,int id,double u,double v,double tolerance,do
 
 // Count first with faces=null/capacity=0, then retrieve session-owned handles.
 int solvent_cad_faces(Cad* cad,int source,int* output,int capacity) noexcept {
+    SOLVENT_PROBE("solvent_cad_faces");
     return guarded(cad,[&] {
         TopTools_IndexedMapOfShape faces;
         TopExp::MapShapes(cad->at(source),TopAbs_FACE,faces);
@@ -116,6 +120,7 @@ int solvent_cad_faces(Cad* cad,int source,int* output,int capacity) noexcept {
 // The kind of a face's supporting surface: GeomAbs_SurfaceType's order (0 plane, 1 cylinder,
 // 2 cone, 3 sphere, 4 torus, 5 Bezier, 6 B-spline, 7 revolution, 8 extrusion, 9 offset, 10 other).
 int solvent_cad_face_kind(Cad* cad,int id) noexcept {
+    SOLVENT_PROBE("solvent_cad_face_kind");
     return guarded(cad,[&] {
         const auto face = TopoDS::Face(cad->at(id));
         return static_cast<int>(BRepAdaptor_Surface(face,false).GetType());
@@ -125,6 +130,7 @@ int solvent_cad_face_kind(Cad* cad,int id) noexcept {
 // first: six doubles a point, position and oriented unit normal. No trim test, so it reads a
 // fitted sheet's whole chart quickly.
 int solvent_cad_surface_grid(Cad* cad,int id,int nu,int nv,double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_surface_grid");
     return guarded(cad,[&] {
         if (!output || nu < 2 || nv < 2) throw std::runtime_error("surface grid needs an output buffer and two points a side");
         const auto face = TopoDS::Face(cad->at(id));

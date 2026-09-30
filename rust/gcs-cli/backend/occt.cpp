@@ -1,5 +1,6 @@
 // Native solid construction and export.
 #include "occt.hpp"
+#include "probe.hpp"
 #include <BRepCheck.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -451,8 +452,16 @@ extern "C" {
 Cad* solvent_cad_new() noexcept { try { return new Cad; } catch (...) { return nullptr; } }
 void solvent_cad_free(Cad* cad) noexcept { delete cad; }
 const char* solvent_cad_error(Cad*) noexcept { return last_error().c_str(); }
+// A stage of the export completed, on the probe's clock (`probe.hpp`).
+void solvent_cad_probe_mark(const char* key) noexcept {
+    if (!probe::on() || !key) return;
+    char line[256];
+    std::snprintf(line,sizeof line,"mark\t%s\t%.6f\t%d",key,probe::now(),probe::thread());
+    probe::write(line);
+}
 
 int solvent_cad_line(Cad* cad,const double* a,const double* b) noexcept {
+    SOLVENT_PROBE("solvent_cad_line");
     return guarded(cad,[&] {
         BRepBuilderAPI_MakeEdge edge(point(a),point(b));
         if (!edge.IsDone()) throw std::runtime_error("profile line failed");
@@ -461,6 +470,7 @@ int solvent_cad_line(Cad* cad,const double* a,const double* b) noexcept {
 }
 int solvent_cad_circle(Cad* cad,const double* center,const double* normal,
     const double* x,double radius,double start,double end) noexcept {
+    SOLVENT_PROBE("solvent_cad_circle");
     return guarded(cad,[&] {
         gp_Circ circle(gp_Ax2(point(center),direction(normal),direction(x)),radius);
         BRepBuilderAPI_MakeEdge edge(circle,start,end);
@@ -471,6 +481,7 @@ int solvent_cad_circle(Cad* cad,const double* center,const double* normal,
 // A non-rational B-spline profile edge: `count` poles (xyz each) and its full knot vector
 // (`count + degree + 1` values, repeated knots as they are), made distinct with multiplicities.
 extern "C" int solvent_cad_bspline(Cad* cad,int degree,int count,const double* poles,const double* knots) noexcept {
+    SOLVENT_PROBE("solvent_cad_bspline");
     return guarded(cad,[&] {
         if (degree < 1 || count <= degree) throw std::runtime_error("a B-spline edge needs more poles than its degree");
         TColgp_Array1OfPnt points(1,count);
@@ -491,6 +502,7 @@ extern "C" int solvent_cad_bspline(Cad* cad,int degree,int count,const double* p
     });
 }
 int solvent_cad_face(Cad* cad,const int* edges,int count) noexcept {
+    SOLVENT_PROBE("solvent_cad_face");
     return guarded(cad,[&] {
         BRepBuilderAPI_MakeWire wire;
         for (int i=0;i<count;++i) {
@@ -503,6 +515,7 @@ int solvent_cad_face(Cad* cad,const int* edges,int count) noexcept {
     });
 }
 int solvent_cad_prism(Cad* cad,int face,const double* placement,const double* sweep) noexcept {
+    SOLVENT_PROBE("solvent_cad_prism");
     return guarded(cad,[&] {
         gp_Trsf transform;
         transform.SetTranslation(vector(placement));
@@ -514,6 +527,7 @@ int solvent_cad_prism(Cad* cad,int face,const double* placement,const double* sw
     });
 }
 int solvent_cad_revolve(Cad* cad,int face,const double* origin,const double* axis,double angle) noexcept {
+    SOLVENT_PROBE("solvent_cad_revolve");
     return guarded(cad,[&] {
         auto dir = direction(axis);
         if (angle < 0) dir.Reverse();
@@ -527,6 +541,7 @@ int solvent_cad_revolve(Cad* cad,int face,const double* origin,const double* axi
 // (a wide tip cone against a blank sphere) otherwise leave an open shell.
 // `operation`: 0 fuses, 1 cuts, 2 keeps what the two share.
 int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
+    SOLVENT_PROBE("solvent_cad_boolean");
     return guarded(cad,[&] {
         TopTools_ListOfShape objects,tools;
         objects.Append(cad->at(a)); tools.Append(cad->at(b));
@@ -543,6 +558,7 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
             operation.SetArguments(objects); operation.SetTools(tools);
             operation.SetFuzzyValue(1e-5); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
             operation.Build();
+            probe::boolean("body cut",operation);
             if (!operation.IsDone()) throw std::runtime_error("Boolean cut failed");
             result = operation.Shape();
         } else if (operation_kind == 2) {
@@ -550,6 +566,7 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
             operation.SetArguments(objects); operation.SetTools(tools);
             operation.SetFuzzyValue(1e-5); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
             operation.Build();
+            probe::boolean("body bound",operation);
             if (!operation.IsDone()) throw std::runtime_error("Boolean intersection failed");
             result = operation.Shape();
         } else {
@@ -557,6 +574,7 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
             operation.SetArguments(objects); operation.SetTools(tools);
             operation.SetFuzzyValue(1e-5); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
             operation.Build();
+            probe::boolean("body on",operation);
             if (!operation.IsDone()) throw std::runtime_error("Boolean union failed");
             result = operation.Shape();
         }
@@ -564,6 +582,7 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
     });
 }
 int solvent_cad_transform(Cad* cad,int source,const double* matrix) noexcept {
+    SOLVENT_PROBE("solvent_cad_transform");
     return guarded(cad,[&] {
         gp_Trsf pose;
         pose.SetValues(matrix[0],matrix[1],matrix[2],matrix[3],
@@ -575,6 +594,7 @@ int solvent_cad_transform(Cad* cad,int source,const double* matrix) noexcept {
     });
 }
 int solvent_cad_bounds(Cad* cad,const int* ids,int count,double* bounds) noexcept {
+    SOLVENT_PROBE("solvent_cad_bounds");
     return guarded(cad,[&] {
         Bnd_Box box;
         for (int i=0;i<count;++i) BRepBndLib::Add(cad->at(ids[i]),box,false);
@@ -584,6 +604,7 @@ int solvent_cad_bounds(Cad* cad,const int* ids,int count,double* bounds) noexcep
     });
 }
 int solvent_cad_validate(Cad* cad,int id) noexcept {
+    SOLVENT_PROBE("solvent_cad_validate");
     return guarded(cad,[&] { cad->validated(id); return 0; });
 }
 // What a STEP file written from a solid must say of it (`solvent_cad_brep_summary`): its counts
@@ -693,6 +714,7 @@ static std::vector<double> brep_summary(const TopoDS_Shape& shape) {
 // `unchecked`: the caller checks the solid itself beside the writing (a pattern's union,
 // `solvent_cad_pattern_check`), and it is not validated here first.
 int solvent_cad_step(Cad* cad,int id,const char* path,int full,int unchecked) noexcept {
+    SOLVENT_PROBE("solvent_cad_step");
     return guarded(cad,[&] {
         // The CLI reserves stdout for its JSON/text report. Restore the stream
         // even if STEP construction throws; this host runs synchronously.
@@ -702,6 +724,7 @@ int solvent_cad_step(Cad* cad,int id,const char* path,int full,int unchecked) no
         } log_stream;
         if (!unchecked || full) cad->validated(id);
         const TopoDS_Shape shape = cad->at(id);
+        probe::shape("exported",shape);
         const bool debug = std::getenv("SOLVENT_STEP_DEBUG") != nullptr;
         auto clock = std::chrono::steady_clock::now();
         const auto lap = [&](const char* step) {
@@ -768,6 +791,7 @@ int solvent_cad_step(Cad* cad,int id,const char* path,int full,int unchecked) no
 }
 // A stored shape's `brep_summary`, `capacity` doubles of it written to `output`: its length.
 int solvent_cad_brep_summary(Cad* cad,int id,double* output,int capacity) noexcept {
+    SOLVENT_PROBE("solvent_cad_brep_summary");
     return guarded(cad,[&] {
         const std::vector<double> summary = brep_summary(cad->at(id));
         if (output) std::copy_n(summary.begin(),std::min(summary.size(),static_cast<size_t>(std::max(capacity,0))),output);
@@ -777,6 +801,7 @@ int solvent_cad_brep_summary(Cad* cad,int id,double* output,int capacity) noexce
 // Read a STEP file's shape into the session, for a meter measuring what was written; nothing
 // is validated or repaired, since the file is what is being judged.
 int solvent_cad_read_step(Cad* cad,const char* path) noexcept {
+    SOLVENT_PROBE("solvent_cad_read_step");
     return guarded(cad,[&] {
         struct LogStream {
             std::streambuf* old = std::cout.rdbuf(std::cerr.rdbuf());
@@ -794,6 +819,7 @@ int solvent_cad_read_step(Cad* cad,const char* path) noexcept {
 // Mesh a shape afresh at an absolute `deflection` (mm) and an `angular` one (radians), dropping
 // any triangulation it had, so a finer mesh replaces a coarser one.
 int solvent_cad_remesh(Cad* cad,int id,double deflection,double angular) noexcept {
+    SOLVENT_PROBE("solvent_cad_remesh");
     return guarded(cad,[&] {
         if (!std::isfinite(deflection) || deflection <= 0 || !std::isfinite(angular) || angular <= 0)
             throw std::runtime_error("meshing needs a positive deflection and angle");
@@ -807,6 +833,7 @@ int solvent_cad_remesh(Cad* cad,int id,double deflection,double angular) noexcep
 }
 // The sag of every face of a meshed shape (`face_sag`). `output`: the distance (mm) and where.
 int solvent_cad_mesh_sag(Cad* cad,int id,double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_mesh_sag");
     return guarded(cad,[&] {
         if (!output) throw std::runtime_error("mesh sag needs an output buffer");
         double worst = 0; gp_Pnt at;
@@ -818,6 +845,7 @@ int solvent_cad_mesh_sag(Cad* cad,int id,double* output) noexcept {
 // `deflection` is absolute millimetres, matching the native construction recipe, and `angular`
 // radians. These are tessellator controls, not an end-to-end geometry error certificate.
 int solvent_cad_stl(Cad* cad,int id,const char* path,double deflection,double angular) noexcept {
+    SOLVENT_PROBE("solvent_cad_stl");
     return guarded(cad,[&] {
         if (!std::isfinite(deflection) || deflection <= 0 || !std::isfinite(angular) || angular <= 0)
             throw std::runtime_error("STL meshing needs a positive deflection and angle");

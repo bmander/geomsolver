@@ -1,5 +1,6 @@
 // Planar sections of a native solid, as the profile a swept boundary is built over.
 #include "occt.hpp"
+#include "probe.hpp"
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
@@ -34,6 +35,7 @@ extern "C" {
 // the call that retrieves it with the same arguments is handed what that one cut.
 int solvent_cad_section(Cad* cad,int solid,const double* origin,const double* axis,const double* side,
     int* rows,int capacity) noexcept {
+    SOLVENT_PROBE("solvent_cad_section");
     return guarded(cad,[&] {
         if (!origin || !axis || !side) throw std::runtime_error("section needs an origin, axis and side");
         const std::vector<double> key{double(solid),origin[0],origin[1],origin[2],axis[0],axis[1],axis[2],side[0],side[1],side[2]};
@@ -61,6 +63,7 @@ int solvent_cad_section(Cad* cad,int solid,const double* origin,const double* ax
         // A cutter is sectioned at many stations side by side: the section leaves it as it is.
         section.SetNonDestructive(true);
         section.Build();
+        probe::boolean("cutter meridian section",section);
         if (!section.IsDone() || section.HasErrors()) throw std::runtime_error("plane section failed");
         TopTools_IndexedMapOfShape faces;
         TopExp::MapShapes(shape,TopAbs_FACE,faces);

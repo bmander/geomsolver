@@ -125,6 +125,62 @@ the most OCCT for the least risk. Phase 0 measures before any code is committed 
 - **Exit:** a table per stage and per Boolean, here; a go/no-go on phase 4 and on each rung, with
   the estimated size of each.
 
+#### Phase 0 — done (2026-09-30)
+
+Measured by a probe in the native backend (`backend/probe.hpp`): with `SOLVENT_ABI_TRACE` naming a
+file, every entry point's time and thread, every Boolean's face pairs read from OCCT's own
+interference table (`BOPDS_InterfFF`: the pairs that met, each curve's length, the least angle
+between the two surfaces along it, OCCT's tangency flag), the exported shape's smallest face and
+edge, and each export stage marked when it completes on the same clock. `tools/abi_trace.py`
+turns a log into the tables below. Both members at the gross bar and at 10 µm, and the static
+goldens (`solid_flange`, `solid_pulley`, `solid_tray`, `solid_indexed_pattern`; `solid_elbow`
+and `solid_loft` are lofts, which OCCT never built and this kernel does since rung 2).
+
+**Where the time goes** (10 µm; a stage's native seconds summed over its threads):
+
+| stage | pinion, done at | pinion native | gear, done at | gear native | what |
+|---|---|---|---|---|---|
+| blank, reach, admission, sheets, fit, clearance | 3.9 s | 2.9 s | 4.4 s | 17.4 s | the cutters' meridian sections (`section`, 44 and 636 calls: 0.6 s and 10.8 s), point-in-solid, 80–190k `face_normal` |
+| **split** | 14.2 s | 8.8 s + 2.0 s (tools' fuse) | 13.7 s | 6.3 s + 2.4 s | the sector split by its sheets — half the export |
+| classify | 14.4 s | 0.2 s | 14.0 s | 0.2 s | ray parity |
+| fuse, mesh | 17.5 s | 4.9 s | 17.4 s | 5.3 s | the pattern, its check, the sector's mesh |
+| STEP | 16.3 s | 1.1 s | 20.0 s | 3.9 s | OCCT's writer |
+
+The statics take 0.1–0.2 s each, a third of it the STL.
+
+**What the Booleans meet.** The sector split (and the fuse of its tools) is the whole of phase
+4's vocabulary, and it is small and well conditioned:
+
+| surfaces meeting in the split | pinion curves | gear curves | least angle | shortest curve |
+|---|---|---|---|---|
+| B-spline sheet × cone (the blank's cones) | 20–25 | 20 | 25.5° / 27.0° | 2 µm (pinion, 10 µm) / 0.29 mm |
+| B-spline × sphere (the end spheres) | 8–11 | 8 | 37.5° / 59.5° | 60 µm / 4.5 mm |
+| B-spline × B-spline (removal × relief) | 2 | 3 | 17.8° / 25.7° | 22 mm / 4 mm |
+
+No pair in the split is tangent or under 17.8°; OCCT flagged no tangent faces anywhere. The
+near-tangent pairs the exports do meet (torus × torus and plane × torus at 0°, cone × plane at 7°)
+are all in the *cutters'* construction — the crown bounded by its turned neighbour (`body bound`),
+and the plane sections that read a cutter's meridian — which phase 3 does in the meridian plane in
+2D, and which rung 1 refuses in 3D. The other Booleans are the clearance commons (plane × cone,
+plane × sphere: the sector's half-planes), the seam's ring pieces (cone × plane) and the recipe's
+body cuts, which met nothing.
+
+**The smallest pieces.** Exported, the pinion has 147 faces (73 cones, 2 spheres, 72 B-splines)
+and the gear 291 (145, 2, 144); the smallest faces are 0.30 and 0.38 mm². The pinion's shortest
+edge at 10 µm is **0.5 µm** (8 µm at the gross bar), the gear's 13 µm — edges shorter than the
+export's own tolerance, which OCCT keeps (its split runs at a fuzzy 1e-5 mm) and rung 1's rule
+would refuse.
+
+**Go, with one finding.** Phase 4 is a go: its intersections are three transversal kinds, each a
+scalar contour in the sheet's domain against a surface of revolution about the member's axis
+(cone, sphere) or a well-conditioned sheet pair, a few dozen curves per member. The finding is the
+tolerance model: a construction tolerance (OCCT's 1e-5 mm) apart from the export's bar, so that
+a 0.5 µm edge is kept and merged within the construction tolerance rather than refused against the
+bar. The same model is what the crown cutters needed in rung 1, and phase 3's 2D cutters avoid the
+3D near-tangencies altogether. Phases 1–3 stand as planned: the pattern, the blank (a meridian
+region turned once — 0.05 s now), the sheets' fits (0.6–0.8 s) and the STEP writer (1–4 s) are
+each small. Rung 3 needs nothing from these numbers.
+
 ### Phase 1 — the B-rep, the STEP writer and the mesher, fed by OCCT
 
 - `brep/`: topology, geometry, evaluation; a converter from OCCT's finished shape (through the

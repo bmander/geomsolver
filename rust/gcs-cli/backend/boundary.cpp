@@ -1,5 +1,6 @@
 // The actual trimmed topology of a constructed solid, including Boolean edges.
 #include "occt.hpp"
+#include "probe.hpp"
 #include <BRepAdaptor_Curve.hxx>
 #include <BRep_Tool.hxx>
 #include <Geom2d_Curve.hxx>
@@ -19,6 +20,7 @@ extern "C" {
 // edge handle, first face handle, second face handle, flags (1=seam, 2=degenerate).
 // Every topological edge is retained, including seams and collapsed pole edges.
 int solvent_cad_boundary(Cad* cad,int source,int* rows,int capacity) noexcept {
+    SOLVENT_PROBE("solvent_cad_boundary");
     return guarded(cad,[&] {
         auto solid = cad->at(source);
         validate(solid);
@@ -56,6 +58,7 @@ int solvent_cad_boundary(Cad* cad,int source,int* rows,int capacity) noexcept {
 // Negative dihedral means convex, positive means concave, zero means smooth.
 // The curve tangent follows increasing native parameter, not wire orientation.
 int solvent_cad_boundary_point(Cad* cad,const int* row,double fraction,double* output) noexcept {
+    SOLVENT_PROBE("solvent_cad_boundary_point");
     return guarded(cad,[&] {
         if (!row || !output || !std::isfinite(fraction) || fraction < 0 || fraction > 1)
             throw std::runtime_error("boundary query parameter must lie in [0,1]");

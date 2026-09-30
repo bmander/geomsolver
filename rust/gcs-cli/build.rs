@@ -6,7 +6,7 @@ fn run(command: &mut Command) {
 }
 
 fn main() {
-    for file in ["occt.cpp","boundary.cpp","surfaces.cpp","trims.cpp","cells.cpp","sections.cpp","occt.hpp"] {
+    for file in ["occt.cpp","boundary.cpp","surfaces.cpp","trims.cpp","cells.cpp","sections.cpp","occt.hpp","probe.hpp"] {
         println!("cargo:rerun-if-changed=backend/{file}");
     }
     for name in ["OCCT_ROOT","CXX","AR"] { println!("cargo:rerun-if-env-changed={name}"); }

@@ -408,6 +408,10 @@ fraction of each edge's parameter. A swept surface's signed distance runs on pas
 so `curve_surface` drops roots off the surface. The meter reads a static body through this kernel's
 B-rep (`accuracy::Exact`) and a field taking splines as chords within `CHORD_SLACK`. A midpoint
 flatness test misses a cubic's S-bend, so edge sampling and `curve::tessellate` test quarter points.
+Phase 0 (measured, in the plan): `SOLVENT_ABI_TRACE=FILE` has the native backend log every entry
+point's time and thread, every Boolean's intersecting face pairs (`backend/probe.hpp`, from OCCT's
+`BOPDS_InterfFF`) and the exported shape's smallest pieces, with stages marked on one clock;
+`rust/gcs-cli/tools/abi_trace.py` makes the tables.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference
