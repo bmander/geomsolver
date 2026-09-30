@@ -210,6 +210,32 @@ impl Brep {
         Ok(())
     }
 
+    /// Where the solid pinches: vertices whose faces fall into more than one fan — joined round
+    /// the vertex only through the edges that end there — so the solid touches itself at a point
+    /// (a bore whose end is tangent to another's wall). A valid boundary, but not a manifold one.
+    pub fn pinches(&self) -> Vec<V> {
+        let mut out = Vec::new();
+        for (vi,v) in self.vertices.iter().enumerate() {
+            let vi = vi as u32;
+            let faces: Vec<usize> = (0..self.faces.len()).filter(|&f| self.faces[f].loops.iter().flatten()
+                .any(|c| self.edges[c.edge as usize].v.contains(&vi))).collect();
+            if faces.len() < 2 { continue }
+            // union the faces sharing an edge that ends at the vertex
+            let mut root: Vec<usize> = (0..faces.len()).collect();
+            fn find(r: &mut Vec<usize>,i: usize) -> usize { if r[i] == i { i } else { let j = find(r,r[i]); r[i] = j; j } }
+            for (ei,e) in self.edges.iter().enumerate() {
+                if !e.v.contains(&vi) || matches!(e.curve,EdgeCurve::Degenerate) { continue }
+                let using: Vec<usize> = faces.iter().enumerate().filter(|(_,&f)| self.faces[f].loops.iter().flatten()
+                    .any(|c| c.edge as usize == ei)).map(|(k,_)| k).collect();
+                for w in using.windows(2) { let (a,b) = (find(&mut root,w[0]),find(&mut root,w[1])); root[a] = b; }
+            }
+            let mut roots: Vec<usize> = (0..faces.len()).map(|i| find(&mut root,i)).collect();
+            roots.sort(); roots.dedup();
+            if roots.len() > 1 { out.push(v.p); }
+        }
+        out
+    }
+
     /// The signed area a loop encloses in its face's parameters (counter-clockwise positive),
     /// by the trapezoid rule over each use sampled finely enough to settle its sign.
     pub fn loop_area(&self,f: &Face,l: &[Coedge]) -> f64 {

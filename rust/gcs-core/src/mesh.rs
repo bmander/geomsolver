@@ -269,6 +269,10 @@ pub fn stl(pieces: &[Piece], name: &str) -> Vec<u8> {
     stl_triangles(&grouped(pieces).positions, [0.0; 3], name)
 }
 
+/// Binary STL of triangles given as nine coordinates each, in order (no welding: a mesh whose
+/// shared points are already the same doubles, as a B-rep's mesh is).
+pub fn stl_of(triangles: &[f64], name: &str) -> Vec<u8> { stl_triangles(triangles, [0.0; 3], name) }
+
 // Placement is applied only when encoding vertices. Never weld/triangulate rounded world
 // coordinates: that could discard collapsed triangles before the export can diagnose them.
 fn stl_triangles(t: &[f64], origin: [f64; 3], name: &str) -> Vec<u8> {

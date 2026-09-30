@@ -313,3 +313,49 @@ fn traced_intersections_cross_bores_and_a_pierced_ball() {
     assert!((volume(&pierced)-want).abs() <= 1e-7*want,"{} against {want}",volume(&pierced));
 }
 
+
+/// The volume a mesh encloses: the signed tetrahedra from the origin to each triangle.
+fn mesh_volume(m: &gcs_core::brep::mesh::Mesh) -> f64 {
+    m.tris.iter().map(|t| {
+        let [a,b,c] = t.map(|i| m.pts[i as usize]);
+        (a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0]))/6.
+    }).sum()
+}
+
+#[test]
+fn meshes_are_closed_and_within_their_sag() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    use gcs_core::brep::mesh::mesh;
+    let across = prism(&Profile {origin:[0.;3],normal:[1.,0.,0.],loops:vec![vec![arc([0.,2.,2.],1.,[1.,0.,0.],[0.,1.,0.],None)]]},-1.,5.).unwrap();
+    let a = block([0.,0.,0.],[4.,4.,4.]);
+    let solids: Vec<(&str,gcs_core::brep::topo::Brep)> = vec![
+        ("block",a.clone()),
+        ("plate with four holes",{
+            let mut loops = vec![poly(&[[-33.,-21.,0.],[33.,-21.,0.],[33.,21.,0.],[-33.,21.,0.]])];
+            for c in [[-24.,-14.],[28.,-14.],[28.,14.],[-24.,14.]] { loops.push(vec![arc([c[0],c[1],0.],3.,XY,[1.,0.,0.],None)]); }
+            prism(&Profile {origin:[0.;3],normal:XY,loops},0.,5.).unwrap()
+        }),
+        ("rod",rod([0.,0.,0.],2.,[0.,3.])),
+        ("ball",ball([1.,2.,3.],2.)),
+        ("torus",revolve(&Profile {origin:[0.;3],normal:XZ,loops:vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]]},[0.;3],[0.,0.,1.],TAU).unwrap()),
+        ("quarter ball",revolve(&Profile {origin:[0.;3],normal:XZ,loops:vec![vec![arc([0.,0.,0.],2.,XZ,[1.,0.,0.],Some([-PI/2.,PI/2.])),
+            line([0.,0.,-2.],[0.,0.,2.])]]},[0.;3],[0.,0.,1.],PI/2.).unwrap()),
+        ("cone",revolve(&Profile {origin:[0.;3],normal:XZ,loops:vec![poly(&[[0.,0.,0.],[2.,0.,0.],[0.,0.,3.]])]},[0.;3],[0.,0.,1.],TAU).unwrap()),
+        ("bored block",boolean(&a,&rod([2.,2.,0.],1.,[-1.,5.]),Op::Cut,1e-9).unwrap()),
+        ("cross bored",boolean(&boolean(&a,&rod([2.,2.,0.],1.5,[-1.,5.]),Op::Cut,1e-9).unwrap(),&across,Op::Cut,1e-9).unwrap()),
+        ("pierced ball",boolean(&ball([0.,0.,0.],3.),&rod([1.5,0.,0.],1.,[-4.,4.]),Op::Cut,1e-9).unwrap()),
+    ];
+    for (what,s) in solids {
+        for bar in [0.01,0.001] {
+            let m = mesh(&s,bar,0.2).unwrap_or_else(|e| panic!("{what}: {e}"));
+            let stl = gcs_core::mesh::stl_of(&m.triangles(),what);
+            gcs_core::mesh::stl_shells(&stl).unwrap_or_else(|e| panic!("{what} at {bar}: {e}"));
+            assert!(m.sag <= bar,"{what}: sags {} against {bar}",m.sag);
+            let (v,w) = (mesh_volume(&m),volume(&s));
+            // a chord's sag loses at most its area times itself: well within the bar over the size
+            assert!((v-w).abs() <= 4.*bar*w.abs().powf(2./3.)*6.,"{what} at {bar}: {v} against {w}");
+            eprintln!("{what} at {bar}: {} triangles, sag {:.2e}, volume {v:.6} against {w:.6}",m.tris.len(),m.sag);
+        }
+    }
+}
+

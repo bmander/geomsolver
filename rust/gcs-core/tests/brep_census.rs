@@ -299,6 +299,16 @@ fn brep_body_debug() {
                 solid = next;
             }
         }
+        match gcs_core::brep::mesh::mesh(&solid,0.01,0.2) {
+            Ok(m) => eprintln!("meshed: {} triangles, sag {}",m.tris.len(),m.sag),
+            Err(err) => {
+                eprintln!("NOT MESHED: {err}");
+                dump(&solid);
+                for (i,f) in solid.faces.iter().enumerate() {
+                    eprintln!("  face {i} loops in parameters: {:?}",f.loops.iter().map(|l| l.iter().map(|c| solid.uv_ends(f,c)[0]).collect::<Vec<_>>()).collect::<Vec<_>>());
+                }
+            }
+        }
         built.insert(id,solid);
     }
     eprintln!("built");

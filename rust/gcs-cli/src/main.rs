@@ -41,6 +41,8 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (requires a native OCCT build)
+    --kernel NAME       occt or rust: which kernel builds a static solid's STEP and STL (occt where the
+                        build has it; rust, the core's own B-rep, otherwise or where asked)
     --verify-step HOW   light (default): the written file parsed and checked against the solid,
                         its topology, surfaces and their numbers; full: that, and read back by
                         the kernel, repaired as a reader would, checked and measured
@@ -142,6 +144,11 @@ fn main() -> ExitCode {
             "--step" => match args.next() {
                 Some(p) => opts.step = Some(p),
                 None => { eprintln!("solventc: --step needs a path"); return ExitCode::from(2); }
+            },
+            "--kernel" => match args.next().as_deref() {
+                Some("occt") => {}
+                Some("rust") => { cad::use_rust_kernel(); opts.native_stl = true; }
+                _ => { eprintln!("solventc: --kernel needs occt or rust"); return ExitCode::from(2); }
             },
             "--verify-step" => match args.next().as_deref() {
                 Some("light") => {}
