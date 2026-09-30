@@ -18,8 +18,10 @@ type M3 = [[f64; 3]; 3];
 
 use crate::space::{add, length};
 fn mv(a: M3, b: V3) -> V3 { a.map(|r| dot(r, b)) }
+// (written out: the sum of an iterator is -0.0 plus its terms in order, the same number, and was not
+// inlined, the hottest thing in a motion's pose)
 fn mm(a: M3, b: M3) -> M3 {
-    std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[i][k]*b[k][j]).sum()))
+    std::array::from_fn(|i| std::array::from_fn(|j| a[i][0]*b[0][j]+a[i][1]*b[1][j]+a[i][2]*b[2][j]))
 }
 fn ma(a: M3, b: M3) -> M3 {
     std::array::from_fn(|i| add(a[i], b[i]))

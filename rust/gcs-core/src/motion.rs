@@ -270,14 +270,14 @@ impl Pose {
     /// A gradient read at `self.point(x)` turned into the gradient at `x`: the rotation's
     /// transpose applied.
     pub fn gradient(&self,g: [f64;3]) -> [f64;3] {
-        std::array::from_fn(|i| (0..3).map(|k| self.r[k][i]*g[k]).sum())
+        std::array::from_fn(|i| self.r[0][i]*g[0]+self.r[1][i]*g[1]+self.r[2][i]*g[2])
     }
     pub fn point(&self,x: [f64;3]) -> [f64;3] {
         std::array::from_fn(|i| self.r[i][0]*x[0]+self.r[i][1]*x[1]+self.r[i][2]*x[2]+self.p[i])
     }
     /// Apply this pose, then `next`.
     fn then(self,next: Pose) -> Pose {
-        Pose {r:std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| next.r[i][k]*self.r[k][j]).sum())),
+        Pose {r:std::array::from_fn(|i| std::array::from_fn(|j| next.r[i][0]*self.r[0][j]+next.r[i][1]*self.r[1][j]+next.r[i][2]*self.r[2][j])),
             p:next.point(self.p)}
     }
     pub fn inverse(self) -> Pose {
