@@ -166,6 +166,25 @@ impl Surface {
             Surface::Torus(_,big,r) => (rho-big).hypot(z)-r,
         }
     }
+    /// The gradient of `implicit` (unit length wherever the surface's normal is defined).
+    pub fn gradient(&self,p: V) -> V {
+        let f = self.frame();
+        let [x,y,z] = f.local(p);
+        let rho = x.hypot(y);
+        let radial = if rho > 0. { [x/rho,y/rho,0.] } else { [1.,0.,0.] };
+        let l = match *self {
+            Surface::Plane(_) => [0.,0.,1.],
+            Surface::Cylinder(..) => radial,
+            Surface::Cone(_,_,a) => { let (sa,ca) = a.sin_cos(); [radial[0]*ca,radial[1]*ca,-sa] }
+            Surface::Sphere(..) => { let d = rho.hypot(z); if d > 0. { [x/d,y/d,z/d] } else { [0.,0.,1.] } }
+            Surface::Torus(_,big,_) => {
+                let (dr,dz) = (rho-big,z);
+                let d = dr.hypot(dz);
+                if d > 0. { [radial[0]*dr/d,radial[1]*dr/d,dz/d] } else { [0.,0.,1.] }
+            }
+        };
+        f.dir(l)
+    }
     /// The length over which the surface turns appreciably, for sampling a curve against it
     /// (infinite for a plane).
     pub fn feature(&self) -> f64 {
@@ -191,8 +210,56 @@ impl Surface {
     }
 }
 
+/// Two surfaces' intersection with no closed form, traced: points on both, in order, and a
+/// parameter that counts them — `C(t)` is the chord between points `⌊t⌋` and `⌊t⌋ + 1` at `t`'s
+/// fraction, pulled onto both surfaces by Newton, so the curve is on both to rounding wherever it
+/// is read. A closed trace ends where it began (its last point is its first).
+#[derive(Clone,Debug,PartialEq)]
+pub struct Traced { pub a: Surface,pub b: Surface,pub pts: Vec<V>,pub closed: bool }
+
+impl Traced {
+    fn segments(&self) -> usize { self.pts.len()-1 }
+    /// The point of both surfaces nearest `q`, by minimum-norm Newton steps.
+    pub fn project(&self,q: V) -> V {
+        // settled once both distances are at the rounding of the coordinates, or a step stops
+        // moving; the last iterate either way, never the unprojected point
+        let settled = 4.*f64::EPSILON*(1.+crate::space::norm(q));
+        let mut p = q;
+        for _ in 0..50 {
+            let (fa,fb) = (self.a.implicit(p),self.b.implicit(p));
+            if fa.abs() <= settled && fb.abs() <= settled { break }
+            let Some(step) = crate::roots::least_norm_step(&[self.a.gradient(p),self.b.gradient(p)],&[fa,fb]) else { break };
+            p = sub(p,step);
+            if crate::space::norm(step) <= settled { break }
+        }
+        p
+    }
+    /// `C`: the chord at `t` pulled onto both surfaces.
+    fn at(&self,t: f64) -> V {
+        let m = self.segments();
+        let t = if self.closed { t.rem_euclid(m as f64) } else { t };
+        let i = (t.floor().max(0.) as usize).min(m-1);
+        self.project(crate::space::lerp(self.pts[i],self.pts[i+1],t-i as f64))
+    }
+    /// `C` and `C'`, the derivative the central difference of `C` itself (the projection of a
+    /// chord's point is not the curve's tangent times its speed off the curve): consistent with
+    /// the points to ~1e-10 of the speed, which is what an integral along it needs.
+    fn d1(&self,t: f64) -> (V,V) {
+        const H: f64 = 1e-6;
+        let (lo,hi) = if self.closed { (t-H,t+H) } else {
+            let m = self.segments() as f64;
+            ((t-H).max(0.),(t+H).min(m))
+        };
+        // never across a point, where the derivative steps
+        let k = t.floor();
+        let (lo,hi) = (if t-k >= H { lo } else { t },if k+1.-t >= H { hi } else { t });
+        let (a,b) = (self.at(lo),self.at(hi));
+        (self.at(t),scale(sub(b,a),1./(hi-lo)))
+    }
+}
+
 /// A curve and its parameterisation `C(t)`.
-#[derive(Clone,Copy,Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum Curve {
     /// `p + t d`, `d` a unit vector.
     Line { p: V,d: V },
@@ -200,16 +267,26 @@ pub enum Curve {
     Circle(Frame,f64),
     /// `o + a cos t x + b sin t y`.
     Ellipse(Frame,f64,f64),
+    /// A traced intersection, its parameter counting its points.
+    Traced(std::sync::Arc<Traced>),
 }
 
 impl Curve {
     pub fn kind(&self) -> &'static str {
-        match self { Curve::Line {..} => "line",Curve::Circle(..) => "circle",Curve::Ellipse(..) => "ellipse" }
+        match self { Curve::Line {..} => "line",Curve::Circle(..) => "circle",Curve::Ellipse(..) => "ellipse",
+            Curve::Traced(..) => "traced" }
     }
-    pub fn period(&self) -> Option<f64> { match self { Curve::Line {..} => None,_ => Some(TAU) } }
+    pub fn period(&self) -> Option<f64> {
+        match self {
+            Curve::Line {..} => None,
+            Curve::Traced(c) => c.closed.then(|| c.segments() as f64),
+            _ => Some(TAU),
+        }
+    }
     /// `C`, `C'`, `C''`.
     pub fn d2(&self,t: f64) -> (V,V,V) {
         match *self {
+            Curve::Traced(ref c) => { let (x,d) = c.d1(t); (x,d,[0.;3]) }
             Curve::Line {p,d} => (add(p,scale(d,t)),d,[0.;3]),
             Curve::Circle(f,r) => {
                 let (s,c) = t.sin_cos();
@@ -229,6 +306,28 @@ impl Curve {
     pub fn inverse(&self,p: V) -> f64 {
         let wrap = |a: f64| { let a = a.rem_euclid(TAU); if a >= TAU { 0. } else { a } };
         match *self {
+            Curve::Traced(ref c) => {
+                // the nearest chord, then Newton on (C − p)·C'
+                let mut best = (f64::INFINITY,0.);
+                for i in 0..c.segments() {
+                    let (a,b) = (c.pts[i],c.pts[i+1]);
+                    let d = sub(b,a);
+                    let s = (dot(sub(p,a),d)/dot(d,d).max(1e-300)).clamp(0.,1.);
+                    let dist = crate::space::distance(p,crate::space::lerp(a,b,s));
+                    if dist < best.0 { best = (dist,i as f64+s); }
+                }
+                let mut t = best.1;
+                for _ in 0..8 {
+                    let (x,dx) = c.d1(t);
+                    let h = dot(dx,dx);
+                    if !(h > 0.) { break }
+                    let step = dot(sub(x,p),dx)/h;
+                    let next = if c.closed { t-step } else { (t-step).clamp(0.,c.segments() as f64) };
+                    if (next-t).abs() < 1e-14 { t = next; break }
+                    t = next;
+                }
+                if c.closed { t.rem_euclid(c.segments() as f64) } else { t }
+            }
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.atan2(x)) }
             Curve::Ellipse(f,a,b) => {
@@ -251,13 +350,18 @@ impl Curve {
     /// The curve's length per unit of parameter (its speed, where it is constant; an ellipse's
     /// greatest).
     pub fn speed(&self) -> f64 {
-        match *self { Curve::Line {..} => 1.,Curve::Circle(_,r) => r,Curve::Ellipse(_,a,b) => a.max(b) }
+        match *self {
+            Curve::Line {..} => 1.,Curve::Circle(_,r) => r,Curve::Ellipse(_,a,b) => a.max(b),
+            Curve::Traced(ref c) => c.pts.windows(2).map(|w| crate::space::distance(w[0],w[1])).fold(0.,f64::max),
+        }
     }
     pub fn moved(&self,m: &Rigid) -> Curve {
         match *self {
             Curve::Line {p,d} => Curve::Line {p:m.point(p),d:m.vector(d)},
             Curve::Circle(f,r) => Curve::Circle(f.moved(m),r),
             Curve::Ellipse(f,a,b) => Curve::Ellipse(f.moved(m),a,b),
+            Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced {a:c.a.moved(m),b:c.b.moved(m),
+                pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
         }
     }
 }

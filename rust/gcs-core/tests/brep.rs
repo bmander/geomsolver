@@ -271,3 +271,45 @@ fn booleans_of_faces_on_one_surface() {
 }
 
 
+
+/// `∫_a^b f` by Simpson's rule on `n` (even) steps.
+fn simpson(a: f64,b: f64,n: usize,f: impl Fn(f64) -> f64) -> f64 {
+    let h = (b-a)/n as f64;
+    (0..=n).map(|i| f(a+h*i as f64)*if i == 0 || i == n { 1. } else if i%2 == 1 { 4. } else { 2. }).sum::<f64>()*h/3.
+}
+
+#[test]
+fn traced_intersections_cross_bores_and_a_pierced_ball() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    use gcs_core::brep::build::prism;
+    // a horizontal rod along x, radius r, through (y, z) = (2, 2)
+    let across = |r: f64| prism(&Profile {origin:[0.;3],normal:[1.,0.,0.],loops:vec![vec![arc([0.,2.,2.],r,[1.,0.,0.],[0.,1.,0.],None)]]},-1.,5.).unwrap();
+    let (big,small) = (1.5,1.);
+    // the two rods' common volume, perpendicular axes crossing: 8 ∫₀ʳ √(r² − t²) √(R² − t²) dt
+    // (substituting t = r sin θ keeps the integrand smooth to its ends)
+    let common = 8.*simpson(0.,PI/2.,2000,|th: f64| {
+        let t = small*th.sin();
+        (small*small-t*t).max(0.).sqrt()*(big*big-t*t).max(0.).sqrt()*small*th.cos()
+    });
+    let r = boolean(&rod([2.,2.,0.],big,[-1.,5.]),&across(small),Op::Common,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    assert!((volume(&r)-common).abs() <= 1e-8*common,"{} against {common}",volume(&r));
+    // a block bored down and across
+    let a = block([0.,0.,0.],[4.,4.,4.]);
+    let down = boolean(&a,&rod([2.,2.,0.],big,[-1.,5.]),Op::Cut,1e-9).unwrap();
+    let both = boolean(&down,&across(small),Op::Cut,1e-9).unwrap();
+    both.check(1e-8).unwrap();
+    let want = 64.-PI*big*big*4.-(PI*small*small*4.-common);
+    assert!((volume(&both)-want).abs() <= 1e-8*want,"{} against {want}",volume(&both));
+    // a ball of radius 3 pierced by a bore of radius 1 off its centre by 1.5 (clear of its poles)
+    let pierced = boolean(&ball([0.,0.,0.],3.),&rod([1.5,0.,0.],1.,[-4.,4.]),Op::Cut,1e-9).unwrap();
+    pierced.check(1e-8).unwrap();
+    // the part of the bore inside the ball: over the bore's disk, the chord 2√(9 − ρ²) of the ball
+    let inside = simpson(0.,1.,400,|s: f64| simpson(0.,TAU,400,|th: f64| {
+        let (x,y) = (1.5+s*th.cos(),s*th.sin());
+        2.*(9.-x*x-y*y).max(0.).sqrt()*s
+    }));
+    let want = 4./3.*PI*27.-inside;
+    assert!((volume(&pierced)-want).abs() <= 1e-7*want,"{} against {want}",volume(&pierced));
+}
+

@@ -36,12 +36,12 @@ impl Pool {
 }
 
 /// An edge of the working set: a stretch of a curve (or a pole) between two pooled vertices.
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone,Debug)]
 struct WEdge { curve: EdgeCurve,t: [f64;2],v: [u32;2] }
 
 impl WEdge {
     fn point(&self,t: f64,pool: &Pool) -> V {
-        match self.curve { EdgeCurve::Curve(c) => c.point(t),EdgeCurve::Degenerate => pool.pts[self.v[0] as usize] }
+        match &self.curve { EdgeCurve::Curve(c) => c.point(t),EdgeCurve::Degenerate => pool.pts[self.v[0] as usize] }
     }
 }
 
@@ -74,11 +74,13 @@ fn overlap(a: &([f64;3],[f64;3]),b: &([f64;3],[f64;3]),pad: f64) -> bool {
     (0..3).all(|k| a.0[k] <= b.1[k]+pad && b.0[k] <= a.1[k]+pad)
 }
 
-/// A closed curve's parameters `t` moved by whole periods into `[lo, lo + period)`.
-fn around(t: f64,lo: f64) -> f64 { lo+(t-lo).rem_euclid(TAU) }
+/// A closed curve's parameter `t` moved by whole periods into `[lo, lo + period)`.
+fn around(t: f64,lo: f64,period: f64) -> f64 { lo+(t-lo).rem_euclid(period) }
 
 /// `a` combined with `b` by `op`, to `tol` (a length).
 pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
+    // `SOLVENT_BREP_DEBUG` narrates every pair of faces: the curves, the spans kept and dropped
+    let debug = std::env::var_os("SOLVENT_BREP_DEBUG").is_some();
     let solids = [a,b];
     let located = [Located::new(a,tol),Located::new(b,tol)];
     let mut pool = Pool::new(tol);
@@ -88,7 +90,7 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
     for (s,sol) in solids.iter().enumerate() {
         first_edge[s] = edges.len();
         let ids: Vec<u32> = sol.vertices.iter().map(|v| pool.at(v.p)).collect();
-        for e in &sol.edges { edges.push(WEdge {curve:e.curve,t:e.t,v:[ids[e.v[0] as usize],ids[e.v[1] as usize]]}); }
+        for e in &sol.edges { edges.push(WEdge {curve:e.curve.clone(),t:e.t,v:[ids[e.v[0] as usize],ids[e.v[1] as usize]]}); }
     }
     let boxes: [Vec<_>;2] = [(0..a.faces.len()).map(|i| face_box(a,i)).collect(),(0..b.faces.len()).map(|i| face_box(b,i)).collect()];
     let pad = 4.*tol;
@@ -98,7 +100,7 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
     for s in 0..2 {
         let other = 1-s;
         for (i,e) in solids[s].edges.iter().enumerate() {
-            let EdgeCurve::Curve(c) = e.curve else { continue };
+            let EdgeCurve::Curve(c) = &e.curve else { continue };
             let we = first_edge[s]+i;
             let mut ebox = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
             for j in 0..=32 {
@@ -133,9 +135,27 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
             let curves = match intersect(sa,sb,tol) {
                 Ssi::Curves(cs) => cs,
                 Ssi::Same => { same_pairs.push((fa,fb)); continue }
-                Ssi::Traced => return Err(format!("a {} and a {} meet in a curve with no closed form, not traced yet",sa.kind(),sb.kind())),
+                Ssi::Traced => {
+                    // traced through the points where either face's boundary crosses the other
+                    let seeds: Vec<V> = on_face[1][fb].iter().chain(&on_face[0][fa]).map(|&v| pool.pts[v as usize])
+                        .filter(|&p| sa.implicit(p).abs() <= 8.*tol && sb.implicit(p).abs() <= 8.*tol).collect();
+                    let (lo,hi): (V,V) = (std::array::from_fn(|k| boxes[0][fa].0[k].max(boxes[1][fb].0[k])),
+                        std::array::from_fn(|k| boxes[0][fa].1[k].min(boxes[1][fb].1[k])));
+                    if debug { eprintln!("brep: A{fa} {} × B{fb} {}: tracing from {} seed(s) {seeds:?}",sa.kind(),sb.kind(),seeds.len()); }
+                    let traced = super::ssi::trace(sa,sb,&seeds,lo,hi,tol)?;
+                    if debug { for c in &traced {
+                        if let super::geom::Curve::Traced(t) = c {
+                            eprintln!("brep:   traced {} points, closed {}, from {:?} to {:?}; seeds off it by {:?}",t.pts.len(),t.closed,
+                                t.pts[0],t.pts[t.pts.len()-1],seeds.iter().map(|&p| distance(c.point(c.inverse(p)),p)).collect::<Vec<_>>());
+                        }
+                    } }
+                    traced
+                }
             };
             let reach = [boxes[0][fa].0,boxes[0][fa].1,boxes[1][fb].0,boxes[1][fb].1];
+            if debug && !curves.is_empty() {
+                eprintln!("brep: A{fa} {} × B{fb} {}: {} curve(s)",sa.kind(),sb.kind(),curves.len());
+            }
             for c in curves {
                 // a curve that comes nowhere near both faces (a far crossing of two nearly parallel
                 // meridians) leaves nothing on them
@@ -164,18 +184,19 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
                     if distance(c.point(t),p) <= 8.*tol && !ts.iter().any(|&(_,w)| w == v) { ts.push((t,v)); }
                 }
                 let closed = c.period().is_some();
+                let period = c.period().unwrap_or(TAU);
                 let mut spans: Vec<([f64;2],[u32;2])> = Vec::new();
                 if closed {
-                    for t in &mut ts { t.0 = around(t.0,0.); }
+                    for t in &mut ts { t.0 = around(t.0,0.,period); }
                     ts.sort_by(|x,y| x.0.total_cmp(&y.0));
                     if ts.is_empty() {
                         let v = pool.at(c.point(0.));
-                        spans.push(([0.,TAU],[v,v]));
+                        spans.push(([0.,period],[v,v]));
                     } else {
                         for k in 0..ts.len() {
                             let (t0,v0) = ts[k];
                             let (mut t1,v1) = ts[(k+1)%ts.len()];
-                            if k+1 == ts.len() { t1 += TAU; }
+                            if k+1 == ts.len() { t1 += period; }
                             spans.push(([t0,t1],[v0,v1]));
                         }
                     }
@@ -183,11 +204,17 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
                     ts.sort_by(|x,y| x.0.total_cmp(&y.0));
                     for w in ts.windows(2) { spans.push(([w[0].0,w[1].0],[w[0].1,w[1].1])); }
                 }
+                if debug { eprintln!("brep:   {} with {} point(s) on it: {:?}",c.kind(),ts.len(),ts.iter().map(|x| pool.pts[x.1 as usize]).collect::<Vec<_>>()); }
                 for (t,v) in spans {
                     if (t[1]-t[0])*c.speed() <= tol || (v[0] == v[1] && !closed) { continue }
                     let m = c.point((t[0]+t[1])/2.);
-                    if located[0].face_place(fa,m) == Place::Out || located[1].face_place(fb,m) == Place::Out { continue }
-                    edges.push(WEdge {curve:EdgeCurve::Curve(c),t,v});
+                    let places = (located[0].face_place(fa,m),located[1].face_place(fb,m));
+                    if debug { eprintln!("brep:     span {t:?} from {:?} to {:?}: middle {m:?} {places:?}",pool.pts[v[0] as usize],pool.pts[v[1] as usize]); }
+                    if places.0 == Place::Out || places.1 == Place::Out { continue }
+                    // where the two only touch (their normals parallel) nothing crosses from one
+                    // side to the other: no face is split there
+                    if norm(crate::space::cross(sa.gradient(m),sb.gradient(m))) < 1e-7 { continue }
+                    edges.push(WEdge {curve:EdgeCurve::Curve(c.clone()),t,v});
                     cuts.push(Vec::new());
                     ssi_edges.push((edges.len()-1,fa,fb));
                 }
@@ -208,7 +235,7 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
         let mut ps = Vec::new();
         for w in run.windows(2) {
             if w[0].1 == w[1].1 && w.len() == 2 && run.len() > 2 { continue }
-            out.push(WEdge {curve:e.curve,t:[w[0].0,w[1].0],v:[w[0].1,w[1].1]});
+            out.push(WEdge {curve:e.curve.clone(),t:[w[0].0,w[1].0],v:[w[0].1,w[1].1]});
             ps.push(((out.len()-1) as u32,[w[0].0,w[1].0]));
         }
         pieces.push(ps);
@@ -219,14 +246,14 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
     for (i,e) in out.iter().enumerate() { by_ends.entry((e.v[0].min(e.v[1]),e.v[0].max(e.v[1]))).or_default().push(i as u32); }
     for group in by_ends.values() {
         for (k,&i) in group.iter().enumerate() {
-            let ei = out[i as usize];
+            let ei = &out[i as usize];
             let mid = ei.point((ei.t[0]+ei.t[1])/2.,&pool);
             for &j in &group[..k] {
                 if rep[j as usize].0 != j { continue }
-                let ej = out[j as usize];
-                let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (ei.curve,ej.curve) else { continue };
+                let ej = &out[j as usize];
+                let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&ei.curve,&ej.curve) else { continue };
                 let mut t = cj.inverse(mid);
-                if cj.period().is_some() { t = around(t,ej.t[0]); }
+                if let Some(period) = cj.period() { t = around(t,ej.t[0],period); }
                 if t < ej.t[0]-1e-9 || t > ej.t[1]+1e-9 || distance(cj.point(t),mid) > 8.*tol { continue }
                 // the same way round: the same first vertex, or (closed) the same tangent
                 let along = if ei.v[0] != ei.v[1] { ei.v[0] == ej.v[0] } else {
@@ -269,8 +296,8 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
             let internal = |r: u32,halves: &mut Vec<Half>,on: &mut Vec<u32>| {
                 if on.contains(&r) { return }
                 on.push(r);
-                let w = out[r as usize];
-                let EdgeCurve::Curve(c) = w.curve else { return };
+                let w = &out[r as usize];
+                let EdgeCurve::Curve(c) = &w.curve else { return };
                 let n = 32;
                 let mid = (w.t[0]+w.t[1])/2.;
                 let start = loc.uv(fi,c.point(mid));
@@ -299,16 +326,21 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
                 for l in &solids[other].faces[theirs].loops { for c in l {
                     for &(piece,_) in &pieces[first_edge[other]+c.edge as usize] {
                         let r = rep[piece as usize].0;
-                        let w = out[r as usize];
+                        let w = &out[r as usize];
                         if matches!(w.curve,EdgeCurve::Degenerate) { continue }
                         if loc.face_place(fi,w.point((w.t[0]+w.t[1])/2.,&pool)) == Place::In { internal(r,&mut halves,&mut on); }
                     }
                 } }
             }
             for piece in split(f,&halves,&out,&pool)? {
-                // place a point inside the piece against the other solid
-                let p = f.surface.point(inside(&piece,f,&out,&pool)?);
-                let place = located[1-s].solid_place(p);
+                // place a point inside the piece against the other solid: the first of its inner
+                // points not on the other's boundary (a piece may touch it tangentially), or one on
+                // it where the other has a face on this surface
+                let candidates = inside(&piece,f,&out,&pool)?;
+                let (p,place) = candidates.iter().map(|&uv| { let p = f.surface.point(uv); (p,located[1-s].solid_place(p)) })
+                    .find(|&(p,place)| place != Place::On || (0..solids[1-s].faces.len()).any(|g|
+                        super::ssi::same(&f.surface,&solids[1-s].faces[g].surface,tol) && located[1-s].face_place(g,p) == Place::In))
+                    .unwrap_or_else(|| { let p = f.surface.point(candidates[0]); (p,Place::On) });
                 let keep = if place == Place::On {
                     // on a face of the other on the same surface: kept once, from A, where the two
                     // face the same way and the operation keeps that side
@@ -353,7 +385,7 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
         if !used[i] { continue }
         let mut v = [0;2];
         for k in 0..2 { v[k] = *vmap.entry(e.v[k]).or_insert_with(|| result.vertex(pool.pts[e.v[k] as usize])); }
-        emap.insert(i as u32,result.edge(e.curve,e.t,v));
+        emap.insert(i as u32,result.edge(e.curve.clone(),e.t,v));
     }
     for mut f in kept {
         for l in &mut f.loops { for c in l { c.edge = emap[&c.edge]; } }
@@ -483,16 +515,16 @@ fn winding(poly: &[Uv],p: Uv) -> i32 {
     w
 }
 
-/// A point well inside a piece, in its face's parameters: the middle of the widest span a level
-/// line across it has inside it.
-fn inside(piece: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool) -> Result<Uv,String> {
+/// Points well inside a piece, in its face's parameters, the best first: the middles of the spans
+/// level lines across it have inside it, widest first.
+fn inside(piece: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool) -> Result<Vec<Uv>,String> {
     let polys: Vec<Vec<Uv>> = piece.iter().map(|cycle| cycle.iter().flat_map(|h| {
         let pts = samples(h,f,out,pool,24);
         pts[..pts.len()-1].to_vec()
     }).collect()).collect();
     let (mut vlo,mut vhi) = (f64::INFINITY,f64::NEG_INFINITY);
     for p in polys.iter().flatten() { vlo = vlo.min(p[1]); vhi = vhi.max(p[1]); }
-    let mut best: Option<(f64,Uv)> = None;
+    let mut found: Vec<(f64,Uv)> = Vec::new();
     for k in 1..16 {
         let v = vlo+(vhi-vlo)*(k as f64+0.37)/16.;
         let mut xs: Vec<f64> = Vec::new();
@@ -504,8 +536,10 @@ fn inside(piece: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool) -> Result<Uv,S
         }
         xs.sort_by(|a,b| a.total_cmp(b));
         for w in xs.chunks(2) {
-            if w.len() == 2 && best.is_none_or(|(width,_)| w[1]-w[0] > width) { best = Some((w[1]-w[0],[(w[0]+w[1])/2.,v])); }
+            if w.len() == 2 && w[1] > w[0] { found.push((w[1]-w[0],[(w[0]+w[1])/2.,v])); }
         }
     }
-    best.map(|b| b.1).ok_or(format!("a piece of a {} has no inside",f.surface.kind()))
+    if found.is_empty() { return Err(format!("a piece of a {} has no inside",f.surface.kind())) }
+    found.sort_by(|a,b| b.0.total_cmp(&a.0));
+    Ok(found.into_iter().map(|f| f.1).collect())
 }

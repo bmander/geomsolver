@@ -17,17 +17,17 @@ pub struct Vertex { pub p: V }
 
 /// What an edge lies on: a curve, or — for a surface's pole or apex, a point its face's
 /// parameters stretch into a line — nothing but its vertex.
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone,Debug)]
 pub enum EdgeCurve { Curve(Curve),Degenerate }
 
 /// A stretch of a curve from `t[0]` at `v[0]` to `t[1]` at `v[1]` (`t[0] < t[1]`; a closed edge
 /// has one vertex at both ends).
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone,Debug)]
 pub struct Edge { pub curve: EdgeCurve,pub t: [f64;2],pub v: [u32;2] }
 
 impl Edge {
     pub fn point(&self,t: f64,vertices: &[Vertex]) -> V {
-        match self.curve { EdgeCurve::Curve(c) => c.point(t),EdgeCurve::Degenerate => vertices[self.v[0] as usize].p }
+        match &self.curve { EdgeCurve::Curve(c) => c.point(t),EdgeCurve::Degenerate => vertices[self.v[0] as usize].p }
     }
     pub fn closed(&self) -> bool { self.v[0] == self.v[1] }
 }
@@ -62,7 +62,7 @@ impl Pcurve {
                 [(b[0]-a[0])/l,(b[1]-a[1])/l]
             }
             Pcurve::Inverse {..} => {
-                let EdgeCurve::Curve(c) = edge.curve else { return [0.;2] };
+                let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
                 let uv = self.at(t,edge,surface,vertices);
                 let (_,su,sv) = surface.d1(uv);
                 let d = c.tangent(t);
@@ -160,7 +160,7 @@ impl Brep {
     pub fn check(&self,tol: f64) -> Result<(),String> {
         let mut uses = vec![(0usize,0usize);self.edges.len()];
         for (i,e) in self.edges.iter().enumerate() {
-            if let EdgeCurve::Curve(c) = e.curve {
+            if let EdgeCurve::Curve(c) = &e.curve {
                 for k in 0..2 {
                     let d = distance(c.point(e.t[k]),self.vertices[e.v[k] as usize].p);
                     if d > tol { return Err(format!("edge {i}: its {} vertex is {d:e} off its curve",["first","last"][k])) }
@@ -203,7 +203,7 @@ impl Brep {
                 EdgeCurve::Degenerate => if u.0+u.1 != 1 { return Err(format!("degenerate edge {i} used {} times",u.0+u.1)) },
                 EdgeCurve::Curve(_) => if *u != (1,1) {
                     return Err(format!("edge {i} ({}) used {} times along and {} against",
-                        if let EdgeCurve::Curve(c) = e.curve { c.kind() } else { "" },u.0,u.1))
+                        if let EdgeCurve::Curve(c) = &e.curve { c.kind() } else { "" },u.0,u.1))
                 }
             }
         }

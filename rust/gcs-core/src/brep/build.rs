@@ -60,14 +60,14 @@ impl Profile {
 }
 
 /// One step of a walk: a curve from `t[0]` to `t[1]` (either way round).
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone,Debug)]
 pub struct Seg { pub curve: Curve,pub t: [f64;2] }
 
 impl Seg {
     pub fn start(&self) -> V { self.curve.point(self.t[0]) }
     pub fn end(&self) -> V { self.curve.point(self.t[1]) }
     pub fn forward(&self) -> bool { self.t[1] > self.t[0] }
-    fn reversed(&self) -> Seg { Seg {curve:self.curve,t:[self.t[1],self.t[0]]} }
+    fn reversed(&self) -> Seg { Seg {curve:self.curve.clone(),t:[self.t[1],self.t[0]]} }
     /// The edge's parameters, increasing.
     pub fn span(&self) -> [f64;2] { if self.forward() { self.t } else { [self.t[1],self.t[0]] } }
     fn samples(&self,n: usize) -> impl Iterator<Item = V> + '_ {
@@ -90,12 +90,12 @@ pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,
         }).collect();
         if segs.iter().any(|s| (s.t[1]-s.t[0]).abs() <= tol) { return Err(format!("loop {li} has an edge of no length")) }
         let mut used = vec![false;segs.len()];
-        let mut walk = vec![segs[0]];
+        let mut walk = vec![segs[0].clone()];
         used[0] = true;
         while walk.len() < segs.len() {
             let end = walk.last().unwrap().end();
             let next = (0..segs.len()).filter(|&i| !used[i]).find_map(|i| {
-                if distance(segs[i].start(),end) <= tol { Some((i,segs[i])) }
+                if distance(segs[i].start(),end) <= tol { Some((i,segs[i].clone())) }
                 else if distance(segs[i].end(),end) <= tol { Some((i,segs[i].reversed())) }
                 else { None }
             });
@@ -144,7 +144,7 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
         let bottom = rim(h0,&bv,&mut b);
         let top = rim(h1,&tv,&mut b);
         for k in 0..m {
-            let s = walk[k];
+            let s = walk[k].clone();
             let k1 = (k+1)%m;
             let (surface,reversed,u0,u1) = match s.curve {
                 Curve::Line {..} => {
@@ -152,7 +152,7 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                     (Surface::Plane(Frame::new(s.start(),cross(d,n),d)),false,0.,distance(s.end(),s.start()))
                 }
                 Curve::Circle(f,r) => (Surface::Cylinder(f,r),!s.forward(),s.t[0],s.t[1]),
-                Curve::Ellipse(..) => unreachable!("a profile has no ellipses"),
+                Curve::Ellipse(..) | Curve::Traced(..) => unreachable!("a profile has only lines and circles"),
             };
             // the side's parameters along the walk step, for the step's edge parameter
             let u_at = |t: f64| match s.curve { Curve::Line {..} => (t-s.t[0]).abs(),_ => t };
@@ -214,7 +214,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
         let v1: Vec<u32> = (0..m).map(|k| if full || on_axis[k] { v0[k] } else { b.vertex(turn.point(pts[k])) }).collect();
         let kinds: Vec<Swept> = walk.iter().enumerate().map(|(k,s)| {
             let ([r0,z0],[r1,z1]) = (rz(s.start()),rz(s.end()));
-            match s.curve {
+            match &s.curve {
                 Curve::Line {..} if on_axis[k] && on_axis[(k+1)%m] => Swept::Axis,
                 Curve::Line {..} if (z0-z1).abs() <= tol => Swept::Disk,
                 Curve::Line {..} if (r0-r1).abs() <= tol => Swept::Cylinder,
@@ -234,7 +234,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
         let first: Vec<Option<u32>> = (0..m).map(|k| needs(k).then(|| {
             let s = &walk[k];
             let ends = [v0[k],v0[(k+1)%m]];
-            b.edge(EdgeCurve::Curve(s.curve),s.span(),if s.forward() { ends } else { [ends[1],ends[0]] })
+            b.edge(EdgeCurve::Curve(s.curve.clone()),s.span(),if s.forward() { ends } else { [ends[1],ends[0]] })
         })).collect();
         let last: Vec<Option<u32>> = (0..m).map(|k| if full || kinds[k] == Swept::Axis { first[k] } else {
             let s = &walk[k];
@@ -242,7 +242,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
             Some(b.edge(EdgeCurve::Curve(s.curve.moved(&turn)),s.span(),if s.forward() { ends } else { [ends[1],ends[0]] }))
         }).collect();
         for k in 0..m {
-            let s = walk[k];
+            let s = walk[k].clone();
             let k1 = (k+1)%m;
             let ([r0,z0],[r1,z1]) = (rz(s.start()),rz(s.end()));
             // the material's outward normal at the step's middle, in (ρ, z): right of the walk
@@ -255,14 +255,14 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
             let (surface,normal,v_of): (Surface,[f64;2],Box<dyn Fn(f64) -> f64>) = match kinds[k] {
                 Swept::Axis => continue,
                 Swept::Disk => (Surface::Plane(Frame {o:f.at([0.,0.,z0]),..f}),[0.,1.],Box::new(|_| 0.)),
-                Swept::Cylinder => (Surface::Cylinder(f,r0),[1.,0.],Box::new(move |t| rz(s.curve.point(t))[1])),
+                Swept::Cylinder => { let c = s.curve.clone(); (Surface::Cylinder(f,r0),[1.,0.],Box::new(move |t| rz(c.point(t))[1])) }
                 Swept::Cone => {
                     let a = ((r1-r0)/(z1-z0)).atan();
                     (Surface::Cone(Frame {o:f.at([0.,0.,z0]),..f},r0,a),[a.cos(),-a.sin()],
-                        Box::new(move |t| (rz(s.curve.point(t))[1]-z0)/a.cos()))
+                        { let c = s.curve.clone(); Box::new(move |t| (rz(c.point(t))[1]-z0)/a.cos()) })
                 }
                 Swept::Sphere | Swept::Torus => {
-                    let Curve::Circle(c,r) = s.curve else { unreachable!() };
+                    let Curve::Circle(c,r) = s.curve.clone() else { unreachable!() };
                     let [rc,zc] = rz(c.o);
                     let big = if kinds[k] == Swept::Sphere { 0. } else { rc };
                     let surface = if kinds[k] == Swept::Sphere { Surface::Sphere(Frame {o:f.at([0.,0.,zc]),..f},r) }

@@ -35,7 +35,7 @@ fn every_node_the_kernel_builds_is_occts() {
                 let b = match recipe::node_named(n,&ours,&names) {
                     Ok(b) => b,
                     // a refusal by name is the kernel saying what it does not build yet
-                    Err(err) if err.contains("not traced yet") => { refused.push(format!("{label}: {err}")); continue }
+                    Err(err) if err.contains("not built yet") => { refused.push(format!("{label}: {err}")); continue }
                     Err(err) if n.get("kind").unwrap().as_str() == "body" => { failures.push(format!("{label}: {err}")); continue }
                     Err(err) => { *skipped.entry(err).or_default() += 1; continue }
                 };

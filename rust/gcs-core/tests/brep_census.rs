@@ -249,3 +249,57 @@ fn brep_census() {
         println!("  {} × {k}: {}", v.len(), v.join("; "));
     }
 }
+
+/// A tool: one corpus body built by the Rust kernel a Boolean at a time, the first result that
+/// fails its check (or the Boolean that refuses) printed face by face.
+/// `BREP_FILE=vtwin/components/disc.sv BREP_SOLID=disc.body cargo test brep_body_debug -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn brep_body_debug() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    use gcs_core::brep::topo::{Brep,EdgeCurve};
+    let (file,solid) = (std::env::var("BREP_FILE").unwrap(),std::env::var("BREP_SOLID").unwrap());
+    let (_,e) = fixtures::examples().into_iter().find(|(n,_)| *n == file).unwrap();
+    let mut sk = e.unwrap().sketch;
+    gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
+    let root = (0..sk.solids.len()).find(|&i| sk.solids[i].name == solid).unwrap();
+    let r = gcs_core::solid::cad::recipe(&sk,root).unwrap();
+    let dump = |b: &Brep| {
+        for (i,f) in b.faces.iter().enumerate() {
+            eprintln!("  face {i} {} rev {} `{}`: {:?}",f.surface.kind(),f.reversed,f.name,f.loops.iter().map(|l| l.iter()
+                .map(|c| format!("{}{}",if c.reversed { "-" } else { "+" },c.edge)).collect::<Vec<_>>()).collect::<Vec<_>>());
+        }
+        for (i,e) in b.edges.iter().enumerate() {
+            let kind = match &e.curve { EdgeCurve::Curve(c) => c.kind(),_ => "pole" };
+            eprintln!("  edge {i}: {kind} {:?} from {:?} to {:?}",e.t,b.vertices[e.v[0] as usize].p,b.vertices[e.v[1] as usize].p);
+        }
+    };
+    let mut built: std::collections::BTreeMap<i64,Brep> = Default::default();
+    let names: std::collections::BTreeMap<i64,String> = r.get("nodes").unwrap().arr().iter()
+        .map(|n| (n.get("id").unwrap().as_i64(),n.get("name").unwrap().as_str().to_string())).collect();
+    for n in r.get("nodes").unwrap().arr() {
+        let id = n.get("id").unwrap().as_i64();
+        if n.get("kind").unwrap().as_str() != "body" {
+            built.insert(id,gcs_core::brep::recipe::node(n,&built).unwrap());
+            continue
+        }
+        let mut solid = built[&n.get("stock").unwrap().as_i64()].clone();
+        for (key,op) in [("on",Op::Union),("cut",Op::Cut),("bound",Op::Common)] {
+            for x in n.get(key).unwrap().arr() {
+                let operand = &built[&x.as_i64()];
+                eprintln!("{} {key} `{}`",names[&id],names[&x.as_i64()]);
+                let tol = 1e-9*solid.size().max(operand.size());
+                let next = match boolean(&solid,operand,op,tol) {
+                    Ok(b) => b,
+                    Err(err) => { eprintln!("REFUSED: {err}\nstock:"); dump(&solid); eprintln!("operand:"); dump(operand); return }
+                };
+                if let Err(err) = next.check(10.*tol) {
+                    eprintln!("INVALID: {err}\nstock:"); dump(&solid); eprintln!("operand:"); dump(operand); eprintln!("result:"); dump(&next); return
+                }
+                solid = next;
+            }
+        }
+        built.insert(id,solid);
+    }
+    eprintln!("built");
+}

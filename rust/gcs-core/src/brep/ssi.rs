@@ -231,3 +231,73 @@ fn solve3(m: [V;3],rhs: V) -> V {
     };
     [col(0)/det,col(1)/det,col(2)/det]
 }
+
+/// The curves two surfaces meet in, traced through `seeds` (points on both) within the box
+/// `[lo, hi]`: from each seed not already on a traced curve, a march along `∇a × ∇b` both ways
+/// — each step predicted along the tangent and pulled onto both surfaces, shortened while the
+/// tangent turns more than a few degrees — until it leaves the box or comes back to where it
+/// began. A seed where the two are tangent (their normals parallel) is refused.
+pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result<Vec<Curve>,String> {
+    use super::geom::Traced;
+    // the sine of the angle the two meet at, below which a trace is ill-conditioned (a point
+    // within `tol` of both surfaces may be `tol / sin θ` off their meeting): refused, not traced
+    const SHALLOW: f64 = 0.0175; // one degree
+    let tangent = |p: V| -> Option<V> {
+        let t = cross(a.gradient(p),b.gradient(p));
+        let n = norm(t);
+        (n > SHALLOW).then(|| scale(t,1./n))
+    };
+    let shallow = |p: V| format!("a {} and a {} meet at {:.2}° there, too shallow to trace: not built yet",a.kind(),b.kind(),
+        norm(cross(a.gradient(p),b.gradient(p))).asin().to_degrees());
+    let probe = Traced {a:*a,b:*b,pts:vec![],closed:false};
+    let diag = norm(sub(hi,lo)).max(tol);
+    let h0 = (a.feature().min(b.feature())/12.).min(diag/24.).max(diag*1e-4);
+    let inside = |p: V,pad: f64| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad);
+    let mut curves: Vec<Curve> = Vec::new();
+    for &seed in seeds {
+        let p0 = probe.project(seed);
+        if curves.iter().any(|c| crate::space::distance(c.point(c.inverse(p0)),p0) <= 8.*tol) { continue }
+        let Some(_) = tangent(p0) else { return Err(shallow(p0)) };
+        let mut halves: Vec<Vec<V>> = Vec::new();
+        let mut closed = false;
+        for sense in [1.,-1.] {
+            let mut pts = vec![p0];
+            let mut p = p0;
+            let mut t = scale(tangent(p0).unwrap(),sense);
+            let mut h = h0;
+            for _ in 0..100_000 {
+                let q = probe.project(add(p,scale(t,h)));
+                let Some(tq) = tangent(q) else { return Err(shallow(q)) };
+                let tq = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
+                if dot(tq,t) < 0.996 && h > h0*1e-4 { h /= 2.; continue }
+                // back where it began: this step's chord passes the start, a closed curve
+                if pts.len() > 3 {
+                    let d = sub(q,p);
+                    let s = dot(sub(p0,p),d)/dot(d,d);
+                    if (0. ..=1.).contains(&s) && crate::space::distance(p0,crate::space::lerp(p,q,s)) < 0.25*h {
+                        closed = true;
+                        pts.push(p0);
+                        break
+                    }
+                }
+                pts.push(q);
+                if !inside(q,h) { break }
+                p = q;
+                t = tq;
+                if dot(tq,t) > 0.9995 { h = (h*1.5).min(h0); }
+            }
+            halves.push(pts);
+            if closed { break }
+        }
+        let pts = if closed { halves.swap_remove(0) } else {
+            let mut back = halves.pop().unwrap();
+            back.reverse();
+            back.pop();
+            back.extend(halves.pop().unwrap());
+            back
+        };
+        if pts.len() < 2 { continue }
+        curves.push(Curve::Traced(std::sync::Arc::new(Traced {a:*a,b:*b,pts,closed})));
+    }
+    Ok(curves)
+}

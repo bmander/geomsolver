@@ -118,7 +118,7 @@ impl<'a> Located<'a> {
     /// The point of an edge nearest `p`: its parameter and distance.
     fn nearest(&self,e: u32,p: V) -> (f64,f64) {
         let e = &self.b.edges[e as usize];
-        let EdgeCurve::Curve(c) = e.curve else { return (e.t[0],distance(p,self.b.vertices[e.v[0] as usize].p)) };
+        let EdgeCurve::Curve(c) = &e.curve else { return (e.t[0],distance(p,self.b.vertices[e.v[0] as usize].p)) };
         let mut t = c.inverse(p);
         if let Some(period) = c.period() {
             // the representative nearest the edge's stretch
@@ -145,13 +145,19 @@ impl<'a> Located<'a> {
         let uv = self.uv(fi,p);
         let e = &self.b.edges[c.edge as usize];
         if d <= self.coarse && t > e.t[0] && t < e.t[1] {
-            // near one edge's interior: which side of it, in the face's parameters
-            let q = c.pcurve.at(t,e,&f.surface,&self.b.vertices);
-            let mut dq = c.pcurve.derivative(t,e,&f.surface,&self.b.vertices);
-            if c.reversed { dq = [-dq[0],-dq[1]]; }
-            let q = unwrap(q,uv,f.surface.periods());
-            let left = dq[0]*(uv[1]-q[1])-dq[1]*(uv[0]-q[0]) > 0.;
-            return if left != f.reversed { Place::In } else { Place::Out }
+            // near one edge's interior: which side of it, in the face's parameters — the point
+            // on the branch beside each use of the edge (a seam is used twice, once each side of
+            // the face), inside if beside any use it is on the face's side
+            let raw = f.surface.inverse(p);
+            let inside = f.loops.iter().flatten().filter(|u| u.edge == c.edge).any(|u| {
+                let q = u.pcurve.at(t,e,&f.surface,&self.b.vertices);
+                let mut dq = u.pcurve.derivative(t,e,&f.surface,&self.b.vertices);
+                if u.reversed { dq = [-dq[0],-dq[1]]; }
+                let near = unwrap(raw,q,f.surface.periods());
+                let left = dq[0]*(near[1]-q[1])-dq[1]*(near[0]-q[0]) > 0.;
+                left != f.reversed
+            });
+            return if inside { Place::In } else { Place::Out }
         }
         let mut winding = 0i32;
         for l in &self.polys[fi] {

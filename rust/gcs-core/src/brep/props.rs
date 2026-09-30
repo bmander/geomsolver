@@ -7,6 +7,7 @@
 //! `∬_D g du dv = ∮_∂D G dv` round the domain counter-clockwise — and a face's loops run
 //! counter-clockwise exactly when it is not reversed, so `∮ G dv` round its loops as stored is
 //! its flux, whichever its sense.
+use super::geom::Curve;
 use super::topo::{Brep,EdgeCurve};
 use crate::space::{cross,dot};
 
@@ -48,13 +49,20 @@ pub fn volume(b: &Brep) -> f64 {
                 let e = &b.edges[c.edge as usize];
                 if matches!(e.curve,EdgeCurve::Degenerate) { continue }
                 let span = e.t[1]-e.t[0];
-                let periodic = pu.is_some() || pv.is_some() || matches!(e.curve,EdgeCurve::Curve(c) if c.period().is_some());
-                let line = gauss(e.t[0],e.t[1],pieces(span,periodic),&mut |t| {
+                let periodic = pu.is_some() || pv.is_some() || matches!(&e.curve,EdgeCurve::Curve(c) if c.period().is_some());
+                let mut integrand = |t: f64| {
                     let dv = c.pcurve.derivative(t,e,s,&b.vertices)[1];
                     if dv == 0. { return 0. }
                     let [u,v] = c.pcurve.at(t,e,s,&b.vertices);
                     big_g(u,v)*dv
-                });
+                };
+                let line = if let EdgeCurve::Curve(Curve::Traced(_)) = &e.curve {
+                    // a traced curve is smooth between its points: integrated a stretch at a time
+                    let mut cuts = vec![e.t[0]];
+                    cuts.extend((e.t[0].floor() as i64+1..=e.t[1].ceil() as i64-1).map(|k| k as f64));
+                    cuts.push(e.t[1]);
+                    cuts.windows(2).map(|w| gauss(w[0],w[1],1,&mut integrand)).sum()
+                } else { gauss(e.t[0],e.t[1],pieces(span,periodic),&mut integrand) };
                 total += if c.reversed { -line } else { line };
             }
         }
