@@ -100,7 +100,10 @@ reads the solved pose and source geometry; face provenance follows the placed in
 `make solventc OCCT=1` enables native STEP export through a C ABI wrapper around OCCT C++.
 The Rust core supplies analytic construction data; the CLI owns native shapes and catches
 kernel exceptions. STEP export supports profiles, extrusions, revolutions, placements and
-Booleans, validates a STEP round trip, and preserves the old output on failure. Along-guide
+Booleans, and preserves the old output on failure. A written STEP is parsed back by our own
+checker (`native::step_check`: every reference, the topology's counts, units, and each face's
+surface and numbers against the solid's); `--verify-step full` (`SOLVENT_STEP_VERIFY=full`, the
+slow tier) also reads it back through the kernel with its repairs. Along-guide
 lofts and continuous generating-motion sweeps remain unsupported by this native host.
 Native builds default `--stl` to OCCT too; `--stl-backend mesh` selects the legacy path.
 Requesting STEP and STL together builds once, stages and checks both, then replaces each file.
@@ -344,8 +347,39 @@ meshed finer until its measured sag (`mesh_sag`) is within that, since OCCT's de
 control and not a bound; the mesh contract counts clusters (`TinyTriangles::clustered`) and the
 field is probed at max(2 tol, 2 µm). `--measure FILE` reads an export against the exact surface
 (`solid::accuracy`: the analytic projection and the material field, two independent routes) and,
-with a tolerance, exits 1 when an exact face exceeds it. **Without `--tolerance` nothing changes**:
-the gross bars stand and every export is byte-identical to what it was before the flag.
+with a tolerance, exits 1 when an exact face exceeds it. Without `--tolerance` the gross bars stand.
+**One sector, sewn round ([plan](docs/native-speed-plan.md)):** a body whose swept cuts are turns of
+one placement about one axis (`solid::sector::indexing`), from a blank alike under the turn, is built
+as one sector (`cad/native/sweep_boundary/sector.rs`): its side runs midway across the gaps the cuts'
+contacts leave between neighbours in each slice (`sector::Boundary`, sliced by spheres about the
+blank's sphere centres or planes square to the axis; a spiral tooth space turns across its face by
+most of a pitch, so no flat half-plane clears it), is read back against the gaps and the field, and
+with its turn by a pitch splits the blank (made again about the axis, `solvent_cad_revolved`, its
+parameters starting opposite the sector) into the sector, whose own sheets split it. Its material
+is turned round and sewn (`solvent_cad_pattern`, no face intersected): faces of revolution are put
+on the source's surfaces with their pcurves shifted by the turn, and a ring's pieces moved into one
+period and split at the seam, so the rings close on an iso line (closed on a copy junction, a ring's
+parameters overran the period and the mesher left 0.1 mm chords). Any failed premise builds the body
+whole and says why; `SOLVENT_SECTOR=off` asks for that, `SOLVENT_SECTOR_DEBUG` narrates. Faces and
+volume are the whole construction's; the native exports' bytes are not. **Speed (phases 3–4):** the
+STL is the sector's mesh turned into every copy, seam points shared bit for bit (`solvent_cad_sector_stl`;
+`SOLVENT_SECTOR_STL=off` meshes whole); sheet faces are written on B-splines cut to their parameter box;
+the pattern and its STEP reading are measured as copies of one (flux about the axis; `SOLVENT_SECTOR_CHECK=full`,
+`SOLVENT_STEP_CHECK` measure whole). Volumes, admission, sections, splits, cells, probes and the field
+agreement run on every core (`gcs_core::par`, serial on wasm, answers in order); the native session is
+thread-safe, the sweeps' sheets are built side by side and beside the blank and the admission, the STEP
+beside the mesh, each thread's lines said in order (`progress::side_by_side`/`beside`/`under`). A cutter
+of revolution is sectioned once and turned. OCCT's parallel `BRepCheck_Analyzer` is unreliable (a valid
+pinion came back invalid): `valid_solid` checks faces in separate analyzers. **Phase 5:** the admission
+proves the placements alike from the solid graph when every blank operand is a full revolution about the
+indexing line or a ball centred on it (`admission::Equivalence::Revolved`, 1e-12 of the blank's size;
+otherwise `Sampled`, as before); such a blank is its meridian section turned once
+(`Session::construct_meridian`, `solvent_cad_revolve_region`; `SOLVENT_BLANK=booleans`); an indexed
+body's field agreement turns each probe into one sector and reads the cuts not proved positive over its
+box (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whole`); a STEP model's
+entities are formatted on every core, the kernel's text to the byte (`SOLVENT_STEP_TEXT_CHECK`); a
+sheet's stations are traced side by side. 8.6–14.6 s a member (40–55×); the floor is OCCT's
+STEP transfer, parse and repairing read-back, its Boolean split and the cutters' Booleans.
 **Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
 its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
 manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference

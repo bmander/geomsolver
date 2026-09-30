@@ -41,6 +41,9 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (requires a native OCCT build)
+    --verify-step HOW   light (default): the written file parsed and checked against the solid,
+                        its topology, surfaces and their numbers; full: that, and read back by
+                        the kernel, repaired as a reader would, checked and measured
     --stl-backend NAME  occt, mesh or refine; every solid defaults to occt when built in, a
                         body with swept cuts included (refine meshes the material field by the
                         core's Delaunay refinement, checked by the field-agreement probe)
@@ -139,6 +142,11 @@ fn main() -> ExitCode {
             "--step" => match args.next() {
                 Some(p) => opts.step = Some(p),
                 None => { eprintln!("solventc: --step needs a path"); return ExitCode::from(2); }
+            },
+            "--verify-step" => match args.next().as_deref() {
+                Some("light") => {}
+                Some("full") => cad::verify_step_fully(),
+                _ => { eprintln!("solventc: --verify-step needs light or full"); return ExitCode::from(2); }
             },
             "--sheet" => match args.next() {
                 Some(n) => opts.sheet = Some(n),
@@ -366,11 +374,13 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     // nothing is written, so an earlier output stays as it was. The class is what the native
     // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
     // only the field, and is gated by the field-agreement probe instead.
+    // A native export admits the body itself, beside the first of its construction.
+    let native = cfg!(feature="occt") && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
     let mut body = None;
     if (step.is_some() || (stl.is_some() && !opts.refine)) && r.success {
         if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
             let mut b = cad::Body::read(&sk,i);
-            if b.swept() {
+            if b.swept() && !native {
                 if let Err(refusal) = b.admit(&sk) {
                     refused(&mut e,i,refusal);
                     code = 1;
@@ -413,6 +423,8 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
                 match tolerance(&sk,opts) {
                     Err(message) => { eprintln!("solventc: {message}"); code = 1; }
                     Ok(t) => if let Err(refusal) = cad::export(&sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t) {
+                        // refused admission, nothing is written (the mesh backend's STL included)
+                        if refusal.stage == cad::Stage::Admission { stl = None; }
                         refused(&mut e,i,refusal);
                         code = 1;
                     },

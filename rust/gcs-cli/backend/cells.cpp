@@ -3,12 +3,38 @@
 #include "occt.hpp"
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BOPAlgo_GlueEnum.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
+#include <BRepAlgoAPI_BuilderAlgo.hxx>
 #include <Message_ProgressIndicator.hxx>
 #include <Message_ProgressScope.hxx>
+#include <chrono>
 #include <ctime>
+#include <thread>
+#include <cstdio>
+#include <cstdlib>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepLib.hxx>
+#include <BRep_Builder.hxx>
+#include <Geom_BSplineSurface.hxx>
+#include <Geom_ElementarySurface.hxx>
+#include <Geom_Plane.hxx>
+#include <Geom_RectangularTrimmedSurface.hxx>
+#include <Geom2d_Curve.hxx>
+#include <gp_Vec2d.hxx>
+#include <gp_Lin.hxx>
+#include <ElCLib.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <TopoDS_Shell.hxx>
+#include <TopoDS_Solid.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <Precision.hxx>
 #include <gp_Trsf.hxx>
@@ -31,17 +57,23 @@
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <algorithm>
+#include <array>
+#include <cstring>
+#include <tuple>
+#include <BRepMesh_IncrementalMesh.hxx>
+#include <IMeshTools_Parameters.hxx>
+#include <OSD_Parallel.hxx>
+#include <Poly_Triangulation.hxx>
+#include <Poly_PolygonOnTriangulation.hxx>
 #include <limits>
 #include <cmath>
 #include <vector>
 #include <sstream>
+#include <functional>
+#include <future>
+#include <optional>
+#include <memory>
 
-// Adaptive quadrature: the default fixed rule is inaccurate on spline faces.
-static double volume(const TopoDS_Shape& shape) {
-    GProp_GProps props;
-    BRepGProp::VolumeProperties(shape,props,1e-9,false,false);
-    return props.Mass();
-}
 
 // A kernel operation's time budget: the algorithm polls UserBreak and stops once it is past.
 // A split that grinds on near-tangent sheets is refused by name, not waited on. The budget is
@@ -65,6 +97,126 @@ static void check_algorithm(BRepAlgoAPI_BuilderAlgo& algorithm,const char* what)
     }
 }
 
+// A union made valid, its faces on one support merged where that costs nothing, and stored as
+// one closed solid with its volume (`known`, where the caller has measured it another way). Unification is a simplification, not a requirement: keep the
+// union when merging faces on one support produces an invalid shape or has to widen a tolerance
+// to do so (it once left a 40 mm vertex tolerance). Unify a copy: the algorithm updates
+// tolerances on vertices it shares with its input, which would silently widen the union kept.
+// `known` is asked only once the union is checked, so a caller may work it out meanwhile.
+// The unified copy, where unifying widened no tolerance (null where it did, or failed).
+static TopoDS_Shape unification(const TopoDS_Shape& result,const char* what) {
+    const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
+    const auto clock = std::chrono::steady_clock::now();
+    const double before = BRep_Tool::MaxTolerance(result,TopAbs_VERTEX);
+    ShapeUpgrade_UnifySameDomain unify(BRepBuilderAPI_Copy(result).Shape(),true,true,false);
+    unify.Build();
+    TopoDS_Shape unified = unify.Shape();
+    if (debug) {
+        int a = 0,b = 0;
+        for (TopExp_Explorer it(result,TopAbs_FACE); it.More(); it.Next()) ++a;
+        if (!unified.IsNull()) for (TopExp_Explorer it(unified,TopAbs_FACE); it.More(); it.Next()) ++b;
+        fprintf(stderr,"sector: %s: unified %.2f s; %d faces, %d unified; vertex tolerance %.3g, %.3g unified\n",what,
+            std::chrono::duration<double>(std::chrono::steady_clock::now()-clock).count(),a,b,before,
+            unified.IsNull() ? -1. : BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX));
+    }
+    if (unified.IsNull() || BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX) > before*1.001+1e-9) return TopoDS_Shape();
+    return unified;
+}
+// A union checked: its one solid closed and valid (`valid_solid`), or the whole shape valid.
+static bool union_checked(const TopoDS_Shape& shape) {
+    TopoDS_Shape one;
+    int solids = 0;
+    for (TopExp_Explorer it(shape,TopAbs_SOLID); it.More(); it.Next()) { ++solids; one = it.Current(); }
+    return solids == 1 ? valid_solid(one) : valid(shape);
+}
+// The one solid a union is, or refused.
+static TopoDS_Shape the_solid(const TopoDS_Shape& shape,const char* what) {
+    TopoDS_Shape result;
+    int solids = 0;
+    for (TopExp_Explorer it(shape,TopAbs_SOLID); it.More(); it.Next()) { ++solids; result = it.Current(); }
+    if (solids != 1) throw std::runtime_error(std::string(what)+" is not one connected solid");
+    return result;
+}
+static int united(Cad* cad,TopoDS_Shape result,const char* what,const std::function<double()>& known) {
+    const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
+    auto clock = std::chrono::steady_clock::now();
+    const auto lap = [&](const char* step) {
+        const auto now = std::chrono::steady_clock::now();
+        if (debug) fprintf(stderr,"sector: %s: %s %.2f s\n",what,step,std::chrono::duration<double>(now-clock).count());
+        clock = now;
+    };
+    // The union checked once: the unified shape where it is kept, the union itself where not.
+    const TopoDS_Shape unified = unification(result,what);
+    const bool kept = !unified.IsNull() && union_checked(unified);
+    if (kept) result = unified;
+    else if (!union_checked(result)) throw std::runtime_error(std::string(what)+" is invalid before unification");
+    lap("checked");
+    result = the_solid(result,what);
+    const double v = validate(result,nullptr,true,known());
+    lap("validated and measured");
+    return cad->put(result,true,v);
+}
+static int united(Cad* cad,TopoDS_Shape result,const char* what,double known = std::numeric_limits<double>::quiet_NaN()) {
+    return united(cad,result,what,std::function<double()>([known] { return known; }));
+}
+
+// A pattern's union made but not yet checked: the union sewn (the shape stored is its unified copy
+// where unifying widened no tolerance, oriented, else this union itself), and its volume being
+// measured meanwhile.
+struct Cad::Pending {
+    TopoDS_Shape made;
+    bool unified;
+    std::shared_future<double> whole;
+    gp_Ax1 line;
+    int copies;
+};
+
+// A partition's cells checked and measured, the work shared out: every face the cells have checked
+// once, on every core, with its own analyzer (`valid_solid`'s face check), and each cell's shell
+// closed and oriented; every face's flux about one point integrated once, on every core, and each
+// cell's volume the sum of its faces' fluxes signed by how the cell holds them — a face two cells
+// share bounds the one forward and the other reversed. The same checks and the same integrals,
+// each done once where `validate` did them once a cell. Throws as `validate` does; records each
+// cell's volume. `SOLVENT_FULL_CHECK` checks and measures the cells as `validate` does.
+static void validate_cells(TopoDS_Shape& partition,TopTools_DataMapOfShapeReal& record) {
+    if (std::getenv("SOLVENT_FULL_CHECK")) { validate(partition,&record); return; }
+    std::vector<TopoDS_Solid> cells;
+    for (TopExp_Explorer it(partition,TopAbs_SOLID); it.More(); it.Next()) cells.push_back(TopoDS::Solid(it.Current()));
+    if (cells.empty()) throw std::runtime_error("operation produced no solid");
+    for (const auto& cell: cells) {
+        int shells = 0;
+        for (TopExp_Explorer it(cell,TopAbs_SHELL); it.More(); it.Next()) ++shells;
+        if (shells != 1) { validate(partition,&record); return; }
+    }
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(partition,TopAbs_FACE,faces);
+    std::vector<char> ok(static_cast<size_t>(faces.Extent()),0);
+    OSD_Parallel::For(0,faces.Extent(),[&](int i) { ok[static_cast<size_t>(i)] = BRepCheck_Analyzer(faces(i+1)).IsValid(); });
+    if (std::find(ok.begin(),ok.end(),0) != ok.end()) throw std::runtime_error("native solid is invalid:"+invalidity(partition));
+    // each cell closed and consistently oriented (its faces checked above, each once)
+    for (const auto& cell: cells) if (!closed_and_oriented(cell)) throw std::runtime_error("native solid is invalid:"+invalidity(cell));
+    // one point for every flux, as `volume` takes it: the mean of the partition's vertices
+    gp_XYZ sum(0,0,0);
+    int count = 0;
+    for (TopExp_Explorer it(partition,TopAbs_VERTEX); it.More(); it.Next(),++count) sum += BRep_Tool::Pnt(TopoDS::Vertex(it.Current())).XYZ();
+    if (count > 0) sum /= count;
+    std::vector<TopoDS_Face> forward;
+    for (int i=1;i<=faces.Extent();++i) forward.push_back(TopoDS::Face(faces(i).Oriented(TopAbs_FORWARD)));
+    std::vector<double> mass(forward.size(),0.);
+    OSD_Parallel::For(0,static_cast<int>(forward.size()),[&](int i) { mass[static_cast<size_t>(i)] = flux({forward[static_cast<size_t>(i)]},gp_Pnt(sum)); });
+    for (const auto& cell: cells) {
+        double v = 0;
+        for (TopExp_Explorer it(cell,TopAbs_FACE); it.More(); it.Next()) {
+            const TopAbs_Orientation o = it.Current().Orientation();
+            if (o != TopAbs_FORWARD && o != TopAbs_REVERSED) continue;
+            const double m = mass[static_cast<size_t>(faces.FindIndex(it.Current())-1)];
+            v += o == TopAbs_FORWARD ? m : -m;
+        }
+        if (!std::isfinite(v) || v <= 0) throw std::runtime_error("solid has no positive volume");
+        record.Bind(cell,v);
+    }
+}
+
 extern "C" {
 int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,double fuzzy) noexcept;
 // Partition one solid by faces or solids. Every cell is retained as a separate
@@ -82,27 +234,41 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
     return guarded(cad,[&] {
         if (!tools || count < 1 || count > 4096)
             throw std::runtime_error("solid split requires 1..4096 tools");
+        const auto checking = std::chrono::steady_clock::now();
         auto& stock = cad->at(solid);
-        if (stock.IsNull() || !BRepCheck_Analyzer(stock).IsValid())
+        if (stock.IsNull() || !valid(stock))
             throw std::runtime_error("invalid stock solid");
         TopTools_ListOfShape objects,cutters;
         objects.Append(stock);
         for (int i=0;i<count;++i) {
             const auto& tool = cad->at(tools[i]);
-            if (tool.IsNull() || !BRepCheck_Analyzer(tool).IsValid())
+            if (tool.IsNull() || !valid(tool))
                 throw std::runtime_error("invalid split tool");
             cutters.Append(tool);
+        }
+        // `SOLVENT_DUMP_SPLIT=DIR`: the stock and the tools written as BRep files, for a harness.
+        if (const char* dump = std::getenv("SOLVENT_DUMP_SPLIT")) {
+            static int dumped = 0;
+            const std::string prefix = std::string(dump)+"/split"+std::to_string(dumped++);
+            BRepTools::Write(stock,(prefix+"-stock.brep").c_str());
+            int k = 0;
+            for (const auto& tool: cutters) BRepTools::Write(tool,(prefix+"-tool"+std::to_string(k++)+".brep").c_str());
         }
         BRepAlgoAPI_Splitter split;
         split.SetArguments(objects); split.SetTools(cutters);
         // Oriented boxes cull face pairs the axis-aligned ones cannot (the tilted sheets):
         // a quarter of the split, and the same cells.
-        split.SetNonDestructive(true); split.SetRunParallel(false); split.SetUseOBB(Standard_True);
+        // Its intersections on every core (`SOLVENT_PARALLEL_SPLIT=off`: one).
+        const char* serial = std::getenv("SOLVENT_PARALLEL_SPLIT");
+        const bool parallel = !serial || std::string(serial) != "off";
+        split.SetNonDestructive(true); split.SetRunParallel(parallel); split.SetUseOBB(Standard_True);
         if (fuzzy > 0) split.SetFuzzyValue(fuzzy);
         // The kernel polls the break only between its phases, so a stop can come well after the
-        // budget; the message says both.
-        const double budget = 15.+5.*count;
+        // budget; the message says both. Processor time is every thread's, so a split run on every
+        // core is given each core's budget.
+        const double budget = (15.+5.*count)*(parallel ? std::max(1u,std::thread::hardware_concurrency()) : 1u);
         const double started = processor_seconds();
+        const auto clock = std::chrono::steady_clock::now();
         Handle(Deadline) deadline = new Deadline(budget);
         split.Build(deadline->Start());
         if (deadline->UserBreak()) {
@@ -116,9 +282,32 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
         for (TopExp_Explorer it(result,TopAbs_SOLID); it.More(); it.Next()) ++cells;
         if (!cells) throw std::runtime_error("solid split produced no cells");
         TopoDS_Shape checked = result;
+        const auto built = std::chrono::steady_clock::now();
         // Every cell's volume is measured here; the cells, listed next, keep it.
-        validate(checked,&cad->measured);
+        TopTools_DataMapOfShapeReal measured;
+        validate_cells(checked,measured);
+        if (std::getenv("SOLVENT_SECTOR_DEBUG")) fprintf(stderr,"split: its inputs checked in %.2f s; %d cells, built %.2f s, checked and measured %.2f s\n",
+            std::chrono::duration<double>(clock-checking).count(),cells,
+            std::chrono::duration<double>(built-clock).count(),std::chrono::duration<double>(std::chrono::steady_clock::now()-built).count());
+        cad->record(measured);
         return cad->put(result);
+    });
+}
+
+// Split tools split by each other (the general fuse of them, as the split would intersect them), as
+// one shape: a split by it skips the tools' intersections with each other, which are then made
+// here, beside other work (docs/native-speed-plan.md, phase 6). Same fuzzy value as the split.
+int solvent_cad_fused_tools(Cad* cad,const int* tools,int count) noexcept {
+    return guarded(cad,[&] {
+        if (!tools || count < 2 || count > 4096) throw std::runtime_error("fusing split tools needs 2..4096 of them");
+        TopTools_ListOfShape arguments;
+        for (int i=0;i<count;++i) arguments.Append(cad->at(tools[i]));
+        BRepAlgoAPI_BuilderAlgo fuse;
+        fuse.SetArguments(arguments);
+        fuse.SetNonDestructive(true); fuse.SetRunParallel(parallel_booleans()); fuse.SetUseOBB(Standard_True); fuse.SetFuzzyValue(1e-5);
+        fuse.Build();
+        check_algorithm(fuse,"the split tools' fuse");
+        return cad->put(fuse.Shape());
     });
 }
 
@@ -131,9 +320,9 @@ int solvent_cad_solids(Cad* cad,int source,int* output,int capacity) noexcept {
         if (!output && capacity == 0) return count;
         if (!output || capacity < count) throw std::runtime_error("solid buffer is too small");
         for (int i=1;i<=count;++i) {
-            output[i-1] = cad->put(solids(i));
-            if (cad->measured.IsBound(solids(i)))
-                cad->volumes[static_cast<size_t>(output[i-1])] = cad->measured.Find(solids(i));
+            double volume = std::numeric_limits<double>::quiet_NaN();
+            cad->recorded(solids(i),volume);
+            output[i-1] = cad->put(solids(i),false,volume);
         }
         return count;
     });
@@ -147,140 +336,227 @@ int solvent_cad_solids(Cad* cad,int source,int* output,int capacity) noexcept {
 // distance is measured for at most `measure` spread candidates. No centroid: integrating a spline cell for it cost seconds, and the
 // cell's volume is measured once already where the partition is listed. Each
 // output row is x, y, z, distance.
-int solvent_cad_solid_samples(Cad* cad,int id,double* output,int capacity,int measure) noexcept {
-    return guarded(cad,[&] {
-        if (!output || capacity < 1 || measure < 1)
-            throw std::runtime_error("solid samples need a buffer and positive counts");
-        const auto& shape = cad->at(id);
-        if (shape.IsNull() || shape.ShapeType() != TopAbs_SOLID)
-            throw std::runtime_error("solid samples need one solid");
-        Bnd_Box box;
-        BRepBndLib::Add(shape,box,false);
-        double x0,y0,z0,x1,y1,z1;
-        box.Get(x0,y0,z0,x1,y1,z1);
-        BRepClass3d_SolidClassifier classify(shape);
-        std::vector<gp_Pnt> inside;
-        const auto consider = [&](const gp_Pnt& p) {
-            if (static_cast<int>(inside.size()) >= measure) return;
-            classify.Perform(p,Precision::Confusion());
-            if (classify.State() == TopAbs_IN) inside.push_back(p);
-        };
-        const double diagonal = std::hypot(std::hypot(x1-x0,y1-y0),z1-z0);
-        // A face's point at (u, v) and its outward unit normal there; false where the surface is
-        // singular.
-        const auto outward = [](const TopoDS_Face& face,const BRepAdaptor_Surface& surface,double u,double v,
-            gp_Pnt& p,gp_Vec& n) {
-            gp_Vec du,dv;
-            surface.D1(u,v,p,du,dv);
-            n = du.Crossed(dv);
-            if (n.Magnitude() <= 1e-12) return false;
-            n.Normalize();
-            if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
-            return true;
-        };
-        // Where a ray from a point of `face` along its inward normal next meets the shell, if it
-        // does: the points before it are inside the cell by geometry alone. The face it starts
-        // on is met again within its own tolerance, which a split leaves at tens of nanometres.
+// The candidates are taken one after another (each classifier and ray intersector a cell builds costs
+// more than the few candidates it takes), the distances measured on every core.
+static int cell_samples(const TopoDS_Shape& shape,double* output,int capacity,int measure) {
+    if (shape.IsNull() || shape.ShapeType() != TopAbs_SOLID)
+        throw std::runtime_error("solid samples need one solid");
+    Bnd_Box box;
+    BRepBndLib::Add(shape,box,false);
+    double x0,y0,z0,x1,y1,z1;
+    box.Get(x0,y0,z0,x1,y1,z1);
+    const auto started = std::chrono::steady_clock::now();
+    const auto since = [&] { return std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count(); };
+    std::string trail;
+    // What the cell is asked with: a classifier, and rays against its shell.
+    struct Probe {
+        BRepClass3d_SolidClassifier classify;
         IntCurvesFace_ShapeIntersector rays;
-        rays.Load(shape,Precision::Confusion());
-        const auto exit = [&](const gp_Pnt& p,const gp_Vec& inward,const TopoDS_Face& face) {
-            double first = Precision::Infinite();
-            const double own = 10.*BRep_Tool::Tolerance(face);
-            rays.Perform(gp_Lin(p,gp_Dir(inward)),diagonal*1e-7,Precision::Infinite());
-            if (rays.IsDone()) for (int k=1;k<=rays.NbPnt();++k) {
-                const double w = rays.WParameter(k);
-                if (w <= own && rays.Face(k).IsSame(face)) continue;
-                first = std::min(first,w);
-            }
-            return first;
-        };
-        // A little inward from points of each face, along its inward normal: nearly always
-        // inside, where a thin cell leaves most of a grid over its box outside and each miss
-        // costs a classification (32 ms each on a tooth space's spline faces). The step is a
-        // fraction of the box, then a finer one. The classifier decides each candidate, and the
-        // ray along the normal must not have left the cell before it: on a sliver the
-        // classifier has put one point inside two cells of one partition.
-        const auto from_faces = [&](const double step) {
-            for (TopExp_Explorer it(shape,TopAbs_FACE); it.More() && static_cast<int>(inside.size()) < measure; it.Next()) {
-                const TopoDS_Face face = TopoDS::Face(it.Current());
-                double u0,u1,v0,v1;
-                BRepTools::UVBounds(face,u0,u1,v0,v1);
-                BRepAdaptor_Surface surface(face);
-                for (const auto& [fu,fv]: {std::pair{0.5,0.5},{0.25,0.25},{0.75,0.75},{0.25,0.75},{0.75,0.25}}) {
-                    gp_Pnt p; gp_Vec n;
-                    if (!outward(face,surface,u0+(u1-u0)*fu,v0+(v1-v0)*fv,p,n)) continue;
-                    // The ray first: on a sliver it rules out most candidates for less than
-                    // a classification each.
-                    if (static_cast<int>(inside.size()) >= measure || exit(p,n.Reversed(),face) <= step) continue;
-                    consider(p.Translated(n.Multiplied(-step)));
-                }
-            }
-        };
-        for (const double step: {diagonal*0.02,diagonal*0.005}) from_faces(step);
-        // Distance to the boundary against the whole shell at once: the extrema
-        // solver culls faces by bounding box, where a face-by-face loop does not.
-        TopoDS_Shape boundary;
-        for (TopExp_Explorer it(shape,TopAbs_SHELL); it.More(); it.Next()) { boundary = it.Current(); break; }
-        if (boundary.IsNull()) throw std::runtime_error("cell has no shell");
-        std::vector<std::pair<double,gp_Pnt>> measured;
-        const auto measure_all = [&] {
-            for (const auto& p: inside) {
-                BRepExtrema_DistShapeShape distance(BRepBuilderAPI_MakeVertex(p).Vertex(),boundary);
-                if (!distance.IsDone() || distance.NbSolution() < 1) continue;
-                measured.emplace_back(distance.Value(),p);
-            }
-            inside.clear();
-        };
-        // A sliver long against its thickness (a chamfer's wedge along a tooth) leaves most
-        // candidates above outside, or on its boundary, and nearly all of a grid over its box:
-        // from points inside each face's trimmed domain, the middle of the ray along the inward
-        // normal to where it next meets the shell. The caller probes only a sample more than
-        // 0.2 µm from the boundary (`classify`), and wants `capacity` of them; the grid stays
-        // the last resort, since each of its misses costs a classification.
-        const auto clear = [&] { return static_cast<int>(std::count_if(measured.begin(),measured.end(),
-            [](const auto& m) { return m.first > 2e-4; })); };
-        measure_all();
-        if (clear() < capacity) {
-            for (TopExp_Explorer it(shape,TopAbs_FACE); it.More() && static_cast<int>(inside.size()) < measure; it.Next()) {
-                const TopoDS_Face face = TopoDS::Face(it.Current());
-                double u0,u1,v0,v1;
-                BRepTools::UVBounds(face,u0,u1,v0,v1);
-                BRepAdaptor_Surface surface(face);
-                BRepTopAdaptor_FClass2d domain(face,Precision::PConfusion());
-                for (int i=0;i<5 && static_cast<int>(inside.size()) < measure;++i) for (int j=0;j<5;++j) {
-                    const double u = u0+(u1-u0)*(i+0.5)/5, v = v0+(v1-v0)*(j+0.5)/5;
-                    if (domain.Perform(gp_Pnt2d(u,v)) != TopAbs_IN) continue;
-                    gp_Pnt p; gp_Vec n;
-                    if (!outward(face,surface,u,v,p,n)) continue;
-                    const double first = exit(p,n.Reversed(),face);
-                    if (first >= Precision::Infinite()) continue;
-                    inside.push_back(p.Translated(n.Multiplied(-0.5*first)));
-                    if (static_cast<int>(inside.size()) >= measure) break;
-                }
-            }
-            measure_all();
+        explicit Probe(const TopoDS_Shape& solid): classify(solid) { rays.Load(solid,Precision::Confusion()); }
+    };
+    const double diagonal = std::hypot(std::hypot(x1-x0,y1-y0),z1-z0);
+    // Whether a point is inside the cell: by the parity of rays from it in fixed directions, each read
+    // only where every crossing is a clean one (through a face's interior, not tangent, not at the
+    // point itself), three that agree deciding; a point they do not decide, the kernel's classifier's
+    // (50-70 ms a point on a cell of spline faces, where a ray is a millisecond or two).
+    // `SOLVENT_CELL_CLASSIFIER=kernel`: the kernel's always; `=check`: both, a disagreement refused.
+    static const char* which = std::getenv("SOLVENT_CELL_CLASSIFIER");
+    const bool kernel_only = which && std::string(which) == "kernel",checking = which && std::string(which) == "check";
+    static const gp_Dir directions[6] = {gp_Dir(0.2672612,0.5345225,0.8017837),gp_Dir(-0.7071068,0.4082483,0.5773503),
+        gp_Dir(0.3015113,-0.9045340,0.3015113),gp_Dir(0.8164966,0.4082483,-0.4082483),gp_Dir(-0.4364358,-0.2182179,-0.8728716),
+        gp_Dir(0.5698029,-0.3798686,-0.7287361)};
+    int by_rays = 0,by_kernel = 0;
+    const auto kernel = [&](Probe& probe,const gp_Pnt& p) {
+        ++by_kernel;
+        probe.classify.Perform(p,Precision::Confusion());
+        return probe.classify.State() == TopAbs_IN;
+    };
+    const auto parity = [&](Probe& probe,const gp_Pnt& p) -> int {
+        int votes[2] = {0,0},read = 0;
+        for (const gp_Dir& d: directions) {
+            probe.rays.Perform(gp_Lin(p,d),0.,Precision::Infinite());
+            if (!probe.rays.IsDone()) continue;
+            bool clean = true;
+            for (int k=1;k<=probe.rays.NbPnt() && clean;++k)
+                clean = probe.rays.State(k) == TopAbs_IN && probe.rays.Transition(k) != IntCurveSurface_Tangent
+                    && probe.rays.WParameter(k) > diagonal*1e-7;
+            if (!clean) continue;
+            ++votes[probe.rays.NbPnt() & 1];
+            if (++read == 3) break;
         }
-        // A coarse grid visited in a spread order, so early candidates are far apart.
-        const int n = 5;
+        return read == 3 && (votes[0] == 3 || votes[1] == 3) ? votes[1] == 3 : -1;
+    };
+    const auto inside_of = [&](Probe& probe,const gp_Pnt& p) {
+        if (kernel_only) return kernel(probe,p);
+        const int rays = parity(probe,p);
+        if (checking) {
+            const bool k = kernel(probe,p);
+            if (rays >= 0 && (rays == 1) != k) throw std::runtime_error("a cell's rays and the kernel's classifier disagree at a point");
+            return k;
+        }
+        if (rays >= 0) { ++by_rays; return rays == 1; }
+        return kernel(probe,p);
+    };
+    std::vector<gp_Pnt> inside;
+    // A face's point at (u, v) and its outward unit normal there; false where the surface is
+    // singular.
+    const auto outward = [](const TopoDS_Face& face,const BRepAdaptor_Surface& surface,double u,double v,
+        gp_Pnt& p,gp_Vec& n) {
+        gp_Vec du,dv;
+        surface.D1(u,v,p,du,dv);
+        n = du.Crossed(dv);
+        if (n.Magnitude() <= 1e-12) return false;
+        n.Normalize();
+        if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+        return true;
+    };
+    // Where a ray from a point of `face` along its inward normal next meets the shell, if it
+    // does: the points before it are inside the cell by geometry alone. The face it starts
+    // on is met again within its own tolerance, which a split leaves at tens of nanometres.
+    const auto exit = [&](Probe& probe,const gp_Pnt& p,const gp_Vec& inward,const TopoDS_Face& face) {
+        double first = Precision::Infinite();
+        const double own = 10.*BRep_Tool::Tolerance(face);
+        probe.rays.Perform(gp_Lin(p,gp_Dir(inward)),diagonal*1e-7,Precision::Infinite());
+        if (probe.rays.IsDone()) for (int k=1;k<=probe.rays.NbPnt();++k) {
+            const double w = probe.rays.WParameter(k);
+            if (w <= own && probe.rays.Face(k).IsSame(face)) continue;
+            first = std::min(first,w);
+        }
+        return first;
+    };
+    std::vector<TopoDS_Face> faces;
+    for (TopExp_Explorer it(shape,TopAbs_FACE); it.More(); it.Next()) faces.push_back(TopoDS::Face(it.Current()));
+    const int count = static_cast<int>(faces.size());
+    // A little inward from points of each face, along its inward normal: nearly always
+    // inside, where a thin cell leaves most of a grid over its box outside and each miss
+    // costs a classification (32 ms each on a tooth space's spline faces). The step is a
+    // fraction of the box, then a finer one. The classifier decides each candidate, and the
+    // ray along the normal must not have left the cell before it: on a sliver the
+    // classifier has put one point inside two cells of one partition.
+    // A cell that rules out this many candidates in a row is a sliver the step does not fit: the rays
+    // between its faces below find its inside at once, where each more candidate costs a ray.
+    const int sliver = 10;
+    const double steps[2] = {diagonal*0.02,diagonal*0.005};
+    const std::pair<double,double> fractions[5] = {{0.5,0.5},{0.25,0.25},{0.75,0.75},{0.25,0.75},{0.75,0.25}};
+    // one classifier and one ray intersector for the cell, which taking the candidates in turn needs
+    Probe probe(shape);
+    const auto consider = [&](const gp_Pnt& p) {
+        if (static_cast<int>(inside.size()) >= measure) return;
+        if (inside_of(probe,p)) inside.push_back(p);
+    };
+    const auto from_faces = [&](const double step) {
+        int missed = 0;
+        for (int f=0;f<count && static_cast<int>(inside.size()) < measure && missed < sliver;++f) {
+            const TopoDS_Face& face = faces[static_cast<size_t>(f)];
+            double u0,u1,v0,v1;
+            BRepTools::UVBounds(face,u0,u1,v0,v1);
+            BRepAdaptor_Surface surface(face);
+            for (const auto& [fu,fv]: fractions) {
+                if (missed >= sliver) break;
+                gp_Pnt p; gp_Vec n;
+                if (!outward(face,surface,u0+(u1-u0)*fu,v0+(v1-v0)*fv,p,n)) continue;
+                // The ray first: on a sliver it rules out most candidates for less than
+                // a classification each.
+                if (static_cast<int>(inside.size()) >= measure) continue;
+                if (exit(probe,p,n.Reversed(),face) <= step) { ++missed; continue; }
+                const size_t before = inside.size();
+                consider(p.Translated(n.Multiplied(-step)));
+                missed = inside.size() > before ? 0 : missed+1;
+            }
+        }
+    };
+    for (const double step: steps) from_faces(step);
+    trail += "faces "+std::to_string(inside.size())+" at "+std::to_string(since());
+    // Distance to the boundary against the whole shell at once: the extrema
+    // solver culls faces by bounding box, where a face-by-face loop does not. Each on its own core.
+    TopoDS_Shape boundary;
+    for (TopExp_Explorer it(shape,TopAbs_SHELL); it.More(); it.Next()) { boundary = it.Current(); break; }
+    if (boundary.IsNull()) throw std::runtime_error("cell has no shell");
+    std::vector<std::pair<double,gp_Pnt>> measured;
+    const auto measure_all = [&] {
+        std::vector<double> d(inside.size(),std::nan(""));
+        OSD_Parallel::For(0,static_cast<int>(inside.size()),[&](int i) {
+            BRepExtrema_DistShapeShape distance(BRepBuilderAPI_MakeVertex(inside[static_cast<size_t>(i)]).Vertex(),boundary);
+            if (distance.IsDone() && distance.NbSolution() >= 1) d[static_cast<size_t>(i)] = distance.Value();
+        });
+        for (size_t i=0;i<inside.size();++i) if (!std::isnan(d[i])) measured.emplace_back(d[i],inside[i]);
+        inside.clear();
+    };
+    // A sliver long against its thickness (a chamfer's wedge along a tooth) leaves most
+    // candidates above outside, or on its boundary, and nearly all of a grid over its box:
+    // from points inside each face's trimmed domain, the middle of the ray along the inward
+    // normal to where it next meets the shell. The caller probes only a sample more than
+    // 0.2 µm from the boundary (`classify`), and wants `capacity` of them; the grid stays
+    // the last resort, since each of its misses costs a classification.
+    const auto clear = [&] { return static_cast<int>(std::count_if(measured.begin(),measured.end(),
+        [](const auto& m) { return m.first > 2e-4; })); };
+    measure_all();
+    trail += ", measured "+std::to_string(measured.size())+" clear "+std::to_string(clear())+" at "+std::to_string(since());
+    if (clear() < capacity) {
+        for (int f=0;f<count && static_cast<int>(inside.size()) < measure;++f) {
+            const TopoDS_Face& face = faces[static_cast<size_t>(f)];
+            double u0,u1,v0,v1;
+            BRepTools::UVBounds(face,u0,u1,v0,v1);
+            BRepAdaptor_Surface surface(face);
+            BRepTopAdaptor_FClass2d domain(face,Precision::PConfusion());
+            for (int i=0;i<5 && static_cast<int>(inside.size()) < measure;++i) for (int j=0;j<5;++j) {
+                const double u = u0+(u1-u0)*(i+0.5)/5, v = v0+(v1-v0)*(j+0.5)/5;
+                if (domain.Perform(gp_Pnt2d(u,v)) != TopAbs_IN) continue;
+                gp_Pnt p; gp_Vec n;
+                if (!outward(face,surface,u,v,p,n)) continue;
+                const double first = exit(probe,p,n.Reversed(),face);
+                if (first >= Precision::Infinite()) continue;
+                inside.push_back(p.Translated(n.Multiplied(-0.5*first)));
+                if (static_cast<int>(inside.size()) >= measure) break;
+            }
+        }
+        measure_all();
+        trail += ", rays: clear "+std::to_string(clear())+" at "+std::to_string(since());
+    }
+    // A coarse grid visited in a spread order, so early candidates are far apart.
+    const int n = 5;
+    if (clear() < capacity) {
         for (int pass=0;pass<2 && clear() < capacity;++pass) {
             for (int i=0;i<n;++i) for (int j=0;j<n;++j) for (int k=0;k<n;++k) {
                 if (((i+j+k)&1) != pass) continue;
                 if (static_cast<int>(inside.size()) >= measure) break;
                 const gp_Pnt g(x0+(x1-x0)*(i+0.5)/n,y0+(y1-y0)*(j+0.5)/n,z0+(z1-z0)*(k+0.5)/n);
-                classify.Perform(g,Precision::Confusion());
-                if (classify.State() == TopAbs_IN) inside.push_back(g);
+                if (inside_of(probe,g)) inside.push_back(g);
             }
             measure_all();
         }
-        if (measured.empty()) return 0;
-        std::sort(measured.begin(),measured.end(),[](const auto& a,const auto& b) { return a.first > b.first; });
-        int written = 0;
-        for (const auto& [d,p]: measured) {
-            if (written >= capacity) break;
-            output[4*written] = p.X(); output[4*written+1] = p.Y(); output[4*written+2] = p.Z(); output[4*written+3] = d;
-            ++written;
-        }
-        return written;
+    }
+    trail += ", end clear "+std::to_string(clear())+" at "+std::to_string(since());
+    trail += "; "+std::to_string(by_rays)+" points classified by rays, "+std::to_string(by_kernel)+" by the kernel";
+    if (std::getenv("SOLVENT_CELL_DEBUG")) fprintf(stderr,"cell samples: %s\n",trail.c_str());
+    if (measured.empty()) return 0;
+    std::sort(measured.begin(),measured.end(),[](const auto& a,const auto& b) { return a.first > b.first; });
+    int written = 0;
+    for (const auto& [d,p]: measured) {
+        if (written >= capacity) break;
+        output[4*written] = p.X(); output[4*written+1] = p.Y(); output[4*written+2] = p.Z(); output[4*written+3] = d;
+        ++written;
+    }
+
+    return written;
+}
+// `cell_samples` of several cells, each on its own core: `output` holds `capacity` rows of four a
+// cell, `written` how many of them each cell filled.
+int solvent_cad_solids_samples(Cad* cad,const int* ids,int count,double* output,int capacity,int measure,int* written) noexcept {
+    return guarded(cad,[&] {
+        if (!ids || !output || !written || count < 0 || capacity < 1 || measure < 1)
+            throw std::runtime_error("solid samples need buffers and positive counts");
+        std::vector<TopoDS_Shape> cells;
+        for (int i=0;i<count;++i) cells.push_back(cad->at(ids[i]));
+        std::vector<std::string> failed(static_cast<size_t>(count));
+        OSD_Parallel::For(0,count,[&](int i) {
+            try { written[i] = cell_samples(cells[static_cast<size_t>(i)],output+4*capacity*i,capacity,measure); }
+            catch (const Standard_Failure& e) { failed[static_cast<size_t>(i)] = e.GetMessageString(); }
+            catch (const std::exception& e) { failed[static_cast<size_t>(i)] = e.what(); }
+            catch (...) { failed[static_cast<size_t>(i)] = "unknown native CAD exception"; }
+        });
+        for (const auto& message: failed) if (!message.empty()) throw std::runtime_error(message);
+        return count;
     });
 }
 
@@ -292,7 +568,9 @@ int solvent_cad_fuse(Cad* cad,const int* ids,int count) noexcept {
         if (!ids || count < 1 || count > 65536)
             throw std::runtime_error("fuse requires 1..65536 solids");
         TopoDS_Shape result;
-        if (count == 1) result = cad->at(ids[0]);
+        // one cell is its own union, and its volume, where it was measured with the partition, is known
+        double known = std::numeric_limits<double>::quiet_NaN();
+        if (count == 1) { result = cad->at(ids[0]); known = cad->known_volume(ids[0]); }
         else {
             TopTools_ListOfShape objects,tools;
             objects.Append(cad->at(ids[0]));
@@ -304,26 +582,677 @@ int solvent_cad_fuse(Cad* cad,const int* ids,int count) noexcept {
             check_algorithm(fuse,"cell union");
             result = fuse.Shape();
         }
-        if (!BRepCheck_Analyzer(result).IsValid()) throw std::runtime_error("cell union is invalid before unification");
-        // Unification is a simplification, not a requirement: keep the union
-        // when merging faces on one support produces an invalid shape or has to
-        // widen a tolerance to do so (it once left a 40 mm vertex tolerance).
-        // Unify a copy: the algorithm updates tolerances on vertices it shares
-        // with its input, which would silently widen the union kept below.
-        const double before = BRep_Tool::MaxTolerance(result,TopAbs_VERTEX);
-        ShapeUpgrade_UnifySameDomain unify(BRepBuilderAPI_Copy(result).Shape(),true,true,false);
-        unify.Build();
-        TopoDS_Shape unified = unify.Shape();
-        if (!unified.IsNull() && BRepCheck_Analyzer(unified).IsValid()
-            && BRep_Tool::MaxTolerance(unified,TopAbs_VERTEX) <= before*1.001+1e-9) result = unified;
-        int solids = 0;
-        for (TopExp_Explorer it(result,TopAbs_SOLID); it.More(); it.Next()) { ++solids; result = it.Current(); }
-        if (solids != 1) throw std::runtime_error("cell union is not one connected solid");
-        const double v = validate(result);
-        const int id = cad->put(result);
-        cad->valid[static_cast<size_t>(id)] = 1;
-        cad->volumes[static_cast<size_t>(id)] = v;
+        return united(cad,result,"cell union",known);
+    });
+}
+
+// A face of revolution about `axis`: an elementary surface (not a plane) whose own axis is that
+// line, either way along it. Only these are carried onto one surface and one period.
+// The surface a face lies on, unwrapped from the trimming a split puts about a face crossing its seam.
+static Handle(Geom_Surface) basis(const TopoDS_Face& face,TopLoc_Location& there) {
+    Handle(Geom_Surface) surface = BRep_Tool::Surface(face,there);
+    while (auto trimmed = Handle(Geom_RectangularTrimmedSurface)::DownCast(surface)) surface = trimmed->BasisSurface();
+    return surface;
+}
+static Handle(Geom_Surface) basis(const TopoDS_Face& face) { TopLoc_Location there; return basis(face,there); }
+
+static bool about(const TopoDS_Face& face,const gp_Ax1& axis) {
+    TopLoc_Location there;
+    const auto elementary = Handle(Geom_ElementarySurface)::DownCast(basis(face,there));
+    if (elementary.IsNull() || elementary->IsKind(STANDARD_TYPE(Geom_Plane)) || !there.IsIdentity()) return false;
+    const gp_Ax1 own = elementary->Position().Axis();
+    return own.Direction().IsParallel(axis.Direction(),1e-12)
+        && gp_Lin(axis).Distance(own.Location()) <= 1e-9*(1.+own.Location().Distance(gp_Pnt(0,0,0)));
+}
+
+// Put `face` on `surface`, its pcurves (on the surface it carries now) moved along u by `shift`:
+// its own surface is `surface` turned about its axis, or `surface` itself a period on.
+static void reseat(const TopoDS_Face& face,const Handle(Geom_Surface)& surface,double shift) {
+    BRep_Builder builder;
+    const gp_Vec2d by(shift,0);
+    for (TopExp_Explorer e(face,TopAbs_EDGE); e.More(); e.Next()) {
+        const TopoDS_Edge edge = TopoDS::Edge(e.Current());
+        double f,l;
+        const double tolerance = BRep_Tool::Tolerance(edge);
+        if (BRep_Tool::IsClosed(edge,face)) {
+            Handle(Geom2d_Curve) c1 = BRep_Tool::CurveOnSurface(TopoDS::Edge(edge.Oriented(TopAbs_FORWARD)),face,f,l);
+            Handle(Geom2d_Curve) c2 = BRep_Tool::CurveOnSurface(TopoDS::Edge(edge.Oriented(TopAbs_REVERSED)),face,f,l);
+            if (c1.IsNull() || c2.IsNull()) throw std::runtime_error("a seam without its pcurves");
+            builder.UpdateEdge(TopoDS::Edge(edge.Oriented(TopAbs_FORWARD)),Handle(Geom2d_Curve)::DownCast(c1->Translated(by)),
+                Handle(Geom2d_Curve)::DownCast(c2->Translated(by)),surface,TopLoc_Location(),tolerance);
+        } else {
+            Handle(Geom2d_Curve) c = BRep_Tool::CurveOnSurface(edge,face,f,l);
+            if (c.IsNull()) throw std::runtime_error("an edge without its pcurve");
+            builder.UpdateEdge(edge,Handle(Geom2d_Curve)::DownCast(c->Translated(by)),surface,TopLoc_Location(),tolerance);
+        }
+        builder.Range(edge,surface,TopLoc_Location(),f,l);
+    }
+    builder.UpdateFace(face,surface,TopLoc_Location(),BRep_Tool::Tolerance(face));
+}
+
+// A face on a B-spline surface put on the surface cut down to the face's parameter box (and a
+// thousandth of the surface's range about it): `Geom_BSplineSurface::Segment` keeps the parameters,
+// so the face's pcurves stand as they are and the face is the same face, but a file writing it
+// carries the piece of the sheet the face uses, not the whole sheet the construction fitted.
+static void restrict_to_face(const TopoDS_Face& face) {
+    TopLoc_Location there;
+    const auto spline = Handle(Geom_BSplineSurface)::DownCast(basis(face,there));
+    if (spline.IsNull() || !there.IsIdentity() || spline->IsUPeriodic() || spline->IsVPeriodic()) return;
+    double u0,u1,v0,v1,U0,U1,V0,V1;
+    BRepTools::UVBounds(face,u0,u1,v0,v1);
+    spline->Bounds(U0,U1,V0,V1);
+    const double du = (U1-U0)*1e-3,dv = (V1-V0)*1e-3;
+    const double a = std::max(U0,u0-du),b = std::min(U1,u1+du),c = std::max(V0,v0-dv),d = std::min(V1,v1+dv);
+    if (!(a < b && c < d) || (a <= U0 && b >= U1 && c <= V0 && d >= V1)) return;
+    const auto cut = Handle(Geom_BSplineSurface)::DownCast(spline->Copy());
+    cut->Segment(a,b,c,d);
+    reseat(face,cut,0.);
+}
+
+// A copy of `source` turned by `angle` about `axis`, its faces of revolution about that line put back
+// on the source's own surfaces: turning a cone or a sphere about its own axis moves its parameters by
+// the angle and nothing else, so the copies' pieces of one blank face then share one surface, as the
+// pieces of a face a split cuts do, and a union can merge them.
+static TopoDS_Shape turned_copy(const TopoDS_Shape& source,const gp_Ax1& axis,double angle) {
+    gp_Trsf turn;
+    turn.SetRotation(axis,angle);
+    BRepBuilderAPI_Transform moved(source,turn,true);
+    if (!moved.IsDone()) throw std::runtime_error("a pattern's turn failed");
+    TopoDS_Shape copy = moved.Shape();
+    TopExp_Explorer from(source,TopAbs_FACE),to(copy,TopAbs_FACE);
+    for (; from.More() && to.More(); from.Next(),to.Next()) {
+        const TopoDS_Face original = TopoDS::Face(from.Current());
+        if (!about(original,axis)) continue;
+        const Handle(Geom_Surface) surface = basis(original);
+        // which way the parameter runs about the axis: the turn is a shift of u by +angle or -angle
+        double u0,u1,v0,v1;
+        BRepTools::UVBounds(original,u0,u1,v0,v1);
+        const gp_Pnt p = surface->Value(u0,v0).Transformed(turn);
+        double shift = std::nan("");
+        for (const double sign: {1.,-1.})
+            if (surface->Value(u0+sign*angle,v0).Distance(p) <= 1e-9*(1.+p.Distance(gp_Pnt(0,0,0)))) { shift = sign*angle; break; }
+        if (std::isnan(shift)) throw std::runtime_error("a turned face's parameters are not its surface's turned");
+        reseat(TopoDS::Face(to.Current()),surface,shift);
+    }
+    return copy;
+}
+
+// A piece of a ring (a face of revolution the copies close round the axis) moved into u in
+// [0, 2π], split along its surface's seam where it crosses it: pieces in one period meet their
+// neighbours on pcurves that agree, and the ring they make closes on the seam line, an iso line,
+// as the blank's own face did. (Closed on the junction between two copies instead, the ring's
+// parameters would span more than a period, which the mesher does not read.)
+static std::vector<TopoDS_Face> into_one_period(const TopoDS_Face& face,const gp_Ax1& axis,double reach) {
+    const Handle(Geom_Surface) surface = basis(face);
+    const double period = 2*M_PI,slack = 1e-9;
+    double u0,u1,v0,v1;
+    BRepTools::UVBounds(face,u0,u1,v0,v1);
+    const double m0 = std::floor((u0+slack)/period),m1 = std::floor((u1-slack)/period);
+    const auto moved = [&](const TopoDS_Face& part,double m) {
+        if (m == 0) return part;
+        const TopoDS_Face copy = TopoDS::Face(BRepBuilderAPI_Copy(part,true).Shape());
+        reseat(copy,surface,-m*period);
+        return copy;
+    };
+    if (m0 == m1) return {moved(face,m0)};
+    if (m1 != m0+1) throw std::runtime_error("a ring's piece spans more than a period");
+    // the half-plane of the seam line crossed, bounded by the axis
+    const double U = m1*period;
+    const gp_Pnt on = surface->Value(U,(v0+v1)/2);
+    const gp_Lin line(axis);
+    const gp_Pnt foot = ElCLib::Value(ElCLib::Parameter(line,on),line);
+    const gp_Vec out = gp_Vec(foot,on).Normalized()*reach,along = gp_Vec(axis.Direction())*reach;
+    const gp_Pnt o = axis.Location();
+    BRepBuilderAPI_MakePolygon polygon(o.Translated(-along),o.Translated(along),o.Translated(along+out),o.Translated(out-along),true);
+    BRepBuilderAPI_MakeFace half(polygon.Wire(),true);
+    // The kernel finds no crossing on a face whose parameters run past the period's end, so the
+    // face is split on its surface turned half a turn (whose u is u - U + π there), and put back.
+    const Handle(Geom_Surface) turned = Handle(Geom_Surface)::DownCast(surface->Rotated(axis,M_PI));
+    const TopoDS_Face across = TopoDS::Face(BRepBuilderAPI_Copy(face,true).Shape());
+    reseat(across,turned,M_PI-U);
+    BRepAlgoAPI_Splitter split;
+    TopTools_ListOfShape objects,tools;
+    objects.Append(across); tools.Append(half.Face());
+    split.SetArguments(objects); split.SetTools(tools);
+    split.Build();
+    check_algorithm(split,"a ring's piece at its seam");
+    std::vector<TopoDS_Face> parts;
+    for (TopExp_Explorer it(split.Shape(),TopAbs_FACE); it.More(); it.Next()) {
+        const TopoDS_Face part = TopoDS::Face(it.Current());
+        double a0,a1,b0,b1;
+        BRepTools::UVBounds(part,a0,a1,b0,b1);
+        const TopoDS_Face own = TopoDS::Face(BRepBuilderAPI_Copy(part,true).Shape());
+        reseat(own,surface,U-M_PI);
+        parts.push_back(moved(own,(a0+a1)/2 > M_PI ? m1 : m0));
+    }
+    if (parts.size() != 2) {
+        std::ostringstream message;
+        message << "a ring's piece (" << surface->DynamicType()->Name() << ", u " << u0 << " to " << u1 << ", v " << v0 << " to " << v1
+            << ") split at its seam (u " << U << ") into " << parts.size() << " faces";
+        throw std::runtime_error(message.str());
+    }
+    return parts;
+}
+
+// Which of a sector's faces (`faces`) lie on one of its two sides (`sides`, two shapes), and on
+// which: 0 or 1 where every sample of the face is within `fuzzy` of that side's surface, -1 else.
+static std::vector<int> sector_sides(Cad* cad,const TopTools_IndexedMapOfShape& faces,const int* sides,double fuzzy) {
+    std::vector<std::pair<int,Handle(Geom_Surface)>> side_surfaces;
+    for (int i=0;i<2;++i) for (TopExp_Explorer it(cad->at(sides[i]),TopAbs_FACE); it.More(); it.Next())
+        side_surfaces.emplace_back(i,BRep_Tool::Surface(TopoDS::Face(it.Current())));
+    const auto side_of = [&](const TopoDS_Face& face) {
+        double u0,u1,v0,v1;
+        BRepTools::UVBounds(face,u0,u1,v0,v1);
+        const Handle(Geom_Surface) own = BRep_Tool::Surface(face);
+        for (const auto& [which,surface]: side_surfaces) {
+            bool all = true;
+            for (const auto& [fu,fv]: {std::pair{0.5,0.5},{0.2,0.3},{0.8,0.7},{0.3,0.8}}) {
+                GeomAPI_ProjectPointOnSurf foot(own->Value(u0+(u1-u0)*fu,v0+(v1-v0)*fv),surface);
+                if (!foot.NbPoints() || foot.LowerDistance() > fuzzy) { all = false; break; }
+            }
+            if (all) return which;
+        }
+        return -1;
+    };
+    std::vector<int> side(faces.Extent());
+    for (int i=0;i<faces.Extent();++i) side[i] = side_of(TopoDS::Face(faces(i+1)));
+    return side;
+}
+
+// One solid and its copies turned by `angles` about the line (`origin`, `axis`), united: the
+// sectors of an indexed body, each meeting the next on a face both carry (docs/native-speed-plan.md).
+// The faces on the two sides (`sides`: every sample of the face within `fuzzy` of one of theirs) are
+// left out, and the rest of every copy sewn to `fuzzy` (mm) into one closed shell: no face is
+// intersected. The pieces of a ring are first moved into one period (`into_one_period`). The union
+// is returned unchecked, for `solvent_cad_pattern_check` to check and measure, which a caller may
+// run beside other work on it (writing its file).
+int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* axis,const double* angles,int count,
+    const int* sides,double fuzzy) noexcept {
+    return guarded(cad,[&] {
+        if (!angles || count < 1 || count > 4096) throw std::runtime_error("a pattern needs 1..4096 turns");
+        const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
+        const auto& source = cad->at(solid);
+        const gp_Ax1 line(gp_Pnt(origin[0],origin[1],origin[2]),gp_Dir(axis[0],axis[1],axis[2]));
+        auto clock = std::chrono::steady_clock::now();
+        const auto lap = [&](const char* step) {
+            const auto now = std::chrono::steady_clock::now();
+            if (debug) fprintf(stderr,"sector: pattern: %s %.2f s\n",step,std::chrono::duration<double>(now-clock).count());
+            clock = now;
+        };
+        TopTools_IndexedMapOfShape faces;
+        TopExp::MapShapes(source,TopAbs_FACE,faces);
+        const std::vector<int> side = sector_sides(cad,faces,sides,fuzzy);
+        if (std::count(side.begin(),side.end(),0) != 1 || std::count(side.begin(),side.end(),1) != 1)
+            throw std::runtime_error("the sector does not carry one face on each side");
+        // a ring's piece: a face of revolution meeting both sides
+        TopTools_IndexedDataMapOfShapeListOfShape by_edge;
+        TopExp::MapShapesAndAncestors(source,TopAbs_EDGE,TopAbs_FACE,by_edge);
+        std::vector<char> ring(faces.Extent());
+        for (int i=0;i<faces.Extent();++i) {
+            const TopoDS_Face face = TopoDS::Face(faces(i+1));
+            if (side[i] >= 0 || !about(face,line)) continue;
+            bool meets[2] = {false,false};
+            for (TopExp_Explorer e(face,TopAbs_EDGE); e.More(); e.Next())
+                for (const auto& other: by_edge.FindFromKey(e.Current())) {
+                    const int j = faces.FindIndex(other)-1;
+                    if (j >= 0 && side[j] >= 0) meets[side[j]] = true;
+                }
+            ring[i] = meets[0] && meets[1];
+        }
+        Bnd_Box box;
+        BRepBndLib::Add(source,box,false);
+        double x0,y0,z0,x1,y1,z1;
+        box.Get(x0,y0,z0,x1,y1,z1);
+        const double reach = 4.*(std::hypot(std::hypot(x1-x0,y1-y0),z1-z0)+line.Location().Distance(gp_Pnt((x0+x1)/2,(y0+y1)/2,(z0+z1)/2)));
+        // The sector on its surfaces as the copies will be (a face a split left on a trimmed surface
+        // too), each face of revolution given the parameters within half a turn of the sector's middle:
+        // a face's pieces in neighbouring copies then continue one another's, where a piece a period
+        // away would meet its neighbour on pcurves a period apart, and never merge.
+        const TopoDS_Shape base = turned_copy(source,line,0.);
+        const gp_Pnt middle((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);
+        // Every copy's volume is the base's faces' but the sides' flux about a point of the axis,
+        // which a turn about the axis keeps: the sides are left out of the union and the rest of
+        // every copy is sewn as it is.
+        std::vector<TopoDS_Face> kept;
+        {
+            TopTools_IndexedMapOfShape own;
+            TopExp::MapShapes(base,TopAbs_FACE,own);
+            for (int i=0;i<own.Extent();++i) if (side[static_cast<size_t>(i)] < 0) {
+                const TopoDS_Face face = TopoDS::Face(own(i+1));
+                restrict_to_face(face);
+                kept.push_back(face);
+            }
+            for (TopExp_Explorer it(base,TopAbs_FACE); it.More(); it.Next()) {
+                const TopoDS_Face face = TopoDS::Face(it.Current());
+                if (!about(face,line)) continue;
+                const Handle(Geom_Surface) surface = basis(face);
+                GeomAPI_ProjectPointOnSurf foot(middle,surface);
+                if (!foot.NbPoints()) throw std::runtime_error("the sector's middle has no foot on a face of revolution");
+                double uc,vc,u0,u1,v0,v1;
+                foot.LowerDistanceParameters(uc,vc);
+                BRepTools::UVBounds(face,u0,u1,v0,v1);
+                const double m = std::round(((u0+u1)/2-uc)/(2*M_PI));
+                if (m != 0) reseat(face,surface,-m*2*M_PI);
+            }
+        }
+        BRepBuilderAPI_Sewing sewing(fuzzy);
+        for (int k=0;k<=count;++k) {
+            const TopoDS_Shape copy = k == 0 ? base : turned_copy(base,line,angles[k-1]);
+            TopTools_IndexedMapOfShape own;
+            TopExp::MapShapes(copy,TopAbs_FACE,own);
+            if (own.Extent() != faces.Extent()) throw std::runtime_error("a turned copy has other faces than its source");
+            for (int i=0;i<own.Extent();++i) {
+                if (side[i] >= 0) continue;
+                const TopoDS_Face face = TopoDS::Face(own(i+1));
+                if (ring[i]) for (const auto& part: into_one_period(face,line,reach)) sewing.Add(part);
+                else sewing.Add(face);
+            }
+        }
+        lap("turned and gathered the copies' faces");
+        sewing.Perform();
+        TopoDS_Shape sewn = sewing.SewedShape();
+        if (sewing.NbFreeEdges() > 0 || sewing.NbMultipleEdges() > 0)
+            throw std::runtime_error("the sewn sectors leave "+std::to_string(sewing.NbFreeEdges())+" free and "
+                +std::to_string(sewing.NbMultipleEdges())+" multiple edges");
+        TopoDS_Shell shell;
+        int shells = 0;
+        for (TopExp_Explorer it(sewn,TopAbs_SHELL); it.More(); it.Next()) { ++shells; shell = TopoDS::Shell(it.Current()); }
+        if (shells != 1) throw std::runtime_error("the sewn sectors make "+std::to_string(shells)+" shells, not one");
+        BRepBuilderAPI_MakeSolid solid_of(shell);
+        if (!solid_of.IsDone()) throw std::runtime_error("the sewn sectors make no solid");
+        TopoDS_Solid made = solid_of.Solid();
+        if (!BRepLib::OrientClosedSolid(made)) throw std::runtime_error("the sewn sectors are not closed");
+        lap("sewn");
+        const gp_Lin axis_line(line);
+        // A copy's faces' flux about a point of the axis, measured while the union is unified and
+        // checked, and waited for as it is checked.
+        const gp_Pnt about = ElCLib::Value(ElCLib::Parameter(axis_line,middle),axis_line);
+        const int copies = count+1;
+        std::shared_future<double> whole = std::async(std::launch::async,[kept,about,copies] { return copies*flux(kept,about); }).share();
+        // `SOLVENT_SECTOR_CHECK=full`: the united solid measured whole as well, which may differ by
+        // the slack its tolerances leave the boundary (the sewing moves edges within them).
+        if (std::getenv("SOLVENT_SECTOR_CHECK") && std::string(std::getenv("SOLVENT_SECTOR_CHECK")) == "full") {
+            const double measured = volume(made);
+            const double slack = std::max(1e-8*std::abs(measured),BRep_Tool::MaxTolerance(made,TopAbs_VERTEX)*area(made));
+            if (debug) fprintf(stderr,"sector: pattern: %.12g mm3 measured whole, %.12g as %d copies of one (slack %.3g)\n",
+                measured,whole.get(),copies,slack);
+            if (std::abs(measured-whole.get()) > slack)
+                throw std::runtime_error("the sectors united measure "+std::to_string(measured)+" mm3 whole and "+std::to_string(whole.get())
+                    +" as copies of one");
+        }
+        // The union unified, and oriented as its check will leave it: a file may be written from it
+        // while it is checked (`solvent_cad_pattern_check`).
+        const TopoDS_Shape unified = unification(made,"pattern union");
+        TopoDS_Shape shape = made;
+        bool unifies = false;
+        if (!unified.IsNull()) {
+            TopoDS_Solid one = TopoDS::Solid(the_solid(unified,"pattern union"));
+            if (BRepLib::OrientClosedSolid(one)) { shape = one; unifies = true; }
+        }
+        lap("unified");
+        const int id = cad->put(shape);
+        cad->set_pattern(id,line,copies);
+        cad->set_pending(id,std::make_shared<Cad::Pending>(Cad::Pending {made,unifies,whole,line,copies}));
         return id;
+    });
+}
+
+// A pattern's union (`solvent_cad_pattern`) checked and measured: the handle it keeps, the unified
+// union's where that passes its check, or a new one of the union as it was sewn, where that does.
+int solvent_cad_pattern_check(Cad* cad,int id) noexcept {
+    return guarded(cad,[&] {
+        const auto pending = cad->take_pending(id);
+        if (!pending) throw std::runtime_error("no pattern's union waits for its check under this handle");
+        const bool debug = std::getenv("SOLVENT_SECTOR_DEBUG") != nullptr;
+        auto clock = std::chrono::steady_clock::now();
+        const auto lap = [&](const char* step) {
+            const auto now = std::chrono::steady_clock::now();
+            if (debug) fprintf(stderr,"sector: pattern union: %s %.2f s\n",step,std::chrono::duration<double>(now-clock).count());
+            clock = now;
+        };
+        if (pending->unified) {
+            // (a copy of the handle: a file is written from the one stored meanwhile)
+            TopoDS_Shape shape = cad->at(id);
+            if (union_checked(shape)) {
+                lap("checked");
+                const TopAbs_Orientation was = shape.Orientation();
+                const double v = validate(shape,nullptr,true,pending->whole.get());
+                if (shape.Orientation() != was) throw std::runtime_error("the pattern's union was stored misoriented");
+                lap("validated and measured");
+                cad->set_checked(id,v);
+                return id;
+            }
+        }
+        if (!union_checked(pending->made)) throw std::runtime_error("pattern union is invalid before unification");
+        lap("checked as it was sewn");
+        TopoDS_Shape result = the_solid(pending->made,"pattern union");
+        const double v = validate(result,nullptr,true,pending->whole.get());
+        const int kept = cad->put(result,true,v);
+        cad->set_pattern(kept,pending->line,pending->copies);
+        return kept;
+    });
+}
+
+// A copy of a stored shape, sharing nothing with it: work on one (a mesh) may run beside work on the
+// other.
+int solvent_cad_copy(Cad* cad,int id) noexcept {
+    return guarded(cad,[&] {
+        BRepBuilderAPI_Copy copy(cad->at(id),true);
+        if (!copy.IsDone()) throw std::runtime_error("copying a shape failed");
+        double volume = cad->known_volume(id);
+        return cad->put(copy.Shape(),false,volume);
+    });
+}
+
+// Mesh a sector's material (the source `solvent_cad_pattern` turns) afresh, its faces on every
+// core, at an absolute `deflection` (mm) and an `angular` one (radians), and read the chordal sag
+// its faces have, the two sides' (`sides`, found as the pattern finds them) left out, since their
+// triangles are no part of the pattern's mesh. `output`: the sag (mm) and where; none, no sag read.
+// A meshing abandoned when the flag it is given is raised (`solvent_cad_sector_mesh`'s `cancel`).
+class Cancel: public Message_ProgressIndicator {
+    const int* flag;
+public:
+    explicit Cancel(const int* flag): flag(flag) {}
+    Standard_Boolean UserBreak() override { return __atomic_load_n(flag,__ATOMIC_RELAXED) != 0; }
+    void Show(const Message_ProgressScope&,const Standard_Boolean) override {}
+};
+
+// `interior`: the chordal deflection within its faces, where it differs from their edges'.
+// `cancel`: where not null, a flag that abandons the meshing when raised (the call then fails).
+int solvent_cad_sector_mesh(Cad* cad,int piece,const int* sides,double fuzzy,double deflection,double interior,double angular,
+    double* output,const int* cancel) noexcept {
+    return guarded(cad,[&] {
+        if (!sides) throw std::runtime_error("a sector's mesh needs its sides");
+        if (!std::isfinite(deflection) || deflection <= 0 || !std::isfinite(angular) || angular <= 0)
+            throw std::runtime_error("meshing needs a positive deflection and angle");
+        cad->validated(piece);
+        auto& shape = cad->at(piece);
+        // `SOLVENT_DUMP_PIECE=PREFIX`: the sector and its sides written as BRep files, for a harness.
+        if (const char* dump = std::getenv("SOLVENT_DUMP_PIECE")) {
+            BRepTools::Write(shape,(std::string(dump)+"-piece.brep").c_str());
+            for (int i=0;i<2;++i) BRepTools::Write(cad->at(sides[i]),(std::string(dump)+"-side"+std::to_string(i)+".brep").c_str());
+        }
+        BRepTools::Clean(shape);
+        const auto started = std::chrono::steady_clock::now();
+        if (!std::isfinite(interior) || interior <= 0) throw std::runtime_error("meshing needs a positive interior deflection");
+        if (cancel) {
+            IMeshTools_Parameters parameters;
+            parameters.Deflection = deflection; parameters.DeflectionInterior = interior;
+            parameters.Angle = angular; parameters.AngleInterior = angular; parameters.InParallel = true;
+            Handle(Cancel) abandon = new Cancel(cancel);
+            BRepMesh_IncrementalMesh mesher(shape,parameters,abandon->Start());
+            if (abandon->UserBreak()) throw std::runtime_error("the meshing was abandoned");
+            if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        } else if (interior == deflection) {
+            BRepMesh_IncrementalMesh mesher(shape,deflection,false,angular,true);
+            if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        } else {
+            IMeshTools_Parameters parameters;
+            parameters.Deflection = deflection; parameters.DeflectionInterior = interior;
+            parameters.Angle = angular; parameters.AngleInterior = angular; parameters.InParallel = true;
+            BRepMesh_IncrementalMesh mesher(shape,parameters);
+            if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        }
+        if (std::getenv("SOLVENT_SECTOR_DEBUG")) fprintf(stderr,"sector: meshed at %g in %.2f s\n",deflection,
+            std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count());
+        if (!output) return 0;
+        if (cancel && __atomic_load_n(cancel,__ATOMIC_RELAXED)) throw std::runtime_error("the meshing was abandoned");
+        TopTools_IndexedMapOfShape faces;
+        TopExp::MapShapes(shape,TopAbs_FACE,faces);
+        const std::vector<int> side = sector_sides(cad,faces,sides,fuzzy);
+        std::vector<double> worst(faces.Extent(),0.);
+        std::vector<gp_Pnt> at(faces.Extent());
+        OSD_Parallel::For(0,faces.Extent(),[&](int i) {
+            if (side[static_cast<size_t>(i)] < 0) face_sag(TopoDS::Face(faces(i+1)),worst[static_cast<size_t>(i)],at[static_cast<size_t>(i)]);
+        });
+        output[0] = 0;
+        for (int i=0;i<faces.Extent();++i) if (worst[static_cast<size_t>(i)] > output[0]) {
+            output[0] = worst[static_cast<size_t>(i)]; output[1] = at[static_cast<size_t>(i)].X();
+            output[2] = at[static_cast<size_t>(i)].Y(); output[3] = at[static_cast<size_t>(i)].Z();
+        }
+        return 0;
+    });
+}
+
+// The binary STL of a sector meshed by `solvent_cad_sector_mesh` and turned `count` times by
+// `pitch` about the line (`origin`, `axis`): every triangle but the sides', copy k's the sector's
+// turned by k pitches. A copy meets its neighbour on the neighbour's side, and there the two write
+// one set of points: each node where a face meets one side is paired, one to one, with the nearest
+// turn of a node where a face meets the other (the sides being a pitch's turn of each other) —
+// within `reach` (mm) and a quarter of the least spacing between the seam's points, or the call
+// refuses — and a copy writes such a node as its partner turned
+// into the neighbouring copy, computed as that copy computes it, so the copies share their seam
+// points bit for bit and close into one shell. The mesher discretizes the two sides' edges alike
+// but not always at the same places along them (the split cuts each side's edges on its own); the
+// partner's turn is on the same two surfaces, so the move is along the seam. `output` gets the
+// farthest a node is moved to its partner (mm). Returns the triangles written.
+int solvent_cad_sector_stl(Cad* cad,int piece,const int* sides,double fuzzy,const double* origin,const double* axis,
+    int count,double pitch,double reach,const char* path,double* output) noexcept {
+    return guarded(cad,[&] {
+        if (!sides || !origin || !axis || !path || !output || count < 1 || !std::isfinite(pitch) || !(reach > 0))
+            throw std::runtime_error("a sector's STL needs its sides, an axis, a count, a pitch, a reach, a path and an output");
+        const auto& shape = cad->at(piece);
+        const gp_Ax1 line(gp_Pnt(origin[0],origin[1],origin[2]),gp_Dir(axis[0],axis[1],axis[2]));
+        TopTools_IndexedMapOfShape faces;
+        TopExp::MapShapes(shape,TopAbs_FACE,faces);
+        const std::vector<int> side = sector_sides(cad,faces,sides,fuzzy);
+        TopTools_IndexedDataMapOfShapeListOfShape by_edge;
+        TopExp::MapShapesAndAncestors(shape,TopAbs_EDGE,TopAbs_FACE,by_edge);
+        // Every kept face's nodes (placed), its triangles wound outward, and which side each node is
+        // on (-1 for neither).
+        struct Mesh { std::vector<gp_Pnt> nodes; std::vector<int> on; std::vector<std::array<int,3>> triangles; };
+        std::vector<Mesh> meshes;
+        std::vector<gp_Pnt> seam[2];
+        for (int i=0;i<faces.Extent();++i) {
+            if (side[static_cast<size_t>(i)] >= 0) continue;
+            const TopoDS_Face face = TopoDS::Face(faces(i+1));
+            TopLoc_Location location;
+            const auto triangulation = BRep_Tool::Triangulation(face,location);
+            if (triangulation.IsNull() || triangulation->NbTriangles() == 0) throw std::runtime_error("a sector's face is not meshed");
+            const gp_Trsf placed = location.Transformation();
+            Mesh mesh;
+            for (int n=1;n<=triangulation->NbNodes();++n) mesh.nodes.push_back(triangulation->Node(n).Transformed(placed));
+            mesh.on.assign(mesh.nodes.size(),-1);
+            for (TopExp_Explorer e(face,TopAbs_EDGE); e.More(); e.Next()) {
+                int s = -1;
+                for (const auto& other: by_edge.FindFromKey(e.Current())) {
+                    const int j = faces.FindIndex(other)-1;
+                    if (j >= 0 && side[static_cast<size_t>(j)] >= 0) s = side[static_cast<size_t>(j)];
+                }
+                if (s < 0) continue;
+                TopLoc_Location at;
+                const auto polygon = BRep_Tool::PolygonOnTriangulation(TopoDS::Edge(e.Current()),triangulation,at);
+                if (polygon.IsNull()) throw std::runtime_error("a sector's seam edge has no polygon on its face's mesh");
+                for (int k=1;k<=polygon->NbNodes();++k) {
+                    const int n = polygon->Node(k)-1;
+                    if (mesh.on[static_cast<size_t>(n)] < 0) { mesh.on[static_cast<size_t>(n)] = s; seam[s].push_back(mesh.nodes[static_cast<size_t>(n)]); }
+                }
+            }
+            const bool reversed = face.Orientation() == TopAbs_REVERSED;
+            for (int t=1;t<=triangulation->NbTriangles();++t) {
+                int a,b,c; triangulation->Triangle(t).Get(a,b,c);
+                if (reversed) std::swap(b,c);
+                mesh.triangles.push_back({a-1,b-1,c-1});
+            }
+            meshes.push_back(std::move(mesh));
+        }
+        // The seam points, each once (a node where faces meet is in each face's mesh).
+        const auto distinct = [](std::vector<gp_Pnt>& points) {
+            std::sort(points.begin(),points.end(),[](const gp_Pnt& p,const gp_Pnt& q) {
+                return std::make_tuple(p.X(),p.Y(),p.Z()) < std::make_tuple(q.X(),q.Y(),q.Z()); });
+            points.erase(std::unique(points.begin(),points.end(),[](const gp_Pnt& p,const gp_Pnt& q) {
+                return p.X() == q.X() && p.Y() == q.Y() && p.Z() == q.Z(); }),points.end());
+        };
+        distinct(seam[0]); distinct(seam[1]);
+        if (seam[0].size() != seam[1].size() || seam[0].empty())
+            throw std::runtime_error("the sector's mesh has "+std::to_string(seam[0].size())+" points on one side and "
+                +std::to_string(seam[1].size())+" on the other");
+        // Which way a pitch turns the first side onto the second, and each second-side point's partner.
+        const auto turn = [&](double angle) { gp_Trsf t; if (angle != 0) t.SetRotation(line,angle); return t; };
+        // A partner nearer than a quarter of the nearest two seam points are to each other is no
+        // other point's: the pairing is the seam's own order, whatever the mesher did along it.
+        double spacing = 1e300;
+        for (size_t v=0;v<seam[0].size();++v) for (size_t u=v+1;u<seam[0].size();++u) spacing = std::min(spacing,seam[0][v].Distance(seam[0][u]));
+        reach = std::min(reach,spacing/4);
+        int sense = 0;
+        double moved[2] = {0,0};
+        std::vector<size_t> partner(seam[1].size());
+        for (const int trial: {1,-1}) {
+            const gp_Trsf by = turn(trial*pitch);
+            std::vector<gp_Pnt> turned(seam[0].size());
+            for (size_t v=0;v<seam[0].size();++v) turned[v] = seam[0][v].Transformed(by);
+            std::vector<char> taken(seam[0].size(),0);
+            bool all = true;
+            double& most = moved[trial > 0 ? 0 : 1];
+            for (size_t w=0;w<seam[1].size() && all;++w) {
+                double best = 1e300; size_t found = 0;
+                for (size_t v=0;v<seam[0].size();++v) {
+                    const double d = turned[v].Distance(seam[1][w]);
+                    if (d < best) { best = d; found = v; }
+                }
+                most = std::max(most,best);
+                if (best > reach || taken[found]) all = false;
+                else { taken[found] = 1; partner[w] = found; }
+            }
+            if (all) { sense = trial; output[0] = most; break; }
+        }
+        if (!sense) {
+            std::ostringstream message;
+            message << "the sector's mesh points on its two sides are not a pitch's turn of each other within " << reach
+                << " mm (" << seam[0].size() << " points a side; one " << moved[0] << " mm from its nearest partner turned one way, "
+                << moved[1] << " the other)";
+            throw std::runtime_error(message.str());
+        }
+        // A node at a second-side seam point, in whichever face's mesh (a face meeting the side at a
+        // corner only has one too): that point's index, or none.
+        const auto index_of = [&](const gp_Pnt& p) {
+            const auto it = std::lower_bound(seam[1].begin(),seam[1].end(),p,[](const gp_Pnt& a,const gp_Pnt& b) {
+                return std::make_tuple(a.X(),a.Y(),a.Z()) < std::make_tuple(b.X(),b.Y(),b.Z()); });
+            if (it == seam[1].end() || it->X() != p.X() || it->Y() != p.Y() || it->Z() != p.Z()) return seam[1].size();
+            return static_cast<size_t>(it-seam[1].begin());
+        };
+        std::vector<gp_Trsf> copies(static_cast<size_t>(count));
+        for (int k=0;k<count;++k) copies[static_cast<size_t>(k)] = turn(k*pitch);
+        size_t triangles = 0;
+        for (const auto& mesh: meshes) triangles += mesh.triangles.size();
+        triangles *= static_cast<size_t>(count);
+        if (triangles > 0xffffffffu) throw std::runtime_error("too many triangles for a binary STL");
+        std::vector<char> bytes(84+50*triangles,0);
+        const uint32_t n32 = static_cast<uint32_t>(triangles);
+        std::memcpy(bytes.data()+80,&n32,4);
+        std::vector<std::vector<size_t>> second(meshes.size());
+        for (size_t m=0;m<meshes.size();++m) for (const auto& p: meshes[m].nodes) second[m].push_back(index_of(p));
+        size_t at = 84;
+        for (int k=0;k<count;++k) for (size_t m=0;m<meshes.size();++m) {
+            const auto& mesh = meshes[m];
+            // each node of this copy, as float32
+            std::vector<std::array<float,3>> written(mesh.nodes.size());
+            for (size_t n=0;n<mesh.nodes.size();++n) {
+                gp_Pnt p = mesh.nodes[n];
+                const gp_Trsf* by = &copies[static_cast<size_t>(k)];
+                if (const size_t w = second[m][n]; w < seam[1].size()) {
+                    p = seam[0][partner[w]];
+                    by = &copies[static_cast<size_t>(((k+sense)%count+count)%count)];
+                }
+                if (by->Form() != gp_Identity) p.Transform(*by);
+                written[n] = {static_cast<float>(p.X()),static_cast<float>(p.Y()),static_cast<float>(p.Z())};
+            }
+            for (const auto& t: mesh.triangles) {
+                const auto& a = written[static_cast<size_t>(t[0])];
+                const auto& b = written[static_cast<size_t>(t[1])];
+                const auto& c = written[static_cast<size_t>(t[2])];
+                gp_Vec normal = gp_Vec(b[0]-a[0],b[1]-a[1],b[2]-a[2]).Crossed(gp_Vec(c[0]-a[0],c[1]-a[1],c[2]-a[2]));
+                if (normal.Magnitude() > 0) normal.Normalize();
+                const float row[12] = {float(normal.X()),float(normal.Y()),float(normal.Z()),a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]};
+                std::memcpy(bytes.data()+at,row,48);
+                at += 50;
+            }
+        }
+        std::FILE* file = std::fopen(path,"wb");
+        if (!file) throw std::runtime_error(std::string("cannot write ")+path);
+        const size_t written = std::fwrite(bytes.data(),1,bytes.size(),file);
+        if (std::fclose(file) != 0 || written != bytes.size()) throw std::runtime_error(std::string("STL write failed: ")+path);
+        return static_cast<int>(std::min<size_t>(triangles,0x7fffffff));
+    });
+}
+
+// A solid of revolution about the line (`origin`, `axis`) made again by turning its meridian
+// section about that line: every face then carries its surface's own frame on the axis, so copies
+// turned about it are one parameterization apart by a turn of `u`, which is what lets faces of
+// neighbouring copies merge (a sphere built about another line through its centre would not).
+// The section is the solid's common with the half-plane bounded by the axis towards `seam`, which is
+// where the faces' parameters start; the caller compares the volumes.
+int solvent_cad_revolved(Cad* cad,int solid,const double* origin,const double* axis,const double* seam) noexcept {
+    return guarded(cad,[&] {
+        const auto& shape = cad->at(solid);
+        const gp_Pnt o(origin[0],origin[1],origin[2]);
+        const gp_Dir a(axis[0],axis[1],axis[2]);
+        const gp_Vec towards(seam[0],seam[1],seam[2]);
+        const gp_Dir x(towards-gp_Vec(a)*towards.Dot(gp_Vec(a)));
+        Bnd_Box box;
+        BRepBndLib::Add(shape,box,false);
+        double x0,y0,z0,x1,y1,z1;
+        box.Get(x0,y0,z0,x1,y1,z1);
+        const double reach = 2.*(std::hypot(std::hypot(x1-x0,y1-y0),z1-z0)+o.Distance(gp_Pnt((x0+x1)/2,(y0+y1)/2,(z0+z1)/2)));
+        const gp_Vec along = gp_Vec(a)*reach, out = gp_Vec(x)*reach;
+        BRepBuilderAPI_MakePolygon polygon(o.Translated(-along),o.Translated(along),o.Translated(along+out),o.Translated(out-along),true);
+        BRepBuilderAPI_MakeFace half(polygon.Wire(),true);
+        if (!half.IsDone()) throw std::runtime_error("the half-plane of a meridian section failed");
+        BRepAlgoAPI_Common common(shape,half.Face());
+        common.SetFuzzyValue(1e-7);
+        common.Build();
+        check_algorithm(common,"meridian section");
+        TopoDS_Shape result;
+        int faces = 0;
+        for (TopExp_Explorer it(common.Shape(),TopAbs_FACE); it.More(); it.Next()) {
+            ++faces;
+            BRepPrimAPI_MakeRevol turned(it.Current(),gp_Ax1(o,a),2*M_PI,true);
+            if (!turned.IsDone()) throw std::runtime_error("turning a meridian section failed");
+            if (result.IsNull()) result = turned.Shape();
+            else {
+                BRepAlgoAPI_Fuse fuse(result,turned.Shape());
+                check_algorithm(fuse,"turned sections' union");
+                result = fuse.Shape();
+            }
+        }
+        if (!faces) throw std::runtime_error("the solid has no meridian section");
+        validate(result);
+        return cad->put(result);
+    });
+}
+
+// A solid of revolution made by turning a planar region (a face, or faces a Boolean of meridian
+// sections left) once about the line (`origin`, `axis`) in its plane: the region's faces merged on
+// their plane first, each turned a whole turn, and the turns united — the blank of a member whose
+// every operand is a revolution about one line, from the Boolean of their meridian sections
+// (docs/native-speed-plan.md). The faces' parameters start where the region lies.
+int solvent_cad_revolve_region(Cad* cad,int region,const double* origin,const double* axis) noexcept {
+    return guarded(cad,[&] {
+        const gp_Ax1 line(gp_Pnt(origin[0],origin[1],origin[2]),gp_Dir(axis[0],axis[1],axis[2]));
+        ShapeUpgrade_UnifySameDomain unify(cad->at(region),true,true,false);
+        unify.Build();
+        const TopoDS_Shape merged = unify.Shape().IsNull() ? cad->at(region) : unify.Shape();
+        TopoDS_Shape result;
+        int faces = 0;
+        for (TopExp_Explorer it(merged,TopAbs_FACE); it.More(); it.Next()) {
+            ++faces;
+            BRepPrimAPI_MakeRevol turned(it.Current(),line,2*M_PI,true);
+            if (!turned.IsDone()) throw std::runtime_error("turning a meridian region failed");
+            if (result.IsNull()) result = turned.Shape();
+            else {
+                BRepAlgoAPI_Fuse fuse(result,turned.Shape());
+                check_algorithm(fuse,"turned regions' union");
+                result = fuse.Shape();
+            }
+        }
+        if (!faces) throw std::runtime_error("the meridian region is empty");
+        // one solid, as a revolution of one face is
+        int solids = 0;
+        TopoDS_Shape one;
+        for (TopExp_Explorer it(result,TopAbs_SOLID); it.More(); it.Next()) { ++solids; one = it.Current(); }
+        if (solids != 1) throw std::runtime_error("the meridian region turns into "+std::to_string(solids)+" solids");
+        const double volume = validate(one);
+        return cad->put(one,true,volume);
     });
 }
 
@@ -367,7 +1296,14 @@ int solvent_cad_tolerance(Cad* cad,int id,double* output) noexcept {
 int solvent_cad_common_volume(Cad* cad,int a,int b,double* output) noexcept {
     return guarded(cad,[&] {
         if (!output) throw std::runtime_error("common volume needs an output buffer");
-        BRepAlgoAPI_Common common(cad->at(a),cad->at(b));
+        // Non-destructively: the blank is read by every sweep's clearance, side by side.
+        BRepAlgoAPI_Common common;
+        TopTools_ListOfShape objects,tools;
+        objects.Append(cad->at(a)); tools.Append(cad->at(b));
+        common.SetArguments(objects); common.SetTools(tools);
+        common.SetNonDestructive(true);
+        common.SetRunParallel(parallel_booleans());
+        common.Build();
         if (!common.IsDone()) throw std::runtime_error("Boolean intersection failed");
         output[0] = volume(common.Shape());
         return 0;

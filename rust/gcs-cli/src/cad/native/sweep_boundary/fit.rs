@@ -11,6 +11,9 @@ const FIT_TURN: f64 = 20.;
 /// How far the fitted face's own normal may turn between points a quarter of a cell apart in the
 /// blank: past a right angle it has folded back on itself, a pleat between the withheld contacts.
 const FOLD_TURN: f64 = 90.;
+/// How near its contact a foot found by a local search from a guess must be to be taken as the
+/// nearest foot without a global search (mm): the tolerance a fabrication export's fit is held to.
+const LOCAL_TRUST: f64 = 0.005;
 /// OCCT's interpolation parametrizations, by the number `Session::fit_sheet_with` takes.
 const PARAMETRIZATIONS: [&str;3] = ["even","chord-length","centripetal"];
 
@@ -26,12 +29,12 @@ pub(super) enum Judged { Fits(c_int,f64),Misses {over: Vec<bool>,refusal: Export
 /// 20°); held to one, the distance bar is its fit share and the normal bar follows from it, the gap
 /// and the node spacing at each contact (`Tolerance::turn`), and a miss is a verdict the caller may
 /// refine.
-pub(super) fn judged(session: &Session,name: &str,sheet: &Sheet,scale: f64,near: &dyn Fn([f64;3]) -> f64,tolerance: Option<Tolerance>)
+pub(super) fn judged(session: &Session,name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn([f64;3]) -> f64+Sync),tolerance: Option<Tolerance>)
     -> Result<Judged,ExportRefusal> {
     let at = |p: [f64;3]| p.map(|x| (x*1e3).round()/1e3);
     let (nu,nv) = (4*(sheet.rows-1)+1,4*(sheet.columns-1)+1);
-    let folds = |face: c_int| -> Result<Vec<([f64;3],[f64;3])>,ExportRefusal> {
-        let grid = session.surface_grid(face,nu,nv).at(Stage::Withheld)?;
+    let surface = |face: c_int| session.surface_grid(face,nu,nv).at(Stage::Withheld);
+    let folds = |grid: Vec<([f64;3],[f64;3])>| -> Result<Vec<([f64;3],[f64;3])>,ExportRefusal> {
         let (mut fold,mut folded) = (0_f64,[0.;3]);
         for i in 0..nu { for j in 0..nv {
             let (p,n) = grid[i*nv+j];
@@ -55,8 +58,14 @@ pub(super) fn judged(session: &Session,name: &str,sheet: &Sheet,scale: f64,near:
         let held: Vec<([f64;3],[f64;3])> = sheet.withheld.iter().zip(&sheet.withheld_normals)
             .filter(|(p,_)| near(**p) < 0.5).map(|(p,n)| (*p,*n)).collect();
         let points: Vec<[f64;3]> = held.iter().map(|(p,_)| *p).collect();
+        // Each foot searched from the nearest point of the fold check's grid, as a sheet held to a
+        // tolerance is (below), and taken only within `LOCAL_TRUST` of its contact: a local foot
+        // farther off may be beside a nearer one where the sheet passes close to itself (the
+        // pinion's read 83 degrees off there against 8 at its nearest), so it is searched globally.
+        let grid = surface(face)?;
+        let guesses = nearest_on(&grid,nu,nv,&points);
         let (mut error,mut turn,mut worst,mut turned) = (0_f64,0_f64,[0.;3],[0.;3]);
-        for ((p,n),found) in held.iter().zip(session.surface_feet(face,&points).at(Stage::Withheld)?) {
+        for ((p,n),found) in held.iter().zip(session.surface_feet_near(face,&points,&guesses,LOCAL_TRUST).at(Stage::Withheld)?) {
             let Some((m,gap)) = found else { error = f64::INFINITY; worst = *p; continue };
             let angle = dot(m,*n).abs().min(1.).acos().to_degrees();
             if gap > error { error = gap; worst = *p; }
@@ -70,7 +79,7 @@ pub(super) fn judged(session: &Session,name: &str,sheet: &Sheet,scale: f64,near:
                 message:format!("`{name}`: the fitted sheet leaves its contacts: {error:.3} mm (at {:?}) and {turn:.1} degrees (at {:?}), \
                 against {FIT_DISTANCE} mm and {FIT_TURN} degrees",at(worst),at(turned))});
         }
-        folds(face)?;
+        folds(grid)?;
         mark(Stage::Withheld);
         return Ok(Judged::Fits(face,error));
     };
@@ -82,7 +91,7 @@ pub(super) fn judged(session: &Session,name: &str,sheet: &Sheet,scale: f64,near:
     let fitted = |parametrization: c_int| -> Result<Candidate,ExportRefusal> {
         let clock = std::time::Instant::now();
         let face = session.fit_sheet_with(&sheet.points,sheet.rows,sheet.columns,parametrization).at(Stage::Fit)?;
-        let grid = folds(face)?;
+        let grid = folds(surface(face)?)?;
         // Each contact's foot is searched from the nearest point of the fold check's grid, a quarter
         // of a cell apart: a local search where a global one samples the whole face, and a local
         // extremum is never nearer than the nearest foot, so a gap it reads is never too small. A
@@ -125,7 +134,8 @@ pub(super) fn judged(session: &Session,name: &str,sheet: &Sheet,scale: f64,near:
     // length came 16.5 with no crease past 5°, but give a halved step √2 of its share, so a locally
     // refined grid's parameters no longer match its spacing (the swept torus's fit went from 0.11 to
     // 3.1 µm on three rows added). Neither holds everywhere; the better fit is the sheet.
-    let chosen = match (fitted(2),fitted(1)) {
+    // the two fitted side by side, what each says said in that order
+    let chosen = match beside(|| fitted(2),|| fitted(1),|_| false) {
         (Err(fold),Err(_)) => return Err(fold),
         (Ok(c),Err(_)) | (Err(_),Ok(c)) => c,
         (Ok(a),Ok(b)) => if (b.distant,b.bent,b.error) < (a.distant,a.bent,a.error) { b } else { a },

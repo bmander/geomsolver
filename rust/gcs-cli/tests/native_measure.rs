@@ -116,3 +116,55 @@ fn a_spheres_export_reads_as_exact_and_an_offset_as_the_offset() { check("sphere
 
 #[test]
 fn a_torus_export_reads_as_exact_and_an_offset_as_the_offset() { check("torus",&fixtures::tools::torus(0.),"tool"); }
+
+/// A STEP file verified against its solid without the kernel's reader (`step_check`): the pulley's
+/// file passes — as it does read back by the kernel in full — and the same text refused where a
+/// reference dangles, a face is missing, or a cone's angle has moved by a part in a million.
+#[test]
+fn a_step_file_is_verified_against_its_solid_and_a_corrupted_one_refused() {
+    use native::step_check::{verify,Verification};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/solid_pulley.sv");
+    let e = fixtures::read(&std::fs::read_to_string(path).unwrap());
+    let body = fixtures::solid(&e,"body");
+    let session = native::Session::new().unwrap();
+    let shape = session.construct(&cad::recipe(&e.sketch,body).unwrap()).unwrap();
+    let file = std::env::temp_dir().join(format!("solvent-step-check-{}.step",std::process::id()));
+    let said = session.step_verified(shape,file.to_str().unwrap(),Verification::Light).unwrap();
+    eprintln!("light: {said}");
+    let said = session.step_verified(shape,file.to_str().unwrap(),Verification::Full).unwrap();
+    eprintln!("full: {said}");
+    assert!(said.contains("read back by the kernel"),"{said}");
+    let text = std::fs::read_to_string(&file).unwrap();
+    let _ = std::fs::remove_file(&file);
+    let solid = session.brep_summary(shape).unwrap();
+    let verified = verify(&text,&solid).unwrap();
+    assert_eq!((verified.faces,verified.splines),(solid.faces.len(),0));
+    let refused = |corrupted: &str,what: &str| {
+        let e = verify(corrupted,&solid).expect_err(what);
+        eprintln!("{what}: {e}");
+        e
+    };
+    // the first oriented edge's edge a number the file does not define
+    let at = text.find("ORIENTED_EDGE('',*,*,#").unwrap()+"ORIENTED_EDGE('',*,*,#".len();
+    let digits = text[at..].find(|c: char| !c.is_ascii_digit()).unwrap();
+    let dangling = format!("{}999999{}",&text[..at],&text[at+digits..]);
+    assert!(refused(&dangling,"a dangling reference").contains("#999999, which the file does not define"));
+    // the shell's first face taken out of its list, and its entity out of the file
+    let shell = text.find("CLOSED_SHELL('',(#").unwrap()+"CLOSED_SHELL('',(".len();
+    let end = shell+text[shell..].find(',').unwrap();
+    let face = &text[shell..end];
+    let line = text.find(&format!("\n{face} = ADVANCED_FACE")).unwrap()+1;
+    let line_end = line+text[line..].find(";\n").unwrap()+2;
+    let missing = format!("{}{}{}",&text[..shell],&text[end+1..line],&text[line_end..]);
+    assert!(refused(&missing,"a missing face").contains("faces"));
+    // a cone's semi-angle moved by a part in a million
+    let cone = text.find("CONICAL_SURFACE(").unwrap();
+    let close = cone+text[cone..].find(");").unwrap();
+    let comma = cone+text[cone..close].rfind(',').unwrap()+1;
+    let angle: f64 = text[comma..close].trim().parse().unwrap();
+    let moved = format!("{}{}{}",&text[..comma],angle*(1.+1e-6),&text[close..]);
+    assert!(refused(&moved,"a moved cone").contains("CONICAL_SURFACE"));
+    // and an entity that does not parse
+    let broken = text.replacen("CARTESIAN_POINT('',(","CARTESIAN_POINT('',((",1);
+    refused(&broken,"an entity that does not parse");
+}

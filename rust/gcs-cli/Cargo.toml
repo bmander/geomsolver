@@ -44,3 +44,8 @@ required-features = ["occt"]
 name = "native_measure"
 path = "tests/native_measure.rs"
 required-features = ["occt"]
+
+[[test]]
+name = "native_sector"
+path = "tests/native_sector.rs"
+required-features = ["occt"]

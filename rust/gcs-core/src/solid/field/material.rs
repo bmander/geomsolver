@@ -308,6 +308,41 @@ impl MaterialField {
         }
     }
 
+    /// The field with the cut operands `keep` refuses left out: every operand of a union that is
+    /// subtracted (through the Booleans above it, a difference's minuend or either side of an
+    /// intersection), asked in the order of the term, `keep` told each one. What is left out may
+    /// only ever have added removal, so the field left can only be lower (more material), and it is
+    /// the same wherever the operands left out are positive: a caller leaves out only operands it has
+    /// proved positive over the region it reads (`solid::agreement`, over one sector of an indexed
+    /// body). Where every operand of a cut is left out, the difference is its minuend.
+    pub fn without_cuts(&self,keep: &mut dyn FnMut(&MaterialField) -> bool) -> Result<MaterialField,Error> {
+        fn cut(f: &MaterialField,keep: &mut dyn FnMut(&MaterialField) -> bool) -> Result<Option<MaterialField>,Error> {
+            match f.node.as_ref() {
+                Node::Union(a,b,_) => Ok(match (cut(a,keep)?,cut(b,keep)?) {
+                    (Some(a),Some(b)) => Some(a.union(b)?),
+                    (Some(a),None) | (None,Some(a)) => Some(a),
+                    (None,None) => None,
+                }),
+                _ => Ok(keep(f).then(|| f.clone())),
+            }
+        }
+        match self.node.as_ref() {
+            Node::Difference(a,b) => {
+                let a = a.without_cuts(keep)?;
+                match cut(b,keep)? { Some(b) => a.difference(b),None => Ok(a) }
+            }
+            Node::Intersection(a,b) => a.without_cuts(keep)?.intersection(b.without_cuts(keep)?),
+            _ => Ok(self.clone()),
+        }
+    }
+
+    /// The cut operands `without_cuts` asks about, in its order.
+    pub fn cut_operands(&self) -> Vec<MaterialField> {
+        let mut all = Vec::new();
+        let _ = self.without_cuts(&mut |f| { all.push(f.clone()); true });
+        all
+    }
+
     /// How many leaves the field has, as a reading numbers them (a sweep's are its source's).
     pub fn leaf_count(&self) -> usize { self.plan().op(self.plan().root()).leaves }
 

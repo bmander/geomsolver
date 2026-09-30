@@ -18,6 +18,7 @@ const CHAIN_TOLERANCE: f64 = 1e-5;
 const SAMPLES_PER_EDGE: usize = 64;
 
 /// One edge of a section loop on one native face, sampled along the walk.
+#[derive(Clone)]
 struct Piece {
     edge: c_int,
     face: c_int,
@@ -40,13 +41,37 @@ impl Piece {
     }
 }
 
+#[derive(Clone)]
 /// A corner between consecutive pieces. `angle` is the turning of the outward
 /// normal there when the corner is convex, and zero otherwise.
 struct Corner { position: [f64;3],normals: [[f64;3];2],angle: f64 }
 
 /// One planar section loop, oriented consistently across stations: pieces in
-/// walk order, corner k after piece k (cyclic).
-pub(super) struct Loop { pieces: Vec<Piece>,corners: Vec<Corner> }
+/// walk order, corner k after piece k (cyclic). A loop of a cutter that is a solid of revolution
+/// about its own axis is its first section turned by `turn` (radians about the axis): its pieces'
+/// edges are that section's, and a point read on one is turned.
+#[derive(Clone)]
+pub(super) struct Loop { pieces: Vec<Piece>,corners: Vec<Corner>,turn: Option<Turn> }
+
+/// A turn about the cutter's axis: the line through `origin` along `axis` (unit), by `angle`.
+#[derive(Clone,Copy)]
+struct Turn { origin: [f64;3],axis: [f64;3],cos: f64,sin: f64 }
+impl Turn {
+    fn new(cutter: &Cutter,angle: f64) -> Turn { Turn {origin:cutter.origin,axis:cutter.axis,cos:angle.cos(),sin:angle.sin()} }
+    /// A direction turned (Rodrigues).
+    fn vector(&self,v: [f64;3]) -> [f64;3] {
+        let (k,c,s) = (self.axis,self.cos,self.sin);
+        let (kxv,kv) = (cross(k,v),dot(k,v));
+        std::array::from_fn(|i| v[i]*c+kxv[i]*s+k[i]*kv*(1.-c))
+    }
+    fn point(&self,p: [f64;3]) -> [f64;3] {
+        let r = self.vector(sub(p,self.origin));
+        std::array::from_fn(|i| self.origin[i]+r[i])
+    }
+    fn apply(turn: Option<Turn>,p: [f64;3],direction: bool) -> [f64;3] {
+        match turn { None => p, Some(t) => if direction { t.vector(p) } else { t.point(p) } }
+    }
+}
 
 /// Where a profile row is: on a piece at arc length, or in a corner's fan.
 enum Place { Piece {index: usize,s: f64},Fan {index: usize,fraction: f64} }
@@ -71,6 +96,13 @@ impl Loop {
         Place::Piece {index:self.pieces.len()-1,s:self.pieces.last().unwrap().length()}
     }
     pub(super) fn index_of(&self,face: c_int) -> Option<usize> { self.pieces.iter().position(|p| p.face == face) }
+    /// This loop (a first section) turned: its points and corners turned, its edges its own.
+    fn turned(&self,turn: Turn) -> Loop {
+        Loop {pieces:self.pieces.iter().map(|p| Piece {edge:p.edge,face:p.face,reversed:p.reversed,
+            points:p.points.iter().map(|&q| turn.point(q)).collect(),lengths:p.lengths.clone()}).collect(),
+            corners:self.corners.iter().map(|c| Corner {position:turn.point(c.position),normals:c.normals.map(|n| turn.vector(n)),
+            angle:c.angle}).collect(),turn:Some(turn)}
+    }
     /// Augmented length of an anchor on this loop.
     fn resolve(&self,anchor: Anchor) -> Result<f64,String> {
         let index = self.index_of(anchor.face).ok_or("a profile face is missing at this station")?;
@@ -92,12 +124,23 @@ pub(super) struct Reach { pub(super) stations: [f64;2],pub(super) start: Anchor,
     pub(super) spent: [f64;3],pub(super) queried: usize }
 
 /// The cutter as the section machinery needs it: the native solid, its faces in
-/// the stable enumeration the sections index, and its axis.
-pub(super) struct Cutter { pub(super) solid: c_int,faces: Vec<c_int>,origin: [f64;3],axis: [f64;3],side: [f64;3] }
+/// the stable enumeration the sections index, and its axis. Where every revolution it is made of
+/// is a whole one about that axis and every placement keeps the axis where it is, the solid is
+/// one of revolution about the axis, and its section at any station is its section at `first`
+/// turned: `first` is sectioned once, the first time a station is asked for.
+pub(super) struct Cutter { pub(super) solid: c_int,faces: Vec<c_int>,origin: [f64;3],axis: [f64;3],side: [f64;3],
+    revolution: bool,first: std::sync::OnceLock<(f64,Vec<Loop>)>,
+    /// Every other cutter's sections, by station angle: a sheet's rows placed a second way are
+    /// traced over the stations the first placement sectioned.
+    sections: std::sync::Mutex<BTreeMap<u64,Vec<Loop>>> }
+
+/// The station a solid of revolution is sectioned at: half a step of the reach's stations off the
+/// side, where a revolution's seam (in the plane of its profile) is not.
+const FIRST_STATION: f64 = TAU*0.5/96.;
 
 impl Session {
-    pub(super) fn cutter(&self,sk: &Sketch,source: usize) -> Result<Cutter,String> {
-        let recipe = cad::recipe(sk,source)?;
+    pub(super) fn cutter(&self,recipe: &gcs_core::json::Json) -> Result<Cutter,String> {
+        let recipe = recipe.clone();
         let solid = self.construct(&recipe)?;
         let mut axes: Vec<([f64;3],[f64;3])> = Vec::new();
         for node in recipe.get("nodes").unwrap().arr() {
@@ -117,7 +160,9 @@ impl Session {
         let (origin,axis) = *axes.first().ok_or("a swept cutter needs at least one revolution")?;
         let seed = if axis[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
         let side = unit(cross(cross(axis,seed),axis))?;
-        Ok(Cutter {solid,faces:self.faces(solid)?,origin,axis,side})
+        let revolution = std::env::var("SOLVENT_SECTIONS").map_or(true,|v| v != "each") && of_revolution(&recipe,origin,axis);
+        Ok(Cutter {solid,faces:self.faces(solid)?,origin,axis,side,revolution,first:std::sync::OnceLock::new(),
+            sections:Default::default()})
     }
 
     fn side_at(cutter: &Cutter,angle: f64) -> [f64;3] {
@@ -135,8 +180,27 @@ impl Session {
 
     /// Section loops at one station: edges chained by endpoint identity, each
     /// loop oriented to positive area about the section plane's normal, with
-    /// corner fans where consecutive faces meet at a convex dihedral.
+    /// corner fans where consecutive faces meet at a convex dihedral. A cutter of revolution about
+    /// its axis is sectioned once, and every station is that section turned.
     pub(super) fn profile(&self,cutter: &Cutter,angle: f64) -> Result<Vec<Loop>,String> {
+        if !cutter.revolution {
+            if let Some(loops) = cutter.sections.lock().unwrap_or_else(|e| e.into_inner()).get(&angle.to_bits()) { return Ok(loops.clone()); }
+            let loops = self.section_loops(cutter,angle)?;
+            if std::env::var_os("SOLVENT_SECTION_COUNT").is_some() { eprintln!("section at {angle:.17}"); }
+            cutter.sections.lock().unwrap_or_else(|e| e.into_inner()).insert(angle.to_bits(),loops.clone());
+            return Ok(loops);
+        }
+        if cutter.first.get().is_none() {
+            let loops = self.section_loops(cutter,FIRST_STATION)?;
+            let _ = cutter.first.set((FIRST_STATION,loops));
+        }
+        let (at,loops) = cutter.first.get().expect("the first section is kept");
+        let turn = Turn::new(cutter,angle-at);
+        Ok(loops.iter().map(|l| l.turned(turn)).collect())
+    }
+
+    /// The section loops the kernel cuts at one station.
+    fn section_loops(&self,cutter: &Cutter,angle: f64) -> Result<Vec<Loop>,String> {
         let side = Self::side_at(cutter,angle);
         let plane_normal = unit(cross(cutter.axis,side))?;
         let rows = self.section(cutter.solid,cutter.origin,cutter.axis,side)?;
@@ -229,7 +293,7 @@ impl Session {
                 };
                 corners.push(Corner {position,normals:[a,b],angle:if convex { angle } else { 0. }});
             }
-            loops.push(Loop {pieces,corners});
+            loops.push(Loop {pieces,corners,turn:None});
         }
         Ok(loops)
     }
@@ -241,7 +305,8 @@ impl Session {
             Place::Piece {index,s} => {
                 let piece = &profile.pieces[index];
                 let position = self.edge_point(piece.edge,piece.parameter(s))?;
-                Ok(Sample {position,normal:self.normal_at(cutter,piece.face,position)?})
+                let normal = self.normal_at(cutter,piece.face,position)?;
+                Ok(Sample {position:Turn::apply(profile.turn,position,false),normal:Turn::apply(profile.turn,normal,true)})
             }
             Place::Fan {index,fraction} => {
                 let corner = &profile.corners[index];
@@ -263,14 +328,15 @@ impl Session {
         let mut order: Option<Vec<c_int>> = None;
         let (mut radius_sum,mut radius_count) = (0.,0);
         let (mut spent,mut queried) = ([0.;3],0);
+        // Half a step off the side: a revolution's seam lies in the plane of its profile, and
+        // a section plane containing a seam loses that face's section. Every station's section
+        // first, on every core.
+        let clock = std::time::Instant::now();
+        let mut sections = gcs_core::par::indices(stations,|c| self.profile(cutter,TAU*(c as f64+0.5)/stations as f64)).into_iter();
+        spent[0] += clock.elapsed().as_secs_f64();
         for c in 0..stations {
-            // Half a step off the side: a revolution's seam lies in the plane of its profile, and
-            // a section plane containing a seam loses that face's section.
-            let angle = TAU*(c as f64+0.5)/stations as f64;
             let mut hit_here = false;
-            let clock = std::time::Instant::now();
-            let loops = self.profile(cutter,angle)?;
-            spent[0] += clock.elapsed().as_secs_f64();
+            let loops = sections.next().expect("a section a station")?;
             for profile in &loops {
                 let total = profile.augmented_length();
                 let count = ((total/0.3).ceil() as usize).max(8);
@@ -375,4 +441,31 @@ fn reverse(pieces: &mut Vec<Piece>) {
         lengths[0] = 0.;
         piece.lengths = lengths;
     }
+}
+
+/// Whether a cutter's recipe makes a solid of revolution about the line through `origin` along
+/// `axis` (millimetres, unit): every revolution a whole turn about that line, every placement a
+/// rigid motion keeping the line where it is, and nothing else but Booleans of them.
+fn of_revolution(recipe: &gcs_core::json::Json,origin: [f64;3],axis: [f64;3]) -> bool {
+    let read = |node: &gcs_core::json::Json,key: &str| -> Option<Vec<f64>> {
+        Some(node.get(key)?.arr().iter().map(gcs_core::json::Json::as_f64).collect())
+    };
+    let size = 1.+norm(origin);
+    let on_line = |p: [f64;3]| { let r = sub(p,origin); norm(sub(r,scaled(axis,dot(r,axis)))) <= 1e-9*size };
+    let along = |d: [f64;3]| norm(cross(d,axis)) <= 1e-12*norm(d) && norm(d) > 0.;
+    let Some(nodes) = recipe.get("nodes") else { return false };
+    nodes.arr().iter().all(|node| match node.get("kind").map(gcs_core::json::Json::as_str) {
+        Some("revolve") => {
+            let (Some(o),Some(a),Some(angle)) = (read(node,"origin"),read(node,"axis"),node.get("angle")) else { return false };
+            (angle.as_f64().abs()-TAU).abs() <= 1e-12 && on_line([o[0],o[1],o[2]]) && along([a[0],a[1],a[2]])
+        }
+        Some("placed") => {
+            let Some(m) = read(node,"matrix") else { return false };
+            if m.len() != 12 { return false }
+            let map = |p: [f64;3],w: f64| -> [f64;3] { std::array::from_fn(|r| m[4*r]*p[0]+m[4*r+1]*p[1]+m[4*r+2]*p[2]+m[4*r+3]*w) };
+            on_line(map(origin,1.)) && along(map(axis,0.))
+        }
+        Some("body") => true,
+        _ => false,
+    })
 }

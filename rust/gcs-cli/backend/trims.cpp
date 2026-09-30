@@ -96,29 +96,12 @@ int solvent_cad_curve_point(Cad* cad,int id,double t,double* output) noexcept {
 }
 // For many points, the support surface's unit normal (du x dv, no orientation) at each
 // point's nearest foot, and the distance to it: rows of nx, ny, nz, distance, with a NaN
-// distance where the projection finds no foot. One projector serves them all.
-int solvent_cad_surface_feet(Cad* cad,int id,const double* points,int count,double* output) noexcept {
-    return guarded(cad,[&] {
-        if (!points || !output || count < 0) throw std::runtime_error("surface feet need input and output buffers");
-        FaceProjector projector(cad,id);
-        const auto& chart = projector.chart;
-        for (int i=0;i<count;++i) {
-            double* row = output+4*i;
-            gp_Pnt p(points[3*i],points[3*i+1],points[3*i+2]);
-            p.Transform(chart.location.Transformation().Inverted());
-            double a,b,distance;
-            if (projector.nearest(p,a,b,distance)) foot_row(chart,a,b,distance,row); else no_foot(row);
-        }
-        return 0;
-    });
-}
-
-// The same, each point starting from a guess of its foot: `guesses` holds u, v per point as
-// fractions of the face's UV box (NaN for none). The foot is the local extremum the guess leads
-// to, taken only if it is no farther than the guess itself and within `trust` of the point;
-// otherwise, or where the local search fails, the point is projected globally as
-// `solvent_cad_surface_feet` does. A local search is a few Newton steps where the global one
-// samples the whole surface.
+// distance where the projection finds no foot. Each point starts from a guess of its foot:
+// `guesses` holds u, v per point as fractions of the face's UV box (NaN for none). The foot is
+// the local extremum the guess leads to, taken only if it is no farther than the guess itself and
+// within `trust` of the point; otherwise, or where the local search fails, the point is projected
+// globally, by one projector serving them all. A local search is a few Newton steps where the
+// global one samples the whole surface.
 int solvent_cad_surface_feet_near(Cad* cad,int id,const double* points,const double* guesses,int count,double trust,
     double* output) noexcept {
     return guarded(cad,[&] {

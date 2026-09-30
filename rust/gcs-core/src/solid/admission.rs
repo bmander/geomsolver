@@ -9,7 +9,7 @@
 //! between them. Material evaluation answers membership for every sweep, admitted or not; only
 //! boundary construction is restricted.
 use super::{SpatialField,SweepContacts,TimedContact,cad};
-use crate::{envelope::{Motion,SurfacePoint},model::{Sketch,SolidDef}};
+use crate::{envelope::{Motion,SurfacePoint},model::{EntKind,Sketch,SolidDef}};
 use std::{collections::BTreeMap,f64::consts::{PI,TAU},fmt};
 
 use crate::space::{sub,dot,cross,norm};
@@ -110,6 +110,22 @@ pub enum Basis { Sampled { rows: usize,columns: usize } }
 #[derive(Clone,Debug)]
 pub struct Placement { pub pose: Motion, pub equivalent_to: Option<usize> }
 
+/// How a sweep's later placements were found equivalent to its first.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum Equivalence {
+    /// From the solid graph: every operand of the blank is a full revolution about one line (a
+    /// point of it and its unit direction), and each later placement is the first turned about
+    /// that line, so the blank is the same under the turn and reads alike at every point.
+    Revolved { origin: V,axis: V },
+    /// Sampled: each later placement's blank read at every point the first placement's checks
+    /// read, and found alike there (or checked itself where it was not).
+    Sampled,
+}
+
+/// How near the lines and the turns must agree (relative to the blank's size) for the structural
+/// equivalence: the solver's own noise, not a modelling tolerance.
+const COINCIDENT: f64 = 1e-12;
+
 #[derive(Clone,Debug)]
 pub struct SweepEvidence {
     pub sweep: usize,
@@ -128,6 +144,8 @@ pub struct SweepEvidence {
     /// sheets touching tangentially, which is where a crossing begins.
     pub near_tangent_pairs: usize,
     pub basis: Basis,
+    /// How the later placements' checks were stood for by the first's.
+    pub equivalence: Equivalence,
 }
 
 /// A body admitted to the class, and the only way to have one: `admit_body` makes it, so a
@@ -168,6 +186,106 @@ pub fn static_remainder(sk: &Sketch,root: usize,axis_tolerance: f64) -> Result<(
     Ok((field,sweeps))
 }
 
+/// What a full revolution is the same under: every turn about its line (a point of it and a
+/// direction), or — a ball, its profile arcs of one circle about a point of the line and segments
+/// of the line itself — every turn about any line through that centre.
+#[derive(Clone,Copy,Debug)]
+enum Turns { Line(V,V),Ball(V) }
+
+/// What each operand of a static solid is the same under (`Turns`), or none where an operand is
+/// not a full revolution. `tolerance` (a length) is how near a point must be to count as on a line.
+fn revolution_turns(sk: &Sketch,id: usize,tolerance: f64) -> Option<Vec<Turns>> {
+    match &sk.solids[id].def {
+        SolidDef::Revolve {face,axis,sweep,..} => {
+            if (sweep.value.abs()-TAU).abs() > 1e-9 { return None; }
+            // the axis's two points lifted through the profile's frame, as the recipe lifts them
+            let p = super::face_poly(sk,*face as usize,super::REPORT_UNIT)?;
+            let lift = |i: usize| {
+                let q = crate::plane::in_view(p.pose.0,p.pose.1,p.pose.2,sk.point_xy(i));
+                p.basis.lift(q.0,q.1)
+            };
+            let line = &sk.lines[*axis as usize];
+            let (a,b) = (lift(line.p1 as usize),lift(line.p2 as usize));
+            let d = sub(b,a);
+            if !(norm(d) > 0.) { return None; }
+            let on_axis = |x: V| norm(cross(sub(x,a),d))/norm(d) <= tolerance;
+            // a ball: every edge an arc or circle of one circle centred on the axis, or a segment of it
+            let mut ball: Option<(V,f64)> = None;
+            let mut round = true;
+            for (edges,_) in sk.faces[*face as usize].boundaries() { for e in edges {
+                let circle = match e.kind {
+                    EntKind::Arc => { let c = &sk.arcs[e.i()]; Some((c.center,c.radius)) }
+                    EntKind::Circle => { let c = &sk.circles[e.i()]; Some((c.center,c.radius)) }
+                    EntKind::Line => { let l = &sk.lines[e.i()]; round &= on_axis(lift(l.p1 as usize)) && on_axis(lift(l.p2 as usize)); None }
+                    _ => { round = false; None }
+                };
+                if let Some((centre,radius)) = circle {
+                    let (c,r) = (lift(centre as usize),sk.params[radius as usize].value);
+                    round &= on_axis(c) && ball.is_none_or(|(k,q)| norm(sub(k,c)) <= tolerance && (q-r).abs() <= tolerance);
+                    ball.get_or_insert((c,r));
+                }
+            } }
+            Some(vec![match ball { Some((c,_)) if round => Turns::Ball(c),_ => Turns::Line(a,d) }])
+        }
+        SolidDef::Placed {source,motion,at} => {
+            let pose = crate::motion::Family::read(sk,*motion as usize).ok()?.at(at.value).ok()?;
+            Some(revolution_turns(sk,*source as usize,tolerance)?.into_iter().map(|t| match t {
+                Turns::Line(o,d) => Turns::Line(pose.point(o),pose.vector(d)),
+                Turns::Ball(c) => Turns::Ball(pose.point(c)),
+            }).collect())
+        }
+        SolidDef::Body {..} => {
+            let mut turns = Vec::new();
+            for o in sk.solids[id].operands() { turns.extend(revolution_turns(sk,o as usize,tolerance)?); }
+            Some(turns)
+        }
+        SolidDef::Prism {..} | SolidDef::Through {..} | SolidDef::Loft {..} | SolidDef::Swept {..} => None,
+    }
+}
+
+/// The blank of `root` (its stock, what is put on it, what bounds it and its static cuts) the same
+/// under every turn about one line — each operand a full revolution about it, or a ball centred on
+/// it — and every placement of every sweep a turn of the sweep's first about that line: then each
+/// later placement's checks read the blank exactly as the first's do (`Equivalence::Revolved`).
+/// `size` is the blank's, for the tolerance.
+fn structurally_alike(sk: &Sketch,root: usize,poses: &BTreeMap<usize,Vec<Motion>>,size: f64) -> Option<(V,V)> {
+    let SolidDef::Body {stock,on,through,bound} = &sk.solids[root].def else { return None };
+    let tolerance = COINCIDENT*size.max(1.);
+    let mut blank = vec![*stock];
+    blank.extend(on.iter().chain(bound));
+    for &c in through { if cad::swept_cut(sk,c as usize).ok()?.is_none() { blank.push(c); } }
+    let mut turns = Vec::new();
+    for &o in &blank { turns.extend(revolution_turns(sk,o as usize,tolerance)?); }
+    // the line: the first operand's that has one, every other line and every ball's centre on it
+    let (origin,axis) = turns.iter().find_map(|t| match *t { Turns::Line(o,d) => Some((o,d.map(|x| x/norm(d)))),_ => None })?;
+    let on_line = |x: V| norm(cross(sub(x,origin),axis)) <= tolerance;
+    for t in &turns {
+        let alike = match *t {
+            Turns::Line(o,d) => norm(cross(axis,d))/norm(d) <= COINCIDENT && on_line(o),
+            Turns::Ball(c) => on_line(c),
+        };
+        if !alike { return None; }
+    }
+    let far: V = std::array::from_fn(|k| origin[k]+size.max(1.)*axis[k]);
+    let mut worst = 0f64;
+    for placements in poses.values() {
+        let Some((first,rest)) = placements.split_first() else { continue };
+        let back = first.inverse();
+        for pose in rest {
+            let turn = back.then(*pose);
+            for x in [origin,far] { worst = worst.max(norm(sub(turn.point(x),x))); }
+            if worst > tolerance { return None; }
+        }
+    }
+    if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() {
+        let off = turns.iter().map(|t| match *t { Turns::Line(o,d) => (norm(cross(axis,d))/norm(d)*size).max(norm(cross(sub(o,origin),axis))),
+            Turns::Ball(c) => norm(cross(sub(c,origin),axis)) }).fold(0.,f64::max);
+        eprintln!("admission: the blank is {} revolutions about one line (off it by {off:.1e} at most) and every placement a turn \
+            about it (off by {worst:.1e}), against {tolerance:.1e}",turns.len());
+    }
+    Some((origin,axis))
+}
+
 /// T1, as a question about the tool's solid graph.
 fn tool(sk: &Sketch,id: usize) -> Result<(),String> {
     let solid = &sk.solids[id];
@@ -191,7 +309,50 @@ fn tool(sk: &Sketch,id: usize) -> Result<(),String> {
 /// agreeing on all of them would compute the same checks to the last number.
 struct Reads { points: Vec<V>,inside: Vec<bool> }
 
-/// Admit or refuse every swept cut of the body `root`.
+impl Reads {
+    fn new() -> Reads { Reads {points:Vec::new(),inside:Vec::new()} }
+    /// Read the blank at `p`, and remember that it was read and what it said.
+    fn read(&mut self,inside: &dyn Fn(V) -> bool,p: V) -> bool { let i = inside(p); self.points.push(p); self.inside.push(i); i }
+    fn extend(&mut self,other: Reads) { self.points.extend(other.points); self.inside.extend(other.inside); }
+    /// Remember a read made elsewhere.
+    fn push(&mut self,p: V,inside: bool) { self.points.push(p); self.inside.push(inside); }
+}
+
+/// What one sample of a tool face says of itself alone, for the fine pass: its point, the rate of its
+/// contact condition, and — where its roots could be found — each root, whether it is in the blank,
+/// and for one that is, the generated surface's area factor there (`area_factor`).
+struct Sampled { s: SurfacePoint,rate: Option<crate::motion::NormalVelocity>,roots: Option<Vec<(TimedContact,bool,Option<f64>)>> }
+
+/// E3's area factor at a contact `t` of the tool point at (u, v) of face `patch`: the generated
+/// surface's oriented area factor on the same branch, by central differences, against the tool
+/// surface's own. None where a neighbouring root or point cannot be read, or the tool's own area
+/// vanishes.
+fn area_factor(surface: &super::surface::RevolvedSurface,patch: usize,
+    roots: &(dyn Fn(usize,f64,f64) -> Result<Vec<TimedContact>,String>+Sync),t: &TimedContact,u: f64,v: f64) -> Option<f64> {
+    let h = 1e-5;
+    let (ua,ub) = ((u-h).max(0.),(u+h).min(1.));
+    let near = |uu: f64,vv: f64| -> Option<V> {
+        roots(patch,uu,vv.rem_euclid(1.)).ok()?.into_iter()
+            .filter(|x| x.root.branch == t.root.branch)
+            .min_by(|a,b| (a.root.time-t.root.time).abs().total_cmp(&(b.root.time-t.root.time).abs()))
+            .map(|x| x.contact.position)
+    };
+    let (Some(fa),Some(fb),Some(ga),Some(gb)) = (near(ua,v),near(ub,v),near(u,v-h),near(u,v+h)) else { return None };
+    let at = |uu: f64,vv: f64| surface.at(uu,vv.rem_euclid(1.)).map(|s| s.position).ok();
+    let (Some(sa),Some(sb),Some(ta),Some(tb)) = (at(ua,v),at(ub,v),at(u,v-h),at(u,v+h)) else { return None };
+    let du = ub-ua;
+    let area = norm(cross(sub(sb,sa).map(|x| x/du),sub(tb,ta).map(|x| x/(2.*h))));
+    if area == 0. { return None; }
+    Some(dot(cross(sub(fb,fa).map(|x| x/du),sub(gb,ga).map(|x| x/(2.*h))),t.contact.normal)/area)
+}
+
+/// What the fine pass over one tool face found.
+struct Fine { reads: Reads,samples: usize,near_double_roots: usize,hits: Vec<(Hit,usize,usize)>,gaps: Vec<f64>,least: f64,
+    signs: BTreeMap<(usize,usize),([usize;2],[Option<V>;2])> }
+
+/// Admit or refuse every swept cut of the body `root`. The sweeps are checked side by side and a
+/// placement's reads against the first placement's on every core; what is admitted or refused, and
+/// with which evidence, is what checking them one after another in order says.
 pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission,Error> {
     let (field,cuts) = static_remainder(sk,root,options.axis_tolerance).map_err(Error::Unreadable)?;
     let mut by_sweep: BTreeMap<usize,Vec<Motion>> = BTreeMap::new();
@@ -200,30 +361,75 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         if !by_sweep.contains_key(&cut.swept) { order.push(cut.swept); }
         by_sweep.entry(cut.swept).or_default().push(cut.pose);
     }
-    let mut admission = Admission {body:root,sweeps:Vec::new()};
-    for swept in order {
-        let name = sk.solids[swept].name.clone();
-        let refuse = |condition,message: String,witness| Error::Refused(Refusal {condition,sweep:name.clone(),message,witness});
+    let names: BTreeMap<usize,String> = order.iter().map(|&s| (s,sk.solids[s].name.clone())).collect();
+    let refuse = |swept: usize,condition,message: String,witness|
+        Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message,witness});
+    let field = &field;
+    let inside_at = |pose: Motion| move |p: V| field.value(pose.point(p)) < -options.margin;
+    // Each sweep's tool read, then its first placement checked.
+    let tools: Vec<Result<SweepContacts,Error>> = order.iter().map(|&swept| {
         let SolidDef::Swept {source,..} = &sk.solids[swept].def else { unreachable!("a swept cut is a sweep") };
-        tool(sk,*source as usize).map_err(|m| refuse(Condition::Tool,m,None))?;
-        let contacts = SweepContacts::read(sk,swept,options.axis_tolerance).map_err(|m| refuse(Condition::Tool,m,None))?;
+        tool(sk,*source as usize).map_err(|m| refuse(swept,Condition::Tool,m,None))?;
+        let contacts = SweepContacts::read(sk,swept,options.axis_tolerance).map_err(|m| refuse(swept,Condition::Tool,m,None))?;
         let probe = SurfacePoint {position:[1.,2.,3.],du:[1.,0.,0.],dv:[0.,1.,0.]};
-        contacts.motion().normal_velocity(probe).map_err(|m| refuse(Condition::Motion,m,None))?;
+        contacts.motion().normal_velocity(probe).map_err(|m| refuse(swept,Condition::Motion,m,None))?;
+        Ok(contacts)
+    }).collect();
+    let clock = std::time::Instant::now();
+    let checks = crate::par::indices(order.len(),|k| -> Option<Result<(SweepEvidence,Reads),Error>> {
+        let contacts = tools[k].as_ref().ok()?;
+        let (swept,pose) = (order[k],by_sweep[&order[k]][0]);
+        Some(check(contacts,&inside_at(pose),options).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p)))))
+    });
+    let first: Vec<Result<(SweepContacts,SweepEvidence,Reads),Error>> = tools.into_iter().zip(checks).map(|(tool,check)| {
+        let contacts = tool?;
+        let (found,reads) = check.expect("a read tool is checked")?;
+        Ok((contacts,found,reads))
+    }).collect();
+    if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: checked in {:?}",clock.elapsed()); }
+    let clock = std::time::Instant::now();
+    // The blank a solid of revolution about the line every placement turns about: the later
+    // placements read it as the first does, proved by the solid graph. Otherwise, whether each
+    // later placement reads the blank as the first did, every point of it.
+    let size = field.support_bounds().ok().flatten().map_or(1.,|b| crate::space::box_centre_diagonal(&b).1);
+    let revolved = structurally_alike(sk,root,&by_sweep,size);
+    let later: Vec<(usize,usize)> = if revolved.is_some() { Vec::new() } else {
+        first.iter().enumerate().filter(|(_,r)| r.is_ok())
+            .flat_map(|(k,_)| (1..by_sweep[&order[k]].len()).map(move |p| (k,p))).collect()
+    };
+    let alike = crate::par::map(&later,|&(k,p)| {
+        let inside = inside_at(by_sweep[&order[k]][p]);
+        let Ok((_,_,reads)) = &first[k] else { unreachable!("only a checked sweep's placements are compared") };
+        reads.points.iter().zip(&reads.inside).all(|(q,&i)| inside(*q) == i)
+    });
+    if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: compared in {:?}",clock.elapsed()); }
+    let mut admission = Admission {body:root,sweeps:Vec::new()};
+    let mut alike = alike.into_iter();
+    for (result,&swept) in first.into_iter().zip(&order) {
+        let (contacts,found,reads) = result?;
         let poses = &by_sweep[&swept];
-        let mut placements: Vec<Placement> = Vec::new();
-        let mut checked: Vec<(usize,Reads)> = Vec::new();
-        let mut evidence = None;
-        for (k,pose) in poses.iter().enumerate() {
-            let inside = |p: V| field.value(pose.point(p)) < -options.margin;
-            let same = checked.iter().find(|(_,reads)| reads.points.iter().zip(&reads.inside).all(|(p,&i)| inside(*p) == i));
+        let mut placements = vec![Placement {pose:poses[0],equivalent_to:None}];
+        let mut checked: Vec<(usize,Reads)> = vec![(0,reads)];
+        let mut found = found;
+        if let Some((origin,axis)) = revolved {
+            placements.extend(poses.iter().skip(1).map(|pose| Placement {pose:*pose,equivalent_to:Some(0)}));
+            found.sweep = swept; found.name = names[&swept].clone(); found.placements = placements;
+            found.equivalence = Equivalence::Revolved {origin,axis};
+            admission.sweeps.push(found);
+            continue;
+        }
+        for (k,pose) in poses.iter().enumerate().skip(1) {
+            if alike.next().expect("one answer a later placement") {
+                placements.push(Placement {pose:*pose,equivalent_to:Some(0)}); continue;
+            }
+            let inside = inside_at(*pose);
+            let same = checked.iter().skip(1).find(|(_,reads)| reads.points.iter().zip(&reads.inside).all(|(p,&i)| inside(*p) == i));
             if let Some((j,_)) = same { placements.push(Placement {pose:*pose,equivalent_to:Some(*j)}); continue; }
-            let (found,reads) = check(&contacts,&inside,options).map_err(|(c,m,w)| refuse(c,m,w.map(|p| pose.point(p))))?;
-            if evidence.is_none() { evidence = Some(found); }
+            let (_,reads) = check(&contacts,&inside,options).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
             checked.push((k,reads));
             placements.push(Placement {pose:*pose,equivalent_to:None});
         }
-        let mut found = evidence.expect("a swept cut has a placement");
-        found.sweep = swept; found.name = name; found.placements = placements;
+        found.sweep = swept; found.name = names[&swept].clone(); found.placements = placements;
         admission.sweeps.push(found);
     }
     Ok(admission)
@@ -235,8 +441,10 @@ struct Hit { source: V,position: V,normal: V }
 
 type Failure = (Condition,String,Option<V>);
 
-/// M2, E1–E4 and T2 for one placement, `inside` being the blank read in the sweep's frame.
-fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Result<(SweepEvidence,Reads),Failure> {
+/// M2, E1–E4 and T2 for one placement, `inside` being the blank read in the sweep's frame. The
+/// tool's faces are sampled side by side, each on its own core, and their findings taken in the
+/// faces' order: the first failure in that order is the one reported, as one pass over them would.
+fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) -> Result<(SweepEvidence,Reads),Failure> {
     let tool = c.source_material();
     let on_tool = |p: V| tool.value(p).abs() < 1e-6;
     let domain = c.domain();
@@ -245,8 +453,7 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
     let limits = [pose(domain[0])?,pose(domain[1])?];
     let times = [pose(domain[0])?,pose(middle)?,pose(domain[1])?];
     let roots = |patch: usize,u: f64,v: f64| c.at_source_over(patch,u,v,domain,options.root_tolerance);
-    let mut reads = Reads {points:Vec::new(),inside:Vec::new()};
-    let mut read = |p: V| { let i = inside(p); reads.points.push(p); reads.inside.push(i); i };
+    let mut reads = Reads::new();
     // T2: a concave corner carried through the blank trims two envelopes against each other.
     // Asked first, since the crossing it makes would otherwise be reported in its place.
     let steps = 64;
@@ -266,27 +473,26 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
         if tool.value(chord) <= 0. { continue; }
         for j in 0..options.coarse_columns {
             let Ok(point) = pa.at(ua,j as f64/options.coarse_columns as f64) else { continue };
-            if let Some(p) = poses.iter().map(|m| m.point(point.position)).find(|&p| read(p)) {
+            if let Some(p) = poses.iter().map(|m| m.point(point.position)).find(|&p| reads.read(inside,p)) {
                 return Err((Condition::Corner,format!("`{}` meets `{}` at a concave corner",pa.name,pb.name),Some(p)));
             }
         }
     }
-    let (mut samples,mut near_double_roots) = (0,0);
-    let mut hits: Vec<(Hit,usize,usize)> = Vec::new();
-    let mut gaps: Vec<f64> = Vec::new();
-    let mut least = f64::INFINITY;
     // E1, over the whole tool, before anything that might be reported in its place.
-    for surface in c.patches() {
+    let clear = crate::par::map(c.patches(),|surface| -> Result<Reads,Failure> {
+        let mut own = Reads::new();
         for i in 0..=options.coarse_rows { for j in 0..options.coarse_columns {
             let Ok(s) = surface.at(i as f64/options.coarse_rows as f64,j as f64/options.coarse_columns as f64) else { continue };
             if !on_tool(s.position) { continue; }
             for limit in &limits {
                 let p = limit.point(s.position);
-                if read(p) { return Err((Condition::Clearance,
+                if own.read(inside,p) { return Err((Condition::Clearance,
                     "the tool at a limit of its roll lies in the blank".into(),Some(p))); }
             }
         }}
-    }
+        Ok(own)
+    });
+    for own in clear { reads.extend(own?); }
     // M2 at the poles: where a face's profile meets the tool's axis the surface has no normal of
     // its own, so the sampled checks below cannot evaluate it. Its normal is the axis, the limit
     // along the profile; a pole whose contact condition is zero at every time and whose path
@@ -311,7 +517,7 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
             let scale = 1.+norm(s.position);
             let values = [domain[0],middle,domain[1]].map(|t| g.at(t).unwrap_or(f64::NAN));
             if !values.iter().all(|x| x.abs() <= options.root_tolerance*scale) { continue; }
-            if let Some(p) = poses.iter().map(|m| m.point(s.position)).find(|&p| read(p)) {
+            if let Some(p) = poses.iter().map(|m| m.point(s.position)).find(|&p| reads.read(inside,p)) {
                 return Err((Condition::Stationary,format!("the pole of `{}`, where its profile meets its axis, is in contact \
                     at every time",surface.name),Some(p)));
             }
@@ -321,19 +527,35 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
     // runs through infinity and changes sign where a point's two contact times merge, which
     // is a fold of the tool's time chart and not of the surface; the product stays finite
     // there, and changes sign only where the generated surface itself folds.
-    let mut signs: BTreeMap<(usize,usize),([usize;2],[Option<V>;2])> = BTreeMap::new();
-    for patch in 0..c.patches().len() {
+    let fine = crate::par::indices(c.patches().len(),|patch| -> Result<Fine,Failure> {
+        let mut own = Reads::new();
+        let (mut samples,mut near_double_roots) = (0,0);
+        let mut hits: Vec<(Hit,usize,usize)> = Vec::new();
+        let mut gaps: Vec<f64> = Vec::new();
+        let mut least = f64::INFINITY;
+        let mut signs: BTreeMap<(usize,usize),([usize;2],[Option<V>;2])> = BTreeMap::new();
         let surface = &c.patches()[patch];
         let (cu,cv) = (options.coarse_rows,options.coarse_columns);
         let mut reach = vec![false;cv];
-        for i in 0..=cu { for j in 0..cv {
-            let (u,v) = (i as f64/cu as f64,j as f64/cv as f64);
-            let Ok(s) = surface.at(u,v) else { continue };
-            if !on_tool(s.position) { continue; }
-            if let Ok(list) = roots(patch,u,v) {
-                if list.iter().any(|t| read(t.contact.position)) { reach[j] = true; }
+        // the coarse rows on every core, each its reads and which angles reach
+        for (row,reads) in crate::par::indices(cu+1,|i| {
+            let mut own = Reads::new();
+            let mut row = vec![false;cv];
+            for j in 0..cv {
+                let (u,v) = (i as f64/cu as f64,j as f64/cv as f64);
+                let Ok(s) = surface.at(u,v) else { continue };
+                if !on_tool(s.position) { continue; }
+                if let Ok(list) = roots(patch,u,v) {
+                    if list.iter().any(|t| own.read(inside,t.contact.position)) { row[j] = true; }
+                }
             }
-        }}
+            (row,own)
+        }) {
+            for (r,x) in reach.iter_mut().zip(row) { *r |= x; }
+            own.extend(reads);
+        }
+        let own = std::cell::RefCell::new(own);
+        let read = |p: V| own.borrow_mut().read(inside,p);
         // The shortest arc of the revolution holding every reaching angle, widened a step.
         let reached: Vec<usize> = (0..cv).filter(|&j| reach[j]).collect();
         let band = if reached.is_empty() { None } else {
@@ -353,19 +575,33 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
         let mut previous: Vec<Option<V>> = vec![None;nv+1];
         // Each sample's contact equation, to find stationary points between samples.
         let mut equations: Vec<Option<([f64;5],V)>> = vec![None;nv+1];
-        for i in 0..=nu {
+        // What each sample says of itself alone — its point, the rate of its contact condition, its
+        // roots with whether each is in the blank, and each such root's area factor — worked out on
+        // every core a row at a time; what samples say of their neighbours is asked below, in order.
+        let sampled: Vec<Vec<Option<Sampled>>> = crate::par::indices(nu+1,|i| {
             let u = i as f64/nu as f64;
+            (0..=nv).map(|j| {
+                let v = v_at(j);
+                let s = surface.at(u,v).ok()?;
+                if !on_tool(s.position) { return None; }
+                let rate = c.motion().normal_velocity(s).ok();
+                let roots = roots(patch,u,v).ok().map(|list| list.into_iter().map(|t| {
+                    let within = inside(t.contact.position);
+                    let factor = if within { area_factor(surface,patch,&roots,&t,u,v) } else { None };
+                    (t,within,factor)
+                }).collect());
+                Some(Sampled {s,rate,roots})
+            }).collect()
+        });
+        for sampled in sampled {
             let mut row: Vec<Option<V>> = vec![None;nv+1];
             let mut here: Vec<Option<([f64;5],V)>> = vec![None;nv+1];
-            for j in 0..=nv {
-                let v = v_at(j);
-                let Ok(s) = surface.at(u,v) else { continue };
-                if !on_tool(s.position) { continue; }
+            for (j,sample) in sampled.into_iter().enumerate() {
+                let Some(Sampled {s,rate,roots:list}) = sample else { continue };
                 samples += 1;
                 // M2: where a point's contact condition does not change over the roll, the
                 // point is on the boundary at every time or at none, and its time is no
                 // parameter of the generated surface. A single rotation is that everywhere.
-                let rate = c.motion().normal_velocity(s).ok();
                 // M2 between samples: the equation is C + a cos + b sin in the roll. Where (a, b)
                 // turns right round between neighbours while roots exist on both sides, it passed
                 // through zero with C: a point between them is in contact at every time, as on a
@@ -414,36 +650,24 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
                         }
                     }
                 }
-                let list = match roots(patch,u,v) { Ok(l) => l, Err(_) => { near_double_roots += 1; continue } };
-                let found: Vec<&TimedContact> = list.iter().filter(|t| read(t.contact.position)).collect();
+                let Some(list) = list else { near_double_roots += 1; continue };
+                // every root read, as a pass over them reads them
+                for (t,within,_) in &list { own.borrow_mut().push(t.contact.position,*within); }
+                let found: Vec<&(TimedContact,bool,Option<f64>)> = list.iter().filter(|x| x.1).collect();
                 if found.len() > 1 {
                     return Err((Condition::Single,format!("a tool point touches the blank at roll {:.4} and again at {:.4}",
-                        found[0].root.time,found[1].root.time),Some(found[1].contact.position)));
+                        found[0].0.root.time,found[1].0.root.time),Some(found[1].0.contact.position)));
                 }
-                for t in found {
+                for &(t,_,factor) in found {
                     let hit = Hit {source:s.position,position:t.contact.position,normal:t.contact.normal};
                     row[j] = Some(hit.position);
                     for q in [previous[j],if j > 0 { row[j-1] } else { None }].into_iter().flatten() {
                         gaps.push(norm(sub(q,hit.position)));
                     }
                     hits.push((hit,patch,t.root.branch));
-                    // E3: the generated surface's oriented area factor on the same branch,
-                    // by central differences, against the tool surface's own.
-                    let h = 1e-5;
-                    let (ua,ub) = ((u-h).max(0.),(u+h).min(1.));
-                    let near = |uu: f64,vv: f64| -> Option<V> {
-                        roots(patch,uu,vv.rem_euclid(1.)).ok()?.into_iter()
-                            .filter(|x| x.root.branch == t.root.branch)
-                            .min_by(|a,b| (a.root.time-t.root.time).abs().total_cmp(&(b.root.time-t.root.time).abs()))
-                            .map(|x| x.contact.position)
-                    };
-                    let (Some(fa),Some(fb),Some(ga),Some(gb)) = (near(ua,v),near(ub,v),near(u,v-h),near(u,v+h)) else { continue };
-                    let at = |uu: f64,vv: f64| surface.at(uu,vv.rem_euclid(1.)).map(|s| s.position).ok();
-                    let (Some(sa),Some(sb),Some(ta),Some(tb)) = (at(ua,v),at(ub,v),at(u,v-h),at(u,v+h)) else { continue };
-                    let du = ub-ua;
-                    let area = norm(cross(sub(sb,sa).map(|x| x/du),sub(tb,ta).map(|x| x/(2.*h))));
-                    if area == 0. { continue; }
-                    let factor = dot(cross(sub(fb,fa).map(|x| x/du),sub(gb,ga).map(|x| x/(2.*h))),t.contact.normal)/area;
+                    // E3: the generated surface's oriented area factor on the same branch
+                    // (`area_factor`), against the tool surface's own.
+                    let Some(factor) = factor else { continue };
                     if factor.abs() < options.least_factor {
                         return Err((Condition::Fold,format!("the generated surface's area factor is {factor:.3e}"),Some(t.contact.position)));
                     }
@@ -460,6 +684,20 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
             previous = row;
             equations = here;
         }
+        Ok(Fine {reads:own.into_inner(),samples,near_double_roots,hits,gaps,least,signs})
+    });
+    let (mut samples,mut near_double_roots) = (0,0);
+    let mut hits: Vec<(Hit,usize,usize)> = Vec::new();
+    let mut gaps: Vec<f64> = Vec::new();
+    let mut least = f64::INFINITY;
+    let mut signs: BTreeMap<(usize,usize),([usize;2],[Option<V>;2])> = BTreeMap::new();
+    for found in fine {
+        let found = found?;
+        reads.extend(found.reads);
+        samples += found.samples; near_double_roots += found.near_double_roots;
+        hits.extend(found.hits); gaps.extend(found.gaps);
+        least = least.min(found.least);
+        signs.extend(found.signs);
     }
     for ((patch,_),(counts,at)) in &signs {
         if counts[0] > 0 && counts[1] > 0 {
@@ -494,5 +732,5 @@ fn check(c: &SweepContacts,inside: &dyn Fn(V) -> bool,options: &Options) -> Resu
     }
     Ok((SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples,contacts:hits.len(),spacing,
         least_area_factor:least,near_double_roots,near_tangent_pairs,
-        basis:Basis::Sampled {rows:options.rows,columns:options.columns}},reads))
+        basis:Basis::Sampled {rows:options.rows,columns:options.columns},equivalence:Equivalence::Sampled},reads))
 }

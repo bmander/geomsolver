@@ -62,7 +62,7 @@ impl MotionBounds {
     /// rotation's midpoint applied, the transpose of the inverse map's linear part.
     pub fn gradient_mid(&self,g: [f64;3]) -> [f64;3] {
         let r = &self.plain.0;
-        std::array::from_fn(|i| (0..3).map(|k| r[i][k]*g[k]).sum())
+        std::array::from_fn(|i| r[i][0]*g[0]+r[i][1]*g[1]+r[i][2]*g[2])
     }
 
     pub fn inverse_point(&self,point: V) -> Result<V,Error> {

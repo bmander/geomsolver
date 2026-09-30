@@ -59,6 +59,7 @@ pub mod admission;
 pub mod agreement;
 pub mod accuracy;
 pub mod contracts;
+pub mod sector;
 pub mod export;
 pub mod contact_trace;
 pub mod blank_features;
