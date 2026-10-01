@@ -6,9 +6,13 @@
 //! `s = ±1` its sense. With `G(u, v) = ∫_0^u g(σ, v) dσ`, Green's theorem gives
 //! `∬_D g du dv = ∮_∂D G dv` round the domain counter-clockwise — and a face's loops run
 //! counter-clockwise exactly when it is not reversed, so `∮ G dv` round its loops as stored is
-//! its flux, whichever its sense.
-use super::geom::Curve;
-use super::topo::{Brep,EdgeCurve};
+//! its flux, whichever its sense. On a B-spline face `G` starts at its chart's first `u` and is
+//! tabled exactly (`Prefix`), and every loop is closed in the face's parameters across the gaps a
+//! kernel's loops leave between uses — Green's theorem holds for a closed curve only, and unclosed
+//! the gaps times `G` were 3e-6 of the pinion, and moved with the origin.
+use super::geom::{Curve,Surface,Uv};
+use super::nurbs::Net;
+use super::topo::{Brep,EdgeCurve,Pcurve};
 use crate::space::{cross,dot};
 
 /// Ten-point Gauss–Legendre nodes and weights on [−1, 1].
@@ -36,15 +40,100 @@ fn pieces(span: f64,periodic: bool) -> usize {
     if periodic { ((span.abs()/(std::f64::consts::PI/8.)).ceil() as usize).max(1) } else { 4 }
 }
 
+/// `n`-point Gauss–Legendre nodes and weights on [−1, 1], by Newton on the Legendre polynomial.
+fn rule(n: usize) -> Vec<(f64,f64)> {
+    (0..n).map(|i| {
+        let mut x = (std::f64::consts::PI*(i as f64+0.75)/(n as f64+0.5)).cos();
+        let mut dp = 1.;
+        for _ in 0..100 {
+            let (mut p0,mut p1) = (1.,x);
+            for k in 2..=n { let p2 = ((2*k-1) as f64*x*p1-(k-1) as f64*p0)/k as f64; p0 = p1; p1 = p2; }
+            dp = n as f64*(x*p1-p0)/(x*x-1.);
+            let step = p1/dp;
+            x -= step;
+            if step.abs() < 1e-16 { break }
+        }
+        (x,2./((1.-x*x)*dp*dp))
+    }).collect()
+}
+
+/// `G(u, v) = ∫_{u₀}^u g(σ, v) dσ` on a polynomial B-spline face, from the domain's start rather
+/// than 0 (which changes `G` by a function of `v` alone, and `∮ F(v) dv` round a closed loop is 0).
+/// `g` is a polynomial of degree `3du − 1` in `u` and `3dv − 1` in `v` on each patch, so a Gauss
+/// rule of `⌈3du/2⌉` points is exact on a `u` span, and `G` at a `u` knot is exactly the polynomial
+/// through `3dv` points of each `v` span: those are tabled once a `v` span is first asked for, and
+/// `G` anywhere is a table read plus one span's rule.
+struct Prefix<'a> {
+    net: &'a Net,
+    /// The distinct `u` knots across the domain, and the `v` ones.
+    us: Vec<f64>,
+    vs: Vec<f64>,
+    ru: Vec<(f64,f64)>,
+    /// Chebyshev points of the second kind on [−1, 1], `3dv` of them.
+    nodes: Vec<f64>,
+    /// Per `v` span, once asked for: per node, `G` at each `u` knot.
+    cols: Vec<Option<Vec<Vec<f64>>>>,
+}
+
+impl<'a> Prefix<'a> {
+    fn new(net: &'a Net) -> Prefix<'a> {
+        let [du,dv] = net.domain();
+        let knots = |k: usize,[a,b]: [f64;2]| { let mut x = vec![a]; x.extend(net.breaks(k,[a,b])); x.push(b); x };
+        let (us,vs) = (knots(0,du),knots(1,dv));
+        let m = 3*net.dv;
+        let nodes = (0..m).map(|k| (std::f64::consts::PI*k as f64/(m-1) as f64).cos()).collect();
+        let cols = vec![None;vs.len()-1];
+        Prefix {net,us,vs,ru:rule((3*net.du).div_ceil(2)+1),nodes,cols}
+    }
+    fn g(&self,u: f64,v: f64) -> f64 { let (x,su,sv) = self.net.d1(u,v); dot(x,cross(su,sv)) }
+    fn across(&self,a: f64,b: f64,v: f64) -> f64 {
+        let (mid,h) = ((a+b)/2.,(b-a)/2.);
+        h*self.ru.iter().map(|&(x,w)| w*self.g(mid+x*h,v)).sum::<f64>()
+    }
+    /// The span of `knots` holding `t`, the end ones taking what lies past them.
+    fn span(knots: &[f64],t: f64) -> usize { knots.partition_point(|&k| k <= t).clamp(1,knots.len()-1)-1 }
+    fn big_g(&mut self,u: f64,v: f64) -> f64 {
+        let (i,j) = (Self::span(&self.us,u),Self::span(&self.vs,v));
+        let (v0,v1) = (self.vs[j],self.vs[j+1]);
+        let at = |x: f64| (v0+v1)/2.+x*(v1-v0)/2.;
+        if self.cols[j].is_none() {
+            let col = self.nodes.iter().map(|&x| {
+                let mut acc = vec![0.];
+                for w in self.us.windows(2) { acc.push(acc.last().unwrap()+self.across(w[0],w[1],at(x))); }
+                acc
+            }).collect();
+            self.cols[j] = Some(col);
+        }
+        // the polynomial through the nodes at `v` (barycentric, the Chebyshev weights)
+        let col = self.cols[j].as_ref().unwrap();
+        let x = (2.*v-v0-v1)/(v1-v0);
+        let m = self.nodes.len();
+        let (mut num,mut den) = (0.,0.);
+        let mut exact = None;
+        for (k,&xk) in self.nodes.iter().enumerate() {
+            if x == xk { exact = Some(col[k][i]); break }
+            let w = if k%2 == 0 { 1. } else { -1. }*if k == 0 || k == m-1 { 0.5 } else { 1. }/(x-xk);
+            num += w*col[k][i];
+            den += w;
+        }
+        exact.unwrap_or(num/den)+self.across(self.us[i],u,v)
+    }
+}
+
 /// The volume the boundary encloses (negative if it is turned inside out).
-pub fn volume(b: &Brep) -> f64 {
-    let mut total = 0.;
-    for f in &b.faces {
+pub fn volume(b: &Brep) -> f64 { fluxes(b).iter().sum::<f64>()/3. }
+
+/// Each face's flux `∬ X·n dA` out of the solid, side by side.
+pub fn fluxes(b: &Brep) -> Vec<f64> {
+    crate::par::map(&b.faces,|f| {
+        let mut total = 0.;
         let s = &f.surface;
         let [pu,pv] = s.periods();
         let g = |u: f64,v: f64| { let (x,su,sv) = s.d1([u,v]); dot(x,cross(su,sv)) };
+        let mut prefix = if let Surface::BSpline(_,n) = s { Some(Prefix::new(n)) } else { None };
         // ∫_0^u, a stretch at a time between the surface's breaks in u
-        let big_g = |u: f64,v: f64| {
+        let mut big_g = |u: f64,v: f64| {
+            if let Some(p) = prefix.as_mut() { return p.big_g(u,v) }
             let cuts = s.breaks(0,[0.,u]);
             if cuts.is_empty() { return gauss(0.,u,pieces(u,pu.is_some()),&mut |w| g(w,v)) }
             let mut at = vec![0.];
@@ -64,7 +153,11 @@ pub fn volume(b: &Brep) -> f64 {
                     let [u,v] = c.pcurve.at(t,e,s,&b.vertices);
                     big_g(u,v)*dv
                 };
-                let breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
+                // where the edge's curve or its curve in the face's parameters may jump in a derivative
+                let mut breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
+                if let Pcurve::Curve(p) = &c.pcurve { breaks.extend(p.breaks(e.t)); }
+                breaks.sort_by(f64::total_cmp);
+                breaks.dedup();
                 let line = if !breaks.is_empty() {
                     // smooth between its knots or points: integrated a stretch at a time
                     let mut cuts = vec![e.t[0]];
@@ -75,7 +168,21 @@ pub fn volume(b: &Brep) -> f64 {
                 } else { gauss(e.t[0],e.t[1],pieces(span,periodic),&mut integrand) };
                 total += if c.reversed { -line } else { line };
             }
+            // the loop closed in the face's parameters, each use's end joined straight to the next's
+            // start: the kernel's measured gaps between them are small in space, but `G` across a
+            // spline face's chart can be large, and Green's theorem needs a closed curve
+            let ends: Vec<(Uv,Uv)> = l.iter().map(|c| {
+                let e = &b.edges[c.edge as usize];
+                let (a,z) = (c.pcurve.at(e.t[0],e,s,&b.vertices),c.pcurve.at(e.t[1],e,s,&b.vertices));
+                if c.reversed { (z,a) } else { (a,z) }
+            }).collect();
+            for k in 0..ends.len() {
+                let (p,q) = (ends[k].1,ends[(k+1)%ends.len()].0);
+                let dv = q[1]-p[1];
+                if dv == 0. { continue }
+                total += gauss(0.,1.,1,&mut |x| big_g(p[0]+x*(q[0]-p[0]),p[1]+x*dv)*dv);
+            }
         }
-    }
-    total/3.
+        total
+    })
 }

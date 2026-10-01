@@ -80,7 +80,7 @@ fn every_node_the_kernel_builds_is_occts() {
                 let kinds = |ks: &mut Vec<i32>| { ks.sort(); ks.clone() };
                 let our_kinds = kinds(&mut b.faces.iter().map(|f| match f.surface {
                     Surface::Plane(_) => 0,Surface::Cylinder(..) => 1,Surface::Cone(..) => 2,Surface::Sphere(..) => 3,Surface::Torus(..) => 4,
-                    Surface::Revolution(..) => 7,Surface::Extrusion(..) => 8,Surface::Blend(..) => 6,
+                    Surface::Revolution(..) => 7,Surface::Extrusion(..) => 8,Surface::Blend(..) | Surface::BSpline(..) => 6,
                 }).collect());
                 let their_kinds = kinds(&mut session.faces(theirs).unwrap().into_iter().map(|g| session.face_kind(g).unwrap()).collect());
                 if our_kinds != their_kinds {

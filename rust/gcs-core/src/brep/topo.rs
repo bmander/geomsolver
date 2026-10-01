@@ -23,7 +23,15 @@ pub enum EdgeCurve { Curve(Curve),Degenerate }
 /// A stretch of a curve from `t[0]` at `v[0]` to `t[1]` at `v[1]` (`t[0] < t[1]`; a closed edge
 /// has one vertex at both ends).
 #[derive(Clone,Debug)]
-pub struct Edge { pub curve: EdgeCurve,pub t: [f64;2],pub v: [u32;2] }
+pub struct Edge {
+    pub curve: EdgeCurve,
+    pub t: [f64;2],
+    pub v: [u32;2],
+    /// The largest gap measured between the edge's curve and its pcurves' images, and its ends
+    /// and its vertices (0 for an edge built exact here): what `check` holds it to, beside the
+    /// tolerance it is asked for. Never widened to make a check pass.
+    pub tol: f64,
+}
 
 impl Edge {
     pub fn point(&self,t: f64,vertices: &[Vertex]) -> V {
@@ -40,6 +48,9 @@ pub enum Pcurve {
     /// The edge's curve inverted onto the surface; on a periodic surface the branch is the one
     /// nearest the line from `a` to `b` (each end's parameters, unwrapped).
     Inverse { a: Uv,b: Uv },
+    /// A curve of its own in the face's parameters (its z is 0), read at the edge's parameter
+    /// itself: what a native kernel hands over (`brep::json`).
+    Curve(std::sync::Arc<Curve>),
 }
 
 impl Pcurve {
@@ -47,6 +58,7 @@ impl Pcurve {
     pub fn at(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex]) -> Uv {
         let s = if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. };
         match *self {
+            Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
             Pcurve::Line {a,b} => [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])],
             Pcurve::Inverse {a,b} => {
                 let near = [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])];
@@ -57,6 +69,7 @@ impl Pcurve {
     /// `d(u, v)/dt` at `t`.
     pub fn derivative(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex]) -> Uv {
         match *self {
+            Pcurve::Curve(ref c) => { let d = c.tangent(t); [d[0],d[1]] }
             Pcurve::Line {a,b} => {
                 let l = edge.t[1]-edge.t[0];
                 [(b[0]-a[0])/l,(b[1]-a[1])/l]
@@ -99,7 +112,7 @@ pub struct Brep { pub vertices: Vec<Vertex>,pub edges: Vec<Edge>,pub faces: Vec<
 impl Brep {
     pub fn vertex(&mut self,p: V) -> u32 { self.vertices.push(Vertex {p}); (self.vertices.len()-1) as u32 }
     pub fn edge(&mut self,curve: EdgeCurve,t: [f64;2],v: [u32;2]) -> u32 {
-        self.edges.push(Edge {curve,t,v});
+        self.edges.push(Edge {curve,t,v,tol:0.});
         (self.edges.len()-1) as u32
     }
     /// The first and last point of a use of an edge, in the use's direction.
@@ -153,7 +166,8 @@ impl Brep {
         if lo[0].is_finite() { norm(sub(hi,lo)) } else { 0. }
     }
 
-    /// Everything the representation promises, checked, to `tol` (a length): every loop closed
+    /// Everything the representation promises, checked, to `tol` (a length) or an edge's own
+    /// measured tolerance where that is larger: every loop closed
     /// in space and in its face's parameters; every edge's ends on its curve; every use's pcurve
     /// on its surface along the edge; every face's loops turning the way its sense says; every
     /// non-degenerate edge used twice, once each way, and every degenerate one once.
@@ -163,7 +177,7 @@ impl Brep {
             if let EdgeCurve::Curve(c) = &e.curve {
                 for k in 0..2 {
                     let d = distance(c.point(e.t[k]),self.vertices[e.v[k] as usize].p);
-                    if d > tol { return Err(format!("edge {i}: its {} vertex is {d:e} off its curve",["first","last"][k])) }
+                    if d > tol.max(e.tol) { return Err(format!("edge {i}: its {} vertex is {d:e} off its curve",["first","last"][k])) }
                 }
                 if !(e.t[1] > e.t[0]) { return Err(format!("edge {i}: its parameters do not increase")) }
             }
@@ -179,14 +193,17 @@ impl Brep {
                     }
                     // the same place, reached on the same branch of the surface's periods
                     let (a,b) = (self.uv_ends(f,c)[1],self.uv_ends(f,next)[0]);
-                    if distance(f.surface.point(a),f.surface.point(b)) > tol || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
+                    // each pcurve's end within twice its edge's tolerance of the vertex (its image to the
+                    // curve, the curve's end to the vertex), so two ends within twice the sum
+                    let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol));
+                    if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
                         return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name))
                     }
                     let e = &self.edges[c.edge as usize];
                     for j in 0..=8 {
                         let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
                         let d = distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
-                        if d > tol { return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it",f.name,c.edge)) }
+                        if d > tol.max(e.tol) { return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it",f.name,c.edge)) }
                     }
                     let u = &mut uses[c.edge as usize];
                     if c.reversed { u.1 += 1 } else { u.0 += 1 }

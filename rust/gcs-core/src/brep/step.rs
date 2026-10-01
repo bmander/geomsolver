@@ -43,8 +43,8 @@ impl Out {
                 let v = self.add(format!("VECTOR('',#{d},1.)"));
                 return Ok(self.add(format!("SURFACE_OF_LINEAR_EXTRUSION('',#{c},#{v})")))
             }
-            Surface::Blend(_,b) => {
-                let net = blend_net(b)?;
+            Surface::Blend(..) | Surface::BSpline(..) => {
+                let net = match s { Surface::Blend(_,b) => blend_net(b)?,Surface::BSpline(_,n) => (**n).clone(),_ => unreachable!() };
                 let rows: Vec<String> = net.poles.iter().map(|col| {
                     let ids: Vec<String> = col.iter().map(|&p| format!("#{}",self.point(p))).collect();
                     format!("({})",ids.join(","))
@@ -78,7 +78,7 @@ impl Out {
                 let a = self.placement(&f);
                 self.add(format!("TOROIDAL_SURFACE('',#{a},{},{})",real(big),real(r)))
             }
-            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) => unreachable!("written above"),
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => unreachable!("written above"),
         })
     }
     /// The curve a swept surface sweeps (a B-spline, as a profile gives one).
@@ -164,7 +164,7 @@ pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
         Surface::Cone(f,r,a) => (if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f },vec![r,a.abs()]),
         Surface::Sphere(f,r) => (f,vec![r]),
         Surface::Torus(f,big,r) => (f,vec![big,r]),
-        Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) => (f,vec![]),
+        Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) => (f,vec![]),
     }
 }
 
@@ -206,6 +206,13 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
         (Pcurve::Line {..},_,_) | (_,_,_) if affine && (z[0]-a[0]).hypot(z[1]-a[1]) > 0. => {
             let d = [(z[0]-a[0])/(e.t[1]-e.t[0]),(z[1]-a[1])/(e.t[1]-e.t[0])];
             line(o,[a[0]-d[0]*(e.t[0]-shift),a[1]-d[1]*(e.t[0]-shift)],d)
+        }
+        // a kernel's own curve in the face's parameters (`brep::json`): its poles, exactly
+        (Pcurve::Curve(pc),_,_) if matches!(**pc,Curve::BSpline(_)) => {
+            let Curve::BSpline(bs) = &**pc else { unreachable!() };
+            let ids: Vec<String> = bs.poles.iter().map(|q| format!("#{}",p2(o,step_uv(&f.surface,[q[0],q[1]])))).collect();
+            let knots: Vec<f64> = bs.knots.iter().map(|k| k-shift).collect();
+            spline(o,bs.degree,&ids,&knots)
         }
         (_,Surface::Plane(pl),Curve::Line {p,d}) => {
             let (l,dl) = (pl.local(*p),pl.dir_local(*d));

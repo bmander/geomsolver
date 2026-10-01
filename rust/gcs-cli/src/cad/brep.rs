@@ -52,6 +52,9 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         let started = std::time::Instant::now();
         let bar = tolerance.map_or(GROSS,|t| t.deflection());
         let m = brep::mesh::mesh(&solid,bar,0.2).map_err(|e| ExportRefusal::at(Stage::Mesh,e))?;
+        if m.turned > 0 {
+            return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh has {} triangles facing against their surfaces",m.turned)))
+        }
         if m.sag > bar {
             return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh sags {:.3} µm against {:.3} µm",m.sag*1e3,bar*1e3)))
         }

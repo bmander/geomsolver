@@ -1,10 +1,13 @@
-//! B-spline curves, non-rational: a degree, a clamped knot vector and poles, evaluated with their
-//! first two derivatives by the Cox–de Boor recurrence (Piegl and Tiller's A2.2 and A2.3).
+//! B-spline curves and tensor surfaces, non-rational: a degree, a clamped knot vector and poles,
+//! evaluated with their first two derivatives by the Cox–de Boor recurrence (Piegl and Tiller's
+//! A2.2 and A2.3). A rational one (a converted conic) is refused by whoever reads it.
 use super::geom::V;
 
-/// The greatest degree evaluated (on the stack).
-pub const MAX_DEGREE: usize = 9;
+/// The greatest degree evaluated (on the stack): OCCT's own bound.
+pub const MAX_DEGREE: usize = 25;
 const W: usize = MAX_DEGREE+1;
+/// The degrees evaluated with a small table, the cubics and their like (most of what is read).
+const SMALL: usize = 10;
 
 #[derive(Clone,Debug,PartialEq)]
 pub struct BSpline { pub degree: usize,pub knots: Vec<f64>,pub poles: Vec<V> }
@@ -27,74 +30,14 @@ impl BSpline {
         out.dedup();
         out
     }
-    fn span(&self,t: f64) -> usize {
-        let (p,n) = (self.degree,self.poles.len());
-        if t >= self.knots[n] { return n-1 }
-        if t <= self.knots[p] { return p }
-        let (mut lo,mut hi) = (p,n);
-        while hi-lo > 1 { let mid = (lo+hi)/2; if t < self.knots[mid] { hi = mid } else { lo = mid } }
-        lo
-    }
+    fn span(&self,t: f64) -> usize { span(self.degree,&self.knots,self.poles.len(),t) }
     /// `C`, `C'`, `C''` at `t` (clamped into the domain).
     pub fn d2(&self,t: f64) -> (V,V,V) {
         let p = self.degree;
         let [a,b] = self.domain();
-        let t = t.clamp(a,b);
-        let s = self.span(t);
-        let u = &self.knots;
-        // basis functions and their derivatives (Piegl and Tiller A2.3), orders 0..=2
-        let mut ndu = [[0.;W];W];
-        let (mut left,mut right) = ([0.;W],[0.;W]);
-        ndu[0][0] = 1.;
-        for j in 1..=p {
-            left[j] = t-u[s+1-j];
-            right[j] = u[s+j]-t;
-            let mut saved = 0.;
-            for r in 0..j {
-                ndu[j][r] = right[r+1]+left[j-r];
-                let temp = ndu[r][j-1]/ndu[j][r];
-                ndu[r][j] = saved+right[r+1]*temp;
-                saved = left[j-r]*temp;
-            }
-            ndu[j][j] = saved;
-        }
-        let orders = 2.min(p);
-        let mut ders = [[0.;W];3];
-        for j in 0..=p { ders[0][j] = ndu[j][p]; }
-        let mut a2 = [[0.;W];2];
-        for r in 0..=p {
-            let (mut s1,mut s2) = (0usize,1usize);
-            a2[0][0] = 1.;
-            for k in 1..=orders {
-                let mut d = 0.;
-                let rk = r as isize-k as isize;
-                let pk = p-k;
-                if r >= k {
-                    a2[s2][0] = a2[s1][0]/ndu[pk+1][rk as usize];
-                    d = a2[s2][0]*ndu[rk as usize][pk];
-                }
-                let j1 = if rk >= -1 { 1 } else { (-rk) as usize };
-                let j2 = if (r as isize-1) <= pk as isize { k-1 } else { p-r };
-                for j in j1..=j2 {
-                    let idx = (rk+j as isize) as usize;
-                    a2[s2][j] = (a2[s1][j]-a2[s1][j-1])/ndu[pk+1][idx];
-                    d += a2[s2][j]*ndu[idx][pk];
-                }
-                if r <= pk {
-                    a2[s2][k] = -a2[s1][k-1]/ndu[pk+1][r];
-                    d += a2[s2][k]*ndu[r][pk];
-                }
-                ders[k][r] = d;
-                std::mem::swap(&mut s1,&mut s2);
-            }
-        }
-        let mut factor = p as f64;
-        for k in 1..=orders {
-            for j in 0..=p { ders[k][j] *= factor; }
-            factor *= (p-k) as f64;
-        }
+        let (s,ders) = basis_ders(p,&self.knots,self.poles.len(),t.clamp(a,b),2);
         let mut out = [[0.;3];3];
-        for (k,row) in ders.iter().enumerate().take(orders+1) {
+        for (k,row) in ders.iter().enumerate().take(2.min(p)+1) {
             for (j,&n) in row.iter().enumerate().take(p+1) {
                 let q = self.poles[s-p+j];
                 for c in 0..3 { out[k][c] += n*q[c]; }
@@ -105,6 +48,78 @@ impl BSpline {
     pub fn point(&self,t: f64) -> V { self.d2(t).0 }
     /// The length of the control polygon, a bound on the curve's.
     pub fn hull_length(&self) -> f64 { self.poles.windows(2).map(|w| crate::space::distance(w[0],w[1])).sum() }
+}
+
+/// The knot span holding `t`, for `count` poles of `degree`.
+fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
+    let (p,n) = (degree,count);
+    if t >= knots[n] { return n-1 }
+    if t <= knots[p] { return p }
+    let (mut lo,mut hi) = (p,n);
+    while hi-lo > 1 { let mid = (lo+hi)/2; if t < knots[mid] { hi = mid } else { lo = mid } }
+    lo
+}
+
+/// The span holding `t`, and there the `degree + 1` basis functions and their derivatives up to
+/// order `n` (at most 2) — Piegl and Tiller's A2.3, on the stack: a degree under `SMALL` in a table
+/// that size, a higher one (OCCT approximates up to 25) in one of `W`.
+fn basis_ders(p: usize,u: &[f64],count: usize,t: f64,n: usize) -> (usize,[[f64;W];3]) {
+    if p < SMALL { basis_ders_in::<SMALL>(p,u,count,t,n) } else { basis_ders_in::<W>(p,u,count,t,n) }
+}
+
+fn basis_ders_in<const M: usize>(p: usize,u: &[f64],count: usize,t: f64,n: usize) -> (usize,[[f64;W];3]) {
+    let s = span(p,u,count,t);
+    let mut ndu = [[0.;M];M];
+    let (mut left,mut right) = ([0.;M],[0.;M]);
+    ndu[0][0] = 1.;
+    for j in 1..=p {
+        left[j] = t-u[s+1-j];
+        right[j] = u[s+j]-t;
+        let mut saved = 0.;
+        for r in 0..j {
+            ndu[j][r] = right[r+1]+left[j-r];
+            let temp = ndu[r][j-1]/ndu[j][r];
+            ndu[r][j] = saved+right[r+1]*temp;
+            saved = left[j-r]*temp;
+        }
+        ndu[j][j] = saved;
+    }
+    let orders = n.min(p).min(2);
+    let mut ders = [[0.;W];3];
+    for j in 0..=p { ders[0][j] = ndu[j][p]; }
+    let mut a2 = [[0.;M];2];
+    for r in 0..=p {
+        let (mut s1,mut s2) = (0usize,1usize);
+        a2[0][0] = 1.;
+        for k in 1..=orders {
+            let mut d = 0.;
+            let rk = r as isize-k as isize;
+            let pk = p-k;
+            if r >= k {
+                a2[s2][0] = a2[s1][0]/ndu[pk+1][rk as usize];
+                d = a2[s2][0]*ndu[rk as usize][pk];
+            }
+            let j1 = if rk >= -1 { 1 } else { (-rk) as usize };
+            let j2 = if (r as isize-1) <= pk as isize { k-1 } else { p-r };
+            for j in j1..=j2 {
+                let idx = (rk+j as isize) as usize;
+                a2[s2][j] = (a2[s1][j]-a2[s1][j-1])/ndu[pk+1][idx];
+                d += a2[s2][j]*ndu[idx][pk];
+            }
+            if r <= pk {
+                a2[s2][k] = -a2[s1][k-1]/ndu[pk+1][r];
+                d += a2[s2][k]*ndu[r][pk];
+            }
+            ders[k][r] = d;
+            std::mem::swap(&mut s1,&mut s2);
+        }
+    }
+    let mut factor = p as f64;
+    for k in 1..=orders {
+        for j in 0..=p { ders[k][j] *= factor; }
+        factor *= (p-k) as f64;
+    }
+    (s,ders)
 }
 
 /// Averaged knots for interpolation at `t` (Piegl and Tiller 9.8): clamped, each interior knot the
@@ -176,9 +191,35 @@ pub fn distinct(knots: &[f64]) -> Vec<(f64,usize)> {
 pub struct Net { pub du: usize,pub dv: usize,pub uknots: Vec<f64>,pub vknots: Vec<f64>,pub poles: Vec<Vec<V>> }
 
 impl Net {
-    pub fn point(&self,u: f64,v: f64) -> V {
-        let rows: Vec<V> = self.poles.iter().map(|col| BSpline {degree:self.dv,knots:self.vknots.clone(),poles:col.clone()}.point(v)).collect();
-        BSpline {degree:self.du,knots:self.uknots.clone(),poles:rows}.point(u)
+    /// Where the surface is defined, in `u` and in `v`.
+    pub fn domain(&self) -> [[f64;2];2] {
+        let (nu,nv) = (self.poles.len(),self.poles[0].len());
+        [[self.uknots[self.du],self.uknots[nu]],[self.vknots[self.dv],self.vknots[nv]]]
+    }
+    /// `S`, `S_u`, `S_v` at `(u, v)`, clamped into the domain.
+    pub fn d1(&self,u: f64,v: f64) -> (V,V,V) {
+        let [[u0,u1],[v0,v1]] = self.domain();
+        let (nu,nv) = (self.poles.len(),self.poles[0].len());
+        let (su,bu) = basis_ders(self.du,&self.uknots,nu,u.clamp(u0,u1),1);
+        let (sv,bv) = basis_ders(self.dv,&self.vknots,nv,v.clamp(v0,v1),1);
+        let mut out = [[0.;3];3];
+        for i in 0..=self.du {
+            let row = &self.poles[su-self.du+i];
+            for j in 0..=self.dv {
+                let q = row[sv-self.dv+j];
+                let (n,nu_,nv_) = (bu[0][i]*bv[0][j],bu[1][i]*bv[0][j],bu[0][i]*bv[1][j]);
+                for c in 0..3 { out[0][c] += n*q[c]; out[1][c] += nu_*q[c]; out[2][c] += nv_*q[c]; }
+            }
+        }
+        (out[0],out[1],out[2])
+    }
+    pub fn point(&self,u: f64,v: f64) -> V { self.d1(u,v).0 }
+    /// The distinct knots strictly inside `[a, b]` of parameter `k` (0 for u, 1 for v).
+    pub fn breaks(&self,k: usize,[a,b]: [f64;2]) -> Vec<f64> {
+        let (lo,hi) = (a.min(b),a.max(b));
+        let mut out: Vec<f64> = (if k == 0 { &self.uknots } else { &self.vknots }).iter().copied().filter(|&x| x > lo && x < hi).collect();
+        out.dedup();
+        out
     }
 }
 

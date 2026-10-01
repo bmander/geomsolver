@@ -31,6 +31,7 @@ extern "C" {
     fn solvent_cad_validate(cad: *mut c_void,id: c_int) -> c_int;
     fn solvent_cad_step(cad: *mut c_void,id: c_int,path: *const c_char,full: c_int,unchecked: c_int) -> c_int;
     fn solvent_cad_brep_summary(cad: *mut c_void,id: c_int,output: *mut f64,capacity: c_int) -> c_int;
+    fn solvent_cad_brep_json(cad: *mut c_void,id: c_int) -> *const c_char;
     fn solvent_cad_stl(cad: *mut c_void,id: c_int,path: *const c_char,deflection: f64,angular: f64) -> c_int;
     fn solvent_cad_remesh(cad: *mut c_void,id: c_int,deflection: f64,angular: f64) -> c_int;
     fn solvent_cad_mesh_sag(cad: *mut c_void,id: c_int,output: *mut f64) -> c_int;

@@ -358,3 +358,52 @@ fn an_involute_tooth_is_its_closed_form() {
     let facets = sk.evaluated_solid(root,gcs_core::solid::ApproximationPolicy::Mesh).unwrap().volume();
     assert!((facets-v).abs() <= 5e-3*v,"{facets} against {v}");
 }
+
+/// Phase 1's tool: a native kernel's shape dumped as JSON (`SOLVENT_BREP_DUMP`), read into the
+/// core's B-rep, checked, measured and meshed. `BREP_JSON=path cargo test … brep_json_debug -- --ignored --nocapture`;
+/// `BREP_AGAINST=other` lists the faces whose fluxes differ most from the other dump's nearest
+/// (OCCT's reading of a STEP, `PATH.read`), `BREP_SHIFT=d` measures it moved (which a closed
+/// boundary's volume does not see), `BREP_BAR=mm` meshes it to that sag.
+#[test]
+#[ignore]
+fn brep_json_debug() {
+    let path = std::env::var("BREP_JSON").unwrap();
+    let started = std::time::Instant::now();
+    let b = gcs_core::brep::json::read(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    eprintln!("read {} faces, {} edges, {} vertices ({:?})",b.faces.len(),b.edges.len(),b.vertices.len(),started.elapsed());
+    let worst = b.edges.iter().map(|e| e.tol).fold(0.,f64::max);
+    eprintln!("edge tolerances measured: worst {worst:e} mm, {} over 1e-5 mm",b.edges.iter().filter(|e| e.tol > 1e-5).count());
+    match b.check(1e-7) { Ok(()) => eprintln!("checked"), Err(e) => eprintln!("CHECK: {e}") }
+    let started = std::time::Instant::now();
+    eprintln!("volume {:.9} mm³ ({:?})",gcs_core::brep::props::volume(&b),started.elapsed());
+    if let Ok(other) = std::env::var("BREP_AGAINST") {
+        // each face's flux against the other B-rep's face nearest it (by a point of its first edge)
+        let o = gcs_core::brep::json::read(&std::fs::read_to_string(&other).unwrap()).unwrap();
+        let (fa,fb) = (gcs_core::brep::props::fluxes(&b),gcs_core::brep::props::fluxes(&o));
+        let at = |b: &gcs_core::brep::topo::Brep,f: usize| -> Vec<[f64;3]> {
+            b.faces[f].loops.iter().flatten().map(|c| { let e = &b.edges[c.edge as usize]; e.point((e.t[0]+e.t[1])/2.,&b.vertices) }).collect()
+        };
+        let mut worst = Vec::new();
+        for i in 0..b.faces.len() {
+            let pi = at(&b,i);
+            let j = (0..o.faces.len()).min_by(|&j,&k| {
+                let d = |j: usize| pi.iter().map(|p| at(&o,j).iter().map(|q| gcs_core::space::distance(*p,*q)).fold(f64::INFINITY,f64::min)).sum::<f64>();
+                d(j).total_cmp(&d(k))
+            }).unwrap();
+            worst.push(((fa[i]-fb[j]).abs(),i,j,b.faces[i].surface.kind(),o.faces[j].surface.kind(),fa[i],fb[j],b.faces[i].reversed,o.faces[j].reversed));
+        }
+        worst.sort_by(|a,b| b.0.total_cmp(&a.0));
+        for w in worst.iter().take(12) { eprintln!("flux {w:?}"); }
+    }
+    if let Ok(d) = std::env::var("BREP_SHIFT") {
+        let d: f64 = d.parse().unwrap();
+        for m in [gcs_core::brep::geom::Rigid {t:[d,0.,0.],..gcs_core::brep::geom::Rigid::identity()},gcs_core::brep::geom::Rigid {t:[0.,d,d],..gcs_core::brep::geom::Rigid::identity()}] {
+            eprintln!("moved: volume {:.9} mm³",gcs_core::brep::props::volume(&b.moved(&m)));
+        }
+    }
+    let started = std::time::Instant::now();
+    match gcs_core::brep::mesh::mesh(&b,std::env::var("BREP_BAR").map_or(0.01,|x| x.parse().unwrap()),0.2) {
+        Ok(m) => eprintln!("meshed: {} triangles, sag {:e}, {} turned ({:?})",m.tris.len(),m.sag,m.turned,started.elapsed()),
+        Err(e) => eprintln!("NOT MESHED: {e}"),
+    }
+}

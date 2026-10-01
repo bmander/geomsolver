@@ -95,7 +95,7 @@ fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
         }
         Surface::Torus(_,big,r) => Some(Meridian::Circle {c:[big,height(f.o)],r}),
         Surface::Revolution(_,ref c) => match &**c { Curve::BSpline(b) => Some(Meridian::Spline(b.clone(),o,z)),_ => None },
-        Surface::Extrusion(..) | Surface::Blend(..) => None,
+        Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) => None,
     }
 }
 

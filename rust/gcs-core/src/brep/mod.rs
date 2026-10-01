@@ -12,3 +12,4 @@ pub mod step;
 pub mod query;
 pub mod ssi;
 pub mod recipe;
+pub mod json;
