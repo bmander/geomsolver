@@ -399,6 +399,26 @@ Rung 1 is done: every corpus solid with a recipe agrees with OCCT (volume 1e-9, 
 but for named refusals of designs that touch themselves — surfaces meeting under 1° (the crown
 cutters' fillet tori touch; the gear's phase needs measured tolerances for them) and pinches.
 An explicit `--kernel occt` / `--stl-backend occt` in a build without OCCT still refuses.
+**Phase 1 (OCCT's shape, our files):** `SOLVENT_WRITER=rust` reads the solid the native export
+built into `brep` (`backend/dump.cpp` → `Session::brep_json` → `brep::json::read`: each face
+dumped forward and a reversed one's loops turned, left-handed placements made right-handed, the
+uses ordered by vertex and parameters since OCCT's wire explorer misreads a closed edge) and
+writes its STEP and STL by our writer and mesher, built whole. `Surface::BSpline` is a tensor
+non-rational `nurbs::Net`; `Pcurve::Curve` a kernel's 2D curve read at the edge's parameter and
+written exactly; `Edge::tol` is measured (curve against each pcurve's image and its vertices),
+and `check` honours it — so it no longer proves pcurves meet their edges: a reader holds the
+tolerances to a bar itself. The volume (`props::fluxes`) tables a B-spline face's `G` exactly per
+span and **closes every loop in the face's parameters** across the kernel's gaps: `G` across a
+small chart is large, and unclosed the pinion was off 3e-6 and moved with the origin. The mesher
+is a neighbour-array CDT (walked location, Bowyer–Watson cavities, Sloan recovery, refinement by
+insert-and-legalize), faces side by side, refined for sag **and** for a facet turning from the
+surface's outward normal (signed: where a chart's metric changes fast a triangle wound right in the
+scaled parameters comes out turned over in space, near the surface, and the pair check sorts
+flanks by facet normals); a sliver gets a point off its longest side, and a face's points nearer
+than 1e-9 of the solid are welded. `Mesh::turned` counts facets still facing against their surface
+(thicker than bar/100), and the export refuses any. Full verification reads our STEP back by OCCT and
+measures that reading by `props` (1e-5; OCCT's reader moves its own STEP 1.1e-6, and its volume is
+held only to 1e-4).
 Rung 2 is done ([plan](docs/rust-kernel-plan.md)): clamped spline profiles (`Curve::BSpline`,
 `brep::nurbs`; `Surface::Extrusion`/`Revolution`, written as STEP's surfaces of linear extrusion and
 revolution); a face's stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, fitted

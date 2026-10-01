@@ -244,6 +244,74 @@ the mesher to a measured sag, volume by Green's theorem). What the gear adds:
   our STL passes the shell checks and the meter within the tolerance; the pair check unchanged
   within 0.1 µm. Time the file stages against phase 6's.
 
+#### Phase 1 — done (2026-09-30)
+
+`SOLVENT_WRITER=rust` hands the solid the native export built to the core and writes its STEP and
+STL by our writer and mesher (the solid built whole, its union made before its files). The hand-over
+is `backend/dump.cpp` (`solvent_cad_brep_json`) read by `brep::json`; `SOLVENT_BREP_DUMP=PATH`
+writes it for the core's tool (`brep_json_debug`). What it took, and what it found:
+
+- **B-spline surfaces and pcurves.** `Surface::BSpline` over `nurbs::Net` (tensor, non-rational;
+  degrees to 25, since OCCT's pcurves reach 11); `Pcurve::Curve`, a kernel's 2D curve read at the
+  edge's own parameter and written to STEP exactly (its poles).
+- **Reading OCCT's shape.** Each face dumped forward and a reversed one's loops turned by the
+  reader (a seam's pcurve is picked by the edge's orientation, which a reversed face turns once
+  more); left-handed placements made right-handed (a revolution's `u` negated with its pcurves);
+  and the uses **ordered by vertex and parameters**, since `BRepTools_WireExplorer` misreads a
+  closed edge's orientation (a sphere band's two circles came out running the same way).
+- **Measured edge tolerances** (`Edge::tol`): the pinion's worst is 0.26 µm, the gear's 0.006 µm.
+  `check` honours them, so it no longer proves that pcurves meet their edges; a reader holds them
+  to a bar itself.
+- **The volume closes each loop in the face's parameters.** OCCT's loops have gaps of about
+  1e-7 in a sheet's chart, and `G` over a chart whose `u` spans a few hundredths is large, so the
+  pinion came out 3e-6 light and moved 0.4 mm³ with a 100 mm shift of the origin. Joined straight
+  across each gap, it is translation-invariant to 2e-9, and the whole pinion is 24 sectors to 2e-8.
+  A B-spline face's `G` is tabled exactly per span (Gauss in `u`, Chebyshev interpolation in `v`),
+  and the faces are integrated side by side: 11–15 s became 0.4–0.6 s.
+- **The mesher is a neighbour-array CDT**: points located by walking, Bowyer–Watson cavities, the
+  loops recovered by Sloan's flips, inside by flood fill, refinement by inserting a triangle's
+  middle and legalizing about it, the faces side by side. The whole pinion went from 21–31 s and
+  200k triangles to under a second; the spheres' 9,500-point boundaries had cost 49 s of it.
+- **A facet must face the way its surface does.** Refined for sag alone, the pinion's mesh failed
+  the pair check (backlash 0.009 mm): where a sheet's metric changes fast across a triangle, one
+  wound the right way in the scaled parameters comes out turned over in space while near the
+  surface (two a sheet, 0.01–0.06 mm², 24 teeth alike), and the check sorts flanks by facet
+  normals. Refinement now also tests each facet against the surface's outward normal at its corners
+  and middle (signed, past `angular`), a sliver getting a point off its longest side rather than
+  in its middle (which only makes two more), and `Mesh::turned` counts what is left thicker than a
+  hundredth of the bar; the export refuses any. A face's points nearer than 1e-9 of the solid are
+  welded (a stretch of a chart where several parameters are one point).
+
+**Gate** (both members, at the gross bar and at `--tolerance`, `SOLVENT_STEP_VERIFY=full`):
+
+| | read back by OCCT, our measure | OCCT's measure | STL sag / bar | triangles (ours / OCCT) | field agreement |
+|---|---|---|---|---|---|
+| pinion, gross | 1.2e-6 | 3.5e-5 | 9.999 / 10 µm | 139k / 143k | 0 disagree |
+| pinion, 10 µm | 2.5e-6 | 1.8e-6 | 4.998 / 5 µm | 133k / 776k | 0 disagree |
+| gear, gross | 1.9e-7 | 3.3e-7 | 9.991 / 10 µm | 216k / 197k | 0 disagree |
+| gear, 10 µm | 2.1e-6 | 1.8e-6 | 4.998 / 5 µm | 286k / 352k | 0 disagree |
+
+Every edge is within 0.26 µm (pinion) and 0.008 µm (gear) of its faces. The meter, at 10 µm: the
+pinion's STEP within 1.37 µm of every exact face (OCCT's 2.75), the gear's 0.69 µm (1.44); the STLs
+within 5.74 and 5.53 µm (OCCT's 3.94 and 6.16). The pair check passes on our STLs:
+backlash 0.0413 and 0.0456 mm against OCCT's 0.0418 and 0.0479 (0.05 designed), the members' least
+distance 0.0211 mm against 0.0214 mm. The plan's "unchanged within 0.1 µm" was never a bar an STL
+can meet at a 5 µm sag; the two files differ by what their sags allow. Our pinion's axis reads
+7e-5° off and the offset 0.24 µm long, since each tooth is meshed on its own where OCCT's mesh is
+one sector turned: phase 2's shared pattern gives that back.
+
+**Time** (a machine at load 50, so ratios rather than totals). Our STEP is written in 0.5–1.0 s
+where OCCT's took 2.8–8.4 s; the conversion is 0.5–1.2 s; our mesh 0.55–1.3 s at 10 µm in one
+pass, where OCCT's pinion needed a second meshing (5.7 s) for 776k triangles. Full verification
+(reading our STEP back through OCCT) is 5–13 s, and is the slow tier's.
+
+OCCT is no volume oracle here. Its STEP of the pinion, read back by OCCT and measured by us,
+moves 1.1e-6, and ours moves 1.2e-6: that is OCCT's reader repairing what it reads. Writing a
+tighter uncertainty makes it worse (3.3e-5 at 1e-7 mm), because the reader then repairs every
+edge. Its own volume of the pinion is 9e-6 off its own sectors' sum. So full verification reads
+our STEP back through OCCT, measures that reading with `props` to 1e-5, and holds OCCT's own
+volume only to 1e-4.
+
 ### Phase 2 — the pattern, built with shared topology
 
 - The sector's material turned by the indexing motion into its copies, each copy's boundary faces

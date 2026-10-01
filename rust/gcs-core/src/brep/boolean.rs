@@ -302,6 +302,8 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
                     let pcurve = if r == piece { match c.pcurve {
                         Pcurve::Line {..} => Pcurve::Line {a:ua,b:ub},
                         Pcurve::Inverse {..} => Pcurve::Inverse {a:ua,b:ub},
+                        // keyed to the curve's own parameter, which a piece of the edge keeps
+                        Pcurve::Curve(ref c) => Pcurve::Curve(c.clone()),
                     } } else if flip { Pcurve::Inverse {a:ub,b:ua} } else { Pcurve::Inverse {a:ua,b:ub} };
                     let along = !c.reversed != flip;
                     let (from,to) = if c.reversed { (ub,ua) } else { (ua,ub) };
@@ -428,6 +430,7 @@ fn at(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64) -> Uv {
         let near = [a[0]+frac*(b[0]-a[0]),a[1]+frac*(b[1]-a[1])];
         match h.pcurve {
             Pcurve::Line {..} => near,
+            Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
             Pcurve::Inverse {..} => unwrap(f.surface.inverse(e.point(t,pool)),near,f.surface.periods()),
         }
     }

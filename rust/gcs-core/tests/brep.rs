@@ -351,6 +351,7 @@ fn meshes_are_closed_and_within_their_sag() {
             let stl = gcs_core::mesh::stl_of(&m.triangles(),what);
             gcs_core::mesh::stl_shells(&stl).unwrap_or_else(|e| panic!("{what} at {bar}: {e}"));
             assert!(m.sag <= bar,"{what}: sags {} against {bar}",m.sag);
+            assert_eq!(m.turned,0,"{what}: triangles facing against their surfaces");
             let (v,w) = (mesh_volume(&m),volume(&s));
             // a chord's sag loses at most its area times itself: well within the bar over the size
             assert!((v-w).abs() <= 4.*bar*w.abs().powf(2./3.)*6.,"{what} at {bar}: {v} against {w}");
@@ -537,7 +538,81 @@ fn splines_swept_and_turned_are_their_closed_forms() {
     for (what,s) in [("plate",&b),("vase",&v),("lofted",&lofted)] {
         let m = mesh(s,0.01,0.2).unwrap_or_else(|e| panic!("{what}: {e}"));
         assert!(m.sag <= 0.01,"{what}: sags {}",m.sag);
+        assert_eq!(m.turned,0,"{what}: triangles facing against their surfaces");
         gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&m.triangles(),what)).unwrap_or_else(|e| panic!("{what}: {e}"));
         assert!((mesh_volume(&m)-volume(s)).abs() <= 2e-3*volume(s),"{what}: {} against {}",mesh_volume(&m),volume(s));
     }
+}
+
+/// A box handed over as a native kernel's JSON (`brep::json`, phase 1): its top a cubic B-spline
+/// face on a domain away from 0, one of its pcurves a kernel's gap off its neighbours (closed in the
+/// parameters by `props`, or the flux would be off by the gap times `G` there), its bottom written
+/// reversed and its uses out of walking order — read, checked, and its volume `a·b·c` wherever it is.
+#[test]
+fn a_box_read_from_json_is_its_closed_form() {
+    let (a,b,c,o) = (3.,2.,1.5,[1000.,-2000.,500.]);
+    let at = |x: f64,y: f64,z: f64| [o[0]+x,o[1]+y,o[2]+z];
+    let corners: Vec<V> = (0..8).map(|k| at(if k&1 == 0 { 0. } else { a },if k&2 == 0 { 0. } else { b },if k&4 == 0 { 0. } else { c })).collect();
+    let sub = |p: V,q: V| [p[0]-q[0],p[1]-q[1],p[2]-q[2]];
+    let dot = |p: V,q: V| p[0]*q[0]+p[1]*q[1]+p[2]*q[2];
+    let edges: Vec<[usize;2]> = (0..8).flat_map(|i| [1,2,4].into_iter().filter(move |&m| i&m == 0).map(move |m| [i,i|m])).collect();
+    let v3 = |p: V| format!("[{},{},{}]",p[0],p[1],p[2]);
+    let mut json = format!("{{\"vertices\":[{}],\"edges\":[",corners.iter().map(|&p| format!("{{\"p\":{},\"tol\":0}}",v3(p))).collect::<Vec<_>>().join(","));
+    json += &edges.iter().map(|&[i,j]| {
+        let d = sub(corners[j],corners[i]);
+        let len = dot(d,d).sqrt();
+        format!("{{\"v\":[{i},{j}],\"t\":[0,{len}],\"tol\":0,\"curve\":{{\"kind\":\"line\",\"p\":{},\"d\":{}}}}}",v3(corners[i]),v3([d[0]/len,d[1]/len,d[2]/len]))
+    }).collect::<Vec<_>>().join(",");
+    json += "],\"faces\":[";
+    // each face: its corners, its parameters (an affine map of a point), its surface, and whether
+    // it is written reversed; the loop runs counter-clockwise in the parameters as written
+    let plane = |q: V,x: V,y: V,z: V| format!("{{\"kind\":\"plane\",\"frame\":{{\"o\":{},\"x\":{},\"y\":{},\"z\":{}}}}}",v3(q),v3(x),v3(y),v3(z));
+    // the top: x in u over [2, 5] with a knot at 3, from 300 times the box's width before it (so the
+    // face is a strip at the end of its surface's chart, far from where `G` starts), y in v over
+    // [−1, 1] with one at ½, its poles at the Greville abscissae so the cubic net is exactly the
+    // plane, linearly parameterised
+    let (uk,vk) = ([2.,2.,2.,2.,3.,5.,5.,5.,5.],[-1.,-1.,-1.,-1.,0.5,1.,1.,1.,1.]);
+    let greville = |k: &[f64],i: usize| (k[i+1]+k[i+2]+k[i+3])/3.;
+    let poles = (0..5).map(|i| format!("[{}]",(0..5).map(|j| v3(at(-300.*a+301.*a*(greville(&uk,i)-2.)/3.,b*(greville(&vk,j)+1.)/2.,c))).collect::<Vec<_>>().join(","))).collect::<Vec<_>>().join(",");
+    let top = format!("{{\"kind\":\"bspline\",\"du\":3,\"dv\":3,\"uknots\":{uk:?},\"vknots\":{vk:?},\"poles\":[{poles}]}}");
+    let top_uv = move |p: V| [2.+3.*(p[0]-o[0]+300.*a)/(301.*a),-1.+2.*(p[1]-o[1])/b];
+    type Uv = Box<dyn Fn(V) -> [f64;2]>;
+    let frame_uv = |r: V,x: V,y: V| -> Uv { Box::new(move |p: V| { let q = [p[0]-r[0],p[1]-r[1],p[2]-r[2]]; [q[0]*x[0]+q[1]*x[1]+q[2]*x[2],q[0]*y[0]+q[1]*y[1]+q[2]*y[2]] }) };
+    let faces: Vec<(Vec<usize>,Uv,String,bool)> = vec![
+        // the bottom, its frame facing in and the face written reversed
+        (vec![0,1,2,3],frame_uv(o,[1.,0.,0.],[0.,1.,0.]),plane(o,[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]),true),
+        (vec![4,5,6,7],Box::new(top_uv),top,false),
+        (vec![0,1,4,5],frame_uv(o,[1.,0.,0.],[0.,0.,1.]),plane(o,[1.,0.,0.],[0.,0.,1.],[0.,-1.,0.]),false),
+        (vec![2,3,6,7],frame_uv(at(0.,b,0.),[0.,0.,1.],[1.,0.,0.]),plane(at(0.,b,0.),[0.,0.,1.],[1.,0.,0.],[0.,1.,0.]),false),
+        (vec![0,2,4,6],frame_uv(o,[0.,0.,1.],[0.,1.,0.]),plane(o,[0.,0.,1.],[0.,1.,0.],[-1.,0.,0.]),false),
+        (vec![1,3,5,7],frame_uv(at(a,0.,0.),[0.,1.,0.],[0.,0.,1.]),plane(at(a,0.,0.),[0.,1.,0.],[0.,0.,1.],[1.,0.,0.]),false),
+    ];
+    json += &faces.iter().enumerate().map(|(fi,(ks,uv,surface,reversed))| {
+        // counter-clockwise about the centre in the parameters
+        let mid = ks.iter().fold([0.,0.],|m,&k| { let p = uv(corners[k]); [m[0]+p[0]/4.,m[1]+p[1]/4.] });
+        let mut ring = ks.clone();
+        ring.sort_by(|&i,&j| { let (p,q) = (uv(corners[i]),uv(corners[j])); (p[1]-mid[1]).atan2(p[0]-mid[0]).total_cmp(&(q[1]-mid[1]).atan2(q[0]-mid[0])) });
+        let mut uses: Vec<String> = (0..4).map(|n| {
+            let (p,q) = (ring[n],ring[(n+1)%4]);
+            let e = edges.iter().position(|&[i,j]| (i,j) == (p,q) || (i,j) == (q,p)).unwrap();
+            let [i,j] = edges[e];
+            let (mut s,t) = (uv(corners[i]),uv(corners[j]));
+            // a kernel's gap: the top's first pcurve 1e-7 off its neighbours in v
+            if fi == 1 && n == 0 { s[1] += 1e-7; }
+            let len = dot(sub(corners[j],corners[i]),sub(corners[j],corners[i])).sqrt();
+            format!("{{\"edge\":{e},\"reversed\":{},\"pcurve\":{{\"kind\":\"line\",\"p\":[{},{},0],\"d\":[{},{},0]}}}}",(i,j) == (q,p),s[0],s[1],(t[0]-s[0])/len,(t[1]-s[1])/len)
+        }).collect();
+        uses.swap(1,3);
+        format!("{{\"reversed\":{reversed},\"surface\":{surface},\"loops\":[{{\"outer\":true,\"uses\":[{}]}}]}}",uses.join(","))
+    }).collect::<Vec<_>>().join(",");
+    json += "]}";
+    let brep = gcs_core::brep::json::read(&json).unwrap();
+    brep.check(1e-9).unwrap();
+    assert!(brep.edges.iter().all(|e| e.tol < 2e-7),"{:?}",brep.edges.iter().map(|e| e.tol).collect::<Vec<_>>());
+    // within what the gap itself moves the boundary (its length times it, times the distance from
+    // the origin), where unclosed it would be off by the gap times the strip's distance along the chart
+    let near = |v: f64| assert!((v-a*b*c).abs() < 1e-4,"{v} against {}",a*b*c);
+    near(volume(&brep));
+    // and wherever it stands
+    near(volume(&brep.moved(&Rigid {t:[-3000.,700.,40.],..Rigid::identity()})));
 }

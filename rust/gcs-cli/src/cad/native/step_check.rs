@@ -272,11 +272,15 @@ impl Solid {
                 let numbers = gcs_core::brep::step::blend_net(bl).map(|n| gcs_core::brep::step::net_numbers(&n)).unwrap_or_default();
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
             }
+            // a sheet is written as its own net
+            if let Surface::BSpline(_,net) = &f.surface {
+                return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers:gcs_core::brep::step::net_numbers(net)}
+            }
             let (frame,scalars) = gcs_core::brep::step::written(&f.surface);
             let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,
                 Surface::Cone(..) => CONE,Surface::Sphere(..) => SPHERE,Surface::Torus(..) => TORUS,
                 Surface::Revolution(..) => REVOLUTION,Surface::Extrusion(..) => EXTRUSION,
-                Surface::Blend(..) => BSPLINE };
+                Surface::Blend(..) | Surface::BSpline(..) => BSPLINE };
             let mut numbers: Vec<f64> = frame.o.iter().chain(&frame.z).chain(&frame.x).copied().collect();
             numbers.extend(scalars);
             Face {kind,reversed:f.reversed,indirect:false,numbers}
