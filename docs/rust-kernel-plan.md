@@ -128,20 +128,41 @@ they taught, and where the plan now says it:
 3. **OCCT is no 1e-9 volume oracle on spline faces** (4e-8 to 2e-6 off where this kernel meets the
    closed forms to 1e-9). The gates of phases 1, 3 and 4 read closed forms and the meter there,
    and OCCT's volume only as a gross check (Design: the oracle).
-4. **Phase 4 is less risky than written.** Its intersections are three transversal kinds, never
+4. **The split (phase 3) is less risky than written.** Its intersections are three transversal kinds, never
    under 17.8°: a sheet against the blank's cones and spheres (the contour in the sheet's domain
    the phase already proposes) and two or three sheet × sheet curves. No general B-spline ×
-   B-spline intersection is needed for the gear (Phase 4).
-5. **Phase 3's cutters in 2D are required, not a nicety.** Every near-tangent pair the export
+   B-spline intersection is needed for the gear (Phase 3).
+5. **The cutters' own sections (phase 4) are required, not a nicety.** Every near-tangent pair the export
    meets (tori at 0°) is in the cutters' construction, so the meridian-plane route must handle
    tangent circles exactly; it also removes the cutters' plane sections, about 11 s of thread time
-   on the gear (Phase 3).
+   on the gear (Phase 4; see the revision below on the gear's cutter, which is not in one meridian
+   plane).
 6. **The faceted kernel drifts from the exact one.** Rung 2 found three places they disagreed
    (splines lofted as chords, twisted lofts 26% light, loft pairing). Until rung 3 retires it, the
    oracle compares the two on every root at a bar tied to the faceting rather than a flat 0.5%
    (Rung 3).
 7. **The sizing was far too high.** Rungs 1–2 came to about 5,900 lines (4,500 of source) against
    the 13–25k estimated for them (Sizing).
+
+## Revisions after phase 2 (2026-09-30)
+
+Phases 1 and 2 read what the kernel builds into the core and work on that; starting phase 3 found
+two things that change the order.
+
+1. **The gear's cutter is not one meridian plane's.** Phase 3 (as first written) took the gear's
+   cutters for 2D Booleans of their profiles in a common meridian plane. The space cutter is the outer
+   crown bounded by its neighbour, and the neighbour is the inner crown turned a crown pitch about
+   the crown's axis (`crown/space.sv`), not the cutter's own: two solids of revolution about
+   different lines, so a meridian half-plane of one cuts the other along curves past lines and
+   arcs. That is also why the gear's cutter is sectioned at every station (636 `section` calls)
+   where the pinion's, a solid of revolution about its own axis, is sectioned once and turned. The
+   gear's sections come from the core's analytic field of the cutter instead (Phase 4).
+2. **The split before what it splits.** Built by the core while the kernel still splits, the blank,
+   the sheets and the cutters would each have to be handed to the kernel as its shapes — an
+   importer and adapters, all thrown away once the split is the core's. The split is therefore
+   phase 3, taking the kernel's blank, sheets and sides through phase 1's converter as phases 1 and
+   2 did, and the producers phase 4, each replacing the kernel's with nothing handed back. The
+   phases below are renumbered; references to them throughout follow.
 
 ## Phases
 
@@ -156,13 +177,13 @@ the most OCCT for the least risk. Phase 0 measures before any code is committed 
   `solid_loft`).
 - For every Boolean the export performs, record the operand face kinds and the pairs that
   actually intersect (sheet × cone, sheet × sphere, sheet × sheet, sheet × side, analytic ×
-  analytic): this is the intersection vocabulary phase 4 must cover, measured rather than guessed.
+  analytic): this is the intersection vocabulary phase 3 (the split) must cover, measured rather than guessed.
 - Record the intersection curves' lengths, the minimum angle between the surfaces along them
   (near-tangent intersections are where marching fails), and the smallest face and edge.
 - For the ladder: every solid in the corpus by form and profile kind (which rung it needs), and
   every Boolean with coincident or tangent operand faces, by kind (a flush bore, a boss `on` its
   stock, a mate, coaxial equal radii).
-- **Exit:** a table per stage and per Boolean, here; a go/no-go on phase 4 and on each rung, with
+- **Exit:** a table per stage and per Boolean, here; a go/no-go on the split (phase 3) and on each rung, with
   the estimated size of each.
 
 #### Phase 0 — done (2026-09-30)
@@ -200,8 +221,9 @@ The statics take 0.1–0.2 s each, a third of it the STL.
 No pair in the split is tangent or under 17.8°; OCCT flagged no tangent faces anywhere. The
 near-tangent pairs the exports do meet (torus × torus and plane × torus at 0°, cone × plane at 7°)
 are all in the *cutters'* construction — the crown bounded by its turned neighbour (`body bound`),
-and the plane sections that read a cutter's meridian — which phase 3 does in the meridian plane in
-2D, and which rung 1 refuses in 3D. The other Booleans are the clearance commons (plane × cone,
+and the plane sections that read a cutter's meridian — which phase 4 does with no 3D intersection
+(a cutter of revolution in its meridian plane, the gear's from its analytic field), and which rung 1
+refuses in 3D. The other Booleans are the clearance commons (plane × cone,
 plane × sphere: the sector's half-planes), the seam's ring pieces (cone × plane) and the recipe's
 body cuts, which met nothing.
 
@@ -211,12 +233,12 @@ edge at 10 µm is **0.5 µm** (8 µm at the gross bar), the gear's 13 µm — ed
 export's own tolerance, which OCCT keeps (its split runs at a fuzzy 1e-5 mm) and rung 1's rule
 would refuse.
 
-**Go, with one finding.** Phase 4 is a go: its intersections are three transversal kinds, each a
+**Go, with one finding.** The split (phase 3) is a go: its intersections are three transversal kinds, each a
 scalar contour in the sheet's domain against a surface of revolution about the member's axis
 (cone, sphere) or a well-conditioned sheet pair, a few dozen curves per member. The finding is the
 tolerance model: a construction tolerance (OCCT's 1e-5 mm) apart from the export's bar, so that
 a 0.5 µm edge is kept and merged within the construction tolerance rather than refused against the
-bar. The same model is what the crown cutters needed in rung 1, and phase 3's 2D cutters avoid the
+bar. The same model is what the crown cutters needed in rung 1, and phase 4's cutter sections avoid the
 3D near-tangencies altogether. Phases 1–3 stand as planned: the pattern, the blank (a meridian
 region turned once — 0.05 s now), the sheets' fits (0.6–0.8 s) and the STEP writer (1–4 s) are
 each small. Rung 3 needs nothing from these numbers.
@@ -362,28 +384,15 @@ gear 8.6 / 10.6 s (OCCT 10.5 / 12.1), gross / 10 µm. From the cells to the file
 takes 2.9 s against OCCT's 4.8 (its union alone 4.1 s; the core's turn 0.25 s); what is left there is
 our STEP's writing and parsed check.
 
-### Phase 3 — the blank and the sheets
-
-- The blank as its meridian region turned once: the region's Booleans are 2D Booleans of lines
-  and arcs (easy, exact), the revolution a face per profile edge (`Surface::Cone`, `Sphere`,
-  `Plane`, `Cylinder`, `Torus` by the edge's relation to the axis).
-- The cutters' meridian profiles: a revolved cutter's section is its own profile; the gear's
-  cutters (a crown bounded by its turned neighbour) are 2D Booleans of their profiles in the
-  common meridian plane. This route is **required**: every near-tangent pair the export meets
-  (the crowns' fillet tori at 0°, phase 0) is in these cutters, and in the plane they are two
-  circles tangent, which exact 2D predicates decide where a 3D intersection cannot. It also
-  replaces the cutters' plane sections (636 `section` calls on the gear, 11 s of thread time).
-- Sheet fitting (`fit.rs`'s chord-length and centripetal grids) and the sector sides' fits, by our
-  least squares; projection and feet by Newton on the B-spline.
-- **Gate:** the blank's volume and faces equal OCCT's (1e-9: all analytic); every sheet fits its withheld
-  contacts as OCCT's did (the fit report the same to the bar); the exports unchanged by the oracle.
-
-### Phase 4 — the sector's split
+### Phase 3 — the sector's split
 
 The phase with the most code, though phase 0 made it smaller: the split meets only a sheet
 against the blank's cones and spheres and two or three sheet × sheet curves, all transversal
 (17.8° and up), a few dozen curves a member. The sector is the blank between two fitted sides,
 split by its sheets into cells, one kept (phase 6 of the speed plan: five cells, one material).
+The kernel still builds what the split takes — the blank, the sheets and the two sides — and the
+core reads them through phase 1's converter (`backend/dump.cpp`, `brep::json`), so nothing is
+handed back to the kernel; the cell kept goes to phase 2's pattern.
 
 - **Sheet × blank face.** Every blank face is a surface of revolution about the member's axis:
   a curve f(r, z) = 0 in the meridian plane. A sheet point S(u, v) is on it where
@@ -400,11 +409,41 @@ split by its sheets into cells, one kept (phase 6 of the speed plan: five cells,
   material cell kept by the field (`MaterialEvaluator::probe`, as today).
 - **Refusals.** A tangential or near-tangential intersection (the angle under a few degrees:
   the split meets none under 17.8°), a curve that leaves its face's domain unexpectedly, an arrangement whose pieces do not
-  close: each refused with a witness, the export falling back to OCCT while it exists.
-- **Gate:** both members at both bars built without OCCT: face counts and kinds equal OCCT's,
-  volume to OCCT's integration's width (~1e-5; phase 1), the field agreement and the meter pass, the STEP
-  reads back in OCCT, the pair check within 0.1 µm; the 48-design harness
-  (`generating_harness.rs`) refuses nothing OCCT built. Time it.
+  close: each refused with a witness, the export falling back to OCCT's split while it exists.
+- **Gate:** both members at both bars split by the core: the kept cell's faces by kind as OCCT's,
+  its volume as OCCT's cell's by the core's measure (1e-9 where both are read by it), the field
+  agreement and the meter pass, the STEP reads back in OCCT, the pair check passes with its readings
+  within the meshes' sag of OCCT's (phase 1: an STL cannot carry a 0.1 µm bar at a 5 µm sag); the
+  48-design harness (`generating_harness.rs`) refuses nothing OCCT split. Time it.
+
+### Phase 4 — the blank, the sheets and the cutters
+
+What the split takes and the contacts read, built by the core, each producer replacing the
+kernel's one at a time with the split already ours (phase 3), so none is handed to the kernel.
+
+- **The blank** as its meridian region turned once: the region's Booleans are 2D Booleans of
+  lines and arcs (exact), the revolution a face per profile edge (`Surface::Cone`, `Sphere`,
+  `Plane`, `Cylinder`, `Torus` by the edge's relation to the axis); or the recipe built by rung 1,
+  which already builds the blank (0.42 s against OCCT's 0.88).
+- **The cutters' sections.** A cutter of revolution about its own axis (the pinion's) is its own
+  meridian profile: a 2D Boolean of its revolutions' profiles, no plane section at all. The gear's
+  is not: its space cutter is the outer crown bounded by its neighbour, and the neighbour is the
+  inner crown turned about the *crown* axis (`crown/space.sv`, `crown_neighbor`), not about the
+  cutter's own, so a meridian half-plane of the cutter cuts the neighbour obliquely — along
+  curves of degree past a line or an arc, not along its profile. Its sections come from the core's
+  analytic material field of the cutter instead (`MaterialField::read`: Booleans of placed
+  revolutions, exact, with no 3D intersection), contoured in each half-plane: each boundary piece
+  belongs to one operand's surface, its points placed by Newton on that operand and the corners
+  where the deciding operand changes found as the creases are. The tangent tori phase 0 found are
+  two operands whose fields both vanish along a curve; in a half-plane that is a corner like any
+  other. This replaces the cutters' plane sections (636 `section` calls on the gear, 11 s of
+  thread time) and the clearance's Booleans (a field reading over the blank's support).
+- **Sheet fitting** (`fit.rs`'s chord-length and centripetal grids) and the sector sides' fits, by our
+  interpolation; projection and feet by Newton on the B-spline.
+- **Gate:** the blank's volume and faces equal OCCT's (1e-9: all analytic); every cutter section's
+  loops agree with OCCT's at every station (points within 1e-6 mm, the same corners); every sheet
+  fits its withheld contacts as OCCT's did (the fit report the same to the bar); the exports
+  unchanged by the oracle.
 
 ### Phase 5 — the export without OCCT
 
@@ -442,8 +481,8 @@ splines and lofts; nothing ever handed them to it.
 
 - Prisms, partial revolutions (planar end caps), placements, and bodies over planes, cylinders,
   cones, spheres and tori: analytic × analytic intersections in closed form where they have one
-  (plane × quadric; coaxial quadrics as circles), marched with phase 4's tracer where they do not
-  (a torus against a cylinder is a quartic), through the phase 4 arrangement.
+  (plane × quadric; coaxial quadrics as circles), marched with phase 3's tracer where they do not
+  (a torus against a cylinder is a quartic), through the phase 3 arrangement.
 - **Coincident faces**, which the gear avoids and Solvent documents write routinely: a flush bore,
   a boss standing `on` its stock (the shared face counted once), parts mated `against` each other,
   coaxial cylinders of one radius. Coincidence is decided exactly where the geometry says it
@@ -517,7 +556,7 @@ What it refuses, it refuses by name, and each is a design that touches itself:
   circles cross in it, so the tori touch each other there — their intersection has a singular
   point. Lowering the limit only traced through it into an invalid boundary (0.05°, and the
   relief's 0.87° falls to 0.34° at half a degree). The refusal names the angle and the place.
-  The gear (phase 4) needs these cutters, so the answer belongs there: measured vertex and edge
+  The gear needs these cutters (phase 4), so the answer belongs there: measured vertex and edge
   tolerances, merging within them as OCCT's Booleans do within 1e-5 mm.
 - **The V-twin disc and flywheel pinch** where their grub-screw holes end tangent to the hub
   bore; OCCT's own export of both fails as well.
@@ -541,7 +580,7 @@ to look when speed matters.
   skinned B-spline surface between its end sections.
 - Their Booleans need **general B-spline intersection**: subdivision of both nets (with interval
   enclosures) until every component is found — small closed loops included — then marching, and
-  tangential contact detected and refused rather than traced through. This generalises phase 4
+  tangential contact detected and refused rather than traced through. This generalises phase 3
   from the handful of well-conditioned pairs the gear has to whatever a document writes, and is
   where most of this rung's cost and risk is.
 - **Gate:** new fixtures with closed forms (a spline prism's volume by Green's theorem, an
@@ -635,11 +674,11 @@ geometry; the B-rep, geometry, Booleans, mesher, STEP writer, lofts and both run
 chord pulled onto both surfaces) served where general B-spline intersection was budgeted.
 
 What remains, on the same evidence: phase 1 1–2k (the B-spline surface and pcurves, the converter,
-per-edge tolerances, point location in the mesher); phase 2 about 1k; phase 3 1–2k (the 2D cutters
-and their tangencies, the fits); phase 4 2–4k (the contour tracer against surfaces of revolution,
-two or three sheet × sheet curves, the arrangement over B-spline faces, the construction-tolerance
-merging); phase 5 under 1k; rung 3 3–5k plus the migration of every sheet's record. Phase 4 is
-still the largest and the riskiest, but it is no longer half of everything.
+per-edge tolerances, point location in the mesher); phase 2 about 1k; phase 3 2–4k (the contour tracer against surfaces of revolution, two or three
+sheet × sheet curves, the arrangement over B-spline faces, the construction-tolerance merging);
+phase 4 1–2k (the blank, the cutters' sections from the field, the fits); phase 5 under 1k; rung 3
+3–5k plus the migration of every sheet's record. Phase 3, the split, is still the largest and the
+riskiest, but it is no longer half of everything.
 
 ## Verification
 
