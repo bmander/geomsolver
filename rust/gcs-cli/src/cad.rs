@@ -205,18 +205,14 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                 let dump = |shape,path: String| session.brep_json(shape).and_then(|t| std::fs::write(&path,t).map_err(|e| e.to_string()));
                 // (a sector's union still to be made has no solid yet: its sector is dumped alone)
                 if built.unchecked.is_none() { dump(solid,path.clone()).at(Stage::Step)?; }
-                if let Some(s) = built.sector.filter(|s| s.piece >= 0) { dump(s.piece,format!("{path}.sector")).at(Stage::Step)?; }
+                if let Some(s) = &built.sector { dump(s.piece,format!("{path}.sector")).at(Stage::Step)?; }
             }
             let converted = if ours {
                 let started = std::time::Instant::now();
                 let read = |shape| session.brep_json(shape).and_then(|t| gcs_core::brep::json::read(&t));
                 let (b,pattern) = match &built.sector {
                     Some(s) => {
-                        // the core's split made it, or the kernel's to be read
-                        let sector = match built.unchecked.as_ref().and_then(|u| u.core.clone()) {
-                            Some(b) => b,
-                            None => read(s.piece).at(Stage::Step)?,
-                        };
+                        let sector = read(s.piece).at(Stage::Step)?;
                         sector.check(1e-7).map_err(|e| format!("the kernel's sector, read into the core's B-rep, is invalid: {e}"))
                             .at(Stage::Step)?;
                         let p = gcs_core::brep::pattern::pattern(&sector,s.origin,s.axis,s.count,PATTERN_MATCH).at(Stage::Fuse)?;
@@ -239,7 +235,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             let sector = built.sector.filter(|_| std::env::var("SOLVENT_SECTOR_STL").map_or(true,|v| v != "off"));
             // A sector whose union is still to be made is meshed as a copy of it, beside the union's making.
             let sector = match (&built.unchecked,sector) {
-                (Some(_),Some(s)) if converted.is_none() => Some(native::kernel::Patterned {piece:session.copy(s.piece).at(Stage::Mesh)?,..s}),
+                (Some(_),Some(s)) => Some(native::kernel::Patterned {piece:session.copy(s.piece).at(Stage::Mesh)?,..s}),
                 (_,sector) => sector,
             };
             // The mesh's absolute chordal deflection (mm) and its angular one: the angle bounds how far a

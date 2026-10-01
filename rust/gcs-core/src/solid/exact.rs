@@ -49,7 +49,9 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
                     let (of, face) = f.name.split_once(SEP).unwrap_or((f.name.as_str(), ""));
                     let path = paths.get(of).map(String::as_str).unwrap_or(of);
                     let placed = super::document::placed_name(&sol.name, path);
-                    if leading.contains(&format!("{of}.{face}")) { leading.insert(format!("{placed}.{face}")); }
+                    if leading.contains(&format!("{of}.{face}")) {
+                        leading.insert(format!("{placed}.{face}"));
+                    }
                     f.name = format!("{placed}{SEP}{face}");
                 }
             }
@@ -62,7 +64,9 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
                     _ => &[],
                 };
                 for f in &mut b.faces {
-                    if caps.contains(&f.name.as_str()) { leading.insert(format!("{}.{}", sol.name, f.name)); }
+                    if caps.contains(&f.name.as_str()) {
+                        leading.insert(format!("{}.{}", sol.name, f.name));
+                    }
                     f.name = format!("{}{SEP}{}", sol.name, f.name);
                 }
             }

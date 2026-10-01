@@ -588,6 +588,11 @@ checks as phase 3's — OCCT's read-back within 2.5e-6, the meter's STEPs 0.42 a
   rational pcurve (a conic on a plane) is read as the `Pcurve::Inverse` of its edge, from its ends in
   homogeneous coordinates, so the core builds no rational curve.
 
+- **The bridge is gone.** Phases 3 and 4 proved each core producer inside the native construction
+  (`SOLVENT_WRITER=rust`'s core split, sheets and sections, shapes the core held under the kernel's
+  handles, and their dump and check switches). Once `brep::sweep` built the whole body, that hybrid
+  only duplicated it, and it was removed: the OCCT path is OCCT's again, the oracle, and
+  `SOLVENT_WRITER=rust` means phases 1–2's reading of the kernel's shape into our writer and mesher.
 - **The generating harness** (`tests/generating_harness.rs`, the fixtures, the controls and the
   48-design sweep, each a `solventc` run located by its stage trace) found six things, each fixed
   where it was: the core export marked no `Written` stage, so a file written read as a refusal;

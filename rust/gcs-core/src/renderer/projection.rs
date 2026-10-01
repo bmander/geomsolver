@@ -28,7 +28,9 @@ fn view_clipped(renderer: &Renderer<'_>, page: PageFrame, cut: Option<Basis>, se
     // its surfaces in place of its mesh's seams
     let traced = solid.silhouettes(eye);
     let mut drawn: Vec<(([f64; 3], [f64; 3]), bool, String)> = Vec::new();
-    let seams = renderer.edges.iter().chain(section_edges).filter(|e| !(e.smooth && traced.is_some())).map(|e| (e, false));
+    let seams = renderer.edges.iter().chain(section_edges)
+        .filter(|e| !(e.smooth && traced.is_some()))
+        .map(|e| (e, false));
     for (e, silhouette) in seams.chain(traced.iter().flatten().map(|e| (e, true))) {
         let sil = e.smooth;
         if sil && !silhouette {

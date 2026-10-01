@@ -136,10 +136,12 @@ impl EvaluatedSolid {
         if sweeps_among(sk, &operands) {
             return Self::of_field(sk, si, policy, unit);
         }
-        // the exact B-rep where this kernel builds and meshes one, the facet term where it does not
-        // — an empty solid among them (`SOLVENT_SOLIDS=facets` asks for the facet term throughout)
+        // the exact B-rep where this kernel builds and meshes one, the facet term where it does
+        // not, an empty solid among them (`SOLVENT_SOLIDS=facets` asks for it throughout)
         if !facets_only() {
-            if let Ok(solid) = sk.exact_solid(si).and_then(|x| Self::from_brep(sk, si, policy, unit, operands.clone(), &x)) {
+            let exact = sk.exact_solid(si)
+                .and_then(|x| Self::from_brep(sk, si, policy, unit, operands.clone(), &x));
+            if let Ok(solid) = exact {
                 return Ok(solid);
             }
         }
@@ -232,11 +234,17 @@ impl EvaluatedSolid {
         }
     }
     /// A static solid from its exact B-rep (`solid::Exact`): the B-rep meshed within the
-    /// approximation's sagitta stands in as one polyhedral primitive whose facets carry their faces'
-    /// paths, so classification, edges and views read it as they read any other — and a face's
-    /// facets meet another face's at a crease, the B-rep's edge. Its volume is the B-rep's own.
-    fn from_brep(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64, operands: BTreeSet<usize>,
-        exact: &std::rc::Rc<super::Exact>) -> Result<Self, String> {
+    /// approximation's sagitta stands in as one polyhedral primitive whose facets carry their
+    /// faces' paths, so classification, edges and views read it as they read any other — and a
+    /// face's facets meet another face's at a crease, the B-rep's edge. Its volume is the B-rep's.
+    fn from_brep(
+        sk: &Sketch,
+        si: usize,
+        policy: ApproximationPolicy,
+        unit: f64,
+        operands: BTreeSet<usize>,
+        exact: &std::rc::Rc<super::Exact>,
+    ) -> Result<Self, String> {
         let name = sk.solid_name(si);
         let origin = WorldPoint(exact.origin);
         let mm = exact.mm;
@@ -244,16 +252,18 @@ impl EvaluatedSolid {
         let bar = (crate::curve::flatness(unit) * mm).min(BREP_RELATIVE_SAG * b.size());
         let m = crate::brep::mesh::mesh(b, bar, BREP_ANGULAR)
             .map_err(|e| format!("`{name}`: {e}"))?;
-        // one face index a path, so the pieces of one face split by a boolean or a seam are one; the
-        // leading faces' first, so an edge is named by the face the facet term named it by
+        // one face index a path, so the pieces of one face split by a boolean or a seam are one;
+        // the leading faces' first, so an edge is named by the face the facet term named it by
         let mut faces: Vec<String> = Vec::new();
         for f in b.faces.iter().filter(|f| exact.leading.contains(&f.name)) {
             if !faces.contains(&f.name) { faces.push(f.name.clone()); }
         }
-        let index: Vec<usize> = b.faces.iter().map(|f| match faces.iter().position(|n| *n == f.name) {
-            Some(k) => k,
-            None => { faces.push(f.name.clone()); faces.len() - 1 }
-        }).collect();
+        let index: Vec<usize> = b.faces.iter()
+            .map(|f| match faces.iter().position(|n| *n == f.name) {
+                Some(k) => k,
+                None => { faces.push(f.name.clone()); faces.len() - 1 }
+            })
+            .collect();
         // the B-rep stands about the solid's origin already
         let local = |p: [f64; 3]| -> [f64; 3] { p.map(|x| x / mm) };
         let mut facets = Vec::with_capacity(m.tris.len());
@@ -286,7 +296,8 @@ impl EvaluatedSolid {
             facets.push(Facet { pts: vec![a, b3, c], n, face: index[fi as usize], smooth });
         }
         if facets.is_empty() { return Err(format!("`{name}`: the exact solid meshed to nothing")); }
-        let csg = Csg { prims: vec![Prim { facets, bbox, faces, of: String::new(), exact: true }], term: Term::Prim(0) };
+        let prim = Prim { facets, bbox, faces, of: String::new(), exact: true };
+        let csg = Csg { prims: vec![prim], term: Term::Prim(0) };
         let epsilon = csg.epsilon();
         if !epsilon.is_finite() || epsilon <= 0.0 {
             return Err("solid scale is not representable".into());
@@ -296,7 +307,8 @@ impl EvaluatedSolid {
             pts: f.pts.clone(), n: f.n, path: prim.faces[f.face].clone(), prim: 0, smooth: f.smooth,
         }).collect();
         let surviving: BTreeSet<String> = prim.faces.iter().cloned().collect();
-        let curved: BTreeSet<&str> = boundary.iter().filter(|p| p.smooth).map(|p| p.path.as_str()).collect();
+        let curved: BTreeSet<&str> =
+            boundary.iter().filter(|p| p.smooth).map(|p| p.path.as_str()).collect();
         let round = round_features(sk, operands, &curved, origin)?;
         let volume = crate::brep::props::volume(b) / (mm * mm * mm);
         Ok(Self {
@@ -348,7 +360,8 @@ impl EvaluatedSolid {
         if facets.is_empty() { return Err(format!("`{name}`: the material field has no boundary yet")); }
         let of = sk.solids[si].name.clone();
         let path = format!("{of}.surface");
-        let csg = Csg { prims: vec![Prim { facets, bbox, faces: vec!["surface".into()], of, exact: false }], term: Term::Prim(0) };
+        let prim = Prim { facets, bbox, faces: vec!["surface".into()], of, exact: false };
+        let csg = Csg { prims: vec![prim], term: Term::Prim(0) };
         let epsilon = csg.epsilon();
         if !epsilon.is_finite() || epsilon <= 0.0 {
             return Err("solid scale is not representable".into());
@@ -499,11 +512,13 @@ impl EvaluatedSolid {
             let mut at = Vec::with_capacity(2);
             for k in 0..3 {
                 let (i, j) = (k, (k + 1) % 3);
-                // a corner facing square to the eye counts as facing it, so a crossing is counted once
+                // a corner square to the eye counts as facing it, so a crossing is counted once
                 if (g[i] >= 0.0) == (g[j] >= 0.0) { continue; }
                 let t = g[i] / (g[i] - g[j]);
                 let (p, q) = (f.pts[i], f.pts[j]);
-                let lerp = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] { std::array::from_fn(|c| a[c] + t * (b[c] - a[c])) };
+                let lerp = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
+                    std::array::from_fn(|c| a[c] + t * (b[c] - a[c]))
+                };
                 at.push((on(fi, lerp(p, q)), lerp(normals[i], normals[j])));
             }
             if let [(a, na), (b, nb)] = at[..] {
@@ -574,8 +589,8 @@ impl EvaluatedSolid {
 /// curve, and a small circle is cut in 64 steps a turn at least, as the facet term cuts one.
 const BREP_ANGULAR: f64 = std::f64::consts::TAU / 64.0;
 /// The most an exact solid's mesh may sag, as a fraction of the solid's size, whatever absolute
-/// length the approximation names: a solid a micron across is meshed as finely, for its size, as one
-/// a metre across — the facet term's rule too, which never cuts a turn coarser than 64 steps.
+/// length the approximation names: a solid a micron across is meshed as finely, for its size, as
+/// one a metre across — the facet term's rule too, which never cuts a turn coarser than 64 steps.
 const BREP_RELATIVE_SAG: f64 = 5e-4;
 
 /// Whether `SOLVENT_SOLIDS=facets` asks every static solid of the facet term (for comparison and
@@ -585,9 +600,10 @@ fn facets_only() -> bool {
     *ONLY.get_or_init(|| std::env::var("SOLVENT_SOLIDS").is_ok_and(|v| v == "facets"))
 }
 
-/// The round features a static solid's operands give it: a circular prism's wall, where it survives
-/// in the boundary (`curved`, the surviving smooth paths), at its circle's centre (local to
-/// `origin`) and radius. A revolution of a circular profile is a torus, not a bore of that diameter.
+/// The round features a static solid's operands give it: a circular prism's wall, where it
+/// survives in the boundary (`curved`, the surviving smooth paths), at its circle's centre (local
+/// to `origin`) and radius. A revolution of a circular profile is a torus, not a bore of that
+/// diameter.
 fn round_features(
     sk: &Sketch, operands: BTreeSet<usize>, curved: &BTreeSet<&str>, origin: WorldPoint,
 ) -> Result<Vec<RoundFeature>, String> {

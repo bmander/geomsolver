@@ -157,7 +157,7 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                 if !overlap(&ebox,&boxes[other][fi],pad+sag) { continue }
                 let started = crate::clock::Instant::now();
                 let meets = curve_surface_within(&c,e.t,&f.surface,tol,boxes[other][fi],pad);
-                if std::env::var_os("SOLVENT_BREP_TIME").is_some() && started.elapsed().as_secs_f64() > 0.1 {
+                if started.elapsed().as_secs_f64() > 0.1 && std::env::var_os("SOLVENT_BREP_TIME").is_some() {
                     eprintln!("time: edge {i} of {} ({}, {:.3} long) against face {fi} ({}, feature {:.3e}): {:.2} s",["A","B"][s],c.kind(),
                         c.speed()*(e.t[1]-e.t[0]),f.surface.kind(),f.surface.feature(),started.elapsed().as_secs_f64());
                 }
@@ -207,7 +207,7 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     let traced = super::ssi::trace(sa,sb,&seeds,lo,hi,tol)?;
                     let took = started.elapsed().as_secs_f64();
                     t_trace += took;
-                    if std::env::var_os("SOLVENT_BREP_TIME").is_some() && took > 0.2 {
+                    if took > 0.2 && std::env::var_os("SOLVENT_BREP_TIME").is_some() {
                         eprintln!("time: A{fa} {} × B{fb} {}: traced {} curves from {} seeds in {took:.2} s",sa.kind(),sb.kind(),traced.len(),seeds.len());
                     }
                     if debug { for c in &traced {
