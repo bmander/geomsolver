@@ -416,7 +416,17 @@ surface's outward normal (signed: where a chart's metric changes fast a triangle
 scaled parameters comes out turned over in space, near the surface, and the pair check sorts
 flanks by facet normals); a sliver gets a point off its longest side, and a face's points nearer
 than 1e-9 of the solid are welded. `Mesh::turned` counts facets still facing against their surface
-(thicker than bar/100), and the export refuses any. Full verification reads our STEP back by OCCT and
+(thicker than bar/100), and the export refuses any.
+**Phase 2 (the pattern ours):** a body built as one sector has the kernel's sector read and turned
+into the whole by `brep::pattern` (the kernel's union is never made): its sides are the face pair one
+of which turned a pitch lies on the other, far vertices and edges are matched to the near ones turned
+once, faces of revolution about the axis keep the sector's surface with pcurves shifted along `u`
+(homed within half a turn of the sector's middle; a piece continuing one across the last copy reads
+a period on), pieces of one surface meeting across a side become one face, and a ring keeps its
+last junction as its seam (one edge used twice, pcurves a period apart). Sheets are cut to their
+faces (`Net::segment`, exact knot insertion). `Built::mesh` meshes the sector once, its far side
+sampled as its near side turned (`mesh::mesh_with`), and turns it into every copy sharing seam
+points by index, so the STL is as symmetric as the solid. Full verification reads our STEP back by OCCT and
 measures that reading by `props` (1e-5; OCCT's reader moves its own STEP 1.1e-6, and its volume is
 held only to 1e-4).
 Rung 2 is done ([plan](docs/rust-kernel-plan.md)): clamped spline profiles (`Curve::BSpline`,

@@ -7,7 +7,7 @@
 //! — exceeds the bar, its middle put in and the triangulation made Delaunay about it again — and
 //! where a facet turns from its surface's outward normal, since a sag says nothing of which way a
 //! facet faces. The faces are meshed side by side.
-use super::geom::{Uv,V};
+use super::geom::{Rigid,Uv,V};
 use super::topo::{Brep,EdgeCurve,Face};
 use crate::delaunay::expansion::Expansion;
 use crate::space::{add,cross,distance,dot,norm,scale,sub};
@@ -401,21 +401,59 @@ fn off(f: &Face,uv: Uv,a: V,b: V,c: V) -> f64 {
 
 /// The mesh of the whole boundary within `bar` (a length) and `angular` (radians an edge's chords
 /// may turn), and the greatest sag measured.
-pub fn mesh(b: &Brep,bar: f64,angular: f64) -> Result<Mesh,String> {
+pub fn mesh(b: &Brep,bar: f64,angular: f64) -> Result<Mesh,String> { Ok(mesh_with(b,bar,angular,&|_| true,None)?.0) }
+
+/// A sector's far side sampled as its near side turned (`brep::pattern`): the turn from one copy to
+/// the next, each far vertex's near partner, and each far edge's (and whether it runs the same way).
+pub(crate) struct Turned<'a> { pub turn: Rigid,pub vertex: &'a [Option<u32>],pub edge: &'a [Option<(u32,bool)>] }
+
+/// The mesh of the faces `kept` says, and — where `turned` gives a far side — for each point, the
+/// near side's point it stands for (the next copy's), every far edge's samples being its near
+/// partner's turned, so neighbouring copies of a sector's mesh share their seam points by index.
+pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> bool + Sync),turned: Option<&Turned>)
+    -> Result<(Mesh,Vec<Option<u32>>),String> {
     let mut m = Mesh::default();
-    let vid: Vec<u32> = b.vertices.iter().map(|v| { m.pts.push(v.p); (m.pts.len()-1) as u32 }).collect();
-    // every edge's samples, once: parameters and point ids
-    let samples: Vec<(Vec<f64>,Vec<u32>)> = (0..b.edges.len()).map(|e| {
+    let mut alias: Vec<Option<u32>> = Vec::new();
+    let vid: Vec<u32> = b.vertices.iter().map(|v| { m.pts.push(v.p); alias.push(None); (m.pts.len()-1) as u32 }).collect();
+    let far_vertex = |v: usize| turned.and_then(|t| t.vertex[v]);
+    for v in 0..b.vertices.len() { if let Some(w) = far_vertex(v) { alias[vid[v] as usize] = Some(vid[w as usize]); } }
+    let far_edge = |e: usize| turned.and_then(|t| t.edge[e]);
+    // every edge's samples, once: parameters and point ids (a far edge's after the rest)
+    let mut samples: Vec<(Vec<f64>,Vec<u32>)> = vec![(Vec::new(),Vec::new());b.edges.len()];
+    for e in (0..b.edges.len()).filter(|&e| far_edge(e).is_none()) {
         let ts = edge_params(b,e,bar,angular);
         let edge = &b.edges[e];
         let ids = ts.iter().enumerate().map(|(k,&t)| {
             if k == 0 { vid[edge.v[0] as usize] }
             else if k == ts.len()-1 { vid[edge.v[1] as usize] }
             else if matches!(edge.curve,EdgeCurve::Degenerate) { vid[edge.v[0] as usize] }
-            else { m.pts.push(edge.point(t,&b.vertices)); (m.pts.len()-1) as u32 }
+            else { m.pts.push(edge.point(t,&b.vertices)); alias.push(None); (m.pts.len()-1) as u32 }
         }).collect();
-        (ts,ids)
-    }).collect();
+        samples[e] = (ts,ids);
+    }
+    if let Some(tn) = turned {
+        for e in 0..b.edges.len() {
+            let Some((near,same)) = far_edge(e) else { continue };
+            let edge = &b.edges[e];
+            let EdgeCurve::Curve(curve) = &edge.curve else { return Err("a far side's degenerate edge".into()) };
+            let (_,nids) = samples[near as usize].clone();
+            let mut order: Vec<u32> = nids;
+            if !same { order.reverse(); }
+            let last = order.len()-1;
+            let (mut ts,mut ids) = (Vec::with_capacity(order.len()),Vec::with_capacity(order.len()));
+            for (k,&nid) in order.iter().enumerate() {
+                let p = tn.turn.point(m.pts[nid as usize]);
+                if k == 0 { ts.push(edge.t[0]); ids.push(vid[edge.v[0] as usize]); continue }
+                if k == last { ts.push(edge.t[1]); ids.push(vid[edge.v[1] as usize]); continue }
+                ts.push(curve.inverse(p).clamp(edge.t[0],edge.t[1]));
+                m.pts.push(p);
+                alias.push(Some(nid));
+                ids.push((m.pts.len()-1) as u32);
+            }
+            if ts.windows(2).any(|w| !(w[1] > w[0])) { return Err("a far side's edge, sampled as its near partner turned, does not run along it".into()) }
+            samples[e] = (ts,ids);
+        }
+    }
     // the least a parameter's scale is taken to be, where a surface's derivative vanishes
     let least = 1e-9*(1.+b.size());
     // points of a face nearer than this are one
@@ -424,6 +462,7 @@ pub fn mesh(b: &Brep,bar: f64,angular: f64) -> Result<Mesh,String> {
     // place among them), its sag
     const NEW: u32 = 1<<31;
     let faces = crate::par::indices(b.faces.len(),|fi| -> Result<(Vec<V>,Vec<[u32;3]>,f64,usize),String> {
+        if !kept(fi) { return Ok((Vec::new(),Vec::new(),0.,0)) }
         let f = &b.faces[fi];
         // the loops' corners: their places in the face's scaled, oriented parameters and their ids
         let mut pts: Vec<[f64;2]> = Vec::new();
@@ -586,6 +625,7 @@ pub fn mesh(b: &Brep,bar: f64,angular: f64) -> Result<Mesh,String> {
     for face in faces {
         let (pts,tris,sag,turned) = face?;
         let base = m.pts.len() as u32;
+        alias.extend(pts.iter().map(|_| None));
         m.pts.extend(pts);
         m.sag = m.sag.max(sag);
         m.turned += turned;
@@ -596,5 +636,5 @@ pub fn mesh(b: &Brep,bar: f64,angular: f64) -> Result<Mesh,String> {
             m.tris.push(tri);
         }
     }
-    Ok(m)
+    Ok((m,alias))
 }

@@ -186,6 +186,39 @@ pub fn distinct(knots: &[f64]) -> Vec<(f64,usize)> {
     out
 }
 
+/// Knot `t` put into a B-spline of degree `p` once (Boehm): the same curve, one more pole. Each pole
+/// is a row of points (a net's column along the other parameter), combined alike.
+fn insert(knots: &mut Vec<f64>,poles: &mut Vec<Vec<V>>,p: usize,t: f64) {
+    let n = poles.len();
+    // the last span starting at or before t
+    let k = knots[..n].iter().rposition(|&x| x <= t).unwrap_or(p).max(p);
+    let mut out: Vec<Vec<V>> = Vec::with_capacity(n+1);
+    for i in 0..=n {
+        if i+p <= k { out.push(poles[i].clone()) }
+        else if i > k { out.push(poles[i-1].clone()) }
+        else {
+            let a = (t-knots[i])/(knots[i+p]-knots[i]);
+            out.push(poles[i-1].iter().zip(&poles[i]).map(|(x,y)| std::array::from_fn(|c| (1.-a)*x[c]+a*y[c])).collect());
+        }
+    }
+    knots.insert(k+1,t);
+    *poles = out;
+}
+
+/// The stretch `[a, b]` of a B-spline of degree `p` along its first index, exactly: each end put in
+/// until the curve passes through a pole there, and the poles and knots between kept, clamped.
+fn segment(knots: &[f64],poles: &[Vec<V>],p: usize,a: f64,b: f64) -> (Vec<f64>,Vec<Vec<V>>) {
+    let (mut k,mut q) = (knots.to_vec(),poles.to_vec());
+    for t in [a,b] {
+        while k.iter().filter(|&&x| x == t).count() < p { insert(&mut k,&mut q,p,t); }
+    }
+    // the first pole: the last copy of `a` less the degree
+    let first = k.iter().rposition(|&x| x == a).unwrap()-p;
+    let knots: Vec<f64> = std::iter::repeat_n(a,p+1).chain(k.iter().copied().filter(|&x| x > a && x < b)).chain(std::iter::repeat_n(b,p+1)).collect();
+    let count = knots.len()-p-1;
+    (knots,q[first..first+count].to_vec())
+}
+
 /// A tensor-product B-spline surface: `poles[i][j]` the pole at `u` index `i` and `v` index `j`.
 #[derive(Clone,Debug,PartialEq)]
 pub struct Net { pub du: usize,pub dv: usize,pub uknots: Vec<f64>,pub vknots: Vec<f64>,pub poles: Vec<Vec<V>> }
@@ -214,6 +247,18 @@ impl Net {
         (out[0],out[1],out[2])
     }
     pub fn point(&self,u: f64,v: f64) -> V { self.d1(u,v).0 }
+    /// The surface over `[u0, u1] × [v0, v1]` (within its domain) alone, exactly: the same points at
+    /// the same parameters, only the net that reaches there.
+    pub fn segment(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Net {
+        let [[a0,a1],[b0,b1]] = self.domain();
+        let (u0,u1,v0,v1) = (u0.max(a0),u1.min(a1),v0.max(b0),v1.min(b1));
+        let (uknots,rows) = segment(&self.uknots,&self.poles,self.du,u0,u1);
+        // along v: each row's points as poles of their own
+        let cols: Vec<Vec<V>> = (0..rows[0].len()).map(|j| rows.iter().map(|r| r[j]).collect()).collect();
+        let (vknots,cols) = segment(&self.vknots,&cols,self.dv,v0,v1);
+        let poles = (0..cols[0].len()).map(|i| cols.iter().map(|c| c[i]).collect()).collect();
+        Net {du:self.du,dv:self.dv,uknots,vknots,poles}
+    }
     /// The distinct knots strictly inside `[a, b]` of parameter `k` (0 for u, 1 for v).
     pub fn breaks(&self,k: usize,[a,b]: [f64;2]) -> Vec<f64> {
         let (lo,hi) = (a.min(b),a.max(b));

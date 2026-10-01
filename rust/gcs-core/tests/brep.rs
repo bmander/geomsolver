@@ -616,3 +616,54 @@ fn a_box_read_from_json_is_its_closed_form() {
     // and wherever it stands
     near(volume(&brep.moved(&Rigid {t:[-3000.,700.,40.],..Rigid::identity()})));
 }
+
+/// A net cut to a box is the same surface there: the same point at the same parameters, for a box
+/// that cuts across spans and one that starts at the domain's own start.
+#[test]
+fn a_net_segmented_is_the_same_surface() {
+    use gcs_core::brep::nurbs::Net;
+    let (uknots,vknots) = (vec![0.,0.,0.,0.,0.3,0.45,1.,1.,1.,1.],vec![-1.,-1.,-1.,0.2,0.5,2.,2.,2.]);
+    let poles: Vec<Vec<V>> = (0..6).map(|i| (0..5).map(|j| {
+        let (x,y) = (i as f64,j as f64);
+        [x+0.3*(x*y).sin(),y-0.2*x*x,0.1*x*y+(x+2.*y).cos()]
+    }).collect()).collect();
+    let net = Net {du:3,dv:2,uknots,vknots,poles};
+    for (bu,bv) in [([0.1,0.7],[-0.5,1.2]),([0.,0.4],[0.5,2.]),([0.3,0.45],[-1.,0.2])] {
+        let cut = net.segment(bu,bv);
+        assert_eq!(cut.domain(),[bu,bv]);
+        for i in 0..=6 { for j in 0..=6 {
+            let (u,v) = (bu[0]+(bu[1]-bu[0])*i as f64/6.,bv[0]+(bv[1]-bv[0])*j as f64/6.);
+            let (a,b) = (net.d1(u,v),cut.d1(u,v));
+            for (p,q) in [(a.0,b.0),(a.1,b.1),(a.2,b.2)] {
+                assert!((0..3).all(|c| (p[c]-q[c]).abs() <= 1e-11),"{bu:?} {bv:?} at ({u}, {v}): {p:?} against {q:?}");
+            }
+        } }
+        assert!(cut.poles.len() <= net.poles.len()+3 && cut.poles[0].len() <= net.poles[0].len()+2);
+    }
+}
+
+/// A sector turned into its copies by identity (`brep::pattern`, phase 2): a torus and a triangle's
+/// revolution (three cones) revolved through a pitch and patterned are the whole revolutions — one
+/// ring a face of the sector's, each closed on a seam, the volume Pappus's, the mesh made of the
+/// sector's turned closed.
+#[test]
+fn a_sector_patterned_is_its_whole_revolution() {
+    use gcs_core::brep::pattern::pattern;
+    let torus = vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]];
+    let triangle = poly(&[[2.,0.,0.],[4.,0.,1.],[2.5,0.,3.]]);
+    let pappus = 2.75*TAU*8.5/3.;
+    for (loops,whole,rings) in [(torus,TAU*PI*3.,1),(vec![triangle],pappus,3)] {
+        for n in [3,6,7] {
+            let sector = revolve(&Profile {origin:[0.;3],normal:XZ,loops:loops.clone()},[0.;3],[0.,0.,1.],TAU/n as f64).unwrap();
+            let built = pattern(&sector,[0.;3],[0.,0.,1.],n,1e-9).unwrap_or_else(|e| panic!("{n} copies: {e}"));
+            let b = &built.solid;
+            b.check(1e-9).unwrap_or_else(|e| panic!("{n} copies: {e}"));
+            assert_eq!(b.faces.len(),rings,"{n} copies: a face a ring");
+            close(volume(b),whole);
+            close(volume(b),n as f64*volume(&sector));
+            let m = built.mesh(0.01,0.2).unwrap();
+            assert!(m.sag <= 0.01 && m.turned == 0,"{n} copies: sag {} with {} turned",m.sag,m.turned);
+            gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&m.triangles(),"ring")).unwrap_or_else(|e| panic!("{n} copies: {e}"));
+        }
+    }
+}
