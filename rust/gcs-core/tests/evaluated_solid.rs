@@ -355,8 +355,11 @@ fn indexed_containment_matches_exhaustive_rays_for_revolved_and_cut_solids() {
                 let raw = gcs_core::solid::resolve(&sk, si, unit);
                 let indexed = sk.evaluated_solid(si, Policy::View { unit }).unwrap();
                 let bounds = raw.bbox();
+                // the index against every ray of the same solid's term (the exact B-rep's mesh where
+                // one is built, else the facet term `raw` is); probed about the facet term's walls,
+                // which lie within a facet's sag of either
                 let check = |p| assert_eq!(
-                    indexed.contains_world(WorldPoint(p)), raw.inside(p),
+                    indexed.contains_world(WorldPoint(p)), indexed.contains_exhaustive(WorldPoint(p)),
                     "solid {} at {p:?}, unit {unit}", sk.solids[si].name,
                 );
                 // Exercise both interior and exterior rays, including cutters and cavities.

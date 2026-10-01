@@ -1,4 +1,6 @@
 //! Contact curves of a revolved surface under an instantaneous rigid motion.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 use crate::envelope::{self,Contact};
 use std::f64::consts::TAU;
@@ -59,7 +61,7 @@ impl RevolvedSurface {
         let q = sub(s.position,self.origin);
         let axial = plane::dot(q,self.axis);
         let radial = sub(q,scale(self.axis,axial));
-        let radius = radial[0].hypot(radial[1]).hypot(radial[2]);
+        let radius = radial[0].dhypot(radial[1]).dhypot(radial[2]);
         if radius == 0. || !radius.is_finite() { return Err(Error::Degenerate); }
         let e = scale(radial,1./radius);
         let f = plane::cross(self.axis,e);
@@ -85,13 +87,13 @@ impl RevolvedSurface {
 /// Isolated roots on a normalized angular span.
 fn sinusoid_roots(a: f64,b: f64,c: f64,sweep: f64,domain: [f64;2],tolerance: f64)
     -> Result<Vec<(usize,f64)>,Error> {
-    let amplitude = a.hypot(b);
+    let amplitude = a.dhypot(b);
     if ![a,b,c,amplitude].iter().all(|v| v.is_finite()) { return Err(Error::NonFinite); }
     if c.abs() > amplitude+tolerance { return Ok(Vec::new()); }
     if amplitude <= tolerance || (c.abs()-amplitude).abs() <= tolerance {
         return Err(Error::Degenerate);
     }
-    let phase = b.atan2(a); let spread = (-c/amplitude).acos();
+    let phase = b.datan2(a); let spread = (-c/amplitude).dacos();
     let mut roots = Vec::new();
     for (branch,theta) in [phase-spread,phase+spread].into_iter().enumerate() {
         let v = (theta*sweep.signum()).rem_euclid(TAU)/sweep.abs();

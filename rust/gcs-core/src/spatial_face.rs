@@ -1,5 +1,7 @@
 //! Ordered finite boundaries on an exact named analytic support. This binds
 //! topology to geometry; it does not yet certify a disk interior or closed solid.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::{edge::{EdgeTolerance,SpatialEdge},envelope::Error,
     model::{EntKind,EntRef,FaceE,Sketch},patch::EnvelopePatch,
     solid::{RevolvedSurface,SurfaceProjector},topology::{Direction,EdgeUse}};
@@ -148,7 +150,7 @@ impl SpatialFaceBoundary {
             }
         };
         let d: [f64;3] = std::array::from_fn(|i| position[i]-p.position[i]);
-        let incidence_error = d[0].hypot(d[1]).hypot(d[2]);
+        let incidence_error = d[0].dhypot(d[1]).dhypot(d[2]);
         if !incidence_error.is_finite() { return Err(Error::NonFinite); }
         if incidence_error > t.incidence { return Err(Error::OutsideDomain); }
         Ok(BoundaryPoint {position:p.position,parameters,incidence_error})

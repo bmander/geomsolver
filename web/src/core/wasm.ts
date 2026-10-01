@@ -201,6 +201,7 @@ export interface Abi {
   gcs_solid_objects_json(h: number): number;
   gcs_solid_stl(h: number, idx: number, unit: number): number;
   gcs_solid_stl_preview(h: number, idx: number, unit: number): number;
+  gcs_solid_exact(h: number, idx: number, kind: number, tolerance: number): number;
   gcs_callout_pick(h: number, unit: number, x: number, y: number, tolPx: number): number;
   gcs_callout_grab(h: number, id: number, unit: number, x: number, y: number,
                    out: number): number;

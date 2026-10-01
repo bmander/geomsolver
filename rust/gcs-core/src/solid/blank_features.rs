@@ -14,7 +14,8 @@
 //! one a host with the blank's kernel topology can afford to trust.
 use super::MaterialField;
 use crate::space::{add,norm,distance as dist};
-use std::{cell::Cell,collections::BTreeMap,time::Instant};
+use std::{cell::Cell,collections::BTreeMap};
+use crate::clock::Instant;
 
 type P = [f64;3];
 

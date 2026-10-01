@@ -38,8 +38,9 @@ impl Body {
     }
 }
 
-/// Which kernel builds a static solid for STEP and STL: OCCT where the build has it, the core's
-/// own (`gcs_core::brep`) where asked (`--kernel rust`, `SOLVENT_KERNEL=rust`) or where it does not.
+/// Which kernel builds a solid for STEP and STL: the core's own (`gcs_core::brep`, phase 5 of
+/// docs/rust-kernel-plan.md), unless OCCT is asked for by name (`--kernel occt`, `--stl-backend
+/// occt`, `SOLVENT_KERNEL=occt`), which a build with the `occt` feature keeps as the oracle.
 static RUST_KERNEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Whether OCCT was asked for by name (`--kernel occt`, `--stl-backend occt`): a build without it
@@ -54,9 +55,8 @@ pub fn ask_occt() { OCCT_ASKED.store(true,std::sync::atomic::Ordering::Relaxed);
 
 /// Whether the core's own kernel builds this export.
 pub fn rust_kernel() -> bool {
-    (!cfg!(feature="occt") && !OCCT_ASKED.load(std::sync::atomic::Ordering::Relaxed))
-        || RUST_KERNEL.load(std::sync::atomic::Ordering::Relaxed)
-        || std::env::var("SOLVENT_KERNEL").is_ok_and(|v| v == "rust")
+    RUST_KERNEL.load(std::sync::atomic::Ordering::Relaxed)
+        || !(OCCT_ASKED.load(std::sync::atomic::Ordering::Relaxed) || std::env::var("SOLVENT_KERNEL").is_ok_and(|v| v == "occt"))
 }
 
 /// Verify every STEP file written in full: the kernel's read-back as well as the light check
@@ -128,27 +128,34 @@ fn ours_step(session: &native::Session,b: &gcs_core::brep::topo::Brep,name: &str
     let wrote = started.elapsed();
     let mut said = format!("{} entities; {} faces ({} on B-splines), {} edges and {} vertices, each the solid's",verified.entities,
         verified.faces,verified.splines,verified.edges,verified.vertices);
-    if native::step_check::verification() == native::step_check::Verification::Full {
-        let read = session.read_step(file)?;
-        session.validate(read).map_err(|e| format!("the STEP file, read back by the kernel, is not a valid solid: {e}"))?;
-        let (faces,theirs) = (session.faces(read)?.len(),b.faces.len());
-        if faces != theirs { return Err(format!("the STEP file, read back by the kernel, has {faces} faces against {theirs}")) }
-        let ours = gcs_core::brep::props::volume(b);
-        let text = session.brep_json(read)?;
-        if let Ok(path) = std::env::var("SOLVENT_BREP_DUMP") { std::fs::write(format!("{path}.read"),&text).map_err(|e| e.to_string())?; }
-        let reading = gcs_core::brep::json::read(&text)?;
-        let read_ours = gcs_core::brep::props::volume(&reading);
-        if (read_ours-ours).abs() > 1e-5*ours.abs() {
-            return Err(format!("the STEP file, read back by the kernel, measures {read_ours:.6} mm³ against {ours:.6} mm³"))
-        }
-        let (after,before) = (session.volume(read)?,ours);
-        if (after-before).abs() > 1e-4*before.abs() {
-            return Err(format!("the STEP file, read back by the kernel, measures {after:.6} mm³ by the kernel against {before:.6} mm³"))
-        }
-        said += &format!(", and read back by the kernel as a valid solid of {faces} faces, measuring {read_ours:.6} mm³ ({:.1e} of \
-            the solid's; {:.1e} by the kernel's own measure)",(read_ours-ours).abs()/ours.abs(),(after-before).abs()/before.abs());
-    }
+    if native::step_check::verification() == native::step_check::Verification::Full { said += &read_back(session,b,file)?; }
     Ok(format!("{said} (written {wrote:?}, verified {:?})",started.elapsed()-wrote))
+}
+
+/// A STEP file of the core's solid `b` read back by the kernel (full verification): a valid solid
+/// with as many faces, that reading handed back to the core and its volume measured there the same
+/// as `b`'s to 1e-5, and by the kernel's own measure to 1e-4 (`ours_step` says why). What was read,
+/// said as the clause that follows the file's own check.
+#[cfg(feature="occt")]
+pub(crate) fn read_back(session: &native::Session,b: &gcs_core::brep::topo::Brep,file: &str) -> Result<String,String> {
+    let read = session.read_step(file)?;
+    session.validate(read).map_err(|e| format!("the STEP file, read back by the kernel, is not a valid solid: {e}"))?;
+    let (faces,theirs) = (session.faces(read)?.len(),b.faces.len());
+    if faces != theirs { return Err(format!("the STEP file, read back by the kernel, has {faces} faces against {theirs}")) }
+    let ours = gcs_core::brep::props::volume(b);
+    let text = session.brep_json(read)?;
+    if let Ok(path) = std::env::var("SOLVENT_BREP_DUMP") { std::fs::write(format!("{path}.read"),&text).map_err(|e| e.to_string())?; }
+    let reading = gcs_core::brep::json::read(&text)?;
+    let read_ours = gcs_core::brep::props::volume(&reading);
+    if (read_ours-ours).abs() > 1e-5*ours.abs() {
+        return Err(format!("the STEP file, read back by the kernel, measures {read_ours:.6} mm³ against {ours:.6} mm³"))
+    }
+    let (after,before) = (session.volume(read)?,ours);
+    if (after-before).abs() > 1e-4*before.abs() {
+        return Err(format!("the STEP file, read back by the kernel, measures {after:.6} mm³ by the kernel against {before:.6} mm³"))
+    }
+    Ok(format!(", and read back by the kernel as a valid solid of {faces} faces, measuring {read_ours:.6} mm³ ({:.1e} of \
+        the solid's; {:.1e} by the kernel's own measure)",(read_ours-ours).abs()/ours.abs(),(after-before).abs()/before.abs()))
 }
 
 /// Build `body` natively once (admitting it first where it cuts sweeps and has not been, the
@@ -198,14 +205,18 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                 let dump = |shape,path: String| session.brep_json(shape).and_then(|t| std::fs::write(&path,t).map_err(|e| e.to_string()));
                 // (a sector's union still to be made has no solid yet: its sector is dumped alone)
                 if built.unchecked.is_none() { dump(solid,path.clone()).at(Stage::Step)?; }
-                if let Some(s) = &built.sector { dump(s.piece,format!("{path}.sector")).at(Stage::Step)?; }
+                if let Some(s) = built.sector.filter(|s| s.piece >= 0) { dump(s.piece,format!("{path}.sector")).at(Stage::Step)?; }
             }
             let converted = if ours {
                 let started = std::time::Instant::now();
                 let read = |shape| session.brep_json(shape).and_then(|t| gcs_core::brep::json::read(&t));
                 let (b,pattern) = match &built.sector {
                     Some(s) => {
-                        let sector = read(s.piece).at(Stage::Step)?;
+                        // the core's split made it, or the kernel's to be read
+                        let sector = match built.unchecked.as_ref().and_then(|u| u.core.clone()) {
+                            Some(b) => b,
+                            None => read(s.piece).at(Stage::Step)?,
+                        };
                         sector.check(1e-7).map_err(|e| format!("the kernel's sector, read into the core's B-rep, is invalid: {e}"))
                             .at(Stage::Step)?;
                         let p = gcs_core::brep::pattern::pattern(&sector,s.origin,s.axis,s.count,PATTERN_MATCH).at(Stage::Fuse)?;
@@ -228,7 +239,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             let sector = built.sector.filter(|_| std::env::var("SOLVENT_SECTOR_STL").map_or(true,|v| v != "off"));
             // A sector whose union is still to be made is meshed as a copy of it, beside the union's making.
             let sector = match (&built.unchecked,sector) {
-                (Some(_),Some(s)) => Some(native::kernel::Patterned {piece:session.copy(s.piece).at(Stage::Mesh)?,..s}),
+                (Some(_),Some(s)) if converted.is_none() => Some(native::kernel::Patterned {piece:session.copy(s.piece).at(Stage::Mesh)?,..s}),
                 (_,sector) => sector,
             };
             // The mesh's absolute chordal deflection (mm) and its angular one: the angle bounds how far a

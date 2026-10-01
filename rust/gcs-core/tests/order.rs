@@ -204,9 +204,18 @@ fn places(sk: &Sketch) -> Vec<(f64, f64)> {
 /// Compared as numbers and never as text: renumbering the points changes the column order the
 /// factorisation pivots on, so a coordinate that lands on 0 in one may land on -3e-15 in the
 /// other.  That is the same place; only a formatter would ever say otherwise, and one did.
+/// Matched as sets and not zipped in sorted order for the same reason: `15.000000000000002`
+/// sorts after `(15, 30)` where `15` sorts before it, and zipped, a point a rounding apart reads
+/// as two points swapped.
 fn same_places(a: &[(f64, f64)], b: &[(f64, f64)], tol: f64) -> bool {
-    a.len() == b.len()
-        && a.iter().zip(b).all(|(p, q)| (p.0 - q.0).abs() <= tol && (p.1 - q.1).abs() <= tol)
+    a.len() == b.len() && farthest(a, b) <= tol && farthest(b, a) <= tol
+}
+
+/// How far the place of `a` farthest from every place of `b` is from the nearest of them.
+fn farthest(a: &[(f64, f64)], b: &[(f64, f64)]) -> f64 {
+    a.iter()
+        .map(|p| b.iter().map(|q| (p.0 - q.0).abs().max((p.1 - q.1).abs())).fold(f64::INFINITY, f64::min))
+        .fold(0., f64::max)
 }
 
 /// How many of a document's recorded root choices the plan built from it can actually use.  A
@@ -484,7 +493,9 @@ fn renumbering_the_points_keeps_the_drawing_and_its_root_choices() {
             assert_eq!(branches_that_apply(&sk2), applied, "{at}: the root choices still apply");
             let mut ps = PlanSolver::new(&sk2, true);
             ps.solve(&mut sk2, 1e-9, true, Method::DogLeg);
-            assert!(same_places(&places(&sk2), &want, 1e-6), "{at}: the drawing moved");
+            let got = places(&sk2);
+            let moved = farthest(&got, &want).max(farthest(&want, &got));
+            assert!(same_places(&got, &want, 1e-6), "{at}: the drawing moved {moved:e}");
         }
     }
 }
@@ -772,3 +783,4 @@ fn a_branch_travels_by_name() {
     }
     assert!(checked > 0, "no case recorded a branch");
 }
+

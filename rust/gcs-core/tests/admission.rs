@@ -206,7 +206,11 @@ holder bound part
         assert_eq!(s.placements.iter().filter(|p| p.equivalent_to.is_none()).count(),1);
     }
     assert_eq!((a.samples,a.contacts,a.near_double_roots,a.near_tangent_pairs),(b.samples,b.contacts,b.near_double_roots,b.near_tangent_pairs));
-    assert_eq!((a.spacing,a.least_area_factor),(b.spacing,b.least_area_factor));
+    // The same sweeps read through two blanks: alike to rounding, not to the bit (the two walks
+    // reach each sample by different arithmetic).
+    let near = |x: f64,y: f64| (x-y).abs() <= 1e-12*x.abs().max(y.abs());
+    assert!(near(a.spacing,b.spacing) && near(a.least_area_factor,b.least_area_factor),"{} {} / {} {}",a.spacing,b.spacing,
+        a.least_area_factor,b.least_area_factor);
 }
 
 /// The configured hypoid pinion, its backlash, tip relief and end relief in: the crown's sweep and

@@ -8,6 +8,8 @@
 //! This compile-once / evaluate-many seam is the architectural boundary the program's Stage 1
 //! calls for: the object model stays out of the hot loop.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::constraints::Constraint;
 use crate::kernels::{self, Kernel};
 use crate::linalg::{rank_and_nullspace_with, rrqr_with, Mat, RankNull, Tol};
@@ -439,7 +441,7 @@ impl System {
             .collect();
         let scaled = col_scale.iter().any(|&s| s != 1.0);
         let extent = sk.extent();
-        let scale = extent.max(1.0).powi(2);
+        let scale = extent.max(1.0).dpowi(2);
 
         // group by kernel id, then sketch order — deterministic.  A claim is no equation and no
         // system carries one, which is the whole of what keeps a claim from moving the geometry:
@@ -519,8 +521,8 @@ impl System {
         let mut jac_scale = vec![1.0; n_res];
         for b in &blocks {
             let kn = table[b.kid];
-            let sc = extent.max(1.0).powi(kn.degree as i32);
-            let jsc = extent.max(1.0).powi(kn.degree as i32 - 1);
+            let sc = extent.max(1.0).dpowi(kn.degree as i32);
+            let jsc = extent.max(1.0).dpowi(kn.degree as i32 - 1);
             for r in b.row0..b.row0 + b.count * kn.n_res {
                 row_scale[r] = sc;
                 jac_scale[r] = jsc;
@@ -879,7 +881,7 @@ impl System {
             let v = c.local_values(sk);
             let j = c.jacobian(sk, &v);
             let kn = crate::kernels::kernel(c.kind.kernel());
-            let inv = 1.0 / self.extent.max(1.0).powi(kn.degree as i32 - 1);
+            let inv = 1.0 / self.extent.max(1.0).dpowi(kn.degree as i32 - 1);
             for t in 0..kn.n_res {
                 for (k, &p) in ps.iter().enumerate() {
                     let col = self.col_of[p as usize];

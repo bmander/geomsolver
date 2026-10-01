@@ -16,6 +16,8 @@
 //!   merge.  Fixed points and the x-axis form the ground elements;
 //! * everything else is listed as `unsupported` and left to the numeric residual step.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::constraints::CKind;
 use crate::graph::UnionFind;
 use crate::model::{EntKind, EntRef, Sketch};
@@ -348,7 +350,7 @@ pub fn known_radii(sk: &Sketch) -> BTreeMap<u32, f64> {
 pub fn normal_of(ax: f64, ay: f64, bx: f64, by: f64) -> [f64; 3] {
     let (dx, dy) = (bx - ax, by - ay);
     let l = {
-        let h = dx.hypot(dy);
+        let h = dx.dhypot(dy);
         if h == 0.0 {
             1.0
         } else {
@@ -369,7 +371,7 @@ pub fn line_normal(sk: &Sketch, ln: usize) -> [f64; 3] {
 /// Angle from normal n1 to normal n2 on the branch of `target` (mod pi) nearest the current
 /// geometry.
 pub fn branch(n1: &[f64], n2: &[f64], target: f64) -> f64 {
-    let cur = (n1[0] * n2[1] - n1[1] * n2[0]).atan2(n1[0] * n2[0] + n1[1] * n2[1]);
+    let cur = (n1[0] * n2[1] - n1[1] * n2[0]).datan2(n1[0] * n2[0] + n1[1] * n2[1]);
     let k = ((cur - target) / std::f64::consts::PI).round();
     target + k * std::f64::consts::PI
 }

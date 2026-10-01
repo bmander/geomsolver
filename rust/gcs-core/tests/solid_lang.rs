@@ -80,6 +80,12 @@ fn solid_operands_follow_surface_children_before_surfaces_are_built() {
     }
 }
 
+/// A reported volume is the exact solid's, a sum of its faces' fluxes: the number a box's
+/// arithmetic gives, to rounding.
+fn assert_volume(got: f64, want: f64) {
+    assert!((got - want).abs() <= 1e-12 * want.abs(), "{got} != {want}");
+}
+
 fn volume(e: &gcs_core::program::Elaborated, name: &str) -> f64 {
     let key = format!("{name}.volume");
     gcs_core::report::positions(&e.sketch, &e.map)
@@ -582,7 +588,7 @@ fn named_chains_sweep_the_same_geometry_and_keep_edge_names() {
     let old = read(&format!("{RECT}solid block(sec, depth: 8mm)\n"));
     let src = format!("{}solid block(profile, depth: 8mm)\n", named_rect());
     let new = read(&src);
-    assert_eq!(volume(&new, "block"), 19200.0);
+    assert_volume(volume(&new, "block"), 19200.0);
     assert_eq!(new.sketch.params.len(), old.sketch.params.len());
     assert_eq!(new.sketch.constraints.len(), old.sketch.constraints.len());
     assert_eq!(new.sketch.lines.len(), old.sketch.lines.len());
@@ -654,7 +660,7 @@ fn named_chains_are_component_members_and_resolve_forward_and_through_formals() 
     assert_eq!(e.sketch.faces.len(), 3);
     assert_eq!(e.sketch.solids.len(), 5);
     assert_eq!(volume(&e, "first"), 400.0);
-    assert_eq!(volume(&e, "x.body"), 600.0);
+    assert_volume(volume(&e, "x.body"), 600.0);
     assert_eq!(volume(&e, "selected"), 800.0);
     assert!(e.map.ent_named("s.ab").is_some());
 }
@@ -669,9 +675,9 @@ fn named_open_chains_can_be_closed_explicitly_but_cannot_be_swept_directly() {
     refused(&format!("{src}face bad(profile)\n"), Code::E080, "share no point");
     let e = read(&format!("{src}solid block(face(profile, -> close), depth: 8mm)\n"));
     assert_eq!(e.sketch.lines.len(), 4);
-    assert_eq!(volume(&e, "block"), 19200.0);
+    assert_volume(volume(&e, "block"), 19200.0);
     let e = read(&format!("{src}face sec(profile, a)\nsolid block(sec, depth: 8mm)\n"));
-    assert_eq!(volume(&e, "block"), 19200.0);
+    assert_volume(volume(&e, "block"), 19200.0);
 }
 
 #[test]
@@ -750,7 +756,7 @@ fn a_refused_named_loop_does_not_misnumber_later_sections() {
     assert!(!e.ok());
     assert_eq!(e.sketch.faces.len(), 1);
     assert_eq!(e.sketch.solids.len(), 1);
-    assert_eq!(volume(&e, "block"), 19200.0);
+    assert_volume(volume(&e, "block"), 19200.0);
 }
 
 #[test]
@@ -761,7 +767,7 @@ fn through_extent_spans_additions_but_only_cut_subtracts() {
         solid body(stock)\nboss on body\n\
         solid bore(hole_f, through: body)\n");
     let uncut = read(&src);
-    assert_eq!(volume(&uncut, "body"), 36000.0);
+    assert_volume(volume(&uncut, "body"), 36000.0);
     let cut = read(&format!("{src}bore cut body\n"));
     let explicit = read(&format!("{}bore cut body\n", src.replace("through: body", "from: -11mm, to: 6mm")));
     assert!((volume(&cut, "body") - volume(&explicit, "body")).abs() < 1e-6);

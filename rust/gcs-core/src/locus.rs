@@ -45,6 +45,8 @@
 //! `u` by a road, and the two agree because every step of that road was checked against the
 //! curve's own tangent.  A change that lets them disagree is a change to `continues`.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::kernels::KERNELS;
 use crate::tape::{self, Tape};
 
@@ -512,7 +514,7 @@ fn assemble(v: &View, s: &mut Scratch, fill: Fill) -> f64 {
             return f64::NAN;
         }
         (kn.res)(1, &s.v, consts, &mut s.r[row0..row0 + kn.n_res]);
-        let unit = mag.powi(kn.degree as i32);
+        let unit = mag.dpowi(kn.degree as i32);
         for t in 0..kn.n_res {
             worst = worst.max(s.r[row0 + t].abs() / unit);
         }
@@ -706,9 +708,9 @@ fn continues(v: &View, s: &Scratch, prev: &Seen) -> bool {
         dx += prev.val.dx[d] * step;
         dy += prev.val.dy[d] * step;
     }
-    let corrected = (x - prev.val.x - dx).hypot(y - prev.val.y - dy);
+    let corrected = (x - prev.val.x - dx).dhypot(y - prev.val.y - dy);
     let scale = 1.0 + prev.val.x.abs().max(prev.val.y.abs());
-    corrected <= PREDICTED * dx.hypot(dy) + TOL_OK * scale
+    corrected <= PREDICTED * dx.dhypot(dy) + TOL_OK * scale
 }
 
 /// The solve everything else is carried from: the **pose** a drawn instance stands at when

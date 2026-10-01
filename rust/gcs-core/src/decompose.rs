@@ -19,6 +19,8 @@
 //!   * unfixed roots placed by least-change (Procrustes onto current positions);
 //!   * write back; verify with the compiled System; numeric fallback if needed.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::cgraph::{
     build, line_normal, normal_of, remainder, ConstraintGraph, Edge, EdgeKind, El, ElKind, X_AXIS,
 };
@@ -315,12 +317,12 @@ pub fn apply_t(t: &[f64; 4], e: El, pose: &[f64]) -> Pose {
 }
 
 pub fn make_t(theta: f64, tx: f64, ty: f64) -> [f64; 4] {
-    [theta.cos(), theta.sin(), tx, ty]
+    [theta.dcos(), theta.dsin(), tx, ty]
 }
 
 /// Pose of `e` under (theta, t) and its Jacobian with respect to (theta, tx, ty).
 fn pose_jac(e: El, pose: &[f64], th: f64, tx: f64, ty: f64) -> Vec<[f64; 3]> {
-    let (c, s) = (th.cos(), th.sin());
+    let (c, s) = (th.dcos(), th.dsin());
     if e.is_point() {
         let (x, y) = (pose[0], pose[1]);
         return vec![[-s * x - c * y, 1.0, 0.0], [c * x - s * y, 0.0, 1.0]];
@@ -362,7 +364,7 @@ fn procrustes(src: &[(f64, f64)], dst: &[(f64, f64)]) -> [f64; 4] {
         s += ax * by - ay * bx;
     }
     let l = {
-        let h = c.hypot(s);
+        let h = c.dhypot(s);
         if h == 0.0 {
             1.0
         } else {
@@ -381,7 +383,7 @@ fn fit2(p: &[f64], q: &[f64], p2: &[f64], q2: &[f64]) -> [f64; 4] {
     let mut c = ux * vx + uy * vy;
     let mut s = ux * vy - uy * vx;
     let l = {
-        let h = c.hypot(s);
+        let h = c.dhypot(s);
         if h == 0.0 {
             1.0
         } else {
@@ -495,7 +497,7 @@ impl<'a> MergeSystem<'a> {
         for &(i, j, la, lb, phi) in self.dpairs {
             let na = self.pose(u, i, la);
             let nb = self.pose(u, j, lb);
-            let ang = (na[0] * nb[1] - na[1] * nb[0]).atan2(na[0] * nb[0] + na[1] * nb[1]);
+            let ang = (na[0] * nb[1] - na[1] * nb[0]).datan2(na[0] * nb[0] + na[1] * nb[1]);
             out[r] = remainder(ang - phi, 2.0 * std::f64::consts::PI);
             r += 1;
         }
@@ -1092,7 +1094,7 @@ pub fn decompose(graph: ConstraintGraph, seed: u32, core_max: usize) -> Plan {
                 .entry(root)
                 .or_insert_with(|| rng.uniform(0.0, 2.0 * std::f64::consts::PI))
                 + pot;
-            generic.insert(e, vec![ang.cos(), ang.sin(), rng.uniform(-100.0, 100.0)]);
+            generic.insert(e, vec![ang.dcos(), ang.dsin(), rng.uniform(-100.0, 100.0)]);
         }
     }
 
@@ -1201,7 +1203,7 @@ fn leaf_poses(g: &ConstraintGraph, sk: &Sketch, edge: &Edge) -> BTreeMap<El, Pos
     let mut out = BTreeMap::new();
     if edge.kind == EdgeKind::Pp {
         let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-        let l = dx.hypot(dy);
+        let l = dx.dhypot(dy);
         let (ux, uy) = if l > 1e-12 { (dx / l, dy / l) } else { (1.0, 0.0) };
         out.insert(edge.b, vec![a[0] + v * ux, a[1] + v * uy]);
         out.insert(edge.a, a);
@@ -1233,10 +1235,10 @@ fn merge_ppp(
     let by = &b.els[&y];
     let cz = &c.els[&z];
     let cy = &c.els[&y];
-    let d_b = (by[0] - bx[0]).hypot(by[1] - bx[1]);
-    let d_c = (cy[0] - cz[0]).hypot(cy[1] - cz[1]);
+    let d_b = (by[0] - bx[0]).dhypot(by[1] - bx[1]);
+    let d_c = (cy[0] - cz[0]).dhypot(cy[1] - cz[1]);
     let (ex, ey) = (za[0] - xa[0], za[1] - xa[1]);
-    let l = ex.hypot(ey);
+    let l = ex.dhypot(ey);
     let (ux, uy) = if l > 1e-12 { (ex / l, ey / l) } else { (1.0, 0.0) };
     let aa = if l > 1e-12 { (d_b * d_b - d_c * d_c + l * l) / (2.0 * l) } else { 0.0 };
     let h2 = d_b * d_b - aa * aa;
@@ -1594,7 +1596,7 @@ fn centre_and_radius(c: &Cluster) -> ([f64; 2], f64) {
     let mut r2 = 0.0;
     for (e, p) in &c.els {
         if e.is_point() {
-            r2 += (p[0] - cx).powi(2) + (p[1] - cy).powi(2);
+            r2 += (p[0] - cx).dpowi(2) + (p[1] - cy).dpowi(2);
         }
     }
     let r = (r2 / n as f64).sqrt();
@@ -1784,7 +1786,7 @@ impl Wave {
             let reached = ids.iter().enumerate().all(|(i, &r)| {
                 !plan.root_els[&r].contains(&self.el) || {
                     let p = sys.pose(&u, i + 1, self.el);
-                    (p[0] - x).hypot(p[1] - y) <= self.reach
+                    (p[0] - x).dhypot(p[1] - y) <= self.reach
                 }
             });
             if !reached {

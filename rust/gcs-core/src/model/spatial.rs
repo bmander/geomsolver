@@ -485,6 +485,18 @@ impl Sketch {
         value
     }
 
+    /// Solid `i`'s exact B-rep (`solid::Exact`), or why this kernel does not build it: built once
+    /// for the geometry it reads, whatever approximation asks.
+    pub fn exact_solid(&self, i: usize) -> Result<std::rc::Rc<crate::solid::Exact>, String> {
+        let key = crate::solid::reads(self, i, 0.0);
+        if let Some((old, value)) = self.exact_cache.borrow().get(&i) {
+            if *old == key { return value.clone(); }
+        }
+        let value = crate::solid::build_exact(self, i).map(std::rc::Rc::new);
+        self.exact_cache.borrow_mut().insert(i, (key, value.clone()));
+        value
+    }
+
     /// **What a host meshing swept solids elsewhere has to mesh** (`FieldMeshing::Deferred`): the
     /// objects (`overview::objects`) with a continuous sweep among their operands, each with the
     /// key of the drawing it is a surface of (`FieldJob`). A swept solid that is no object is left

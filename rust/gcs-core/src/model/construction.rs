@@ -1,5 +1,7 @@
 //! Geometry construction and constraint mutation, preserving parameter and identity order.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 use crate::constraints::Arg;
 
@@ -30,20 +32,20 @@ pub fn three_point_arc(
     let (ux, uy) = (bx - ax, by - ay);
     let (vx, vy) = (cx - ax, cy - ay);
     let cross = ux * vy - uy * vx;
-    if cross.abs() <= tol * ux.hypot(uy) * vx.hypot(vy) {
+    if cross.abs() <= tol * ux.dhypot(uy) * vx.dhypot(vy) {
         return None;
     }
     let d = 2.0 * cross;
     let (u2, v2) = (ux * ux + uy * uy, vx * vx + vy * vy);
     let ox = ax + (vy * u2 - uy * v2) / d;
     let oy = ay + (ux * v2 - vx * u2) / d;
-    let r = (ax - ox).hypot(ay - oy);
-    let ta = (ay - oy).atan2(ax - ox);
-    let tb = (by - oy).atan2(bx - ox);
+    let r = (ax - ox).dhypot(ay - oy);
+    let ta = (ay - oy).datan2(ax - ox);
+    let tb = (by - oy).datan2(bx - ox);
     let tau = 2.0 * std::f64::consts::PI;
     let sweep = |th: f64| ((th - ta) % tau + tau) % tau;
     let to_b = sweep(tb);
-    let to_c = sweep((cy - oy).atan2(cx - ox));
+    let to_c = sweep((cy - oy).datan2(cx - ox));
     Some(if to_c < to_b {
         ThreePointArc { cx: ox, cy: oy, r, a0: ta, a1: ta + to_b, swapped: false }
     } else {
@@ -123,7 +125,7 @@ impl Sketch {
     pub fn arc(&mut self, center: usize, start: usize, end: usize, name: &str) -> usize {
         let (cx, cy) = self.point_xy(center);
         let (sx, sy) = self.point_xy(start);
-        let r = (sx - cx).hypot(sy - cy);
+        let r = (sx - cx).dhypot(sy - cy);
         let rp = self.param(r, false, &format!("{name}.r"));
         self.arcs.push(ArcE {
             center: center as u32,
@@ -247,7 +249,7 @@ impl Sketch {
     pub(crate) fn frame_chord(&self, origin: usize, toward: usize) -> ((f64, f64), f64) {
         let (ox, oy) = self.point_xy(origin);
         let (tx, ty) = self.point_xy(toward);
-        let d = (tx - ox).hypot(ty - oy);
+        let d = (tx - ox).dhypot(ty - oy);
         if d > 0.0 { (((tx - ox) / d, (ty - oy) / d), d) } else { ((1.0, 0.0), 1.0) }
     }
 

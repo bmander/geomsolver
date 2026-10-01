@@ -451,3 +451,252 @@ fn brep_json_debug() {
         Err(e) => eprintln!("NOT MESHED: {e}"),
     }
 }
+
+/// Phase 3's tool: a member's split as the native export dumps it (`SOLVENT_SPLIT_DUMP=DIR`) done by
+/// the core — the blank by its two sides, the wedge by each sheet in turn — against the kernel's
+/// cells, by volume and faces. `BREP_SPLIT=DIR cargo test … brep_split_debug -- --ignored --nocapture`.
+fn occt_first(dir: &str) -> gcs_core::brep::topo::Brep {
+    use gcs_core::brep::{json,props::volume};
+    (0..).map_while(|k| std::fs::read_to_string(format!("{dir}/cell{k}.json")).ok()).map(|t| json::read(&t).unwrap())
+        .max_by(|a,b| volume(a).total_cmp(&volume(b))).unwrap()
+}
+
+#[test]
+#[ignore]
+fn brep_split_debug() {
+    use gcs_core::brep::{boolean::split,json,props::volume,topo::Brep};
+    let dir = std::env::var("BREP_SPLIT").unwrap();
+    let tol: f64 = std::env::var("BREP_TOL").map_or(1e-6,|x| x.parse().unwrap());
+    let read = |name: &str| json::read(&std::fs::read_to_string(format!("{dir}/{name}.json")).unwrap()).unwrap();
+    let kinds = |b: &Brep| b.faces.iter().fold(std::collections::BTreeMap::new(),|mut m,f| { *m.entry(f.surface.kind()).or_insert(0) += 1; m });
+    let said = |what: &str,cells: &[Brep],started: std::time::Instant| {
+        let mut v: Vec<(f64,String)> = cells.iter().map(|c| (volume(c),format!("{:?} {}",kinds(c),match c.check(1e-6) { Ok(()) => "checked".into(),Err(e) => e }))).collect();
+        v.sort_by(|a,b| b.0.total_cmp(&a.0));
+        eprintln!("{what}: {} cells ({:?})",cells.len(),started.elapsed());
+        for (x,k) in v { eprintln!("  {x:.9} {k}"); }
+    };
+    let blank = read("blank");
+    let sides = read("side").joined(&read("other"));
+    let started = std::time::Instant::now();
+    let halves = split(&blank,&sides,tol).unwrap_or_else(|e| panic!("the sides: {e}"));
+    said("the blank by its sides",&halves,started);
+    let theirs = read("wedge");
+    eprintln!("the kernel's wedge: {:.9} {:?}",volume(&theirs),kinds(&theirs));
+    let wedge = halves.into_iter().min_by(|a,b| volume(a).total_cmp(&volume(b))).unwrap();
+    let mut cells = vec![wedge];
+    let only: Option<usize> = std::env::var("BREP_SHEETS").ok().map(|x| x.parse().unwrap());
+    for k in 0.. {
+        if only.is_some_and(|n| k >= n) { break }
+        let Ok(text) = std::fs::read_to_string(format!("{dir}/sheet{k}.json")) else { break };
+        let sheet = json::read(&text).unwrap();
+        let started = std::time::Instant::now();
+        let mut next = Vec::new();
+        for c in &cells { next.extend(split(c,&sheet,tol).unwrap_or_else(|e| panic!("sheet {k}: {e}"))); }
+        cells = next;
+        said(&format!("and by sheet {k}"),&cells,started);
+    }
+    // the largest cell's short edges and near vertices
+    if std::env::var_os("BREP_SHORT").is_some() {
+        let c = cells.iter().max_by(|a,b| volume(a).total_cmp(&volume(b))).unwrap();
+        eprintln!("the largest cell: {} faces, {} edges, {} vertices",c.faces.len(),c.edges.len(),c.vertices.len());
+        let used: std::collections::BTreeSet<u32> = c.faces.iter().flat_map(|f| f.loops.iter().flatten().map(|co| co.edge)).collect();
+        for &i in &used {
+            let e = &c.edges[i as usize];
+            let pts: Vec<[f64;3]> = (0..=8).map(|k| e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/8.,&c.vertices)).collect();
+            let len: f64 = pts.windows(2).map(|w| ((w[1][0]-w[0][0]).powi(2)+(w[1][1]-w[0][1]).powi(2)+(w[1][2]-w[0][2]).powi(2)).sqrt()).sum();
+            if len < 1e-2 { eprintln!("  edge {i}: {len:.3e} long, vertices {:?} at {:?}",e.v,pts[0]); }
+        }
+        for (who,b) in [("ours",c),("theirs",&occt_first(&dir))] {
+            let m = gcs_core::brep::mesh::mesh(b,0.01,0.2).unwrap();
+            let mut near: std::collections::BTreeMap<u32,usize> = std::collections::BTreeMap::new();
+            let samples: Vec<(u32,[f64;3])> = b.faces.iter().flat_map(|f| f.loops.iter().flatten().map(|co| co.edge)).collect::<std::collections::BTreeSet<_>>()
+                .into_iter().flat_map(|i| { let e = &b.edges[i as usize]; (0..=64).map(move |k| (i,e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/64.,&b.vertices))) }).collect();
+            let mut tiny = 0;
+            for t in &m.tris {
+                let [a,bb,cc] = t.map(|i| m.pts[i as usize]);
+                let u = [bb[0]-a[0],bb[1]-a[1],bb[2]-a[2]]; let v = [cc[0]-a[0],cc[1]-a[1],cc[2]-a[2]];
+                let n = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+                if (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt()/2. >= 1e-6 { continue }
+                tiny += 1;
+                if who == "ours" { eprintln!("  tiny: {a:?} {bb:?} {cc:?}"); }
+                let g = [(a[0]+bb[0]+cc[0])/3.,(a[1]+bb[1]+cc[1])/3.,(a[2]+bb[2]+cc[2])/3.];
+                let best = samples.iter().min_by(|x,y| {
+                    let d = |p: [f64;3]| (p[0]-g[0]).powi(2)+(p[1]-g[1]).powi(2)+(p[2]-g[2]).powi(2);
+                    d(x.1).total_cmp(&d(y.1)) }).unwrap();
+                *near.entry(best.0).or_insert(0) += 1;
+            }
+            eprintln!("{who}: {} triangles, {tiny} tiny, sag {:.3e}; nearest edges {near:?}",m.tris.len(),m.sag);
+            for (&e,_) in &near { let e = &b.edges[e as usize]; eprintln!("  edge {:?} from {:?} to {:?}: {:?}",e.v,b.vertices[e.v[0] as usize].p,b.vertices[e.v[1] as usize].p,match &e.curve { gcs_core::brep::topo::EdgeCurve::Curve(c) => c.kind(),_ => "pole" }); }
+        }
+        let mut degree = vec![0;c.vertices.len()];
+        for &i in &used { for v in c.edges[i as usize].v { degree[v as usize] += 1; } }
+        for (v,d) in degree.iter().enumerate() { if *d != 3 { eprintln!("  vertex {v} of degree {d} at {:?}",c.vertices[v].p); } }
+        let theirs = occt_first(&dir);
+        let used_t: std::collections::BTreeSet<u32> = theirs.faces.iter().flat_map(|f| f.loops.iter().flatten().map(|co| co.edge)).collect();
+        let mut degree = vec![0;theirs.vertices.len()];
+        for &i in &used_t { for v in theirs.edges[i as usize].v { degree[v as usize] += 1; } }
+        eprintln!("the kernel's: {} faces, {} edges, {} vertices",theirs.faces.len(),used_t.len(),degree.iter().filter(|&&d| d > 0).count());
+        for (v,d) in degree.iter().enumerate() { if *d != 3 && *d > 0 { eprintln!("  their vertex {v} of degree {d} at {:?}",theirs.vertices[v].p); } }
+        for i in 0..c.vertices.len() { for j in i+1..c.vertices.len() {
+            let (p,q) = (c.vertices[i].p,c.vertices[j].p);
+            let d = ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt();
+            if d < 1e-3 { eprintln!("  vertices {i} and {j}: {d:.3e} apart at {p:?}"); }
+        } }
+    }
+    let mut occt: Vec<Brep> = (0..).map_while(|k| std::fs::read_to_string(format!("{dir}/cell{k}.json")).ok()).map(|t| json::read(&t).unwrap()).collect();
+    occt.sort_by(|a,b| volume(b).total_cmp(&volume(a)));
+    eprintln!("the kernel's cells:");
+    for c in &occt { eprintln!("  {:.9} {:?}",volume(c),kinds(c)); }
+    // points given, read against the kernel's cells: by our classifier and by a mesh's winding number
+    if let Ok(text) = std::env::var("BREP_POINTS") {
+        let given: Vec<[f64;3]> = text.split(';').map(|p| { let v: Vec<f64> = p.split(',').map(|x| x.trim().parse().unwrap()).collect(); [v[0],v[1],v[2]] }).collect();
+        // each point and its six neighbours 0.01 off along the axes
+        let pts: Vec<[f64;3]> = given.iter().flat_map(|p| (0..7).map(move |k| { let mut q = *p; if k > 0 { q[(k-1)/2] += if k % 2 == 0 { 0.01 } else { -0.01 }; } q })).collect();
+        for (k,c) in occt.iter().enumerate() {
+            let located = gcs_core::brep::query::Located::new(c,tol);
+            let m = gcs_core::brep::mesh::mesh(c,0.002,0.1).unwrap();
+            for p in &pts {
+                let mut w = 0.;
+                for t in &m.tris {
+                    let [a,b,d] = t.map(|i| { let q = m.pts[i as usize]; [q[0]-p[0],q[1]-p[1],q[2]-p[2]] });
+                    let n = |v: [f64;3]| (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]).sqrt();
+                    let (la,lb,ld) = (n(a),n(b),n(d));
+                    let det = a[0]*(b[1]*d[2]-b[2]*d[1])-a[1]*(b[0]*d[2]-b[2]*d[0])+a[2]*(b[0]*d[1]-b[1]*d[0]);
+                    let dot = |x: [f64;3],y: [f64;3]| x[0]*y[0]+x[1]*y[1]+x[2]*y[2];
+                    w += 2.*det.atan2(la*lb*ld+dot(a,b)*ld+dot(b,d)*la+dot(d,a)*lb);
+                }
+                eprintln!("  cell {k} ({:.3}): {p:?} {:?}, winding {:.3}",volume(c),located.solid_place(*p),w/(4.*std::f64::consts::PI));
+            }
+        }
+    }
+    // the largest cells face by face: each face's flux and area against its nearest in the other
+    cells.sort_by(|a,b| volume(b).total_cmp(&volume(a)));
+    if let (Some(ours),Some(theirs)) = (cells.first(),occt.first()) {
+        let (fa,fb) = (gcs_core::brep::props::fluxes(ours),gcs_core::brep::props::fluxes(theirs));
+        let middle = |b: &Brep,f: usize| -> [f64;3] {
+            let pts: Vec<[f64;3]> = b.faces[f].loops.iter().flatten().map(|c| { let e = &b.edges[c.edge as usize]; e.point((e.t[0]+e.t[1])/2.,&b.vertices) }).collect();
+            let n = pts.len() as f64;
+            [pts.iter().map(|p| p[0]).sum::<f64>()/n,pts.iter().map(|p| p[1]).sum::<f64>()/n,pts.iter().map(|p| p[2]).sum::<f64>()/n]
+        };
+        let mut measured = ours.clone();
+        json::measure(&mut measured);
+        if let Ok(k) = std::env::var("BREP_FACE") {
+            let f = &measured.faces[k.parse::<usize>().unwrap()];
+            for c in f.loops.iter().flatten() {
+                let e = &measured.edges[c.edge as usize];
+                let kind = match &e.curve { gcs_core::brep::topo::EdgeCurve::Curve(c) => c.kind(),_ => "pole" };
+                let pk = match &c.pcurve { gcs_core::brep::topo::Pcurve::Line {..} => "line",gcs_core::brep::topo::Pcurve::Inverse {..} => "inverse",gcs_core::brep::topo::Pcurve::Curve(_) => "curve" };
+                eprintln!("    edge {} {kind} pcurve {pk}: within {:e}",c.edge,e.tol);
+            }
+        }
+        for i in 0..ours.faces.len() {
+            let mi = middle(ours,i);
+            let j = (0..theirs.faces.len()).filter(|&j| theirs.faces[j].surface.kind() == ours.faces[i].surface.kind())
+                .min_by(|&x,&y| gcs_core::space::distance(middle(theirs,x),mi).total_cmp(&gcs_core::space::distance(middle(theirs,y),mi))).unwrap();
+            if std::env::var("BREP_FACE").is_ok_and(|k| k.parse::<usize>().unwrap() == i) {
+                let corners = |b: &Brep,f: usize| -> Vec<[f64;3]> { b.faces[f].loops.iter().flatten().map(|c| {
+                    let e = &b.edges[c.edge as usize]; b.vertices[e.v[if c.reversed { 1 } else { 0 }] as usize].p }).collect() };
+                let sides = |b: &Brep,f: usize| -> Vec<String> { b.faces[f].loops.iter().flatten().map(|c| {
+                    let e = &b.edges[c.edge as usize];
+                    let pts: Vec<[f64;3]> = (0..=64).map(|k| e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/64.,&b.vertices)).collect();
+                    let len: f64 = pts.windows(2).map(|w| gcs_core::space::distance(w[0],w[1])).sum();
+                    let mid = pts[32];
+                    let across: Vec<usize> = (0..b.faces.len()).filter(|&g| g != f && b.faces[g].loops.iter().flatten().any(|u| u.edge == c.edge)).collect();
+                    let kind = match &e.curve { gcs_core::brep::topo::EdgeCurve::Curve(c) => c.kind(),_ => "pole" };
+                    let off = |g: usize| pts.iter().map(|&p| b.faces[g].surface.implicit(p).abs()).fold(0.,f64::max);
+                    let offs: Vec<String> = std::iter::once(f).chain(across.iter().copied()).map(|g| format!("{:.1e}",off(g))).collect();
+                    format!("{kind} len {len:.5} mid {:?} across {:?} off {offs:?}",mid.map(|x| (x*1e3).round()/1e3),across.iter().map(|&g| b.faces[g].surface.kind()).collect::<Vec<_>>())
+                }).collect() };
+                let net = |b: &Brep,f: usize| match &b.faces[f].surface { gcs_core::brep::geom::Surface::BSpline(_,n) => format!("{}x{} first pole {:?}",n.poles.len(),n.poles[0].len(),n.poles[0][0]),s => s.kind().into() };
+                eprintln!("    nets: ours {} theirs {}",net(ours,i),net(theirs,j));
+                // the area each face's loops enclose in the sheet's parameters, densely sampled
+                let uv_area = |b: &Brep,f: usize| -> f64 {
+                    let face = &b.faces[f];
+                    let mut sum = 0.;
+                    for c in face.loops.iter().flatten() {
+                        let e = &b.edges[c.edge as usize];
+                        let mut ts: Vec<f64> = (0..=4000).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/4000.).collect();
+                        if c.reversed { ts.reverse(); }
+                        for w in ts.windows(2) {
+                            let (p,q) = (c.pcurve.at(w[0],e,&face.surface,&b.vertices),c.pcurve.at(w[1],e,&face.surface,&b.vertices));
+                            sum += p[0]*q[1]-p[1]*q[0];
+                        }
+                    }
+                    sum/2.
+                };
+                eprintln!("    areas in the parameters: ours {:.9} theirs {:.9}",uv_area(ours,i),uv_area(theirs,j));
+                // the flux by positions alone: Σ G(middle) Δv, G = ∫ g du from the net's start by 64-point
+                // Gauss–Legendre a knot span
+                let flux_by_positions = |b: &Brep,f: usize| -> f64 {
+                    let face = &b.faces[f];
+                    let gcs_core::brep::geom::Surface::BSpline(_,n) = &face.surface else { return f64::NAN };
+                    let [[u0,_],_] = n.domain();
+                    let g = |u: f64,v: f64| { let (x,su,sv) = n.d1(u,v); gcs_core::space::dot(x,gcs_core::space::cross(su,sv)) };
+                    let mut knots: Vec<f64> = n.uknots.clone(); knots.dedup();
+                    let big_g = |u: f64,v: f64| -> f64 {
+                        let mut cuts = vec![u0]; cuts.extend(knots.iter().copied().filter(|&k| k > u0 && k < u)); cuts.push(u);
+                        cuts.windows(2).map(|w| { let (a,z) = (w[0],w[1]); let m = 400;
+                            (0..m).map(|k| { let x = a+(z-a)*(k as f64+0.5)/m as f64; g(x,v) }).sum::<f64>()*(z-a)/m as f64 }).sum()
+                    };
+                    let mut sum = 0.;
+                    for c in face.loops.iter().flatten() {
+                        let e = &b.edges[c.edge as usize];
+                        let mut ts: Vec<f64> = (0..=2000).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/2000.).collect();
+                        if c.reversed { ts.reverse(); }
+                        let mut part = 0.;
+                        for w in ts.windows(2) {
+                            let (p,q) = (c.pcurve.at(w[0],e,&face.surface,&b.vertices),c.pcurve.at(w[1],e,&face.surface,&b.vertices));
+                            part += big_g((p[0]+q[0])/2.,(p[1]+q[1])/2.)*(q[1]-p[1]);
+                        }
+                        // the same by derivatives at the steps' middles, as `props` reads it
+                        let by_derivative: f64 = ts.windows(2).map(|w| { let m = (w[0]+w[1])/2.;
+                            let uv = c.pcurve.at(m,e,&face.surface,&b.vertices);
+                            big_g(uv[0],uv[1])*c.pcurve.derivative(m,e,&face.surface,&b.vertices)[1]*(w[1]-w[0]) }).sum();
+                        eprintln!("      use of edge {}: by positions {part:.6}, by derivatives {by_derivative:.6}",c.edge);
+                        sum += part;
+                    }
+                    if face.reversed { -sum } else { sum }
+                };
+                eprintln!("    flux by positions: ours {:.6} theirs {:.6}",flux_by_positions(ours,i),flux_by_positions(theirs,j));
+                // each of our sides against the nearest of theirs, densely sampled
+                let dense = |b: &Brep,f: usize| -> Vec<Vec<[f64;3]>> { b.faces[f].loops.iter().flatten().map(|c| { let e = &b.edges[c.edge as usize];
+                    (0..=2000).map(|k| e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/2000.,&b.vertices)).collect() }).collect() };
+                let (mine,_their) = (dense(ours,i),dense(theirs,j));
+                let their_edges: Vec<&gcs_core::brep::topo::Edge> = theirs.faces[j].loops.iter().flatten().map(|c| &theirs.edges[c.edge as usize]).collect();
+                for (k,side) in mine.iter().enumerate() {
+                    // the nearest of their edges by samples, then each point's foot on its curve
+                    let m = side[side.len()/2];
+                    let e = their_edges.iter().min_by(|a,b| {
+                        let d = |e: &gcs_core::brep::topo::Edge| (0..=200).map(|q| gcs_core::space::distance(e.point(e.t[0]+(e.t[1]-e.t[0])*q as f64/200.,&theirs.vertices),m)).fold(f64::INFINITY,f64::min);
+                        d(a).total_cmp(&d(b)) }).unwrap();
+                    let gcs_core::brep::topo::EdgeCurve::Curve(c) = &e.curve else { continue };
+                    let (mut far,mut at) = (0_f64,0);
+                    for (q,&p) in side.iter().enumerate() { let d = gcs_core::space::distance(c.point(c.inverse(p).clamp(e.t[0],e.t[1])),p); if d > far { far = d; at = q; } }
+                    let ts: Vec<f64> = side.iter().map(|&p| c.inverse(p).clamp(e.t[0],e.t[1])).collect();
+                    let up = ts.windows(2).filter(|w| w[1] > w[0]).count();
+                    let down = ts.windows(2).filter(|w| w[1] < w[0]).count();
+                    eprintln!("    our side {k}: {far:.2e} from theirs at most, at {:.3} of it; along theirs {up} up {down} down",at as f64/2000.);
+                }
+                for x in sides(ours,i) { eprintln!("    ours side: {x}"); }
+                for x in sides(theirs,j) { eprintln!("    their side: {x}"); }
+                eprintln!("    ours:   {:?}",corners(ours,i).iter().map(|p| p.map(|x| (x*1e4).round()/1e4)).collect::<Vec<_>>());
+                eprintln!("    theirs: {:?}",corners(theirs,j).iter().map(|p| p.map(|x| (x*1e4).round()/1e4)).collect::<Vec<_>>());
+            }
+            eprintln!("  face {i} {} ({} uses) flux {:.6} against {:.6} ({} uses): {:+.6}",ours.faces[i].surface.kind(),
+                ours.faces[i].loops.iter().map(|l| l.len()).sum::<usize>(),fa[i],fb[j],theirs.faces[j].loops.iter().map(|l| l.len()).sum::<usize>(),fa[i]-fb[j]);
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn brep_meridian_debug() {
+    // `BREP_MERIDIAN=recipe.json`: the recipe's meridian region by the core, with its pieces
+    let text = std::fs::read_to_string(std::env::var("BREP_MERIDIAN").unwrap()).unwrap();
+    let recipe = gcs_core::json::parse(&text).unwrap();
+    let seam = [1.,0.,0.];
+    match gcs_core::brep::recipe::meridian_region(&recipe,seam).unwrap() {
+        Ok((p,o,a)) => eprintln!("region about {o:?} along {a:?}: {} loops of {:?} edges",p.loops.len(),p.loops.iter().map(|l| l.len()).collect::<Vec<_>>()),
+        Err(e) => eprintln!("not a meridian: {e}"),
+    }
+}

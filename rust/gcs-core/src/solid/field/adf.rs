@@ -11,6 +11,8 @@
 //! is read from cells as wide as its curvature allows, a crease from the finest. What comes back
 //! is a reading, never an interval claim: the centre test samples the interpolation's error, it
 //! does not bound it.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::memo::{Map,Mix};
 use std::hash::Hasher;
 
@@ -50,7 +52,7 @@ const RECENT: usize = 1024;
 impl Adf {
     /// An octree refined to `resolution`, rooted in cells `root` across.
     pub(super) fn new(root: f64,resolution: Resolution) -> Self {
-        let depth = |size: f64| (root/size).log2().ceil().clamp(0.,20.) as u32;
+        let depth = |size: f64| (root/size).dlog2().ceil().clamp(0.,20.) as u32;
         let levels = depth(resolution.finest);
         let coarse = depth(resolution.coarsest).min(levels);
         Self {root,levels,coarse,tolerance:resolution.tolerance,corners:Map::default(),cells:Map::default(),

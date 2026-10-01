@@ -1,5 +1,7 @@
 //! Named curves shared by generating faces or analytic surfaces.
 //! A seam is declared once for subsequent oriented uses in face topology.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 mod boundary;
 pub use boundary::{BoundarySeam,BoundarySeamTolerance};
 mod surfaces;
@@ -8,7 +10,7 @@ use crate::{envelope::{self,Contact,Error,Intersection,IntersectionOptions,Motio
     model::{edge_ends,EntKind,EntRef,Sketch},patch::EnvelopePatch};
 
 fn distance(a: [f64;3],b: [f64;3]) -> f64 {
-    (a[0]-b[0]).hypot(a[1]-b[1]).hypot(a[2]-b[2])
+    (a[0]-b[0]).dhypot(a[1]-b[1]).dhypot(a[2]-b[2])
 }
 
 fn source_envelope(sk: &Sketch,mut e: EntRef) -> Result<usize,String> {

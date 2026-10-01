@@ -5,6 +5,8 @@
 //! byte for byte across refactors, so a helper is not rewritten into an equal-in-exact-arithmetic
 //! form (`norm` is `sqrt(dot)`, and `length` — by `hypot` — is a different number).
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 type V3 = [f64;3];
 
 pub fn sub(a: V3,b: V3) -> V3 { [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
@@ -16,7 +18,7 @@ pub fn cross(a: V3,b: V3) -> V3 { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*
 pub fn norm(a: V3) -> f64 { dot(a,a).sqrt() }
 /// The Euclidean length by `hypot`, which neither overflows nor underflows where the squares
 /// would: not bit-identical to `norm`.
-pub fn length(a: V3) -> f64 { a[0].hypot(a[1]).hypot(a[2]) }
+pub fn length(a: V3) -> f64 { a[0].dhypot(a[1]).dhypot(a[2]) }
 pub fn distance(a: V3,b: V3) -> f64 { norm(sub(a,b)) }
 pub fn distance_squared(a: V3,b: V3) -> f64 { let d = sub(a,b); dot(d,d) }
 /// The unit vector along `a`, or none for a zero vector.

@@ -36,6 +36,8 @@
 //! continuation inside the other, which reads short. The search is sampled (the roll's scan,
 //! the tabulated cells) and says so: a sample farther than `reach` from every face is unmatched.
 //! Signs follow the field's: positive outside the material.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::{cad,RevolvedSurface,SpatialField,SurfaceProjector,SweepContacts,MaterialField};
 use crate::envelope::Motion;
 use crate::model::{EntKind,Sketch,SolidDef};
@@ -652,7 +654,7 @@ fn percentile(values: &mut [f64],fraction: f64) -> f64 {
 fn normal_error(sample: &Sample,measurement: &Measurement) -> Option<f64> {
     let (n,a) = (sample.normal?,measurement.analytic?);
     let c = dot(normalised(n)?,a.normal).clamp(-1.,1.);
-    Some(c.acos().to_degrees())
+    Some(c.dacos().to_degrees())
 }
 
 /// The distribution over the samples `which` picks.

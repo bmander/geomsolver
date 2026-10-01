@@ -40,15 +40,17 @@ solventc — check a Solvent document
     --allow-unsolved    a document that does not solve is not a failure
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
-    --step PATH         write an analytic STEP solid (requires a native OCCT build)
-    --kernel NAME       occt or rust: which kernel builds a static solid's STEP and STL (occt where the
-                        build has it; rust, the core's own B-rep, otherwise or where asked)
+    --step PATH         write an analytic STEP solid (by the kernel --kernel names)
+    --kernel NAME       rust (default) or occt: which kernel builds a solid's STEP and STL (rust, the
+                        core's own B-rep, a swept body of the generating class included; occt,
+                        where the build has it, kept as the oracle)
     --verify-step HOW   light (default): the written file parsed and checked against the solid,
                         its topology, surfaces and their numbers; full: that, and read back by
                         the kernel, repaired as a reader would, checked and measured
-    --stl-backend NAME  occt, mesh or refine; every solid defaults to occt when built in, a
-                        body with swept cuts included (refine meshes the material field by the
-                        core's Delaunay refinement, checked by the field-agreement probe)
+    --stl-backend NAME  occt, mesh or refine; every solid defaults to the kernel's export (the
+                        core's, or occt as --kernel says), a body with swept cuts included (mesh is
+                        the faceted kernel; refine meshes the material field by the core's Delaunay
+                        refinement, checked by the field-agreement probe)
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
     --tolerance [LENGTH] export for fabrication: the native STEP/STL within LENGTH of the exact
@@ -116,7 +118,7 @@ impl Default for Opts {
             output: None,
             stl: None,
             step: None,
-            native_stl: cfg!(feature="occt"),
+            native_stl: true,
             refine: false,
             gltf: None,
             solid: None,
@@ -238,8 +240,8 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
     if opts.tolerance.is_some() && opts.measure.is_empty() && opts.step.is_none() && (opts.stl.is_none() || opts.refine || !opts.native_stl) {
-        eprintln!("solventc: --tolerance holds a native export (or a measurement) to it; give --step, --stl with the occt \
-            backend, or --measure");
+        eprintln!("solventc: --tolerance holds a native export (or a measurement) to it; give --step, --stl by the kernel's \
+            export, or --measure");
         return ExitCode::from(2);
     }
     if opts.output.is_some() && paths.len() != 1 {
@@ -382,7 +384,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
     // only the field, and is gated by the field-agreement probe instead.
     // A native export admits the body itself, beside the first of its construction.
-    let native = cfg!(feature="occt") && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
+    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
     let mut body = None;
     if (step.is_some() || (stl.is_some() && !opts.refine)) && r.success {
         if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {

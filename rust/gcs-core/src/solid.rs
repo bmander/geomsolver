@@ -25,7 +25,12 @@
 //! bore's wall would lie inside the true bore by the sagitta, both its samples would read
 //! *outside*, and the wall would silently vanish.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 mod evaluated;
+mod exact;
+pub use exact::Exact;
+pub(crate) use exact::build as build_exact;
 mod field_mesh;
 pub use field_mesh::{FieldMesher, FieldMeshing, FieldProgress, FieldSurface, FieldJob, field_key, FINENESS as FIELD_FINENESS};
 pub use field_mesh::{first_pass as field_first_pass, creases as field_creases};
@@ -133,7 +138,7 @@ pub fn mesh_unit(sk: &Sketch, i: usize) -> f64 {
     if b.is_empty() {
         return REPORT_UNIT;
     }
-    let diag = (0..3).map(|k| (b.hi[k] - b.lo[k]).powi(2)).sum::<f64>().sqrt();
+    let diag = (0..3).map(|k| (b.hi[k] - b.lo[k]).dpowi(2)).sum::<f64>().sqrt();
     (diag * MESH_SAGITTA / crate::curve::FLATNESS_PX).max(REPORT_UNIT)
 }
 
@@ -224,6 +229,9 @@ pub struct Prim {
     pub faces: Vec<String>,
     /// The solid statement this primitive came from — what a face path is prefixed by.
     pub of: String,
+    /// The facets are an exact B-rep's mesh (`solid::Exact`): each of `faces` is a whole path, `of`
+    /// prefixes nothing, and two faces meet at a crease however their facets lie.
+    pub exact: bool,
 }
 
 /// The term a solid *is*.  Order lives here, over names, and nowhere else.
@@ -471,7 +479,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
             let (c, s, o) = poly.pose;
             let a = plane::in_view(c, s, o, sk.point_xy(axis.p1 as usize));
             let b = plane::in_view(c, s, o, sk.point_xy(axis.p2 as usize));
-            let length = (b.0 - a.0).hypot(b.1 - a.1);
+            let length = (b.0 - a.0).dhypot(b.1 - a.1);
             if !length.is_finite() || length <= 0.0 { return Err(fail("a revolution axis must have nonzero finite length")); }
             let distances: Vec<_> = poly.pts.iter().map(|p|
                 (-(p.0 - a.0) * (b.1 - a.1) + (p.1 - a.1) * (b.0 - a.0)) / length).collect();

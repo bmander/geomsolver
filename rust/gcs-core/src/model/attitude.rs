@@ -5,6 +5,8 @@
 //! two views in space has no `Att` and no `LiftE`, so its parameter vector, its constraints and
 //! every number a solve reads are what they would be without any of this.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 use crate::constraints::CKind;
 use crate::plane::{self, Quat};
@@ -206,7 +208,7 @@ impl Sketch {
         let f = &self.planes[i].frame;
         let (c, s) = (self.params[f.c as usize].value, self.params[f.s as usize].value);
         let o = self.point_xy(f.origin as usize);
-        let far = |a: f64, b: f64| (ab[0] + a).hypot(ab[1] + b).hypot(d);
+        let far = |a: f64, b: f64| (ab[0] + a).dhypot(ab[1] + b).dhypot(d);
         let mut r = far(0.0, 0.0);
         for (k, p) in self.points.iter().enumerate() {
             if p.plane == Some(i as u32) {

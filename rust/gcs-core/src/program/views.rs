@@ -19,6 +19,8 @@
 //! A plane that says none of these, folded from one that is stated, stays exactly as it was:
 //! no parameter, no row, and the corpus compiles to the same bytes.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::planes::fold_aff;
 use super::resolve::{follow, Resolver};
 use super::{Code, Diag, Made, SourceMap};
@@ -179,7 +181,7 @@ fn one(
             let b = sk.basis(p);
             [crate::plane::dot(b.o, b.u), crate::plane::dot(b.o, b.v)]
         }, |a| a.ab);
-        if turns && ab[0].hypot(ab[1]) > ON_NORMAL * (1.0 + sk.extent()) {
+        if turns && ab[0].dhypot(ab[1]) > ON_NORMAL * (1.0 + sk.extent()) {
             let span = d.attitude.plane_ref().map_or(st.span, |r| r.span);
             fail(diags, Code::E064, span, format!(
                 "`{}` stands off the shared origin in its own plane, and a solved fold turns \
@@ -215,11 +217,11 @@ fn one(
         let o = sk.point_xy(f.origin as usize);
         let (a1, b1) = crate::plane::in_view(c, s, o, sk.point_xy(p1));
         let (a2, b2) = crate::plane::in_view(c, s, o, sk.point_xy(p2));
-        let theta = (b2 - b1).atan2(a2 - a1);
+        let theta = (b2 - b1).datan2(a2 - a1);
         let folded = sk.basis(p).fold(theta);
         sk.set_basis(pi, stand_through(folded, sk.world_point(p1)));
         theta_along = Some(theta);
-        let (hs, hc) = (0.5 * theta).sin_cos();
+        let (hs, hc) = (0.5 * theta).dsin_cos();
         hinges.push(Constraint::new(CKind::HingeAlong, vec![
             CArg::Ent(EntRef::plane(pi)),
             CArg::Ent(EntRef::plane(p)),

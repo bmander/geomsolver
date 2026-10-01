@@ -2,6 +2,7 @@
 //! into cells, each cell sampled and measured, the material cells fused; sections of a
 //! cutter, faces and their points, and the files a solid is written as.
 use super::*;
+use gcs_core::space::{cross,distance,norm};
 
 extern "C" {
     fn solvent_cad_split_solid(cad: *mut c_void,solid: c_int,tools: *const c_int,count: c_int) -> c_int;
@@ -72,16 +73,16 @@ pub(crate) struct FacePoint {
 
 impl Session {
     pub(crate) fn split_solid(&self,solid: c_int,tools: &[c_int]) -> Result<c_int,String> {
-        self.result(unsafe { solvent_cad_split_solid(self.0,solid,tools.as_ptr(),tools.len() as c_int) })
+        self.result(unsafe { solvent_cad_split_solid(self.ptr,solid,tools.as_ptr(),tools.len() as c_int) })
     }
     /// Split tools split by each other, as one tool: a split by it does not intersect them again.
     pub(crate) fn fused_tools(&self,tools: &[c_int]) -> Result<c_int,String> {
-        self.result(unsafe { solvent_cad_fused_tools(self.0,tools.as_ptr(),tools.len() as c_int) })
+        self.result(unsafe { solvent_cad_fused_tools(self.ptr,tools.as_ptr(),tools.len() as c_int) })
     }
     pub(crate) fn solids(&self,source: c_int) -> Result<Vec<c_int>,String> {
-        let count = self.result(unsafe { solvent_cad_solids(self.0,source,std::ptr::null_mut(),0) })?;
+        let count = self.result(unsafe { solvent_cad_solids(self.ptr,source,std::ptr::null_mut(),0) })?;
         let mut ids = vec![-1;count as usize];
-        let actual = self.result(unsafe { solvent_cad_solids(self.0,source,ids.as_mut_ptr(),count) })?;
+        let actual = self.result(unsafe { solvent_cad_solids(self.ptr,source,ids.as_mut_ptr(),count) })?;
         if actual != count { return Err("native solid count changed during enumeration".into()); }
         Ok(ids)
     }
@@ -96,7 +97,7 @@ impl Session {
     pub(crate) fn samples_of(&self,solids: &[c_int],capacity: usize,measure: usize) -> Result<Vec<Vec<([f64;3],f64)>>,String> {
         let mut data = vec![0.;4*capacity*solids.len()];
         let mut written = vec![0 as c_int;solids.len()];
-        self.result(unsafe { solvent_cad_solids_samples(self.0,solids.as_ptr(),solids.len() as c_int,data.as_mut_ptr(),capacity as c_int,
+        self.result(unsafe { solvent_cad_solids_samples(self.ptr,solids.as_ptr(),solids.len() as c_int,data.as_mut_ptr(),capacity as c_int,
             measure as c_int,written.as_mut_ptr()) })?;
         Ok(written.iter().enumerate().map(|(k,&n)| (0..n as usize).map(|i| {
             let d = &data[4*(capacity*k+i)..];
@@ -104,22 +105,22 @@ impl Session {
         }).collect()).collect())
     }
     pub(crate) fn fuse(&self,ids: &[c_int]) -> Result<c_int,String> {
-        self.result(unsafe { solvent_cad_fuse(self.0,ids.as_ptr(),ids.len() as c_int) })
+        self.result(unsafe { solvent_cad_fuse(self.ptr,ids.as_ptr(),ids.len() as c_int) })
     }
     /// A solid and its copies turned by `angles` about the line through `origin` (mm) along `axis`,
     /// united: its faces on `sides` left out and the rest of every copy sewn to `fuzzy` (mm), no face
     /// intersected. Unchecked: `pattern_check` checks and measures it, and gives the handle to keep.
     pub(crate) fn pattern(&self,solid: c_int,origin: [f64;3],axis: [f64;3],angles: &[f64],sides: [c_int;2],fuzzy: f64)
         -> Result<c_int,String> {
-        self.result(unsafe { solvent_cad_pattern(self.0,solid,origin.as_ptr(),axis.as_ptr(),angles.as_ptr(),angles.len() as c_int,
+        self.result(unsafe { solvent_cad_pattern(self.ptr,solid,origin.as_ptr(),axis.as_ptr(),angles.as_ptr(),angles.len() as c_int,
             sides.as_ptr(),fuzzy) })
     }
     /// A copy of a shape sharing nothing with it, which may be worked on (meshed) beside it.
-    pub(crate) fn copy(&self,solid: c_int) -> Result<c_int,String> { self.result(unsafe { solvent_cad_copy(self.0,solid) }) }
+    pub(crate) fn copy(&self,solid: c_int) -> Result<c_int,String> { self.result(unsafe { solvent_cad_copy(self.ptr,solid) }) }
     /// A pattern's union checked and measured: its handle, or another where the union unified does
     /// not check and the union as it was sewn does.
     pub(crate) fn pattern_check(&self,made: c_int) -> Result<c_int,String> {
-        self.result(unsafe { solvent_cad_pattern_check(self.0,made) })
+        self.result(unsafe { solvent_cad_pattern_check(self.ptr,made) })
     }
     /// Mesh a patterned body's sector afresh, at an absolute chordal `deflection` (mm) and an
     /// `angular` one (radians), and, asked, the chordal sag its faces but the sides have (mm) and where.
@@ -135,7 +136,7 @@ impl Session {
     pub(crate) fn sector_mesh_abandoned(&self,sector: &Patterned,deflection: f64,interior: f64,angular: f64,sag: bool,
         cancel: Option<&std::sync::atomic::AtomicI32>) -> Result<Option<(f64,[f64;3])>,String> {
         let mut data = [0.;4];
-        self.result(unsafe { solvent_cad_sector_mesh(self.0,sector.piece,sector.sides.as_ptr(),sector.fuzzy,deflection,interior,angular,
+        self.result(unsafe { solvent_cad_sector_mesh(self.ptr,sector.piece,sector.sides.as_ptr(),sector.fuzzy,deflection,interior,angular,
             if sag { data.as_mut_ptr() } else { std::ptr::null_mut() },cancel.map_or(std::ptr::null(),|c| c.as_ptr().cast_const())) })?;
         Ok(sag.then(|| (data[0],[data[1],data[2],data[3]])))
     }
@@ -146,7 +147,7 @@ impl Session {
     pub(crate) fn sector_stl(&self,sector: &Patterned,reach: f64,path: &str) -> Result<(usize,f64),String> {
         let name = CString::new(path).map_err(|e| e.to_string())?;
         let mut moved = [0.];
-        let triangles = self.result(unsafe { solvent_cad_sector_stl(self.0,sector.piece,sector.sides.as_ptr(),sector.fuzzy,
+        let triangles = self.result(unsafe { solvent_cad_sector_stl(self.ptr,sector.piece,sector.sides.as_ptr(),sector.fuzzy,
             sector.origin.as_ptr(),sector.axis.as_ptr(),sector.count as c_int,sector.pitch,reach,name.as_ptr(),moved.as_mut_ptr()) })?;
         Ok((triangles as usize,moved[0]))
     }
@@ -154,59 +155,70 @@ impl Session {
     /// turning its meridian section about it, so that every face's frame is on that line, its
     /// parameters starting on the half-plane towards `seam`.
     pub(crate) fn revolved(&self,solid: c_int,origin: [f64;3],axis: [f64;3],seam: [f64;3]) -> Result<c_int,String> {
-        self.result(unsafe { solvent_cad_revolved(self.0,solid,origin.as_ptr(),axis.as_ptr(),seam.as_ptr()) })
+        self.result(unsafe { solvent_cad_revolved(self.ptr,solid,origin.as_ptr(),axis.as_ptr(),seam.as_ptr()) })
     }
     /// A solid of revolution: a planar region turned a whole turn about a line in its plane.
     pub(crate) fn revolve_region(&self,region: c_int,origin: [f64;3],axis: [f64;3]) -> Result<c_int,String> {
-        self.result(unsafe { solvent_cad_revolve_region(self.0,region,origin.as_ptr(),axis.as_ptr()) })
+        self.result(unsafe { solvent_cad_revolve_region(self.ptr,region,origin.as_ptr(),axis.as_ptr()) })
     }
     /// The box about some shapes, lower corner then upper (mm).
     pub(crate) fn bounds(&self,ids: &[c_int]) -> Result<[[f64;3];2],String> {
         let mut b = [0.;6];
-        self.result(unsafe { solvent_cad_bounds(self.0,ids.as_ptr(),ids.len() as c_int,b.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_bounds(self.ptr,ids.as_ptr(),ids.len() as c_int,b.as_mut_ptr()) })?;
         Ok([[b[0],b[1],b[2]],[b[3],b[4],b[5]]])
     }
     /// Per point: 0 outside, 1 inside, 2 within `tolerance` of the boundary.
     pub(crate) fn solid_contains(&self,solid: c_int,points: &[[f64;3]],tolerance: f64) -> Result<Vec<c_int>,String> {
         let mut states = vec![-1;points.len()];
-        self.result(unsafe { solvent_cad_solid_contains(self.0,solid,points.as_ptr().cast(),
+        self.result(unsafe { solvent_cad_solid_contains(self.ptr,solid,points.as_ptr().cast(),
             points.len() as c_int,tolerance,states.as_mut_ptr()) })?;
         Ok(states)
     }
     pub(crate) fn volume(&self,solid: c_int) -> Result<f64,String> {
         let mut v = [0.];
-        self.result(unsafe { solvent_cad_volume(self.0,solid,v.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_volume(self.ptr,solid,v.as_mut_ptr()) })?;
         Ok(v[0])
     }
     pub(crate) fn common_volume(&self,a: c_int,b: c_int) -> Result<f64,String> {
         let mut v = [0.];
-        self.result(unsafe { solvent_cad_common_volume(self.0,a,b,v.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_common_volume(self.ptr,a,b,v.as_mut_ptr()) })?;
         Ok(v[0])
     }
     /// Place a copy of any shape at a model-unit pose.
     pub(crate) fn place(&self,source: c_int,pose: gcs_core::envelope::Motion,scale: f64) -> Result<c_int,String> {
         let matrix = gcs_core::solid::cad::placement_matrix(pose,scale);
-        self.result(unsafe { solvent_cad_place(self.0,source,matrix.as_ptr()) })
+        if let Some(b) = self.held(source) { return Ok(self.hold(b.moved(&gcs_core::brep::geom::Rigid::from_rows(&matrix)))) }
+        self.result(unsafe { solvent_cad_place(self.ptr,source,matrix.as_ptr()) })
     }
     /// Interpolate a row-major grid of points as a B-spline face with chord-length
     /// parameters, which keep uneven row spacing from overshooting where the columns space
     /// their rows alike: each row's parameter is averaged over the columns. A sheet held to a
     /// tolerance is also fitted with centripetal parameters (`fit_sheet_with`, 2).
     pub(crate) fn fit_sheet(&self,points: &[[f64;3]],rows: usize,columns: usize) -> Result<c_int,String> {
-        self.fit_sheet_with(points,rows,columns,1)
+        // (the core's interpolation, its knots averaged from the parameters, overshoots a sheet's
+        // unevenly spaced rows by chord length where OCCT's approximation does not: the pinion's
+        // folded; by centripetal parameters it fits it nearer than OCCT's chord-length fit did)
+        self.fit_sheet_with(points,rows,columns,if core_sheets() { 2 } else { 1 })
     }
     /// The same with OCCT's parametrization by number: 0 even, 1 chord length, 2 centripetal.
     pub(crate) fn fit_sheet_with(&self,points: &[[f64;3]],rows: usize,columns: usize,parametrization: c_int) -> Result<c_int,String> {
         if points.len() != rows*columns { return Err("sheet grid size mismatch".into()); }
-        self.result(unsafe { solvent_cad_bspline_face_with(self.0,points.as_ptr().cast(),rows as c_int,columns as c_int,parametrization) })
+        // the core's interpolation (phase 4 of docs/rust-kernel-plan.md), unless `SOLVENT_SHEETS=occt`
+        if core_sheets() {
+            use gcs_core::brep::nurbs::{interpolate_net,Parametrization};
+            let kind = match parametrization { 1 => Parametrization::ChordLength,2 => Parametrization::Centripetal,_ => Parametrization::Even };
+            let net = interpolate_net(points,rows,columns,kind).ok_or("the sheet grid could not be interpolated")?;
+            return Ok(self.hold(gcs_core::brep::build::sheet(net)?))
+        }
+        self.result(unsafe { solvent_cad_bspline_face_with(self.ptr,points.as_ptr().cast(),rows as c_int,columns as c_int,parametrization) })
     }
     /// Section a solid by the half-plane through `origin` containing `axis` on the
     /// `side` direction: (edge handle, 1-based face index in `faces(solid)`)
     /// pairs, unordered.
     pub(crate) fn section(&self,solid: c_int,origin: [f64;3],axis: [f64;3],side: [f64;3]) -> Result<Vec<(c_int,c_int)>,String> {
-        let count = self.result(unsafe { solvent_cad_section(self.0,solid,origin.as_ptr(),axis.as_ptr(),side.as_ptr(),std::ptr::null_mut(),0) })?;
+        let count = self.result(unsafe { solvent_cad_section(self.ptr,solid,origin.as_ptr(),axis.as_ptr(),side.as_ptr(),std::ptr::null_mut(),0) })?;
         let mut rows = vec![-1;2*count as usize];
-        let actual = self.result(unsafe { solvent_cad_section(self.0,solid,origin.as_ptr(),axis.as_ptr(),side.as_ptr(),rows.as_mut_ptr(),count) })?;
+        let actual = self.result(unsafe { solvent_cad_section(self.ptr,solid,origin.as_ptr(),axis.as_ptr(),side.as_ptr(),rows.as_mut_ptr(),count) })?;
         if actual != count { return Err("section changed between count and retrieval".into()); }
         Ok((0..count as usize).map(|i| (rows[2*i],rows[2*i+1])).collect())
     }
@@ -214,13 +226,13 @@ impl Session {
     /// and the projection distance; no trim test.
     pub(crate) fn face_normal(&self,face: c_int,point: [f64;3]) -> Result<([f64;3],f64),String> {
         let mut data = [0.;4];
-        self.result(unsafe { solvent_cad_face_normal(self.0,face,point.as_ptr(),data.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_face_normal(self.ptr,face,point.as_ptr(),data.as_mut_ptr()) })?;
         Ok(([data[0],data[1],data[2]],data[3]))
     }
     /// Maximum vertex, edge and face tolerances the kernel carries on the shape.
     pub(crate) fn tolerances(&self,solid: c_int) -> Result<[f64;3],String> {
         let mut t = [0.;3];
-        self.result(unsafe { solvent_cad_tolerance(self.0,solid,t.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_tolerance(self.ptr,solid,t.as_mut_ptr()) })?;
         Ok(t)
     }
     /// Write a solid's STEP file and verify it as `step_check::verification` says: its text parsed and
@@ -232,10 +244,10 @@ impl Session {
     /// OCCT's checker on a shape: a valid solid, or why not.
     #[allow(dead_code)]
     pub(crate) fn validate(&self,solid: c_int) -> Result<(),String> {
-        self.result(unsafe { solvent_cad_validate(self.0,solid) }).map(|_| ())
+        self.result(unsafe { solvent_cad_validate(self.ptr,solid) }).map(|_| ())
     }
     pub(crate) fn step_verified(&self,solid: c_int,path: &str,how: step_check::Verification) -> Result<String,String> {
-        self.result(unsafe { solvent_cad_validate(self.0,solid) })?;
+        self.result(unsafe { solvent_cad_validate(self.ptr,solid) })?;
         self.step_written(solid,path,how,false)
     }
     /// The same of a pattern's union that is being checked beside it (`pattern_check`), which the
@@ -250,7 +262,7 @@ impl Session {
         // the solid's summary read while the kernel writes the file
         let (written,summary) = std::thread::scope(|scope| {
             let summary = scope.spawn(|| self.brep_summary(solid));
-            let written = self.result(unsafe { solvent_cad_step(self.0,solid,name.as_ptr(),c_int::from(full),c_int::from(unchecked)) });
+            let written = self.result(unsafe { solvent_cad_step(self.ptr,solid,name.as_ptr(),c_int::from(full),c_int::from(unchecked)) });
             (written,summary.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
         });
         written?;
@@ -271,15 +283,15 @@ impl Session {
     /// phase 1 of docs/rust-kernel-plan.md, OCCT's finished shape handed over for our writer and
     /// mesher.
     pub(crate) fn brep_json(&self,shape: c_int) -> Result<String,String> {
-        let text = unsafe { solvent_cad_brep_json(self.0,shape) };
-        if text.is_null() { return Err(unsafe { CStr::from_ptr(solvent_cad_error(self.0)) }.to_string_lossy().into_owned()) }
+        let text = unsafe { solvent_cad_brep_json(self.ptr,shape) };
+        if text.is_null() { return Err(unsafe { CStr::from_ptr(solvent_cad_error(self.ptr)) }.to_string_lossy().into_owned()) }
         Ok(unsafe { CStr::from_ptr(text) }.to_string_lossy().into_owned())
     }
     /// What a STEP file of a stored solid must say of it (`solvent_cad_brep_summary`).
     pub(crate) fn brep_summary(&self,solid: c_int) -> Result<step_check::Solid,String> {
-        let count = self.result(unsafe { solvent_cad_brep_summary(self.0,solid,std::ptr::null_mut(),0) })?;
+        let count = self.result(unsafe { solvent_cad_brep_summary(self.ptr,solid,std::ptr::null_mut(),0) })?;
         let mut data = vec![0.;count as usize];
-        let actual = self.result(unsafe { solvent_cad_brep_summary(self.0,solid,data.as_mut_ptr(),count) })?;
+        let actual = self.result(unsafe { solvent_cad_brep_summary(self.ptr,solid,data.as_mut_ptr(),count) })?;
         if actual != count { return Err("the solid's summary changed between count and retrieval".into()); }
         step_check::Solid::read(&data)
     }
@@ -288,26 +300,26 @@ impl Session {
     pub(crate) fn stl(&self,solid: c_int,path: &str) -> Result<(),String> { self.stl_with(solid,path,0.01,0.2) }
     /// Mesh a shape afresh at an absolute chordal `deflection` (mm) and an `angular` one (radians).
     pub(crate) fn remesh(&self,solid: c_int,deflection: f64,angular: f64) -> Result<(),String> {
-        self.result(unsafe { solvent_cad_remesh(self.0,solid,deflection,angular) }).map(|_| ())
+        self.result(unsafe { solvent_cad_remesh(self.ptr,solid,deflection,angular) }).map(|_| ())
     }
     /// The chordal sag a meshed shape has (mm), read at its triangles' centroids and edge midpoints
     /// against each face's surface at the same parameters, and where it is largest.
     pub(crate) fn mesh_sag(&self,solid: c_int) -> Result<(f64,[f64;3]),String> {
         let mut data = [0.;4];
-        self.result(unsafe { solvent_cad_mesh_sag(self.0,solid,data.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_mesh_sag(self.ptr,solid,data.as_mut_ptr()) })?;
         Ok((data[0],[data[1],data[2],data[3]]))
     }
     /// An STL meshed at an absolute chordal `deflection` (mm) and an `angular` one (radians); a
     /// shape already meshed at least as finely keeps its mesh.
     pub(crate) fn stl_with(&self,solid: c_int,path: &str,deflection: f64,angular: f64) -> Result<(),String> {
         let name = CString::new(path).map_err(|e| e.to_string())?;
-        self.result(unsafe { solvent_cad_stl(self.0,solid,name.as_ptr(),deflection,angular) })?;
+        self.result(unsafe { solvent_cad_stl(self.ptr,solid,name.as_ptr(),deflection,angular) })?;
         Ok(())
     }
     pub(crate) fn faces(&self,source: c_int) -> Result<Vec<c_int>,String> {
-        let count = self.result(unsafe { solvent_cad_faces(self.0,source,std::ptr::null_mut(),0) })?;
+        let count = self.result(unsafe { solvent_cad_faces(self.ptr,source,std::ptr::null_mut(),0) })?;
         let mut faces = vec![-1;count as usize];
-        let actual = self.result(unsafe { solvent_cad_faces(self.0,source,faces.as_mut_ptr(),count) })?;
+        let actual = self.result(unsafe { solvent_cad_faces(self.ptr,source,faces.as_mut_ptr(),count) })?;
         if actual != count { return Err("native face count changed during enumeration".into()); }
         Ok(faces)
     }
@@ -318,7 +330,7 @@ impl Session {
     pub(crate) fn face_point(&self,face: c_int,u: f64,v: f64,tolerance: f64)
         -> Result<Option<FacePoint>,String> {
         let mut data = [0.;6];
-        match self.result(unsafe { solvent_cad_face_point(self.0,face,u,v,tolerance,data.as_mut_ptr()) })? {
+        match self.result(unsafe { solvent_cad_face_point(self.ptr,face,u,v,tolerance,data.as_mut_ptr()) })? {
             0 => Ok(None),
             state @ (1 | 2) => Ok(Some(FacePoint {position:[data[0],data[1],data[2]],
                 normal:[data[3],data[4],data[5]],on_trim:state == 2})),
@@ -327,28 +339,40 @@ impl Session {
     }
     pub(crate) fn face_seams(&self,face: c_int) -> Result<[bool;2],String> {
         let mut axes = [0;2];
-        self.result(unsafe { solvent_cad_face_seams(self.0,face,axes.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_face_seams(self.ptr,face,axes.as_mut_ptr()) })?;
         Ok(axes.map(|v| v != 0))
     }
     pub(crate) fn edge_point(&self,edge: c_int,t: f64) -> Result<[f64;3],String> {
         let mut p = [0.;3];
-        self.result(unsafe { solvent_cad_curve_point(self.0,edge,t,p.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_curve_point(self.ptr,edge,t,p.as_mut_ptr()) })?;
         Ok(p)
     }
     /// A STEP file's shape, read as it was written: nothing validated or repaired.
     pub(crate) fn read_step(&self,path: &str) -> Result<c_int,String> {
         let name = CString::new(path).map_err(|e| e.to_string())?;
-        self.result(unsafe { solvent_cad_read_step(self.0,name.as_ptr()) })
+        self.result(unsafe { solvent_cad_read_step(self.ptr,name.as_ptr()) })
     }
     /// The kind of a face's supporting surface, in OCCT's `GeomAbs_SurfaceType` order.
     pub(crate) fn face_kind(&self,face: c_int) -> Result<c_int,String> {
-        self.result(unsafe { solvent_cad_face_kind(self.0,face) })
+        self.result(unsafe { solvent_cad_face_kind(self.ptr,face) })
     }
     /// A face's supporting surface on an even `nu` x `nv` grid over its UV box (u first): each
     /// point's position and oriented unit normal, without a trim test.
     pub(crate) fn surface_grid(&self,face: c_int,nu: usize,nv: usize) -> Result<Vec<([f64;3],[f64;3])>,String> {
+        if let Some(b) = self.held(face) {
+            let f = b.faces.first().ok_or("a held shape with no face")?;
+            let [[a,z],[c,d]] = held_box(&b);
+            return Ok((0..nu*nv).map(|k| {
+                let (i,j) = (k/nv,k%nv);
+                let uv = [a+(z-a)*i as f64/(nu-1) as f64,c+(d-c)*j as f64/(nv-1) as f64];
+                let (p,su,sv) = f.surface.d1(uv);
+                let n = cross(su,sv);
+                let l = norm(n).max(1e-300);
+                (p,n.map(|x| x/l*if f.reversed { -1. } else { 1. }))
+            }).collect())
+        }
         let mut data = vec![0.;6*nu*nv];
-        self.result(unsafe { solvent_cad_surface_grid(self.0,face,nu as c_int,nv as c_int,data.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_surface_grid(self.ptr,face,nu as c_int,nv as c_int,data.as_mut_ptr()) })?;
         Ok(data.chunks(6).map(|d| ([d[0],d[1],d[2]],[d[3],d[4],d[5]])).collect())
     }
     /// For each point, the face's support normal (unoriented) at its nearest foot and the distance
@@ -358,8 +382,33 @@ impl Session {
     pub(crate) fn surface_feet_near(&self,face: c_int,points: &[[f64;3]],guesses: &[[f64;2]],trust: f64)
         -> Result<Vec<Option<([f64;3],f64)>>,String> {
         if guesses.len() != points.len() { return Err("one guess a point".into()); }
+        if let Some(b) = self.held(face) {
+            let f = b.faces.first().ok_or("a held shape with no face")?;
+            let [[a,z],[c,d]] = held_box(&b);
+            let s = &f.surface;
+            let gap = |uv: [f64;2],p: [f64;3]| distance(s.point(uv),p);
+            return Ok(gcs_core::par::indices(points.len(),|k| {
+                let p = points[k];
+                let g = guesses[k];
+                // the local foot from the guess, and the global one where it does not improve on the
+                // guess or lands farther than `trust`
+                let start = (g[0].is_finite() && g[1].is_finite()).then(|| [a+(z-a)*g[0],c+(d-c)*g[1]]);
+                let local = start.and_then(|uv| s.foot_from(p,uv).filter(|&f| gap(f,p) <= gap(uv,p)));
+                let foot = match local {
+                    Some(uv) if gap(uv,p) <= trust => uv,
+                    _ => {
+                        let global = s.inverse(p);
+                        match local { Some(uv) if gap(uv,p) < gap(global,p) => uv,_ => global }
+                    }
+                };
+                let (_,su,sv) = s.d1(foot);
+                let n = cross(su,sv);
+                let l = norm(n);
+                (l > 0.).then(|| (n.map(|x| x/l),gap(foot,p)))
+            }))
+        }
         let mut data = vec![0.;4*points.len()];
-        self.result(unsafe { solvent_cad_surface_feet_near(self.0,face,points.as_ptr().cast(),guesses.as_ptr().cast(),
+        self.result(unsafe { solvent_cad_surface_feet_near(self.ptr,face,points.as_ptr().cast(),guesses.as_ptr().cast(),
             points.len() as c_int,trust,data.as_mut_ptr()) })?;
         Ok(feet(&data))
     }
@@ -368,4 +417,22 @@ impl Session {
 /// The feet the kernel wrote, four doubles a point: the normal and the distance, NaN for none.
 fn feet(data: &[f64]) -> Vec<Option<([f64;3],f64)>> {
     data.chunks(4).map(|d| d[3].is_finite().then(|| ([d[0],d[1],d[2]],d[3]))).collect()
+}
+
+/// The core's sheets in place of the kernel's (`SOLVENT_WRITER=rust`, unless `SOLVENT_SHEETS=occt`).
+pub(crate) fn core_sheets() -> bool {
+    std::env::var("SOLVENT_WRITER").is_ok_and(|v| v == "rust") && std::env::var("SOLVENT_SHEETS").map_or(true,|v| v != "occt")
+}
+
+/// A held sheet's box in its parameters: its first face's surface's domain where that is a net,
+/// otherwise its loops' extent.
+fn held_box(b: &gcs_core::brep::topo::Brep) -> [[f64;2];2] {
+    let f = &b.faces[0];
+    if let gcs_core::brep::geom::Surface::BSpline(_,n) = &f.surface { return n.domain() }
+    let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+    for c in f.loops.iter().flatten() {
+        let e = &b.edges[c.edge as usize];
+        for t in [e.t[0],e.t[1]] { let q = c.pcurve.at(t,e,&f.surface,&b.vertices); for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); } }
+    }
+    [[lo[0],hi[0]],[lo[1],hi[1]]]
 }

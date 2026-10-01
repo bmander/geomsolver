@@ -1,4 +1,6 @@
 //! Document dependencies, cache reads and resolved CSG terms.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 
 // -- resolving a document's solids into terms ---------------------------------------------------
@@ -319,7 +321,7 @@ pub(crate) fn operand_paths(sk: &Sketch, si: usize) -> BTreeMap<String, String> 
     done.remove(&(si as u32)).unwrap_or_default()
 }
 
-fn placed_name(name: &str,path: &str) -> String {
+pub(super) fn placed_name(name: &str,path: &str) -> String {
     if path.is_empty() { name.to_string() } else { format!("{name}.{path}") }
 }
 
@@ -407,7 +409,7 @@ fn build(
             let b = n[k] * (bounds.hi[k] - basis.o[k]);
             (lo + a.min(b), hi + a.max(b))
         });
-        let diagonal = (0..3).map(|k| (bounds.hi[k] - bounds.lo[k]).powi(2)).sum::<f64>().sqrt();
+        let diagonal = (0..3).map(|k| (bounds.hi[k] - bounds.lo[k]).dpowi(2)).sum::<f64>().sqrt();
         let pad = diagonal * EPS * 4.0;
         Some((lo - pad, hi + pad))
     } else { None };

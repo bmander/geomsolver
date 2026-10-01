@@ -29,6 +29,8 @@
 //! reaches a kernel: it rides in the constraint's constants, where a block already carries
 //! per-constraint numbers, so no kernel signature has to learn about curves.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::expr::{Ast, Op as EOp};
 use std::collections::BTreeMap;
 
@@ -432,15 +434,15 @@ fn call1_series(f: Fn1, a: f64) -> [f64; 4] {
         }
         Fn1::Abs => [a.abs(), a.signum(), 0.0, 0.0],
         Fn1::Sin => {
-            let (s, c) = (a * K).sin_cos();
+            let (s, c) = (a * K).dsin_cos();
             [s, K * c, -K * K * s, -K * K * K * c]
         }
         Fn1::Cos => {
-            let (s, c) = (a * K).sin_cos();
+            let (s, c) = (a * K).dsin_cos();
             [c, -K * s, -K * K * c, K * K * K * s]
         }
         Fn1::Tan => {
-            let t = (a * K).tan();
+            let t = (a * K).dtan();
             let q = 1.0 + t * t;
             [t, K * q, 2.0 * K * K * t * q, 2.0 * K * K * K * q * (1.0 + 3.0 * t * t)]
         }
@@ -449,27 +451,27 @@ fn call1_series(f: Fn1, a: f64) -> [f64; 4] {
             let r = w.sqrt();
             let d = [1.0 / r / K, a / (w * r) / K, (1.0 + 2.0 * a * a) / (w * w * r) / K];
             match f {
-                Fn1::Asin => [a.asin().to_degrees(), d[0], d[1], d[2]],
-                _ => [a.acos().to_degrees(), -d[0], -d[1], -d[2]],
+                Fn1::Asin => [a.dasin().to_degrees(), d[0], d[1], d[2]],
+                _ => [a.dacos().to_degrees(), -d[0], -d[1], -d[2]],
             }
         }
         Fn1::Atan => {
             let w = 1.0 + a * a;
             [
-                a.atan().to_degrees(),
+                a.datan().to_degrees(),
                 1.0 / w / K,
                 -2.0 * a / (w * w) / K,
                 (6.0 * a * a - 2.0) / (w * w * w) / K,
             ]
         }
         Fn1::Exp => {
-            let e = a.exp();
+            let e = a.dexp();
             [e, e, e, e]
         }
-        Fn1::Ln => [a.ln(), 1.0 / a, -1.0 / (a * a), 2.0 / (a * a * a)],
+        Fn1::Ln => [a.dln(), 1.0 / a, -1.0 / (a * a), 2.0 / (a * a * a)],
         Fn1::Log => {
             let l = std::f64::consts::LN_10;
-            [a.log10(), 1.0 / (a * l), -1.0 / (a * a * l), 2.0 / (a * a * a * l)]
+            [a.dlog10(), 1.0 / (a * l), -1.0 / (a * a * l), 2.0 / (a * a * a * l)]
         }
         Fn1::Floor => [a.floor(), 0.0, 0.0, 0.0],
         Fn1::Ceil => [a.ceil(), 0.0, 0.0, 0.0],
@@ -520,11 +522,11 @@ pub fn eval_series_flat(flat: &[f64], n_vars: usize, x: &[f64], s: &mut Scratch)
                 // `p (p−1) … (p−k+1) a^(p−k)`; a constant exponent over a zero base is finite,
                 // as `eval_flat` keeps it
                 let (v, p) = (base.c[0], ex.c[0]);
-                let mut d = [v.powf(p); 4];
+                let mut d = [v.dpowf(p); 4];
                 let mut fall = 1.0;
                 for k in 1..4 {
                     fall *= p - (k - 1) as f64;
-                    d[k] = if v == 0.0 && p - k as f64 <= 0.0 { 0.0 } else { fall * v.powf(p - k as f64) };
+                    d[k] = if v == 0.0 && p - k as f64 <= 0.0 { 0.0 } else { fall * v.dpowf(p - k as f64) };
                 }
                 base.apply(d, n)
             } else {
@@ -610,11 +612,11 @@ pub fn eval_flat(flat: &[f64], n_vars: usize, x: &[f64], s: &mut Scratch) -> Val
             (av * inv, zip(&ad, &bd, n, |p, q| (p * bv - av * q) * inv * inv))
         } else if w[0] == code::POW {
             let ((av, ad), (bv, bd)) = (get(v, g, n, a), get(v, g, n, b));
-            let val = av.powf(bv);
+            let val = av.dpowf(bv);
             // d(a^b) = a^b (b' ln a + b a'/a); the second term is written a^(b-1) b a' so a
             // constant exponent over a zero base is finite rather than a logarithm of one
-            let p1 = if av == 0.0 { 0.0 } else { av.powf(bv - 1.0) * bv };
-            let l = if av > 0.0 { val * av.ln() } else { 0.0 };
+            let p1 = if av == 0.0 { 0.0 } else { av.dpowf(bv - 1.0) * bv };
+            let l = if av > 0.0 { val * av.dln() } else { 0.0 };
             (val, zip(&ad, &bd, n, |p, q| p1 * p + l * q))
         } else if w[0] == code::CALL1 {
             let (av, ad) = get(v, g, n, a);
@@ -684,7 +686,7 @@ fn call2(f: Fn2, a: f64, b: f64) -> (f64, f64, f64) {
             if r2 == 0.0 {
                 (0.0, 0.0, 0.0)
             } else {
-                (a.atan2(b).to_degrees(), b / r2 / K, -a / r2 / K)
+                (a.datan2(b).to_degrees(), b / r2 / K, -a / r2 / K)
             }
         }
         Fn2::Min => {
@@ -702,7 +704,7 @@ fn call2(f: Fn2, a: f64, b: f64) -> (f64, f64, f64) {
             }
         }
         Fn2::Hypot => {
-            let h = a.hypot(b);
+            let h = a.dhypot(b);
             if h == 0.0 {
                 (0.0, 0.0, 0.0)
             } else {

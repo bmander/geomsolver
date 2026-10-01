@@ -120,7 +120,7 @@ fn body_reports_keep_every_operand_path() {
     let p = positions(&src);
     assert_eq!(p["result.stock.near.area"], 91.0);
     assert_eq!(p["result.boss.near.area"], 9.0);
-    assert_eq!(p["result.volume"], 518.0);
+    near(p["result.volume"], 518.0, 1e-12);
     assert_eq!(p["result.area"], 424.0);
     let face_area: f64 = p
         .iter()
@@ -222,7 +222,7 @@ fn nonexistent_and_removed_mate_faces_are_refused() {
 #[test]
 fn acyclic_body_nesting_has_no_fake_cycle_or_empty_term_limit() {
     let p = positions(&source(11));
-    assert_eq!(p["result.volume"], 1000.0);
+    near(p["result.volume"], 1000.0, 1e-12);
     let mut e = read(&source(11));
     let mut last = e.map.ent_named("result").unwrap().i();
     for i in 0..512 {
@@ -253,9 +253,10 @@ fn depth_is_a_positive_magnitude_even_when_it_is_an_expression() {
             e.diags
         );
     }
-    assert_eq!(
+    near(
         positions(&source(12).replace("depth: -5mm", "from: 0mm, to: 5mm"))["result.volume"],
-        500.0
+        500.0,
+        1e-12,
     );
     let src = source(12)
         .replace("unit mm", "unit mm\nparam d = -5mm")

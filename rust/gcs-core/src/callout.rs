@@ -17,6 +17,8 @@
 //! changes what a callout measures, never how big it looks.  The one thing measured in the
 //! sketch's own units is the value itself.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::constraints::{CKind, Constraint};
 use crate::io::dimension_text;
 use crate::model::{angle_between, seg_distance, signed_point_to_line, EntKind, EntRef, Sketch};
@@ -375,7 +377,7 @@ fn cross(a: P, b: P) -> f64 {
 }
 
 fn len(a: P) -> f64 {
-    a.0.hypot(a.1)
+    a.0.dhypot(a.1)
 }
 
 /// A quarter turn counterclockwise.
@@ -397,7 +399,7 @@ fn mid(a: P, b: P) -> P {
 }
 
 fn ray(th: f64) -> P {
-    (th.cos(), th.sin())
+    (th.dcos(), th.dsin())
 }
 
 /// Text is never upside down: a direction in the left half plane reads the other way round, and
@@ -441,7 +443,7 @@ impl Frame {
             Frame::Linear { o, d, n } => (dot(sub(p, o), d), dot(sub(p, o), n)),
             Frame::Polar { o, th0 } => {
                 let v = sub(p, o);
-                (wrap(v.1.atan2(v.0) - th0), len(v))
+                (wrap(v.1.datan2(v.0) - th0), len(v))
             }
         }
     }
@@ -490,7 +492,7 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
         }
         CKind::Angle => {
             let (corner, d1, _) = corner_of(sk, c)?;
-            Some(Frame::Polar { o: corner, th0: d1.1.atan2(d1.0) })
+            Some(Frame::Polar { o: corner, th0: d1.1.datan2(d1.0) })
         }
         // about the arc's own centre from its own start, as a radius on it is
         CKind::ArcLength => {
@@ -769,7 +771,7 @@ impl Pen<'_> {
         let dc = if d.1 < 0.0 || (d.1 == 0.0 && d.0 < 0.0) { mul(d, -1.0) } else { d };
         let nc = perp(dc);
         let key = (
-            (dc.1.atan2(dc.0) / (PI / 24.0)).round() as i64,
+            (dc.1.datan2(dc.0) / (PI / 24.0)).round() as i64,
             (dot(nc, a) / self.px(LANE_PX)).round() as i64,
             if dot(n, nc) >= 0.0 { 1 } else { -1 },
         );
@@ -813,7 +815,7 @@ impl Pen<'_> {
                 0.5 * (a1 - a0) + spin.clamp(-room, room)
             }
             _ => {
-                let away = unit(sub(c, self.hub)).map_or(FRAC_PI_4, |d| d.1.atan2(d.0));
+                let away = unit(sub(c, self.hub)).map_or(FRAC_PI_4, |d| d.1.datan2(d.0));
                 away + spin
             }
         }
@@ -874,7 +876,7 @@ impl Pen<'_> {
         // the heads face along the dimension line, which runs backwards when the second point
         // is behind the first across the page — a run of -30 is drawn, and reads, right to left
         let dd = unit(sub(b1, a1)).unwrap_or(d);
-        k.angle = readable(dd.1.atan2(dd.0));
+        k.angle = readable(dd.1.datan2(dd.0));
         let over = s * (self.px(TEXT_GAP_PX) + 0.5 * th);
         if len(sub(b1, a1)) >= tw + 2.2 * head {
             k.arrows.push(Arrow { at: a1, dir: mul(dd, -1.0) });
@@ -911,7 +913,7 @@ impl Pen<'_> {
         let pad = self.px(2.0);
         let hw = 0.5 * self.px(FONT_PX * text_em(&k.text)) + pad;
         let hh = 0.5 * self.px(FONT_PX) + pad;
-        let (c, s) = (k.angle.cos(), k.angle.sin());
+        let (c, s) = (k.angle.dcos(), k.angle.dsin());
         let corner = |sx: f64, sy: f64| {
             (
                 k.anchor.0 + sx * hw * c - sy * hh * s,
@@ -1056,10 +1058,10 @@ impl Pen<'_> {
             return Some(self.note(c.id, CalloutKind::Angular, mid(a1, b1), &text));
         };
         let sweep = sweep_of(self.sk, c, e1, e2);
-        let th0 = d1.1.atan2(d1.0);
+        let th0 = d1.1.datan2(d1.0);
         let (tw, th) = (self.px(FONT_PX * text_em(&text)), self.px(FONT_PX));
         // the label rides outside the arc, clear of it by its own half extent in that direction
-        let half = |am: f64| 0.5 * (th * am.sin().abs() + tw * am.cos().abs());
+        let half = |am: f64| 0.5 * (th * am.dsin().abs() + tw * am.dcos().abs());
         let place = self.placed(c).unwrap_or_else(|| {
             let reach = |i: usize| {
                 let (a, b) = seg(self.sk, i);
@@ -1109,7 +1111,7 @@ impl Pen<'_> {
         let (a0, a1) = self.sk.arc_angles(e.i());
         let (tw, th) = (self.px(FONT_PX * text_em(&text)), self.px(FONT_PX));
         // the label rides outside the dimension arc, clear of it by its own half extent there
-        let half = |am: f64| 0.5 * (th * am.sin().abs() + tw * am.cos().abs());
+        let half = |am: f64| 0.5 * (th * am.dsin().abs() + tw * am.dcos().abs());
         // left where it fell, over the middle of the sweep — turned off it as a second leader
         // out of the same centre is, so a radius on the same arc keeps its own place
         let place = self.placed(c).unwrap_or_else(|| {

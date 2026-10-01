@@ -7,6 +7,8 @@
 //! which then never meshes a field itself (`FieldMeshing::Deferred`). A host that does neither (the
 //! terminal, a test) has the sketch mesh the field to the end when a solid is first asked for
 //! (`FieldMeshing::Now`).
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 use crate::delaunay::refine::{Criteria, Domain, Progressive, Readings, Stage};
 use super::{Query, Resolution, Source, Want};
@@ -333,7 +335,7 @@ impl FieldMesher {
         let refine = self.run.progress();
         self.peak = self.peak.max(refine.worst);
         let within = if refine.stage == Stage::Done || refine.worst <= 1.0 || self.peak <= 1.0 { 1.0 }
-            else { (1.0 - refine.worst.ln() / self.peak.ln()).clamp(0.0, 1.0) };
+            else { (1.0 - refine.worst.dln() / self.peak.dln()).clamp(0.0, 1.0) };
         let (phase, within, fraction) = match self.phase {
             Phase::Tracing(..) => ("tracing edges", 0.0, 0.25),
             Phase::First(_) => ("first pass", within, 0.25 * within),

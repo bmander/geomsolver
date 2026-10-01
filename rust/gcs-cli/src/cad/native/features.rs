@@ -25,15 +25,15 @@ impl Session {
     pub(crate) fn construct_recipe(&self,recipe: &Json) -> Result<c_int,String> { self.construct(recipe) }
 
     pub(crate) fn boundary(&self,solid: c_int) -> Result<Vec<BoundaryEdge>,String> {
-        let count = self.result(unsafe { solvent_cad_boundary(self.0,solid,std::ptr::null_mut(),0) })?;
+        let count = self.result(unsafe { solvent_cad_boundary(self.ptr,solid,std::ptr::null_mut(),0) })?;
         let mut rows = vec![0;4*count as usize];
-        self.result(unsafe { solvent_cad_boundary(self.0,solid,rows.as_mut_ptr(),count) })?;
+        self.result(unsafe { solvent_cad_boundary(self.ptr,solid,rows.as_mut_ptr(),count) })?;
         Ok(rows.chunks(4).map(|r| BoundaryEdge {row:[r[0],r[1],r[2],r[3]]}).collect())
     }
 
     pub(crate) fn boundary_point(&self,edge: &BoundaryEdge,fraction: f64) -> Result<EdgePoint,String> {
         let mut data = [0.;15];
-        self.result(unsafe { solvent_cad_boundary_point(self.0,edge.row.as_ptr(),fraction,data.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_boundary_point(self.ptr,edge.row.as_ptr(),fraction,data.as_mut_ptr()) })?;
         Ok(EdgePoint {position:[data[0],data[1],data[2]],normals:[[data[6],data[7],data[8]],[data[9],data[10],data[11]]],
             dihedral:data[14]})
     }

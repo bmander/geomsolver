@@ -1,5 +1,7 @@
 //! One transport for both sweeps and lofts. Sections are solved geometry at the guide ends;
 //! omitting the second section repeats the first in the transported frame.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 use plane::{cross, dot, norm, scaled};
 
@@ -77,7 +79,7 @@ impl Guide {
         Ok(g)
     }
     fn rotate(&self, p: V, t: f64) -> V {
-        let (s, c) = (self.angle * t).sin_cos();
+        let (s, c) = (self.angle * t).dsin_cos();
         add(
             add(scaled(p, c), scaled(cross(self.axis, p), s)),
             scaled(self.axis, dot(self.axis, p) * (1.0 - c)),
@@ -176,11 +178,11 @@ fn pair(
     // changing the end plane's drawing axes cannot twist or collapse a circular loft.
     if a.names.len() == 1 && b.names.len() == 1 {
         if let (Some(ac), Some(bc)) = (ac[0], bc[0]) {
-            let angle = (a.pts[0].1 - ac.1).atan2(a.pts[0].0 - ac.0);
-            let radius = (b.pts[0].0 - bc.0).hypot(b.pts[0].1 - bc.1);
+            let angle = (a.pts[0].1 - ac.1).datan2(a.pts[0].0 - ac.0);
+            let radius = (b.pts[0].0 - bc.0).dhypot(b.pts[0].1 - bc.1);
             let count = b.pts.len();
             for (i, p) in b.pts.iter_mut().enumerate() {
-                let (s, c) = (angle + std::f64::consts::TAU * i as f64 / count as f64).sin_cos();
+                let (s, c) = (angle + std::f64::consts::TAU * i as f64 / count as f64).dsin_cos();
                 *p = (bc.0 + radius * c, bc.1 + radius * s);
             }
         }
@@ -209,12 +211,12 @@ fn pair(
                 for &i in group {
                     let (a, b) = (p.pts[i], p.pts[(i + 1) % p.pts.len()]);
                     let (u, v) = ((a.0 - c.0, a.1 - c.1), (b.0 - c.0, b.1 - c.1));
-                    angle += (u.0 * v.1 - u.1 * v.0).atan2(u.0 * v.0 + u.1 * v.1);
+                    angle += (u.0 * v.1 - u.1 * v.0).datan2(u.0 * v.0 + u.1 * v.1);
                 }
             }
             move |t: f64| {
                 if let Some(c) = center {
-                    let (sn, cs) = (angle * t).sin_cos();
+                    let (sn, cs) = (angle * t).dsin_cos();
                     let (x, y) = (first.0 - c.0, first.1 - c.1);
                     (c.0 + x * cs - y * sn, c.1 + x * sn + y * cs)
                 } else {
@@ -370,7 +372,7 @@ pub(super) fn prepare(
     }
     let flatness = crate::curve::flatness(unit);
     let step = if rmax > flatness {
-        2.0 * (1.0 - flatness / rmax).acos()
+        2.0 * (1.0 - flatness / rmax).dacos()
     } else {
         std::f64::consts::TAU
     };
@@ -489,9 +491,9 @@ fn cap(polys: &[&FacePoly]) -> Vec<Vec<(f64, f64)>> {
         for interval in hits.chunks_exact(2) {
             let (l, r) = (interval[0], interval[1]);
             let mut quad = vec![l.1, r.1, r.2, l.2];
-            quad.dedup_by(|a, b| (a.0 - b.0).hypot(a.1 - b.1) <= tol);
+            quad.dedup_by(|a, b| (a.0 - b.0).dhypot(a.1 - b.1) <= tol);
             if quad.len() > 2
-                && (quad[0].0 - quad.last().unwrap().0).hypot(quad[0].1 - quad.last().unwrap().1)
+                && (quad[0].0 - quad.last().unwrap().0).dhypot(quad[0].1 - quad.last().unwrap().1)
                     <= tol
             {
                 quad.pop();

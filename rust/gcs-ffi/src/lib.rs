@@ -2028,6 +2028,36 @@ pub unsafe extern "C" fn gcs_solid_stl_preview(h: *mut Sketch, idx: i32, unit: f
     })
 }
 
+/// **A solid's exact export by the core's own kernel** (`gcs_core::brep::export`, the same functions
+/// `solventc` calls): `kind` 0 for its STEP file (text), 1 for its STL, held to `tolerance`
+/// millimetres (zero or less: the gross bars). A body with swept cuts of the generating class is
+/// admitted and built as one sector patterned, its STL held to its material field: seconds, not
+/// milliseconds, which is why the app asks for it in its worker. Null with the reason where the
+/// export refuses, the stage it refused at named.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_exact(h: *mut Sketch, idx: i32, kind: i32, tolerance: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let s = sk(h);
+        let i = idx.max(0) as usize;
+        if let Some((_, message)) = gcs_core::solid::bearing_errors(s).into_iter().next() {
+            set_error(message);
+            return std::ptr::null_mut();
+        }
+        let tolerance = if tolerance > 0. {
+            match gcs_core::solid::export::Tolerance::new(tolerance) { Ok(t) => Some(t), Err(m) => { set_error(m); return std::ptr::null_mut() } }
+        } else { None };
+        let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
+        let made = gcs_core::brep::export::exact(s, i, None, tolerance, &say).and_then(|exact| match kind {
+            0 => gcs_core::brep::export::step(&exact, &s.solids[i].name, tolerance, &say).map(String::into_bytes),
+            _ => gcs_core::brep::export::stl(s, i, &exact, tolerance, &say),
+        });
+        match made {
+            Ok(bytes) => out_bytes(bytes),
+            Err(refusal) => { set_error(format!("{} (at {})", refusal.message, refusal.stage.key())); std::ptr::null_mut() }
+        }
+    })
+}
+
 /// Whether solid `idx`'s surface is still being refined: 1, 0, or −1 with the reason where it has
 /// none to ask about (`Sketch::field_provisional`; a solid with no sweep is 0 unevaluated).
 #[no_mangle]

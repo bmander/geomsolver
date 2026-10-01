@@ -1,6 +1,8 @@
 //! Exact generating patches of existing declarative solids. These retain the solved
 //! profile's lines and circles; no facets enter their position or derivative evaluation.
 //! Boundary trimming and outward orientation remain separate questions.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 pub(super) mod contact;
 pub use contact::RevolvedContact;
 mod project;
@@ -130,7 +132,7 @@ impl RevolvedSurface {
         let axis = sk.lines.get(*axis as usize).ok_or("no revolution axis")?;
         let origin = lift(sk.point_xy(axis.p1 as usize));
         let delta = sub(lift(sk.point_xy(axis.p2 as usize)),origin);
-        let len = delta[0].hypot(delta[1]).hypot(delta[2]);
+        let len = delta[0].dhypot(delta[1]).dhypot(delta[2]);
         if !len.is_finite() || len == 0. { return Err("degenerate revolution axis".into()); }
         let meridian = match edge.kind {
             EntKind::Line => {
@@ -151,7 +153,7 @@ impl RevolvedSurface {
                 if !r.is_finite() || r <= 0. || !sweep.is_finite() || sweep <= 0. {
                     return Err("a round profile edge needs positive finite radius and sweep".into());
                 }
-                let (s,c) = start.sin_cos();
+                let (s,c) = start.dsin_cos();
                 Meridian::Round { center: lift(sk.point_xy(center as usize)),
                     a: vector((r*c,r*s)),b: vector((-r*s,r*c)),sweep }
             }
@@ -179,7 +181,7 @@ impl RevolvedSurface {
         let (p,d) = match &self.meridian {
             Meridian::Line { start,delta } => (add(*start,scale(*delta,u)),*delta),
             Meridian::Round { center,a,b,sweep } => {
-                let (s,c) = (u*sweep).sin_cos();
+                let (s,c) = (u*sweep).dsin_cos();
                 (add(*center,add(scale(*a,c),scale(*b,s))),
                     scale(add(scale(*a,-s),scale(*b,c)),*sweep))
             }
@@ -188,7 +190,7 @@ impl RevolvedSurface {
         // angular velocity's cross product: what a pose would compute through
         // two matrices, on a path evaluated many thousand times per trace.
         let a = crate::envelope::normalized(self.axis).ok_or(Error::Degenerate)?;
-        let (s,c) = (v*self.sweep).sin_cos();
+        let (s,c) = (v*self.sweep).dsin_cos();
         use crate::space::cross;
         let turned = |x: V| { let along = (a[0]*x[0]+a[1]*x[1]+a[2]*x[2])*(1.-c); add(add(scale(x,c),scale(cross(a,x),s)),scale(a,along)) };
         let r = turned(sub(p,self.origin));

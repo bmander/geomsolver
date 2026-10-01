@@ -1,5 +1,7 @@
 //! Validation of planar sections with holes, before any sweep is built.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::{face_poly, loop_poly, FacePoly};
 use crate::model::{EntKind, EntRef, Sketch};
 
@@ -72,7 +74,7 @@ fn boundaries_touch(sk: &Sketch, a: &[EntRef], b: &[EntRef]) -> bool {
         if e.kind == EntKind::Circle { return true; }
         let (c, r) = round(e);
         let (start, end) = sk.arc_angles(e.i());
-        let angle = (p.1 - c.1).atan2(p.0 - c.0);
+        let angle = (p.1 - c.1).datan2(p.0 - c.0);
         let turn = std::f64::consts::TAU;
         let offset = (angle - start).rem_euclid(turn);
         offset <= end - start + tol / r || turn - offset <= tol / r
@@ -106,7 +108,7 @@ fn boundaries_touch(sk: &Sketch, a: &[EntRef], b: &[EntRef]) -> bool {
             } else {
                 let (bc, br) = round(b);
                 let d = sub(bc, c);
-                let length = d.0.hypot(d.1);
+                let length = d.0.dhypot(d.1);
                 let tol = r.max(br).max(length) * 1e-12;
                 if length > r + br + tol || length < (r - br).abs() - tol { continue; }
                 if length <= tol {

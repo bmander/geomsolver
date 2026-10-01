@@ -1,4 +1,6 @@
 //! Visibility against a prepared solid, shared by drawing projection and the 3D overview.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::{plane, solid::LocalPoint};
 use super::{Renderer, spatial::{Bounds, Bvh}};
 
@@ -76,7 +78,7 @@ fn face_bounds(face: &crate::csg::Piece, eps: f64) -> Bounds<3> {
         let a = face.pts[i];
         let b = face.pts[(i + 1) % face.pts.len()];
         let e: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
-        let length = e[0].hypot(e[1]).hypot(e[2]);
+        let length = e[0].dhypot(e[1]).dhypot(e[2]);
         if length > 0.0 { edges.push(e.map(|x| x / length)); }
     }
     if edges.len() < 3 {

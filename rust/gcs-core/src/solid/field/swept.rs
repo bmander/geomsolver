@@ -1,4 +1,6 @@
 //! Continuous volume sweeps of explicit one-Lipschitz material fields.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::{SpatialField,Error,I,V,Query,Reading,Source,Want,memo::{self,Grid,Memo}};
 use crate::{interval::minimum::{self,Minimum,Options,Stop},motion::{Family,MotionBounds},roots::brent};
 use std::{collections::{BTreeMap,BinaryHeap},sync::{Arc,OnceLock}};
@@ -565,7 +567,7 @@ impl SweptField {
     /// indexed round a blank is far from most points asked about, and reading this costs nothing.
     pub(super) fn clear_of(&self,p: [f64;3]) -> Option<f64> {
         let support = (*self.caches.support.get_or_init(|| self.support_bounds().ok().flatten().map(|b| b.map(|x| x.bounds()))))?;
-        let d2: f64 = (0..3).map(|k| (support[k][0]-p[k]).max(p[k]-support[k][1]).max(0.).powi(2)).sum();
+        let d2: f64 = (0..3).map(|k| (support[k][0]-p[k]).max(p[k]-support[k][1]).max(0.).dpowi(2)).sum();
         (d2 > 0.).then(|| d2.sqrt())
     }
 

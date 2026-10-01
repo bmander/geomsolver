@@ -4,6 +4,8 @@
 //! B-spline of degree one through points within `tol` of it; every edge's curve in each face that
 //! uses it (its pcurve, a seam's two) written beside it, so a reader need not project its own; and
 //! a pole's degenerate edge left out of its loop, as a reader rebuilds it.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
 use super::topo::{Brep,EdgeCurve};
 use crate::space::{distance,scale};
@@ -174,6 +176,50 @@ fn step_uv(s: &Surface,uv: super::geom::Uv) -> [f64;2] {
     match s { Surface::Cone(_,_,a) if *a < 0. => [-uv[0],-uv[1]],_ => uv }
 }
 
+/// The curve `uv(t)` over `[t0, t1]` as cubic Bézier pieces (a B-spline of degree 3 whose inner
+/// knots are triple): cut at `breaks` (the edge's own knots, where its derivatives may jump) and
+/// halved wherever a piece's quarter points come onto `surface` farther than a tenth of `FIT`
+/// from `uv(t)`'s own; each piece is the Hermite cubic of its ends' values and derivatives.
+/// Measured against the edge's foot on the surface, not the edge: a fitted intersection curve
+/// stands off each of its surfaces by its own fit, which no pcurve can close. None where a piece
+/// halved thirty times still misses, or past 4096 pieces.
+fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super::geom::Uv,surface: &Surface,[t0,t1]: [f64;2],
+    breaks: &[f64]) -> Option<(Vec<[f64;2]>,Vec<f64>)> {
+    let hermite = |a: f64,b: f64| -> [[f64;2];4] {
+        let (p,q,dp,dq) = (uv(a),uv(b),duv(a),duv(b));
+        let h = (b-a)/3.;
+        [p,[p[0]+h*dp[0],p[1]+h*dp[1]],[q[0]-h*dq[0],q[1]-h*dq[1]],q]
+    };
+    let at = |c: &[[f64;2];4],s: f64| -> [f64;2] {
+        let w = [(1.-s).dpowi(3),3.*s*(1.-s)*(1.-s),3.*s*s*(1.-s),s.dpowi(3)];
+        [(0..4).map(|k| w[k]*c[k][0]).sum(),(0..4).map(|k| w[k]*c[k][1]).sum()]
+    };
+    let mut cuts = vec![t0];
+    cuts.extend(breaks.iter().copied().filter(|&k| k > t0 && k < t1));
+    cuts.push(t1);
+    let mut pieces: Vec<(f64,f64,[[f64;2];4])> = Vec::new();
+    for w in cuts.windows(2) {
+        let mut stack = vec![(w[0],w[1],0)];
+        while let Some((a,b,depth)) = stack.pop() {
+            let c = hermite(a,b);
+            let off = [0.25,0.5,0.75].iter().map(|&f| distance(surface.point(at(&c,f)),surface.point(uv(a+(b-a)*f)))).fold(0.,f64::max);
+            if off > FIT/10. {
+                if depth >= 30 || pieces.len()+stack.len() > 4096 { return None }
+                let m = (a+b)/2.;
+                stack.push((m,b,depth+1));
+                stack.push((a,m,depth+1));
+            } else { pieces.push((a,b,c)); }
+        }
+    }
+    let mut poles = vec![pieces[0].2[0]];
+    let mut knots = vec![t0;4];
+    for (k,(_,b,c)) in pieces.iter().enumerate() {
+        poles.extend_from_slice(&c[1..]);
+        knots.extend(std::iter::repeat_n(*b,if k+1 == pieces.len() { 4 } else { 3 }));
+    }
+    Some((poles,knots))
+}
+
 /// A use's pcurve, as a STEP `PCURVE` on the face's surface: a line where it is one, a circle
 /// where a plane's edge is one turning the plane's way, otherwise the degree-one B-spline through
 /// its parameters at points chosen so each chord's middle maps within `tol` of the edge.
@@ -185,7 +231,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
     let at = |t: f64| step_uv(&f.surface,u.pcurve.at(t,e,&f.surface,&b.vertices));
     let p2 = |o: &mut Out,p: [f64;2]| o.add(format!("CARTESIAN_POINT('',({},{}))",real(p[0]),real(p[1])));
     let line = |o: &mut Out,origin: [f64;2],d: [f64;2]| {
-        let l = d[0].hypot(d[1]);
+        let l = d[0].dhypot(d[1]);
         let p = p2(o,origin);
         let dir = o.add(format!("DIRECTION('',({},{}))",real(d[0]/l),real(d[1]/l)));
         let v = o.add(format!("VECTOR('',#{dir},{})",real(l)));
@@ -203,7 +249,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
     });
     let curve = match (&u.pcurve,&f.surface,c) {
         // linear in the edge's parameter: a line through where it is at t = 0
-        (Pcurve::Line {..},_,_) | (_,_,_) if affine && (z[0]-a[0]).hypot(z[1]-a[1]) > 0. => {
+        (Pcurve::Line {..},_,_) | (_,_,_) if affine && (z[0]-a[0]).dhypot(z[1]-a[1]) > 0. => {
             let d = [(z[0]-a[0])/(e.t[1]-e.t[0]),(z[1]-a[1])/(e.t[1]-e.t[0])];
             line(o,[a[0]-d[0]*(e.t[0]-shift),a[1]-d[1]*(e.t[0]-shift)],d)
         }
@@ -229,6 +275,16 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
         (_,Surface::Plane(pl),Curve::BSpline(bs)) => {
             let ids: Vec<String> = bs.poles.iter().map(|&q| { let l = pl.local(q); format!("#{}",p2(o,[l[0],l[1]])) }).collect();
             spline(o,bs.degree,&ids,&bs.knots)
+        }
+        // a cubic in the edge's parameter through its parameters at evenly spaced points, doubled
+        // until it maps within a tenth of `FIT` of the edge between them (a chordal pcurve within
+        // the file's tolerance trims a spline face that far off its edge, and a reader measures
+        // the face it trims: 1e-5 of a pinion read back)
+        _ if let Some((poles,knots)) = bezier_pcurve(&|t| u.pcurve.at(t,e,&f.surface,&b.vertices),
+            &|t| u.pcurve.derivative(t,e,&f.surface,&b.vertices),&f.surface,e.t,&c.breaks(e.t)) => {
+            let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,step_uv(&f.surface,q)))).collect();
+            let knots: Vec<f64> = knots.iter().map(|k| k-shift).collect();
+            spline(o,3,&ids,&knots)
         }
         _ => {
             let off = |ta: f64,tz: f64| {

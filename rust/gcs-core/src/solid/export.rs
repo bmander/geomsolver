@@ -2,6 +2,8 @@
 //! met at, the class row when admission refused it, a point where when there is one, and the
 //! words a person reads. A host writes files and builds kernel shapes; what a refusal *is* is
 //! the core's, so a harness, a front end and the terminal all read the same thing.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::admission;
 use std::fmt;
 
@@ -138,7 +140,7 @@ impl Tolerance {
     /// a few degrees, does not. Never past `MOST_TURN`, whatever the spacing.
     pub fn turn(&self,gap: f64,spacing: f64) -> f64 {
         let room = (self.millimetres-gap).max(0.);
-        (4.*room/spacing.max(1e-12)).atan().to_degrees().min(Self::MOST_TURN)
+        (4.*room/spacing.max(1e-12)).datan().to_degrees().min(Self::MOST_TURN)
     }
 
     /// The STL mesher's absolute chordal deflection: the share of the tolerance the sheet does

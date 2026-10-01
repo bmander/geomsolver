@@ -191,6 +191,66 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
         ("root",root.into()),("nodes",Json::Arr(nodes))]),sweeps})
 }
 
+/// A recipe written about another origin: every point it carries less `by` (millimetres) — a
+/// profile's edges' ends, centres and poles, a guide's start and centre, a placement's translation
+/// (`t + R by − by`) — and every direction as it was. A point that only places a plane or a line (a
+/// profile's origin, a revolution's) is put where its plane or line comes nearest the new origin:
+/// moved within it, it says the same, and the frames built about it keep parameters of the solid's
+/// own size. A kernel building a solid far from the world's origin builds it about its own instead,
+/// where a double still carries the solid's sizes (a part at 1e9 mm is good to 1e-7 mm there).
+pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
+    let triple = |j: &Json| -> Option<[f64;3]> { match j { Json::Arr(a) if a.len() == 3 => Some(std::array::from_fn(|k| a[k].as_f64())),_ => None } };
+    let point = |j: &Json| match triple(j) { Some(p) => vector(std::array::from_fn(|k| p[k]-by[k])),None => j.clone() };
+    let points = |j: &Json,keys: &[&str]| {
+        let mut j = j.clone();
+        for &k in keys { if let Some(p) = j.get(k).map(&point) { j.set(k,p); } }
+        if let Some(Json::Arr(poles)) = j.get("poles") { let poles = Json::Arr(poles.iter().map(&point).collect()); j.set("poles",poles); }
+        j
+    };
+    // the point of the plane through `key` square to `along` (or of the line through it along
+    // `along`) nearest the new origin
+    let nearest = |j: &mut Json,key: &str,along: &str,plane: bool| {
+        let (Some(o),Some(d)) = (j.get(key).and_then(triple),j.get(along).and_then(triple)) else { return };
+        let o: [f64;3] = std::array::from_fn(|k| o[k]-by[k]);
+        let dd: f64 = d.iter().map(|x| x*x).sum();
+        if !(dd > 0.) { return }
+        let t = (0..3).map(|k| o[k]*d[k]).sum::<f64>()/dd;
+        j.set(key,vector(std::array::from_fn(|k| if plane { t*d[k] } else { o[k]-t*d[k] })));
+    };
+    let profile = |p: &Json| {
+        let mut p = p.clone();
+        nearest(&mut p,"origin","normal",true);
+        if let Some(Json::Arr(loops)) = p.get("loops") {
+            let loops = Json::Arr(loops.iter().map(|l| match l {
+                Json::Arr(edges) => Json::Arr(edges.iter().map(|e| points(e,&["start","end","center"])).collect()),
+                other => other.clone(),
+            }).collect());
+            p.set("loops",loops);
+        }
+        p
+    };
+    let mut out = recipe.clone();
+    if let Some(Json::Arr(nodes)) = recipe.get("nodes") {
+        let nodes = nodes.iter().map(|n| {
+            let mut n = n.clone();
+            nearest(&mut n,"origin","axis",false);
+            for k in ["profile","end"] { if let Some(p) = n.get(k).filter(|p| matches!(p,Json::Obj(_))).map(&profile) { n.set(k,p); } }
+            if let Some(g) = n.get("guide").map(|g| points(g,&["start","center"])) { n.set("guide",g); }
+            if let Some(Json::Arr(m)) = n.get("matrix") {
+                let m: Vec<f64> = m.iter().map(Json::as_f64).collect();
+                if m.len() == 12 {
+                    let mut moved = m.clone();
+                    for r in 0..3 { moved[4*r+3] = m[4*r+3]+(0..3).map(|c| m[4*r+c]*by[c]).sum::<f64>()-by[r]; }
+                    n.set("matrix",Json::Arr(moved.into_iter().map(Json::from).collect()));
+                }
+            }
+            n
+        }).collect();
+        out.set("nodes",Json::Arr(nodes));
+    }
+    out
+}
+
 /// How near its curve a fitted stretch must pass (millimetres).
 pub const FIT_MM: f64 = 1e-4;
 
@@ -289,8 +349,13 @@ fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
             _ => return Err(format!("`{}`: CAD profiles currently require lines, arcs, circles, splines or stretches of curves",face.name)),
         })
     };
-    let loops = face.boundaries().map(|(edges,_)|
-        edges.iter().copied().map(edge).collect::<Result<Vec<_>,_>>().map(Json::Arr))
+    // each edge with its name, where the document gives it one: the name of the face a sweep makes
+    // of it, which a kernel building the solid gives that face (`brep::build`)
+    let loops = face.boundaries().map(|(edges,names)|
+        edges.iter().enumerate().map(|(k,&e)| edge(e).map(|mut j| {
+            if let Some(n) = names.get(k).filter(|n| !n.is_empty()) { j.set("name",n.clone().into()); }
+            j
+        })).collect::<Result<Vec<_>,_>>().map(Json::Arr))
         .collect::<Result<Vec<_>,_>>()?;
     Ok(object([("loops",Json::Arr(loops)),("origin",vector(p.basis.o.map(|v| v*scale))),
         ("normal",vector(p.basis.normal()))]))

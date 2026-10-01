@@ -52,14 +52,25 @@ fn tracing() -> bool {
 /// and are read in the cells' order, so the first refusal is the one the cells taken in turn give.
 pub(crate) fn classify(session: &Session,partition: c_int,field: &MaterialField)
     -> Result<(Vec<Cell>,Vec<Cell>),String> {
-    let (mut kept,mut removed) = (Vec::new(),Vec::new());
     // Each cell's volume was measured when the partition was validated; its point is the
     // deepest interior sample measured here, every cell's on its own core.
     let solids = session.solids(partition)?;
     let clock = std::time::Instant::now();
     let sampled = session.samples_of(&solids,4,12)?;
     let sampling = clock.elapsed().as_secs_f64();
-    // every sample far enough from its cell's boundary is probed, at half its distance (at most 0.05 mm)
+    let volumes = solids.iter().map(|&s| session.volume(s)).collect::<Result<Vec<_>,_>>()?;
+    let (kept,removed) = judge(&volumes,sampled,field,sampling)?;
+    let native = |c: Cell| Cell {solid:solids[c.solid as usize],..c};
+    Ok((kept.into_iter().map(native).collect(),removed.into_iter().map(native).collect()))
+}
+
+/// Cells of the given volumes judged by the material field at their interior samples (points with
+/// a lower bound on their distance from the cell's boundary, deepest first): each `Cell`'s `solid`
+/// is its index. Every sample far enough from its cell's boundary is probed, at half that distance
+/// (at most 0.05 mm), on every core, an evaluator a thread, and read in the cells' order.
+pub(crate) fn judge(volumes: &[f64],sampled: Vec<Vec<([f64;3],f64)>>,field: &MaterialField,sampling: f64)
+    -> Result<(Vec<Cell>,Vec<Cell>),String> {
+    let (mut kept,mut removed) = (Vec::new(),Vec::new());
     let asked: Vec<([f64;3],f64)> = sampled.iter().flatten().map(|&(point,boundary)| (point,(boundary*0.5).min(0.05)))
         .filter(|&(_,distance)| distance > 1e-4).collect();
     let clock = std::time::Instant::now();
@@ -70,10 +81,9 @@ pub(crate) fn classify(session: &Session,partition: c_int,field: &MaterialField)
     });
     let probing = clock.elapsed().as_secs_f64();
     let mut answers = answers.into_iter();
-    for (solid,samples) in solids.into_iter().zip(sampled) {
-        let volume = session.volume(solid)?;
+    for (k,(&volume,samples)) in volumes.iter().zip(sampled).enumerate() {
         if samples.is_empty() { return Err(format!("a cell of volume {volume} has no interior sample")); }
-        let cell = Cell {solid,point:samples[0].0,volume};
+        let cell = Cell {solid:k as c_int,point:samples[0].0,volume};
         let mut verdict = None;
         let deepest = samples[0];
         for (point,boundary) in samples {

@@ -1,4 +1,6 @@
 //! Solved planar profiles, boundary tessellation and provenance.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 
 // -- building a primitive out of a face --------------------------------------------------------
@@ -37,7 +39,7 @@ impl FacePoly {
             (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
         for i in 0..n {
             let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
-            if (b.0 - a.0).hypot(b.1 - a.1) <= tol { return false; }
+            if (b.0 - a.0).dhypot(b.1 - a.1) <= tol { return false; }
             // Collinear forward corners are valid; a retraced spike is not.
             if cross(a, b, c).abs() <= area_tol
                 && (b.0 - a.0) * (c.0 - b.0) + (b.1 - a.1) * (c.1 - b.1) < 0.0
@@ -212,7 +214,7 @@ fn tidy_poly(mut f: FacePoly) -> FacePoly {
     let mut of = Vec::with_capacity(f.of.len());
     for i in 0..f.pts.len() {
         let j = (i + 1) % f.pts.len();
-        let d = (f.pts[j].0 - f.pts[i].0).hypot(f.pts[j].1 - f.pts[i].1);
+        let d = (f.pts[j].0 - f.pts[i].0).dhypot(f.pts[j].1 - f.pts[i].1);
         if d > g {
             pts.push(f.pts[i]);
             of.push(f.of[i]);
@@ -247,7 +249,7 @@ fn walk_edge(
             let r = sk.params[a.radius as usize].value.abs();
             let ang = |p: u32| {
                 let q = sk.point_xy(p as usize);
-                (q.1 - c.1).atan2(q.0 - c.0)
+                (q.1 - c.1).datan2(q.0 - c.0)
             };
             let (a0, a1) = (ang(a.start), ang(a.end));
             // **How far an arc goes is the arc's own fact; which way is the walk's.**  An arc
@@ -314,13 +316,13 @@ fn tessellate_arc(c: (f64, f64), r: f64, from: f64, sweep: f64, unit: f64) -> Ve
     let tol = crate::curve::flatness(unit);
     // Bound angular error too: below the absolute flatness a circle still needs a region,
     // with the same relative area accuracy as a larger circular profile.
-    let step = (if r > tol { 2.0 * (1.0 - tol / r).acos() } else { std::f64::consts::TAU })
+    let step = (if r > tol { 2.0 * (1.0 - tol / r).dacos() } else { std::f64::consts::TAU })
         .min(std::f64::consts::TAU / 64.0);
     let n = ((sweep.abs() / step).ceil() as usize).clamp(2, 4096);
     (0..=n)
         .map(|k| {
             let a = from + sweep * k as f64 / n as f64;
-            (c.0 + r * a.cos(), c.1 + r * a.sin())
+            (c.0 + r * a.dcos(), c.1 + r * a.dsin())
         })
         .collect()
 }

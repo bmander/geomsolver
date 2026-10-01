@@ -23,6 +23,14 @@ const MARGIN: f64 = 0.05;
 const PROBES: usize = 160;
 /// The fuzzy value the copies are identified to (mm): the split's own.
 const FUZZY: f64 = 1e-5;
+/// The tolerance the core's split works to (mm), phase 3 of docs/rust-kernel-plan.md.
+const SPLIT_TOL: f64 = 1e-6;
+
+/// The sector split by the core's kernel and not the native one (phase 3 of the Rust kernel plan):
+/// with the core's writer (`SOLVENT_WRITER=rust`), unless `SOLVENT_SPLIT=occt`.
+pub(crate) fn core_split() -> bool {
+    std::env::var("SOLVENT_WRITER").is_ok_and(|v| v == "rust") && std::env::var("SOLVENT_SPLIT").map_or(true,|v| v != "occt")
+}
 
 /// The centres of the spheres the recipe's revolutions make, where they are on the axis: the
 /// slicings a bevel gear's end spheres suggest. Millimetres.
@@ -126,7 +134,7 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
     // fit share of 10 µm). A looser sheet (the pinion's at the gross bars, 15 µm) carries 0.6 µm
     // tolerances into the union, and intersected apart they moved its volume by 2.7e-6 of itself.
     // `SOLVENT_SECTOR_FUSE=off` splits by the sheets as they are.
-    let fusing = tools.len() > 1 && sheets.iter().all(|s| s.2 <= Tolerance::FABRICATION.fit())
+    let fusing = tools.len() > 1 && !core_split() && sheets.iter().all(|s| s.2 <= Tolerance::FABRICATION.fit())
         && std::env::var("SOLVENT_SECTOR_FUSE").map_or(true,|v| v != "off");
     std::thread::scope(|scope| {
         let fused = fusing.then(|| scope.spawn(|| session.fused_tools(&tools)));
@@ -182,6 +190,25 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         }
         let debug = std::env::var_os("SOLVENT_SECTOR_DEBUG").is_some();
         if debug { eprintln!("sector: the blank made again about its axis ({:?})",clock.elapsed()); }
+        // `SOLVENT_SPLIT_DUMP=DIR`: what the split takes and makes, as the core's B-rep reads it, for
+        // the core's split to be developed against (phase 3 of docs/rust-kernel-plan.md)
+        let dump_dir = std::env::var("SOLVENT_SPLIT_DUMP").ok();
+        let dump = |shape: c_int,name: &str| -> Result<(),String> {
+            let Some(dir) = &dump_dir else { return Ok(()) };
+            // (a shape the core holds has no kernel's reading to dump)
+            if session.held(shape).is_some() { return Ok(()) }
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            std::fs::write(format!("{dir}/{name}.json"),session.brep_json(shape)?).map_err(|e| e.to_string())
+        };
+        dump(turned,"blank")?; dump(side,"side")?; dump(other,"other")?;
+        for (k,&t) in tools.iter().enumerate() { dump(t,&format!("sheet{k}"))?; }
+        if core_split() {
+            let piece = core_sector(session,turned,[side,other],&tools,n,&body_field,distinct.len(),clock,
+                &recipe.recipe,frame.origin,frame.axis,frame.radial(across))?;
+            let one = gcs_core::brep::props::volume(&piece);
+            let sector = Patterned {piece:-1,sides:[side,other],fuzzy:FUZZY,origin:frame.origin,axis:frame.axis,count:n,pitch:indexing.pitch()};
+            return Ok((sector,Union {sector,one,clock,core:Some(piece)}))
+        }
         let halves = session.split_solid(turned,&[side,other])?;
         if debug { eprintln!("sector: the blank split by the sides ({:?})",clock.elapsed()); }
         let cells = session.solids(halves)?;
@@ -194,7 +221,9 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         };
         if cells.len() != 2 { return Err(format!("the sides split the blank into {} cells, not two",cells.len())); }
         let tool = match fused { Some(fused) => vec![fused.join().unwrap_or_else(|e| std::panic::resume_unwind(e))?],None => tools.clone() };
+        dump(wedge,"wedge")?;
         let partition = session.split_solid(wedge,&tool)?;
+        for (k,&c) in session.solids(partition)?.iter().enumerate() { dump(c,&format!("cell{k}"))?; }
         stage(&format!("split the blank by the sides into the sector of {share:.6} mm³, and it by {} sheets into {} cells ({:?})",
             tools.len(),session.solids(partition)?.len(),clock.elapsed()));
         mark(Stage::Split);
@@ -207,17 +236,21 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         mark(Stage::Classify);
         let clock = std::time::Instant::now();
         let piece = session.fuse(&kept.iter().map(|c| c.solid).collect::<Vec<_>>())?;
+        dump(piece,"piece")?;
         let one = session.volume(piece)?;
         debug_faces(session,"the sector's material",piece);
         let sector = Patterned {piece,sides:[side,other],fuzzy:FUZZY,origin:frame.origin,axis:frame.axis,count:n,pitch:indexing.pitch()};
-        Ok((sector,Union {sector,one,clock}))
+        Ok((sector,Union {sector,one,clock,core:None}))
     })
 }
 
 /// A sector's material to be turned into its copies and united (`Union::make`, `Session::pattern`)
 /// and the union checked (`Union::check`), which a caller may run beside the files written from the
 /// union and the sector.
-pub(crate) struct Union { sector: Patterned,one: f64,clock: std::time::Instant }
+pub(crate) struct Union { sector: Patterned,one: f64,clock: std::time::Instant,
+    /// The sector's material as the core's split made it, where it made it (`core_split`): its
+    /// `sector.piece` is then no native solid, and the core turns it into the copies.
+    pub core: Option<gcs_core::brep::topo::Brep> }
 
 impl Union {
     /// The sector and its copies united, unchecked.
@@ -243,4 +276,112 @@ impl Union {
         mark(Stage::Fuse);
         Ok(part)
     }
+}
+
+/// The sector by the core's kernel: the blank turned about its axis split by the two sides, the
+/// share of its volume taken, that split by each sheet in turn, its cells judged by the material
+/// field at interior samples the core measures (`brep::query::interior`), and the material cell
+/// returned as the core's B-rep.
+#[allow(clippy::too_many_arguments)]
+fn core_sector(session: &Session,turned: c_int,sides: [c_int;2],tools: &[c_int],n: usize,field: &MaterialField,
+    sweeps: usize,clock: std::time::Instant,recipe: &gcs_core::json::Json,origin: [f64;3],axis: [f64;3],seam: [f64;3])
+    -> Result<gcs_core::brep::topo::Brep,String> {
+    use gcs_core::brep::{boolean::split,json,props::volume,query::interior};
+    let read = |s: c_int| session.brep(s).map(|b| (*b).clone());
+    // the blank: the core's (phase 4), its recipe built and turned about the axis till its faces'
+    // seams lie in the half-plane opposite the sector, or the kernel's (`SOLVENT_BLANK=occt`)
+    let blank = if std::env::var("SOLVENT_BLANK").is_ok_and(|v| v == "occt") { read(turned)? } else {
+        let started = std::time::Instant::now();
+        // its meridian region turned once, from the half-plane opposite the sector; where it is not a
+        // solid of revolution, its Booleans turned till its seams lie there
+        if let Ok(dir) = std::env::var("SOLVENT_RECIPE_DUMP") { let _ = std::fs::write(format!("{dir}/blank.json"),recipe.dump(None)); }
+        let blank = match gcs_core::brep::recipe::meridian(recipe,seam)? {
+            Ok((b,o,a)) => {
+                if gcs_core::space::norm(cross(a,axis)) > 1e-9 || gcs_core::space::norm(cross(sub(o,origin),axis)) > 1e-6 {
+                    return Err("the blank's meridian is about another line than the indexing's".into())
+                }
+                b
+            }
+            Err(_) => turned_to(&gcs_core::brep::recipe::build(recipe)?,origin,axis,seam)?,
+        };
+        if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+            for (fi,f) in blank.faces.iter().enumerate() {
+                let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+                for c in f.loops.iter().flatten() {
+                    let e = &blank.edges[c.edge as usize];
+                    for j in 0..=8 { let q = c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,e,&f.surface,&blank.vertices);
+                        for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); } }
+                }
+                eprintln!("blank: face {fi} {} {:?}: {} loops, {} uses, u {:.4}..{:.4} v {:.4}..{:.4}",f.surface.kind(),f.name,f.loops.len(),
+                    f.loops.iter().map(|l| l.len()).sum::<usize>(),lo[0],hi[0],lo[1],hi[1]);
+            }
+        }
+        let kinds = |b: &gcs_core::brep::topo::Brep| b.faces.iter().fold(std::collections::BTreeMap::new(),|mut m,f| { *m.entry(f.surface.kind()).or_insert(0) += 1; m });
+        let (ours,theirs) = (volume(&blank),session.volume(turned)?);
+        stage(&format!("the blank by the core: {ours:.6} mm³ against the kernel's {theirs:.6}, faces {:?} against {:?} ({:?})",kinds(&blank),
+            kinds(&read(turned)?),started.elapsed()));
+        if (ours-theirs).abs() > 1e-7*theirs { return Err(format!("the core's blank is {ours:.9} mm³, the kernel's {theirs:.9}")) }
+        blank
+    };
+    let whole = volume(&blank);
+    let halves = split(&blank,&read(sides[0])?.joined(&read(sides[1])?),SPLIT_TOL)?;
+    let volumes: Vec<f64> = halves.iter().map(volume).collect();
+    let share = whole/n as f64;
+    let Some(wedge) = halves.iter().zip(&volumes).find(|(_,v)| (*v-share).abs() <= 1e-5*whole).map(|(c,_)| c.clone()) else {
+        return Err(format!("the sides split the blank ({whole:.6} mm³) by the core into {} cells of {volumes:.6?} mm³, none its \
+            {share:.6} mm³ share",halves.len()));
+    };
+    if halves.len() != 2 { return Err(format!("the sides split the blank by the core into {} cells, not two",halves.len())); }
+    let mut cells = vec![wedge];
+    for &t in tools {
+        let sheet = read(t)?;
+        let split = gcs_core::par::map(&cells,|c| split(c,&sheet,SPLIT_TOL));
+        cells = split.into_iter().collect::<Result<Vec<_>,_>>()?.into_iter().flatten().collect();
+    }
+    for c in &cells { c.check(1e-6).map_err(|e| format!("a cell of the core's split is invalid: {e}"))?; }
+    let volumes: Vec<f64> = cells.iter().map(volume).collect();
+    stage(&format!("split the blank by the sides into the sector of {share:.6} mm³, and it by {} sheets into {} cells, by the core \
+        ({:?})",tools.len(),cells.len(),clock.elapsed()));
+    mark(Stage::Split);
+    let clock = std::time::Instant::now();
+    let sampled = gcs_core::par::map(&cells,|c| interior(c,4)).into_iter().collect::<Result<Vec<_>,_>>()?;
+    let (kept,removed) = judge(&volumes,sampled,field,clock.elapsed().as_secs_f64())?;
+    stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),clock.elapsed()));
+    let measured = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();
+    contracts::cells(&measured(&kept),&measured(&removed),&vec![1;sweeps])?;
+    mark(Stage::Classify);
+    let [kept] = &kept[..] else { return Err(format!("{} cells of the sector are material: the core does not unite them",kept.len())) };
+    // each edge's tolerance measured, as a kernel's shape read into the core's B-rep has
+    let mut piece = cells.swap_remove(kept.solid as usize);
+    json::measure(&mut piece);
+    Ok(piece)
+}
+
+/// A solid of revolution about the line through `origin` along `axis` turned about it until its
+/// faces' seams (an edge used twice by one face) lie in the half-plane along `seam`; refused where
+/// its seams are not in one half-plane.
+fn turned_to(b: &gcs_core::brep::topo::Brep,origin: [f64;3],axis: [f64;3],seam: [f64;3]) -> Result<gcs_core::brep::topo::Brep,String> {
+    let mut found: Option<[f64;3]> = None;
+    for f in &b.faces {
+        let uses: Vec<u32> = f.loops.iter().flatten().map(|c| c.edge).collect();
+        for (k,&e) in uses.iter().enumerate() {
+            if !uses[k+1..].contains(&e) { continue }
+            let edge = &b.edges[e as usize];
+            let gcs_core::brep::topo::EdgeCurve::Curve(_) = &edge.curve else { continue };
+            let p = edge.point((edge.t[0]+edge.t[1])/2.,&b.vertices);
+            let r = sub(p,origin);
+            let r = sub(r,gcs_core::space::scale(axis,dot(r,axis)));
+            let l = norm(r);
+            if l < 1e-9 { continue }
+            let r = r.map(|x| x/l);
+            match found {
+                None => found = Some(r),
+                Some(q) if dot(q,r) < 1.-1e-12 => return Err("the blank's seams are not in one half-plane".into()),
+                _ => {}
+            }
+        }
+    }
+    let Some(r) = found else { return Ok(b.clone()) };
+    let angle = dot(axis,cross(r,seam)).atan2(dot(r,seam));
+    Ok(b.moved(&gcs_core::brep::geom::Rigid::turn(origin,axis,angle)))
 }

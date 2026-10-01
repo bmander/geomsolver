@@ -1,5 +1,7 @@
 //! Build primitive entities and resolve their initial seeds.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::curves::build_curve;
 use super::resolve::{follow, follow_building, Resolver};
 use super::{Code, Diag};
@@ -25,7 +27,7 @@ fn scatter(i: usize) -> (f64, f64) {
     let mut rng = Rng::new(0x5eed_u32 ^ (i as u32).wrapping_mul(2_654_435_761));
     let th = i as f64 * STEP + rng.uniform(-0.2, 0.2);
     let r = rng.uniform(0.8, 1.2);
-    (r * th.cos(), r * th.sin())
+    (r * th.dcos(), r * th.dsin())
 }
 
 /// Child display names under `base`, such as `l.p1` and `a.center`.
@@ -464,7 +466,7 @@ fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<(f64, crate::u
         return Ok(match scalar {
             "c" => (c, crate::units::Dim::SCALAR),
             "s" => (s, crate::units::Dim::SCALAR),
-            _ => (s.atan2(c).to_degrees(), crate::units::Dim::ANGLE),
+            _ => (s.datan2(c).to_degrees(), crate::units::Dim::ANGLE),
         });
     }
     let names = e
@@ -566,7 +568,7 @@ fn place_of(
             // written in; what it comes to is in the document's angle unit, which is degrees
             let b = seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}"))?;
             let b = b.to_radians();
-            Ok((cx + r * b.cos(), cy + r * b.sin()))
+            Ok((cx + r * b.dcos(), cy + r * b.dsin()))
         }
         (EntKind::Circle, None) => {
             Err("where on the edge?  `hint(at: c, bearing: …)` says the bearing".to_string())

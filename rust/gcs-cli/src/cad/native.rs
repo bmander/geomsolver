@@ -58,56 +58,76 @@ pub(crate) fn turned_about(origin: [f64;3],axis: [f64;3],angle: f64) -> Result<g
 #[derive(Clone,Copy,Debug)]
 pub(crate) struct Meridian { pub region: c_int,pub origin: [f64;3],pub axis: [f64;3],pub seam: [f64;3] }
 
-pub(crate) struct Session(*mut c_void);
+pub(crate) struct Session { ptr: *mut c_void,
+    /// Shapes the core made and holds (phase 4 of docs/rust-kernel-plan.md), by handle less `CORE`.
+    core: std::sync::Mutex<Vec<std::sync::Arc<gcs_core::brep::topo::Brep>>> }
+
+/// The first handle of a shape the core holds: the kernel's own count up from one.
+pub(crate) const CORE: c_int = 1 << 28;
 // A session is called from several threads at once, each building its own shapes and reading
 // shared ones: the native side guards its tables and keeps each thread's last error
 // (`backend/occt.hpp`).
 unsafe impl Sync for Session {}
-impl Drop for Session { fn drop(&mut self) { unsafe { solvent_cad_free(self.0); } } }
+impl Drop for Session { fn drop(&mut self) { unsafe { solvent_cad_free(self.ptr); } } }
 impl Session {
+    /// A shape of the core's, held under a handle of its own.
+    pub(crate) fn hold(&self,b: gcs_core::brep::topo::Brep) -> c_int {
+        let mut core = self.core.lock().unwrap_or_else(|e| e.into_inner());
+        core.push(std::sync::Arc::new(b));
+        CORE+(core.len()-1) as c_int
+    }
+    /// The core's shape a handle names, where the core holds it.
+    pub(crate) fn held(&self,id: c_int) -> Option<std::sync::Arc<gcs_core::brep::topo::Brep>> {
+        if id < CORE { return None }
+        self.core.lock().unwrap_or_else(|e| e.into_inner()).get((id-CORE) as usize).cloned()
+    }
+    /// A shape as the core's B-rep: its own where the core holds it, or the kernel's read.
+    pub(crate) fn brep(&self,id: c_int) -> Result<std::sync::Arc<gcs_core::brep::topo::Brep>,String> {
+        match self.held(id) { Some(b) => Ok(b),None => Ok(std::sync::Arc::new(gcs_core::brep::json::read(&self.brep_json(id)?)?)) }
+    }
     pub(crate) fn new() -> Result<Self,String> {
         let context = unsafe { solvent_cad_new() };
         if context.is_null() { Err("cannot allocate native CAD session".into()) }
-        else { Ok(Self(context)) }
+        else { Ok(Self {ptr:context,core:Default::default()}) }
     }
     /// The session's handle, for a test crate calling the backend's C ABI directly
     /// (`tests/native_boundary.rs`); the binary's own test build has no use for it.
     #[cfg(test)]
     #[allow(dead_code)]
-    pub(crate) fn as_ptr(&self) -> *mut c_void { self.0 }
+    pub(crate) fn as_ptr(&self) -> *mut c_void { self.ptr }
     pub(crate) fn result(&self,id: c_int) -> Result<c_int,String> {
         if id < 0 {
-            Err(unsafe { CStr::from_ptr(solvent_cad_error(self.0)) }.to_string_lossy().into_owned())
+            Err(unsafe { CStr::from_ptr(solvent_cad_error(self.ptr)) }.to_string_lossy().into_owned())
         } else { Ok(id) }
     }
     /// `operation`: the body rule's word, `on` fusing, `cut` subtracting and
     /// `bound` keeping what the two share.
     fn boolean(&self,a: c_int,b: c_int,operation: &str) -> Result<c_int,String> {
         let kind = match operation { "on" => 0,"cut" => 1,"bound" => 2,_ => return Err(format!("unknown body operation `{operation}`")) };
-        self.result(unsafe { solvent_cad_boolean(self.0,a,b,kind) })
+        self.result(unsafe { solvent_cad_boolean(self.ptr,a,b,kind) })
     }
     fn face(&self,edges: &Json) -> Result<c_int,String> {
         let mut ids = Vec::new();
         for edge in edges.arr() {
             let id = match field(edge,"kind").as_str() {
-                "line" => unsafe { solvent_cad_line(self.0,v(edge,"start").as_ptr(),v(edge,"end").as_ptr()) },
+                "line" => unsafe { solvent_cad_line(self.ptr,v(edge,"start").as_ptr(),v(edge,"end").as_ptr()) },
                 "circle" => {
                     let (start,end) = edge.get("angles").map(|a| (a.arr()[0].as_f64(),a.arr()[1].as_f64()))
                         .unwrap_or((0.,std::f64::consts::TAU));
-                    unsafe { solvent_cad_circle(self.0,v(edge,"center").as_ptr(),
+                    unsafe { solvent_cad_circle(self.ptr,v(edge,"center").as_ptr(),
                         v(edge,"normal").as_ptr(),v(edge,"x_dir").as_ptr(),
                         field(edge,"radius").as_f64(),start,end) }
                 }
                 "bspline" => {
                     let poles: Vec<f64> = field(edge,"poles").arr().iter().flat_map(|p| p.arr().iter().map(Json::as_f64).collect::<Vec<_>>()).collect();
                     let knots: Vec<f64> = field(edge,"knots").arr().iter().map(Json::as_f64).collect();
-                    unsafe { solvent_cad_bspline(self.0,field(edge,"degree").as_i64() as c_int,(poles.len()/3) as c_int,poles.as_ptr(),knots.as_ptr()) }
+                    unsafe { solvent_cad_bspline(self.ptr,field(edge,"degree").as_i64() as c_int,(poles.len()/3) as c_int,poles.as_ptr(),knots.as_ptr()) }
                 }
                 _ => return Err("unsupported CAD profile edge".into()),
             };
             ids.push(self.result(id)?);
         }
-        self.result(unsafe { solvent_cad_face(self.0,ids.as_ptr(),ids.len() as c_int) })
+        self.result(unsafe { solvent_cad_face(self.ptr,ids.as_ptr(),ids.len() as c_int) })
     }
     fn primitive(&self,node: &Json,shapes: &BTreeMap<i64,c_int>) -> Result<c_int,String> {
         let profile = field(node,"profile");
@@ -118,7 +138,7 @@ impl Session {
             "through" => {
                 let ids: Vec<_> = field(node,"sources").arr().iter().map(|i| shapes[&i.as_i64()]).collect();
                 let mut bounds = [0.;6];
-                self.result(unsafe { solvent_cad_bounds(self.0,ids.as_ptr(),ids.len() as c_int,bounds.as_mut_ptr()) })?;
+                self.result(unsafe { solvent_cad_bounds(self.ptr,ids.as_ptr(),ids.len() as c_int,bounds.as_mut_ptr()) })?;
                 let origin = v(profile,"origin");
                 let (mut lo,mut hi,mut diagonal) = (0.,0.,0.);
                 for k in 0..3 {
@@ -138,10 +158,10 @@ impl Session {
         for edges in field(profile,"loops").arr() {
             let face = self.face(edges)?;
             let id = if kind == "revolve" {
-                unsafe { solvent_cad_revolve(self.0,face,v(node,"origin").as_ptr(),
+                unsafe { solvent_cad_revolve(self.ptr,face,v(node,"origin").as_ptr(),
                     v(node,"axis").as_ptr(),field(node,"angle").as_f64()) }
             } else {
-                unsafe { solvent_cad_prism(self.0,face,n.map(|x| x*start).as_ptr(),
+                unsafe { solvent_cad_prism(self.ptr,face,n.map(|x| x*start).as_ptr(),
                     n.map(|x| x*(end-start)).as_ptr()) }
             };
             let id = self.result(id)?;
@@ -208,11 +228,11 @@ impl Session {
                         let r = field(field(field(node,"profile"),"loops").arr()[0].arr().iter()
                             .find(|e| field(e,"kind").as_str() == "circle").unwrap(),"radius").as_f64();
                         let (a,b) = (std::array::from_fn::<f64,3,_>(|k| c[k]-r*axis[k]),std::array::from_fn::<f64,3,_>(|k| c[k]+r*axis[k]));
-                        let chord = self.result(unsafe { solvent_cad_line(self.0,a.as_ptr(),b.as_ptr()) })?;
+                        let chord = self.result(unsafe { solvent_cad_line(self.ptr,a.as_ptr(),b.as_ptr()) })?;
                         let normal = cross(seam,axis);
-                        let arc = self.result(unsafe { solvent_cad_circle(self.0,c.as_ptr(),normal.as_ptr(),seam.as_ptr(),r,
+                        let arc = self.result(unsafe { solvent_cad_circle(self.ptr,c.as_ptr(),normal.as_ptr(),seam.as_ptr(),r,
                             -std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2) })?;
-                        self.result(unsafe { solvent_cad_face(self.0,[arc,chord].as_ptr(),2) })?
+                        self.result(unsafe { solvent_cad_face(self.ptr,[arc,chord].as_ptr(),2) })?
                     } else {
                         let (o,a) = (v(node,"origin"),unit(v(node,"axis")));
                         if dot(cross(a,axis),cross(a,axis)).sqrt() > 1e-12 || !on_line(o) {
@@ -285,10 +305,10 @@ impl Session {
                     id
                 } else if field(node,"kind").as_str() == "placed" {
                     let matrix: Vec<_> = field(node,"matrix").arr().iter().map(Json::as_f64).collect();
-                    self.result(unsafe { solvent_cad_transform(self.0,
+                    self.result(unsafe { solvent_cad_transform(self.ptr,
                         shapes[&field(node,"source").as_i64()],matrix.as_ptr()) })?
                 } else { self.primitive(node,&shapes)? };
-                self.result(unsafe { solvent_cad_validate(self.0,id) })?;
+                self.result(unsafe { solvent_cad_validate(self.ptr,id) })?;
                 Ok(id)
             };
             let clock = std::time::Instant::now();

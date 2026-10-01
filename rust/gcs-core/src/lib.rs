@@ -47,6 +47,8 @@ pub mod modules;
 pub mod newton;
 pub mod overview;
 pub mod par;
+pub mod clock;
+pub mod fmath;
 pub mod plane;
 pub mod program;
 pub mod report;

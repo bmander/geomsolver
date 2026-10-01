@@ -15,6 +15,8 @@
 //! once, here, rather than by a group transform that would mirror every label.  That is the same
 //! division `app/camera.ts` draws: one place writes a minus sign in front of a y.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::callout::{self, Callout};
 use crate::json::fmt_g;
 use crate::model::{grow, EntKind, EntRef, Sketch};
@@ -164,8 +166,8 @@ fn arc_path(
     attrs: &str,
 ) {
     let (s, e) = (
-        at((c.0 + r * a0.cos(), c.1 + r * a0.sin())),
-        at((c.0 + r * a1.cos(), c.1 + r * a1.sin())),
+        at((c.0 + r * a0.dcos(), c.1 + r * a0.dsin())),
+        at((c.0 + r * a1.dcos(), c.1 + r * a1.dsin())),
     );
     let sweep = (a1 - a0).abs();
     let large = usize::from(sweep > std::f64::consts::PI);

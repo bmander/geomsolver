@@ -10,6 +10,8 @@
 //! tabled exactly (`Prefix`), and every loop is closed in the face's parameters across the gaps a
 //! kernel's loops leave between uses — Green's theorem holds for a closed curve only, and unclosed
 //! the gaps times `G` were 3e-6 of the pinion, and moved with the origin.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::geom::{Curve,Surface,Uv};
 use super::nurbs::Net;
 use super::topo::{Brep,EdgeCurve,Pcurve};
@@ -43,7 +45,7 @@ fn pieces(span: f64,periodic: bool) -> usize {
 /// `n`-point Gauss–Legendre nodes and weights on [−1, 1], by Newton on the Legendre polynomial.
 fn rule(n: usize) -> Vec<(f64,f64)> {
     (0..n).map(|i| {
-        let mut x = (std::f64::consts::PI*(i as f64+0.75)/(n as f64+0.5)).cos();
+        let mut x = (std::f64::consts::PI*(i as f64+0.75)/(n as f64+0.5)).dcos();
         let mut dp = 1.;
         for _ in 0..100 {
             let (mut p0,mut p1) = (1.,x);
@@ -81,7 +83,7 @@ impl<'a> Prefix<'a> {
         let knots = |k: usize,[a,b]: [f64;2]| { let mut x = vec![a]; x.extend(net.breaks(k,[a,b])); x.push(b); x };
         let (us,vs) = (knots(0,du),knots(1,dv));
         let m = 3*net.dv;
-        let nodes = (0..m).map(|k| (std::f64::consts::PI*k as f64/(m-1) as f64).cos()).collect();
+        let nodes = (0..m).map(|k| (std::f64::consts::PI*k as f64/(m-1) as f64).dcos()).collect();
         let cols = vec![None;vs.len()-1];
         Prefix {net,us,vs,ru:rule((3*net.du).div_ceil(2)+1),nodes,cols}
     }
@@ -125,33 +127,65 @@ pub fn volume(b: &Brep) -> f64 { fluxes(b).iter().sum::<f64>()/3. }
 
 /// Each face's flux `∬ X·n dA` out of the solid, side by side.
 pub fn fluxes(b: &Brep) -> Vec<f64> {
-    crate::par::map(&b.faces,|f| {
-        let mut total = 0.;
+    crate::par::indices(b.faces.len(),|fi| terms(b,fi).iter().flatten().map(|t| t.0+t.1).sum())
+}
+
+/// A face's flux term by term: for each use of each loop, its line integral and the closing
+/// segment from its end to the next use's start (what a reading of the face can be compared by).
+pub fn terms(b: &Brep,fi: usize) -> Vec<Vec<(f64,f64)>> {
+    {
+        let f = &b.faces[fi];
+        let mut out: Vec<Vec<(f64,f64)>> = Vec::new();
         let s = &f.surface;
         let [pu,pv] = s.periods();
         let g = |u: f64,v: f64| { let (x,su,sv) = s.d1([u,v]); dot(x,cross(su,sv)) };
         let mut prefix = if let Surface::BSpline(_,n) = s { Some(Prefix::new(n)) } else { None };
-        // ∫_0^u, a stretch at a time between the surface's breaks in u
+        // The face's box in its parameters. Away from a spline's table, `g` is integrated from the
+        // middle of the face's range and across the parameter it spans less: `G` is then as small
+        // as the face allows, and an error δ in a use's parameters moves the flux by `G δ` — from 0
+        // on a sphere ring turned 9 radians round, `G` is π R³ times the turn, and a pcurve 1e-8
+        // off in v moved a gear's flux by 1e-5 of itself
+        let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+        for c in f.loops.iter().flatten() {
+            let e = &b.edges[c.edge as usize];
+            for j in 0..=8 {
+                let q = c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,e,s,&b.vertices);
+                for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); }
+            }
+        }
+        // the parameter `g` is integrated along (`G` then multiplies the other's derivative)
+        let along = if prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 };
+        let base = if prefix.is_some() || !lo[along].is_finite() { 0. } else { (lo[along]+hi[along])/2. };
+        let periodic = [pu,pv][along].is_some();
+        // ∫ from the base, a stretch at a time between the surface's breaks along it
         let mut big_g = |u: f64,v: f64| {
             if let Some(p) = prefix.as_mut() { return p.big_g(u,v) }
-            let cuts = s.breaks(0,[0.,u]);
-            if cuts.is_empty() { return gauss(0.,u,pieces(u,pu.is_some()),&mut |w| g(w,v)) }
-            let mut at = vec![0.];
-            if u >= 0. { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
-            at.push(u);
-            at.windows(2).map(|w| gauss(w[0],w[1],2,&mut |x| g(x,v))).sum::<f64>()
+            let x = [u,v][along];
+            let mut at_x = |w: f64| if along == 0 { g(w,v) } else { g(u,w) };
+            let cuts = s.breaks(along,[base,x]);
+            if cuts.is_empty() { return gauss(base,x,pieces(x-base,periodic),&mut at_x) }
+            let mut at = vec![base];
+            if x >= base { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
+            at.push(x);
+            at.windows(2).map(|w| gauss(w[0],w[1],2,&mut at_x)).sum::<f64>()
         };
+        // ∬ g du dv = ∮ G dv with G along u, or -∮ G du with G along v
+        let (other,sign) = if along == 0 { (1,1.) } else { (0,-1.) };
         for l in &f.loops {
+            let mut row: Vec<(f64,f64)> = Vec::new();
             for c in l {
                 let e = &b.edges[c.edge as usize];
-                if matches!(e.curve,EdgeCurve::Degenerate) { continue }
+                // a pole's degenerate edge runs along u alone: nothing in dv, but its du counts
+                if matches!(e.curve,EdgeCurve::Degenerate) && (other == 1 || !matches!(c.pcurve,Pcurve::Line {..})) {
+                    row.push((0.,0.)); continue
+                }
                 let span = e.t[1]-e.t[0];
                 let periodic = pu.is_some() || pv.is_some() || matches!(&e.curve,EdgeCurve::Curve(c) if c.period().is_some());
                 let mut integrand = |t: f64| {
-                    let dv = c.pcurve.derivative(t,e,s,&b.vertices)[1];
+                    let dv = c.pcurve.derivative(t,e,s,&b.vertices)[other];
                     if dv == 0. { return 0. }
                     let [u,v] = c.pcurve.at(t,e,s,&b.vertices);
-                    big_g(u,v)*dv
+                    sign*big_g(u,v)*dv
                 };
                 // where the edge's curve or its curve in the face's parameters may jump in a derivative
                 let mut breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
@@ -166,7 +200,7 @@ pub fn fluxes(b: &Brep) -> Vec<f64> {
                     let each = if let EdgeCurve::Curve(Curve::Traced(_)) = &e.curve { 1 } else { 2 };
                     cuts.windows(2).map(|w| gauss(w[0],w[1],each,&mut integrand)).sum()
                 } else { gauss(e.t[0],e.t[1],pieces(span,periodic),&mut integrand) };
-                total += if c.reversed { -line } else { line };
+                row.push((if c.reversed { -line } else { line },0.));
             }
             // the loop closed in the face's parameters, each use's end joined straight to the next's
             // start: the kernel's measured gaps between them are small in space, but `G` across a
@@ -178,11 +212,12 @@ pub fn fluxes(b: &Brep) -> Vec<f64> {
             }).collect();
             for k in 0..ends.len() {
                 let (p,q) = (ends[k].1,ends[(k+1)%ends.len()].0);
-                let dv = q[1]-p[1];
+                let dv = q[other]-p[other];
                 if dv == 0. { continue }
-                total += gauss(0.,1.,1,&mut |x| big_g(p[0]+x*(q[0]-p[0]),p[1]+x*dv)*dv);
+                row[k].1 = gauss(0.,1.,1,&mut |x| sign*big_g(p[0]+x*(q[0]-p[0]),p[1]+x*(q[1]-p[1]))*dv);
             }
+            out.push(row);
         }
-        total
-    })
+        out
+    }
 }

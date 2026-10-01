@@ -6,6 +6,8 @@
 //! wherever it is opened.  No external crates: the WebAssembly build has no build step
 //! beyond `cargo build`.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use std::fmt::Write as _;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -432,9 +434,9 @@ pub fn fmt_g(v: f64, sig: usize) -> String {
     if v == 0.0 {
         return "0".to_string();
     }
-    let exp = v.abs().log10().floor() as i32;
+    let exp = v.abs().dlog10().floor() as i32;
     if exp < -4 || exp >= sig as i32 {
-        let mantissa = format!("{:.*}", sig.saturating_sub(1), v / 10f64.powi(exp));
+        let mantissa = format!("{:.*}", sig.saturating_sub(1), v / 10f64.dpowi(exp));
         let mantissa = trim_zeros(&mantissa);
         let sign = if exp < 0 { '-' } else { '+' };
         format!("{mantissa}e{sign}{:02}", exp.abs())
