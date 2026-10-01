@@ -395,6 +395,50 @@ fn brep_json_debug() {
         worst.sort_by(|a,b| b.0.total_cmp(&a.0));
         for w in worst.iter().take(12) { eprintln!("flux {w:?}"); }
     }
+    if let Ok(n) = std::env::var("BREP_PATTERN") {
+        // the sector turned into `n` copies about its sphere's axis
+        let f = b.faces.iter().find(|f| f.surface.kind() == "sphere").expect("a sphere gives the axis").surface.frame();
+        let started = std::time::Instant::now();
+        match gcs_core::brep::pattern::pattern(&b,f.o,f.z,n.parse().unwrap(),1e-4) {
+            Err(e) => eprintln!("PATTERN: {e}"),
+            Ok(p) => {
+                let w = &p.solid;
+                let kinds = w.faces.iter().fold(std::collections::BTreeMap::new(),|mut m,f| { *m.entry(f.surface.kind()).or_insert(0) += 1; m });
+                eprintln!("pattern: sides {:?}, step {:.6}°, vertices matched within {:e}; {} faces {kinds:?}, {} edges, {} vertices ({:?})",
+                    p.sides,p.step.to_degrees(),p.matched,w.faces.len(),w.edges.len(),w.vertices.len(),started.elapsed());
+                eprintln!("pattern: edges within {:e}",w.edges.iter().map(|e| e.tol).fold(0.,f64::max));
+                match w.check(1e-7) { Ok(()) => eprintln!("pattern: checked"),Err(e) => eprintln!("PATTERN CHECK: {e}") }
+                if std::env::var("PATTERN_FACE").is_ok() {
+                    let f = &w.faces[std::env::var("PATTERN_FACE").unwrap().parse::<usize>().unwrap()];
+                    eprintln!("face {} reversed {} loops {:?}",f.surface.kind(),f.reversed,f.loops.iter().map(|l| l.len()).collect::<Vec<_>>());
+                    for c in f.loops.iter().flatten().take(14) {
+                        let e = &w.edges[c.edge as usize];
+                        let (a,z) = (c.pcurve.at(e.t[0],e,&f.surface,&w.vertices),c.pcurve.at(e.t[1],e,&f.surface,&w.vertices));
+                        eprintln!("  edge {} rev {} v {:?} uv {:?} -> {:?}",c.edge,c.reversed,e.v,a,z);
+                    }
+                }
+                let (v,one) = (gcs_core::brep::props::volume(w),gcs_core::brep::props::volume(&b));
+                eprintln!("pattern: volume {v:.9} against {n} sectors' {:.9} ({:e})",one*n.parse::<f64>().unwrap(),(v/(one*n.parse::<f64>().unwrap())-1.));
+                match gcs_core::brep::mesh::mesh(w,0.01,0.2) {
+                    Ok(m) => eprintln!("pattern: meshed whole {} triangles, sag {:e}, {} turned",m.tris.len(),m.sag,m.turned),
+                    Err(e) => eprintln!("PATTERN MESH: {e}"),
+                }
+                let started = std::time::Instant::now();
+                match p.mesh(0.01,0.2) {
+                    Ok(m) => {
+                        let stl = gcs_core::mesh::stl_of(&m.triangles(),"pattern");
+                        let shells = gcs_core::mesh::stl_shells(&stl);
+                        // the mesh's volume, by the divergence theorem over its triangles
+                        let vol: f64 = m.tris.iter().map(|t| { let [a,b,c] = t.map(|i| m.pts[i as usize]);
+                            gcs_core::space::dot(a,gcs_core::space::cross(b,c)) }).sum::<f64>()/6.;
+                        eprintln!("pattern: meshed as copies {} triangles, sag {:e}, {} turned, shells {:?}, volume {vol:.6} ({:?})",
+                            m.tris.len(),m.sag,m.turned,shells.map(|_| "ok"),started.elapsed());
+                    }
+                    Err(e) => eprintln!("PATTERN COPIES MESH: {e}"),
+                }
+            }
+        }
+    }
     if let Ok(d) = std::env::var("BREP_SHIFT") {
         let d: f64 = d.parse().unwrap();
         for m in [gcs_core::brep::geom::Rigid {t:[d,0.,0.],..gcs_core::brep::geom::Rigid::identity()},gcs_core::brep::geom::Rigid {t:[0.,d,d],..gcs_core::brep::geom::Rigid::identity()}] {

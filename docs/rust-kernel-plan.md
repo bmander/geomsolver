@@ -321,6 +321,47 @@ volume only to 1e-4.
   in its face's domain, faces' senses consistent (`topology::ClosedShell` over the result).
 - **Gate:** as phase 1, with the pattern ours (the sector still OCCT's); the union's 3.8 s gone.
 
+#### Phase 2 — done (2026-09-30)
+
+`SOLVENT_WRITER=rust` on a body built as one sector reads the kernel's *sector* and turns it into the
+whole in the core (`brep::pattern`); the kernel's union, its unification and its check are never
+made. By identity, as planned:
+
+- **The sides** are the one pair of faces (not of revolution about the axis) one of which, turned a
+  pitch either way, lies on the other; the far side's vertices and edges are matched once to the near
+  side's turned (to 1.6e-14 mm on the pinion: the kernel makes the far side the near one turned).
+- **Faces of revolution about the axis keep the sector's surface** in every copy, their pcurves moved
+  along `u` by the turn (the sign read off a point). Each is first homed within half a turn of the
+  sector's middle, since a kernel keeps each face's parameters in a period of its own choosing; a
+  piece continuing one across the last copy is read a period on.
+- **Pieces of one surface meeting across a side are one face.** On the gear pair every side edge is
+  between two pieces of one blank face, so every junction disappears: the pinion's three lands are
+  piece 13 of copy k joined to piece 0 of copy k + 1, and the cone and two spheres meeting both sides
+  close into rings, each keeping its last junction as its seam (one edge used twice, its pcurves a
+  period apart — not an iso line, which our mesher and writer do not need). 147 and 291 faces, as
+  OCCT's unified unions; more edges (555 and 1155 against 415 and 871), since the junction vertices
+  stay on the arcs they split.
+- **Sheets are cut to their faces** (`Net::segment`: exact knot insertion to the face's parameter box,
+  a hundredth about it), so the STEP carries what OCCT's did: 148,595 entities for the 10 µm pinion
+  (OCCT 149,767), 13 MB.
+- **The mesh is the sector's turned** (`Built::mesh`, `mesh::mesh_with`): the sector's faces but its
+  sides meshed once, the far side sampled as the near side turned, the copies sharing their seam
+  points by index. The pair check reads the transverse moments equal within 6.5e-9 and 1.0e-8, the
+  shaft angle 90.00000° and the offset 25.00000 mm, as from OCCT's sector STL (phase 1, meshing each
+  copy alone: 4e-6, 0.24 µm off). Meshing takes 0.09–0.18 s.
+
+**Gate** (both members, both bars, full verification): OCCT reads our STEP back valid with the same
+faces, within 1.2e-6 to 2.5e-6 by the core's measure; the STLs within their bars with no turned
+facets; the field agreement 0 disagreeing; the meter at 10 µm, STEPs 1.37 and 0.69 µm, STLs 5.13 and
+5.65 µm; the pair check passes (backlash 0.0413 and 0.0457 mm). The pattern's volume is the sector's
+times the copies to 2e-8, and a torus and a cone triangle revolved through a pitch pattern into their
+Pappus volumes (`a_sector_patterned_is_its_whole_revolution`).
+
+**Time** (load 35, interleaved, light verification as exported): pinion 6.2 / 6.7 s (OCCT 5.7 / 11.0),
+gear 8.6 / 10.6 s (OCCT 10.5 / 12.1), gross / 10 µm. From the cells to the files the gear at 10 µm
+takes 2.9 s against OCCT's 4.8 (its union alone 4.1 s; the core's turn 0.25 s); what is left there is
+our STEP's writing and parsed check.
+
 ### Phase 3 — the blank and the sheets
 
 - The blank as its meridian region turned once: the region's Booleans are 2D Booleans of lines

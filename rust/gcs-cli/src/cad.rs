@@ -105,8 +105,12 @@ const SEAM_TRIES: usize = 4;
 /// least spacing still bounds it.
 #[cfg(feature="occt")]
 const GROSS_SEAM: f64 = 0.02;
+/// How near a sector's far side's vertex must be to its near side's turned for the core's pattern to
+/// take them for one (mm): the kernel makes the far side the near one turned, so they agree to rounding.
+#[cfg(feature="occt")]
+const PATTERN_MATCH: f64 = 1e-6;
 
-/// The STEP of the kernel's `solid`, read into the core's B-rep as `b`, written by the core's writer
+/// The STEP of the solid `b` (the core's B-rep of what the kernel built), written by the core's writer
 /// to `file` and verified: parsed back against `b` (`step_check`), and — with full verification —
 /// read back by the kernel as a valid solid with as many faces, that reading handed back to the core
 /// and its volume measured there the same as `b`'s to 1e-5. The reader repairs what it reads (its own
@@ -114,8 +118,8 @@ const GROSS_SEAM: f64 = 0.02;
 /// own volume is only good to about 1e-5 on spline faces (on the pinion it is 9e-6 off its own
 /// sectors' sum), so that is held to 1e-4, a gross bar.
 #[cfg(feature="occt")]
-fn ours_step(session: &native::Session,solid: std::ffi::c_int,b: &gcs_core::brep::topo::Brep,name: &str,tolerance: Option<Tolerance>,
-    file: &str) -> Result<String,String> {
+fn ours_step(session: &native::Session,b: &gcs_core::brep::topo::Brep,name: &str,tolerance: Option<Tolerance>,file: &str)
+    -> Result<String,String> {
     let started = std::time::Instant::now();
     let text = gcs_core::brep::step::write(b,name,tolerance.map_or(1e-4,|t| t.deflection()*0.1))?;
     let verified = native::step_check::verify(&text,&native::step_check::Solid::of(b))
@@ -127,7 +131,7 @@ fn ours_step(session: &native::Session,solid: std::ffi::c_int,b: &gcs_core::brep
     if native::step_check::verification() == native::step_check::Verification::Full {
         let read = session.read_step(file)?;
         session.validate(read).map_err(|e| format!("the STEP file, read back by the kernel, is not a valid solid: {e}"))?;
-        let (faces,theirs) = (session.faces(read)?.len(),session.faces(solid)?.len());
+        let (faces,theirs) = (session.faces(read)?.len(),b.faces.len());
         if faces != theirs { return Err(format!("the STEP file, read back by the kernel, has {faces} faces against {theirs}")) }
         let ours = gcs_core::brep::props::volume(b);
         let text = session.brep_json(read)?;
@@ -137,7 +141,7 @@ fn ours_step(session: &native::Session,solid: std::ffi::c_int,b: &gcs_core::brep
         if (read_ours-ours).abs() > 1e-5*ours.abs() {
             return Err(format!("the STEP file, read back by the kernel, measures {read_ours:.6} mm³ against {ours:.6} mm³"))
         }
-        let (after,before) = (session.volume(read)?,session.volume(solid)?);
+        let (after,before) = (session.volume(read)?,ours);
         if (after-before).abs() > 1e-4*before.abs() {
             return Err(format!("the STEP file, read back by the kernel, measures {after:.6} mm³ by the kernel against {before:.6} mm³"))
         }
@@ -162,14 +166,15 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         progress::start();
         let recipe = body.recipe.as_ref().map_err(Clone::clone).at(Stage::Blank)?;
         let session = native::Session::new().at(Stage::Blank)?;
-        // `SOLVENT_WRITER=rust` (phase 1 of docs/rust-kernel-plan.md): the solid the kernel built read
-        // into the core's own B-rep and its STEP and STL written from that, by our writer and mesher,
-        // the solid whole (its union made before its files)
+        // `SOLVENT_WRITER=rust` (phases 1 and 2 of docs/rust-kernel-plan.md): the solid the kernel built
+        // read into the core's own B-rep and its STEP and STL written from that, by our writer and
+        // mesher; built as one sector, the sector read and turned into the whole by the core
+        // (`brep::pattern`), the kernel's union never made
         let ours = std::env::var("SOLVENT_WRITER").is_ok_and(|v| v == "rust");
         // A body with swept cuts not yet admitted is admitted beside its blank and sheets; built as one
         // sector patterned and verified lightly, its union is checked beside its files (below).
         let defer = native::step_check::verification() == native::step_check::Verification::Light
-            && std::env::var("SOLVENT_SECTOR_STL").map_or(true,|v| v != "off") && !ours;
+            && std::env::var("SOLVENT_SECTOR_STL").map_or(true,|v| v != "off") || ours;
         let admitting = body.swept() && body.admission.is_none();
         let build = |defer: bool,whole: bool| if admitting {
             native::sweep_boundary::construct_admitting(&session,sk,body.index,recipe,&|| admitted(sk,body.index),tolerance,defer,whole)
@@ -197,12 +202,24 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             }
             let converted = if ours {
                 let started = std::time::Instant::now();
-                let b = session.brep_json(solid).and_then(|t| gcs_core::brep::json::read(&t)).at(Stage::Step)?;
+                let read = |shape| session.brep_json(shape).and_then(|t| gcs_core::brep::json::read(&t));
+                let (b,pattern) = match &built.sector {
+                    Some(s) => {
+                        let sector = read(s.piece).at(Stage::Step)?;
+                        sector.check(1e-7).map_err(|e| format!("the kernel's sector, read into the core's B-rep, is invalid: {e}"))
+                            .at(Stage::Step)?;
+                        let p = gcs_core::brep::pattern::pattern(&sector,s.origin,s.axis,s.count,PATTERN_MATCH).at(Stage::Fuse)?;
+                        stage(&format!("turned the sector into {} copies by the core: its sides faces {} and {}, their vertices \
+                            matched within {:.1e} mm",s.count,p.sides[0],p.sides[1],p.matched));
+                        (p.solid.clone(),Some(p))
+                    }
+                    None => (read(solid).at(Stage::Step)?,None),
+                };
                 b.check(1e-7).map_err(|e| format!("the kernel's solid, read into the core's B-rep, is invalid: {e}")).at(Stage::Step)?;
                 let worst = b.edges.iter().map(|e| e.tol).fold(0.,f64::max);
                 stage(&format!("read the kernel's solid into the core's B-rep: {} faces, {} edges, each within {:.3} µm of its faces \
                     ({:?})",b.faces.len(),b.edges.len(),worst*1e3,started.elapsed()));
-                Some(b)
+                Some((b,pattern))
             } else { None };
             // An indexed body's field agreement reads each probe turned into one sector.
             let indexed = built.sector.as_ref().map(|s| (s.origin,s.axis,s.count));
@@ -246,11 +263,12 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                 unreachable!("the tries end in a return")
             };
             let mesh = |path: &str| -> Result<(),String> {
-                if let Some(b) = &converted {
-                    // the core's mesher measures its sag: the bar is a bound, met or refused
+                if let Some((b,pattern)) = &converted {
+                    // the core's mesher measures its sag: the bar is a bound, met or refused; a pattern's
+                    // mesh is its sector's turned into the copies, seam points shared by index
                     let started = std::time::Instant::now();
                     let bar = tolerance.map_or(0.01,|t| t.deflection());
-                    let m = gcs_core::brep::mesh::mesh(b,bar,ANGULAR)?;
+                    let m = match pattern { Some(p) => p.mesh(bar,ANGULAR)?,None => gcs_core::brep::mesh::mesh(b,bar,ANGULAR)? };
                     if m.sag > bar { return Err(format!("the mesh sags {:.3} µm against {:.3} µm",m.sag*1e3,bar*1e3)) }
                     if m.turned > 0 { return Err(format!("the mesh has {} triangles facing against their surfaces",m.turned)) }
                     std::fs::write(path,gcs_core::mesh::stl_of(&m.triangles(),&solid_name)).map_err(|e| format!("{path}: {e}"))?;
@@ -351,8 +369,8 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             // The STEP, of the union as it was made where its check runs beside the writing.
             let write_step = |solid: std::ffi::c_int,beside: bool| -> Result<(),ExportRefusal> {
                 let Some(file) = &step_file else { return Ok(()) };
-                if let Some(b) = &converted {
-                    let verified = ours_step(&session,solid,b,&solid_name,tolerance,file).at(Stage::Step)?;
+                if let Some((b,_)) = &converted {
+                    let verified = ours_step(&session,b,&solid_name,tolerance,file).at(Stage::Step)?;
                     stage(&format!("staged the STEP output by the core's writer: {verified}"));
                     mark(Stage::Step);
                     return Ok(())
@@ -407,7 +425,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             // mesh; written again where the check keeps the union as it was sewn instead. Otherwise the
             // STEP is written beside the mesh where the mesh is the sector's, not the solid's.
             let checked_step = || -> Result<Option<String>,ExportRefusal> {
-                let Some(union) = &built.unchecked else { return write_step(solid,false).map(|_| None) };
+                let Some(union) = built.unchecked.as_ref().filter(|_| converted.is_none()) else { return write_step(solid,false).map(|_| None) };
                 let made = match union.make(&session) { Ok(made) => made, Err(reason) => return Ok(Some(reason)) };
                 let (checked,wrote) = progress::under(|| union.check(&session,made),|| write_step(made,true),Result::is_err);
                 let kept = match checked { Ok(kept) => kept, Err(reason) => return Ok(Some(reason)) };
