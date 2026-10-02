@@ -140,7 +140,7 @@ example `spiral_bevel` (`?example=spiral_bevel`): the glass box (⌘B) shows bot
 refining from their material fields. The public bodies are `pair.pinion.body` and
 `pair.gear.body`; the layout is `pair.reference`.
 
-**The checks: `pair.sv`** with **`verification.sv`.** The layout alone, `pair := HypoidLayout(…)`,
+**The checks: `pair.sv`** with **`verification.sv`.** The layout alone, `pair := layout.HypoidLayout(…)`,
 with `ReferenceFaces(pair)`: each generated flank as an envelope of its crown surface trimmed to
 its member's limits, and the seams, corners, edges and faces its face loop is built from. The
 independent generating-system checks (`gcs-core/tests/envelope/paired.rs`) read these; the

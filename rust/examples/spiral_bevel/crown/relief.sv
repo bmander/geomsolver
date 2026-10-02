@@ -108,9 +108,9 @@ component ToothRelief(tooth: group, cap: line, design: group, normal_module: Len
     normal_module: normal_module)
   inner_chamfer := ArrivingChamfer(tooth.rack.inner, tooth.rack.base, design,
     normal_module: normal_module)
-  private outer := FlankSection(tooth.rack.base, outer_chamfer.slope, outer_chamfer.round,
+  private outer := crown.space.FlankSection(tooth.rack.base, outer_chamfer.slope, outer_chamfer.round,
     outer_chamfer.top, tooth.axis)
-  private inner := FlankSection(tooth.rack.base, inner_chamfer.slope, inner_chamfer.round,
+  private inner := crown.space.FlankSection(tooth.rack.base, inner_chamfer.slope, inner_chamfer.round,
     inner_chamfer.top, cap)
   private construction outer_side := solid(outer.profile, about: tooth.axis)
   private construction inner_side := solid(inner.profile, about: tooth.axis)
@@ -127,9 +127,9 @@ component SpaceRelief(axis: line, outside: group, inside: group, indexing: motio
     normal_module: normal_module)
   inner_chamfer := ArrivingChamfer(inside.outer, inside.base, design,
     normal_module: normal_module)
-  private outer := FlankSection(outside.base, outer_chamfer.slope, outer_chamfer.round,
+  private outer := crown.space.FlankSection(outside.base, outer_chamfer.slope, outer_chamfer.round,
     outer_chamfer.top, cap)
-  private inner := FlankSection(inside.base, inner_chamfer.slope, inner_chamfer.round,
+  private inner := crown.space.FlankSection(inside.base, inner_chamfer.slope, inner_chamfer.round,
     inner_chamfer.top, axis)
   private construction outer_side := solid(outer.profile, about: axis)
   private construction inner_side := solid(inner.profile, about: axis)
@@ -140,26 +140,26 @@ component SpaceRelief(axis: line, outside: group, inside: group, indexing: motio
 
 preview {
   unit mm
-  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear := GearCone(pitch.view, g.view, hypoid_design)
-  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
-  trace := ToothTrace(pitch.view, gear.generator, hypoid_design)
-  thickness := CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
-  n := FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
-  tooth := CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
-    hypoid_design) in n.view
+  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
+  gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
+  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
+  thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal, design.hypoid_design)
+  n := views.FoldedView(pitch.view, trace.normal, span: design.hypoid_design.cutter_radius)
+  tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
+    design.hypoid_design) in n.view
   // Alone, the tooth's depths are in the trace's normal module: K stands that far from MC.
   trace.K distance(tooth.normal_module) trace.normal
-  mate := CrownMate(tooth, hypoid_design) in n.view
+  mate := crown.mate.CrownMate(tooth, design.hypoid_design) in n.view
   trace.K distance(mate.normal_module) trace.normal
-  reach := CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
-    reach: hypoid_design.space_reach)
+  reach := crown.reach.CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
+    reach: design.hypoid_design.space_reach)
   crown_neighbor := motion(about: gear.crown_axis,
     phase: -4 * length(thickness.ahead) / radius(thickness.ahead) * 1rad)
-  space := ComplementarySpace(mate.axis, mate.outer, mate.inner, crown_neighbor, reach.cap) in n.view
-  tooth_relief := ToothRelief(tooth, reach.cap, hypoid_design) in n.view
+  space := crown.space.ComplementarySpace(mate.axis, mate.outer, mate.inner, crown_neighbor, reach.cap) in n.view
+  tooth_relief := ToothRelief(tooth, reach.cap, design.hypoid_design) in n.view
   trace.K distance(tooth_relief.normal_module) trace.normal
   space_relief := SpaceRelief(mate.axis, mate.outer, mate.inner, crown_neighbor, reach.cap,
-    hypoid_design) in n.view
+    design.hypoid_design) in n.view
   trace.K distance(space_relief.normal_module) trace.normal
 }

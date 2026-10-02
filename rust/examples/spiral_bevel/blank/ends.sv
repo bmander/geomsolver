@@ -114,11 +114,11 @@ preview {
   to_foot := line(mean, foot)
   to_foot perpendicular axis
   generator angle(30deg) axis
-  span := FaceSpan(generator, width: 10mm)
-  toe := SphericalBoundary(std.origin, generator, span.toe)
-  heel := SphericalBoundary(std.origin, generator, span.heel)
-  tip := ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
-  inner := FaceSpan(generator, width: 9mm)
+  span := blank.sphere.FaceSpan(generator, width: 10mm)
+  toe := blank.sphere.SphericalBoundary(std.origin, generator, span.toe)
+  heel := blank.sphere.SphericalBoundary(std.origin, generator, span.heel)
+  tip := blank.cone.ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
+  inner := blank.sphere.FaceSpan(generator, width: 9mm)
   toe_end := EndChamfer(std.origin, span.toe, inner.toe, generator, tip.p, tip.q, axis,
     size: 0.5mm)
   heel_end := EndChamfer(std.origin, span.heel, inner.heel, generator, tip.p, tip.q, axis,

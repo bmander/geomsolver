@@ -207,11 +207,11 @@ geometry, created once only when referenced. A short upright preview is:
 ```sv
 preview {
   unit mm
-  cyl := Cylinder(std.up, fw: 12mm, dims: vtwin_dims)
+  cyl := Cylinder(std.up, fw: 12mm, dims: components.dims.vtwin_dims)
 }
 ```
 
-`Cylinder(std.front, fw: 12mm, dims: vtwin_dims)` also works as an unnamed call. Its bore follows the datum's
+`Cylinder(std.front, fw: 12mm, dims: components.dims.vtwin_dims)` also works as an unnamed call. Its bore follows the datum's
 u axis, so use `std.up` for this cylinder's upright pose. Keep `cyl:` when a drawing or another
 statement references its members. The datum argument does not imply `in`: unassigned geometry
 stays on the page, or write `in std.front` to assign membership explicitly.
@@ -544,14 +544,14 @@ free unknown of the drawing, named under the instance (`c.theta`), which is how 
 drawn with its crank free (2.9.1).
 
 A component reads its arguments and its own declarations. Root and module parameters,
-geometry, and standard datums must be passed in. Visible component definitions and built-in
-functions remain available. Repetition blocks share the enclosing component's local scope.
+geometry, and standard datums must be passed in. Component definitions stay callable — the
+file's own by name, a used module's by its path (1.12) — and so do built-in functions. Repetition blocks share the enclosing component's local scope.
 
 `use std` provides an axis-aligned rectangle centered on an existing point:
 
 ```solvent
-outer := CenteredRectangle(center, w: 18mm, h: 18mm)
-inner := CenteredRectangle(center, w: 14mm, h: 14mm)
+outer := std.CenteredRectangle(center, w: 18mm, h: 18mm)
+inner := std.CenteredRectangle(center, w: 14mm, h: 14mm)
 section := face(outer.loop, holes: inner.loop)
 ```
 
@@ -569,7 +569,7 @@ A reusable pattern can hide its polygon layout while exposing its holes:
 ```solvent
 component BoltPattern(body: solid, center: point, ref: line,
                       n: Int, pitch_r: Length, hole_r: Length, phase: Angle) {
-  private construction layout := Polygon(center, ref, n: n, r: pitch_r, phase: phase)
+  private construction layout := std.Polygon(center, ref, n: n, r: pitch_r, phase: phase)
   repeat n as i {
     hole := radius(hole_r) circle(center: layout.v[i])
     private drill := solid(face(hole), through: body)
@@ -644,9 +644,9 @@ anchored at the drawing's own pose, so the component needs no seeds for the curv
 never drawn; the curve is the only thing made of it. Its anchor is the value it gives the swept
 formal, or the interval's start when it gives none.
 
-**The ellipse is one of these.** `use std` brings in `Ellipse(f: plane, a: Length, b: Length,
+**The ellipse is one of these.** `use std` brings in `std.Ellipse(f: plane, a: Length, b: Length,
 u: Angle)`, a computed point at eccentric angle `u` on the datum `f`, and
-`e := Ellipse(f, a: 40, b: 25).p over u in (0, 360)` is the rim: `p on e`, `e tangent l`
+`e := std.Ellipse(f, a: 40, b: 25).p over u in (0, 360)` is the rim: `p on e`, `e tangent l`
 and `e curvature k` are the curve's contacts, exact to third order. There is no `ellipse`
 element; the word is refused with this spelling.
 
@@ -708,15 +708,22 @@ its callout belongs to the drawing.
 
 ```
 use engine.dims          // engine/dims.sv beside the document, else the library compiled in
-use std                  // the datums std.front, std.up, std.origin (1.4); ThreeViews (2.10),
-                         // CenteredRectangle (1.8), Ellipse (1.9), Polygon and Hex
-use hardware             // fasteners and fittings by name: hexbolt14_af, brg608_od, oring014_cs, …
+use std                  // the datums std.front, std.up, std.origin (1.4); std.ThreeViews (2.10),
+                         // std.CenteredRectangle (1.8), std.Ellipse (1.9), std.Polygon, std.Hex
+use hardware             // fasteners and fittings by name: hardware.hexbolt14_af, …
 ```
 
 A module is a Solvent document read for its `component`s and its top-level params and groups; its own
-drawing is not drawn, so `gear.sv` is a module as it stands. A module's own `use`s are followed,
-once each. No such module is E070, a component defined twice is E071, and a module's own error is
-reported at the `use` that brought it in. `rust/examples/engine.sv` is the worked case: a
+drawing is not drawn, so `gear.sv` is a module as it stands. **Nothing a module defines is
+imported bare: every name is written with the module's full path**, as the `use` spells it —
+`engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.vtwin_dims` — in the file's root
+body for a param or a group, and anywhere for a component. A module reaches its *own* names
+bare. Only a module the file itself `use`s may be named: one that a used module uses is that
+module's business, so a file that wants it writes its own `use` (the error says which). The
+standard datums are no exception: `std.front` needs the file's own `use std`. Two modules may
+define one name; two definitions in one file are E071. A drawn callout shows a param's bare name
+(`D`, not `engine.dims.D`). A module's own `use`s are followed, once each. No such module is
+E070, and a module's own error is reported at the `use` that brought it in. `rust/examples/engine.sv` is the worked case: a
 four-cylinder engine in three views, written as a dimension module, a parts module and one module
 per part.
 
@@ -1753,7 +1760,7 @@ At distance(30, along: y) Bt
 Each view's origin is the same corner `A` as that view sees it, so no projection between origins
 is needed. `B` in the top and right views is placed by projection and the one depth dimension.
 
-The standard library writes this layout once. `use std` and `views: ThreeViews(O, right: 150,
+The standard library writes this layout once. `use std` and `views := std.ThreeViews(O, right: 150,
 up: 90)` declares the page as `views.front` and folds `views.right` and `views.top` from it, with
 `views.right_origin` and `views.top_origin` the corner as those views see it; a drawing grounds
 `O` and writes its geometry `in views.top`. `bracket.sv` is the full case, with an auxiliary view

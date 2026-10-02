@@ -15,10 +15,10 @@ use engine.parts
 // A main bearing edge on, at the axis point `jc`: the shell above and below the journal, the
 // bulkhead rising from the shell to the cylinder walls, the cap hung below it.
 component MainBearingSide(jc: point, dims: group) {
-  upper := Box(jc, x0: -dims.wmb / 2, y0: dims.rj, x1: dims.wmb / 2, y1: dims.rmb)
-  lower := Box(jc, x0: -dims.wmb / 2, y0: -dims.rmb, x1: dims.wmb / 2, y1: -dims.rj)
-  web := Box(jc, x0: -dims.bulk / 2, y0: dims.rmb, x1: dims.bulk / 2, y1: dims.deck - dims.wall)
-  cap := Box(jc, x0: -dims.wmb / 2, y0: -(dims.rmb + dims.capd), x1: dims.wmb / 2, y1: -dims.rmb)
+  upper := engine.parts.Box(jc, x0: -dims.wmb / 2, y0: dims.rj, x1: dims.wmb / 2, y1: dims.rmb)
+  lower := engine.parts.Box(jc, x0: -dims.wmb / 2, y0: -dims.rmb, x1: dims.wmb / 2, y1: -dims.rj)
+  web := engine.parts.Box(jc, x0: -dims.bulk / 2, y0: dims.rmb, x1: dims.bulk / 2, y1: dims.deck - dims.wall)
+  cap := engine.parts.Box(jc, x0: -dims.wmb / 2, y0: -(dims.rmb + dims.capd), x1: dims.wmb / 2, y1: -dims.rmb)
 }
 
 component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point, o_t: point, dims: group) {
@@ -27,8 +27,8 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     // the bore's walls, `wall` deep below the deck
     bl0 := point hint(x: o.x - dims.D / 2, y: o.y + dims.deck)
     br0 := point hint(x: o.x + dims.D / 2, y: o.y + dims.deck)
-    bl1 := At(o, dx: -dims.D / 2, dy: dims.deck - dims.wall)
-    br1 := At(o, dx: dims.D / 2, dy: dims.deck - dims.wall)
+    bl1 := engine.parts.At(o, dx: -dims.D / 2, dy: dims.deck - dims.wall)
+    br1 := engine.parts.At(o, dx: dims.D / 2, dy: dims.deck - dims.wall)
     wall_l := line(bl0, bl1.p)
     wall_r := line(br0, br1.p)
     o distance(-dims.D / 2, along: x) bl0
@@ -38,10 +38,10 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     // the outline: deck, walls, skirt, pan rail
     d_l := point hint(x: o.x - dims.hw, y: o.y + dims.deck)
     d_r := point hint(x: o.x + dims.hw, y: o.y + dims.deck)
-    s_l := At(o, dx: -dims.hw, dy: 110mm)
-    s_r := At(o, dx: dims.hw, dy: 110mm)
-    k_l := At(o, dx: -dims.kw, dy: 30mm)
-    k_r := At(o, dx: dims.kw, dy: 30mm)
+    s_l := engine.parts.At(o, dx: -dims.hw, dy: 110mm)
+    s_r := engine.parts.At(o, dx: dims.hw, dy: 110mm)
+    k_l := engine.parts.At(o, dx: -dims.kw, dy: 30mm)
+    k_r := engine.parts.At(o, dx: dims.kw, dy: 30mm)
     pr_l := point hint(x: o.x - dims.kw, y: o.y + dims.rail)
     pr_r := point hint(x: o.x + dims.kw, y: o.y + dims.rail)
     (deckline := line(d_l, d_r)) -> (b_r := line(d_r, s_r.p)) -> (sk_r := line(s_r.p, k_r.p)) ->
@@ -67,8 +67,8 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     o distance(0, along: y) c_l
     o distance(0, along: y) c_r
     // the sump
-    sh_l := At(o, dx: -dims.kw, dy: dims.rail - 30mm)
-    sh_r := At(o, dx: dims.kw, dy: dims.rail - 30mm)
+    sh_l := engine.parts.At(o, dx: -dims.kw, dy: dims.rail - 30mm)
+    sh_r := engine.parts.At(o, dx: dims.kw, dy: dims.rail - 30mm)
     sp_l := point hint(x: o.x - 60mm, y: o.y + dims.sump)
     sp_r := point hint(x: o.x + 60mm, y: o.y + dims.sump)
     (su_r := line(pr_r, sh_r.p)) -> (ss_r := line(sh_r.p, sp_r)) -> (sb := line(sp_r, sp_l)) ->
@@ -113,7 +113,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     horizontal s3
     // the four bores, their walls down from the deck
     repeat 4 as i {
-      ax := At(o_s, dx: dims.front + 25mm + dims.P / 2 + i * dims.P, dy: 0mm)
+      ax := engine.parts.At(o_s, dx: dims.front + 25mm + dims.P / 2 + i * dims.P, dy: 0mm)
       wl0 := point hint(x: ax.p.x - dims.D / 2, y: ax.p.y + dims.deck)
       wr0 := point hint(x: ax.p.x + dims.D / 2, y: ax.p.y + dims.deck)
       wl1 := point hint(x: ax.p.x - dims.D / 2, y: ax.p.y + dims.deck - dims.wall)
@@ -131,7 +131,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     }
     // the five bulkheads and their main bearings
     repeat 5 as j {
-      jc := At(o_s, dx: dims.front + 25mm + j * dims.P, dy: 0mm)
+      jc := engine.parts.At(o_s, dx: dims.front + 25mm + j * dims.P, dy: 0mm)
       bearing := MainBearingSide(jc.p, dims: dims)
     }
     claim ax[0].p distance(dims.P) ax[1].p

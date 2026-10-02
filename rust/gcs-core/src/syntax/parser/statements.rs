@@ -235,9 +235,11 @@ impl<'a> P<'a> {
                     span: Span::new(lo, self.prev_hi()),
                 }))
             }
-            // a bare component call, when no source name is needed
-            _ if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')))
-                && !crate::constraints::is_operator(&w) =>
+            // a bare component call, when no source name is needed — its own file's component,
+            // or a used module's by its full path (`engine.parts.Crank(…)`, §14.4)
+            _ if self.call_at(self.i).is_some_and(|dotted| {
+                dotted || !crate::constraints::is_operator(&w)
+            }) =>
             {
                 let lo = self.here().lo as usize;
                 let name = Name { text: format!("#i{lo}"), span: Span::new(lo, lo) };
@@ -307,7 +309,7 @@ impl<'a> P<'a> {
     /// `Tooth(base, a0: 30) in top class phantom` — the call and its trailers, the name already
     /// read (or minted, for a bare call).
     fn instance(&mut self, name: Name, lo: usize) -> Option<Instance> {
-        let component = self.ident()?;
+        let component = self.component_name()?;
         let args = self.inst_args()?;
         // the trailers an instance takes, in either order: `in top` — drawn in a view
         // (§6.7) — and `class phantom` — every declaration it makes carries the class
@@ -342,6 +344,34 @@ impl<'a> P<'a> {
         })
     }
 
+    /// `Crank` or `engine.parts.Crank` — the component a call names, as one dotted name.
+    pub(super) fn component_name(&mut self) -> Option<Name> {
+        let first = self.ident()?;
+        let mut text = first.text;
+        while self.peek() == Some(&Tok::P('.')) {
+            self.i += 1;
+            text.push('.');
+            text.push_str(&self.ident()?.text);
+        }
+        Some(Name { text, span: Span::new(first.span.lo as usize, self.prev_hi()) })
+    }
+
+    /// Whether a call stands at `j` — a name, or a dotted path, and its `(` — and whether the
+    /// name is dotted, which only a module's component may be.
+    pub(super) fn call_at(&self, j: usize) -> Option<bool> {
+        let mut k = j;
+        if !matches!(self.t.get(k).map(|(t, _)| t), Some(Tok::Ident(_))) {
+            return None;
+        }
+        k += 1;
+        while self.t.get(k).map(|(t, _)| t) == Some(&Tok::P('.'))
+            && matches!(self.t.get(k + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
+        {
+            k += 2;
+        }
+        (self.t.get(k).map(|(t, _)| t) == Some(&Tok::P('('))).then_some(k > j + 1)
+    }
+
     /// `name :=` at the head of a statement, consumed — the name, or nothing and nothing eaten.
     fn defines(&mut self) -> Option<Name> {
         match (self.peek(), self.t.get(self.i + 1).map(|(t, _)| t)) {
@@ -354,10 +384,16 @@ impl<'a> P<'a> {
         }
     }
 
-    /// Whether the statement from here holds a word at the top bracket level before it ends.
+    /// Whether the statement from here holds a token at the top bracket level before it ends —
+    /// a word standing as itself, not as one segment of a dotted path (`lib.over.Long`).
     pub(super) fn statement_has(&self, want: impl Fn(&Tok) -> bool) -> bool {
         let (mut paren, mut brace) = (0i32, 0i32);
-        for (t, _) in &self.t[self.i..] {
+        for (k, (t, _)) in self.t[self.i..].iter().enumerate() {
+            let dot = |j: usize| self.t.get(j).map(|(t, _)| t) == Some(&Tok::P('.'));
+            let j = self.i + k;
+            if matches!(t, Tok::Ident(_)) && (dot(j + 1) || (j > 0 && dot(j - 1))) {
+                continue;
+            }
             match t {
                 Tok::Nl => return false,
                 Tok::P('(') | Tok::P('[') => paren += 1,
@@ -397,6 +433,7 @@ impl<'a> P<'a> {
         }
         let word = self.word_at(self.i).map(str::to_string);
         let call = matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')));
+        let dotted_call = self.call_at(self.i) == Some(true);
         let kind = match word.as_deref() {
             Some("group") if call => {
                 self.i += 1;
@@ -428,6 +465,7 @@ impl<'a> P<'a> {
             // after one is a number read, not a declaration
             Some(_) if matches!(self.t.get(self.i + 1).map(|(t, _)| t),
                 Some(Tok::P('+' | '-' | '*' | '/' | '^'))) => self.param(name)?,
+            _ if dotted_call => StmtKind::Instance(self.instance(name, lo)?),
             _ if self.chain_starts() => return self.chain(next_id, out, Some(name)),
             Some(w) if call
                 && !crate::constraints::is_operator(w)
@@ -559,8 +597,8 @@ impl<'a> P<'a> {
     /// `Component(args).path over IDENT in (a, b)`.  A component name is told from a point's by
     /// the `(` after it, the same token that tells an instance from a reference elsewhere.
     pub(super) fn curve_spec(&mut self) -> Option<CurveSpec> {
-        let target = if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('('))) {
-            let component = self.ident()?;
+        let target = if self.call_at(self.i).is_some() {
+            let component = self.component_name()?;
             let lo = component.span.lo as usize;
             let args = self.inst_args()?;
             if !self.eat_p('.') {

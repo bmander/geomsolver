@@ -12,6 +12,7 @@
 // table's starting angle, which is what keeps the solve on the branch with the cylinder over the
 // pin rather than folded back through the pivot.
 
+use std
 use components.dims
 use components.parts
 use components.cylinder
@@ -29,8 +30,8 @@ component Bank(pin: point, piv: point, fw: Length, dim: Int, dims: group) {
   // from its crown to the pin. Membership in the swing plane comes from the caller.
   cylinder_axes := plane(origin: piv, toward: crown)
   piston_axes := plane(origin: crown, toward: pin)
-  cyl := Cylinder(cylinder_axes, fw: fw, dims: dims)
-  pis := Piston(piston_axes, dims: dims)
+  cyl := components.cylinder.Cylinder(cylinder_axes, fw: fw, dims: dims)
+  pis := components.piston.Piston(piston_axes, dims: dims)
 
   // the dimensions, on one bank
   repeat dim {
@@ -43,16 +44,16 @@ component Bank(pin: point, piv: point, fw: Length, dim: Int, dims: group) {
 // Open this file to preview bank B at the assembly's starting angle.
 preview {
   unit mm
-  pin := point hint(x: std.up.origin.x + (R * cos(theta0)) * std.up.c - (-R * sin(theta0)) * std.up.s,
-                    y: std.up.origin.y + (R * cos(theta0)) * std.up.s + (-R * sin(theta0)) * std.up.c)
-  pivot := point hint(x: std.up.origin.x + (H * cos(alphaR)) * std.up.c - (-H * sin(alphaR)) * std.up.s,
-                    y: std.up.origin.y + (H * cos(alphaR)) * std.up.s + (-H * sin(alphaR)) * std.up.c)
-  bank := Bank(pin, pivot, fw: fwB, dim: 1, dims: vtwin_dims)
+  pin := point hint(x: std.up.origin.x + (components.dims.R * cos(components.dims.theta0)) * std.up.c - (-components.dims.R * sin(components.dims.theta0)) * std.up.s,
+                    y: std.up.origin.y + (components.dims.R * cos(components.dims.theta0)) * std.up.s + (-components.dims.R * sin(components.dims.theta0)) * std.up.c)
+  pivot := point hint(x: std.up.origin.x + (components.dims.H * cos(components.dims.alphaR)) * std.up.c - (-components.dims.H * sin(components.dims.alphaR)) * std.up.s,
+                    y: std.up.origin.y + (components.dims.H * cos(components.dims.alphaR)) * std.up.s + (-components.dims.H * sin(components.dims.alphaR)) * std.up.c)
+  bank := Bank(pin, pivot, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims)
   reference := line(std.origin, std.up.toward)
   crank := line(std.origin, pin)
   bank_axis := line(std.origin, pivot)
-  std.origin distance(R) pin
-  std.origin distance(H) pivot
-  reference angle(theta0, sense: cw) crank
-  reference angle(alphaR, sense: cw) bank_axis
+  std.origin distance(components.dims.R) pin
+  std.origin distance(components.dims.H) pivot
+  reference angle(components.dims.theta0, sense: cw) crank
+  reference angle(components.dims.alphaR, sense: cw) bank_axis
 }

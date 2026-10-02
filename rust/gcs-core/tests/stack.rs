@@ -198,7 +198,8 @@ sec := face(e0, e1, e2, e3)
 blank := solid(sec, about: ax)
 pis := solid(blank)
 groove_axes := plane(origin: o, toward: ax.p2)
-g := Groove(body: pis, f: groove_axes, r: 8mm, z: 15mm, cs: oring014_cs, seal: seal_dims) in f
+g := hardware.Groove(body: pis, f: groove_axes, r: 8mm, z: 15mm, cs: hardware.oring014_cs,
+  seal: hardware.seal_dims) in f
 ";
     let (prog, errs, linked) = gcs_core::library::parse_linked(src);
     assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");

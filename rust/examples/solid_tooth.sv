@@ -23,6 +23,6 @@ radius(Rb) base
 radius(Rr) root
 radius(Rt) tip
 
-t := Tooth(base, root, tip, a0: 0deg, half: half, u0: u0, u1: u1)
+t := gear.Tooth(base, root, tip, a0: 0deg, half: half, u0: u0, u1: u1)
 tooth := solid(face(t.r.e from t.r.lo to t.r.hi, t.crown, t.l.e from t.l.hi to t.l.lo, -> close),
             depth: 5mm)

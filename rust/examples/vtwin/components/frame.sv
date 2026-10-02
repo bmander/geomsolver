@@ -16,8 +16,8 @@ component FrameBank(o: point, ref: line, alpha: Angle, dim: Int, dims: group) {
   ref angle(alpha, sense: cw) axis
   bolt := circle(center: piv) hint(r: dims.studclr / 2)
   radius(dims.studclr / 2) bolt
-  ip := At(piv, dx: dims.a * sin(alpha - dims.beta), dy: dims.a * cos(alpha - dims.beta))
-  ep := At(piv, dx: dims.a * sin(alpha + dims.beta), dy: dims.a * cos(alpha + dims.beta))
+  ip := components.parts.At(piv, dx: dims.a * sin(alpha - dims.beta), dy: dims.a * cos(alpha - dims.beta))
+  ep := components.parts.At(piv, dx: dims.a * sin(alpha + dims.beta), dy: dims.a * cos(alpha + dims.beta))
   intake := circle(center: ip.p) hint(r: dims.dport / 2)
   exhaust := circle(center: ep.p) hint(r: dims.dport / 2)
   radius(dims.dport / 2) intake
@@ -49,12 +49,12 @@ component FrameBlank(o: point, dims: group) {
   zb := -dims.tp / 2
   zbb := zb - dims.boss
   zpkt := zbb + dims.brgpocket
-  p0 := At(o, dx: -dims.fx, dy: dims.fy0)
-  p1 := At(o, dx: dims.fx, dy: dims.fy0)
-  p2 := At(o, dx: dims.fx, dy: dims.fy1 - dims.fch)
-  p3 := At(o, dx: dims.fx - dims.fch, dy: dims.fy1)
-  p4 := At(o, dx: -(dims.fx - dims.fch), dy: dims.fy1)
-  p5 := At(o, dx: -dims.fx, dy: dims.fy1 - dims.fch)
+  p0 := components.parts.At(o, dx: -dims.fx, dy: dims.fy0)
+  p1 := components.parts.At(o, dx: dims.fx, dy: dims.fy0)
+  p2 := components.parts.At(o, dx: dims.fx, dy: dims.fy1 - dims.fch)
+  p3 := components.parts.At(o, dx: dims.fx - dims.fch, dy: dims.fy1)
+  p4 := components.parts.At(o, dx: -(dims.fx - dims.fch), dy: dims.fy1)
+  p5 := components.parts.At(o, dx: -dims.fx, dy: dims.fy1 - dims.fch)
   (bottom := line(p0.p, p1.p)) -> (edge_r := line(p1.p, p2.p)) -> (cham_r := line(p2.p, p3.p)) ->
     (topline := line(p3.p, p4.p)) -> (cham_l := line(p4.p, p5.p)) -> (edge_l := line(p5.p, p0.p)) -> close
   claim p0.p distance(2 * dims.fx) p1.p
@@ -69,7 +69,7 @@ component FrameBlank(o: point, dims: group) {
   claim radius(dims.shafthole / 2) sh
   claim radius(dims.rbrg) bp
 
-  ft := Box(o, x0: -dims.fx, y0: dims.fy0, x1: dims.fx, y1: dims.fy0 + dims.footh)
+  ft := components.parts.Box(o, x0: -dims.fx, y0: dims.fy0, x1: dims.fx, y1: dims.fy0 + dims.footh)
   bcirc := circle(center: o) hint(r: dims.rbrg + 3mm)
   radius(dims.rbrg + 3mm) bcirc
 
@@ -137,10 +137,10 @@ component ExhaustPassage(opening: point, boundary: line, dims: group) {
   outlet on boundary
   opening distance(0mm, along: y) outlet
   center := line(opening, outlet)
-  a := At(opening, dx: 0mm, dy: dims.wch / 2)
-  b := At(outlet, dx: 0mm, dy: dims.wch / 2)
-  c := At(outlet, dx: 0mm, dy: -dims.wch / 2)
-  d := At(opening, dx: 0mm, dy: -dims.wch / 2)
+  a := components.parts.At(opening, dx: 0mm, dy: dims.wch / 2)
+  b := components.parts.At(outlet, dx: 0mm, dy: dims.wch / 2)
+  c := components.parts.At(outlet, dx: 0mm, dy: -dims.wch / 2)
+  d := components.parts.At(opening, dx: 0mm, dy: -dims.wch / 2)
   body := solid(face(a.p, b.p, c.p, d.p, -> close), from: -dims.wch / 2, to: dims.wch / 2)
 }
 
@@ -150,27 +150,27 @@ component FrameInlet(o: point, dims: group) {
   coupling_base := dims.bossh - dims.cplin
   coupling_top := coupling_base + dims.cpll
   plug_top := coupling_top + dims.mplug_body_l
-  boss := Box(o, x0: -dims.bossw / 2, y0: dims.fy1, x1: dims.bossw / 2, y1: dims.bossh)
-  cpl_in := Box(o, x0: -dims.cpl / 2, y0: coupling_base, x1: dims.cpl / 2, y1: dims.bossh)
-  cpl_out := Box(o, x0: -dims.cpl / 2, y0: dims.bossh, x1: dims.cpl / 2, y1: coupling_top)
-  cplh := Box(o, x0: -dims.cplhole / 2, y0: coupling_base, x1: dims.cplhole / 2, y1: dims.bossh)
-  passage := Box(o, x0: -dims.wch / 2, y0: dims.rman, x1: dims.wch / 2, y1: coupling_base)
-  plug_body := Box(o, x0: -dims.mplug_body_d / 2, y0: coupling_top, x1: dims.mplug_body_d / 2, y1: plug_top)
-  plug_nose := Box(o, x0: -dims.mplug_nose_d / 2, y0: plug_top, x1: dims.mplug_nose_d / 2, y1: plug_top + dims.mplug_nose_l)
+  boss := components.parts.Box(o, x0: -dims.bossw / 2, y0: dims.fy1, x1: dims.bossw / 2, y1: dims.bossh)
+  cpl_in := components.parts.Box(o, x0: -dims.cpl / 2, y0: coupling_base, x1: dims.cpl / 2, y1: dims.bossh)
+  cpl_out := components.parts.Box(o, x0: -dims.cpl / 2, y0: dims.bossh, x1: dims.cpl / 2, y1: coupling_top)
+  cplh := components.parts.Box(o, x0: -dims.cplhole / 2, y0: coupling_base, x1: dims.cplhole / 2, y1: dims.bossh)
+  passage := components.parts.Box(o, x0: -dims.wch / 2, y0: dims.rman, x1: dims.wch / 2, y1: coupling_base)
+  plug_body := components.parts.Box(o, x0: -dims.mplug_body_d / 2, y0: coupling_top, x1: dims.mplug_body_d / 2, y1: plug_top)
+  plug_nose := components.parts.Box(o, x0: -dims.mplug_nose_d / 2, y0: plug_top, x1: dims.mplug_nose_d / 2, y1: plug_top + dims.mplug_nose_l)
   claim boss.a distance(dims.bossw) boss.b
   claim boss.a distance(dims.bossh - dims.fy1, along: y) boss.d
   claim cplh.a distance(dims.cplhole) cplh.b
   claim cplh.a distance(dims.cplin, along: y) cplh.d
   claim passage.a distance(dims.wch) passage.b
-  tb := At(o, dx: 0mm, dy: dims.Ty)
+  tb := components.parts.At(o, dx: 0mm, dy: dims.Ty)
   tbore := circle(center: tb.p) hint(r: barbore / 2)
   radius(barbore / 2) tbore
   claim o distance(dims.Ty, along: y) tb.p
   claim radius(barbore / 2) tbore
 
   // The coupling bore turns about an axis in the page; the other features are sweeps.
-  cph0 := At(o, dx: 0mm, dy: coupling_base)
-  cph1 := At(o, dx: 0mm, dy: dims.bossh)
+  cph0 := components.parts.At(o, dx: 0mm, dy: coupling_base)
+  cph1 := components.parts.At(o, dx: 0mm, dy: dims.bossh)
   cpax := line(cph0.p, cph1.p)
 
   iboss := solid(boss.profile, from: -dims.bossz / 2, to: dims.bossz / 2)
@@ -195,7 +195,7 @@ component Frame(layout: group, dims: group) {
     ventL := ExhaustPassage(l.ep.p, blank.cham_l, dims: dims)
     inlet := FrameInlet(layout.origin, dims: dims)
   }
-  thr := Throttle(layout.front, inlet.tb.p, layout.axis, phi: dims.throttle, dims: dims)
+  thr := components.throttle.Throttle(layout.front, inlet.tb.p, layout.axis, phi: dims.throttle, dims: dims)
 
   boltR := solid(face(r.bolt), from: zb, to: zf)
   boltL := solid(face(l.bolt), from: zb, to: zf)
@@ -233,5 +233,5 @@ preview {
   unit mm
   ref := line(std.origin, std.up.toward) in std.front
   layout := group(front: std.front, origin: std.origin, axis: ref)
-  plate := Frame(layout, dims: vtwin_dims)
+  plate := Frame(layout, dims: components.dims.vtwin_dims)
 }

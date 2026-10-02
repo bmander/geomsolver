@@ -95,6 +95,9 @@ struct Scope {
     /// ±1 in `vals` — which is exactly the idiom issue #48's item 4 takes out of the helpers, and
     /// putting it back one level down would leave `s * 90deg` writable inside a body.
     sides: BTreeMap<String, String>,
+    /// The file the body being walked was written in — the document (`None`) or a module — which
+    /// is what a call's component name is resolved from (`Program::resolve_component`).
+    module: Option<usize>,
 }
 
 impl Scope {
@@ -151,7 +154,10 @@ pub struct InstanceInfo {
     /// The absolute prefix every name of its expansion starts with — `leg.`, `g.t.r.`, or
     /// `#c12.` for an instance written in place inside a curve.
     pub prefix: String,
+    /// The component as the call wrote it (`Tooth`, `engine.parts.Crank`).
     pub component: String,
+    /// Which of the program's components it is.
+    pub comp: usize,
     /// The entity formals in order, each with the absolute name of the actual it aliases —
     /// `None` where the instance gave none, or gave one that resolved to nothing.
     pub ents: Vec<(String, Option<String>)>,
@@ -255,7 +261,12 @@ pub fn expand(prog: &Program, units: Units) -> Expansion {
 /// done here and not again by the compile.
 pub fn expand_component(prog: &Program, comp: &Component, units: Units) -> Expansion {
     let mut w = Walk::new(prog, units, Some(Sym::default()));
-    let scope = Scope { prefixes: vec![String::new()], closed: true, ..Scope::default() };
+    let scope = Scope {
+        prefixes: vec![String::new()],
+        closed: true,
+        module: comp.module,
+        ..Scope::default()
+    };
     let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
     for f in &comp.formals {
         match f.ty {
@@ -275,15 +286,18 @@ pub fn expand_component(prog: &Program, comp: &Component, units: Units) -> Expan
 
 impl<'a> Walk<'a> {
     fn new(prog: &'a Program, units: Units, sym: Option<Sym>) -> Walk<'a> {
-        let standard = prog.component("StandardDatums").filter(|c|
-            c.module.is_some_and(|k| prog.modules[k].name == "std"));
+        let std_module = prog.modules.iter().position(|m| m.name == "std");
+        let standard = std_module.and_then(|k| prog.component_in(Some(k), "StandardDatums"));
         let shadowed = prog.root().body.iter().any(|st| match &st.kind {
             StmtKind::Instance(i) => i.name.text == "std",
             StmtKind::Decl(d) => d.name.key().text == "std",
             StmtKind::Group(g) => g.name.text == "std",
             _ => false,
         });
-        let standard_datums = sym.is_none() && standard.is_some() && !shadowed;
+        // the datums are the standard library's names like any other (§14.4): the document
+        // reaches `std.front` through a `use std` of its own
+        let used = prog.uses.iter().any(|u| u.name == "std");
+        let standard_datums = sym.is_none() && standard.is_some() && used && !shadowed;
         Walk {
             private_names: BTreeMap::new(),
             prog,
@@ -328,8 +342,9 @@ impl<'a> Walk<'a> {
         if self.standard_datums && self.needs_standard_datums {
             // Keep the datums as ordinary library statements with their own source spans.
             // They precede consumers for geometry building, but participate in the same solve.
-            let comp = self.prog.component("StandardDatums").unwrap();
-            let scope = Scope { prefixes: vec!["std.".into()], ..Scope::default() };
+            let k = self.prog.modules.iter().position(|m| m.name == "std");
+            let comp = self.prog.component_in(k, "StandardDatums").unwrap();
+            let scope = Scope { prefixes: vec!["std.".into()], module: k, ..Scope::default() };
             let mut vals = self.module_params(comp.module.unwrap());
             self.body(&comp.body, &scope, &mut vals, &[], 1);
             self.expand_pending();

@@ -28,7 +28,7 @@ component Sphere(center: point, r: Length) {
 private mid := point hint(x: 0, y: -block_h / 2)
 std.origin vertical mid
 std.origin distance(block_h / 2, along: down) mid
-private outline := CenteredRectangle(mid, w: block_w, h: block_h)
+private outline := std.CenteredRectangle(mid, w: block_w, h: block_h)
 construction block := solid(outline.loop, from: -block_w / 2, to: block_w / 2)
 
 // The cutter: a ball with its centre on the top face, swung about the upright axis.

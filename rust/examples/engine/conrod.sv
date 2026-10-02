@@ -148,24 +148,24 @@ component ConRod(end: plane, side: plane, secv: plane,
       // the big end: a block `wB` along the axis, the parting line across it, a bolt down it
       ba := point hint(x: pin_s.x - wB / 2, y: pin_s.y - eB)
       bb := point hint(x: pin_s.x + wB / 2, y: pin_s.y - eB)
-      bc := At(pin_s, dx: wB / 2, dy: eB)
-      bd := At(pin_s, dx: -wB / 2, dy: eB)
+      bc := engine.parts.At(pin_s, dx: wB / 2, dy: eB)
+      bd := engine.parts.At(pin_s, dx: -wB / 2, dy: eB)
       (b1 := line(ba, bb)) -> (b2 := line(bb, bc.p)) -> (b3 := line(bc.p, bd.p)) -> (b4 := line(bd.p, ba)) -> close
       pin_s distance(-wB / 2, along: x) ba
       pin_s distance(-eB, along: y) ba
       pin_s distance(-eB, along: y) bb
       ba distance(wB) bb
-      pa := At(pin_s, dx: -wB / 2, dy: 0mm)
-      pb := At(pin_s, dx: wB / 2, dy: 0mm)
+      pa := engine.parts.At(pin_s, dx: -wB / 2, dy: 0mm)
+      pb := engine.parts.At(pin_s, dx: wB / 2, dy: 0mm)
       parting_s := line(pa.p, pb.p)
-      b0 := At(pin_s, dx: 0mm, dy: -capd)
-      b1s := At(pin_s, dx: 0mm, dy: rodd)
+      b0 := engine.parts.At(pin_s, dx: 0mm, dy: -capd)
+      b1s := engine.parts.At(pin_s, dx: 0mm, dy: rodd)
       bolt_s := line(b0.p, b1s.p)
       // the small end
       sa := point hint(x: sm_s.x - wS / 2, y: sm_s.y - eS)
       sb := point hint(x: sm_s.x + wS / 2, y: sm_s.y - eS)
-      sc := At(sm_s, dx: wS / 2, dy: eS)
-      sd := At(sm_s, dx: -wS / 2, dy: eS)
+      sc := engine.parts.At(sm_s, dx: wS / 2, dy: eS)
+      sd := engine.parts.At(sm_s, dx: -wS / 2, dy: eS)
       (s1 := line(sa, sb)) -> (s2 := line(sb, sc.p)) -> (s3 := line(sc.p, sd.p)) -> (s4 := line(sd.p, sa)) -> close
       sm_s distance(-wS / 2, along: x) sa
       sm_s distance(-eS, along: y) sa
@@ -197,18 +197,18 @@ component ConRod(end: plane, side: plane, secv: plane,
   // section A-A: the shank's I-section at mid-length, about `at`
   repeat draw_sec {
     in secv {
-      q0 := At(at, dx: -fl / 2, dy: -hM)
+      q0 := engine.parts.At(at, dx: -fl / 2, dy: -hM)
       q1 := point hint(x: at.x + fl / 2, y: at.y - hM)
       q2 := point hint(x: at.x + fl / 2, y: at.y - hM + ft)
       q3 := point hint(x: at.x + wt / 2, y: at.y - hM + ft)
-      q4 := At(at, dx: wt / 2, dy: hM - ft)
-      q5 := At(at, dx: fl / 2, dy: hM - ft)
-      q6 := At(at, dx: fl / 2, dy: hM)
+      q4 := engine.parts.At(at, dx: wt / 2, dy: hM - ft)
+      q5 := engine.parts.At(at, dx: fl / 2, dy: hM - ft)
+      q6 := engine.parts.At(at, dx: fl / 2, dy: hM)
       q7 := point hint(x: at.x - fl / 2, y: at.y + hM)
-      q8 := At(at, dx: -fl / 2, dy: hM - ft)
-      q9 := At(at, dx: -wt / 2, dy: hM - ft)
-      q10 := At(at, dx: -wt / 2, dy: -hM + ft)
-      q11 := At(at, dx: -fl / 2, dy: -hM + ft)
+      q8 := engine.parts.At(at, dx: -fl / 2, dy: hM - ft)
+      q9 := engine.parts.At(at, dx: -wt / 2, dy: hM - ft)
+      q10 := engine.parts.At(at, dx: -wt / 2, dy: -hM + ft)
+      q11 := engine.parts.At(at, dx: -fl / 2, dy: -hM + ft)
       (a1 := line(q0.p, q1)) -> (a2 := line(q1, q2)) -> (a3 := line(q2, q3)) -> (a4 := line(q3, q4.p)) ->
         (a5 := line(q4.p, q5.p)) -> (a6 := line(q5.p, q6.p)) -> (a7 := line(q6.p, q7)) -> (a8 := line(q7, q8.p)) ->
         (a9 := line(q8.p, q9.p)) -> (a10 := line(q9.p, q10.p)) -> (a11 := line(q10.p, q11.p)) -> (a12 := line(q11.p, q0.p)) -> close

@@ -25,7 +25,7 @@ component Flywheel(f: plane, dims: group) {
   se on rim
   ssa perpendicular reference
   screw_axes := plane(origin: f.origin, toward: se)
-  gs := Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rfw, dims: dims)
+  gs := components.parts.Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rfw, dims: dims)
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
   plate := solid(face(rim), from: -dims.wfw / 2, to: dims.wfw / 2)
@@ -38,5 +38,5 @@ component Flywheel(f: plane, dims: group) {
 // Open this file to preview the flywheel; ../flywheel.svd arranges its three projections.
 preview {
   unit mm
-  fw := Flywheel(std.up, dims: vtwin_dims)
+  fw := Flywheel(std.up, dims: components.dims.vtwin_dims)
 }

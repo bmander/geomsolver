@@ -104,7 +104,7 @@ fn a_component_receives_a_named_dimension_as_an_argument() {
 fn a_modules_component_does_not_read_the_callers_names() {
     let mut shelf: BTreeMap<&str, &str> = BTreeMap::new();
     shelf.insert("lib.t", "component T(p: point, q: point, w: Length) { p distance(w) q }\n");
-    let src = format!("use lib.t\n{BASE}a distance(w := 60) b\nt := T(b, c)\n");
+    let src = format!("use lib.t\n{BASE}a distance(w := 60) b\nt := lib.t.T(b, c)\n");
     let (mut prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let linked = link(&mut prog, &mut |name| shelf.get(name).map(|t| t.to_string()));

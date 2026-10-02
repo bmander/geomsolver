@@ -52,7 +52,7 @@ component RackSection(lp: point, rp: point, design: group, normal_module: Length
     lp on inner
     rp on outer
   }
-  rounding := TipRounding(pitch, base, tip, outer_round, inner_round, design,
+  rounding := crown.rounding.TipRounding(pitch, base, tip, outer_round, inner_round, design,
     normal_module: normal_module)
 }
 

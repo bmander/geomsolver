@@ -38,8 +38,8 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
 
 preview {
   unit mm
-  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear := GearCone(pitch.view, g.view, hypoid_design)
-  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
-  trace := ToothTrace(pitch.view, gear.generator, hypoid_design)
+  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
+  gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
+  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  trace := ToothTrace(pitch.view, gear.generator, design.hypoid_design)
 }

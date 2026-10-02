@@ -53,7 +53,7 @@ reye := 6.5mm          // the rod's eye, outside: 3.3 of wall round the pin
 // section: the groove's bottom is the bore less twice 88% of the section, and the ring's own
 // 12.4 bore stretches 4% onto it, which keeps it seated.  The groove is a third wider than the
 // section, so the ring can roll a little rather than drag.
-oring := oring014_cs
+oring := hardware.oring014_cs
 // Piston and throttle derive their grooves locally from their ring and `seal_dims`.
 groove := 4mm                       // the groove's top, below the crown
 
@@ -74,16 +74,16 @@ rpl := sqrt(H^2 + a^2 + 2 * H * a * cos(beta))   // every port's radius from the
 // head against the wall between the slot and the face — plastic in compression — and the slot,
 // a head's width across the flats, stops it turning.  (A pocket opening on the face would not
 // do: the tension pulls the head *toward* the face, and nothing would hold the cylinder on.)
-rstud := hexbolt14_d / 2       // the bolt's shank
-boltaf := hexbolt14_af         // its head, across flats — the slot is this wide
-boltac := hexbolt14_ac         // and across corners: how far the slot must reach past the axis
-boltH := hexbolt14_h           // the head's height
+rstud := hardware.hexbolt14_d / 2       // the bolt's shank
+boltaf := hardware.hexbolt14_af         // its head, across flats — the slot is this wide
+boltac := hardware.hexbolt14_ac         // and across corners: how far the slot must reach past the axis
+boltH := hardware.hexbolt14_h           // the head's height
 trapz := 4mm           // the face to the slot: the wall the head bears on
 traph := boltH + 0.6mm  // the slot height follows the selected bolt head
-trapfit := fit14       // the hole through the wall the shank is located by; the plate's is the running fit
-studclr := clearance14         // the plate's hole for the shank: it is the pivot's bearing
-wsh := washer14_t              // a 1/4" flat washer
-nutH := nylock14_h             // a 1/4"-20 nylon-insert nut
+trapfit := hardware.fit14       // the hole through the wall the shank is located by; the plate's is the running fit
+studclr := hardware.clearance14         // the plate's hole for the shank: it is the pivot's bearing
+wsh := hardware.washer14_t              // a 1/4" flat washer
+nutH := hardware.nylock14_h             // a 1/4"-20 nylon-insert nut
 spring := 12mm         // the spring's working length between the plate and the washer
 
 // -- the frame plate ------------------------------------------------------------------------
@@ -99,28 +99,28 @@ footh := 8mm
 shafthole := 8.5mm     // the shaft's clearance through the plate
 
 // -- the crank train ------------------------------------------------------------------------
-dshaft := rod516_d     // steel rod
+dshaft := hardware.rod516_d     // steel rod
 rshaft := dshaft / 2
-rbrg := brg608_od / 2  // 608 bearing: 22 outside, 8 bore, 7 wide — two, in the boss
-wbrg := brg608_w
+rbrg := hardware.brg608_od / 2  // 608 bearing: 22 outside, 8 bore, 7 wide — two, in the boss
+wbrg := hardware.brg608_w
 boss := brgpocket + 1.5mm  // bearing pocket plus the material left against the plate
 brgpocket := 2 * wbrg + 0.5mm   // the pocket the two sit in, from the boss's back
 rdisc := 18mm          // the crank disc, in front of the plate, clear of the cylinder mouths
 zdisc := 1.4mm         // its clearance off the plate's face
 tdisc := zA - rw / 2 - wsh - zdisc   // its thickness: rod A's near face, less a washer
-dpin := clevis14_d     // the crank pin: a 1/4" × 1-1/4" clevis pin, its head in a pocket in
+dpin := hardware.clevis14_d     // the crank pin: a 1/4" × 1-1/4" clevis pin, its head in a pocket in
                             // the disc's back, the rods on its shank, a hairpin cotter outboard
 rpin := dpin / 2
 pinclr := dpin + 0.15mm  // diametral clearance in the disc and each rod eye
-pinhead := clevis14_head_d     // the clevis pin's head
-pinheadH := clevis14_head_t
+pinhead := hardware.clevis14_head_d     // the clevis pin's head
+pinheadH := hardware.clevis14_head_t
 pinpocket := pinheadH + 0.7mm  // clevis head plus recess clearance; shared with the side view
-pingrip := clevis14_grip_114   // under the head to the cotter hole
+pingrip := hardware.clevis14_grip_114   // under the head to the cotter hole
 dhub := 8mm            // the disc's and the flywheel's bore for the shaft
-grub := screw832_clearance     // a #8-32 set screw's clearance hole, rim to bore
-nutaf := nut832_af             // a #8-32 nut, across flats — the pocket it is trapped in
-nutac := nut832_ac             // and across corners
-nutT := nut832_t               // its thickness
+grub := hardware.screw832_clearance     // a #8-32 set screw's clearance hole, rim to bore
+nutaf := hardware.nut832_af             // a #8-32 nut, across flats — the pocket it is trapped in
+nutac := hardware.nut832_ac             // and across corners
+nutT := hardware.nut832_t               // its thickness
 nutin := 4mm           // the pocket starts this far out from the bore
 rfw := 32mm            // the flywheel, behind the boss
 wfw := 12mm
@@ -145,15 +145,15 @@ lev := 22mm            // the throttle lever
 levw := 4mm            // its width, and the hub's height off the boss
 hubr := 4mm
 throttle := 35deg      // the lever's angle off full open; 90 is shut
-tor := oring010_cs     // a #010 O-ring (1/4" bore, 1/16" section)
+tor := hardware.oring010_cs     // a #010 O-ring (1/4" bore, 1/16" section)
 torz := 5.5mm          // the two seals' grooves, either side of the cross-hole
 tback := 4mm           // the barrel runs this far past the boss's back
 tretain := 1.5mm       // the retaining ring's groove, behind the boss's back face
-cpl := npt14_cpl_af    // the 1/4" NPT brass coupling: across flats, and its length
-cpll := npt14_cpl_l
+cpl := hardware.npt14_cpl_af    // the 1/4" NPT brass coupling: across flats, and its length
+cpll := hardware.npt14_cpl_l
 cplin := 18mm          // how deep it is set into the boss
 cplhole := 16.5mm      // the boss's hole for it, epoxied
-cplbore := npt14_drill // its bore, near enough: the tap drill for 1/4" NPT
+cplbore := hardware.npt14_drill // its bore, near enough: the tap drill for 1/4" NPT
 
 // Component inputs: shared dimensions, selected hardware, and seal proportions.
 // Each part derives its private sizes from these; extra root-only values stay above.
@@ -165,13 +165,13 @@ vtwin_dims := group(
   cplhole: cplhole, cplin: cplin, cpll: cpll, dhub: dhub, dport: dport,
   fch: fch, footd: footd, footh: footh, fwA: fwA, fwB: fwB,
   fx: fx, fy0: fy0, fy1: fy1, groove: groove, grub: grub,
-  head: head, hubr: hubr, lev: lev, levw: levw, mplug_body_d: mplug_body_d,
-  mplug_body_l: mplug_body_l, mplug_nose_d: mplug_nose_d, mplug_nose_l: mplug_nose_l, nutH: nutH, nutT: nutT,
+  head: head, hubr: hubr, lev: lev, levw: levw, mplug_body_d: hardware.mplug_body_d,
+  mplug_body_l: hardware.mplug_body_l, mplug_nose_d: hardware.mplug_nose_d, mplug_nose_l: hardware.mplug_nose_l, nutH: nutH, nutT: nutT,
   nutaf: nutaf, nutin: nutin, oring: oring, ph: ph, pinclr: pinclr,
   pingrip: pingrip, pinhead: pinhead, pinheadH: pinheadH, pinpocket: pinpocket, rbar: rbar,
   rbrg: rbrg, rdisc: rdisc, reye: reye, rfw: rfw, rman: rman,
   rpin: rpin, rpl: rpl, rshaft: rshaft, rstud: rstud, rt: rt,
-  rw: rw, seal: seal_dims, shafthole: shafthole, spring: spring, studclr: studclr,
+  rw: rw, seal: hardware.seal_dims, shafthole: shafthole, spring: spring, studclr: studclr,
   swing: swing, tback: tback, tdisc: tdisc, theta0: theta0, throttle: throttle,
   tor: tor, torz: torz, tp: tp, trapfit: trapfit, traph: traph,
   trapz: trapz, tretain: tretain, wall: wall, wbrg: wbrg, wch: wch,

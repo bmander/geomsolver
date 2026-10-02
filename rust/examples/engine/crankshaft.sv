@@ -113,8 +113,8 @@ component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
   // -- across the axis: the whole shaft edge on ------------------------------------------
   repeat 5 * draw_side as j {
     in side {
-      jc := At(o_s, dx: dims.front + 25mm + j * dims.P, dy: 0mm)
-      journal := Box(jc.p, x0: -wj / 2, y0: -dims.rj, x1: wj / 2, y1: dims.rj)
+      jc := engine.parts.At(o_s, dx: dims.front + 25mm + j * dims.P, dy: 0mm)
+      journal := engine.parts.Box(jc.p, x0: -wj / 2, y0: -dims.rj, x1: wj / 2, y1: dims.rj)
     }
   }
   repeat 4 * draw_side as i {
@@ -125,7 +125,7 @@ component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
       ph := dims.theta + 180deg * k
       pin_s := point hint(x: o_s.x + xc, y: o_s.y + dims.R * cos(ph))
       o_s distance(xc, along: x) pin_s
-      pin := Box(pin_s, x0: -wpin / 2, y0: -dims.rp, x1: wpin / 2, y1: dims.rp)
+      pin := engine.parts.Box(pin_s, x0: -wpin / 2, y0: -dims.rp, x1: wpin / 2, y1: dims.rp)
       // the throw's crown and heel at this cylinder, their heights the end view's
       ct := point hint(x: o_s.x + xc, y: o_s.y + (dims.R + eP) * cos(ph))
       hb := point hint(x: o_s.x + xc, y: o_s.y - rcw * cos(ph))
@@ -139,10 +139,10 @@ component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
     in side {
       // the nose the pulley sits on, forward of the first journal; behind the last, the seal
       // journal through the block's rear wall, then the flange and the flywheel on it
-      nose := Box(o_s, x0: dims.front - 70mm, y0: -rnose, x1: dims.front + 25mm - wj / 2, y1: rnose)
-      seal := Box(o_s, x0: dims.back - 25mm + wj / 2, y0: -dims.rseal, x1: dims.back + 8mm, y1: dims.rseal)
-      flange := Box(o_s, x0: dims.back + 8mm, y0: -dims.rflange, x1: dims.back + 8mm + dims.wflange, y1: dims.rflange)
-      flywheel := Box(o_s, x0: dims.back + 8mm + dims.wflange, y0: -dims.rfw, x1: dims.back + 8mm + dims.wflange + dims.wfw, y1: dims.rfw)
+      nose := engine.parts.Box(o_s, x0: dims.front - 70mm, y0: -rnose, x1: dims.front + 25mm - wj / 2, y1: rnose)
+      seal := engine.parts.Box(o_s, x0: dims.back - 25mm + wj / 2, y0: -dims.rseal, x1: dims.back + 8mm, y1: dims.rseal)
+      flange := engine.parts.Box(o_s, x0: dims.back + 8mm, y0: -dims.rflange, x1: dims.back + 8mm + dims.wflange, y1: dims.rflange)
+      flywheel := engine.parts.Box(o_s, x0: dims.back + 8mm + dims.wflange, y0: -dims.rfw, x1: dims.back + 8mm + dims.wflange + dims.wfw, y1: dims.rfw)
       claim journal[0].a distance(wj, along: x) journal[0].b
       claim pin[0].a distance(wpin, along: x) pin[0].b
     }

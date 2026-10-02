@@ -11,8 +11,8 @@ bend_angle := 90deg
 center := point hint(x: bend_radius, y: 0mm)
 std.origin horizontal center
 std.origin distance(bend_radius) center
-outer := CenteredRectangle(center, w: 2 * inlet_half, h: 2 * inlet_half)
-inner := CenteredRectangle(center, w: 2 * (inlet_half - wall), h: 2 * (inlet_half - wall))
+outer := std.CenteredRectangle(center, w: 2 * inlet_half, h: 2 * inlet_half)
+inner := std.CenteredRectangle(center, w: 2 * (inlet_half - wall), h: 2 * (inlet_half - wall))
 inlet := face(outer.loop, holes: inner.loop)
 
 // The guide is drawn in plan; each section stands perpendicular to its tangent at its end.
@@ -35,8 +35,8 @@ outlet_view := plane(origin: std.origin, toward: std.front.toward, u: (0, 1, 0),
 in outlet_view {
   out_center := point hint(x: bend_radius, y: 0mm)
   ground out_center
-  out_outer := CenteredRectangle(out_center, w: 2 * outlet_half, h: 2 * outlet_half)
-  out_inner := CenteredRectangle(out_center, w: 2 * (outlet_half - wall), h: 2 * (outlet_half - wall))
+  out_outer := std.CenteredRectangle(out_center, w: 2 * outlet_half, h: 2 * outlet_half)
+  out_inner := std.CenteredRectangle(out_center, w: 2 * (outlet_half - wall), h: 2 * (outlet_half - wall))
 }
 outlet := face(out_outer.loop, holes: out_inner.loop)
 body := solid(inlet, outlet, along: guide)

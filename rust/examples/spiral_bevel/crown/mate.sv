@@ -24,9 +24,9 @@ component CrownMate(tooth: group, design: group, normal_module: Length) {
   construction inner_span := line(inner_far, tooth.rack.pitch.p2)
   tooth.rack.pitch.p2 midpoint outer_span
   tooth.rack.pitch.p1 midpoint inner_span
-  outer := MateSection(tooth.rack.pitch.p2, outer_far, tooth.rack.outer, tooth.rack.inner, design,
+  outer := crown.mate_section.MateSection(tooth.rack.pitch.p2, outer_far, tooth.rack.outer, tooth.rack.inner, design,
     normal_module: normal_module)
-  inner := MateSection(inner_far, tooth.rack.pitch.p1, tooth.rack.outer, tooth.rack.inner, design,
+  inner := crown.mate_section.MateSection(inner_far, tooth.rack.pitch.p1, tooth.rack.outer, tooth.rack.inner, design,
     normal_module: normal_module)
   axis := line(tooth.axis.p1, bottom)
   tooth.axis angle(180deg) axis
@@ -37,16 +37,16 @@ component CrownMate(tooth: group, design: group, normal_module: Length) {
 
 preview {
   unit mm
-  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear := GearCone(pitch.view, g.view, hypoid_design)
-  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
-  trace := ToothTrace(pitch.view, gear.generator, hypoid_design)
-  thickness := CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
-  n := FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
-  tooth := CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
-    hypoid_design) in n.view
+  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
+  gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
+  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
+  thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal, design.hypoid_design)
+  n := views.FoldedView(pitch.view, trace.normal, span: design.hypoid_design.cutter_radius)
+  tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
+    design.hypoid_design) in n.view
   // Alone, the tooth's depths are in the trace's normal module: K stands that far from MC.
   trace.K distance(tooth.normal_module) trace.normal
-  mate := CrownMate(tooth, hypoid_design) in n.view
+  mate := CrownMate(tooth, design.hypoid_design) in n.view
   trace.K distance(mate.normal_module) trace.normal
 }

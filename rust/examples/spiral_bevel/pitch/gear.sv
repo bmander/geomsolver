@@ -45,7 +45,7 @@ component GearCone(p: plane, g: plane, design: group) {
 
 preview {
   unit mm
-  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear := GearCone(pitch.view, g.view, hypoid_design)
-  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
+  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
+  gear := GearCone(pitch.view, g.view, design.hypoid_design)
+  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
 }

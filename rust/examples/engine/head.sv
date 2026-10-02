@@ -17,7 +17,7 @@ use engine.valvetrain
 
 // A cam bearing cap, edge on or from above: a block `wcamb` long round the journal.
 component CamBearing(c: point, dims: group) {
-  cap := Box(c, x0: -dims.wcamb / 2, y0: -(dims.rcamj + dims.camcap), x1: dims.wcamb / 2, y1: dims.rcamj + dims.camcap)
+  cap := engine.parts.Box(c, x0: -dims.wcamb / 2, y0: -(dims.rcamj + dims.camcap), x1: dims.wcamb / 2, y1: dims.rcamj + dims.camcap)
 }
 
 component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point, o_t: point, dims: group) {
@@ -27,7 +27,7 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     f_l := point hint(x: o.x - dims.hw, y: o.y + dims.deck + dims.gasket)
     f_r := point hint(x: o.x + dims.hw, y: o.y + dims.deck + dims.gasket)
     t_l := point hint(x: o.x - 110mm, y: o.y + dims.deck + dims.head)
-    tr := At(o, dx: 110mm, dy: dims.deck + dims.head)
+    tr := engine.parts.At(o, dx: 110mm, dy: dims.deck + dims.head)
     (gasket := line(f_l, f_r)) -> (side_r := line(f_r, tr.p)) -> (topline := line(tr.p, t_l)) -> (side_l := line(t_l, f_l)) -> close
     o distance(-dims.hw, along: x) f_l
     o distance(dims.deck + dims.gasket, along: y) f_l
@@ -36,12 +36,12 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     o distance(110, along: left) t_l
     o distance(dims.deck + dims.head, along: y) t_l
     // the pent roof over the bore, from the face at the bore's edges up to the ridge
-    r_l := At(o, dx: -dims.D / 2, dy: dims.deck + dims.gasket)
-    r_r := At(o, dx: dims.D / 2, dy: dims.deck + dims.gasket)
-    ridge := At(o, dx: 0mm, dy: dims.roof + dims.gasket)
+    r_l := engine.parts.At(o, dx: -dims.D / 2, dy: dims.deck + dims.gasket)
+    r_r := engine.parts.At(o, dx: dims.D / 2, dy: dims.deck + dims.gasket)
+    ridge := engine.parts.At(o, dx: 0mm, dy: dims.roof + dims.gasket)
     roof_l := line(r_l.p, ridge.p)
     roof_r := line(r_r.p, ridge.p)
-    plug := Box(ridge.p, x0: -7mm, y0: 0mm, x1: 7mm, y1: 40mm)
+    plug := engine.parts.Box(ridge.p, x0: -7mm, y0: 0mm, x1: 7mm, y1: 40mm)
     // the valve axes: through the seat centres, square to the roof, up to the cam centres
     seat_i := point hint(x: o.x + dims.vs, y: o.y + dims.deck + dims.gasket + (dims.D / 2 - dims.vs) * tan(dims.va))
     seat_e := point hint(x: o.x - dims.vs, y: o.y + dims.deck + dims.gasket + (dims.D / 2 - dims.vs) * tan(dims.va))
@@ -68,10 +68,10 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     ae := (dims.cycle - dims.ecenter) / 2
     lift_now_i := max(dims.rb, dims.dn_i * cos(ai) + dims.rn) - dims.rb
     lift_now_e := max(dims.rb, dims.dn_e * cos(ae) + dims.rn) - dims.rb
-    lobe_i := Lobe(cam_i, vaxis_i, phi: 180deg + ai, dn: dims.dn_i, dims: dims)
-    lobe_e := Lobe(cam_e, vaxis_e, phi: 180deg + ae, dn: dims.dn_e, dims: dims)
-    v_i := Valve(seat_i, vaxis_i, lift: lift_now_i, head: dims.div, dims: dims)
-    v_e := Valve(seat_e, vaxis_e, lift: lift_now_e, head: dims.dev, dims: dims)
+    lobe_i := engine.valvetrain.Lobe(cam_i, vaxis_i, phi: 180deg + ai, dn: dims.dn_i, dims: dims)
+    lobe_e := engine.valvetrain.Lobe(cam_e, vaxis_e, phi: 180deg + ae, dn: dims.dn_e, dims: dims)
+    v_i := engine.valvetrain.Valve(seat_i, vaxis_i, lift: lift_now_i, head: dims.div, dims: dims)
+    v_e := engine.valvetrain.Valve(seat_e, vaxis_e, lift: lift_now_e, head: dims.dev, dims: dims)
   }
 
   // -- across the axis: the head edge on ----------------------------------------------
@@ -133,8 +133,8 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
       lc := point hint(x: o_s.x + dims.front + 25mm + dims.P / 2 + i * dims.P, y: o_s.y + dims.camh + dims.gasket)
       o_s distance(dims.front + 25mm + dims.P / 2 + i * dims.P, along: x) lc
       cam distance(0, along: y) lc
-      lobe_i := Box(lc, x0: 14mm, y0: -bot_i, x1: 26mm, y1: top_i)
-      lobe_e := Box(lc, x0: -26mm, y0: -bot_e, x1: -14mm, y1: top_e)
+      lobe_i := engine.parts.Box(lc, x0: 14mm, y0: -bot_i, x1: 26mm, y1: top_i)
+      lobe_e := engine.parts.Box(lc, x0: -26mm, y0: -bot_e, x1: -14mm, y1: top_e)
     }
   }
 
@@ -199,8 +199,8 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
       plug := circle(center: pc) hint(r: 7mm)
       radius(7) plug
       repeat 2 as k {
-        vi := At(pc, dx: -16mm + k * 32mm, dy: dims.vs)
-        ve := At(pc, dx: -16mm + k * 32mm, dy: -dims.vs)
+        vi := engine.parts.At(pc, dx: -16mm + k * 32mm, dy: dims.vs)
+        ve := engine.parts.At(pc, dx: -16mm + k * 32mm, dy: -dims.vs)
         intake := circle(center: vi.p) hint(r: dims.div / 2)
         exhaust := circle(center: ve.p) hint(r: dims.dev / 2)
         radius(dims.div / 2) intake

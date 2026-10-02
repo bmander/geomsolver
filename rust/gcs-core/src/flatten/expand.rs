@@ -63,7 +63,7 @@ impl<'a> Walk<'a> {
             }
         }
         // the root's numbers are the file's: the params of every module the file `use`s come
-        // first, so the file's own may read them (`rB := rp + 1.5mm`) and shadow them
+        // first, so the file's own may read them under their modules' paths
         if depth == 0 {
             let uses: Vec<String> = self.prog.uses.iter().map(|u| u.name.clone()).collect();
             for (k, v) in self.used_params(&uses) {
@@ -232,6 +232,8 @@ impl<'a> Walk<'a> {
                         // the sides this instance was given, and no others: a component reads a
                         // side by the name of its own formal, as it reads every other argument
                         sides,
+                        // and its body's calls name components from the file it was written in
+                        module: comp.module,
                     };
                     let mut instance_path = path.to_vec();
                     instance_path.push(PathStep::Instance(st.id));
@@ -458,6 +460,7 @@ impl<'a> Walk<'a> {
                 in_class: scope.in_class.clone(),
                 graph: scope.graph.clone(),
                 sides: scope.sides.clone(),
+                module: scope.module,
             };
             let mut p2 = path.to_vec();
             p2.push(PathStep::Copy { block: st.id, index: k as u32 });

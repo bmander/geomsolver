@@ -736,9 +736,8 @@ impl<'a> Walk<'a> {
         owners
             .into_iter()
             .find(|i| {
-                self.prog.component(&i.component).is_some_and(|c| {
-                    c.formals.iter().any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_) | Ty::Group))
-                })
+                self.prog.components[i.comp].formals.iter()
+                    .any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_) | Ty::Group))
             })
             .map(|i| crate::syntax::CurveOf {
                 instance: i.prefix.clone(),

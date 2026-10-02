@@ -1,6 +1,11 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.29 — October 2026**
+**Specification, Draft 0.30 — October 2026**
+
+**[0.30] Nothing is imported bare.** A used module's component, param or group is written with
+the module's full path — `engine.parts.Crank(…)`, `hardware.nut14_af`,
+`components.dims.vtwin_dims` — and only through a `use` the file wrote itself (§14.4). Two
+modules may define one name.
 
 **[0.29] One way to define a name.** `NAME := VALUE` is the only form that puts a name in scope,
 and `(NAME := VALUE)` is the value itself, so a name may stand where its value does (§5). `w := 100`
@@ -455,7 +460,7 @@ R := m * N / 2
 
 A definition whose value is a number introduces a named definitional value, a **param**. Param values are evaluated at elaboration time when all inputs are `Int`/literal, otherwise they are definitional scalars.
 
-A `param` is visible throughout the body that declares it and its repetition blocks. A file may import a module's top-level parameters and groups (§14.4) for use in its root body; a component receives external values through arguments (§8). A root definition may override an imported parameter for the root's own expressions. A `param` MUST NOT read geometry (`a.x`): a `param` feeds constraints, and a number read off a seed would make the solution set depend on where a solve began (P3); a *seed* may (§6.4).
+A `param` is visible throughout the body that declares it and its repetition blocks. A file may read a used module's top-level parameters and groups (§14.4) in its root body, by the module's path (`engine.dims.bore`); a component receives external values through arguments (§8). A `param` MUST NOT read geometry (`a.x`): a `param` feeds constraints, and a number read off a seed would make the solution set depend on where a solve began (P3); a *seed* may (§6.4).
 
 ### 6.4 Seeds written inline **[0.2]**
 
@@ -1717,7 +1722,9 @@ use engine.dims
 use engine.parts
 ```
 
-A **module** is a Solvent document read for its components. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions** and its top-level **`param`s and groups** (§6.3), available at the importing root; its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`. Two definitions of one component name, wherever they come from, are **E071**, at the document's own definition when the clash is with one and otherwise at the `use` that brought the later module in; there is no shadowing (§5). A module's own errors — a parse error, a faulty `param` — are reported to a reader of the document *at the `use` that brought the module in*, with the module's name, line and column in front of the message, since that line is the one the document can edit.
+A **module** is a Solvent document read for its components. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions** and its top-level **`param`s and groups** (§6.3), available at the importing root; its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`.
+
+**[0.30] Nothing is imported bare.** A file reaches a module's component, param or group only by the module's **full path**, as its `use` spells it: `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.vtwin_dims`. A param or group so named is read in the file's root body (components are closed, §5); a component may be called from anywhere in the file. A module names its *own* definitions bare. Only a module the file itself `use`s may be named — one reached through another module's `use` is that module's business, and naming it is an error that says which `use` to write. So two modules may define one name, and only two definitions in one file are **E071**. The standard datums follow the rule: `std.front` needs the file's own `use std`. A drawn callout of a dimension written `engine.dims.D` shows `D`. A module's own errors — a parse error, a faulty `param` — are reported to a reader of the document *at the `use` that brought the module in*, with the module's name, line and column in front of the message, since that line is the one the document can edit.
 
 **[0.21] Standard datums.** `use std` makes `std.front`, `std.up`, and `std.origin`
 available. `std.front` is a fixed plane datum at page `(0, 0)`, with u right and v up.
@@ -1728,17 +1735,17 @@ An explicit root declaration or instance named `std` takes precedence over the s
 
 A datum argument does not assign membership. `Part(std.front, …)` draws unassigned geometry
 on the page, as any other unassigned geometry does; `Part(std.front, …) in std.front` assigns
-membership explicitly. With `vtwin_dims` imported from the dimension module, the upright cylinder preview can therefore be just:
+membership explicitly. With the dimension module used, the upright cylinder preview can therefore be just:
 
 ```solvent
 preview {
   unit mm
-  cyl := Cylinder(std.up, fw: 12mm, dims: vtwin_dims)
+  cyl := Cylinder(std.up, fw: 12mm, dims: components.dims.vtwin_dims)
 }
 ```
 
 The name `cyl` is retained because the part drawing references `cyl.body`. For an unnamed
-preview, `Cylinder(std.front, fw: 12mm, dims: vtwin_dims)` is sufficient; its bore follows the datum's u axis.
+preview, `Cylinder(std.front, fw: 12mm, dims: components.dims.vtwin_dims)` is sufficient; its bore follows the datum's u axis.
 
 **[0.21] A component file may provide its own preview.** At most one `preview { … }`
 block may appear at file scope. Its body contains ordinary model statements, including units,
@@ -1845,7 +1852,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E065 | a relation in space degenerate at the solve: views a `project` relates that came out parallel, lines whose skew distance is stated that came out parallel (§6.7) **[0.23]** |
 | E066 | `against` between faces whose planes turn apart, one of them a solved view, or a placed plane that follows a solved offset and has views derived from it (§6.10) **[0.23; narrowed 0.26]** |
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
-| E071 | a component defined twice, across the document and its modules (§14.4) **[0.12]** |
+| E071 | a component defined twice in one file (§14.4) **[0.12]** **[0.30]** |
 | E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc, a circle or a point, a circle standing *in* a loop rather than being one, **[0.19]** an edge that meets neither neighbour and so is walked two ways, a straight loop with fewer than three corners, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body |
 | E081 | invalid revolution axis or guided sweep path (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |

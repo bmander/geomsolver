@@ -33,7 +33,18 @@ geometric point hints settle. Component aliases retain subentity paths such as `
 expanded from the library's `StandardDatums` only when referenced. Both datums are fixed at
 page zero, with no implied membership. Calls may omit `name:`; anonymous instance keys stay
 out of user-facing names. The cylinder preview keeps `cyl:` for its `.svd` references and uses
-`cyl := Cylinder(std.up, fw: fwA, dims: vtwin_dims)` with no explicit origin, ground, plane, or Axes setup.
+`cyl := Cylinder(std.up, fw: components.dims.fwA, dims: components.dims.vtwin_dims)` with no
+explicit origin, ground, plane, or Axes setup.
+
+**Nothing is imported bare (Solvent §14.4, [0.30]):** a used module's component, param or group
+is written with the module's full path — `engine.parts.Crank(…)`, `hardware.nut14_af`,
+`components.dims.vtwin_dims` — and only through a `use` the file wrote itself; a module names
+its own definitions bare. `Program::resolve_component(name, from)` resolves a call from the file
+it is written in (`Scope::module`, set on entering a component's body), and `component_id` is a
+component's program-wide identity (it keys `CurveDef`s). `Walk::used_params` qualifies a module's
+numbers (`module_params` keeps only the module's own), and module groups register under their
+path. Two modules may define one name; E071 is two in one file. `std.front` needs a `use std`
+of the document's own. A drawn callout drops a used module's path (`relations::unqualified`).
 
 
 
@@ -47,14 +58,16 @@ attitude root (`from:` with no fold); a solved datum offset makes a `CKind::Mate
 `u:`/`v:` is where a stated basis stands, which `to_program` writes for a stand-off plane.
 
 **Closed components:** model dependencies enter through arguments, including standard datums.
-Visible component definitions and built-in functions/constants remain callable. Component scopes
+Component definitions remain callable (the file's own bare, a used module's by its path) and so
+do built-in functions/constants. Component scopes
 contain only their own formals and declarations; repetitions share that lexical scope.
 `dims := group(width: 20mm, origin: o)` bundles values and geometry aliases; `dims: group` is a
 required formal, usable positionally or by label. Groups nest, and a component instance may be
 passed as a layout group exposing its geometry. They add no solver state. Numeric member units
 survive substitution; missing members are errors. Curves still need fixed scalar/entity formals.
-The V-twin and inline-four examples pass `vtwin_dims` and `engine_dims` explicitly. Frame takes
-`Frame(layout, dims: vtwin_dims)`; its layout names the front datum, origin, and reference axis.
+The V-twin and inline-four examples pass `components.dims.vtwin_dims` and
+`engine.dims.engine_dims` explicitly. `Frame(layout, dims: components.dims.vtwin_dims)` takes a
+layout naming the front datum, origin, and reference axis.
 
 **Analytic surface references:** `flank := surface(crown, edge: rack.outer)` names a line/arc/circle
 patch of an unmodified revolution. It is spatial, owns no solver parameters, and is not a 2D
@@ -864,14 +877,15 @@ Conventions:
   says which text an offset is in; `modules::localize` (run by `link` and by `elaborate`) shows a
   module's diagnostic at the `use` that brought it in (`Module::via`) with `name:line:col` in
   front of the message.  A module contributes its components (`Component::module` says which)
-  and its top-level params and groups to the importing root; its own drawing is not drawn.  **The core has no filesystem**: the
+  and its top-level params and groups, each reached by the module's full path (`engine.parts.Crank`,
+  [0.30]); its own drawing is not drawn.  **The core has no filesystem**: the
   resolver is the host's — `solventc` reads `engine.parts` as `engine/parts.sv` beside the
   document, then `library::resolve`; the FFI and `examples::document` use `library::parse_linked`,
   over `library::MODULES` (compiled in with `include_str!`, which is how the app opens the
-  engine).  **`rust/lib/` is the standard library** — `std` (`ThreeViews`: the three principal
+  engine).  **`rust/lib/` is the standard library** — `std` (`std.ThreeViews`: the three principal
   views laid out from one grounded point) — and is in the Makefile's `RUST_SRC` so editing it
   rebuilds what compiled it in.  `program::reparse` relinks from the texts already in hand (`modules::relink`), so an
-  edit never asks the host.  E070 no module, E071 defined twice.  `tests/modules.rs` is the gate.
+  edit never asks the host.  E070 no module, E071 defined twice in one file.  `tests/modules.rs` is the gate.
 - **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its
   dotted name (`five.s[0].p1`, `t0.mid`), so a port was a second name for a thing that had one:
   its declaring form is a `point` of the body, its alias form is the caller writing the entity's

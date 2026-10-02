@@ -93,14 +93,14 @@ impl<'a> Walk<'a> {
         vals: &BTreeMap<String, Aff>,
         drawn: bool,
     ) -> Option<(&'a Component, BTreeMap<String, Aff>, BTreeMap<String, String>, String)> {
-        let Some(comp) = self.prog.component(&inst.component.text) else {
-            self.err(
-                Code::E103,
-                inst.component.span,
-                format!("no component named `{}`", inst.component.text),
-            );
-            return None;
+        let index = match self.prog.resolve_component(&inst.component.text, scope.module) {
+            Ok(i) => i,
+            Err(m) => {
+                self.err(Code::E103, inst.component.span, m);
+                return None;
+            }
         };
+        let comp = &self.prog.components[index];
         if self.called.insert(inst.span) {
             self.check_call(comp, inst);
         }
@@ -109,6 +109,7 @@ impl<'a> Walk<'a> {
         self.instances.push(InstanceInfo {
             prefix: key.clone(),
             component: inst.component.text.clone(),
+            comp: index,
             ents: comp
                 .formals
                 .iter()
@@ -298,8 +299,9 @@ impl<'a> Walk<'a> {
         (sub, sides)
     }
 
-    /// A module's top-level `param`s, worked out once — in the module's own scope, which has no
-    /// prefix and no numbers but its own and those of the modules it `use`s.
+    /// A module's top-level `param`s, worked out once — in the module's own scope, by their own
+    /// names, which has no numbers but its own and those of the modules it `use`s.  Its groups
+    /// are known under the module's path (`components.dims.vtwin_dims`), the name a file passes.
     pub(super) fn module_params(&mut self, k: usize) -> BTreeMap<String, Aff> {
         if let Some(Some(v)) = self.module_vals.get(k) {
             return v.clone();
@@ -309,29 +311,34 @@ impl<'a> Walk<'a> {
         if let Some(slot) = self.module_vals.get_mut(k) {
             *slot = Some(BTreeMap::new());
         }
-        let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
-        let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
         let m = &self.prog.modules[k];
+        let scope = Scope { prefixes: vec![format!("{}.", m.name)], module: Some(k), ..Scope::default() };
+        let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
         let (body, uses) = (m.root.body.clone(), m.uses.clone());
-        // the modules it uses first, so its own params may read them and shadow them
-        for (name, v) in self.used_params(&uses) {
-            vals.insert(name, v);
+        // the modules it uses first, under their paths, so its own params may read them
+        let used = self.used_params(&uses);
+        for (name, v) in &used {
+            vals.insert(name.clone(), v.clone());
         }
         self.params(&body, &mut vals, &mut BTreeMap::new(), &scope);
+        // and only its own go out: a file reaches another module's numbers through a `use` of
+        // its own, so passing these on would only lengthen their names at every level
+        vals.retain(|name, _| !used.contains_key(name));
         if let Some(slot) = self.module_vals.get_mut(k) {
             *slot = Some(vals.clone());
         }
         vals
     }
 
-    /// The params of the modules a file names in its `use`s, in that order; a name two of them
-    /// define is the earlier's.
+    /// The params of the modules a file names in its `use`s, each under the module's full path
+    /// (`hardware.nut14_af`, `components.dims.vtwin_dims.bore`): nothing a module defines is read
+    /// bare outside it (§14.4).
     pub(super) fn used_params(&mut self, uses: &[String]) -> BTreeMap<String, Aff> {
         let mut out: BTreeMap<String, Aff> = BTreeMap::new();
         for name in uses {
             let Some(k) = self.prog.modules.iter().position(|m| &m.name == name) else { continue };
             for (n, v) in self.module_params(k) {
-                out.entry(n).or_insert(v);
+                out.insert(format!("{name}.{n}"), v);
             }
         }
         out

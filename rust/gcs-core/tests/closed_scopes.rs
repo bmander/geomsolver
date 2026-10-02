@@ -171,7 +171,7 @@ p := Part(dims)
 
 #[test]
 fn standard_centered_rectangle_has_dimensioned_sides_and_a_private_diagonal() {
-    let mut e = build("unit mm\nuse std\nc := point hint(x: 7mm, y: -3mm)\nground c\nr := CenteredRectangle(c, w: 20mm, h: 12mm)");
+    let mut e = build("unit mm\nuse std\nc := point hint(x: 7mm, y: -3mm)\nground c\nr := std.CenteredRectangle(c, w: 20mm, h: 12mm)");
     assert!(e.ok(), "{:?}", e.diags);
     for i in 0..e.sketch.points.len() {
         for (axis, param) in e.sketch.point_params(i).into_iter().enumerate() {

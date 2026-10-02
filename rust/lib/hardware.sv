@@ -78,7 +78,7 @@ component Ring(c: point, id: Length, od: Length) {
 
 // A nut or a bolt's head face on: the hex, with the bore through it.
 component Nut(c: point, ref: line, af: Length, bore: Length, phase: Angle) {
-  hex := Hex(c, ref, af: af, phase: phase)
+  hex := std.Hex(c, ref, af: af, phase: phase)
   hole := circle(center: c) hint(r: bore / 2)
   radius(bore / 2) hole
 }
@@ -139,7 +139,7 @@ seal_dims := group(squeeze: oring_squeeze, width_factor: oring_groove_w)
 // its edges private to this component. n >= 3, as for Polygon.
 component BoltPattern(body: solid, center: point, ref: line,
                       n: Int, pitch_r: Length, hole_r: Length, phase: Angle) {
-  private construction layout := Polygon(center, ref, n: n, r: pitch_r, phase: phase)
+  private construction layout := std.Polygon(center, ref, n: n, r: pitch_r, phase: phase)
   repeat n as i {
     hole := radius(hole_r) circle(center: layout.v[i])
     private drill := solid(face(hole), through: body)

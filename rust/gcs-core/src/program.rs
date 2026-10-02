@@ -370,7 +370,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     let mut arrays = BTreeSet::new();
     for st in &body {
         let StmtKind::Relation(r) = &st.kind else { continue };
-        if let Some(id) = constrain(&mut sk, &res, r, st, p.text(), &mut diags) {
+        if let Some(id) = constrain(&mut sk, &res, r, st, p, &mut diags) {
             map.record(st, Made::Con(id));
             if let Some(place) = r.place {
                 sk.placements.insert(id, place);
