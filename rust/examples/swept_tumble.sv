@@ -10,10 +10,10 @@ tube := 0.5mm      // the torus's tube
 roll := 75deg      // how far it tumbles each way
 
 // The torus: a circle turned about an upright axis `ring` away from its centre.
-private ta := point hint(x: 3, y: 1)
-private tb := point hint(x: 3, y: 3)
-ground ta
-ground tb
+private ta := point
+private tb := point
+fix(x == 3, y == 1) ta
+fix(x == 3, y == 3) tb
 private taxis := line(ta, tb)
 private tc := point hint(x: 3mm + ring, y: 2)
 tc distance(ring, along: right) ta

@@ -17,7 +17,7 @@ fn groups_pass_units_and_geometry_without_copying_it() {
         tip := point hint(x: d.origin.x + d.length, y: d.origin.y)\n\
         d.origin distance(d.length) tip\nd.origin distance(0mm, along: y) tip\n}\n\
         part := Bar(design)\ndesign := group(length: width, origin: o)\n\
-        width := 2cm\no := point hint(x: 7mm, y: 3mm)\nground o\n");
+        width := 2cm\no := point\nfix(x == 7mm, y == 3mm) o\n");
     assert_eq!(e.sketch.points.len(), 2);
     let tip = e.sketch.point_xy(e.map.ent_named("part.tip").unwrap().i());
     assert!((tip.0 - 27.0).abs() < 1e-8 && (tip.1 - 3.0).abs() < 1e-8, "{tip:?}");
@@ -34,7 +34,7 @@ fn nested_groups_forward_through_components_and_repetitions() {
 }
 #[test]
 fn layout_instances_can_be_passed_forward_without_an_extra_solve() {
-    let mut e = solved("component Layout() { a := point hint(x: 0,y: 0)\nground a\nb := point hint(x: 20,y: 0) }\n\
+    let mut e = solved("component Layout() { a := point\nfix(x == 0, y == 0) a\nb := point hint(x: 20,y: 0) }\n\
         component Part(layout: group) { bar := line(layout.a, layout.b)\nhorizontal bar\nlayout.a distance(20) layout.b }\n\
         part := Part(layout)\nlayout := Layout()\n");
     assert_eq!(e.sketch.points.len(), 2);
@@ -45,9 +45,9 @@ fn layout_instances_can_be_passed_forward_without_an_extra_solve() {
 fn components_cannot_capture_global_values_geometry_or_standard_datums() {
     for src in [
         "length := 20\ncomponent Bad() { a := point\nb := point\na distance(length) b }\nb := Bad()",
-        "a := point\ncomponent Bad() { ground a }\nb := Bad()",
+        "a := point\ncomponent Bad() { fix(x == 0, y == 0) a }\nb := Bad()",
         "use std\ncomponent Bad() { axis := line(std.origin, std.up.toward) }\nb := Bad()",
-        "component Inner() { ground a }\ncomponent Outer() { a := point\ni := Inner() }\no := Outer()",
+        "component Inner() { fix(x == 0, y == 0) a }\ncomponent Outer() { a := point\ni := Inner() }\no := Outer()",
         "length := 20\ncomponent Bad() { width := length / 2\na := point }\nb := Bad()",
     ] { assert!(!build(src).ok(), "captured ambient value: {src}"); }
 }
@@ -76,8 +76,8 @@ fn layout_groups_resolve_nested_and_indexed_members_forward() {
     let e = solved(r#"
 component Layout() {
   repeat 2 as i {
-    p := point hint(x: i * 20, y: 0)
-    ground p
+    p := point
+    fix(x == i * 20, y == 0) p
   }
 }
 component Part(d: group) {
@@ -119,8 +119,8 @@ cycle 3 {
     let e = solved(r#"
 component Inner(a: point, b: point) { border := line(a, b) }
 cycle 3 as i {
-  p := point hint(x: i * 20, y: 0)
-  ground p
+  p := point
+  fix(x == i * 20, y == 0) p
   part := Inner(p, next.p)
 }
 "#);
@@ -157,8 +157,8 @@ unit mm
 dims := group(area: 400mm * 1mm, root: sqrt(16mm))
 component Part(d: group) {
   length := sqrt(d.area) + d.root * d.root
-  a := point hint(x: 0, y: 0)
-  ground a
+  a := point
+  fix(x == 0, y == 0) a
   b := point hint(x: length, y: 0)
   a distance(length, along: x) b
   a distance(0mm, along: y) b
@@ -171,7 +171,7 @@ p := Part(dims)
 
 #[test]
 fn standard_centered_rectangle_has_dimensioned_sides_and_a_private_diagonal() {
-    let mut e = build("unit mm\nuse std\nc := point hint(x: 7mm, y: -3mm)\nground c\nr := std.CenteredRectangle(c, w: 20mm, h: 12mm)");
+    let mut e = build("unit mm\nuse std\nc := point\nfix(x == 7mm, y == -3mm) c\nr := std.CenteredRectangle(c, w: 20mm, h: 12mm)");
     assert!(e.ok(), "{:?}", e.diags);
     for i in 0..e.sketch.points.len() {
         for (axis, param) in e.sketch.point_params(i).into_iter().enumerate() {

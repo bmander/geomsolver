@@ -52,9 +52,9 @@ fn part(tag: &str, plane: &str, w: f64, lo: &str, hi: &str) -> String {
 /// The page, and one plane parallel to it that a mate must place.
 const HEAD: &str = "\
 unit mm
-o := point hint(x: 0, y: 0)
+o := point
 qq := point hint(x: 40, y: 0)
-ground o
+fix(x == 0, y == 0) o
 ref := horizontal line(o, qq)
 o distance(40) qq
 front := plane(origin: o, toward: qq)
@@ -173,10 +173,10 @@ use hardware
 fo := point
 fq := point hint(x: -10, y: 0)
 f := plane(origin: fo, toward: fq)
-o := point hint(x: 0, y: 0) in f
+o := point in f
 up := point hint(x: 0, y: 40) in f
 side := point hint(x: -10, y: 0) in f
-ground o
+fix(x == 0, y == 0) o
 ax := line(o, up)
 ac := line(o, side)
 vertical ax

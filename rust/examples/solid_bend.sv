@@ -18,8 +18,8 @@ inlet := face(outer.loop, holes: inner.loop)
 // The guide is drawn in plan; each section stands perpendicular to its tangent at its end.
 plan := plane(origin: std.origin, toward: std.front.toward, from: std.front, fold: 0deg)
 in plan {
-  turn_center := point hint(x: 0mm, y: 0mm)
-  ground turn_center
+  turn_center := point
+  fix(x == 0mm, y == 0mm) turn_center
   entry := point hint(x: bend_radius, y: 0mm)
   exit := point hint(x: bend_radius * cos(bend_angle), y: bend_radius * sin(bend_angle))
   construction centerline inlet_axis := line(turn_center, entry)
@@ -33,8 +33,8 @@ in plan {
 // The outlet's plane holds the bend's axis and the radius to the exit.
 outlet_view := plane(origin: std.origin, toward: std.front.toward, u: (0, 1, 0), v: (0, 0, 1))
 in outlet_view {
-  out_center := point hint(x: bend_radius, y: 0mm)
-  ground out_center
+  out_center := point
+  fix(x == bend_radius, y == 0mm) out_center
   out_outer := std.CenteredRectangle(out_center, w: 2 * outlet_half, h: 2 * outlet_half)
   out_inner := std.CenteredRectangle(out_center, w: 2 * (outlet_half - wall), h: 2 * (outlet_half - wall))
 }

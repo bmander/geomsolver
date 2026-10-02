@@ -12,8 +12,8 @@
 // One degree of freedom is left over: nothing says where along the base the chain sits, so it
 // slides.
 
-o := point hint(x: 0, y: 0)
-e := point hint(x: 40, y: 0)
+o := point
+e := point
 base := line(o, e)
 
 a := point hint(x: 0, y: 15)
@@ -38,5 +38,5 @@ l3 perpendicular l4
 f coincident d
 f distance(20) g
 
-ground o
-ground e
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) e

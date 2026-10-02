@@ -10,24 +10,24 @@ end_plane := plane(origin: std.origin, toward: std.front.toward, from: std.front
 in std.front {
   c := point hint(x: 0mm, y: 0mm)
   c coincident std.origin
-  a0 := point hint(x: -half, y: -half)
-  a1 := point hint(x: half, y: -half)
-  a2 := point hint(x: half, y: half)
-  a3 := point hint(x: -half, y: half)
-  ground a0
-  ground a1
-  ground a2
-  ground a3
+  a0 := point
+  a1 := point
+  a2 := point
+  a3 := point
+  fix(x == -half, y == -half) a0
+  fix(x == half, y == -half) a1
+  fix(x == half, y == half) a2
+  fix(x == -half, y == half) a3
 }
 in end_plane {
-  b0 := point hint(x: 0mm, y: -reach)
-  b1 := point hint(x: reach, y: 0mm)
-  b2 := point hint(x: 0mm, y: reach)
-  b3 := point hint(x: -reach, y: 0mm)
-  ground b0
-  ground b1
-  ground b2
-  ground b3
+  b0 := point
+  b1 := point
+  b2 := point
+  b3 := point
+  fix(x == 0mm, y == -reach) b0
+  fix(x == reach, y == 0mm) b1
+  fix(x == 0mm, y == reach) b2
+  fix(x == -reach, y == 0mm) b3
 }
 plan := plane(origin: std.origin, toward: std.front.toward, from: std.front, fold: 0deg)
 in plan {

@@ -18,12 +18,12 @@
 // diagnosis judges the claim a theorem — true, and adding nothing the equal angles had not
 // already said.  Drag the source or the target (or edit a number) and it stays one.
 
-m1 := point hint(x: 0, y: 0)
+m1 := point
 m2 := point hint(x: 100, y: 0)
 m := line(m1, m2)
 horizontal m
 m1 distance(100) m2
-ground m1
+fix(x == 0, y == 0) m1
 
 // the source and the target, each a station along the mirror and a height above it
 s := point hint(x: 10, y: 40)

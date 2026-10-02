@@ -130,7 +130,6 @@ macro_rules! undrawn {
             | CKind::HingeParallel
             | CKind::HingeAlong
             | CKind::ProjectSolved
-            | CKind::Ground
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw

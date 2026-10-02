@@ -1325,8 +1325,6 @@ pub enum Seg {
     Index(String),
 }
 
-/// `ground(p0)` pins both of a point's coordinates; `fix(c0.r)` pins one scalar.  Deliberately
-/// narrow: exactly what the document can already store, and no sugar that would not round-trip.
 /// `branch(KEY, ±1)` — a recorded root choice under a key `decompose::branch_key_points` could
 /// not read as a triple of points.
 #[derive(Clone, Debug)]

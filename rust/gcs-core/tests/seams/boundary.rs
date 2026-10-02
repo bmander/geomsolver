@@ -3,10 +3,10 @@ use gcs_core::{envelope::IntersectionOptions,seam::{BoundarySeam,BoundarySeamTol
 
 pub(super) const SPHERE: &str = "
 component Sphere(origin: point, size: Length) {
-  private bottom := point hint(x: 0,y: -size)
-  private top := point hint(x: 0,y: size)
-  ground bottom
-  ground top
+  private bottom := point
+  private top := point
+  fix(x == 0, y == -size) bottom
+  fix(x == 0, y == size) top
   private rim := arc(center: origin,start: bottom,end: top)
   radius(size) rim
   private diameter := line(top,bottom)
@@ -77,9 +77,9 @@ fn boundary_seams_roundtrip_copy_delete_and_preserve_private_dependencies() {
     // The flat printer deliberately refuses component definitions. Exercise its
     // seam spelling with a flat sphere, and component privacy separately below.
     let mut flat = solved(&format!("{MODEL}\n\
-        south := point hint(x: 0,y: -sqrt(9.25))\n\
-        north := point hint(x: 0,y: sqrt(9.25))\n\
-        ground south\nground north\n\
+        south := point\n\
+        north := point\n\
+        fix(x == 0, y == -sqrt(9.25)) south\nfix(x == 0, y == sqrt(9.25)) north\n\
         rim := arc(center: o,start: south,end: north)\n\
         radius(sqrt(9.25) * 1mm) rim\ndiameter := line(north,south)\n\
         ball := solid(face(rim,diameter),about: diameter)\n\

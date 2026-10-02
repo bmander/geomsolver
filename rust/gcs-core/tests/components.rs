@@ -32,9 +32,9 @@ fn a_formal_is_visible_inside_a_repeat_in_the_body() {
              hub distance(10) tip
            }
          }
-         h := point hint(x: 0, y: 0)
+         h := point
          f := Fan(h)
-         ground h",
+         fix(x == 0, y == 0) h",
     );
     let d = diagnose(&mut sk.clone(), DiagnoseOptions::default());
     assert_eq!(sk.points.len(), 4);
@@ -57,9 +57,9 @@ fn a_formal_is_forwarded_into_a_nested_instance() {
          component Outer(q: point) {
            i := Inner(q)
          }
-         a := point hint(x: 0, y: 0)
+         a := point
          o := Outer(a)
-         ground a",
+         fix(x == 0, y == 0) a",
     );
     assert_eq!(sk.points.len(), 2);
     let (zx, zy) = sk.point_xy(1);
@@ -73,8 +73,8 @@ fn each_copy_of_an_instance_in_a_block_binds_its_own_actual() {
         "component Peg(a: point, b: point) {
            a distance(10) b
          }
-         hub := point hint(x: 0, y: 0)
-         ground hub
+         hub := point
+         fix(x == 0, y == 0) hub
          repeat 3 as i {
            tip := point hint(x: 20 + i, y: i * 5)
            s := Peg(hub, tip)
@@ -96,8 +96,8 @@ fn a_cycle_of_instances_binds_per_copy() {
         "component Spoke(c: point, t: point) {
            c distance(40) t
          }
-         hub := point hint(x: 0, y: 0)
-         ground hub
+         hub := point
+         fix(x == 0, y == 0) hub
          cycle 6 as i {
            tip := point hint(x: 40 * cos(60 * i), y: 40 * sin(60 * i))
            s := Spoke(hub, tip)
@@ -122,12 +122,12 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
          \x20 }\n\
          \x20 o coincident p[0]\n\
          }\n\
-         o := point hint(x: 0, y: 0)\n\
-         o2 := point hint(x: 50, y: 0)\n\
+         o := point\n\
+         o2 := point\n\
          l := Ladder(o, n: 3)\n\
          m := Ladder(o2, n: 2)\n\
-         ground o\n\
-         ground o2\n\
+         fix(x == 0, y == 0) o\n\
+         fix(x == 50, y == 0) o2\n\
          l.p[0] vertical l.p[1]\n\
          l.p[0] distance(10) l.p[1]\n\
          l.p[1] vertical l.p[2]\n\
@@ -151,8 +151,9 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
         let e = gcs_core::program::elaborate(&prog);
         assert!(!e.ok(), "{src}");
     };
-    refused("component L(n: Int) { repeat n { p := point } }\nl := L(n: 2)\nground l.p[2]\n");
-    refused("component L(n: Int) { repeat n { p := point } }\nl := L(n: 2)\nground l.p[0][0]\n");
+    let l = "component L(n: Int) { repeat n { p := point } }\nl := L(n: 2)\n";
+    refused(&format!("{l}fix(x == 0, y == 0) l.p[2]\n"));
+    refused(&format!("{l}fix(x == 0, y == 0) l.p[0][0]\n"));
 }
 
 // **How a call is written** (issue #48, item 1; §4.1).  Positional binding is a count, and a
@@ -176,9 +177,9 @@ const ARM: &str = "unit mm\n\
                    component Arm(hub: point, tip: point, len: Length) {\n\
                      hub distance(len) tip\n\
                    }\n\
-                   o := point hint(x: 0, y: 0)\n\
+                   o := point\n\
                    t := point hint(x: 10, y: 0)\n\
-                   ground o\n";
+                   fix(x == 0, y == 0) o\n";
 
 #[test]
 fn a_number_is_given_by_label() {
@@ -210,8 +211,8 @@ fn one_call_is_read_once_however_many_copies_it_makes() {
            tip := point hint(x: 20 * cos(phase), y: 20 * sin(phase))\n\
            hub distance(20) tip\n\
          }\n\
-         o := point hint(x: 0, y: 0)\n\
-         ground o\n\
+         o := point\n\
+         fix(x == 0, y == 0) o\n\
          cycle 4 as i { s := Spoke(o, i * 90deg) }\n",
     );
     let said: Vec<&String> = d.iter().filter(|m| m.starts_with("E004")).collect();

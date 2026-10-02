@@ -54,11 +54,11 @@ fn refused(src: &str, code: &str, needle: &str) {
 /// the corners, so the figure is rigid once `a` is grounded and turned.
 const SQUARE: &str = "\
 unit mm
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 40, y: 0)
 c := point hint(x: 40, y: 30)
 d := point hint(x: 0, y: 30)
-ground a
+fix(x == 0, y == 0) a
 square := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 horizontal ab
 vertical bc
@@ -148,10 +148,10 @@ m[0] distance(1mm) m[1]
 fn a_surface_per_edge_of_a_revolved_profile() {
     let src = "\
 unit mm
-o := point hint(x: 0, y: 0)
-q := point hint(x: 0, y: 10)
-ground o
-ground q
+o := point
+q := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 10) q
 axis := line(o, q)
 component Rect(w: Length, h: Length) {
   a := point hint(x: 2, y: 0)

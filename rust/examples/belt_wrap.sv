@@ -19,7 +19,7 @@ r := 10        // the small pulley
 R := 25        // the big one
 wrap := 90     // belt in contact with the big pulley
 
-c1 := point hint(x: 0, y: 0)
+c1 := point
 c2 := point hint(x: 66, y: 0)
 
 // where the runs touch the pulleys: seeds only, for the side each run passes on
@@ -38,4 +38,4 @@ radius(R) big
 length(wrap) big
 
 c1 horizontal c2
-ground c1
+fix(x == 0, y == 0) c1

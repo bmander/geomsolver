@@ -42,9 +42,9 @@ component Rung(a: point, len: Length) {
     q := point hint(x: a.x, y: a.y + 10 * (i + 1))
   }
 }
-o := point hint(x: 0, y: 0)
+o := point
 r := Rung(o, len: 30)
-ground r.a
+fix(x == 0, y == 0) r.a
 horizontal r.e
 r.b distance(5) r.q[1]
 ";
@@ -52,7 +52,7 @@ r.b distance(5) r.q[1]
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
-    // the formal is the actual — one entity under two names — so `ground r.a` pinned `o`
+    // the formal is the actual — one entity under two names — so `fix(…) r.a` pinned `o`
     assert_eq!(e.sketch.points.len(), 4, "o, b and the two copies of q, and no fifth for `r.a`");
     let o = e.map.ent_named("o").expect("o");
     assert!(e.sketch.own_params(o).iter().all(|&p| e.sketch.params[p as usize].fixed));
@@ -65,7 +65,7 @@ r.b distance(5) r.q[1]
 #[test]
 fn a_computed_point_is_a_declaration() {
     let ray = "component Ray(c: point, u: Angle) {\n  p := point(x: c.x + cos(u), y: c.y + sin(u))\n}\n";
-    let src = format!("{ray}o := point hint(x: 0, y: 0)\nf := Ray(o).p over u in (0, 90)\nground o\n");
+    let src = format!("{ray}o := point\nf := Ray(o).p over u in (0, 90)\nfix(x == 0, y == 0) o\n");
     let (prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);

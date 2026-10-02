@@ -14,12 +14,12 @@ use crate::common::fd_jacobian;
 /// An ellipse of semi-axes 8 and 3 about (10, 5), its major axis along the page's x.
 const ELLIPSE: &str = "\
 use std
-o := point hint(x: 10, y: 5)
-q := point hint(x: 18, y: 5)
+o := point
+q := point
 f := plane(origin: o, toward: q)
 e := std.Ellipse(f, a: 8, b: 3).p over u in (0, 360)
-ground o
-ground q
+fix(x == 10, y == 5) o
+fix(x == 18, y == 5) q
 ";
 
 fn build(src: &str) -> Elaborated {
@@ -80,8 +80,8 @@ fn a_point_solves_onto_the_rim_at_its_eccentric_angle() {
 fn a_line_solves_tangent_to_the_rim() {
     // a level line above the ellipse, one end grounded, the other 12 away and free to fall
     let mut e = build(&format!(
-        "{ELLIPSE}a := point hint(x: 4, y: 10)\nb := point hint(x: 16, y: 10)\nl := line(a, b)\n\
-         ground a\na distance(12) b\ne tangent l hint(t: 90)\n"
+        "{ELLIPSE}a := point\nb := point hint(x: 16, y: 10)\nl := line(a, b)\n\
+         fix(x == 4, y == 10) a\na distance(12) b\ne tangent l hint(t: 90)\n"
     ));
     fd_jacobian(&e.sketch, 1e-5);
     let r = solve(&mut e.sketch, SolveOpts::default());

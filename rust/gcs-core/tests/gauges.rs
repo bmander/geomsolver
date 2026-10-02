@@ -1,8 +1,12 @@
 //! The gauges and the orientation predicates are entries of the operator table (issue #47,
-//! item 5): `ground p`, `fix c.r`, `ccw(a, b, c)` are read by the one relation parser and
-//! settled by the one table, so a class, a placement and a `claim` reach them syntactically —
-//! and they are *applied* rather than added, holding parameters or recording a root choice,
-//! with no constraint the sketch holds to show for it.
+//! item 5): `fix(x == 0, y == 0) p`, `fix(r == 25) c`, `ccw(a, b, c)` are read by the one
+//! relation parser and settled by the one table, so a class, a placement and a `claim` reach
+//! them syntactically — and they are *applied* rather than added, holding parameters or
+//! recording a root choice, with no constraint the sketch holds to show for it.
+//!
+//! **A `fix` states what it holds**: each number pinned under its field's name, the way any pin
+//! is written in a relation's parentheses (`t == 0.4`), so the held numbers are never seeds in a
+//! `hint(…)` clause, which is what a solve revises.
 
 use gcs_core::constraints::{gauge_op, is_operator, CKind, Fixity, ALL_KINDS};
 use gcs_core::program::{elaborate, Elaborated};
@@ -18,92 +22,185 @@ fn messages(e: &Elaborated) -> Vec<String> {
     e.diags.iter().map(|d| format!("{} {}", d.code.as_str(), d.message)).collect()
 }
 
+fn xy(e: &Elaborated, name: &str) -> (f64, f64) {
+    let p = e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`"));
+    e.sketch.point_xy(p.i())
+}
+
 const TRI: &str = "
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 10, y: 0)
 c := point hint(x: 0, y: 10)
 k := circle(center: a) hint(r: 5)
 ";
 
-/// The four are operator words, written as relations, and none of them is a constraint the
-/// sketch holds: the registry never learns them.
+/// The three are operator words, written as relations, and none of them is a constraint the
+/// sketch holds: the registry never learns them.  `ground` is no word at all.
 #[test]
-fn the_four_are_operators_and_none_is_in_the_registry() {
-    for w in ["ground", "fix", "ccw", "cw"] {
+fn the_three_are_operators_and_none_is_in_the_registry() {
+    for w in ["fix", "ccw", "cw"] {
         assert!(is_operator(w), "{w}");
         let k = gauge_op(w).expect(w);
         assert!(k.gauge());
         assert!(!ALL_KINDS.contains(&k), "{w} is applied, never published");
         assert!(!k.claimable());
     }
+    assert!(!is_operator("ground") && gauge_op("ground").is_none());
     assert_eq!(CKind::Ccw.operator(), Some(("ccw", Fixity::Call)));
-    assert_eq!(CKind::Ground.operator(), Some(("ground", Fixity::Prefix)));
-    let (prog, errs) = parse(&format!("{TRI}ground a\nfix k.r\nccw(a, b, c)\n"));
+    assert_eq!(CKind::Fix.operator(), Some(("fix", Fixity::Prefix)));
+    let (prog, errs) = parse(&format!("{TRI}fix(x == 0, y == 0) a\nfix(r == 5) k\nccw(a, b, c)\n"));
     assert!(errs.is_empty(), "{errs:?}");
     let rels = prog.root().body.iter().filter(|s| matches!(s.kind, StmtKind::Relation(_))).count();
     assert_eq!(rels, 3, "each is an ordinary relation statement");
 }
 
-/// Applied, not added: the point is held, the radius is held, the root choice is recorded, and
-/// the sketch holds no constraint for any of it.
+/// Applied, not added: the point is held where the statement says, the radius at what it says,
+/// the root choice is recorded, and the sketch holds no constraint for any of it.
 #[test]
-fn applied_and_not_added() {
-    let e = read(&format!("{TRI}ground a\nfix k.r\ncw(a, b, c)\n"));
+fn applied_at_the_numbers_stated_and_not_added() {
+    let e = read(&format!("{TRI}fix(x == 3, y == -4) a\nfix(r == 7) k\ncw(a, b, c)\n"));
     assert!(e.ok(), "{:?}", messages(&e));
     let sk = &e.sketch;
     assert!(sk.point_fixed(0));
-    assert!(sk.params[sk.circles[0].radius as usize].fixed);
+    assert_eq!(xy(&e, "a"), (3., -4.));
+    let r = &sk.params[sk.circles[0].radius as usize];
+    assert!(r.fixed && r.value == 7.);
     assert_eq!(sk.branches.len(), 1);
     assert_eq!(sk.branches.values().next().copied(), Some(-1));
     assert!(sk.user_constraints().is_empty(), "{:?}", sk.user_constraints());
+}
+
+/// A fix may hold one coordinate and leave the other free, and what it holds is the number it
+/// states, whatever a hint on the declaration says: a hint is only where a solve begins.
+#[test]
+fn a_fix_holds_what_it_names_and_beats_a_hint() {
+    let e = read("unit mm\nhalf := 10mm\na := point hint(x: 3, y: 7)\nfix(x == -half) a\n");
+    assert!(e.ok(), "{:?}", messages(&e));
+    let p = &e.sketch.points[0];
+    assert!(e.sketch.params[p.x as usize].fixed && !e.sketch.params[p.y as usize].fixed);
+    assert_eq!(xy(&e, "a"), (-10., 7.), "x held at the expression, y left at its seed");
+    // a cone's half-angle is written in degrees, as its hint is
+    let e = read("unit mm\no := point\nfix(x == 0, y == 0) o\nt := point hint(x: 0, y: 10)\n\
+                  l := line(o, t)\nk := cone(axis: l)\nfix(half == 30deg) k\n");
+    assert!(e.ok(), "{:?}", messages(&e));
+    let h = &e.sketch.params[e.sketch.cones[0].param as usize];
+    assert!(h.fixed && (h.value - 30f64.to_radians()).abs() < 1e-12, "{}", h.value);
+}
+
+/// Held before the seeds that read geometry are worked out: a place reading a held point reads
+/// where it is held, and a seed that reads geometry never moves a held number.
+#[test]
+fn a_seed_reads_a_held_point_and_never_moves_one() {
+    let e = read("a := point\nfix(x == 4, y == 5) a\nq := point hint(at: a)\n\
+                  b := point hint(at: q)\nfix(y == -1) b\n");
+    assert!(e.ok(), "{:?}", messages(&e));
+    assert_eq!(xy(&e, "q"), (4., 5.), "q seeded from a's held place");
+    assert_eq!(xy(&e, "b"), (4., -1.), "b takes q's x, and its own held y");
 }
 
 /// The trailing clauses every relation takes are read on a gauge too — a class is inert, since
 /// nothing is drawn for it — and a claim is refused with the reason.
 #[test]
 fn a_class_is_read_and_a_claim_is_refused() {
-    let e = read(&format!("{TRI}ground a class held\nccw(a, b, c) class chosen\n"));
+    let e = read(&format!("{TRI}fix(x == 0, y == 0) a class held\nccw(a, b, c) class chosen\n"));
     assert!(e.ok(), "{:?}", messages(&e));
     assert!(e.sketch.point_fixed(0));
-    let e = read(&format!("{TRI}claim ground a\n"));
+    let e = read(&format!("{TRI}claim fix(x == 0, y == 0) a\n"));
     let m = messages(&e);
-    assert!(m.iter().any(|m| m.starts_with("E040") && m.contains("ground")), "{m:?}");
+    assert!(m.iter().any(|m| m.starts_with("E040") && m.contains("fix")), "{m:?}");
     assert!(!e.sketch.point_fixed(0), "a refused claim holds nothing");
 }
 
-/// The words the gauges always used for what they refuse.
+/// A fix says what it holds, by name, pinned — and every other spelling is refused where it
+/// stands, saying how it is written.
 #[test]
-fn the_refusals_keep_their_words() {
-    let e = read(&format!("{TRI}ground k\n"));
-    assert!(messages(&e).iter().any(|m| m.contains("ground pins a point")), "{:?}", messages(&e));
-    let e = read(&format!("{TRI}fix k.q\n"));
-    assert!(messages(&e).iter().any(|m| m.contains("has r, not `q`")), "{:?}", messages(&e));
+fn a_fix_that_does_not_state_its_numbers_is_refused() {
+    for (stmt, says) in [
+        ("fix a", "`fix` states the numbers it holds"),
+        ("fix(x: 0) a", "`fix` pins a number with `==`"),
+        ("fix(5) k", "`fix(r == 5) k`"),
+        ("fix(z == 1) a", "`fix` holds `x`, `y`, `r` or `half`, not `z`"),
+        ("fix(x == 1) k", "a circle has r, not `x`"),
+        ("fix(r == 1) a", "a point has x and y, not `r`"),
+    ] {
+        let e = read(&format!("{TRI}{stmt}\n"));
+        let m = messages(&e);
+        assert!(m.iter().any(|m| m.contains(says)), "{stmt}: {m:?}");
+    }
     let e = read(&format!("{TRI}ccw(a, b)\n"));
     assert!(messages(&e).iter().any(|m| m.contains("three points")), "{:?}", messages(&e));
     let e = read(&format!("{TRI}ccw(a, b, k)\n"));
     assert!(messages(&e).iter().any(|m| m.contains("no such point")), "{:?}", messages(&e));
 }
 
-/// The lift writes them back as the same operators, and the colouring reads all four as the
-/// relation words they are.
+/// The lift writes them back as the same operators, holding the same numbers — a partial hold
+/// as partial — and the colouring reads them as the relation words they are.
 #[test]
-fn lifted_and_coloured_as_relations() {
-    let e = read(&format!("{TRI}ground a\nfix k.r\nccw(a, b, c)\n"));
+fn lifted_with_their_numbers_and_coloured_as_relations() {
+    let src = format!("{TRI}fix(x == 2, y == 3) a\nfix(y == 0) b\nfix(r == 5) k\nccw(a, b, c)\n");
+    let e = read(&src);
+    assert!(e.ok(), "{:?}", messages(&e));
     let mut p = gcs_core::program::to_program(&e.sketch);
     let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
-    assert!(text.contains("ground p0"), "{text}");
-    assert!(text.contains("fix c0.r"), "{text}");
+    assert!(text.contains("fix(x == 2, y == 3) p0"), "{text}");
+    assert!(text.contains("fix(y == 0) p1"), "{text}");
+    assert!(text.contains("fix(r == 5) c0"), "{text}");
     // the key canonicalises the triple's order and keeps its sense — and the call is printed
     // in that order: printed back to front, `ccw(p2, p1, p0)` was the other turn, and the lifted
     // text read back chose the other root
     assert!(text.contains("ccw(p0, p1, p2)"), "{text}");
     let again = read(&text);
+    assert!(again.ok(), "{:?}", messages(&again));
     assert_eq!(again.sketch.branches, e.sketch.branches, "{text}");
-    let src = format!("{TRI}ground a\nccw(a, b, c)\n");
+    let held = |e: &Elaborated| {
+        e.sketch.params.iter().map(|p| (p.fixed, p.fixed.then_some(p.value))).collect::<Vec<_>>()
+    };
+    assert_eq!(held(&again), held(&e), "{text}");
+    let src = format!("{TRI}fix(x == 0, y == 0) a\nccw(a, b, c)\n");
     let runs = highlight(&src);
-    for w in ["ground", "ccw"] {
+    for w in ["fix", "ccw"] {
         let at = src.find(&format!("\n{w}")).unwrap() + 1;
         let tint = runs.iter().find(|(_, s)| s.lo as usize == at).map(|(t, _)| *t);
         assert_eq!(tint, Some(Tint::Relation), "{w}");
     }
+}
+
+/// A solve's writeback leaves a held number where the `fix` states it: no hint grows back on a
+/// held point, a partly held one is seeded only in its free coordinate, and a held child's slot
+/// stays empty.
+#[test]
+fn a_solve_writes_no_seed_for_a_held_number() {
+    let src = "b := point\nfix(x == 30, y == 0) b\nc := point\nfix(x == 3) c\nc distance(30) b\n\
+               l := line\nfix(x == 0, y == 0) l.p1\nl.p1 distance(10) l.p2\n";
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut e = elaborate(&prog);
+    assert!(e.ok(), "{:?}", messages(&e));
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    let edit = gcs_core::edit::commit_seeds(&e, &e.sketch, &prog);
+    let text = &edit.text;
+    assert!(text.contains("b := point\n"), "{text}");
+    assert!(text.contains("c := point hint(y: ") && !text.contains("hint(x: 3"), "{text}");
+    assert!(text.contains("l := line(p2: hint("), "{text}");
+    let again = read(text);
+    assert!(again.ok(), "{:?}", messages(&again));
+    assert_eq!(xy(&again, "b"), (30., 0.));
+}
+
+/// The app's hold is written as a `fix` with the numbers it holds — a coordinate on its own as a
+/// partial one — and taken away again when let go.
+#[test]
+fn a_hold_made_in_the_app_is_written_with_its_numbers() {
+    let src = "a := point hint(x: 2, y: 3)\nb := point hint(x: 7, y: 1)\nfix(x == 7, y == 1) b\n";
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut e = elaborate(&prog);
+    let (a, b) = (e.map.ent_named("a").unwrap(), e.map.ent_named("b").unwrap());
+    e.sketch.fix_point(b.i(), false);
+    let ax = e.sketch.points[a.i()].x as usize;
+    e.sketch.params[ax].fixed = true;
+    let sk = std::mem::take(&mut e.sketch);
+    let edit = gcs_core::edit::reconcile(&mut e, &sk);
+    assert!(edit.text.contains("fix(x == 2) a"), "{}", edit.text);
+    assert!(!edit.text.contains(") b"), "the hold let go is gone:\n{}", edit.text);
 }

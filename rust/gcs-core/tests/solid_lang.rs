@@ -39,7 +39,7 @@ fn refused(src: &str, code: Code, needle: &str) {
 /// A 60 × 40 rectangle on the page, fully dimensioned and grounded, as `sec`.
 const RECT: &str = "\
 unit mm
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
 d := point hint(x: 0, y: 40)
@@ -48,7 +48,7 @@ horizontal ab
 vertical bc
 a distance(60) b
 a distance(40) d
-ground a
+fix(x == 0, y == 0) a
 sec := face(ab, bc, cd, da)
 ";
 
@@ -315,10 +315,10 @@ p1 := point hint(x: 14, y: 0)
 p2 := point hint(x: 14, y: 6)
 p3 := point hint(x: 10, y: 6)
 (e0 := line(p0, p1)) -> (e1 := line(p1, p2)) -> (e2 := line(p2, p3)) -> (e3 := line(p3, p0)) -> close
-q0 := point hint(x: 0, y: 0)
+q0 := point
 q1 := point hint(x: 0, y: 10)
 ax := line(q0, q1)
-ground q0
+fix(x == 0, y == 0) q0
 vertical ax
 horizontal e0
 vertical e1
@@ -429,10 +429,10 @@ fn a_mixed_faces_seed_writeback_changes_only_the_points() {
     assert_eq!(unchanged.kind, Kind::None);
     assert_eq!(unchanged.text, src);
 
-    let a = e.map.ent_named("a").unwrap();
-    let [x, _] = sk.point_params(a.i());
-    sk.params[x as usize].value = -5.0;
-    let want = src.replace("a := point hint(x: 0, y: 0)", "a := point hint(x: -5, y: 0)");
+    let b = e.map.ent_named("b").unwrap();
+    let [x, _] = sk.point_params(b.i());
+    sk.params[x as usize].value = 65.0;
+    let want = src.replace("b := point hint(x: 60, y: 0)", "b := point hint(x: 65, y: 0)");
     let moved = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(moved.kind, Kind::Numeric);
     assert_eq!(moved.text, want);
@@ -441,7 +441,7 @@ fn a_mixed_faces_seed_writeback_changes_only_the_points() {
     assert_eq!(synced.text, want);
     let back = read(&synced.text);
     assert_eq!(back.sketch.lines.len(), sk.lines.len());
-    assert_eq!(back.sketch.point_xy(a.i()), (-5.0, 0.0));
+    assert_eq!(back.sketch.point_xy(b.i()), (65.0, 0.0));
 }
 
 #[test]
@@ -1152,7 +1152,7 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
         let src = format!("unit mm\nuse hardware\nuse components.dims\nuse components.parts\nuse components.throttle\n\
             torgb := 2 * components.dims.rbar - 2 * (1 - hardware.oring_squeeze) * components.dims.tor\n\
             torw := hardware.oring_groove_w * components.dims.tor\n\
-            O := point hint(x: {page_x}, y: {page_y})\nground O\n\
+            O := point\nfix(x == {page_x}, y == {page_y}) O\n\
             q := point hint(x: {}, y: {page_y})\nO distance(40mm, along: x) q\nO distance(0mm, along: y) q\n\
             datum := plane(origin: O, toward: q)\n\
             front := plane(origin: O, toward: q, from: datum, offset: {offset}mm)\n\
@@ -1212,17 +1212,17 @@ unit mm
 component Par(o: point, u: Length) {
   p := point(x: o.x + u, y: o.y + u * u / 1mm)
 }
-o := point hint(x: 0mm, y: 0mm)
-ground o
+o := point
+fix(x == 0mm, y == 0mm) o
 k := Par(o).p over u in (-2mm, 2mm)
-a := point hint(x: -1mm, y: 1mm)
-b := point hint(x: 1mm, y: 1mm)
-c := point hint(x: 0mm, y: 3mm)
-ground c
+a := point hint(y: 1mm)
+b := point hint(y: 1mm)
+c := point
+fix(x == 0mm, y == 3mm) c
 a on k hint(t: -1)
 b on k hint(t: 1)
-fix a.x
-fix b.x
+fix(x == -1mm) a
+fix(x == 1mm) b
 ";
 
 #[test]

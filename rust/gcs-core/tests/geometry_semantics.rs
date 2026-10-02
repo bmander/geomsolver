@@ -28,14 +28,14 @@ fn private_error(src: &str) {
 
 #[test]
 fn private_names_work_locally_but_not_through_external_paths() {
-    let component = "component Part() { private center := point hint(x: 0,y: 0)\nground center\npublic := line(center, hint(x: 10,y: 0)) }\np := Part()\n";
+    let component = "component Part() { private center := point\nfix(x == 0, y == 0) center\npublic := line(center, hint(x: 10,y: 0)) }\np := Part()\n";
     let e = good(component);
     assert!(e.map.entity_path(&e.sketch, "p.center").is_none());
     assert!(e.map.entity_path(&e.sketch, "p.public.p1").is_some());
     for suffix in [
-        "ground p.center",
+        "fix(x == 0, y == 0) p.center",
         "q := point hint(x: p.center.x, y: 0)",
-        "component Use(c: point) { ground c }\nUse(p.center)",
+        "component Use(c: point) { fix(x == 0, y == 0) c }\nUse(p.center)",
         "leaked := group(c: p.center)",
     ] {
         private_error(&format!("{component}{suffix}"));
@@ -48,18 +48,18 @@ fn private_names_work_locally_but_not_through_external_paths() {
 #[test]
 fn private_geometry_can_be_explicitly_passed_and_forwarded() {
     good(
-        "component Use(c: point) { ground c }\n\
+        "component Use(c: point) { fix(x == 0, y == 0) c }\n\
           component Forward(c: point) { Use(c) }\n\
           component Owner() { Forward(secret)\nprivate secret := point }\nOwner()",
     );
     good(
         "component Layout() { p := point }\n\
-          component Use(g: group) { ground g.p }\n\
+          component Use(g: group) { fix(x == 0, y == 0) g.p }\n\
           component Owner() { Use(layout)\nprivate layout := Layout() }\nOwner()",
     );
     private_error(
         "component Layout() { private p := point }\n\
-          component Use(g: group) { ground g.p }\n\
+          component Use(g: group) { fix(x == 0, y == 0) g.p }\n\
           component Owner() { Use(layout)\nprivate layout := Layout() }\nOwner()",
     );
 }
@@ -67,24 +67,24 @@ fn private_geometry_can_be_explicitly_passed_and_forwarded() {
 #[test]
 fn privacy_survives_nested_instances_repetition_and_forward_references() {
     good(
-        "component Cell() { private p := point\nground p }\n\
+        "component Cell() { private p := point\nfix(x == 0, y == 0) p }\n\
           component Owner() { private cell := Cell() }\nOwner()",
     );
     private_error(
-        "ground x.hidden.p\ncomponent Child() { p := point }\n\
+        "fix(x == 0, y == 0) x.hidden.p\ncomponent Child() { p := point }\n\
           component Owner() { private hidden := Child() }\nx := Owner()",
     );
     private_error(
-        "component Owner() { repeat 3 { private p := point\nground p } }\n\
-          x := Owner()\nground x.p[1]",
+        "component Owner() { repeat 3 { private p := point\nfix(x == 0, y == 0) p } }\n\
+          x := Owner()\nfix(x == 0, y == 0) x.p[1]",
     );
     private_error(
         "component Child() { private p := point }\n\
-          component Owner() { child := Child()\nground child.p }\nx := Owner()",
+          component Owner() { child := Child()\nfix(x == 0, y == 0) child.p }\nx := Owner()",
     );
     private_error(
         "component Owner() { private p := point }\nx := Owner()\n\
-          alias := group(layout: x)\nground alias.layout.p",
+          alias := group(layout: x)\nfix(x == 0, y == 0) alias.layout.p",
     );
 }
 
@@ -114,8 +114,8 @@ fn semantic_instance_roles_do_not_escape_to_arguments_or_consumers() {
 
 #[test]
 fn roles_preserve_the_constraint_problem_and_round_trip() {
-    let tagged = "private construction centerline axis := line(hint(x: 0,y: 0), hint(x: 10,y: 0))\n\
-                  ground axis.p1\nhorizontal axis\ndistance(10) axis";
+    let tagged = "private construction centerline axis := line(p2: hint(x: 10,y: 0))\n\
+                  fix(x == 0, y == 0) axis.p1\nhorizontal axis\ndistance(10) axis";
     let mut e = good(tagged);
     let plain = good(&tagged.replace("private construction centerline ", ""));
     assert_eq!(e.sketch.params.len(), plain.sketch.params.len());

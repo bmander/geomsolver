@@ -70,7 +70,7 @@ use crate::model::{EntKind, EntRef, Sketch};
 use crate::syntax::{Name, Program, Stmt, StmtId, StmtKind};
 pub(crate) use entities::child_names;
 use entities::{build, crosses_views, settle_deferred, Deferred};
-pub(crate) use lift::{lift_decl, lift_gauge, lift_relation};
+pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation};
 use planes::{memberships, plane_bases};
 pub(crate) use planes::{plane_of_entity, plane_of_entity_by};
 use relations::{constrain, repeated};
@@ -336,6 +336,15 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
 
+    // the numbers `fix` holds, before the seeds that read geometry: a place reading a held
+    // point reads where it is held, and a seed never writes a held number (`settle_deferred`)
+    for st in &body {
+        let StmtKind::Relation(r) = &st.kind else { continue };
+        if relations::is_fix(r) {
+            constrain(&mut sk, &res, r, st, p, &mut diags);
+        }
+    }
+
     // seeds named by geometry, once every entity has a seed to be read: in statement order, so
     // a seed that reads a seed read from a third is settled after both (§6.4)
     let first = diags.len();
@@ -366,6 +375,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
     let mut arrays = BTreeSet::new();
     for st in &body {
         let StmtKind::Relation(r) = &st.kind else { continue };
+        if relations::is_fix(r) {
+            continue;
+        }
         if let Some(id) = constrain(&mut sk, &res, r, st, p, &mut diags) {
             map.record(st, Made::Con(id));
             if let Some(place) = r.place {

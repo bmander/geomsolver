@@ -180,7 +180,7 @@ fn explicit_native_stl_never_falls_back_when_occt_is_unavailable() {
     std::fs::create_dir_all(&dir).unwrap();
     let model = dir.join("model.sv");
     let output = dir.join("model.stl");
-    std::fs::write(&model,"unit mm\no := point hint(x: 0,y: 0)\nground o\n\
+    std::fs::write(&model,"unit mm\no := point\nfix(x == 0, y == 0) o\n\
         c := circle(center: o)\nradius(2) c\nbody := solid(face(c), depth: 3)\n").unwrap();
     std::fs::write(&output,"old STL").unwrap();
     let result = run(&[model.to_str().unwrap(),"--stl",output.to_str().unwrap(),
@@ -198,7 +198,7 @@ fn component_previews_resolve_project_imports_for_models_and_drawings() {
     std::fs::write(dir.join("parts/dims.sv"), "width := 20mm\n").unwrap();
     let part = dir.join("parts/bar.sv");
     std::fs::write(&part, "use parts.dims\ncomponent Bar(w: Length) {\n\
-        a := point hint(x: 0, y: 0)\nground a\nb := point hint(x: w, y: 0)\nground b\n\
+        a := point\nfix(x == 0, y == 0) a\nb := point\nfix(x == w, y == 0) b\n\
         border := line(a, b)\n}\npreview {\nunit mm\ndemo := Bar(w: parts.dims.width)\n}\n").unwrap();
     let args = [part.to_str().unwrap(), "--json", "--where", "demo.b.x"];
     let result = run(&args);
@@ -226,8 +226,8 @@ fn component_previews_resolve_project_imports_for_models_and_drawings() {
 fn drawings_load_relative_files_select_sheets_and_refuse_broken_references() {
     let dir = std::env::temp_dir().join(format!("solventc-drawing-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("sheets")).unwrap();
-    std::fs::write(dir.join("part.sv"), "unit mm\na := point hint(x: 0,y: 0)\nground a\n\
-        b := point hint(x: 20,y: 0)\nground b\nbar := line(a,b)\n").unwrap();
+    std::fs::write(dir.join("part.sv"), "unit mm\na := point\nfix(x == 0, y == 0) a\n\
+        b := point\nfix(x == 20, y == 0) b\nbar := line(a,b)\n").unwrap();
     std::fs::write(dir.join("ink.svd"), "style m.bar { color: #123456 }").unwrap();
     let path = dir.join("sheets/part.svd");
     let source = "model m from \"../part.sv\" use \"../ink.svd\"\n\
@@ -465,8 +465,8 @@ fn the_rust_kernel_exports_a_static_solid() {
     std::fs::create_dir_all(&dir).unwrap();
     let model = dir.join("model.sv");
     let (stl,step) = (dir.join("model.stl"),dir.join("model.step"));
-    std::fs::write(&model,"unit mm\no := point hint(x: 0,y: 0)\nb := point hint(x: 10,y: 0)\na := point hint(x: 10,y: 6)\n\
-        d := point hint(x: 0,y: 6)\nground o\nground b\nground a\nground d\nm := point hint(x: 5,y: 3)\nground m\n\
+    std::fs::write(&model,"unit mm\no := point\nb := point\na := point\n\
+        d := point\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) b\nfix(x == 10, y == 6) a\nfix(x == 0, y == 6) d\nm := point\nfix(x == 5, y == 3) m\n\
         c := circle(center: m) hint(r: 1)\nradius(1) c\n\
         block := solid(face(o, b, a, d, -> close), depth: 3)\nbore := solid(face(c), from: -5, to: 5)\nbody := solid(block)\nbore cut body\n").unwrap();
     let result = run(&[model.to_str().unwrap(),"--solid","body","--kernel","rust","--stl",stl.to_str().unwrap(),

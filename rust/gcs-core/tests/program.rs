@@ -511,7 +511,7 @@ fn parsing_and_printing_is_a_fixed_point() {
 fn a_program_written_by_hand_draws() {
     let text = "\
 // a square with a hole, written by hand
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 100, y: 0)
 c := point hint(x: 100, y: 100)
 d := point hint(x: 0, y: 100)
@@ -529,7 +529,7 @@ cd perpendicular da
 a distance(w := 100) b
 b distance(w) c
 radius(w / 5) hole
-ground a
+fix(x == 0, y == 0) a
 ";
     let (p, errs) = gcs_core::syntax::parse(text);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
@@ -832,7 +832,7 @@ fn read_ok(src: &str) -> gcs_core::program::Elaborated {
 /// they are called — a name earns its place when something says it twice, and these said it once.
 #[test]
 fn a_declaration_may_omit_its_children() {
-    let e = read_ok("l := line\nhorizontal l\nground l.p1\n");
+    let e = read_ok("l := line\nhorizontal l\nfix(x == 0, y == 0) l.p1\n");
     assert_eq!(e.sketch.points.len(), 2, "two ends, minted");
     assert_eq!(e.sketch.lines.len(), 1);
     // the dotted path is the name: it resolves, and the map carries it
@@ -859,9 +859,9 @@ fn a_declaration_may_omit_its_children() {
 /// statements it stands for — same drawing, same freedoms.
 #[test]
 fn a_child_slot_may_hold_a_seed() {
-    let mut anon = read_ok("l := line(hint(x: 0, y: 0), hint(x: 60, y: 20))\nground l.p1\n");
+    let mut anon = read_ok("l := line(p2: hint(x: 60, y: 20))\nfix(x == 0, y == 0) l.p1\n");
     let mut named = read_ok(
-        "a := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 20)\nl := line(a, b)\nground a\n",
+        "a := point\nb := point hint(x: 60, y: 20)\nl := line(a, b)\nfix(x == 0, y == 0) a\n",
     );
     assert_eq!(gcs_core::io::dumps(&anon.sketch, Some(1)), gcs_core::io::dumps(&named.sketch, Some(1)));
     let opts = gcs_core::diagnose::DiagnoseOptions::default();

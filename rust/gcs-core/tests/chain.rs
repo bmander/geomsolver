@@ -40,7 +40,7 @@ l2 := point hint(x: 0, y: r)
 c_br := point hint(x: w - r, y: r)
 c_tr := point hint(x: w - r, y: h - r)
 c_tl := point hint(x: r, y: h - r)
-c_bl := point hint(x: r, y: r)
+c_bl := point
 
 bottom := line(b1, b2)
 a_br := arc(center: c_br, start: b2, end: r1) hint(r: r)
@@ -73,7 +73,7 @@ radius(r) a_bl
 l1 distance(w) r2
 t1 distance(h) b2
 
-ground c_bl
+fix(x == r, y == r) c_bl
 ";
 
 /// Five points and a centre, the cast every small chain below is drawn from.
@@ -1145,7 +1145,9 @@ fn the_operator_form_round_trips() {
             gcs_core::io::dumps(&b.sketch, Some(1)),
             "{key} did not come back the same:\n{text}"
         );
-        assert!(!text.contains("=="), "no statement is written as a call: {text}");
+        // a pin is `==` in a relation's parentheses; outside a `fix` none of these has one
+        let calls = text.lines().filter(|l| !l.starts_with("fix(")).any(|l| l.contains("=="));
+        assert!(!calls, "no statement is written as a call: {text}");
     }
 }
 
@@ -1164,7 +1166,7 @@ fn no_document_writes_a_call() {
                 "vertical_points", "horizontal_distance", "vertical_distance",
                 "parallel_distance", "point_line_distance", "annular_distance", "symmetric(",
                 "angle(", "parallel(", "perpendicular(", "coincident(", "midpoint(",
-                "symmetry(", "equal(", "on(", "curvature(", "tangent(", "ground(", "fix(",
+                "symmetry(", "equal(", "on(", "curvature(", "tangent(", "ground(",
                 "horizontal(", "vertical(",
             ] {
                 assert!(!code.starts_with(w), "{key}:{}: a call — {line}", n + 1);

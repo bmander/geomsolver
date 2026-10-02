@@ -1,21 +1,21 @@
 unit mm
-o := point hint(x: 0, y: 0)
-ground o
-q := point hint(x: 40, y: 0)
-ground q
+o := point
+fix(x == 0, y == 0) o
+q := point
+fix(x == 40, y == 0) q
 front := plane(origin:o,toward:q)
-stockfp0 := point hint(x: 0, y: 0)
-ground stockfp0
-stockfp1 := point hint(x: 10, y: 0)
-ground stockfp1
-stockfp2 := point hint(x: 10, y: 10)
-ground stockfp2
-stockfp3 := point hint(x: 0, y: 10)
-ground stockfp3
+stockfp0 := point
+fix(x == 0, y == 0) stockfp0
+stockfp1 := point
+fix(x == 10, y == 0) stockfp1
+stockfp2 := point
+fix(x == 10, y == 10) stockfp2
+stockfp3 := point
+fix(x == 0, y == 10) stockfp3
 stockf := face(stockfp0, stockfp1, stockfp2, stockfp3, -> close)
 stock := solid(stockf, from: -1mm, to: 0mm)
-fp := point hint(x: 20, y: 20)
-ground fp
+fp := point
+fix(x == 20, y == 20) fp
 fc := circle(center: fp) hint(r: 2)
 radius(2mm) fc
 f := face(fc)

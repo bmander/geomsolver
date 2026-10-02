@@ -34,8 +34,8 @@ use components.side_view
 
 // the page is the view along the crank axis, where the V is; the side view stands to its right,
 // its origin the crank axis on the plate's front face
-O := point hint(x: 0, y: 0)
-ground O
+O := point
+fix(x == 0, y == 0) O
 views := std.ThreeViews(O, right: 240, up: 150)
 up := point hint(x: 0, y: 40) in views.front
 O distance(0, along: x) up

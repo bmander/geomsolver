@@ -76,14 +76,14 @@ fn a_swept_bodys_exact_surface_is_built_by_stages_and_supplied() {
 fn far_box(x0: f64) -> Sketch {
     let x1 = x0+2.03;
     let src = format!("unit mm
-p0 := point hint(x: {x0}, y: 0)
-ground p0
-p1 := point hint(x: {x1}, y: 0)
-ground p1
-p2 := point hint(x: {x1}, y: 2)
-ground p2
-p3 := point hint(x: {x0}, y: 2)
-ground p3
+p0 := point
+fix(x == {x0}, y == 0) p0
+p1 := point
+fix(x == {x1}, y == 0) p1
+p2 := point
+fix(x == {x1}, y == 2) p2
+p3 := point
+fix(x == {x0}, y == 2) p3
 section := face(p0, p1, p2, p3, -> close)
 body := solid(section, from: 0mm, to: 2mm)
 ");

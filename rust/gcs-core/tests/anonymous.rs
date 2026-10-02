@@ -209,7 +209,7 @@ fn a_fixed_anonymous_point_is_named_for_its_gauge() {
     e.sketch.fix_point(0, true);
     let edit = reconciled(&mut e);
     assert!(edit.text.contains("p0 := point hint(x: 3, y: 4)"), "{}", edit.text);
-    assert!(edit.text.contains("ground p0"), "{}", edit.text);
+    assert!(edit.text.contains("fix(x == 3, y == 4) p0\n"), "{}", edit.text);
     let back = read(&edit.text);
     assert!(back.sketch.point_fixed(0));
 }
@@ -377,7 +377,7 @@ fn the_sketch_shows_a_name_and_never_the_key() {
 
     // and a *block prefix* is not an anonymous name: the flattener wrote it, it says which
     // instance the thing belongs to, and it is shown as it always has been
-    let e = read("o := point hint(x: 0, y: 0)\nground o\ncycle 3 as i {\n  p := point hint(x: 1, y: 0)\n}\n");
+    let e = read("o := point\nfix(x == 0, y == 0) o\ncycle 3 as i {\n  p := point hint(x: 1, y: 0)\n}\n");
     let names: Vec<&str> = e.sketch.params.iter().map(|p| p.name.as_str()).collect();
     assert!(names.iter().any(|n| n.ends_with(".0.p.x")), "the instance path stands: {names:?}");
 }

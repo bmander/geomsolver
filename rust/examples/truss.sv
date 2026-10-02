@@ -41,4 +41,4 @@ repeat bays - 1 as i {
 }
 
 horizontal chord[0]
-ground b[0]
+fix(x == 0, y == 0) b[0]

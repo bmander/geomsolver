@@ -21,8 +21,8 @@ fn temporal_coefficients_match_full_motion_with_offset_axes_and_signed_rates() {
         SurfacePoint {position:[1.,-2.,0.5],du:[-1.,1.,0.],dv:[0.,-2.,1.]},
     ];
     let (mut roots,mut empty) = (0,0);
-    let shifted = AXES.replace("o := point hint(x: 0,y: 0)","o := point hint(x: -1,y: 2)")
-        .replace("x := point hint(x: 1,y: 0)","x := point hint(x: 3,y: 1)");
+    let shifted = AXES.replace("fix(x == 0, y == 0) o","fix(x == -1, y == 2) o")
+        .replace("fix(x == 1, y == 0) x","fix(x == 3, y == 1) x");
     for axes in [AXES,shifted.as_str()] {
     for source_rate in [-2.,0.,0.7] { for observer_rate in [-0.5,0.,3.] {
         let family = from_axes(axes,source_rate,observer_rate,31.,-47.);

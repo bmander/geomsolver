@@ -390,7 +390,7 @@ pub fn to_json(sk: &Sketch) -> Json {
     }
     // the page-placement gauge's holds, by point index — only when there is one, and
     // derived again by an elaboration, but a document loaded from this has no source to derive
-    // them from: without it a writeback would read the hold as a `ground`
+    // them from: without it a writeback would read the hold as a `fix`
     if !sk.page_held.is_empty() {
         doc.set("page_held", Json::Arr(sk.page_held.iter().map(|&p| Json::Int(p as i64)).collect()));
     }
@@ -720,7 +720,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     }
     let pt_index = |i: usize| pt_map[i];
     // a held datum point is still the gauge's in the copy: fixed like any held point, and not
-    // a `ground` a writeback would spell
+    // a `fix` a writeback would spell
     for &p in &src.page_held {
         if let Some(n) = pt_map[p as usize] {
             dst.page_held.insert(n as u32);

@@ -41,14 +41,14 @@ fn standard_datums_are_shared_fixed_and_only_built_when_used() {
     let sk = e.sketch.clone();
     let edit = gcs_core::edit::reconcile(&mut e, &sk);
     assert_eq!(edit.kind, gcs_core::edit::Kind::None, "{}", edit.text);
-    assert!(!edit.text.contains("ground"), "library datums must not be copied into model source");
+    assert!(!edit.text.contains("fix("), "library datums must not be copied into model source");
 }
 
 #[test]
 fn standard_datums_work_in_hints_children_and_explicit_membership() {
     let mut e = build("unit mm\nuse std\n\
-        a := point hint(x: std.up.origin.x + 1mm * std.up.c, y: std.up.origin.y + 1mm * std.up.s)\n\
-        ground a\naxis := line(std.front.origin, std.front.toward)\n\
+        a := point\n\
+        fix(x == 0mm, y == 1mm) a\naxis := line(std.front.origin, std.front.toward)\n\
         b := point in std.front\nb distance(2mm, along: u) std.front\nb distance(3mm, along: v) std.front\n");
     solved(&mut e.sketch);
     close(e.sketch.point_xy(e.map.ent_named("a").unwrap().i()), (0.0, 1.0));
@@ -90,7 +90,7 @@ fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
 
 #[test]
 fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
-    let mut e = build("unit mm\no := point hint(x: 10, y: 20)\nq := point hint(x: 14, y: 23)\nground o\nground q\nf := plane(origin: o, toward: q)\np := point hint(x: 100, y: -200)\np distance(-5mm, along: u) f\np distance(2mm, along: v) f\n");
+    let mut e = build("unit mm\no := point\nq := point\nfix(x == 10, y == 20) o\nfix(x == 14, y == 23) q\nf := plane(origin: o, toward: q)\np := point hint(x: 100, y: -200)\np distance(-5mm, along: u) f\np distance(2mm, along: v) f\n");
     let p = e.map.ent_named("p").unwrap().i();
     solved(&mut e.sketch);
     close(e.sketch.point_xy(p), (4.8, 18.6));
@@ -110,7 +110,7 @@ fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
 
 #[test]
 fn an_external_constraint_moves_the_datum_through_an_aliased_component_point() {
-    let mut e = build("unit mm\ncomponent Offset(f: plane, p: point) {\np distance(3mm, along: u) f\np distance(-2mm, along: v) f\n}\no := point hint(x: 10, y: 20)\nq := point hint(x: 14, y: 20)\naxis := line(o, q)\nhorizontal axis\no distance(4mm, along: x) q\nf := plane(origin: o, toward: q)\np := point hint(x: 23, y: 28)\nground p\ni := Offset(f, p)\n");
+    let mut e = build("unit mm\ncomponent Offset(f: plane, p: point) {\np distance(3mm, along: u) f\np distance(-2mm, along: v) f\n}\no := point hint(x: 10, y: 20)\nq := point hint(x: 14, y: 20)\naxis := line(o, q)\nhorizontal axis\no distance(4mm, along: x) q\nf := plane(origin: o, toward: q)\np := point\nfix(x == 23, y == 28) p\ni := Offset(f, p)\n");
     solved(&mut e.sketch);
     close(e.sketch.point_xy(e.map.ent_named("o").unwrap().i()), (20.0, 30.0));
     assert_eq!(e.sketch.points.len(), 3, "the argument is an alias");
@@ -119,7 +119,7 @@ fn an_external_constraint_moves_the_datum_through_an_aliased_component_point() {
 
 #[test]
 fn both_ordinates_can_be_solved_as_independent_dimensions() {
-    let mut e = build("unit mm\ncomponent Read(f: plane, p: point, u: Length, v: Length) {\np distance(u, along: u) f\np distance(v, along: v) f\n}\no := point hint(x: 10, y: 20)\nq := point hint(x: 14, y: 23)\np := point hint(x: 4.8, y: 18.6)\nground o\nground q\nground p\nf := plane(origin: o, toward: q)\nr := Read(f, p)\n");
+    let mut e = build("unit mm\ncomponent Read(f: plane, p: point, u: Length, v: Length) {\np distance(u, along: u) f\np distance(v, along: v) f\n}\no := point\nq := point\np := point\nfix(x == 10, y == 20) o\nfix(x == 14, y == 23) q\nfix(x == 4.8, y == 18.6) p\nf := plane(origin: o, toward: q)\nr := Read(f, p)\n");
     super::common::fd_jacobian(&e.sketch, 1e-6);
     solved(&mut e.sketch);
     let value = |name: &str| e.sketch.params[e.sketch.free_vars[name] as usize].value;
@@ -129,7 +129,7 @@ fn both_ordinates_can_be_solved_as_independent_dimensions() {
 
 #[test]
 fn datum_seeds_and_membership_pass_through_nested_instances() {
-    let mut e = build("unit mm\nuse std\ncomponent Probe(f: plane) {\np := point hint(x: f.origin.x - 5mm * f.c - 2mm * f.s, y: f.origin.y - 5mm * f.s + 2mm * f.c)\np distance(-5mm, along: u) f\np distance(2mm, along: v) f\n}\ncomponent Part(f: plane) { probe := Probe(f) }\no := point hint(x: 10, y: 20)\nq := point hint(x: o.x + 4mm, y: o.y + 3mm)\nground o\nground q\ndatum := plane(origin: o, toward: q)\nview := plane\ni := Part(datum) in view\n");
+    let mut e = build("unit mm\nuse std\ncomponent Probe(f: plane) {\np := point hint(x: f.origin.x - 5mm * f.c - 2mm * f.s, y: f.origin.y - 5mm * f.s + 2mm * f.c)\np distance(-5mm, along: u) f\np distance(2mm, along: v) f\n}\ncomponent Part(f: plane) { probe := Probe(f) }\no := point\nq := point\nfix(x == 10, y == 20) o\nfix(x == 14, y == 23) q\ndatum := plane(origin: o, toward: q)\nview := plane\ni := Part(datum) in view\n");
     let p = e.map.ent_named("i.probe.p").unwrap().i();
     close(e.sketch.point_xy(p), (4.8, 18.6));
     let view = e.map.ent_named("view").unwrap().i();
@@ -141,7 +141,7 @@ fn datum_seeds_and_membership_pass_through_nested_instances() {
 
 #[test]
 fn zero_ordinates_are_regular_and_claims_remain_assertions() {
-    let mut e = build("unit mm\no := point hint(x: 10, y: 20)\nq := point hint(x: 14, y: 23)\nground o\nground q\nf := plane(origin: o, toward: q)\np := point\np distance(0mm, along: u) f\np distance(0mm, along: v) f\nclaim p distance(0mm, along: u) f\n");
+    let mut e = build("unit mm\no := point\nq := point\nfix(x == 10, y == 20) o\nfix(x == 14, y == 23) q\nf := plane(origin: o, toward: q)\np := point\np distance(0mm, along: u) f\np distance(0mm, along: v) f\nclaim p distance(0mm, along: u) f\n");
     solved(&mut e.sketch);
     close(e.sketch.point_xy(e.map.ent_named("p").unwrap().i()), (10.0, 20.0));
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).status, diagnose::State::Well);

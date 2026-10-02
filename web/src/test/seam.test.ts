@@ -11,22 +11,22 @@ await initCore();
 
 test('spatial seams, vertices and finite edges retain their defining geometry through the ABI', () => {
   const doc = Document.read(`unit mm
-o := point hint(x: 0,y: 0)
-q := point hint(x: 0,y: 2)
-x := point hint(x: 1,y: 0)
-a := point hint(x: 2,y: 0)
-b := point hint(x: 3,y: 0)
-m := point hint(x: 3,y: 1)
-c := point hint(x: 3,y: 2)
-d := point hint(x: 2,y: 2)
-ground o
-ground q
-ground x
-ground a
-ground b
-ground m
-ground c
-ground d
+o := point
+q := point
+x := point
+a := point
+b := point
+m := point
+c := point
+d := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 2) q
+fix(x == 1, y == 0) x
+fix(x == 2, y == 0) a
+fix(x == 3, y == 0) b
+fix(x == 3, y == 1) m
+fix(x == 3, y == 2) c
+fix(x == 2, y == 2) d
 axis := line(o,q)
 spin_axis := line(o,x)
 profile := (bottom := line(a,b)) -> (low := line(b,m)) -> (high := line(m,c)) ->
@@ -38,10 +38,10 @@ roll := motion(about: spin_axis)
 first_envelope := envelope(first_surface,under: roll,from: -20deg,to: 20deg)
 second_envelope := envelope(second_surface,under: roll,from: -20deg,to: 20deg)
 shared := seam(first_envelope,second_envelope)
-south := point hint(x: 0,y: -sqrt(9.25))
-north := point hint(x: 0,y: sqrt(9.25))
-ground south
-ground north
+south := point
+north := point
+fix(x == 0, y == -sqrt(9.25)) south
+fix(x == 0, y == sqrt(9.25)) north
 rim := arc(center: o,start: south,end: north)
 radius(sqrt(9.25) * 1mm) rim
 diameter := line(north,south)
@@ -51,16 +51,16 @@ sphere_edge := seam(first_envelope,boundary)
 component Sphere(origin: point,size: Length) {
   private south := point hint(x: origin.x,y: origin.y-size)
   private north := point hint(x: origin.x,y: origin.y+size)
-  ground south
-  ground north
+  south vertical origin
+  north vertical origin
   private rim := arc(center: origin,start: south,end: north)
   radius(size) rim
   private diameter := line(north,south)
   private carrier := solid(face(rim,diameter),about: diameter)
   wall := surface(carrier,rim)
 }
-shifted := point hint(x: 0,y: 1)
-ground shifted
+shifted := point
+fix(x == 0, y == 1) shifted
 offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
 join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
 offset_edge := seam(first_envelope,offset.wall)

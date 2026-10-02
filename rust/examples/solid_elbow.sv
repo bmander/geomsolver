@@ -16,8 +16,8 @@ annulus := face(outer.loop, holes: inner.loop)
 // The guide is drawn in plan; the section stands perpendicular to its start tangent.
 plan := plane(origin: std.origin, toward: std.front.toward, from: std.front, fold: 0deg)
 in plan {
-  turn_center := point hint(x: 0mm, y: 0mm)
-  ground turn_center
+  turn_center := point
+  fix(x == 0mm, y == 0mm) turn_center
   entry := point hint(x: bend_radius, y: 0mm)
   exit := point hint(x: bend_radius * cos(bend_angle), y: bend_radius * sin(bend_angle))
   construction centerline inlet := line(turn_center, entry)

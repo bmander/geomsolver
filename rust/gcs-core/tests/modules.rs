@@ -22,7 +22,7 @@ stray := point hint(x: 999, y: 999)
 
 const LADDER: &str = "\
 use lib.rung
-l0 := point hint(x: 0, y: 0)
+l0 := point
 r0 := point hint(x: 50, y: 0)
 l1 := point hint(x: 0, y: 20)
 r1 := point hint(x: 50, y: 20)
@@ -31,7 +31,7 @@ t1 := lib.rung.Rung(l1, r1, len: lib.rung.len)
 stile := line(l0, l1)
 vertical stile
 l0 distance(lib.rung.len) l1
-ground l0
+fix(x == 0, y == 0) l0
 ";
 
 fn shelf() -> BTreeMap<&'static str, &'static str> {
@@ -70,7 +70,7 @@ fn a_component_only_file_does_not_instantiate_its_last_definition() {
 #[test]
 fn preview_solves_only_when_its_file_is_opened() {
     let src = "shared := 3mm\ncomponent Sample(size: Length) {\n\
-        c := circle hint(r: size)\nradius(size) c\nground c.center\n}\n\
+        c := circle hint(r: size)\nradius(size) c\nfix(x == 0, y == 0) c.center\n}\n\
         preview {\nunit cm\npreview_size := 7cm\n\
         sample := Sample(size: preview_size)\n}\n";
     let (p, errs) = parse(src);
@@ -224,8 +224,8 @@ fn a_diamond_links_once_and_a_cycle_ends() {
 /// document's read the module's: `twice := 2 * lib.rung.len` is 100 and not free.
 #[test]
 fn a_files_params_read_the_modules_it_uses() {
-    let (e, linked) = read("use lib.over\na := point hint(x: 0, y: 0)\nb := point hint(x: 100, y: 0)\n\
-        l := lib.over.Long(a, b, twice: lib.over.twice)\nground a\n\
+    let (e, linked) = read("use lib.over\na := point\nb := point hint(x: 100, y: 0)\n\
+        l := lib.over.Long(a, b, twice: lib.over.twice)\nfix(x == 0, y == 0) a\n\
         b distance(lib.over.twice, along: y) a\n");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
@@ -272,7 +272,7 @@ fn every_span_is_one_integer_into_one_virtual_text() {
 #[test]
 fn the_standard_library_lays_out_three_views() {
     let (prog, errs, linked) = gcs_core::library::parse_linked(
-        "use std\nO := point hint(x: 0, y: 0)\nground O\nv := std.ThreeViews(O, right: 100, up: 80)\n\
+        "use std\nO := point\nfix(x == 0, y == 0) O\nv := std.ThreeViews(O, right: 100, up: 80)\n\
          a := point in v.front\nb := point in v.top\nc := point in v.right\na project b\na project c\nb project c\n\
          O distance(30, along: x) a\nO distance(20, along: y) a\nv.top_origin distance(10, along: y) b\n",
     );

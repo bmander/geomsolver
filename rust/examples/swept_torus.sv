@@ -5,13 +5,13 @@
 unit mm
 use std
 construction centerline spindle := line(std.origin, std.up.toward)
-private ta := point hint(x: 3, y: 1)
-private tb := point hint(x: 3, y: 3)
-ground ta
-ground tb
+private ta := point
+private tb := point
+fix(x == 3, y == 1) ta
+fix(x == 3, y == 3) tb
 private taxis := line(ta, tb)
-private tc := point hint(x: 4, y: 2)
-ground tc
+private tc := point
+fix(x == 4, y == 2) tc
 private ring := circle(center: tc) hint(r: 0.5)
 radius(0.5mm) ring
 construction tool := solid(face(ring), about: taxis)
@@ -39,14 +39,14 @@ in flat {
 private observer := motion(about: kaxis)
 turn := motion(spin, relative_to: observer)
 construction removal := solid(tool, under: turn, from: -75deg, to: 75deg)
-private q0 := point hint(x: 4, y: 0.5)
-private q1 := point hint(x: 4.4, y: 0.5)
-private q2 := point hint(x: 4.4, y: 2)
-private q3 := point hint(x: 4, y: 2)
-ground q0
-ground q1
-ground q2
-ground q3
+private q0 := point
+private q1 := point
+private q2 := point
+private q3 := point
+fix(x == 4, y == 0.5) q0
+fix(x == 4.4, y == 0.5) q1
+fix(x == 4.4, y == 2) q2
+fix(x == 4, y == 2) q3
 private qb := line(q0, q1)
 private qw := line(q1, q2)
 private qt := line(q2, q3)

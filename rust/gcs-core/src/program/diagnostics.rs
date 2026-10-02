@@ -70,7 +70,7 @@ pub enum Code {
     E103,
     /// longer than the model will hold
     E104,
-    /// `ground`/`fix` on something the document cannot express
+    /// a `fix` of a number the entity does not have
     E105,
     /// not yet: a construct the language has and elaboration does not
     E106,

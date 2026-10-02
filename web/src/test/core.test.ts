@@ -1263,10 +1263,10 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   // layer's business and not the geometry, whose test is `gcs-core/tests/mesh.rs`.
   const src = [
     'unit mm',
-    'a := point hint(x: 0, y: 0)', 'b := point hint(x: 60, y: 0)',
+    'a := point', 'b := point hint(x: 60, y: 0)',
     'c := point hint(x: 60, y: 40)', 'd := point hint(x: 0, y: 40)',
     '(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close',
-    'horizontal ab', 'vertical bc', 'a distance(60) b', 'a distance(40) d', 'ground a',
+    'horizontal ab', 'vertical bc', 'a distance(60) b', 'a distance(40) d', 'fix(x == 0, y == 0) a',
     'sec := face(ab, bc, cd, da)',
     'o := point hint(x: 30, y: 20)',
     'a distance(30, along: x) o', 'a distance(20, along: y) o',
@@ -1306,7 +1306,7 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
 
 test('a named component chain reaches the browser as the same swept mesh', () => {
   const src = [
-    'unit mm', 'use components.parts', 'O := point hint(x: 0, y: 0)', 'ground O',
+    'unit mm', 'use components.parts', 'O := point', 'fix(x == 0, y == 0) O',
     'boss := components.parts.Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)',
     'block := solid(boss.profile, depth: 8mm)', '',
   ].join('\n');
@@ -1784,9 +1784,9 @@ test('a name nothing defines is a free variable that ties the dimensions reading
 
 test('an ellipse is a curve of the library, and a point solves onto its rim', () => {
   const d = Document.read(
-    'use std\no := point hint(x: 10, y: 5)\nq := point hint(x: 18, y: 5)\n'
+    'use std\no := point\nq := point\n'
     + 'f := plane(origin: o, toward: q)\ne := std.Ellipse(f, a: 8, b: 3).p over u in (0, 360)\n'
-    + 'ground o\nground q\np := point hint(x: 11, y: 9)\np on e hint(t: 80)\n');
+    + 'fix(x == 10, y == 5) o\nfix(x == 18, y == 5) q\np := point hint(x: 11, y: 9)\np on e hint(t: 80)\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   const sk = d.sketch;
   assert.equal(sk.curves.length, 1);
@@ -2020,12 +2020,12 @@ test('a sketch prints as a program and reads back the same', () => {
 
 test('a program written by hand draws', () => {
   const d = Document.read([
-    'a := point hint(x: 0, y: 0)',
+    'a := point',
     'b := point hint(x: 100, y: 0)',
     'ab := line(a, b)',
     'a distance(w := 60) b',
     'horizontal ab',
-    'ground a',
+    'fix(x == 0, y == 0) a',
   ].join('\n'));
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   assert.equal(d.sketch.points.length, 2);
@@ -2098,7 +2098,7 @@ test('the gear is a program, and its flanks are involutes the language defines',
 
 const TRIANGLE = `\
 // a triangle, and this comment must survive every edit
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 100, y: 0)
 c := point hint(x: 40, y: 70)
 
@@ -2108,7 +2108,7 @@ ca := line(c, a)
 
 horizontal ab
 a distance(w := 140) b
-ground a
+fix(x == 0, y == 0) a
 `;
 
 test('an edit is a new text, and the document is unchanged until it is applied', () => {
@@ -2302,7 +2302,7 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
   // the gear's centre is declared well past the em dash, so its span is only right if converted
   const centre = d.map.entities.find((x) => x.name === 'g.center')!;
   assert.ok(centre && centre.lo > dash, 'the centre is in the map, past the em dash');
-  assert.equal(text.slice(centre.lo, centre.hi), 'center := point hint(x: 0, y: 0)');
+  assert.equal(text.slice(centre.lo, centre.hi), 'center := point');
   const lo = d.map.entities.find((x) => x.name?.endsWith('.t.r.lo'))!;
   assert.ok(lo, 'a flank end is in the map');
   assert.equal(text.slice(lo.lo, lo.hi), 'lo := point hint(x: 0, y: 0)');
@@ -2358,7 +2358,7 @@ test('a rectangle joins the view it is drawn in, whole', () => {
 });
 
 test('a module the host hands over resolves a use before the library', async () => {
-  const doc = 'use demo.parts\no := point hint(x: 0, y: 0)\nground o\nr := demo.parts.Rung(o)\n';
+  const doc = 'use demo.parts\no := point\nfix(x == 0, y == 0) o\nr := demo.parts.Rung(o)\n';
   const mod = 'component Rung(a: point) {\n  b := point\n  e := line(a, b)\n  horizontal e\n  a distance(10) b\n}\n';
   assert.deepEqual(modules.uses(doc), ['demo.parts']);
   assert.equal(modules.pathOf('demo.parts'), 'demo/parts.sv');

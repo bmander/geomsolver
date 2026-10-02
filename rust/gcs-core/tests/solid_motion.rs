@@ -2,18 +2,18 @@
 use gcs_core::{io,model::MotionDef,program,solid::{ApproximationPolicy::Report,WorldPoint},solve,syntax};
 
 const SOURCE: &str = "unit mm
-a := point hint(x: 1,y: 0)
-b := point hint(x: 3,y: 0)
-c := point hint(x: 3,y: 2)
-d := point hint(x: 1,y: 2)
-o := point hint(x: 0,y: 0)
-z := point hint(x: 0,y: 1)
-ground a
-ground b
-ground c
-ground d
-ground o
-ground z
+a := point
+b := point
+c := point
+d := point
+o := point
+z := point
+fix(x == 1, y == 0) a
+fix(x == 3, y == 0) b
+fix(x == 3, y == 2) c
+fix(x == 1, y == 2) d
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) z
 axis := line(o,z)
 ab := line(a,b)
 bc := line(b,c)

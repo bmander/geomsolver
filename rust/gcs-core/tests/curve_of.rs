@@ -39,8 +39,8 @@ component Crank(o: point, theta: Angle) {
   a := Arm(o, p, len: 30, theta: theta)
   b := Arm(o, q, len: 30, theta: twice)
 }
-o := point hint(x: 0, y: 0)
-ground o
+o := point
+fix(x == 0, y == 0) o
 c := Crank(o)
 ";
     let mut e = build(src);
@@ -80,9 +80,9 @@ component Inner(o: point, u: Angle) {
 component Outer(o: point, u: Angle) {
   i := Inner(o)
 }
-o := point hint(x: 0, y: 0)
+o := point
 base := circle(center: o) hint(r: 7)
-ground o
+fix(x == 0, y == 0) o
 w := Outer(o).i.q over u in (0, 90)
 ";
     let e = build(src);
@@ -112,8 +112,8 @@ component Inner(o: point, a: Angle) {
 component Outer(o: point, u: Angle) {
   i := Inner(o, a: u)
 }
-o := point hint(x: 0, y: 0)
-ground o
+o := point
+fix(x == 0, y == 0) o
 d := Outer(o, u: 30)
 k := d.i.t over u in (0, 90)
 ";

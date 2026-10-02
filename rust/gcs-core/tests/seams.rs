@@ -6,22 +6,22 @@ mod surfaces;
 mod vertices;
 
 const MODEL: &str = "unit mm
-o := point hint(x: 0,y: 0)
-q := point hint(x: 0,y: 2)
-x := point hint(x: 1,y: 0)
-a := point hint(x: 2,y: 0)
-b := point hint(x: 3,y: 0)
-m := point hint(x: 3,y: 1)
-c := point hint(x: 3,y: 2)
-d := point hint(x: 2,y: 2)
-ground o
-ground q
-ground x
-ground a
-ground b
-ground m
-ground c
-ground d
+o := point
+q := point
+x := point
+a := point
+b := point
+m := point
+c := point
+d := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 2) q
+fix(x == 1, y == 0) x
+fix(x == 2, y == 0) a
+fix(x == 3, y == 0) b
+fix(x == 3, y == 1) m
+fix(x == 3, y == 2) c
+fix(x == 2, y == 2) d
 axis := line(o,q)
 spin_axis := line(o,x)
 bottom := line(a,b)
@@ -153,10 +153,10 @@ fn seam_formals_can_reach_forward_operands_and_private_seams_stay_private() {
 fn a_retained_seam_must_satisfy_material_trims_on_both_faces() {
     let source = format!("{MODEL}
 component Sphere(o: point,size: Length) {{
-  private bottom := point hint(x: 0,y: -size)
-  private top := point hint(x: 0,y: size)
-  ground bottom
-  ground top
+  private bottom := point
+  private top := point
+  fix(x == 0, y == -size) bottom
+  fix(x == 0, y == size) top
   private rim := arc(center: o,start: bottom,end: top)
   radius(size) rim
   private diameter := line(top,bottom)
@@ -182,10 +182,10 @@ clipped := seam(first_patch,second_patch)
 
 #[test]
 fn an_unresolved_arc_radius_cannot_hide_a_gap_at_a_shared_vertex() {
-    let source = MODEL.replace("a := point hint(x: 2,y: 0)","a := point hint(x: 1,y: 0)")
-        .replace("c := point hint(x: 3,y: 2)","c := point hint(x: 2,y: 2)")
-        .replace("d := point hint(x: 2,y: 2)","d := point hint(x: 1,y: 2)")
-        .replace("high := line(m,c)","arc_center := point hint(x: 2,y: 1)\nground arc_center\n\
+    let source = MODEL.replace("fix(x == 2, y == 0) a","fix(x == 1, y == 0) a")
+        .replace("fix(x == 3, y == 2) c","fix(x == 2, y == 2) c")
+        .replace("fix(x == 2, y == 2) d","fix(x == 1, y == 2) d")
+        .replace("high := line(m,c)","arc_center := point\nfix(x == 2, y == 1) arc_center\n\
             high := arc(center: arc_center,start: m,end: c)\nradius(1mm) high");
     let mut e = solved(&source);
     assert!(EnvelopeSeam::named(&e.sketch,0,tolerance()).is_ok());

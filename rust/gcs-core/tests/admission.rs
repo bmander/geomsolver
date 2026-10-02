@@ -110,18 +110,18 @@ fn a_union_tool_is_refused() {
 const ELL: &str = "unit mm
 use std
 construction centerline spindle := line(std.origin, std.up.toward)
-private l0 := point hint(x: 3, y: -1)
-private l1 := point hint(x: 4, y: -1)
-private l2 := point hint(x: 4, y: 0)
-private l3 := point hint(x: 3.5, y: 0)
-private l4 := point hint(x: 3.5, y: 1)
-private l5 := point hint(x: 3, y: 1)
-ground l0
-ground l1
-ground l2
-ground l3
-ground l4
-ground l5
+private l0 := point
+private l1 := point
+private l2 := point
+private l3 := point
+private l4 := point
+private l5 := point
+fix(x == 3, y == -1) l0
+fix(x == 4, y == -1) l1
+fix(x == 4, y == 0) l2
+fix(x == 3.5, y == 0) l3
+fix(x == 3.5, y == 1) l4
+fix(x == 3, y == 1) l5
 private e0 := line(l0, l1)
 private e1 := line(l1, l2)
 private e2 := line(l2, l3)
@@ -182,14 +182,14 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
 fn an_indexed_ring_is_alike_by_its_revolution_and_a_boxed_ring_by_sampling() {
     let ring = |extra: &str| format!("{}{}construction removal := solid(tool, under: turn, from: -35deg, to: 35deg)\n{}{extra}",
         sphere(2.),cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
-    let boxed = "private b0 := point hint(x: -5, y: 1)
-private b1 := point hint(x: 5, y: 1)
-private b2 := point hint(x: 5, y: 3)
-private b3 := point hint(x: -5, y: 3)
-ground b0
-ground b1
-ground b2
-ground b3
+    let boxed = "private b0 := point
+private b1 := point
+private b2 := point
+private b3 := point
+fix(x == -5, y == 1) b0
+fix(x == 5, y == 1) b1
+fix(x == 5, y == 3) b2
+fix(x == -5, y == 3) b3
 private bb := line(b0, b1)
 private bw := line(b1, b2)
 private bt := line(b2, b3)

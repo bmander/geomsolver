@@ -384,39 +384,39 @@ fn an_opposite_end_plane_normal_does_not_twist_circular_sections() {
 #[test]
 fn an_end_section_written_the_other_way_round_is_refused_by_both_kernels() {
     let square = |order: &str| format!("unit mm
-o := point hint(x: 0, y: 0)
-q := point hint(x: 1, y: 0)
-ground o
-ground q
+o := point
+q := point
+fix(x == 0, y == 0) o
+fix(x == 1, y == 0) q
 front := plane(origin: o, toward: q)
 back := plane(origin: o, toward: q, from: front, offset: -20mm)
 top := plane(origin: o, toward: q, from: front, fold: 0deg)
 in top {{
-  a := point hint(x: 0, y: 0)
-  b := point hint(x: 0, y: 20)
-  ground a
-  ground b
+  a := point
+  b := point
+  fix(x == 0, y == 0) a
+  fix(x == 0, y == 20) b
   guide := line(a, b)
 }}
 in front {{
-  s0 := point hint(x: -5, y: -5)
-  s1 := point hint(x: 5, y: -5)
-  s2 := point hint(x: 5, y: 5)
-  s3 := point hint(x: -5, y: 5)
-  ground s0
-  ground s1
-  ground s2
-  ground s3
+  s0 := point
+  s1 := point
+  s2 := point
+  s3 := point
+  fix(x == -5, y == -5) s0
+  fix(x == 5, y == -5) s1
+  fix(x == 5, y == 5) s2
+  fix(x == -5, y == 5) s3
 }}
 in back {{
-  e0 := point hint(x: -3, y: -3)
-  e1 := point hint(x: 3, y: -3)
-  e2 := point hint(x: 3, y: 3)
-  e3 := point hint(x: -3, y: 3)
-  ground e0
-  ground e1
-  ground e2
-  ground e3
+  e0 := point
+  e1 := point
+  e2 := point
+  e3 := point
+  fix(x == -3, y == -3) e0
+  fix(x == 3, y == -3) e1
+  fix(x == 3, y == 3) e2
+  fix(x == -3, y == 3) e3
 }}
 body := solid(face(s0, s1, s2, s3, -> close), face({order}, -> close), along: guide)
 ");

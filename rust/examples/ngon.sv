@@ -29,4 +29,4 @@ component Ngon(n: Int, side: Length) {
 
 // the hub and the sides are reached by their names: `five.c`, `five.s[0]`
 five := Ngon(n: 5, side: 40)
-ground five.c.center
+fix(x == 0, y == 0) five.c.center

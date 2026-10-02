@@ -93,7 +93,7 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   u0 := sqrt((Rr / Rb) ^ 2 - 1) * 1rad
   u1 := sqrt((Rt / Rb) ^ 2 - 1) * 1rad
 
-  center := point hint(x: 0, y: 0)
+  center := point
   base := circle(center: center) hint(r: Rb)
   root := circle(center: center) hint(r: Rr)
   tip := circle(center: center) hint(r: Rt)
@@ -103,7 +103,7 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   radius(Rb) base
   radius(Rr) root
   radius(Rt) tip
-  ground center
+  fix(x == 0, y == 0) center
 
   // `cycle` and not `ring`: the teeth are congruent because each is given the same numbers, not
   // because the wheel is *claimed* to be symmetric.  Spec §12.3 makes the two equivalent when the

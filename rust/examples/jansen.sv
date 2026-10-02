@@ -76,9 +76,9 @@ component Leg(axle: point, pivot: point, theta: Angle) {
   ccw(knee, heel, toe)      // the toe below the knee-to-heel side
 }
 
-axle := point  hint(x: 0, y: 0)
+axle := point 
 pivot := point hint(x: -38, y: -7.8)
-ground axle
+fix(x == 0, y == 0) axle
 pivot distance(a, along: x) axle
 pivot distance(l, along: y) axle
 

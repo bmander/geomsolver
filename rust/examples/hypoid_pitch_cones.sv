@@ -28,20 +28,20 @@ Rp := Np * module / 2
 E := 20mm
 
 // the pitch plane, and M on it
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
+o := point
+t := point
 P := plane(origin: o, toward: t)
-ground o
-ground t
-M := point hint(x: 0, y: 0) in P
-ground M
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
+M := point in P
+fix(x == 0, y == 0) M
 
 // the gear's axial plane, square to P about its vertical axis; the pinion's, solved, through M
-og := point hint(x: 0, y: 200)
-tg := point hint(x: 40, y: 200)
+og := point
+tg := point
 G := plane(origin: og, toward: tg, from: P, fold: 90deg)
-ground og
-ground tg
+fix(x == 0, y == 200) og
+fix(x == 40, y == 200) tg
 oq := point hint(x: 0, y: -200)
 tq := point hint(x: 40, y: -200)
 Q := plane(origin: oq, toward: tq, attitude: free, through: M) hint(u: (0.1618, -0.4935, -0.8546), v: (0.0918, 0.8698, -0.4847))

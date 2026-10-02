@@ -9,12 +9,12 @@ await initCore();
 
 test('a named analytic surface evaluates the solved model through the ABI', () => {
   const doc = Document.read(`unit mm
-o := point hint(x: 0,y: 0)
-q := point hint(x: 0,y: 1)
-c := point hint(x: 3,y: 0)
-ground o
-ground q
-ground c
+o := point
+q := point
+c := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) q
+fix(x == 3, y == 0) c
 axis := line(o,q)
 meridian := circle(center: c)
 radius(1mm) meridian

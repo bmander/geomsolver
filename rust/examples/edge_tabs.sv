@@ -10,11 +10,11 @@ width := 60mm
 height := 40mm
 rise := 12mm
 
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
 d := point hint(x: 0, y: 40)
-ground a
+fix(x == 0, y == 0) a
 outline := (ad := line(a, d)) -> (dc := line(d, c)) -> (cb := line(c, b)) -> (ba := line(b, a)) -> close
 vertical ad
 horizontal dc

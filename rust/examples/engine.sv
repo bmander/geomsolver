@@ -20,8 +20,8 @@ use engine.side_view
 
 // the three views, from the standard library: the page is the side view, the end view stands
 // to the right of it turned so up stays up, and the plan is folded up above it
-O := point hint(x: 0, y: 0)
-ground O
+O := point
+fix(x == 0, y == 0) O
 views := std.ThreeViews(O, right: 620, up: 620)
 
 end := engine.end_view.EndSection(views.right_origin, dims: engine.dims.engine_dims) in views.right

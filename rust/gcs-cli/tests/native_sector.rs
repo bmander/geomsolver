@@ -102,14 +102,14 @@ fn a_blank_of_revolutions_is_its_meridian_section_turned_and_any_other_its_boole
     assert!((a-b).abs() <= 1e-9*b,"{a} against {b}");
     assert_eq!(session.faces(turned).unwrap().len(),session.faces(booleans).unwrap().len());
     let boxed = fixtures::read(&format!("{}{}construction removal := solid(tool, under: turn, from: -35deg, to: 35deg)\n{}\
-private b0 := point hint(x: -5, y: 1)
-private b1 := point hint(x: 5, y: 1)
-private b2 := point hint(x: 5, y: 3)
-private b3 := point hint(x: -5, y: 3)
-ground b0
-ground b1
-ground b2
-ground b3
+private b0 := point
+private b1 := point
+private b2 := point
+private b3 := point
+fix(x == -5, y == 1) b0
+fix(x == 5, y == 1) b1
+fix(x == 5, y == 3) b2
+fix(x == -5, y == 3) b3
 private bb := line(b0, b1)
 private bw := line(b1, b2)
 private bt := line(b2, b3)

@@ -15,10 +15,10 @@ use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::syntax::parse;
 
-const BASE: &str = "a := point hint(x: 0, y: 0)
+const BASE: &str = "a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
-ground a
+fix(x == 0, y == 0) a
 a horizontal b
 b vertical c
 ";
@@ -145,7 +145,7 @@ fn a_named_dimension_in_an_instance_is_read_by_its_dotted_path() {
 #[test]
 fn a_block_copy_declares_its_own_names_and_shares_the_bodys_unknowns() {
     let (e, d) = read(
-        "o := point hint(x: 0, y: 0)\nground o\n\
+        "o := point\nfix(x == 0, y == 0) o\n\
          cycle 2 { z := point hint(x: 5, y: 5)\n  y := point hint(x: 9, y: 2)\n\
          x := point hint(x: 3, y: 8)\n\
          o distance(w := 60) z\n  o distance(w / 2) y\n  o distance(s) x }\n",
@@ -168,7 +168,7 @@ fn a_block_copy_declares_its_own_names_and_shares_the_bodys_unknowns() {
 fn an_unbound_formal_inside_a_block_is_a_name_the_graph_reads() {
     let (e, d) = read(
         "component T(p: point, q: point, w: Length) { p distance(w) q }\n\
-         o := point hint(x: 0, y: 0)\nground o\ncycle 3 { a := point hint(x: 10, y: 0)\n  t := T(o, a) }\n",
+         o := point\nfix(x == 0, y == 0) o\ncycle 3 { a := point hint(x: 10, y: 0)\n  t := T(o, a) }\n",
     );
     assert!(d.iter().all(|m| m.starts_with("W111")), "{d:?}");
     assert_eq!(e.sketch.free_vars.len(), 3, "{:?}", e.sketch.free_vars);

@@ -30,7 +30,7 @@ fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
 
 #[test]
 fn two_unseeded_points_do_not_start_on_top_of_each_other() {
-    let e = read("a := point\nb := point\na distance(30) b\nground a\n");
+    let e = read("a := point\nb := point\na distance(30) b\nfix(x == 0, y == 0) a\n");
     let (a, b) = (e.sketch.point_xy(0), e.sketch.point_xy(1));
     assert!(dist(a, b) > 0.5, "b starts apart from a: {a:?} {b:?}");
     let mut sk = e.sketch.clone();
@@ -44,11 +44,11 @@ fn a_port_with_no_seed_starts_off_the_origin_and_solves() {
     let e = read(
         "component Hook(len: Length) {
            tip := point
-           base := point hint(x: 0, y: 0)
+           base := point
            base distance(len) tip
          }
          h := Hook(len: 30)
-         ground h.tip",
+         fix(x == 0, y == 0) h.base",
     );
     let mut sk = e.sketch.clone();
     let r = solve(&mut sk, SolveOpts::default());
@@ -91,11 +91,11 @@ fn a_port_takes_a_hint_clause() {
 /// written document reads back to the same drawing.
 #[test]
 fn an_unseeded_point_gets_its_pose_written_back() {
-    let e = read("a := point\nb := point\na distance(30) b\nground a\n");
+    let e = read("a := point\nb := point\na distance(30) b\nfix(x == 0, y == 0) a\n");
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let edit = edit::commit_seeds(&e, &sk, &e.program);
-    assert!(edit.text.contains("a := point hint(x: "), "{}", edit.text);
+    assert!(edit.text.starts_with("a := point\n"), "a held point grows no hint: {}", edit.text);
     assert!(edit.text.contains("b := point hint(x: "), "{}", edit.text);
     let back = read(&edit.text);
     assert_eq!(back.sketch.point_xy(1), sk.point_xy(1));

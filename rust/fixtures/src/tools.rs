@@ -6,14 +6,14 @@
 pub const CYLINDER: &str = "unit mm
 use std
 construction centerline spindle := line(std.origin, std.up.toward)
-private c0 := point hint(x: 3, y: -1)
-private c1 := point hint(x: 4, y: -1)
-private c2 := point hint(x: 4, y: 1)
-private c3 := point hint(x: 3, y: 1)
-ground c0
-ground c1
-ground c2
-ground c3
+private c0 := point
+private c1 := point
+private c2 := point
+private c3 := point
+fix(x == 3, y == -1) c0
+fix(x == 4, y == -1) c1
+fix(x == 4, y == 1) c2
+fix(x == 3, y == 1) c3
 private bottom := line(c0, c1)
 private wall := line(c1, c2)
 private top := line(c2, c3)
@@ -25,14 +25,14 @@ construction tool := solid(face(bottom, wall, top, axis), about: axis)
 pub const BOX: &str = "unit mm
 use std
 construction centerline spindle := line(std.origin, std.up.toward)
-private b0 := point hint(x: 2, y: -3)
-private b1 := point hint(x: 4, y: -3)
-private b2 := point hint(x: 4, y: 0)
-private b3 := point hint(x: 2, y: 0)
-ground b0
-ground b1
-ground b2
-ground b3
+private b0 := point
+private b1 := point
+private b2 := point
+private b3 := point
+fix(x == 2, y == -3) b0
+fix(x == 4, y == -3) b1
+fix(x == 4, y == 0) b2
+fix(x == 2, y == 0) b3
 private e0 := line(b0, b1)
 private e1 := line(b1, b2)
 private e2 := line(b2, b3)
@@ -44,12 +44,12 @@ construction tool := solid(face(e0, e1, e2, e3), from: -1mm, to: 1mm)
 pub const TRIANGLE_PRISM: &str = "unit mm
 use std
 construction centerline spindle := line(std.origin, std.up.toward)
-private t0 := point hint(x: 3, y: -0.8)
-private t1 := point hint(x: 4.5, y: 0)
-private t2 := point hint(x: 3, y: 0.8)
-ground t0
-ground t1
-ground t2
+private t0 := point
+private t1 := point
+private t2 := point
+fix(x == 3, y == -0.8) t0
+fix(x == 4.5, y == 0) t1
+fix(x == 3, y == 0.8) t2
 private e0 := line(t0, t1)
 private e1 := line(t1, t2)
 private e2 := line(t2, t0)
@@ -62,14 +62,14 @@ construction tool := solid(face(e0, e1, e2), from: -1.5mm, to: 1.5mm)
 pub const DUMBBELL: &str = "unit mm
 use std
 construction centerline spindle := line(std.origin, std.up.toward)
-private c0 := point hint(x: 3, y: -1)
-private c1 := point hint(x: 3.25, y: -1)
-private c2 := point hint(x: 3.25, y: 1)
-private c3 := point hint(x: 3, y: 1)
-ground c0
-ground c1
-ground c2
-ground c3
+private c0 := point
+private c1 := point
+private c2 := point
+private c3 := point
+fix(x == 3, y == -1) c0
+fix(x == 3.25, y == -1) c1
+fix(x == 3.25, y == 1) c2
+fix(x == 3, y == 1) c3
 private bottom := line(c0, c1)
 private wall := line(c1, c2)
 private top := line(c2, c3)
@@ -188,13 +188,13 @@ pub fn torus(h: f64) -> String {
     format!("unit mm
 use std
 construction centerline spindle := line(std.origin, std.up.toward)
-private ta := point hint(x: 3, y: {b})
-private tb := point hint(x: 3, y: {t})
-ground ta
-ground tb
+private ta := point
+private tb := point
+fix(x == 3, y == {b}) ta
+fix(x == 3, y == {t}) tb
 private taxis := line(ta, tb)
-private tc := point hint(x: 4, y: {h})
-ground tc
+private tc := point
+fix(x == 4, y == {h}) tc
 private ring := circle(center: tc) hint(r: 0.5)
 radius(0.5mm) ring
 construction tool := solid(face(ring), about: taxis)
@@ -209,19 +209,19 @@ pub fn ring_lens(h: f64) -> String {
     format!("unit mm
 use std
 construction centerline spindle := line(std.origin, std.up.toward)
-private ta := point hint(x: 3, y: {b})
-private tb := point hint(x: 3, y: {t})
-ground ta
-ground tb
+private ta := point
+private tb := point
+fix(x == 3, y == {b}) ta
+fix(x == 3, y == {t}) tb
 private taxis := line(ta, tb)
-private tc := point hint(x: 4, y: {lo})
-ground tc
+private tc := point
+fix(x == 4, y == {lo}) tc
 private ring := circle(center: tc) hint(r: 0.5)
 radius(0.5mm) ring
 construction stock := solid(face(ring), about: taxis)
 construction tool := solid(stock)
-private tc2 := point hint(x: 4, y: {hi})
-ground tc2
+private tc2 := point
+fix(x == 4, y == {hi}) tc2
 private ring2 := circle(center: tc2) hint(r: 0.5)
 radius(0.5mm) ring2
 construction other := solid(face(ring2), about: taxis)
@@ -270,14 +270,14 @@ other bound tool
 /// small fixture cuts: `part`, less the removal.
 pub fn post(cx: f64,radius: f64,low: f64,high: f64) -> String {
     let r = cx+radius;
-    format!("private q0 := point hint(x: {cx}, y: {low})
-private q1 := point hint(x: {r}, y: {low})
-private q2 := point hint(x: {r}, y: {high})
-private q3 := point hint(x: {cx}, y: {high})
-ground q0
-ground q1
-ground q2
-ground q3
+    format!("private q0 := point
+private q1 := point
+private q2 := point
+private q3 := point
+fix(x == {cx}, y == {low}) q0
+fix(x == {r}, y == {low}) q1
+fix(x == {r}, y == {high}) q2
+fix(x == {cx}, y == {high}) q3
 private qb := line(q0, q1)
 private qw := line(q1, q2)
 private qt := line(q2, q3)
@@ -300,14 +300,14 @@ pub fn skew_post(x: f64) -> String { post(x,0.4,0.5,2.) }
 /// removal turned to `count` places evenly about the spindle: an indexed body, as a gear's teeth
 /// are, small enough to build whole in seconds.
 pub fn indexed_ring(count: usize,inner: f64,outer: f64,low: f64,high: f64) -> String {
-    format!("private q0 := point hint(x: {inner}, y: {low})
-private q1 := point hint(x: {outer}, y: {low})
-private q2 := point hint(x: {outer}, y: {high})
-private q3 := point hint(x: {inner}, y: {high})
-ground q0
-ground q1
-ground q2
-ground q3
+    format!("private q0 := point
+private q1 := point
+private q2 := point
+private q3 := point
+fix(x == {inner}, y == {low}) q0
+fix(x == {outer}, y == {low}) q1
+fix(x == {outer}, y == {high}) q2
+fix(x == {inner}, y == {high}) q3
 private qb := line(q0, q1)
 private qw := line(q1, q2)
 private qt := line(q2, q3)

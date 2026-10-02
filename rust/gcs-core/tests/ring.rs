@@ -8,9 +8,9 @@
 use gcs_core::syntax::parse;
 
 const SPOKES: &str = "
-hub := point hint(x: 0, y: 0)
+hub := point
 rim := circle(center: hub) hint(r: 40)
-ground hub
+fix(x == 0, y == 0) hub
 ring 4 about hub as i {
   tip := point hint(x: 40 * cos(90 * i), y: 40 * sin(90 * i))
   hub distance(40) tip

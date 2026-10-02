@@ -87,8 +87,8 @@ pub struct Sketch {
     /// The datum points the **page-placement gauge** holds: a solved view's origin and
     /// toward, where no statement of the document names them.  Their params are `fixed`, so no
     /// solve moves them and no ledger counts them; this set is what says the hold is the gauge's
-    /// and not a `ground`, so a writeback into the source never spells one.  (A lifted program
-    /// does ground them: it states every view, and over a stated view the gauge holds nothing.)
+    /// and not a `fix`'s, so a writeback into the source never spells one.  (A lifted program
+    /// does fix them: it states every view, and over a stated view the gauge holds nothing.)
     /// Derived state, set at elaboration and never written to a document.
     pub page_held: std::collections::BTreeSet<u32>,
     /// The planes a **mate** places (§6.10): written `from: P` with neither `fold:` nor

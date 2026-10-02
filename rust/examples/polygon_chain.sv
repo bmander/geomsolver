@@ -26,4 +26,4 @@ cycle n as i {
 }
 
 // the ring floats otherwise; one end of the first link is enough to pin it
-ground a[0]
+fix(x == radius, y == 0) a[0]

@@ -241,7 +241,7 @@ fn two_solid_queries_keep_relative_placement_under_translation() {
 
 #[test]
 fn curved_mesh_policy_keeps_its_own_cost_and_glb_reports_precision_failure() {
-    let mut e = read(&BORE.replace("x: 20, y: 20", "x: 5, y: 5"));
+    let mut e = read(&BORE.replace("fix(x == 20, y == 20) fp", "fix(x == 5, y == 5) fp"));
     let i = index(&e);
     let mesh = e.sketch.evaluated_solid(i, Policy::Mesh).unwrap();
     let report = e.sketch.evaluated_solid(i, Policy::Report).unwrap();

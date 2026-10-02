@@ -10,14 +10,14 @@ await initCore();
 
 test('a named envelope exposes its defining residual and enforces the declared roll domain', () => {
   const doc = Document.read(`unit mm
-o := point hint(x: 0,y: 0)
-q := point hint(x: 0,y: 1)
-x := point hint(x: 1,y: 0)
-c := point hint(x: 3,y: 0)
-ground o
-ground q
-ground x
-ground c
+o := point
+q := point
+x := point
+c := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) q
+fix(x == 1, y == 0) x
+fix(x == 3, y == 0) c
 axis := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)

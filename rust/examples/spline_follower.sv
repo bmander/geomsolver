@@ -16,7 +16,7 @@
 // and the curve cannot simply shrug it off.  `8.666667` is where the straight edge starts
 // looking for its contact — a starting guess, not a statement.
 
-k0 := point hint(x: 0, y: 26)
+k0 := point
 k1 := point hint(x: 20, y: 0)
 k2 := point hint(x: 40, y: 26)
 k3 := point hint(x: 60, y: 0)
@@ -37,9 +37,9 @@ cam tangent flat
 
 // and a point riding on the curve, held off a grounded anchor above it
 rider := point hint(x: 60, y: 8.666667)
-anchor := point hint(x: 60, y: 68.666667)
+anchor := point
 rider on cam
 anchor distance(60) rider
 
-ground k0
-ground anchor
+fix(x == 0, y == 26) k0
+fix(x == 60, y == 68.666667) anchor

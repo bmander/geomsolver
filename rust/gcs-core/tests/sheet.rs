@@ -33,7 +33,7 @@ fn read(src: &str) -> Elaborated {
 /// A 60 × 40 plate with a Ø16 hole through it, and a side view beside the front.
 const PART: &str = "\
 unit mm
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
 d := point hint(x: 0, y: 40)
@@ -42,7 +42,7 @@ horizontal ab
 vertical bc
 a distance(60) b
 a distance(40) d
-ground a
+fix(x == 0, y == 0) a
 sec := face(ab, bc, cd, da)
 front := plane(origin: a, toward: b)
 o := point hint(x: 30, y: 20)
@@ -55,10 +55,10 @@ stock := solid(sec, depth: 30mm)
 bore := solid(hole_f, depth: 30mm)
 body := solid(stock)
 bore cut body
-p2 := point hint(x: 110, y: 0)
+p2 := point
 q2 := point hint(x: 150, y: 0)
 side := plane(origin: p2, toward: q2, from: front, fold: -90deg)
-ground p2
+fix(x == 110, y == 0) p2
 p2 distance(40, along: x) q2
 p2 distance(0, along: y) q2
 ";

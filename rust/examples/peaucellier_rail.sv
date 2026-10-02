@@ -11,7 +11,7 @@ crank := 40      // the crank q–b, and the orbit its pin rides
 // The fixed frame.  `o on orbit` is the theorem's whole hypothesis — the pin's
 // circle passes through the centre of inversion — and it places `q` too, so no dimension between
 // the pivots is ever stated.
-o := point hint(x: 0, y: 0)
+o := point
 q := point hint(x: crank, y: 0)
 datum := line(o, q)
 orbit := circle(center: q) hint(r: crank)
@@ -19,7 +19,7 @@ orbit := circle(center: q) hint(r: crank)
 horizontal datum
 radius(crank) orbit
 o on orbit
-ground o
+fix(x == 0, y == 0) o
 
 // the machine itself, at one pose; the crank is the one freedom left
 b := point   hint(x: 50.4, y: 38.6)
@@ -46,8 +46,8 @@ ccw(c, d, pen)                         // and the pen on the far side of the kit
 // The whole proof, in four statements.  A claim is judged on whether stating it would cost a
 // freedom, so a theorem here does not mean "the pen happens to be at 80" — it means saying so
 // takes nothing from the crank, which is to say the pen's x never changes as the crank turns.
-anchor := point hint(x: 80, y: 0)
-ground anchor
+anchor := point
+fix(x == 80, y == 0) anchor
 rail := line(anchor, pen)
 claim vertical rail
 

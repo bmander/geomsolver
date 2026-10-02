@@ -796,7 +796,7 @@ Conventions:
   `cylinder` words are spatial from `infix_op`.  `tests/cross_view_audit.rs` asserts the corpus's
   cross-membership relations keep their 2D kinds.  **A solved view's page placement is held
   silently**: `reading::hold_page_placement` fixes a view-with-`att`'s unnamed datum points into
-  `Sketch::page_held` (so `edit::held_refs` writes no `ground`), and a held view's `quat_unit` row
+  `Sketch::page_held` (so `edit::held_refs` writes no `fix`), and a held view's `quat_unit` row
   with no free column is not hard, so the ledger's equations equal its rank.
 - A **`claim`** (Solvent §9.7) is *judged, never solved for*: **no** `System` compiles a row for
   it, and `cgraph`, `io::Part` and the witness's jitter skip it, so it never moves geometry,
@@ -874,8 +874,8 @@ Conventions:
   derived rather than canonical; `io::dumps` is still what the Rust tests and the benchmarks
   compare against.
 - **Every constraint is written as a prefix or an infix operator** (Solvent §9.2); `name(args…)`
-  is retired.  `radius(25) c`, `p1 distance(80) p2`, `horizontal l`, `ground p`, `a symmetry(l) b`
-  — the word, its one or two operands, and everything else in the parentheses on the word: the
+  is retired.  `radius(25) c`, `p1 distance(80) p2`, `horizontal l`, `fix(x == 0, y == 0) p`,
+  `a symmetry(l) b` — the word, its one or two operands, and everything else in the parentheses on the word: the
   number, a selector (`side: -1`, `at: start`, `along: x`), a third entity, a pin (`t == 0.4`).
   A *seed* for an owned slot stays the trailing `hint(t: 0.4)`, where every seed is.
   **A pin and a seed are one `OpArg::Slot { key: Name, arg: Arg }`** — the word is the only
@@ -902,15 +902,20 @@ Conventions:
   with `operator`/`fixity`/`operands` beside it — **the binding is untouched**.  `ccw`/`cw` keep a
   call (`Fixity::Call`, every operand in the parentheses): the predicate is about the *triangle*.
   **The gauges and the orientation predicates are entries of the same table** (issue #47):
-  `CKind::Ground`, `Fix`, `Ccw`, `Cw`, read by the one relation parser and settled by the word
-  alone (`constraints::gauge_op`, before the operands' kinds are asked — `fix c.r` names a
-  `SpecKind::Scalar` slot, and `ccw(a, b, c)` has no operand outside its parentheses).  They are
+  `CKind::Fix`, `Ccw`, `Cw`, read by the one relation parser and settled by the word alone
+  (`constraints::gauge_op`, before the operands' kinds are asked — which numbers `fix` holds is
+  the entity's, and `ccw(a, b, c)` has no operand outside its parentheses).  They are
   **applied, not added**: `program::apply_gauge` marks the parameters fixed or records the root
   choice, `constrain` returns no id, and no `Constraint` is one — so they are not in `ALL_KINDS`,
   the registry never publishes them, and `CKind::gauge` is the question every table that would
   reach for a kernel asks first.  A `claim` on one is refused (E040): a gauge adds no row.
-  `edit::reconcile` reads a held parameter's statement off the word (`gauge_key`) and appends one
-  built by `program::lift_gauge`; a root choice under a key no triple spells stays the
+  **A `fix` states what it holds** ([0.34]): `fix(x == 0, y == 0) p`, `fix(x == 5) p` (partial),
+  `fix(r == 25) c`, `fix(half == 30deg) k` — pinned slots named by the entity's scalar fields
+  (`Fix`'s spec is their union; `apply_gauge` checks the kind's).  `ground`, `fix c.r` and a bare
+  `fix p` are gone (`relations::fix_spelling` refuses the others where written).  Fixes are applied
+  before `settle_deferred` (`relations::is_fix`), which never writes a held number.
+  `edit::reconcile` diffs holds per entity and field (`gauge_key`, `held_refs` over
+  `program::holds`) and appends a statement built by `program::lift_gauge` with the numbers; a root choice under a key no triple spells stays the
   `branch(KEY, ±1)` statement (`StmtKind::Branch`).
   Operand order carries meaning — `arc tangent line` is `TangentArcLine`, `line tangent circle`
   is `TangentLineCircle` — and a name that is also an element keyword cannot lead a statement

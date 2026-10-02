@@ -226,14 +226,14 @@ component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
 }
 
-o := point hint(x: 0, y: 0)
+o := point
 base := circle(center: o) hint(r: 20)
 flank := Involute(base, phase: 0).p over u in (0, 60)
 
 p := point hint(x: 40, y: 40)
 p on flank
 radius(20) base
-ground o
+fix(x == 0, y == 0) o
 ";
     let (prog, errs) = gcs_core::syntax::parse(src);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());

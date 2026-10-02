@@ -1,6 +1,14 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.33 — October 2026**
+**Specification, Draft 0.34 — October 2026**
+
+**[0.34] A `fix` states what it holds.** `fix(x == 0, y == 0) p` holds a point at the numbers it
+states, each pinned with `==` under the field it is, as any pin in a relation's parentheses is;
+`fix(x == 0) p` holds one coordinate and leaves the other free, and `fix(r == 25) c` holds a
+circle's radius. `ground` is retired, and so are `fix c.r` and a bare `fix p`, which held a number
+at its *seed*: the one place a number in a `hint(…)` clause was not a seed (§4.3). A `fix` is still
+a gauge, applied rather than solved for (§13), and is applied before the seeds that read geometry,
+so a place read off a held point is where it is held (§6.4).
 
 **[0.33] A place is a step from a point.** `hint(at: a, toward: b, by: f, turn: θ)` seeds a
 point the fraction `f` (1 if unsaid) of the way from point `a` to point `b`, that step turned `θ`
@@ -164,7 +172,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. The seven labels a solid's brackets take — `from`, `to`, `depth`, `through`, `about`, `sweep`, `sense` — and `offset` (§6.10) and `at` (§6.11) are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
+- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. The seven labels a solid's brackets take — `from`, `to`, `depth`, `through`, `about`, `sweep`, `sense` — and `offset` (§6.10) and `at` (§6.11) are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -642,7 +650,7 @@ and `along: u` or `along: v` is required for this pair. These selectors are not 
 
 The datum's origin and rotor participate in the same solve as the point. Reading a datum for
 coordinates MUST NOT assign plane membership to either entity, transform incoming aliases,
-ground geometry, or create a component placement phase. A datum with existing defining points
+hold geometry, or create a component placement phase. A datum with existing defining points
 adds no freedom beyond those points. Its spatial attitude and offset do not enter these equations.
 Passing `f.origin` or `f.toward` to another component aliases that point, including through nested
 components; a face may likewise name such a point as a corner.
@@ -1319,8 +1327,8 @@ horizontal line1                    point1 horizontal point2
 radius(25) circle1                  point1 distance(1' 3") point2
 distance(6) line1                   point1 symmetry(line1) point2
 distance(x := 7) line1              point1 distance(60, along: x) point2
-ground p1                           l1 angle(30) l2
-fix c.r                             line1 tangent(side: -1) circle1
+fix(x == 0, y == 0) p1             l1 angle(30) l2
+fix(r == 25) c                      line1 tangent(side: -1) circle1
 ```
 
 **The type system already has this shape.** Every constraint a person writes has 1 or 2 entity slots, always first in spec order: 1 for `horizontal`, `vertical` and `radius`, 2 for everything else, and 3 for symmetry alone — which the parentheses absorb exactly as proposed. So "two operands, the rest in parentheses" is a *description* of the library rather than a rule imposed on it.
@@ -1347,7 +1355,7 @@ What goes in the parentheses is a short list:
 | `angle` | prefix | **[0.26]** a cone: its half-angle (between two lines `angle` is infix) |
 | `coincident`, `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
-| `ground`, `fix` | prefix | the gauges (§13): a point, or one of an entity's own numbers by its field (`fix c.r`) |
+| `fix` | prefix | the gauge (§13): an entity, and its own numbers each pinned by its field — `fix(x == 0, y == 0) p`, `fix(r == 25) c` **[0.34]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |
 
 The collapses are where the saving is: **`on` is five constraints, `distance` is six, `tangent` is six**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, which is exactly the distinction the point-pair forms were added to draw. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
@@ -1648,12 +1656,22 @@ One copy per link of a named chain (§6.6), in traversal order, with `e` a refer
 Well-posed models are typically invariant under rigid motion; the Jacobian is rank-deficient by design. The language names this freedom rather than letting the solver pick:
 
 ```
-ground(center)                        // pins a Point: removes 2 DOF
-fix(direction(center, t.lead))        // pins a bearing: removes 1 DOF
-fix(<scalar expr>)                    // pins any 1-DOF quantity at its hinted/current value
+fix(x == 0, y == 0) center            // holds a point: removes 2 DOF
+fix(x == 0) p                         // holds one coordinate: removes 1 DOF
+fix(r == 25) c                        // holds one of an entity's own numbers: removes 1 DOF
 ```
 
-`ground` and `fix` are constraint-class. `fix(e)` constrains `e` to the value obtained from hints/definitions at elaboration; if no such value is determined, error **E030**. Implementations MUST report residual gauge freedom (rank deficiency whose null space is spanned by rigid motions) with the suggestion to add `ground`/`fix` (**W103**), and MUST distinguish it from genuine under-constraint.
+**[0.34]** A `fix` names an entity and states each number of its own it holds, pinned with `==`
+under the field it is (`x`, `y` of a point; `r` of a circle, arc, sphere or cylinder; `half` of a
+cone, in degrees). The values are expressions over the parameters in scope, with units, and MAY
+NOT read geometry. A `fix` is a gauge: it takes the numbers out of the solve at the values stated
+and adds no equation, so it never takes part in a conflict set. It is applied before the seeds
+that read geometry (§6.4), which read a held number where it is held and never move one; a seed
+for a held number is never read. A `fix` that states no number, writes one as a selector
+(`fix(x: 0) p`) or unnamed (`fix(5) c`), or names a field the entity does not have is **E040** /
+**E105** at what was written. Implementations MUST report residual gauge freedom (rank deficiency
+whose null space is spanned by rigid motions) with the suggestion to add a `fix` (**W103**), and
+MUST distinguish it from genuine under-constraint.
 
 ### 13.1 Document state travels on its statement **[0.2]**
 
@@ -1778,10 +1796,10 @@ component Part(f: plane, width: Length) {
 
 preview {
   unit mm
-  o := point hint(x: 0, y: 0)
-  q := point hint(x: 0, y: 40)
-  ground o
-  ground q
+  o := point
+  q := point
+  fix(x == 0, y == 0) o
+  fix(x == 0, y == 40) q
   front := plane(origin: o, toward: q)
   part := Part(front, width: 20mm) in front
 }
@@ -1861,7 +1879,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E020 | `next`/`prev` in `repeat` |
 | E021 | external entity referenced in `ring` not provably invariant |
 | E022 | nested `ring` (if unsupported) |
-| E030 | `fix` target has no determined value |
+| E030 | retired **[0.34]**: a `fix` states its numbers (E040 where it does not) |
 | E040 | type mismatch within an alias class |
 | E041 | cyclic definitional dependency (a plane folded from itself, §6.7; **[0.18]** a solid made of itself, §6.9) |
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |
@@ -1888,7 +1906,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | W100 | `coincident(p, q)` where making `p`,`q` one entity would suffice — "consider binding instead of constraining" |
 | W101 | frames fully welded by constraints — "consider passing one entity to both" |
 | W102 | `abs(angle(...))` without a disambiguating orientation predicate |
-| W103 | rank deficiency spanned by rigid motions — "add ground/fix" |
+| W103 | rank deficiency spanned by rigid motions — "add a fix" |
 | W104 | under-constrained: report the number of residual DOF and, when computable, a basis of unconstrained motions attributed to source entities |
 | W105 | consistent redundancy: constraints dependent on others; report the dependent set with spans |
 | W112 | a `param`, formal or block binder declared over a built-in name (§3.3, §5) — the built-in is what an expression reads **[0.17]** |
@@ -1988,8 +2006,8 @@ component Gear(N: Int, m: Length) {
 
   hint t.lead(x: center.x + root.r, y: center.y)
 
-  ground(center)
-  fix(direction(center, t.lead))
+  fix(x == 0, y == 0) center
+  t.lead horizontal center
 }
 ```
 
@@ -2013,8 +2031,8 @@ component Gear(N: Int, m: Length) {
 | tooth span angle `== slot/2` | −1 |
 | flank symmetry angle equality | −1 |
 | gap angle `== tau/(2N)` | −1 |
-| `ground(center)` | −2 |
-| `fix(direction(center, t.lead))` | −1 |
+| `fix(x == 0, y == 0) center` | −2 |
+| `t.lead horizontal center` | −1 |
 | **Equations** | **10** |
 | `ccw(lead, tl, tr)` | 0 (inequality) |
 
@@ -2138,7 +2156,8 @@ path_expr      = ref seg ref { seg ref } ;
 seg            = "->" | "~" ref [ "rev" ] "~" ;
 
 hint           = "hint" ref hint_clause ;                  (* §11; unimplemented *)
-gauge          = "ground" ref | "fix" ref ;                 (* §9.2: prefix operators *)
+gauge          = "fix" "(" pin { "," pin } ")" ref ;       (* §13 [0.34] *)
+pin            = ( "x" | "y" | "r" | "half" ) "==" expr ;
 orientation    = orient "(" ref "," ref "," ref ")" ;      (* §9.2: a call *)
 
 block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref ) [ "as" IDENT ]

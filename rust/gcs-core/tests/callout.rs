@@ -788,8 +788,8 @@ fn an_array_is_dimensioned_once() {
 
     // copies stating different numbers are a dimension each
     let sk = elaborate(
-        "o := point hint(x: 0, y: 0)
-         ground o
+        "o := point
+         fix(x == 0, y == 0) o
          repeat 3 as i {
            p := point hint(x: 10 + 10 * i, y: 0)
            o distance(10 + 10 * i) p

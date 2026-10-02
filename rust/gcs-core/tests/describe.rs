@@ -23,13 +23,13 @@ fn dims(sk: &Sketch) -> Vec<String> {
 #[test]
 fn an_angle_that_names_its_unit_is_not_given_a_second_one() {
     let e = read(
-        "o := point hint(x: 0, y: 0)
+        "o := point
          a := point hint(x: 40, y: 0)
          b := point hint(x: 20, y: 30)
          oa := line(o, a)
          ob := line(o, b)
          oa angle(60deg) ob
-         ground o",
+         fix(x == 0, y == 0) o",
     );
     assert_eq!(dims(&e.sketch), ["60deg"], "the unit as written, once");
     // a bare number in an angle slot takes the sign a reader expects; a fraction is a bare number
@@ -73,12 +73,12 @@ fn the_list_and_the_callout_print_one_number_one_way() {
 #[test]
 fn a_culprit_is_named_as_the_source_names_it() {
     let e = read(
-        "corner := point hint(x: 0, y: 0)
+        "corner := point
          along := point  hint(x: 60, y: 0)
          base := line(corner, along)
          horizontal base
          corner distance(60) along
-         ground corner",
+         fix(x == 0, y == 0) corner",
     );
     let name = |x| e.map.name_of(x).cloned();
     let texts: Vec<String> =
@@ -103,9 +103,9 @@ fn the_report_says_where_a_name_landed() {
     let e = read(
         "unit mm\n\
          component Arm(hub: point, tip: point) { hub distance(40) tip }\n\
-         o := point hint(x: 0, y: 0)\n\
+         o := point\n\
          t := point hint(x: 5, y: 40)\n\
-         ground o\n\
+         fix(x == 0, y == 0) o\n\
          o vertical t\n\
          a := Arm(o, t)\n\
          c := circle(center: o) hint(r: 25)\n\
@@ -137,9 +137,9 @@ fn the_report_says_where_a_name_landed() {
 fn a_datum_reports_its_angle() {
     let e = read(
         "unit mm\n\
-         o := point hint(x: 0, y: 0)\n\
+         o := point\n\
          q := point hint(x: 5, y: 40)\n\
-         ground o\n\
+         fix(x == 0, y == 0) o\n\
          o vertical q\n\
          o distance(40) q\n\
          v := plane(origin: o, toward: q)\n",

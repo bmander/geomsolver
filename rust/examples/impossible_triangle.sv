@@ -11,7 +11,7 @@
 // So the drawing reports as fully determined and the solve has nowhere to go, and holding those
 // two facts at once without pretending either away is what the case is for.
 
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 10, y: 0)
 c := point hint(x: 5, y: 5)
 
@@ -22,4 +22,4 @@ b distance(1) c
 a distance(1) c
 horizontal ab
 
-ground a
+fix(x == 0, y == 0) a

@@ -16,14 +16,14 @@ use crate::common::{apart, bits, build, ent, with_blocks};
 /// part), a point on nothing (under-determined columns) and a point on a circle about the last
 /// corner (an under-determined row).
 const PARTS: &str = "\
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 10, y: 1)
 c := point hint(x: 5, y: 9)
 d := point hint(x: 15, y: 8)
 e := point hint(x: 20, y: 1)
 f := point hint(x: 30, y: 30)
 g := point hint(x: 26, y: 2)
-ground a
+fix(x == 0, y == 0) a
 a distance(10) b
 a horizontal b
 a distance(10) b
@@ -115,7 +115,7 @@ fn a_document_the_whole_solve_settles_is_not_touched() {
 
 /// A chain of `n` triangles off a grounded, levelled base: `2n + 1` two-row blocks in a line.
 fn chain(n: usize) -> String {
-    let mut s = String::from("p0 := point hint(x: 0, y: 0)\np1 := point hint(x: 10, y: 0)\nground p0\n\
+    let mut s = String::from("p0 := point\np1 := point hint(x: 10, y: 0)\nfix(x == 0, y == 0) p0\n\
         p0 horizontal p1\np0 distance(10) p1\n");
     for k in 2..n + 2 {
         s += &format!("p{k} := point hint(x: {}, y: {})\n", 5 * k, if k % 2 == 0 { 8 } else { 0 });

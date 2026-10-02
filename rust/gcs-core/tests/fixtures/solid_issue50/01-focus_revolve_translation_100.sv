@@ -1,16 +1,16 @@
 unit mm
-fp0 := point hint(x: 90, y: 100)
-ground fp0
-fp1 := point hint(x: 86, y: 100)
-ground fp1
-fp2 := point hint(x: 86, y: 106)
-ground fp2
-fp3 := point hint(x: 90, y: 106)
-ground fp3
+fp0 := point
+fix(x == 90, y == 100) fp0
+fp1 := point
+fix(x == 86, y == 100) fp1
+fp2 := point
+fix(x == 86, y == 106) fp2
+fp3 := point
+fix(x == 90, y == 106) fp3
 f := face(fp0, fp1, fp2, fp3, -> close)
-a := point hint(x: 100, y: 100)
-ground a
-b := point hint(x: 100, y: 110)
-ground b
+a := point
+fix(x == 100, y == 100) a
+b := point
+fix(x == 100, y == 110) b
 ax := line(a,b)
 result := solid(f, about: ax, sweep: 90deg)

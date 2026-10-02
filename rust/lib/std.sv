@@ -7,12 +7,12 @@
 // front has u to the right and v up; up has u up and v to the left.
 // Reading a datum does not assign plane membership: unplaced geometry stays on the page.
 component StandardDatums() {
-  origin := point hint(x: 0, y: 0)
-  ground origin
-  rightward := point hint(x: 1, y: 0)
-  ground rightward
-  upward := point hint(x: 0, y: 1)
-  ground upward
+  origin := point
+  fix(x == 0, y == 0) origin
+  rightward := point
+  fix(x == 1, y == 0) rightward
+  upward := point
+  fix(x == 0, y == 1) upward
   front := plane(origin: origin, toward: rightward)
   up := plane(origin: origin, toward: upward)
 }

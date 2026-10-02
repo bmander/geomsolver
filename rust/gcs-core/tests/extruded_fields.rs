@@ -6,29 +6,29 @@ use gcs_core::{interval::Interval as I,program,solid::{MaterialField,SpatialFiel
 
 const BLOCK: &str = "unit mm
 use std
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
 d := point hint(x: 0, y: 40)
 horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) -> horizontal (cd := line(c, d)) -> vertical (da := line(d, a)) -> close
 a distance(60) b
 b distance(40) c
-ground a
+fix(x == 0, y == 0) a
 sec := face(ab, bc, cd, da)
 block := solid(sec, depth: 30mm)
 ";
 
-const TURN: &str = "o := point hint(x: 0, y: 0)
-z := point hint(x: 0, y: 10)
-ground o
-ground z
+const TURN: &str = "o := point
+z := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 10) z
 axis := line(o, z)
 turn := motion(about: axis)
 moved := solid(block, under: turn, at: 40deg)
 ";
 
-const BORE: &str = "h := point hint(x: 30, y: 20)
-ground h
+const BORE: &str = "h := point
+fix(x == 30, y == 20) h
 hole := circle(center: h) hint(r: 8)
 radius(8) hole
 hole_f := face(hole)
@@ -39,7 +39,7 @@ bore cut body
 
 const ELL: &str = "unit mm
 use std
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 50, y: 0)
 c := point hint(x: 50, y: 20)
 d := point hint(x: 20, y: 20)
@@ -50,7 +50,7 @@ a distance(50) b
 b distance(20) c
 c distance(30) d
 d distance(30) e
-ground a
+fix(x == 0, y == 0) a
 sec := face(ab, bc, cd, de, ef, fa)
 ell := solid(sec, depth: 12mm)
 ";
@@ -59,15 +59,15 @@ ell := solid(sec, depth: 12mm)
 // against the loop, and the face enters it by its end.
 const NOTCH: &str = "unit mm
 use std
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 30)
 d := point hint(x: 40, y: 30)
 e := point hint(x: 20, y: 30)
 f := point hint(x: 0, y: 30)
-m := point hint(x: 30, y: 30)
-ground a
-ground m
+m := point
+fix(x == 0, y == 0) a
+fix(x == 30, y == 30) m
 a distance(60) b
 b distance(30) c
 a distance(30) f

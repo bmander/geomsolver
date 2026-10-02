@@ -4,14 +4,14 @@ mod bounds;
 mod contact;
 
 const AXES: &str = "unit mm
-a := point hint(x: 2,y: 0)
-b := point hint(x: 2,y: 1)
-o := point hint(x: 0,y: 0)
-x := point hint(x: 1,y: 0)
-ground a
-ground b
-ground o
-ground x
+a := point
+b := point
+o := point
+x := point
+fix(x == 2, y == 0) a
+fix(x == 2, y == 1) b
+fix(x == 0, y == 0) o
+fix(x == 1, y == 0) x
 axis := line(a,b)
 other := line(o,x)
 ";
@@ -144,10 +144,10 @@ fn motions_reject_wrong_units_missing_references_and_cycles() {
 #[test]
 fn motion_axes_use_world_geometry_and_follow_solved_point_edits() {
     let mut e = solved("unit mm
-o := point hint(x: 7,y: -3)
-q := point hint(x: 7,y: -2)
-ground o
-ground q
+o := point
+q := point
+fix(x == 7, y == -3) o
+fix(x == 7, y == -2) q
 side := plane(origin: o,toward: q,u: (1,0,0),v: (0,0,1))
 in side {
   a := point

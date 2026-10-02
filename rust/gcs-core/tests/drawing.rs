@@ -2,8 +2,8 @@ use gcs_core::{drawing, program, solve, syntax};
 use std::collections::BTreeMap;
 
 const MODEL: &str = "unit mm
-o := point hint(x: 0, y: 0)
-ground o
+o := point
+fix(x == 0, y == 0) o
 rim := circle(center: o) hint(r: 10)
 radius(r := 10mm) rim
 stock := solid(face(rim), depth: 4mm)
@@ -139,8 +139,8 @@ fn host_loading_is_relative_cached_and_cycle_checked() {
 fn indexed_members_and_field_measurements_survive_reordering() {
     let model = "unit mm
 repeat 3 as i {
-  p := point hint(x: i * 10, y: 0)
-  ground p
+  p := point
+  fix(x == i * 10, y == 0) p
 }
 bar := line(p[0], p[2])
 ";
@@ -157,7 +157,7 @@ bar := line(p[0], p[2])
 
 #[test]
 fn measurements_refuse_foreshortening_and_sections_check_the_cut_plane() {
-    let model = format!("{MODEL}b := point hint(x: 0, y: 10)\nground b\n");
+    let model = format!("{MODEL}b := point\nfix(x == 0, y == 10) b\n");
     let compile = |text: &str| drawing::compile(text, "drawing.svd", None,
         &mut |_, _| Some(("part.sv".into(), model.clone())));
     let err = compile("model m from \"part.sv\" sheet s {
@@ -188,7 +188,7 @@ fn styles_can_show_one_point_and_hide_selected_dimensions() {
 #[test]
 fn isometric_camera_matches_the_old_helper_plane_without_model_geometry() {
     let plain = solved();
-    let source = format!("{MODEL}\niq := point hint(x: 1, y: 0)\nground iq\niso := plane(origin: o, toward: iq, u: (1, -1, 0), v: (1, 1, 2))");
+    let source = format!("{MODEL}\niq := point\nfix(x == 1, y == 0) iq\niso := plane(origin: o, toward: iq, u: (1, -1, 0), v: (1, 1, 2))");
     let (p, errs) = syntax::parse(&source);
     assert!(errs.is_empty(), "{errs:?}");
     let mut with_helper = program::elaborate(&p);

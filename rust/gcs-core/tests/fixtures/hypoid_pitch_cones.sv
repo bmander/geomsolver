@@ -20,8 +20,8 @@ E := 20mm
 o := point hint(x: 0, y: 0)
 t := point hint(x: 40, y: 0)
 P := plane(origin: o, toward: t)
-M := point hint(x: 0, y: 0) in P
-ground M
+M := point in P
+fix(x == 0, y == 0) M
 O := point hint(x: 110, y: 0) in P
 A := point hint(x: 95, y: 18) in P
 gen_g := line(O, M) in P

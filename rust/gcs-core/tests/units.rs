@@ -95,8 +95,8 @@ fn a_length_plus_an_angle_is_an_error() {
     let src = "\
 component Bad(w: Length, phi: Angle) {
   x := w + phi
-  p := point hint(x: x, y: 0)
-  ground p
+  p := point
+  fix(x == x, y == 0) p
 }
 g := Bad(w: 10, phi: 20)
 ";
@@ -109,7 +109,7 @@ g := Bad(w: 10, phi: 20)
 #[test]
 fn the_unstated_radians_are_caught() {
     let head = "component G(phi: Angle) {\n  ivp := ";
-    let tail = "\n  p := point hint(x: ivp, y: 0)\n  ground p\n}\ng := G(phi: 20)\n";
+    let tail = "\n  p := point\n  fix(x == ivp, y == 0) p\n}\ng := G(phi: 20)\n";
     says(&format!("{head}tan(phi) - phi{tail}"), "cannot be added");
     says(&format!("{head}tan(phi) * 180 / pi - phi{tail}"), "cannot be added");
     // said properly, it elaborates — and comes to the same number the conversion did
@@ -418,7 +418,7 @@ fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
     assert!(!d[0].1.contains("last number"), "{}", d[0].1);
 
     let d = diag(&format!(
-        "{two}c := point hint(x: 40, y: 30)\na distance(40) b\nb distance(30) c\nclaim a distance(zz) c\nground a\nground b\n"
+        "{two}c := point hint(x: 40, y: 30)\na distance(40) b\nb distance(30) c\nclaim a distance(zz) c\nfix(x == 0, y == 0) a\nfix(x == 40, y == 0) b\n"
     ));
     assert_eq!(d.iter().filter(|x| x.0 == "E040").count(), 1, "{d:?}");
     assert!(d.iter().any(|x| x.1.contains("a claim may not bind an unknown")), "{d:?}");

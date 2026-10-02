@@ -7,39 +7,39 @@ use gcs_core::{constraints::{CKind,SpecKind},io,model::MotionDef,motion,program,
 /// A stock beside an upright axis, and three lines to measure: `big` 30 long, `small` 10, and
 /// `slope` 30° off `big`.
 const DRAWING: &str = "unit mm
-o := point hint(x: 0,y: 0)
-z := point hint(x: 0,y: 1)
-ground o
-ground z
+o := point
+z := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) z
 axis := line(o,z)
-a := point hint(x: 1,y: 0)
-b := point hint(x: 3,y: 0)
-c := point hint(x: 3,y: 2)
-d := point hint(x: 1,y: 2)
-ground a
-ground b
-ground c
-ground d
+a := point
+b := point
+c := point
+d := point
+fix(x == 1, y == 0) a
+fix(x == 3, y == 0) b
+fix(x == 3, y == 2) c
+fix(x == 1, y == 2) d
 ab := line(a,b)
 bc := line(b,c)
 cd := line(c,d)
 da := line(d,a)
 profile := face(ab,bc,cd,da)
 stock := solid(profile, from: 0mm, to: 2mm)
-r0 := point hint(x: 0,y: -4)
+r0 := point
 r1 := point hint(x: 30,y: -4)
-ground r0
+fix(x == 0, y == -4) r0
 big := horizontal line(r0,r1)
 r0 distance(30mm) r1
-s0 := point hint(x: 0,y: -6)
+s0 := point
 s1 := point hint(x: 10,y: -6)
-ground s0
+fix(x == 0, y == -6) s0
 small := horizontal line(s0,s1)
 s0 distance(10mm) s1
-k0 := point hint(x: 0,y: -8)
-k1 := point hint(x: 0.8660254037844387,y: -7.5)
-ground k0
-ground k1
+k0 := point
+k1 := point
+fix(x == 0, y == -8) k0
+fix(x == 0.8660254037844387, y == -7.5) k1
 slope := line(k0,k1)
 wheel := circle(center: o) hint(r: 12)
 radius(12mm) wheel
@@ -195,22 +195,22 @@ fn the_source_and_the_flat_print_keep_the_measurement_as_written() {
 fn a_measurement_inside_a_component_names_the_instance_geometry() {
     let e = read("unit mm
 component Pair(axis: line, big: Length, small: Length) {
-  r0 := point hint(x: 0,y: -4)
+  r0 := point
   r1 := point hint(x: 30,y: -4)
-  ground r0
+  fix(x == 0, y == -4) r0
   wheel := horizontal line(r0,r1)
   r0 distance(big) r1
-  s0 := point hint(x: 0,y: -6)
+  s0 := point
   s1 := point hint(x: 10,y: -6)
-  ground s0
+  fix(x == 0, y == -6) s0
   pinion := horizontal line(s0,s1)
   s0 distance(small) s1
   turn := motion(about: axis, ratio: -length(wheel) / distance(pinion.p1, pinion.p2))
 }
-o := point hint(x: 0,y: 0)
-z := point hint(x: 0,y: 1)
-ground o
-ground z
+o := point
+z := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) z
 axis := line(o,z)
 one := Pair(axis, big: 30mm, small: 10mm)
 two := Pair(axis, big: 12mm, small: 3mm)

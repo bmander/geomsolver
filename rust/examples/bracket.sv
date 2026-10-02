@@ -27,26 +27,26 @@ tilt := atan((rise - toe) / leg)   // the incline's bearing in the front view
 // `toward` points set which way each view is turned on the page.  Third-angle layout: the top
 // view above the front, the right view beside it turned so its z is up and its depth grows to
 // the right, the auxiliary across the incline's fold line.
-Af := point hint(x: 0, y: 0) in front
-qf := point hint(x: 40, y: 0)
+Af := point in front
+qf := point
 front := plane(origin: Af, toward: qf)
-At := point hint(x: 0, y: 90) in top
-qt := point hint(x: 40, y: 90)
+At := point in top
+qt := point
 top := plane(origin: At, toward: qt, from: front, fold: 0deg)
-Ar := point hint(x: 150, y: 0) in right
-qr := point hint(x: 150, y: -40)
+Ar := point in right
+qr := point
 right := plane(origin: Ar, toward: qr, from: front, fold: -90deg)
-oa := point hint(x: -70, y: 70)
-qa := point hint(x: -36.7, y: 92.2)
+oa := point
+qa := point
 aux := plane(origin: oa, toward: qa, from: front, fold: tilt)
-ground Af
-ground qf
-ground At
-ground qt
-ground Ar
-ground qr
-ground oa
-ground qa
+fix(x == 0, y == 0) Af
+fix(x == 40, y == 0) qf
+fix(x == 0, y == 90) At
+fix(x == 40, y == 90) qt
+fix(x == 150, y == 0) Ar
+fix(x == 150, y == -40) qr
+fix(x == -70, y == 70) oa
+fix(x == -36.7, y == 92.2) qa
 
 // the front view: the profile, and every dimension the part is made to
 in front {

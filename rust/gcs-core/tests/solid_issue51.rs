@@ -51,7 +51,7 @@ fn crossing_bars_are_material_interference_even_without_contained_vertices() {
     );
     close(reversed.measured().unwrap(), v.measured().unwrap());
     let unrelated = read(
-        &(source("cross_clear") + "remote := point hint(x:1000000000,y:1000000000)\nground remote\n"),
+        &(source("cross_clear") + "remote := point\nfix(x == 1000000000, y == 1000000000) remote\n"),
     );
     close(claim(&unrelated, SolidWord::Clear, 0.1).measured().unwrap(), -1.0);
     close(claim(&case("cross_clear_control"), SolidWord::Clear, 0.1).measured().unwrap(), 2.0);
@@ -65,7 +65,7 @@ fn penetration_is_a_geometric_thickness_with_a_reported_error_bound() {
     close(v.tolerance().unwrap(), 0.0);
     assert_eq!(v.holds(), Some(false));
     let equal =
-        read(&source("penetration_10").replace("x: 5,", "x: 0,").replace("x: 15,", "x: 10,"));
+        read(&source("penetration_10").replace("x == 5,", "x == 0,").replace("x == 15,", "x == 10,"));
     close(claim(&equal, SolidWord::Clear, 0.0).measured().unwrap(), -10.0);
 }
 
@@ -135,7 +135,7 @@ fn sweep_bounds_use_the_inferred_variable_dimension_and_user_units() {
     let (p, _) = syntax::parse_legacy(&source("sweep_dimensional_error"));
     assert!(program::elaborate(&p).errors().any(|d| d.code == program::Code::E103));
     let src = source("sweep_possible")
-        .replace("c := circle(center:o)", "q := point hint(x:1,y:0)\nground q\nc := circle(center:o)")
+        .replace("c := circle(center:o)", "q := point\nfix(x == 1, y == 0) q\nc := circle(center:o)")
         .replace(
             "o distance(reach,along:x) p",
             "datum := line(o,q)\nradial := line(o,p)\ndatum angle(reach) radial",
@@ -174,7 +174,7 @@ fn input_edge_names_cannot_steal_sweep_cap_names() {
     let e = case("cap_collision_control");
     assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
     let src=source("cap_collision_control").replace("bottom","start")
-        .replace("result := solid(f,depth: 2mm)","ax0 := point hint(x:-1,y:0)\nground ax0\nax1 := point hint(x:-1,y:5)\nground ax1\naxis := line(ax0,ax1)\nresult := solid(f,about:axis,sweep:90deg)");
+        .replace("result := solid(f,depth: 2mm)","ax0 := point\nfix(x == -1, y == 0) ax0\nax1 := point\nfix(x == -1, y == 5) ax1\naxis := line(ax0,ax1)\nresult := solid(f,about:axis,sweep:90deg)");
     let e = read(&src);
     assert!(!program::solid_diagnostics(&e.sketch, &e.map).is_empty());
 }
@@ -236,7 +236,9 @@ fn dimensions_only_describe_surviving_round_features() {
         assert_eq!(dims.len(), 2);
         assert!(dims.iter().all(|(_, d)| !d.round));
     }
-    let e = read(&source("ghost_dimension_through").replace("x: 20, y: 20", "x: 5, y: 5"));
+    let src = source("ghost_dimension_through")
+        .replace("fix(x == 20, y == 20) fp", "fix(x == 5, y == 5) fp");
+    let e = read(&src);
     let dims = hidden::generated(&e.sketch, solid::REPORT_UNIT);
     assert_eq!(dims.iter().filter(|(_, d)| d.round && d.value == 4.0).count(), 1);
 }
@@ -290,7 +292,7 @@ fn glb_preserves_local_triangles_and_world_placement_at_large_coordinates() {
 fn box_source(name: &str, x: f64, y: f64, w: f64, h: f64, lo: f64, hi: f64) -> String {
     let mut src = String::new();
     for (i, (x, y)) in [(x, y), (x + w, y), (x + w, y + h), (x, y + h)].into_iter().enumerate() {
-        src += &format!("{name}p{i} := point hint(x:{x},y:{y})\nground {name}p{i}\n");
+        src += &format!("{name}p{i} := point\nfix(x == {x}, y == {y}) {name}p{i}\n");
     }
     src += &format!(
         "{name} := solid(face({name}p0,{name}p1,{name}p2,{name}p3,-> close),from:{lo}mm,to:{hi}mm)\n"
@@ -332,8 +334,8 @@ fn a_section_clips_crossing_edges_and_removes_occlusion_by_discarded_material() 
 fn negative_clearance_cannot_certify_uncertain_round_surface_contact() {
     let e = read(
         "unit mm\n\
-        a := point hint(x:0,y:0)\nground a\nac := circle(center:a)\nradius(1mm) ac\n\
-        b := point hint(x:2,y:0)\nground b\nbc := circle(center:b)\nradius(1mm) bc\n\
+        a := point\nfix(x == 0, y == 0) a\nac := circle(center:a)\nradius(1mm) ac\n\
+        b := point\nfix(x == 2, y == 0) b\nbc := circle(center:b)\nradius(1mm) bc\n\
         af := face(ac)\nbf := face(bc)\nresult := solid(af,depth:1mm)\nother := solid(bf,depth:1mm)\n",
     );
     let v = claim(&e, SolidWord::Clear, -1.0);

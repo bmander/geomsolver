@@ -34,8 +34,8 @@ component unwind(c: circle, datum: line, phase: Angle, u: Angle) {
   t distance(c.r * u * pi / 180) p
 }
 
-o := point hint(x: 0, y: 0)
-ax := point hint(x: 1, y: 0)
+o := point
+ax := point
 datum := line(o, ax)
 base := circle(center: o) hint(r: 20)
 
@@ -43,8 +43,8 @@ formula := involute(base, phase: 0).p over u in (5, 60)
 string := unwind(base, datum, phase: 0).p over u in (5, 60)
 
 radius(20) base
-ground o
-ground ax
+fix(x == 0, y == 0) o
+fix(x == 1, y == 0) ax
 ";
 
 fn build(src: &str) -> gcs_core::program::Elaborated {
@@ -178,7 +178,7 @@ fn a_block_holds_declarations_and_constraints_only() {
     let src = "\
 component odd(c: circle, u: Angle) {
   p := point
-  ground p
+  fix(x == 0, y == 0) p
   p coincident c.center
 }
 o := point hint(x: 0, y: 0)
@@ -314,14 +314,14 @@ component involute(c: circle, datum: line, phase: Angle, u: Angle) {
   ccw(datum.p1, datum.p2, t)
 }
 
-o := point hint(x: 0, y: 0)
-ax := point hint(x: 1, y: 0)
+o := point
+ax := point
 datum := line(o, ax)
 base := circle(center: o) hint(r: 20)
 w := involute(base, datum, phase: 0).p over u in (5, 60)
 radius(20) base
-ground o
-ground ax
+fix(x == 0, y == 0) o
+fix(x == 1, y == 0) ax
 q := point hint(x: 28, y: 22)
 q on w hint(t: 30)
 ";

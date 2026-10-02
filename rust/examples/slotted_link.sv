@@ -22,7 +22,7 @@ length := 80
 r := 15
 hole_r := 6
 
-c1 := point hint(x: 0, y: 0)
+c1 := point
 c2 := point hint(x: length, y: 0)
 
 t1 := point hint(x: 0, y: r)
@@ -52,4 +52,4 @@ radius(hole_r) h2
 c1 distance(length) c2
 horizontal top
 
-ground c1
+fix(x == 0, y == 0) c1

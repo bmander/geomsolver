@@ -19,12 +19,12 @@ fn read(src: &str) -> Sketch {
 }
 
 const PLAIN: &str = "\
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 ab := line(a, b) class construction
 a distance(60) b
 horizontal ab
-ground a
+fix(x == 0, y == 0) a
 ";
 
 /// `class construction` draws exactly as the retired keyword did — from the base sheet, which is
@@ -178,9 +178,9 @@ fn a_document_rule_beats_a_shipped_one_on_a_later_class() {
 fn an_svg_export_draws_a_claimed_dimension_in_the_documents_ink() {
     let src = "\
 style .dimension { color: #b00020 }
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
-ground a
+fix(x == 0, y == 0) a
 ab := line(a, b)
 horizontal ab
 a distance(60) b at (10, -20)
@@ -264,7 +264,7 @@ fn a_relations_class_says_how_its_callout_looks() {
     let src = "\
 style .dimension { display: none }
 style .shown { display: inline; color: #ff0000 }
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
 ab := line(a, b)
@@ -273,7 +273,7 @@ a distance(60) b class shown
 b distance(40) c
 horizontal ab
 vertical bc
-ground a
+fix(x == 0, y == 0) a
 ";
     let sk = read(src);
     let shown: Vec<u32> = gcs_core::callout::layout(&sk, 1.0).iter().map(|c| c.id).collect();
@@ -310,11 +310,11 @@ fn display_none_leaves_a_thing_out_of_the_export() {
     let src = "\
 style .gone { display: none }
 style .point { display: none }
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 ab := line(a, b)
 cd := line(hint(x: 0, y: 20), hint(x: 60, y: 20)) class gone
-ground a
+fix(x == 0, y == 0) a
 ";
     let sk = read(src);
     assert!(!sk.style_of(EntRef::new(EntKind::Line, 1)).shown());
@@ -362,8 +362,8 @@ component Bar(a: point) {
   a distance(30) b class shown
   horizontal l
 }
-o := point hint(x: 0, y: 0)
-ground o
+o := point
+fix(x == 0, y == 0) o
 r := Bar(o)
 g := Bar(o) class phantom
 ";

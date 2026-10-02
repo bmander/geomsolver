@@ -2,14 +2,14 @@ use gcs_core::{envelope::{Error,GeneratedEnvelope,IntersectionOptions},io,
     model::EntKind,program,solve,syntax};
 
 const MODEL: &str = "unit mm
-o := point hint(x: 0,y: 0)
-q := point hint(x: 0,y: 1)
-x := point hint(x: 1,y: 0)
-c := point hint(x: 3,y: 0)
-ground o
-ground q
-ground x
-ground c
+o := point
+q := point
+x := point
+c := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) q
+fix(x == 1, y == 0) x
+fix(x == 3, y == 0) c
 axis := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)
@@ -142,7 +142,7 @@ fn envelopes_reject_invalid_dependencies_and_domains() {
         ("bad := envelope(wall,roll,from: 1mm,to: 2mm)","envelope bound"),
         ("bad := envelope(wall,roll,from: 1deg,to: 1deg)","increasing"),
         ("bad := envelope(wall,roll,from: 1deg,to: -1deg)","increasing"),
-        ("ground generated","pins a point"),
+        ("fix(x == 0, y == 0) generated","an envelope has no number of its own to fix"),
     ] {
         let e = build(&format!("{MODEL}{tail}\n"));
         assert!(!e.ok() && e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);

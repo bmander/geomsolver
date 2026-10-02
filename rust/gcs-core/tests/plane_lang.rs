@@ -39,16 +39,16 @@ fn refused(src: &str, code: &str, needle: &str) {
 #[test]
 fn a_component_carries_its_views_in_blocks() {
     let src = "\
-Af := point hint(x: 0, y: 0) in front
-qf := point hint(x: 40, y: 0)
+Af := point in front
+qf := point
 front := plane(origin: Af, toward: qf)
-Ar := point hint(x: 150, y: 0) in right
-qr := point hint(x: 150, y: -40)
+Ar := point in right
+qr := point
 right := plane(origin: Ar, toward: qr, from: front, fold: -90deg)
-ground Af
-ground qf
-ground Ar
-ground qr
+fix(x == 0, y == 0) Af
+fix(x == 40, y == 0) qf
+fix(x == 150, y == 0) Ar
+fix(x == 150, y == -40) qr
 component Peg(f: plane, r: plane, cf: point, cr: point, draw_r: Int) {
   in f {
     a := point hint(x: cf.x, y: cf.y + 10)
@@ -96,21 +96,21 @@ fn reconciled(e: &mut Elaborated) -> edit::Edit {
 }
 
 const VIEWS: &str = "\
-o := point hint(x: 0, y: 0)
-q := point hint(x: 1, y: 0)
-o2 := point hint(x: 0, y: 100)
-q2 := point hint(x: 1, y: 100)
-o3 := point hint(x: 150, y: 0)
-q3 := point hint(x: 150, y: -1)
+o := point
+q := point
+o2 := point
+q2 := point
+o3 := point
+q3 := point
 front := plane(origin: o, toward: q)
 top := plane(origin: o2, toward: q2, from: front, fold: 0deg)
 right := plane(origin: o3, toward: q3, from: front, fold: -90deg)
-ground o
-ground q
-ground o2
-ground q2
-ground o3
-ground q3
+fix(x == 0, y == 0) o
+fix(x == 1, y == 0) q
+fix(x == 0, y == 100) o2
+fix(x == 1, y == 100) q2
+fix(x == 150, y == 0) o3
+fix(x == 150, y == -1) q3
 ";
 
 #[test]

@@ -25,7 +25,7 @@ fn read(src: &str) -> Elaborated {
 /// A 60 × 40 rectangle grounded on the page, its face `sec`, and the front view it lies in.
 const RECT: &str = "\
 unit mm
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
 d := point hint(x: 0, y: 40)
@@ -34,17 +34,17 @@ horizontal ab
 vertical bc
 a distance(60) b
 a distance(40) d
-ground a
+fix(x == 0, y == 0) a
 sec := face(ab, bc, cd, da)
 front := plane(origin: a, toward: b)
 ";
 
 /// The right view, a hand's breadth to the side — `std`'s own `ThreeViews` fold.
 const SIDE: &str = "\
-p2 := point hint(x: 100, y: 0)
+p2 := point
 q2 := point hint(x: 140, y: 0)
 side := plane(origin: p2, toward: q2, from: front, fold: -90deg)
-ground p2
+fix(x == 100, y == 0) p2
 p2 distance(40, along: x) q2
 p2 distance(0, along: y) q2
 ";

@@ -33,7 +33,7 @@ fn drawn(src: &str) -> Sketch {
 
 /// §2.2's rectangle, with room after it for one claim.
 const RECT: &str = "
-p0 := point hint(x: 0, y: 0)
+p0 := point
 p1 := point hint(x: 60, y: 0)
 p2 := point hint(x: 60, y: 40)
 p3 := point hint(x: 0, y: 40)
@@ -43,7 +43,7 @@ horizontal (top := line(p2, p3)) ->
 vertical   (left := line(p3, p0)) -> close
 p0 distance(60) p1
 p1 distance(40) p2
-ground p0
+fix(x == 0, y == 0) p0
 ";
 
 #[test]
@@ -79,10 +79,10 @@ fn a_claim_the_pose_happens_to_satisfy_is_consuming() {
     // not a theorem and the diagnosis says which kind of not
     let mut sk = drawn(
         "
-a := point hint(x: 0, y: 0)
+a := point
 c := point hint(x: 0, y: 9)
 ac := line(a, c)
-ground a
+fix(x == 0, y == 0) a
 claim vertical ac
 ",
     );
@@ -140,18 +140,18 @@ fn a_claim_does_not_weld_drag_parts() {
     // one part, or dragging either would cost both
     let sk = drawn(
         "
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 30, y: 0)
 ab := line(a, b)
 horizontal ab
 a distance(30) b
-ground a
-c := point hint(x: 0, y: 20)
+fix(x == 0, y == 0) a
+c := point
 d := point hint(x: 30, y: 20)
 cd := line(c, d)
 horizontal cd
 c distance(30) d
-ground c
+fix(x == 0, y == 20) c
 claim ab equal cd
 ",
     );
@@ -189,9 +189,9 @@ fn a_claim_is_not_a_number_the_decomposition_reads() {
     // "everything that must be satisfied" is written down once.  A claimed radius states no
     // radius, so the decomposition must not be able to tell it from an absent one.
     const CIRCLE: &str = "
-o := point hint(x: 0, y: 0)
+o := point
 k := circle(center: o) hint(r: 20)
-ground o
+fix(x == 0, y == 0) o
 ";
     let plain = drawn(CIRCLE);
     let claimed = drawn(&format!("{CIRCLE}claim radius(20) k\n"));
@@ -206,12 +206,12 @@ fn a_document_may_not_smuggle_a_claim_onto_an_unknown() {
     // another road entirely, so the flag is dropped there rather than honoured
     let sk = drawn(
         "
-o := point hint(x: 0, y: 0)
+o := point
 p := point hint(x: 20, y: 0)
 q := point hint(x: 25, y: 8)
 s := spline(o, p, q, o, p, q, o)
 q on s
-ground o
+fix(x == 0, y == 0) o
 ",
     );
     let json = gcs_core::io::dumps(&sk, None)
@@ -230,19 +230,19 @@ fn a_claims_rows_are_the_rows_the_compiler_would_have_built() {
         (RECT, "bottom parallel top\n"),      // a theorem: adds nothing
         (RECT, "horizontal top\n"),          // a duplicate: adds nothing either
         ("
-a := point hint(x: 0, y: 0)
+a := point
 c := point hint(x: 0, y: 9)
 ac := line(a, c)
-ground a
+fix(x == 0, y == 0) a
 ", "vertical ac\n"),                         // consuming: the pose alone satisfies it
         ("
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 30, y: 0)
 c := point hint(x: 30, y: 40)
 ab := line(a, b)
 bc := line(b, c)
 horizontal ab
-ground a
+fix(x == 0, y == 0) a
 ", "vertical bc\n"),                         // consuming as well, with a bigger base
     ] {
         let mut claimed = drawn(&format!("{src}claim {tail}"));
@@ -280,10 +280,10 @@ fn a_claimed_dimension_is_drawn_as_a_reference_dimension() {
     // controlling, which is a claim exactly — and they go round the whole label, so a claimed
     // radius reads `(R20)` and never `R(20)`
     let src = "
-o := point hint(x: 0, y: 0)
+o := point
 p := point hint(x: 60, y: 0)
 k := circle(center: o) hint(r: 20)
-ground o
+fix(x == 0, y == 0) o
 l := horizontal line(o, p)
 o distance(60) p
 ";
@@ -373,7 +373,7 @@ fn the_rail_proves_the_line_without_tracing_it() {
 #[test]
 fn the_rail_is_refuted_when_it_is_not_where_the_pen_goes() {
     let src = gcs_core::examples::source("peaucellier_rail").unwrap()
-        .replace("anchor := point hint(x: 80, y: 0)", "anchor := point hint(x: 70, y: 0)");
+        .replace("fix(x == 80, y == 0) anchor", "fix(x == 70, y == 0) anchor");
     let (prog, errs) = gcs_core::syntax::parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = gcs_core::program::elaborate(&prog);

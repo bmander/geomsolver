@@ -17,9 +17,8 @@ drawing satisfies them, then check that the diagnosis agrees (1.16).
 | `w := 40` | a param: arithmetic done while elaborating, never an unknown |
 | `claim vertical rail` | check a consequence without enforcing it (1.10) |
 
-Deleting every seed leaves the set of solutions unchanged — with one deliberate exception:
-`ground` and `fix` pin a point's coordinates or a scalar *at its starting value*, so a seed under
-one of them also states the pinned value.
+Deleting every seed leaves the set of solutions unchanged, without exception: a held number is
+stated by `fix`, pinned with `==` like any pin (`fix(x == 0, y == 0) a`), never by a seed.
 
 Scope:
 
@@ -101,8 +100,8 @@ NAME := surface | motion | envelope | patch | seam | vertex | edge(...)
 WORD[(ARGS)] REF  |  REF WORD[(ARGS)] REF  [hint(SLOT: E, ...)]
                                         a constraint, prefix or infix                (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.10)
-ground REF                              pin both coordinates of a point
-fix REF.FIELD                           pin one scalar: fix c.r
+fix(FIELD == EXPR, …) REF               hold an entity's own numbers at the values stated:
+                                        fix(x == 0, y == 0) p, fix(x == 5) p, fix(r == 25) c
 ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation
 [NAME :=] Component(ARGS) [in REF]      an instance                                  (1.8)
 component NAME(FORMALS) { statement* }  a component definition (not a value)
@@ -187,8 +186,8 @@ on the word:
 horizontal line1                    point1 horizontal point2
 radius(25) circle1                  point1 distance(80) point2
 distance(6) line1                   point1 symmetry(line1) point2
-ground p1                           l1 angle(30) l2
-fix c.r                             line1 tangent(side: left) circle1
+fix(x == 0, y == 0) p1             l1 angle(30) l2
+fix(r == 25) c                      line1 tangent(side: left) circle1
 length(40) arc1                     l1 angle(l3, l4) l2
 ```
 
@@ -212,7 +211,7 @@ stands in the parentheses:
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines |
 | `project` | infix | two points, each `in` a plane: two images of one point in space (1.13) |
-| `ground`, `fix` | prefix | a point's two coordinates, or one scalar |
+| `fix` | prefix | an entity's own numbers, each named and pinned: `x`/`y` of a point (either or both), `r` of a circle, arc, sphere or cylinder, `half` of a cone (degrees) |
 | `ccw(a, b, c)`, `cw(a, b, c)` | call | all three points in the parentheses; `ccw` means `c` is left of ray `a → b` |
 
 **Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end;
@@ -395,11 +394,11 @@ is refused on an open chain. A hole at every edge's midpoint, sized by index (`h
 
 ```
 unit mm
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
 d := point hint(x: 0, y: 40)
-ground a
+fix(x == 0, y == 0) a
 outline := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 horizontal ab
 vertical bc
@@ -691,7 +690,7 @@ q := plane(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 
   in space.
 - A solved view's *place on the sheet* (its origin and toward) is presentation, held silently and
   not counted unless a statement names it. A free view with nothing else in it reports DOF 4 with
-  no `ground` written.
+  no `fix` written.
 - Errors: a seed for a stated quantity is E040; a position stated twice, or a fold along another
   view's line, E064; views that come out parallel under a `project`, E065.
 - `against` (1.14) works with solved views when the two planes turn together (one derived `from:`
@@ -737,7 +736,7 @@ the next. A **circle is a whole loop by itself** (`face(hole)`), and cannot stan
 
 ```
 unit mm
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
 d := point hint(x: 0, y: 40)
@@ -749,7 +748,7 @@ vertical   (da := line(d, a)) -> close
 
 a distance(60) b
 b distance(40) c
-ground a
+fix(x == 0, y == 0) a
 
 sec := face(ab, bc, cd, da)
 block := solid(sec, depth: 30mm)
@@ -790,15 +789,15 @@ unit mm
 component Par(o: point, u: Length) {
   p := point(x: o.x + u, y: o.y + u * u / 1mm)
 }
-o := point hint(x: 0mm, y: 0mm)
-ground o
+o := point
+fix(x == 0mm, y == 0mm) o
 k := Par(o).p over u in (-2mm, 2mm)
-a := point hint(x: -1mm, y: 1mm)
-b := point hint(x: 1mm, y: 1mm)
+a := point hint(y: 1mm)
+b := point hint(y: 1mm)
 a on k hint(t: -1)
 b on k hint(t: 1)
-fix a.x
-fix b.x
+fix(x == -1mm) a
+fix(x == 1mm) b
 cap := solid(face(k from a to b, -> close), depth: 3mm)
 ```
 
@@ -838,10 +837,10 @@ vertical   (e1 := line(p1, p2)) ->
 horizontal (e2 := line(p2, p3)) ->
 vertical   (e3 := line(p3, p0)) -> close
 
-q0 := point hint(x: 0, y: 0)
+q0 := point
 q1 := point hint(x: 0, y: 10)
 ax := vertical line(q0, q1)
-ground q0
+fix(x == 0, y == 0) q0
 q0 distance(10) q1
 q0 distance(10, along: x) p0
 q0 distance(0, along: y) p0
@@ -1040,19 +1039,19 @@ radians and returns exact pose and velocity per radian. A motion never moves the
 
 ```sv
 unit mm
-o := point hint(x: 0, y: 0)
-z := point hint(x: 0, y: 1)
-ground o
-ground z
+o := point
+z := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) z
 axis := line(o, z)
-c := point hint(x: 0, y: -2)
+c := point
 d := point hint(x: 25, y: -2)
-ground c
+fix(x == 0, y == -2) c
 wheel_radius := horizontal line(c, d)
 c distance(30mm) d
-e := point hint(x: 0, y: -4)
+e := point
 f := point hint(x: 12, y: -4)
-ground e
+fix(x == 0, y == -4) e
 pinion_radius := horizontal line(e, f)
 e distance(10mm) f
 wheel := motion(about: axis)
@@ -1173,7 +1172,7 @@ instance's (`--where views`), a view's basis and origin (`--where side`), a soli
 every name answers in a `positions` table, narrowed by `--where`. It is quicker than writing a
 `claim` to test a position.
 
-Two habits: **ground something** (an unground figure is under by three however determined its
+Two habits: **fix something** (a figure nothing holds is under by three however determined its
 shape), and **seed for the branch** (the solver finds the solution nearest its start, so an arc
 seeded on the wrong side comes out mirrored).
 
@@ -1186,18 +1185,18 @@ Each was run through `solventc`; the DOF and state quoted are what it reported.
 ### 2.1 One dimensioned line: DOF 0, well
 
 ```
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 30, y: 10)
 
 ab := line(a, b)
 horizontal ab
 a distance(40) b
 
-ground a
+fix(x == 0, y == 0) a
 ```
 
-`2 params, 2 equations, structural rank 2; DOF 0`: the ground takes `a`'s two coordinates out of
-the solve, and the level and the length settle `b`'s. `b`'s seed is nowhere near the
+`2 params, 2 equations, structural rank 2; DOF 0`: the `fix` takes `a`'s two coordinates out of
+the solve, at the numbers it states, and the level and the length settle `b`'s. `b`'s seed is nowhere near the
 answer and needn't be: it only says which side of `a` to put `b`.
 
 ### 2.2 A rectangle, as a chain: DOF 0, well
@@ -1206,7 +1205,7 @@ answer and needn't be: it only says which side of `a` to put `b`.
 w := 60
 h := 40
 
-p0 := point hint(x: 0, y: 0)
+p0 := point
 p1 := point hint(x: w, y: 0)
 p2 := point hint(x: w, y: h)
 p3 := point hint(x: 0, y: h)
@@ -1218,7 +1217,7 @@ vertical   (left := line(p3, p0)) -> close
 
 p0 distance(w) p1
 p1 distance(h) p2
-ground p0
+fix(x == 0, y == 0) p0
 ```
 
 `w` and `h` are params: 60 and 40 wherever they appear, never unknowns. The chain states nothing
@@ -1237,7 +1236,7 @@ Edit the 60 and the height follows. `h := w / 2` and `hint(x: w)` may read `w` t
 ### 2.4 A free variable: DOF 1, under, on purpose
 
 ```
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 10, y: 0)
 c := point hint(x: 0, y: 9)
 
@@ -1247,7 +1246,7 @@ horizontal ab
 vertical ac
 a distance(s) b         // s is defined nowhere...
 a distance(s) c         // ...so the two lengths are tied, and their value is the solver's
-ground a
+fix(x == 0, y == 0) a
 ```
 
 The lengths must agree, but nothing says what they are, so one freedom remains. Give `s` a value
@@ -1256,7 +1255,7 @@ or add a constraint and it closes. Inside a component, `s` would be per instance
 ### 2.5 An arc, tangent to what it joins: DOF 0, well
 
 ```
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 30, y: 0)
 c := point hint(x: 40, y: 10)
 d := point hint(x: 40, y: 40)
@@ -1269,7 +1268,7 @@ vertical (rise := line(c, d))
 radius(10) fillet
 a distance(30) b
 c distance(30) d
-ground a
+fix(x == 0, y == 0) a
 ```
 
 `fillet` names only its centre; the chain threads `b` in as its start and `c` as its end, and each
@@ -1285,7 +1284,7 @@ component Rung(a: point, b: point, len: Length) {
   a distance(len) b
 }
 
-l0 := point hint(x: 0, y: 0)
+l0 := point
 r0 := point hint(x: 50, y: 0)
 l1 := point hint(x: 0, y: 20)
 r1 := point hint(x: 50, y: 20)
@@ -1296,7 +1295,7 @@ t1 := Rung(l1, r1, len: 50)
 stile := line(l0, l1)
 vertical stile
 l0 distance(20) l1
-ground l0
+fix(x == 0, y == 0) l0
 ```
 
 The formals alias the actuals; nothing is added at the boundary.
@@ -1312,7 +1311,7 @@ cycle n as i {
   e := line(p, next.p)
   e equal next.e
 }
-ground p[0]
+fix(x == r, y == 0) p[0]
 ```
 
 Six equal links: round a loop one `equal` is implied (listed `implied:`), and nothing sizes the
@@ -1325,11 +1324,11 @@ cycle 4 {
   (s := line) -> perpendicular equal
 }
 s[0].p1 distance(50) s[0].p2
-ground s[0].p1
+fix(x == 0, y == 0) s[0].p1
 ```
 
 Each side welds to the next at a square, equal corner; the wrap closes the loop. One dimension sizes
-it and one ground places it, leaving it free to swing about that corner. Round a closed loop one
+it and one `fix` places it, leaving it free to swing about that corner. Round a closed loop one
 `perpendicular` and one `equal` are implied; dimension every corner instead (`-> angle(90)`) and
 it reads `over`, since editing one number would then conflict. `square.sv` is this figure;
 `ngon.sv` is the parametric version, seeded round a circle because equal chords fix each central
@@ -1342,14 +1341,14 @@ component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)))
 }
 
-o := point hint(x: 0, y: 0)
+o := point
 base := circle(center: o) hint(r: 20)
 f := Involute(base, phase: 0).p over u in (0, 90)
 
 t := point hint(x: 25, y: 8)
 t on f
-ground o
-fix base.r
+fix(x == 0, y == 0) o
+fix(r == 20) base
 ```
 
 The remaining freedom is how far along `f` the point `t` sits — which is why a contact slides
@@ -1370,7 +1369,7 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
   p distance(-(c.r * u / 1rad)) rad                      // and taut: as long as the arc
 }
 
-o := point hint(x: 0, y: 0)
+o := point
 x := point hint(x: 20, y: 0)
 base := circle(center: o) hint(r: 20)
 datum := line(o, x)
@@ -1380,8 +1379,8 @@ f := Unwind(base, datum, phase: 0).p over u in (0, 90)
 g := point hint(x: 25, y: 8)
 g on f
 
-ground o
-fix base.r
+fix(x == 0, y == 0) o
+fix(r == 20) base
 horizontal datum
 o distance(20) x
 ```
@@ -1403,11 +1402,11 @@ component Crank(o: point, datum: line, theta: Angle) {
   datum angle(theta) arm
 }
 
-o := point hint(x: 0, y: 0)
-x := point hint(x: 10, y: 0)
+o := point
+x := point
 datum := line(o, x)
-ground o
-ground x
+fix(x == 0, y == 0) o
+fix(x == 10, y == 0) x
 
 c := Crank(o, datum)                                  // theta unbound: the crank turns
 rim := c.p over theta in (0, 360)
@@ -1421,21 +1420,21 @@ full size.
 
 ```
 // a 60-wide, 40-tall, 30-deep block, three views, one corner tied across them
-Af := point hint(x: 0, y: 0) in front
-qf := point hint(x: 40, y: 0)
+Af := point in front
+qf := point
 front := plane(origin: Af, toward: qf)                             // the page itself
-At := point hint(x: 0, y: 90) in top
-qt := point hint(x: 40, y: 90)
+At := point in top
+qt := point
 top := plane(origin: At, toward: qt, from: front, fold: 0deg)      // folded up from the x-axis
-Ar := point hint(x: 150, y: 0) in right
-qr := point hint(x: 150, y: -40)
+Ar := point in right
+qr := point
 right := plane(origin: Ar, toward: qr, from: front, fold: -90deg)  // folded from z, turned so z is up
-ground Af
-ground qf
-ground At
-ground qt
-ground Ar
-ground qr
+fix(x == 0, y == 0) Af
+fix(x == 40, y == 0) qf
+fix(x == 0, y == 90) At
+fix(x == 40, y == 90) qt
+fix(x == 150, y == 0) Ar
+fix(x == 150, y == -40) qr
 
 Bf := point hint(x: 60, y: 40) in front
 Af distance(60, along: x) Bf
@@ -1465,9 +1464,9 @@ unit mm
 o := point hint(x: 0, y: 0)
 t := point hint(x: 40, y: 0)
 front := plane(origin: o, toward: t)
-gax := line(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
-ground gax.p1
-ground gax.p2
+gax := line in front
+fix(x == 0, y == 0) gax.p1
+fix(x == 0, y == 50) gax.p2
 
 o2 := point hint(x: 120, y: 0)
 t2 := point hint(x: 160, y: 0)
@@ -1504,8 +1503,8 @@ E := 20mm
 o := point hint(x: 0, y: 0)
 t := point hint(x: 40, y: 0)
 P := plane(origin: o, toward: t)
-M := point hint(x: 0, y: 0) in P
-ground M
+M := point in P
+fix(x == 0, y == 0) M
 O := point hint(x: 110, y: 0) in P
 A := point hint(x: 95, y: 18) in P
 gen_g := line(O, M) in P
@@ -1554,20 +1553,20 @@ Rg := 48 * module / 2
 Rp := 24 * module / 2
 E := 20mm
 
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
+o := point
+t := point
 P := plane(origin: o, toward: t)
-ground o
-ground t
-M := point hint(x: 0, y: 0) in P
-ground M
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
+M := point in P
+fix(x == 0, y == 0) M
 
 // the gear's axial plane, square to P about its vertical axis; the pinion's, solved, through M
-og := point hint(x: 0, y: 200)
-tg := point hint(x: 40, y: 200)
+og := point
+tg := point
 G := plane(origin: og, toward: tg, from: P, fold: 90deg)
-ground og
-ground tg
+fix(x == 0, y == 200) og
+fix(x == 40, y == 200) tg
 oq := point hint(x: 0, y: -200)
 tq := point hint(x: 40, y: -200)
 Q := plane(origin: oq, toward: tq, attitude: free, through: M) hint(u: (0.1618, -0.4935, -0.8546), v: (0.0918, 0.8698, -0.4847))
@@ -1602,7 +1601,7 @@ constructed: the gear's apex on P makes P the gear cone's tangent plane at M, an
 ### 2.14 An arc placed by its length: DOF 0, well
 
 ```
-o := point hint(x: 0, y: 0)
+o := point
 s := point hint(x: 10, y: 0)
 e := point hint(x: 3, y: 9)
 
@@ -1610,7 +1609,7 @@ a := arc(o, s, e)
 radius(10) a
 length(5 * pi) a        // a quarter of the circumference: the sweep is 90°
 o horizontal s
-ground o
+fix(x == 0, y == 0) o
 ```
 
 `5 params, 5 equations, structural rank 5; DOF 0`, with `e.x ≈ 2e-15`, `e.y = 10`: straight
@@ -1622,7 +1621,7 @@ DOF 0`; `c2.x = 66.0205` for a wrap of 90 on radius 25, since π + 2·asin(15 / 
 ### 2.15 A bisector, stated as two equal angles: DOF 0, well
 
 ```
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 40, y: 0)
 c := point hint(x: 10, y: 30)
 d := point hint(x: 25, y: 10)
@@ -1637,7 +1636,7 @@ a distance(30) c
 a distance(20) d
 
 ab angle(ad, ac) ad     // the angle from ab to ad is the angle from ad to ac
-ground a
+fix(x == 0, y == 0) a
 ```
 
 `6 params, 6 equations, structural rank 6; DOF 0`, with `d.x = 17.3205`, `d.y = 10`: `ad` at 30°.
@@ -1655,7 +1654,7 @@ judged a theorem.
 2. Declare lines, arcs and circles from them; use a chain for a contour.
 3. State relations (levels, tangencies, equalities), then dimensions. Model relationships, not
    coordinate tables.
-4. `ground` one point; `fix` a scalar that is given rather than solved.
+4. `fix` one point (`fix(x == 0, y == 0) a`), and a number that is given rather than solved.
 5. Run `solventc`. Aim for `well` and DOF 0 unless freedom is intended.
 6. On `conflict`, read the minimal set. On `over`, find the dimension the others imply. On
    `under`, ask what can still move.

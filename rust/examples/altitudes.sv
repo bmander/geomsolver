@@ -14,9 +14,9 @@
 // Three degrees of freedom are left deliberately — the foot of each altitude may slide along its
 // line — so the triangle can be dragged about while the three lines go on meeting.
 
-A := point hint(x: 0, y: 0)
-B := point hint(x: 40, y: 0)
-C := point hint(x: 15, y: 30)
+A := point
+B := point
+C := point
 
 ab := line(A, B)
 bc := line(B, C)
@@ -40,6 +40,6 @@ P on alt_a
 P on alt_b
 P on alt_c
 
-ground A
-ground B
-ground C
+fix(x == 0, y == 0) A
+fix(x == 40, y == 0) B
+fix(x == 15, y == 30) C

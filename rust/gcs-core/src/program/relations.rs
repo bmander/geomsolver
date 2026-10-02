@@ -5,7 +5,7 @@ use super::{Code, Diag};
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Field, Sketch};
-use crate::syntax::{Arg, Ref, RelationForm, Seg, Span, StmtId};
+use crate::syntax::{Arg, Ref, RelationForm, Span, StmtId};
 use std::collections::BTreeSet;
 use crate::{decompose, expr, io};
 
@@ -16,10 +16,13 @@ pub(crate) fn settle(
 ) -> Result<(CKind, Vec<Option<Arg>>), (Span, String)> {
     use crate::constraints::Fixity;
     let word = w.word.text.as_str();
-    // a gauge or an orientation is settled by its word alone: `fix c.r` names a number and not
-    // an entity, and `ccw(a, b, c)` has no operand outside its parentheses; what each operand
-    // must be is checked where the statement is applied, in the words the gauges always used
+    // a gauge or an orientation is settled by its word alone: which numbers `fix` may hold is
+    // the entity's, and `ccw(a, b, c)` has no operand outside its parentheses; what each operand
+    // must be is checked where the statement is applied
     if let Some(k) = crate::constraints::gauge_op(word) {
+        if k == CKind::Fix {
+            fix_spelling(w)?;
+        }
         return Ok((k, w.assemble(k)?));
     }
     // `along:` chooses the kind and fills no slot, so this is the only place its word can be
@@ -110,6 +113,49 @@ pub(crate) fn settle(
             .to_string()));
     }
     Ok((kind, w.assemble(kind)?))
+}
+
+/// `fix` states every number it holds, each pinned under its field's name (§9.2: inside the
+/// parentheses `==` pins and `:` selects).  A bare `fix p`, a held number without its name and
+/// one written as a selector are each refused where they stand, with the spelling.
+fn fix_spelling(w: &crate::syntax::Written) -> Result<(), (Span, String)> {
+    use crate::syntax::OpArg;
+    let of = w.ops.first().map_or("p".to_string(), |r| r.root.text.clone());
+    for a in &w.args {
+        match a {
+            OpArg::Named(key, _) => {
+                let m = format!("`fix` pins a number with `==`: `fix({} == …) {of}`", key.text);
+                return Err((key.span, m))
+            }
+            OpArg::Dim(text, span) => {
+                return Err((*span, format!("`fix` names each number it holds, by its field: \
+                    `fix(r == {text}) {of}`")))
+            }
+            OpArg::Slot { key, .. } => {
+                let fields = &CKind::Fix.spec()[1..];
+                if !fields.iter().any(|(n, _)| *n == key.text) {
+                    let names: Vec<&str> = fields.iter().map(|(n, _)| *n).collect();
+                    return Err((key.span, format!("`fix` holds {}, not `{}`",
+                        crate::syntax::one_of(&names), key.text)))
+                }
+            }
+            _ => {}
+        }
+    }
+    if !w.args.iter().any(|a| matches!(a, OpArg::Slot { .. })) {
+        return Err((w.word.span, format!("`fix` states the numbers it holds: `fix(x == 0, y == 0) \
+            {of}`")));
+    }
+    Ok(())
+}
+
+/// Whether a statement is a `fix`, which is applied before the seeds that read geometry are
+/// worked out (`program::build`), so a seed reading a held point reads where it is held.
+pub(super) fn is_fix(r: &Relation) -> bool {
+    match &r.form {
+        RelationForm::Written(w) => w.word.text == "fix",
+        RelationForm::Canonical { kind, .. } => *kind == CKind::Fix,
+    }
 }
 
 pub(super) fn constrain(
@@ -519,61 +565,53 @@ fn apply_gauge(
         diags.push(Diag { code, span, stmt: Some(st.id), message })
     };
     match r.kind {
-        CKind::Ground | CKind::Fix => {
+        CKind::Fix => {
             let Some(rf) = refs.first().copied() else {
-                bad(
-                    Code::E103,
-                    st.span,
-                    format!("`{}` names what it pins", crate::syntax::snake(r.kind.name())),
-                );
+                bad(Code::E103, st.span, "`fix` names what it holds".to_string());
                 return;
             };
-            let Some(e) = res.lookup(rf) else {
+            let Some(e) = res.lookup(rf).and_then(|e| follow(sk, e, &rf.path).ok()) else {
                 bad(Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text));
                 return;
             };
-            if r.kind == CKind::Ground {
-                let e = follow(sk, e, &rf.path).unwrap_or(e);
-                if e.kind != EntKind::Point {
+            // a plane's attitude is the datum's intrinsics, held by its points
+            let scalars: Vec<&str> = match e.kind {
+                EntKind::Plane => Vec::new(),
+                k => k
+                    .fields()
+                    .iter()
+                    .filter(|(_, f)| *f == Field::Scalar)
+                    .map(|(n, _)| *n)
+                    .collect(),
+            };
+            let own = sk.own_params(e);
+            let spec = r.kind.spec();
+            for (i, a) in r.args.iter().enumerate().skip(1) {
+                let Some(a) = a else { continue };
+                let field = spec[i].0;
+                let Some(at) = scalars.iter().position(|&n| n == field).filter(|&at| at < own.len())
+                else {
+                    let kind = e.kind.as_str();
+                    let article = if kind.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" };
                     bad(
                         Code::E105,
                         st.span,
-                        "ground pins a point; a scalar is pinned with fix".to_string(),
+                        if scalars.is_empty() {
+                            format!("{article} {kind} has no number of its own to fix")
+                        } else {
+                            format!("{article} {kind} has {}, not `{field}`", scalars.join(" and "))
+                        },
                     );
-                    return;
-                }
-                sk.fix_point(e.i(), true);
-                return;
-            }
-            // `fix c.r`: the entity's own scalar, named by the field it is.  The document
-            // stores one flag per scalar and nothing finer, so neither does this.
-            let field = match rf.path.first() {
-                Some(Seg::Field(f)) => f.text.clone(),
-                _ => String::new(),
-            };
-            let own = sk.own_params(e);
-            let scalars: Vec<&str> = e
-                .kind
-                .fields()
-                .iter()
-                .filter(|(_, f)| *f == Field::Scalar)
-                .map(|(n, _)| *n)
-                .collect();
-            match scalars.iter().position(|&n| n == field) {
-                Some(i) if i < own.len() => sk.params[own[i] as usize].fixed = true,
-                _ => bad(
-                    Code::E105,
-                    st.span,
-                    if scalars.is_empty() {
-                        format!("a {} has no number of its own to fix", e.kind.as_str())
-                    } else {
-                        format!(
-                            "a {} has {}, not `{field}`",
-                            e.kind.as_str(),
-                            scalars.join(" and ")
-                        )
-                    },
-                ),
+                    continue;
+                };
+                // what the flattener settled the pin to; an expression it could not work out was
+                // reported there
+                let Arg::Seed { value, .. } = a else { continue };
+                // a cone's half-angle is written in degrees, as its hint is (`Sketch::seed_value`)
+                let v = if e.kind == EntKind::Cone { value.to_radians() } else { *value };
+                let p = &mut sk.params[own[at] as usize];
+                p.value = v;
+                p.fixed = true;
             }
         }
         CKind::Ccw | CKind::Cw => {

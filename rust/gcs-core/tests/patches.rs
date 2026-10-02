@@ -2,14 +2,14 @@ use gcs_core::{diagnose,envelope::{Error,IntersectionOptions},io,model::{EntKind
     patch::TrimmedPatch,program,solve,syntax};
 
 const SOURCE: &str = "unit mm
-o := point hint(x: 0,y: 0)
-q := point hint(x: 0,y: 1)
-x := point hint(x: 1,y: 0)
-c := point hint(x: 3,y: 0)
-ground o
-ground q
-ground x
-ground c
+o := point
+q := point
+x := point
+c := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) q
+fix(x == 1, y == 0) x
+fix(x == 3, y == 0) c
 axis := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)
@@ -19,10 +19,10 @@ wall := surface(ring,meridian)
 roll := motion(about: spin_axis)
 generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
 component Sphere(o: point, size: Length) {
-  private bottom := point hint(x: 0,y: -size)
-  private top := point hint(x: 0,y: size)
-  ground bottom
-  ground top
+  private bottom := point
+  private top := point
+  fix(x == 0, y == -size) bottom
+  fix(x == 0, y == size) top
   private rim := arc(center: o,start: bottom,end: top)
   radius(size) rim
   private axis := line(top,bottom)
@@ -145,7 +145,7 @@ fn patch_diagnostics_refuse_missing_or_wrong_operands_and_ambiguous_labels() {
         ("bad := patch(axis,inside: ring)","source must be"),
         ("bad := patch(wall,inside: missing)","no such entity"),
         ("bad := patch(source: wall,source: wall,inside: ring)","exactly one"),
-        ("ground tooth","pins a point"),
+        ("fix(x == 0, y == 0) tooth","a patch has no number of its own to fix"),
     ] {
         let e = build(&format!("{SOURCE}{tail}\n"));
         assert!(e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);

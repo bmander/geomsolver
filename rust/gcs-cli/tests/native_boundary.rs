@@ -121,9 +121,9 @@ fn trimmed_cube_and_hole_edges_have_material_normals() {
 fn periodic_seams_and_collapsed_poles_remain_explicit() {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
     let sphere = fixtures::gear::read(include_str!("../../examples/solid_generating_sweep.sv"),&base);
-    let torus = fixtures::gear::read("unit mm\na := point hint(x: 0,y: 0)\nground a\n\
-        b := point hint(x: 0,y: 1)\nground b\naxis := line(a,b)\n\
-        c := point hint(x: 10,y: 2)\nground c\nring := circle(center: c)\nradius(2) ring\n\
+    let torus = fixtures::gear::read("unit mm\na := point\nfix(x == 0, y == 0) a\n\
+        b := point\nfix(x == 0, y == 1) b\naxis := line(a,b)\n\
+        c := point\nfix(x == 10, y == 2) c\nring := circle(center: c)\nradius(2) ring\n\
         tool := solid(face(ring),about: axis)\n",Path::new("."));
     let cad = native::Session::new().unwrap();
     for (e,is_sphere) in [(&sphere,true),(&torus,false)] {
@@ -188,7 +188,7 @@ fn native_cutter_edges_agree_with_the_independent_source_material() {
 fn a_sliver_is_sampled_between_its_faces() {
     let mut text = String::from("unit mm\n");
     for (name,x,y) in [("a",0.,0.),("b",20.,10.),("c",40.,0.),("d",40.,0.004),("e",20.,10.004),("f",0.,0.004)] {
-        text += &format!("{name} := point hint(x: {x}, y: {y})\nground {name}\n");
+        text += &format!("{name} := point\nfix(x == {x}, y == {y}) {name}\n");
     }
     text += "sliver := solid(face(a, b, c, d, e, f, -> close), depth: 10mm)\n";
     let e = fixtures::gear::read(&text,Path::new("."));

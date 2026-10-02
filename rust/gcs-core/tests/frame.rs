@@ -166,15 +166,15 @@ component elbow(o: point, datum: line, f: plane, u: Angle) {
   o distance(50) p
 }
 
-o := point hint(x: 0, y: 0)
-q := point hint(x: -30, y: 51.9615242270663)
+o := point
+q := point
 datum := line(o, q)
 f := plane(origin: o, toward: q)
 
 path := elbow(o, datum, f, u: 30).p over u in (10, 80)
 
-ground o
-ground q
+fix(x == 0, y == 0) o
+fix(x == -30, y == 51.9615242270663) q
 ";
 
 /// Where the elbow is at `u`, worked out here: 50 out of `o` at bearing `datum + u + acos(0.6)`,

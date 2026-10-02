@@ -521,6 +521,8 @@ fn seed_eval(
     }
 }
 
+/// Seeds that read geometry, worked out in statement order — never over a number a `fix` holds,
+/// which was applied first.
 pub(super) fn settle_deferred(
     sk: &mut Sketch,
     res: &Resolver,
@@ -531,15 +533,21 @@ pub(super) fn settle_deferred(
         let (span, stmt, result) = match d {
             Deferred::Text { param, text, names, span, stmt } => {
                 let r = seed_eval(sk, res, text, names).map(|v| {
-                    sk.params[*param as usize].value = v;
+                    let p = &mut sk.params[*param as usize];
+                    if !p.fixed {
+                        p.value = v;
+                    }
                 });
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
             Deferred::At { point, at, names, span, stmt } => {
                 let r = place_of(sk, res, *point, at, names).map(|(x, y)| {
-                    let [px, py] = sk.point_params(*point);
-                    sk.params[px as usize].value = x;
-                    sk.params[py as usize].value = y;
+                    for (p, v) in sk.point_params(*point).into_iter().zip([x, y]) {
+                        let p = &mut sk.params[p as usize];
+                        if !p.fixed {
+                            p.value = v;
+                        }
+                    }
                 });
                 (*span, *stmt, r)
             }
@@ -549,7 +557,9 @@ pub(super) fn settle_deferred(
                     (sk.point_xy(a.center as usize), sk.point_xy(a.start as usize));
                 let r = (sx - cx).dhypot(sy - cy);
                 let rp = a.radius as usize;
-                sk.params[rp].value = if r.abs() > 1e-9 { r } else { UNSEEDED_RADIUS };
+                if !sk.params[rp].fixed {
+                    sk.params[rp].value = if r.abs() > 1e-9 { r } else { UNSEEDED_RADIUS };
+                }
                 continue;
             }
         };

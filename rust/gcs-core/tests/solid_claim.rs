@@ -31,12 +31,12 @@ fn verdicts(e: &Elaborated) -> Vec<gcs_core::diagnose::SolidVerdict> {
 /// `lo` and `hi` along the page's own normal — face `f{tag}` and solid `s{tag}_`.
 fn block(tag: &str, x: f64, y: f64, w: f64, lo: f64, hi: f64) -> String {
     format!(
-        "a{tag} := point hint(x: {x}, y: {y})\nb{tag} := point hint(x: {}, y: {y})\n\
+        "a{tag} := point\nb{tag} := point hint(x: {}, y: {y})\n\
          c{tag} := point hint(x: {}, y: {})\nd{tag} := point hint(x: {x}, y: {})\n\
          (p{tag} := line(a{tag}, b{tag})) -> (q{tag} := line(b{tag}, c{tag})) -> \
          (r{tag} := line(c{tag}, d{tag})) -> (s{tag} := line(d{tag}, a{tag})) -> close\n\
          horizontal p{tag}\nvertical q{tag}\nhorizontal r{tag}\nvertical s{tag}\n\
-         a{tag} distance({w}) b{tag}\na{tag} distance({w}) d{tag}\nground a{tag}\n\
+         a{tag} distance({w}) b{tag}\na{tag} distance({w}) d{tag}\nfix(x == {x}, y == {y}) a{tag}\n\
          f{tag} := face(p{tag}, q{tag}, r{tag}, s{tag})\n\
          s{tag}_ := solid(f{tag}, from: {lo}mm, to: {hi}mm)\n",
         x + w,
@@ -91,8 +91,8 @@ fn a_swept_claim_finds_the_worst_pose() {
     // V-twin's port timing and disc clearance were checked by.
     let src = "\
 unit mm
-o := point hint(x: 0, y: 0)
-ground o
+o := point
+fix(x == 0, y == 0) o
 p := point hint(x: 10, y: 0)
 o distance(reach, along: x) p
 o distance(0, along: y) p
@@ -108,12 +108,12 @@ p distance(4, along: y) s
 (e0 := line(p, q)) -> (e1 := line(q, r)) -> (e2 := line(r, s)) -> (e3 := line(s, p)) -> close
 arm_f := face(e0, e1, e2, e3)
 arm := solid(arm_f, depth: 3mm)
-w0 := point hint(x: 50, y: 0)
+w0 := point
 w1 := point hint(x: 56, y: 0)
 w2 := point hint(x: 56, y: 4)
 w3 := point hint(x: 50, y: 4)
 (g0 := line(w0, w1)) -> (g1 := line(w1, w2)) -> (g2 := line(w2, w3)) -> (g3 := line(w3, w0)) -> close
-ground w0
+fix(x == 50, y == 0) w0
 horizontal g0
 vertical g1
 w0 distance(6) w1

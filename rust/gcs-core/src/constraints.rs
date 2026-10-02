@@ -228,13 +228,12 @@ pub enum CKind {
     /// The **gauges** and the **orientation predicates** (spec §9.2, §9.6; issue #47, item 5):
     /// statements written as every other constraint is — an operator, its operands, a class, a
     /// placement — and settled through the same table, but **applied by the elaborator rather
-    /// than held by the model**: `ground` and `fix` mark parameters fixed, `ccw` and `cw` record
-    /// a root choice in `Sketch::branches`.  They own no kernel, add no row, and are in no
-    /// `Constraint` the sketch holds — so they are **not in `ALL_KINDS`**, the registry never
+    /// than held by the model**: `fix` marks parameters fixed at the numbers it states, `ccw` and
+    /// `cw` record a root choice in `Sketch::branches`.  They own no kernel, add no row, and are in
+    /// no `Constraint` the sketch holds — so they are **not in `ALL_KINDS`**, the registry never
     /// publishes them, and `CKind::gauge` is how every table that would otherwise reach for a
     /// kernel tells them apart.  A `claim` on one is refused: a claim is judged by rank over
     /// rows, and these have none.
-    Ground,
     Fix,
     Ccw,
     Cw,
@@ -508,12 +507,12 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
 /// Every word the language writes a **constraint** with (spec §9.1) — the gauges and the
 /// orientation predicates among them, read by the one relation parser and settled by the one
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
-/// other word.  None of the four is a prefix word a chain can open a link with: `prefix_op`
-/// declines them, so `ground point p -> …` stays what it always was, no chain.
-pub const OPERATORS: [&str; 23] = [
+/// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
+/// declines them, so `fix(x == 0) point p -> …` is no chain.
+pub const OPERATORS: [&str; 22] = [
     "on", "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
-    "ground", "fix", "ccw", "cw",
+    "fix", "ccw", "cw",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement
     // reads the way every other statement does; they settle to no `CKind` and compile no row,
     // because a solid is evaluated after the drawing is solved and a claim about one is judged
@@ -568,12 +567,11 @@ pub fn is_operator(w: &str) -> bool {
 }
 
 /// The gauges and the orientation predicates, by word: settled **before** the operands' kinds
-/// are asked, since `fix c.r` names a number and not an entity and `ccw(a, b, c)` has no
-/// operand outside its parentheses.  What each operand must be is checked where the statement
-/// is applied (`program::apply_gauge`), in the words the gauges always used.
+/// are asked, since what `fix` may hold depends on the entity (`fix(r == 25) c`, `fix(x == 0) p`)
+/// and `ccw(a, b, c)` has no operand outside its parentheses.  What each operand must be is
+/// checked where the statement is applied (`program::apply_gauge`).
 pub fn gauge_op(word: &str) -> Option<CKind> {
     Some(match word {
-        "ground" => CKind::Ground,
         "fix" => CKind::Fix,
         "ccw" => CKind::Ccw,
         "cw" => CKind::Cw,
@@ -589,7 +587,7 @@ pub fn call_word(w: &str) -> bool {
 /// Where an operator stands to its operand(s) — see `CKind::operator`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fixity {
-    /// `radius(25) circle1`, `horizontal line1`, `ground p1`
+    /// `radius(25) circle1`, `horizontal line1`, `fix(x == 0, y == 0) p1`
     Prefix,
     /// `p1 distance(80) p2`, `line1 tangent circle1`
     Infix,
@@ -625,9 +623,9 @@ pub enum SpecKind {
     /// A cone and a cylinder: an axis drawn in a view and a number each owns.
     Cone,
     Cylinder,
-    /// One of an entity's own numbers, named by its field — `c.r`, `p.x` — the operand of
-    /// `fix`.  Filled from a reference like an entity slot and resolved by the gauge's own
-    /// rule, never by `follow`, since a field is not a child.
+    /// The operand of `fix`: an entity of any kind whose own numbers the statement holds
+    /// (`fix(r == 25) c`).  Filled from a reference like an entity slot; which numbers that
+    /// kind has is the gauge's own check.
     Scalar,
     Length,
     Angle,
@@ -816,7 +814,6 @@ impl CKind {
             CKind::HingeAlong => "HingeAlong",
             CKind::ProjectSolved => "ProjectSolved",
             CKind::Mate => "Mate",
-            CKind::Ground => "Ground",
             CKind::Fix => "Fix",
             CKind::Ccw => "Ccw",
             CKind::Cw => "Cw",
@@ -826,7 +823,7 @@ impl CKind {
     /// A statement the elaborator applies rather than a constraint the model holds — see the
     /// variants' note.  Asked wherever a table would otherwise reach for a kernel.
     pub fn gauge(self) -> bool {
-        matches!(self, CKind::Ground | CKind::Fix | CKind::Ccw | CKind::Cw)
+        matches!(self, CKind::Fix | CKind::Ccw | CKind::Cw)
     }
 
     pub fn from_name(s: &str) -> Option<CKind> {
@@ -992,9 +989,17 @@ impl CKind {
             }
             // the plane a mate places, the one it bears on, and the faces' ordinates' difference
             CKind::Mate => &[("plane", S::Plane), ("datum", S::Plane), ("gap", S::Float)],
-            CKind::Ground => &[("p", S::Point)],
-            // one of an entity's own numbers, named by its field: `fix c.r`
-            CKind::Fix => &[("x", S::Scalar)],
+            // the entity, and the numbers it holds, each pinned under the name of the field it
+            // is (`model::EntKind::fields`): `fix(x == 0, y == 0) p`, `fix(r == 25) c`,
+            // `fix(half == 30deg) k`.  Every scalar field a kind owns is a slot here, and which
+            // of them the entity has is the gauge's own check
+            CKind::Fix => &[
+                ("of", S::Scalar),
+                ("x", S::Param),
+                ("y", S::Param),
+                ("r", S::Param),
+                ("half", S::Param),
+            ],
             // the predicate is about the triangle, so all three stand in the parentheses
             CKind::Ccw | CKind::Cw => &[("a", S::Point), ("b", S::Point), ("c", S::Point)],
         }
@@ -1095,7 +1100,6 @@ impl CKind {
             CKind::Project | CKind::ProjectSolved => ("project", Infix),
             // the gauges are prefix words like `horizontal`; the orientation predicates keep
             // a call, since `a ccw(c) b` would reorder three points that are symmetric
-            CKind::Ground => ("ground", Prefix),
             CKind::Fix => ("fix", Prefix),
             CKind::Ccw => ("ccw", Call),
             CKind::Cw => ("cw", Call),
@@ -1408,7 +1412,6 @@ impl CKind {
             | CKind::HingeAlong
             | CKind::ProjectSolved
             | CKind::Mate
-            | CKind::Ground
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw => false,
@@ -1538,7 +1541,7 @@ impl CKind {
             CKind::HingeAlong => K::HingeAlong,
             CKind::ProjectSolved => K::ProjectFree,
             CKind::Mate => K::Mate,
-            CKind::Ground | CKind::Fix | CKind::Ccw | CKind::Cw => {
+            CKind::Fix | CKind::Ccw | CKind::Cw => {
                 panic!("{:?} is a gauge: applied by the elaborator, it has no kernel", self)
             }
         }
@@ -1654,7 +1657,6 @@ impl CKind {
             | CKind::HingeAlong
             | CKind::ProjectSolved
             | CKind::Mate
-            | CKind::Ground
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw => return None,
@@ -2697,7 +2699,7 @@ impl Constraint {
                 }
                 out
             }
-            CKind::Ground | CKind::Fix | CKind::Ccw | CKind::Cw => {
+            CKind::Fix | CKind::Ccw | CKind::Cw => {
                 unreachable!("{:?} is a gauge and is never in a sketch", self.kind)
             }
         }

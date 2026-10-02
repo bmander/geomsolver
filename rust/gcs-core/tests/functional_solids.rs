@@ -107,8 +107,8 @@ fn spatial_composition_bounds_lenses_shells_and_shared_empty_results() {
 #[test]
 fn spatial_transforms_use_inverse_fixed_poses_and_refuse_invalid_angles() {
     use gcs_core::{syntax,program,solve,motion::Family};
-    let (source,errors) = syntax::parse("a := point hint(x: 1,y: 0)\nb := point hint(x: 1,y: 1)\n\
-        ground a\nground b\naxis := line(a,b)\nturn := motion(about: axis)\n");
+    let (source,errors) = syntax::parse("a := point\nb := point\n\
+        fix(x == 1, y == 0) a\nfix(x == 1, y == 1) b\naxis := line(a,b)\nturn := motion(about: axis)\n");
     assert!(errors.is_empty());
     let mut model = program::elaborate(&source); assert!(model.ok());
     assert!(solve::solve(&mut model.sketch,Default::default()).success);

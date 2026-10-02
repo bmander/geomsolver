@@ -52,11 +52,11 @@ fn a_statement_is_coloured_by_what_it_declares() {
     let src = "\
 component Gear(N: Int, m: Length, c: circle) {
   R := m * N / 2
-  hub := point
-  center := point hint(x: 0, y: 0)
+  hub := point hint(x: 0, y: 5)
+  center := point
   base := circle(center: center) hint(r: R) class construction
   radius(R) base
-  ground center
+  fix(x == 0, y == 0) center
   cycle N as i {
     t := Tooth(base, a0: i * R)
   }
@@ -81,7 +81,7 @@ g := Gear(N: 30, m: 3)  // one wheel
     assert_eq!(tint_of(src, "construction"), Some(Tint::Class));
     assert_eq!(tint_of(src, "radius"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "radius(R)"), Some(Tint::Relation));
-    assert_eq!(tint_of(src, "ground"), Some(Tint::Relation));
+    assert_eq!(tint_of(src, "fix(x"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "cycle"), Some(Tint::Word));
     assert_eq!(tint_of(src, "as"), Some(Tint::Word));
     assert_eq!(tint_of(src, "i {"), Some(Tint::Def));

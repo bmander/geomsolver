@@ -47,24 +47,24 @@ fn dof(src: &str) -> i64 {
 /// the side one.
 const VIEWS: &str = "\
 unit mm
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
+o := point
+t := point
 front := plane(origin: o, toward: t)
-ground o
-ground t
-o2 := point hint(x: 120, y: 0)
-t2 := point hint(x: 160, y: 0)
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
+o2 := point
+t2 := point
 side := plane(origin: o2, toward: t2, from: front, fold: 90deg)
-ground o2
-ground t2
-ax := line(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
-ground ax.p1
-ground ax.p2
+fix(x == 120, y == 0) o2
+fix(x == 160, y == 0) t2
+ax := line in front
+fix(x == 0, y == 0) ax.p1
+fix(x == 0, y == 50) ax.p2
 a := point hint(x: 130, y: 20) in side
 l := line(hint(x: 125, y: 3), hint(x: 150, y: 20)) in side
-bx := line(hint(x: 0, y: 20), hint(x: 50, y: 20)) in front
-ground bx.p1
-ground bx.p2
+bx := line in front
+fix(x == 0, y == 20) bx.p1
+fix(x == 50, y == 20) bx.p2
 c := cylinder(axis: ax) hint(r: 10)
 cb := cylinder(axis: bx) hint(r: 10)
 k := cone(axis: ax) hint(half: 30deg)
@@ -89,7 +89,8 @@ fn a_cone_and_a_cylinder_are_entities_about_a_drawn_axis() {
     assert_eq!(sk.params[sk.axial(c).param as usize].value, 10.0);
     assert!((sk.params[sk.axial(k).param as usize].value - 30f64.to_radians()).abs() < 1e-15);
     // no freedom of their own beyond that number: a grounded axis leaves the two numbers
-    assert_eq!(dof(VIEWS) - dof(&format!("{VIEWS}fix c.r\nfix cb.r\nfix k.half\n")), 3);
+    let held = format!("{VIEWS}fix(r == 10) c\nfix(r == 10) cb\nfix(half == 30deg) k\n");
+    assert_eq!(dof(VIEWS) - dof(&held), 3);
     // and nothing on a sheet: neither is drawn on a page
     assert_eq!(gcs_core::overview::drawable(sk, c, 1.0).len(), 0);
 }
@@ -133,7 +134,7 @@ fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
     assert!(dot(w, d) > 0.0, "on the nappe the axis points into");
     assert_eq!(dof(&format!("{VIEWS}angle(25deg) k\n")) - dof(&src), 1);
     // and a free half-angle is found by the point
-    let e = read(&format!("{VIEWS}fix a.x\nfix a.y\na on k\n"));
+    let e = read(&format!("{VIEWS}fix(x == 130, y == 20) a\na on k\n"));
     let sk = solved(&e);
     let (apex, d, half) = axial(&sk, ent(&e, "k"));
     assert!((half.to_degrees() - angle(sub(at(&sk, &e, "a"), apex), d)).abs() < 1e-9);
@@ -144,7 +145,7 @@ fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
 fn a_line_touching_a_cylinder_is_its_radius_from_the_axis() {
     // the axis runs square to the side view, so the line touches it where it passes a circle
     // about the point the axis crosses that view at
-    let src = format!("{VIEWS}radius(12) cb\nground l.p1\ncb tangent l\n");
+    let src = format!("{VIEWS}radius(12) cb\nfix(x == 125, y == 3) l.p1\ncb tangent l\n");
     let e = read(&src);
     let sk = solved(&e);
     let (p, d, _) = axial(&sk, ent(&e, "cb"));
@@ -237,7 +238,7 @@ fn cones_and_cylinders_round_trip() {
         assert!(norm(sub(sk.world_point(i), again.world_point(i))) < 1e-7, "p{i}");
     }
     // a cylinder's side comes through a document, where nobody wrote it
-    let e = read(&format!("{VIEWS}radius(12) cb\nground l.p1\ncb tangent l\n"));
+    let e = read(&format!("{VIEWS}radius(12) cb\nfix(x == 125, y == 3) l.p1\ncb tangent l\n"));
     let sk = solved(&e);
     let back = io::loads(&io::dumps(&sk, None)).expect("reads back");
     assert_eq!(io::dumps(&back, None), io::dumps(&sk, None));
@@ -306,11 +307,11 @@ fn part(tag: &str, plane: &str, w: f64, lo: &str, hi: &str) -> String {
 /// page: `mid` stands where `mid_clause` says, and `back` is placed by a mate on `mid`.
 fn stack(mid_clause: &str) -> String {
     format!(
-        "unit mm\no := point hint(x: 0, y: 0)\nqq := point hint(x: 40, y: 0)\nground o\n\
+        "unit mm\no := point\nqq := point hint(x: 40, y: 0)\nfix(x == 0, y == 0) o\n\
          ref := horizontal line(o, qq)\no distance(40) qq\nfront := plane(origin: o, toward: qq)\n\
-         o3 := point hint(x: 200, y: 0)\nt3 := point hint(x: 240, y: 0)\nground o3\nground t3\n\
+         o3 := point\nt3 := point\nfix(x == 200, y == 0) o3\nfix(x == 240, y == 0) t3\n\
          side := plane(origin: o3, toward: t3, from: front, fold: 90deg)\n\
-         m := point hint(x: 200, y: -8) in side\nground m\n\
+         m := point in side\nfix(x == 200, y == -8) m\n\
          mid := plane(origin: o, toward: qq, from: front, {mid_clause})\n\
          back := plane(origin: o, toward: qq, from: front)\n{}{}\
          back_part.far against mid_part.near\n",
@@ -349,11 +350,11 @@ fn a_mate_on_a_solved_offset_follows_it() {
 #[test]
 fn a_mate_in_a_solved_view_turns_with_it() {
     let doc = |fold: &str, hint: &str| format!(
-        "unit mm\no := point hint(x: 0, y: 0)\nqq := point hint(x: 40, y: 0)\nground o\n\
+        "unit mm\no := point\nqq := point hint(x: 40, y: 0)\nfix(x == 0, y == 0) o\n\
          ref := horizontal line(o, qq)\no distance(40) qq\nfront := plane(origin: o, toward: qq)\n\
          g := plane(origin: o, toward: qq, from: front, fold: {fold}){hint}\n\
          back := plane(origin: o, toward: qq, from: g)\n\
-         gp := point hint(x: 20, y: 0) in g\nfp := point hint(x: 16, y: 12) in front\nground fp\n\
+         gp := point hint(x: 20, y: 0) in g\nfp := point in front\nfix(x == 16, y == 12) fp\n\
          {}{}back_part.far against g_part.near\n",
         part("g_part", "g", 25.0, "-2mm", "0mm"),
         part("back_part", "back", 20.0, "-10mm", "0mm")
@@ -378,7 +379,7 @@ fn a_mate_in_a_solved_view_turns_with_it() {
 #[test]
 fn a_mate_between_views_that_turn_apart_is_refused() {
     let src = format!(
-        "unit mm\no := point hint(x: 0, y: 0)\nqq := point hint(x: 40, y: 0)\nground o\n\
+        "unit mm\no := point\nqq := point hint(x: 40, y: 0)\nfix(x == 0, y == 0) o\n\
          ref := horizontal line(o, qq)\no distance(40) qq\nfront := plane(origin: o, toward: qq)\n\
          g := plane(origin: o, toward: qq, from: front, fold: beta) hint(fold: 0deg)\n\
          back := plane(origin: o, toward: qq, from: front)\n{}{}\

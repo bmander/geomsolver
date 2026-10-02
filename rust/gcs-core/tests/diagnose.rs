@@ -620,8 +620,8 @@ fn a_tangential_contact_is_rigid_not_under() {
 #[test]
 fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
     let (prog, _) = gcs_core::syntax::parse(
-        "a := point hint(x: 0, y: 0)
-         d := point hint(x: 60, y: 0)
+        "a := point
+         d := point
          b := point hint(x: 8, y: 24)
          c := point hint(x: 52, y: 30)
          ground_link := line(a, d)
@@ -631,8 +631,8 @@ fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
          a distance(25) b
          b distance(45) c
          d distance(30) c
-         ground a
-         ground d
+         fix(x == 0, y == 0) a
+         fix(x == 60, y == 0) d
          crank angle(70) ground_link",
     );
     let mut sk = gcs_core::program::elaborate(&prog).sketch;
@@ -658,13 +658,13 @@ fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
 #[test]
 fn an_intrinsic_row_is_never_a_culprit() {
     let (prog, _) = gcs_core::syntax::parse(
-        "o := point hint(x: 0, y: 0)
+        "o := point
          s := point hint(x: 20, y: 0)
          e := point hint(x: 0, y: 20)
          a := arc(center: o, start: s, end: e) hint(r: 20)
          radius(20) a
          o distance(20) s
-         ground o
+         fix(x == 0, y == 0) o
          r0 := horizontal line(o, s)",
     );
     let mut sk = gcs_core::program::elaborate(&prog).sketch;
@@ -679,7 +679,7 @@ fn an_intrinsic_row_is_never_a_culprit() {
 /// #43.18 — the components line is paged like every other list in the summary.
 #[test]
 fn the_components_line_is_bounded() {
-    let (prog, _) = gcs_core::syntax::parse("repeat 400 as i { p := point hint(x: i, y: 0) }\nground p[0]\n");
+    let (prog, _) = gcs_core::syntax::parse("repeat 400 as i { p := point hint(x: i, y: 0) }\nfix(x == 0, y == 0) p[0]\n");
     let mut sk = gcs_core::program::elaborate(&prog).sketch;
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     let s = summary(&d);
@@ -710,15 +710,15 @@ fn a_relation_only_closure_is_implied_at_dof_zero_too() {
         (d, dims)
     };
     let (d, dims) = read(
-        "cycle 4 {\n (s := line) -> perpendicular equal\n}\ns[0].p1 distance(50) s[0].p2\nground s[0].p1\nhorizontal s[0]\n",
+        "cycle 4 {\n (s := line) -> perpendicular equal\n}\ns[0].p1 distance(50) s[0].p2\nfix(x == 0, y == 0) s[0].p1\nhorizontal s[0]\n",
     );
     assert_eq!((d.dof, d.status), (0, State::Well), "{}", summary(&d));
     assert!(d.over.is_empty(), "over: {:?}", d.over);
     assert!(!d.implied.is_empty() && dims.iter().all(|c| !d.implied.contains(c)), "{:?}", d.implied);
     let (d, dims) = read(
-        "p := point hint(x: 0, y: 0)\nq := point hint(x: 40, y: 0)\nr := point hint(x: 40, y: 40)\ns := point hint(x: 0, y: 40)\n\
+        "p := point\nq := point hint(x: 40, y: 0)\nr := point hint(x: 40, y: 40)\ns := point hint(x: 0, y: 40)\n\
          a := line(p, q)\nb := line(q, r)\nc := line(r, s)\nd := line(s, p)\nhorizontal a\na perpendicular b\n\
-         b perpendicular c\nc perpendicular d\nd perpendicular a\np distance(40) q\nq distance(40) r\nground p\n",
+         b perpendicular c\nc perpendicular d\nd perpendicular a\np distance(40) q\nq distance(40) r\nfix(x == 0, y == 0) p\n",
     );
     assert_eq!((d.dof, d.status), (0, State::Well), "{}", summary(&d));
     assert!(d.over.is_empty(), "over: {:?}", d.over);
@@ -726,7 +726,7 @@ fn a_relation_only_closure_is_implied_at_dof_zero_too() {
     assert!(dims.iter().all(|c| !d.implied.contains(c)), "{:?}", d.implied);
     // and a redundancy a dimension takes part in is still `over`, at DOF 0 as anywhere
     let (d, dims) = read(
-        "a := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\na horizontal b\na distance(40) b\na distance(40) b\nground a\n",
+        "a := point\nb := point hint(x: 40, y: 0)\na horizontal b\na distance(40) b\na distance(40) b\nfix(x == 0, y == 0) a\n",
     );
     assert_eq!(d.status, State::Over, "{}", summary(&d));
     assert!(dims.iter().all(|c| d.over.contains(c)), "over: {:?}", d.over);
@@ -745,13 +745,13 @@ fn an_unwritten_radius_starts_off_zero_and_a_conflict_names_no_intrinsic() {
         assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
         e
     };
-    let arc = "c := point hint(x: 0, y: 0)\ns := point hint(x: 10, y: 0)\ne := point hint(x: 0, y: 10)\n\
-               k := arc(center: c, start: s, end: e)\nground c\nground s\nground e\n";
+    let arc = "c := point\ns := point\ne := point\n\
+               k := arc(center: c, start: s, end: e)\nfix(x == 0, y == 0) c\nfix(x == 10, y == 0) s\nfix(x == 0, y == 10) e\n";
     let mut sk = read(arc).sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.arcs[0].radius as usize].value;
     assert!((r - 10.0).abs() < 1e-9, "r := {r}");
-    let mut sk = read("o := point hint(x: 0, y: 0)\nc := circle(center: o)\np := point hint(x: 10, y: 0)\np on c\nground o\nground p\n").sketch;
+    let mut sk = read("o := point\nc := circle(center: o)\np := point\np on c\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) p\n").sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.circles[0].radius as usize].value;
     assert!((r - 10.0).abs() < 1e-9, "r := {r}");

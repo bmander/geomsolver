@@ -1,12 +1,12 @@
 use gcs_core::{diagnose,io,model::{EntKind,EntRef},program,solid::RevolvedSurface,solve,syntax};
 
 const MODEL: &str = "unit mm
-o := point hint(x: 0, y: 0)
-q := point hint(x: 0, y: 1)
-c := point hint(x: 3, y: 0)
-ground o
-ground q
-ground c
+o := point
+q := point
+c := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) q
+fix(x == 3, y == 0) c
 axis := line(o,q)
 meridian := circle(center: c)
 radius(1mm) meridian
@@ -200,7 +200,7 @@ fn a_surface_refuses_wrong_solids_edges_and_planar_constraints() {
         ("bad := surface(ring,axis)","not a boundary"),
         ("prism := solid(face(meridian),depth: 2mm)\nbad := surface(prism,meridian)","unmodified revolution"),
         ("bad := surface(missing,meridian)","no such entity"),
-        ("ground wall","pins a point"),
+        ("fix(x == 0, y == 0) wall","a surface has no number of its own to fix"),
     ] {
         let e = build(&format!("{MODEL}{tail}\n"));
         assert!(!e.ok() && e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);
@@ -239,14 +239,14 @@ fn analytic_projection_preserves_orientation_and_distinguishes_finite_patches() 
 #[test]
 fn straight_meridian_sphere_sections_return_all_finite_roots() {
     let e = solved("unit mm
-a := point hint(x: 1,y: -2)
-b := point hint(x: 1,y: 2)
-c := point hint(x: 0,y: 2)
-d := point hint(x: 0,y: -2)
-ground a
-ground b
-ground c
-ground d
+a := point
+b := point
+c := point
+d := point
+fix(x == 1, y == -2) a
+fix(x == 1, y == 2) b
+fix(x == 0, y == 2) c
+fix(x == 0, y == -2) d
 side := line(a,b)
 top := line(b,c)
 axis := line(d,c)

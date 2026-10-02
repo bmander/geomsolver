@@ -14,4 +14,4 @@ cycle 4 {
 // the loop states everything but a size and a pose: one dimension scales it, and a grounded
 // corner leaves a single freedom — drag any side and the square swings about that corner
 s[0].p1 distance(50) s[0].p2
-ground s[0].p1
+fix(x == 0, y == 0) s[0].p1

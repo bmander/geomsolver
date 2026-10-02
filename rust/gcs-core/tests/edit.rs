@@ -18,7 +18,7 @@ use gcs_core::syntax::parse;
 /// blank lines, alignment, and a trailing note after the last statement.
 const DOC: &str = "\
 // a triangle, and this comment must survive every drag
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 100, y: 0)
 c := point hint(x: 40, y: 70)
 
@@ -28,7 +28,7 @@ ca := line(c, a)
 
 horizontal ab
 a distance(w := 140) b
-ground a
+fix(x == 0, y == 0) a
 
 // and this trailing note, too
 ";
@@ -85,10 +85,10 @@ fn a_solve_writes_back_the_seeds_and_nothing_else() {
 fn a_seed_written_as_an_expression_is_not_overwritten() {
     let src = "\
 component Ring(rad: Length) {
-  o := point hint(x: 0, y: 0)
+  o := point
   c := circle(center: o) hint(r: rad)
   radius(rad) c
-  ground o
+  fix(x == 0, y == 0) o
 }
 g := Ring(rad: 25)
 ";
@@ -104,8 +104,8 @@ g := Ring(rad: 25)
 #[test]
 fn a_seed_inside_a_block_is_left_alone() {
     let src = "\
-o := point hint(x: 0, y: 0)
-ground o
+o := point
+fix(x == 0, y == 0) o
 cycle 4 as i {
   p := point hint(x: 10, y: 0)
 }
@@ -245,11 +245,11 @@ fn deleting_a_point_takes_what_named_it() {
 fn deleting_what_a_component_made_is_refused() {
     let src = "\
 component Pair() {
-  a := point hint(x: 0, y: 0)
+  a := point
   b := point hint(x: 10, y: 0)
 }
 q := Pair()
-ground q.a
+fix(x == 0, y == 0) q.a
 ";
     let prog = prog_of(src);
     let e = elaborate(&prog);
@@ -460,8 +460,8 @@ fn reconciling_extends_the_map_rather_than_rebuilding_the_drawing() {
     assert!(d.text.contains("// a triangle, and this comment must survive every drag"));
 }
 
-/// A gauge a component wrote is the component's, not the drawing's: `ground center` inside
-/// `Gear` says the same thing about `g.center` as a top-level `ground g.center` would, and adding
+/// A gauge a component wrote is the component's, not the drawing's: `fix(…) center` inside
+/// `Gear` says the same thing about `g.center` as a top-level `fix(…) g.center` would, and adding
 /// the second is a statement the document did not need and nobody asked for.
 #[test]
 fn a_gauge_a_component_wrote_is_not_repeated() {
@@ -470,7 +470,7 @@ fn a_gauge_a_component_wrote_is_not_repeated() {
     assert!(e.ok());
     assert!(e.sketch.point_fixed(0), "the gear grounds its own centre");
     let edit = reconciled(&mut e);
-    assert!(!edit.text.contains("ground g.center"), "{}", &edit.text[edit.text.len() - 300..]);
+    assert!(!edit.text.contains(") g.center\n"), "{}", &edit.text[edit.text.len() - 300..]);
     assert_eq!(edit.text, gcs_core::examples::GEAR, "nothing to say, and nothing said");
 }
 
@@ -490,8 +490,8 @@ fn a_gauge_is_spliced_but_presentation_stays_out_of_model_source() {
     let edit = reconciled(&mut e);
     assert!(!edit.text.contains("class construction"), "{}", edit.text);
     assert!(edit.text.contains("ab := line(a, b)      // the base"), "the comment stayed");
-    assert!(edit.text.contains("ground c"), "{}", edit.text);
-    assert!(!edit.text.contains("ground a"), "the one that was let go is gone:\n{}", edit.text);
+    assert!(edit.text.contains("fix(x == 40, y == 70) c\n"), "{}", edit.text);
+    assert!(!edit.text.contains(") a\n"), "the one that was let go is gone:\n{}", edit.text);
 
     let back = elaborate(&prog_of(&edit.text));
     assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());
@@ -649,7 +649,7 @@ fn a_seed_the_source_never_wrote_is_appended() {
 /// words in front of them, so the statement around them is never reprinted.
 #[test]
 fn a_seed_written_in_a_hint_clause_is_written_back() {
-    let src = "a := point hint(x: 0, y: 0)\nb := point hint(x: 10, y: 0)\nl := line(a, b)\nground a\n";
+    let src = "a := point\nb := point hint(x: 10, y: 0)\nl := line(a, b)\nfix(x == 0, y == 0) a\n";
     let mut e = elaborate(&prog_of(src));
     let mut sk = std::mem::take(&mut e.sketch);
     let bx = sk.points[1].x as usize;
@@ -657,7 +657,7 @@ fn a_seed_written_in_a_hint_clause_is_written_back() {
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(out.kind, Kind::Numeric);
     assert!(out.text.contains("b := point hint(x: 42.5, y: 0)"), "{}", out.text);
-    assert!(out.text.contains("a := point hint(x: 0, y: 0)"), "and nothing else moved: {}", out.text);
+    assert!(out.text.starts_with("a := point\nb"), "and nothing else moved: {}", out.text);
 }
 
 /// **A drag of an anonymous endpoint records itself.**
@@ -767,9 +767,9 @@ fn a_slot_that_omits_a_coordinate_is_rewritten_whole() {
 #[test]
 fn driving_radius_dimensions_do_not_acquire_redundant_hints() {
     for source in [
-        "size := 15\no := point hint(x: 0,y: 0)\nground o\nc := circle(center: o)\nradius(size) c\n",
-        "size := 15\no := point hint(x: 0,y: 0)\nground o\nc := radius(size) circle(center: o)\n",
-        "size := 15\no := point hint(x: 0,y: 0)\nground o\nradius(size) c\nc := circle(center: o)\n",
+        "size := 15\no := point\nfix(x == 0, y == 0) o\nc := circle(center: o)\nradius(size) c\n",
+        "size := 15\no := point\nfix(x == 0, y == 0) o\nc := radius(size) circle(center: o)\n",
+        "size := 15\no := point\nfix(x == 0, y == 0) o\nradius(size) c\nc := circle(center: o)\n",
     ] {
         let mut e = elaborate(&prog_of(source));
         assert!(e.ok(), "{:?}", e.diags);

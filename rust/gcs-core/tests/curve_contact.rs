@@ -14,11 +14,11 @@ const INVOLUTE: &str = "\
 component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
 }
-o := point hint(x: 0, y: 0)
+o := point
 base := circle(center: o) hint(r: 20)
 inv := Involute(base, phase: 0).p over u in (10, 90)
 radius(20) base
-ground o
+fix(x == 0, y == 0) o
 ";
 
 const UNWIND: &str = "\
@@ -33,14 +33,14 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
   datum angle(u + phase) rad
   t distance(c.r * u * pi / 180) p
 }
-o := point hint(x: 0, y: 0)
-ax := point hint(x: 1, y: 0)
+o := point
+ax := point
 datum := line(o, ax)
 base := circle(center: o) hint(r: 20)
 inv := Unwind(base, datum, phase: 0).p over u in (10, 90)
 radius(20) base
-ground o
-ground ax
+fix(x == 0, y == 0) o
+fix(x == 1, y == 0) ax
 ";
 
 use crate::common::{build, fd_jacobian, involute_at};
@@ -57,8 +57,8 @@ fn param_of(e: &Elaborated) -> f64 {
 #[test]
 fn a_line_solves_tangent_to_a_curve() {
     let src = format!(
-        "{INVOLUTE}a := point hint(x: 30, y: -5)\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
-         ground a\na distance(30) b\ninv tangent l hint(t: 45)\n"
+        "{INVOLUTE}a := point\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
+         fix(x == 30, y == -5) a\na distance(30) b\ninv tangent l hint(t: 45)\n"
     );
     let mut e = build(&src);
     fd_jacobian(&e.sketch, 1e-5);
@@ -108,8 +108,8 @@ fn a_circle_solves_osculating_a_curve() {
 #[test]
 fn a_line_solves_tangent_to_a_traced_curve() {
     let src = format!(
-        "{UNWIND}a := point hint(x: 30, y: -5)\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
-         ground a\na distance(30) b\ninv tangent l hint(t: 45)\n"
+        "{UNWIND}a := point\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
+         fix(x == 30, y == -5) a\na distance(30) b\ninv tangent l hint(t: 45)\n"
     );
     let mut e = build(&src);
     // the solve first: the frame's difference reads the pose the contact last reached

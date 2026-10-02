@@ -38,7 +38,7 @@ component Cell(orbit: circle, datum: line, arm: Length, side: Length, u: Angle) 
 // The fixed frame: the datum the crank angle is read from, and the orbit.  `o on orbit` is the
 // theorem's whole hypothesis — the pin's circle passes through the centre of inversion — and it
 // places `q` too, so no dimension between the pivots is ever stated.
-o := point hint(x: 0, y: 0)
+o := point
 q := point hint(x: crank, y: 0)
 datum := line(o, q)
 orbit := circle(center: q) hint(r: crank)
@@ -46,7 +46,7 @@ orbit := circle(center: q) hint(r: crank)
 horizontal datum
 radius(crank) orbit
 o on orbit
-ground o
+fix(x == 0, y == 0) o
 
 // the machine itself, at one pose — `u` unbound, so the crank angle is an unknown of the
 // drawing and the pen may be dragged

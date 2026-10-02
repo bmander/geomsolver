@@ -29,7 +29,7 @@ l2 := point hint(x: 0, y: r)
 c_br := point hint(x: w - r, y: r)
 c_tr := point hint(x: w - r, y: h - r)
 c_tl := point hint(x: r, y: h - r)
-c_bl := point hint(x: r, y: r)
+c_bl := point
 
 // round the outline, counter-clockwise from the bottom edge
 horizontal (bottom := line(b1, b2)) -> tangent
@@ -48,4 +48,4 @@ radius(r) a_bl
 // and no width: this is the freedom the case is about
 t1 distance(h) b2
 
-ground c_bl
+fix(x == r, y == r) c_bl

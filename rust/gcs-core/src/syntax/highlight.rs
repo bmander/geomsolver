@@ -18,7 +18,7 @@ pub enum Tint {
     Word,
     /// `Angle`, `circle`, `Tooth` — a word in the place a type is written
     Type,
-    /// a constraint's name, where the statement is one: `distance`, `ground`, `point_on_circle`
+    /// a constraint's name, where the statement is one: `distance`, `fix`, `point_on_circle`
     Relation,
     /// the name a statement gives what it declares, and the binder a block counts by
     Def,

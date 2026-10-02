@@ -1,20 +1,20 @@
 unit mm
-o := point hint(x: 0,y: 0)
-q := point hint(x: 0,y: 2)
-x := point hint(x: 1,y: 0)
-a := point hint(x: 2,y: 0)
-b := point hint(x: 3,y: 0)
-m := point hint(x: 3,y: 1)
-c := point hint(x: 3,y: 2)
-d := point hint(x: 2,y: 2)
-ground o
-ground q
-ground x
-ground a
-ground b
-ground m
-ground c
-ground d
+o := point
+q := point
+x := point
+a := point
+b := point
+m := point
+c := point
+d := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 2) q
+fix(x == 1, y == 0) x
+fix(x == 2, y == 0) a
+fix(x == 3, y == 0) b
+fix(x == 3, y == 1) m
+fix(x == 3, y == 2) c
+fix(x == 2, y == 2) d
 axis := line(o,q)
 spin_axis := line(o,x)
 bottom := line(a,b)
@@ -34,16 +34,16 @@ shared := seam(first_envelope,second_envelope)
 component Sphere(origin: point,size: Length) {
   private south := point hint(x: origin.x,y: origin.y-size)
   private north := point hint(x: origin.x,y: origin.y+size)
-  ground south
-  ground north
+  south vertical origin
+  north vertical origin
   private rim := arc(center: origin,start: south,end: north)
   radius(size) rim
   private diameter := line(north,south)
   private carrier := solid(face(rim,diameter),about: diameter)
   wall := surface(carrier,rim)
 }
-shifted := point hint(x: 0,y: 1)
-ground shifted
+shifted := point
+fix(x == 0, y == 1) shifted
 globe := Sphere(o,size: sqrt(9.25)*1mm)
 offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
 join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)

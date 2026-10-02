@@ -4,16 +4,16 @@ use gcs_core::{io,model::{MotionDef,SolidDef},program,solid::{self,MaterialField
 mod contacts;
 
 const SOURCE: &str = "unit mm
-center := point hint(x: 3,y: 0)
-a := point hint(x: 3,y: -1)
-b := point hint(x: 3,y: 1)
-o := point hint(x: 0,y: 0)
-z := point hint(x: 0,y: 1)
-ground center
-ground a
-ground b
-ground o
-ground z
+center := point
+a := point
+b := point
+o := point
+z := point
+fix(x == 3, y == 0) center
+fix(x == 3, y == -1) a
+fix(x == 3, y == 1) b
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) z
 rim := arc(center: center,start: a,end: b)
 radius(1) rim
 diameter := line(a,b)

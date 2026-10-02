@@ -160,7 +160,7 @@ fn invalid_solved_profiles_and_revolution_axes_are_diagnosed() {
     for src in [
         source(8),
         source(9),
-        source(9).replace("x: 5, y: 10", "x: 5, y: 0"),
+        source(9).replace("fix(x == 5, y == 10) b", "fix(x == 5, y == 0) b"),
     ] {
         let e = read(&src);
         let errors = program::solid_diagnostics(&e.sketch, &e.map);
@@ -185,7 +185,7 @@ fn invalid_solved_profiles_and_revolution_axes_are_diagnosed() {
     ] {
         let mut src = String::from("unit mm\n");
         for (i, (x, y)) in coords.iter().enumerate() {
-            src += &format!("p{i} := point hint(x: {x}, y: {y})\nground p{i}\n");
+            src += &format!("p{i} := point\nfix(x == {x}, y == {y}) p{i}\n");
         }
         src += &format!(
             "f := face({}, -> close)\nresult := solid(f, depth: 5mm)\n",
@@ -206,10 +206,10 @@ fn nonexistent_and_removed_mate_faces_are_refused() {
     assert!(e.errors().any(|d| d.code == program::Code::E082));
     let removed = source(4)
         .replace("from: -3mm, to: 0mm", "from: -6mm, to: 0mm")
-        .replace("x: 2,", "x: 0,")
-        .replace("y: 2)", "y: 0)")
-        .replace("x: 8,", "x: 10,")
-        .replace("y: 8)", "y: 10)")
+        .replace("x == 2,", "x == 0,")
+        .replace("y == 2)", "y == 0)")
+        .replace("x == 8,", "x == 10,")
+        .replace("y == 8)", "y == 10)")
         .replace("body.tool.far", "body.stock.near");
     let e = read(&removed);
     let errors = program::solid_diagnostics(&e.sketch, &e.map);
@@ -268,7 +268,7 @@ fn depth_is_a_positive_magnitude_even_when_it_is_an_expression() {
 #[test]
 fn geometry_validation_uses_the_solved_shape_instead_of_its_hint() {
     // p2 starts at p1. Its dimensions move it to the fourth corner before validation runs.
-    let e = read("unit mm\np0 := point hint(x: 0, y: 0)\nground p0\np1 := point hint(x: 10, y: 0)\nground p1\np2 := point hint(x: 10, y: 0)\np3 := point hint(x: 0, y: 10)\nground p3\np0 distance(10mm, along: x) p2\np0 distance(10mm, along: y) p2\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(f, depth: 5mm)\n");
+    let e = read("unit mm\np0 := point\nfix(x == 0, y == 0) p0\np1 := point\nfix(x == 10, y == 0) p1\np2 := point hint(x: 10, y: 0)\np3 := point\nfix(x == 0, y == 10) p3\np0 distance(10mm, along: x) p2\np0 distance(10mm, along: y) p2\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(f, depth: 5mm)\n");
     assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
     near(
         report::positions(&e.sketch, &e.map)

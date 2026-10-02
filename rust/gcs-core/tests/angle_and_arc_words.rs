@@ -44,13 +44,13 @@ fn said(e: &Elaborated) -> Vec<String> {
 /* -- arc length ---------------------------------------------------------------------------- */
 
 const QUARTER: &str = "\
-o := point hint(x: 0, y: 0)
+o := point
 s := point hint(x: 10, y: 0)
 e := point hint(x: 3, y: 9)
 a := arc(o, s, e)
 radius(10) a
 o horizontal s
-ground o
+fix(x == 0, y == 0) o
 ";
 
 /// An arc of radius 10 whose length is 5π sweeps a quarter turn: its end lands straight above
@@ -73,7 +73,7 @@ fn an_arc_of_radius_ten_and_length_five_pi_sweeps_a_quarter_turn() {
 #[test]
 fn a_length_and_a_sweep_make_the_radius() {
     let src = "\
-o := point hint(x: 0, y: 0)
+o := point
 s := point hint(x: 14, y: 0)
 e := point hint(x: 0, y: 14)
 a := arc(o, s, e)
@@ -82,7 +82,7 @@ l2 := line(o, e)
 horizontal l1
 l1 angle(90deg) l2
 length(5 * pi) a
-ground o
+fix(x == 0, y == 0) o
 ";
     let e = solved(src);
     assert!((e.sketch.radius_value(e.map.ent_named("a").unwrap()) - 10.0).abs() < 1e-9);
@@ -93,20 +93,20 @@ ground o
 #[test]
 fn two_arc_lengths_tied_by_a_free_variable() {
     let src = "\
-o1 := point hint(x: 0, y: 0)
+o1 := point
 s1 := point hint(x: 10, y: 0)
-e1 := point hint(x: 0, y: 10)
+e1 := point
 a1 := arc(o1, s1, e1)
 o1 horizontal s1
-ground o1
-ground e1
-o2 := point hint(x: 50, y: 0)
+fix(x == 0, y == 0) o1
+fix(x == 0, y == 10) e1
+o2 := point
 s2 := point hint(x: 70, y: 0)
 e2 := point hint(x: 60, y: 15)
 a2 := arc(o2, s2, e2)
 radius(20) a2
 o2 horizontal s2
-ground o2
+fix(x == 50, y == 0) o2
 length(s) a1
 length(s) a2
 ";
@@ -139,7 +139,7 @@ fn an_arc_length_is_drawn_as_a_concentric_arc() {
 /* -- an angle as another angle ------------------------------------------------------------- */
 
 const FAN: &str = "\
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 40, y: 0)
 c := point hint(x: 10, y: 30)
 d := point hint(x: 25, y: 10)
@@ -151,7 +151,7 @@ a distance(40) b
 a distance(30) c
 a distance(20) d
 ab angle(60deg) ac
-ground a
+fix(x == 0, y == 0) a
 ";
 
 /// The angle from `ab` to `ad` stated as the angle from `ad` to `ac` makes `ad` the bisector:

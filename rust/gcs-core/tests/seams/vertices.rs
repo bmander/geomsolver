@@ -9,16 +9,16 @@ const CORNERS: &str = "
 component Sphere(origin: point,size: Length) {
   private south := point hint(x: origin.x,y: origin.y-size)
   private north := point hint(x: origin.x,y: origin.y+size)
-  ground south
-  ground north
+  south vertical origin
+  north vertical origin
   private rim := arc(center: origin,start: south,end: north)
   radius(size) rim
   private diameter := line(north,south)
   private carrier := solid(face(rim,diameter),about: diameter)
   wall := surface(carrier,rim)
 }
-shifted := point hint(x: 0,y: 1)
-ground shifted
+shifted := point
+fix(x == 0, y == 1) shifted
 globe := Sphere(o,size: sqrt(9.25)*1mm)
 offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
 join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
@@ -113,8 +113,8 @@ fn vertex_identity_formals_privacy_and_dependency_copy_survive() {
 
 #[test]
 fn vertex_spelling_roundtrips_in_a_flat_program() {
-    let source = format!("{MODEL}\nsouth := point hint(x: 0,y: -sqrt(10))\n\
-        north := point hint(x: 0,y: sqrt(10))\nground south\nground north\n\
+    let source = format!("{MODEL}\nsouth := point\n\
+        north := point\nfix(x == 0, y == -sqrt(10)) south\nfix(x == 0, y == sqrt(10)) north\n\
         rim := arc(center: o,start: south,end: north)\nradius(sqrt(10)*1mm) rim\n\
         diameter := line(north,south)\nball := solid(face(rim,diameter),about: diameter)\n\
         wall := surface(ball,rim)\nboundary := seam(first_envelope,wall)\n\
@@ -142,7 +142,7 @@ fn vertices_reject_unrelated_faces_duplicate_boundaries_and_wrong_operands() {
         "bad := vertex(first_envelope,radial)",
         "bad := vertex(radial)",
         "bad := vertex(radial,offset_edge,join_edge)",
-        "ground corner",
+        "fix(x == 0, y == 0) corner",
     ] {
         let (p,errors) = syntax::parse(&format!("{MODEL}{CORNERS}{tail}\n"));
         assert!(!errors.is_empty() || !program::elaborate(&p).ok(),"accepted {tail}");
@@ -189,10 +189,10 @@ fn corner_snapshots_enforce_finite_boundaries_material_and_numerical_controls() 
 
 #[test]
 fn a_corner_does_not_transfer_fine_incidence_across_a_coarse_seam_tolerance() {
-    let src = MODEL.replace("a := point hint(x: 2,y: 0)","a := point hint(x: 1,y: 0)")
-        .replace("c := point hint(x: 3,y: 2)","c := point hint(x: 2,y: 2)")
-        .replace("d := point hint(x: 2,y: 2)","d := point hint(x: 1,y: 2)")
-        .replace("high := line(m,c)","arc_center := point hint(x: 2,y: 1)\nground arc_center\n\
+    let src = MODEL.replace("fix(x == 2, y == 0) a","fix(x == 1, y == 0) a")
+        .replace("fix(x == 3, y == 2) c","fix(x == 2, y == 2) c")
+        .replace("fix(x == 2, y == 2) d","fix(x == 1, y == 2) d")
+        .replace("high := line(m,c)","arc_center := point\nfix(x == 2, y == 1) arc_center\n\
             high := arc(center: arc_center,start: m,end: c)\nradius(1mm) high");
     let mut e = solved(&format!("{src}{CORNERS}"));
     let radius = e.sketch.arcs[e.map.ent_named("high").unwrap().i()].radius as usize;

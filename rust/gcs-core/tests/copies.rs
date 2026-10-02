@@ -18,7 +18,7 @@ repeat 3 as i {
   p := point hint(x: 0, y: i * 20)
   r := Rung(p)
 }
-ground p[0]
+fix(x == 0, y == 0) p[0]
 p[1] distance(5) r[2].b
 r[0].b distance(20, along: y) r[1].b
 ";

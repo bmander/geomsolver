@@ -11,12 +11,12 @@ fn solved(source: &str) -> program::Elaborated {
 }
 
 const RING: &str = "unit mm
-o := point hint(x: 0, y: 0)
-q := point hint(x: 0, y: 1)
-c := point hint(x: 3, y: 0)
-ground o
-ground q
-ground c
+o := point
+q := point
+c := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) q
+fix(x == 3, y == 0) c
 axis := line(o,q)
 rim := circle(center: c)
 radius(1mm) rim
@@ -24,12 +24,12 @@ body := solid(face(rim), about: axis)
 ";
 
 const SPHERE: &str = "unit mm
-o := point hint(x: 0, y: 0)
-a := point hint(x: 0, y: -2)
-b := point hint(x: 0, y: 2)
-ground o
-ground a
-ground b
+o := point
+a := point
+b := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == -2) a
+fix(x == 0, y == 2) b
 rim := arc(center: o, start: a, end: b)
 radius(2mm) rim
 axis := line(b,a)
@@ -84,8 +84,8 @@ fn holes_are_voids_and_source_axis_direction_does_not_change_material() {
 #[test]
 fn a_spheres_diameter_disappears_and_its_center_is_interior_material() {
     for source in [SPHERE.to_string(),SPHERE.replace("axis := line(b,a)","axis := line(a,b)"),
-        SPHERE.replace("x: 0, y: -2","x: -2, y: 0")
-            .replace("x: 0, y: 2","x: 2, y: 0")] {
+        SPHERE.replace("fix(x == 0, y == -2) a","fix(x == -2, y == 0) a")
+            .replace("fix(x == 0, y == 2) b","fix(x == 2, y == 0) b")] {
         let e = solved(&source);
         let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
         for x in -20..=20 {
@@ -102,14 +102,14 @@ fn a_spheres_diameter_disappears_and_its_center_is_interior_material() {
 #[test]
 fn finite_conical_material_includes_caps_and_refuses_support_continuations() {
     let e = solved("unit mm
-a := point hint(x: 0,y: 1)
-b := point hint(x: 1,y: 1)
-c := point hint(x: 3,y: 3)
-d := point hint(x: 0,y: 3)
-ground a
-ground b
-ground c
-ground d
+a := point
+b := point
+c := point
+d := point
+fix(x == 0, y == 1) a
+fix(x == 1, y == 1) b
+fix(x == 3, y == 3) c
+fix(x == 0, y == 3) d
 axis := line(a,d)
 profile := (ab := line(a,b)) -> (bc := line(b,c)) -> (cd := line(c,d)) -> (da := line(d,a)) -> close
 body := solid(profile,about: axis)

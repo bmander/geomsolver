@@ -14,8 +14,8 @@ half := 90deg / N + tan(phi) * 1rad - phi
 u0 := sqrt((Rr / Rb) ^ 2 - 1) * 1rad
 u1 := sqrt((Rt / Rb) ^ 2 - 1) * 1rad
 
-center := point hint(x: 0mm, y: 0mm)
-ground center
+center := point
+fix(x == 0mm, y == 0mm) center
 base := circle(center: center) hint(r: Rb)
 root := circle(center: center) hint(r: Rr)
 tip := circle(center: center) hint(r: Rt)

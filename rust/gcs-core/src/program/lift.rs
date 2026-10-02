@@ -33,25 +33,12 @@ pub fn to_program(sk: &Sketch) -> Program {
     for c in sk.user_constraints().into_iter().filter(lifted) {
         p.push(StmtKind::Relation(lift_relation(sk, c)));
     }
-    // a datum point the page-placement gauge holds is not grounded: the lifted views are solved
-    // again (`lift_view`), and the gauge holds it again; every other held point is said
-    for i in 0..sk.points.len() {
-        if sk.point_fixed(i) && !sk.page_held.contains(&(i as u32)) {
-            p.push(StmtKind::Relation(lift_gauge(&entity_name(EntRef::point(i)), None)));
-        }
-    }
+    // every held number is said, with what it is held at; a datum point the page-placement
+    // gauge holds is not: the lifted views are solved again (`lift_view`), and it is held again
     for e in sk.primitives() {
-        if e.kind == EntKind::Point {
-            continue;
-        }
-        let own = sk.own_params(e);
-        let scalars: Vec<&str> =
-            e.kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n).collect();
-        for (i, &pi) in own.iter().enumerate() {
-            if sk.params[pi as usize].fixed {
-                let f = scalars.get(i).copied().unwrap_or("r");
-                p.push(StmtKind::Relation(lift_gauge(&entity_name(e), Some(f))));
-            }
+        let held = holds(sk, e);
+        if !held.is_empty() {
+            p.push(StmtKind::Relation(lift_gauge(&entity_name(e), &held)));
         }
     }
     for (key, &v) in &sk.branches {
@@ -319,14 +306,35 @@ pub(crate) fn lift_plane(sk: &Sketch, e: EntRef) -> crate::syntax::Membership {
     }
 }
 
-/// A `ground` or a `fix` statement, built: `ground p` for a point, `fix c.r` for one of an
-/// entity's own numbers.  What `to_program` writes for every held parameter and what
-/// `edit::reconcile` appends when the app holds one.
-pub(crate) fn lift_gauge(name: &str, field: Option<&str>) -> Relation {
-    match field {
-        None => built(CKind::Ground, vec![Some(Arg::Ref(Ref::new(name.to_string())))]),
-        Some(f) => built(CKind::Fix, vec![Some(Arg::Ref(Ref::field(name.to_string(), f)))]),
+/// The numbers of an entity's own a `fix` holds, by field and at what — written as a hint
+/// writes them (`Sketch::seed_value`: a cone's half-angle in degrees).  None for a plane, whose
+/// attitude its points hold, or for a datum point the page-placement gauge holds.
+pub(crate) fn holds(sk: &Sketch, e: EntRef) -> Vec<(&'static str, f64)> {
+    let page_held = e.kind == EntKind::Point && sk.page_held.contains(&(e.i() as u32));
+    if e.kind == EntKind::Plane || page_held {
+        return Vec::new();
     }
+    let scalars = e.kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n);
+    scalars
+        .zip(sk.own_params(e))
+        .filter(|&(_, p)| sk.params[p as usize].fixed)
+        .map(|(n, p)| (n, sk.seed_value(e, p)))
+        .collect()
+}
+
+/// A `fix` statement, built: `fix(x == 0, y == 0) p`, `fix(r == 25) c` — the numbers it holds,
+/// each pinned under its field's name.  What `to_program` writes for every held entity and what
+/// `edit::reconcile` appends when the app holds one.
+pub(crate) fn lift_gauge(name: &str, held: &[(&str, f64)]) -> Relation {
+    let spec = CKind::Fix.spec();
+    let mut args: Vec<Option<Arg>> = vec![None; spec.len()];
+    args[0] = Some(Arg::Ref(Ref::new(name.to_string())));
+    for &(field, value) in held {
+        if let Some(i) = spec.iter().position(|(n, _)| *n == field) {
+            args[i] = Some(Arg::Seed { value, pinned: true });
+        }
+    }
+    built(CKind::Fix, args)
 }
 
 /// A relation somebody built rather than wrote: the kind and its arguments, and nothing else.

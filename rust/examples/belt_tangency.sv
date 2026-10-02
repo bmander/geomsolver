@@ -19,8 +19,8 @@
 // `side: right` says which way round the belt runs.  It is written out because a document that
 // leaves it out gets a fixed default rather than a look at the drawing.
 
-c1 := point hint(x: 0, y: 0)
-c2 := point hint(x: 50, y: 0)
+c1 := point
+c2 := point
 
 k1 := circle(center: c1) hint(r: 10)
 k2 := circle(center: c2) hint(r: 10)
@@ -36,5 +36,5 @@ q on k2
 belt tangent(side: right) k1
 belt tangent(side: right) k2
 
-ground c1
-ground c2
+fix(x == 0, y == 0) c1
+fix(x == 50, y == 0) c2

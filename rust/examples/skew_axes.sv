@@ -24,9 +24,9 @@ offset := 17.5mm
 o := point hint(x: 0, y: 0)
 t := point hint(x: 40, y: 0)
 front := plane(origin: o, toward: t)
-gax := line(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
-ground gax.p1
-ground gax.p2
+gax := line in front
+fix(x == 0, y == 0) gax.p1
+fix(x == 0, y == 50) gax.p2
 
 o2 := point hint(x: 120, y: 0)
 t2 := point hint(x: 160, y: 0)

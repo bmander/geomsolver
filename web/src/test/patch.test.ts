@@ -9,18 +9,18 @@ await initCore();
 
 test('patch sampling requires both the declared material side and source incidence', () => {
   const doc = Document.read(`unit mm
-o := point hint(x: 0,y: 0)
-q := point hint(x: 0,y: 1)
-x := point hint(x: 1,y: 0)
-c := point hint(x: 3,y: 0)
-b := point hint(x: 0,y: -3.5)
-t := point hint(x: 0,y: 3.5)
-ground o
-ground q
-ground x
-ground c
-ground b
-ground t
+o := point
+q := point
+x := point
+c := point
+b := point
+t := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) q
+fix(x == 1, y == 0) x
+fix(x == 3, y == 0) c
+fix(x == 0, y == -3.5) b
+fix(x == 0, y == 3.5) t
 axis := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)

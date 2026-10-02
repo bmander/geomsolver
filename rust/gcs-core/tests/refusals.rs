@@ -18,12 +18,12 @@ fn read(src: &str) -> (Elaborated, Vec<String>) {
 /// the document did not describe.  The signed dimensions keep their sign.
 #[test]
 fn a_negative_magnitude_is_refused_and_a_signed_dimension_is_not() {
-    let (_, d) = read("o := point hint(x: 0, y: 0)\nc := circle(center: o) hint(r: 20)\nradius(-20) c\nground o\n");
+    let (_, d) = read("o := point\nc := circle(center: o) hint(r: 20)\nradius(-20) c\nfix(x == 0, y == 0) o\n");
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("radius is a magnitude")), "{d:?}");
     let (_, d) = read("a := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\na distance(-40) b\n");
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("distance is a magnitude")), "{d:?}");
     // the run is signed from the first point to the second, and −40 is a statement
-    let (e, d) = read("a := point hint(x: 0, y: 0)\nb := point hint(x: -40, y: 0)\na distance(-40, along: x) b\nground a\n");
+    let (e, d) = read("a := point\nb := point hint(x: -40, y: 0)\na distance(-40, along: x) b\nfix(x == 0, y == 0) a\n");
     assert!(d.is_empty(), "{d:?}");
     let mut sk = e.sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -42,8 +42,8 @@ fn a_negative_magnitude_is_refused_and_a_signed_dimension_is_not() {
 /// second being dropped, and a point in the pair is not a line.
 #[test]
 fn an_arc_length_and_an_angle_pair_refuse_what_they_cannot_mean() {
-    const ARC: &str = "o := point hint(x: 0, y: 0)\ns := point hint(x: 10, y: 0)\ne := point hint(x: 0, y: 10)\n\
-                       a := arc(o, s, e)\nground o\n";
+    const ARC: &str = "o := point\ns := point hint(x: 10, y: 0)\ne := point hint(x: 0, y: 10)\n\
+                       a := arc(o, s, e)\nfix(x == 0, y == 0) o\n";
     let (_, d) = read(&format!("{ARC}length(-5) a\n"));
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("length is a magnitude")), "{d:?}");
     assert!(read(&format!("{ARC}length(5) a\n")).1.is_empty());
@@ -64,7 +64,7 @@ fn an_arc_length_and_an_angle_pair_refuse_what_they_cannot_mean() {
 /// #43.13 — a second `param w` is the E001 a second `w := point` is, and the first stands.
 #[test]
 fn a_param_declared_twice_is_an_error() {
-    let (e, d) = read("w := 60\nw := 80\na := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\na distance(w) b\nground a\n");
+    let (e, d) = read("w := 60\nw := 80\na := point\nb := point hint(x: 40, y: 0)\na distance(w) b\nfix(x == 0, y == 0) a\n");
     assert!(d.iter().any(|m| m.starts_with("E001") && m.contains("`w` is declared twice")), "{d:?}");
     assert!(!e.ok());
     // one per body: a component may have its own
@@ -76,7 +76,7 @@ fn a_param_declared_twice_is_an_error() {
 /// level, inside a block and inside a component alike.
 #[test]
 fn a_param_may_read_one_declared_below_it() {
-    let (e, d) = read("h := w / 2\nw := 60\na := point hint(x: 0, y: 0)\nb := point hint(x: w, y: 0)\na horizontal b\na distance(w) b\nc := point hint(x: 0, y: h)\na vertical c\na distance(h) c\nground a\n");
+    let (e, d) = read("h := w / 2\nw := 60\na := point\nb := point hint(x: w, y: 0)\na horizontal b\na distance(w) b\nc := point hint(x: 0, y: h)\na vertical c\na distance(h) c\nfix(x == 0, y == 0) a\n");
     assert!(d.is_empty() && e.ok(), "{d:?}");
     let mut sk = e.sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -95,7 +95,7 @@ fn a_param_may_read_one_declared_below_it() {
 /// block: `p[n - 1]` reads the `param n`, wherever the statement stands.
 #[test]
 fn a_top_level_index_reads_a_param() {
-    let (e, d) = read("p[n - 1] distance(10) p[0]\nn := 4\ncycle n as i {\n p := point hint(x: 40 * cos(i * 90), y: 40 * sin(i * 90))\n}\nground p[0]\np[n / 2] distance(k) p[1]\nk := 30\n");
+    let (e, d) = read("p[n - 1] distance(10) p[0]\nn := 4\ncycle n as i {\n p := point hint(x: 40 * cos(i * 90), y: 40 * sin(i * 90))\n}\nfix(x == 40, y == 0) p[0]\np[n / 2] distance(k) p[1]\nk := 30\n");
     assert!(d.is_empty() && e.ok(), "{d:?}");
     let mut sk = e.sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -107,7 +107,7 @@ fn a_top_level_index_reads_a_param() {
     let (x2, y2) = sk.point_xy(2);
     assert!(((x2 - x1).hypot(y2 - y1) - 30.0).abs() < 1e-6);
     // an index past the copies is still nothing
-    let (e, d) = read("n := 4\ncycle n {\n p := point\n}\nground p[n]\n");
+    let (e, d) = read("n := 4\ncycle n {\n p := point\n}\nfix(x == 0, y == 0) p[n]\n");
     assert!(!e.ok() && d.iter().any(|m| m.contains("no such entity: `p[n]`")), "{d:?}");
 }
 
@@ -116,7 +116,7 @@ fn a_top_level_index_reads_a_param() {
 /// is written, not again at every param that reads it.
 #[test]
 fn a_cyclic_param_is_e041_and_a_failed_one_is_reported_once() {
-    let (e, d) = read("a := b + 1\nb := c * 2\nc := a\nd := d\ne := 60\np := point hint(x: e, y: 0)\nground p\n");
+    let (e, d) = read("a := b + 1\nb := c * 2\nc := a\nd := d\ne := 60\np := point\nfix(x == e, y == 0) p\n");
     assert!(!e.ok());
     let cycles: Vec<&String> = d.iter().filter(|m| m.starts_with("E041")).collect();
     assert_eq!(cycles.len(), 4, "{d:?}");
@@ -125,7 +125,7 @@ fn a_cyclic_param_is_e041_and_a_failed_one_is_reported_once() {
     // `e` is not in the cycle and is worked out
     assert!((e.sketch.point_xy(0).0 - 60.0).abs() < 1e-9);
     // `h` reads a `w` whose definition failed: the one error is at `w`
-    let (_, d) = read("w := nosuch * 2\nh := w / 2\na := point hint(x: 0, y: 0)\nground a\n");
+    let (_, d) = read("w := nosuch * 2\nh := w / 2\na := point\nfix(x == 0, y == 0) a\n");
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].contains("`w`: `nosuch` is not a number here"), "{d:?}");
 }
@@ -134,7 +134,7 @@ fn a_cyclic_param_is_e041_and_a_failed_one_is_reported_once() {
 /// entity is still declared for everything that names it.
 #[test]
 fn a_bad_hint_key_is_one_error_and_keeps_the_declaration() {
-    let (_, d) = read("a := point hint(x: 0, y: 0, z: 5)\nb := point hint(x: 40, y: 0)\nab := line(a, b)\nhorizontal ab\na distance(40) b\nground a\n");
+    let (_, d) = read("a := point hint(x: 0, y: 0, z: 5)\nb := point hint(x: 40, y: 0)\nab := line(a, b)\nhorizontal ab\na distance(40) b\nfix(x == 0, y == 0) a\n");
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].contains("no scalar `z`"), "{d:?}");
 }
@@ -143,11 +143,11 @@ fn a_bad_hint_key_is_one_error_and_keeps_the_declaration() {
 /// unknown property still has no rule, as in CSS.
 #[test]
 fn an_unreadable_style_value_is_reported() {
-    let (_, d) = read("style .weird { color: ; width: nope; dash: }\na := point hint(x: 0, y: 0)\nground a\n");
+    let (_, d) = read("style .weird { color: ; width: nope; dash: }\na := point\nfix(x == 0, y == 0) a\n");
     assert!(d.iter().any(|m| m.contains("`color:` is given no value")), "{d:?}");
     assert!(d.iter().any(|m| m.contains("`width` cannot read `nope`")), "{d:?}");
     assert!(!d.iter().any(|m| m.contains("dash")), "`dash:` states solid: {d:?}");
-    let (e, d) = read("style .odd { glow: 3 }\na := point hint(x: 0, y: 0)\nground a\n");
+    let (e, d) = read("style .odd { glow: 3 }\na := point\nfix(x == 0, y == 0) a\n");
     assert!(d.is_empty() && e.ok(), "{d:?}");
 }
 
@@ -159,8 +159,8 @@ fn an_unreadable_style_value_is_reported() {
 fn a_contact_seeded_off_its_curve_still_solves() {
     let doc = |t: &str| {
         format!(
-            "a := point hint(x: 0, y: 0)\nb := point hint(x: 10, y: 20)\nc := point hint(x: 30, y: 20)\n\
-             d := point hint(x: 40, y: 0)\ns := spline(a, b, c, d)\nground a\nground b\nground c\nground d\n\
+            "a := point\nb := point\nc := point\n\
+             d := point\ns := spline(a, b, c, d)\nfix(x == 0, y == 0) a\nfix(x == 10, y == 20) b\nfix(x == 30, y == 20) c\nfix(x == 40, y == 0) d\n\
              p := point hint(x: 20, y: 14)\np on s hint(t: {t})\np vertical b\n"
         )
     };
@@ -186,7 +186,7 @@ fn a_contact_seeded_off_its_curve_still_solves() {
     for u in ["900", "-100"] {
         let (e, d) = read(&format!(
             "component spiral(o: point, k: Length, u: Angle) {{\n  p := point(x: o.x + k * u / 360 * cos(u), y: o.y + k * u / 360 * sin(u))\n}}\n\
-             o := point hint(x: 0, y: 0)\nf := spiral(o, k: 10).p over u in (0, 720)\nt := point hint(x: 12, y: 3)\nt on f hint(t: {u})\nground o\n"
+             o := point\nf := spiral(o, k: 10).p over u in (0, 720)\nt := point hint(x: 12, y: 3)\nt on f hint(t: {u})\nfix(x == 0, y == 0) o\n"
         ));
         assert!(d.is_empty(), "{d:?}");
         let mut sk = e.sketch;
@@ -207,7 +207,7 @@ fn distance_between_circles_centred_apart_is_refused() {
     );
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("concentric")), "{d:?}");
     let (e, d) = read(
-        "o := point hint(x: 0, y: 0)\nc1 := circle(center: o) hint(r: 15)\nc2 := circle(center: o) hint(r: 20)\nradius(15) c1\nc1 distance(5) c2\nground o\n",
+        "o := point\nc1 := circle(center: o) hint(r: 15)\nc2 := circle(center: o) hint(r: 20)\nradius(15) c1\nc1 distance(5) c2\nfix(x == 0, y == 0) o\n",
     );
     assert!(d.is_empty(), "{d:?}");
     let mut sk = e.sketch;
@@ -223,11 +223,11 @@ fn a_curve_family_contact_stays_inside_its_domain() {
         "component quarter(c: circle, u: Angle) {
            p := point(x: c.center.x + c.r * cos(u), y: c.center.y + c.r * sin(u))
          }
-         o := point hint(x: 0, y: 0)
+         o := point
          c := circle(center: o) hint(r: 20)
          f := quarter(c).p over u in (0, 90)
-         ground o
-         fix c.r
+         fix(x == 0, y == 0) o
+         fix(r == 20) c
          p := point hint(x: 0, y: -20)
          p on f
          p distance(20, along: y) o",
@@ -255,7 +255,7 @@ fn a_non_ascii_character_in_a_statement_does_not_hang_the_lexer() {
         assert!(!d.is_empty(), "{src:?} should be refused, not accepted");
     }
     // a letter outside ASCII is a letter, in a name as in a comment
-    let (e, d) = read("début := point hint(x: 1, y: 2)\nground début\n");
+    let (e, d) = read("début := point\nfix(x == 1, y == 2) début\n");
     assert!(d.is_empty(), "{d:?}");
     assert_eq!(e.sketch.point_xy(0), (1.0, 2.0));
     let (_, d) = read("// an em dash — in a comment\np := point hint(x: 0, y: 0)\n");
@@ -272,9 +272,9 @@ fn a_non_ascii_character_in_a_statement_does_not_hang_the_lexer() {
 #[test]
 fn a_selector_that_says_nothing_is_refused() {
     const PAIR: &str = "unit mm\n\
-                        a := point hint(x: 0, y: 0)\n\
+                        a := point\n\
                         b := point hint(x: 40, y: 10)\n\
-                        ground a\n";
+                        fix(x == 0, y == 0) a\n";
     // a key the word has no slot for: dropped in silence, and the statement stood
     let (_, d) = read(&format!("{PAIR}a distance(40, sied: x) b\n"));
     assert!(d.iter().any(|m| m == "E040: `distance` takes no `sied`"), "{d:?}");
@@ -286,14 +286,14 @@ fn a_selector_that_says_nothing_is_refused() {
 
     // a word outside the slot's own set: `banana` used to mean `end`, because nothing checked
     const ARC: &str = "unit mm\n\
-                       c := point hint(x: 0, y: 0)\n\
+                       c := point\n\
                        s := point hint(x: 12, y: 0)\n\
                        e := point hint(x: 0, y: 12)\n\
                        k := arc(c, s, e)\n\
                        radius(12) k\n\
                        q := point hint(x: 40, y: 0)\n\
                        l := line(s, q)\n\
-                       ground c\n";
+                       fix(x == 0, y == 0) c\n";
     let (_, d) = read(&format!("{ARC}k tangent(at: banana) l\n"));
     assert!(d.iter().any(|m| m == "E040: `at` is `start` or `end`, not `banana`"), "{d:?}");
     for w in ["start", "end"] {
@@ -320,11 +320,11 @@ fn a_selector_that_says_nothing_is_refused() {
 #[test]
 fn a_distance_from_a_line_is_a_magnitude() {
     const AXIS: &str = "unit mm\n\
-                        a := point hint(x: 0, y: 0)\n\
-                        b := point hint(x: 40, y: 0)\n\
+                        a := point\n\
+                        b := point\n\
                         ax := line(a, b)\n\
-                        ground a\n\
-                        ground b\n";
+                        fix(x == 0, y == 0) a\n\
+                        fix(x == 40, y == 0) b\n";
     let solved = |src: &str| {
         let (e, d) = read(src);
         assert!(d.is_empty(), "{d:?}");
@@ -365,11 +365,11 @@ fn a_component_takes_a_side() {
                          p := point hint(x: o.x, y: o.y + 20mm)\n\
                          p distance(d, side: s) ax\n\
                        }\n\
-                       a := point hint(x: 0, y: 0)\n\
-                       b := point hint(x: 40, y: 0)\n\
+                       a := point\n\
+                       b := point\n\
                        ax := line(a, b)\n\
-                       ground a\n\
-                       ground b\n";
+                       fix(x == 0, y == 0) a\n\
+                       fix(x == 40, y == 0) b\n";
     let at = |src: &str, i: usize| {
         let (e, d) = read(src);
         assert!(d.is_empty(), "{d:?}");
@@ -392,9 +392,9 @@ fn a_component_takes_a_side() {
 #[test]
 fn a_direction_and_a_sense_are_words() {
     const PAIR: &str = "unit mm\n\
-                        a := point hint(x: 0, y: 0)\n\
+                        a := point\n\
                         b := point hint(x: 40, y: 10)\n\
-                        ground a\n";
+                        fix(x == 0, y == 0) a\n";
     let at = |src: &str| {
         let (e, d) = read(src);
         assert!(d.is_empty(), "{d:?}");
@@ -409,8 +409,8 @@ fn a_direction_and_a_sense_are_words() {
     assert!((at(&format!("{PAIR}a distance(-60, along: x) b\n")).0 + 60.0).abs() < 1e-6);
 
     // and an angle: `sense: cw` is the minus, and the drawing shows what the statement makes
-    let lines = "unit mm\no := point hint(x: 0, y: 0)\np := point hint(x: 10, y: 0)\n\
-                 q := point hint(x: 7, y: 7)\nl1 := line(o, p)\nl2 := line(o, q)\nground o\nground p\n";
+    let lines = "unit mm\no := point\np := point\n\
+                 q := point hint(x: 7, y: 7)\nl1 := line(o, p)\nl2 := line(o, q)\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) p\n";
     let (e, d) = read(&format!("{lines}l1 angle(30, sense: cw) l2\n"));
     assert!(d.is_empty(), "{d:?}");
     let mut sk = e.sketch;
@@ -428,13 +428,13 @@ fn a_direction_and_a_sense_are_words() {
 fn a_free_dimension_keeps_its_word() {
     // `k` is 30, stated by a rise whose sign is arithmetic
     const AXIS: &str = "unit mm\n\
-                        a := point hint(x: 0, y: 0)\n\
-                        b := point hint(x: 40, y: 0)\n\
-                        q := point hint(x: 0, y: 30)\n\
+                        a := point\n\
+                        b := point\n\
+                        q := point\n\
                         ax := line(a, b)\n\
-                        ground a\n\
-                        ground b\n\
-                        ground q\n\
+                        fix(x == 0, y == 0) a\n\
+                        fix(x == 40, y == 0) b\n\
+                        fix(x == 0, y == 30) q\n\
                         a distance(k, along: up) q\n";
     let at = |src: &str, i: usize| {
         let (e, d) = read(src);
@@ -469,9 +469,9 @@ fn a_free_dimension_keeps_its_word() {
         }
     }
     // and an angle's sense: `t` is 30 degrees, by a line grounded there
-    let lines = "unit mm\no := point hint(x: 0, y: 0)\np := point hint(x: 10, y: 0)\n\
-                 q := point hint(x: 7, y: 7)\nr := point hint(x: 8.660254037844387, y: 5)\n\
-                 l1 := line(o, p)\nl2 := line(o, q)\nl3 := line(o, r)\nground o\nground p\nground r\n\
+    let lines = "unit mm\no := point\np := point\n\
+                 q := point hint(x: 7, y: 7)\nr := point\n\
+                 l1 := line(o, p)\nl2 := line(o, q)\nl3 := line(o, r)\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) p\nfix(x == 8.660254037844387, y == 5) r\n\
                  l1 angle(t) l3\n";
     let (x, y) = at(&format!("{lines}l1 angle(t, sense: cw) l2\n"), 2);
     assert!(y < 0.0 && (y.atan2(x).to_degrees() + 30.0).abs() < 1e-6, "({x}, {y})");

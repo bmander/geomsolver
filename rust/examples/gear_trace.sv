@@ -83,8 +83,8 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   u0 := sqrt((Rr / Rb) ^ 2 - 1) * 1rad
   u1 := sqrt((Rt / Rb) ^ 2 - 1) * 1rad
 
-  center := point hint(x: 0, y: 0)
-  anchor := point hint(x: R, y: 0)
+  center := point
+  anchor := point
   datum := line(center, anchor)
   base := circle(center: center) hint(r: Rb)
   root := circle(center: center) hint(r: Rr)
@@ -93,8 +93,8 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   radius(Rb) base
   radius(Rr) root
   radius(Rt) tip
-  ground center
-  ground anchor
+  fix(x == 0, y == 0) center
+  fix(x == R, y == 0) anchor
 
   cycle N as i {
     t := Tooth(base, datum, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)

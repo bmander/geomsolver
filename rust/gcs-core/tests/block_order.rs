@@ -9,12 +9,12 @@ use crate::common::{build, ent};
 /// A chain of triangles off one grounded point: each new point is placed by two distances from
 /// the two before it, so each is a block of its own, solved after the ones it reads.
 const TRIANGLES: &str = "\
-a := point hint(x: 0, y: 0)
+a := point
 b := point hint(x: 10, y: 1)
 c := point hint(x: 5, y: 9)
 d := point hint(x: 15, y: 8)
 e := point hint(x: 20, y: 1)
-ground a
+fix(x == 0, y == 0) a
 a distance(10) b
 a horizontal b
 a distance(10) c
@@ -28,12 +28,12 @@ d distance(10) e
 /// Two cranks on grounded pivots joined by a level coupler: no point is placed before the other,
 /// so the four equations are one block.
 const LINKAGE: &str = "\
-o1 := point hint(x: 0, y: 0)
-o2 := point hint(x: 20, y: 0)
+o1 := point
+o2 := point
 a := point hint(x: 2, y: 4)
 b := point hint(x: 12, y: 5)
-ground o1
-ground o2
+fix(x == 0, y == 0) o1
+fix(x == 20, y == 0) o2
 o1 distance(5) a
 o2 distance(12) b
 a distance(9) b

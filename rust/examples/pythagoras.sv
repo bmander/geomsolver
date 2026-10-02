@@ -22,7 +22,7 @@ la := 30
 lb := 40
 s := la + lb
 
-O := point hint(x: 0, y: 0)
+O := point
 E := point hint(x: s, y: 0)
 F := point hint(x: s, y: s)
 G := point hint(x: 0, y: s)
@@ -64,4 +64,4 @@ h4 := line(P4, P1)
 
 // the theorem, stated as a claim: judged against the figure, never imposed on it
 claim P1 distance(c := hypot(a, b)) P2
-ground O
+fix(x == 0, y == 0) O

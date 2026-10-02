@@ -158,8 +158,10 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         };
         let mut mine: Vec<Splice> = Vec::new();
         let mut missing = false;
+        // a number a `fix` holds is stated there: no seed of it is written, or counted missing
+        let held = |p: u32| sk.params[p as usize].fixed;
         for (i, p) in sk.own_params(parent).iter().enumerate() {
-            if omit_radius { continue; }
+            if omit_radius || held(*p) { continue; }
             let v = sk.seed_value(parent, *p);
             let text = d.seed_text.get(i).and_then(|t| t.as_ref());
             let (sp, miss) = one(v, text, d.seed_spans.get(i).copied().unwrap_or_default());
@@ -171,6 +173,9 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // together.  A slot the source wrote a *name* in is a point declared elsewhere, and is
         // written back where it was declared; one it wrote nothing for at all was minted.
         for (j, &k) in kids.iter().enumerate() {
+            if sk.point_params(k.i()).iter().all(|&p| held(p)) {
+                continue;
+            }
             let seed = match slot_kid(j) {
                 Some(syntax::Kid::Ref(_) | syntax::Kid::Face { .. } | syntax::Kid::Trim { .. }) => continue,
                 Some(syntax::Kid::Hint(s)) => Some(s),
@@ -227,8 +232,20 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         }
         // the clause, as the pose the solve arrived at; empty when the kind owns no scalar at
         // all — a line's numbers are its two points', and they are written in the slots
+        let own = sk.own_params(parent);
         let hint = match &plane_now {
             _ if omit_radius => String::new(),
+            // only the numbers no `fix` holds: `hint(y: 7)` beside `fix(x == 3) p`, and none at
+            // all where every one is held
+            None if own.iter().any(|&p| held(p)) => {
+                let fields = parent.kind.fields().iter()
+                    .filter(|(_, f)| *f == crate::model::Field::Scalar);
+                let free: Vec<String> = fields.zip(&own).zip(&pose)
+                    .filter(|((_, &p), _)| !held(p))
+                    .map(|(((n, _), _), v)| format!("{n}: {}", num(*v)))
+                    .collect();
+                if free.is_empty() { String::new() } else { format!("hint({})", free.join(", ")) }
+            }
             Some(now) => {
                 let mut d2 = d.clone();
                 d2.plane.hints = now.clone();
@@ -265,6 +282,8 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             );
             let mut filled = kids.iter().enumerate().map(|(j, k)| match slot_kid(j) {
                 Some(syntax::Kid::Ref(r)) if syntax::hidden(&r.root.text) => None,
+                // a child a `fix` holds is placed there, and its slot is left empty
+                None if sk.point_params(k.i()).iter().all(|&p| held(p)) => None,
                 Some(syntax::Kid::Ref(r)) => Some(syntax::Kid::Ref(r.clone())),
                 _ => {
                     let v = sk.point_params(k.i()).map(|p| sk.params[p as usize].value);
@@ -1467,11 +1486,13 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         let with = now.map(|p| format!(" in {}", name_of(EntRef::plane(p))));
         flags.push(clause_splice(prog.text(), d.membership.span(), with));
     }
-    // `ground(p)` and `fix(c.r)`: a statement per held parameter, added and taken away — the
-    // holds walked once, above, and named here now that there is a name for each
-    let held_now: std::collections::BTreeSet<(String, Option<String>)> =
-        held.iter().map(|(r, f)| (name_of(*r), f.map(str::to_string))).collect();
-    let held_was: std::collections::BTreeSet<(String, Option<String>)> = prog
+    // `fix(x == 0, y == 0) p`: a statement per held entity, added and taken away — the holds
+    // walked once, above, and named here now that there is a name for each
+    let held_now: std::collections::BTreeMap<GaugeKey, &[(&str, f64)]> =
+        held.iter()
+            .map(|(r, h)| (gauge_key_of(name_of(*r), h.iter().map(|(f, _)| *f)), h.as_slice()))
+            .collect();
+    let held_was: std::collections::BTreeSet<GaugeKey> = prog
         .root()
         .body
         .iter()
@@ -1487,15 +1508,15 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         if e.map.ent_named(&k.0).is_none() {
             continue;   // a gauge over something a component made is the component's, not ours
         }
-        if !held_now.contains(&k) {
+        if !held_now.contains_key(&k) {
             doomed.insert(st.id);
         }
     }
-    for k in held_now.iter() {
+    for (k, h) in held_now.iter() {
         if held_was.contains(k) {
             continue;
         }
-        adds.push(StmtKind::Relation(crate::program::lift_gauge(&k.0, k.1.as_deref())));
+        adds.push(StmtKind::Relation(crate::program::lift_gauge(&k.0, h)));
         made.push(Made::Gauge);
     }
 
@@ -1573,63 +1594,62 @@ fn rename_children(
     }
 }
 
-/// What a `ground` or a `fix` statement holds — a name, and a field when it is one scalar
-/// rather than a point — and `None` for a relation that is neither.  Read off the word as it
-/// was written, or off the kind of one that was built (`program::lift_gauge`).
-fn gauge_key(r: &syntax::Relation) -> Option<(String, Option<String>)> {
-    use crate::constraints::CKind;
-    let (kind, rf) = match &r.form {
-        syntax::RelationForm::Written(w) => (crate::constraints::gauge_op(&w.word.text)?, w.ops.first()?),
-        syntax::RelationForm::Canonical { kind, args } => match args.first() {
-            Some(Some(syntax::Arg::Ref(rf))) => (*kind, rf),
-            _ => return None,
-        },
-    };
-    if !matches!(kind, CKind::Ground | CKind::Fix) {
-        return None;
-    }
-    let field = match rf.path.first() {
-        Some(syntax::Seg::Field(n)) => Some(n.text.clone()),
-        _ => None,
-    };
-    Some((rf.root.text.clone(), field))
+/// What a `fix` holds: the entity as written, and the names of the numbers it holds, sorted —
+/// so a statement and the sketch's holds are compared by what is held and not by spelling.
+type GaugeKey = (String, Vec<String>);
+
+fn gauge_key_of<'a>(name: String, fields: impl Iterator<Item = &'a str>) -> GaugeKey {
+    let mut fields: Vec<String> = fields.map(str::to_string).collect();
+    fields.sort();
+    (name, fields)
 }
 
-/// Everything the sketch itself holds fixed — the entity, and the field when it is one scalar
-/// rather than a point — before any name is put to it.  **The one walk**, made once per
+/// What a `fix` statement holds, and `None` for a relation that is no `fix`.  Read off the
+/// statement as it was written, or as it was built (`program::lift_gauge`).
+fn gauge_key(r: &syntax::Relation) -> Option<GaugeKey> {
+    use crate::constraints::CKind;
+    match &r.form {
+        syntax::RelationForm::Written(w) => {
+            if crate::constraints::gauge_op(&w.word.text)? != CKind::Fix {
+                return None;
+            }
+            let fields = w.args.iter().filter_map(|a| match a {
+                syntax::OpArg::Slot { key, .. } => Some(key.text.as_str()),
+                _ => None,
+            });
+            Some(gauge_key_of(syntax::ref_text(w.ops.first()?), fields))
+        }
+        syntax::RelationForm::Canonical { kind: CKind::Fix, args } => {
+            let Some(Some(syntax::Arg::Ref(rf))) = args.first() else { return None };
+            let spec = CKind::Fix.spec();
+            let fields = args.iter().enumerate().skip(1)
+                .filter(|(_, a)| a.is_some())
+                .map(|(i, _)| spec[i].0);
+            Some(gauge_key_of(syntax::ref_text(rf), fields))
+        }
+        syntax::RelationForm::Canonical { .. } => None,
+    }
+}
+
+/// Everything the sketch itself holds fixed — each entity, and the numbers of its own held, by
+/// field and at what — before any name is put to it.  **The one walk**, made once per
 /// reconcile: the anonymous-naming pass reads it to know what a gauge will have to name, and the
 /// gauge statements are written from the same list, so the two cannot disagree about what is
 /// held.  Names are put to it only at the second, by which point every hold has one.
-fn held_refs(sk: &Sketch, ours: &dyn Fn(EntRef) -> bool) -> Vec<(EntRef, Option<&'static str>)> {
-    let mut out = Vec::new();
-    for i in 0..sk.points.len() {
-        // a datum point the page-placement gauge holds was never grounded by anybody
-        if sk.point_fixed(i) && ours(EntRef::point(i)) && !sk.page_held.contains(&(i as u32)) {
-            out.push((EntRef::point(i), None));
-        }
-    }
-    for r in sk.primitives() {
-        if r.kind == EntKind::Point || !ours(r) {
-            continue;
-        }
-        let scalars: Vec<&'static str> = r
-            .kind
-            .fields()
-            .iter()
-            .filter(|(_, f)| *f == crate::model::Field::Scalar)
-            .map(|(n, _)| *n)
-            .collect();
-        for (i, &pi) in sk.own_params(r).iter().enumerate() {
-            if sk.params[pi as usize].fixed {
-                out.push((r, Some(scalars.get(i).copied().unwrap_or("r"))));
-            }
-        }
-    }
-    out
+fn held_refs(
+    sk: &Sketch,
+    ours: &dyn Fn(EntRef) -> bool,
+) -> Vec<(EntRef, Vec<(&'static str, f64)>)> {
+    sk.primitives()
+        .into_iter()
+        .filter(|&r| ours(r))
+        .map(|r| (r, crate::program::holds(sk, r)))
+        .filter(|(_, h)| !h.is_empty())
+        .collect()
 }
 
 /// Whether an entity's declaration is a statement of the root — as against one a component made,
-/// which is where its `ground` is written too, and neither is ours to add or take away.
+/// which is where its `fix` is written too, and neither is ours to add or take away.
 fn root_declared(e: &Elaborated, prog: &Program, r: EntRef) -> bool {
     match e.map.of_entity.get(&r) {
         Some(site) => site.path.0.is_empty() && in_root(prog, site.stmt),

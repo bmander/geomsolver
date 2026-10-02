@@ -19,19 +19,19 @@ use crate::common::{ends, ent, off_line, read, refused, unit};
 /// front view, the pinion's in a view folded from it by a fold the document solves for.
 const AXES: &str = "\
 unit mm
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
+o := point
+t := point
 front := plane(origin: o, toward: t)
-ground o
-ground t
-gax := line(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
-ground gax.p1
-ground gax.p2
-o2 := point hint(x: 120, y: 0)
-t2 := point hint(x: 160, y: 0)
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
+gax := line in front
+fix(x == 0, y == 0) gax.p1
+fix(x == 0, y == 50) gax.p2
+o2 := point
+t2 := point
 side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
-ground o2
-ground t2
+fix(x == 120, y == 0) o2
+fix(x == 160, y == 0) t2
 pax := line(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
 pax.p1 distance(0, along: u) side
 pax.p2 distance(60, along: u) side
@@ -160,23 +160,23 @@ f := plane(origin: o, toward: t, from: front, offset: free) hint(offset: 12)
 fn a_fold_along_a_line_follows_the_line() {
     let doc = |deg: f64| format!("\
 unit mm
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
+o := point
+t := point
 front := plane(origin: o, toward: t)
-ground o
-ground t
-base := line(hint(x: 0, y: 0), hint(x: 50, y: 0)) in front
-ground base.p1
-ground base.p2
-l := line(hint(x: 10, y: 5), hint(x: 40, y: 20)) in front
-ground l.p1
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
+base := line in front
+fix(x == 0, y == 0) base.p1
+fix(x == 50, y == 0) base.p2
+l := line(p2: hint(x: 40, y: 20)) in front
+fix(x == 10, y == 5) l.p1
 l.p1 distance(40) l.p2
 base angle({deg}deg) l
-o2 := point hint(x: 120, y: 0)
-t2 := point hint(x: 160, y: 0)
+o2 := point
+t2 := point
 side := plane(origin: o2, toward: t2, from: front, fold: along l)
-ground o2
-ground t2
+fix(x == 120, y == 0) o2
+fix(x == 160, y == 0) t2
 ");
     for deg in [30.0, 55.0] {
         let e = read(&doc(deg));
@@ -204,19 +204,19 @@ ground t2
 fn a_plane_through_a_point_follows_it() {
     let doc = |h: f64| format!("\
 unit mm
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
+o := point
+t := point
 front := plane(origin: o, toward: t)
-ground o
-ground t
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
 m := point hint(x: 12, y: 3) in front
 o distance(12, along: x) m
 o distance({h}, along: y) m
-o3 := point hint(x: 0, y: 100)
-t3 := point hint(x: 40, y: 100)
+o3 := point
+t3 := point
 top := plane(origin: o3, toward: t3, from: front, fold: 0deg, through: m)
-ground o3
-ground t3
+fix(x == 0, y == 100) o3
+fix(x == 40, y == 100) t3
 ");
     for h in [8.0, -3.5] {
         let e = read(&doc(h));
@@ -238,10 +238,10 @@ ground t3
 fn a_free_view_starts_at_its_seed() {
     let e = read("\
 unit mm
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
-ground o
-ground t
+o := point
+t := point
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
 q := plane(origin: o, toward: t, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
 ");
     let mut sk = e.sketch.clone();
@@ -253,10 +253,10 @@ q := plane(origin: o, toward: t, attitude: free, offset: free) hint(u: (0, 1, 0)
     assert_eq!(view_freedoms(&sk, &d), vec!["q.attitude".to_string(), "q.offset".to_string()]);
     // held, the attitude alone is three
     let e = read("\
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
-ground o
-ground t
+o := point
+t := point
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
 q := plane(origin: o, toward: t, attitude: free)
 ");
     let mut sk = e.sketch.clone();
@@ -284,16 +284,16 @@ fn a_stated_view_reports_as_before() {
 fn a_projection_between_a_stated_and_a_solved_view() {
     let e = read("\
 unit mm
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
+o := point
+t := point
 front := plane(origin: o, toward: t)
-ground o
-ground t
-o2 := point hint(x: 120, y: 0)
-t2 := point hint(x: 160, y: 0)
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
+o2 := point
+t2 := point
 side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 20deg)
-ground o2
-ground t2
+fix(x == 120, y == 0) o2
+fix(x == 160, y == 0) t2
 a := point hint(x: 30, y: 40) in front
 o distance(30, along: x) a
 o distance(40, along: y) a
@@ -617,17 +617,21 @@ fn a_word_with_no_meaning_in_space_is_refused_across_views() {
 /// so the ledger is still 0 and counts no freedom of where the picture sits.
 #[test]
 fn a_solved_views_page_placement_is_held_silently() {
-    let bare = AXES.replace("ground o\n", "").replace("ground t\n", "")
-        .replace("ground o2\n", "").replace("ground t2\n", "");
+    let bare = AXES.replace("fix(x == 0, y == 0) o\n", "").replace("fix(x == 40, y == 0) t\n", "")
+        .replace("fix(x == 120, y == 0) o2\n", "").replace("fix(x == 160, y == 0) t2\n", "")
+        .replace("o := point\n", "o := point hint(x: 0, y: 0)\n")
+        .replace("t := point\n", "t := point hint(x: 40, y: 0)\n")
+        .replace("o2 := point\n", "o2 := point hint(x: 120, y: 0)\n")
+        .replace("t2 := point\n", "t2 := point hint(x: 160, y: 0)\n");
     let e = read(&format!("{bare}{AXES_IN_WORDS}"));
     let mut sk = e.sketch.clone();
     assert_eq!(sk.page_held.len(), 4, "o, t, o2 and t2");
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
-    // the hold is the gauge's, not a `ground`: nothing is written back, and nothing is lifted
+    // the hold is the gauge's, not a `fix`: nothing is written back, and nothing is lifted
     let ed = edit::commit_seeds(&e, &sk, &e.program);
-    assert!(!ed.text.contains("ground o"), "{}", ed.text);
+    assert!(!ed.text.contains(") o\n"), "{}", ed.text);
     // a free view alone is its attitude and its offset, and nothing of where it is drawn
     let free = "o := point hint(x: 0, y: 0)\nt := point hint(x: 40, y: 0)\n\
                 q := plane(origin: o, toward: t, attitude: free, offset: free)\n";
@@ -669,7 +673,8 @@ fn a_sphere_takes_its_words_in_space() {
     refused(&with("s tangent cb"), "E040", "a circle lying on the sphere is `c on s`", "tangent");
     assert_eq!(kind("cb on s2"), CKind::CircleOnSphereFixed);
     // and solved: the centre held, a point of the other view on it, and a line tangent to it
-    let e = read(&with("ground s.center\na on s\nground la.p1\nground la.p2\ns tangent la"));
+    let e = read(&with("fix(x == 140, y == 10) s.center\na on s\nfix(x == 0, y == 0) la.p1\n\
+                            fix(x == 30, y == 10) la.p2\ns tangent la"));
     let mut sk = e.sketch.clone();
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{}", r.message);
@@ -688,7 +693,8 @@ fn a_sphere_takes_its_words_in_space() {
         assert!(solve(&mut sk, SolveOpts::default()).success);
         diagnose(&mut sk, DiagnoseOptions::default()).dof
     };
-    let tied = "ground s.center\nground la.p1\nground la.p2\ns tangent la";
+    let tied = "fix(x == 140, y == 10) s.center\nfix(x == 0, y == 0) la.p1\n\
+                 fix(x == 30, y == 10) la.p2\ns tangent la";
     assert_eq!(dof(with(tied)) - dof(with(&format!("{tied}\na on s"))), 1);
 }
 
@@ -817,7 +823,9 @@ fn a_lifted_program_keeps_its_folds_along_lines() {
     let mut back = again.sketch.clone();
     assert_eq!(back.page_held, sk.page_held, "{text}");
     for &p in &sk.page_held {
-        assert!(!text.contains(&format!("ground p{p}\n")), "p{p} is the gauge's\n{text}");
+        let held = format!(") p{p}");
+        assert!(!text.lines().any(|l| l.starts_with("fix(") && l.ends_with(&held)),
+                "p{p} is the gauge's\n{text}");
     }
     let count = |s: &Sketch, k: CKind| s.constraints.iter().filter(|c| c.kind == k).count();
     for k in [CKind::HingeAlong, CKind::PointOnPlane, CKind::PointOnPlaneFixed, CKind::ProjectSolved] {
@@ -836,11 +844,11 @@ fn a_lifted_program_keeps_its_folds_along_lines() {
 fn a_lifted_program_keeps_free_attitudes_and_offsets() {
     let e = read("\
 unit mm
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
+o := point
+t := point
 front := plane(origin: o, toward: t)
-ground o
-ground t
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
 m := point hint(x: 12, y: 3) in front
 o distance(12, along: x) m
 o distance(8, along: y) m
@@ -878,8 +886,12 @@ r := plane(origin: o4, toward: t4, from: w, offset: 7)
 /// them, so it reads the same DOF and nothing lifted from it grounds them.
 #[test]
 fn the_page_gauge_is_kept_by_a_document() {
-    let bare = AXES.replace("ground o\n", "").replace("ground t\n", "")
-        .replace("ground o2\n", "").replace("ground t2\n", "");
+    let bare = AXES.replace("fix(x == 0, y == 0) o\n", "").replace("fix(x == 40, y == 0) t\n", "")
+        .replace("fix(x == 120, y == 0) o2\n", "").replace("fix(x == 160, y == 0) t2\n", "")
+        .replace("o := point\n", "o := point hint(x: 0, y: 0)\n")
+        .replace("t := point\n", "t := point hint(x: 40, y: 0)\n")
+        .replace("o2 := point\n", "o2 := point hint(x: 120, y: 0)\n")
+        .replace("t2 := point\n", "t2 := point hint(x: 160, y: 0)\n");
     let mut sk = read(&format!("{bare}{AXES_IN_WORDS}")).sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let text = io::dumps(&sk, None);
@@ -890,7 +902,9 @@ fn the_page_gauge_is_kept_by_a_document() {
     assert_eq!(diagnose(&mut back, DiagnoseOptions::default()).dof, 0);
     let lifted = gcs_core::program::to_program(&back).text().to_string();
     for &p in &sk.page_held {
-        assert!(!lifted.contains(&format!("ground p{p}\n")), "p{p}\n{lifted}");
+        let held = format!(") p{p}");
+        assert!(!lifted.lines().any(|l| l.starts_with("fix(") && l.ends_with(&held)),
+                "p{p}\n{lifted}");
     }
     // a copy keeps them too, renumbered with their points
     let copy = io::copy(&back, &back.primitives());
@@ -912,16 +926,16 @@ fn a_circle_on_a_sphere_is_on_it_all_the_way_round() {
         };
         let e = read(&format!("\
 unit mm
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
+o := point
+t := point
 front := plane(origin: o, toward: t)
-ground o
-ground t
-o2 := point hint(x: 120, y: 0)
-t2 := point hint(x: 160, y: 0)
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
+o2 := point
+t2 := point
 {side}
-ground o2
-ground t2
+fix(x == 120, y == 0) o2
+fix(x == 160, y == 0) t2
 s := sphere(hint(x: 10, y: 20)) hint(r: 30) in front
 radius(30) s
 k := circle(hint(x: 135, y: 12)) hint(r: 15) in side
@@ -948,16 +962,16 @@ k on s
         let d = diagnose(&mut sk, DiagnoseOptions::default());
         let without = read(&format!("\
 unit mm
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
+o := point
+t := point
 front := plane(origin: o, toward: t)
-ground o
-ground t
-o2 := point hint(x: 120, y: 0)
-t2 := point hint(x: 160, y: 0)
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
+o2 := point
+t2 := point
 {side}
-ground o2
-ground t2
+fix(x == 120, y == 0) o2
+fix(x == 160, y == 0) t2
 s := sphere(hint(x: 10, y: 20)) hint(r: 30) in front
 radius(30) s
 k := circle(hint(x: 135, y: 12)) hint(r: 15) in side
@@ -974,13 +988,13 @@ radius(18) k
 #[test]
 fn the_midpoint_and_the_mirror_read_in_space() {
     let e = read(&format!("{TWO_VIEWS}\
-ground o
-ground t
-ground o2
-ground t2
-ground lb.p1
-ground la.p1
-ground la.p2
+fix(x == 0, y == 0) o
+fix(x == 40, y == 0) t
+fix(x == 120, y == 0) o2
+fix(x == 160, y == 0) t2
+fix(x == 125, y == 3) lb.p1
+fix(x == 0, y == 0) la.p1
+fix(x == 30, y == 10) la.p2
 c := point hint(x: 20, y: 5) in front
 c midpoint lb
 d := point hint(x: 5, y: 30) in front
