@@ -881,6 +881,8 @@ export interface ConstraintRecord {
   claim: boolean;
   /** attribute → the expression text behind it, for a dimension written as one */
   exprs?: Record<string, string>;
+  /** its dimension as the statement wrote it, where a `param` was worked out of it (`w`) */
+  written?: string;
 }
 
 type Factory = (sk: Sketch, rec: ConstraintRecord) => Constraint;

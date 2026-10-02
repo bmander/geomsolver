@@ -394,8 +394,13 @@ fn the_constraint_record_carries_identity_and_arguments_only() {
     for rec in &recs {
         let Json::Obj(kv) = rec else { panic!("not an object") };
         let keys: Vec<&str> = kv.iter().map(|(k, _)| k.as_str()).collect();
-        assert_eq!(keys, ["id", "type", "args", "soft", "intrinsic", "claim"], "{keys:?}");
+        assert_eq!(keys[..6], ["id", "type", "args", "soft", "intrinsic", "claim"], "{keys:?}");
+        // past those, only an argument's own text: an expression, or how a `param` was written
+        assert!(keys[6..].iter().all(|k| matches!(*k, "exprs" | "written")), "{keys:?}");
     }
+    // the document says `distance(w)`, and the record carries it for the editor to open on
+    assert!(recs.iter().any(|r| matches!(r, Json::Obj(kv)
+        if kv.iter().any(|(k, v)| k == "written" && matches!(v, Json::Str(s) if s == "w")))));
     // and what was dropped is still reachable for the one constraint someone is looking at
     let c = &sk.constraints[0];
     assert!(!io::describe(c).is_empty());

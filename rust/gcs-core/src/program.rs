@@ -369,7 +369,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // -- phase 3: constraints, in statement order
     for st in &body {
         let StmtKind::Relation(r) = &st.kind else { continue };
-        if let Some(id) = constrain(&mut sk, &res, r, st, &mut diags) {
+        if let Some(id) = constrain(&mut sk, &res, r, st, p.text(), &mut diags) {
             map.record(st, Made::Con(id));
             if let Some(place) = r.place {
                 sk.placements.insert(id, place);

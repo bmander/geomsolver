@@ -2071,7 +2071,11 @@ Conventions:
   prints the text and what it came to (`h = w * 2 = 80`).  A **callout carries the expression**:
   `io::dimension_text` draws every written dimension as written, since `h = w / 2` and `3 1/8`
   each tell a reader what 40 and 3.125 do not, and what a dimension came to is the one thing a
-  reader can measure off the drawing.
+  reader can measure off the drawing.  That includes a `param`: the flattener settles
+  `distance(w)` to `100`, so a root statement's spelling is read back off the source at the
+  argument's span into `Constraint::written` (`program::relations::written`), presentation only,
+  dropped by any write of a number.  Inside a component or a block copy one spelling is many
+  numbers, and the number is drawn.
   `expr::set_dimension` is the one write path for text (a bare number becomes `Arg::Num`, with
   the angle conversion — the app converts nothing); `Sketch::add` and `io::from_json` evaluate;
   `Sketch::set_constraint_num` is the write path for a number, and re-evaluates when it dropped

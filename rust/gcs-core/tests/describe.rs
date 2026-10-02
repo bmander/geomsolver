@@ -152,3 +152,41 @@ fn a_datum_reports_its_angle() {
     assert_eq!(p["v.origin.y"], 0.0);
     assert!((p["v.toward.y"] - 40.0).abs() < 1e-6);
 }
+
+#[test]
+fn a_dimension_written_over_a_param_is_drawn_with_the_name() {
+    // the flattener settles `w` to 100 before the sketch sees it; the callout draws what was
+    // written, at the root, where each name has one value
+    let e = read(
+        "param w = 100
+         param a = 30deg
+         point o hint(x: 0, y: 0)
+         point p hint(x: 100, y: 0)
+         point q hint(x: 100, y: 50)
+         line l1(o, p)
+         line l2(o, q)
+         o distance(w) p
+         p distance(w / 2) q
+         o distance(112) q
+         l1 angle(a) l2",
+    );
+    assert_eq!(dims(&e.sketch), ["w", "w / 2", "112", "a"]);
+    let c = &e.sketch.user_constraints()[0];
+    assert_eq!(c.args[2].num(), 100.0, "the number is still what the solve reads");
+    // writing a number is what the statement says from then on
+    let mut sk = e.sketch.clone();
+    let id = sk.user_constraints()[0].id;
+    sk.set_constraint_num(id, "d", 120.0);
+    assert_eq!(io::dimension_text(sk.constraint(id).unwrap()).unwrap(), "120");
+    let id = sk.user_constraints()[1].id;
+    gcs_core::expr::set_dimension(&mut sk, id, "d", "60").unwrap();
+    assert_eq!(io::dimension_text(sk.constraint(id).unwrap()).unwrap(), "60");
+    // inside a component the same text is a different number in every instance: drawn as one
+    let e = read(
+        "component Bar(a: point, b: point, len: Length) { a distance(len) b }
+         point o hint(x: 0, y: 0)
+         point p hint(x: 40, y: 0)
+         bar: Bar(o, p, len: 40)",
+    );
+    assert_eq!(dims(&e.sketch), ["40"]);
+}

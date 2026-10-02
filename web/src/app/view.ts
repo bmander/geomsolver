@@ -89,9 +89,10 @@ export class SketchView {
   autoSolve = true;
   usePlan = false;
   colorByState = true;
-  /** Paint the dimensioned constraints on the drawing as callouts. */
-  /** Opt-in inspection of all model constraint values, separate from authored .svd annotations. */
-  showDimensions = false;
+  /** Paint the dimensioned constraints on the drawing as callouts.  View state, like the
+   *  colouring: a document change leaves it as it was.  The model canvas's callouts are the
+   *  editor's, and separate from what a `.svd` asks to be annotated on paper. */
+  showDimensions = true;
   /** **The overview**: the sheet folded back into the glass box it was unfolded from, with the
    *  object reconstructed in the middle.  A mode on the same canvas rather than a second window,
    *  and *read-only* — orbit, pan and zoom; a click highlights and never edits, which
@@ -402,12 +403,7 @@ export class SketchView {
 
   /** Project navigation starts a separate edit history; undo must never cross file boundaries. */
   openProjectFile(text: string): boolean {
-    const inspect = this.showDimensions;
-    this.showDimensions = false;
-    if (!this.reread(text, true, false)) {
-      this.showDimensions = inspect;
-      return false;
-    }
+    if (!this.reread(text, true, false)) return false;
     this.undoStack = [];
     return true;
   }
@@ -425,10 +421,7 @@ export class SketchView {
    *  its own way and is not this. */
   load(text: string, fit = true): boolean {
     this.pushUndo();
-    const inspect = this.showDimensions;
-    this.showDimensions = false;
     if (!this.reread(text, fit, false)) {
-      this.showDimensions = inspect;
       this.dropUndo();
       return false;
     }
@@ -537,6 +530,19 @@ export class SketchView {
     }
     if (what) this.onStatus(what);
     return true;
+  }
+
+  /** Take an elaboration already read as the document — for a caller that had to read it to
+   *  know whether to take it at all (a dimension's text that does not elaborate is refused and
+   *  left in its editor).  The selection crosses by name, as after any structural edit. */
+  takeDocument(next: Document): void {
+    this.redoStack = [];
+    this.swap(next, false, true);
+  }
+
+  /** Elaborate the source again, as it stands — the selection crossing by name. */
+  rereadSource(): boolean {
+    return this.reread(this.source, false, true);
   }
 
   /** Take a new source as the document.
@@ -962,6 +968,7 @@ export class SketchView {
     return dimension.startDimension(this, targets, fresh, alt);
   }
   endDimension(commit: boolean): void { dimension.endDimension(this, commit); }
+  rewriteDimension(text: string): string | null { return dimension.rewriteDimension(this, text); }
 
   addConstraints(...cs: Constraint[]): void { edit.addConstraints(this, ...cs); }
   removeConstraint(c: Constraint): void { edit.removeConstraint(this, c); }

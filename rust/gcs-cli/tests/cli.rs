@@ -380,10 +380,12 @@ fn output_writes_an_svg() {
     assert!(svg.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\""), "{}", &svg[..80]);
     assert!(svg.ends_with("</svg>\n"));
     assert!(!svg.contains("NaN") && !svg.contains("inf"), "every number is a number");
-    // the four fillets, as arcs; the four sides, as lines; the two dimensions, as text
+    // the four fillets, as arcs; the four sides, as lines; the dimensions, as text — each drawn
+    // with the `param` it was written over, not the number the flattener settled it to
     assert_eq!(svg.matches("<path d=\"M").count(), 4);
     assert_eq!(svg.matches("<line ").count(), 4);
-    assert!(svg.contains(">100</text>") && svg.contains(">60</text>"), "the numbers are drawn");
+    assert!(svg.contains(">w</text>") && svg.contains(">h</text>") && svg.contains(">R r</text>"),
+            "the dimensions are drawn as written");
 
     // one file, so one document
     let two = run(&["--output", &out.to_string_lossy(), &doc("rect_fillets.sv"), &doc("truss.sv")]);

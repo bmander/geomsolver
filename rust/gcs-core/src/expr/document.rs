@@ -508,6 +508,8 @@ pub fn set_dimension(
         (i, kind, c.args[i].num()) // the last number, until the expression is computed
     };
     let text = text.trim();
+    // what is typed now is what the statement says: a spelling it was written with before is gone
+    sk.constraint_mut(id).unwrap().written = None;
     if let Some(v) = literal(text) {
         if v < 0.0 && sk.constraint(id).is_some_and(|c| c.kind.magnitude()) {
             return Err(format!(

@@ -727,6 +727,15 @@ fn claimed(c: &Constraint, text: String) -> String {
     }
 }
 
+/// A symbol before the number — `R50`, `⌒12` — set off by a space where what follows is a name
+/// rather than a number (`R r`, `R w / 2`), which run together would read as one word.
+fn prefixed(symbol: &str, text: String) -> String {
+    match text.chars().next() {
+        Some(ch) if ch.is_alphabetic() => format!("{symbol} {text}"),
+        _ => format!("{symbol}{text}"),
+    }
+}
+
 impl Pen<'_> {
     fn px(&self, n: f64) -> f64 {
         n * self.u
@@ -1004,7 +1013,7 @@ impl Pen<'_> {
     /// the number on a landing clear of the shape.
     fn radius(&mut self, c: &Constraint) -> Option<Callout> {
         let e = c.args[0].ent();
-        let text = claimed(c, format!("R{}", dimension_text(c)?));
+        let text = claimed(c, prefixed("R", dimension_text(c)?));
         let r = self.sk.radius_value(e).abs();
         let place = self
             .placed(c)
@@ -1105,7 +1114,7 @@ impl Pen<'_> {
     /// angular dimension's figure about the arc's centre, measured as a length.
     fn arc_length(&mut self, c: &Constraint) -> Option<Callout> {
         let e = c.args[0].ent();
-        let text = claimed(c, format!("⌒{}", dimension_text(c)?));
+        let text = claimed(c, prefixed("⌒", dimension_text(c)?));
         let ctr = self.center(e);
         let rim = self.sk.radius_value(e).abs();
         let (a0, a1) = self.sk.arc_angles(e.i());

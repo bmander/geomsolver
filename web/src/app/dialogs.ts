@@ -93,11 +93,11 @@ export function options(): Promise<void> {
               + 'over the whole sketch');
     addCheckbox(box, 'colour by state', view.colorByState, (v) => { view.colorByState = v; view.draw(); },
                 'Paint each entity by what diagnosis makes of it');
-    addCheckbox(box, 'inspect all constraint values', view.showDimensions,
+    addCheckbox(box, 'dimensions', view.showDimensions,
                 (v) => { view.showDimensions = v; view.draw(); },
-                'Show every model constraint value for inspection. Drawing annotations are '
-              + 'requested separately in .svd. Editing a value shows just that dimension; '
-              + 'opening another model turns this inspection overlay off.');
+                'Call out every dimensioned constraint on the drawing — click one to select it, '
+              + 'drag it where you want it, double-click to change its number.  Off, editing a '
+              + 'dimension still shows that one.  A .svd asks for its own annotations on paper');
     addCheckbox(box, 'overview', view.overview, (v) => { view.setOverview(v); },
                 'Fold the views back into the glass box they were unfolded from, with the object '
               + 'reconstructed between them.  Drag to orbit, wheel to zoom; the drawing is '

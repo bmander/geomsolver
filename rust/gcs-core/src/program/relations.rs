@@ -117,6 +117,7 @@ pub(super) fn constrain(
     res: &Resolver,
     r: &Relation,
     st: &Stmt,
+    source: &str,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
     // **`on` between two solids is the body rule and not a constraint** (§6.9).  A word means
@@ -339,7 +340,28 @@ pub(super) fn constrain(
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
     c.class = r.class.clone();
+    c.written = written(&r.args, r.kind.spec(), st, source);
     Some(sk.add_quiet(c))
+}
+
+/// A root statement's dimension as it was written, when that differs from the text it reached
+/// here as — see `Constraint::written`.  At the root the only thing the flattener writes into a
+/// dimension's text is a number a name stood for (a `param`, a module's or a group's member), so
+/// a difference is exactly a name worked out; a named dimension keeps its name already.  Read
+/// off the source at the argument's span, which is the document's own text only at the root: a
+/// copy of a block or an instance's body (a non-empty path) is one spelling with many numbers,
+/// and a module's span indexes a text this is not.
+fn written(args: &[Option<Arg>], spec: &[(&str, SpecKind)], st: &Stmt, source: &str)
+    -> Option<String> {
+    if !st.path.is_empty() {
+        return None;
+    }
+    let (text, span) = spec.iter().zip(args).find_map(|((_, k), a)| match a {
+        Some(Arg::Dim { text, span }) if k.is_dimension() => Some((text, *span)),
+        _ => None,
+    })?;
+    let was = source.get(span.lo as usize..span.hi as usize)?.trim();
+    (!was.is_empty() && was != text.trim()).then(|| was.to_string())
 }
 
 pub(super) fn arg_span(a: &Arg) -> Option<Span> {

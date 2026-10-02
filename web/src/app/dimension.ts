@@ -6,6 +6,7 @@ import * as dim from '../core/callout.js';
 import type { Callout } from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
 import { Point } from '../core/model.js';
+import { Document } from '../core/program.js';
 import { applyConstraints, reportAdded } from './edit.js';
 import type { SketchView } from './view.js';
 
@@ -125,8 +126,69 @@ export function endDimension(v: SketchView, commit: boolean): void {
   } else if (live.fresh) {
     for (const c of live.targets) v.sketch.remove(c);
   }
+  // a dimension stated with an expression reaches the source as it was typed, and the sketch
+  // read its names as only other dimensions define them — a `param` is not one of those, so
+  // what the source now says is read again, where every name means what the document says
+  const named = commit && live.fresh
+    && live.targets.some((c) => c.dimensions().some(([a]) => c.expr(a) !== null));
   v.afterEdit();
+  if (named) v.rereadSource();
   v.onDimension(null, null);
+}
+
+/** An edit of a dimension the source already states, accepted: the text goes **into the
+ *  statement**, and the drawing is what the source then says.  Not onto the sketch, where a
+ *  name means only what another dimension defines: a `param` is worked out by the flattener
+ *  before a sketch exists, so `2 * h` written there read `h` as an unknown of its own and the
+ *  dimension held nothing — and the source, never told, went on saying the old number.
+ *
+ *  A number replacing a number is `numeric` (the plan survives, the sketch takes the number
+ *  directly); anything else is read whole first, so a text that does not elaborate is refused
+ *  with the core's own message and left in the editor to correct.  Null when it is done — the
+ *  dimension has ended, and what was there before is one undo step back. */
+export function rewriteDimension(v: SketchView, text: string): string | null {
+  const live = v.liveDim;
+  if (!live || live.fresh || live.targets.length !== 1) return 'no stated dimension to rewrite';
+  const [c] = live.targets;
+  const [d] = c.dimensions();
+  if (!d) return `${c.typeName} has no editable dimension`;
+  const e = v.doc.setDimension(c.id, d[0], text);
+  if (e.refused) return e.refused;
+  const finish = (): void => {
+    v.liveDim = null;
+    v.litConstraint = null;
+    v.pushUndo(live.before);
+    v.afterEdit();
+    v.onProgram();
+    v.onDimension(null, null);
+  };
+  if (e.kind === 'numeric') {
+    try {
+      c.setDimension(d[0], text);
+    } catch (err) {
+      return (err as Error).message;
+    }
+    if (v.doc.retext(e.text)) {
+      finish();
+      return null;
+    }
+  }
+  let next: Document;
+  try {
+    next = Document.read(e.text);
+  } catch (err) {
+    return (err as Error).message;
+  }
+  const bad = next.diagnostics.find((g) => g.severity === 'error');
+  if (bad) {
+    next.dispose();
+    return bad.message;
+  }
+  // no longer live before the swap, whose settling would end it uncommitted
+  v.liveDim = null;
+  v.takeDocument(next);
+  finish();
+  return null;
 }
 
 /** Where the live dimension's number was just painted, so the shell can put its editor on

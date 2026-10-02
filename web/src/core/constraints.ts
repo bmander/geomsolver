@@ -94,6 +94,9 @@ export abstract class Constraint {
   /** attribute → expression text, for each dimension written as one (`w = 1`, `h = w * 2`).
    *  The attribute itself is the number it evaluates to, like any other dimension. */
   exprs: Record<string, string> = {};
+  /** Its dimension as the statement wrote it, where that is not the text above: `w`, for a
+   *  `param` the core worked out to the number this constraint holds.  What its callout draws. */
+  written: string | null = null;
   soft = false;
   intrinsic = false;
   /** a `claim` (Solvent §9.7): expected to add no rank, judged by the diagnosis, never solved */
@@ -175,6 +178,7 @@ export abstract class Constraint {
     this.claim = rec.claim;
     this.args = this.spec.map(([, kind], i) => fromJson(sk, rec.args[i], kind));
     this.exprs = rec.exprs ?? {};
+    this.written = rec.written ?? null;
   }
 
   /** The expression text behind a dimension, or null when it is a plain number. */

@@ -1315,6 +1315,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             let mut nc = Constraint::new(c.kind, args);
             nc.claim = c.claim;
             nc.class = c.class.clone();
+            nc.written = c.written.clone();
             let id = dst.add_quiet(nc);
             if let Some(&place) = src.placements.get(&c.id) {
                 dst.placements.insert(id, place);   // a dimension keeps where it was dragged to
@@ -1692,6 +1693,11 @@ pub fn dimension_text(c: &Constraint) -> Option<String> {
     // label is the magnitude, which is how a drawing has always dimensioned an offset.
     if c.sense() < 0.0 {
         return Some(arg_text(kind, &Arg::Num(-c.args[i].num())));
+    }
+    // a dimension the elaborator worked out from a name is drawn with the name — `w`, not the
+    // `100` the flattener settled it to — and verbatim: it names something, so no degree sign
+    if let Some(w) = &c.written {
+        return Some(w.clone());
     }
     Some(match &c.args[i] {
         Arg::Expr(e) => as_written(kind, &e.text),

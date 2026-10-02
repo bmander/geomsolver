@@ -50,7 +50,6 @@ function pinnedApex(): Sketch {
  *  compare identity against `view.sketch`. */
 function viewOn(sk: Sketch): SketchView {
   const view = new SketchView(fakeCanvas(), Document.read(fromSketch(sk)));
-  view.showDimensions = true;  // These gesture tests explicitly inspect constraint callouts.
   view.autoSolve = false;
   return view;
 }
@@ -80,32 +79,32 @@ test('project file navigation isolates undo and clears pending model interaction
   assert.equal(v.source, other, 'edits within the new file remain undoable');
 });
 
-test('model previews annotate only the active dimension unless inspection is requested', (t) => {
+test('the model canvas calls out its dimensions, and off shows only the one being edited', (t) => {
   t.mock.method(globalThis, 'requestAnimationFrame', () => 1);
   const v = new SketchView(fakeCanvas(), Document.read(examples.source('rect_fillets')));
   t.after(() => { v.derived.clear(); v.doc.dispose(); });
   const painted: string[] = [];
   v.ctx = new Proxy(v.ctx, { get: (target, key) => key === 'fillText'
     ? (text: string) => painted.push(text) : Reflect.get(target, key) });
-  assert.equal(v.showDimensions, false);
-  paintCallouts(v);
-  assert.equal(painted.length, 0);
-
   const all = callouts(v.sketch, v.unit).items;
   assert.ok(all.length > 1);
+  assert.equal(v.showDimensions, true, 'callouts are on by default');
+  paintCallouts(v);
+  assert.equal(painted.length, all.length);
+
+  v.showDimensions = false;
+  painted.length = 0;
+  paintCallouts(v);
+  assert.equal(painted.length, 0);
   const target = v.sketch.constraintById(all[0].id)!;
   assert.ok(v.startDimension([target], false, null));
   paintCallouts(v);
   assert.deepEqual(painted, [all[0].text]);
-  assert.equal(v.showDimensions, false, 'editing does not enable the full overlay');
+  assert.equal(v.showDimensions, false, 'editing does not switch them all back on');
   assert.deepEqual(callouts(v.sketch, v.unit, []).items, []);
 
-  v.showDimensions = true;
   v.load(examples.source('square'));
-  assert.equal(v.showDimensions, false, 'inspection does not leak into another model');
-  painted.length = 0;
-  paintCallouts(v);
-  assert.equal(painted.length, 0);
+  assert.equal(v.showDimensions, false, 'the choice is view state and survives a load');
 });
 
 test('startup resize defers projection until the sketch has been solved and fitted', (t) => {
@@ -1851,4 +1850,33 @@ test('the spatial demos open, fold into the glass box, and the point on the ball
     assert.notDeepEqual(pb.xy, before, 'the point moved');
     assert.ok(Math.abs(onBall(pb.xy) - 12) < 1e-6, `and is still on the ball: ${onBall(pb.xy)}`);
   }
+});
+
+test('a dimension over a param opens as written, and an edit of it goes into the source', (t) => {
+  t.mock.method(globalThis, 'requestAnimationFrame', () => 1);
+  const v = new SketchView(fakeCanvas(), Document.read(examples.source('rect_fillets')));
+  t.after(() => { v.derived.clear(); v.doc.dispose(); });
+  const width = (): Constraint => v.sketch.userConstraints()
+    .find((c) => c.typeName === 'Distance' && c.written === 'w')!;
+  const c = width();
+  assert.ok(c, 'the width is written `w`, and the record says so');
+  assert.equal(c.d, 100, 'and holds the number the param came to');
+
+  // an expression over the other param: the source says it, and the drawing holds to it
+  assert.ok(v.startDimension([c], false, null));
+  assert.equal(v.rewriteDimension('2 * h'), null);
+  assert.equal(v.liveDim, null, 'accepting it ends the dimension');
+  assert.match(v.source, /l1 distance\(2 \* h\) r2/);
+  const now = v.sketch.userConstraints().find((k) => k.written === '2 * h');
+  assert.ok(now, 'drawn as written');
+  assert.equal(now.d, 120, 'h is the param, not an unknown of the sketch');
+  v.undo();
+  assert.match(v.source, /l1 distance\(w\) r2/, 'one undo step back');
+
+  // a text that does not elaborate is refused, and the dimension stays open to correct it
+  assert.ok(v.startDimension([width()], false, null));
+  assert.notEqual(v.rewriteDimension('2 *'), null);
+  assert.ok(v.liveDim, 'still being edited');
+  assert.match(v.source, /l1 distance\(w\) r2/);
+  v.endDimension(false);
 });
