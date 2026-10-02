@@ -365,6 +365,23 @@ fn stl_points(bytes: &[u8]) -> Result<impl Iterator<Item=[[f64;3];3]> + '_,Strin
         }))))
 }
 
+/// How far float32 encoding may have moved a vertex of a binary STL, read off the file alone: a
+/// coordinate rounded to nearest stands within half the step to the next float32 away from zero
+/// (the larger of its two neighbours' steps), and a vertex within the length of those three
+/// halves. Every point of a written triangle is a weighted mean of its corners, so the written
+/// surface lies within this of the triangles that were encoded: a world placement far from the
+/// origin spends a tolerance before the mesh has sagged at all (a face at x = 10⁶ mm moves by
+/// up to 31 µm). A bound and not a measurement: never less than the displacement, and more where
+/// a coordinate was written exactly.
+pub fn stl_rounding(bytes: &[u8]) -> Result<f64,String> {
+    let half_step = |x: f64| {
+        let a = (x as f32).abs();
+        if !a.is_finite() { return f64::INFINITY }
+        (f32::from_bits(a.to_bits()+1) as f64-a as f64)/2.
+    };
+    Ok(stl_points(bytes)?.flatten().map(|v| v.map(half_step).iter().map(|h| h*h).sum::<f64>().sqrt()).fold(0.,f64::max))
+}
+
 /// Reconstruct and validate the topology of the actual binary STL coordinates.
 /// Exactly equal encoded positions share one identity (+0 and -0 compare equal);
 /// no distance tolerance repairs the file. Also refuses nonfinite/degenerate triangles.

@@ -278,9 +278,11 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                     let m = match pattern { Some(p) => p.mesh(bar,ANGULAR)?,None => gcs_core::brep::mesh::mesh(b,bar,ANGULAR)? };
                     if m.sag > bar { return Err(format!("the mesh sags {:.3} µm against {:.3} µm",m.sag*1e3,bar*1e3)) }
                     if m.turned > 0 { return Err(format!("the mesh has {} triangles facing against their surfaces",m.turned)) }
-                    std::fs::write(path,gcs_core::mesh::stl_of(&m.triangles(),&solid_name)).map_err(|e| format!("{path}: {e}"))?;
-                    stage(&format!("meshed the solid by the core: {} triangles, sagging {:.3} µm at most against {:.3} µm ({:?})",
-                        m.tris.len(),m.sag*1e3,bar*1e3,started.elapsed()));
+                    let bytes = gcs_core::mesh::stl_of(&m.triangles(),&solid_name);
+                    let rounding = gcs_core::brep::export::written_within(&bytes,m.sag,bar).map_err(|e| e.to_string())?;
+                    std::fs::write(path,bytes).map_err(|e| format!("{path}: {e}"))?;
+                    stage(&format!("meshed the solid by the core: {} triangles, sagging {:.3} µm at most and moved {:.3} µm at most by \
+                        float32, against {:.3} µm ({:?})",m.tris.len(),m.sag*1e3,rounding*1e3,bar*1e3,started.elapsed()));
                     return Ok(())
                 }
                 let Some(t) = tolerance else {
@@ -328,6 +330,8 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                     first = Some(mine);
                     ahead = Some((copy,theirs.0,theirs.1));
                 }
+                // the sag of the mesh written, for the bar the float32 file is held to beside it
+                let mut sagged = 0.;
                 for round in 0.. {
                     let started = std::time::Instant::now();
                     let taken = match (round,first.take()) {
@@ -350,7 +354,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                     let within = if interior != deflection { format!(" ({:.2} µm within its faces)",interior*1e3) } else { String::new() };
                     stage(&format!("meshed {what} at {:.2} µm deflection{within}: it sags {:.2} µm at most, at {:?}, against {:.2} µm ({:?})",
                         deflection*1e3,sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,elapsed));
-                    if sag <= bar { break }
+                    if sag <= bar { sagged = sag; break }
                     if round+1 == MOST_MESHES {
                         return Err(format!("the mesh still sags {:.2} µm at {:?} after {MOST_MESHES} meshings, against {:.2} µm, half \
                             the {} µm tolerance",sag*1e3,at.map(|x| (x*1e3).round()/1e3),t.deflection()*1e3,t.millimetres*1e3));
@@ -367,10 +371,13 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
                         let (triangles,moved,_) = turned_copies(sector,deflection,interior,ANGULAR,deflection,Some(t.deflection()),path)?;
                         stage(&format!("turned the sector's mesh into {} copies: {triangles} triangles, seam points moved {:.3} µm at \
                             most onto their partners ({:?})",sector.count,moved*1e3,started.elapsed()));
-                        Ok(())
                     }
-                    None => session.stl_with(solid,path,deflection,ANGULAR),
+                    None => session.stl_with(solid,path,deflection,ANGULAR)?,
                 }
+                // the bar is about the surface written: float32 coordinates move it too
+                let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+                gcs_core::brep::export::written_within(&bytes,sagged,bar).map_err(|e| e.to_string())?;
+                Ok(())
             };
 
             // The STEP, of the union as it was made where its check runs beside the writing.

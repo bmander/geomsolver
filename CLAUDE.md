@@ -211,7 +211,8 @@ the pair from the STLs.
 pass within half of it of withheld contacts (`contact_trace::Withheld::Sides`), normals within
 `Tolerance::turn`, refined where they miss (`marked`, `Grid::refined`, ≤4 times, 480×400). Fit:
 `cad/native/sweep_boundary/fit.rs`, `surface_feet_near`. STL meshed until `mesh_sag` is within
-half (OCCT's deflection is no bound); the mesh contract counts clusters
+half (OCCT's deflection is no bound), float32 rounding counted with it (`mesh::stl_rounding`,
+`brep::export::written_within`: far from the origin refused, #60); the mesh contract counts clusters
 (`TinyTriangles::clustered`); the field is probed at max(2 tol, 2 µm).
 `--measure FILE` checks an export (`solid::accuracy`) and exits 1 over tolerance.
 **One sector, sewn round ([plan](docs/native-speed-plan.md)):** a body whose swept cuts are turns

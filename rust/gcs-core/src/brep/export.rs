@@ -84,12 +84,26 @@ pub fn stl(sk: &Sketch,body: usize,exact: &Exact,tolerance: Option<Tolerance>,sa
     if m.turned > 0 { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh has {} triangles facing against their surfaces",m.turned))) }
     if m.sag > bar { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh sags {:.3} µm against {:.3} µm",m.sag*1e3,bar*1e3))) }
     let bytes = crate::mesh::stl_of(&m.triangles(),&sk.solids[body].name);
+    let rounding = written_within(&bytes,m.sag,bar)?;
     crate::mesh::stl_shells(&bytes).at(Stage::Stl)?;
-    (say.stage)(&format!("the STL output: {} triangles, sagging {:.3} µm at most against {:.3} µm, its shells checked ({:?})",
-        m.tris.len(),m.sag*1e3,bar*1e3,started.elapsed()));
+    (say.stage)(&format!("the STL output: {} triangles, sagging {:.3} µm at most and moved {:.3} µm at most by float32, against \
+        {:.3} µm, its shells checked ({:?})",m.tris.len(),m.sag*1e3,rounding*1e3,bar*1e3,started.elapsed()));
     (say.mark)(Stage::Stl);
     if exact.swept { field_agreement(sk,body,&bytes,tolerance,exact.indexed,say)?; }
     Ok(bytes)
+}
+
+/// How far float32 encoding may have moved the written STL (`mesh::stl_rounding`), refused where
+/// that and the mesh's `sag` together pass the STL's share of the tolerance (`bar`): the bar is
+/// about the written surface, and binary STL cannot place a vertex far from the origin finely.
+pub fn written_within(bytes: &[u8],sag: f64,bar: f64) -> Result<f64,ExportRefusal> {
+    let rounding = crate::mesh::stl_rounding(bytes).at(Stage::Stl)?;
+    if sag+rounding > bar {
+        return Err(ExportRefusal::at(Stage::Stl,format!("float32 STL coordinates may move the surface {:.3} µm at this \
+            position, which with the mesh's sag of {:.3} µm passes {:.3} µm; move the solid nearer the origin or ask a coarser \
+            tolerance",rounding*1e3,sag*1e3,bar*1e3)))
+    }
+    Ok(rounding)
 }
 
 /// A swept body's STL held to its material field: no cluster of microscopic triangles, and every

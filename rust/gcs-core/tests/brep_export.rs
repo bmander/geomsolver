@@ -71,3 +71,72 @@ fn a_swept_bodys_exact_surface_is_built_by_stages_and_supplied() {
     let bad = gcs_core::solid::FieldSurface {provisional:true,..sk.supplied_field(body).unwrap().as_ref().clone()};
     assert!(sk.supply_field(body,bad).unwrap_err().contains("never provisional"));
 }
+
+/// A 2.03 × 2 × 2 mm box whose near face stands at x = `x0` mm (issue #60).
+fn far_box(x0: f64) -> Sketch {
+    let x1 = x0+2.03;
+    let src = format!("unit mm
+p0 := point hint(x: {x0}, y: 0)
+ground p0
+p1 := point hint(x: {x1}, y: 0)
+ground p1
+p2 := point hint(x: {x1}, y: 2)
+ground p2
+p3 := point hint(x: {x0}, y: 2)
+ground p3
+section := face(p0, p1, p2, p3, -> close)
+body := solid(section, from: 0mm, to: 2mm)
+");
+    let (p,errors) = gcs_core::syntax::parse(&src);
+    assert!(errors.is_empty(),"{errors:?}");
+    let e = gcs_core::program::elaborate(&p);
+    assert!(e.ok(),"{:?}",e.diags);
+    e.sketch
+}
+
+/// The x extent of a binary STL's written coordinates, decoded from its bytes.
+fn written_x(stl: &[u8]) -> (f64,f64) {
+    let n = u32::from_le_bytes(stl[80..84].try_into().unwrap()) as usize;
+    let xs = (0..n).flat_map(|i| (0..3).map(move |k| {
+        let at = 84+50*i+12+12*k;
+        f32::from_le_bytes(stl[at..at+4].try_into().unwrap()) as f64
+    }));
+    xs.fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),x| (lo.min(x),hi.max(x)))
+}
+
+/// The tolerance is about the surface written, and binary STL writes float32: a box far from the
+/// origin, whose mesh sags nothing, is moved by the encoding alone (30 µm at x = 10⁶ mm). The
+/// rounding is counted with the sag, so an STL is written within its share of the tolerance —
+/// its faces read back from the bytes where the model has them — or refused, and never given
+/// back moved further.
+#[test]
+fn float32_rounding_is_spent_from_the_tolerance_of_the_written_stl() {
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    for (x0,tolerance,written) in [(0.03,0.001,true),(100_000.003,0.001,false),(100_000.003,0.01,true),
+        (1_000_000.03,0.001,false),(1_000_000.03,0.01,false)] {
+        let sk = far_box(x0);
+        let tolerance = gcs_core::solid::export::Tolerance::new(tolerance).unwrap();
+        let exact = export::exact(&sk,0,None,Some(tolerance),&say).unwrap();
+        let what = format!("x = {x0} mm within {} µm",tolerance.millimetres*1e3);
+        match export::stl(&sk,0,&exact,Some(tolerance),&say) {
+            Ok(stl) => {
+                assert!(written,"{what}: written");
+                let rounding = gcs_core::mesh::stl_rounding(&stl).unwrap();
+                assert!(rounding <= tolerance.deflection(),"{what}: {rounding}");
+                let (lo,hi) = written_x(&stl);
+                let off = (lo-x0).abs().max((hi-(x0+2.03)).abs());
+                assert!(off <= tolerance.deflection(),"{what}: the faces written at {lo} and {hi}, {off} mm off");
+            }
+            Err(e) => {
+                assert!(!written,"{what}: {e}");
+                assert_eq!(e.stage,gcs_core::solid::export::Stage::Stl,"{what}: {e}");
+                assert!(e.message.contains("float32"),"{what}: {e}");
+            }
+        }
+    }
+    // the bound is half a float32 step: 1/32 mm on one axis at 10⁶ mm, nothing at the origin
+    let one = |p: [f64;3]| gcs_core::mesh::stl_rounding(&gcs_core::mesh::stl_of(&[p,[p[0]+1.,p[1],p[2]],[p[0],p[1]+1.,p[2]]]
+        .concat(),"t")).unwrap();
+    assert!((one([1_000_000.03,0.,0.])-1./32.).abs() < 1e-9);
+    assert!(one([0.,0.,0.]) < 1e-7);
+}
