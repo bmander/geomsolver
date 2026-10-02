@@ -244,7 +244,10 @@ intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `c
 `build` (prisms, revolutions, lofts of line/arc/circle/spline profiles), `props` (volume by Green's
 theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
-seam curves), `recipe`.
+seam curves), `recipe`. A traced pair is seeded where edges cross faces; between analytic
+surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
+the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
+refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
 **This kernel is every export's default** (phase 5): OCCT answers only `--kernel occt` /
 `--stl-backend occt` / `SOLVENT_KERNEL=occt` (the oracle; refused in a build without OCCT), its
 STEP checked by `step_check` against `Solid::of`. `gcs-cli tests/brep_oracle.rs` builds every

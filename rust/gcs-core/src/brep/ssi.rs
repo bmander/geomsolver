@@ -2,7 +2,8 @@
 //! revolution about one axis (a plane square to it, a cylinder, a cone, a sphere centred on it, a
 //! torus) in circles, found where their meridians cross in one half-plane; a plane and a cylinder
 //! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines. The
-//! rest is left to be traced (`Ssi::Traced`).
+//! rest is left to be traced (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no
+//! seed reaches is searched for (`unseen`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
@@ -417,6 +418,144 @@ pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result
         curves.push(fitted(t,tol/4.,&through).unwrap_or(c));
     }
     Ok(curves)
+}
+
+/// Whether the search for unseen meetings (`unseen`) can answer for a surface, as either side:
+/// one with closed-form bounds on its derivatives and a signed distance for its implicit.
+pub fn searchable(s: &Surface) -> bool { derivative_bounds(s,[0.,0.]).is_some() }
+
+/// Bounds over the parameter strip `v` of an analytic surface's derivatives: the largest sizes of
+/// `S_u`, `S_v`, `S_uu`, `S_uv`, `S_vv`. None for a surface swept from a curve, a loft or a sheet.
+fn derivative_bounds(s: &Surface,[v0,v1]: [f64;2]) -> Option<[f64;5]> {
+    match *s {
+        Surface::Plane(_) => Some([1.,1.,0.,0.,0.]),
+        Surface::Cylinder(_,r) => Some([r,1.,r,0.,0.]),
+        Surface::Cone(_,r,a) => {
+            let sa = a.dsin();
+            let q = (r+v0*sa).abs().max((r+v1*sa).abs());
+            Some([q,1.,q,sa.abs(),0.])
+        }
+        Surface::Sphere(_,r) => Some([r;5]),
+        Surface::Torus(_,big,r) => Some([big.abs()+r,r,big.abs()+r,r,r]),
+        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => None,
+    }
+}
+
+/// A bound on the size of an analytic surface's `implicit`'s Hessian over the ball about `p` of
+/// radius `r` — the curvature of its level sets, the inverse of the distance to where they focus —
+/// or none where the ball reaches that focus (an axis, a centre, a torus's core circle).
+fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
+    let [x,y,z] = s.frame().local(p);
+    let rho = x.dhypot(y);
+    let over = |d: f64| (d > 0.).then(|| 1./d);
+    match *s {
+        Surface::Plane(_) => Some(0.),
+        Surface::Sphere(..) => over(rho.dhypot(z)-r),
+        // a cone's implicit is cos α times ρ less a linear part: ρ's curvature at most
+        Surface::Cylinder(..) | Surface::Cone(..) => over(rho-r),
+        // the distance to the core circle in the meridian half-plane, which turns with ρ
+        Surface::Torus(_,big,_) => Some(over((rho-big).dhypot(z)-r)?+over(rho-r)?),
+        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => None,
+    }
+}
+
+/// Points along a traced curve, or a fitted one, no farther apart than `spacing` (a traced curve's
+/// chords: they pass within a sagitta of it far smaller than the spacing).
+fn samples_along(c: &Curve,spacing: f64) -> Vec<V> {
+    // even in the parameter, twice as many as its sampled speed asks
+    let even = |t0: f64,t1: f64,length: f64| -> Vec<V> {
+        let n = (2.*length/spacing).ceil().clamp(1.,1e6) as usize;
+        (0..=n).map(|j| c.point(t0+(t1-t0)*j as f64/n as f64)).collect()
+    };
+    match c {
+        Curve::Traced(t) => t.pts.windows(2).flat_map(|w| {
+            let n = (crate::space::distance(w[0],w[1])/spacing).ceil().clamp(1.,1e6) as usize;
+            (0..n).map(move |j| crate::space::lerp(w[0],w[1],j as f64/n as f64))
+        }).chain(t.pts.last().copied()).collect(),
+        Curve::BSpline(b) => { let [t0,t1] = b.domain(); even(t0,t1,c.speed()*(t1-t0)) }
+        _ => match c.period() { Some(p) => even(0.,p,c.speed()*p),None => Vec::new() },
+    }
+}
+
+/// A point where `b` meets a face of `a` that no curve of `known` passes near: what an edge's
+/// crossing cannot seed — a closed curve lying inside both faces. `domain` is a box of `a`'s
+/// parameters holding the face, and the search keeps to the faces' shared box `[lo, hi]`.
+///
+/// The box is halved, the longer side in space first, and each cell answered three ways: clear of
+/// `b` (shown, not sampled: `b`'s implicit is a signed distance, so it changes by no more than the
+/// distance moved — the cell's reach from its middle — and, where the cell keeps clear of where
+/// `b`'s level sets focus, by no more than its first-order change and a bound on its second);
+/// beside a known curve, once no wider than `leaf`; or holding a point pulled onto both surfaces
+/// from its middle, new and returned. A cell answering none of these is halved again, down to a
+/// few tolerances — below that its meeting with `b` is not resolved, and that is refused, never
+/// guessed. Two curves nearer than `leaf` are not told apart. `Ok(None)`: every part of the face is
+/// clear of `b` or beside a known curve. Both surfaces must be `searchable`.
+pub fn unseen(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
+    // a cap on the cells asked, far past any face this kernel builds, that a pathology ends at
+    const CELLS: usize = 4_000_000;
+    let pad = 4.*tol;
+    if (0..3).any(|k| !(hi[k]+pad >= lo[k]-pad)) { return Ok(None) }
+    let diag = norm(sub(hi,lo));
+    let leaf = (a.feature().min(b.feature()).min(diag)/64.).max(diag*1e-4).max(16.*tol);
+    let floor = (leaf*1e-6).max(4.*tol);
+    // the known curves' points, filed by place, read within a cell's reach of its middle
+    let spacing = leaf/2.;
+    let mut grid = crate::space::Grid::new(2.*leaf+spacing);
+    let mut along: Vec<V> = Vec::new();
+    for c in known { for p in samples_along(c,spacing) { grid.insert(p,along.len() as u32); along.push(p); } }
+    let near_known = |p: V,within: f64| {
+        let mut hit = false;
+        grid.around(p,|i| if !hit && crate::space::distance(along[i as usize],p) <= within { hit = true });
+        hit
+    };
+    let probe = super::geom::Traced {a:a.clone(),b:b.clone(),pts:vec![],closed:false};
+    let mut cells = vec![domain];
+    let mut asked = 0;
+    while let Some([[u0,u1],[v0,v1]]) = cells.pop() {
+        asked += 1;
+        if asked > CELLS {
+            return Err(format!("a {} and a {}: the search for where they meet asked {CELLS} cells without settling, not built yet",
+                a.kind(),b.kind()))
+        }
+        let Some([mu,mv,muu,muv,mvv]) = derivative_bounds(a,[v0,v1]) else {
+            return Err(format!("a {} cannot be searched for where it meets a {}",a.kind(),b.kind()))
+        };
+        let (hu,hv) = ((u1-u0)/2.,(v1-v0)/2.);
+        let mid = [(u0+u1)/2.,(v0+v1)/2.];
+        let (p,su,sv) = a.d1(mid);
+        // every point of the cell is within `reach` of its middle
+        let reach = mu*hu+mv*hv;
+        if (0..3).any(|k| p[k]+reach < lo[k]-pad || p[k]-reach > hi[k]+pad) { continue }
+        let g = b.implicit(p);
+        if g.abs() > reach { continue }
+        if let Some(k) = curvature_bound(b,p,reach) {
+            let n = b.gradient(p);
+            let slope = dot(n,su).abs()*hu+dot(n,sv).abs()*hv;
+            let bend = k*reach*reach+muu*hu*hu+2.*muv*hu*hv+mvv*hv*hv;
+            if g.abs()-slope-bend/2. > 0. { continue }
+        }
+        if reach <= leaf {
+            if near_known(p,2.*reach+spacing) { continue }
+            let q = probe.project(p);
+            if a.implicit(q).abs().max(b.implicit(q).abs()) <= 16.*tol {
+                // a meeting beyond the shared box is on neither face; one on a known curve says
+                // nothing of this cell, which is halved
+                if (0..3).any(|k| q[k] < lo[k]-pad || q[k] > hi[k]+pad) { continue }
+                if !near_known(q,spacing) { return Ok(Some(q)) }
+            }
+            if reach <= floor {
+                return Err(format!("a {} and a {} come within {:.1e} of each other at [{:.4}, {:.4}, {:.4}] and no meeting was \
+                    found there: whether they touch is not resolved, not built yet",a.kind(),b.kind(),g.abs(),p[0],p[1],p[2]))
+            }
+        }
+        if mu*hu >= mv*hv { cells.push([[mid[0],u1],[v0,v1]]); cells.push([[u0,mid[0]],[v0,v1]]); }
+        else { cells.push([[u0,u1],[mid[1],v1]]); cells.push([[u0,u1],[v0,mid[1]]]); }
+    }
+    if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+        eprintln!("brep:   a {} over {domain:?} is clear of a {} but for {} known curve(s), in {asked} cells (leaf {leaf:.1e})",
+            a.kind(),b.kind(),known.len());
+    }
+    Ok(None)
 }
 
 /// An open traced curve as a cubic B-spline through its points (on both surfaces already) by chord

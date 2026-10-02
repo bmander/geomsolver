@@ -762,3 +762,123 @@ fn a_trace_off_a_sheets_patch_ends_at_its_edge() {
     let ends = [c.point(t0),c.point(t1)];
     for e in ends { assert!((e[0]-1.).abs() < 1e-3 && e[0] <= 1.+1e-6,"{ends:?}"); }
 }
+
+/// A ball about the axis through `c` along the unit `axis`, its profile in the plane square to
+/// `normal` (square to the axis): the seam where that plane cuts it.
+fn ball_about(c: V,r: f64,axis: V,normal: V) -> gcs_core::brep::topo::Brep {
+    use gcs_core::space::{add,cross};
+    let pole = |s: f64| add(c,scale3(axis,s));
+    let p = Profile {names:vec![],origin:c,normal,loops:vec![vec![arc(c,r,normal,cross(axis,normal),Some([-PI/2.,PI/2.])),
+        line(pole(-r),pole(r))]]};
+    revolve(&p,c,axis,TAU).unwrap()
+}
+
+/// A torus about z through the origin, of major radius `big` and tube radius `r`.
+fn torus(big: f64,r: f64) -> gcs_core::brep::topo::Brep {
+    let p = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![arc([big,0.,0.],r,XZ,[1.,0.,0.],None)]]};
+    revolve(&p,[0.;3],[0.,0.,1.],TAU).unwrap()
+}
+
+/// The volume a ball about `c` of radius `r` shares with the torus about z of radii `big`, `tube`:
+/// over the ball's disk seen from above, the overlap of the two vertical chords.
+fn ball_in_torus(c: V,r: f64,big: f64,tube: f64) -> f64 {
+    simpson(0.,1.,800,|s: f64| simpson(0.,TAU,800,|th: f64| {
+        // s² spaced radially, so the integrand is smooth at the disk's rim
+        let d = r*(1.-(1.-s)*(1.-s));
+        let (x,y) = (c[0]+d*th.cos(),c[1]+d*th.sin());
+        let ball = (r*r-d*d).max(0.).sqrt();
+        let rho = x.hypot(y);
+        let ring = (tube*tube-(rho-big)*(rho-big)).max(0.).sqrt();
+        let chord = ((c[2]+ball).min(ring)-(c[2]-ball).max(-ring)).max(0.);
+        chord*d*r*2.*(1.-s)
+    }))
+}
+
+#[test]
+fn a_closed_intersection_crossing_no_edge_is_found_whichever_way_a_seam_runs() {
+    // issue #58: a small ball pressed into a torus meets it in one closed curve. About y its seam
+    // misses that curve, so no edge of either crosses the other's face; about z it crosses it.
+    use gcs_core::brep::boolean::{boolean,Op};
+    let (big,tube) = (3.,1.);
+    let ring = torus(big,tube);
+    let whole = 2.*PI*PI*big*tube*tube;
+    close(volume(&ring),whole);
+    let at = 3./2f64.sqrt();
+    let r = 0.2;
+    let sphere = 4./3.*PI*r*r*r;
+    for (what,z,inside) in [("a shallow pocket",1.1,None),("half sunk",0.9,None),("disjoint",1.3,Some(0.)),
+        ("contained",0.5,Some(sphere))] {
+        let c = [at,at,z];
+        let shared = inside.unwrap_or_else(|| ball_in_torus(c,r,big,tube));
+        for (seam,axis,normal) in [("about y",[0.,1.,0.],XY),("about z",[0.,0.,1.],XZ),("about x",[1.,0.,0.],XY)] {
+            let ball = ball_about(c,r,axis,normal);
+            for (op,want) in [(Op::Cut,whole-shared),(Op::Common,shared),(Op::Union,whole+sphere-shared)] {
+                let out = boolean(&ring,&ball,op,1e-9).unwrap_or_else(|e| panic!("{what}, {seam}, {op:?}: {e}"));
+                out.check(1e-8).unwrap_or_else(|e| panic!("{what}, {seam}, {op:?}: {e}"));
+                let v = volume(&out);
+                // the reference is a quadrature over a kinked integrand: good to ~1e-7 of the ball
+                assert!((v-want).abs() <= 1e-6*sphere,"{what}, {seam}, {op:?}: {v} against {want} ({:e} of the ball)",(v-want)/sphere);
+            }
+        }
+    }
+}
+
+#[test]
+fn one_closed_intersection_found_does_not_hide_another() {
+    // a ball about a point of a torus's core circle, the tube through it: two loops, where the tube
+    // goes in and where it comes out. Traced from a point on one, the search finds the other.
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::ssi::{trace,unseen};
+    let tol = 1e-9;
+    let ring = Surface::Torus(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),3.,1.);
+    let ball = Surface::Sphere(Frame::new([3.,0.,0.],[0.,0.,1.],[1.,0.,0.]),1.5);
+    let (lo,hi) = ([-5.;3],[5.;3]);
+    let whole = [[0.,TAU],[0.,TAU]];
+    // along the top of the tube, 1.5 from the ball's centre
+    let u = ((19.-2.25)/18f64).acos();
+    let first = trace(&ring,&ball,&[[3.*u.cos(),3.*u.sin(),1.]],lo,hi,tol).unwrap();
+    assert_eq!(first.len(),1);
+    assert!(matches!(&first[0],Curve::Traced(t) if t.closed));
+    let other = unseen(&ring,whole,&ball,&first,lo,hi,tol).unwrap().expect("the second loop");
+    assert!(other[1] < -0.5 && ring.implicit(other).abs() <= 1e-8 && ball.implicit(other).abs() <= 1e-8,"{other:?}");
+    let mut both = first.clone();
+    both.extend(trace(&ring,&ball,&[other],lo,hi,tol).unwrap());
+    assert_eq!(unseen(&ring,whole,&ball,&both,lo,hi,tol).unwrap(),None);
+    // from the ball's side too
+    assert!(unseen(&ball,[[0.,TAU],[-PI/2.,PI/2.]],&ring,&first,lo,hi,tol).unwrap().is_some_and(|p| p[1] < -0.5));
+    // and nothing where the two are clear of each other
+    let clear = Surface::Sphere(Frame::new([3.,0.,1.5],[0.,0.,1.],[1.,0.,0.]),0.4);
+    assert_eq!(unseen(&ring,whole,&clear,&[],lo,hi,tol).unwrap(),None);
+    assert_eq!(unseen(&clear,[[0.,TAU],[-PI/2.,PI/2.]],&ring,&[],lo,hi,tol).unwrap(),None);
+}
+
+#[test]
+fn a_ball_touching_a_torus_is_refused_not_missed() {
+    // resting on the top of the tube: the two meet in one point, where no curve can be traced
+    use gcs_core::brep::boolean::{boolean,Op};
+    let ring = torus(3.,1.);
+    let at = 3./2f64.sqrt();
+    for (seam,axis,normal) in [("about y",[0.,1.,0.],XY),("about z",[0.,0.,1.],XZ)] {
+        let ball = ball_about([at,at,1.2],0.2,axis,normal);
+        let out = boolean(&ring,&ball,Op::Cut,1e-9);
+        assert!(out.as_ref().is_err_and(|e| e.contains("touch")),"{seam}: {:?}",out.map(|b| volume(&b)));
+    }
+}
+
+#[test]
+fn the_dimpled_ring_example_is_the_ring_less_the_ball_it_shares() {
+    // examples/solid_dimpled_ring.sv: the same pocket at ten times the size, written in Solvent,
+    // the ball's seam above the ring
+    let src = include_str!("../../examples/solid_dimpled_ring.sv");
+    let (prog,errs,_) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty(),"{errs:?}");
+    let mut e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(),"{:?}",e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    assert!(gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default()).success);
+    let part = e.map.ent_named("part").unwrap().i();
+    let b = gcs_core::brep::recipe::build(&gcs_core::solid::cad::recipe(&e.sketch,part).unwrap()).unwrap();
+    b.check(1e-6).unwrap();
+    let at = 30./2f64.sqrt();
+    let want = 2.*PI*PI*30.*100.-ball_in_torus([at,at,11.],2.,30.,10.);
+    assert!((volume(&b)-want).abs() <= 1e-6*4./3.*PI*8.,"{} against {want}",volume(&b));
+}

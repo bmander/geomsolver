@@ -46,6 +46,13 @@ const projects: Example[] = [{
     + 'ball: drag it round the circle the side view cuts. Open the glass box (⌘B) to see the '
     + 'surfaces; edit the first cone\'s half-angle and the second reopens to keep touching.',
   target: { kind: 'file', path: 'sphere_cone_cylinder.sv' },
+}, {
+  label: 'Dimpled ring · a closed intersection', key: 'solid_dimpled_ring',
+  description: 'A ball pressed into a torus off to one side. The two meet in one small loop that '
+    + 'crosses neither solid\'s seam, so the kernel finds it by searching the faces. Open the glass '
+    + 'box (⌘B) to see the dimple; raise `sunk` to deepen it, or set it to 0mm and the bare touch '
+    + 'is refused rather than built.',
+  target: { kind: 'file', path: 'solid_dimpled_ring.sv' },
 }];
 
 export function exampleCases(): Example[] {

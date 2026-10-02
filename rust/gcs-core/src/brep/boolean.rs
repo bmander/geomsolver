@@ -204,7 +204,32 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     seeds.extend(grid.into_iter().filter(|p| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad)));
                     if debug { eprintln!("brep: A{fa} {} × B{fb} {}: tracing from {} seed(s) {seeds:?}",sa.kind(),sb.kind(),seeds.len()); }
                     let started = crate::clock::Instant::now();
-                    let traced = super::ssi::trace(sa,sb,&seeds,lo,hi,tol)?;
+                    let mut traced = super::ssi::trace(sa,sb,&seeds,lo,hi,tol)?;
+                    // a closed curve inside both faces crosses no edge and has no seed: between
+                    // analytic surfaces the smaller face is searched for what no curve yet passes,
+                    // each found traced in turn, until the search shows nothing else is there
+                    if super::ssi::searchable(sa) && super::ssi::searchable(sb) {
+                        let size = |bx: &(V,V)| distance(bx.0,bx.1);
+                        let (sol,fi,mine,theirs) = if size(&boxes[1][fb]) < size(&boxes[0][fa]) { (b,fb,sb,sa) } else { (a,fa,sa,sb) };
+                        let domain = parameters(sol,fi,true);
+                        // more separate loops than any face pair this kernel builds meets in
+                        const LOOPS: usize = 64;
+                        let mut found = 0;
+                        while let Some(p) = super::ssi::unseen(mine,domain,theirs,&traced,lo,hi,tol)? {
+                            if debug { eprintln!("brep: A{fa} {} × B{fb} {}: a meeting no edge crosses, at {p:?}",sa.kind(),sb.kind()); }
+                            found += 1;
+                            if found > LOOPS {
+                                return Err(format!("a {} and a {} meet in more than {LOOPS} curves no edge crosses, not built yet",
+                                    sa.kind(),sb.kind()))
+                            }
+                            let more = super::ssi::trace(sa,sb,&[p],lo,hi,tol)?;
+                            if more.is_empty() {
+                                return Err(format!("a {} and a {} meet at {p:?}, where no edge crosses, in a curve that could not be \
+                                    traced, not built yet",sa.kind(),sb.kind()))
+                            }
+                            traced.extend(more);
+                        }
+                    }
                     let took = started.elapsed().as_secs_f64();
                     t_trace += took;
                     if took > 0.2 && std::env::var_os("SOLVENT_BREP_TIME").is_some() {
@@ -742,11 +767,10 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
     Ok(cells)
 }
 
-/// Where a grid across face `fi` of `b`, in its parameters' box, crosses `other`: each grid line's
-/// change of sign in `other`'s implicit found by bisection, then pulled onto both surfaces by the
-/// trace. Seeds for curves no edge crosses.
-fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V> {
-    const N: usize = 24;
+/// The box of face `fi`'s parameters its loops reach, sampled along each edge. `whole`: grown
+/// to hold the face though a pcurve bulges between samples — by a sixteenth of each side, or to a
+/// whole period where that comes near one.
+fn parameters(b: &Brep,fi: usize,whole: bool) -> [[f64;2];2] {
     let f = &b.faces[fi];
     let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
     for c in f.loops.iter().flatten() {
@@ -756,6 +780,27 @@ fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V
             for k in 0..2 { lo[k] = lo[k].min(uv[k]); hi[k] = hi[k].max(uv[k]); }
         }
     }
+    if whole {
+        let periods = f.surface.periods();
+        for k in 0..2 {
+            let grow = (hi[k]-lo[k])/16.+1e-9*(1.+lo[k].abs().max(hi[k].abs()));
+            match periods[k] {
+                Some(p) if hi[k]-lo[k]+2.*grow >= p => hi[k] = lo[k]+p,
+                _ => { lo[k] -= grow; hi[k] += grow; }
+            }
+        }
+    }
+    [[lo[0],hi[0]],[lo[1],hi[1]]]
+}
+
+/// Where a grid across face `fi` of `b`, in its parameters' box, crosses `other`: each grid line's
+/// change of sign in `other`'s implicit found by bisection, then pulled onto both surfaces by the
+/// trace. Seeds for curves no edge crosses.
+fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V> {
+    const N: usize = 24;
+    let f = &b.faces[fi];
+    let [[lo0,hi0],[lo1,hi1]] = parameters(b,fi,false);
+    let (lo,hi) = ([lo0,lo1],[hi0,hi1]);
     let at = |i: usize,j: usize| [lo[0]+(hi[0]-lo[0])*i as f64/N as f64,lo[1]+(hi[1]-lo[1])*j as f64/N as f64];
     let value = |uv: Uv| other.implicit(f.surface.point(uv));
     let grid: Vec<Vec<f64>> = (0..=N).map(|i| (0..=N).map(|j| value(at(i,j))).collect()).collect();
