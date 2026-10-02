@@ -94,7 +94,7 @@ NAME := face(EDGE, ..., holes: LOOP, ...)  a planar region                      
 NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:, about:, along:
 NAME := solid(SOLID)                    a body over a stock
 NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E)   placed by, or swept through, a motion
-REF on REF | REF cut REF | REF bound REF   material added to, removed from, kept within a body
+REF union REF | REF cut REF | REF bound REF   material added to, removed from, kept within a body
 REF.FACE against REF.FACE               a mate between two parts' caps
 NAME := surface | motion | envelope | patch | seam | vertex | edge(...)
                                         spatial geometry read after the solve        (1.15)
@@ -191,7 +191,7 @@ stands in the parentheses:
 
 | word | fixity | operands and options |
 |---|---|---|
-| `on` | infix | a point to a line, circle, arc, spline or curve. In space (1.13): a point or line to a **plane**; a point or circle to a **sphere**; a point to a **cone** or **cylinder**. Between two **solids** it is the body rule (1.14), not a constraint |
+| `on` | infix | a point to a line, circle, arc, spline or curve. In space (1.13): a point or line to a **plane**; a point or circle to a **sphere**; a point to a **cone** or **cylinder**. Not between two **solids**: material is added with `union` (1.14) |
 | `distance` | infix | two points (length; `along: x`/`y` or `right`/`left`/`up`/`down` for a signed run or rise); a point and a line, or two lines (a magnitude; `side:` picks the side); two concentric circles or arcs (radial gap); a point and a datum (`along: u`/`v` signed ordinates, `along: n` signed distance along the normal, in space) |
 | `distance` | prefix | a line: its length |
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; in space, sphere–line, sphere–sphere, cylinder–line (round thing first); two cones at a point, `k1 tangent(M) k2` |
@@ -715,8 +715,8 @@ q := plane(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 
 
 **A solid is a term, never a step.** A feature tree is a history: step *n* acts on the anonymous
 body left by step *n − 1* and names faces by creation order. In Solvent a solid is a face swept,
-or a stock **plus everything `on` it, minus everything that `cut`s it, within everything that
-`bound`s it**. The order lives inside a term, never between statements: `bore cut body` may be
+or a stock **plus everything in `union` with it, minus everything that `cut`s it, within
+everything that `bound`s it**. The order lives inside a term, never between statements: `bore cut body` may be
 written fifty lines above `body := solid(…)` and means the same.
 
 **Nothing about a solid is solved for.** A solid owns no parameters; numeric extents are worked
@@ -903,7 +903,7 @@ before `body := solid(stock)` gives the same number: both sides of the body rule
 
   Union comes first; `cut` and `bound` commute.
 - **Name intermediates the sets cannot express.** A boss standing in a pocket's floor is not
-  `pocket cut body` + `boss on body` — that is stock ∪ boss − pocket, and the pocket eats the boss:
+  `pocket cut body` + `boss union body` — that is stock ∪ boss − pocket, and the pocket eats the boss:
 
   ```
   // the plate again, with `o` at its middle
@@ -922,7 +922,7 @@ before `body := solid(stock)` gives the same number: both sides of the body rule
   pocket cut shell
 
   body := solid(shell)
-  boss on body
+  boss union body
   ```
 
   `shell.volume` is 64931.4 (`72000 − π · 15² · 10`) and `body.volume` 65402.7, that plus

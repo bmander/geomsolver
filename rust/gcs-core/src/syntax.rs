@@ -269,8 +269,8 @@ pub struct DerivedDecl {
 /// Which side of the body rule a statement fills.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BodyWord {
-    /// `boss on cyl` — material.
-    On,
+    /// `boss union cyl` — material.
+    Union,
     /// `bore cut cyl` — the body rule's subtraction (§6.9). Relations are folded into
     /// the stock body after declarations are built.
     Cut,
@@ -286,7 +286,7 @@ pub enum BodyWord {
 impl BodyWord {
     pub fn as_str(self) -> &'static str {
         match self {
-            BodyWord::On => "on",
+            BodyWord::Union => "union",
             BodyWord::Cut => "cut",
             BodyWord::Bound => "bound",
             BodyWord::Against => "against",
@@ -294,7 +294,7 @@ impl BodyWord {
     }
 }
 
-/// A body operation (§6.9): `cut` subtracts, `on` unites, `bound` intersects.
+/// A body operation (§6.9): `cut` subtracts, `union` unites, `bound` intersects.
 /// Relations are folded into the stock body after declarations are built.
 #[derive(Clone, Debug)]
 pub struct SolidRel {

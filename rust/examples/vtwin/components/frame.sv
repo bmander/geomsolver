@@ -206,9 +206,9 @@ component Frame(layout: group, dims: group) {
   portLe := solid(face(l.exhaust), from: 0mm, to: zf)
 
   body := solid(blank.stock)
-  blank.foot on body
-  blank.bboss on body
-  inlet.iboss on body
+  blank.foot union body
+  blank.bboss union body
+  inlet.iboss union body
   blank.bpkt cut body
   blank.shaft cut body
   boltR cut body

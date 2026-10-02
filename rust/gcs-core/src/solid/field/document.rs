@@ -33,14 +33,14 @@ impl Snapshot {
     fn combine(self,other: Self,word: BodyWord) -> Result<Self,crate::interval::Error> {
         Ok(match (self,other) {
             (Self::Static(a),Self::Static(b)) => Self::Static(match word {
-                BodyWord::On => a.union(b)?,
+                BodyWord::Union => a.union(b)?,
                 BodyWord::Cut => a.difference(b)?,
                 _ => a.intersection(b)?,
             }),
             (a,b) => {
                 let (a,b) = (a.material(),b.material());
                 Self::Swept(match word {
-                    BodyWord::On => a.union(b)?,
+                    BodyWord::Union => a.union(b)?,
                     BodyWord::Cut => a.difference(b)?,
                     _ => a.intersection(b)?,
                 })
@@ -207,7 +207,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     I::new(from.value,to.value).map_err(error)?).into()),
                 SolidDef::Body {stock,on,through,bound} => {
                     let mut body = get(*stock);
-                    for &i in on { body = body.combine(get(i),BodyWord::On).map_err(error)?; }
+                    for &i in on { body = body.combine(get(i),BodyWord::Union).map_err(error)?; }
                     // Everything that cuts is one union, subtracted once: the same field as the
                     // cuts taken away in turn, max(max(s, -a), -b) being max(s, -min(a, b)), with
                     // the leaves in the same order; but the union keeps an indexed cut's copies
@@ -218,7 +218,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                         let mut paired = Vec::with_capacity(cuts.len().div_ceil(2));
                         let mut it = cuts.into_iter();
                         while let Some(a) = it.next() {
-                            paired.push(match it.next() { Some(b) => a.combine(b,BodyWord::On).map_err(error)?, None => a });
+                            paired.push(match it.next() { Some(b) => a.combine(b,BodyWord::Union).map_err(error)?, None => a });
                         }
                         cuts = paired;
                     }

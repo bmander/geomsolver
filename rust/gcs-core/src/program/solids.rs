@@ -2,7 +2,7 @@
 
 use super::resolve::Resolver;
 use super::{Code, Diag, Made, SourceMap};
-use crate::ir::{Decl, Kid, Operation as StmtKind, Relation, Statement as Stmt};
+use crate::ir::{Decl, Kid, Operation as StmtKind, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Extent, Sense, Sketch, SolidDef};
 use crate::style::Classes;
 use crate::syntax::{Span, StmtId};
@@ -15,19 +15,6 @@ pub(super) use claims::solid_claims;
 use claims::place;
 use faces::{chain_face,validate_chain,build_face};
 use build::build_solid;
-
-/// `boss on cyl`: an `on` whose two operands are both solids.  Asked of the *resolver*, which
-/// has known every declaration's kind since phase 1 — so the question is answered the same way
-/// before the solids are built and after.
-pub(super) fn is_body_on(sk: &Sketch, res: &Resolver, r: &Relation) -> bool {
-    let Some(w) = r.form.written() else { return false };
-    if w.word.text != "on" || w.ops.len() != 2 {
-        return false;
-    }
-    w.ops.iter().all(|o| res.lookup(o)
-        .and_then(|e| super::resolve::follow_building(sk,res,e,o).ok())
-        .is_some_and(|e| e.kind == EntKind::Solid))
-}
 
 /// Build faces and solids in dependency order, then fold body operations into stock solids.
 pub(super) fn solids(
@@ -121,7 +108,7 @@ pub(super) fn solids(
         }
     }
     // -- the body rule --------------------------------------------------------
-    // `bore cut cyl`, `boss on cyl`, folded into the body they name.  **Both are sets**, so
+    // `bore cut cyl`, `boss union cyl`, folded into the body they name.  **Both are sets**, so
     // the order this walk meets them in cannot matter, and a document may write them anywhere.
     for st in body {
         if skip.contains(&st.id) {
@@ -132,10 +119,6 @@ pub(super) fn solids(
             // placement walk after every solid is built
             StmtKind::SolidRel(r) if r.word != crate::syntax::BodyWord::Against => {
                 (r.word, &r.what, r.span, &r.body)
-            }
-            StmtKind::Relation(r) if is_body_on(sk, res, r) => {
-                let w = r.form.written().expect("`is_body_on` read the operands");
-                (crate::syntax::BodyWord::On, &w.ops[0], st.span, &w.ops[1])
             }
             _ => continue,
         };
@@ -190,7 +173,7 @@ pub(super) fn solids(
         let Some(SolidDef::Body { on, through, bound, .. }) =
             sk.solids.get_mut(b.i()).map(|s| &mut s.def) else { continue };
         match word {
-            crate::syntax::BodyWord::On => on.push(a.idx),
+            crate::syntax::BodyWord::Union => on.push(a.idx),
             crate::syntax::BodyWord::Cut => through.push(a.idx),
             crate::syntax::BodyWord::Bound => bound.push(a.idx),
             crate::syntax::BodyWord::Against => unreachable!("filtered above"),

@@ -65,8 +65,8 @@ hole_f := face(hole)
 #[test]
 fn solid_operands_follow_surface_children_before_surfaces_are_built() {
     for statements in [
-        "body := solid(side.solid)\nside.solid cut body\nside.solid on body\n",
-        "side.solid on body\nside.solid cut body\nbody := solid(side.solid)\n",
+        "body := solid(side.solid)\nside.solid cut body\nside.solid union body\n",
+        "side.solid union body\nside.solid cut body\nbody := solid(side.solid)\n",
     ] {
         let e = read(&format!("{statements}{RECT}\naxis := line(a,d)\n\
             stock := solid(sec, about: axis)\nside := surface(stock, bc)\n"));
@@ -287,8 +287,8 @@ fn a_body_keeps_what_lies_within_everything_that_bounds_it() {
 }
 
 #[test]
-fn a_boss_is_written_with_the_word_the_kinds_of_its_operands_choose() {
-    // `on` is already five constraints; between two solids it is the body rule (§9.2)
+fn a_boss_is_united_with_its_body() {
+    // `union` is the body rule's own word (§6.9); `on` is a constraint and relates no solids
     let src = format!(
         "{RECT}e := point hint(x: 20, y: 10)\nf := point hint(x: 40, y: 10)\n\
          g := point hint(x: 40, y: 30)\nh := point hint(x: 20, y: 30)\n\
@@ -298,11 +298,12 @@ fn a_boss_is_written_with_the_word_the_kinds_of_its_operands_choose() {
          horizontal ef\nvertical fg\nhorizontal gh\nvertical he\n\
          boss_f := face(ef, fg, gh, he)\n\
          block := solid(sec, depth: 30mm)\nboss := solid(boss_f, from: 0mm, to: 10mm)\n\
-         body := solid(block)\nboss on body\n"
+         body := solid(block)\nboss union body\n"
     );
     let e = read(&src);
     let want = 60.0 * 40.0 * 30.0 + 20.0 * 20.0 * 10.0;
     assert!((volume(&e, "body") - want).abs() < 1e-6, "a boss adds: {}", volume(&e, "body"));
+    refused(&src.replace("boss union body", "boss on body"), Code::E040, "does not relate a solid to a solid");
 }
 
 #[test]
@@ -791,7 +792,7 @@ fn through_extent_spans_additions_but_only_cut_subtracts() {
     let src = format!("{RECT}{HOLE}\n\
         stock := solid(sec, depth: 10mm)\n\
         boss := solid(sec, from: 0mm, to: 5mm)\n\
-        body := solid(stock)\nboss on body\n\
+        body := solid(stock)\nboss union body\n\
         bore := solid(hole_f, through: body)\n");
     let uncut = read(&src);
     assert_volume(volume(&uncut, "body"), 36000.0);
@@ -874,7 +875,7 @@ fn through_extent_refuses_mixed_labels_bad_targets_and_real_cycles() {
     refused(&format!("{RECT}s := solid(sec, through: missing)\n"), Code::E101, "no such entity");
     refused(&format!("{RECT}s := solid(sec, through: s)\n"), Code::E041, "made of itself");
     refused(&format!("{RECT}s := solid(sec, through: body)\nbody := solid(s)\n"), Code::E041, "made of itself");
-    refused(&format!("{RECT}stock := solid(sec, depth: 10mm)\ns := solid(sec, through: body)\nbody := solid(stock)\ns on body\n"), Code::E041, "made of itself");
+    refused(&format!("{RECT}stock := solid(sec, depth: 10mm)\ns := solid(sec, through: body)\nbody := solid(stock)\ns union body\n"), Code::E041, "made of itself");
     refused(&format!("{RECT}a1 := solid(sec, through: b1)\nb1 := solid(sec, through: a1)\n"), Code::E041, "made of itself");
     refused(&format!("{RECT}stock := solid(sec, depth: 10mm)\nbody := solid(stock)\nstock through body\n"), Code::E100, "now `cut`");
 }
@@ -1164,7 +1165,7 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
             groove0 := solid(groove_section, from: components.dims.torz - torw / 2, to: components.dims.torz + torw / 2)\n\
             groove1 := solid(groove_section, from: -components.dims.torz - torw / 2, to: -components.dims.torz + torw / 2)\n\
             groove2 := solid(groove_section, from: -(components.dims.bossz / 2 + components.dims.tretain) - torw / 2, to: -(components.dims.bossz / 2 + components.dims.tretain) + torw / 2)\n\
-            reference := solid(old_barrel)\nold_hub on reference\nthr.arm on reference\nthr.knob_s on reference\n\
+            reference := solid(old_barrel)\nold_hub union reference\nthr.arm union reference\nthr.knob_s union reference\n\
             thr.cross cut reference\ngroove0 cut reference\ngroove1 cut reference\ngroove2 cut reference\n", page_x + 40);
         let (p, errors, linked) = gcs_core::library::parse_linked(&src);
         assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");

@@ -308,7 +308,7 @@ fn interference_checks_respect_voids_and_disconnected_material() {
     let src = "unit mm\n".to_string()
         + &box_source("left", 0.0, 0.0, 1.0, 1.0, -1.0, 0.0)
         + &box_source("right", 8.0, 0.0, 1.0, 1.0, -1.0, 0.0)
-        + "result := solid(left)\nright on result\nother := solid(result)\n";
+        + "result := solid(left)\nright union result\nother := solid(result)\n";
     let e = read(&src);
     let v = claim(&e, SolidWord::Clear, 0.0);
     assert_eq!(v.holds(), Some(false));

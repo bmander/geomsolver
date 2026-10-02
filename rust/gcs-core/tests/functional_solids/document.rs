@@ -63,7 +63,7 @@ fn source_sphere_sweep_matches_a_torus_and_keeps_snapshot_geometry() {
 #[test]
 fn source_bodies_holes_and_nested_placements_keep_material_and_finite_support() {
     let e = read(&format!("{SPHERE}\nfirst := solid(ball,under: indexing,at: 45deg)\n\
-        moved := solid(first,under: indexing,at: 45deg)\nbody := solid(ball)\nmoved on body\n"));
+        moved := solid(first,under: indexing,at: 45deg)\nbody := solid(ball)\nmoved union body\n"));
     let body = field(&e,"body");
     for p in [[3.,0.,0.],[0.,3.,0.]] { assert!(body.bounds(point(p)).unwrap().bounds()[1] < -0.99); }
     assert!(body.bounds(point([0.;3])).unwrap().bounds()[0] > 1.99);

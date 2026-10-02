@@ -19,7 +19,7 @@ hub_rim := radius(hub_radius) circle(center: std.origin)
 plate_section := face(rim, holes: bore)
 flange := solid(plate_section, depth: plate_depth)
 hub := solid(face(hub_rim, holes: bore), from: 0mm, to: hub_height)
-hub on flange
+hub union flange
 
 construction centerline reference := line(std.origin, std.front.toward)
 pattern := hardware.BoltPattern(flange, std.origin, reference,

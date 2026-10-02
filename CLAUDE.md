@@ -222,11 +222,12 @@ support comes from an enclosing disk. Partial revolutions and lofts remain expli
 Snapshot construction uses floating-point solved curves and numeric convexity checks;
 interval evaluation does not certify that conversion or source-solve/axis-snapping error.
 **The body rule's third side (0.22):** `tip bound body` keeps of a body what lies within `tip`:
-a solid is its stock, plus everything `on` it, minus everything that `cut`s it, within everything
-that `bound`s it. `SolidDef::Body` carries `bound` beside `through`; `Term::Inter` is the term;
+a solid is its stock, plus everything in `union` with it, minus everything that `cut`s it, within
+everything that `bound`s it. `SolidDef::Body` carries `bound` beside `through`; `Term::Inter` is the term;
 the facet kernel, the fields and the CAD recipe (`"bound"`, OCCT `BRepAlgoAPI_Common`) all
 evaluate it. Union first; `cut` and `bound` commute. A swept solid may only
-be `cut` for now. `bound` is a body word like `cut`, so it is no declaration name. The spiral
+be `cut` for now. `bound` and `union` (0.32) are body words like `cut`, so they are no
+declaration names; `on` is a constraint word only, and between two solids is refused. The spiral
 bevel blank is `heel` bounded by `tip`, and the gear cutter the outer crown bounded by its
 indexed neighbour; the `A − (A − B)` intermediate is gone. The spiral bevel's steps are modules
 (`design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`, `generation.sv`, `layout.sv`'s
@@ -1599,13 +1600,13 @@ Conventions:
   `solid.rs`; issue #48, items 9 and 10).  What makes a CAD feature tree imperative is not that it
   is ordered but that it is *stateful*: step *n* acts on "the body as of step *n − 1*", an
   anonymous thing, and names faces by the order they were made in.  Solvent names everything —
-  which is why `port` was retired — so a solid is its **stock, plus everything `on` it, minus
-  everything that `cut`s it**, over primitives that are faces swept.  Both groups are *sets*, so
+  which is why `port` was retired — so a solid is its **stock, plus everything in `union` with it,
+  minus everything that `cut`s it**, over primitives that are faces swept.  Both groups are *sets*, so
   the statements filling them may be written anywhere in any order (P2), and the order that does
   exist lives inside one term over names, exactly as it lives inside `h = w / 2`.  A design that
   needs the other order (a pocket with a boss standing in it) **names the intermediate**, which
   is honest: there are two things there.
-  **A swept solid takes features too** (§6.9, [0.31]): the first `on`/`cut`/`bound` naming one
+  **A swept solid takes features too** (§6.9, [0.31]): the first `union`/`cut`/`bound` naming one
   makes it the body over its own sweep (`program/solids.rs`'s body pass) — the name keeps its
   index, so every reader sees the whole object, and the sweep moves to a stock of the same name
   (`SourceMap::also_made`), which `operand_paths` gives no step, so `plate.near` stays its name.

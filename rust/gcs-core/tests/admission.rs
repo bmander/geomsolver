@@ -99,7 +99,7 @@ fn a_roll_that_starts_in_the_blank_is_refused() {
 
 #[test]
 fn a_union_tool_is_refused() {
-    let tool = format!("{}construction twin := solid(tool, under: observer, at: 20deg)\nconstruction lump := solid(tool)\ntwin on lump\n",sphere(0.));
+    let tool = format!("{}construction twin := solid(tool, under: observer, at: 20deg)\nconstruction lump := solid(tool)\ntwin union lump\n",sphere(0.));
     let source = format!("{tool}{}construction removal := solid(lump, under: turn, from: -60deg, to: 60deg)\n{}",motions::roll(0.25),centred_post());
     let r = refused(admit(&source));
     assert_eq!(r.condition,Condition::Tool);

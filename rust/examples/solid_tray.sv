@@ -39,7 +39,7 @@ component Standoff(body: solid, c: point, r: Length, screw_r: Length, base_depth
     radius(screw_r) screw
     // Annular bosses leave blind screw holes; the floor stays intact underneath.
     boss := solid(face(rim, holes: screw), from: base_depth, to: base_depth + h)
-    boss on body
+    boss union body
 }
 // The contour's corner references, rather than independently calculated coordinates.
 Standoff(body, centers.a, r: boss_radius, screw_r: screw_radius, base_depth: -depth + wall, h: boss_height)

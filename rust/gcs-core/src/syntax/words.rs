@@ -147,7 +147,7 @@ pub fn is_name(s: &str) -> bool {
         && cs.all(ident_char)
         && EntKind::parse(s).is_none()
         && !trails_decl(s)
-        && !["group", "cut", "bound"].contains(&s)
+        && !["group", "cut", "union", "bound"].contains(&s)
         && !MODIFIERS.contains(&s)
         && !OPENERS.contains(&s)
 }

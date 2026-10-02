@@ -213,8 +213,8 @@ the most OCCT for the least risk. Phase 0 measures before any code is committed 
 - Record the intersection curves' lengths, the minimum angle between the surfaces along them
   (near-tangent intersections are where marching fails), and the smallest face and edge.
 - For the ladder: every solid in the corpus by form and profile kind (which rung it needs), and
-  every Boolean with coincident or tangent operand faces, by kind (a flush bore, a boss `on` its
-  stock, a mate, coaxial equal radii).
+  every Boolean with coincident or tangent operand faces, by kind (a flush bore, a boss in `union`
+  with its stock, a mate, coaxial equal radii).
 - **Exit:** a table per stage and per Boolean, here; a go/no-go on the split (phase 3) and on each rung, with
   the estimated size of each.
 
@@ -634,7 +634,7 @@ body), and the OCCT path already refuses part of what it allows:
 | the same with a **traced or formula curve** (an involute, `std.Ellipse`) | refused | 2 |
 | **loft** along a guide (`solid_loft`) | refused (`solid::cad`: "does not yet support along-guide lofts") | 2 |
 | a swept cut of the generating class | built, on our sheets | phases 1–5 |
-| **any other continuous sweep**: swept stock (`swept_tumble`, `swept_spring`, `swept_torus`), a sweep `on` or `bound`, nested sweeps, tools outside rows T1–E4 | refused; field mesh only | outside the ladder |
+| **any other continuous sweep**: swept stock (`swept_tumble`, `swept_spring`, `swept_torus`), a sweep `union`ed or `bound`, nested sweeps, tools outside rows T1–E4 | refused; field mesh only | outside the ladder |
 
 A kernel that climbs rungs 1 and 2 covers more than OCCT covers here today — OCCT could build
 splines and lofts; nothing ever handed them to it.
@@ -646,7 +646,7 @@ splines and lofts; nothing ever handed them to it.
   (plane × quadric; coaxial quadrics as circles), marched with phase 3's tracer where they do not
   (a torus against a cylinder is a quartic), through the phase 3 arrangement.
 - **Coincident faces**, which the gear avoids and Solvent documents write routinely: a flush bore,
-  a boss standing `on` its stock (the shared face counted once), parts mated `against` each other,
+  a boss in `union` with its stock (the shared face counted once), parts mated `against` each other,
   coaxial cylinders of one radius. Coincidence is decided exactly where the geometry says it
   (two planes, two coaxial quadrics of equal radius: the same surface to the tolerance) and never
   by an intersection that happens to come out tangent; coincident pieces are merged, their

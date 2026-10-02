@@ -147,8 +147,8 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
   knob_s := solid(face(knob), from: dims.bossz / 2, to: dims.bossz / 2 + dims.levw)
   cross := solid(face(x0, x1, x2, x3, -> close), about: hax)
   body := solid(turned)
-  arm on body
-  knob_s on body
+  arm union body
+  knob_s union body
   cross cut body
 }
 

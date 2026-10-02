@@ -20,4 +20,4 @@ ground bossfp3
 bossf := face(bossfp0, bossfp1, bossfp2, bossfp3, -> close)
 boss := solid(bossf, from: 0mm, to: 2mm)
 result := solid(stock)
-boss on result
+boss union result

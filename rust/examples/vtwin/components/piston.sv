@@ -134,8 +134,8 @@ component Piston(f: plane, dims: group) {
   boss := solid(face(eye), from: -dims.rw / 2, to: dims.rw / 2)
   pinhole := solid(face(hole), through: body)
   body := solid(pist)
-  shank on body
-  boss on body
+  shank union body
+  boss union body
   pinhole cut body
 }
 
