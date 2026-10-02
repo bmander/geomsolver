@@ -1,68 +1,44 @@
-//! The export by the core's own kernel (docs/rust-kernel-plan.md, `--kernel rust`): a static solid
-//! built from its CAD recipe by `gcs_core::brep`, its STEP written and its STL meshed within the
-//! tolerance's deflection (the measured sag, not a control), each checked — the boundary valid and
-//! not pinched, the STEP parsed back against it (`step_check`), the STL's shells closed — and
-//! staged, so a failure anywhere leaves every output as it was.
+//! The export by the core's own kernel (docs/rust-kernel-plan.md, the default; `--kernel occt` asks
+//! for OCCT): a solid built by `gcs_core::brep` — from its CAD recipe, or with swept cuts of the
+//! generating class as one sector patterned — its STEP written and parsed back against it, its STL
+//! meshed within the tolerance's deflection and a swept body's held to its material field, by the
+//! same functions the browser's export calls (`brep::export`); staged, so a failure anywhere leaves
+//! every output as it was.
 use super::{output,progress::stage,Body,ExportRefusal,Stage};
-#[cfg(feature="occt")]
-use super::native::step_check;
-#[cfg(not(feature="occt"))]
-#[path="native/step_check.rs"]
-#[allow(dead_code)]
-mod step_check;
 use gcs_core::brep;
 use gcs_core::model::Sketch;
 use gcs_core::solid::export::Tolerance;
 
-/// The mesh's deflection with no tolerance given: the native export's gross bar.
-const GROSS: f64 = 0.01;
-
 pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,tolerance: Option<Tolerance>) -> Result<(),ExportRefusal> {
-    if body.swept() {
-        return Err(ExportRefusal::at(Stage::Blank,"the Rust kernel builds static solids only, not yet a body with swept cuts; \
-            use `--kernel occt`"))
-    }
-    let recipe = body.recipe.as_ref().map_err(|e| ExportRefusal::at(Stage::Blank,e.clone()))?;
-    let started = std::time::Instant::now();
-    let solid = brep::recipe::build(&recipe.recipe).map_err(|e| ExportRefusal::at(Stage::Blank,e))?;
-    let tol = 1e-9*solid.size().max(1.);
-    solid.check(10.*tol).map_err(|e| ExportRefusal::at(Stage::Blank,format!("the built boundary is invalid: {e}")))?;
-    if let Some(p) = solid.pinches().first() {
-        return Err(ExportRefusal::at(Stage::Blank,format!("the solid pinches to a point at [{:.4}, {:.4}, {:.4}] mm (two of its \
-            walls touch there without an edge between them): no manifold file describes it",p[0],p[1],p[2])))
-    }
-    let volume = brep::props::volume(&solid);
-    stage(&format!("built the solid by the Rust kernel: {volume:.6} mm³, {} faces, {} edges ({:?})",solid.faces.len(),
-        solid.edges.len(),started.elapsed()));
+    super::progress::start();
+    let say = brep::sweep::Say {stage:&|line: &str| stage(line),mark:&|m| super::mark(m)};
+    let exact = brep::export::exact(sk,body.index,body.admission.as_ref(),tolerance,&say)?;
     let name = sk.solids[body.index].name.clone();
     let mut staged = output::Staged::new();
     if let Some(path) = step {
-        let started = std::time::Instant::now();
-        let text = brep::step::write(&solid,&name,tolerance.map_or(1e-4,|t| t.deflection()*0.1))
-            .map_err(|e| ExportRefusal::at(Stage::Step,e))?;
-        // the file parsed back and checked against the solid: every reference, the topology's
-        // counts, units, and each face's surface and its numbers
-        let verified = step_check::verify(&text,&step_check::Solid::of(&solid))
-            .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the solid: {e}")))?;
-        staged.write(path,"step",text.as_bytes()).map_err(|e| ExportRefusal::at(Stage::Step,e))?;
-        stage(&format!("staged the STEP output: {} entities; {} faces, {} edges and {} vertices, each the solid's ({:?})",
-            verified.entities,verified.faces,verified.edges,verified.vertices,started.elapsed()));
-    }
-    if let Some(path) = stl {
-        let started = std::time::Instant::now();
-        let bar = tolerance.map_or(GROSS,|t| t.deflection());
-        let m = brep::mesh::mesh(&solid,bar,0.2).map_err(|e| ExportRefusal::at(Stage::Mesh,e))?;
-        if m.turned > 0 {
-            return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh has {} triangles facing against their surfaces",m.turned)))
+        let text = brep::export::step(&exact,&name,tolerance,&say)?;
+        let file = staged.file(path,"step").map_err(|e| ExportRefusal::at(Stage::Step,e))?;
+        std::fs::write(&file,text.as_bytes()).map_err(|e| ExportRefusal::at(Stage::Step,format!("{path}: {e}")))?;
+        // a build with the kernel reads the file back by it, as a consumer's reader would, when
+        // verification is full
+        #[cfg(feature="occt")]
+        if super::native::step_check::verification() == super::native::step_check::Verification::Full {
+            let started = std::time::Instant::now();
+            let session = super::native::Session::new().map_err(|e| ExportRefusal::at(Stage::Step,e))?;
+            let said = super::read_back(&session,&exact.solid,&file.to_string_lossy()).map_err(|e| ExportRefusal::at(Stage::Step,e))?;
+            stage(&format!("the STEP file, each the solid's{said} ({:?})",started.elapsed()));
         }
-        if m.sag > bar {
-            return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh sags {:.3} µm against {:.3} µm",m.sag*1e3,bar*1e3)))
-        }
-        let bytes = gcs_core::mesh::stl_of(&m.triangles(),&name);
-        gcs_core::mesh::stl_shells(&bytes).map_err(|e| ExportRefusal::at(Stage::Stl,e))?;
-        staged.write(path,"stl",&bytes).map_err(|e| ExportRefusal::at(Stage::Stl,e))?;
-        stage(&format!("staged the STL output: {} triangles, sagging {:.3} µm at most against {:.3} µm, its shells checked ({:?})",
-            m.tris.len(),m.sag*1e3,bar*1e3,started.elapsed()));
+        stage("staged the STEP output");
     }
-    staged.commit().map_err(|e| ExportRefusal::at(Stage::Written,e))
+    // a swept body is meshed and judged against its material field whether or not an STL is asked for
+    if stl.is_some() || exact.swept {
+        let bytes = brep::export::stl(sk,body.index,&exact,tolerance,&say)?;
+        if let Some(path) = stl {
+            staged.write(path,"stl",&bytes).map_err(|e| ExportRefusal::at(Stage::Stl,e))?;
+            stage("staged the STL output");
+        }
+    }
+    staged.commit().map_err(|e| ExportRefusal::at(Stage::Written,e))?;
+    super::mark(Stage::Written);
+    Ok(())
 }

@@ -1,4 +1,6 @@
 //! The contacts of a continuous sweep's tool, read from an ordinary swept-solid definition.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::{SpatialField,RevolvedSurface};
 use crate::{envelope::{self,Contact,Error,Motion},model::{Sketch,SolidDef,EntKind},motion::Family};
 use std::{collections::BTreeSet,f64::consts::TAU};
@@ -79,7 +81,7 @@ impl SweepContacts {
                             let surface = RevolvedSurface::read(sk,id,edge)?.placed(pose);
                             if edge.kind == EntKind::Line {
                                 let radius = |u| surface.at(u,0.).map(|p|
-                                    p.dv[0].hypot(p.dv[1]).hypot(p.dv[2])/TAU);
+                                    p.dv[0].dhypot(p.dv[1]).dhypot(p.dv[2])/TAU);
                                 // A diameter on the axis disappears in a full revolution.
                                 if radius(0.).map_err(|e| format!("{e:?}"))? <= axis_tolerance
                                     && radius(1.).map_err(|e| format!("{e:?}"))? <= axis_tolerance { order.push(None); continue; }
@@ -106,8 +108,8 @@ impl SweepContacts {
                     Ok([p.at(0.,0.).map_err(|e| format!("{e:?}"))?.position,p.at(1.,0.).map_err(|e| format!("{e:?}"))?.position])
                 };
                 let (ea,eb) = (ends(&patches[a])?,ends(&patches[b])?);
-                let scale = ea.iter().chain(&eb).map(|p| p[0].hypot(p[1]).hypot(p[2])).fold(1_f64,f64::max);
-                let close = |p: [f64;3],q: [f64;3]| (0..3).map(|k| (p[k]-q[k]).powi(2)).sum::<f64>().sqrt() < 1e-7*scale;
+                let scale = ea.iter().chain(&eb).map(|p| p[0].dhypot(p[1]).dhypot(p[2])).fold(1_f64,f64::max);
+                let close = |p: [f64;3],q: [f64;3]| (0..3).map(|k| (p[k]-q[k]).dpowi(2)).sum::<f64>().sqrt() < 1e-7*scale;
                 let Some((ua,ub)) = [(1.,0.),(1.,1.),(0.,0.),(0.,1.)].into_iter()
                     .find(|&(ua,ub)| close(ea[ua as usize],eb[ub as usize])) else { continue; };
                 edges.push(PatchEdge {patches:[a,b],ends:[ua,ub]});

@@ -62,7 +62,7 @@ impl Pcurve {
             Pcurve::Line {a,b} => [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])],
             Pcurve::Inverse {a,b} => {
                 let near = [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])];
-                unwrap(surface.inverse(edge.point(t,vertices)),near,surface.periods())
+                unwrap(surface.inverse_near(edge.point(t,vertices),near),near,surface.periods())
             }
         }
     }
@@ -111,6 +111,15 @@ pub struct Brep { pub vertices: Vec<Vertex>,pub edges: Vec<Edge>,pub faces: Vec<
 
 impl Brep {
     pub fn vertex(&mut self,p: V) -> u32 { self.vertices.push(Vertex {p}); (self.vertices.len()-1) as u32 }
+    /// The faces of `self` and of `other` as one B-rep, sharing nothing (two sheets to split by at once).
+    pub fn joined(&self,other: &Brep) -> Brep {
+        let mut c = self.clone();
+        let (nv,ne) = (c.vertices.len() as u32,c.edges.len() as u32);
+        c.vertices.extend(other.vertices.iter().cloned());
+        c.edges.extend(other.edges.iter().cloned().map(|mut e| { e.v = e.v.map(|v| v+nv); e }));
+        c.faces.extend(other.faces.iter().cloned().map(|mut f| { for co in f.loops.iter_mut().flatten() { co.edge += ne; } f }));
+        c
+    }
     pub fn edge(&mut self,curve: EdgeCurve,t: [f64;2],v: [u32;2]) -> u32 {
         self.edges.push(Edge {curve,t,v,tol:0.});
         (self.edges.len()-1) as u32

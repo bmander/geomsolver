@@ -15,6 +15,8 @@
 //! Every walk here is culled by bounding box before it is paid for, and every container is
 //! ordered, so the answer does not depend on how the drawing was written down.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::plane;
 use crate::solid::{Box3, Csg, Facet, Prim, RayIndex};
 
@@ -105,6 +107,7 @@ fn same_plane(n1: [f64; 3], d1: f64, n2: [f64; 3], d2: f64) -> bool {
 /// every history-based kernel has does not arise here.
 fn path_of(prim: &Prim, f: &Facet) -> String {
     match prim.faces.get(f.face) {
+        Some(n) if prim.exact => n.clone(),
         Some(n) => format!("{}.{}", prim.of, n),
         None => prim.of.clone(),
     }
@@ -1029,7 +1032,7 @@ fn on_boundary(csg: &Csg, indices: &[RayIndex], m: [f64; 3], along: [f64; 3], ep
     let mut ins = [false; RING];
     for (k, slot) in ins.iter_mut().enumerate() {
         let a = std::f64::consts::TAU * k as f64 / RING as f64;
-        let (s, c) = a.sin_cos();
+        let (s, c) = a.dsin_cos();
         *slot = csg.inside_indexed([
             m[0] + eps * (c * p[0] + s * q[0]),
             m[1] + eps * (c * p[1] + s * q[1]),
@@ -1075,9 +1078,11 @@ fn seams(prim: &Prim, out: &mut Vec<Edge>) {
         let b = [k.1[0] as f64 * g, k.1[1] as f64 * g, k.1[2] as f64 * g];
         let (na, nb) = (prim.facets[f1].n, prim.facets[f2].n);
         // a seam whose two facets face the same way is a chord of a tessellation and not a
-        // corner, and it is smooth if *either* facet says its sweep was one
+        // corner, and it is smooth if *either* facet says its sweep was one — within one face of an
+        // exact B-rep, whose faces meet at its edges
         let flat = plane::dot(na, nb) > 0.999_999;
-        let smooth = flat || (prim.facets[f1].smooth && prim.facets[f2].smooth);
+        let one_face = !prim.exact || prim.facets[f1].face == prim.facets[f2].face;
+        let smooth = flat || (prim.facets[f1].smooth && prim.facets[f2].smooth && one_face);
         out.push(Edge {
             a,
             b,

@@ -16,6 +16,8 @@
 //! Sampled, like the admission, and says so: a gap is read at the contacts the host traced, and a
 //! host checks the surface it builds from the boundary against the gaps (`clearance_of`) and the
 //! material field before it is used.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::envelope::Motion;
 use crate::space::{sub,add,dot,cross,norm,scale};
 use std::f64::consts::{PI,TAU};
@@ -87,7 +89,7 @@ pub fn indexing(sweeps: &[Vec<Motion>],size: f64) -> Result<Indexing,String> {
         let r = matrix(m);
         let re1 = [dot(r[0],e1),dot(r[1],e1),dot(r[2],e1)];
         let (c,s) = (dot(re1,e1),dot(re1,e2));
-        let angle = s.atan2(c).rem_euclid(TAU);
+        let angle = s.datan2(c).rem_euclid(TAU);
         let t = m.point([0.;3]);
         let slide = dot(t,axis);
         let (tx,ty) = (dot(t,e1),dot(t,e2));
@@ -99,8 +101,8 @@ pub fn indexing(sweeps: &[Vec<Motion>],size: f64) -> Result<Indexing,String> {
         Ok((add(scale(e1,x),scale(e2,y)),angle,slide))
     };
     let widest = (1..count).max_by(|&a,&b| {
-        let sa = line(relative(first,a)).map(|l| l.1.sin().abs()).unwrap_or(0.);
-        let sb = line(relative(first,b)).map(|l| l.1.sin().abs()).unwrap_or(0.);
+        let sa = line(relative(first,a)).map(|l| l.1.dsin().abs()).unwrap_or(0.);
+        let sb = line(relative(first,b)).map(|l| l.1.dsin().abs()).unwrap_or(0.);
         sa.total_cmp(&sb)
     }).unwrap();
     let (origin,_,_) = line(relative(first,widest))?;
@@ -156,30 +158,30 @@ impl Frame {
     pub fn coordinates(&self,slices: Slices,p: V) -> [f64;3] {
         let d = sub(p,self.origin);
         let (x,y) = (dot(d,self.e1),dot(d,self.e2));
-        let phi = y.atan2(x);
+        let phi = y.datan2(x);
         match slices {
             Slices::Spheres(c) => {
                 let d = sub(p,c);
-                let (z,r) = (dot(d,self.axis),x.hypot(y));
-                [norm(d),r.atan2(z),phi]
+                let (z,r) = (dot(d,self.axis),x.dhypot(y));
+                [norm(d),r.datan2(z),phi]
             }
-            Slices::Planes => [dot(d,self.axis),x.hypot(y),phi],
+            Slices::Planes => [dot(d,self.axis),x.dhypot(y),phi],
         }
     }
     /// The point at a slice, a place in it and an angle.
     pub fn point(&self,slices: Slices,s: f64,w: f64,phi: f64) -> V {
-        let radial = add(scale(self.e1,phi.cos()),scale(self.e2,phi.sin()));
+        let radial = add(scale(self.e1,phi.dcos()),scale(self.e2,phi.dsin()));
         match slices {
-            Slices::Spheres(c) => add(c,scale(add(scale(self.axis,w.cos()),scale(radial,w.sin())),s)),
+            Slices::Spheres(c) => add(c,scale(add(scale(self.axis,w.dcos()),scale(radial,w.dsin())),s)),
             Slices::Planes => add(self.origin,add(scale(self.axis,s),scale(radial,w))),
         }
     }
     /// The direction square to the axis at angle `phi`.
-    pub fn radial(&self,phi: f64) -> V { add(scale(self.e1,phi.cos()),scale(self.e2,phi.sin())) }
+    pub fn radial(&self,phi: f64) -> V { add(scale(self.e1,phi.dcos()),scale(self.e2,phi.dsin())) }
     /// A point's distance from the axis.
     pub fn radius(&self,p: V) -> f64 {
         let d = sub(p,self.origin);
-        dot(d,self.e1).hypot(dot(d,self.e2))
+        dot(d,self.e1).dhypot(dot(d,self.e2))
     }
 }
 
@@ -298,7 +300,7 @@ impl Boundary {
         let mut a = [[0.;5];4];
         for (&k,&p) in self.knots.iter().zip(&self.phase) {
             let t = self.scaled(k);
-            let powers: [f64;4] = std::array::from_fn(|i| if i <= degree { t.powi(i as i32) } else { 0. });
+            let powers: [f64;4] = std::array::from_fn(|i| if i <= degree { t.dpowi(i as i32) } else { 0. });
             for i in 0..=degree { for j in 0..=degree { a[i][j] += powers[i]*powers[j]; } a[i][4] += powers[i]*p; }
         }
         // Gaussian elimination with partial pivoting on the normal equations, well conditioned on [-1, 1]

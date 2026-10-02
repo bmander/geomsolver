@@ -1,5 +1,7 @@
 //! Evaluate typed arithmetic and affine expressions.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::{Ast, Measure, Op, CONSTANTS};
 use crate::constraints::SpecKind;
 use crate::units::Dim;
@@ -9,22 +11,22 @@ fn call(name: &str, a: &[f64]) -> f64 {
     match name {
         "sqrt" => a[0].sqrt(),
         "abs" => a[0].abs(),
-        "sin" => a[0].to_radians().sin(),
-        "cos" => a[0].to_radians().cos(),
-        "tan" => a[0].to_radians().tan(),
-        "asin" => a[0].asin().to_degrees(),
-        "acos" => a[0].acos().to_degrees(),
-        "atan" => a[0].atan().to_degrees(),
-        "atan2" => a[0].atan2(a[1]).to_degrees(),
-        "exp" => a[0].exp(),
-        "ln" => a[0].ln(),
-        "log" => a[0].log10(),
+        "sin" => a[0].to_radians().dsin(),
+        "cos" => a[0].to_radians().dcos(),
+        "tan" => a[0].to_radians().dtan(),
+        "asin" => a[0].dasin().to_degrees(),
+        "acos" => a[0].dacos().to_degrees(),
+        "atan" => a[0].datan().to_degrees(),
+        "atan2" => a[0].datan2(a[1]).to_degrees(),
+        "exp" => a[0].dexp(),
+        "ln" => a[0].dln(),
+        "log" => a[0].dlog10(),
         "floor" => a[0].floor(),
         "ceil" => a[0].ceil(),
         "round" => a[0].round(),
         "min" => a.iter().copied().fold(f64::INFINITY, f64::min),
         "max" => a.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-        "hypot" => a[0].hypot(a[1]),
+        "hypot" => a[0].dhypot(a[1]),
         _ => f64::NAN,
     }
 }
@@ -184,7 +186,7 @@ fn ev(ast: &Ast, env: &BTreeMap<String, Aff>, ms: Option<Measurer>) -> Result<Af
                                 x.dim.name()
                             )
                         })?;
-                        Aff::of_dim(p.powf(q), dim)
+                        Aff::of_dim(p.dpowf(q), dim)
                     }
                     _ => return Err(free_pair_of(&x, &y)),
                 },

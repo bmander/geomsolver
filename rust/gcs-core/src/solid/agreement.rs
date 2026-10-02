@@ -4,6 +4,8 @@
 //! fifth to a third of its surface while its volume and its closed shell passed, so it is the
 //! acceptance of every swept export (docs/generating-sweeps.md, Acceptance). It is sampled,
 //! and a probe the field cannot decide is counted apart and never taken as agreement.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::MaterialEvaluator;
 use crate::interval::{Interval,minimum::{self,Stop}};
 use crate::space::{sub,cross,norm};
@@ -133,7 +135,7 @@ pub fn of_triangles_indexed(vertices: &[V],triangles: &[[u32;3]],field: &super::
     let Some(sector) = Sector::new(field,indexed,&points,cache,options)? else {
         return of_triangles_parallel(vertices,triangles,field,cache,options).map(|a| (a,Folding::default()));
     };
-    let clock = std::time::Instant::now();
+    let clock = crate::clock::Instant::now();
     let outcomes = crate::par::indices_with(chosen.len(),|| sector.state(),|state,i| {
         let before = state.whole;
         let probed = probe_with(vertices,chosen[i],options,&mut |p,stop,tolerance| sector.read(state,p,stop,tolerance));
@@ -200,7 +202,7 @@ impl Sector {
         });
         if !alike { return Ok(None); }
         folding.alike = true;
-        let clock = std::time::Instant::now();
+        let clock = crate::clock::Instant::now();
         let mut cells: Vec<[usize;3]> = Vec::new();
         for &p in points { if let Some(c) = sector.cell(sector.fold(p)) { if !cells.contains(&c) { cells.push(c); } } }
         folding.cells = cells.len();
@@ -253,7 +255,7 @@ impl Sector {
     /// `p` turned by whole pitches into the sector about angle zero.
     pub fn fold(&self,p: V) -> V {
         let d = sub(p,self.origin);
-        let angle = crate::space::dot(d,self.e2).atan2(crate::space::dot(d,self.e1));
+        let angle = crate::space::dot(d,self.e2).datan2(crate::space::dot(d,self.e1));
         self.turn(p,-(angle/self.pitch).round() as i64)
     }
 

@@ -485,6 +485,18 @@ impl Sketch {
         value
     }
 
+    /// Solid `i`'s exact B-rep (`solid::Exact`), or why this kernel does not build it: built once
+    /// for the geometry it reads, whatever approximation asks.
+    pub fn exact_solid(&self, i: usize) -> Result<std::rc::Rc<crate::solid::Exact>, String> {
+        let key = crate::solid::reads(self, i, 0.0);
+        if let Some((old, value)) = self.exact_cache.borrow().get(&i) {
+            if *old == key { return value.clone(); }
+        }
+        let value = crate::solid::build_exact(self, i).map(std::rc::Rc::new);
+        self.exact_cache.borrow_mut().insert(i, (key, value.clone()));
+        value
+    }
+
     /// **What a host meshing swept solids elsewhere has to mesh** (`FieldMeshing::Deferred`): the
     /// objects (`overview::objects`) with a continuous sweep among their operands, each with the
     /// key of the drawing it is a surface of (`FieldJob`). A swept solid that is no object is left
@@ -510,6 +522,19 @@ impl Sketch {
         let n = surface.vertices.len();
         if surface.triangles.iter().flatten().any(|&v| v as usize >= n) {
             return Err(format!("`{}`: a supplied triangle names a vertex past the {n} given", self.solids[i].name));
+        }
+        // an exact surface is a finished one, and says the face of every triangle
+        if let Some(x) = &surface.exact {
+            let name = &self.solids[i].name;
+            if surface.provisional { return Err(format!("`{name}`: an exact surface is never provisional")); }
+            if x.of.len() != surface.triangles.len() {
+                return Err(format!("`{name}`: an exact surface names the faces of {} of its {} triangles", x.of.len(),
+                    surface.triangles.len()));
+            }
+            if x.of.iter().any(|&f| f as usize >= x.smooth.len()) {
+                return Err(format!("`{name}`: an exact surface's triangle names a face past the {} given", x.smooth.len()));
+            }
+            if !(x.volume.is_finite()) { return Err(format!("`{name}`: an exact surface's volume is not a number")); }
         }
         let key = crate::solid::reads(self, i, 0.0);
         self.field_surfaces.borrow_mut().insert(i, (key, std::rc::Rc::new(surface)));

@@ -21,6 +21,8 @@
 //! already sit on — so the scene comes out in 2D world coordinates and the app's camera, a 2D
 //! similarity, maps it to the screen with no vector arithmetic of its own.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::linalg::{min_norm_solve, Mat};
 use crate::model::{grow, Box2, EntKind, EntRef, Sketch};
 use crate::plane::{dot, Basis};
@@ -287,12 +289,12 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
 fn round(c: (f64, f64), r: f64, from: f64, sweep: f64, unit: f64) -> Vec<(f64, f64)> {
     let tol = crate::curve::flatness(unit);
     // sagitta of a step of angle θ on radius r is r(1 − cos(θ/2)); invert for θ
-    let step = if r > tol { 2.0 * (1.0 - tol / r).acos() } else { std::f64::consts::TAU };
+    let step = if r > tol { 2.0 * (1.0 - tol / r).dacos() } else { std::f64::consts::TAU };
     let n = ((sweep.abs() / step).ceil() as usize).clamp(2, 4096);
     (0..=n)
         .map(|k| {
             let a = from + sweep * k as f64 / n as f64;
-            (c.0 + r * a.cos(), c.1 + r * a.sin())
+            (c.0 + r * a.dcos(), c.1 + r * a.dsin())
         })
         .collect()
 }
@@ -365,8 +367,8 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
                 let pts = (0..=n).map(|k| {
                     let t = std::f64::consts::TAU * k as f64 / n as f64;
                     let mut p = o;
-                    p[a] += r * t.cos();
-                    p[b] += r * t.sin();
+                    p[a] += r * t.dcos();
+                    p[b] += r * t.dsin();
                     p
                 }).collect();
                 items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
@@ -396,10 +398,10 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
             let (r0, r1) = if e.kind == EntKind::Cylinder {
                 (own.abs(), own.abs())
             } else {
-                (0.0, len * own.tan().abs().min(4.0))
+                (0.0, len * own.dtan().abs().min(4.0))
             };
             let ring = |c: [f64; 3], r: f64, t: f64| {
-                add(c, add(scale(u, r * t.cos()), scale(v, r * t.sin())))
+                add(c, add(scale(u, r * t.dcos()), scale(v, r * t.dsin())))
             };
             let tau = std::f64::consts::TAU;
             let n = ((tau * r1.max(r0) / unit).sqrt().ceil() as usize).clamp(24, 256);
@@ -615,7 +617,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
     // corner is its own least-squares answer and two of them agree to a tolerance, not to a bit.
     let tol = sk.extent() * SAME_POINT;
     let same = |p: [f64; 3], q: [f64; 3]| {
-        (p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2) <= tol * tol
+        (p[0] - q[0]).dpowi(2) + (p[1] - q[1]).dpowi(2) + (p[2] - q[2]).dpowi(2) <= tol * tol
     };
     let mut edges: Vec<([f64; 3], [f64; 3])> = Vec::new();
     for (i, c1) in cs.iter().enumerate() {
@@ -836,8 +838,8 @@ fn lambert(n: [f64; 3], eye: &([f64; 3], [f64; 3])) -> f64 {
 }
 
 fn eye(az: f64, el: f64) -> ([f64; 3], [f64; 3]) {
-    let (sa, ca) = az.sin_cos();
-    let (se, ce) = el.sin_cos();
+    let (sa, ca) = az.dsin_cos();
+    let (se, ce) = el.dsin_cos();
     // the viewer stands at (ca·ce, sa·ce, se) and looks back at the origin
     let right = [-sa, ca, 0.0];
     let up = [-ca * se, -sa * se, ce];

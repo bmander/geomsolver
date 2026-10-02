@@ -2,6 +2,8 @@
 //! must give the same result — so every random draw (witness jitter, generic poses for merge
 //! decisions, homotopy's gamma trick) comes from a seeded stream here.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 pub struct Rng {
     s: u32,
     spare: Option<f64>,
@@ -39,7 +41,7 @@ impl Rng {
             if s == 0.0 || s >= 1.0 {
                 continue;
             }
-            let f = (-2.0 * s.ln() / s).sqrt();
+            let f = (-2.0 * s.dln() / s).sqrt();
             self.spare = Some(v * f);
             return mu + sigma * u * f;
         }

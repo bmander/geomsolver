@@ -12,6 +12,8 @@
 //!   theorem-induced dependencies; when the Jacobian rank is lower than the matching we log it —
 //!   that residue is Stage 4's motivation.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::cgraph::coincident_classes;
 use crate::constraints::{same_constraint, CKind, Constraint};
 use crate::graph;
@@ -581,7 +583,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             .filter(|c| {
                 let e = c.error(sk);
                 let deg = crate::kernels::kernel(c.kind.kernel()).degree as i32;
-                !e.is_nan() && e <= opts.tol * sk.extent().max(1.0).powi(deg)
+                !e.is_nan() && e <= opts.tol * sk.extent().max(1.0).dpowi(deg)
             })
             .map(|c| c.id)
             .collect();

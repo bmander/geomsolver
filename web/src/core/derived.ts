@@ -43,6 +43,12 @@ export function derived(sk: Sketch, unit: number): Drawn[] {
   return takeJson<Drawn[]>(core().gcs_derived_json(sk.handle, unit));
 }
 
+/** Whether those pictures are the same at every pixel length (every solid they project is swept,
+ *  one surface whatever the zoom): a picture kept through a zoom then needs no refining. */
+export function derivedDetailFree(sk: Sketch): boolean {
+  return core().gcs_derived_detail_free(sk.handle) === 1;
+}
+
 /** What those pictures depend on. The core walks their solids and planes; coordinates of
  *  unrelated geometry do not force another projection during a drag. */
 export function derivedInputs(sk: Sketch, capacity = 128): Float64Array {

@@ -1,5 +1,7 @@
 //! Solved planar and world geometry, drawing bounds and point access.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 
 pub type Box2 = (f64, f64, f64, f64); // (xmin, ymin, xmax, ymax)
@@ -49,7 +51,7 @@ impl Sketch {
 
     pub fn line_length(&self, i: usize) -> f64 {
         let (dx, dy) = self.line_dir(i);
-        dx.hypot(dy)
+        dx.dhypot(dy)
     }
 
     /// Centre point index of a circle or an arc.
@@ -84,8 +86,8 @@ impl Sketch {
         let (cx, cy) = self.point_xy(a.center as usize);
         let (sx, sy) = self.point_xy(a.start as usize);
         let (ex, ey) = self.point_xy(a.end as usize);
-        let a0 = (sy - cy).atan2(sx - cx);
-        let mut a1 = (ey - cy).atan2(ex - cx);
+        let a0 = (sy - cy).datan2(sx - cx);
+        let mut a1 = (ey - cy).datan2(ex - cx);
         if a1 <= a0 {
             a1 += 2.0 * std::f64::consts::PI;
         }
@@ -106,7 +108,7 @@ impl Sketch {
         let (cx, cy) = self.point_xy(a.center as usize);
         let r = self.params[a.radius as usize].value.abs();
         let (a0, a1) = self.arc_angles(i);
-        let at = |th: f64| (cx + r * th.cos(), cy + r * th.sin());
+        let at = |th: f64| (cx + r * th.dcos(), cy + r * th.dsin());
         let mut out = vec![at(a0), at(a1)];
         let quarter = std::f64::consts::FRAC_PI_2;
         let mut k = (a0 / quarter).ceil();
@@ -256,7 +258,7 @@ impl Sketch {
         let mut bd = f64::INFINITY;
         for i in 0..self.points.len() {
             let (px, py) = self.point_xy(i);
-            let d = (px - x).hypot(py - y);
+            let d = (px - x).dhypot(py - y);
             if d < bd {
                 best = Some(i);
                 bd = d;

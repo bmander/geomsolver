@@ -5,6 +5,7 @@
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import type { Pt, Seg } from '../core/callout.js';
+import type { Drawn } from '../core/derived.js';
 import type { Item, Part } from '../core/overview.js';
 import {
   Arc, Circle, Line, Plane, Point, Primitive, Spline, Style, onRadius,
@@ -262,6 +263,27 @@ export function paintOverview(v: SketchView): void {
   v.gesture?.paint?.(v.ctx);
 }
 
+/** A picture's strokes by ink, kept as long as the picture is (`DerivedDrawing` hands the same
+ *  array back through a pan or a zoom). One path an ink, stroked once: a picture is thousands of
+ *  short strokes in two or three inks — an exact gear pair's silhouettes and creases, sixteen
+ *  thousand — and a stroke and a dash set apiece was most of a pan's frame, and grouping them
+ *  afresh each frame six milliseconds more. The inks keep the order they first appear in. */
+const inked = new WeakMap<Drawn[], Drawn[][]>();
+function byInk(items: Drawn[]): Drawn[][] {
+  let groups = inked.get(items);
+  if (groups) return groups;
+  const by = new Map<string, Drawn[]>();
+  for (const d of items) {
+    if (d.pts.length < 2) continue;
+    const key = `${d.stroke.color ?? ''}|${d.stroke.width ?? 1}|${(d.stroke.dash ?? []).join(',')}`;
+    const list = by.get(key);
+    if (list) list.push(d); else by.set(key, [d]);
+  }
+  groups = [...by.values()];
+  inked.set(items, groups);
+  return groups;
+}
+
 /** The pictures the document asked of its solids (§6.11): `view(body) in right`, and sections.
  *
  *  One pass, and it owns no rule: the core lays the polylines out in world coordinates and
@@ -275,17 +297,19 @@ export function paintDerived(v: SketchView): void {
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  for (const d of items) {
-    if (d.pts.length < 2) continue;
-    ctx.strokeStyle = d.stroke.color ?? COL.line;
-    ctx.lineWidth = d.stroke.width ?? 1;
-    ctx.setLineDash(d.stroke.dash ?? []);
+  for (const list of byInk(items)) {
+    const ink = list[0].stroke;
+    ctx.strokeStyle = ink.color ?? COL.line;
+    ctx.lineWidth = ink.width ?? 1;
+    ctx.setLineDash(ink.dash ?? []);
     ctx.beginPath();
-    d.pts.forEach((p, i) => {
-      const [x, y] = v.w2s(p[0], p[1]);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
+    for (const d of list) {
+      d.pts.forEach((p, i) => {
+        const [x, y] = v.w2s(p[0], p[1]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+    }
     ctx.stroke();
   }
   ctx.setLineDash([]);

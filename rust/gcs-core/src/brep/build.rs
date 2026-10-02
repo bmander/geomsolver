@@ -2,6 +2,8 @@
 //! turned about a line in its plane (a revolution), or lofted along a guide to a second section,
 //! from the loops of lines, arcs, circles and B-splines the CAD recipe carries
 //! (`solid::cad::recipe`).
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::geom::{BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
 use std::sync::Arc;
 use super::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
@@ -22,15 +24,22 @@ pub enum ProfileEdge { Line { a: V,b: V },Arc { frame: Frame,r: f64,span: Option
 /// A planar region: an outer loop and its holes, each a closed walk of edges (listed in any
 /// order and direction).
 #[derive(Clone,Debug)]
-pub struct Profile { pub origin: V,pub normal: V,pub loops: Vec<Vec<ProfileEdge>> }
+pub struct Profile { pub origin: V,pub normal: V,pub loops: Vec<Vec<ProfileEdge>>,
+    /// Each loop's edges' names, as the document spells them (`block.side_l`'s `side_l`): the face
+    /// a sweep makes of an edge is named by it, as the faceted kernel names it. Empty where unnamed.
+    pub names: Vec<Vec<String>> }
 
 impl Profile {
+    /// The name of loop `l`'s edge `k`, or nothing.
+    pub fn name(&self,l: usize,k: usize) -> String { self.names.get(l).and_then(|n| n.get(k)).cloned().unwrap_or_default() }
     /// From a recipe's `profile` (millimetres).
     pub fn from_json(j: &Json) -> Result<Profile,String> {
         let field = |j: &Json,k: &str| j.get(k).cloned().ok_or(format!("profile: no `{k}`"));
         let mut loops = Vec::new();
+        let mut names = Vec::new();
         for l in field(j,"loops")?.arr() {
             let mut edges = Vec::new();
+            names.push(l.arr().iter().map(|e| e.get("name").map_or(String::new(),|n| n.as_str().to_string())).collect());
             for e in l.arr() {
                 edges.push(match field(e,"kind")?.as_str() {
                     "line" => ProfileEdge::Line {a:vec3(&field(e,"start")?),b:vec3(&field(e,"end")?)},
@@ -54,7 +63,7 @@ impl Profile {
             }
             loops.push(edges);
         }
-        Ok(Profile {origin:vec3(&field(j,"origin")?),normal:unit(vec3(&field(j,"normal")?)),loops})
+        Ok(Profile {origin:vec3(&field(j,"origin")?),normal:unit(vec3(&field(j,"normal")?)),loops,names})
     }
 
     /// A length the profile's tolerances are taken against.
@@ -139,10 +148,11 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
     let n = unit(p.normal);
     let plane = Frame::about(p.origin,n);
     let walks = walks(p,&|q| { let l = plane.local(q); [l[0],l[1]] })?;
+    let named = |li: usize,s: &Seg| p.name(li,s.source);
     let mut b = Brep::default();
     let lift = |q: V,h: f64| add(q,scale(n,h));
     let (mut bottom_loops,mut top_loops) = (Vec::new(),Vec::new());
-    for walk in &walks {
+    for (li,walk) in walks.iter().enumerate() {
         let m = walk.len();
         let bv: Vec<u32> = walk.iter().map(|s| b.vertex(lift(s.start(),h0))).collect();
         let tv: Vec<u32> = walk.iter().map(|s| b.vertex(lift(s.start(),h1))).collect();
@@ -177,14 +187,16 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                 use_of(top[k],&s,false,Pcurve::Line {a:[u_at(ta),h1],b:[u_at(tb),h1]}),
                 Coedge {edge:up[k],reversed:true,pcurve:Pcurve::Line {a:[u0,h0],b:[u0,h1]}},
             ];
-            b.faces.push(Face {surface,reversed,loops:vec![side],name:String::new()});
+            b.faces.push(Face {surface,reversed,loops:vec![side],name:named(li,&s)});
         }
         bottom_loops.push((0..m).rev().map(|k| use_of(bottom[k],&walk[k],false,on_plane())).collect::<Vec<_>>());
         top_loops.push((0..m).map(|k| use_of(top[k],&walk[k],true,on_plane())).collect::<Vec<_>>());
     }
     let cap = |h: f64| Surface::Plane(Frame {o:lift(plane.o,h),..plane});
-    b.faces.push(Face {surface:cap(h0),reversed:true,loops:bottom_loops,name:"near".into()});
-    b.faces.push(Face {surface:cap(h1),reversed:false,loops:top_loops,name:"far".into()});
+    // named as the document names them: `near` the cap toward the viewer (along the normal), as
+    // the faceted kernel and `against` read them
+    b.faces.push(Face {surface:cap(h0),reversed:true,loops:bottom_loops,name:"far".into()});
+    b.faces.push(Face {surface:cap(h1),reversed:false,loops:top_loops,name:"near".into()});
     Ok(b)
 }
 
@@ -208,7 +220,11 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
     let mut x = unit(cross(z,normal));
     let far = p.loops.iter().flatten().flat_map(|e| match *e {
         ProfileEdge::Line {a,b} => vec![a,b],
-        ProfileEdge::Arc {frame,r,..} => vec![add(frame.o,scale(frame.x,r)),sub(frame.o,scale(frame.x,r))],
+        // points along the arc itself (its frame's x may lie along the axis: a semicircle's ends)
+        ProfileEdge::Arc {frame,r,span} => {
+            let [a0,a1] = span.unwrap_or([0.,TAU]);
+            (0..=16).map(|k| { let t = a0+(a1-a0)*k as f64/16.; add(frame.o,add(scale(frame.x,r*t.dcos()),scale(frame.y,r*t.dsin()))) }).collect()
+        }
         ProfileEdge::Spline(ref b) => b.poles.clone(),
     }).map(|q| dot(sub(q,origin),x)).fold(0.,|m: f64,v| if v.abs() > m.abs() { v } else { m });
     if far < 0. { x = scale(x,-1.); }
@@ -221,7 +237,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
     let turn = Rigid::turn(origin,z,theta);
     let mut b = Brep::default();
     let (mut cap0,mut cap1) = (Vec::new(),Vec::new());
-    for walk in &walks {
+    for (li,walk) in walks.iter().enumerate() {
         let m = walk.len();
         let pts: Vec<V> = walk.iter().map(|s| s.start()).collect();
         let on_axis: Vec<bool> = pts.iter().map(|&q| rz(q)[0] <= tol).collect();
@@ -273,13 +289,13 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                 Swept::Disk => (Surface::Plane(Frame {o:f.at([0.,0.,z0]),..f}),[0.,1.],Box::new(|_| 0.)),
                 Swept::Cylinder => { let c = s.curve.clone(); (Surface::Cylinder(f,r0),[1.,0.],Box::new(move |t| rz(c.point(t))[1])) }
                 Swept::Cone => {
-                    let a = ((r1-r0)/(z1-z0)).atan();
-                    (Surface::Cone(Frame {o:f.at([0.,0.,z0]),..f},r0,a),[a.cos(),-a.sin()],
-                        { let c = s.curve.clone(); Box::new(move |t| (rz(c.point(t))[1]-z0)/a.cos()) })
+                    let a = ((r1-r0)/(z1-z0)).datan();
+                    (Surface::Cone(Frame {o:f.at([0.,0.,z0]),..f},r0,a),[a.dcos(),-a.dsin()],
+                        { let c = s.curve.clone(); Box::new(move |t| (rz(c.point(t))[1]-z0)/a.dcos()) })
                 }
                 Swept::Spline => {
                     // C(v) turned by u: in (ρ, z) its normal is the tangent turned clockwise
-                    let l = d[0].hypot(d[1]);
+                    let l = d[0].dhypot(d[1]);
                     (Surface::Revolution(f,Arc::new(s.curve.clone())),[d[1]/l,-d[0]/l],Box::new(|t| t))
                 }
                 Swept::Sphere | Swept::Torus => {
@@ -290,7 +306,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                         else { Surface::Torus(Frame {o:f.at([0.,0.,zc]),..f},big,r) };
                     // v at the step's start, and which way it runs with the circle's parameter
                     let [ra,za] = rz(s.start());
-                    let va = (za-zc).atan2(ra-big);
+                    let va = (za-zc).datan2(ra-big);
                     let dt = { let l = f.dir_local(s.curve.tangent(s.t[0])); [l[0],l[2]] };
                     let sigma = ((ra-big)*dt[1]-(za-zc)*dt[0]).signum();
                     let t0 = s.t[0];
@@ -307,7 +323,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                     let rim = |i: usize,outer: bool| Coedge {edge:circles[i].unwrap(),reversed:(outer == reversed),pcurve:on_plane()};
                     let mut loops = vec![vec![rim(outer,true)]];
                     if let Some(_) = circles[inner] { loops.push(vec![rim(inner,false)]); }
-                    b.faces.push(Face {surface,reversed,loops,name:String::new()});
+                    b.faces.push(Face {surface,reversed,loops,name:p.name(li,s.source)});
                     continue;
                 }
                 l.push(use_of(first[k].unwrap(),&s,true,on_plane()));
@@ -331,7 +347,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
             }
             let ccw = b.loop_area(&Face {surface:surface.clone(),reversed,loops:vec![],name:String::new()},&l) > 0.;
             if ccw == reversed { l = l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect(); }
-            b.faces.push(Face {surface,reversed,loops:vec![l],name:String::new()});
+            b.faces.push(Face {surface,reversed,loops:vec![l],name:p.name(li,s.source)});
         }
         if !full {
             cap0.push((0..m).map(|k| use_of(first[k].unwrap(),&walk[k],true,on_plane())).collect::<Vec<_>>());
@@ -358,7 +374,17 @@ pub enum Guide { Line { delta: V },Arc { center: V,axis: V,angle: f64 } }
 /// one, each start edge is joined to the end edge written in its place (`ruled`).
 pub fn loft(start: &Profile,end: Option<&Profile>,guide: &Guide) -> Result<Brep,String> {
     match (guide,end) {
-        (Guide::Line {delta,..},None) => prism(start,0.,dot(*delta,unit(start.normal))),
+        (Guide::Line {delta,..},None) => {
+            // a prism, its caps (the last two faces, at its lower height and its upper) named as a
+            // sweep's are: `start` where the section stands, `end` where the guide takes it
+            let d = dot(*delta,unit(start.normal));
+            let mut b = prism(start,0.,d)?;
+            let n = b.faces.len();
+            let (lower,upper) = if d > 0. { ("start","end") } else { ("end","start") };
+            b.faces[n-2].name = lower.into();
+            b.faces[n-1].name = upper.into();
+            Ok(b)
+        }
         (Guide::Arc {center,axis,angle,..},None) => revolve(start,*center,*axis,*angle),
         (Guide::Line {delta,..},Some(end)) => ruled(start,end,Carry::Line {delta:*delta}),
         (Guide::Arc {center,axis,angle,..},Some(end)) =>
@@ -468,7 +494,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
                 Surface::Blend(..) => dot(surface.normal_raw([0.5,0.]),outward) < 0.,
                 _ => dot(surface.normal_raw(surface.inverse(a.curve.point(mid))),outward) < 0.,
             };
-            let face = Face {surface,reversed,loops:vec![],name:String::new()};
+            let face = Face {surface,reversed,loops:vec![],name:start.name(li,a.source)};
             let ccw = b.loop_area(&face,&l) > 0.;
             if ccw == reversed { l = l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect(); }
             b.faces.push(Face {loops:vec![l],..face});
@@ -527,8 +553,34 @@ fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64) -> Option<(Surface,b
                 || !aligned(a.start(),z.start()) || !aligned(a.end(),z.end())
                 || !aligned(a.curve.point(mid),z.curve.point((z.t[0]+z.t[1])/2.)) { return None }
             let f = Frame::new(fa.o,e,radial(a.start(),fa.o));
-            Some((if (ra-rb).abs() <= tol { Surface::Cylinder(f,*ra) } else { Surface::Cone(f,*ra,((rb-ra)/h).atan()) },true))
+            Some((if (ra-rb).abs() <= tol { Surface::Cylinder(f,*ra) } else { Surface::Cone(f,*ra,((rb-ra)/h).datan()) },true))
         }
         _ => None,
     }
+}
+
+/// A sheet: the whole of a B-spline surface as one face, bounded by its four boundary curves
+/// (each its net's outermost row or column of poles, exactly), its sense the net's own.
+pub fn sheet(net: crate::brep::nurbs::Net) -> Result<Brep,String> {
+    let [[u0,u1],[v0,v1]] = net.domain();
+    let row = |i: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),poles:net.poles[i].clone()})) };
+    let column = |j: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.du,knots:net.uknots.clone(),poles:net.poles.iter().map(|r| r[j]).collect()})) };
+    let (last_u,last_v) = (net.poles.len()-1,net.poles[0].len()-1);
+    let mut b = Brep::default();
+    let corner = [net.point(u0,v0),net.point(u1,v0),net.point(u1,v1),net.point(u0,v1)];
+    let vs: Vec<u32> = corner.iter().map(|&p| b.vertex(p)).collect();
+    // the loop u0v0 → u1v0 → u1v1 → u0v1 → back, counter-clockwise in (u, v)
+    let e0 = b.edge(EdgeCurve::Curve(column(0)),[u0,u1],[vs[0],vs[1]]);
+    let e1 = b.edge(EdgeCurve::Curve(row(last_u)),[v0,v1],[vs[1],vs[2]]);
+    let e2 = b.edge(EdgeCurve::Curve(column(last_v)),[u0,u1],[vs[3],vs[2]]);
+    let e3 = b.edge(EdgeCurve::Curve(row(0)),[v0,v1],[vs[0],vs[3]]);
+    let line = |a: [f64;2],z: [f64;2]| Pcurve::Line {a,b:z};
+    let lp = vec![
+        Coedge {edge:e0,reversed:false,pcurve:line([u0,v0],[u1,v0])},
+        Coedge {edge:e1,reversed:false,pcurve:line([u1,v0],[u1,v1])},
+        Coedge {edge:e2,reversed:true,pcurve:line([u0,v1],[u1,v1])},
+        Coedge {edge:e3,reversed:true,pcurve:line([u0,v0],[u0,v1])},
+    ];
+    b.faces.push(Face {surface:Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net)),reversed:false,loops:vec![lp],name:String::new()});
+    Ok(b)
 }

@@ -128,6 +128,11 @@ pub struct Sketch {
     /// derived view for its edges, and a boundary is a sweep of classifications over a drawing
     /// that has not changed.
     pub solid_cache: std::cell::RefCell<BTreeMap<(usize, (u8, u64)), (Vec<f64>, Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>)>>,
+    /// Each static solid's exact B-rep (`solid::Exact`), remembered against `solid::reads` alone:
+    /// it does not depend on an approximation, so it is built once for a geometry and only meshed
+    /// again for each one the evaluated solids above ask for.
+    pub exact_cache:
+        std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::Exact>, String>)>>,
     /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
     /// `solid::reads` it was supplied under, so a moved drawing reads none.
     pub field_surfaces: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, std::rc::Rc<crate::solid::FieldSurface>)>>,

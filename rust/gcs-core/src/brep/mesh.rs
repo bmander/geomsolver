@@ -7,6 +7,8 @@
 //! — exceeds the bar, its middle put in and the triangulation made Delaunay about it again — and
 //! where a facet turns from its surface's outward normal, since a sag says nothing of which way a
 //! facet faces. The faces are meshed side by side.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::geom::{Rigid,Uv,V};
 use super::topo::{Brep,EdgeCurve,Face};
 use crate::delaunay::expansion::Expansion;
@@ -15,10 +17,12 @@ use crate::space::{add,cross,distance,dot,norm,scale,sub};
 /// Triangles over shared points, each turning with the solid's outward normal.
 #[derive(Clone,Debug,Default)]
 pub struct Mesh { pub pts: Vec<V>,pub tris: Vec<[u32;3]>,
+    /// The face of the meshed B-rep each triangle is of (a pattern's: the sector's).
+    pub of: Vec<u32>,
     /// The greatest sag measured on any face's triangles.
     pub sag: f64,
     /// Triangles facing against their surface's outward normal at their middle, of those thicker
-    /// than a hundredth of the bar (none, but where a face's refinement ran out of points).
+    /// than a tenth of the bar (none, but where a face's refinement ran out of points).
     pub turned: usize }
 
 impl Mesh {
@@ -64,19 +68,26 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
     let edge = &b.edges[e];
     let EdgeCurve::Curve(c) = &edge.curve else { return vec![edge.t[0],edge.t[1]] };
     let mut out = vec![edge.t[0]];
-    // the first pieces: a closed edge in three; a B-spline's every knot span in one more piece than
-    // its degree, since a midpoint test is blind to an S-bend whose chord's middle is on the curve
+    // the first pieces: a closed edge in three; a B-spline's every knot span (one inflection at most
+    // in a cubic's, which the quarter points below see though a midpoint test is blind to it)
     let mut cuts = vec![edge.t[0]];
     let near = 1e-6*(edge.t[1]-edge.t[0]);
     if let super::geom::Curve::BSpline(s) = c {
-        cuts.extend(s.breaks(edge.t).into_iter().filter(|&k| k-edge.t[0] > near && edge.t[1]-k > near));
+        // (a knot is a cut only a bar or more along from the last one and from the end: a fit's
+        // knots crowd where it bends, and a cut at each fans slivers there)
+        let end = c.point(edge.t[1]);
+        for k in s.breaks(edge.t).into_iter().filter(|&k| k-edge.t[0] > near && edge.t[1]-k > near) {
+            let p = c.point(k);
+            if distance(p,c.point(*cuts.last().unwrap())) >= bar && distance(p,end) >= bar { cuts.push(k); }
+        }
     }
     cuts.push(edge.t[1]);
-    let each = match c { super::geom::Curve::BSpline(s) => s.degree+1,_ if edge.closed() => 3,_ => 1 };
-    let mut stack: Vec<(f64,f64,u32)> = cuts.windows(2).flat_map(|w| (0..each).map(move |k| {
-        let h = (w[1]-w[0])/each as f64;
+    // (cut in several pieces regardless, a short span fans slivers from the face's nearest point)
+    let each = |_: f64,_: f64| if !matches!(c,super::geom::Curve::BSpline(_)) && edge.closed() { 3 } else { 1 };
+    let mut stack: Vec<(f64,f64,u32)> = cuts.windows(2).flat_map(|w| { let n = each(w[0],w[1]); (0..n).map(move |k| {
+        let h = (w[1]-w[0])/n as f64;
         (w[0]+h*k as f64,w[0]+h*(k+1) as f64,0)
-    })).collect();
+    }) }).collect();
     stack.reverse();
     while let Some((a,z,depth)) = stack.pop() {
         let (pa,pz) = (c.point(a),c.point(z));
@@ -87,14 +98,18 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
         let s = if l2 > 0. { (dot(sub(pm,pa),chord)/l2).clamp(0.,1.) } else { 0. };
         let off = distance(pm,add(pa,scale(chord,s)));
         let (ta,tz) = (c.tangent(a),c.tangent(z));
-        let turn = (dot(ta,tz)/(norm(ta)*norm(tz)).max(1e-300)).clamp(-1.,1.).acos();
+        let turn = (dot(ta,tz)/(norm(ta)*norm(tz)).max(1e-300)).clamp(-1.,1.).dacos();
         // and the quarter points, which a stretch centred on an inflection cannot hide
         let strays = || [0.25,0.75].iter().any(|&f| {
             let q = c.point(a+(z-a)*f);
             let s = if l2 > 0. { (dot(sub(q,pa),chord)/l2).clamp(0.,1.) } else { 0. };
             distance(q,add(pa,scale(chord,s))) > bar
         });
-        if depth < 40 && (off > bar || turn > angular || strays()) { stack.push((m,z,depth+1)); stack.push((a,m,depth+1)); }
+        // (a traced or fitted curve's chord no longer than the bar turns as it likes: a tight bend of
+        // an intersection near tangency, cut by its turning, fans slivers from the face's nearest
+        // point; a circle's or an ellipse's tight bend is a small feature, and keeps its turns)
+        let conic = matches!(c,super::geom::Curve::Circle(..) | super::geom::Curve::Ellipse(..));
+        if depth < 40 && (off > bar || turn > angular && (conic || l2 > bar*bar) || strays()) { stack.push((m,z,depth+1)); stack.push((a,m,depth+1)); }
         else { out.push(z); }
     }
     out
@@ -387,7 +402,7 @@ fn put(t2: &mut Tri2,inside: &mut Vec<bool>,sag: &mut Vec<f64>,t: usize,p: [f64;
 fn sliver(t2: &Tri2,t: [u32;3]) -> bool {
     let q = t.map(|v| t2.pts[v as usize]);
     let area2 = ((q[1][0]-q[0][0])*(q[2][1]-q[0][1])-(q[1][1]-q[0][1])*(q[2][0]-q[0][0])).abs();
-    let longest = (0..3).map(|k| { let (a,b) = (q[k],q[(k+1)%3]); (b[0]-a[0]).hypot(b[1]-a[1]) }).fold(0.,f64::max);
+    let longest = (0..3).map(|k| { let (a,b) = (q[k],q[(k+1)%3]); (b[0]-a[0]).dhypot(b[1]-a[1]) }).fold(0.,f64::max);
     area2 < 0.2*longest*longest
 }
 
@@ -543,7 +558,7 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                         (norm(m) > 1e-6*norm(su)*norm(sv) && l > 0.).then(|| out*dot(n,m)/l)
                     }).collect();
                     let over = cosines.iter().any(|&c| c < 0.);
-                    let turns = over || long && cosines.iter().any(|&c| c.min(1.).acos() > angular);
+                    let turns = over || long && cosines.iter().any(|&c| c.min(1.).dacos() > angular);
                     if t2.pts.len() >= 400_000 || !(s > bar || turns && turned < budget) { continue }
                     let middle = |q: [[f64;2];3]| [(q[0][0]+q[1][0]+q[2][0])/3.,(q[0][1]+q[1][1]+q[2][1])/3.];
                     let q = t.map(|v| t2.pts[v as usize]);
@@ -581,13 +596,14 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
             let [ua,ub,uc] = t2.tris[ti].map(facing);
             let (pa,pb,pc) = (f.surface.point(ua),f.surface.point(ub),f.surface.point(uc));
             let (_,su,sv) = f.surface.d1([(ua[0]+ub[0]+uc[0])/3.,(ua[1]+ub[1]+uc[1])/3.]);
-            // (a triangle thinner than a hundredth of the bar is flat within it, and its normal is
-            // rounding: a sliver a few nanometres off a boundary side, or one with two corners at
-            // a pole, which is dropped)
+            // (a triangle thinner than a tenth of the bar is flat within it, and its normal says
+            // nothing of the surface's: a sliver a few nanometres off a boundary side, one with two
+            // corners at a pole, which is dropped, or one whose inner corner a sheet's chart bends
+            // past the straight side its parameters stand beside, 0.35 µm across on the pinion)
             let nf = cross(sub(pb,pa),sub(pc,pa));
             let longest = distance(pa,pb).max(distance(pb,pc)).max(distance(pc,pa));
             let o = dot(nf,cross(su,sv));
-            norm(nf) > 0.01*bar*longest && if f.reversed { o > 0. } else { o < 0. }
+            norm(nf) > 0.1*bar*longest && if f.reversed { o > 0. } else { o < 0. }
         }).count();
         // the new points, and the triangles (the three corners of the triangle about them all come
         // after the face's own, and are never inside)
@@ -622,7 +638,7 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let tris = t2.tris.iter().zip(&inside).filter(|x| *x.1).map(|(t,_)| t.map(id)).collect();
         Ok((new_pts,tris,worst,turned))
     });
-    for face in faces {
+    for (fi,face) in faces.into_iter().enumerate() {
         let (pts,tris,sag,turned) = face?;
         let base = m.pts.len() as u32;
         alias.extend(pts.iter().map(|_| None));
@@ -634,6 +650,7 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
             // a triangle with two corners at one point (a pole) has no area
             if tri[0] == tri[1] || tri[1] == tri[2] || tri[2] == tri[0] { continue }
             m.tris.push(tri);
+            m.of.push(fi as u32);
         }
     }
     Ok((m,alias))

@@ -16,6 +16,8 @@
 //! distance from the current solution.  Small cores only — the number of paths is exponential in
 //! the number of rotations, which is exactly the cost decomposition minimises.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::cgraph::El;
 use crate::complex::{cmatvec, cmul, cmul_real, cnorm, csolve, free_columns, CMat};
 use crate::decompose::{apply_t, execute, make_t, write_point, Cluster, Plan, Step};
@@ -96,7 +98,7 @@ impl Poly {
             // n_b' − rot(phi) n_a' = 0
             let (aa, ca) = lin_pose(i, la);
             let (ab, cb) = lin_pose(j, lb);
-            let (c, s) = (phi.cos(), phi.sin());
+            let (c, s) = (phi.dcos(), phi.dsin());
             rows.push((0..n).map(|t| ab[0][t] - (c * aa[0][t] - s * aa[1][t])).collect());
             rows.push((0..n).map(|t| ab[1][t] - (s * aa[0][t] + c * aa[1][t])).collect());
             rhs.push(c * ca.0 - s * ca.1 - cb.0);
@@ -241,7 +243,7 @@ fn w_to_u(wr: &[f64]) -> Vec<f64> {
     let mut u = vec![0.0; 3 * k];
     for q in 0..k {
         let (c, s) = (wr[4 * q], wr[4 * q + 1]);
-        u[3 * q] = s.atan2(c);
+        u[3 * q] = s.datan2(c);
         u[3 * q + 1] = wr[4 * q + 2];
         u[3 * q + 2] = wr[4 * q + 3];
     }
@@ -323,7 +325,7 @@ pub fn enumerate_step(
     }
     let sigma: Vec<usize> = free[..n_q].to_vec();
     let g_ang = 2.0 * std::f64::consts::PI * rng.next();
-    let (gamma_r, gamma_i) = (g_ang.cos(), g_ang.sin());
+    let (gamma_r, gamma_i) = (g_ang.dcos(), g_ang.dsin());
 
     /// Row q of the random combination M2 applied to the quadratic rows.
     fn m2q(m2: &CMat, m_q: usize, q: usize, qr: &[f64], qi: &[f64]) -> (f64, f64) {
@@ -569,7 +571,7 @@ pub fn enumerate_step(
         if kept.iter().any(|kv| {
             let mut s = 0.0;
             for i in 0..n {
-                s += (wr[i] - kv[i]).powi(2);
+                s += (wr[i] - kv[i]).dpowi(2);
             }
             s.sqrt() < 1e-6
         }) {
@@ -585,7 +587,7 @@ pub fn enumerate_step(
         }
         let mut d = 0.0; // the imaginary part is ~0 by now
         for i in 0..n {
-            d += (wr[i] - w_id[i]).powi(2) + wi[i] * wi[i];
+            d += (wr[i] - w_id[i]).dpowi(2) + wi[i] * wi[i];
         }
         out.push(Alternative { u, distance: d.sqrt(), location: loc });
     }

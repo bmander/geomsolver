@@ -1,5 +1,7 @@
 //! Compiled curve definitions, solved sampling and the model-side trace cache.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 
 thread_local! {
@@ -270,8 +272,8 @@ impl Sketch {
         let (lo, hi) = (a.min(b), a.max(b));
         let off = |p: (f64, f64), q: (f64, f64), m: (f64, f64)| {
             let (dx, dy) = (q.0 - p.0, q.1 - p.1);
-            let l = dx.hypot(dy);
-            if l > 0.0 { ((m.0 - p.0) * dy - (m.1 - p.1) * dx).abs() / l } else { (m.0 - p.0).hypot(m.1 - p.1) }
+            let l = dx.dhypot(dy);
+            if l > 0.0 { ((m.0 - p.0) * dy - (m.1 - p.1) * dx).abs() / l } else { (m.0 - p.0).dhypot(m.1 - p.1) }
         };
         let mut n = CURVE_STEPS;
         let (samples, count) = loop {

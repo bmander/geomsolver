@@ -7,6 +7,8 @@
 //! the core owns algorithms and because all three language test suites run the same generator
 //! over the same seeds; it lives in its own module so that nothing mistakes it for a case.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::constraints::{CKind, Constraint};
 use crate::model::{EntRef, Sketch};
 use crate::rng::Rng;
@@ -18,7 +20,7 @@ fn add(sk: &mut Sketch, c: Constraint) {
 fn dist(sk: &Sketch, a: usize, b: usize) -> f64 {
     let (ax, ay) = sk.point_xy(a);
     let (bx, by) = sk.point_xy(b);
-    (ax - bx).hypot(ay - by)
+    (ax - bx).dhypot(ay - by)
 }
 
 /// Random Laman graph on n >= 2 vertices by Henneberg I (add a vertex and 2 edges) and II

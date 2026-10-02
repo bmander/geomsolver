@@ -20,6 +20,8 @@
 //! is why the offset may only be along the normal: `d` is perpendicular to both normals, so
 //! `d·o = 0` and `fold_line` — the whole of what `Project` reads — cannot see it.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 /// An orthonormal basis of a plane in space, and where its origin stands; `u × v` points toward
 /// the viewer.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -67,7 +69,7 @@ impl Basis {
     /// (`u = x`, `v = y`, viewer at +z) and `fold(−90°)` the right view (`u = −z`, `v = y`,
     /// viewer at +x).
     pub fn fold(&self, theta: f64) -> Basis {
-        let (s, c) = theta.sin_cos();
+        let (s, c) = theta.dsin_cos();
         let u = [
             c * self.u[0] + s * self.v[0],
             c * self.u[1] + s * self.v[1],
@@ -199,7 +201,7 @@ const FOLD_TILT: Quat =
 /// elaborator seeds a hinge with it and the `hinge` kernels hold one to it
 /// (`tests/spatial_lang.rs` holds it to `Basis::fold`).
 pub fn fold_rotor(theta: f64) -> Quat {
-    let (s, c) = (0.5 * theta).sin_cos();
+    let (s, c) = (0.5 * theta).dsin_cos();
     fold_turn(c, s)
 }
 

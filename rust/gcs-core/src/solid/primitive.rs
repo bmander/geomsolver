@@ -1,4 +1,6 @@
 //! Faceted prism and revolution primitives.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 
 // -- sweeping ----------------------------------------------------------------------------------
@@ -121,7 +123,7 @@ pub fn revolve(
     // the axis in the plane's own 2D coordinates, and the meridian frame off it
     let (a2, b2) = axis;
     let dir2 = (b2.0 - a2.0, b2.1 - a2.1);
-    let len = dir2.0.hypot(dir2.1);
+    let len = dir2.0.dhypot(dir2.1);
     if len <= 0.0 {
         return None;
     }
@@ -153,7 +155,7 @@ pub fn revolve(
     let qdir = plane::cross(w, pdir);
     let turn = if sense == Sense::Cw { -1.0 } else { 1.0 };
     let at = |r: f64, z: f64, phi: f64| {
-        let (sp, cp) = (turn * phi).sin_cos();
+        let (sp, cp) = (turn * phi).dsin_cos();
         [
             o3[0] + z * w[0] + r * (cp * pdir[0] + sp * qdir[0]),
             o3[1] + z * w[1] + r * (cp * pdir[1] + sp * qdir[1]),
@@ -163,7 +165,7 @@ pub fn revolve(
     // faceted about the axis by the same sagitta rule an arc is drawn by, on the widest radius
     let rmax = mer.iter().fold(0.0f64, |m, p| m.max(p.0));
     let tolf = crate::curve::flatness(unit);
-    let step = (if rmax > tolf { 2.0 * (1.0 - tolf / rmax).acos() } else { std::f64::consts::TAU })
+    let step = (if rmax > tolf { 2.0 * (1.0 - tolf / rmax).dacos() } else { std::f64::consts::TAU })
         .min(std::f64::consts::TAU / 64.0);
     let steps = ((sweep / step).ceil() as usize).clamp(3, 2048);
 
@@ -256,5 +258,5 @@ pub(super) fn finish(facets: Vec<Facet>, faces: Vec<String>, of: &str) -> Prim {
             bbox.add(*p);
         }
     }
-    Prim { facets, bbox, faces, of: of.to_string() }
+    Prim { facets, bbox, faces, of: of.to_string(), exact: false }
 }

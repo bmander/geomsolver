@@ -81,6 +81,18 @@ export function stl(sk: Sketch, idx: number, unit = 0): Uint8Array {
   return takeBytes(handle);
 }
 
+/** **One object's exact export by the core's own kernel** (`gcs_core::brep::export`, the functions
+ *  `solventc` calls, so a file is one file wherever it is written): its STEP file, or its STL held
+ *  to `tolerance` millimetres (0 for the gross bars). A body with swept cuts of the generating class
+ *  is admitted and built as one sector patterned, and its STL judged against its material field:
+ *  seconds, not milliseconds — which is why the app asks for it in its mesh worker. Throws with
+ *  the export's refusal, the stage named. */
+export function exact(sk: Sketch, idx: number, kind: 'step' | 'stl', tolerance = 0): Uint8Array {
+  const handle = core().gcs_solid_exact(sk.handle, idx, kind === 'step' ? 0 : 1, tolerance);
+  if (!handle) throw new Error(lastError());
+  return takeBytes(handle);
+}
+
 /** **A surface still being refined, as it stands**, as binary STL: coarse, maybe open — a look at
  *  the part before the refinement has finished, never a part to print. */
 export function stlPreview(sk: Sketch, idx: number, unit = 0): Uint8Array {

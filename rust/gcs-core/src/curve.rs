@@ -21,6 +21,8 @@
 //! `Sketch::topology_key` carries it — so a contact walking past a knot is a recompile, the
 //! same event as any other topology change and about as rare.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::model::{EntKind, EntRef, Sketch};
 use std::collections::BTreeMap;
 
@@ -312,9 +314,9 @@ fn refine(
     // the stretch has its middle exactly on the chord however far the rest of it strays
     let quarters = || [0.25, 0.75].iter().all(|&f| {
         let (q, c) = (eval_on(sk, i, span, a + (b - a) * f).p, (pa.0 + (pb.0 - pa.0) * f, pa.1 + (pb.1 - pa.1) * f));
-        (q.0 - c.0).hypot(q.1 - c.1) <= tol
+        (q.0 - c.0).dhypot(q.1 - c.1) <= tol
     });
-    if depth == 0 || ((pm.0 - cx).hypot(pm.1 - cy) <= tol && quarters()) {
+    if depth == 0 || ((pm.0 - cx).dhypot(pm.1 - cy) <= tol && quarters()) {
         out.push(pb);
         return;
     }
@@ -378,7 +380,7 @@ fn length(sk: &Sketch, i: usize) -> f64 {
     let mut prev: Option<(f64, f64)> = None;
     for (_, p) in samples(sk, i, 8) {
         if let Some(q) = prev {
-            total += (p.0 - q.0).hypot(p.1 - q.1);
+            total += (p.0 - q.0).dhypot(p.1 - q.1);
         }
         prev = Some(p);
     }
@@ -406,7 +408,7 @@ pub fn closest(sk: &Sketch, i: usize, x: f64, y: f64) -> (f64, f64) {
     let (t0, t1) = domain(sk, i);
     let mut best = (t0, f64::INFINITY);
     for (t, p) in samples(sk, i, 16) {
-        let d = (p.0 - x).hypot(p.1 - y);
+        let d = (p.0 - x).dhypot(p.1 - y);
         if d < best.1 {
             best = (t, d);
         }
@@ -429,7 +431,7 @@ pub fn closest(sk: &Sketch, i: usize, x: f64, y: f64) -> (f64, f64) {
         t = nt;
     }
     let p = point_at(sk, i, t);
-    let d = (p.0 - x).hypot(p.1 - y);
+    let d = (p.0 - x).dhypot(p.1 - y);
     if d <= best.1 {
         (t, d)
     } else {
@@ -441,7 +443,7 @@ pub fn closest(sk: &Sketch, i: usize, x: f64, y: f64) -> (f64, f64) {
 /// (ax, ay) and (bx, by) — the point of it nearest that line.  Where a fresh tangency starts.
 pub fn nearest_to_line(sk: &Sketch, i: usize, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
     let (dx, dy) = (bx - ax, by - ay);
-    let l = dx.hypot(dy);
+    let l = dx.dhypot(dy);
     if l <= 1e-12 {
         return closest(sk, i, ax, ay).0;
     }
@@ -488,7 +490,7 @@ pub fn interpolating_ctrl(
     }
     // chord-length parameters: points that are far apart get more of the curve
     let chords: Vec<f64> =
-        (1..m).map(|k| (pts[k].0 - pts[k - 1].0).hypot(pts[k].1 - pts[k - 1].1)).collect();
+        (1..m).map(|k| (pts[k].0 - pts[k - 1].0).dhypot(pts[k].1 - pts[k - 1].1)).collect();
     let total: f64 = chords.iter().sum();
     if !total.is_finite() || total <= 0.0 {
         return None;

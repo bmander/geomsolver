@@ -10,6 +10,8 @@
 //!
 //! Reference: Nocedal & Wright ch. 4 & 10; PlaneGCS's DogLeg.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::linalg::{absmax, dot, lu_solve, min_norm_lstsq, norm, Mat};
 use crate::sparse::Ata;
 use crate::system::{System, DENSE_MAX};
@@ -460,7 +462,7 @@ fn lm_core(
             if rho > 0.0 {
                 z.copy_from_slice(&z_new);
                 r[..m].copy_from_slice(&r_new[..m]);
-                let t = 1.0 - (2.0 * rho - 1.0).powi(3);
+                let t = 1.0 - (2.0 * rho - 1.0).dpowi(3);
                 lam *= t.max(1.0 / 3.0);
                 nu = 2.0;
                 break;

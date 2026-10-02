@@ -140,6 +140,7 @@ pub fn interpolate(pts: &[V],t: &[f64],degree: usize) -> Option<BSpline> {
     if degree == 0 || t.len() != m || t.windows(2).any(|w| !(w[1] > w[0])) { return None }
     let knots = averaged(t,degree);
     let s = BSpline {degree,knots,poles:vec![[0.;3];m]};
+    if m > BANDED { if let Some(poles) = banded(&s,pts,t) { return Some(BSpline {poles,..s}) } }
     // the collocation matrix: each parameter's basis functions, in the columns of its span
     let mut n = vec![0.;m*m];
     for (k,&tk) in t.iter().enumerate() {
@@ -156,6 +157,47 @@ pub fn interpolate(pts: &[V],t: &[f64],degree: usize) -> Option<BSpline> {
         for k in 0..m { poles[k][c] = x[k]; }
     }
     poles.iter().flatten().all(|v| v.is_finite()).then(|| BSpline {poles,..s})
+}
+
+/// Above this many points an interpolation is solved in its band: the dense factorisation below is
+/// cubic in them, and a trace across a whole blank refined to thousands of points took minutes a
+/// round. Below it the dense solve stands, so every curve and sheet fitted before is fitted alike.
+const BANDED: usize = 200;
+
+/// The poles interpolating `pts` at `t` in the knots of `s`, by Gaussian elimination in the
+/// collocation matrix's band (a row's basis functions span `degree + 1` columns about its own,
+/// with averaged knots) without pivoting — stable, the matrix being totally positive (de Boor) —
+/// or nothing where a row falls outside the band or a pivot vanishes.
+fn banded(s: &BSpline,pts: &[V],t: &[f64]) -> Option<Vec<V>> {
+    let (m,p) = (pts.len(),s.degree);
+    let w = 2*p+1;
+    // a[k][j-k+p]: row k's entry in column j
+    let mut a = vec![0.;m*w];
+    for (k,&tk) in t.iter().enumerate() {
+        let span = s.span(tk.clamp(t[0],t[m-1]));
+        let basis = s.basis(tk,span);
+        for (j,&b) in basis.iter().enumerate().take(p+1) {
+            let col = span-p+j;
+            if col+p < k || col > k+p { return None }
+            a[k*w+col+p-k] = b;
+        }
+    }
+    let mut x: Vec<V> = pts.to_vec();
+    for i in 0..m {
+        let pivot = a[i*w+p];
+        if !(pivot.abs() > 1e-300) { return None }
+        for r in i+1..m.min(i+p+1) {
+            let f = a[r*w+i+p-r]/pivot;
+            if f == 0. { continue }
+            for c in i..m.min(i+p+1) { a[r*w+c+p-r] -= f*a[i*w+c+p-i]; }
+            for d in 0..3 { x[r][d] -= f*x[i][d]; }
+        }
+    }
+    for i in (0..m).rev() {
+        for c in i+1..m.min(i+p+1) { let v = a[i*w+c+p-i]; for d in 0..3 { x[i][d] -= v*x[c][d]; } }
+        for d in 0..3 { x[i][d] /= a[i*w+p]; }
+    }
+    x.iter().flatten().all(|v| v.is_finite()).then_some(x)
 }
 
 impl BSpline {
@@ -247,6 +289,27 @@ impl Net {
         (out[0],out[1],out[2])
     }
     pub fn point(&self,u: f64,v: f64) -> V { self.d1(u,v).0 }
+    /// `S`, `S_u`, `S_v`, `S_uu`, `S_uv`, `S_vv` at `(u, v)`, clamped into the domain.
+    pub fn d2(&self,u: f64,v: f64) -> [V;6] {
+        let [[u0,u1],[v0,v1]] = self.domain();
+        let (nu,nv) = (self.poles.len(),self.poles[0].len());
+        let (su,bu) = basis_ders(self.du,&self.uknots,nu,u.clamp(u0,u1),2);
+        let (sv,bv) = basis_ders(self.dv,&self.vknots,nv,v.clamp(v0,v1),2);
+        // (u order, v order) of each output
+        const ORDERS: [(usize,usize);6] = [(0,0),(1,0),(0,1),(2,0),(1,1),(0,2)];
+        let mut out = [[0.;3];6];
+        for i in 0..=self.du {
+            let row = &self.poles[su-self.du+i];
+            for j in 0..=self.dv {
+                let q = row[sv-self.dv+j];
+                for (k,&(a,b)) in ORDERS.iter().enumerate() {
+                    let n = bu[a][i]*bv[b][j];
+                    for c in 0..3 { out[k][c] += n*q[c]; }
+                }
+            }
+        }
+        out
+    }
     /// The surface over `[u0, u1] × [v0, v1]` (within its domain) alone, exactly: the same points at
     /// the same parameters, only the net that reaches there.
     pub fn segment(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Net {
@@ -303,4 +366,40 @@ pub fn fit_curve(f: &dyn Fn(f64) -> V,d: usize,mut n: usize,tol: f64) -> Option<
         if err <= tol || n >= 4096 { return Some((s,err)) }
         n *= 2;
     }
+}
+
+/// How a grid's parameters are spread: evenly, by chord length, or by its square root.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum Parametrization { Even,ChordLength,Centripetal }
+
+/// The cubic surface (lower where a direction has fewer than four points) through a row-major
+/// grid of `rows × columns` points, rows along `u`: each direction's parameters from 0 to 1, spread
+/// by `kind` along each column (or row) and averaged over them, so every row is interpolated at
+/// one set of parameters; the rows interpolated along `v`, then their poles along `u`.
+pub fn interpolate_net(points: &[V],rows: usize,columns: usize,kind: Parametrization) -> Option<Net> {
+    if rows < 2 || columns < 2 || points.len() != rows*columns { return None }
+    let at = |i: usize,j: usize| points[i*columns+j];
+    let spread = |n: usize,lines: usize,gap: &dyn Fn(usize,usize) -> f64| -> Option<Vec<f64>> {
+        let mut t = vec![0.;n];
+        for line in 0..lines {
+            let steps: Vec<f64> = (1..n).map(|k| match kind {
+                Parametrization::Even => 1.,
+                Parametrization::ChordLength => gap(line,k),
+                Parametrization::Centripetal => gap(line,k).sqrt(),
+            }).collect();
+            let total: f64 = steps.iter().sum();
+            if !(total > 0.) { return None }
+            let mut s = 0.;
+            for k in 1..n { s += steps[k-1]; t[k] += s/total/lines as f64; }
+        }
+        t[n-1] = 1.;
+        t.windows(2).all(|w| w[1] > w[0]).then_some(t)
+    };
+    let tu = spread(rows,columns,&|j,i| crate::space::distance(at(i-1,j),at(i,j)))?;
+    let tv = spread(columns,rows,&|i,j| crate::space::distance(at(i,j-1),at(i,j)))?;
+    let rows_fit: Vec<BSpline> = (0..rows).map(|i| interpolate(&(0..columns).map(|j| at(i,j)).collect::<Vec<_>>(),&tv,3)).collect::<Option<_>>()?;
+    let nv = rows_fit[0].poles.len();
+    let cols_fit: Vec<BSpline> = (0..nv).map(|j| interpolate(&rows_fit.iter().map(|r| r.poles[j]).collect::<Vec<_>>(),&tu,3)).collect::<Option<_>>()?;
+    let poles: Vec<Vec<V>> = (0..cols_fit[0].poles.len()).map(|i| cols_fit.iter().map(|c| c.poles[i]).collect()).collect();
+    Some(Net {du:cols_fit[0].degree,dv:rows_fit[0].degree,uknots:cols_fit[0].knots.clone(),vknots:rows_fit[0].knots.clone(),poles})
 }

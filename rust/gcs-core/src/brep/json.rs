@@ -10,6 +10,8 @@
 //! other way, so its pcurves' `u` is negated and the face's sense turned with it. And each edge's
 //! tolerance is *measured* — the largest gap between its curve and its pcurves' images, and between
 //! its curve's ends and its vertices — never taken from the kernel's own bookkeeping.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::geom::{BSpline,Curve,Frame,Surface,V};
 use super::nurbs::Net;
 use super::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
@@ -79,7 +81,19 @@ fn surface(j: &Json) -> Result<(Surface,bool),String> {
 }
 
 /// A curve in a face's parameters, its `u` negated where the face's surface runs it the other way.
-fn pcurve(j: &Json,flip: bool) -> Result<Pcurve,String> {
+/// A rational one (a reader's conic on a plane) is taken as the preimage it is of its edge,
+/// `Pcurve::Inverse` from its ends at the edge's parameters `t` — read in homogeneous coordinates,
+/// a non-rational curve of `(w x, w y, w)`, so no rational curve is built.
+fn pcurve(j: &Json,flip: bool,t: [f64;2]) -> Result<Pcurve,String> {
+    if let Some(w) = j.get("weights").filter(|_| field(j,"kind").is_ok_and(|k| k.as_str() == "bspline")) {
+        let w = reals(w);
+        let poles = field(j,"poles")?.arr().iter().map(vec3).collect::<Vec<V>>();
+        if w.len() != poles.len() || w.iter().any(|&x| !(x > 0.)) { return Err("brep json: a rational pcurve's weights".into()) }
+        let h = BSpline::new(field(j,"degree")?.as_f64() as usize,reals(field(j,"knots")?),
+            poles.iter().zip(&w).map(|(p,&w)| [w*p[0],w*p[1],w]).collect())?;
+        let at = |t: f64| { let q = h.point(t); [if flip { -q[0]/q[2] } else { q[0]/q[2] },q[1]/q[2]] };
+        return Ok(Pcurve::Inverse {a:at(t[0]),b:at(t[1])})
+    }
     let mut c = curve(j)?;
     if flip {
         let neg = |p: V| [-p[0],p[1],p[2]];
@@ -114,7 +128,8 @@ pub fn read(text: &str) -> Result<Brep,String> {
             for u in field(l,"uses")?.arr() {
                 let edge = field(u,"edge")?.as_i64() as u32;
                 if edge as usize >= b.edges.len() { return Err("brep json: a use's edge out of range".into()) }
-                found.push(Coedge {edge,reversed:field(u,"reversed")?.as_bool(),pcurve:pcurve(field(u,"pcurve")?,flip)?});
+                let t = b.edges[edge as usize].t;
+                found.push(Coedge {edge,reversed:field(u,"reversed")?.as_bool(),pcurve:pcurve(field(u,"pcurve")?,flip,t)?});
             }
             let mut uses = chained(found,&b,&s);
             // a reversed face's loops run the other way round from its forward self's, as dumped
@@ -145,7 +160,7 @@ fn chained(mut left: Vec<Coedge>,b: &Brep,s: &Surface) -> Vec<Coedge> {
     walk.push(left.remove(0));
     while !left.is_empty() {
         let (v,uv) = ends(walk.last().unwrap()).1;
-        let gap = |c: &Coedge| { let (w,p) = ends(c).0; (w != v,(p[0]-uv[0]).hypot(p[1]-uv[1])) };
+        let gap = |c: &Coedge| { let (w,p) = ends(c).0; (w != v,(p[0]-uv[0]).dhypot(p[1]-uv[1])) };
         let k = (0..left.len()).min_by(|&i,&j| { let (a,b) = (gap(&left[i]),gap(&left[j])); a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)) }).unwrap();
         walk.push(left.remove(k));
     }

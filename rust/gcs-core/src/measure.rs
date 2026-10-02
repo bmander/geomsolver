@@ -12,6 +12,8 @@
 //! the solve begins, an extent is settled at elaboration), and a measurement there is refused:
 //! `expr::measure_refusal`, E107.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::expr::{self, Aff, Ast, Measure};
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::units::{Dim, Units};
@@ -218,7 +220,7 @@ pub fn measure(sk: &Sketch, m: Measure, es: &[EntRef]) -> Result<f64, String> {
                 return Err("an angle to a line of no length".into());
             }
             // atan2 of the cross and the dot: accurate at 0° and 180°, where acos is not
-            norm(cross(u, w)).atan2(dot(u, w)).to_degrees()
+            norm(cross(u, w)).datan2(dot(u, w)).to_degrees()
         }
         _ => return Err(format!("`{}` cannot measure these", m.name())),
     };

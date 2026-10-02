@@ -7,6 +7,8 @@
 //! dimensionless (`system::Conditioned`), where a magnitude is a statement on its own.
 //! No LAPACK/BLAS: these routines are ours, and `tests/linalg.rs` checks them against `nalgebra`.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 /// How a factorisation decides that a pivot or a singular value is zero.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Tol {
@@ -190,7 +192,7 @@ fn house_gen(a: &mut [f64], off: usize, len: usize, stride: usize) -> (f64, f64)
         return (alpha, 0.0);
     }
     xnorm = xnorm.sqrt();
-    let beta = -dsign(alpha.hypot(xnorm), alpha);
+    let beta = -dsign(alpha.dhypot(xnorm), alpha);
     let tau = (beta - alpha) / beta;
     let s = 1.0 / (alpha - beta);
     for i in 1..len {
@@ -323,7 +325,7 @@ fn tzrz(k: usize, n: usize, a: &mut [f64]) -> Vec<f64> {
             continue;
         }
         xnorm = xnorm.sqrt();
-        let beta = -dsign(alpha.hypot(xnorm), alpha);
+        let beta = -dsign(alpha.dhypot(xnorm), alpha);
         let t = (beta - alpha) / beta;
         let s = 1.0 / (alpha - beta);
         for j in 0..nz {

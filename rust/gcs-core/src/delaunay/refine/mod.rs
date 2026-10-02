@@ -25,6 +25,8 @@
 //!
 //! `Progressive` runs the five a step at a time (`progressive`). Outside the bounding sphere is
 //! outside the domain, as in Mesh_3.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::predicates::orient;
 use super::regular::{Regular,Inserted,NONE,ENCLOSING};
 use crate::space::{sub,dot,distance_squared as dist2,circumcentre};
@@ -256,7 +258,7 @@ impl Refiner<'_> {
         let mut ns = Vec::with_capacity(3);
         for w in q { match self.normal(w.p) { Some(n) => ns.push(n), None => return 0. } }
         let least = [(0,1),(1,2),(2,0)].iter().map(|&(i,j)| dot(ns[i],ns[j])).fold(1f64,f64::min);
-        least.clamp(-1.,1.).acos().to_degrees()/limit
+        least.clamp(-1.,1.).dacos().to_degrees()/limit
     }
 
     /// How badly a restricted facet breaks the criteria (above 1 is bad).
@@ -274,7 +276,7 @@ impl Refiner<'_> {
             bad = bad.max(dist2(cc,centre).sqrt()/self.criteria.facet_distance);
             let angle = |p: P,q: P,r: P| {
                 let (x,y) = (sub(q,p),sub(r,p));
-                (dot(x,y)/(dot(x,x)*dot(y,y)).sqrt()).clamp(-1.,1.).acos().to_degrees()
+                (dot(x,y)/(dot(x,x)*dot(y,y)).sqrt()).clamp(-1.,1.).dacos().to_degrees()
             };
             let least = angle(a,b,c).min(angle(b,c,a)).min(angle(c,a,b));
             if least < self.criteria.facet_angle { bad = bad.max(1.+(self.criteria.facet_angle-least)/self.criteria.facet_angle); }

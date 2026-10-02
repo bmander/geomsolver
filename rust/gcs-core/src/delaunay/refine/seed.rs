@@ -1,5 +1,7 @@
 //! Where refinement starts: boundary points along rays from the centre, and from a lattice where
 //! the rays find none.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 use crate::space::lerp;
 
@@ -19,7 +21,7 @@ pub(super) fn seed(r: &mut Refiner) -> Result<(),String> {
     for k in 0..rays {
         let z = 1.-2.*(k as f64+0.5)/rays as f64;
         let s = (1.-z*z).sqrt();
-        let d = [s*(golden*k as f64).cos(),s*(golden*k as f64).sin(),z];
+        let d = [s*(golden*k as f64).dcos(),s*(golden*k as f64).dsin(),z];
         let point = |j: usize| lerp(centre,[centre[0]+radius*d[0],centre[1]+radius*d[1],centre[2]+radius*d[2]],j as f64/steps as f64);
         let mut last = (point(0),r.side(point(0)));
         for j in 1..=steps {

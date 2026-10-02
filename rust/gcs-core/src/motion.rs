@@ -1,4 +1,6 @@
 //! Named rigid-motion families. Every node reads the same angular parameter in radians.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 mod bounds;
 pub use bounds::MotionBounds;
 mod contact;
@@ -152,7 +154,7 @@ impl Family {
             [Step::Rotation {origin,axis,ratio,phase:_,advance}] => {
                 let axis = unit(axis)?;
                 let skew = cross(axis,normal);
-                if advance != 0. || skew[0].hypot(skew[1]).hypot(skew[2]) > 1e-9 || ratio == 0. { return None; }
+                if advance != 0. || skew[0].dhypot(skew[1]).dhypot(skew[2]) > 1e-9 || ratio == 0. { return None; }
                 // the plane turns about where its axis meets it
                 let along = dot([point[0]-origin[0],point[1]-origin[1],point[2]-origin[2]],axis);
                 Some(PlaneRigid::Turn {centre:std::array::from_fn(|k| origin[k]+along*axis[k]),axis,rate:ratio})
@@ -302,7 +304,7 @@ impl Family {
             let value = match *step {
                 Step::Rotation {origin,axis,ratio,phase,advance} => {
                     let a = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
-                    let (s,c) = (phase+ratio*angle).sin_cos();
+                    let (s,c) = (phase+ratio*angle).dsin_cos();
                     let k = [[0.,-a[2],a[1]],[a[2],0.,-a[0]],[-a[1],a[0],0.]];
                     let r: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j|
                         c*if i == j { 1. } else { 0. }+(1.-c)*a[i]*a[j]+s*k[i][j]));

@@ -7,6 +7,8 @@
 //! That field is one-Lipschitz by construction, whatever the winding, and a
 //! hole is an ordinary loop subtracted. Snapshot construction reads solved
 //! floating-point curves; interval evaluation does not certify that reading.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::{norm,min,point,Error,I,Node,PlanarField,RevolvedField};
 use crate::solid::surface::{Edge,RevolvedRegion};
 use std::f64::consts::{PI,TAU};
@@ -41,7 +43,7 @@ impl Edge {
         match *self {
             Self::Line {a,b,..} => delta(b,a),
             Self::Arc {start,sweep,..} => {
-                let (s,c) = (start+t*sweep).sin_cos();
+                let (s,c) = (start+t*sweep).dsin_cos();
                 [-s*sweep.signum(),c*sweep.signum()]
             }
         }
@@ -57,8 +59,8 @@ impl Edge {
     // convex hull of its boundary, hence inside this disk.
     fn reach(&self) -> f64 {
         match *self {
-            Self::Line {a,b,..} => a[0].hypot(a[1]).max(b[0].hypot(b[1])),
-            Self::Arc {center,radius,..} => center[0].hypot(center[1])+radius,
+            Self::Line {a,b,..} => a[0].dhypot(a[1]).max(b[0].dhypot(b[1])),
+            Self::Arc {center,radius,..} => center[0].dhypot(center[1])+radius,
         }
     }
 }
@@ -114,7 +116,7 @@ fn turning(edges: &[Edge]) -> Result<(f64,bool),String> {
             turning += sweep*direction;
         }
         let a = e.tangent(1.); let b = edges[(i+1)%edges.len()].tangent(0.);
-        let turn = (direction*cross(a,b)).atan2(a[0]*b[0]+a[1]*b[1]);
+        let turn = (direction*cross(a,b)).datan2(a[0]*b[0]+a[1]*b[1]);
         // Tangent junctions inherit the solved source's floating-point residual.
         if turn < -1e-9 { convex = false; }
         turning += turn;

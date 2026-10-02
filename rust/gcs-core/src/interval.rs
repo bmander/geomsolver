@@ -3,6 +3,8 @@
 //! Trigonometric bounds use Taylor polynomials and explicit remainder bounds,
 //! not the platform libm's unspecified transcendental accuracy.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 pub mod minimum;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]

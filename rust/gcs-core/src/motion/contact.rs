@@ -1,4 +1,6 @@
 //! Temporal contact charts for a rotation viewed from another rotating frame.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::{Family,Step};
 use crate::{envelope::{self,Error,Motion,SurfacePoint},plane::{cross,dot}};
 use std::f64::consts::TAU;
@@ -44,7 +46,7 @@ impl Family {
         let Step::Rotation {origin,axis,ratio,phase,advance:0.} = *source else {
             return Err("temporal contacts require a rotation or two relative rotations without advance".into());
         };
-        let length = |v: [f64;3]| v[0].hypot(v[1]).hypot(v[2]);
+        let length = |v: [f64;3]| v[0].dhypot(v[1]).dhypot(v[2]);
         let axis = axis.map(|v| v/length(axis));
         let (omega,offset) = match observer {
             None => ([0.;3],[0.;3]),
@@ -76,7 +78,7 @@ impl NormalVelocity {
 
     pub fn at(&self,time: f64) -> Result<f64,Error> {
         let angle = self.phase+self.rate*time;
-        let value = self.constant+self.cosine*angle.cos()+self.sine*angle.sin();
+        let value = self.constant+self.cosine*angle.dcos()+self.sine*angle.dsin();
         if time.is_finite() && value.is_finite() { Ok(value) } else { Err(Error::NonFinite) }
     }
 
@@ -91,7 +93,7 @@ impl NormalVelocity {
             return Err(Error::InvalidOptions);
         }
         if !domain.iter().all(|v| v.is_finite()) { return Err(Error::NonFinite); }
-        let amplitude = self.cosine.hypot(self.sine);
+        let amplitude = self.cosine.dhypot(self.sine);
         if !amplitude.is_finite() { return Err(Error::NonFinite); }
         if self.rate == 0. || amplitude <= tolerance {
             return if self.at(domain[0])?.abs() <= tolerance { Err(Error::Degenerate) }
@@ -100,8 +102,8 @@ impl NormalVelocity {
         }
         if self.constant.abs() > amplitude+tolerance { return Ok(Vec::new()); }
         if (self.constant.abs()-amplitude).abs() <= tolerance { return Err(Error::Degenerate); }
-        let phase = self.sine.atan2(self.cosine);
-        let spread = (-self.constant/amplitude).acos();
+        let phase = self.sine.datan2(self.cosine);
+        let spread = (-self.constant/amplitude).dacos();
         let angles = domain.map(|t| self.phase+self.rate*t);
         let lo = angles[0].min(angles[1]); let hi = angles[0].max(angles[1]);
         if !lo.is_finite() || !hi.is_finite() { return Err(Error::NonFinite); }

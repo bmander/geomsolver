@@ -21,7 +21,7 @@ const XZ: V = [0.,1.,0.];
 
 #[test]
 fn a_rectangle_swept_is_its_area_times_its_depth() {
-    let p = Profile {origin:[0.;3],normal:XY,loops:vec![poly(&[[0.,0.,0.],[3.,0.,0.],[3.,2.,0.],[0.,2.,0.]])]};
+    let p = Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![poly(&[[0.,0.,0.],[3.,0.,0.],[3.,2.,0.],[0.,2.,0.]])]};
     let b = prism(&p,-1.5,2.5).unwrap();
     b.check(1e-9).unwrap();
     assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(6,12,8));
@@ -40,7 +40,7 @@ fn a_bored_and_rounded_plate_is_its_area_times_its_depth() {
     outer.push(arc([0.,0.,0.],r,XY,[1.,0.,0.],Some([PI/2.,3.*PI/2.])));
     let hole = vec![arc([0.,0.,0.],0.5,XY,[1.,0.,0.],None)];
     let square = poly(&[[3.,-0.5,0.],[4.,-0.5,0.],[4.,0.5,0.],[3.,0.5,0.]]);
-    let p = Profile {origin:[0.;3],normal:XY,loops:vec![outer,hole,square]};
+    let p = Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![outer,hole,square]};
     let b = prism(&p,0.,2.).unwrap();
     b.check(1e-9).unwrap();
     close(volume(&b),2.*(w*2.*r+PI*r*r-PI*0.25-1.));
@@ -48,7 +48,7 @@ fn a_bored_and_rounded_plate_is_its_area_times_its_depth() {
 
 #[test]
 fn a_circle_swept_is_a_cylinder_seamed_once() {
-    let p = Profile {origin:[1.,2.,3.],normal:[1.,1.,1.],loops:vec![vec![arc([1.,2.,3.],2.,[1.,1.,1.],[1.,-1.,0.],None)]]};
+    let p = Profile {names:vec![],origin:[1.,2.,3.],normal:[1.,1.,1.],loops:vec![vec![arc([1.,2.,3.],2.,[1.,1.,1.],[1.,-1.,0.],None)]]};
     let b = prism(&p,0.,5.).unwrap();
     b.check(1e-9).unwrap();
     assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(3,3,2));
@@ -58,7 +58,7 @@ fn a_circle_swept_is_a_cylinder_seamed_once() {
 #[test]
 fn turned_whole_profiles_are_their_solids_of_revolution() {
     let turn = |loops: Vec<Vec<ProfileEdge>>,angle: f64| {
-        let b = revolve(&Profile {origin:[0.;3],normal:XZ,loops},[0.;3],[0.,0.,1.],angle).unwrap();
+        let b = revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops},[0.;3],[0.,0.,1.],angle).unwrap();
         b.check(1e-9).unwrap();
         b
     };
@@ -101,25 +101,25 @@ fn a_partial_turn_is_its_share_of_the_whole_with_two_caps() {
     let solid = vec![poly(&[[0.,0.,0.],[r,0.,0.],[r,0.,h],[0.,0.,h]])];
     for (loops,whole) in [(tube,PI*(r*r-r0*r0)*h),(solid,PI*r*r*h)] {
         for angle in [PI/2.,-PI/3.,5.] {
-            let b = revolve(&Profile {origin:[0.;3],normal:XZ,loops:loops.clone()},[0.;3],[0.,0.,1.],angle).unwrap();
+            let b = revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:loops.clone()},[0.;3],[0.,0.,1.],angle).unwrap();
             b.check(1e-9).unwrap();
             close(volume(&b),whole*angle.abs()/TAU);
         }
     }
     // a quarter of a ball and of a torus
     let ball = vec![arc([0.,0.,0.],r,XZ,[1.,0.,0.],Some([-PI/2.,PI/2.])),line([0.,0.,-r],[0.,0.,r])];
-    let b = revolve(&Profile {origin:[0.;3],normal:XZ,loops:vec![ball]},[0.;3],[0.,0.,1.],PI/2.).unwrap();
+    let b = revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![ball]},[0.;3],[0.,0.,1.],PI/2.).unwrap();
     b.check(1e-9).unwrap();
     close(volume(&b),PI*r*r*r/3.);
     let torus = vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]];
-    let b = revolve(&Profile {origin:[0.;3],normal:XZ,loops:torus},[0.;3],[0.,0.,1.],PI/2.).unwrap();
+    let b = revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:torus},[0.;3],[0.,0.,1.],PI/2.).unwrap();
     b.check(1e-9).unwrap();
     close(volume(&b),PI*PI*3./2.);
 }
 
 #[test]
 fn a_moved_solid_is_the_same_solid() {
-    let p = Profile {origin:[0.;3],normal:XZ,loops:vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]]};
+    let p = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]]};
     let b = revolve(&p,[0.;3],[0.,0.,1.],TAU).unwrap();
     let m = Rigid::turn([1.,2.,3.],[1.,-2.,0.5],0.7).then(&Rigid {r:Rigid::identity().r,t:[5.,-1.,2.]});
     let moved = b.moved(&m);
@@ -130,11 +130,11 @@ fn a_moved_solid_is_the_same_solid() {
 #[test]
 fn points_are_placed_in_on_or_out_of_each_primitive() {
     use gcs_core::brep::query::{Located,Place::*};
-    let block = prism(&Profile {origin:[0.;3],normal:XY,loops:vec![poly(&[[0.,0.,0.],[3.,0.,0.],[3.,2.,0.],[0.,2.,0.]]),
+    let block = prism(&Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![poly(&[[0.,0.,0.],[3.,0.,0.],[3.,2.,0.],[0.,2.,0.]]),
         vec![arc([1.,1.,0.],0.5,XY,[1.,0.,0.],None)]]},0.,1.).unwrap();
-    let torus = revolve(&Profile {origin:[0.;3],normal:XZ,loops:vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]]},
+    let torus = revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]]},
         [0.;3],[0.,0.,1.],TAU).unwrap();
-    let ball = revolve(&Profile {origin:[0.;3],normal:XZ,loops:vec![vec![arc([0.,0.,0.],2.,XZ,[1.,0.,0.],Some([-PI/2.,PI/2.])),
+    let ball = revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![arc([0.,0.,0.],2.,XZ,[1.,0.,0.],Some([-PI/2.,PI/2.])),
         line([0.,0.,-2.],[0.,0.,2.])]]},[0.;3],[0.,0.,1.],PI/2.).unwrap();
     let cases: [(&gcs_core::brep::topo::Brep,V,_);14] = [
         (&block,[2.,1.,0.5],In),(&block,[1.,1.,0.5],Out),(&block,[1.5,1.,0.5],On),(&block,[3.,1.,0.5],On),
@@ -193,14 +193,14 @@ fn surfaces_meet_in_curves_on_both() {
 fn scale3(a: V,s: f64) -> V { [a[0]*s,a[1]*s,a[2]*s] }
 
 fn block(lo: V,hi: V) -> gcs_core::brep::topo::Brep {
-    let p = Profile {origin:[0.,0.,0.],normal:XY,loops:vec![poly(&[[lo[0],lo[1],0.],[hi[0],lo[1],0.],[hi[0],hi[1],0.],[lo[0],hi[1],0.]])]};
+    let p = Profile {names:vec![],origin:[0.,0.,0.],normal:XY,loops:vec![poly(&[[lo[0],lo[1],0.],[hi[0],lo[1],0.],[hi[0],hi[1],0.],[lo[0],hi[1],0.]])]};
     prism(&p,lo[2],hi[2]).unwrap()
 }
 fn rod(c: V,r: f64,z: [f64;2]) -> gcs_core::brep::topo::Brep {
-    prism(&Profile {origin:[0.,0.,0.],normal:XY,loops:vec![vec![arc([c[0],c[1],0.],r,XY,[1.,0.,0.],None)]]},z[0],z[1]).unwrap()
+    prism(&Profile {names:vec![],origin:[0.,0.,0.],normal:XY,loops:vec![vec![arc([c[0],c[1],0.],r,XY,[1.,0.,0.],None)]]},z[0],z[1]).unwrap()
 }
 fn ball(c: V,r: f64) -> gcs_core::brep::topo::Brep {
-    let p = Profile {origin:c,normal:XZ,loops:vec![vec![arc(c,r,XZ,[1.,0.,0.],Some([-PI/2.,PI/2.])),
+    let p = Profile {names:vec![],origin:c,normal:XZ,loops:vec![vec![arc(c,r,XZ,[1.,0.,0.],Some([-PI/2.,PI/2.])),
         line([c[0],c[1],c[2]-r],[c[0],c[1],c[2]+r])]]};
     revolve(&p,c,[0.,0.,1.],TAU).unwrap()
 }
@@ -283,7 +283,7 @@ fn traced_intersections_cross_bores_and_a_pierced_ball() {
     use gcs_core::brep::boolean::{boolean,Op};
     use gcs_core::brep::build::prism;
     // a horizontal rod along x, radius r, through (y, z) = (2, 2)
-    let across = |r: f64| prism(&Profile {origin:[0.;3],normal:[1.,0.,0.],loops:vec![vec![arc([0.,2.,2.],r,[1.,0.,0.],[0.,1.,0.],None)]]},-1.,5.).unwrap();
+    let across = |r: f64| prism(&Profile {names:vec![],origin:[0.;3],normal:[1.,0.,0.],loops:vec![vec![arc([0.,2.,2.],r,[1.,0.,0.],[0.,1.,0.],None)]]},-1.,5.).unwrap();
     let (big,small) = (1.5,1.);
     // the two rods' common volume, perpendicular axes crossing: 8 ∫₀ʳ √(r² − t²) √(R² − t²) dt
     // (substituting t = r sin θ keeps the integrand smooth to its ends)
@@ -326,21 +326,21 @@ fn mesh_volume(m: &gcs_core::brep::mesh::Mesh) -> f64 {
 fn meshes_are_closed_and_within_their_sag() {
     use gcs_core::brep::boolean::{boolean,Op};
     use gcs_core::brep::mesh::mesh;
-    let across = prism(&Profile {origin:[0.;3],normal:[1.,0.,0.],loops:vec![vec![arc([0.,2.,2.],1.,[1.,0.,0.],[0.,1.,0.],None)]]},-1.,5.).unwrap();
+    let across = prism(&Profile {names:vec![],origin:[0.;3],normal:[1.,0.,0.],loops:vec![vec![arc([0.,2.,2.],1.,[1.,0.,0.],[0.,1.,0.],None)]]},-1.,5.).unwrap();
     let a = block([0.,0.,0.],[4.,4.,4.]);
     let solids: Vec<(&str,gcs_core::brep::topo::Brep)> = vec![
         ("block",a.clone()),
         ("plate with four holes",{
             let mut loops = vec![poly(&[[-33.,-21.,0.],[33.,-21.,0.],[33.,21.,0.],[-33.,21.,0.]])];
             for c in [[-24.,-14.],[28.,-14.],[28.,14.],[-24.,14.]] { loops.push(vec![arc([c[0],c[1],0.],3.,XY,[1.,0.,0.],None)]); }
-            prism(&Profile {origin:[0.;3],normal:XY,loops},0.,5.).unwrap()
+            prism(&Profile {names:vec![],origin:[0.;3],normal:XY,loops},0.,5.).unwrap()
         }),
         ("rod",rod([0.,0.,0.],2.,[0.,3.])),
         ("ball",ball([1.,2.,3.],2.)),
-        ("torus",revolve(&Profile {origin:[0.;3],normal:XZ,loops:vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]]},[0.;3],[0.,0.,1.],TAU).unwrap()),
-        ("quarter ball",revolve(&Profile {origin:[0.;3],normal:XZ,loops:vec![vec![arc([0.,0.,0.],2.,XZ,[1.,0.,0.],Some([-PI/2.,PI/2.])),
+        ("torus",revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]]},[0.;3],[0.,0.,1.],TAU).unwrap()),
+        ("quarter ball",revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![arc([0.,0.,0.],2.,XZ,[1.,0.,0.],Some([-PI/2.,PI/2.])),
             line([0.,0.,-2.],[0.,0.,2.])]]},[0.;3],[0.,0.,1.],PI/2.).unwrap()),
-        ("cone",revolve(&Profile {origin:[0.;3],normal:XZ,loops:vec![poly(&[[0.,0.,0.],[2.,0.,0.],[0.,0.,3.]])]},[0.;3],[0.,0.,1.],TAU).unwrap()),
+        ("cone",revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![poly(&[[0.,0.,0.],[2.,0.,0.],[0.,0.,3.]])]},[0.;3],[0.,0.,1.],TAU).unwrap()),
         ("bored block",boolean(&a,&rod([2.,2.,0.],1.,[-1.,5.]),Op::Cut,1e-9).unwrap()),
         ("cross bored",boolean(&boolean(&a,&rod([2.,2.,0.],1.5,[-1.,5.]),Op::Cut,1e-9).unwrap(),&across,Op::Cut,1e-9).unwrap()),
         ("pierced ball",boolean(&ball([0.,0.,0.],3.),&rod([1.5,0.,0.],1.,[-4.,4.]),Op::Cut,1e-9).unwrap()),
@@ -365,7 +365,7 @@ fn meshes_are_closed_and_within_their_sag() {
 fn lofts_and_guided_sweeps_are_their_closed_forms() {
     use gcs_core::brep::build::{loft,Guide};
     let square = |c: V,half: f64,z: f64| poly(&[[c[0]-half,c[1]-half,z],[c[0]+half,c[1]-half,z],[c[0]+half,c[1]+half,z],[c[0]-half,c[1]+half,z]]);
-    let section = |z: f64,outer: f64,inner: f64| Profile {origin:[0.,0.,z],normal:XY,loops:vec![square([0.;3],outer,z),square([0.;3],inner,z)]};
+    let section = |z: f64,outer: f64,inner: f64| Profile {names:vec![],origin:[0.,0.,z],normal:XY,loops:vec![square([0.;3],outer,z),square([0.;3],inner,z)]};
     let (h,a,b0,w) = (40.,12.,6.,2.);
     // a hollow square frustum: each side a plane; the prismoidal formula, outer less inner
     let frustum = |a: f64,b: f64| h/3.*(4.*a*a+4.*b*b+4.*a*b);
@@ -373,7 +373,7 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     s.check(1e-8).unwrap();
     close(volume(&s),frustum(a,b0)-frustum(a-w,b0-w));
     // a round reducer: a cone frustum with a hole
-    let ring = |z: f64,r: f64,hole: f64| Profile {origin:[0.,0.,z],normal:XY,loops:vec![
+    let ring = |z: f64,r: f64,hole: f64| Profile {names:vec![],origin:[0.,0.,z],normal:XY,loops:vec![
         vec![arc([0.,0.,z],r,XY,[1.,0.,0.],None)],vec![arc([0.,0.,z],hole,XY,[0.,1.,0.],None)]]};
     let s = loft(&ring(0.,10.,4.),Some(&ring(h,6.,3.)),&Guide::Line {delta:[0.,0.,h]}).unwrap();
     s.check(1e-8).unwrap();
@@ -381,7 +381,7 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     close(volume(&s),cone(10.,6.)-cone(4.,3.));
     // a square elbow: its section turned a quarter about the bend's axis (Pappus)
     let bend = 30.;
-    let elbow = Profile {origin:[bend,0.,0.],normal:XZ,loops:vec![
+    let elbow = Profile {names:vec![],origin:[bend,0.,0.],normal:XZ,loops:vec![
         poly(&[[bend-9.,0.,-9.],[bend+9.,0.,-9.],[bend+9.,0.,9.],[bend-9.,0.,9.]]),
         poly(&[[bend-7.,0.,-7.],[bend+7.,0.,-7.],[bend+7.,0.,7.],[bend-7.,0.,7.]])]};
     let s = loft(&elbow,None,&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],angle:PI/2.}).unwrap();
@@ -392,7 +392,7 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     let shoelace = |p: &[[f64;2]]| (0..p.len()).map(|i| { let (a,b) = (p[i],p[(i+1)%p.len()]); a[0]*b[1]-a[1]*b[0] }).sum::<f64>()/2.;
     let (sq,dia) = ([[-6.,-6.],[6.,-6.],[6.,6.],[-6.,6.]],[[0.,-8.],[8.,0.],[0.,8.],[-8.,0.]]);
     let mix = |t: f64| (0..4).map(|k| [sq[k][0]*(1.-t)+dia[k][0]*t,sq[k][1]*(1.-t)+dia[k][1]*t]).collect::<Vec<_>>();
-    let turned = Profile {origin:[0.,0.,h],normal:XY,loops:vec![poly(&[[0.,-8.,h],[8.,0.,h],[0.,8.,h],[-8.,0.,h]])]};
+    let turned = Profile {names:vec![],origin:[0.,0.,h],normal:XY,loops:vec![poly(&[[0.,-8.,h],[8.,0.,h],[0.,8.,h],[-8.,0.,h]])]};
     let s = loft(&Profile {loops:vec![square([0.;3],6.,0.)],..section(0.,a,a-w)},Some(&turned),&Guide::Line {delta:[0.,0.,h]}).unwrap();
     s.check(1e-8).unwrap();
     assert!(s.faces.iter().any(|f| f.surface.kind() == "blend"));
@@ -406,7 +406,7 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
         let m = |p: [[f64;2];4],q: [[f64;2];4]| (0..4).map(|k| [p[k][0]*(1.-t)+q[k][0]*t,p[k][1]*(1.-t)+q[k][1]*t]).collect::<Vec<_>>();
         moment(&m(ring2(9.),ring2(o)))-moment(&m(ring2(7.),ring2(i)))
     };
-    let narrow = Profile {origin:[0.,bend,0.],normal:[1.,0.,0.],loops:vec![
+    let narrow = Profile {names:vec![],origin:[0.,bend,0.],normal:[1.,0.,0.],loops:vec![
         poly(&ring2(6.).map(|q| [0.,q[0],q[1]])),poly(&ring2(4.).map(|q| [0.,q[0],q[1]]))]};
     let s = loft(&elbow,Some(&narrow),&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],angle:PI/2.}).unwrap();
     s.check(1e-8).unwrap();
@@ -454,7 +454,7 @@ fn splines_swept_and_turned_are_their_closed_forms() {
     let spline = |s: &std::sync::Arc<gcs_core::brep::geom::BSpline>| ProfileEdge::Spline(s.clone());
     // a plate: a base, a spline of two spans round to the back, and the back
     let lobe = cubic(&[[10.,0.,0.],[12.,8.,0.],[9.,13.,0.],[6.,14.,0.],[0.,10.,0.]],&[0.4]);
-    let plate = Profile {origin:[0.;3],normal:XY,loops:vec![vec![line([0.,0.,0.],[10.,0.,0.]),spline(&lobe),line([0.,10.,0.],[0.,0.,0.])]]};
+    let plate = Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![vec![line([0.,0.,0.],[10.,0.,0.]),spline(&lobe),line([0.,10.,0.],[0.,0.,0.])]]};
     // its area by Green's theorem: the lines through the origin enclose nothing
     let area = over_spans(&lobe,[0.,1.],|t| { let (p,d,_) = lobe.d2(t); (p[0]*d[1]-p[1]*d[0])/2. });
     let b = prism(&plate,0.,3.).unwrap();
@@ -491,7 +491,7 @@ fn splines_swept_and_turned_are_their_closed_forms() {
     assert!((volume(&r)-want).abs() <= 1e-8*want,"{} against {want}",volume(&r));
     // a vase: a foot, a spline wall and a rim, turned about z
     let wall = cubic(&[[12.,0.,0.],[20.,0.,12.],[2.,0.,24.],[10.,0.,36.]],&[]);
-    let vase = Profile {origin:[0.;3],normal:XZ,loops:vec![vec![line([0.,0.,0.],[12.,0.,0.]),spline(&wall),
+    let vase = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![line([0.,0.,0.],[12.,0.,0.]),spline(&wall),
         line([10.,0.,36.],[0.,0.,36.]),line([0.,0.,36.],[0.,0.,0.])]]};
     let v = revolve(&vase,[0.;3],[0.,0.,1.],TAU).unwrap();
     v.check(1e-9).unwrap();
@@ -513,7 +513,7 @@ fn splines_swept_and_turned_are_their_closed_forms() {
     // lofted to itself at half the size along z: every section the plate scaled by 1 − t/2, so the
     // volume is h A ∫(1 − t/2)² dt = 7 h A / 12; the lines join in planes, the splines in a blend
     let half = cubic(&lobe.poles.iter().map(|p| [p[0]/2.,p[1]/2.,6.]).collect::<Vec<_>>(),&[0.4]);
-    let top = Profile {origin:[0.,0.,6.],normal:XY,loops:vec![vec![line([0.,0.,6.],[5.,0.,6.]),spline(&half),line([0.,5.,6.],[0.,0.,6.])]]};
+    let top = Profile {names:vec![],origin:[0.,0.,6.],normal:XY,loops:vec![vec![line([0.,0.,6.],[5.,0.,6.]),spline(&half),line([0.,5.,6.],[0.,0.,6.])]]};
     let lofted = gcs_core::brep::build::loft(&plate,Some(&top),&gcs_core::brep::build::Guide::Line {delta:[0.,0.,6.]}).unwrap();
     lofted.check(1e-9).unwrap();
     assert!(lofted.faces.iter().any(|f| f.surface.kind() == "blend") && lofted.faces.iter().filter(|f| f.surface.kind() == "plane").count() == 4);
@@ -654,7 +654,7 @@ fn a_sector_patterned_is_its_whole_revolution() {
     let pappus = 2.75*TAU*8.5/3.;
     for (loops,whole,rings) in [(torus,TAU*PI*3.,1),(vec![triangle],pappus,3)] {
         for n in [3,6,7] {
-            let sector = revolve(&Profile {origin:[0.;3],normal:XZ,loops:loops.clone()},[0.;3],[0.,0.,1.],TAU/n as f64).unwrap();
+            let sector = revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:loops.clone()},[0.;3],[0.,0.,1.],TAU/n as f64).unwrap();
             let built = pattern(&sector,[0.;3],[0.,0.,1.],n,1e-9).unwrap_or_else(|e| panic!("{n} copies: {e}"));
             let b = &built.solid;
             b.check(1e-9).unwrap_or_else(|e| panic!("{n} copies: {e}"));
@@ -666,4 +666,99 @@ fn a_sector_patterned_is_its_whole_revolution() {
             gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&m.triangles(),"ring")).unwrap_or_else(|e| panic!("{n} copies: {e}"));
         }
     }
+}
+
+#[test]
+fn interior_samples_are_inside_and_no_deeper_than_they_are() {
+    use gcs_core::brep::query::interior;
+    // a block with a ball cut from it: every sample is in the block and out of the ball, and its
+    // depth is no more than its distance from either
+    let (lo,hi) = ([0.,0.,0.],[10.,6.,4.]);
+    let (c,r) = ([5.,3.,2.],1.5);
+    let solid = gcs_core::brep::boolean::boolean(&block(lo,hi),&ball(c,r),gcs_core::brep::boolean::Op::Cut,1e-9).unwrap();
+    let samples = interior(&solid,8).unwrap();
+    assert_eq!(samples.len(),8);
+    for (p,d) in &samples {
+        let to_box = (0..3).map(|k| (p[k]-lo[k]).min(hi[k]-p[k])).fold(f64::INFINITY,f64::min);
+        let to_ball = ((p[0]-c[0]).powi(2)+(p[1]-c[1]).powi(2)+(p[2]-c[2]).powi(2)).sqrt()-r;
+        assert!(to_box > 0. && to_ball > 0.,"{p:?} outside");
+        assert!(*d <= to_box.min(to_ball)+1e-12 && *d > 0.,"{p:?} said {d} deep, {to_box} and {to_ball} from the walls");
+    }
+    // the deepest is nearly as deep as the deepest point of the solid: a corner region 2 from the walls
+    assert!(samples[0].1 > 1.2,"{samples:?}");
+}
+
+#[test]
+fn a_grid_interpolated_passes_through_it_and_makes_a_sheet() {
+    use gcs_core::brep::nurbs::{interpolate_net,Parametrization};
+    // a saddle sampled unevenly: rows bunched toward one end
+    let (rows,cols) = (9,7);
+    let pts: Vec<V> = (0..rows).flat_map(|i| (0..cols).map(move |j| {
+        let (x,y) = ((i as f64/8.).powf(1.5)*10.,j as f64*1.5);
+        [x,y,0.05*(x*x-y*y)]
+    })).collect();
+    for kind in [Parametrization::Even,Parametrization::ChordLength,Parametrization::Centripetal] {
+        let net = interpolate_net(&pts,rows,cols,kind).unwrap();
+        assert_eq!((net.du,net.dv),(3,3));
+        // through every grid point at the parameters it was given: found again by the surface's inverse
+        let s = gcs_core::brep::geom::Surface::BSpline(gcs_core::brep::geom::Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),std::sync::Arc::new(net.clone()));
+        for &p in &pts {
+            let q = s.point(s.inverse(p));
+            assert!(gcs_core::space::distance(p,q) < 1e-9,"{kind:?}: {p:?} against {q:?}");
+        }
+        // the sheet's boundary is the grid's: its corners the grid's corners
+        let b = gcs_core::brep::build::sheet(net).unwrap();
+        assert_eq!(b.faces.len(),1);
+        for (k,&c) in [0,(rows-1)*cols,rows*cols-1,cols-1].iter().enumerate() {
+            assert!(gcs_core::space::distance(b.vertices[k].p,pts[c]) < 1e-12);
+        }
+        // each use's pcurve and its edge agree along it
+        let f = &b.faces[0];
+        for c in &f.loops[0] {
+            let e = &b.edges[c.edge as usize];
+            for t in [0.,0.3,0.7,1.] {
+                let x = e.t[0]+(e.t[1]-e.t[0])*t;
+                let uv = c.pcurve.at(x,e,&f.surface,&b.vertices);
+                assert!(gcs_core::space::distance(f.surface.point(uv),e.point(x,&b.vertices)) < 1e-12);
+            }
+        }
+    }
+}
+
+/// An interpolation of many points (solved in its band, past the dense solve's size) passes through
+/// every one, at its own parameter.
+#[test]
+fn a_long_interpolation_passes_through_its_points() {
+    let pts: Vec<[f64;3]> = (0..300).map(|k| { let a = k as f64*0.05; [10.*a.cos(),10.*a.sin(),0.3*a] }).collect();
+    let mut t = vec![0.];
+    for w in pts.windows(2) { t.push(t.last().unwrap()+gcs_core::space::distance(w[0],w[1])); }
+    let s = gcs_core::brep::nurbs::interpolate(&pts,&t,3).unwrap();
+    let worst = pts.iter().zip(&t).map(|(p,&u)| gcs_core::space::distance(s.point(u),*p)).fold(0.,f64::max);
+    assert!(worst < 1e-9,"{worst}");
+}
+
+/// A meeting that runs off a sheet's patch ends at the patch's edge: past it the sheet's signed
+/// distance runs on along its tangent extension, and a trace read by that alone went back and forth
+/// at the edge a hundred thousand times.
+#[test]
+fn a_trace_off_a_sheets_patch_ends_at_its_edge() {
+    use gcs_core::brep::geom::Surface;
+    // a flat sheet over the unit square, and a ball centred on its edge x = 1
+    let points: Vec<V> = (0..6).flat_map(|i| (0..6).map(move |j| [i as f64/5.,j as f64/5.,0.])).collect();
+    let net = gcs_core::brep::nurbs::interpolate_net(&points,6,6,gcs_core::brep::nurbs::Parametrization::Even).unwrap();
+    let sheet = Surface::BSpline(Frame::about([0.;3],[0.,0.,1.]),std::sync::Arc::new(net));
+    let ball = Surface::Sphere(Frame::about([1.,0.5,0.],[0.,0.,1.]),0.3);
+    let started = std::time::Instant::now();
+    let curves = gcs_core::brep::ssi::trace(&ball,&sheet,&[[0.7,0.5,0.]],[-1.;3],[2.;3],1e-9).unwrap();
+    assert!(started.elapsed().as_secs_f64() < 5.,"{:?}",started.elapsed());
+    assert_eq!(curves.len(),1);
+    // the half circle on the patch, its ends at x = 1 (within a step's halving at the edge)
+    let c = &curves[0];
+    let [t0,t1] = match c {
+        gcs_core::brep::geom::Curve::BSpline(b) => b.domain(),
+        gcs_core::brep::geom::Curve::Traced(t) => [0.,(t.pts.len()-1) as f64],
+        other => panic!("a {} where a trace was expected",other.kind()),
+    };
+    let ends = [c.point(t0),c.point(t1)];
+    for e in ends { assert!((e[0]-1.).abs() < 1e-3 && e[0] <= 1.+1e-6,"{ends:?}"); }
 }

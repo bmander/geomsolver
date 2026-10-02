@@ -1,6 +1,6 @@
 /* A derived picture is geometry in page coordinates. Moving the camera only transforms those
  * coordinates; it must not reclassify the solid's edges and hidden lines on every frame. */
-import { derived, derivedInputs } from '../core/derived.js';
+import { derived, derivedDetailFree, derivedInputs } from '../core/derived.js';
 import type { Drawn } from '../core/derived.js';
 import type { Sketch } from '../core/model.js';
 
@@ -18,6 +18,8 @@ interface Cached {
   style: number;
   unit: number;
   items: Drawn[];
+  /** The same at every pixel length: no zoom refines it. */
+  fixed: boolean;
 }
 
 /** Keep the last projection through a pan or zoom. Finer curves are requested once the camera
@@ -50,13 +52,15 @@ export class DerivedDrawing {
         || inputs.some((v, i) => !(Math.abs(v - c.inputs[i]) <= noise))) {
       const detail = displayUnit(unit);
       const items = derived(sketch, detail);
-      this.cached = { sketch, inputs, style, unit: detail, items };
+      this.cached = { sketch, inputs, style, unit: detail, items, fixed: derivedDetailFree(sketch) };
       return items;
     }
     // Zooming out can keep the finer picture indefinitely. Zooming in transforms the same
     // polylines during the gesture, then replaces them at the final screen tolerance. Only
     // one refinement can be pending, and it never retains a sketch that a load disposed of.
-    if (unit < c.unit && c.items.length) {
+    // A picture of swept solids alone is one surface's at every zoom, and re-deriving it — seconds,
+    // for an exact gear pair's sixteen thousand strokes — would draw the same lines again.
+    if (unit < c.unit && c.items.length && !c.fixed) {
       this.refinement = setTimeout(() => {
         this.refinement = null;
         this.cached = null;

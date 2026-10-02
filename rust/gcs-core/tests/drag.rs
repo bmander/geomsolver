@@ -488,7 +488,8 @@ fn guards_are_renumbered_into_the_part_or_dropped() {
 /// the one-shot solve's rescue of a pose that stopped on its limit never reaches them.  Every
 /// frame of a `Drag` (the pull and polish alone) on three figures — a rectangle with fillets, a
 /// floating truss and the traced gear — is hashed, pose, status and success together, against
-/// the hash recorded before the rescue existed.
+/// the hash recorded before the rescue existed — re-recorded once since, when the core's
+/// trigonometry became its own (`fmath`, the same bits native and in wasm).
 #[test]
 fn pull_polish_frames_are_the_bits_they_were() {
     // FNV-1a over 64-bit words
@@ -514,5 +515,5 @@ fn pull_polish_frames_are_the_bits_they_were() {
         d.end(sk);
     }
     println!("pull/polish hash {h:#018x}");
-    assert_eq!(h, 0x877b5fff543dab07);
+    assert_eq!(h, 0x5c0d42ac9b59af67);
 }

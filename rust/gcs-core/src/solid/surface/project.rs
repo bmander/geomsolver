@@ -1,4 +1,6 @@
 //! Exact support equations and finite-patch incidence for line/circle revolutions.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 use std::f64::consts::TAU;
 
@@ -60,7 +62,7 @@ impl RevolvedSurface {
             Meridian::Line {start,delta} => {
                 let start = coords(sub(start,self.origin));
                 let delta = coords(delta);
-                let length = delta[0].hypot(delta[1]);
+                let length = delta[0].dhypot(delta[1]);
                 if !length.is_finite() || length == 0. {
                     return Err("a boundary meridian needs a nondegenerate line".into());
                 }
@@ -73,14 +75,14 @@ impl RevolvedSurface {
             Meridian::Round {center,a,b,sweep} => {
                 let center = coords(sub(center,self.origin));
                 let a = coords(a); let b = coords(b);
-                let radius = a[0].hypot(a[1]);
+                let radius = a[0].dhypot(a[1]);
                 let det = a[0]*b[1]-a[1]*b[0];
                 if !radius.is_finite() || radius <= 0. || det == 0. {
                     return Err("a boundary meridian needs a regular circle".into());
                 }
-                let r = |t: f64| center[0]+a[0]*t.cos()+b[0]*t.sin();
+                let r = |t: f64| center[0]+a[0]*t.dcos()+b[0]*t.dsin();
                 let mut rmin = r(0.).min(r(sweep));
-                let extreme = b[0].atan2(a[0]).rem_euclid(TAU);
+                let extreme = b[0].datan2(a[0]).rem_euclid(TAU);
                 for t in [extreme,(extreme+std::f64::consts::PI).rem_euclid(TAU)] {
                     if t <= sweep { rmin = rmin.min(r(t)); }
                 }
@@ -111,7 +113,7 @@ impl SurfaceProjector {
         let direction = if r > 0. { scale(rvec,1./r) } else { self.radial };
         let sign = s.sweep.signum();
         let angle = dot(s.axis,plane::cross(self.radial,direction))
-            .atan2(dot(self.radial,direction));
+            .datan2(dot(self.radial,direction));
         let [from,to] = s.v_domain.map(|v| v*s.sweep.abs());
         let v = (from+phase(sign*angle-from,to-from))/s.sweep.abs();
         let (u,distance,n) = match self.section {
@@ -123,9 +125,9 @@ impl SurfaceProjector {
             }
             Section::Circle {center,a,b,radius,sweep,orientation} => {
                 let q = [r-center[0],z-center[1]];
-                let d = q[0].hypot(q[1]);
+                let d = q[0].dhypot(q[1]);
                 if d == 0. { return Err(Error::Degenerate); }
-                let angle = (q[0]*b[0]+q[1]*b[1]).atan2(q[0]*a[0]+q[1]*a[1]);
+                let angle = (q[0]*b[0]+q[1]*b[1]).datan2(q[0]*a[0]+q[1]*a[1]);
                 (phase(angle,sweep)/sweep,orientation*(d-radius),
                     [orientation*q[0]/d,orientation*q[1]/d])
             }

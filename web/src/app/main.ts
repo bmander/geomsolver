@@ -44,6 +44,8 @@
  * number a dimension is edited in. */
 import * as io from '../core/io.js';
 import * as solids from '../core/mesh.js';
+import { related } from '../core/modules.js';
+import type { ExportJob, ExportReply } from './export-worker.js';
 import { drawingActive, exportDrawingSvg } from './drawing.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
 import {
@@ -173,14 +175,66 @@ async function exportFile(kind: 'glb' | 'stl', objs: { name: string; index: numb
   toast(preview ? `exported ${name} — a preview, not the finished surface` : `exported ${name}`);
 }
 
+/** **A solid's exact export, made in a worker** (`export-worker.ts`): the core's own kernel builds
+ *  each object — a swept body of the generating class as one sector patterned — and writes its STEP
+ *  parsed back against it, or its STL held to the fabrication tolerance and to its material field;
+ *  the functions `solventc --step/--stl` calls, so the file is the one the terminal writes. It takes
+ *  seconds, so the page goes on drawing, and says so; a refusal is the export's, its stage named. */
+let exporter: Worker | null = null;
+let exportJob = 0;
+const exportsWaiting = new Map<number, { name: string; kind: 'step' | 'stl' }>();
+function exactExport(kind: 'step' | 'stl'): void {
+  const objs = solids.objects(view.sketch);
+  if (objs.length === 0) {
+    toast('this drawing has no solid — a `solid` statement makes one from a `face`');
+    return;
+  }
+  if (!exporter) {
+    const w = new Worker(new URL('./export-worker.bundle.js', import.meta.url), { type: 'module' });
+    w.onmessage = (ev: MessageEvent<ExportReply>) => {
+      const reply = ev.data;
+      const asked = exportsWaiting.get(reply.id);
+      if (!asked) return;
+      exportsWaiting.delete(reply.id);
+      if ('error' in reply) { toast(`cannot export ${asked.name}: ${reply.error}`); return; }
+      download(`${asked.name}.${asked.kind}`, reply.bytes);
+      toast(`exported ${asked.name}.${asked.kind} — by the core's kernel, its file checked`);
+    };
+    w.onerror = (ev) => { exportsWaiting.clear(); toast(`the export stopped: ${ev.message || 'its worker failed'}`); exporter = null; };
+    exporter = w;
+  }
+  const text = view.source;
+  const modules = related(text).filter((f) => f.provided).map((f): [string, string] => [f.name, f.text]);
+  for (const o of objs) {
+    const id = ++exportJob;
+    const name = o.name.replace(/[^\w.-]/g, '_');
+    exportsWaiting.set(id, { name, kind });
+    const job: ExportJob = { id, text, modules, x: view.sketch.getX(), solid: o.index, kind, tolerance: 0.01 };
+    exporter.postMessage(job);
+  }
+  toast(`exporting ${objs.length === 1 ? objs[0].name : `${objs.length} objects`} as ${kind.toUpperCase()} — a swept body takes seconds`);
+}
+
 /** **The background refinement, said in the footer** — one entry an object, while any is going:
  *  its phase (the rough first pass, tracing sharp edges, the final pass, and a repair's rebuilds),
  *  a bar of its estimated progress, its triangles so far and the time taken. The estimate is how
  *  far the worst facet waiting has come toward the criteria, and no count of work left, which no
- *  refinement knows. Finished, the line says so for a few seconds; failed, it stays with why. */
+ *  refinement knows. Finished, the line says so for a few seconds; failed, it stays with why.
+ *
+ *  **An exact surface's build is said beside its preview**: the stage it is on in the core's
+ *  words, a bar of the stages done, a spinner and a clock. A stage of a gear runs for seconds with
+ *  nothing said, so the page ticks the spinner and the clock itself while one is building: work
+ *  going on never looks like work that has stopped. Built, the entry says so; refused, the preview
+ *  is the surface and the entry says it is the field's. */
 let refineTimer = 0;
+let refineTick = 0;
+let refineList: Refining[] = [];
+const SPIN = '◐◓◑◒';
 function showRefining(list: Refining[]): void {
+  refineList = list;
   clearTimeout(refineTimer);
+  clearInterval(refineTick);
+  refineTick = 0;
   if (!list.length) { refining(''); return; }
   const clock = (ms: number): string => {
     const s = Math.floor(ms / 1000);
@@ -191,19 +245,34 @@ function showRefining(list: Refining[]): void {
     return '▰'.repeat(n) + '▱'.repeat(8 - n);
   };
   const short = (name: string): string => name.split('.').filter((w) => w !== 'body').pop() ?? name;
-  const failed = list.filter((r) => r.error || r.progress?.failed);
+  const building = (r: Refining): boolean => !!r.exact && !r.exact.built && !r.exact.error;
+  const spin = SPIN[Math.floor(performance.now() / 250) % SPIN.length];
+  const failed = list.filter((r) => (r.error || r.progress?.failed) && !r.exact?.built);
   const parts = list.map((r) => {
     const p = r.progress;
-    if (r.error || p?.failed) return `${short(r.name)}: failed — ${r.error ?? p?.stage}`;
-    if (r.done) return `${short(r.name)}: refined · ${r.triangles.toLocaleString()} triangles · ${clock(r.elapsed)}`;
-    // what it is doing is the core's words (`FieldProgress::doing`), shown as they are
-    const what = p?.doing ?? 'starting';
-    // the bar is the pass in hand, as the core estimates it
-    return `${short(r.name)}: ${what} ${bar(p?.within ?? 0)} ${r.triangles.toLocaleString()} triangles · ${clock(r.elapsed)}`;
+    const x = r.exact;
+    if (x?.built) return `${short(r.name)}: exact solid · ${x.triangles.toLocaleString()} triangles · ${clock(performance.now() - r.since)}`;
+    // the preview, as it stands: refined, or the pass in hand (what it is doing is the core's words)
+    const preview = r.error || p?.failed ? `failed — ${r.error ?? p?.stage}`
+      : r.done ? `refined · ${r.triangles.toLocaleString()} triangles`
+      : `${p?.doing ?? 'starting'} ${bar(p?.within ?? 0)} ${r.triangles.toLocaleString()} triangles`;
+    if (x && building(r)) {
+      const shown = r.done ? `preview ${r.triangles.toLocaleString()} triangles` : `preview ${r.triangles.toLocaleString()} triangles…`;
+      return `${short(r.name)}: exact solid ${spin} ${x.doing} ${bar(x.done / Math.max(1, x.total))} ${clock(performance.now() - r.since)}`
+        + ` · ${shown}`;
+    }
+    const field = x?.error ? ' (the field\'s surface: no exact solid for it)' : '';
+    return `${short(r.name)}: ${preview}${field} · ${clock(r.elapsed)}`;
   });
   const text = parts.join('   |   ');
+  if (list.some(building)) {
+    // the stage in hand says nothing till it ends: the clock and the spinner say it is going
+    refineTick = window.setInterval(() => showRefining(refineList), 250);
+    refining(text);
+    return;
+  }
   if (failed.length) { refining(text, 'failed'); return; }
-  if (list.every((r) => r.done)) {
+  if (list.every((r) => r.done || r.exact?.built)) {
     refining(text, 'finished');
     refineTimer = window.setTimeout(() => refining(''), 5000);
     return;
@@ -264,7 +333,13 @@ const MENUS: [string, (MenuItem | null)[]][] = [
         + '`solventc --gltf` writes' },
     { label: 'Export solid (STL)', onClick: () => void exportSolid('stl'),
       title: 'The object as a printer takes it: triangles, welded so every edge has its '
-        + 'partner.  What `solventc --stl` writes' },
+        + 'partner, from the drawing\'s own mesh' },
+    { label: 'Export solid (STEP)', onClick: () => exactExport('step'),
+      title: 'The exact solid, built by the core\'s own kernel and held to 10 µm: what '
+        + '`solventc --step --tolerance` writes' },
+    { label: 'Export solid for fabrication (STL)', onClick: () => exactExport('stl'),
+      title: 'The exact solid meshed within 10 µm and held to its material field: what '
+        + '`solventc --stl --tolerance` writes' },
     null,
     { label: 'Trace image…', onClick: () => void traceImage(),
       title: 'Put a picture behind the drawing to draw over.  It is scenery — not saved, not '

@@ -1,6 +1,8 @@
 //! The analytic geometry a B-rep face and edge lie on: frames, surfaces with their natural
 //! parameterisations and closed-form inverses, and curves. Every surface is parameterised as
 //! OCCT (and STEP) parameterise it, so a face written out is the face read in.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::space::{add,cross,dot,norm,scale,sub};
 use std::sync::Arc;
 pub use super::nurbs::BSpline;
@@ -57,7 +59,7 @@ impl Rigid {
     /// The turn by `angle` about the line through `o` along the unit `a`.
     pub fn turn(o: V,a: V,angle: f64) -> Rigid {
         let a = unit(a);
-        let (s,c) = angle.sin_cos();
+        let (s,c) = angle.dsin_cos();
         let t = 1.-c;
         let [x,y,z] = a;
         let r = [[c+x*x*t,x*y*t-z*s,x*z*t+y*s],[y*x*t+z*s,c+y*y*t,y*z*t-x*s],[z*x*t-y*s,z*y*t+x*s,c+z*z*t]];
@@ -106,7 +108,7 @@ pub enum Carry { Line { delta: V },Arc { center: V,axis: V,angle: f64 } }
 
 impl Carry {
     fn turn(axis: V,angle: f64,p: V) -> V {
-        let (s,c) = angle.sin_cos();
+        let (s,c) = angle.dsin_cos();
         add(add(scale(p,c),scale(cross(axis,p),s)),scale(axis,dot(axis,p)*(1.-c)))
     }
     /// `p` carried to `v`.
@@ -211,9 +213,108 @@ fn patch_side(p: V,uv: Uv,middle: Uv,d1: &dyn Fn(Uv) -> (V,V,V)) -> (f64,V) {
     (dot(d,n),n)
 }
 
-/// The parameters of a B-spline sheet's point nearest `p`: the nearest of a grid across its knot
-/// spans, then Gauss–Newton held to the domain.
+/// Gauss–Newton for the parameters of a B-spline sheet's point nearest `p`, from `uv` and held to
+/// the domain: where it reaches a foot — on the sheet, off it along its normal (to a millionth of a
+/// radian), or held at the domain's edge with the point beyond it — or `None` where it does not
+/// settle.
+fn net_newton(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
+    let [[u0,u1],[v0,v1]] = n.domain();
+    let size = 1.+(u1-u0).abs().max((v1-v0).abs());
+    let on = 1e-12*(1.+dot(p,p).sqrt());
+    uv = [uv[0].clamp(u0,u1),uv[1].clamp(v0,v1)];
+    for _ in 0..30 {
+        let [x,xu,xv,xuu,xuv,xvv] = n.d2(uv[0],uv[1]);
+        let e = sub(x,p);
+        let gap = dot(e,e).sqrt();
+        let square = |d: V| dot(e,d).abs() <= 1e-6*gap*dot(d,d).sqrt();
+        if gap <= on || (square(xu) && square(xv)) { return Some(uv) }
+        // Newton on the squared distance where its Hessian is positive definite (a point well off a
+        // curved sheet, where Gauss–Newton's first-order model crawls), Gauss–Newton elsewhere
+        let (g11,g12,g22) = (dot(xu,xu),dot(xu,xv),dot(xv,xv));
+        let (h11,h12,h22) = (g11+dot(e,xuu),g12+dot(e,xuv),g22+dot(e,xvv));
+        let (a11,a12,a22) = if h11 > 0. && h22 > 0. && h11*h22-h12*h12 > 0. { (h11,h12,h22) } else { (g11,g12,g22) };
+        let (b1,b2) = (dot(xu,e),dot(xv,e));
+        // a parameter at the domain's edge with the descent pushing it out is held there, and the
+        // other found alone (the joint step would keep moving it along the edge)
+        let held_u = (uv[0] <= u0 && b1 > 0.) || (uv[0] >= u1 && b1 < 0.);
+        let held_v = (uv[1] <= v0 && b2 > 0.) || (uv[1] >= v1 && b2 < 0.);
+        let next = match (held_u,held_v) {
+            (true,true) => return Some(uv),
+            (true,false) => { if !(a22 > 0.) { return None } [uv[0],(uv[1]-b2/a22).clamp(v0,v1)] }
+            (false,true) => { if !(a11 > 0.) { return None } [(uv[0]-b1/a11).clamp(u0,u1),uv[1]] }
+            (false,false) => {
+                let det = a11*a22-a12*a12;
+                if !(det.abs() > 0.) { return None }
+                [(uv[0]-(a22*b1-a12*b2)/det).clamp(u0,u1),(uv[1]-(a11*b2-a12*b1)/det).clamp(v0,v1)]
+            }
+        };
+        // a step that moves farther off is halved back toward where it began
+        let mut next = next;
+        for _ in 0..8 {
+            let f = sub(n.point(next[0],next[1]),p);
+            if dot(f,f) <= dot(e,e) { break }
+            next = [(uv[0]+next[0])/2.,(uv[1]+next[1])/2.];
+        }
+        let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs());
+        uv = next;
+        // still: at a foot, or at the domain's edge with the point beyond it (the nearest the domain has)
+        if moved <= 1e-14*size { return Some(uv) }
+        // settled along the edge: the free parameter's gap square to the surface
+        if held_u || held_v {
+            let (x,xu,xv) = n.d1(uv[0],uv[1]);
+            let e = sub(x,p);
+            let gap = dot(e,e).sqrt();
+            let d = if held_u { xv } else { xu };
+            if dot(e,d).abs() <= 1e-9*gap*dot(d,d).sqrt() { return Some(uv) }
+        }
+    }
+    None
+}
+
+thread_local! {
+    /// The last foot each thread found on each of the last few sheets (by their nets' addresses): a
+    /// trace asks of one point after another a step apart, on two surfaces in turn, so the next foot is
+    /// a Newton step or two from the last.
+    static LAST_FOOT: std::cell::Cell<[(usize,Uv);4]> = const { std::cell::Cell::new([(0,[0.;2]);4]) };
+}
+
+/// The parameters of a B-spline sheet's point nearest `p`: Gauss–Newton from the last foot this
+/// thread found on it where `p` is near the sheet there (within a thousandth of its own size — off
+/// the surface a local foot need not be the nearest); else from the nearest pole's Greville
+/// parameters (the net of a fitted sheet lies close to it); where that does not settle, from the
+/// nearest of a grid across its knot spans.
 fn net_inverse(n: &super::nurbs::Net,p: V) -> Uv {
+    let key = n as *const _ as usize;
+    let near = 1e-3*(1.+dot(p,p).sqrt());
+    let last = LAST_FOOT.with(|c| c.get());
+    let warm = last.iter().find(|s| s.0 == key).and_then(|s| net_newton(n,p,s.1))
+        .filter(|&uv| crate::space::distance(n.point(uv[0],uv[1]),p) <= near);
+    let uv = warm.unwrap_or_else(|| {
+        let greville = |k: &[f64],d: usize,i: usize| k[i+1..=i+d].iter().sum::<f64>()/d as f64;
+        // from the nearest poles' Greville points, the nearest first, then the grid
+        let mut nearest = [(f64::INFINITY,(0,0));4];
+        for (i,row) in n.poles.iter().enumerate() { for (j,&q) in row.iter().enumerate() {
+            let e = sub(q,p);
+            let d = dot(e,e);
+            if d < nearest[3].0 {
+                nearest[3] = (d,(i,j));
+                nearest.sort_by(|a,b| a.0.total_cmp(&b.0));
+            }
+        } }
+        nearest.iter().filter(|c| c.0.is_finite())
+            .find_map(|&(_,at)| net_newton(n,p,[greville(&n.uknots,n.du,at.0),greville(&n.vknots,n.dv,at.1)]))
+            .unwrap_or_else(|| net_grid_inverse(n,p))
+    });
+    // this sheet's foot first, the rest after it, the oldest dropped
+    let mut next = [(key,uv);4];
+    let mut k = 1;
+    for s in last { if s.0 != key && k < 4 { next[k] = s; k += 1; } }
+    LAST_FOOT.with(|c| c.set(next));
+    uv
+}
+
+/// `net_inverse` by the nearest of a grid across the knot spans, then Gauss–Newton.
+fn net_grid_inverse(n: &super::nurbs::Net,p: V) -> Uv {
     let [[u0,u1],[v0,v1]] = n.domain();
     // a sample or two per span, at least sixteen a side and at most sixty-four
     let (su,sv) = ((n.poles.len()-n.du).clamp(16,64),(n.poles[0].len()-n.dv).clamp(16,64));
@@ -245,8 +346,8 @@ fn plane_side(c: &Curve,t: f64,p: [f64;2],meridian: &dyn Fn(V) -> [f64;2],along:
     let (x,d,_) = c.d2(t);
     let [fr,fz] = meridian(x);
     let [dr,dz] = along(d);
-    let l = dr.hypot(dz);
-    if !(l > 0.) { return ((p[0]-fr).hypot(p[1]-fz),[1.,0.]) }
+    let l = dr.dhypot(dz);
+    if !(l > 0.) { return ((p[0]-fr).dhypot(p[1]-fz),[1.,0.]) }
     let n = [dz/l,-dr/l];
     ((p[0]-fr)*n[0]+(p[1]-fz)*n[1],n)
 }
@@ -294,7 +395,7 @@ impl Surface {
     }
     /// `S`, `S_u`, `S_v`.
     pub fn d1(&self,[u,v]: Uv) -> (V,V,V) {
-        let (su,cu) = u.sin_cos();
+        let (su,cu) = u.dsin_cos();
         match self {
             Surface::Extrusion(f,c) => {
                 let (x,d,_) = c.d2(u);
@@ -315,16 +416,16 @@ impl Surface {
             Surface::Plane(f) => (f.at([u,v,0.]),f.x,f.y),
             Surface::Cylinder(f,r) => (f.at([r*cu,r*su,v]),f.dir([-r*su,r*cu,0.]),f.z),
             Surface::Cone(f,r,a) => {
-                let (sa,ca) = a.sin_cos();
+                let (sa,ca) = a.dsin_cos();
                 let q = r+v*sa;
                 (f.at([q*cu,q*su,v*ca]),f.dir([-q*su,q*cu,0.]),f.dir([sa*cu,sa*su,ca]))
             }
             Surface::Sphere(f,r) => {
-                let (sv,cv) = v.sin_cos();
+                let (sv,cv) = v.dsin_cos();
                 (f.at([r*cv*cu,r*cv*su,r*sv]),f.dir([-r*cv*su,r*cv*cu,0.]),f.dir([-r*sv*cu,-r*sv*su,r*cv]))
             }
             Surface::Torus(f,big,r) => {
-                let (sv,cv) = v.sin_cos();
+                let (sv,cv) = v.dsin_cos();
                 let q = big+r*cv;
                 (f.at([q*cu,q*su,r*sv]),f.dir([-q*su,q*cu,0.]),f.dir([-r*sv*cu,-r*sv*su,r*cv]))
             }
@@ -340,12 +441,39 @@ impl Surface {
     /// (`[0, 2π)`, or `[0, 1)` for a loft face running round). For a
     /// point on the surface this is exact to rounding; off it, the foot of the normal through it
     /// (on the axis, where every `u` is nearest, `u = 0`).
+    /// `inverse`, where the point's parameters are known to be near `hint`: a sheet's from there by
+    /// Newton where that lands on the surface (within a millionth of the point's size: an edge's
+    /// point on the face), and globally otherwise — off the surface a local foot need not be the
+    /// nearest. Any other surface's in closed form as ever.
+    /// A B-spline sheet's foot of `p` found by Newton from `hint` alone (a local search: the
+    /// nearest foot where the hint is nearest it), or none where it does not settle.
+    pub fn foot_from(&self,p: V,hint: Uv) -> Option<Uv> {
+        match self { Surface::BSpline(_,n) => net_newton(n,p,hint),_ => Some(self.inverse_near(p,hint)) }
+    }
+    /// How far `p` stands from a patch's own points — a sheet's or a loft's, its foot held to its
+    /// domain: past the domain's edge its signed distance, read along the normal at the edge, runs on
+    /// along the tangent extension, and this does not. `None` for a surface with no domain's edge.
+    pub fn off_patch(&self,p: V) -> Option<f64> {
+        match self {
+            Surface::BSpline(_,n) => { let uv = net_inverse(n,p); Some(crate::space::distance(p,n.point(uv[0],uv[1]))) }
+            Surface::Blend(_,b) => Some(crate::space::distance(p,b.d1(b.inverse(p)).0)),
+            _ => None,
+        }
+    }
+    pub fn inverse_near(&self,p: V,hint: Uv) -> Uv {
+        match self {
+            Surface::BSpline(_,n) => net_newton(n,p,hint)
+                .filter(|&uv| crate::space::distance(n.point(uv[0],uv[1]),p) <= 1e-6*(1.+dot(p,p).sqrt()))
+                .unwrap_or_else(|| net_inverse(n,p)),
+            _ => self.inverse(p),
+        }
+    }
     pub fn inverse(&self,p: V) -> Uv {
         let wrap = |a: f64| { let a = a.rem_euclid(TAU); if a >= TAU { 0. } else { a } };
         let f = self.frame();
         let [x,y,z] = f.local(p);
-        let u = if x == 0. && y == 0. { 0. } else { wrap(y.atan2(x)) };
-        let rho = x.hypot(y);
+        let u = if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) };
+        let rho = x.dhypot(y);
         match self {
             Surface::Extrusion(_,c) => {
                 let t = c.inverse(f.at([x,y,0.]));
@@ -361,11 +489,11 @@ impl Surface {
             Surface::Cylinder(..) => [u,z],
             Surface::Cone(_,r,a) => {
                 // the generator through u, in the (ρ, z) half-plane: (r, 0) + v (sin α, cos α)
-                let (sa,ca) = a.sin_cos();
+                let (sa,ca) = a.dsin_cos();
                 [u,(rho-r)*sa+z*ca]
             }
-            Surface::Sphere(..) => [u,z.atan2(rho)],
-            Surface::Torus(_,big,_) => [u,wrap(z.atan2(rho-big))],
+            Surface::Sphere(..) => [u,z.datan2(rho)],
+            Surface::Torus(_,big,_) => [u,wrap(z.datan2(rho-big))],
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => unreachable!(),
         }
     }
@@ -379,13 +507,13 @@ impl Surface {
     pub fn implicit(&self,p: V) -> f64 {
         if let Some((d,_)) = self.swept_side(p) { return d }
         let [x,y,z] = self.frame().local(p);
-        let rho = x.hypot(y);
+        let rho = x.dhypot(y);
         match *self {
             Surface::Plane(_) => z,
             Surface::Cylinder(_,r) => rho-r,
-            Surface::Cone(_,r,a) => { let (sa,ca) = a.sin_cos(); (rho-r)*ca-z*sa }
-            Surface::Sphere(_,r) => rho.hypot(z)-r,
-            Surface::Torus(_,big,r) => (rho-big).hypot(z)-r,
+            Surface::Cone(_,r,a) => { let (sa,ca) = a.dsin_cos(); (rho-r)*ca-z*sa }
+            Surface::Sphere(_,r) => rho.dhypot(z)-r,
+            Surface::Torus(_,big,r) => (rho-big).dhypot(z)-r,
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => unreachable!(),
         }
     }
@@ -405,7 +533,7 @@ impl Surface {
             }
             Surface::Revolution(f,c) => {
                 let [x,y,z] = f.local(p);
-                let rho = x.hypot(y);
+                let rho = x.dhypot(y);
                 let t = c.inverse(f.at([rho,0.,z]));
                 let loc = |q: V| { let l = f.local(q); [l[0],l[2]] };
                 let dir = |d: V| { let l = f.dir_local(d); [l[0],l[2]] };
@@ -431,16 +559,16 @@ impl Surface {
         if let Some((_,g)) = self.swept_side(p) { return g }
         let f = self.frame();
         let [x,y,z] = f.local(p);
-        let rho = x.hypot(y);
+        let rho = x.dhypot(y);
         let radial = if rho > 0. { [x/rho,y/rho,0.] } else { [1.,0.,0.] };
         let l = match *self {
             Surface::Plane(_) => [0.,0.,1.],
             Surface::Cylinder(..) => radial,
-            Surface::Cone(_,_,a) => { let (sa,ca) = a.sin_cos(); [radial[0]*ca,radial[1]*ca,-sa] }
-            Surface::Sphere(..) => { let d = rho.hypot(z); if d > 0. { [x/d,y/d,z/d] } else { [0.,0.,1.] } }
+            Surface::Cone(_,_,a) => { let (sa,ca) = a.dsin_cos(); [radial[0]*ca,radial[1]*ca,-sa] }
+            Surface::Sphere(..) => { let d = rho.dhypot(z); if d > 0. { [x/d,y/d,z/d] } else { [0.,0.,1.] } }
             Surface::Torus(_,big,_) => {
                 let (dr,dz) = (rho-big,z);
-                let d = dr.hypot(dz);
+                let d = dr.dhypot(dz);
                 if d > 0. { [radial[0]*dr/d,radial[1]*dr/d,dz/d] } else { [0.,0.,1.] }
             }
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => unreachable!(),
@@ -519,21 +647,27 @@ impl Traced {
     fn segments(&self) -> usize { self.pts.len()-1 }
     /// The point of both surfaces nearest `q`, by minimum-norm Newton steps.
     pub fn project(&self,q: V) -> V {
-        // settled once both distances are at the rounding of the coordinates, or a step stops
-        // moving; the last iterate either way, never the unprojected point
+        // settled once both distances are at the rounding of the coordinates, a step stops moving,
+        // or the distances stop falling (a sheet's are read through a numerical foot, whose noise
+        // is above the coordinates' rounding): the nearest iterate, never the unprojected point —
+        // at the noise, not short of it, since `d1` differences two projections
         let settled = 4.*f64::EPSILON*(1.+crate::space::norm(q));
         let mut p = q;
+        let mut best = (f64::INFINITY,q);
         for _ in 0..50 {
             let (fa,fb) = (self.a.implicit(p),self.b.implicit(p));
-            if fa.abs() <= settled && fb.abs() <= settled { break }
+            let off = fa.abs().max(fb.abs());
+            if off >= best.0 { break }
+            best = (off,p);
+            if off <= settled { break }
             let Some(step) = crate::roots::least_norm_step(&[self.a.gradient(p),self.b.gradient(p)],&[fa,fb]) else { break };
             p = sub(p,step);
-            if crate::space::norm(step) <= settled { break }
+            if crate::space::norm(step) <= settled { best.1 = p; break }
         }
-        p
+        best.1
     }
     /// `C`: the chord at `t` pulled onto both surfaces.
-    fn at(&self,t: f64) -> V {
+    pub(crate) fn at(&self,t: f64) -> V {
         let m = self.segments();
         let t = if self.closed { t.rem_euclid(m as f64) } else { t };
         let i = (t.floor().max(0.) as usize).min(m-1);
@@ -600,11 +734,11 @@ impl Curve {
             }
             Curve::Line {p,d} => (add(p,scale(d,t)),d,[0.;3]),
             Curve::Circle(f,r) => {
-                let (s,c) = t.sin_cos();
+                let (s,c) = t.dsin_cos();
                 (f.at([r*c,r*s,0.]),f.dir([-r*s,r*c,0.]),f.dir([-r*c,-r*s,0.]))
             }
             Curve::Ellipse(f,a,b) => {
-                let (s,c) = t.sin_cos();
+                let (s,c) = t.dsin_cos();
                 (f.at([a*c,b*s,0.]),f.dir([-a*s,b*c,0.]),f.dir([-a*c,-b*s,0.]))
             }
         }
@@ -694,12 +828,12 @@ impl Curve {
                 t
             }
             Curve::Line {p: q,d} => dot(sub(p,q),d),
-            Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.atan2(x)) }
+            Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.datan2(x)) }
             Curve::Ellipse(f,a,b) => {
                 let [x,y,_] = f.local(p);
-                let mut t = (y/b).atan2(x/a);
+                let mut t = (y/b).datan2(x/a);
                 for _ in 0..8 {
-                    let (s,c) = t.sin_cos();
+                    let (s,c) = t.dsin_cos();
                     // d/dt ½|C − p|² = (C − p)·C'
                     let g = (a*c-x)*(-a*s)+(b*s-y)*(b*c);
                     let h = a*a*s*s+b*b*c*c+(a*c-x)*(-a*c)+(b*s-y)*(-b*s);

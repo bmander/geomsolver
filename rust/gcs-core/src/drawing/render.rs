@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::plane::Basis;
@@ -216,12 +218,12 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
             }
             let ((ax, ay), aw) = point(model, a, m.span)?;
             let ((bx, by), bw) = point(model, b, m.span)?;
-            let value = (aw[0] - bw[0]).hypot(aw[1] - bw[1]).hypot(aw[2] - bw[2]);
+            let value = (aw[0] - bw[0]).dhypot(aw[1] - bw[1]).dhypot(aw[2] - bw[2]);
             let (a, b) = if v.sketch { ((ax, ay), (bx, by)) } else {
                 let frame = basis(&v.direction, models, v.span)?;
                 (frame.view_coords(aw), frame.view_coords(bw))
             };
-            if ((b.0 - a.0).hypot(b.1 - a.1) - value).abs() > 1e-8 * value.max(1.0) {
+            if ((b.0 - a.0).dhypot(b.1 - a.1) - value).abs() > 1e-8 * value.max(1.0) {
                 return Err(error(m.span, "this view foreshortens the measured distance; choose a view showing its true length"));
             }
             let c = crate::callout::measurement(&sk, unit, a, b, value, m.offset * PX_MM * unit)

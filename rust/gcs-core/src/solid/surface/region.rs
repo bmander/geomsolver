@@ -1,11 +1,13 @@
 //! Material membership of full revolutions, evaluated on analytic profile curves.
 //! This is separate from the faceted CSG kernel: callers must choose which geometry
 //! they mean. It does not silently substitute an analytic surface for a mesh face.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::*;
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 
 type P = [f64;2];
-fn distance(a: P,b: P) -> f64 { (a[0]-b[0]).hypot(a[1]-b[1]) }
+fn distance(a: P,b: P) -> f64 { (a[0]-b[0]).dhypot(a[1]-b[1]) }
 
 /// One analytic profile edge in planar coordinates: a revolved meridian's
 /// (radius, height), or a prism section's plane view coordinates. An arc's
@@ -22,7 +24,7 @@ impl Edge {
         match *self {
             Self::Line {a,b,..} => std::array::from_fn(|i| a[i]+t*(b[i]-a[i])),
             Self::Arc {center,radius,start,sweep,..} => {
-                let (s,c) = (start+t*sweep).sin_cos();
+                let (s,c) = (start+t*sweep).dsin_cos();
                 [center[0]+radius*c,center[1]+radius*s]
             }
         }
@@ -34,7 +36,7 @@ impl Edge {
         if let Self::Arc {center,radius,start,sweep,..} = *self {
             for angle in [0.,PI] {
                 if ((angle-start)*sweep.signum()).rem_euclid(TAU) <= sweep.abs() {
-                    let r = center[0]+radius*angle.cos();
+                    let r = center[0]+radius*angle.dcos();
                     lo = lo.min(r); hi = hi.max(r);
                 }
             }
@@ -60,16 +62,16 @@ impl Edge {
                 // An axis edge disappears in a full revolution; it is not a wall.
                 if axis { return f64::INFINITY; }
                 let d = [b[0]-a[0],b[1]-a[1]];
-                let len = d[0].hypot(d[1]);
+                let len = d[0].dhypot(d[1]);
                 let t = (((p[0]-a[0])*(d[0]/len)+(p[1]-a[1])*(d[1]/len))/len)
                     .clamp(0.,1.);
                 distance(p,self.at(t))
             }
             Self::Arc {center,radius,start,sweep,..} => {
                 let q = [p[0]-center[0],p[1]-center[1]];
-                let angle = q[1].atan2(q[0]);
+                let angle = q[1].datan2(q[0]);
                 if ((angle-start)*sweep.signum()).rem_euclid(TAU) <= sweep.abs() {
-                    (q[0].hypot(q[1])-radius).abs()
+                    (q[0].dhypot(q[1])-radius).abs()
                 } else { distance(p,self.at(0.)).min(distance(p,self.at(1.))) }
             }
         }
@@ -100,13 +102,13 @@ impl Edge {
                 angles.windows(2).enumerate().filter(|(i,a)| {
                     // Shared source vertices have exactly the same ordinate on both
                     // edges. Reconstructing one with sin(pi) can open a spurious ray gap.
-                    let za = if *i == 0 { zs[0] } else { center[1]+radius*a[0].sin() };
+                    let za = if *i == 0 { zs[0] } else { center[1]+radius*a[0].dsin() };
                     let zb = if *i+2 == angles.len() { zs[1] }
-                        else { center[1]+radius*a[1].sin() };
+                        else { center[1]+radius*a[1].dsin() };
                     if (za > p[1]) == (zb > p[1]) { return false; }
                     let y = (p[1]-center[1])/radius;
                     let x = center[0]+radius*(1.-y*y).max(0.).sqrt()
-                        * ((a[0]+a[1])/2.).cos().signum();
+                        * ((a[0]+a[1])/2.).dcos().signum();
                     p[0] < x
                 }).count()
             }
@@ -179,8 +181,8 @@ impl RevolvedRegion {
                         let arc = &sk.arcs[e.i()];
                         [arc.start,arc.end].map(|i| coords(sub(sk.world_point(i as usize),origin)))
                     } else { [[0.;2];2] }; // Full circles have no ray seam.
-                    Edge::Arc {center:coords(sub(center,origin)),radius:a[0].hypot(a[1]),
-                        start:a[1].atan2(a[0]),sweep:sweep*(a[0]*b[1]-a[1]*b[0]).signum(),ends}
+                    Edge::Arc {center:coords(sub(center,origin)),radius:a[0].dhypot(a[1]),
+                        start:a[1].datan2(a[0]),sweep:sweep*(a[0]*b[1]-a[1]*b[0]).signum(),ends}
                 }
             })
         }).collect::<Result<Vec<_>,String>>()).collect::<Result<Vec<_>,_>>()?;
@@ -213,7 +215,7 @@ impl RevolvedRegion {
         let q = sub(point,self.origin);
         let z = plane::dot(q,self.axis);
         let v = sub(q,scale(self.axis,z));
-        let p = [v[0].hypot(v[1]).hypot(v[2]),z];
+        let p = [v[0].dhypot(v[1]).dhypot(v[2]),z];
         let distance = self.loops.iter().flatten().map(|e| e.distance(p))
             .fold(f64::INFINITY,f64::min);
         if !distance.is_finite() { return Err(Error::NonFinite); }

@@ -246,6 +246,15 @@ first, to `supply_field` (checked in the core); a provisional surface draws, and
 through the preview choice. Options ▸ mesh fineness is view state: the job carries it to
 `FieldMesher::with_fineness` (facets that many times smaller, surface distance its square;
 the core offers 0.25–4 and refuses the rest), and a change meshes every swept object again.
+**A swept object of the generating class also gets its exact surface**: other instances of the
+same worker (one an object, up to four) step `brep::export::Builder` — admitted (a quarter of the
+export's samples each way), the blank, each sheet, the sector, the cut, the pattern, a display mesh
+at `DISPLAY_SAG` and `DISPLAY_ANGULAR` — saying what each next stage does, which the footer shows
+with a bar, a spinner and a clock the page keeps ticking through a stage's silent seconds. The
+surface replaces the field's preview through `supply_field` with `ExactFaces` (each triangle's face,
+which faces are curved, the B-rep's volume: `from_exact_surface`), ends the preview's job, and is
+kept across fineness changes; one the build refuses keeps its field's surface. A gear member is
+about 12 s in the browser, its sector's split most of it.
 **Field meshing** ([docs/field-meshing.md](docs/field-meshing.md)): Delaunay refinement of the
 material field (`delaunay::refine::Progressive`, resumable, over a regular triangulation with
 exact predicates; what it meshes is a `refine::Domain`), sharp edges protected by weighted points. `FieldMesher` runs two passes: an
@@ -390,11 +399,12 @@ theorem round each face's loops), `query`, `ssi` (closed forms, else traced; und
 by name), `boolean` (split, arrange in each face's parameters, classify, assemble; faces on one
 surface and tangent touches handled), `mesh` (constrained Delaunay in scaled parameters, refined to
 a measured sag), `step` (AP214 with pcurves and seam curves), `recipe` (the CAD recipe's nodes).
-`solventc --kernel rust` / `SOLVENT_KERNEL=rust` (and every export of a build without OCCT) builds a
-static solid with it, checking its STEP by `step_check` against `Solid::of`. `gcs-cli
+**This kernel is every export's default** (phase 5): `solventc --step/--stl` builds with it whether or
+not the binary has OCCT, which answers only `--kernel occt` / `--stl-backend occt` /
+`SOLVENT_KERNEL=occt` (the oracle), checking its STEP by `step_check` against `Solid::of`. `gcs-cli
 tests/brep_oracle.rs` builds every corpus recipe node both ways (the slow tier reads our STEP back
 by OCCT); `tests/brep_census.rs` holds a census and `brep_body_debug`; `SOLVENT_BREP_DEBUG`
-narrates. OCCT's volume of a STEP it reads is good to ~1e-5, not a gate on our files' accuracy.
+narrates and `SOLVENT_BREP_TIME` times a Boolean's slow steps. OCCT's volume of a STEP it reads is good to ~1e-5, not a gate on our files' accuracy.
 Rung 1 is done: every corpus solid with a recipe agrees with OCCT (volume 1e-9, faces by kind),
 but for named refusals of designs that touch themselves — surfaces meeting under 1° (the crown
 cutters' fillet tori touch; the gear's phase needs measured tolerances for them) and pinches.
@@ -429,6 +439,37 @@ sampled as its near side turned (`mesh::mesh_with`), and turns it into every cop
 points by index, so the STL is as symmetric as the solid. Full verification reads our STEP back by OCCT and
 measures that reading by `props` (1e-5; OCCT's reader moves its own STEP 1.1e-6, and its volume is
 held only to 1e-4).
+**Phases 3–5 (the gear without OCCT):** `brep::sweep` builds an admitted swept body: the blank
+from its meridian region (`brep::planar`'s Booleans of lines and arcs, turned once:
+`recipe::meridian`), each cutter sectioned exactly (`brep::section`, revolutions about parallel lines
+through a `planar::Chart`), each sheet traced and fitted (`sweep::sheet`, `nurbs::interpolate_net`,
+centripetal at the gross bars), the blank split by the sector's sides and the sheets
+(`boolean::split`) and its cells judged by the material field (`sweep::sector`) — or, where a
+sector's premises fail (a sweep placed once), the whole blank split and judged (`sector::whole`) —
+and the sector patterned. `brep::export::{exact,step,stl}` is what `solventc` and the app's export
+worker (`app/export-worker.ts`, `gcs_solid_exact`) both call, so a file is one file wherever it is
+written: the native and wasm files are byte-identical because the core's trigonometry, `exp`,
+`ln`, `pow` and `hypot` are its own (`fmath`, reached as `x.dsin()` through `Det`; no platform
+libm), which also moved the solver's bits once. With OCCT and `--verify-step full`, the CLI reads
+our STEP back by the kernel (`cad::read_back`; a reader's rational pcurve is taken as the
+`Pcurve::Inverse` of its edge). Pinion and gear 8–9.5 s a member, 10 µm met. A cutter face the
+meridian section meets twice is told apart by occurrence (`cutter::OCCURRENCE`); a trace ends where
+it leaves a sheet's patch (`Surface::off_patch` — the signed distance runs on along the tangent
+extension past the edge); interpolations past `nurbs::BANDED` points are solved in their band; a
+gross sheet falls back from centripetal to chord length. The harness exports 28 of its 48 designs.
+**Rung 3 (the app reads the exact solid):** an `EvaluatedSolid` of a static solid is the B-rep's
+(`solid::Exact`, `Sketch::exact_solid`, cached against `solid::reads` alone; `from_brep`): the CAD
+recipe built about the solid's own origin (`cad::shifted`, a Boolean floor for the coordinates'
+rounding), every face named by its document path (a placed copy's renamed, a prism's and a
+sweep's caps leading as the facet term's do, so an edge is named alike), meshed within the
+policy's sagitta and never coarser than `BREP_RELATIVE_SAG` of the solid or 64 steps a turn, and
+handed in as one polyhedral `Prim` (`exact`: whole paths, faces meet at creases); its volume is
+the B-rep's. The facet term answers whatever the exact path refuses (the cutters' touching tori,
+an empty solid) and `SOLVENT_SOLIDS=facets` throughout. A view's silhouettes on its curved faces
+are traced on the surfaces (`EvaluatedSolid::silhouettes`: n·eye's zero set across each facet from
+its corners' exact normals, put back on the surface), never the mesh's seams, which zigzag on an
+irregular mesh (the V-twin cylinder's sheet: 44 s and 6.4 MB drawn from seams, 0.7 s traced).
+Hidden lines and sections classified against the surfaces are a later step.
 Rung 2 is done ([plan](docs/rust-kernel-plan.md)): clamped spline profiles (`Curve::BSpline`,
 `brep::nurbs`; `Surface::Extrusion`/`Revolution`, written as STEP's surfaces of linear extrusion and
 revolution); a face's stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, fitted

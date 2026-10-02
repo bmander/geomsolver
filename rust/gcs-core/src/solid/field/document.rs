@@ -1,4 +1,6 @@
 //! Immutable material snapshots of ordinary Solvent solid definitions.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::{SpatialField,MaterialField,SweptField,ExtrudedField,PlanarField,I,V};
 use crate::model::{EntKind,Sketch,SolidDef};
 use crate::{motion::Family,plane::{self,Basis},syntax::BodyWord};
@@ -55,8 +57,8 @@ pub const CHORD_SLACK: f64 = 1e-7;
 fn within(at: &dyn Fn(f64) -> (f64,f64),a: f64,b: f64,tol: f64) -> Vec<(f64,f64)> {
     let off = |p: (f64,f64),q: (f64,f64),m: (f64,f64)| {
         let (dx,dy) = (q.0-p.0,q.1-p.1);
-        let l = dx.hypot(dy);
-        if l > 0. { ((m.0-p.0)*dy-(m.1-p.1)*dx).abs()/l } else { (m.0-p.0).hypot(m.1-p.1) }
+        let l = dx.dhypot(dy);
+        if l > 0. { ((m.0-p.0)*dy-(m.1-p.1)*dx).abs()/l } else { (m.0-p.0).dhypot(m.1-p.1) }
     };
     let mut out = vec![at(a)];
     let mut stack: Vec<(f64,f64,u32)> = (0..32).rev().map(|k| (a+(b-a)*k as f64/32.,a+(b-a)*(k+1) as f64/32.,0)).collect();
@@ -118,12 +120,12 @@ fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> 
             let arc = &sk.arcs[e.i()];
             let center = view(arc.center);
             let ends = [view(arc.start),view(arc.end)];
-            let angle = |p: [f64;2]| (p[1]-center[1]).atan2(p[0]-center[0]);
+            let angle = |p: [f64;2]| (p[1]-center[1]).datan2(p[0]-center[0]);
             let start = angle(ends[0]);
             // An arc runs counter-clockwise from its start to its end.
             let mut sweep = angle(ends[1])-start;
             while sweep <= 0. { sweep += TAU; }
-            let radius = (ends[0][0]-center[0]).hypot(ends[0][1]-center[1]);
+            let radius = (ends[0][0]-center[0]).dhypot(ends[0][1]-center[1]);
             vec![Edge::Arc {center,radius,start,sweep,ends}]
         }
         EntKind::Circle => {
@@ -163,7 +165,7 @@ fn through_range(basis: &Basis,supports: &[Option<V>]) -> Result<[f64;2],String>
         let (p,q) = (n[k]*(lo[k]-basis.o[k]),n[k]*(hi[k]-basis.o[k]));
         a += p.min(q); b += p.max(q);
     }
-    let diagonal = (0..3).map(|k| (hi[k]-lo[k]).powi(2)).sum::<f64>().sqrt();
+    let diagonal = (0..3).map(|k| (hi[k]-lo[k]).dpowi(2)).sum::<f64>().sqrt();
     let pad = diagonal*crate::solid::EPS*4.;
     Ok([a-pad,b+pad])
 }

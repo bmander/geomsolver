@@ -1,6 +1,8 @@
 //! The questions a Boolean asks of geometry and of a boundary: where a curve meets a surface,
 //! whether a point of a face's surface is inside the face, and whether a point of space is inside
 //! a solid.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::geom::{Curve,Surface,Uv,V};
 use super::topo::{unwrap,Brep,EdgeCurve,Face};
 use crate::space::{add,distance,norm,scale};
@@ -65,6 +67,88 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
     Meets::At(roots)
 }
 
+/// A face's box in space, from its edges and a grid across its parameters, grown by what the
+/// samples may miss between them (a quarter of the longest step bounds the bulge of an arc no more
+/// than a semicircle between two samples).
+pub(crate) fn face_box(b: &Brep,fi: usize) -> ([f64;3],[f64;3]) {
+    let f = &b.faces[fi];
+    let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+    let mut step: f64 = 0.;
+    let mut grow = |p: V,last: &mut Option<V>| {
+        for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); }
+        if let Some(q) = *last { step = step.max(distance(p,q)); }
+        *last = Some(p);
+    };
+    let (mut ulo,mut uhi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+    for l in &f.loops { for c in l {
+        let e = &b.edges[c.edge as usize];
+        let mut last = None;
+        for j in 0..=16 {
+            let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/16.;
+            grow(e.point(t,&b.vertices),&mut last);
+            let uv = c.pcurve.at(t,e,&f.surface,&b.vertices);
+            for k in 0..2 { ulo[k] = ulo[k].min(uv[k]); uhi[k] = uhi[k].max(uv[k]); }
+        }
+    } }
+    for i in 0..=8 {
+        let (mut row,mut column) = (None,None);
+        for j in 0..=8 {
+            grow(f.surface.point([ulo[0]+(uhi[0]-ulo[0])*i as f64/8.,ulo[1]+(uhi[1]-ulo[1])*j as f64/8.]),&mut row);
+            grow(f.surface.point([ulo[0]+(uhi[0]-ulo[0])*j as f64/8.,ulo[1]+(uhi[1]-ulo[1])*i as f64/8.]),&mut column);
+        }
+    }
+    let pad = step/4.;
+    (lo.map(|x| x-pad),hi.map(|x| x+pad))
+}
+
+/// `curve_surface` over only the stretches of `[t0, t1]` where the curve comes within `grow` of the
+/// box `bx` (a face's box in space): a crossing of a face is in its box, and a B-spline's signed
+/// distance, sampled along a ray four times the solid's size, is a foot found by Newton at every
+/// sample.  A line is clipped to the box exactly; any other curve by samples, each stretch grown
+/// by a sample to either side.  A stretch lying along the surface is asked of the whole again.
+pub fn curve_surface_within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3],[f64;3]),grow: f64) -> Meets {
+    let (lo,hi) = (bx.0.map(|x| x-grow-tol),bx.1.map(|x| x+grow+tol));
+    let mut stretches: Vec<[f64;2]> = Vec::new();
+    match curve {
+        Curve::Line {p,d} => {
+            let (mut a,mut z) = (t0,t1);
+            for k in 0..3 {
+                if d[k].abs() < 1e-300 {
+                    if p[k] < lo[k] || p[k] > hi[k] { return Meets::At(Vec::new()) }
+                } else {
+                    let (u,v) = ((lo[k]-p[k])/d[k],(hi[k]-p[k])/d[k]);
+                    a = a.max(u.min(v));
+                    z = z.min(u.max(v));
+                }
+            }
+            if a < z { stretches.push([a,z]); }
+        }
+        _ => {
+            const N: usize = 64;
+            let ts: Vec<f64> = (0..=N).map(|i| t0+(t1-t0)*i as f64/N as f64).collect();
+            // a point within half a step's length of the box may have the curve inside it beside it
+            let reach = curve.speed()*(t1-t0)/N as f64;
+            let near: Vec<bool> = ts.iter().map(|&t| { let q = curve.point(t); (0..3).all(|k| q[k] >= lo[k]-reach && q[k] <= hi[k]+reach) }).collect();
+            let mut i = 0;
+            while i <= N {
+                if !near[i] { i += 1; continue }
+                let start = i.saturating_sub(1);
+                while i <= N && near[i] { i += 1; }
+                stretches.push([ts[start],ts[i.min(N)]]);
+            }
+        }
+    }
+    if stretches.len() == 1 && stretches[0] == [t0,t1] { return curve_surface(curve,[t0,t1],surface,tol) }
+    let mut roots = Vec::new();
+    for s in stretches {
+        match curve_surface(curve,s,surface,tol) {
+            Meets::Along => return curve_surface(curve,[t0,t1],surface,tol),
+            Meets::At(r) => roots.extend(r),
+        }
+    }
+    Meets::At(roots)
+}
+
 /// A boundary with its faces' loops drawn in their parameters, for classifying points against it —
 /// borrowing the boundary, or owning it where it is kept (`Located::owned`).
 #[derive(Clone,Debug)]
@@ -79,13 +163,15 @@ pub struct Located<'a> {
     polys: Vec<Vec<Vec<Uv>>>,
     /// Each face's parameter box.
     boxes: Vec<[Uv;2]>,
+    /// Each face's box in space (`face_box`).
+    space: Vec<([f64;3],[f64;3])>,
 }
 
 impl<'a> Located<'a> {
     /// A located boundary that keeps its own copy.
     pub fn owned(b: Brep,tol: f64) -> Located<'static> {
-        let (tol,coarse,polys,boxes) = { let l = Located::new(&b,tol); (l.tol,l.coarse,l.polys,l.boxes) };
-        Located {b:std::borrow::Cow::Owned(b),tol,coarse,polys,boxes}
+        let (tol,coarse,polys,boxes,space) = { let l = Located::new(&b,tol); (l.tol,l.coarse,l.polys,l.boxes,l.space) };
+        Located {b:std::borrow::Cow::Owned(b),tol,coarse,polys,boxes,space}
     }
     pub fn new(b: &'a Brep,tol: f64) -> Located<'a> {
         let coarse = (1e-4*b.size()).max(tol*8.);
@@ -118,7 +204,8 @@ impl<'a> Located<'a> {
             polys.push(loops);
             boxes.push(bx);
         }
-        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,polys,boxes}
+        let space = (0..b.faces.len()).map(|fi| face_box(b,fi)).collect();
+        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,polys,boxes,space}
     }
 
     /// The parameters of a point of face `fi`'s surface, on the branch of its periods its loops
@@ -127,7 +214,7 @@ impl<'a> Located<'a> {
         let f = &self.b.faces[fi];
         let bx = self.boxes[fi];
         let mid = [(bx[0][0]+bx[1][0])/2.,(bx[0][1]+bx[1][1])/2.];
-        unwrap(f.surface.inverse(p),mid,f.surface.periods())
+        unwrap(f.surface.inverse_near(p,mid),mid,f.surface.periods())
     }
 
     /// The point of an edge nearest `p`: its parameter and distance.
@@ -163,7 +250,8 @@ impl<'a> Located<'a> {
             // near one edge's interior: which side of it, in the face's parameters — the point
             // on the branch beside each use of the edge (a seam is used twice, once each side of
             // the face), inside if beside any use it is on the face's side
-            let raw = f.surface.inverse(p);
+            let hint = f.loops.iter().flatten().find(|u| u.edge == c.edge).map_or(uv,|u| u.pcurve.at(t,e,&f.surface,&self.b.vertices));
+            let raw = f.surface.inverse_near(p,hint);
             let inside = f.loops.iter().flatten().filter(|u| u.edge == c.edge).any(|u| {
                 let q = u.pcurve.at(t,e,&f.surface,&self.b.vertices);
                 let mut dq = u.pcurve.derivative(t,e,&f.surface,&self.b.vertices);
@@ -204,7 +292,7 @@ impl<'a> Located<'a> {
             let ray = Curve::Line {p,d};
             let mut crossings = 0;
             for (fi,f) in self.b.faces.iter().enumerate() {
-                match curve_surface(&ray,[0.,reach],&f.surface,self.tol*1e-3) {
+                match curve_surface_within(&ray,[0.,reach],&f.surface,self.tol*1e-3,self.space[fi],self.tol) {
                     Meets::Along => continue 'dirs,
                     Meets::At(roots) => for (t,touch) in roots {
                         if t <= self.tol { continue }
@@ -221,4 +309,81 @@ impl<'a> Located<'a> {
         }
         Place::On
     }
+}
+
+/// Up to `capacity` points inside the solid `b`, each with a lower bound on its distance from the
+/// boundary, deepest first and no two nearer than half the deepest's depth.  Candidates are a
+/// jittered grid over the box and points stepped in from the boundary along its normals (for a cell
+/// too thin for the grid: a sliver a split leaves), judged against a mesh of the boundary whose sag
+/// was measured: a point farther from the mesh than that sag is on the side of the boundary the mesh
+/// says it is (its winding number), and is the distance less the sag from the boundary at least.  So
+/// nothing returned is a guess.
+pub fn interior(b: &Brep,capacity: usize) -> Result<Vec<(V,f64)>,String> {
+    let (lo,hi) = b.bounds();
+    let size = distance(lo,hi);
+    let m = super::mesh::mesh(b,size*5e-4,0.2)?;
+    let tris: Vec<[V;3]> = m.tris.iter().map(|t| t.map(|i| m.pts[i as usize])).collect();
+    const N: usize = 12;
+    const STEPPED: usize = 400;
+    let mut rng = crate::rng::Rng::new(0x1a7e);
+    let mut candidates: Vec<V> = (0..N*N*N).map(|k| {
+        let ijk = [k % N,(k/N) % N,k/(N*N)];
+        std::array::from_fn(|a| lo[a]+(hi[a]-lo[a])*(ijk[a] as f64+rng.uniform(0.2,0.8))/N as f64)
+    }).collect();
+    let stride = tris.len().div_ceil(STEPPED).max(1);
+    for t in tris.iter().step_by(stride) {
+        let (u,v) = ([t[1][0]-t[0][0],t[1][1]-t[0][1],t[1][2]-t[0][2]],[t[2][0]-t[0][0],t[2][1]-t[0][1],t[2][2]-t[0][2]]);
+        let n = crate::space::cross(u,v);
+        let l = norm(n);
+        if l == 0. { continue }
+        let centre = [(t[0][0]+t[1][0]+t[2][0])/3.,(t[0][1]+t[1][1]+t[2][1])/3.,(t[0][2]+t[1][2]+t[2][2])/3.];
+        for k in 1..=6 { candidates.push(add(centre,scale(n,-size/4f64.dpowi(k)/l))); }
+    }
+    let judged = crate::par::map(&candidates,|&p| {
+        let (mut w,mut d2) = (0.,f64::INFINITY);
+        for t in &tris {
+            let [a,b,c] = t.map(|q| [q[0]-p[0],q[1]-p[1],q[2]-p[2]]);
+            let (la,lb,lc) = (norm(a),norm(b),norm(c));
+            let det = a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0]);
+            let dot = |x: V,y: V| x[0]*y[0]+x[1]*y[1]+x[2]*y[2];
+            w += 2.*det.datan2(la*lb*lc+dot(a,b)*lc+dot(b,c)*la+dot(c,a)*lb);
+            d2 = d2.min(triangle_distance2(p,t));
+        }
+        (w/(4.*std::f64::consts::PI),d2.sqrt()-m.sag)
+    });
+    let mut inside: Vec<(V,f64)> = candidates.iter().zip(judged).filter(|(_,(w,d))| *d > 0. && *w > 0.5).map(|(&p,(_,d))| (p,d)).collect();
+    inside.sort_by(|a,b| b.1.total_cmp(&a.1));
+    let mut chosen: Vec<(V,f64)> = Vec::new();
+    for (p,d) in inside {
+        if chosen.len() == capacity { break }
+        if chosen.first().is_some_and(|f| chosen.iter().any(|c| distance(c.0,p) < f.1/2.)) { continue }
+        chosen.push((p,d));
+    }
+    Ok(chosen)
+}
+
+/// The square of the distance from `p` to the triangle `t`.
+fn triangle_distance2(p: V,t: &[V;3]) -> f64 {
+    let sub = |a: V,b: V| [a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+    let dot = |a: V,b: V| a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+    let (a,b,c) = (t[0],t[1],t[2]);
+    let (ab,ac,ap) = (sub(b,a),sub(c,a),sub(p,a));
+    let (d1,d2) = (dot(ab,ap),dot(ac,ap));
+    let at = |q: V| { let d = sub(p,q); dot(d,d) };
+    if d1 <= 0. && d2 <= 0. { return at(a) }
+    let bp = sub(p,b);
+    let (d3,d4) = (dot(ab,bp),dot(ac,bp));
+    if d3 >= 0. && d4 <= d3 { return at(b) }
+    let vc = d1*d4-d3*d2;
+    if vc <= 0. && d1 >= 0. && d3 <= 0. { let v = d1/(d1-d3); return at(add(a,scale(ab,v))) }
+    let cp = sub(p,c);
+    let (d5,d6) = (dot(ab,cp),dot(ac,cp));
+    if d6 >= 0. && d5 <= d6 { return at(c) }
+    let vb = d5*d2-d1*d6;
+    if vb <= 0. && d2 >= 0. && d6 <= 0. { let w = d2/(d2-d6); return at(add(a,scale(ac,w))) }
+    let va = d3*d6-d5*d4;
+    if va <= 0. && d4-d3 >= 0. && d5-d6 >= 0. { let w = (d4-d3)/((d4-d3)+(d5-d6)); return at(add(b,scale(sub(c,b),w))) }
+    let denom = 1./(va+vb+vc);
+    let (v,w) = (vb*denom,vc*denom);
+    at(add(a,add(scale(ab,v),scale(ac,w))))
 }

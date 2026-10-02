@@ -91,7 +91,8 @@ impl<F: Fn(&[f64]) -> V3> TrustRegion for IntersectionSystem<F> {
     fn jacobian_at(&mut self, z: &[f64]) {
         let r = (self.residual)(z);
         for k in 0..self.n() {
-            let h = (f64::EPSILON.cbrt() * z[k].abs().max(1.))
+            // (∛ε, written out: the platform's cube root is no constant across targets)
+            let h = (f64::from_bits(0x3ed9_65fe_a53d_6e42) * z[k].abs().max(1.))
                 .min((self.bounds[k][1]-self.bounds[k][0])*0.25);
             let mut lo = z.to_vec();
             let mut hi = z.to_vec();

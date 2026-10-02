@@ -6,6 +6,8 @@
 //! sides closes round the axis into a ring, whose last junction is kept as its seam (one edge, used
 //! twice, its pcurves a period apart). Nothing is intersected or sewn: every vertex on the far side is
 //! the near side's turned, matched once in the sector, and every other point is the sector's turned.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::geom::{Rigid,Surface,Uv,V};
 use super::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::space::{cross,distance,norm,sub};
@@ -33,6 +35,8 @@ pub struct Built {
 }
 
 impl Built {
+    /// The sector the copies are made of: the faces `mesh`'s triangles say they are of.
+    pub fn sector(&self) -> &Brep { &self.sector }
     /// The solid's mesh within `bar` (`mesh::mesh`), made as the sector's — its sides left out, its far
     /// side sampled as its near side turned — turned into every copy, the copies sharing their seam
     /// points by index: the same in every copy to the turn's rounding, as the solid is.
@@ -51,7 +55,8 @@ impl Built {
             let turn = Rigid::turn(self.o,self.a,self.step*k as f64);
             for x in 0..l { if used[k*l+x] { renum[k*l+x] = pts.len() as u32; pts.push(turn.point(one.pts[x])); } }
         }
-        Ok(super::mesh::Mesh {pts,tris:tris.into_iter().map(|t| t.map(|x| renum[x])).collect(),sag:one.sag,turned:one.turned*n})
+        let of = (0..n).flat_map(|_| one.of.iter().copied()).collect();
+        Ok(super::mesh::Mesh {pts,tris:tris.into_iter().map(|t| t.map(|x| renum[x])).collect(),of,sag:one.sag,turned:one.turned*n})
     }
 }
 
@@ -310,7 +315,7 @@ fn loops_of(mut left: Vec<Coedge>,b: &Brep,s: &Surface) -> Result<Vec<Vec<Coedge
         let (v0,v1) = if c.reversed { (e.v[1],e.v[0]) } else { (e.v[0],e.v[1]) };
         ((v0,c.pcurve.at(t0,e,s,&b.vertices)),(v1,c.pcurve.at(t1,e,s,&b.vertices)))
     };
-    let gap = |p: Uv,q: Uv| (p[0]-q[0]).hypot(p[1]-q[1]);
+    let gap = |p: Uv,q: Uv| (p[0]-q[0]).dhypot(p[1]-q[1]);
     let mut loops = Vec::new();
     while !left.is_empty() {
         let mut walk = vec![left.remove(0)];

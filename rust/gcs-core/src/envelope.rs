@@ -8,6 +8,8 @@
 //! This module finds regular, local intersections. It does not certify a global envelope,
 //! trim self-intersections, choose a material side, or turn patches into a closed solid.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 mod named;
 pub use named::GeneratedEnvelope;
 
@@ -60,7 +62,7 @@ impl Motion {
     pub fn rotation(axis: V3, angle: f64, rate: f64) -> Result<Self, Error> {
         if !angle.is_finite() || !rate.is_finite() { return Err(Error::NonFinite); }
         let a = normalized(axis).ok_or(Error::Degenerate)?;
-        let (s, c) = angle.sin_cos();
+        let (s, c) = angle.dsin_cos();
         let k = [[0.,-a[2],a[1]], [a[2],0.,-a[0]], [-a[1],a[0],0.]];
         let r = std::array::from_fn(|i| std::array::from_fn(|j|
             c * if i == j { 1. } else { 0. } + (1.-c)*a[i]*a[j] + s*k[i][j]));

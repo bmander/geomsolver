@@ -9,6 +9,8 @@
 //! determinant, angle a wrapped atan2 gap (directed, so it needs no chirality), tangency a
 //! signed distance minus the radius with a chirality flag fixed at construction.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::expr::Free;
 use crate::kernels::{self, K};
 use crate::model::{EntKind, EntRef, Sketch};
@@ -1944,7 +1946,7 @@ impl Constraint {
         let e = external.unwrap_or_else(|| {
             let (ax, ay) = sk.point_xy(sk.round_center(c1));
             let (bx, by) = sk.point_xy(sk.round_center(c2));
-            let d = (ax - bx).hypot(ay - by);
+            let d = (ax - bx).dhypot(ay - by);
             let (r1, r2) = (sk.radius_value(c1).abs(), sk.radius_value(c2).abs());
             (d - (r1 + r2)).abs() <= (d - (r1 - r2).abs()).abs()
         });
@@ -2832,14 +2834,14 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             let [ax, ay, bx, by] = sk.line_params(args[1].ent().i());
             let g = |p: u32| sk.params[p as usize].value;
             let (ax, ay, dx, dy) = (g(ax), g(ay), g(bx) - g(ax), g(by) - g(ay));
-            let len = dx.hypot(dy).max(kernels::MIN_LINE_LEN);
+            let len = dx.dhypot(dy).max(kernels::MIN_LINE_LEN);
             sk.curve_nearest_by(args[0].ent().i(), |px, py| {
                 ((px - ax) * dy - (py - ay) * dx).abs() / len
             })
         }
         (CKind::CurveCurvature, 2) => {
             let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));
-            sk.curve_nearest_by(args[0].ent().i(), |px, py| (px - cx).hypot(py - cy))
+            sk.curve_nearest_by(args[0].ent().i(), |px, py| (px - cx).dhypot(py - cy))
         }
         // an osculating circle sits centred a radius off the curve, so the curve point nearest
         // the centre it already has is the place it is asking about

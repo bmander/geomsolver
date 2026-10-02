@@ -1,5 +1,7 @@
 //! Following one crease: pinning a point onto two operands' zero sets, the corner three meet at,
 //! where a third takes the boundary over, and the predictor-corrector walk between.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::{Crease,CreaseOptions,CreaseSource,End,LEAST_DIHEDRAL,OperandId,Reading,P};
 use super::graph::meets;
 use crate::space::{dot,cross,norm,distance,lerp};
@@ -101,7 +103,7 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
     let tangent0 = cross(ra.gradient,rb.gradient);
     // Two operands meeting tangentially — a sweep's envelope running on into the tool at a roll
     // limit — leave the surface smooth there: no crease to keep.
-    if !(norm(tangent0) > LEAST_DIHEDRAL.sin()*norm(ra.gradient)*norm(rb.gradient)) { return None; }
+    if !(norm(tangent0) > LEAST_DIHEDRAL.dsin()*norm(ra.gradient)*norm(rb.gradient)) { return None; }
     let mut halves: [Vec<P>;2] = [Vec::new(),Vec::new()];
     let mut ends = [End::Budget;2];
     'direction: for (side,sign) in [(0usize,1f64),(1,-1.)] {
@@ -125,7 +127,7 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
                     if n > 0. {
                         let t = t.map(|x| x/n);
                         let t = if dot(t,tangent) < 0. { t.map(|x| -x) } else { t };
-                        if dot(t,tangent) > (0.2f64).cos() && distance(q,p) > 0.25*step { next = Some((q,trial,t)); break; }
+                        if dot(t,tangent) > (0.2f64).dcos() && distance(q,p) > 0.25*step { next = Some((q,trial,t)); break; }
                     }
                 }
                 step *= 0.5;
@@ -156,7 +158,7 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
                 // the crease goes on along it from there.
                 let tangent_to = |k: usize| match (&here,field.read_operand(at,at_ops[k],o)) {
                     (Some(h),Some(r)) => third.differs(at_ops[k],0.) && dot(r.gradient,h.gradient) > 0.
-                        && norm(cross(r.gradient,h.gradient)) <= LEAST_DIHEDRAL.sin()*norm(r.gradient)*norm(h.gradient),
+                        && norm(cross(r.gradient,h.gradient)) <= LEAST_DIHEDRAL.dsin()*norm(r.gradient)*norm(h.gradient),
                     _ => false,
                 };
                 if let Some(k) = (0..2).find(|&k| tangent_to(k)) {

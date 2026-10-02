@@ -111,7 +111,8 @@ fn a_static_spline_face_offset_reads_as_its_offset() {
     let body = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "cam").unwrap();
     let meter = Meter::read(&sk,body,Options::in_units(1.)).unwrap();
     let b = gcs_core::brep::recipe::build(&cad::recipe(&sk,body).unwrap()).unwrap();
-    let face = b.faces.iter().find(|f| f.surface.kind() == "extrusion").unwrap();
+    let at = b.faces.iter().position(|f| f.surface.kind() == "extrusion").unwrap();
+    let face = &b.faces[at];
     // the side's parameters: along the spline, and across the depth its loop spans
     let vs: Vec<f64> = face.loops[0].iter().flat_map(|c| b.uv_ends(face,c)).map(|uv| uv[1]).collect();
     let (v0,v1) = (vs.iter().copied().fold(f64::INFINITY,f64::min),vs.iter().copied().fold(f64::NEG_INFINITY,f64::max));
@@ -124,7 +125,8 @@ fn a_static_spline_face_offset_reads_as_its_offset() {
         for offset in OFFSETS {
             let m = meter.measure(add(p,scale(n,offset)));
             let a = m.analytic.unwrap();
-            assert_eq!(meter.surfaces()[a.surface].name.split(' ').next(),Some("extrusion"));
+            // the face sampled, by its place among the B-rep's faces (its label is its name, `lobe`)
+            assert_eq!(a.surface,at,"{}",meter.surfaces()[a.surface].name);
             worst[0] = worst[0].max((a.distance-offset).abs());
             worst[1] = worst[1].max((m.field-offset).abs());
         }

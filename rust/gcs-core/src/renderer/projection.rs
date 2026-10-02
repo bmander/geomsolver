@@ -1,4 +1,6 @@
 //! Silhouettes, sections, visibility splitting and stroke joining for the polygon renderer.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use crate::plane::{self, Basis};
 use crate::solid::{LocalPoint, PageFrame};
 use super::{Drawing, Renderer, Stroke, View, spatial::{Bounds, Bvh}};
@@ -22,11 +24,16 @@ fn view_clipped(renderer: &Renderer<'_>, page: PageFrame, cut: Option<Basis>, se
     let eps = solid.epsilon();
 
     // **which edges this view draws at all**: every corner, and a smooth seam only where the
-    // surface turns away from the eye across it
+    // surface turns away from the eye across it — or, on an exact solid, the silhouettes traced on
+    // its surfaces in place of its mesh's seams
+    let traced = solid.silhouettes(eye);
     let mut drawn: Vec<(([f64; 3], [f64; 3]), bool, String)> = Vec::new();
-    for e in renderer.edges.iter().chain(section_edges) {
+    let seams = renderer.edges.iter().chain(section_edges)
+        .filter(|e| !(e.smooth && traced.is_some()))
+        .map(|e| (e, false));
+    for (e, silhouette) in seams.chain(traced.iter().flatten().map(|e| (e, true))) {
         let sil = e.smooth;
-        if sil {
+        if sil && !silhouette {
             let (a, b) = (plane::dot(e.na, eye), plane::dot(e.nb, eye));
             // a silhouette is where the sign changes; a seam whose two facets both face the eye
             // (or both face away) is the tessellation and is not drawn
@@ -183,7 +190,7 @@ fn overlay(v: Vec<Stroke>, tol: f64) -> Vec<Stroke> {
     // a line, as the page has it: a canonical direction and the offset across it
     let key = |a: (f64, f64), b: (f64, f64)| {
         let (mut dx, mut dy) = (b.0 - a.0, b.1 - a.1);
-        let n = dx.hypot(dy);
+        let n = dx.dhypot(dy);
         if n <= 0.0 {
             return None;
         }
@@ -320,7 +327,7 @@ fn join(mut v: Vec<Stroke>) -> Vec<Stroke> {
     // an edge seen end-on is a point, and a point is not a line
     v.retain(|s| {
         let (a, b) = (s.pts[0], s.pts[s.pts.len() - 1]);
-        (a.0 - b.0).hypot(a.1 - b.1) > tol
+        (a.0 - b.0).dhypot(a.1 - b.1) > tol
     });
     let v = overlay(v, tol.max(1e-12));
     let mut out: Vec<Stroke> = Vec::with_capacity(v.len());
@@ -335,7 +342,7 @@ fn join(mut v: Vec<Stroke>) -> Vec<Stroke> {
             Some(t) => {
                 let (ta, tb) = (t.pts[0], t.pts[t.pts.len() - 1]);
                 let (sa, sb) = (s.pts[0], s.pts[s.pts.len() - 1]);
-                let near = |p: (f64, f64), q: (f64, f64)| (p.0 - q.0).hypot(p.1 - q.1) <= tol;
+                let near = |p: (f64, f64), q: (f64, f64)| (p.0 - q.0).dhypot(p.1 - q.1) <= tol;
                 if near(tb, sa) {
                     t.pts.pop();
                     t.pts.extend(s.pts);
@@ -361,13 +368,13 @@ fn join(mut v: Vec<Stroke>) -> Vec<Stroke> {
 fn collinear(t: &Stroke, s: &Stroke, tol: f64) -> bool {
     let (ta, tb) = (t.pts[0], t.pts[t.pts.len() - 1]);
     let (sa, sb) = (s.pts[0], s.pts[s.pts.len() - 1]);
-    let near = |p: (f64, f64), q: (f64, f64)| (p.0 - q.0).hypot(p.1 - q.1) <= tol;
+    let near = |p: (f64, f64), q: (f64, f64)| (p.0 - q.0).dhypot(p.1 - q.1) <= tol;
     if !(near(tb, sa) || near(ta, sb)) {
         return false;
     }
     let d1 = (tb.0 - ta.0, tb.1 - ta.1);
     let d2 = (sb.0 - sa.0, sb.1 - sa.1);
-    let n1 = d1.0.hypot(d1.1).max(1e-300);
-    let n2 = d2.0.hypot(d2.1).max(1e-300);
+    let n1 = d1.0.dhypot(d1.1).max(1e-300);
+    let n2 = d2.0.dhypot(d2.1).max(1e-300);
     ((d1.0 * d2.1 - d1.1 * d2.0) / (n1 * n2)).abs() < 1e-6
 }

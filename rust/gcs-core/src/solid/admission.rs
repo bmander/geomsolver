@@ -8,6 +8,8 @@
 //! admits has shown no failure at the samples it names, which is not a proof that none exists
 //! between them. Material evaluation answers membership for every sweep, admitted or not; only
 //! boundary construction is restricted.
+#[allow(unused_imports)]
+use crate::fmath::Det;
 use super::{SpatialField,SweepContacts,TimedContact,cad};
 use crate::{envelope::{Motion,SurfacePoint},model::{EntKind,Sketch,SolidDef}};
 use std::{collections::BTreeMap,f64::consts::{PI,TAU},fmt};
@@ -375,7 +377,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         contacts.motion().normal_velocity(probe).map_err(|m| refuse(swept,Condition::Motion,m,None))?;
         Ok(contacts)
     }).collect();
-    let clock = std::time::Instant::now();
+    let clock = crate::clock::Instant::now();
     let checks = crate::par::indices(order.len(),|k| -> Option<Result<(SweepEvidence,Reads),Error>> {
         let contacts = tools[k].as_ref().ok()?;
         let (swept,pose) = (order[k],by_sweep[&order[k]][0]);
@@ -387,7 +389,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         Ok((contacts,found,reads))
     }).collect();
     if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: checked in {:?}",clock.elapsed()); }
-    let clock = std::time::Instant::now();
+    let clock = crate::clock::Instant::now();
     // The blank a solid of revolution about the line every placement turns about: the later
     // placements read it as the first does, proved by the solid graph. Otherwise, whether each
     // later placement reads the blank as the first did, every point of it.
@@ -613,11 +615,11 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
                     // between two samples: there (a, b) winds right round the cell's corners.
                     if j > 0 { if let (Some(p0),Some(p1),Some(p2)) = (equations[j-1],equations[j],here[j-1]) {
                         let corners = [p0,p1,(k,s.position),p2];
-                        let reached = corners.iter().all(|(m,_)| m[0].abs() <= m[1].hypot(m[2]));
+                        let reached = corners.iter().all(|(m,_)| m[0].abs() <= m[1].dhypot(m[2]));
                         let mut turn = 0.;
                         for w in 0..4 {
                             let (m,n) = (corners[w].0,corners[(w+1)%4].0);
-                            turn += (m[1]*n[2]-m[2]*n[1]).atan2(m[1]*n[1]+m[2]*n[2]);
+                            turn += (m[1]*n[2]-m[2]*n[1]).datan2(m[1]*n[1]+m[2]*n[2]);
                         }
                         if reached && turn.abs() > PI {
                             let centre: V = std::array::from_fn(|n| corners.iter().map(|c| c.1[n]).sum::<f64>()/4.);
@@ -629,7 +631,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
                     } }
                     for neighbour in [equations[j],if j > 0 { here[j-1] } else { None }].into_iter().flatten() {
                         let (m,q) = neighbour;
-                        let (a1,a2) = (m[1].hypot(m[2]),k[1].hypot(k[2]));
+                        let (a1,a2) = (m[1].dhypot(m[2]),k[1].dhypot(k[2]));
                         let turned = m[1]*k[1]+m[2]*k[2] < -0.5*a1*a2;
                         if turned && m[0].abs() <= a1 && k[0].abs() <= a2 {
                             let between: V = std::array::from_fn(|n| 0.5*(q[n]+s.position[n]));

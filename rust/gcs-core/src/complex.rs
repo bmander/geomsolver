@@ -2,6 +2,8 @@
 //! real/imaginary buffers, an LU solve, and a reduced-row-echelon pass used to pick a set of
 //! variables that is free with respect to the linear part of a merge system.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 #[derive(Clone, Debug)]
 pub struct CMat {
     pub rows: usize,
@@ -72,7 +74,7 @@ pub fn csolve(n: usize, a: &mut CMat, b: &mut CMat) -> bool {
         let mut p = k;
         let mut best = -1.0f64;
         for i in k..n {
-            let m = a.re[i * n + k].hypot(a.im[i * n + k]);
+            let m = a.re[i * n + k].dhypot(a.im[i * n + k]);
             if m > best {
                 best = m;
                 p = i;
@@ -144,7 +146,7 @@ pub fn free_columns(a: &CMat, tol: f64) -> (Vec<usize>, Vec<usize>) {
     let mut r = 0usize;
     let mut scale = 0.0f64;
     for i in 0..re.len() {
-        scale = scale.max(re[i].hypot(im[i]));
+        scale = scale.max(re[i].dhypot(im[i]));
     }
     let lim = tol * if scale == 0.0 { 1.0 } else { scale };
     let mut c = 0usize;
@@ -152,7 +154,7 @@ pub fn free_columns(a: &CMat, tol: f64) -> (Vec<usize>, Vec<usize>) {
         let mut p = r;
         let mut best = -1.0f64;
         for i in r..m {
-            let v = re[i * n + c].hypot(im[i * n + c]);
+            let v = re[i * n + c].dhypot(im[i * n + c]);
             if v > best {
                 best = v;
                 p = i;

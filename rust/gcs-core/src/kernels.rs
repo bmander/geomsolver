@@ -9,6 +9,8 @@
 //!
 //! The order of `KERNELS` **is** the kernel id and is part of the plan ABI.
 
+#[allow(unused_imports)]
+use crate::fmath::Det;
 /// Kernel ids, in registration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
@@ -247,7 +249,7 @@ fn lin_jac(n: usize, j: &'static [f64], out: &mut [f64]) {
 pub const MIN_LINE_LEN: f64 = 1e-12;
 
 fn line_len(dx: f64, dy: f64) -> f64 {
-    dx.hypot(dy).max(MIN_LINE_LEN)
+    dx.dhypot(dy).max(MIN_LINE_LEN)
 }
 
 /// Jacobian of C/L from dC and dL — the quotient rule, shared by the signed distance-to-a-line
@@ -478,7 +480,7 @@ fn wrap_turn(a: f64) -> f64 {
 #[inline]
 fn angle_gap(v: &[f64], theta: f64) -> f64 {
     let (dot, cross) = dot_cross(v);
-    wrap_turn(cross.atan2(dot) - theta)
+    wrap_turn(cross.datan2(dot) - theta)
 }
 
 /// Its gradient in the eight direction columns.
@@ -2183,7 +2185,7 @@ fn cos3(v: &[f64], j: &mut [f64]) -> f64 {
 fn angle3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let mut g = [0.0; 12];
     for i in 0..n {
-        r[i] = cos3(&v[12 * i..], &mut g) - k[i].cos();
+        r[i] = cos3(&v[12 * i..], &mut g) - k[i].dcos();
     }
 }
 
@@ -2199,7 +2201,7 @@ fn angle3_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let mut g = [0.0; 12];
     for i in 0..n {
         let o = 13 * i;
-        r[i] = cos3(&v[o..], &mut g) - free_dim(v, k, i, o + 12).0.cos();
+        r[i] = cos3(&v[o..], &mut g) - free_dim(v, k, i, o + 12).0.dcos();
     }
 }
 
@@ -2208,7 +2210,7 @@ fn angle3_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         let o = 13 * i;
         cos3(&v[o..], &mut j[o..o + 12]);
         let (th, m) = free_dim(v, k, i, o + 12);
-        j[o + 12] = th.sin() * m;
+        j[o + 12] = th.dsin() * m;
     }
 }
 
@@ -2407,7 +2409,7 @@ fn point_on_circle3_fixed_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// own axes (`plane::fold_rotor`, the one statement of it).
 #[inline]
 fn fold_rel(theta: f64) -> ([f64; 4], [f64; 4]) {
-    let (s, c) = (0.5 * theta).sin_cos();
+    let (s, c) = (0.5 * theta).dsin_cos();
     let d = crate::plane::fold_turn(-0.5 * s, 0.5 * c);
     (crate::plane::fold_rotor(theta), d)
 }
@@ -2504,7 +2506,7 @@ fn hinge_along_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
 fn along_row(v: &[f64], g: Option<&mut [f64]>) -> f64 {
     let (hc, hs, c, s) = (v[8], v[9], v[10], v[11]);
     let (dx, dy) = (v[14] - v[12], v[15] - v[13]);
-    let l = dx.hypot(dy).max(MIN_LINE_LEN);
+    let l = dx.dhypot(dy).max(MIN_LINE_LEN);
     let (ex, ey) = (c * dx + s * dy, -s * dx + c * dy);
     let (cc, ss) = (hc * hc - hs * hs, 2.0 * hc * hs);
     let nn = cc * ey - ss * ex;
@@ -3045,10 +3047,10 @@ impl<const N: usize> Dual<N> {
         self.map(s, if s > 0.0 { 0.5 / s } else { 0.0 })
     }
     fn sin(self) -> Self {
-        self.map(self.v.sin(), self.v.cos())
+        self.map(self.v.dsin(), self.v.dcos())
     }
     fn cos(self) -> Self {
-        self.map(self.v.cos(), -self.v.sin())
+        self.map(self.v.dcos(), -self.v.dsin())
     }
 }
 
@@ -3234,7 +3236,7 @@ fn equal_angle_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
         let o = 16 * i;
         let (d12, c12) = dot_cross(&v[o..]);
         let (d34, c34) = dot_cross(&v[o + 8..]);
-        r[i] = wrap_turn(c12.atan2(d12) - k[i] * c34.atan2(d34));
+        r[i] = wrap_turn(c12.datan2(d12) - k[i] * c34.datan2(d34));
     }
 }
 
@@ -3263,7 +3265,7 @@ fn arc_sweep(v: &[f64]) -> (f64, [f64; 6]) {
     const MIN_LEN_SQ: f64 = MIN_LINE_LEN * MIN_LINE_LEN;
     let (ux, uy) = (v[2] - v[0], v[3] - v[1]);
     let (wx, wy) = (v[4] - v[0], v[5] - v[1]);
-    let mut th = wy.atan2(wx) - uy.atan2(ux);
+    let mut th = wy.datan2(wx) - uy.datan2(ux);
     if th <= 0.0 {
         th += TURN;
     }
