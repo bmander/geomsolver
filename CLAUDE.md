@@ -2075,7 +2075,9 @@ Conventions:
   `distance(w)` to `100`, so a root statement's spelling is read back off the source at the
   argument's span into `Constraint::written` (`program::relations::written`), presentation only,
   dropped by any write of a number.  Inside a component or a block copy one spelling is many
-  numbers, and the number is drawn.
+  numbers, and the number is drawn.  A block's copies are one statement, so its dimension is one callout:
+  `program::relations::repeated` marks each later copy drawing the same label
+  (`Constraint::repeated`), the full layout leaves it out, and a request by id still draws it.
   `expr::set_dimension` is the one write path for text (a bare number becomes `Arg::Num`, with
   the angle conversion — the app converts nothing); `Sketch::add` and `io::from_json` evaluate;
   `Sketch::set_constraint_num` is the write path for a number, and re-evaluates when it dropped

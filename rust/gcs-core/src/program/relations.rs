@@ -4,9 +4,10 @@ use super::resolve::{follow, Resolver};
 use super::solids::is_body_on;
 use super::{Code, Diag};
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
-use crate::ir::{Relation, ResolvedRelation, Statement as Stmt};
+use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Field, Sketch};
-use crate::syntax::{Arg, Ref, RelationForm, Seg, Span};
+use crate::syntax::{Arg, Ref, RelationForm, Seg, Span, StmtId};
+use std::collections::BTreeSet;
 use crate::{decompose, expr, io};
 
 /// Resolve an operator to its constraint kind and registry-ordered arguments.
@@ -362,6 +363,33 @@ fn written(args: &[Option<Arg>], spec: &[(&str, SpecKind)], st: &Stmt, source: &
     })?;
     let was = source.get(span.lo as usize..span.hi as usize)?.trim();
     (!was.is_empty() && was != text.trim()).then(|| was.to_string())
+}
+
+/// Mark a dimension another copy of the same block already states — see
+/// `Constraint::repeated`.  The key is the statement, the path to it with every copy index
+/// erased (so two instances of a component are two arrays, and one block's copies are one), and
+/// the label it draws: copies stating *different* numbers (`distance(i * 10)`) are each a
+/// dimension of their own.  Statement order is copy order, so the first copy is the one drawn.
+pub(super) fn repeated(
+    sk: &mut Sketch,
+    id: u32,
+    st: &Stmt,
+    seen: &mut BTreeSet<(StmtId, Vec<PathStep>, String)>,
+) {
+    if !st.path.iter().any(|s| matches!(s, PathStep::Copy { .. })) {
+        return;
+    }
+    let Some(c) = sk.constraint(id) else { return };
+    let Some(label) = io::dimension_text(c) else { return };
+    let path = st.path.iter().map(|s| match s {
+        PathStep::Copy { block, .. } => PathStep::Copy { block: *block, index: 0 },
+        s => s.clone(),
+    });
+    if !seen.insert((st.id, path.collect(), label)) {
+        if let Some(c) = sk.constraint_mut(id) {
+            c.repeated = true;
+        }
+    }
 }
 
 pub(super) fn arg_span(a: &Arg) -> Option<Span> {

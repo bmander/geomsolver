@@ -73,7 +73,7 @@ use entities::{build, settle_deferred, Deferred};
 pub(crate) use lift::{lift_decl, lift_gauge, lift_relation};
 use planes::{memberships, plane_bases};
 pub(crate) use planes::{plane_of_entity, plane_of_entity_by};
-use relations::constrain;
+use relations::{constrain, repeated};
 use resolve::Resolver;
 use solids::{solid_claims, solids};
 use std::collections::{BTreeMap, BTreeSet};
@@ -367,6 +367,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     views::solve_planes(&mut sk, &res, &mut map, &body, &skip, &mut diags);
 
     // -- phase 3: constraints, in statement order
+    let mut arrays = BTreeSet::new();
     for st in &body {
         let StmtKind::Relation(r) = &st.kind else { continue };
         if let Some(id) = constrain(&mut sk, &res, r, st, p.text(), &mut diags) {
@@ -374,6 +375,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
             if let Some(place) = r.place {
                 sk.placements.insert(id, place);
             }
+            repeated(&mut sk, id, st, &mut arrays);
         }
     }
 

@@ -298,8 +298,10 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
     let mut out = Vec::with_capacity(sk.constraints.len());
     for c in &sk.constraints {
         // a drag target is a number, not a dimension, and an arc's own definition is not
-        // something the drawing states twice
-        if ids.is_some_and(|ids| !ids.contains(&c.id))
+        // something the drawing states twice — nor is a block's dimension, once per copy,
+        // unless that copy is the one asked for
+        let asked = ids.map(|ids| ids.contains(&c.id));
+        if asked == Some(false) || (c.repeated && asked.is_none())
             || c.soft || c.intrinsic || !style_of(sk, c).dimensioned() {
             continue;
         }

@@ -1316,6 +1316,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             nc.claim = c.claim;
             nc.class = c.class.clone();
             nc.written = c.written.clone();
+            nc.repeated = c.repeated;
             let id = dst.add_quiet(nc);
             if let Some(&place) = src.placements.get(&c.id) {
                 dst.placements.insert(id, place);   // a dimension keeps where it was dragged to

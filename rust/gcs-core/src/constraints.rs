@@ -1832,6 +1832,12 @@ pub struct Constraint {
     /// in every instance, and the number is what is drawn.  Presentation, like `class`: nothing
     /// that solves reads it, and writing a number (`set_num`, `expr::set_dimension`) drops it.
     pub written: Option<String>,
+    /// A dimension **another copy of its block already states**: `repeat n { radius(hole_r)
+    /// circle hole … }` is one statement, and six holes are drawn with one callout and not six.
+    /// Set by the elaborator (`program::relations::repeated`) on every copy after the first
+    /// that draws the same label; the full callout layout leaves it out, and asking for it by id
+    /// (editing that one) still draws it.  Presentation, like `class`.
+    pub repeated: bool,
 }
 
 /// `+1` and `−1` as the words a statement writes them with — the one place the two meet, read by
@@ -1878,6 +1884,7 @@ impl Constraint {
             free: None,
             class: Default::default(),
             written: None,
+            repeated: false,
         }
     }
 
