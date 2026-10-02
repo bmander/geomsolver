@@ -29,7 +29,7 @@ general project spent its effort.
 
 ## The class
 
-A sweep `solid removal(tool, under: generating, from: a, to: b)` is **admitted** when all of
+A sweep `removal := solid(tool, under: generating, from: a, to: b)` is **admitted** when all of
 the following hold. Each condition is a predicate evaluated on the solved model, and each
 failure is reported with its witness.
 

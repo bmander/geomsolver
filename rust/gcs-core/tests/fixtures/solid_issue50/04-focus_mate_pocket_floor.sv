@@ -1,40 +1,40 @@
 unit mm
-point o hint(x: 0, y: 0)
+o := point hint(x: 0, y: 0)
 ground o
-point q hint(x: 40, y: 0)
+q := point hint(x: 40, y: 0)
 ground q
-plane front(origin: o, toward: q)
-plane back(origin: o, toward: q, from: front)
-point stockfp0 hint(x: 0, y: 0) in front
+front := plane(origin: o, toward: q)
+back := plane(origin: o, toward: q, from: front)
+stockfp0 := point hint(x: 0, y: 0) in front
 ground stockfp0
-point stockfp1 hint(x: 10, y: 0) in front
+stockfp1 := point hint(x: 10, y: 0) in front
 ground stockfp1
-point stockfp2 hint(x: 10, y: 10) in front
+stockfp2 := point hint(x: 10, y: 10) in front
 ground stockfp2
-point stockfp3 hint(x: 0, y: 10) in front
+stockfp3 := point hint(x: 0, y: 10) in front
 ground stockfp3
-face stockf(stockfp0, stockfp1, stockfp2, stockfp3, -> close)
-solid stock(stockf, from: -6mm, to: 0mm)
-point toolfp0 hint(x: 2, y: 2) in front
+stockf := face(stockfp0, stockfp1, stockfp2, stockfp3, -> close)
+stock := solid(stockf, from: -6mm, to: 0mm)
+toolfp0 := point hint(x: 2, y: 2) in front
 ground toolfp0
-point toolfp1 hint(x: 8, y: 2) in front
+toolfp1 := point hint(x: 8, y: 2) in front
 ground toolfp1
-point toolfp2 hint(x: 8, y: 8) in front
+toolfp2 := point hint(x: 8, y: 8) in front
 ground toolfp2
-point toolfp3 hint(x: 2, y: 8) in front
+toolfp3 := point hint(x: 2, y: 8) in front
 ground toolfp3
-face toolf(toolfp0, toolfp1, toolfp2, toolfp3, -> close)
-solid tool(toolf, from: -3mm, to: 0mm)
-solid body(stock)
+toolf := face(toolfp0, toolfp1, toolfp2, toolfp3, -> close)
+tool := solid(toolf, from: -3mm, to: 0mm)
+body := solid(stock)
 tool cut body
-point resultfp0 hint(x: 3, y: 3) in back
+resultfp0 := point hint(x: 3, y: 3) in back
 ground resultfp0
-point resultfp1 hint(x: 5, y: 3) in back
+resultfp1 := point hint(x: 5, y: 3) in back
 ground resultfp1
-point resultfp2 hint(x: 5, y: 5) in back
+resultfp2 := point hint(x: 5, y: 5) in back
 ground resultfp2
-point resultfp3 hint(x: 3, y: 5) in back
+resultfp3 := point hint(x: 3, y: 5) in back
 ground resultfp3
-face resultf(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
-solid result(resultf, from: -1mm, to: 0mm)
+resultf := face(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
+result := solid(resultf, from: -1mm, to: 0mm)
 result.far against body.tool.far

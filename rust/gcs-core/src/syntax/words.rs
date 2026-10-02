@@ -8,11 +8,10 @@ use crate::model::EntKind;
 // `port`, `frame` and `ellipse` are retired and `ring` is not yet (bmander/geomsolver#47), and
 // each is kept here only so a document written with it is told what to write instead of reading
 // the word as a name
-pub(super) const OPENERS: [&str; 17] = [
+pub(super) const OPENERS: [&str; 16] = [
     "preview",
     "claim",
     "component",
-    "param",
     "port",
     "unit",
     "style",
@@ -85,7 +84,9 @@ pub(super) fn word_at(toks: &[(Tok, Span)], i: usize) -> Option<&str> {
 /// Stop at a statement boundary if the list is unclosed; parsing reports the error.
 pub(super) fn past_args(toks: &[(Tok, Span)], i: usize) -> usize {
     let mut j = i + 1;
-    if toks.get(j).map(|(t, _)| t) != Some(&Tok::P('(')) {
+    // `horizontal (l := line)` — the parentheses are the named link the word stands before,
+    // not the word's own arguments
+    if toks.get(j).map(|(t, _)| t) != Some(&Tok::P('(')) || named_link_at(toks, j) {
         return j;
     }
     let mut depth = 0i32;
@@ -107,6 +108,25 @@ pub(super) fn past_args(toks: &[(Tok, Span)], i: usize) -> usize {
     }
 }
 
+/// `(name := line …)` — a chain link named where it stands.  The kind keyword after `:=` is what
+/// tells one from an operator's own parentheses holding a named dimension, `distance(w := 60)`.
+pub(super) fn named_link_at(toks: &[(Tok, Span)], j: usize) -> bool {
+    matches!(
+        (toks.get(j), toks.get(j + 1), toks.get(j + 2), word_at(toks, j + 3)),
+        (Some((Tok::P('('), _)), Some((Tok::Ident(_), _)), Some((Tok::Define, _)), Some(w))
+            if EntKind::parse(w).is_some()
+    )
+}
+
+/// The word a link opens with at `j`: the element keyword inside a named link, or the word there.
+pub(super) fn link_word(toks: &[(Tok, Span)], j: usize) -> Option<&str> {
+    if named_link_at(toks, j) {
+        word_at(toks, j + 3)
+    } else {
+        word_at(toks, j)
+    }
+}
+
 /// Shared chain lookahead: a declaration, or a prefix before an element or another
 /// prefix. A standalone call such as `horizontal(bottom)` remains a relation.
 pub(super) fn opens_link(w: &str, next: Option<&str>) -> bool {
@@ -118,10 +138,12 @@ pub(super) fn opens_link(w: &str, next: Option<&str>) -> bool {
     (EntKind::parse(n).is_some() || prefix_word(n)) && prefix_word(w)
 }
 
-/// An optional declaration name cannot consume an element keyword or trailing clause.
-/// `at` stays reserved so the retired seed spelling gets its diagnostic.
-pub(super) fn names_decl(w: &str) -> bool {
-    EntKind::parse(w).is_none() && !trails_decl(w) && w != "at" && w != "cut" && w != "bound" && !["private", "construction", "centerline"].contains(&w)
+/// The words a name may not be: an element keyword, a trailing clause or joint, and the words a
+/// statement is shaped by.  `at` stays reserved so the retired seed spelling gets its diagnostic.
+fn names_decl(w: &str) -> bool {
+    EntKind::parse(w).is_none()
+        && !trails_decl(w)
+        && !["at", "group", "cut", "bound", "private", "construction", "centerline"].contains(&w)
 }
 
 /// A valid identifier that is not reserved by the grammar. Used by source edits

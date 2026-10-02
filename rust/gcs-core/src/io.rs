@@ -470,7 +470,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     if d.get("ellipses").is_some_and(|a| !a.arr().is_empty()) {
         return Err(
             "this document holds an ellipse entity, which is a library component now: write \
-             it as `curve e = Ellipse(f, a: …, b: …).p over u in (0, 360)` under `use std`"
+             it as `e := Ellipse(f, a: …, b: …).p over u in (0, 360)` under `use std`"
                 .to_string(),
         );
     }
@@ -1674,8 +1674,10 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
 /// read in — unless the text names its unit already, since `45deg` followed by `°` says it
 /// twice (#43.14).  Trimming is all the tidying there is — their spacing is theirs.
 fn as_written(kind: SpecKind, text: &str) -> String {
-    let t = text.trim();
-    if kind == SpecKind::Angle && !expr::names_unit(t) { format!("{t}°") } else { t.to_string() }
+    // a dimension named where it is stated reads `w = 60` on paper: `:=` is the language's word
+    // for a definition, and a drawing is read by people who never typed one
+    let t = text.trim().replacen(" := ", " = ", 1);
+    if kind == SpecKind::Angle && !expr::names_unit(&t) { format!("{t}°") } else { t }
 }
 
 /// The number a dimensioned constraint states, as its callout prints it — the first Length or
@@ -1698,7 +1700,7 @@ pub fn dimension_text(c: &Constraint) -> Option<String> {
     // a dimension the elaborator worked out from a name is drawn with the name — `w`, not the
     // `100` the flattener settled it to — and verbatim: it names something, so no degree sign
     if let Some(w) = &c.written {
-        return Some(w.clone());
+        return Some(w.trim().replacen(" := ", " = ", 1));
     }
     Some(match &c.args[i] {
         Arg::Expr(e) => as_written(kind, &e.text),

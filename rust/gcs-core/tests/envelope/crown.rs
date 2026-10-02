@@ -174,7 +174,7 @@ fn crown_root_limit_is_a_cusp_of_the_envelope_not_a_search_bound() {
     let a = position(h-1e-5*pair.module);
     let b = position(h+1e-5*pair.module);
     let speed = (0..3).map(|i| ((b[i]-a[i])/(2e-5*pair.module)).powi(2)).sum::<f64>().sqrt();
-    assert!(speed < 1e-5, "speed={speed}");
+    assert!(speed < 1e-5, "speed:={speed}");
     eprintln!("crown cusp h={h}, polar={}deg, requested={}deg, speed={speed}",
         polar(h).to_degrees(),target.to_degrees());
 

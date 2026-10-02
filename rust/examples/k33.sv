@@ -13,14 +13,14 @@
 // The nine lengths are read off a drawing that works.  They have to be: pick nine numbers at
 // random and there is generally no arrangement of six joints that achieves them.
 
-point k0 hint(x: 0, y: 0)
-point k1 hint(x: 30, y: 4)
-point k2 hint(x: 58, y: -2)
-point k3 hint(x: 6, y: 26)
-point k4 hint(x: 34, y: 32)
-point k5 hint(x: 62, y: 24)
+k0 := point hint(x: 0, y: 0)
+k1 := point hint(x: 30, y: 4)
+k2 := point hint(x: 58, y: -2)
+k3 := point hint(x: 6, y: 26)
+k4 := point hint(x: 34, y: 32)
+k5 := point hint(x: 62, y: 24)
 
-line datum(k0, k3)
+datum := line(k0, k3)
 
 k0 distance(26.683328) k3
 k0 distance(46.690470) k4

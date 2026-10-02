@@ -6,14 +6,14 @@ mod surfaces;
 mod vertices;
 
 const MODEL: &str = "unit mm
-point o hint(x: 0,y: 0)
-point q hint(x: 0,y: 2)
-point x hint(x: 1,y: 0)
-point a hint(x: 2,y: 0)
-point b hint(x: 3,y: 0)
-point m hint(x: 3,y: 1)
-point c hint(x: 3,y: 2)
-point d hint(x: 2,y: 2)
+o := point hint(x: 0,y: 0)
+q := point hint(x: 0,y: 2)
+x := point hint(x: 1,y: 0)
+a := point hint(x: 2,y: 0)
+b := point hint(x: 3,y: 0)
+m := point hint(x: 3,y: 1)
+c := point hint(x: 3,y: 2)
+d := point hint(x: 2,y: 2)
 ground o
 ground q
 ground x
@@ -22,21 +22,21 @@ ground b
 ground m
 ground c
 ground d
-line axis(o,q)
-line spin_axis(o,x)
-line bottom(a,b)
-line low(b,m)
-line high(m,c)
-line top(c,d)
-line inner(d,a)
-face profile(bottom,low,high,top,inner)
-solid body(profile,about: axis)
-surface first_surface(body,low,from: 0deg,to: 90deg)
-surface second_surface(body,high,from: 0deg,to: 90deg)
-motion roll(about: spin_axis)
-envelope first_envelope(first_surface,under: roll,from: -20deg,to: 20deg)
-envelope second_envelope(second_surface,under: roll,from: -20deg,to: 20deg)
-seam shared(first_envelope,second_envelope)
+axis := line(o,q)
+spin_axis := line(o,x)
+bottom := line(a,b)
+low := line(b,m)
+high := line(m,c)
+top := line(c,d)
+inner := line(d,a)
+profile := face(bottom,low,high,top,inner)
+body := solid(profile,about: axis)
+first_surface := surface(body,low,from: 0deg,to: 90deg)
+second_surface := surface(body,high,from: 0deg,to: 90deg)
+roll := motion(about: spin_axis)
+first_envelope := envelope(first_surface,under: roll,from: -20deg,to: 20deg)
+second_envelope := envelope(second_surface,under: roll,from: -20deg,to: 20deg)
+shared := seam(first_envelope,second_envelope)
 ";
 
 fn tolerance() -> SeamTolerance { SeamTolerance {position:1e-9,normal:1e-9,axis:1e-10} }
@@ -115,37 +115,37 @@ fn a_seam_refuses_coincident_lookalikes_nontangent_junctions_and_incompatible_so
     let high = e.map.ent_named("high").unwrap();
     e.sketch.lines[high.i()].p1 = duplicate as u32;
     assert!(EnvelopeSeam::named(&e.sketch,0,tolerance()).unwrap_err().contains("shared source vertex"));
-    let e = solved(&MODEL.replace("first_surface(body,low,","first_surface(body,high,")
-        .replace("second_surface(body,high,","second_surface(body,top,"));
+    let e = solved(&MODEL.replace("first_surface := surface(body,low,","first_surface := surface(body,high,")
+        .replace("second_surface := surface(body,high,","second_surface := surface(body,top,"));
     assert!(EnvelopeSeam::named(&e.sketch,0,tolerance()).unwrap_err().contains("tangent"));
-    let e = build(&MODEL.replace("seam shared(first_envelope,second_envelope)",
-        "seam shared(first_envelope,first_envelope)"));
+    let e = build(&MODEL.replace("shared := seam(first_envelope,second_envelope)",
+        "shared := seam(first_envelope,first_envelope)"));
     assert!(e.errors().any(|d| d.message.contains("exactly one shared")));
-    let e = build(&MODEL.replace("seam shared(first_envelope,second_envelope)",
-        "seam shared(first_surface,second_surface)"));
+    let e = build(&MODEL.replace("shared := seam(first_envelope,second_envelope)",
+        "shared := seam(first_surface,second_surface)"));
     assert!(e.ok(),"{:?}",e.diags);
     assert!(EnvelopeSeam::named(&e.sketch,0,tolerance()).is_err());
-    let e = build(&MODEL.replace("motion roll(about: spin_axis)",
-        "motion roll(about: spin_axis)\nmotion other(about: axis)")
+    let e = build(&MODEL.replace("roll := motion(about: spin_axis)",
+        "roll := motion(about: spin_axis)\nother := motion(about: axis)")
         .replace("second_surface,under: roll","second_surface,under: other"));
     assert!(e.errors().any(|d| d.message.contains("same source revolution and motion")));
-    let e = solved(&MODEL.replace("second_surface(body,high,from: 0deg,to: 90deg)",
-        "second_surface(body,high,from: 180deg,to: 270deg)"));
+    let e = solved(&MODEL.replace("second_surface := surface(body,high,from: 0deg,to: 90deg)",
+        "second_surface := surface(body,high,from: 180deg,to: 270deg)"));
     assert!(EnvelopeSeam::named(&e.sketch,0,tolerance()).unwrap_err().contains("overlapping"));
 }
 
 #[test]
 fn seam_formals_can_reach_forward_operands_and_private_seams_stay_private() {
-    let src = format!("component Copy(s: seam) {{ seam out(s.first,s.second) }}\n\
-        copy: Copy(shared)\n{MODEL}");
+    let src = format!("component Copy(s: seam) {{ out := seam(s.first,s.second) }}\n\
+        copy := Copy(shared)\n{MODEL}");
     let e = solved(&src);
     let copy = e.map.ent_named("copy.out").unwrap();
     assert_eq!(e.sketch.children(copy),e.sketch.children(e.map.ent_named("shared").unwrap()));
     let src = format!("{MODEL}component Part(a: envelope,b: envelope) {{\n\
-        private construction seam join(a,b)\n}}\npart: Part(first_envelope,second_envelope)\n");
+        private construction join := seam(a,b)\n}}\npart := Part(first_envelope,second_envelope)\n");
     let e = solved(&src);
     assert!(e.map.entity_path(&e.sketch,"part.join").is_none());
-    let e = build(&format!("{src}seam leak(part.join.first,second_envelope)\n"));
+    let e = build(&format!("{src}leak := seam(part.join.first,second_envelope)\n"));
     assert!(e.errors().any(|d| d.message.contains("private member")));
 }
 
@@ -153,20 +153,20 @@ fn seam_formals_can_reach_forward_operands_and_private_seams_stay_private() {
 fn a_retained_seam_must_satisfy_material_trims_on_both_faces() {
     let source = format!("{MODEL}
 component Sphere(o: point,size: Length) {{
-  private point bottom hint(x: 0,y: -size)
-  private point top hint(x: 0,y: size)
+  private bottom := point hint(x: 0,y: -size)
+  private top := point hint(x: 0,y: size)
   ground bottom
   ground top
-  private arc rim(center: o,start: bottom,end: top)
+  private rim := arc(center: o,start: bottom,end: top)
   radius(size) rim
-  private line diameter(top,bottom)
-  solid ball(face(rim,diameter),about: diameter)
+  private diameter := line(top,bottom)
+  ball := solid(face(rim,diameter),about: diameter)
 }}
-large: Sphere(o,size: 4mm)
-small: Sphere(o,size: 3.1mm)
-patch first_patch(first_envelope,inside: large.ball)
-patch second_patch(second_envelope,inside: small.ball)
-seam clipped(first_patch,second_patch)
+large := Sphere(o,size: 4mm)
+small := Sphere(o,size: 3.1mm)
+first_patch := patch(first_envelope,inside: large.ball)
+second_patch := patch(second_envelope,inside: small.ball)
+clipped := seam(first_patch,second_patch)
 ");
     for (source,retained) in [(source.clone(),false),(source.replace("size: 3.1mm","size: 3.5mm"),true)] {
         let e = solved(&source);
@@ -182,11 +182,11 @@ seam clipped(first_patch,second_patch)
 
 #[test]
 fn an_unresolved_arc_radius_cannot_hide_a_gap_at_a_shared_vertex() {
-    let source = MODEL.replace("point a hint(x: 2,y: 0)","point a hint(x: 1,y: 0)")
-        .replace("point c hint(x: 3,y: 2)","point c hint(x: 2,y: 2)")
-        .replace("point d hint(x: 2,y: 2)","point d hint(x: 1,y: 2)")
-        .replace("line high(m,c)","point arc_center hint(x: 2,y: 1)\nground arc_center\n\
-            arc high(center: arc_center,start: m,end: c)\nradius(1mm) high");
+    let source = MODEL.replace("a := point hint(x: 2,y: 0)","a := point hint(x: 1,y: 0)")
+        .replace("c := point hint(x: 3,y: 2)","c := point hint(x: 2,y: 2)")
+        .replace("d := point hint(x: 2,y: 2)","d := point hint(x: 1,y: 2)")
+        .replace("high := line(m,c)","arc_center := point hint(x: 2,y: 1)\nground arc_center\n\
+            high := arc(center: arc_center,start: m,end: c)\nradius(1mm) high");
     let mut e = solved(&source);
     assert!(EnvelopeSeam::named(&e.sketch,0,tolerance()).is_ok());
     let arc = e.map.ent_named("high").unwrap();
@@ -198,8 +198,8 @@ fn an_unresolved_arc_radius_cannot_hide_a_gap_at_a_shared_vertex() {
 
 #[test]
 fn a_stationary_family_does_not_produce_a_falsely_unique_seam_intersection() {
-    let e = solved(&MODEL.replace("motion roll(about: spin_axis)",
-        "motion roll(about: spin_axis,ratio: 0)"));
+    let e = solved(&MODEL.replace("roll := motion(about: spin_axis)",
+        "roll := motion(about: spin_axis,ratio: 0)"));
     let seam = EnvelopeSeam::named(&e.sketch,0,tolerance()).unwrap();
     let result = seam.intersect(|c| c.position[1]-1.,[0.05,0.],options(&seam),1e-9);
     assert_eq!(result.unwrap_err(),Error::SingularIntersection);

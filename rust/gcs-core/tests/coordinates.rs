@@ -22,15 +22,15 @@ fn close(a: (f64, f64), b: (f64, f64)) {
 
 #[test]
 fn standard_datums_are_shared_fixed_and_only_built_when_used() {
-    let unused = build("use std\npoint p\n");
+    let unused = build("use std\np := point\n");
     assert_eq!(unused.sketch.points.len(), 1);
     assert!(unused.sketch.planes.is_empty());
-    let explicit = build("use std\nstd: StandardDatums()\npoint a hint(x: 3, y: 4)\na distance(3, along: u) std.front\na distance(4, along: v) std.front\n");
+    let explicit = build("use std\nstd := StandardDatums()\na := point hint(x: 3, y: 4)\na distance(3, along: u) std.front\na distance(4, along: v) std.front\n");
     assert_eq!(explicit.sketch.planes.len(), 2, "an explicit std binding is not duplicated");
     let mut e = build("unit mm\nuse std\n\
-        point a hint(x: 3, y: 4)\na distance(3mm, along: u) std.front\na distance(4mm, along: v) std.front\n\
-        point b hint(x: -4, y: 3)\nb distance(3mm, along: u) std.up\nb distance(4mm, along: v) std.up\n\
-        point c hint(x: 6, y: 8)\nc distance(6mm, along: u) std.front\nc distance(8mm, along: v) std.front\n");
+        a := point hint(x: 3, y: 4)\na distance(3mm, along: u) std.front\na distance(4mm, along: v) std.front\n\
+        b := point hint(x: -4, y: 3)\nb distance(3mm, along: u) std.up\nb distance(4mm, along: v) std.up\n\
+        c := point hint(x: 6, y: 8)\nc distance(6mm, along: u) std.front\nc distance(8mm, along: v) std.front\n");
     solved(&mut e.sketch);
     assert_eq!(e.sketch.planes.len(), 2);
     assert_eq!(e.sketch.points.len(), 6);
@@ -47,9 +47,9 @@ fn standard_datums_are_shared_fixed_and_only_built_when_used() {
 #[test]
 fn standard_datums_work_in_hints_children_and_explicit_membership() {
     let mut e = build("unit mm\nuse std\n\
-        point a hint(x: std.up.origin.x + 1mm * std.up.c, y: std.up.origin.y + 1mm * std.up.s)\n\
-        ground a\nline axis(std.front.origin, std.front.toward)\n\
-        point b in std.front\nb distance(2mm, along: u) std.front\nb distance(3mm, along: v) std.front\n");
+        a := point hint(x: std.up.origin.x + 1mm * std.up.c, y: std.up.origin.y + 1mm * std.up.s)\n\
+        ground a\naxis := line(std.front.origin, std.front.toward)\n\
+        b := point in std.front\nb distance(2mm, along: u) std.front\nb distance(3mm, along: v) std.front\n");
     solved(&mut e.sketch);
     close(e.sketch.point_xy(e.map.ent_named("a").unwrap().i()), (0.0, 1.0));
     let front = e.map.ent_named("std.front").unwrap().i();
@@ -59,8 +59,8 @@ fn standard_datums_work_in_hints_children_and_explicit_membership() {
 #[test]
 fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
     let src = "unit mm\nuse std\ncomponent Spoke(f: plane) {\n\
-        point tip hint(x: f.origin.x + 5mm * f.c, y: f.origin.y + 5mm * f.s)\n\
-        line axis(f.origin, f.toward)\ntip on axis\nf.origin distance(5mm) tip\n}\n\
+        tip := point hint(x: f.origin.x + 5mm * f.c, y: f.origin.y + 5mm * f.s)\n\
+        axis := line(f.origin, f.toward)\ntip on axis\nf.origin distance(5mm) tip\n}\n\
         preview {\nSpoke(std.front)\nSpoke(std.up)\n}\n";
     let mut e = build(src);
     solved(&mut e.sketch);
@@ -90,7 +90,7 @@ fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
 
 #[test]
 fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
-    let mut e = build("unit mm\npoint o hint(x: 10, y: 20)\npoint q hint(x: 14, y: 23)\nground o\nground q\nplane f(origin: o, toward: q)\npoint p hint(x: 100, y: -200)\np distance(-5mm, along: u) f\np distance(2mm, along: v) f\n");
+    let mut e = build("unit mm\no := point hint(x: 10, y: 20)\nq := point hint(x: 14, y: 23)\nground o\nground q\nf := plane(origin: o, toward: q)\np := point hint(x: 100, y: -200)\np distance(-5mm, along: u) f\np distance(2mm, along: v) f\n");
     let p = e.map.ent_named("p").unwrap().i();
     solved(&mut e.sketch);
     close(e.sketch.point_xy(p), (4.8, 18.6));
@@ -110,7 +110,7 @@ fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
 
 #[test]
 fn an_external_constraint_moves_the_datum_through_an_aliased_component_point() {
-    let mut e = build("unit mm\ncomponent Offset(f: plane, p: point) {\np distance(3mm, along: u) f\np distance(-2mm, along: v) f\n}\npoint o hint(x: 10, y: 20)\npoint q hint(x: 14, y: 20)\nline axis(o, q)\nhorizontal axis\no distance(4mm, along: x) q\nplane f(origin: o, toward: q)\npoint p hint(x: 23, y: 28)\nground p\ni: Offset(f, p)\n");
+    let mut e = build("unit mm\ncomponent Offset(f: plane, p: point) {\np distance(3mm, along: u) f\np distance(-2mm, along: v) f\n}\no := point hint(x: 10, y: 20)\nq := point hint(x: 14, y: 20)\naxis := line(o, q)\nhorizontal axis\no distance(4mm, along: x) q\nf := plane(origin: o, toward: q)\np := point hint(x: 23, y: 28)\nground p\ni := Offset(f, p)\n");
     solved(&mut e.sketch);
     close(e.sketch.point_xy(e.map.ent_named("o").unwrap().i()), (20.0, 30.0));
     assert_eq!(e.sketch.points.len(), 3, "the argument is an alias");
@@ -119,7 +119,7 @@ fn an_external_constraint_moves_the_datum_through_an_aliased_component_point() {
 
 #[test]
 fn both_ordinates_can_be_solved_as_independent_dimensions() {
-    let mut e = build("unit mm\ncomponent Read(f: plane, p: point, u: Length, v: Length) {\np distance(u, along: u) f\np distance(v, along: v) f\n}\npoint o hint(x: 10, y: 20)\npoint q hint(x: 14, y: 23)\npoint p hint(x: 4.8, y: 18.6)\nground o\nground q\nground p\nplane f(origin: o, toward: q)\nr: Read(f, p)\n");
+    let mut e = build("unit mm\ncomponent Read(f: plane, p: point, u: Length, v: Length) {\np distance(u, along: u) f\np distance(v, along: v) f\n}\no := point hint(x: 10, y: 20)\nq := point hint(x: 14, y: 23)\np := point hint(x: 4.8, y: 18.6)\nground o\nground q\nground p\nf := plane(origin: o, toward: q)\nr := Read(f, p)\n");
     super::common::fd_jacobian(&e.sketch, 1e-6);
     solved(&mut e.sketch);
     let value = |name: &str| e.sketch.params[e.sketch.free_vars[name] as usize].value;
@@ -129,7 +129,7 @@ fn both_ordinates_can_be_solved_as_independent_dimensions() {
 
 #[test]
 fn datum_seeds_and_membership_pass_through_nested_instances() {
-    let mut e = build("unit mm\nuse std\ncomponent Probe(f: plane) {\npoint p hint(x: f.origin.x - 5mm * f.c - 2mm * f.s, y: f.origin.y - 5mm * f.s + 2mm * f.c)\np distance(-5mm, along: u) f\np distance(2mm, along: v) f\n}\ncomponent Part(f: plane) { probe: Probe(f) }\npoint o hint(x: 10, y: 20)\npoint q hint(x: o.x + 4mm, y: o.y + 3mm)\nground o\nground q\nplane datum(origin: o, toward: q)\nplane view\ni: Part(datum) in view\n");
+    let mut e = build("unit mm\nuse std\ncomponent Probe(f: plane) {\np := point hint(x: f.origin.x - 5mm * f.c - 2mm * f.s, y: f.origin.y - 5mm * f.s + 2mm * f.c)\np distance(-5mm, along: u) f\np distance(2mm, along: v) f\n}\ncomponent Part(f: plane) { probe := Probe(f) }\no := point hint(x: 10, y: 20)\nq := point hint(x: o.x + 4mm, y: o.y + 3mm)\nground o\nground q\ndatum := plane(origin: o, toward: q)\nview := plane\ni := Part(datum) in view\n");
     let p = e.map.ent_named("i.probe.p").unwrap().i();
     close(e.sketch.point_xy(p), (4.8, 18.6));
     let view = e.map.ent_named("view").unwrap().i();
@@ -141,7 +141,7 @@ fn datum_seeds_and_membership_pass_through_nested_instances() {
 
 #[test]
 fn zero_ordinates_are_regular_and_claims_remain_assertions() {
-    let mut e = build("unit mm\npoint o hint(x: 10, y: 20)\npoint q hint(x: 14, y: 23)\nground o\nground q\nplane f(origin: o, toward: q)\npoint p\np distance(0mm, along: u) f\np distance(0mm, along: v) f\nclaim p distance(0mm, along: u) f\n");
+    let mut e = build("unit mm\no := point hint(x: 10, y: 20)\nq := point hint(x: 14, y: 23)\nground o\nground q\nf := plane(origin: o, toward: q)\np := point\np distance(0mm, along: u) f\np distance(0mm, along: v) f\nclaim p distance(0mm, along: u) f\n");
     solved(&mut e.sketch);
     close(e.sketch.point_xy(e.map.ent_named("p").unwrap().i()), (10.0, 20.0));
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).status, diagnose::State::Well);
@@ -150,7 +150,7 @@ fn zero_ordinates_are_regular_and_claims_remain_assertions() {
 #[test]
 fn datum_axes_require_a_datum_and_lengths() {
     for relation in ["p distance(2mm, along: u) q", "p distance(2mm, along: x) f", "p distance(2deg, along: u) f", "p distance(2mm, along: z) f"] {
-        let source = format!("unit mm\npoint p\npoint q\nplane f\n{relation}\n");
+        let source = format!("unit mm\np := point\nq := point\nf := plane\n{relation}\n");
         let (p, errs) = syntax::parse(&source);
         assert!(errs.is_empty(), "{errs:?}");
         assert!(!program::elaborate(&p).ok(), "accepted {relation}");
@@ -159,7 +159,7 @@ fn datum_axes_require_a_datum_and_lengths() {
 
 #[test]
 fn a_datum_child_remains_a_point_through_aliases_and_face_corners() {
-    let e = build("unit mm\ncomponent Inner(p: point) {\npoint q hint(x: p.x + 1mm, y: p.y + 2mm)\nline border(p, q)\n}\ncomponent Outer(f: plane) {\ni: Inner(f.origin)\nface triangle(f.origin, i.q, f.toward, -> close)\n}\npoint o hint(x: 10, y: 20)\npoint t hint(x: 14, y: 23)\nplane f(origin: o, toward: t)\nx: Outer(f)\n");
+    let e = build("unit mm\ncomponent Inner(p: point) {\nq := point hint(x: p.x + 1mm, y: p.y + 2mm)\nborder := line(p, q)\n}\ncomponent Outer(f: plane) {\ni := Inner(f.origin)\ntriangle := face(f.origin, i.q, f.toward, -> close)\n}\no := point hint(x: 10, y: 20)\nt := point hint(x: 14, y: 23)\nf := plane(origin: o, toward: t)\nx := Outer(f)\n");
     let edge = &e.sketch.lines[e.map.ent_named("x.i.border").unwrap().i()];
     assert_eq!(edge.p1 as usize, e.map.ent_named("o").unwrap().i());
     close(e.sketch.point_xy(edge.p2 as usize), (11.0, 22.0));
@@ -169,7 +169,7 @@ fn a_datum_child_remains_a_point_through_aliases_and_face_corners() {
 
 #[test]
 fn coordinate_placement_is_not_a_standard_library_component() {
-    let (p, errors, linked) = library::parse_linked("use std\np: Loc(std.front, u: 3mm, v: 4mm)\n");
+    let (p, errors, linked) = library::parse_linked("use std\np := Loc(std.front, u: 3mm, v: 4mm)\n");
     assert!(errors.is_empty() && linked.is_empty());
     let e = program::elaborate(&p);
     assert!(!e.ok(), "the removed placement helper must not remain callable");
@@ -229,17 +229,17 @@ fn vtwin_variant(src: &str, edits: &[(&str, &str, &str)]) -> program::Elaborated
 #[test]
 fn vtwin_cylinder_follows_piston_travel_and_wall_thickness() {
     let src = "unit mm\nuse std\nuse components.bank\n\
-        point bottom_pin hint(x: 0mm, y: -R)\nstd.origin vertical bottom_pin\nstd.origin distance(R) bottom_pin\n\
-        point top_pin hint(x: 0mm, y: R)\nstd.origin vertical top_pin\nstd.origin distance(R) top_pin\n\
-        point pivot hint(x: 0mm, y: H)\nstd.origin vertical pivot\nstd.origin distance(H) pivot\n\
-        bottom: Bank(bottom_pin, pivot, fw: fwA, dim: 0, dims: vtwin_dims)\n\
-        top: Bank(top_pin, pivot, fw: fwA, dim: 0, dims: vtwin_dims)\n";
+        bottom_pin := point hint(x: 0mm, y: -R)\nstd.origin vertical bottom_pin\nstd.origin distance(R) bottom_pin\n\
+        top_pin := point hint(x: 0mm, y: R)\nstd.origin vertical top_pin\nstd.origin distance(R) top_pin\n\
+        pivot := point hint(x: 0mm, y: H)\nstd.origin vertical pivot\nstd.origin distance(H) pivot\n\
+        bottom := Bank(bottom_pin, pivot, fw: fwA, dim: 0, dims: vtwin_dims)\n\
+        top := Bank(top_pin, pivot, fw: fwA, dim: 0, dims: vtwin_dims)\n";
     for (before, after, wall) in [
-        ("param R = 10mm", "param R = 12mm", 4.0),
-        ("param L = 46mm", "param L = 49mm", 4.0),
-        ("param ph = 14mm", "param ph = 16mm", 4.0),
-        ("param D = 16mm", "param D = 18mm", 4.0),
-        ("param wall = 4mm", "param wall = 5mm", 5.0),
+        ("R := 10mm", "R := 12mm", 4.0),
+        ("L := 46mm", "L := 49mm", 4.0),
+        ("ph := 14mm", "ph := 16mm", 4.0),
+        ("D := 16mm", "D := 18mm", 4.0),
+        ("wall := 4mm", "wall := 5mm", 5.0),
     ] {
         let e = vtwin_variant(src, &[("components.dims", before, after)]);
         let at = |name| e.sketch.point_xy(e.map.ent_named(name).unwrap().i());
@@ -255,14 +255,14 @@ fn vtwin_cylinder_follows_piston_travel_and_wall_thickness() {
 #[test]
 fn vtwin_hardware_changes_update_pockets_bores_and_seal_grooves() {
     let e = vtwin_variant(gcs_core::examples::source("vtwin").unwrap(), &[
-        ("hardware", "param hexbolt14_h = 4.4mm", "param hexbolt14_h = 5.4mm"),
-        ("hardware", "param brg608_w = 7mm", "param brg608_w = 8mm"),
-        ("hardware", "param clevis14_d = 6.35mm", "param clevis14_d = 6.85mm"),
-        ("hardware", "param clevis14_head_d = 9.7mm", "param clevis14_head_d = 10.7mm"),
-        ("hardware", "param clevis14_head_t = 2.3mm", "param clevis14_head_t = 3.3mm"),
-        ("hardware", "param oring014_cs = 1.78mm", "param oring014_cs = 2mm"),
-        ("hardware", "param oring010_cs = 1.78mm", "param oring010_cs = 2mm"),
-        ("components.dims", "param rbar = 5mm", "param rbar = 6mm"),
+        ("hardware", "hexbolt14_h := 4.4mm", "hexbolt14_h := 5.4mm"),
+        ("hardware", "brg608_w := 7mm", "brg608_w := 8mm"),
+        ("hardware", "clevis14_d := 6.35mm", "clevis14_d := 6.85mm"),
+        ("hardware", "clevis14_head_d := 9.7mm", "clevis14_head_d := 10.7mm"),
+        ("hardware", "clevis14_head_t := 2.3mm", "clevis14_head_t := 3.3mm"),
+        ("hardware", "oring014_cs := 1.78mm", "oring014_cs := 2mm"),
+        ("hardware", "oring010_cs := 1.78mm", "oring010_cs := 2mm"),
+        ("components.dims", "rbar := 5mm", "rbar := 6mm"),
     ]);
     let at = |name| e.sketch.point_xy(e.map.ent_named(name).unwrap().i());
     let radius = |name| e.sketch.radius_value(e.map.ent_named(name).unwrap());

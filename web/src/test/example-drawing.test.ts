@@ -67,7 +67,7 @@ test('a component preview uses edited project dependencies when opened directly'
   assert.ok(bundle.files['vtwin/components/dims.sv']);
   const edited: Record<string, string> = { ...bundle.files,
     'vtwin/components/dims.sv': bundle.files['vtwin/components/dims.sv'].replace(
-      'param fwA = trapz + traph + 3mm', 'param fwA = trapz + traph + 4mm'),
+      'fwA := trapz + traph + 3mm', 'fwA := trapz + traph + 4mm'),
   };
   modules.provideProject(path, edited);
   try {
@@ -102,7 +102,7 @@ test('live directory listings discover files added after the static build', asyn
   const fresh: Record<string, string> = { ...files,
     'vtwin/assembly.svd': 'model m from "assembly.sv" sheet main { sketch v(m) at (20,30) }',
     'vtwin/components/dims.sv': `${files['vtwin/components/dims.sv']}\n// fresh source\n`,
-    'vtwin/extra.sv': 'point extra\n',
+    'vtwin/extra.sv': 'extra := point\n',
   };
   t.mock.method(globalThis, 'fetch', async (path: string | URL | Request) => {
     const key = String(path);
@@ -114,7 +114,7 @@ test('live directory listings discover files added after the static build', asyn
   const bundle = await remote.drawing('vtwin');
   assert.equal(bundle.files['vtwin/assembly.svd'], fresh['vtwin/assembly.svd']);
   assert.equal(bundle.files['vtwin/components/dims.sv'], fresh['vtwin/components/dims.sv']);
-  assert.equal(bundle.files['vtwin/extra.sv'], 'point extra\n');
+  assert.equal(bundle.files['vtwin/extra.sv'], 'extra := point\n');
 });
 
 test('file routes, old part links, and selected directory files resolve to the right source', async (t) => {

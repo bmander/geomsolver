@@ -23,14 +23,14 @@ fn solved(src: &str) -> (bool, i32, f64) {
 #[test]
 fn a_four_bar_with_its_crank_angle_stated_solves() {
     let (ok, it, res) = solved(
-        "point a hint(x: 0, y: 0)
-         point d hint(x: 60, y: 0)
-         point b hint(x: 8, y: 24)
-         point c hint(x: 52, y: 30)
-         line ground_link(a, d)
-         line crank(a, b)
-         line coupler(b, c)
-         line rocker(d, c)
+        "a := point hint(x: 0, y: 0)
+         d := point hint(x: 60, y: 0)
+         b := point hint(x: 8, y: 24)
+         c := point hint(x: 52, y: 30)
+         ground_link := line(a, d)
+         crank := line(a, b)
+         coupler := line(b, c)
+         rocker := line(d, c)
          a distance(25) b
          b distance(45) c
          d distance(30) c
@@ -48,11 +48,11 @@ fn a_four_bar_with_its_crank_angle_stated_solves() {
 fn an_angle_beside_lengths_solves_at_every_size() {
     for side in [1.0, 10.0, 40.0, 400.0, 4000.0] {
         let (ok, it, res) = solved(&format!(
-            "point o hint(x: 0, y: 0)
-             point a hint(x: {side}, y: 0)
-             point b hint(x: 0, y: {side})
-             line oa(o, a)
-             line ob(o, b)
+            "o := point hint(x: 0, y: 0)
+             a := point hint(x: {side}, y: 0)
+             b := point hint(x: 0, y: {side})
+             oa := line(o, a)
+             ob := line(o, b)
              horizontal oa
              o distance({side}) a
              o distance({side}) b
@@ -69,11 +69,11 @@ fn an_angle_beside_lengths_solves_at_every_size() {
 #[test]
 fn residuals_are_in_row_units() {
     let (prog, _) = gcs_core::syntax::parse(
-        "point o hint(x: 0, y: 0)
-         point a hint(x: 1000, y: 0)
-         point b hint(x: 0, y: 1000)
-         line oa(o, a)
-         line ob(o, b)
+        "o := point hint(x: 0, y: 0)
+         a := point hint(x: 1000, y: 0)
+         b := point hint(x: 0, y: 1000)
+         oa := line(o, a)
+         ob := line(o, b)
          o distance(1000) a
          oa angle(90) ob
          ground o",

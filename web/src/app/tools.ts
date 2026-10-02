@@ -276,7 +276,7 @@ export function toolClick(v: SketchView, sp: [number, number]): void {
     v.pending = [p];                            // continue the polyline
   } else if (v.tool === 'rect') {
     // a rectangle is a *component instance*: the gesture measures width and height, the
-    // document gains `rN: Rectangle(w: …, h: …)` — and the component itself, the first time —
+    // document gains `rN := Rectangle(w: …, h: …)` — and the component itself, the first time —
     // and the instance is then seeded where the gesture drew it.  The first click is a place,
     // not a point: the statement's only numbers are the two lengths.
     if (!v.pendingFit.length) {

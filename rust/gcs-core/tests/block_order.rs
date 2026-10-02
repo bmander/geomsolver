@@ -9,11 +9,11 @@ use crate::common::{build, ent};
 /// A chain of triangles off one grounded point: each new point is placed by two distances from
 /// the two before it, so each is a block of its own, solved after the ones it reads.
 const TRIANGLES: &str = "\
-point a hint(x: 0, y: 0)
-point b hint(x: 10, y: 1)
-point c hint(x: 5, y: 9)
-point d hint(x: 15, y: 8)
-point e hint(x: 20, y: 1)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 10, y: 1)
+c := point hint(x: 5, y: 9)
+d := point hint(x: 15, y: 8)
+e := point hint(x: 20, y: 1)
 ground a
 a distance(10) b
 a horizontal b
@@ -28,10 +28,10 @@ d distance(10) e
 /// Two cranks on grounded pivots joined by a level coupler: no point is placed before the other,
 /// so the four equations are one block.
 const LINKAGE: &str = "\
-point o1 hint(x: 0, y: 0)
-point o2 hint(x: 20, y: 0)
-point a hint(x: 2, y: 4)
-point b hint(x: 12, y: 5)
+o1 := point hint(x: 0, y: 0)
+o2 := point hint(x: 20, y: 0)
+a := point hint(x: 2, y: 4)
+b := point hint(x: 12, y: 5)
 ground o1
 ground o2
 o1 distance(5) a
@@ -87,7 +87,7 @@ fn a_closed_linkage_is_one_block() {
 /// redundant row reads, and every row those read, in the over-determined part.
 #[test]
 fn the_over_and_under_determined_parts_stand_apart() {
-    let src = format!("{TRIANGLES}point f hint(x: 30, y: 30)\na distance(10) b\n");
+    let src = format!("{TRIANGLES}f := point hint(x: 30, y: 30)\na distance(10) b\n");
     let e = build(&src);
     let mut sys = System::new(&e.sketch);
     let order = sys.block_order();

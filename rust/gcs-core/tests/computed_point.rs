@@ -1,7 +1,7 @@
 //! `port` is retired (issue #47, item 1): everything an instance makes is reached by its dotted
 //! name, so a port was a second name for a thing that already had one.  What survives is the
 //! one real construct the keyword carried — the computed point — written now as the
-//! declaration it is, `point p = (xexpr, yexpr)`, beside `point p hint(x: …)`.
+//! declaration it is, `p := point(x: xexpr, y: yexpr)`, beside `p := point hint(x: …)`.
 
 use gcs_core::program::elaborate;
 use gcs_core::syntax::{parse, write_stmt_to};
@@ -23,9 +23,9 @@ fn refuses(src: &str, needle: &str) {
 #[test]
 fn port_is_retired_and_says_what_to_write() {
     for form in ["port lo: point hint(x: 0, y: 0)", "port hub = c", "port p = (c.x, c.y)"] {
-        let src = format!("component H(c: point) {{\n  {form}\n}}\npoint o hint(x: 0, y: 0)\nh: H(o)\n");
+        let src = format!("component H(c: point) {{\n  {form}\n}}\no := point hint(x: 0, y: 0)\nh := H(o)\n");
         refuses(&src, "`port` is retired");
-        refuses(&src, "`point p = (x, y)`");
+        refuses(&src, "`p := point(x: …, y: …)`");
     }
 }
 
@@ -35,15 +35,15 @@ fn port_is_retired_and_says_what_to_write() {
 fn an_instances_entities_are_reached_by_dotted_name() {
     let src = "\
 component Rung(a: point, len: Length) {
-  point b hint(x: a.x + len, y: a.y)
-  line e(a, b)
+  b := point hint(x: a.x + len, y: a.y)
+  e := line(a, b)
   a distance(len) b
   repeat 2 as i {
-    point q hint(x: a.x, y: a.y + 10 * (i + 1))
+    q := point hint(x: a.x, y: a.y + 10 * (i + 1))
   }
 }
-point o hint(x: 0, y: 0)
-r: Rung(o, len: 30)
+o := point hint(x: 0, y: 0)
+r := Rung(o, len: 30)
 ground r.a
 horizontal r.e
 r.b distance(5) r.q[1]
@@ -64,8 +64,8 @@ r.b distance(5) r.q[1]
 /// a curve, and is refused on the sheet, on any kind but a point, and without a name.
 #[test]
 fn a_computed_point_is_a_declaration() {
-    let ray = "component Ray(c: point, u: Angle) {\n  point p = ( c.x + cos(u), c.y + sin(u) )\n}\n";
-    let src = format!("{ray}point o hint(x: 0, y: 0)\ncurve f = Ray(o).p over u in (0, 90)\nground o\n");
+    let ray = "component Ray(c: point, u: Angle) {\n  p := point(x: c.x + cos(u), y: c.y + sin(u))\n}\n";
+    let src = format!("{ray}o := point hint(x: 0, y: 0)\nf := Ray(o).p over u in (0, 90)\nground o\n");
     let (prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);
@@ -79,11 +79,11 @@ fn a_computed_point_is_a_declaration() {
         .expect("the component");
     let mut out = String::new();
     write_stmt_to(&mut out, &comp.body[0].kind).unwrap();
-    assert_eq!(out.split_whitespace().collect::<Vec<_>>().join(" "), "point p = (c.x + cos(u), c.y + sin(u))");
+    assert_eq!(out.split_whitespace().collect::<Vec<_>>().join(" "), "p := point(x: c.x + cos(u), y: c.y + sin(u))");
     // nothing on the sheet holds a point to a formula — neither written there nor drawn there
-    refuses("point o hint(x: 0, y: 0)\npoint p = (o.x + 1, o.y)\n", "computed point");
-    refuses(&format!("{ray}point o hint(x: 0, y: 0)\nr: Ray(o)\n"), "drawn only as a curve");
+    refuses("o := point hint(x: 0, y: 0)\np := point(x: o.x + 1, y: o.y)\n", "computed point");
+    refuses(&format!("{ray}o := point hint(x: 0, y: 0)\nr := Ray(o)\n"), "drawn only as a curve");
     // and the form is a point's alone
-    refuses("line l = (1, 2)\n", "only a point is computed");
-    refuses("point = (1, 2)\n", "a computed point is named");
+    refuses("p := point(x: 1)\n", "both `x:` and `y:`");
+    refuses("point(x: 1, y: 2)\n", "a computed point is named");
 }

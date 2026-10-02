@@ -391,27 +391,27 @@ fn nearly_parallel_views_place_nothing() {
 fn the_box_shows_the_object_and_not_its_features() {
     let src = "\
 unit mm
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 40)
-point d hint(x: 0, y: 40)
-line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 40)
+d := point hint(x: 0, y: 40)
+(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 horizontal ab
 vertical bc
 a distance(60) b
 a distance(40) d
 ground a
-face sec(ab, bc, cd, da)
-plane front(origin: a, toward: b)
-point o hint(x: 30, y: 20)
+sec := face(ab, bc, cd, da)
+front := plane(origin: a, toward: b)
+o := point hint(x: 30, y: 20)
 a distance(30, along: x) o
 a distance(20, along: y) o
-circle hole(center: o) hint(r: 8)
+hole := circle(center: o) hint(r: 8)
 radius(8) hole
-face hole_f(hole)
-solid stock(sec, depth: 30mm)
-solid bore(hole_f, depth: 30mm)
-solid body(stock)
+hole_f := face(hole)
+stock := solid(sec, depth: 30mm)
+bore := solid(hole_f, depth: 30mm)
+body := solid(stock)
 bore cut body
 ";
     let (prog, errs) = gcs_core::syntax::parse(src);

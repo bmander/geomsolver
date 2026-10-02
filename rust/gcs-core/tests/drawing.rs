@@ -2,12 +2,12 @@ use gcs_core::{drawing, program, solve, syntax};
 use std::collections::BTreeMap;
 
 const MODEL: &str = "unit mm
-point o hint(x: 0, y: 0)
+o := point hint(x: 0, y: 0)
 ground o
-circle rim(center: o) hint(r: 10)
-radius(r = 10mm) rim
-solid stock(face(rim), depth: 4mm)
-solid body(stock)
+rim := circle(center: o) hint(r: 10)
+radius(r := 10mm) rim
+stock := solid(face(rim), depth: 4mm)
+body := solid(stock)
 ";
 
 fn solved() -> program::Elaborated {
@@ -82,7 +82,7 @@ fn drawing_references_are_checked_and_cannot_be_model_statements() {
     ] {
         assert!(drawing::render(&drawing::parse(text).unwrap(), &models, None).is_err(), "{text}");
     }
-    for text in ["point p", "sheet s { point p }", "sheet s { scale 0 }",
+    for text in ["p := point", "sheet s { p := point }", "sheet s { scale 0 }",
         "sheet s { view a(m.body) at (NaN,0) }", "model m from \"unfinished",
         "sheet s { style .visible { color: red } }"] {
         assert!(drawing::parse(text).is_err(), "{text}");
@@ -92,7 +92,7 @@ fn drawing_references_are_checked_and_cannot_be_model_statements() {
 #[test]
 fn model_sources_refuse_presentation_but_keep_geometry_and_claims() {
     for extra in ["style .hidden { width: 2 }", "view(body) in front",
-        "point a class hidden", "solid extra(face(rim) class hidden, depth: 2mm)",
+        "a := point class hidden", "extra := solid(face(rim) class hidden, depth: 2mm)",
         "o distance(20) o at (1,2)"] {
         let (_, errs) = syntax::parse(&format!("{MODEL}\n{extra}"));
         assert!(errs.iter().any(|e| e.message.contains(".svd")), "{errs:?}");
@@ -108,7 +108,7 @@ fn named_dimensions_survive_statement_reordering() {
     let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &e.sketch, names: &e.map })]);
     let a = drawing::render(&doc, &models, None).unwrap();
     assert!(a.contains("<text"));
-    let text = MODEL.replace("radius(r = 10mm) rim\n", "") + "radius(r = 10mm) rim\n";
+    let text = MODEL.replace("radius(r := 10mm) rim\n", "") + "radius(r := 10mm) rim\n";
     let (p, errs) = syntax::parse(&text); assert!(errs.is_empty());
     let mut other = program::elaborate(&p);
     assert!(solve::solve(&mut other.sketch, solve::SolveOpts::default()).success);
@@ -139,10 +139,10 @@ fn host_loading_is_relative_cached_and_cycle_checked() {
 fn indexed_members_and_field_measurements_survive_reordering() {
     let model = "unit mm
 repeat 3 as i {
-  point p hint(x: i * 10, y: 0)
+  p := point hint(x: i * 10, y: 0)
   ground p
 }
-line bar(p[0], p[2])
+bar := line(p[0], p[2])
 ";
     let drawing = "model m from \"part.sv\" sheet s {
         sketch v(m) at (30mm,40mm)
@@ -152,12 +152,12 @@ line bar(p[0], p[2])
         &mut |_, _| Some(("part.sv".into(), text.into()))).unwrap();
     let a = render(model);
     assert!(a.contains(">20</text>"), "{a}");
-    assert_eq!(a, render(&("param unused = 7\n".to_string() + model)));
+    assert_eq!(a, render(&("unused := 7\n".to_string() + model)));
 }
 
 #[test]
 fn measurements_refuse_foreshortening_and_sections_check_the_cut_plane() {
-    let model = format!("{MODEL}point b hint(x: 0, y: 10)\nground b\n");
+    let model = format!("{MODEL}b := point hint(x: 0, y: 10)\nground b\n");
     let compile = |text: &str| drawing::compile(text, "drawing.svd", None,
         &mut |_, _| Some(("part.sv".into(), model.clone())));
     let err = compile("model m from \"part.sv\" sheet s {
@@ -188,7 +188,7 @@ fn styles_can_show_one_point_and_hide_selected_dimensions() {
 #[test]
 fn isometric_camera_matches_the_old_helper_plane_without_model_geometry() {
     let plain = solved();
-    let source = format!("{MODEL}\npoint iq hint(x: 1, y: 0)\nground iq\nplane iso(origin: o, toward: iq, u: (1, -1, 0), v: (1, 1, 2))");
+    let source = format!("{MODEL}\niq := point hint(x: 1, y: 0)\nground iq\niso := plane(origin: o, toward: iq, u: (1, -1, 0), v: (1, 1, 2))");
     let (p, errs) = syntax::parse(&source);
     assert!(errs.is_empty(), "{errs:?}");
     let mut with_helper = program::elaborate(&p);

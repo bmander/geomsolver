@@ -3,7 +3,7 @@
 //! Two base dimensions, because two is what the language has — a **length** and an **angle**.
 //! `*` and `/` derive them, `+` and `-` demand agreement, and the dimension an expression comes
 //! to is checked against the slot it is written in (spec §3.3).  It catches
-//! `distance(a, b) == 45deg`, `param x = w + phi`, and the involute formula's unstated radians.
+//! `distance(a, b) == 45deg`, `x := w + phi`, and the involute formula's unstated radians.
 //!
 //! **A bare number is dimensionless, and a *context* may take one.**  That is the whole of what
 //! "a document with no `unit` line is in drawing units" means: `distance(a, b) == 80` is a length
@@ -15,7 +15,7 @@
 //! A name is worth a *number*, and where that number is used decides what it is: `w = 80` in a
 //! `Length` slot does not make `w` a length, because the same 80 may be a run, a rise or an
 //! angle.  `w = 80mm` is how a person says otherwise, and *that* travels — as does a component
-//! formal's declared type, which is what catches `param x = w + phi`.
+//! formal's declared type, which is what catches `x := w + phi`.
 //!
 //! **Lengths cost the core nothing.**  Every kernel is already homogeneous in length: a residual
 //! is judged over `extent^degree`, "solved" is `max_relative_residual`, and rank is judged on
@@ -157,7 +157,7 @@ impl Dim {
 
     /// What two *operands* have in common.  **Strict**: `+` and `-` demand agreement, and a
     /// bare number does not quietly become an angle because it was added to one.  That is what
-    /// catches `param x = w + phi`, and what makes the involute formula's `tan(phi) * 180 / pi -
+    /// catches `x := w + phi`, and what makes the involute formula's `tan(phi) * 180 / pi -
     /// phi` say the radians it was silently working in — `tan(phi) * 1rad - phi`.
     ///
     /// The asymmetry with `fits` is deliberate and is the whole of the design.  A **context**

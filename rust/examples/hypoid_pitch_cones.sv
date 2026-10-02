@@ -20,44 +20,44 @@
 // solve both and find the same pair to 2e-11.
 
 unit mm
-param Ng = 48          // gear teeth
-param Np = 24          // pinion teeth
-param module = 4mm
-param Rg = Ng * module / 2
-param Rp = Np * module / 2
-param E = 20mm
+Ng := 48          // gear teeth
+Np := 24          // pinion teeth
+module := 4mm
+Rg := Ng * module / 2
+Rp := Np * module / 2
+E := 20mm
 
 // the pitch plane, and M on it
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane P(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+P := plane(origin: o, toward: t)
 ground o
 ground t
-point M hint(x: 0, y: 0) in P
+M := point hint(x: 0, y: 0) in P
 ground M
 
 // the gear's axial plane, square to P about its vertical axis; the pinion's, solved, through M
-point og hint(x: 0, y: 200)
-point tg hint(x: 40, y: 200)
-plane G(origin: og, toward: tg, from: P, fold: 90deg)
+og := point hint(x: 0, y: 200)
+tg := point hint(x: 40, y: 200)
+G := plane(origin: og, toward: tg, from: P, fold: 90deg)
 ground og
 ground tg
-point oq hint(x: 0, y: -200)
-point tq hint(x: 40, y: -200)
-plane Q(origin: oq, toward: tq, attitude: free, through: M) hint(u: (0.1618, -0.4935, -0.8546), v: (0.0918, 0.8698, -0.4847))
+oq := point hint(x: 0, y: -200)
+tq := point hint(x: 40, y: -200)
+Q := plane(origin: oq, toward: tq, attitude: free, through: M) hint(u: (0.1618, -0.4935, -0.8546), v: (0.0918, 0.8698, -0.4847))
 
 // each axis from its apex, drawn at a length that says nothing about the cone; the pinion's
 // drawn level in its view, which is where the view's own turn is held
-line gax(hint(x: 110.85, y: 200), hint(x: 50.85, y: 303.9)) in G
-line pax(hint(x: -84.62, y: -248), hint(x: -4.62, y: -248)) in Q
+gax := line(hint(x: 110.85, y: 200), hint(x: 50.85, y: 303.9)) in G
+pax := line(hint(x: -84.62, y: -248), hint(x: -4.62, y: -248)) in Q
 gax.p1 on P
 gax.p1 distance(120) gax.p2
 pax.p1 distance(80) pax.p2
 horizontal pax
 
 // the pitch cones: the gear's pitch angle, M on both, and the two touching there
-cone gc(axis: gax) hint(half: 60deg)
-cone pc(axis: pax) hint(half: 30deg)
+gc := cone(axis: gax) hint(half: 60deg)
+pc := cone(axis: pax) hint(half: 30deg)
 angle(60deg) gc
 M on gc
 M on pc

@@ -225,7 +225,11 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
             '(' => Tok::LParen,
             ')' => Tok::RParen,
             ',' => Tok::Comma,
-            '=' => Tok::Assign,
+            // `w := 60` — a dimension named where it is stated (§5)
+            ':' if chars.get(i) == Some(&'=') => {
+                i += 1;
+                Tok::Assign
+            }
             _ => return Err(format!("unexpected `{c}` at {}", at + 1)),
         };
         out.push((t, at));
@@ -399,7 +403,7 @@ impl Parser {
     }
 }
 
-/// Parse `name = body` or `body`.  A syntax error, an unknown function, a wrong arity, or a
+/// Parse `name := body` or `body`.  A syntax error, an unknown function, a wrong arity, or a
 /// definition of a built-in name is an `Err`; a name nothing defines is not — that is the
 /// document's business, not the text's.
 /// Parse in **drawing units**: a document that names none, where a unit suffix is an error.
@@ -439,7 +443,7 @@ fn tok_text(t: &Tok) -> String {
         Tok::LParen => "(".to_string(),
         Tok::RParen => ")".to_string(),
         Tok::Comma => ",".to_string(),
-        Tok::Assign => "=".to_string(),
+        Tok::Assign => ":=".to_string(),
         Tok::End => "end".to_string(),
     }
 }

@@ -54,27 +54,27 @@ function viewOn(sk: Sketch): SketchView {
   return view;
 }
 
-const PROJECTED_CIRCLE = 'point o\npoint q hint(x: 10)\nplane front(origin: o, toward: q)\n'
-  + 'circle rim(center: o) hint(r: 10)\nsolid body(face(rim), depth: 8)\n';
+const PROJECTED_CIRCLE = 'o := point\nq := point hint(x: 10)\nfront := plane(origin: o, toward: q)\n'
+  + 'rim := circle(center: o) hint(r: 10)\nbody := solid(face(rim), depth: 8)\n';
 
 test('project file navigation isolates undo and clears pending model interactions', (t) => {
-  const v = new SketchView(fakeCanvas(), Document.read('point a hint(x: 10)\n'));
+  const v = new SketchView(fakeCanvas(), Document.read('a := point hint(x: 10)\n'));
   t.after(() => { v.derived.clear(); v.doc.dispose(); });
   v.pushUndo();
-  v.setProgram('point a hint(x: 20)\n');
+  v.setProgram('a := point hint(x: 20)\n');
   v.setTool('line');
   v.pending = [v.sketch.points[0]];
   v.pauseEditing();
   assert.equal(v.pending.length, 0);
   let loads = 0;
   v.onLoad = () => { loads++; };
-  const other = 'point b hint(x: 30)\n';
+  const other = 'b := point hint(x: 30)\n';
   assert.equal(v.openProjectFile(other), true);
   assert.equal(loads, 0, 'switching files must not reset the containing project');
   v.undo();
   assert.equal(v.source, other, 'undo cannot restore another file into this one');
   v.pushUndo();
-  v.setProgram('point b hint(x: 40)\n');
+  v.setProgram('b := point hint(x: 40)\n');
   v.undo();
   assert.equal(v.source, other, 'edits within the new file remain undoable');
 });
@@ -154,7 +154,7 @@ test('display detail bands keep camera fitting from triggering another projectio
 
 test('loading a solid replaces the previous camera zoom before requesting a projection', (t) => {
   t.mock.method(globalThis, 'requestAnimationFrame', () => 1);
-  const v = new SketchView(fakeCanvas(), Document.read('point p hint(x: 0, y: 0)'));
+  const v = new SketchView(fakeCanvas(), Document.read('p := point hint(x: 0, y: 0)'));
   t.after(() => { v.derived.clear(); v.doc.dispose(); });
   v.cam.scale = 1e9;  // A close-up of the document being replaced.
   const requested: number[] = [];
@@ -217,7 +217,7 @@ test('derived pictures follow geometry changes immediately and cancel pending re
 
   v.cam.zoomAt(400, 300, 2);
   v.derived.read(v.sketch, v.unit);
-  v.setProgram('point p\n', false);
+  v.setProgram('p := point\n', false);
   t.mock.timers.tick(1000);
   assert.deepEqual(v.derived.read(v.sketch, v.unit), [], 'no disposed sketch survives a load');
   v.derived.clear();
@@ -225,7 +225,7 @@ test('derived pictures follow geometry changes immediately and cancel pending re
 });
 
 test('changing a solid depth refreshes its projection even when no coordinate changes', () => {
-  const src = PROJECTED_CIRCLE + 'plane side(origin: o, toward: q, from: front, fold: -90deg)\n';
+  const src = PROJECTED_CIRCLE + 'side := plane(origin: o, toward: q, from: front, fold: -90deg)\n';
   const v = new SketchView(fakeCanvas(), Document.read(src));
   assert.ok(v.doc.ok, JSON.stringify(v.doc.diagnostics));
   v.autoSolve = false;
@@ -243,8 +243,8 @@ test('changing a solid depth refreshes its projection even when no coordinate ch
 });
 
 test('dragging a constrained figure does not redraw unrelated solid projections', () => {
-  const src = PROJECTED_CIRCLE + 'point a hint(x: 2, y: 2)\npoint b hint(x: 4, y: 2)\n'
-    + 'horizontal line bar(a, b)\nground a\n';
+  const src = PROJECTED_CIRCLE + 'a := point hint(x: 2, y: 2)\nb := point hint(x: 4, y: 2)\n'
+    + 'bar := horizontal line(a, b)\nground a\n';
   const v = new SketchView(fakeCanvas(), Document.read(src));
   assert.ok(v.doc.ok, JSON.stringify(v.doc.diagnostics));
   v.autoSolve = false;
@@ -529,7 +529,7 @@ test('re-placing puts a dragged callout back', () => {
   const points = view.sketch.points.length;
   view.undo();
   assert.equal(view.sketch.points.length, points, 'undo kept the drawing');
-  assert.ok(view.source.startsWith('point'), 'undo restored the source, not a dump');
+  assert.ok(/^\w+ := point/.test(view.source), 'undo restored the source, not a dump');
 });
 
 /* -- copy and paste -------------------------------------------------------------------- */
@@ -813,7 +813,7 @@ test('a dimension being written is one edit, and Escape takes all of it back', (
   // program text like every other, and a serialised sketch fed to `Document.read` would come
   // back as an empty document rather than as a refusal
   assert.equal(view.sketch.points.length, points, 'undo kept the drawing');
-  assert.ok(view.source.startsWith('point'), `undo restored the source, not a dump: ${view.source.slice(0, 40)}`);
+  assert.ok(/^\w+ := point/.test(view.source), `undo restored the source, not a dump: ${view.source.slice(0, 40)}`);
 });
 
 test('a click plants the number, and the pointer stops carrying it', () => {
@@ -970,9 +970,9 @@ test('picking measures what is drawn, and does it in the core', () => {
 
 const ANNOTATED = `\
 // a base, and this comment must survive every gesture
-point a hint(x: 0, y: 0)
-point b hint(x: 100, y: 0)
-line ab(a, b)      // the base
+a := point hint(x: 0, y: 0)
+b := point hint(x: 100, y: 0)
+ab := line(a, b)      // the base
 horizontal ab
 ground a
 `;
@@ -998,7 +998,7 @@ test('a gesture is a source edit, and leaves everything else written', () => {
   for (const line of ANNOTATED.split('\n').filter((l) => l.trim())) {
     assert.ok(view.source.includes(line), `the gesture rewrote: ${line}\n${view.source}`);
   }
-  assert.ok(/\nline\s+l0\(p0, p1\)/.test(view.source), view.source);
+  assert.ok(/\nl0 := line\(p0, p1\)/.test(view.source), view.source);
   // and the source is a document: reading it back gives the same drawing
   const again = Document.read(view.source);
   assert.equal(io.dumps(again.sketch, 1), io.dumps(view.sketch, 1));
@@ -1022,17 +1022,17 @@ test('a drag writes its seeds back, once, and nothing else', () => {
   assert.equal(view.sketch, sketchDuring, 'a drag must not re-elaborate the drawing');
   assert.equal(wrote, 1, 'a drag is one edit');
   assert.ok(view.source.includes('// a base, and this comment must survive every gesture'));
-  assert.ok(view.source.includes('line ab(a, b)      // the base'));
-  assert.ok(!view.source.includes('point b hint(x: 100, y: 0)'), `the seed did not move:\n${view.source}`);
-  assert.ok(/point b hint\(/.test(view.source), 'and it is still a seed');
+  assert.ok(view.source.includes('ab := line(a, b)      // the base'));
+  assert.ok(!view.source.includes('b := point hint(x: 100, y: 0)'), `the seed did not move:\n${view.source}`);
+  assert.ok(/b := point hint\(/.test(view.source), 'and it is still a seed');
 });
 
 test('deleting takes the statements that named it, and leaves the comments', () => {
   const view = docView(ANNOTATED);
   view.selected = [view.sketch.points[1]];
   view.deleteSelected();
-  assert.ok(!view.source.includes('point b at'), view.source);
-  assert.ok(!view.source.includes('line ab'), 'the line that named it went too');
+  assert.ok(!view.source.includes('b := point'), view.source);
+  assert.ok(!view.source.includes('ab := line'), 'the line that named it went too');
   assert.ok(!view.source.includes('horizontal ab'), 'and the constraint on that line');
   assert.ok(view.source.includes('// a base, and this comment must survive every gesture'));
   assert.ok(view.source.includes('ground a'));
@@ -1061,8 +1061,8 @@ test('a gesture beside a component leaves the component written', () => {
   assert.ok(view.source.includes('component Involute(c: circle, phase: Angle, u: Angle) {'));
   assert.ok(view.source.includes('component Flank('));
   assert.ok(view.source.includes('cycle N as i {'));
-  assert.ok(view.source.includes('g: Gear(N: 30, m: 3, phi: 25, ded: 1)'));
-  assert.ok(/point\s+p0 hint\(x: 200, y: 0\)/.test(view.source), view.source);
+  assert.ok(view.source.includes('g := Gear(N: 30, m: 3, phi: 25, ded: 1)'));
+  assert.ok(/p0 := point hint\(x: 200, y: 0\)/.test(view.source), view.source);
 });
 
 
@@ -1075,12 +1075,12 @@ test('a gesture beside a component leaves the component written', () => {
  * does, and a projection the core refuses leaves nothing behind. */
 
 const VIEWS = `\
-point o hint(x: 0, y: 0)
-point q hint(x: 40, y: 0)
-point o2 hint(x: 0, y: 80)
-point q2 hint(x: 40, y: 80)
-plane front(origin: o, toward: q)
-plane top(origin: o2, toward: q2, from: front, fold: 0deg)
+o := point hint(x: 0, y: 0)
+q := point hint(x: 40, y: 0)
+o2 := point hint(x: 0, y: 80)
+q2 := point hint(x: 40, y: 80)
+front := plane(origin: o, toward: q)
+top := plane(origin: o2, toward: q2, from: front, fold: 0deg)
 ground o
 ground q
 ground o2
@@ -1117,22 +1117,22 @@ test('the current plane flows into a fresh point, and a snapped point stays wher
 
   view.setTool('point');
   click(view, 20, 10);
-  assert.ok(/point\s+p0 hint\(x: 20, y: 10\) in front/.test(view.source), view.source);
+  assert.ok(/p0 := point hint\(x: 20, y: 10\) in front/.test(view.source), view.source);
   assert.equal(pointNamed(view, 'p0').plane, front);
   // a click on the page's own datum snaps to it and does not pull it into the view
   click(view, 0, 0);
   assert.equal(view.sketch.points.length, 5, 'the click snapped rather than minting');
-  assert.ok(view.source.includes('point o hint(x: 0, y: 0)\n'), view.source);
+  assert.ok(view.source.includes('o := point hint(x: 0, y: 0)\n'), view.source);
   assert.equal(pointNamed(view, 'o').plane, null);
   // and back on the page, the next point carries no clause
   view.drawOnPage();
   click(view, 25, 15);
-  assert.ok(/point\s+p1 hint\(x: 25, y: 15\)\n/.test(view.source), view.source);
+  assert.ok(/p1 := point hint\(x: 25, y: 15\)\n/.test(view.source), view.source);
 });
 
 test('a projection is one constraint, and the source says `project`', () => {
-  const view = docView(`${VIEWS}point a in front hint(x: 10, y: 5)\n`
-                       + 'point b in top hint(x: 10, y: 100)\n');
+  const view = docView(`${VIEWS}a := point in front hint(x: 10, y: 5)\n`
+                       + 'b := point in top hint(x: 10, y: 100)\n');
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.addConstraints(new C.Project(pointNamed(view, 'a'), pointNamed(view, 'b')));
   const cs = view.sketch.userConstraints();
@@ -1146,8 +1146,8 @@ test('a projection is one constraint, and the source says `project`', () => {
 });
 
 test('a refused projection changes nothing, says why, and leaves nothing to undo', () => {
-  const view = docView(`${VIEWS}point a in front hint(x: 10, y: 5)\n`
-                       + 'point b in front hint(x: 20, y: 5)\npoint c hint(x: 30, y: 30)\n');
+  const view = docView(`${VIEWS}a := point in front hint(x: 10, y: 5)\n`
+                       + 'b := point in front hint(x: 20, y: 5)\nc := point hint(x: 30, y: 30)\n');
   const said: string[] = [];
   view.onStatus = (m) => said.push(m);
   const before = view.source;
@@ -1166,7 +1166,7 @@ test('the current plane survives an edit, goes with its deletion, and is dropped
   // a projection into the view about to go: its statement never names the plane, so whether
   // it goes too is the model's to say — through the live sketch, which the elaboration's
   // own was taken out into
-  const view = docView(`${VIEWS}point a hint(x: 5, y: 5) in front\npoint b hint(x: 5, y: 85) in top\na project b\n`);
+  const view = docView(`${VIEWS}a := point hint(x: 5, y: 5) in front\nb := point hint(x: 5, y: 85) in top\na project b\n`);
   view.plane = planeNamed(view, 'top');
   // a structural edit re-elaborates the drawing: the plane comes across by name
   assert.ok(view.apply(view.doc.addPoint(1, 2)));
@@ -1177,10 +1177,10 @@ test('the current plane survives an edit, goes with its deletion, and is dropped
   view.selected = [view.plane];
   view.deleteSelected();
   assert.equal(view.plane, null);
-  assert.ok(!view.source.includes('plane top'), view.source);
+  assert.ok(!view.source.includes('top := plane'), view.source);
   assert.ok(view.source.includes('ground o2'), 'its points stay');
   assert.ok(!view.source.includes('project'), `the projection went with it: ${view.source}`);
-  assert.ok(view.source.includes('point b hint(x: 5, y: 85)\n'), `the clause came out: ${view.source}`);
+  assert.ok(view.source.includes('b := point hint(x: 5, y: 85)\n'), `the clause came out: ${view.source}`);
   assert.equal(view.sketch.userConstraints().length, 0);
   // and a load is another drawing's, whatever it happens to call things
   view.plane = planeNamed(view, 'front');
@@ -1204,7 +1204,7 @@ test('the plane tool writes the statement, seeds its points, and makes it curren
   assert.deepEqual(aux.toward.xy, [100, 0]);
   // one statement, its attitude kept and its two points seeded in the one list — seeded *in
   // the statement*, so the frame was read off the chord that was clicked
-  const line = view.source.split('\n').find((l) => /^plane\s+aux\(/.test(l));
+  const line = view.source.split('\n').find((l) => /^aux := plane\(/.test(l));
   assert.ok(line, view.source);
   assert.ok(line.includes('origin: hint(x: 60, y: 0)'), line);
   assert.ok(line.includes('toward: hint(x: 100, y: 0)'), line);
@@ -1224,7 +1224,7 @@ test('three views land where the table puts them, and stay there through the sol
   // auto-solve on: what this guards is the *solve* after the edit.  A plane is a frame whose
   // rotor and chord length are read off the chord at elaboration, so a pose written into the
   // points afterwards left both stale and the solve collapsed `toward` onto `origin`
-  const view = new SketchView(fakeCanvas(), Document.read('point o hint(x: 0, y: 0)\nground o\n'));
+  const view = new SketchView(fakeCanvas(), Document.read('o := point hint(x: 0, y: 0)\nground o\n'));
   assert.ok(threeViews(view));
   const at = (name: string, x: number, y: number): void => {
     const p = pointNamed(view, name);
@@ -1243,7 +1243,7 @@ test('three views land where the table puts them, and stay there through the sol
   assert.ok(view.lastResult?.success, 'the layout solved');
   assert.equal(view.plane, planeNamed(view, 'front'), 'drawing in the front');
   // one edit: the three statements, their seeds, and the five relations, all written
-  assert.ok(view.source.includes('plane   right(origin: hint(x: 120, y: 0), toward: hint(x: 120, '
+  assert.ok(view.source.includes('right := plane(origin: hint(x: 120, y: 0), toward: hint(x: 120, '
                                  + 'y: -40), from: front, fold: -90deg)'), view.source);
   assert.ok(view.source.includes('front.origin vertical top.origin'), view.source);
   const kinds = view.sketch.userConstraints().map((c) => c.typeName).sort();
@@ -1537,12 +1537,12 @@ test('drawing on the page stays on the page across a re-elaboration', () => {
 
 /** Two views with one edge of an object drawn in each, tied corner to corner — the least a box
  *  can be folded from. */
-const BOXED = `${VIEWS}point af in front hint(x: 10, y: 10)
-point bf in front hint(x: 30, y: 20)
-point a2 in top hint(x: 10, y: 100)
-point b2 in top hint(x: 30, y: 100)
-line lf(af, bf)
-line lt(a2, b2)
+const BOXED = `${VIEWS}af := point in front hint(x: 10, y: 10)
+bf := point in front hint(x: 30, y: 20)
+a2 := point in top hint(x: 10, y: 100)
+b2 := point in top hint(x: 30, y: 100)
+lf := line(af, bf)
+lt := line(a2, b2)
 af project a2
 bf project b2
 `;
@@ -1585,7 +1585,7 @@ test('the overview is view state, so it outlives the document it was opened on',
   // the drawing is read-only in the box but the *source* is not: typing in the program panel
   // re-elaborates the drawing under it, and the mode has to survive that swap
   const n = view.sketch.points.length;
-  view.setProgram(`${BOXED}point extra hint(x: 1, y: 2)\n`);
+  view.setProgram(`${BOXED}extra := point hint(x: 1, y: 2)\n`);
   assert.equal(view.sketch.points.length, n + 1, 'a structural edit re-elaborates the drawing');
   assert.equal(view.overview, true, 'the mode survived the swap');
   assert.deepEqual(view.orbit, orbit, 'and so did the orbit');
@@ -1624,7 +1624,7 @@ test('a new document is one undo step, and takes nothing in flight with it', () 
 
 test('the box exists only where there are views', () => {
   // a drawing with no plane has nothing to fold: ⌘B stays on the sheet and says why
-  const view = docView('point p hint(x: 0, y: 0)\nground p\n');
+  const view = docView('p := point hint(x: 0, y: 0)\nground p\n');
   let said = '';
   view.onStatus = (s) => { said = s; };
   view.setOverview(true);
@@ -1633,7 +1633,7 @@ test('the box exists only where there are views', () => {
   // and File ▸ New from inside the box comes back to the sheet, where the tools work — left in
   // the box, a plane-less document is a tilted empty sheet on which every click does nothing
   const boxedView = boxed();
-  boxedView.setProgram('point p hint(x: 0, y: 0)\nground p\n');
+  boxedView.setProgram('p := point hint(x: 0, y: 0)\nground p\n');
   assert.equal(boxedView.overview, false, 'a document with no plane has no box');
   boxedView.setTool('point');
   const n = boxedView.sketch.points.length;

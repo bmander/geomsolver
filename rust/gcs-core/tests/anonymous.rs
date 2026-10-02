@@ -54,13 +54,13 @@ fn every_anonymous_form_declares() {
     assert_eq!(e.sketch.points.len(), 1);
     assert_eq!(e.sketch.point_xy(0), (3.0, 4.0), "the clause still seeds it");
 
-    let e = read("point o hint(x: 0, y: 0)\ncircle(center: o) hint(r: 25)\n");
+    let e = read("o := point hint(x: 0, y: 0)\ncircle(center: o) hint(r: 25)\n");
     assert_eq!(e.sketch.circles.len(), 1);
     let rp = e.sketch.circles[0].radius as usize;
     assert_eq!(e.sketch.params[rp].value, 25.0);
 
     // the children list without a name, over names declared further down
-    let e = read("line(p1, p2)\npoint p1 hint(x: 0, y: 0)\npoint p2 hint(x: 8, y: 0)\n");
+    let e = read("line(p1, p2)\np1 := point hint(x: 0, y: 0)\np2 := point hint(x: 8, y: 0)\n");
     assert_eq!((e.sketch.points.len(), e.sketch.lines.len()), (2, 1));
 
     // and a class, which is a trailing-clause word and so can no longer be a name
@@ -102,14 +102,14 @@ fn the_retired_spelling_errors_without_a_name() {
     refuses("point at (0, 0)\n", "a coordinate seed is keyed now: `point hint(x: …, y: …)`");
 }
 
-/// `curve` keeps requiring a name: its form is `curve name = family(…)`, and the name is what
-/// the contact constraints address.
+/// A curve is the value of a definition, `k := leg.toe over u in (a, b)`, and the name is what
+/// the contact constraints address: the keyword alone declares nothing.
 #[test]
 fn a_curve_still_requires_a_name() {
-    refuses("curve = involute(c)\n", "expected a name");
+    refuses("curve\n", "a curve is `name := instance.point over formal in (a, b)`");
 }
 
-/// A solve writes an anonymous element's pose back the way it writes `line l`'s: the argument
+/// A solve writes an anonymous element's pose back the way it writes `l := line`'s: the argument
 /// list and the `hint(…)` clause the source never wrote, spliced after the keyword, and the
 /// statement is still anonymous afterwards.
 #[test]
@@ -141,7 +141,7 @@ fn a_constraint_from_the_drawing_mints_a_name() {
     let edit = reconciled(&mut e);
     assert_eq!(edit.kind, Kind::Structural);
     // the declaration gained its name — and, reconcile committing the seeds too, its pose
-    assert!(edit.text.contains("line l0("), "the declaration gained its name:\n{}", edit.text);
+    assert!(edit.text.contains("l0 := line("), "the declaration gained its name:\n{}", edit.text);
     assert!(edit.text.contains("horizontal l0"), "{}", edit.text);
     assert!(edit.text.contains("point hint(x: 40, y: 40)"), "the unreferenced point stays");
     let back = read(&edit.text);
@@ -159,7 +159,7 @@ fn a_dimension_on_anonymous_endpoints_mints_the_parent() {
     let kids = e.sketch.children(EntRef::line(0));
     e.sketch.add(Constraint::distance(kids[0], kids[1], 80.0));
     let edit = reconciled(&mut e);
-    assert!(edit.text.contains("line l0("), "{}", edit.text);
+    assert!(edit.text.contains("l0 := line("), "{}", edit.text);
     assert!(edit.text.contains("l0.p1 distance(80) l0.p2"), "{}", edit.text);
     let back = read(&edit.text);
     assert_eq!(back.sketch.user_constraints().len(), 1);
@@ -173,13 +173,13 @@ fn a_dimension_on_anonymous_endpoints_mints_the_parent() {
 /// two halves apart.
 #[test]
 fn a_mint_names_a_child_by_the_slot_it_sits_in() {
-    let src = "point c hint(x: 0, y: 0)\npoint s hint(x: 10, y: 0)\narc(center: c, start: s)\n";
+    let src = "c := point hint(x: 0, y: 0)\ns := point hint(x: 10, y: 0)\narc(center: c, start: s)\n";
     let mut e = read(src);
     let kids = e.sketch.children(EntRef::arc(0));
     assert_eq!(kids[0], EntRef::point(0), "the named slots are the points that were declared");
     e.sketch.add(Constraint::distance(EntRef::point(0), kids[2], 80.0));
     let edit = reconciled(&mut e);
-    assert!(edit.text.contains("arc a0("), "{}", edit.text);
+    assert!(edit.text.contains("a0 := arc("), "{}", edit.text);
     assert!(edit.text.contains("c distance(80) a0.end"), "{}", edit.text);
     let back = read(&edit.text);
     assert_eq!(back.sketch.user_constraints().len(), 1);
@@ -194,7 +194,7 @@ fn a_mint_names_one_link_and_leaves_the_chain_threaded() {
     let mut e = read("line -> tangent arc -> tangent line\n");
     e.sketch.add(Constraint::one_line(CKind::Horizontal, EntRef::line(0)));
     let edit = reconciled(&mut e);
-    assert!(edit.text.contains("line l0("), "{}", edit.text);
+    assert!(edit.text.starts_with("(l0 := line("), "{}", edit.text);
     assert!(edit.text.contains("horizontal l0"), "{}", edit.text);
     assert!(!edit.text.contains('#'), "no hidden name reaches the source:\n{}", edit.text);
     let back = read(&edit.text);
@@ -208,7 +208,7 @@ fn a_fixed_anonymous_point_is_named_for_its_gauge() {
     let mut e = read("point hint(x: 3, y: 4)\n");
     e.sketch.fix_point(0, true);
     let edit = reconciled(&mut e);
-    assert!(edit.text.contains("point p0 hint(x: 3, y: 4)"), "{}", edit.text);
+    assert!(edit.text.contains("p0 := point hint(x: 3, y: 4)"), "{}", edit.text);
     assert!(edit.text.contains("ground p0"), "{}", edit.text);
     let back = read(&edit.text);
     assert!(back.sketch.point_fixed(0));
@@ -265,7 +265,7 @@ fn a_second_gesture_after_a_mint_still_writes() {
 /// the rename follows the dotted path, which is the stable half, and never compares offsets.
 #[test]
 fn a_mint_survives_offsets_an_earlier_edit_moved() {
-    let mut e = read("point q hint(x: 1, y: 2)\nline\n");
+    let mut e = read("q := point hint(x: 1, y: 2)\nline\n");
     let [px, py] = e.sketch.point_params(0);
     e.sketch.params[px as usize].value = 17.25;
     e.sketch.params[py as usize].value = -3.5;
@@ -286,7 +286,7 @@ fn a_mint_survives_offsets_an_earlier_edit_moved() {
 /// parse it back.
 #[test]
 fn a_gesture_on_a_component_made_anonymous_element_says_why_it_is_refused() {
-    let mut e = read("component Strut() {\n  line\n}\ns1: Strut()\n");
+    let mut e = read("component Strut() {\n  line\n}\ns1 := Strut()\n");
     e.sketch.add(Constraint::one_line(CKind::Horizontal, EntRef::line(0)));
     let edit = reconciled(&mut e);
     assert_eq!(edit.kind, Kind::None);
@@ -301,8 +301,8 @@ fn a_gesture_on_a_component_made_anonymous_element_says_why_it_is_refused() {
 #[test]
 fn an_instance_prefix_is_writable_and_a_block_prefix_is_not() {
     let e = read(
-        "component Strut() {\n  point p hint(x: 1, y: 0)\n}\ns1: Strut()\n\
-         cycle 2 {\n  point q hint(x: 0, y: 0)\n}\n",
+        "component Strut() {\n  p := point hint(x: 1, y: 0)\n}\ns1 := Strut()\n\
+         cycle 2 {\n  q := point hint(x: 0, y: 0)\n}\n",
     );
     // the instance's: the source can say `s1.p`, so all three questions answer yes
     let inst = EntRef::point(0);
@@ -325,7 +325,7 @@ fn an_instance_prefix_is_writable_and_a_block_prefix_is_not() {
 /// the prefix out and come back with `adopt`'s generic "could not be written down".
 #[test]
 fn a_gesture_on_one_copy_of_a_block_says_why_it_is_refused() {
-    let mut e = read("point q hint(x: 5, y: 5)\ncycle 2 {\n  point p hint(x: 0, y: 0)\n}\n");
+    let mut e = read("q := point hint(x: 5, y: 5)\ncycle 2 {\n  p := point hint(x: 0, y: 0)\n}\n");
     assert_eq!(e.map.name_of(EntRef::point(1)).map(String::as_str), Some("#3.0.p"));
     e.sketch.add(Constraint::distance(EntRef::point(0), EntRef::point(1), 80.0));
     let edit = reconciled(&mut e);
@@ -336,23 +336,21 @@ fn a_gesture_on_one_copy_of_a_block_says_why_it_is_refused() {
     assert!(!edit.text.contains('#'), "and nothing was written:\n{}", edit.text);
 }
 
-/// A reserved word written where a name would go is very possibly a name somebody meant, so a
-/// line that then fails to parse says the reservation — beside the failure, never on a line
-/// that parses (`line tangent arc` is a chain).
+/// The name stands before `:=`, so no word after an element keyword is ever read as one: a chain
+/// of anonymous links parses, and a reserved word written as a name is refused where it stands.
 #[test]
-fn a_reserved_word_meant_as_a_name_is_said_so() {
-    refuses("point tangent hint(x: 0, y: 0)\n", "cannot be a declaration's name");
-    refuses("point close hint(x: 0, y: 0)\n", "cannot be a declaration's name");
+fn a_name_stands_before_its_definition() {
     let (_, errs) = parse("line -> tangent arc -> tangent line\n");
-    assert!(errs.is_empty(), "a chain that parses gets no note: {errs:?}");
+    assert!(errs.is_empty(), "{errs:?}");
+    refuses("point tangent hint(x: 0, y: 0)\n", "more on this line");
 }
 
 /// Deletion never needed the name: the statement goes by its site.
 #[test]
 fn deleting_an_anonymous_element_takes_its_statement() {
-    let e = read("line\npoint a hint(x: 1, y: 2)\n");
+    let e = read("line\na := point hint(x: 1, y: 2)\n");
     let d = edit::remove(&e, &e.program, &e.sketch, &[EntRef::line(0)], &[]);
-    assert_eq!(d.text, "point a hint(x: 1, y: 2)\n");
+    assert_eq!(d.text, "a := point hint(x: 1, y: 2)\n");
 }
 
 /// **Names in the sketch are display; names in the map are identity.**  A parameter carries its
@@ -361,7 +359,7 @@ fn deleting_an_anonymous_element_takes_its_statement() {
 /// by, which is not a thing to show anybody.
 #[test]
 fn the_sketch_shows_a_name_and_never_the_key() {
-    let e = read("point a hint(x: 1, y: 2)\nline\ncircle\n");
+    let e = read("a := point hint(x: 1, y: 2)\nline\ncircle\n");
     for p in &e.sketch.params {
         assert!(!p.name.contains('#'), "a key reached a parameter: {}", p.name);
     }
@@ -372,14 +370,14 @@ fn the_sketch_shows_a_name_and_never_the_key() {
     // the map keeps the key all the same — that is what a chain's corner welds by — but files
     // it under *resolution* and never as a name, so nothing that reads what an entity is called
     // has to screen it out (issue #39)
-    let key = format!("#a{}", "point a hint(x: 1, y: 2)\nline".len());
+    let key = format!("#a{}", "a := point hint(x: 1, y: 2)\nline".len());
     assert_eq!(e.map.ent_named(&key), Some(EntRef::line(0)), "the key still resolves");
     assert_eq!(e.map.name_of(EntRef::line(0)), None, "and the source calls it nothing");
     assert!(e.map.names.values().flatten().all(|n| !n.starts_with("#a")), "a key was filed");
 
     // and a *block prefix* is not an anonymous name: the flattener wrote it, it says which
     // instance the thing belongs to, and it is shown as it always has been
-    let e = read("point o hint(x: 0, y: 0)\nground o\ncycle 3 as i {\n  point p hint(x: 1, y: 0)\n}\n");
+    let e = read("o := point hint(x: 0, y: 0)\nground o\ncycle 3 as i {\n  p := point hint(x: 1, y: 0)\n}\n");
     let names: Vec<&str> = e.sketch.params.iter().map(|p| p.name.as_str()).collect();
     assert!(names.iter().any(|n| n.ends_with(".0.p.x")), "the instance path stands: {names:?}");
 }
@@ -389,13 +387,13 @@ fn the_sketch_shows_a_name_and_never_the_key() {
 #[test]
 fn a_trace_block_diagnostic_never_says_the_hidden_key() {
     let src = "\
-point o hint(x: 0, y: 0)
-circle c(center: o) hint(r: 10)
+o := point hint(x: 0, y: 0)
+c := circle(center: o) hint(r: 10)
 component fam(c: circle, u: Angle) {
-  point p hint(x: 1, y: 0)
+  p := point hint(x: 1, y: 0)
   line
 }
-curve w = fam(c).p over u in (0, 1)
+w := fam(c).p over u in (0, 1)
 ";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
@@ -411,6 +409,6 @@ curve w = fam(c).p over u in (0, 1)
 /// other — the instances do not collide.
 #[test]
 fn an_anonymous_declaration_in_a_component_instances_cleanly() {
-    let e = read("component Strut() {\n  line\n}\ns1: Strut()\ns2: Strut()\n");
+    let e = read("component Strut() {\n  line\n}\ns1 := Strut()\ns2 := Strut()\n");
     assert_eq!((e.sketch.points.len(), e.sketch.lines.len()), (4, 2));
 }

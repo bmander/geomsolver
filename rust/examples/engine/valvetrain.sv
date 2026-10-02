@@ -9,17 +9,17 @@ use engine.parts
 // A tangent cam about `c`, its nose `dn` out at `phi` from the line `ref`, measured
 // counter-clockwise: the base circle, the nose circle and the two flanks tangent to both.
 component Lobe(c: point, ref: line, phi: Angle, dn: Length, dims: group) {
-  circle base(center: c) hint(r: dims.rb)
+  base := circle(center: c) hint(r: dims.rb)
   radius(dims.rb) base
-  point n hint(x: c.x + dn * cos(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)),
+  n := point hint(x: c.x + dn * cos(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)),
                y: c.y + dn * sin(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)))
-  line spine(c, n)
+  spine := line(c, n)
   c distance(dn) n
   ref angle(phi) spine
-  circle nose(center: n) hint(r: dims.rn)
+  nose := circle(center: n) hint(r: dims.rn)
   radius(dims.rn) nose
-  fl: Span(base, nose, side: 1)
-  fr: Span(base, nose, side: -1)
+  fl := Span(base, nose, side: 1)
+  fr := Span(base, nose, side: -1)
 }
 
 // A valve on the axis from its seat centre `seat` toward the cam centre at `axis.p2`, lifted
@@ -28,33 +28,33 @@ component Lobe(c: point, ref: line, phi: Angle, dn: Length, dims: group) {
 // is tangent to whichever of base circle, flank or nose is under it, without saying which.
 component Valve(seat: point, axis: line, lift: Length, head: Length, dims: group) {
   // the follower face: on the axis and square to it, `rb + lift` short of the cam's centre
-  point fc hint(x: axis.p2.x - (dims.rb + lift) * (axis.p2.x - axis.p1.x) / dims.stem, y: axis.p2.y - (dims.rb + lift) * (axis.p2.y - axis.p1.y) / dims.stem)
+  fc := point hint(x: axis.p2.x - (dims.rb + lift) * (axis.p2.x - axis.p1.x) / dims.stem, y: axis.p2.y - (dims.rb + lift) * (axis.p2.y - axis.p1.y) / dims.stem)
   fc on axis
   axis.p2 distance(dims.rb + lift) fc
-  point f1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - dims.rb)
-  point f2 hint(x: axis.p2.x + 15mm, y: axis.p2.y - dims.rb)
-  line flat(f1, f2)
+  f1 := point hint(x: axis.p2.x - 15mm, y: axis.p2.y - dims.rb)
+  f2 := point hint(x: axis.p2.x + 15mm, y: axis.p2.y - dims.rb)
+  flat := line(f1, f2)
   fc midpoint flat
   flat perpendicular axis
   f1 distance(30) f2
   // the bucket under the face, 30 wide and 20 deep
-  point b1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - dims.rb - 20mm)
-  point b2 hint(x: axis.p2.x + 15mm, y: axis.p2.y - dims.rb - 20mm)
-  line bl(f1, b1)
-  line br(f2, b2)
-  line bb(b1, b2)
+  b1 := point hint(x: axis.p2.x - 15mm, y: axis.p2.y - dims.rb - 20mm)
+  b2 := point hint(x: axis.p2.x + 15mm, y: axis.p2.y - dims.rb - 20mm)
+  bl := line(f1, b1)
+  br := line(f2, b2)
+  bb := line(b1, b2)
   bl parallel axis
   br parallel axis
   f1 distance(20) b1
   f2 distance(20) b2
   // the stem, `stem` down the axis to the head, which the lobe lifts off its seat or does not
-  point hc hint(at: seat)
+  hc := point hint(at: seat)
   hc on axis
   hc distance(dims.stem) fc
-  line st(hc, fc)
-  point h1 hint(x: seat.x - head / 2, y: seat.y)
-  point h2 hint(x: seat.x + head / 2, y: seat.y)
-  line hd(h1, h2)
+  st := line(hc, fc)
+  h1 := point hint(x: seat.x - head / 2, y: seat.y)
+  h2 := point hint(x: seat.x + head / 2, y: seat.y)
+  hd := line(h1, h2)
   hc midpoint hd
   hd perpendicular axis
   h1 distance(head) h2

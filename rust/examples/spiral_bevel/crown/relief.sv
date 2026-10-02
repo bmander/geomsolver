@@ -27,10 +27,10 @@ use crown.space
 // square to the base. `level` runs through the mark along the base.
 component Kink(flank: line, base: line, design: group, normal_module: Length) {
   // Seeds, rough: halfway along the flank.
-  point mark hint(x: (flank.p1.x + flank.p2.x) / 2, y: (flank.p1.y + flank.p2.y) / 2)
-  point along hint(x: mark.x + base.p2.x - base.p1.x, y: mark.y + base.p2.y - base.p1.y)
-  point kink hint(at: mark)
-  line level(mark, along)
+  mark := point hint(x: (flank.p1.x + flank.p2.x) / 2, y: (flank.p1.y + flank.p2.y) / 2)
+  along := point hint(x: mark.x + base.p2.x - base.p1.x, y: mark.y + base.p2.y - base.p1.y)
+  kink := point hint(at: mark)
+  level := line(mark, along)
   mark on flank
   mark distance((design.base - design.addendum) * normal_module, side: left) base
   base angle(0deg) level
@@ -51,52 +51,52 @@ component ChamferTop(kink: group, top: line, design: group, normal_module: Lengt
 // through the kink, turned the relief angle from the flank so the section widens toward its
 // base, then a round of the crown's tip radius into a `top` running back along the base.
 component LeavingChamfer(flank: line, base: line, design: group, normal_module: Length) {
-  at: Kink(flank, base, design, normal_module: normal_module)
+  at := Kink(flank, base, design, normal_module: normal_module)
   // Seeds, in fractions of the flank from its base end toward its tip (`u`) and of the base
   // toward the section's inside (`w`): the round's centre stands inside the section, above
   // the kink, where a round on the far side of the slope would turn the wrong way.
-  point foot hint(x: flank.p1.x - 0.35 * (base.p1.x - base.p2.x),
+  foot := point hint(x: flank.p1.x - 0.35 * (base.p1.x - base.p2.x),
                   y: flank.p1.y - 0.35 * (base.p1.y - base.p2.y))
-  point rc hint(x: flank.p1.x + 0.41 * (flank.p2.x - flank.p1.x) + 0.1 * (base.p1.x - base.p2.x),
+  rc := point hint(x: flank.p1.x + 0.41 * (flank.p2.x - flank.p1.x) + 0.1 * (base.p1.x - base.p2.x),
                 y: flank.p1.y + 0.41 * (flank.p2.y - flank.p1.y) + 0.1 * (base.p1.y - base.p2.y))
-  line slope(foot, hint(x: flank.p1.x + 0.42 * (flank.p2.x - flank.p1.x) + 0.02 * (base.p1.x - base.p2.x),
-                        y: flank.p1.y + 0.42 * (flank.p2.y - flank.p1.y) + 0.02 * (base.p1.y - base.p2.y))) -> tangent
-    arc round(center: rc) hint(r: design.rounding * normal_module) -> tangent
-    line top(hint(x: flank.p1.x + 0.51 * (flank.p2.x - flank.p1.x) + 0.1 * (base.p1.x - base.p2.x),
+  (slope := line(foot, hint(x: flank.p1.x + 0.42 * (flank.p2.x - flank.p1.x) + 0.02 * (base.p1.x - base.p2.x),
+                        y: flank.p1.y + 0.42 * (flank.p2.y - flank.p1.y) + 0.02 * (base.p1.y - base.p2.y)))) -> tangent
+    (round := arc(center: rc) hint(r: design.rounding * normal_module)) -> tangent
+    (top := line(hint(x: flank.p1.x + 0.51 * (flank.p2.x - flank.p1.x) + 0.1 * (base.p1.x - base.p2.x),
                   y: flank.p1.y + 0.51 * (flank.p2.y - flank.p1.y) + 0.1 * (base.p1.y - base.p2.y)),
              hint(x: flank.p1.x + 0.51 * (flank.p2.x - flank.p1.x) + 0.2 * (base.p1.x - base.p2.x),
-                  y: flank.p1.y + 0.51 * (flank.p2.y - flank.p1.y) + 0.2 * (base.p1.y - base.p2.y)))
+                  y: flank.p1.y + 0.51 * (flank.p2.y - flank.p1.y) + 0.2 * (base.p1.y - base.p2.y))))
   foot on base
   at.kink on slope
   flank angle(design.relief_angle) slope
   radius(design.rounding * normal_module) round
   base angle(180deg) top
-  tops: ChamferTop(at, top, design, normal_module: normal_module)
+  tops := ChamferTop(at, top, design, normal_module: normal_module)
 }
 
 // A chamfer where the walk arrives at the base along `flank`: the `top`, the round and the
 // `slope` down through the kink to the base line, walked in that order.
 component ArrivingChamfer(flank: line, base: line, design: group, normal_module: Length) {
-  at: Kink(flank, base, design, normal_module: normal_module)
+  at := Kink(flank, base, design, normal_module: normal_module)
   // Seeds as LeavingChamfer's, the flank's base end its second point.
-  point foot hint(x: flank.p2.x - 0.35 * (base.p2.x - base.p1.x),
+  foot := point hint(x: flank.p2.x - 0.35 * (base.p2.x - base.p1.x),
                   y: flank.p2.y - 0.35 * (base.p2.y - base.p1.y))
-  point rc hint(x: flank.p2.x + 0.41 * (flank.p1.x - flank.p2.x) + 0.1 * (base.p2.x - base.p1.x),
+  rc := point hint(x: flank.p2.x + 0.41 * (flank.p1.x - flank.p2.x) + 0.1 * (base.p2.x - base.p1.x),
                 y: flank.p2.y + 0.41 * (flank.p1.y - flank.p2.y) + 0.1 * (base.p2.y - base.p1.y))
-  line top(hint(x: flank.p2.x + 0.51 * (flank.p1.x - flank.p2.x) + 0.2 * (base.p2.x - base.p1.x),
+  (top := line(hint(x: flank.p2.x + 0.51 * (flank.p1.x - flank.p2.x) + 0.2 * (base.p2.x - base.p1.x),
                 y: flank.p2.y + 0.51 * (flank.p1.y - flank.p2.y) + 0.2 * (base.p2.y - base.p1.y)),
            hint(x: flank.p2.x + 0.51 * (flank.p1.x - flank.p2.x) + 0.1 * (base.p2.x - base.p1.x),
-                y: flank.p2.y + 0.51 * (flank.p1.y - flank.p2.y) + 0.1 * (base.p2.y - base.p1.y))) -> tangent
-    arc round(center: rc) hint(r: design.rounding * normal_module) -> tangent
-    line slope(hint(x: flank.p2.x + 0.42 * (flank.p1.x - flank.p2.x) + 0.02 * (base.p2.x - base.p1.x),
+                y: flank.p2.y + 0.51 * (flank.p1.y - flank.p2.y) + 0.1 * (base.p2.y - base.p1.y)))) -> tangent
+    (round := arc(center: rc) hint(r: design.rounding * normal_module)) -> tangent
+    (slope := line(hint(x: flank.p2.x + 0.42 * (flank.p1.x - flank.p2.x) + 0.02 * (base.p2.x - base.p1.x),
                     y: flank.p2.y + 0.42 * (flank.p1.y - flank.p2.y) + 0.02 * (base.p2.y - base.p1.y)),
-               foot)
+               foot))
   foot on base
   at.kink on slope
   flank angle(design.relief_angle, sense: cw) slope
   radius(design.rounding * normal_module) round
   base angle(180deg) top
-  tops: ChamferTop(at, top, design, normal_module: normal_module)
+  tops := ChamferTop(at, top, design, normal_module: normal_module)
 }
 
 // The pinion's relief, beside its crown tooth (a CrownTooth): the material between both
@@ -104,17 +104,17 @@ component ArrivingChamfer(flank: line, base: line, design: group, normal_module:
 // (crown/space.sv), at the cutter's axis beyond the outer flank and at the space cutter's
 // `cap` beyond the inner.
 component ToothRelief(tooth: group, cap: line, design: group, normal_module: Length) {
-  outer_chamfer: LeavingChamfer(tooth.rack.outer, tooth.rack.base, design,
+  outer_chamfer := LeavingChamfer(tooth.rack.outer, tooth.rack.base, design,
     normal_module: normal_module)
-  inner_chamfer: ArrivingChamfer(tooth.rack.inner, tooth.rack.base, design,
+  inner_chamfer := ArrivingChamfer(tooth.rack.inner, tooth.rack.base, design,
     normal_module: normal_module)
-  private outer: FlankSection(tooth.rack.base, outer_chamfer.slope, outer_chamfer.round,
+  private outer := FlankSection(tooth.rack.base, outer_chamfer.slope, outer_chamfer.round,
     outer_chamfer.top, tooth.axis)
-  private inner: FlankSection(tooth.rack.base, inner_chamfer.slope, inner_chamfer.round,
+  private inner := FlankSection(tooth.rack.base, inner_chamfer.slope, inner_chamfer.round,
     inner_chamfer.top, cap)
-  private construction solid outer_side(outer.profile, about: tooth.axis)
-  private construction solid inner_side(inner.profile, about: tooth.axis)
-  solid body(outer_side)
+  private construction outer_side := solid(outer.profile, about: tooth.axis)
+  private construction inner_side := solid(inner.profile, about: tooth.axis)
+  body := solid(outer_side)
   inner_side bound body
 }
 
@@ -123,43 +123,43 @@ component ToothRelief(tooth: group, cap: line, design: group, normal_module: Len
 // as the space's flanks are.
 component SpaceRelief(axis: line, outside: group, inside: group, indexing: motion, cap: line,
                       design: group, normal_module: Length) {
-  outer_chamfer: LeavingChamfer(outside.inner, outside.base, design,
+  outer_chamfer := LeavingChamfer(outside.inner, outside.base, design,
     normal_module: normal_module)
-  inner_chamfer: ArrivingChamfer(inside.outer, inside.base, design,
+  inner_chamfer := ArrivingChamfer(inside.outer, inside.base, design,
     normal_module: normal_module)
-  private outer: FlankSection(outside.base, outer_chamfer.slope, outer_chamfer.round,
+  private outer := FlankSection(outside.base, outer_chamfer.slope, outer_chamfer.round,
     outer_chamfer.top, cap)
-  private inner: FlankSection(inside.base, inner_chamfer.slope, inner_chamfer.round,
+  private inner := FlankSection(inside.base, inner_chamfer.slope, inner_chamfer.round,
     inner_chamfer.top, axis)
-  private construction solid outer_side(outer.profile, about: axis)
-  private construction solid inner_side(inner.profile, about: axis)
-  private construction solid neighbor(inner_side, under: indexing, at: 0deg)
-  solid body(outer_side)
+  private construction outer_side := solid(outer.profile, about: axis)
+  private construction inner_side := solid(inner.profile, about: axis)
+  private construction neighbor := solid(inner_side, under: indexing, at: 0deg)
+  body := solid(outer_side)
   neighbor bound body
 }
 
 preview {
   unit mm
-  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
-  trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
-  thickness: CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
-  n: FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
-  tooth: CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
+  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
+  gear := GearCone(pitch.view, g.view, hypoid_design)
+  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
+  trace := ToothTrace(pitch.view, gear.generator, hypoid_design)
+  thickness := CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
+  n := FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
+  tooth := CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
     hypoid_design) in n.view
   // Alone, the tooth's depths are in the trace's normal module: K stands that far from MC.
   trace.K distance(tooth.normal_module) trace.normal
-  mate: CrownMate(tooth, hypoid_design) in n.view
+  mate := CrownMate(tooth, hypoid_design) in n.view
   trace.K distance(mate.normal_module) trace.normal
-  reach: CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
+  reach := CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
     reach: hypoid_design.space_reach)
-  motion crown_neighbor(about: gear.crown_axis,
+  crown_neighbor := motion(about: gear.crown_axis,
     phase: -4 * length(thickness.ahead) / radius(thickness.ahead) * 1rad)
-  space: ComplementarySpace(mate.axis, mate.outer, mate.inner, crown_neighbor, reach.cap) in n.view
-  tooth_relief: ToothRelief(tooth, reach.cap, hypoid_design) in n.view
+  space := ComplementarySpace(mate.axis, mate.outer, mate.inner, crown_neighbor, reach.cap) in n.view
+  tooth_relief := ToothRelief(tooth, reach.cap, hypoid_design) in n.view
   trace.K distance(tooth_relief.normal_module) trace.normal
-  space_relief: SpaceRelief(mate.axis, mate.outer, mate.inner, crown_neighbor, reach.cap,
+  space_relief := SpaceRelief(mate.axis, mate.outer, mate.inner, crown_neighbor, reach.cap,
     hypoid_design) in n.view
   trace.K distance(space_relief.normal_module) trace.normal
 }

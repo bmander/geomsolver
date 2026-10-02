@@ -471,12 +471,12 @@ impl Design {
 fn scaled(text: &str,f: f64) -> String {
     text.lines().map(|l| {
         let t = l.trim_start();
-        match ["param mean_module","param offset"].iter().find(|p| t.starts_with(**p)
-            && t[p.len()..].trim_start().starts_with('=')) {
+        match ["mean_module","offset"].iter().find(|p| t.starts_with(**p)
+            && t[p.len()..].trim_start().starts_with(":=")) {
             Some(_) => {
-                let eq = l.find('=').unwrap();
-                let v: f64 = l[eq+1..].trim().trim_end_matches("mm").trim().parse().unwrap();
-                format!("{}= {}mm\n",&l[..eq],v*f)
+                let eq = l.find(":=").unwrap();
+                let v: f64 = l[eq+2..].trim().trim_end_matches("mm").trim().parse().unwrap();
+                format!("{}:= {}mm\n",&l[..eq],v*f)
             }
             None => format!("{l}\n"),
         }

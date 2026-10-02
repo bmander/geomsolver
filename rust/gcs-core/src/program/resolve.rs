@@ -11,7 +11,7 @@ pub(super) struct Resolver {
     pub(super) declared_at: BTreeMap<String, Span>,
     /// Each declaration's child slots, as the names it wrote — what `follow_building` reads
     /// where the entity itself is not built yet (build order is per kind, so a child slot that
-    /// reaches into an entity of a later kind — `line t(p3, k.start)` with `k` an arc — has
+    /// reaches into an entity of a later kind — `t := line(p3, k.start)` with `k` an arc — has
     /// only the declaration to ask).  `None` where a slot holds a seed or nothing, since the
     /// point it mints does not exist until the parent is built.
     pub(super) kids: BTreeMap<String, Vec<Option<Ref>>>,

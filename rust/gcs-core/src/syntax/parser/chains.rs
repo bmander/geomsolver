@@ -6,16 +6,19 @@ use crate::model::{EntKind, Field};
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::names::refs_eq;
-use crate::syntax::words::{joint_word, opens_link, past_args, prefix_word, word_at, OPENERS};
+use crate::syntax::words::{
+    joint_word, link_word, named_link_at, opens_link, past_args, prefix_word, word_at, OPENERS,
+};
 use crate::syntax::{
-    build_rank, ref_text, under_root, Arg, Chained, Decl, Fall, Kid, Name, OpArg, OpenJoint,
+    build_rank, ref_text, under_root, Arg, Chained, Decl, DeclName, Fall, Kid, Name, OpArg,
+    OpenJoint,
     OpenNamed, OpenSide, Ref, Relation, Seg, Span, Stmt, StmtKind, SynErr, Written,
 };
 
 /// A declaration exposes child slots for threading; a reference leaves its declaration
 /// untouched. Only `->` requests a shared boundary point.
 enum LinkBody {
-    /// `line bottom(b1, b2)` — the chain declares it, so the keyword says what kind it is.
+    /// `bottom := line(b1, b2)` — the chain declares it, so the keyword says what kind it is.
     /// Boxed because a `Decl` is many times a `Ref`, and a chain holds a `Vec` of these.
     Decl(Box<Decl>),
     /// `a_br` — the chain names one declared elsewhere.  What kind it is, only elaboration
@@ -138,22 +141,19 @@ fn boundary_ref(root: Name, kind: EntKind, slot: usize) -> Ref {
     }
 }
 impl<'a> P<'a> {
-    pub(super) fn named_chain_starts(&self) -> bool {
-        matches!(self.peek(), Some(Tok::Ident(w)) if crate::syntax::is_name(w))
-            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Eq))
-    }
-
     /// Whether what stands here opens a declaration — possibly a chain of them.
     pub(super) fn chain_starts(&self) -> bool {
+        // `(ab := line(a, b)) -> …` — a link named where it stands
+        if named_link_at(&self.t, self.i) {
+            return true;
+        }
         let Some(Tok::Ident(w)) = self.peek() else { return false };
-        let next = word_at(&self.t, past_args(&self.t, self.i));
+        let next = link_word(&self.t, past_args(&self.t, self.i));
         // `a_br equal a_tr` — a name, then a word that relates it to another.  Nothing else in
         // the language has that shape: a statement opening with a bare name is an instance, and
-        // that is a name followed by a colon.  `claim parallel(…)` has the shape too — a binary
-        // relation's name doubles as an infix joint word — but `claim` qualifies a statement,
-        // it never names an element.
-        // a word that *opens* a statement is not an operand, however the next word reads:
-        // `param radius = 50` is a definition and not `param` related to `radius`
+        // that is a call.  `claim parallel(…)` has the shape too — a binary relation's name
+        // doubles as an infix joint word — but `claim` qualifies a statement, it never names an
+        // element: a word that *opens* a statement is not an operand, however the next word reads
         if !OPENERS.contains(&w.as_str())
             && EntKind::parse(w).is_none()
             && !prefix_word(w)
@@ -212,18 +212,22 @@ impl<'a> P<'a> {
         word_at(&self.t, i)
     }
 
-    /// `[prefix…] decl (joint [prefix…] decl)* [joint "close"]`.
-    pub(super) fn chain(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
-        let lo = self.here().lo as usize;
-        let name = if self.named_chain_starts() {
-            let name = self.ident()?;
-            self.i += 1;
-            self.skip_ends();
-            Some(name)
-        } else {
-            None
+    /// `[prefix…] decl (joint [prefix…] decl)* [joint "close"]`.  A definition hands in its name:
+    /// the chain's when `->` joins its links, and otherwise its one declaration's — the value of
+    /// `horizontal line(a, b)` is the line, the word stated beside it.
+    pub(super) fn chain(
+        &mut self,
+        next_id: &mut u32,
+        out: &mut Vec<Stmt>,
+        name: Option<Name>,
+    ) -> Option<()> {
+        let lo = name.as_ref().map_or(self.here().lo as usize, |n| n.span.lo as usize);
+        let (name, link_name) = match name {
+            Some(n) if self.statement_has(|t| *t == Tok::Arrow) => (Some(n), None),
+            n => (None, n),
         };
-        let mut links = vec![self.link()?];
+        let named_link = link_name.is_some();
+        let mut links = vec![self.link(link_name)?];
         let mut joints: Vec<Joint> = Vec::new();
         let mut close: Option<Joint> = None;
         let mut open: Option<Joint> = None;
@@ -251,7 +255,7 @@ impl<'a> P<'a> {
             let mut words: Vec<(String, Vec<OpArg>, Span)> = Vec::new();
             loop {
                 let Some(Tok::Ident(w)) = self.peek() else { break };
-                if !joint_word(w) || opens_link(w, self.word_at(past_args(&self.t, self.i))) {
+                if !joint_word(w) || opens_link(w, link_word(&self.t, past_args(&self.t, self.i))) {
                     break;
                 }
                 let w = w.clone();
@@ -277,7 +281,10 @@ impl<'a> P<'a> {
                 self.skip_ends();
             }
             // the retired 0.8 list, caught so a document written against it says what to write
-            if (thread || !words.is_empty()) && self.peek() == Some(&Tok::P('(')) {
+            if (thread || !words.is_empty())
+                && self.peek() == Some(&Tok::P('('))
+                && !named_link_at(&self.t, self.i)
+            {
                 self.fail("a joint states its relations as bare words: `-> equal angle(30deg)` (spec §6.6)");
             }
             if !thread && words.is_empty() {
@@ -315,7 +322,7 @@ impl<'a> P<'a> {
                 break;
             }
             joints.push(Joint { thread, words, span: Span::new(start, hi), sound: true });
-            links.push(self.link()?);
+            links.push(self.link(None)?);
         }
         // the trailing clauses a statement may carry — a lone infix operator is a one-joint
         // chain, so it carries them here as it would anywhere else
@@ -362,6 +369,16 @@ impl<'a> P<'a> {
         }
         self.end_of_stmt();
         let whole = Span::new(lo, self.prev_hi());
+        if named_link && (!joints.is_empty() || close.is_some() || open.is_some()) {
+            let at = joints.first().or(close.as_ref()).or(open.as_ref()).map_or(whole, |j| j.span);
+            self.errs.push(SynErr {
+                span: at,
+                message: "a definition names one declaration, or a chain that joins every pair of \
+                          its links with `->`"
+                    .into(),
+            });
+            return None;
+        }
         // whether the line's end can take a trailing clause appended later: a chain ending
         // in a name (or sealed by `close`) can, one ending in a declaration cannot — the
         // declaration reads a trailing `at` as its own retired seed spelling
@@ -394,6 +411,13 @@ impl<'a> P<'a> {
             }
         }
         self.desugar(links, joints, close, open.is_some(), whole, next_id, out);
+        // `l := line(a, b)` — the statement's text starts at its name, before the keyword
+        if named_link {
+            let decl = out[first..].iter_mut().find(|s| matches!(s.kind, StmtKind::Decl(_)));
+            if let Some(st) = decl {
+                st.span.lo = lo as u32;
+            }
+        }
         if let (Some(j), Some((fe, le, named))) = (open, ends) {
             self.open_finish(j, fe, le, named, &out[first..], next_id);
         }
@@ -456,10 +480,26 @@ impl<'a> P<'a> {
         Some(())
     }
 
-    /// `[prefix…] KIND name(…)`, or a bare name — the two things a link may stand on.
-    fn link(&mut self) -> Option<Link> {
+    /// `[prefix…] KIND(…)`, `[prefix…] (name := KIND(…))`, or a bare name — what a link may
+    /// stand on.  `name` is a definition's, handed to the one declaration it names.
+    fn link(&mut self, name: Option<Name>) -> Option<Link> {
         let mut prefixes: Vec<(Name, Vec<OpArg>)> = Vec::new();
         let kind = loop {
+            // `(ab := line(a, b))` — the link named where it stands
+            if name.is_none() && named_link_at(&self.t, self.i) {
+                let lo = self.here().lo as usize;
+                self.i += 1;
+                let n = self.ident()?;
+                self.i += 1; // `:=`
+                let kind = EntKind::parse(self.word_at(self.i)?).expect("named_link_at");
+                self.i += 1;
+                let decl = self.decl(kind, Some(n))?;
+                if !self.want_p(')') {
+                    return None;
+                }
+                let body = LinkBody::Decl(Box::new(decl));
+                return Some(Link { prefixes, body, span: Span::new(lo, self.prev_hi()) });
+            }
             let Some(Tok::Ident(w)) = self.peek().cloned() else {
                 self.fail("expected an element");
                 return None;
@@ -477,21 +517,25 @@ impl<'a> P<'a> {
                 return None;
             }
             // a prefix word carries its own parentheses like any other operator:
-            // `radius(25) circle base(center: c)`
-            let mut name = Name { text: w, span: self.here() };
+            // `radius(25) circle(center: c)`
+            let mut word = Name { text: w, span: self.here() };
             self.i += 1;
-            let args = self.op_args(&name.text)?;
+            let args = self.op_args(&word.text)?;
             // Removing a unary constraint removes its argument list with its word.
-            name.span.hi = self.prev_hi() as u32;
-            prefixes.push((name, args));
+            word.span.hi = self.prev_hi() as u32;
+            prefixes.push((word, args));
         };
         let lo = self.here().lo as usize;
         let Some(kind) = kind else {
+            if name.is_some() {
+                self.fail("a definition names a declaration here: `name := line(…)`");
+                return None;
+            }
             let r = self.refr()?;
             return Some(Link { prefixes, span: r.span, body: LinkBody::Ref(r) });
         };
         self.i += 1; // the kind keyword
-        let decl = self.decl(kind)?;
+        let decl = self.decl(kind, name)?;
         let body = LinkBody::Decl(Box::new(decl));
         Some(Link { prefixes, body, span: Span::new(lo, self.prev_hi()) })
     }
@@ -572,7 +616,8 @@ impl<'a> P<'a> {
         // threading: at each threaded joint the shared point is named by exactly one side, by
         // both in agreement, or — between two declarations — by nobody, in which case the chain
         // mints it (`thread`).  An end no marker reaches is an implicit child like any other
-        // unwritten slot (§6.2): `line l1 -> line l2` is two lines and three points, one shared.
+        // unwritten slot (§6.2): `(l1 := line) -> (l2 := line)` is two lines and three points,
+        // one shared.
         for k in 0..joints.len() {
             if joints[k].thread && joints[k].sound {
                 self.thread(&mut links, k, k + 1, joints[k].span);
@@ -673,7 +718,17 @@ impl<'a> P<'a> {
             // a link that only *names* an element declares nothing, so it emits no statement of
             // its own — the whole of what it contributes is being one end of its joints
             let LinkBody::Decl(decl) = link.body else { continue };
-            let decl = *decl;
+            let mut decl = *decl;
+            // where a minted name goes: before a lone declaration's whole statement, prefix
+            // words and all (`l := horizontal line(a, b)`), and round a link's declaration in
+            // a chain (`horizontal (l := line(a, b)) -> …`), since `:=` binds looser than `->`
+            if let DeclName::Key(k) = &mut decl.name {
+                if chained {
+                    decl.mint_close = Some(link.span.hi as usize);
+                } else {
+                    k.span = Span::new(whole.lo as usize, whole.lo as usize);
+                }
+            }
             let Some(id) = self.mint_stmt(next_id, link.span) else { return };
             out.push(Stmt {
                 id,
@@ -854,7 +909,7 @@ impl<'a> P<'a> {
         // which slot each side threads through, where that side is declared here.  A link that
         // only *names* an element has no list to read or fill — its boundary is its own
         // declaration's business — so the declared side must say where the two meet, usually
-        // by the existing element's own child (`line l(a, k.start) -> tangent k`).
+        // by the existing element's own child (`(l := line(a, k.start)) -> tangent k`).
         let exit = links[li].kind().and_then(|k| k.ends()).map(|(_, ex)| ex);
         let entry = links[ri].kind().and_then(|k| k.ends()).map(|(en, _)| en);
         // a joint threads a *name*: it welds two links to one point, and only a name says

@@ -503,7 +503,7 @@ fn an_unrelated_dimension_cannot_change_the_verdict() {
         solve(&mut sk, SolveOpts::default());
         let d = diagnose(&mut sk, DiagnoseOptions::default());
         assert!(d.over.is_empty(), "far={far}: {:?}", d.over);
-        assert_ne!(d.status, State::Over, "far={far}");
+        assert_ne!(d.status, State::Over, "far:={far}");
         reads.push((d.geometric_dependency, d.implied.len(), d.n_redundant));
     }
     assert_eq!(reads[0], reads[1]);
@@ -620,14 +620,14 @@ fn a_tangential_contact_is_rigid_not_under() {
 #[test]
 fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
     let (prog, _) = gcs_core::syntax::parse(
-        "point a hint(x: 0, y: 0)
-         point d hint(x: 60, y: 0)
-         point b hint(x: 8, y: 24)
-         point c hint(x: 52, y: 30)
-         line ground_link(a, d)
-         line crank(a, b)
-         line coupler(b, c)
-         line rocker(d, c)
+        "a := point hint(x: 0, y: 0)
+         d := point hint(x: 60, y: 0)
+         b := point hint(x: 8, y: 24)
+         c := point hint(x: 52, y: 30)
+         ground_link := line(a, d)
+         crank := line(a, b)
+         coupler := line(b, c)
+         rocker := line(d, c)
          a distance(25) b
          b distance(45) c
          d distance(30) c
@@ -658,14 +658,14 @@ fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
 #[test]
 fn an_intrinsic_row_is_never_a_culprit() {
     let (prog, _) = gcs_core::syntax::parse(
-        "point o hint(x: 0, y: 0)
-         point s hint(x: 20, y: 0)
-         point e hint(x: 0, y: 20)
-         arc a(center: o, start: s, end: e) hint(r: 20)
+        "o := point hint(x: 0, y: 0)
+         s := point hint(x: 20, y: 0)
+         e := point hint(x: 0, y: 20)
+         a := arc(center: o, start: s, end: e) hint(r: 20)
          radius(20) a
          o distance(20) s
          ground o
-         horizontal line r0(o, s)",
+         r0 := horizontal line(o, s)",
     );
     let mut sk = gcs_core::program::elaborate(&prog).sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -679,7 +679,7 @@ fn an_intrinsic_row_is_never_a_culprit() {
 /// #43.18 — the components line is paged like every other list in the summary.
 #[test]
 fn the_components_line_is_bounded() {
-    let (prog, _) = gcs_core::syntax::parse("repeat 400 as i { point p hint(x: i, y: 0) }\nground p[0]\n");
+    let (prog, _) = gcs_core::syntax::parse("repeat 400 as i { p := point hint(x: i, y: 0) }\nground p[0]\n");
     let mut sk = gcs_core::program::elaborate(&prog).sketch;
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     let s = summary(&d);
@@ -710,14 +710,14 @@ fn a_relation_only_closure_is_implied_at_dof_zero_too() {
         (d, dims)
     };
     let (d, dims) = read(
-        "cycle 4 {\n line s -> perpendicular equal\n}\ns[0].p1 distance(50) s[0].p2\nground s[0].p1\nhorizontal s[0]\n",
+        "cycle 4 {\n (s := line) -> perpendicular equal\n}\ns[0].p1 distance(50) s[0].p2\nground s[0].p1\nhorizontal s[0]\n",
     );
     assert_eq!((d.dof, d.status), (0, State::Well), "{}", summary(&d));
     assert!(d.over.is_empty(), "over: {:?}", d.over);
     assert!(!d.implied.is_empty() && dims.iter().all(|c| !d.implied.contains(c)), "{:?}", d.implied);
     let (d, dims) = read(
-        "point p hint(x: 0, y: 0)\npoint q hint(x: 40, y: 0)\npoint r hint(x: 40, y: 40)\npoint s hint(x: 0, y: 40)\n\
-         line a(p, q)\nline b(q, r)\nline c(r, s)\nline d(s, p)\nhorizontal a\na perpendicular b\n\
+        "p := point hint(x: 0, y: 0)\nq := point hint(x: 40, y: 0)\nr := point hint(x: 40, y: 40)\ns := point hint(x: 0, y: 40)\n\
+         a := line(p, q)\nb := line(q, r)\nc := line(r, s)\nd := line(s, p)\nhorizontal a\na perpendicular b\n\
          b perpendicular c\nc perpendicular d\nd perpendicular a\np distance(40) q\nq distance(40) r\nground p\n",
     );
     assert_eq!((d.dof, d.status), (0, State::Well), "{}", summary(&d));
@@ -726,7 +726,7 @@ fn a_relation_only_closure_is_implied_at_dof_zero_too() {
     assert!(dims.iter().all(|c| !d.implied.contains(c)), "{:?}", d.implied);
     // and a redundancy a dimension takes part in is still `over`, at DOF 0 as anywhere
     let (d, dims) = read(
-        "point a hint(x: 0, y: 0)\npoint b hint(x: 40, y: 0)\na horizontal b\na distance(40) b\na distance(40) b\nground a\n",
+        "a := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\na horizontal b\na distance(40) b\na distance(40) b\nground a\n",
     );
     assert_eq!(d.status, State::Over, "{}", summary(&d));
     assert!(dims.iter().all(|c| d.over.contains(c)), "over: {:?}", d.over);
@@ -745,21 +745,21 @@ fn an_unwritten_radius_starts_off_zero_and_a_conflict_names_no_intrinsic() {
         assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
         e
     };
-    let arc = "point c hint(x: 0, y: 0)\npoint s hint(x: 10, y: 0)\npoint e hint(x: 0, y: 10)\n\
-               arc k(center: c, start: s, end: e)\nground c\nground s\nground e\n";
+    let arc = "c := point hint(x: 0, y: 0)\ns := point hint(x: 10, y: 0)\ne := point hint(x: 0, y: 10)\n\
+               k := arc(center: c, start: s, end: e)\nground c\nground s\nground e\n";
     let mut sk = read(arc).sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.arcs[0].radius as usize].value;
-    assert!((r - 10.0).abs() < 1e-9, "r = {r}");
-    let mut sk = read("point o hint(x: 0, y: 0)\ncircle c(center: o)\npoint p hint(x: 10, y: 0)\np on c\nground o\nground p\n").sketch;
+    assert!((r - 10.0).abs() < 1e-9, "r := {r}");
+    let mut sk = read("o := point hint(x: 0, y: 0)\nc := circle(center: o)\np := point hint(x: 10, y: 0)\np on c\nground o\nground p\n").sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.circles[0].radius as usize].value;
-    assert!((r - 10.0).abs() < 1e-9, "r = {r}");
+    assert!((r - 10.0).abs() < 1e-9, "r := {r}");
     // a written seed still wins, including a written 0
-    let e = read("point c hint(x: 0, y: 0)\narc k(center: c) hint(r: 0)\n");
+    let e = read("c := point hint(x: 0, y: 0)\nk := arc(center: c) hint(r: 0)\n");
     assert_eq!(e.sketch.params[e.sketch.arcs[0].radius as usize].value, 0.0);
     // the conflict: a point on the arc at the wrong distance from its centre
-    let e = read(&format!("{arc}point p hint(x: 7, y: 7)\np on k\np distance(5) c\n"));
+    let e = read(&format!("{arc}p := point hint(x: 7, y: 7)\np on k\np distance(5) c\n"));
     let mut sk = e.sketch;
     assert!(!solve(&mut sk, SolveOpts::default()).success);
     let d = diagnose(&mut sk, DiagnoseOptions::default());

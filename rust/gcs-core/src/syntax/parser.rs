@@ -60,11 +60,6 @@ struct P<'a> {
     t: Vec<(Tok, Span)>,
     i: usize,
     errs: Vec<SynErr>,
-    /// A word `decl()` declined as a name because the language reserves it — kept until the
-    /// statement ends, so a line that then fails to parse can say the likely cause.  A line
-    /// that parses (`line tangent arc` is a chain) needs no saying, so this is only read
-    /// beside a failure (`chain_or_one`).
-    declined: Option<(String, Span)>,
     /// How many braced bodies are being read: a chain inside one may end mid-joint at the
     /// body's `}`, and a statement there ends at `}` as it would at a line break (issue #38).
     in_body: u32,
@@ -167,7 +162,6 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         t: lexed.toks,
         i: 0,
         errs,
-        declined: None,
         in_body: 0,
         open: None,
         in_blocks: Vec::new(),
@@ -234,7 +228,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
                 message: "a curve family is a component now: write \
                           `component Name(c: circle, u: Angle) { … }` with the traced point \
                           inside it, and draw the curve as \
-                          `curve e = Name(c).point over u in (a, b)`"
+                          `e := Name(c).point over u in (a, b)`"
                     .to_string(),
             });
             st.resync();

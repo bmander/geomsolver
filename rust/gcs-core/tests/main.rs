@@ -1,5 +1,5 @@
 //! The core's whole suite as one test binary.  Cargo would make each file in this directory a
-//! binary of its own — `autotests = false` in Cargo.toml turns that off and names this file
+//! binary of its own — `autotests := false` in Cargo.toml turns that off and names this file
 //! instead — and every one of those binaries linked the engine again, was assessed by macOS on
 //! its first launch (a third of a second each, syspolicyd looking a fresh executable over) and
 //! ran its tests after the last binary's had finished.  As one crate the engine links once,
@@ -38,6 +38,7 @@ mod delaunay;
 mod fmath;
 mod planar;
 mod predicates;
+mod definitions;
 mod derived;
 mod describe;
 mod diagnose;
@@ -116,7 +117,7 @@ mod units;
 mod unseeded;
 mod witness;
 
-/// Every `tests/*.rs` beside this file is declared above: with `autotests = false` a file
+/// Every `tests/*.rs` beside this file is declared above: with `autotests := false` a file
 /// nobody lists is a test nobody runs, silently.
 #[test]
 fn every_file_is_a_module() {

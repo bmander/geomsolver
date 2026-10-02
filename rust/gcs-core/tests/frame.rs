@@ -157,21 +157,21 @@ use gcs_core::syntax::parse;
 /// datum's own bearing, read off the plane's rotor, so the seed follows the drawing.
 const ELBOW: &str = "\
 component elbow(o: point, datum: line, f: plane, u: Angle) {
-  point t hint(x: o.x + 60 * cos(u + f.angle), y: o.y + 60 * sin(u + f.angle))
-  point p hint(x: o.x + 50 * cos(u + f.angle + 53), y: o.y + 50 * sin(u + f.angle + 53))
-  line swing(o, t)
+  t := point hint(x: o.x + 60 * cos(u + f.angle), y: o.y + 60 * sin(u + f.angle))
+  p := point hint(x: o.x + 50 * cos(u + f.angle + 53), y: o.y + 50 * sin(u + f.angle + 53))
+  swing := line(o, t)
   datum angle(u) swing
   o distance(60) t
   t distance(50) p
   o distance(50) p
 }
 
-point o hint(x: 0, y: 0)
-point q hint(x: -30, y: 51.9615242270663)
-line  datum(o, q)
-plane f(origin: o, toward: q)
+o := point hint(x: 0, y: 0)
+q := point hint(x: -30, y: 51.9615242270663)
+datum := line(o, q)
+f := plane(origin: o, toward: q)
 
-curve path = elbow(o, datum, f, u: 30).p over u in (10, 80)
+path := elbow(o, datum, f, u: 30).p over u in (10, 80)
 
 ground o
 ground q
@@ -276,9 +276,9 @@ fn a_wrong_name_is_still_refused() {
 /// declaration and at a component's formal alike.
 #[test]
 fn the_word_frame_is_refused_with_the_spelling_it_became() {
-    let (_, errs) = parse("point o hint(x: 0, y: 0)\npoint q hint(x: 4, y: 0)\nframe f(origin: o, toward: q)\n");
+    let (_, errs) = parse("o := point hint(x: 0, y: 0)\nq := point hint(x: 4, y: 0)\nframe f(origin: o, toward: q)\n");
     assert_eq!(errs.len(), 1, "{errs:?}");
     assert!(errs[0].message.contains("folded into `plane`"), "{}", errs[0].message);
-    let (_, errs) = parse("component c(f: frame) {\n  point p\n}\n");
+    let (_, errs) = parse("component c(f: frame) {\n  p := point\n}\n");
     assert!(errs.iter().any(|e| e.message.contains("`f: plane`")), "{errs:?}");
 }

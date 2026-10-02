@@ -14,10 +14,10 @@ use crate::common::fd_jacobian;
 /// An ellipse of semi-axes 8 and 3 about (10, 5), its major axis along the page's x.
 const ELLIPSE: &str = "\
 use std
-point o hint(x: 10, y: 5)
-point q hint(x: 18, y: 5)
-plane f(origin: o, toward: q)
-curve e = Ellipse(f, a: 8, b: 3).p over u in (0, 360)
+o := point hint(x: 10, y: 5)
+q := point hint(x: 18, y: 5)
+f := plane(origin: o, toward: q)
+e := Ellipse(f, a: 8, b: 3).p over u in (0, 360)
 ground o
 ground q
 ";
@@ -64,7 +64,7 @@ fn rim_at(u: f64, a: f64, b: f64) -> ((f64, f64), f64) {
 
 #[test]
 fn a_point_solves_onto_the_rim_at_its_eccentric_angle() {
-    let mut e = build(&format!("{ELLIPSE}point p hint(x: 11, y: 9)\np on e hint(t: 80)\n"));
+    let mut e = build(&format!("{ELLIPSE}p := point hint(x: 11, y: 9)\np on e hint(t: 80)\n"));
     fd_jacobian(&e.sketch, 1e-5);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
@@ -80,7 +80,7 @@ fn a_point_solves_onto_the_rim_at_its_eccentric_angle() {
 fn a_line_solves_tangent_to_the_rim() {
     // a level line above the ellipse, one end grounded, the other 12 away and free to fall
     let mut e = build(&format!(
-        "{ELLIPSE}point a hint(x: 4, y: 10)\npoint b hint(x: 16, y: 10)\nline l(a, b)\n\
+        "{ELLIPSE}a := point hint(x: 4, y: 10)\nb := point hint(x: 16, y: 10)\nl := line(a, b)\n\
          ground a\na distance(12) b\ne tangent l hint(t: 90)\n"
     ));
     fd_jacobian(&e.sketch, 1e-5);
@@ -113,7 +113,7 @@ fn a_circle_solves_onto_the_osculating_circle() {
     // a circle near the major end, centre and radius free: a computed point's frame is exact
     // to third order, so the curvature is not refused as a traced curve's is
     let mut e = build(&format!(
-        "{ELLIPSE}point k hint(x: 16, y: 5.5)\ncircle c(center: k) hint(r: 2)\n\
+        "{ELLIPSE}k := point hint(x: 16, y: 5.5)\nc := circle(center: k) hint(r: 2)\n\
          e curvature c hint(t: 10)\n"
     ));
     fd_jacobian(&e.sketch, 1e-5);
@@ -137,7 +137,7 @@ fn a_circle_solves_onto_the_osculating_circle() {
 /// solved back onto the turned rim.
 #[test]
 fn the_rim_turns_with_its_datum() {
-    let mut e = build(&format!("{ELLIPSE}point p hint(x: 11, y: 9)\np on e hint(t: 80)\n"));
+    let mut e = build(&format!("{ELLIPSE}p := point hint(x: 11, y: 9)\np on e hint(t: 80)\n"));
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     // the datum swings to 90°: q goes from (18, 5) to (10, 13)
@@ -173,8 +173,8 @@ fn the_rim_is_picked_and_bounded() {
 #[test]
 fn an_axis_left_out_is_refused_by_name() {
     let (prog, errs, _) = gcs_core::library::parse_linked(
-        "use std\npoint o hint(x: 10, y: 5)\npoint q hint(x: 18, y: 5)\n\
-         plane f(origin: o, toward: q)\ncurve e = Ellipse(f, a: 8).p over u in (0, 360)\n",
+        "use std\no := point hint(x: 10, y: 5)\nq := point hint(x: 18, y: 5)\n\
+         f := plane(origin: o, toward: q)\ne := Ellipse(f, a: 8).p over u in (0, 360)\n",
     );
     assert!(errs.is_empty());
     let e = elaborate(&prog);

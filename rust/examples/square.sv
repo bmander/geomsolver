@@ -8,7 +8,7 @@
 // of each is a theorem, which the diagnosis notes as implied and never paints.
 
 cycle 4 {
-  line s -> perpendicular equal
+  (s := line) -> perpendicular equal
 }
 
 // the loop states everything but a size and a pose: one dimension scales it, and a grounded

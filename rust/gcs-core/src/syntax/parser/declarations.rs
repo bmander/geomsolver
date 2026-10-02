@@ -4,7 +4,7 @@ use super::P;
 use crate::model::{EntKind, Field};
 use crate::style::{Classes, Style};
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{names_decl, trails_decl};
+use crate::syntax::words::trails_decl;
 use crate::syntax::{
     decl_head, Arg, AtRef, Attitude, Decl, DeclName, Kid, KidSeed, Membership, Name, PlaneHint,
     PlaneSolve, Position, Ref, Sense, Span, StmtKind, StyleRule, Sweep,
@@ -231,97 +231,84 @@ fn attitude_of(p: AttParts) -> Result<(Attitude, Position), String> {
     Ok((a?, position))
 }
 impl<'a> P<'a> {
-    pub(super) fn decl(&mut self, kind: EntKind) -> Option<Decl> {
-        // **The name is optional**, independently of everything after it (issue #33): `line`
-        // alone, `line(p1, p2)` and `circle hint(r: 25)` are all anonymous forms.  The token
-        // after the kind keyword decides — an identifier that may be a name is one, and a word
-        // reserved for what can follow a declaration (`names_decl`) is read as itself.  An
-        // anonymous declaration still needs a key the desugared statements can resolve by — a
-        // chain's corner welds by *name* — so it is given one the tokenizer can never produce,
-        // `#a` and its own offset (the flattener's block-prefix device, marked apart); its
-        // span is empty at the point a real name would go, which is where `edit::reconcile`
-        // splices one the moment a statement must say it.  `curve` keeps requiring a name: its
-        // form is `curve name = family(…)`, and the name is what the contacts address.
-        // Curve first, and on its own: its name is required, so it reaches `ident()` — and that
-        // error — whatever stands next, identifier or not.
-        let named =
-            kind == EntKind::Curve || matches!(self.peek(), Some(Tok::Ident(w)) if names_decl(w));
-        let name = if named {
-            DeclName::Written(self.ident()?)
-        } else {
-            // an Ident declined here was very possibly *meant* as a name — remembered, so a
-            // line that then fails to parse can say so (`chain_or_one`)
-            if let (Some(Tok::Ident(w)), None) = (self.peek(), &self.declined) {
-                self.declined = Some((w.clone(), self.here()));
+    /// A declaration, its kind keyword just read: what it is made of and its trailers.  The name
+    /// was read before it (`name := line(…)`, `(name := line(…))`), or there is none.
+    pub(super) fn decl(&mut self, kind: EntKind, name: Option<Name>) -> Option<Decl> {
+        // **The name is optional** (issue #33): `line`, `line(p1, p2)` and `circle hint(r: 25)`
+        // are all anonymous forms.  An anonymous declaration still needs a key the desugared
+        // statements can resolve by — a chain's corner welds by *name* — so it is given one the
+        // tokenizer can never produce, `#a` and its keyword's end (the flattener's block-prefix
+        // device, marked apart); its span is empty at the keyword, the point a name's `name := `
+        // would go, which is where `edit::reconcile` splices one the moment a statement must say
+        // it (`Decl::mint_close` says when the name needs parentheses round the declaration).
+        let kw = self.t.get(self.i.wrapping_sub(1)).map(|(_, s)| *s).unwrap_or_default();
+        let name = match name {
+            // an element keyword names a kind wherever it stands, so a reference to an element
+            // called `face` would read as a new face; a param may still bear the word
+            Some(n) if EntKind::parse(&n.text).is_some() => {
+                let m =
+                    format!("`{}` is an element keyword, and no element may be called it", n.text);
+                self.fail_at(n.span, &m);
+                return None;
             }
-            let at = self.prev_hi();
-            DeclName::Key(Name { text: format!("#a{at}"), span: Span::new(at, at) })
+            Some(n) => DeclName::Written(n),
+            None => DeclName::Key(Name {
+                text: format!("#a{}", kw.hi),
+                span: Span::new(kw.lo as usize, kw.lo as usize),
+            }),
         };
         // how an error spells this statement's head — computed at the failure, since every
         // declaration that parses would otherwise allocate a string nothing reads
         let head = || decl_head(kind, &name);
         if kind == EntKind::Motion { return self.motion_decl(name); }
         if kind == EntKind::Envelope { return self.envelope_decl(name); }
-        // `curve path = leg.toe over theta in (0, 360)` — a point of a component, as one of its
-        // numeric formals runs (§6.5).  The target is an instance's point, or an instance
-        // written in place followed by the point's path.
+        // a curve is what `over` makes a definition's value: `k := leg.toe over u in (a, b)`
         if kind == EntKind::Curve {
-            if self.peek() != Some(&Tok::Eq) {
-                self.fail(
-                    "a curve is `curve name = instance.point over formal in (a, b)`, or \
-                     `curve name = Component(args).point over formal in (a, b)`",
-                );
-                return None;
-            }
-            self.i += 1;
-            let curve = self.curve_spec()?;
-            let at = self.prev_hi();
-            let (class, class_span) = self.class_clause(at);
-            if self.peek_word("in") {
-                self.fail("`in` puts points on a plane, and a curve has none of its own");
-                return None;
-            }
-            return Some(Decl {
-                annotations: Default::default(),
-                kind,
-                name,
-                children: Vec::new(),
-                seed: Vec::new(),
-                seed_text: Vec::new(),
-                seed_spans: Vec::new(),
-                hint_span: None,
-                knots: None,
-                curve: Some(curve),
-                class,
-                class_span,
-                computed: None,
-                seed_at: None,
-                seed_names: Vec::new(),
-                attitude: Attitude::Page,
-                sweep: None, motion: None, angular_span: None, plane: Default::default(),
-                membership: Membership::default(),
-                list_span: Span::default(),
-                close: None,
-            });
+            self.fail(
+                "a curve is `name := instance.point over formal in (a, b)`, or \
+                 `name := Component(args).point over formal in (a, b)`",
+            );
+            return None;
         }
-        // `point p = (xexpr, yexpr)` — a computed point (§6.5).  The brackets after a name say
-        // what the thing is made of, and this one is made of a formula: no children, no seed
-        // and no trailer, since nothing on the sheet ever holds it and no solve writes it.
-        if self.peek() == Some(&Tok::Eq) {
-            if kind != EntKind::Point {
-                self.fail(&format!(
-                    "only a point is computed (`point p = (x, y)`); a {} is made of its \
-                     children",
-                    kind.as_str()
-                ));
-                return None;
-            }
+        // `p := point(x: xexpr, y: yexpr)` — a computed point (§6.5).  The brackets say what the
+        // thing is made of, and this one is made of a formula: no children, no seed and no
+        // trailer, since nothing on the sheet ever holds it and no solve writes it.  A point has
+        // no children, so its brackets are free to hold the two coordinates.
+        if kind == EntKind::Point && self.peek() == Some(&Tok::P('(')) {
             if name.written().is_none() {
-                self.fail("a computed point is named: `point p = (x, y)`");
+                self.fail("a computed point is named: `p := point(x: …, y: …)`");
                 return None;
             }
             self.i += 1;
-            let computed = Some(self.pair()?);
+            let mut xy: [Option<(String, Span)>; 2] = [None, None];
+            while !self.eat_p(')') {
+                let Some(l) = self.slot_label() else {
+                    self.fail("a computed point's brackets are `(x: …, y: …)`");
+                    return None;
+                };
+                let k = match l.as_str() {
+                    "x" => 0,
+                    "y" => 1,
+                    _ => {
+                        self.fail(&format!("a point is computed by `x:` and `y:`, not `{l}:`"));
+                        return None;
+                    }
+                };
+                if xy[k].is_some() {
+                    self.fail(&format!("`{l}` is given twice"));
+                    return None;
+                }
+                xy[k] = Some(self.expr_until(',')?);
+                if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                    self.fail("expected `,` or `)`");
+                    return None;
+                }
+            }
+            let [Some(x), Some(y)] = xy else {
+                self.fail("a computed point gives both `x:` and `y:`");
+                return None;
+            };
+            let computed = Some([x, y]);
             let end = self.prev_hi();
             let mut membership = Membership::default();
             membership.set_span(Span::new(end, end));
@@ -346,6 +333,7 @@ impl<'a> P<'a> {
                 membership,
                 list_span: Span::new(end, end),
                 close: None,
+                mint_close: None,
             });
         }
         let mut children: Vec<Vec<Kid>> = Vec::new();
@@ -473,11 +461,12 @@ impl<'a> P<'a> {
                                 && self.t.get(self.i + 1).map(|t| &t.0) == Some(&Tok::P('(')) =>
                             {
                                 if kind != EntKind::Solid {
-                                    self.fail("an inline face is a solid's section: write `solid name(face(…), …)`");
+                                    self.fail("an inline face is a solid's section: \
+                                               write `name := solid(face(…), …)`");
                                     return None;
                                 }
                                 self.i += 1;
-                                let decl = self.decl(EntKind::Face)?;
+                                let decl = self.decl(EntKind::Face, None)?;
                                 Kid::Face { span: decl.list_span, decl: Box::new(decl) }
                             }
                             None => {
@@ -738,6 +727,7 @@ impl<'a> P<'a> {
             membership,
             list_span,
             close,
+            mint_close: None,
         })
     }
 
@@ -932,7 +922,7 @@ impl<'a> P<'a> {
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],attitude:Attitude::Page,
             sweep:None,motion:None,angular_span:Some(crate::syntax::AngularSpan {from,to}),plane:Default::default(),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
         })
     }
 
@@ -986,7 +976,7 @@ impl<'a> P<'a> {
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],attitude:Attitude::Page,
             sweep:None,motion:Some(spec),angular_span:None,plane:Default::default(),membership:Membership::default(),
-            list_span:Span::new(start.lo as usize,end),close:None,
+            list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
         })
     }
 

@@ -263,7 +263,7 @@ impl<'a> Walk<'a> {
                 }
                 // A formal *declares* what its argument is — `phi: Angle`, `m: Length` — so the
                 // number it stands for carries that dimension through the component's body.
-                // This is where `param x = w + phi` is caught: nothing else in a component says
+                // This is where `x := w + phi` is caught: nothing else in a component says
                 // what a number is, and the substitution `settle` performs erases it.
                 (ty, InstVal::Expr(t)) => {
                     self.bind_value(&mut sub, f, *ty, t, vals, scope, &inst.name.text, a.span)

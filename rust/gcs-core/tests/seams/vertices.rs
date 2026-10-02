@@ -7,26 +7,26 @@ mod faces;
 
 const CORNERS: &str = "
 component Sphere(origin: point,size: Length) {
-  private point south hint(x: origin.x,y: origin.y-size)
-  private point north hint(x: origin.x,y: origin.y+size)
+  private south := point hint(x: origin.x,y: origin.y-size)
+  private north := point hint(x: origin.x,y: origin.y+size)
   ground south
   ground north
-  private arc rim(center: origin,start: south,end: north)
+  private rim := arc(center: origin,start: south,end: north)
   radius(size) rim
-  private line diameter(north,south)
-  private solid carrier(face(rim,diameter),about: diameter)
-  surface wall(carrier,rim)
+  private diameter := line(north,south)
+  private carrier := solid(face(rim,diameter),about: diameter)
+  wall := surface(carrier,rim)
 }
-point shifted hint(x: 0,y: 1)
+shifted := point hint(x: 0,y: 1)
 ground shifted
-globe: Sphere(o,size: sqrt(9.25)*1mm)
-offset: Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
-join_cut: Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
-seam radial(first_envelope,globe.wall)
-seam offset_edge(first_envelope,offset.wall)
-seam join_edge(second_envelope,join_cut.wall)
-vertex corner(first: radial,second: offset_edge)
-vertex junction(shared,join_edge)
+globe := Sphere(o,size: sqrt(9.25)*1mm)
+offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
+join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
+radial := seam(first_envelope,globe.wall)
+offset_edge := seam(first_envelope,offset.wall)
+join_edge := seam(second_envelope,join_cut.wall)
+corner := vertex(first: radial,second: offset_edge)
+junction := vertex(shared,join_edge)
 ";
 
 fn model() -> program::Elaborated { solved(&format!("{MODEL}{CORNERS}")) }
@@ -80,8 +80,8 @@ fn named_vertices_solve_both_corner_kinds_without_planar_coordinates() {
 
 #[test]
 fn vertex_identity_formals_privacy_and_dependency_copy_survive() {
-    let src = format!("component Forward(v: vertex) {{ construction vertex out(v.second,v.first) }}\n\
-        copy: Forward(corner)\ncopy_join: Forward(junction)\n{MODEL}{CORNERS}");
+    let src = format!("component Forward(v: vertex) {{ construction out := vertex(v.second,v.first) }}\n\
+        copy := Forward(corner)\ncopy_join := Forward(junction)\n{MODEL}{CORNERS}");
     let e = solved(&src);
     let out = e.map.ent_named("copy.out").unwrap();
     let original = e.map.ent_named("corner").unwrap();
@@ -104,22 +104,22 @@ fn vertex_identity_formals_privacy_and_dependency_copy_survive() {
     let deleted = io::without(&e.sketch,&[e.map.ent_named("offset.wall").unwrap()],&[]);
     assert_eq!(deleted.vertices.len(),2); // Both junction declarations survive.
     let src = format!("{MODEL}{CORNERS}\ncomponent Private(a: seam,b: seam) {{\n\
-        private vertex hidden(a,b)\n}}\npart: Private(radial,offset_edge)\n");
+        private hidden := vertex(a,b)\n}}\npart := Private(radial,offset_edge)\n");
     let e = solved(&src);
     assert!(e.map.entity_path(&e.sketch,"part.hidden").is_none());
-    let e = build(&format!("{src}vertex leak(part.hidden.first,offset_edge)\n"));
+    let e = build(&format!("{src}leak := vertex(part.hidden.first,offset_edge)\n"));
     assert!(e.errors().any(|d| d.message.contains("private member")),"{:?}",e.diags);
 }
 
 #[test]
 fn vertex_spelling_roundtrips_in_a_flat_program() {
-    let source = format!("{MODEL}\npoint south hint(x: 0,y: -sqrt(10))\n\
-        point north hint(x: 0,y: sqrt(10))\nground south\nground north\n\
-        arc rim(center: o,start: south,end: north)\nradius(sqrt(10)*1mm) rim\n\
-        line diameter(north,south)\nsolid ball(face(rim,diameter),about: diameter)\n\
-        surface wall(ball,rim)\nseam boundary(first_envelope,wall)\n\
-        construction vertex corner(shared,boundary)\nvertex other(shared,boundary)\n\
-        edge extent(shared,from: corner,to: other,along: axis)\n");
+    let source = format!("{MODEL}\nsouth := point hint(x: 0,y: -sqrt(10))\n\
+        north := point hint(x: 0,y: sqrt(10))\nground south\nground north\n\
+        rim := arc(center: o,start: south,end: north)\nradius(sqrt(10)*1mm) rim\n\
+        diameter := line(north,south)\nball := solid(face(rim,diameter),about: diameter)\n\
+        wall := surface(ball,rim)\nboundary := seam(first_envelope,wall)\n\
+        construction corner := vertex(shared,boundary)\nother := vertex(shared,boundary)\n\
+        extent := edge(shared,from: corner,to: other,along: axis)\n");
     let mut p = solved(&source).program;
     let text = syntax::render_flat(&mut p).unwrap();
     let e = solved(text);
@@ -134,21 +134,21 @@ fn vertex_spelling_roundtrips_in_a_flat_program() {
 #[test]
 fn vertices_reject_unrelated_faces_duplicate_boundaries_and_wrong_operands() {
     for tail in [
-        "vertex bad(radial,radial)",
-        "seam duplicate(first_envelope,globe.wall)\nvertex bad(radial,duplicate)",
-        "seam different(second_envelope,offset.wall)\nvertex bad(radial,different)",
-        "vertex bad(shared,shared)",
-        "seam other_join(second_envelope,first_envelope)\nvertex bad(shared,other_join)",
-        "vertex bad(first_envelope,radial)",
-        "vertex bad(radial)",
-        "vertex bad(radial,offset_edge,join_edge)",
+        "bad := vertex(radial,radial)",
+        "duplicate := seam(first_envelope,globe.wall)\nbad := vertex(radial,duplicate)",
+        "different := seam(second_envelope,offset.wall)\nbad := vertex(radial,different)",
+        "bad := vertex(shared,shared)",
+        "other_join := seam(second_envelope,first_envelope)\nbad := vertex(shared,other_join)",
+        "bad := vertex(first_envelope,radial)",
+        "bad := vertex(radial)",
+        "bad := vertex(radial,offset_edge,join_edge)",
         "ground corner",
     ] {
         let (p,errors) = syntax::parse(&format!("{MODEL}{CORNERS}{tail}\n"));
         assert!(!errors.is_empty() || !program::elaborate(&p).ok(),"accepted {tail}");
     }
-    let src = format!("{MODEL}{CORNERS}\nenvelope lookalike(first_surface,under: roll,from: -20deg,to: 20deg)\n\
-        seam unrelated(lookalike,join_cut.wall)\nvertex bad(shared,unrelated)\n");
+    let src = format!("{MODEL}{CORNERS}\nlookalike := envelope(first_surface,under: roll,from: -20deg,to: 20deg)\n\
+        unrelated := seam(lookalike,join_cut.wall)\nbad := vertex(shared,unrelated)\n");
     assert!(build(&src).errors().any(|d| d.message.contains("face of the generating junction")));
 }
 
@@ -177,10 +177,10 @@ fn corner_snapshots_enforce_finite_boundaries_material_and_numerical_controls() 
         }
     }
     for radius in [3.01,3.5] {
-        let src = format!("{MODEL}{}\nclip: Sphere(o,size: {radius}mm)\n\
-            patch clipped(first_envelope,inside: clip.wall.solid)\n",
-            CORNERS.replace("seam radial(first_envelope,","seam radial(clipped,")
-                .replace("seam offset_edge(first_envelope,","seam offset_edge(clipped,"));
+        let src = format!("{MODEL}{}\nclip := Sphere(o,size: {radius}mm)\n\
+            clipped := patch(first_envelope,inside: clip.wall.solid)\n",
+            CORNERS.replace("radial := seam(first_envelope,","radial := seam(clipped,")
+                .replace("offset_edge := seam(first_envelope,","offset_edge := seam(clipped,"));
         let e = solved(&src);
         let v = BoundaryVertex::named(&e.sketch,0,1e-10).unwrap();
         assert_eq!(v.solve([0.45,0.01,0.08],bounds(&v),1e-10).is_ok(),radius > 3.05);
@@ -189,11 +189,11 @@ fn corner_snapshots_enforce_finite_boundaries_material_and_numerical_controls() 
 
 #[test]
 fn a_corner_does_not_transfer_fine_incidence_across_a_coarse_seam_tolerance() {
-    let src = MODEL.replace("point a hint(x: 2,y: 0)","point a hint(x: 1,y: 0)")
-        .replace("point c hint(x: 3,y: 2)","point c hint(x: 2,y: 2)")
-        .replace("point d hint(x: 2,y: 2)","point d hint(x: 1,y: 2)")
-        .replace("line high(m,c)","point arc_center hint(x: 2,y: 1)\nground arc_center\n\
-            arc high(center: arc_center,start: m,end: c)\nradius(1mm) high");
+    let src = MODEL.replace("a := point hint(x: 2,y: 0)","a := point hint(x: 1,y: 0)")
+        .replace("c := point hint(x: 3,y: 2)","c := point hint(x: 2,y: 2)")
+        .replace("d := point hint(x: 2,y: 2)","d := point hint(x: 1,y: 2)")
+        .replace("high := line(m,c)","arc_center := point hint(x: 2,y: 1)\nground arc_center\n\
+            high := arc(center: arc_center,start: m,end: c)\nradius(1mm) high");
     let mut e = solved(&format!("{src}{CORNERS}"));
     let radius = e.sketch.arcs[e.map.ent_named("high").unwrap().i()].radius as usize;
     e.sketch.params[radius].value += 1e-5;
@@ -206,14 +206,14 @@ fn a_corner_does_not_transfer_fine_incidence_across_a_coarse_seam_tolerance() {
 #[test]
 fn distinct_names_do_not_make_a_nonisolated_corner_unique() {
     let src = format!("{MODEL}{}",CORNERS.replace(
-        "offset: Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)",
-        "offset: Sphere(o,size: sqrt(9.25)*1mm)"));
+        "offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)",
+        "offset := Sphere(o,size: sqrt(9.25)*1mm)"));
     let e = solved(&src);
     let v = BoundaryVertex::named(&e.sketch,0,1e-10).unwrap();
     assert_eq!(v.solve([0.5,0.,0.1],bounds(&v),1e-10).unwrap_err(),Error::SingularIntersection);
     let src = format!("{MODEL}{}",CORNERS.replace(
-        "join_cut: Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)",
-        "join_cut: Sphere(o,size: sqrt(10)*1mm)"));
+        "join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)",
+        "join_cut := Sphere(o,size: sqrt(10)*1mm)"));
     let e = solved(&src);
     let v = JunctionVertex::named(&e.sketch,1,tolerance()).unwrap();
     assert_eq!(v.solve([0.,0.1],junction_options(&v),1e-10).unwrap_err(),Error::SingularIntersection);

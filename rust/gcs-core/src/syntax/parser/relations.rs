@@ -121,7 +121,8 @@ impl<'a> P<'a> {
     /// Read optional operator arguments. Slot pins stay in parentheses; seeds come
     /// from the separate hint clause.
     pub(super) fn op_args(&mut self, word: &str) -> Option<Vec<OpArg>> {
-        if !self.eat_p('(') {
+        // `horizontal (l := line)` — a named link after the word, not the word's own arguments
+        if crate::syntax::words::named_link_at(&self.t, self.i) || !self.eat_p('(') {
             return Some(Vec::new());
         }
         // `symmetry`'s line and `tangent`'s contact point (two cones touching at M) stand in the

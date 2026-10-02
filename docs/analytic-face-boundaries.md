@@ -3,8 +3,8 @@
 A spatial face now uses the existing `face` declaration with an explicit support:
 
 ```sv
-face working(toe, tip, heel, join, on: flank)
-face transition(round_toe, join, round_heel, root, on: fillet)
+working := face(toe, tip, heel, join, on: flank)
+transition := face(round_toe, join, round_heel, root, on: fillet)
 ```
 
 Every boundary operand is a named finite `edge`. `on:` names the exact surface,

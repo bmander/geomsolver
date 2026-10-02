@@ -106,8 +106,8 @@ fn a_derived_plane_inherits_its_mated_parents_final_origin() {
     assert_eq!(p["result.bounds.y1"], -4.0);
     let src = source(5)
         .replace(
-            "plane child(",
-            "plane middle(origin: o, toward: q, from: back, offset: 1mm)\nplane child(",
+            "child := plane(",
+            "middle := plane(origin: o, toward: q, from: back, offset: 1mm)\nchild := plane(",
         )
         .replace("from: back, offset: 3mm", "from: middle, offset: 2mm");
     let deeper = positions(&src);
@@ -130,7 +130,7 @@ fn body_reports_keep_every_operand_path() {
         .map(|(_, value)| value)
         .sum();
     assert_eq!(face_area, p["result.area"]);
-    let p = positions(&format!("{src}\nsolid outer(result)\n"));
+    let p = positions(&format!("{src}\nouter := solid(result)\n"));
     assert_eq!(p["outer.result.stock.near.area"], 91.0);
     assert_eq!(p["outer.result.boss.near.area"], 9.0);
 }
@@ -185,10 +185,10 @@ fn invalid_solved_profiles_and_revolution_axes_are_diagnosed() {
     ] {
         let mut src = String::from("unit mm\n");
         for (i, (x, y)) in coords.iter().enumerate() {
-            src += &format!("point p{i} hint(x: {x}, y: {y})\nground p{i}\n");
+            src += &format!("p{i} := point hint(x: {x}, y: {y})\nground p{i}\n");
         }
         src += &format!(
-            "face f({}, -> close)\nsolid result(f, depth: 5mm)\n",
+            "f := face({}, -> close)\nresult := solid(f, depth: 5mm)\n",
             (0..coords.len())
                 .map(|i| format!("p{i}"))
                 .collect::<Vec<_>>()
@@ -259,7 +259,7 @@ fn depth_is_a_positive_magnitude_even_when_it_is_an_expression() {
         1e-12,
     );
     let src = source(12)
-        .replace("unit mm", "unit mm\nparam d = -5mm")
+        .replace("unit mm", "unit mm\nd := -5mm")
         .replace("depth: -5mm", "depth: d");
     let (p, _) = syntax::parse(&src);
     assert!(!program::elaborate(&p).ok());
@@ -268,7 +268,7 @@ fn depth_is_a_positive_magnitude_even_when_it_is_an_expression() {
 #[test]
 fn geometry_validation_uses_the_solved_shape_instead_of_its_hint() {
     // p2 starts at p1. Its dimensions move it to the fourth corner before validation runs.
-    let e = read("unit mm\npoint p0 hint(x: 0, y: 0)\nground p0\npoint p1 hint(x: 10, y: 0)\nground p1\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 0, y: 10)\nground p3\np0 distance(10mm, along: x) p2\np0 distance(10mm, along: y) p2\nface f(p0,p1,p2,p3, -> close)\nsolid result(f, depth: 5mm)\n");
+    let e = read("unit mm\np0 := point hint(x: 0, y: 0)\nground p0\np1 := point hint(x: 10, y: 0)\nground p1\np2 := point hint(x: 10, y: 0)\np3 := point hint(x: 0, y: 10)\nground p3\np0 distance(10mm, along: x) p2\np0 distance(10mm, along: y) p2\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(f, depth: 5mm)\n");
     assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
     near(
         report::positions(&e.sketch, &e.map)

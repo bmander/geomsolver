@@ -4,22 +4,22 @@ use gcs_core::{io,model::{MotionDef,SolidDef},program,solid::{self,MaterialField
 mod contacts;
 
 const SOURCE: &str = "unit mm
-point center hint(x: 3,y: 0)
-point a hint(x: 3,y: -1)
-point b hint(x: 3,y: 1)
-point o hint(x: 0,y: 0)
-point z hint(x: 0,y: 1)
+center := point hint(x: 3,y: 0)
+a := point hint(x: 3,y: -1)
+b := point hint(x: 3,y: 1)
+o := point hint(x: 0,y: 0)
+z := point hint(x: 0,y: 1)
 ground center
 ground a
 ground b
 ground o
 ground z
-arc rim(center: center,start: a,end: b)
+rim := arc(center: center,start: a,end: b)
 radius(1) rim
-line diameter(a,b)
-line axis(o,z)
-solid tool(face(rim,diameter),about: diameter)
-motion generating(about: axis)
+diameter := line(a,b)
+axis := line(o,z)
+tool := solid(face(rim,diameter),about: diameter)
+generating := motion(about: axis)
 ";
 fn read(source: &str) -> program::Elaborated {
     let (mut p,errors) = syntax::parse(source);
@@ -74,7 +74,7 @@ fn a_continuous_sweep_is_meshed_from_its_field() {
 
 #[test]
 fn sweep_print_copy_paste_and_delete_preserve_transitive_dependencies() {
-    let e = read(&format!("solid swept(tool,under: generating,from: -60deg,to: 60deg)\n{SOURCE}"));
+    let e = read(&format!("swept := solid(tool,under: generating,from: -60deg,to: 60deg)\n{SOURCE}"));
     let mut p = e.program.clone();
     let printed = syntax::render_flat(&mut p).unwrap();
     assert!(printed.contains("from: -60deg, to: 60deg"),"{printed}");
@@ -100,16 +100,16 @@ fn repeated_component_cuts_index_one_continuous_sweep() {
     let e = read(&format!("{SOURCE}
 component IndexedCuts(tool: solid,target: solid,indexing: motion,count: Int) {{
   repeat count as i {{
-    solid placed(tool,under: indexing,at: i*360deg/count)
+    placed := solid(tool,under: indexing,at: i*360deg/count)
     placed cut target
   }}
 }}
-circle band(center: center)
+band := circle(center: center)
 radius(2) band
-solid stock(face(band),about: axis)
-solid body(stock)
-solid swept(tool,under: generating,from: -10deg,to: 10deg)
-cuts: IndexedCuts(swept,body,generating,count: 3)
+stock := solid(face(band),about: axis)
+body := solid(stock)
+swept := solid(tool,under: generating,from: -10deg,to: 10deg)
+cuts := IndexedCuts(swept,body,generating,count: 3)
 "));
     let i = e.map.ent_named("body").unwrap().i();
     for k in 0..6 {
@@ -129,7 +129,7 @@ cuts: IndexedCuts(swept,body,generating,count: 3)
 
 #[test]
 fn sweep_fingerprints_read_the_motion_family_and_source_geometry() {
-    let mut e = read(&format!("{SOURCE}solid swept(tool,under: generating,from: 0deg,to: 360deg)\n"));
+    let mut e = read(&format!("{SOURCE}swept := solid(tool,under: generating,from: 0deg,to: 360deg)\n"));
     let i = e.map.ent_named("swept").unwrap().i();
     let before = solid::reads(&e.sketch,i,solid::REPORT_UNIT);
     let m = e.map.ent_named("generating").unwrap().i();
@@ -144,22 +144,22 @@ fn sweep_fingerprints_read_the_motion_family_and_source_geometry() {
 
 #[test]
 fn invalid_intervals_cycles_and_nested_sweeps_are_explicit() {
-    for bad in ["solid bad(tool,under: generating,from: 1deg)",
-        "solid bad(tool,under: generating,to: 1deg)",
-        "solid bad(tool,under: generating,from: 0deg,to: 0deg)",
-        "solid bad(tool,under: generating,from: 1deg,to: -1deg)",
-        "solid bad(tool,under: generating,from: 1mm,to: 2mm)",
-        "solid bad(tool,under: generating,from: 0deg,to: 1deg,at: 0deg)",
-        "solid bad(tool,under: generating,from: 0deg,to: 1deg,depth: 1mm)",
-        "solid bad(tool,under: axis,from: 0deg,to: 1deg)",
-        "solid bad(bad,under: generating,from: 0deg,to: 1deg)"] {
+    for bad in ["bad := solid(tool,under: generating,from: 1deg)",
+        "bad := solid(tool,under: generating,to: 1deg)",
+        "bad := solid(tool,under: generating,from: 0deg,to: 0deg)",
+        "bad := solid(tool,under: generating,from: 1deg,to: -1deg)",
+        "bad := solid(tool,under: generating,from: 1mm,to: 2mm)",
+        "bad := solid(tool,under: generating,from: 0deg,to: 1deg,at: 0deg)",
+        "bad := solid(tool,under: generating,from: 0deg,to: 1deg,depth: 1mm)",
+        "bad := solid(tool,under: axis,from: 0deg,to: 1deg)",
+        "bad := solid(bad,under: generating,from: 0deg,to: 1deg)"] {
         let (p,errors) = syntax::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);
         assert!(!errors.is_empty() || !e.ok() ||
             e.sketch.solids.iter().enumerate().any(|(i,_)| solid::validate(&e.sketch,i).is_err()),"{bad}");
     }
-    let e = read(&format!("{SOURCE}solid inner_sweep(tool,under: generating,from: -10deg,to: 10deg)\n\
-        solid outer_sweep(inner_sweep,under: generating,from: -10deg,to: 10deg)\n"));
+    let e = read(&format!("{SOURCE}inner_sweep := solid(tool,under: generating,from: -10deg,to: 10deg)\n\
+        outer_sweep := solid(inner_sweep,under: generating,from: -10deg,to: 10deg)\n"));
     let i = e.map.ent_named("outer_sweep").unwrap().i();
     assert!(MaterialField::read(&e.sketch,i,1e-10).unwrap_err().contains("nested continuous sweeps"));
 }

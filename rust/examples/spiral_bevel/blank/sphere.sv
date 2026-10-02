@@ -7,10 +7,10 @@ use std
 // The face width along `generator` (apex -> mean point), centred on the mean point.
 component FaceSpan(generator: line, width: Length) {
   // Seeds only, rough: a tenth of the generator back from the mean point.
-  point toe hint(x: generator.p2.x - (generator.p2.x - generator.p1.x) / 10,
+  toe := point hint(x: generator.p2.x - (generator.p2.x - generator.p1.x) / 10,
                  y: generator.p2.y - (generator.p2.y - generator.p1.y) / 10)
-  point heel hint(x: 2 * generator.p2.x - toe.x, y: 2 * generator.p2.y - toe.y)
-  line span(toe, heel)
+  heel := point hint(x: 2 * generator.p2.x - toe.x, y: 2 * generator.p2.y - toe.y)
+  span := line(toe, heel)
   generator.p2 midpoint span
   distance(width) span
   generator angle(0deg) span
@@ -19,25 +19,25 @@ component FaceSpan(generator: line, width: Length) {
 // The sphere about `apex` through `rim`, a point of `generator` (apex -> mean point).
 component SphericalBoundary(apex: point, generator: line, rim: point) {
   // Seeds: the rim turned a quarter either way about the apex.
-  private point bottom hint(x: apex.x + rim.y - apex.y, y: apex.y - rim.x + apex.x)
-  private point top hint(x: apex.x - rim.y + apex.y, y: apex.y + rim.x - apex.x)
-  private arc meridian(center: apex, start: bottom, end: top)
-  private line diameter(top, bottom)
+  private bottom := point hint(x: apex.x + rim.y - apex.y, y: apex.y - rim.x + apex.x)
+  private top := point hint(x: apex.x - rim.y + apex.y, y: apex.y + rim.x - apex.x)
+  private meridian := arc(center: apex, start: bottom, end: top)
+  private diameter := line(top, bottom)
   apex on diameter
   generator angle(90deg, sense: cw) diameter
   rim on meridian
-  private face profile(meridian, diameter)
-  private construction solid carrier(profile, about: diameter)
-  surface wall(carrier, meridian)
+  private profile := face(meridian, diameter)
+  private construction carrier := solid(profile, about: diameter)
+  wall := surface(carrier, meridian)
 }
 
 preview {
   unit mm
-  point mean hint(x: 50, y: 0)
+  mean := point hint(x: 50, y: 0)
   std.origin distance(50mm, along: right) mean
   std.origin distance(0mm, along: up) mean
-  line generator(std.origin, mean)
-  span: FaceSpan(generator, width: 10mm)
-  toe: SphericalBoundary(std.origin, generator, span.toe)
-  heel: SphericalBoundary(std.origin, generator, span.heel)
+  generator := line(std.origin, mean)
+  span := FaceSpan(generator, width: 10mm)
+  toe := SphericalBoundary(std.origin, generator, span.toe)
+  heel := SphericalBoundary(std.origin, generator, span.heel)
 }

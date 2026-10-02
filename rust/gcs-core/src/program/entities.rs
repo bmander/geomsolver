@@ -110,8 +110,8 @@ pub(super) fn build(
     for group in &d.children {
         // a slot nothing names or seeds is an *implicit child*, minted exactly as a declaration
         // that writes no list at all mints them (spec §6.2) — which is what lets a chain's
-        // thread fill only the slots it speaks for (`line l1 -> line l2`) and leave the rest
-        // the drawing's own
+        // thread fill only the slots it speaks for (`(l1 := line) -> (l2 := line)`) and leave the
+        // rest the drawing's own
         if group.is_empty() && written != 0 {
             // a `List` kind has no arity to mint from, and a slot with no dotted path has no
             // name to be reached by
@@ -359,7 +359,7 @@ pub(super) fn build(
     Some(e)
 }
 
-/// **A cone or a cylinder**: `cone k(axis: l) hint(half: 30deg)`, `cylinder c(axis: l)
+/// **A cone or a cylinder**: `k := cone(axis: l) hint(half: 30deg)`, `cylinder c(axis: l)
 /// hint(r: 10)`.  What it is made of is a line already drawn in some view — a cone's apex is the
 /// line's start and its axis runs toward the end — and it owns one number, a half-angle or a
 /// radius, which a relation states (`angle(30deg) k`, `radius(10) c`) or a solve finds.  The

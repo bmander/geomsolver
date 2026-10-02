@@ -11,22 +11,22 @@ use components.parts
 use components.disc
 
 component Crank(o: point, ref: line, dims: group) {
-  point pin hint(x: o.x + dims.R * sin(dims.theta0), y: o.y + dims.R * cos(dims.theta0))
-  line arm(o, pin)
+  pin := point hint(x: o.x + dims.R * sin(dims.theta0), y: o.y + dims.R * cos(dims.theta0))
+  arm := line(o, pin)
   o distance(dims.R) pin
   arm angle(theta) ref
-  circle path(center: o) hint(r: dims.R)
+  path := circle(center: o) hint(r: dims.R)
   radius(dims.R) path
   // the clevis pin's end, seen on
-  circle kp(center: pin) hint(r: dims.rpin)
+  kp := circle(center: pin) hint(r: dims.rpin)
   radius(dims.rpin) kp
-  plane disc_axes(origin: o, toward: pin)
-  disc: Disc(disc_axes, dims: dims)
+  disc_axes := plane(origin: o, toward: pin)
+  disc := Disc(disc_axes, dims: dims)
 }
 
 // Open this file to preview the crank; drag its pin to turn it.
 preview {
   unit mm
-  line ref(std.origin, std.up.toward)
-  crank: Crank(std.origin, ref, dims: vtwin_dims)
+  ref := line(std.origin, std.up.toward)
+  crank := Crank(std.origin, ref, dims: vtwin_dims)
 }

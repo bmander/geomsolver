@@ -6,85 +6,85 @@ use gcs_core::{interval::Interval as I,program,solid::{MaterialField,SpatialFiel
 
 const BLOCK: &str = "unit mm
 use std
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 40)
-point d hint(x: 0, y: 40)
-horizontal line ab(a, b) -> vertical line bc(b, c) -> horizontal line cd(c, d) -> vertical line da(d, a) -> close
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 40)
+d := point hint(x: 0, y: 40)
+horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) -> horizontal (cd := line(c, d)) -> vertical (da := line(d, a)) -> close
 a distance(60) b
 b distance(40) c
 ground a
-face sec(ab, bc, cd, da)
-solid block(sec, depth: 30mm)
+sec := face(ab, bc, cd, da)
+block := solid(sec, depth: 30mm)
 ";
 
-const TURN: &str = "point o hint(x: 0, y: 0)
-point z hint(x: 0, y: 10)
+const TURN: &str = "o := point hint(x: 0, y: 0)
+z := point hint(x: 0, y: 10)
 ground o
 ground z
-line axis(o, z)
-motion turn(about: axis)
-solid moved(block, under: turn, at: 40deg)
+axis := line(o, z)
+turn := motion(about: axis)
+moved := solid(block, under: turn, at: 40deg)
 ";
 
-const BORE: &str = "point h hint(x: 30, y: 20)
+const BORE: &str = "h := point hint(x: 30, y: 20)
 ground h
-circle hole(center: h) hint(r: 8)
+hole := circle(center: h) hint(r: 8)
 radius(8) hole
-face hole_f(hole)
-solid body(block)
-solid bore(hole_f, through: body)
+hole_f := face(hole)
+body := solid(block)
+bore := solid(hole_f, through: body)
 bore cut body
 ";
 
 const ELL: &str = "unit mm
 use std
-point a hint(x: 0, y: 0)
-point b hint(x: 50, y: 0)
-point c hint(x: 50, y: 20)
-point d hint(x: 20, y: 20)
-point e hint(x: 20, y: 50)
-point f hint(x: 0, y: 50)
-horizontal line ab(a, b) -> vertical line bc(b, c) -> horizontal line cd(c, d) -> vertical line de(d, e) -> horizontal line ef(e, f) -> vertical line fa(f, a) -> close
+a := point hint(x: 0, y: 0)
+b := point hint(x: 50, y: 0)
+c := point hint(x: 50, y: 20)
+d := point hint(x: 20, y: 20)
+e := point hint(x: 20, y: 50)
+f := point hint(x: 0, y: 50)
+horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) -> horizontal (cd := line(c, d)) -> vertical (de := line(d, e)) -> horizontal (ef := line(e, f)) -> vertical (fa := line(f, a)) -> close
 a distance(50) b
 b distance(20) c
 c distance(30) d
 d distance(30) e
 ground a
-face sec(ab, bc, cd, de, ef, fa)
-solid ell(sec, depth: 12mm)
+sec := face(ab, bc, cd, de, ef, fa)
+ell := solid(sec, depth: 12mm)
 ";
 
 // A block with a semicircular notch bitten out of its top edge: the arc turns
 // against the loop, and the face enters it by its end.
 const NOTCH: &str = "unit mm
 use std
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 30)
-point d hint(x: 40, y: 30)
-point e hint(x: 20, y: 30)
-point f hint(x: 0, y: 30)
-point m hint(x: 30, y: 30)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 30)
+d := point hint(x: 40, y: 30)
+e := point hint(x: 20, y: 30)
+f := point hint(x: 0, y: 30)
+m := point hint(x: 30, y: 30)
 ground a
 ground m
 a distance(60) b
 b distance(30) c
 a distance(30) f
-line ab(a, b)
-line bc(b, c)
-line cd(c, d)
-arc notch(center: m, start: e, end: d) hint(r: 10)
-line ef(e, f)
-line fa(f, a)
+ab := line(a, b)
+bc := line(b, c)
+cd := line(c, d)
+notch := arc(center: m, start: e, end: d) hint(r: 10)
+ef := line(e, f)
+fa := line(f, a)
 horizontal ab
 vertical bc
 horizontal cd
 horizontal ef
 vertical fa
 radius(10) notch
-face sec(ab, bc, cd, notch, ef, fa)
-solid notched(sec, depth: 8mm)
+sec := face(ab, bc, cd, notch, ef, fa)
+notched := solid(sec, depth: 8mm)
 ";
 
 fn read(source: &str) -> program::Elaborated {

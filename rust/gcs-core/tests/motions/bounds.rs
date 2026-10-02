@@ -8,7 +8,7 @@ fn contains(b: [I;3],p: [f64;3]) {
 
 #[test]
 fn interval_rotations_include_axis_normalization_offset_and_both_senses() {
-    let e = solved(&format!("{AXES}\nmotion turn(about: axis,ratio: -2,phase: 30deg)\n"));
+    let e = solved(&format!("{AXES}\nturn := motion(about: axis,ratio: -2,phase: 30deg)\n"));
     let family = motion::Family::read(&e.sketch,0).unwrap();
     let domain = I::new(-0.3,0.4).unwrap();
     let bounds = family.bounds(domain).unwrap();
@@ -30,10 +30,10 @@ fn interval_rotations_include_axis_normalization_offset_and_both_senses() {
 #[test]
 fn relative_motion_bounds_cover_input_boxes_and_nested_observer_inverses() {
     let e = solved(&format!("{AXES}\n\
-        motion turn(about: axis,ratio: 2,phase: 30deg)\n\
-        motion observer(about: other,ratio: -0.3,phase: 20deg)\n\
-        motion relative(turn,relative_to: observer)\n\
-        motion nested(relative,relative_to: turn)\n"));
+        turn := motion(about: axis,ratio: 2,phase: 30deg)\n\
+        observer := motion(about: other,ratio: -0.3,phase: 20deg)\n\
+        relative := motion(turn,relative_to: observer)\n\
+        nested := motion(relative,relative_to: turn)\n"));
     for name in ["relative","nested"] {
         let family = motion::Family::read(&e.sketch,e.map.ent_named(name).unwrap().i()).unwrap();
         let b = family.bounds(I::new(-0.1,0.2).unwrap()).unwrap();
@@ -51,7 +51,7 @@ fn relative_motion_bounds_cover_input_boxes_and_nested_observer_inverses() {
 
 #[test]
 fn motion_bounds_retain_solved_snapshots_and_enclose_angles_of_any_size() {
-    let mut e = solved(&format!("{AXES}\nmotion turn(about: axis,ratio: 2)\n"));
+    let mut e = solved(&format!("{AXES}\nturn := motion(about: axis,ratio: 2)\n"));
     let family = motion::Family::read(&e.sketch,0).unwrap();
     // Many turns wide, the bounds hold every pose in them, the identity among them; a single
     // angle past sin_cos's own domain reads the same pose as that angle a turn nearer zero.

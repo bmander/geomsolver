@@ -24,24 +24,24 @@ fn messages(e: &Elaborated) -> Vec<String> {
 fn an_unbound_formal_is_one_unknown_everywhere_it_is_read() {
     let src = "\
 component Arm(o: point, p: point, len: Length, theta: Angle) {
-  line l(o, p)
+  l := line(o, p)
   o distance(len) p
-  point x hint(x: 1, y: 0)
-  line ax(o, x)
+  x := point hint(x: 1, y: 0)
+  ax := line(o, x)
   horizontal ax
   o distance(1) x
   ax angle(theta) l
 }
 component Crank(o: point, theta: Angle) {
-  param twice = theta * 2
-  point p hint(x: 20, y: 10)
-  point q hint(x: 10, y: 20)
-  a: Arm(o, p, len: 30, theta: theta)
-  b: Arm(o, q, len: 30, theta: twice)
+  twice := theta * 2
+  p := point hint(x: 20, y: 10)
+  q := point hint(x: 10, y: 20)
+  a := Arm(o, p, len: 30, theta: theta)
+  b := Arm(o, q, len: 30, theta: twice)
 }
-point o hint(x: 0, y: 0)
+o := point hint(x: 0, y: 0)
 ground o
-c: Crank(o)
+c := Crank(o)
 ";
     let mut e = build(src);
     assert!(e.ok(), "{:?}", messages(&e));
@@ -68,22 +68,22 @@ c: Crank(o)
 fn a_nested_unbound_formal_is_not_captured_by_the_outer_one() {
     let src = "\
 component Inner(o: point, u: Angle) {
-  point q hint(x: 5, y: 0)
-  point x hint(x: 1, y: 0)
-  line ax(o, x)
-  line l(o, q)
+  q := point hint(x: 5, y: 0)
+  x := point hint(x: 1, y: 0)
+  ax := line(o, x)
+  l := line(o, q)
   horizontal ax
   o distance(1) x
   o distance(5) q
   ax angle(u) l
 }
 component Outer(o: point, u: Angle) {
-  i: Inner(o)
+  i := Inner(o)
 }
-point o hint(x: 0, y: 0)
-circle base(center: o) hint(r: 7)
+o := point hint(x: 0, y: 0)
+base := circle(center: o) hint(r: 7)
 ground o
-curve w = Outer(o).i.q over u in (0, 90)
+w := Outer(o).i.q over u in (0, 90)
 ";
     let e = build(src);
     assert!(!e.ok(), "the inner `u` swept with the outer one");
@@ -100,22 +100,22 @@ curve w = Outer(o).i.q over u in (0, 90)
 fn the_owner_is_the_instance_with_the_formal() {
     let src = "\
 component Inner(o: point, a: Angle) {
-  point t hint(x: 5, y: 0)
-  point x hint(x: 1, y: 0)
-  line ax(o, x)
-  line l(o, t)
+  t := point hint(x: 5, y: 0)
+  x := point hint(x: 1, y: 0)
+  ax := line(o, x)
+  l := line(o, t)
   horizontal ax
   o distance(1) x
   o distance(5) t
   ax angle(a) l
 }
 component Outer(o: point, u: Angle) {
-  i: Inner(o, a: u)
+  i := Inner(o, a: u)
 }
-point o hint(x: 0, y: 0)
+o := point hint(x: 0, y: 0)
 ground o
-d: Outer(o, u: 30)
-curve k = d.i.t over u in (0, 90)
+d := Outer(o, u: 30)
+k := d.i.t over u in (0, 90)
 ";
     let e = build(src);
     assert!(e.ok(), "{:?}", messages(&e));
@@ -135,12 +135,12 @@ curve k = d.i.t over u in (0, 90)
 fn a_computed_point_stands_alone() {
     let src = "\
 component Both(o: point, u: Angle) {
-  point p = ( o.x + cos(u), o.y + sin(u) )
-  point q hint(x: 3, y: 4)
+  p := point(x: o.x + cos(u), y: o.y + sin(u))
+  q := point hint(x: 3, y: 4)
   o distance(5) q
 }
-point o hint(x: 0, y: 0)
-curve w = Both(o).p over u in (0, 90)
+o := point hint(x: 0, y: 0)
+w := Both(o).p over u in (0, 90)
 ";
     let e = build(src);
     assert!(!e.ok());

@@ -346,7 +346,7 @@ Ordered by what they unlock. All six are done; the table gives the spelling that
    (`tests/spatial_surfaces.rs`). Beyond the plan: cones, cylinders and spheres are entities with
    their own words, and the relations across views are the ordinary words read in space rather
    than new ones.
-2. **`plane q(from: P, fold: ε, through: M)`**: a fold through a solved point. `project` never
+2. **`q := plane(from: P, fold: ε, through: M)`**: a fold through a solved point. `project` never
    reads a plane's normal offset; the offset matters only when points are lifted to 3D, after
    the solve, as `against` placement already does. It lets every view pass through M while the
    gear apex stays at the origin. *Done* as written; where a mate bears on a view whose offset is

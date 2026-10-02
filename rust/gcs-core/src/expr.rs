@@ -181,7 +181,7 @@ pub enum Op {
     Pow,
 }
 
-/// `name = body`, or just `body`.
+/// `name := body`, or just `body`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parsed {
     pub name: Option<String>,

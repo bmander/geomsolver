@@ -3,18 +3,18 @@ use gcs_core::{envelope::IntersectionOptions,seam::{BoundarySeam,BoundarySeamTol
 
 pub(super) const SPHERE: &str = "
 component Sphere(origin: point, size: Length) {
-  private point bottom hint(x: 0,y: -size)
-  private point top hint(x: 0,y: size)
+  private bottom := point hint(x: 0,y: -size)
+  private top := point hint(x: 0,y: size)
   ground bottom
   ground top
-  private arc rim(center: origin,start: bottom,end: top)
+  private rim := arc(center: origin,start: bottom,end: top)
   radius(size) rim
-  private line diameter(top,bottom)
-  private solid carrier(face(rim,diameter),about: diameter)
-  surface wall(carrier,rim)
+  private diameter := line(top,bottom)
+  private carrier := solid(face(rim,diameter),about: diameter)
+  wall := surface(carrier,rim)
 }
-cut: Sphere(o,size: sqrt(9.25) * 1mm)
-seam boundary_edge(first_envelope,cut.wall)
+cut := Sphere(o,size: sqrt(9.25) * 1mm)
+boundary_edge := seam(first_envelope,cut.wall)
 ";
 
 fn model() -> program::Elaborated { solved(&format!("{MODEL}{SPHERE}")) }
@@ -61,9 +61,9 @@ fn boundary_seams_refuse_support_continuations_and_excluded_material() {
         .unwrap_err(),Error::OutsideDomain);
     assert!(original.evaluate([0.5,0.,0.1],tolerance()).is_ok());
     for radius in [3.01,3.1] {
-        let src = format!("{MODEL}{}\nsmall: Sphere(o,size: {radius}mm)\n\
-            patch clipped(first_envelope,inside: small.wall.solid)\n",
-            SPHERE.replace("seam boundary_edge(first_envelope,cut.wall)","seam boundary_edge(clipped,cut.wall)"));
+        let src = format!("{MODEL}{}\nsmall := Sphere(o,size: {radius}mm)\n\
+            clipped := patch(first_envelope,inside: small.wall.solid)\n",
+            SPHERE.replace("boundary_edge := seam(first_envelope,cut.wall)","boundary_edge := seam(clipped,cut.wall)"));
         let e = solved(&src);
         let seam = read(&e);
         let result = seam.intersect(section,[0.4,0.01,0.],options(&seam),1e-10);
@@ -77,13 +77,13 @@ fn boundary_seams_roundtrip_copy_delete_and_preserve_private_dependencies() {
     // The flat printer deliberately refuses component definitions. Exercise its
     // seam spelling with a flat sphere, and component privacy separately below.
     let mut flat = solved(&format!("{MODEL}\n\
-        point south hint(x: 0,y: -sqrt(9.25))\n\
-        point north hint(x: 0,y: sqrt(9.25))\n\
+        south := point hint(x: 0,y: -sqrt(9.25))\n\
+        north := point hint(x: 0,y: sqrt(9.25))\n\
         ground south\nground north\n\
-        arc rim(center: o,start: south,end: north)\n\
-        radius(sqrt(9.25) * 1mm) rim\nline diameter(north,south)\n\
-        solid ball(face(rim,diameter),about: diameter)\n\
-        surface wall(ball,rim)\nseam boundary_edge(first_envelope,wall)\n")).program;
+        rim := arc(center: o,start: south,end: north)\n\
+        radius(sqrt(9.25) * 1mm) rim\ndiameter := line(north,south)\n\
+        ball := solid(face(rim,diameter),about: diameter)\n\
+        wall := surface(ball,rim)\nboundary_edge := seam(first_envelope,wall)\n")).program;
     let text = syntax::render_flat(&mut flat).unwrap().to_string();
     assert!(read(&solved(&text)).evaluate([0.5,0.,0.1],tolerance()).is_ok());
     let edge = e.map.ent_named("boundary_edge").unwrap();
@@ -99,9 +99,9 @@ fn boundary_seams_roundtrip_copy_delete_and_preserve_private_dependencies() {
     let removed = io::without(&e.sketch,&[e.map.ent_named("cut.wall").unwrap()],&[]);
     assert_eq!(removed.seams.len(),1); // The unrelated generating junction survives.
     let src = format!("component Edge(e: envelope,b: surface) {{\n\
-        private seam hidden(e,b)\n}}\npart: Edge(first_envelope,cut.wall)\n{MODEL}{SPHERE}");
+        private hidden := seam(e,b)\n}}\npart := Edge(first_envelope,cut.wall)\n{MODEL}{SPHERE}");
     assert!(solved(&src).map.ent_named("part.hidden").is_some());
-    let bad = build(&format!("{src}seam bad(part.hidden.first,cut.wall)\n"));
+    let bad = build(&format!("{src}bad := seam(part.hidden.first,cut.wall)\n"));
     assert!(bad.errors().any(|d| d.message.contains("private member")),"{:?}",bad.diags);
 }
 
@@ -120,7 +120,7 @@ fn boundary_seams_refuse_invalid_controls_and_nonisolated_sections() {
     // A duplicate sphere section leaves roll free, even at an exact initial root.
     assert_eq!(seam.intersect(|c| c.position[0].hypot(c.position[1]).hypot(c.position[2])-9.25f64.sqrt(),
         [0.5,0.,0.1],options(&seam),1e-10).unwrap_err(),Error::SingularIntersection);
-    for tail in ["seam bad(cut.wall,first_envelope)","seam bad(cut.wall,cut.wall)"] {
+    for tail in ["bad := seam(cut.wall,first_envelope)","bad := seam(cut.wall,cut.wall)"] {
         assert!(!build(&format!("{MODEL}{SPHERE}{tail}\n")).ok());
     }
 }

@@ -38,7 +38,7 @@ fn says(src: &str, what: &str) {
     assert!(ds.iter().any(|m| m.contains(what)), "expected {what:?} in {ds:?}");
 }
 
-const PAIR: &str = "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\nline l(a, b)\n";
+const PAIR: &str = "a := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\nl := line(a, b)\n";
 
 /* -- the literal ------------------------------------------------------------------------- */
 
@@ -82,7 +82,7 @@ fn an_angle_in_a_length_slot_is_an_error() {
     says(&format!("{PAIR}a distance(45deg) b\n"), "is Length, and this is Angle");
     // and the other way round
     says(
-        &format!("{PAIR}point c hint(x: 1, y: 1)\nline m(b, c)\nl angle(3in) m\n"),
+        &format!("{PAIR}c := point hint(x: 1, y: 1)\nm := line(b, c)\nl angle(3in) m\n"),
         "names no unit",
     );
 }
@@ -94,11 +94,11 @@ fn an_angle_in_a_length_slot_is_an_error() {
 fn a_length_plus_an_angle_is_an_error() {
     let src = "\
 component Bad(w: Length, phi: Angle) {
-  param x = w + phi
-  point p hint(x: x, y: 0)
+  x := w + phi
+  p := point hint(x: x, y: 0)
   ground p
 }
-g: Bad(w: 10, phi: 20)
+g := Bad(w: 10, phi: 20)
 ";
     says(src, "cannot be added");
 }
@@ -108,8 +108,8 @@ g: Bad(w: 10, phi: 20)
 /// what `* 1rad` does.
 #[test]
 fn the_unstated_radians_are_caught() {
-    let head = "component G(phi: Angle) {\n  param ivp = ";
-    let tail = "\n  point p hint(x: ivp, y: 0)\n  ground p\n}\ng: G(phi: 20)\n";
+    let head = "component G(phi: Angle) {\n  ivp := ";
+    let tail = "\n  p := point hint(x: ivp, y: 0)\n  ground p\n}\ng := G(phi: 20)\n";
     says(&format!("{head}tan(phi) - phi{tail}"), "cannot be added");
     says(&format!("{head}tan(phi) * 180 / pi - phi{tail}"), "cannot be added");
     // said properly, it elaborates — and comes to the same number the conversion did
@@ -125,8 +125,8 @@ fn pi_is_a_number_and_tau_is_an_angle() {
     says(&format!("{PAIR}a distance(tau) b\n"), "is Length, and this is Angle");
     read(&format!("{PAIR}a distance(pi * 20) b\n")).expect("pi is a plain number");
     // `tau == 2 * pi * 1rad` holds dimensionally, which it did not
-    let sk = read("point a hint(x: 0, y: 0)\npoint b hint(x: 1, y: 0)\npoint c hint(x: 1, y: 1)\n\
-                   line l(a, b)\nline m(a, c)\nl angle(tau / 8) m\n")
+    let sk = read("a := point hint(x: 0, y: 0)\nb := point hint(x: 1, y: 0)\nc := point hint(x: 1, y: 1)\n\
+                   l := line(a, b)\nm := line(a, c)\nl angle(tau / 8) m\n")
         .expect("an angle slot takes an angle");
     let want = (360.0f64 / 8.0).to_radians();
     assert!((sk.user_constraints()[0].args[2].num() - want).abs() < 1e-9);
@@ -137,11 +137,11 @@ fn pi_is_a_number_and_tau_is_an_angle() {
 #[test]
 fn a_free_variable_read_two_ways_is_an_error() {
     let src = "\
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 40)
-line l(a, b)
-line m(b, c)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 40)
+l := line(a, b)
+m := line(b, c)
 a distance(k) b
 l angle(k) m
 ";
@@ -205,7 +205,7 @@ fn a_paste_between_units_converts() {
     let clip = io::copy(&inches, &inches.primitives());
     assert_eq!(clip.units.name(), Some("in"), "a clipboard says what its numbers are in");
 
-    let mut mm = read("unit mm\npoint z hint(x: 0, y: 0)\n").expect("elaborates");
+    let mut mm = read("unit mm\nz := point hint(x: 0, y: 0)\n").expect("elaborates");
     io::paste(&mut mm, &clip, 0.0, 0.0);
     let far = mm.points.iter().skip(1).map(|p| mm.params[p.x as usize].value).fold(0.0, f64::max);
     assert!((far - 60.0 * 25.4).abs() < 1e-6, "60 in is 1524 mm, got {far}");
@@ -214,7 +214,7 @@ fn a_paste_between_units_converts() {
     assert!((d.expect("the length came too").args[2].num() - 50.8).abs() < 1e-9);
 
     // and into a document in the same units, nothing is scaled
-    let mut same = read("unit in\npoint z hint(x: 0, y: 0)\n").expect("elaborates");
+    let mut same = read("unit in\nz := point hint(x: 0, y: 0)\n").expect("elaborates");
     io::paste(&mut same, &clip, 0.0, 0.0);
     let far = same.points.iter().skip(1).map(|p| same.params[p.x as usize].value).fold(0.0, f64::max);
     assert!((far - 60.0).abs() < 1e-9, "got {far}");
@@ -223,8 +223,8 @@ fn a_paste_between_units_converts() {
 /// The unit itself: a name the language does not know, and one that is an angle.
 #[test]
 fn a_unit_line_says_what_it_will_not_take() {
-    says("unit furlong\npoint a\n", "is not a unit");
-    says("unit deg\npoint a\n", "a document's unit is its length");
+    says("unit furlong\na := point\n", "is not a unit");
+    says("unit deg\na := point\n", "a document's unit is its length");
     assert!(Units::with_length("mm").is_ok());
 }
 
@@ -250,21 +250,21 @@ fn a_printed_model_keeps_units_and_omits_the_sheet() {
 #[test]
 fn there_is_no_string_literal() {
     // `at: start` is a word, and always was
-    read("point o hint(x: 0, y: 0)\npoint s hint(x: 10, y: 0)\npoint e hint(x: 0, y: 10)\n\
-          arc a(center: o, start: s, end: e) hint(r: 10)\npoint q hint(x: 20, y: 0)\n\
-          line l(s, q)\na tangent(at: start) l\n")
+    read("o := point hint(x: 0, y: 0)\ns := point hint(x: 10, y: 0)\ne := point hint(x: 0, y: 10)\n\
+          a := arc(center: o, start: s, end: e) hint(r: 10)\nq := point hint(x: 20, y: 0)\n\
+          l := line(s, q)\na tangent(at: start) l\n")
         .expect("a Str argument is a bare word");
     // a raw branch, bare, and printed back the same way.  A key the reader does not recognise
     // is exactly what `branch` exists for — a recorded root choice from a document this
     // implementation did not write.
-    let sk = read("point a hint(x: 0, y: 0)\nbranch(other:0|1|2, 1)\n")
+    let sk = read("a := point hint(x: 0, y: 0)\nbranch(other:0|1|2, 1)\n")
         .expect("a raw branch key is bare");
     assert_eq!(sk.branches.get("other:0|1|2").copied(), Some(1));
     let mut p = gcs_core::program::to_program(&sk);
     let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(text.contains("branch(other:0|1|2, 1)"), "{text}");
     // and a quote in a document is a unit mark, wherever it lands
-    let (_, errs) = parse("unit mm\npoint a hint(x: 0, y: 0)\npoint b hint(x: 1, y: 0)\n\
+    let (_, errs) = parse("unit mm\na := point hint(x: 0, y: 0)\nb := point hint(x: 1, y: 0)\n\
                            a distance(6\") b\n");
     assert!(errs.is_empty(), "{errs:?}");
 }
@@ -283,11 +283,11 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
     use gcs_core::constraints::CKind;
 
     let src = "unit in\n\
-               point o hint(x: 0, y: 0)\n\
-               point q hint(x: 4, y: 0)\n\
-               plane f(origin: o, toward: q)\n\
-               point a hint(x: 0, y: 3)\n\
-               point b hint(x: 6, y: 3)\n\
+               o := point hint(x: 0, y: 0)\n\
+               q := point hint(x: 4, y: 0)\n\
+               f := plane(origin: o, toward: q)\n\
+               a := point hint(x: 0, y: 3)\n\
+               b := point hint(x: 6, y: 3)\n\
                a distance(w) b\n\
                o distance(w / 2) a\n";
     let inches = read(src).expect("elaborates");
@@ -310,7 +310,7 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
     assert!((chord(&clip) - 4.0).abs() < 1e-9, "the chord is 4 in, got {}", chord(&clip));
     assert!((free(&clip) - 6.0).abs() < 1e-9, "`w` is 6 in, got {}", free(&clip));
 
-    let mut mm = read("unit mm\npoint z hint(x: 0, y: 0)\n").expect("elaborates");
+    let mut mm = read("unit mm\nz := point hint(x: 0, y: 0)\n").expect("elaborates");
     let made = io::paste(&mut mm, &clip, 0.0, 0.0);
     assert!(!made.is_empty());
 
@@ -328,7 +328,7 @@ fn a_paste_converts_a_placement() {
     let clip = io::copy(&inches, &inches.primitives());
     assert_eq!(clip.placements.len(), 1, "the placement came along");
 
-    let mut mm = read("unit mm\npoint z hint(x: 0, y: 0)\n").expect("elaborates");
+    let mut mm = read("unit mm\nz := point hint(x: 0, y: 0)\n").expect("elaborates");
     io::paste(&mut mm, &clip, 0.0, 0.0);
     let &(t, r) = mm.placements.values().next().expect("a placement");
     assert!((t - 3.0 * 25.4).abs() < 1e-6 && (r - 1.0 * 25.4).abs() < 1e-6, "got {t}, {r}");
@@ -358,10 +358,10 @@ fn every_param_slot_states_its_dimension() {
 fn a_curve_body_is_read_in_the_documents_units() {
     let sk = read(
         "unit mm\n\
-         component ray(c: circle, u: Angle) {\n  point p = ( c.center.x + 1in * u, c.center.y )\n}\n\
-         point o hint(x: 0, y: 0)\n\
-         circle c1(center: o) hint(r: 25)\n\
-         curve w = ray(c1).p over u in (0, 1)\n",
+         component ray(c: circle, u: Angle) {\n  p := point(x: c.center.x + 1in * u, y: c.center.y)\n}\n\
+         o := point hint(x: 0, y: 0)\n\
+         c1 := circle(center: o) hint(r: 25)\n\
+         w := ray(c1).p over u in (0, 1)\n",
     )
     .expect("a suffix in a curve body is read in the document's own unit");
     assert_eq!(sk.curve_defs.len(), 1);
@@ -390,9 +390,9 @@ fn a_saved_document_has_its_unit_before_its_expressions() {
 /// expanded into the flat list and read by nobody, which is the silent failure §13.1 forbids.
 #[test]
 fn a_unit_is_stated_once_and_only_in_the_root() {
-    says("unit mm\nunit in\npoint a\n", "already stated above");
+    says("unit mm\nunit in\na := point\n", "already stated above");
     says(
-        "unit mm\ncomponent Part { unit in\n  point a hint(x: 0, y: 0)\n}\np: Part()\n",
+        "unit mm\ncomponent Part { unit in\n  a := point hint(x: 0, y: 0)\n}\np := Part()\n",
         "stated once, at the top",
     );
 }
@@ -410,7 +410,7 @@ fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
         let e = gcs_core::program::elaborate(&prog);
         e.diags.iter().map(|d| (d.code.as_str().to_string(), d.message.clone())).collect()
     };
-    let two = "point a hint(x: 0, y: 0)\npoint b hint(x: 40, y: 0)\n";
+    let two = "a := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\n";
     let d = diag(&format!("{two}a distance(45deg) b\n"));
     assert_eq!(d.len(), 1, "{d:?}");
     assert_eq!(d[0].0, "E103");
@@ -418,7 +418,7 @@ fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
     assert!(!d[0].1.contains("last number"), "{}", d[0].1);
 
     let d = diag(&format!(
-        "{two}point c hint(x: 40, y: 30)\na distance(40) b\nb distance(30) c\nclaim a distance(zz) c\nground a\nground b\n"
+        "{two}c := point hint(x: 40, y: 30)\na distance(40) b\nb distance(30) c\nclaim a distance(zz) c\nground a\nground b\n"
     ));
     assert_eq!(d.iter().filter(|x| x.0 == "E040").count(), 1, "{d:?}");
     assert!(d.iter().any(|x| x.1.contains("a claim may not bind an unknown")), "{d:?}");

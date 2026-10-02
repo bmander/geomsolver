@@ -3,8 +3,8 @@ use gcs_core::{interval::minimum::{Options,Status,Stop},motion::Family,
     solid::{SweptField,SweepError},syntax,program,solve};
 
 pub(super) fn rotation() -> Family {
-    let (source,errors) = syntax::parse("point a hint(x: 0,y: 0)\npoint b hint(x: 0,y: 1)\n\
-        ground a\nground b\nline axis(a,b)\nmotion turn(about: axis)\n");
+    let (source,errors) = syntax::parse("a := point hint(x: 0,y: 0)\nb := point hint(x: 0,y: 1)\n\
+        ground a\nground b\naxis := line(a,b)\nturn := motion(about: axis)\n");
     assert!(errors.is_empty());
     let mut model = program::elaborate(&source); assert!(model.ok());
     assert!(solve::solve(&mut model.sketch,Default::default()).success);

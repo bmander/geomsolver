@@ -19,10 +19,10 @@ fn messages(e: &Elaborated) -> Vec<String> {
 }
 
 const TRI: &str = "
-point a hint(x: 0, y: 0)
-point b hint(x: 10, y: 0)
-point c hint(x: 0, y: 10)
-circle k(center: a) hint(r: 5)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 10, y: 0)
+c := point hint(x: 0, y: 10)
+k := circle(center: a) hint(r: 5)
 ";
 
 /// The four are operator words, written as relations, and none of them is a constraint the

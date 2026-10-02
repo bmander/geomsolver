@@ -28,12 +28,12 @@ fn a_formal_is_visible_inside_a_repeat_in_the_body() {
     let sk = drawn(
         "component Fan(hub: point) {
            repeat 3 as i {
-             point tip hint(x: 20 + i, y: i * 5)
+             tip := point hint(x: 20 + i, y: i * 5)
              hub distance(10) tip
            }
          }
-         point h hint(x: 0, y: 0)
-         f: Fan(h)
+         h := point hint(x: 0, y: 0)
+         f := Fan(h)
          ground h",
     );
     let d = diagnose(&mut sk.clone(), DiagnoseOptions::default());
@@ -51,14 +51,14 @@ fn a_formal_is_visible_inside_a_repeat_in_the_body() {
 fn a_formal_is_forwarded_into_a_nested_instance() {
     let sk = drawn(
         "component Inner(p: point) {
-           point z hint(x: 10, y: 0)
+           z := point hint(x: 10, y: 0)
            p distance(20) z
          }
          component Outer(q: point) {
-           i: Inner(q)
+           i := Inner(q)
          }
-         point a hint(x: 0, y: 0)
-         o: Outer(a)
+         a := point hint(x: 0, y: 0)
+         o := Outer(a)
          ground a",
     );
     assert_eq!(sk.points.len(), 2);
@@ -73,11 +73,11 @@ fn each_copy_of_an_instance_in_a_block_binds_its_own_actual() {
         "component Peg(a: point, b: point) {
            a distance(10) b
          }
-         point hub hint(x: 0, y: 0)
+         hub := point hint(x: 0, y: 0)
          ground hub
          repeat 3 as i {
-           point tip hint(x: 20 + i, y: i * 5)
-           s: Peg(hub, tip)
+           tip := point hint(x: 20 + i, y: i * 5)
+           s := Peg(hub, tip)
          }",
     );
     let d = diagnose(&mut sk.clone(), DiagnoseOptions::default());
@@ -96,11 +96,11 @@ fn a_cycle_of_instances_binds_per_copy() {
         "component Spoke(c: point, t: point) {
            c distance(40) t
          }
-         point hub hint(x: 0, y: 0)
+         hub := point hint(x: 0, y: 0)
          ground hub
          cycle 6 as i {
-           point tip hint(x: 40 * cos(60 * i), y: 40 * sin(60 * i))
-           s: Spoke(hub, tip)
+           tip := point hint(x: 40 * cos(60 * i), y: 40 * sin(60 * i))
+           s := Spoke(hub, tip)
          }",
     );
     let d = diagnose(&mut sk.clone(), DiagnoseOptions::default());
@@ -117,15 +117,15 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
     let sk = drawn(
         "component Ladder(o: point, n: Int) {\n\
          \x20 repeat n as i {\n\
-         \x20   point p hint(x: 0, y: i * 10)\n\
-         \x20   line e(p, hint(x: 5, y: i * 10))\n\
+         \x20   p := point hint(x: 0, y: i * 10)\n\
+         \x20   e := line(p, hint(x: 5, y: i * 10))\n\
          \x20 }\n\
          \x20 o coincident p[0]\n\
          }\n\
-         point o hint(x: 0, y: 0)\n\
-         point o2 hint(x: 50, y: 0)\n\
-         l: Ladder(o, n: 3)\n\
-         m: Ladder(o2, n: 2)\n\
+         o := point hint(x: 0, y: 0)\n\
+         o2 := point hint(x: 50, y: 0)\n\
+         l := Ladder(o, n: 3)\n\
+         m := Ladder(o2, n: 2)\n\
          ground o\n\
          ground o2\n\
          l.p[0] vertical l.p[1]\n\
@@ -151,8 +151,8 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
         let e = gcs_core::program::elaborate(&prog);
         assert!(!e.ok(), "{src}");
     };
-    refused("component L(n: Int) { repeat n { point p } }\nl: L(n: 2)\nground l.p[2]\n");
-    refused("component L(n: Int) { repeat n { point p } }\nl: L(n: 2)\nground l.p[0][0]\n");
+    refused("component L(n: Int) { repeat n { p := point } }\nl := L(n: 2)\nground l.p[2]\n");
+    refused("component L(n: Int) { repeat n { p := point } }\nl := L(n: 2)\nground l.p[0][0]\n");
 }
 
 // **How a call is written** (issue #48, item 1; §4.1).  Positional binding is a count, and a
@@ -176,17 +176,17 @@ const ARM: &str = "unit mm\n\
                    component Arm(hub: point, tip: point, len: Length) {\n\
                      hub distance(len) tip\n\
                    }\n\
-                   point o hint(x: 0, y: 0)\n\
-                   point t hint(x: 10, y: 0)\n\
+                   o := point hint(x: 0, y: 0)\n\
+                   t := point hint(x: 10, y: 0)\n\
                    ground o\n";
 
 #[test]
 fn a_number_is_given_by_label() {
-    let d = diags(&format!("{ARM}a: Arm(o, t, 40mm)\n"));
+    let d = diags(&format!("{ARM}a := Arm(o, t, 40mm)\n"));
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].starts_with("E004") && d[0].contains("`len`"), "{d:?}");
     // the entities stay positional; the number carries the formal's name
-    assert!(diags(&format!("{ARM}a: Arm(o, t, len: 40mm)\n")).is_empty());
+    assert!(diags(&format!("{ARM}a := Arm(o, t, len: 40mm)\n")).is_empty());
 }
 
 /// The mistake itself: an argument after a label binds by a count the label has nothing to do
@@ -194,11 +194,11 @@ fn a_number_is_given_by_label() {
 /// drawing coming out with a length stated about a point nothing else placed.
 #[test]
 fn a_positional_argument_after_a_labelled_one_is_refused() {
-    let d = diags(&format!("{ARM}a: Arm(hub: o, t, len: 40mm)\n"));
+    let d = diags(&format!("{ARM}a := Arm(hub: o, t, len: 40mm)\n"));
     assert!(d[0].starts_with("E004") && d[0].contains("`hub:`"), "{d:?}");
     // and what the count did instead is the noise the refusal is for: `tip` was never bound
     assert!(d.iter().any(|m| m.contains("no such entity: `tip`")), "{d:?}");
-    assert!(diags(&format!("{ARM}a: Arm(hub: o, tip: t, len: 40mm)\n")).is_empty());
+    assert!(diags(&format!("{ARM}a := Arm(hub: o, tip: t, len: 40mm)\n")).is_empty());
 }
 
 /// The question is about the text, so it is asked of the text: once per written call, however
@@ -207,12 +207,12 @@ fn a_positional_argument_after_a_labelled_one_is_refused() {
 fn one_call_is_read_once_however_many_copies_it_makes() {
     let d = diags(
         "component Spoke(hub: point, phase: Angle) {\n\
-           point tip hint(x: 20 * cos(phase), y: 20 * sin(phase))\n\
+           tip := point hint(x: 20 * cos(phase), y: 20 * sin(phase))\n\
            hub distance(20) tip\n\
          }\n\
-         point o hint(x: 0, y: 0)\n\
+         o := point hint(x: 0, y: 0)\n\
          ground o\n\
-         cycle 4 as i { s: Spoke(o, i * 90deg) }\n",
+         cycle 4 as i { s := Spoke(o, i * 90deg) }\n",
     );
     let said: Vec<&String> = d.iter().filter(|m| m.starts_with("E004")).collect();
     assert_eq!(said.len(), 1, "one line, one mistake: {d:?}");

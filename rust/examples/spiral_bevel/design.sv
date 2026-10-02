@@ -6,9 +6,9 @@
 // stated: the trace constructs it (pitch/trace.sv).
 use configuration
 
-param mean_cone_distance = mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2
+mean_cone_distance := mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2
 
-group hypoid_design(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
+hypoid_design := group(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   module: mean_module,
   shaft: shaft_angle, offset: offset, spiral: spiral_angle,
   pressure: 20deg, shift: pressure_shift,

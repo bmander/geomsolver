@@ -15,27 +15,27 @@ use crown.thickness
 
 // `gear` is a GearCone, `pinion` a PinionCone and `thickness` a CrownThickness.
 component Generation(gear: group, pinion: group, thickness: group) {
-  motion crown_roll(about: gear.crown_axis)
-  motion pinion_roll(about: pinion.axis,
+  crown_roll := motion(about: gear.crown_axis)
+  pinion_roll := motion(about: pinion.axis,
     ratio: distance(gear.apex, gear.mean) / distance(gear.apex, gear.foot))
-  motion gear_roll(about: gear.axis,
+  gear_roll := motion(about: gear.axis,
     ratio: -distance(gear.apex, gear.mean) / distance(gear.mean, gear.axis))
-  motion pinion_generation(crown_roll, relative_to: pinion_roll)
-  motion gear_generation(crown_roll, relative_to: gear_roll)
-  motion pinion_index(about: pinion.axis)
-  motion gear_index(about: gear.axis)
-  motion crown_neighbor(about: gear.crown_axis,
+  pinion_generation := motion(crown_roll, relative_to: pinion_roll)
+  gear_generation := motion(crown_roll, relative_to: gear_roll)
+  pinion_index := motion(about: pinion.axis)
+  gear_index := motion(about: gear.axis)
+  crown_neighbor := motion(about: gear.crown_axis,
     phase: -4 * length(thickness.ahead) / radius(thickness.ahead) * 1rad)
 }
 
 preview {
   unit mm
-  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
-  trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
-  pinion: PinionCone(pitch.view, q.view, gear, trace.foot, hypoid_design)
-  q: FoldedView(pitch.view, pinion.hinge, span: hypoid_design.cutter_radius)
-  thickness: CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
-  generation: Generation(gear, pinion, thickness)
+  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
+  gear := GearCone(pitch.view, g.view, hypoid_design)
+  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
+  trace := ToothTrace(pitch.view, gear.generator, hypoid_design)
+  pinion := PinionCone(pitch.view, q.view, gear, trace.foot, hypoid_design)
+  q := FoldedView(pitch.view, pinion.hinge, span: hypoid_design.cutter_radius)
+  thickness := CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
+  generation := Generation(gear, pinion, thickness)
 }

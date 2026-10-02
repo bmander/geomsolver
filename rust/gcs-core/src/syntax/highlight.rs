@@ -2,8 +2,7 @@
 
 use super::lexer::{lex, Tok};
 use super::words::{
-    joint_word, names_decl, opens_link, over_chain, past_args, trails_decl, word_at, BLOCKS,
-    MODIFIERS,
+    joint_word, link_word, opens_link, over_chain, past_args, trails_decl, BLOCKS, MODIFIERS,
 };
 use super::{Span, Ty, MAX_TEXT};
 use crate::constraints::is_operator;
@@ -14,8 +13,8 @@ use crate::model::EntKind;
 pub enum Tint {
     Comment,
     Num,
-    /// `component`, `param`, `cycle`, `point`, `over`, `construction` — a word that starts a
-    /// statement or shapes one
+    /// `component`, `cycle`, `point`, `over`, `construction` — a word that starts a statement or
+    /// shapes one
     Word,
     /// `Angle`, `circle`, `Tooth` — a word in the place a type is written
     Type,
@@ -64,11 +63,6 @@ enum Next {
     Unit,
     /// names what the statement declares
     Def,
-    /// the same, after an element keyword — where the name is *optional* (§6.1), so a word
-    /// reserved for what may follow a declaration keeps its own reading instead
-    DeclName,
-    /// names the component an instance is of — the one type written without a `:` before it
-    Inst,
     /// nothing in particular
     Word,
 }
@@ -113,9 +107,12 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
             }
             Tok::Num(_) if hint > 0 => Some(Tint::Seed),
             Tok::Num(_) => Some(Tint::Num),
-            // `param w = 100` and `curve e = involute(…)` — an assignment, and not a seed: the
-            // clause is what says a number is one now
-            Tok::Eq => None,
+            // `w := 100` — a definition, and not a seed: the clause is what says a number is one.
+            // What follows is read as a statement's head is: an element keyword, a call.
+            Tok::Define => {
+                at = Next::Start;
+                continue;
+            }
             Tok::EqEq => Some(Tint::Claim),
             // the joint marker is structure, the way `close` is
             Tok::Arrow => Some(Tint::Word),
@@ -135,11 +132,6 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         // (`Def`, `Inst`) survives the punctuation in between, which is why only `Start` lapses
         let modifier = matches!(t, Tok::Ident(w) if ["private", "construction", "centerline"].contains(&w.as_str()));
         if at == Next::Start && !matches!(t, Tok::P('{') | Tok::P('}')) && !modifier {
-            at = Next::Word;
-        }
-        // a declaration's name stands against its keyword or not at all — the name is optional,
-        // so `line(p1, p2)` must not read `p1` as one once the bracket has gone by
-        if at == Next::DeclName && !matches!(t, Tok::Ident(_)) {
             at = Next::Word;
         }
         // a `style` block's body is `property: value` pairs, not statements: the brace above
@@ -190,29 +182,24 @@ fn tint_word(
             (Some(Tint::Class), Next::Class)
         }
         Next::Def => (Some(Tint::Def), Next::Word),
-        Next::DeclName => {
-            // the name is optional: what follows the keyword may be the next thing the
-            // statement says — a clause, a joint, the next link — and those words keep their
-            // own colour.  The same predicate the parser decides by, asked once.
-            if !names_decl(w) {
-                return tint_word(w, prev, toks, i, Next::Word);
-            }
-            (Some(Tint::Def), Next::Word)
-        }
-        Next::Inst => (Some(Tint::Type), Next::Word),
         Next::Start => {
             if ["private", "construction", "centerline"].contains(&w) {
                 return (Some(Tint::Word), Next::Start);
             }
-            if super::is_name(w) && next == Some(&Tok::Eq) {
+            // `w := 100`, `c := circle(…)` — the name a definition gives its value
+            if next == Some(&Tok::Define) {
                 return (Some(Tint::Def), Next::Word);
             }
-            // `point p`, `component Gear(…)`, `curve involute(…)`, `param R = …`
+            // `point hint(…)`, `line(a, b)`
             if EntKind::parse(w).is_some() {
-                return (Some(Tint::Word), after_kind(w));
+                return (Some(Tint::Word), Next::Word);
             }
-            if matches!(w, "component" | "param" | "group" | "use") {
+            if matches!(w, "component" | "use") {
                 return (Some(Tint::Word), Next::Def);
+            }
+            // `dims := group(…)`
+            if w == "group" && next == Some(&Tok::P('(')) {
+                return (Some(Tint::Word), Next::Word);
             }
             // `style .construction { … }` — the class it names is the thing it declares
             if w == "style" {
@@ -236,10 +223,6 @@ fn tint_word(
             if w == "branch" {
                 return (Some(Tint::Relation), Next::Word);
             }
-            // `t: Tooth(…)` — a name, a colon and a component
-            if next == Some(&Tok::P(':')) {
-                return (Some(Tint::Def), Next::Inst);
-            }
             if next == Some(&Tok::P('(')) && !is_operator(w) {
                 return (Some(Tint::Type), Next::Word);
             }
@@ -260,6 +243,10 @@ fn tint_word(
             }
             if next == Some(&Tok::P(':')) {
                 return (Some(Tint::Label), Next::Word);
+            }
+            // `(ab := line(a, b))`, `distance(w := 60)` — a name defined where it stands
+            if next == Some(&Tok::Define) {
+                return (Some(Tint::Def), Next::Word);
             }
             // `3in` is one literal to the parser and two tokens here: the inch mark after a
             // number is a unit, plain like `mm` and `deg`, and not the membership clause
@@ -291,7 +278,7 @@ fn tint_word(
             // and computed *here*, in the one arm that reads it, since the loop around this runs
             // per keystroke and every other arm has already returned.
             let j = past_args(toks, i);
-            let next_word = word_at(toks, j);
+            let next_word = link_word(toks, j);
             // both questions off the one cursor: a line ending in a joint word continues its
             // chain onto the next, and `p distance(80)` ends a line as surely as `p equal` does.
             // A body's `}` ends a statement as a line break does (`end_of_stmt`), so a word
@@ -301,7 +288,7 @@ fn tint_word(
             if opens_link(w, next_word) {
                 // the element keyword names what the link declares; a prefix states a relation
                 return match EntKind::parse(w) {
-                    Some(_) => (Some(Tint::Word), after_kind(w)),
+                    Some(_) => (Some(Tint::Word), Next::Word),
                     None => (Some(Tint::Relation), Next::Word),
                 };
             }
@@ -317,16 +304,5 @@ fn tint_word(
             }
             (None, Next::Word)
         }
-    }
-}
-
-/// What follows an element keyword: a name, and the name is optional — except after `curve`,
-/// whose form is `curve name = family(…)` and whose name a contact addresses.  `decl()` makes
-/// the same exception, so this is the colouring's half of one rule.
-fn after_kind(w: &str) -> Next {
-    if w == "curve" {
-        Next::Def
-    } else {
-        Next::DeclName
     }
 }

@@ -42,7 +42,7 @@ function cases() {
       'point p at (0,0)',
       'radius(c)==4',
       'distance(a,b)==12.5  // a comment right up against it',
-      'param w = a*b/(c+d)-e',
+      'w := a*b/(c+d)-e',
       '',
     ].join('\n')],
     // characters a monospace face may not have, which fall back to another font
@@ -50,14 +50,14 @@ function cases() {
       '// an em dash — and a section §, a pi π, a square ², a times ×',
       'point p at (0, 0)   // — — — — — — — — — —',
       'radius(c) == 3      // π² ×',
-      'line l(p, q)        // the last line, after everything above it',
+      'l := line(p, q)        // the last line, after everything above it',
       '',
     ].join('\n')],
     // long lines, so the box carries a horizontal scrollbar and the copy does not
     ['long lines', [
       `// ${'x'.repeat(200)}`,
       `point ${'p'.repeat(60)} at (0, 0)`,
-      'line l(a, b)',
+      'l := line(a, b)',
       '',
     ].join('\n')],
   ];

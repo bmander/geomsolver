@@ -3,7 +3,7 @@ use gcs_core::{seam::{self,BoundarySeam,SeamKind,SurfaceSeam,SurfaceSeamOptions}
     solid::RevolvedSurface};
 
 fn source() -> String {
-    format!("{MODEL}{}\nseam section_curve(first_surface,cut.wall)\n",boundary::SPHERE)
+    format!("{MODEL}{}\nsection_curve := seam(first_surface,cut.wall)\n",boundary::SPHERE)
 }
 fn read(e: &program::Elaborated) -> SurfaceSeam {
     SurfaceSeam::named(&e.sketch,e.map.ent_named("section_curve").unwrap().i()).unwrap()
@@ -78,8 +78,8 @@ fn surface_seams_refuse_tangency_and_nonisolated_sections_at_exact_seeds() {
     assert_eq!(s.intersect(|_,_| 0.,[0.4,0.1],opts).unwrap_err(),Error::NotConverged);
     let e = solved(&source().replace("sqrt(9.25)","3"));
     assert_eq!(read(&e).evaluate([0.,0.1],1e-10,1e-6).unwrap_err(),Error::SingularIntersection);
-    let e = solved(&source().replace("seam section_curve(first_surface,cut.wall)",
-        "surface duplicate(body,low,from: 0deg,to: 90deg)\nseam section_curve(first_surface,duplicate)"));
+    let e = solved(&source().replace("section_curve := seam(first_surface,cut.wall)",
+        "duplicate := surface(body,low,from: 0deg,to: 90deg)\nsection_curve := seam(first_surface,duplicate)"));
     assert_eq!(read(&e).evaluate([0.5,0.1],1e-10,1e-6).unwrap_err(),Error::SingularIntersection);
 }
 
@@ -104,7 +104,7 @@ fn surface_seam_controls_fail_before_callbacks_and_unsupported_vertices_fail_at_
     }
     assert_eq!(s.intersect(|_,_| 0.,[f64::NAN,0.1],options(&s)).unwrap_err(),Error::NonFinite);
     assert_eq!(s.intersect(|_,_| f64::NAN,[0.5,0.1],options(&s)).unwrap_err(),Error::NonFinite);
-    for tail in ["vertex unsupported(section_curve,boundary_edge)","seam same(first_surface,first_surface)"] {
+    for tail in ["unsupported := vertex(section_curve,boundary_edge)","same := seam(first_surface,first_surface)"] {
         let e = build(&format!("{}{tail}\n",source()));
         assert!(!e.ok(),"{tail}");
     }
@@ -123,10 +123,10 @@ fn surface_seams_copy_dependencies_and_obey_component_privacy() {
     assert!(SurfaceSeam::named(&dst,dst.seams.len()-1).unwrap().evaluate([0.5,0.1],1e-10,1e-6).is_ok());
     assert!(!io::without(&e.sketch,&[e.map.ent_named("cut.wall").unwrap()],&[])
         .seams.iter().any(|s| s.name == "section_curve"));
-    let src = format!("component Pair(a: surface,b: surface) {{ private seam hidden(a,b) }}\n\
-        part: Pair(first_surface,cut.wall)\n{}",source());
+    let src = format!("component Pair(a: surface,b: surface) {{ private hidden := seam(a,b) }}\n\
+        part := Pair(first_surface,cut.wall)\n{}",source());
     let e = solved(&src);
     assert!(e.map.entity_path(&e.sketch,"part.hidden").is_none());
-    let e = build(&format!("{src}\nseam leak(part.hidden.first,cut.wall)\n"));
+    let e = build(&format!("{src}\nleak := seam(part.hidden.first,cut.wall)\n"));
     assert!(e.errors().any(|d| d.message.contains("private member")));
 }

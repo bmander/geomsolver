@@ -4,16 +4,16 @@ mod bounds;
 mod contact;
 
 const AXES: &str = "unit mm
-point a hint(x: 2,y: 0)
-point b hint(x: 2,y: 1)
-point o hint(x: 0,y: 0)
-point x hint(x: 1,y: 0)
+a := point hint(x: 2,y: 0)
+b := point hint(x: 2,y: 1)
+o := point hint(x: 0,y: 0)
+x := point hint(x: 1,y: 0)
 ground a
 ground b
 ground o
 ground x
-line axis(a,b)
-line other(o,x)
+axis := line(a,b)
+other := line(o,x)
 ";
 
 fn build(src: &str) -> program::Elaborated {
@@ -34,10 +34,10 @@ fn near(a: [f64;3], b: [f64;3], tol: f64) {
 #[test]
 fn inverse_motion_speed_bounds_cover_offset_axes_and_shared_relative_graphs() {
     let e = solved(&format!("{AXES}\n\
-        motion turn(about: axis,ratio: 2,phase: 90deg)\n\
-        motion observer(about: other,ratio: -3,phase: 20deg)\n\
-        motion relative(turn,relative_to: observer)\n\
-        motion nested(relative,relative_to: turn)\n"));
+        turn := motion(about: axis,ratio: 2,phase: 90deg)\n\
+        observer := motion(about: other,ratio: -3,phase: 20deg)\n\
+        relative := motion(turn,relative_to: observer)\n\
+        nested := motion(relative,relative_to: turn)\n"));
     for name in ["turn","observer","relative","nested"] {
         let family = motion::Family::read(&e.sketch,e.map.ent_named(name).unwrap().i()).unwrap();
         for p in [[0.;3],[0.,3.,4.],[3.,1.,4.],[-20.,30.,-5.]] {
@@ -58,9 +58,9 @@ fn inverse_motion_speed_bounds_cover_offset_axes_and_shared_relative_graphs() {
 
 #[test]
 fn motions_follow_directed_axes_with_phase_and_exact_relative_velocity() {
-    let e = solved(&format!("{AXES}motion relative(turn,relative_to: observer)\n\
-        motion turn(about: axis,ratio: 2,phase: 90deg)\n\
-        motion observer(about: other,ratio: -0.3,phase: 20deg)\n"));
+    let e = solved(&format!("{AXES}relative := motion(turn,relative_to: observer)\n\
+        turn := motion(about: axis,ratio: 2,phase: 90deg)\n\
+        observer := motion(about: other,ratio: -0.3,phase: 20deg)\n"));
     let index = |n| e.map.ent_named(n).unwrap().i();
     let turn = motion::evaluate(&e.sketch,index("turn"),0.).unwrap();
     near(turn.point([3.,0.,0.]),[2.,1.,0.],1e-12);
@@ -82,8 +82,8 @@ fn motions_follow_directed_axes_with_phase_and_exact_relative_velocity() {
 
 #[test]
 fn motions_round_trip_and_remap_transitive_dependencies() {
-    let src = format!("{AXES}motion a_relative(turn,relative_to: observer)\n\
-        motion turn(about: axis)\nmotion observer(about: other,ratio: -2)\n");
+    let src = format!("{AXES}a_relative := motion(turn,relative_to: observer)\n\
+        turn := motion(about: axis)\nobserver := motion(about: other,ratio: -2)\n");
     let e = solved(&src);
     let mut p = e.program.clone();
     let text = syntax::render_flat(&mut p).unwrap().to_string();
@@ -108,35 +108,35 @@ fn motions_round_trip_and_remap_transitive_dependencies() {
 #[test]
 fn motion_component_formals_preserve_private_dependencies() {
     let src = format!("{AXES}component Rotate(ax: line,rate: Scalar) {{\n\
-        private motion spin(about: ax,ratio: rate)\n\
-        motion out(spin,relative_to: spin)\n}}\n\
-        component Observe(m: motion) {{ motion out(m,relative_to: m) }}\n\
-        copy: Observe(part.out)\npart: Rotate(axis,rate: 2)\n");
+        private spin := motion(about: ax,ratio: rate)\n\
+        out := motion(spin,relative_to: spin)\n}}\n\
+        component Observe(m: motion) {{ out := motion(m,relative_to: m) }}\n\
+        copy := Observe(part.out)\npart := Rotate(axis,rate: 2)\n");
     let e = solved(&src);
     assert!(e.map.entity_path(&e.sketch,"part.spin").is_none());
     let out = e.map.ent_named("copy.out").unwrap();
     assert_eq!(out.kind,EntKind::Motion);
     near(motion::evaluate(&e.sketch,out.i(),0.7).unwrap().point([1.,2.,3.]),[1.,2.,3.],1e-12);
-    let bad = build(&format!("{src}motion bad(part.spin,relative_to: part.out)\n"));
+    let bad = build(&format!("{src}bad := motion(part.spin,relative_to: part.out)\n"));
     assert!(bad.errors().any(|d| d.message.contains("private member")),"{:?}",bad.diags);
 }
 
 #[test]
 fn motions_reject_wrong_units_missing_references_and_cycles() {
     for (tail,want) in [
-        ("motion bad(about: o)","directed line"),
-        ("motion bad(about: missing)","no such motion axis"),
-        ("motion bad(about: axis,ratio: 2mm)","ratio"),
-        ("motion bad(about: axis,phase: 2mm)","phase"),
-        ("motion bad(axis,relative_to: axis)","does not name a motion"),
-        ("motion ma(mb,relative_to: mb)\nmotion mb(ma,relative_to: ma)","cycle"),
+        ("bad := motion(about: o)","directed line"),
+        ("bad := motion(about: missing)","no such motion axis"),
+        ("bad := motion(about: axis,ratio: 2mm)","ratio"),
+        ("bad := motion(about: axis,phase: 2mm)","phase"),
+        ("bad := motion(axis,relative_to: axis)","does not name a motion"),
+        ("ma := motion(mb,relative_to: mb)\nmb := motion(ma,relative_to: ma)","cycle"),
     ] {
         let e = build(&format!("{AXES}{tail}\n"));
         assert!(!e.ok() && e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);
     }
     for args in ["", "about: axis,relative_to: a", "about: axis,about: axis",
         "a,relative_to: a,ratio: 1", "bogus: axis"] {
-        let (_,errors) = syntax::parse(&format!("motion bad({args})\n"));
+        let (_,errors) = syntax::parse(&format!("bad := motion({args})\n"));
         assert!(!errors.is_empty(),"accepted {args}");
     }
 }
@@ -144,21 +144,21 @@ fn motions_reject_wrong_units_missing_references_and_cycles() {
 #[test]
 fn motion_axes_use_world_geometry_and_follow_solved_point_edits() {
     let mut e = solved("unit mm
-point o hint(x: 7,y: -3)
-point q hint(x: 7,y: -2)
+o := point hint(x: 7,y: -3)
+q := point hint(x: 7,y: -2)
 ground o
 ground q
-plane side(origin: o,toward: q,u: (1,0,0),v: (0,0,1))
+side := plane(origin: o,toward: q,u: (1,0,0),v: (0,0,1))
 in side {
-  point a
-  point b
+  a := point
+  b := point
   a distance(2mm,along: u) side
   a distance(0mm,along: v) side
   b distance(2mm,along: u) side
   b distance(1mm,along: v) side
-  line axis(a,b)
+  axis := line(a,b)
 }
-motion turn(about: axis,phase: 90deg)
+turn := motion(about: axis,phase: 90deg)
 ");
     let snapshot = motion::Family::read(&e.sketch,0).unwrap();
     let m = motion::evaluate(&e.sketch,0,0.).unwrap();
@@ -186,24 +186,24 @@ motion turn(about: axis,phase: 90deg)
 
 #[test]
 fn motion_dependency_depth_is_bounded_and_runtime_cycles_are_rejected() {
-    let mut src = format!("{AXES}motion base(about: axis)\n");
+    let mut src = format!("{AXES}base := motion(about: axis)\n");
     for i in 0..70 {
         let next = if i == 69 { "base".to_string() } else { format!("m{:02}",i+1) };
-        src.push_str(&format!("motion m{i:02}({next},relative_to: base)\n"));
+        src.push_str(&format!("m{i:02} := motion({next},relative_to: base)\n"));
     }
     let e = build(&src);
     assert!(e.errors().any(|d| d.message.contains("64 levels")),"{:?}",e.diags);
-    let mut e = solved(&format!("{AXES}motion base(about: axis)\n"));
+    let mut e = solved(&format!("{AXES}base := motion(about: axis)\n"));
     e.sketch.motions[0].def = MotionDef::Relative {source:0,observer:0};
     assert!(motion::evaluate(&e.sketch,0,0.).unwrap_err().contains("cycle"));
 }
 
 #[test]
 fn cached_motion_dependencies_do_not_bypass_the_depth_limit() {
-    let mut src = format!("{AXES}motion base(about: axis)\n");
+    let mut src = format!("{AXES}base := motion(about: axis)\n");
     for i in 0..70 {
         let prev = if i == 0 { "base".to_string() } else { format!("m{:02}",i-1) };
-        src.push_str(&format!("motion m{i:02}({prev},relative_to: base)\n"));
+        src.push_str(&format!("m{i:02} := motion({prev},relative_to: base)\n"));
     }
     let e = build(&src);
     assert!(e.errors().any(|d| d.message.contains("64 levels")),"{:?}",e.diags);
@@ -217,9 +217,9 @@ fn cached_motion_dependencies_do_not_bypass_the_depth_limit() {
 fn screws_and_translations_follow_their_closed_forms() {
     use gcs_core::interval::Interval as I;
     let e = solved(&format!("{AXES}\n\
-        motion tap(about: axis,ratio: 2,phase: 30deg,advance: 3mm)\n\
-        motion feed(along: other,advance: 10mm)\n\
-        motion relative(tap,relative_to: feed)\n"));
+        tap := motion(about: axis,ratio: 2,phase: 30deg,advance: 3mm)\n\
+        feed := motion(along: other,advance: 10mm)\n\
+        relative := motion(tap,relative_to: feed)\n"));
     let tap = motion::Family::read(&e.sketch,e.map.ent_named("tap").unwrap().i()).unwrap();
     let feed = motion::Family::read(&e.sketch,e.map.ent_named("feed").unwrap().i()).unwrap();
     let relative = motion::Family::read(&e.sketch,e.map.ent_named("relative").unwrap().i()).unwrap();
@@ -279,13 +279,13 @@ fn screws_and_translations_follow_their_closed_forms() {
 #[test]
 fn a_pose_alone_is_the_motion_without_its_derivative() {
     let e = solved(&format!("{AXES}\n\
-        motion tap(about: axis,ratio: 2,phase: 30deg,advance: 3mm)\n\
-        motion feed(along: other,advance: 10mm)\n\
-        motion turn(about: axis,ratio: 2,phase: 90deg)\n\
-        motion observer(about: other,ratio: -3,phase: 20deg)\n\
-        motion relative(tap,relative_to: feed)\n\
-        motion rolled(turn,relative_to: observer)\n\
-        motion nested(rolled,relative_to: turn)\n"));
+        tap := motion(about: axis,ratio: 2,phase: 30deg,advance: 3mm)\n\
+        feed := motion(along: other,advance: 10mm)\n\
+        turn := motion(about: axis,ratio: 2,phase: 90deg)\n\
+        observer := motion(about: other,ratio: -3,phase: 20deg)\n\
+        relative := motion(tap,relative_to: feed)\n\
+        rolled := motion(turn,relative_to: observer)\n\
+        nested := motion(rolled,relative_to: turn)\n"));
     for name in ["tap","feed","turn","relative","rolled","nested"] {
         let family = motion::Family::read(&e.sketch,e.map.ent_named(name).unwrap().i()).unwrap();
         for k in -8..=8 {

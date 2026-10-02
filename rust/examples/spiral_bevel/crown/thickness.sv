@@ -13,23 +13,23 @@ use pitch.trace
 component CrownThickness(p: plane, generator: line, normal: line, design: group) {
   // Seeds only, rough: the quarter pitch's ends straight across from M, and the trace
   // circles seven tenths of a module either side of the cutter radius.
-  param r = design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
-  param rc = design.cutter_radius
-  param ri = rc - 0.7 * design.module
-  param ro = rc + 0.7 * design.module
+  r := design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
+  rc := design.cutter_radius
+  ri := rc - 0.7 * design.module
+  ro := rc + 0.7 * design.module
   in p {
-    point ahead_end hint(x: r, y: pi * design.module / 4)
-    point behind_end hint(x: r, y: -pi * design.module / 4)
-    arc ahead(center: generator.p1, start: generator.p2, end: ahead_end) hint(r: r)
-    arc behind(center: generator.p1, start: behind_end, end: generator.p2) hint(r: r)
-    circle inner(center: normal.p1) hint(r: ri)
-    circle outer(center: normal.p1) hint(r: ro)
-    point inner_pitch hint(x: normal.p1.x + (normal.p1.x - normal.p2.x) * ri / rc,
+    ahead_end := point hint(x: r, y: pi * design.module / 4)
+    behind_end := point hint(x: r, y: -pi * design.module / 4)
+    ahead := arc(center: generator.p1, start: generator.p2, end: ahead_end) hint(r: r)
+    behind := arc(center: generator.p1, start: behind_end, end: generator.p2) hint(r: r)
+    inner := circle(center: normal.p1) hint(r: ri)
+    outer := circle(center: normal.p1) hint(r: ro)
+    inner_pitch := point hint(x: normal.p1.x + (normal.p1.x - normal.p2.x) * ri / rc,
                            y: normal.p1.y + (normal.p1.y - normal.p2.y) * ri / rc)
-    point outer_pitch hint(x: normal.p1.x + (normal.p1.x - normal.p2.x) * ro / rc,
+    outer_pitch := point hint(x: normal.p1.x + (normal.p1.x - normal.p2.x) * ro / rc,
                            y: normal.p1.y + (normal.p1.y - normal.p2.y) * ro / rc)
-    line to_inner(normal.p1, inner_pitch)
-    line to_outer(normal.p1, outer_pitch)
+    to_inner := line(normal.p1, inner_pitch)
+    to_outer := line(normal.p1, outer_pitch)
   }
   length(pi * design.module / 4) ahead
   length(pi * design.module / 4) behind
@@ -43,9 +43,9 @@ component CrownThickness(p: plane, generator: line, normal: line, design: group)
 
 preview {
   unit mm
-  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
-  trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
-  thickness: CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
+  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
+  gear := GearCone(pitch.view, g.view, hypoid_design)
+  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
+  trace := ToothTrace(pitch.view, gear.generator, hypoid_design)
+  thickness := CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
 }

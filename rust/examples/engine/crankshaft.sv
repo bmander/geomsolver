@@ -20,43 +20,43 @@ use engine.parts
 // and `heel` are where the arm's line crosses the eye and the rim — the throw's extreme points,
 // which the side view reads.
 component Throw(o: point, axis: line, theta: Angle, dims: group, shape: group) {
-  point pin hint(x: o.x + dims.R * sin(theta), y: o.y + dims.R * cos(theta))
-  line arm(o, pin)
+  pin := point hint(x: o.x + dims.R * sin(theta), y: o.y + dims.R * cos(theta))
+  arm := line(o, pin)
   o distance(dims.R) pin
   axis angle(theta, sense: cw) arm
-  circle kp(center: pin) hint(r: dims.rp)
+  kp := circle(center: pin) hint(r: dims.rp)
   radius(dims.rp) kp
   // the eye: the arc of the far side, between the two flank tangents
-  point el hint(x: pin.x - shape.eye * cos(theta), y: pin.y + shape.eye * sin(theta))
-  point er hint(x: pin.x + shape.eye * cos(theta), y: pin.y - shape.eye * sin(theta))
-  arc eye(center: pin, start: er, end: el) hint(r: shape.eye)
+  el := point hint(x: pin.x - shape.eye * cos(theta), y: pin.y + shape.eye * sin(theta))
+  er := point hint(x: pin.x + shape.eye * cos(theta), y: pin.y - shape.eye * sin(theta))
+  eye := arc(center: pin, start: er, end: el) hint(r: shape.eye)
   radius(shape.eye) eye
   // the rim: an arc about the axis on the far side from the pin, `shape.half_width` either side of the arm
-  point cl hint(x: o.x - shape.rim * sin(theta - asin(shape.half_width / shape.rim)), y: o.y - shape.rim * cos(theta - asin(shape.half_width / shape.rim)))
-  point cr hint(x: o.x - shape.rim * sin(theta + asin(shape.half_width / shape.rim)), y: o.y - shape.rim * cos(theta + asin(shape.half_width / shape.rim)))
-  arc rim(center: o, start: cl, end: cr) hint(r: shape.rim)
+  cl := point hint(x: o.x - shape.rim * sin(theta - asin(shape.half_width / shape.rim)), y: o.y - shape.rim * cos(theta - asin(shape.half_width / shape.rim)))
+  cr := point hint(x: o.x - shape.rim * sin(theta + asin(shape.half_width / shape.rim)), y: o.y - shape.rim * cos(theta + asin(shape.half_width / shape.rim)))
+  rim := arc(center: o, start: cl, end: cr) hint(r: shape.rim)
   radius(shape.rim) rim
   cl distance(shape.half_width, side: left) arm
   cr distance(shape.half_width, side: right) arm
   // the flanks, tangent to the eye where they leave it
-  line fl(el, cl)
-  line fr(er, cr)
+  fl := line(el, cl)
+  fr := line(er, cr)
   fl tangent(at: p1) eye
   fr tangent(at: p1) eye
   // the crown of the eye and the heel of the rim, on the arm's own line
-  point crown hint(x: pin.x + shape.eye * sin(theta), y: pin.y + shape.eye * cos(theta))
-  point heel hint(x: o.x - shape.rim * sin(theta), y: o.y - shape.rim * cos(theta))
+  crown := point hint(x: pin.x + shape.eye * sin(theta), y: pin.y + shape.eye * cos(theta))
+  heel := point hint(x: o.x - shape.rim * sin(theta), y: o.y - shape.rim * cos(theta))
   crown on eye
   crown on arm
   heel on rim
   heel on arm
   // the oil passage, drilled up the arm from the journal's surface to the pin's
-  point oa hint(x: o.x + dims.rj * sin(theta) - shape.oil_radius * cos(theta), y: o.y + dims.rj * cos(theta) + shape.oil_radius * sin(theta))
-  point ob hint(x: pin.x - dims.rp * sin(theta) - shape.oil_radius * cos(theta), y: pin.y - dims.rp * cos(theta) + shape.oil_radius * sin(theta))
-  point oc hint(x: o.x + dims.rj * sin(theta) + shape.oil_radius * cos(theta), y: o.y + dims.rj * cos(theta) - shape.oil_radius * sin(theta))
-  point od hint(x: pin.x - dims.rp * sin(theta) + shape.oil_radius * cos(theta), y: pin.y - dims.rp * cos(theta) - shape.oil_radius * sin(theta))
-  line oil_l(oa, ob)
-  line oil_r(oc, od)
+  oa := point hint(x: o.x + dims.rj * sin(theta) - shape.oil_radius * cos(theta), y: o.y + dims.rj * cos(theta) + shape.oil_radius * sin(theta))
+  ob := point hint(x: pin.x - dims.rp * sin(theta) - shape.oil_radius * cos(theta), y: pin.y - dims.rp * cos(theta) + shape.oil_radius * sin(theta))
+  oc := point hint(x: o.x + dims.rj * sin(theta) + shape.oil_radius * cos(theta), y: o.y + dims.rj * cos(theta) - shape.oil_radius * sin(theta))
+  od := point hint(x: pin.x - dims.rp * sin(theta) + shape.oil_radius * cos(theta), y: pin.y - dims.rp * cos(theta) - shape.oil_radius * sin(theta))
+  oil_l := line(oa, ob)
+  oil_r := line(oc, od)
   oa distance(shape.oil_radius, side: left) arm
   ob distance(shape.oil_radius, side: left) arm
   oc distance(shape.oil_radius, side: right) arm
@@ -70,11 +70,11 @@ component Throw(o: point, axis: line, theta: Angle, dims: group, shape: group) {
 // A web seen edge on: a rectangle between `x0` and `x1` along the axis whose top and bottom are
 // the heights of two points the end view placed.
 component WebSide(o: point, x0: Length, x1: Length, top: point, bottom: point) {
-  point a hint(x: o.x + x0, y: top.y)
-  point b hint(x: o.x + x1, y: top.y)
-  point c hint(x: o.x + x1, y: bottom.y)
-  point d hint(x: o.x + x0, y: bottom.y)
-  line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+  a := point hint(x: o.x + x0, y: top.y)
+  b := point hint(x: o.x + x1, y: top.y)
+  c := point hint(x: o.x + x1, y: bottom.y)
+  d := point hint(x: o.x + x0, y: bottom.y)
+  (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
   o distance(x0, along: x) a
   top distance(0, along: y) a
   o distance(x1, along: x) b
@@ -88,61 +88,61 @@ component WebSide(o: point, x0: Length, x1: Length, top: point, bottom: point) {
 component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
                      draw_end: Int, draw_side: Int, dims: group) {
   // the shaft's own dimensions
-  param eP = dims.rp + 12mm        // the pin's eye, outside
-  param rcw = 55mm            // the counterweight rim
-  param hcw = 42mm            // half the web's width at the rim
-  param wj = 24mm             // a main journal's length along the axis
-  param wpin = dims.pinlen         // a crank pin's length: the table's, since the rod's big end rides it
-  param web = dims.P / 2 - (wj + wpin) / 2   // a web's thickness along the axis: what the pitch leaves
-  param rnose = 16mm          // the nose the pulley sits on
-  param oilr = 2.5mm          // the oil passage, half its bore
-  group throw_dims(eye: eP, rim: rcw, half_width: hcw, oil_radius: oilr)
+  eP := dims.rp + 12mm        // the pin's eye, outside
+  rcw := 55mm            // the counterweight rim
+  hcw := 42mm            // half the web's width at the rim
+  wj := 24mm             // a main journal's length along the axis
+  wpin := dims.pinlen         // a crank pin's length: the table's, since the rod's big end rides it
+  web := dims.P / 2 - (wj + wpin) / 2   // a web's thickness along the axis: what the pitch leaves
+  rnose := 16mm          // the nose the pulley sits on
+  oilr := 2.5mm          // the oil passage, half its bore
+  throw_dims := group(eye: eP, rim: rcw, half_width: hcw, oil_radius: oilr)
 
   // -- along the axis: the section through cylinder 1 -------------------------------------
   repeat draw_end {
     in end {
-      circle main(center: o) hint(r: dims.rj)
+      main := circle(center: o) hint(r: dims.rj)
       radius(dims.rj) main
-      circle path(center: o) hint(r: dims.R)
+      path := circle(center: o) hint(r: dims.R)
       radius(dims.R) path
-      t1: Throw(o, axis, theta: dims.theta, dims: dims, shape: throw_dims)
-      t2: Throw(o, axis, theta: dims.theta + 180deg, dims: dims, shape: throw_dims)
+      t1 := Throw(o, axis, theta: dims.theta, dims: dims, shape: throw_dims)
+      t2 := Throw(o, axis, theta: dims.theta + 180deg, dims: dims, shape: throw_dims)
     }
   }
 
   // -- across the axis: the whole shaft edge on ------------------------------------------
   repeat 5 * draw_side as j {
     in side {
-      jc: At(o_s, dx: dims.front + 25mm + j * dims.P, dy: 0mm)
-      journal: Box(jc.p, x0: -wj / 2, y0: -dims.rj, x1: wj / 2, y1: dims.rj)
+      jc := At(o_s, dx: dims.front + 25mm + j * dims.P, dy: 0mm)
+      journal := Box(jc.p, x0: -wj / 2, y0: -dims.rj, x1: wj / 2, y1: dims.rj)
     }
   }
   repeat 4 * draw_side as i {
     in side {
-      param xc = dims.front + 25mm + dims.P / 2 + i * dims.P
+      xc := dims.front + 25mm + dims.P / 2 + i * dims.P
       // cylinders 1 and 4 are up together, 2 and 3 a half turn on
-      param k = i * (3 - i) / 2
-      param ph = dims.theta + 180deg * k
-      point pin_s hint(x: o_s.x + xc, y: o_s.y + dims.R * cos(ph))
+      k := i * (3 - i) / 2
+      ph := dims.theta + 180deg * k
+      pin_s := point hint(x: o_s.x + xc, y: o_s.y + dims.R * cos(ph))
       o_s distance(xc, along: x) pin_s
-      pin: Box(pin_s, x0: -wpin / 2, y0: -dims.rp, x1: wpin / 2, y1: dims.rp)
+      pin := Box(pin_s, x0: -wpin / 2, y0: -dims.rp, x1: wpin / 2, y1: dims.rp)
       // the throw's crown and heel at this cylinder, their heights the end view's
-      point ct hint(x: o_s.x + xc, y: o_s.y + (dims.R + eP) * cos(ph))
-      point hb hint(x: o_s.x + xc, y: o_s.y - rcw * cos(ph))
+      ct := point hint(x: o_s.x + xc, y: o_s.y + (dims.R + eP) * cos(ph))
+      hb := point hint(x: o_s.x + xc, y: o_s.y - rcw * cos(ph))
       o_s distance(xc, along: x) ct
       o_s distance(xc, along: x) hb
-      wl: WebSide(o_s, x0: xc - dims.P / 2 + wj / 2, x1: xc - wpin / 2, top: ct, bottom: hb)
-      wr: WebSide(o_s, x0: xc + wpin / 2, x1: xc + dims.P / 2 - wj / 2, top: ct, bottom: hb)
+      wl := WebSide(o_s, x0: xc - dims.P / 2 + wj / 2, x1: xc - wpin / 2, top: ct, bottom: hb)
+      wr := WebSide(o_s, x0: xc + wpin / 2, x1: xc + dims.P / 2 - wj / 2, top: ct, bottom: hb)
     }
   }
   repeat draw_side {
     in side {
       // the nose the pulley sits on, forward of the first journal; behind the last, the seal
       // journal through the block's rear wall, then the flange and the flywheel on it
-      nose: Box(o_s, x0: dims.front - 70mm, y0: -rnose, x1: dims.front + 25mm - wj / 2, y1: rnose)
-      seal: Box(o_s, x0: dims.back - 25mm + wj / 2, y0: -dims.rseal, x1: dims.back + 8mm, y1: dims.rseal)
-      flange: Box(o_s, x0: dims.back + 8mm, y0: -dims.rflange, x1: dims.back + 8mm + dims.wflange, y1: dims.rflange)
-      flywheel: Box(o_s, x0: dims.back + 8mm + dims.wflange, y0: -dims.rfw, x1: dims.back + 8mm + dims.wflange + dims.wfw, y1: dims.rfw)
+      nose := Box(o_s, x0: dims.front - 70mm, y0: -rnose, x1: dims.front + 25mm - wj / 2, y1: rnose)
+      seal := Box(o_s, x0: dims.back - 25mm + wj / 2, y0: -dims.rseal, x1: dims.back + 8mm, y1: dims.rseal)
+      flange := Box(o_s, x0: dims.back + 8mm, y0: -dims.rflange, x1: dims.back + 8mm + dims.wflange, y1: dims.rflange)
+      flywheel := Box(o_s, x0: dims.back + 8mm + dims.wflange, y0: -dims.rfw, x1: dims.back + 8mm + dims.wflange + dims.wfw, y1: dims.rfw)
       claim journal[0].a distance(wj, along: x) journal[0].b
       claim pin[0].a distance(wpin, along: x) pin[0].b
     }

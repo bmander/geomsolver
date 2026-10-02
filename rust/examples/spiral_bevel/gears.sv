@@ -5,4 +5,4 @@ use std
 use design
 use members
 
-pair: HypoidPair(std.front, hypoid_design)
+pair := HypoidPair(std.front, hypoid_design)

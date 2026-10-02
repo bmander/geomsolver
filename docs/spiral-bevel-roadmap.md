@@ -40,7 +40,7 @@ the finite bevel rim through spherical and conical boundary components. Its STEP
 the experimental pinion blank under both directed native Boolean differences (no
 remaining solids); volumes agree within 5e-9 mm³. This is a construction comparison,
 not a new geometric error certificate. Motion placement now supports indexing through
-`solid indexed(tool, under: indexing, at: i * 360deg / teeth)` in ordinary components.
+`indexed := solid(tool, under: indexing, at: i * 360deg / teeth)` in ordinary components.
 Native builds export both STEP and STL from that same solid, constructing once when both
 formats are requested. Encoded STL shell checks reject cracks, pinches and float32 collapse;
 all native faces must be meshed. Native STL uses millimetres and a 0.01 mm linear tessellation
@@ -66,7 +66,7 @@ crown and bevel blank need no name-specific coordinate adapter on this path. Sou
 compare the crown against independent analytic membership and a sphere sweep against a
 closed-form torus. Concave profile loops, prisms and partial revolutions are still refused.
 These numerical conversion checks do not certify source-solve error.
-The public declaration is now `solid removal(tool, under: generating, from: -30deg, to: 30deg)`.
+The public declaration is now `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`.
 Its component parameters, copy/delete graph and continuous material evaluation are connected.
 `MaterialField::read` handles the full static/swept/placed Boolean graph without pose sampling.
 Tests cover finite end caps and indexing one swept cutter through an ordinary component.

@@ -56,7 +56,7 @@ The keys are `fold`, `offset`, `u`/`v` and `o`.
 - A bare `from:` still means "placed by `against`". With a solved attitude `against` is refused,
   under a new code, until P4.
 
-A new entity, `sphere s(center: p) hint(r: …)`, takes the prefix `radius` and the relations `on`
+A new entity, `s := sphere(center: p) hint(r: …)`, takes the prefix `radius` and the relations `on`
 and `tangent`. A circle drawn in a view is already a spatial circle.
 
 The spatial words are entries of `constraints::infix_op`, dispatched on the operand kinds and on
@@ -343,7 +343,7 @@ without naming an intrinsic row.
   into the offset, and its free twin carries the plane's normal and offset beside (m, c)). A
   view's own point or line on it is refused (E061: identically zero).
 - **Sphere.** `EntKind::Sphere` (last in the enum; FFI kind id 16), `SphereE { center, radius }`,
-  `sphere s(center: p) hint(r: …)`, built after planes, in `primitives()`, JSON (`"spheres"`, only
+  `s := sphere(center: p) hint(r: …)`, built after planes, in `primitives()`, JSON (`"spheres"`, only
   when there is one) and the graft. No sheet glyph (`svg`, `drawable`, `pick`); `scene3d` draws
   three great circles about the centre's lift. Words: `radius(r) s` (`SphereRadius`, the radius
   kernel), `p on s` (`SphereOn`, `sphere_on`), `s tangent l` (`SphereTangentLine`, `point_line3`'s
@@ -443,7 +443,7 @@ pitch plane, and `fixtures::gear::bevel` designs are unchanged.
 
 ### P4 — cones, cylinders, mates with solved views, and `o:` (done)
 
-- **Spelling.** `cone gc(axis: gax) hint(half: 60deg)` and `cylinder c(axis: ax) hint(r: 10)`:
+- **Spelling.** `gc := cone(axis: gax) hint(half: 60deg)` and `c := cylinder(axis: ax) hint(r: 10)`:
   the brackets are what each is made of — a line already drawn in some view, never minted, a
   cone's apex its start and its axis running toward its end — and the one number each owns is a
   seed (`hint(half: …)` in degrees, held in radians; `hint(r: …)`) that a relation states

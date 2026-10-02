@@ -47,27 +47,27 @@ fn dof(src: &str) -> i64 {
 /// the side one.
 const VIEWS: &str = "\
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
 ground o
 ground t
-point o2 hint(x: 120, y: 0)
-point t2 hint(x: 160, y: 0)
-plane side(origin: o2, toward: t2, from: front, fold: 90deg)
+o2 := point hint(x: 120, y: 0)
+t2 := point hint(x: 160, y: 0)
+side := plane(origin: o2, toward: t2, from: front, fold: 90deg)
 ground o2
 ground t2
-line ax(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
+ax := line(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
 ground ax.p1
 ground ax.p2
-point a hint(x: 130, y: 20) in side
-line l(hint(x: 125, y: 3), hint(x: 150, y: 20)) in side
-line bx(hint(x: 0, y: 20), hint(x: 50, y: 20)) in front
+a := point hint(x: 130, y: 20) in side
+l := line(hint(x: 125, y: 3), hint(x: 150, y: 20)) in side
+bx := line(hint(x: 0, y: 20), hint(x: 50, y: 20)) in front
 ground bx.p1
 ground bx.p2
-cylinder c(axis: ax) hint(r: 10)
-cylinder cb(axis: bx) hint(r: 10)
-cone k(axis: ax) hint(half: 30deg)
+c := cylinder(axis: ax) hint(r: 10)
+cb := cylinder(axis: bx) hint(r: 10)
+k := cone(axis: ax) hint(half: 30deg)
 ";
 
 /// The kind one statement over `VIEWS` settles to.
@@ -102,7 +102,7 @@ fn the_words_a_cone_and_a_cylinder_take() {
     assert_eq!(settles("angle(25deg) k"), CKind::ConeAngle);
     assert_eq!(settles("c tangent l"), CKind::CylinderTangentLine);
     // a point of the axis's own view is on a cylinder in space too
-    assert_eq!(settles("point b hint(x: 4, y: 4) in front\nb on c"), CKind::CylinderOn);
+    assert_eq!(settles("b := point hint(x: 4, y: 4) in front\nb on c"), CKind::CylinderOn);
 }
 
 /// A point on a cylinder stands its radius off the axis, and `radius` states it.
@@ -228,7 +228,7 @@ fn cones_and_cylinders_round_trip() {
     assert_eq!((back.cones.len(), back.cylinders.len()), (2, 0));
     // a lifted program spells both cones and the contact, and reads back to the same drawing
     let lifted = gcs_core::program::to_program(&sk).text().to_string();
-    let half = lifted.split("n0(axis: l0) hint(half: ").nth(1).and_then(|t| t.split(')').next())
+    let half = lifted.split("n0 := cone(axis: l0) hint(half: ").nth(1).and_then(|t| t.split(')').next())
         .unwrap_or_else(|| panic!("{lifted}"));
     assert!((half.parse::<f64>().unwrap() - 60.0).abs() < 1e-9, "in degrees: {lifted}");
     assert!(lifted.contains("n0 tangent(p2) n1"), "{lifted}");
@@ -247,7 +247,7 @@ fn cones_and_cylinders_round_trip() {
     let e = read(&src);
     let sk = solved(&e);
     let out = gcs_core::edit::commit_seeds(&e, &sk, &e.program).text;
-    assert!(out.contains("cone k(axis: ax) hint(half: 40)"), "{out}");
+    assert!(out.contains("k := cone(axis: ax) hint(half: 40)"), "{out}");
 }
 
 /// Each is drawn in the glass box: two circles square to the axis and four rulings.
@@ -273,15 +273,15 @@ fn the_glass_box_draws_them() {
 /// What is not a relation yet is said, and a cone or a cylinder is built about a line.
 #[test]
 fn what_a_cone_or_a_cylinder_does_not_take_is_refused() {
-    let with = |s: &str| format!("{VIEWS}cone k2(axis: l) hint(half: 20deg)\n{s}\n");
+    let with = |s: &str| format!("{VIEWS}k2 := cone(axis: l) hint(half: 20deg)\n{s}\n");
     refused(&with("l on k"), "E040", "a line on a cone or a cylinder", "on");
     refused(&with("l on c"), "E040", "a line on a cone or a cylinder", "on");
     refused(&with("k tangent l"), "E040", "a line touches a cylinder", "tangent");
     refused(&with("k tangent k2"), "E040", "names it", "tangent");
     refused(&with("angle(20deg) c"), "E040", "does not apply to a cylinder", "angle");
     refused(&with("radius(20) k"), "E040", "does not apply to a cone", "radius");
-    refused(&format!("{VIEWS}cone bad(axis: a)\n"), "E103", "axis is a line", "a");
-    refused(&format!("{VIEWS}cylinder bad\n"), "E103", "built about a line", "cylinder bad");
+    refused(&format!("{VIEWS}bad := cone(axis: a)\n"), "E103", "axis is a line", "a");
+    refused(&format!("{VIEWS}bad := cylinder\n"), "E103", "built about a line", "bad := cylinder");
     refused(&format!("{VIEWS}radius(-3) c\n"), "E040", "magnitude", "-3");
 }
 
@@ -291,14 +291,14 @@ fn what_a_cone_or_a_cylinder_does_not_take_is_refused() {
 /// standing between `lo` and `hi` along that plane's normal (`tests/stack.rs`'s part).
 fn part(tag: &str, plane: &str, w: f64, lo: &str, hi: &str) -> String {
     format!(
-        "point a{tag} hint(x: 0, y: 0) in {plane}\npoint b{tag} hint(x: {w}, y: 0) in {plane}\n\
-         point c{tag} hint(x: {w}, y: {w}) in {plane}\npoint d{tag} hint(x: 0, y: {w}) in {plane}\n\
-         line p{tag}(a{tag}, b{tag}) -> line q{tag}(b{tag}, c{tag}) -> \
-         line r{tag}(c{tag}, d{tag}) -> line s{tag}(d{tag}, a{tag}) -> close\n\
+        "a{tag} := point hint(x: 0, y: 0) in {plane}\nb{tag} := point hint(x: {w}, y: 0) in {plane}\n\
+         c{tag} := point hint(x: {w}, y: {w}) in {plane}\nd{tag} := point hint(x: 0, y: {w}) in {plane}\n\
+         (p{tag} := line(a{tag}, b{tag})) -> (q{tag} := line(b{tag}, c{tag})) -> \
+         (r{tag} := line(c{tag}, d{tag})) -> (s{tag} := line(d{tag}, a{tag})) -> close\n\
          horizontal p{tag}\nvertical q{tag}\nhorizontal r{tag}\nvertical s{tag}\n\
          a{tag} distance({w}) b{tag}\na{tag} distance({w}) d{tag}\na{tag} coincident o\n\
-         face f{tag}(p{tag}, q{tag}, r{tag}, s{tag})\n\
-         solid {tag}(f{tag}, from: {lo}, to: {hi})\n"
+         f{tag} := face(p{tag}, q{tag}, r{tag}, s{tag})\n\
+         {tag} := solid(f{tag}, from: {lo}, to: {hi})\n"
     )
 }
 
@@ -306,13 +306,13 @@ fn part(tag: &str, plane: &str, w: f64, lo: &str, hi: &str) -> String {
 /// page: `mid` stands where `mid_clause` says, and `back` is placed by a mate on `mid`.
 fn stack(mid_clause: &str) -> String {
     format!(
-        "unit mm\npoint o hint(x: 0, y: 0)\npoint qq hint(x: 40, y: 0)\nground o\n\
-         horizontal line ref(o, qq)\no distance(40) qq\nplane front(origin: o, toward: qq)\n\
-         point o3 hint(x: 200, y: 0)\npoint t3 hint(x: 240, y: 0)\nground o3\nground t3\n\
-         plane side(origin: o3, toward: t3, from: front, fold: 90deg)\n\
-         point m hint(x: 200, y: -8) in side\nground m\n\
-         plane mid(origin: o, toward: qq, from: front, {mid_clause})\n\
-         plane back(origin: o, toward: qq, from: front)\n{}{}\
+        "unit mm\no := point hint(x: 0, y: 0)\nqq := point hint(x: 40, y: 0)\nground o\n\
+         ref := horizontal line(o, qq)\no distance(40) qq\nfront := plane(origin: o, toward: qq)\n\
+         o3 := point hint(x: 200, y: 0)\nt3 := point hint(x: 240, y: 0)\nground o3\nground t3\n\
+         side := plane(origin: o3, toward: t3, from: front, fold: 90deg)\n\
+         m := point hint(x: 200, y: -8) in side\nground m\n\
+         mid := plane(origin: o, toward: qq, from: front, {mid_clause})\n\
+         back := plane(origin: o, toward: qq, from: front)\n{}{}\
          back_part.far against mid_part.near\n",
         part("mid_part", "mid", 25.0, "-2mm", "0mm"),
         part("back_part", "back", 20.0, "-10mm", "0mm")
@@ -349,11 +349,11 @@ fn a_mate_on_a_solved_offset_follows_it() {
 #[test]
 fn a_mate_in_a_solved_view_turns_with_it() {
     let doc = |fold: &str, hint: &str| format!(
-        "unit mm\npoint o hint(x: 0, y: 0)\npoint qq hint(x: 40, y: 0)\nground o\n\
-         horizontal line ref(o, qq)\no distance(40) qq\nplane front(origin: o, toward: qq)\n\
-         plane g(origin: o, toward: qq, from: front, fold: {fold}){hint}\n\
-         plane back(origin: o, toward: qq, from: g)\n\
-         point gp hint(x: 20, y: 0) in g\npoint fp hint(x: 16, y: 12) in front\nground fp\n\
+        "unit mm\no := point hint(x: 0, y: 0)\nqq := point hint(x: 40, y: 0)\nground o\n\
+         ref := horizontal line(o, qq)\no distance(40) qq\nfront := plane(origin: o, toward: qq)\n\
+         g := plane(origin: o, toward: qq, from: front, fold: {fold}){hint}\n\
+         back := plane(origin: o, toward: qq, from: g)\n\
+         gp := point hint(x: 20, y: 0) in g\nfp := point hint(x: 16, y: 12) in front\nground fp\n\
          {}{}back_part.far against g_part.near\n",
         part("g_part", "g", 25.0, "-2mm", "0mm"),
         part("back_part", "back", 20.0, "-10mm", "0mm")
@@ -378,10 +378,10 @@ fn a_mate_in_a_solved_view_turns_with_it() {
 #[test]
 fn a_mate_between_views_that_turn_apart_is_refused() {
     let src = format!(
-        "unit mm\npoint o hint(x: 0, y: 0)\npoint qq hint(x: 40, y: 0)\nground o\n\
-         horizontal line ref(o, qq)\no distance(40) qq\nplane front(origin: o, toward: qq)\n\
-         plane g(origin: o, toward: qq, from: front, fold: beta) hint(fold: 0deg)\n\
-         plane back(origin: o, toward: qq, from: front)\n{}{}\
+        "unit mm\no := point hint(x: 0, y: 0)\nqq := point hint(x: 40, y: 0)\nground o\n\
+         ref := horizontal line(o, qq)\no distance(40) qq\nfront := plane(origin: o, toward: qq)\n\
+         g := plane(origin: o, toward: qq, from: front, fold: beta) hint(fold: 0deg)\n\
+         back := plane(origin: o, toward: qq, from: front)\n{}{}\
          back_part.far against g_part.near\n",
         part("g_part", "g", 25.0, "-2mm", "0mm"),
         part("back_part", "back", 20.0, "-10mm", "0mm")
@@ -396,11 +396,11 @@ fn a_mate_between_views_that_turn_apart_is_refused() {
 /// from one, whose origin is off its own normal.
 #[test]
 fn a_lifted_plane_keeps_its_origin() {
-    let src = "unit mm\npoint o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\n\
-               plane front(origin: o, toward: t)\n\
-               plane back(origin: o, toward: t, from: front, offset: 12)\n\
-               plane side(origin: o, toward: t, from: back, fold: 35deg)\n\
-               point a hint(x: 5, y: 7) in back\npoint b hint(x: 9, y: -3) in side\n";
+    let src = "unit mm\no := point hint(x: 0, y: 0)\nt := point hint(x: 40, y: 0)\n\
+               front := plane(origin: o, toward: t)\n\
+               back := plane(origin: o, toward: t, from: front, offset: 12)\n\
+               side := plane(origin: o, toward: t, from: back, fold: 35deg)\n\
+               a := point hint(x: 5, y: 7) in back\nb := point hint(x: 9, y: -3) in side\n";
     let e = read(src);
     let sk = solved(&e);
     let lifted = gcs_core::program::to_program(&sk).text().to_string();
@@ -414,9 +414,9 @@ fn a_lifted_plane_keeps_its_origin() {
         assert!(norm(sub(sk.world_point(i), again.sketch.world_point(i))) < 1e-9, "p{i}");
     }
     // a page view at the origin still lifts as the page
-    assert!(lifted.contains("v0(origin: p0, toward: p1) hint"), "{lifted}");
+    assert!(lifted.contains("v0 := plane(origin: p0, toward: p1) hint"), "{lifted}");
     // and `o:` is a basis's: alone it is refused
-    let (_, errs) = parse("point o hint(x: 0, y: 0)\npoint t hint(x: 4, y: 0)\n\
-                           plane p(origin: o, toward: t, o: (0, 0, 3))\n");
+    let (_, errs) = parse("o := point hint(x: 0, y: 0)\nt := point hint(x: 4, y: 0)\n\
+                           p := plane(origin: o, toward: t, o: (0, 0, 3))\n");
     assert!(errs.iter().any(|x| x.message.contains("say `u:` and `v:` too")), "{errs:?}");
 }

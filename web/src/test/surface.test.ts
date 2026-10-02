@@ -9,17 +9,17 @@ await initCore();
 
 test('a named analytic surface evaluates the solved model through the ABI', () => {
   const doc = Document.read(`unit mm
-point o hint(x: 0,y: 0)
-point q hint(x: 0,y: 1)
-point c hint(x: 3,y: 0)
+o := point hint(x: 0,y: 0)
+q := point hint(x: 0,y: 1)
+c := point hint(x: 3,y: 0)
 ground o
 ground q
 ground c
-line axis(o,q)
-circle meridian(center: c)
+axis := line(o,q)
+meridian := circle(center: c)
 radius(1mm) meridian
-solid ring(face(meridian),about: axis)
-surface wall(ring,meridian)
+ring := solid(face(meridian),about: axis)
+wall := surface(ring,meridian)
 `);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));

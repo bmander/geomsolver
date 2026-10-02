@@ -63,7 +63,7 @@ impl<'a> Walk<'a> {
             }
         }
         // the root's numbers are the file's: the params of every module the file `use`s come
-        // first, so the file's own may read them (`param rB = rp + 1.5mm`) and shadow them
+        // first, so the file's own may read them (`rB := rp + 1.5mm`) and shadow them
         if depth == 0 {
             let uses: Vec<String> = self.prog.uses.iter().map(|u| u.name.clone()).collect();
             for (k, v) in self.used_params(&uses) {
@@ -131,7 +131,7 @@ impl<'a> Walk<'a> {
                                 d.name.span(),
                                 format!(
                                     "`{n}` is a computed point, so its component is drawn only \
-                                     as a curve: `curve e = Component(…).{n} over u in (a, b)`"
+                                     as a curve: `e := Component(…).{n} over u in (a, b)`"
                                 ),
                             );
                             continue;

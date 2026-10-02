@@ -1,34 +1,34 @@
 unit mm
-point stockfp0 hint(x: 0, y: 0)
+stockfp0 := point hint(x: 0, y: 0)
 ground stockfp0
-point stockfp1 hint(x: 20, y: 0)
+stockfp1 := point hint(x: 20, y: 0)
 ground stockfp1
-point stockfp2 hint(x: 20, y: 20)
+stockfp2 := point hint(x: 20, y: 20)
 ground stockfp2
-point stockfp3 hint(x: 0, y: 20)
+stockfp3 := point hint(x: 0, y: 20)
 ground stockfp3
-face stockf(stockfp0, stockfp1, stockfp2, stockfp3, -> close)
-solid stock(stockf, from: -20mm, to: 0mm)
-point voidfp0 hint(x: 8, y: 8)
+stockf := face(stockfp0, stockfp1, stockfp2, stockfp3, -> close)
+stock := solid(stockf, from: -20mm, to: 0mm)
+voidfp0 := point hint(x: 8, y: 8)
 ground voidfp0
-point voidfp1 hint(x: 12, y: 8)
+voidfp1 := point hint(x: 12, y: 8)
 ground voidfp1
-point voidfp2 hint(x: 12, y: 12)
+voidfp2 := point hint(x: 12, y: 12)
 ground voidfp2
-point voidfp3 hint(x: 8, y: 12)
+voidfp3 := point hint(x: 8, y: 12)
 ground voidfp3
-face voidf(voidfp0, voidfp1, voidfp2, voidfp3, -> close)
-solid void(voidf, from: -12mm, to: -8mm)
-solid shell(stock)
+voidf := face(voidfp0, voidfp1, voidfp2, voidfp3, -> close)
+void := solid(voidf, from: -12mm, to: -8mm)
+shell := solid(stock)
 void cut shell
-point resultfp0 hint(x: 4, y: 4)
+resultfp0 := point hint(x: 4, y: 4)
 ground resultfp0
-point resultfp1 hint(x: 16, y: 4)
+resultfp1 := point hint(x: 16, y: 4)
 ground resultfp1
-point resultfp2 hint(x: 16, y: 16)
+resultfp2 := point hint(x: 16, y: 16)
 ground resultfp2
-point resultfp3 hint(x: 4, y: 16)
+resultfp3 := point hint(x: 4, y: 16)
 ground resultfp3
-face resultf(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
-solid result(resultf, from: -16mm, to: -4mm)
+resultf := face(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
+result := solid(resultf, from: -16mm, to: -4mm)
 claim result inside shell

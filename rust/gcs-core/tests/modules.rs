@@ -10,24 +10,24 @@ use std::collections::BTreeMap;
 
 const RUNG: &str = "\
 // a module: a param the caller can pass, and a drawing of its own that is not the document's
-param len = 50
+len := 50
 component Rung(a: point, b: point, len: Length) {
-  line e(a, b)
+  e := line(a, b)
   horizontal e
   a distance(len) b
 }
-point stray hint(x: 999, y: 999)
+stray := point hint(x: 999, y: 999)
 ";
 
 const LADDER: &str = "\
 use lib.rung
-point l0 hint(x: 0, y: 0)
-point r0 hint(x: 50, y: 0)
-point l1 hint(x: 0, y: 20)
-point r1 hint(x: 50, y: 20)
-t0: Rung(l0, r0, len: len)
-t1: Rung(l1, r1, len: len)
-line stile(l0, l1)
+l0 := point hint(x: 0, y: 0)
+r0 := point hint(x: 50, y: 0)
+l1 := point hint(x: 0, y: 20)
+r1 := point hint(x: 50, y: 20)
+t0 := Rung(l0, r0, len: len)
+t1 := Rung(l1, r1, len: len)
+stile := line(l0, l1)
 vertical stile
 l0 distance(len) l1
 ground l0
@@ -36,13 +36,13 @@ ground l0
 fn shelf() -> BTreeMap<&'static str, &'static str> {
     let mut m = BTreeMap::new();
     m.insert("lib.rung", RUNG);
-    m.insert("lib.bad", "component Bad(a: point) {\n  line l(a,\n}\n");
+    m.insert("lib.bad", "component Bad(a: point) {\n  l := line(a,\n}\n");
     m.insert("lib.rung2", "use lib.rung\ncomponent Rung(a: point) { }\n");
-    m.insert("lib.diamond", "use lib.rung\ncomponent Step(a: point, b: point, len: Length) { r: Rung(a, b, len: len) }\n");
-    m.insert("lib.loop_a", "use lib.loop_b\nparam pa = 1\ncomponent A(p: point) { }\n");
-    m.insert("lib.loop_b", "use lib.loop_a\nparam pb = 2\ncomponent B(p: point) { }\n");
-    m.insert("lib.over", "use lib.rung\nparam twice = 2 * len\ncomponent Long(a: point, b: point, twice: Length) { a distance(twice) b }\n");
-    m.insert("lib.units", "param size = 10mm\ncomponent UnitLink(a: point, b: point, size: Length) { a distance(size) b }\n");
+    m.insert("lib.diamond", "use lib.rung\ncomponent Step(a: point, b: point, len: Length) { r := Rung(a, b, len: len) }\n");
+    m.insert("lib.loop_a", "use lib.loop_b\npa := 1\ncomponent A(p: point) { }\n");
+    m.insert("lib.loop_b", "use lib.loop_a\npb := 2\ncomponent B(p: point) { }\n");
+    m.insert("lib.over", "use lib.rung\ntwice := 2 * len\ncomponent Long(a: point, b: point, twice: Length) { a distance(twice) b }\n");
+    m.insert("lib.units", "size := 10mm\ncomponent UnitLink(a: point, b: point, size: Length) { a distance(size) b }\n");
     m
 }
 
@@ -68,10 +68,10 @@ fn a_component_only_file_does_not_instantiate_its_last_definition() {
 
 #[test]
 fn preview_solves_only_when_its_file_is_opened() {
-    let src = "param shared = 3mm\ncomponent Sample(size: Length) {\n\
-        circle c hint(r: size)\nradius(size) c\nground c.center\n}\n\
-        preview {\nunit cm\nparam preview_size = 7cm\n\
-        sample: Sample(size: preview_size)\n}\n";
+    let src = "shared := 3mm\ncomponent Sample(size: Length) {\n\
+        c := circle hint(r: size)\nradius(size) c\nground c.center\n}\n\
+        preview {\nunit cm\npreview_size := 7cm\n\
+        sample := Sample(size: preview_size)\n}\n";
     let (p, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     assert!(p.preview.is_some());
@@ -83,8 +83,8 @@ fn preview_solves_only_when_its_file_is_opened() {
 
     // The caller can use the same setup names and different units. Neither the preview's
     // geometry nor its params/named dimensions may become part of the importing document.
-    let (mut caller, errs) = parse("unit mm\nuse part\nparam preview_size = 11mm\n\
-        sample: Sample(size: preview_size + shared)\n");
+    let (mut caller, errs) = parse("unit mm\nuse part\npreview_size := 11mm\n\
+        sample := Sample(size: preview_size + shared)\n");
     assert!(errs.is_empty());
     let linked = link(&mut caller, &mut |_| Some(src.into()));
     assert!(linked.is_empty(), "{linked:?}");
@@ -100,21 +100,21 @@ fn preview_solves_only_when_its_file_is_opened() {
 
 #[test]
 fn preview_is_a_single_top_level_block() {
-    let runs = gcs_core::syntax::highlight("preview { point p }");
+    let runs = gcs_core::syntax::highlight("preview { p := point }");
     assert!(runs.iter().any(|(t, s)| s.lo == 0 && *t == gcs_core::syntax::Tint::Word));
     for src in [
         "preview {}\npreview {}",
         "component Part() { preview {} }",
         "preview { preview {} }",
         "repeat 2 { preview {} }",
-        "preview { point p",
+        "preview { p := point",
         "preview { line -> }",
     ] {
         let (_, errs) = parse(src);
         assert!(!errs.is_empty(), "accepted {src}");
     }
-    let (mut p, errs) = parse("preview {\npoint o\npoint q\nplane f(origin: o, toward: q)\n\
-        in f { point p }\n}\n");
+    let (mut p, errs) = parse("preview {\no := point\nq := point\nf := plane(origin: o, toward: q)\n\
+        in f { p := point }\n}\n");
     assert!(errs.is_empty(), "{errs:?}");
     assert_eq!(p.in_blocks.len(), 1);
     let before = p.text().to_string();
@@ -141,7 +141,7 @@ fn a_module_contributes_its_components_and_its_params() {
 
 #[test]
 fn a_module_nothing_resolves_is_said_at_the_use() {
-    let (e, linked) = read("use lib.nothing\npoint p\n");
+    let (e, linked) = read("use lib.nothing\np := point\n");
     assert_eq!(linked.len(), 1);
     assert_eq!(linked[0].code.as_str(), "E070");
     assert!(linked[0].message.contains("lib.nothing"));
@@ -151,13 +151,13 @@ fn a_module_nothing_resolves_is_said_at_the_use() {
 
 #[test]
 fn a_component_defined_twice_is_refused_at_the_documents_own() {
-    let src = "use lib.rung\ncomponent Rung(a: point) { }\npoint p\n";
+    let src = "use lib.rung\ncomponent Rung(a: point) { }\np := point\n";
     let (_, linked) = read(src);
     assert_eq!(linked.len(), 1, "{linked:?}");
     assert_eq!(linked[0].code.as_str(), "E071");
     assert_eq!(linked[0].span.lo as usize, src.find("component").unwrap());
     // and across two modules, at the `use` that brought the later one in
-    let src2 = "use lib.rung\nuse lib.rung2\npoint p\n";
+    let src2 = "use lib.rung\nuse lib.rung2\np := point\n";
     let (_, linked) = read(src2);
     assert_eq!(linked.len(), 1, "{linked:?}");
     assert_eq!(linked[0].code.as_str(), "E071");
@@ -167,7 +167,7 @@ fn a_component_defined_twice_is_refused_at_the_documents_own() {
 
 #[test]
 fn a_modules_parse_error_is_shown_at_the_use_with_its_own_place() {
-    let src = "point p\nuse lib.bad\n";
+    let src = "p := point\nuse lib.bad\n";
     let (_, linked) = read(src);
     assert_eq!(linked.len(), 1, "{linked:?}");
     assert_eq!(linked[0].code.as_str(), "E100");
@@ -177,21 +177,21 @@ fn a_modules_parse_error_is_shown_at_the_use_with_its_own_place() {
 
 #[test]
 fn a_diamond_links_once_and_a_cycle_ends() {
-    let (e, linked) = read("use lib.rung\nuse lib.diamond\npoint a\npoint b\ns: Step(a, b, len: len)\n");
+    let (e, linked) = read("use lib.rung\nuse lib.diamond\na := point\nb := point\ns := Step(a, b, len: len)\n");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     assert_eq!(e.sketch.lines.len(), 1);
-    let (e, linked) = read("use lib.loop_a\npoint p\nq: A(p)\nr: B(p)\n");
+    let (e, linked) = read("use lib.loop_a\np := point\nq := A(p)\nr := B(p)\n");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok());
     assert_eq!(e.program.modules.len(), 2);
 }
 
 /// A module's own params may read the params of the modules it uses, and the document's may
-/// read every module's: the used come first, so `param twice = 2 * len` is 100 and not free.
+/// read every module's: the used come first, so `twice := 2 * len` is 100 and not free.
 #[test]
 fn a_files_params_read_the_modules_it_uses() {
-    let (e, linked) = read("use lib.over\npoint a hint(x: 0, y: 0)\npoint b hint(x: 100, y: 0)\nl: Long(a, b, twice: twice)\nground a\nb distance(twice, along: y) a\n");
+    let (e, linked) = read("use lib.over\na := point hint(x: 0, y: 0)\nb := point hint(x: 100, y: 0)\nl := Long(a, b, twice: twice)\nground a\nb distance(twice, along: y) a\n");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch.clone();
@@ -237,8 +237,8 @@ fn every_span_is_one_integer_into_one_virtual_text() {
 #[test]
 fn the_standard_library_lays_out_three_views() {
     let (prog, errs, linked) = gcs_core::library::parse_linked(
-        "use std\npoint O hint(x: 0, y: 0)\nground O\nv: ThreeViews(O, right: 100, up: 80)\n\
-         point a in v.front\npoint b in v.top\npoint c in v.right\na project b\na project c\nb project c\n\
+        "use std\nO := point hint(x: 0, y: 0)\nground O\nv := ThreeViews(O, right: 100, up: 80)\n\
+         a := point in v.front\nb := point in v.top\nc := point in v.right\na project b\na project c\nb project c\n\
          O distance(30, along: x) a\nO distance(20, along: y) a\nv.top_origin distance(10, along: y) b\n",
     );
     assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");
