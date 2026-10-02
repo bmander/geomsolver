@@ -232,6 +232,30 @@ fn the_body_rule_does_not_care_what_order_it_was_written_in() {
 }
 
 #[test]
+fn a_swept_solid_takes_features_as_the_body_over_its_own_sweep() {
+    // `bore cut stock` makes `stock` the body over its own sweep: the same object
+    // `body := solid(stock)` names, with no second name for it
+    let parts = format!("{RECT}{HOLE}stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n");
+    let body = volume(&read(&format!("{parts}body := solid(stock)\nbore cut body\n")), "body");
+    let e = read(&format!("{parts}bore cut stock\n"));
+    assert_volume(volume(&e, "stock"), body);
+    assert_volume(volume(&read(&format!("{RECT}{HOLE}bore cut stock\nstock := solid(sec, depth: 30mm)\n\
+         bore := solid(hole_f, depth: 30mm)\n")), "stock"), body);
+    // a face is called what it was before anything stood on it, and a feature's through it
+    let p = gcs_core::report::positions(&e.sketch, &e.map);
+    let has = |n: &str| p.iter().any(|(k, _)| k == n);
+    assert!(has("stock.near.area") && has("stock.ab.area") && has("stock.bore.hole.area"), "{p:?}");
+    assert!(!has("stock.stock.near.area"), "the sweep adds no step to its own faces' names");
+    // and the name means the whole object wherever it is read: a cutter through it, a body
+    // over it
+    let through = read(&format!("{parts}pin := solid(hole_f, through: stock)\npin cut stock\n"));
+    assert_volume(volume(&through, "stock"), body);
+    let over = read(&format!("{parts}bore cut stock\nwhole := solid(stock)\n"));
+    assert_volume(volume(&over, "whole"), body);
+    refused(&format!("{parts}stock cut stock\n"), Code::E080, "is cut itself");
+}
+
+#[test]
 fn a_body_keeps_what_lies_within_everything_that_bounds_it() {
     // `bound` is the body rule's third side: the block within the bore is the bore's own
     // polygon (what `cut` takes out of it), and it is a set like the other two
@@ -541,11 +565,11 @@ fn what_is_written_wrong_is_refused_where_it_is_written() {
         Code::E041,
         "made of itself",
     );
-    // a feature written into a solid that is a face swept, not a body
+    // two sweeps cutting each other are each made of the other
     refused(
-        &format!("{RECT}{HOLE}s := solid(sec, depth: 3mm)\nh := solid(hole_f, depth: 3mm)\nh cut s\n"),
-        Code::E080,
-        "only a body takes features",
+        &format!("{RECT}{HOLE}s := solid(sec, depth: 3mm)\nh := solid(hole_f, depth: 3mm)\nh cut s\ns cut h\n"),
+        Code::E041,
+        "made of itself",
     );
     // a mixture of the two sweeps
     refused(

@@ -126,6 +126,14 @@ impl SourceMap {
         })
     }
 
+    /// `e` was made by whichever statement made `of`, after everything else that statement
+    /// made: a swept solid's stock, split off when a feature first names the solid.
+    pub(super) fn also_made(&mut self, of: EntRef, e: EntRef) {
+        let Some(site) = self.of_entity.get(&of).cloned() else { return };
+        self.made.entry(site.stmt).or_default().push(Made::Ent(e));
+        self.of_entity.insert(e, site);
+    }
+
     pub(super) fn record(&mut self, st: &crate::ir::Statement, what: Made) {
         let site = Site { stmt: st.id, span: st.span, path: InstPath(st.path.clone()) };
         match what {

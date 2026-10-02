@@ -54,7 +54,9 @@ fn gallery_solids_have_the_designed_volume_and_render() {
             solve::solve(&mut e.sketch, Default::default()).success,
             "{key}"
         );
-        let body = e.map.ent_named("body").unwrap().i();
+        // the object a sheet draws: the flange takes its features on its own sweep
+        let object = if key == "solid_flange" { "flange" } else { "body" };
+        let body = e.map.ent_named(object).unwrap().i();
         assert_eq!(
             gcs_core::diagnose::diagnose(&mut e.sketch, Default::default()).dof,
             0,

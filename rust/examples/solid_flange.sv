@@ -17,11 +17,10 @@ hub_rim := radius(hub_radius) circle(center: std.origin)
 
 // Holes belong to the profile here, so both extrusions already have the shaft bore.
 plate_section := face(rim, holes: bore)
-plate := solid(plate_section, depth: plate_depth)
+flange := solid(plate_section, depth: plate_depth)
 hub := solid(face(hub_rim, holes: bore), from: 0mm, to: hub_height)
-body := solid(plate)
-hub on body
+hub on flange
 
 construction centerline reference := line(std.origin, std.front.toward)
-pattern := hardware.BoltPattern(body, std.origin, reference,
-                     n: bolts, pitch_r: bolt_circle, hole_r: bolt_radius, phase: 0deg)
+pattern := hardware.BoltPattern(flange, std.origin, reference,
+                       n: bolts, pitch_r: bolt_circle, hole_r: bolt_radius, phase: 0deg)

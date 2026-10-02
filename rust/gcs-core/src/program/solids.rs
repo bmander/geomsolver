@@ -175,27 +175,25 @@ pub(super) fn solids(
             say(at, format!("`{}` is {} itself", into.root.text, word.as_str()));
             continue;
         }
-        let Some(sol) = sk.solids.get_mut(b.i()) else { continue };
-        match &mut sol.def {
-            SolidDef::Body { on, through, bound, .. } => match word {
-                crate::syntax::BodyWord::On => on.push(a.idx),
-                crate::syntax::BodyWord::Cut => through.push(a.idx),
-                crate::syntax::BodyWord::Bound => bound.push(a.idx),
-                crate::syntax::BodyWord::Against => unreachable!("filtered above"),
-            },
-            _ => {
-                // a swept solid is what its brackets say; a body is what its statements say.
-                // Naming the first in the second would make one statement mean two things
-                say(
-                    at,
-                    format!(
-                        "`{}` is a face swept, and only a body takes features: give it a stock \
-                         (`solid {name}({name}_stock)`) and write them there",
-                        into.root.text,
-                        name = into.root.text
-                    ),
-                );
-            }
+        // **a swept solid that takes a feature is the body over its own sweep**: the name keeps
+        // its index, so everything already reading it (a `through:` extent, a body's operand, a
+        // view) reads the whole object, and the sweep moves to a stock of the same name, so a
+        // face is called what it was (`plate.near`) whether or not anything stands on it
+        if sk.solids.get(b.i()).is_some_and(|s| !matches!(s.def, SolidDef::Body { .. })) {
+            let swept = sk.solids[b.i()].clone();
+            let stock = sk.solids.len() as u32;
+            sk.solids.push(swept);
+            sk.solids[b.i()].def =
+                SolidDef::Body { stock, on: Vec::new(), through: Vec::new(), bound: Vec::new() };
+            map.also_made(b, EntRef::solid(stock as usize));
+        }
+        let Some(SolidDef::Body { on, through, bound, .. }) =
+            sk.solids.get_mut(b.i()).map(|s| &mut s.def) else { continue };
+        match word {
+            crate::syntax::BodyWord::On => on.push(a.idx),
+            crate::syntax::BodyWord::Cut => through.push(a.idx),
+            crate::syntax::BodyWord::Bound => bound.push(a.idx),
+            crate::syntax::BodyWord::Against => unreachable!("filtered above"),
         }
     }
     // -- where the parts stand (§6.10) ----------------------------------------

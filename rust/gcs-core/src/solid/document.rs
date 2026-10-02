@@ -309,7 +309,11 @@ pub(crate) fn operand_paths(sk: &Sketch, si: usize) -> BTreeMap<String, String> 
                     let name = operand.name.rsplit('.').next().unwrap_or(&operand.name);
                     if let Some(source) = done.get(&o) {
                         for (primitive,path) in source {
-                            paths.insert(primitive.clone(),placed_name(name,path));
+                            // a swept solid's own sweep, split off as its stock, is the solid
+                            // itself and adds no step to the route
+                            let route = if operand.name == s.name { path.clone() }
+                                else { placed_name(name,path) };
+                            paths.insert(primitive.clone(),route);
                         }
                     }
                 }

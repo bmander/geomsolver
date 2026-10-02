@@ -1605,6 +1605,10 @@ Conventions:
   exist lives inside one term over names, exactly as it lives inside `h = w / 2`.  A design that
   needs the other order (a pocket with a boss standing in it) **names the intermediate**, which
   is honest: there are two things there.
+  **A swept solid takes features too** (§6.9, [0.31]): the first `on`/`cut`/`bound` naming one
+  makes it the body over its own sweep (`program/solids.rs`'s body pass) — the name keeps its
+  index, so every reader sees the whole object, and the sweep moves to a stock of the same name
+  (`SourceMap::also_made`), which `operand_paths` gives no step, so `plate.near` stays its name.
   **Nothing three-dimensional is solved for past the sketch** (a view's attitude may be, with the
   sketch and before anything below reads it).  `EntKind::Face` and `EntKind::Solid` own no
   `Param` — `entity_params` returns nothing for either, so no column of the Jacobian is one —

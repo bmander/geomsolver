@@ -1282,6 +1282,12 @@ plate.sv: solved
 solid(stock)` it belongs to — and the number is the same, because both sides of the rule are *sets*
 and a set has no order.
 
+A swept solid takes features itself, so the body above needs no second name: `bore cut stock` makes
+`stock` the body whose stock is its own sweep, and `stock.volume` is the `69644.2` `body.volume`
+was. Its faces keep the names they had (`stock.near`, `stock.ab`), and the bore's are reached
+through it (`stock.bore.hole`). Write `body := solid(stock)` when the bare sweep and the finished
+part are both worth naming — the next example needs exactly that.
+
 **Body-relative cutter extents.**
 
 Use `through:` to let a cutter span a part, and `cut` to subtract it:
@@ -1435,11 +1441,9 @@ and what is a reference are the design, and a sheet still states those.
 | `bad := solid(sec, about: a)` | E081 — "a face turns about a line, and `a` is a point" |
 | `bad := solid(sec, depth: 3mm, about: ax)` | E001 — "a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned about a line (`about:`), not both" |
 | `x cut y` and `y cut x` | E041 — "`x` is made of itself" |
-| `h cut s`, `s` a face swept | E080 — "`s` is a face swept, and only a body takes features: give it a stock (`s := solid(s_stock)`) and write them there" |
+| `h cut h` | E080 — "`h` is cut itself" |
 
-The `h cut s` one carries the most: only a *body* takes features, so a face swept is a
-primitive and a body is the term over primitives, and the two are never the same name. The negative
-sweep is 1.5's rule again — which way is a word, not a sign.
+The negative sweep is 1.5's rule again — which way is a word, not a sign.
 
 ### 1.15 Checking your work
 

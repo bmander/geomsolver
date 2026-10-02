@@ -32,7 +32,7 @@ distance(2 * half_width) de
 bc equal fg
 b vertical g
 std.origin distance(half_width, side: left) cd
-blank := solid(profile, about: spindle)
+body := solid(profile, about: spindle)
 
 // The triangular cutter extends outside the rim so the groove opens cleanly.
 lo := point hint(x: rim_radius + 1mm, y: -groove_half_width)
@@ -44,5 +44,4 @@ lo distance(1mm, side: right) de
 lo symmetry(mid_axis) hi
 lo distance(2 * groove_half_width) hi
 groove := solid(face(lo, root, hi, -> close), about: spindle)
-body := solid(blank)
 groove cut body

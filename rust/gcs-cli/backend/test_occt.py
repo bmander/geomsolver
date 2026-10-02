@@ -95,7 +95,7 @@ class StepTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             step = Path(directory)/"flange.step"
             result = subprocess.run([str(CLI), str(RUST/"examples/solid_flange.sv"),
-                "--step", str(step), "--solid", "body", "--no-diagnose"],
+                "--step", str(step), "--solid", "flange", "--no-diagnose"],
                 text=True, capture_output=True, env=dict(os.environ, SOLVENT_CAD_PYTHON="/no-python-subprocess-allowed"))
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             reader = STEPControl_Reader()

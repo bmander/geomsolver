@@ -1,5 +1,5 @@
 // A pocketed enclosure with four standoffs. Nested bodies preserve the order:
-// hollow the stock first, then add the bosses inside the pocket.
+// hollow the shell first, then add the bosses inside the pocket.
 unit mm
 use std
 width := 72mm
@@ -24,9 +24,8 @@ component Rectangle(center: point, w: Length, h: Length) {
 }
 outer := Rectangle(std.origin, w: width, h: height)
 inner := Rectangle(std.origin, w: width - 2 * wall, h: height - 2 * wall)
-stock := solid(outer.profile, depth: depth)
+shell := solid(outer.profile, depth: depth)
 pocket := solid(inner.profile, depth: depth - wall)
-shell := solid(stock)
 pocket cut shell
 body := solid(shell)
 
