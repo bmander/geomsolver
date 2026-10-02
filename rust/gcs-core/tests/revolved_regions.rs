@@ -11,29 +11,29 @@ fn solved(source: &str) -> program::Elaborated {
 }
 
 const RING: &str = "unit mm
-point o hint(x: 0, y: 0)
-point q hint(x: 0, y: 1)
-point c hint(x: 3, y: 0)
+o := point hint(x: 0, y: 0)
+q := point hint(x: 0, y: 1)
+c := point hint(x: 3, y: 0)
 ground o
 ground q
 ground c
-line axis(o,q)
-circle rim(center: c)
+axis := line(o,q)
+rim := circle(center: c)
 radius(1mm) rim
-solid body(face(rim), about: axis)
+body := solid(face(rim), about: axis)
 ";
 
 const SPHERE: &str = "unit mm
-point o hint(x: 0, y: 0)
-point a hint(x: 0, y: -2)
-point b hint(x: 0, y: 2)
+o := point hint(x: 0, y: 0)
+a := point hint(x: 0, y: -2)
+b := point hint(x: 0, y: 2)
 ground o
 ground a
 ground b
-arc rim(center: o, start: a, end: b)
+rim := arc(center: o, start: a, end: b)
 radius(2mm) rim
-line axis(b,a)
-solid body(face(rim,axis), about: axis)
+axis := line(b,a)
+body := solid(face(rim,axis), about: axis)
 ";
 
 fn check(region: &RevolvedRegion,p: [f64;3],expected: f64) {
@@ -64,9 +64,9 @@ fn torus_membership_and_distance_follow_analytic_circles_including_ray_tangencie
 
 #[test]
 fn holes_are_voids_and_source_axis_direction_does_not_change_material() {
-    let source = RING.replace("solid body(face(rim)",
-        "circle hole(center: c)\nradius(0.4mm) hole\nsolid body(face(rim, holes: hole)");
-    for source in [source.clone(),source.replace("line axis(o,q)","line axis(q,o)")] {
+    let source = RING.replace("body := solid(face(rim)",
+        "hole := circle(center: c)\nradius(0.4mm) hole\nbody := solid(face(rim, holes: hole)");
+    for source in [source.clone(),source.replace("axis := line(o,q)","axis := line(q,o)")] {
         let e = solved(&source);
         let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
         for r in 0..=40 {
@@ -83,7 +83,7 @@ fn holes_are_voids_and_source_axis_direction_does_not_change_material() {
 
 #[test]
 fn a_spheres_diameter_disappears_and_its_center_is_interior_material() {
-    for source in [SPHERE.to_string(),SPHERE.replace("line axis(b,a)","line axis(a,b)"),
+    for source in [SPHERE.to_string(),SPHERE.replace("axis := line(b,a)","axis := line(a,b)"),
         SPHERE.replace("x: 0, y: -2","x: -2, y: 0")
             .replace("x: 0, y: 2","x: 2, y: 0")] {
         let e = solved(&source);
@@ -102,17 +102,17 @@ fn a_spheres_diameter_disappears_and_its_center_is_interior_material() {
 #[test]
 fn finite_conical_material_includes_caps_and_refuses_support_continuations() {
     let e = solved("unit mm
-point a hint(x: 0,y: 1)
-point b hint(x: 1,y: 1)
-point c hint(x: 3,y: 3)
-point d hint(x: 0,y: 3)
+a := point hint(x: 0,y: 1)
+b := point hint(x: 1,y: 1)
+c := point hint(x: 3,y: 3)
+d := point hint(x: 0,y: 3)
 ground a
 ground b
 ground c
 ground d
-line axis(a,d)
-profile = line ab(a,b) -> line bc(b,c) -> line cd(c,d) -> line da(d,a) -> close
-solid body(profile,about: axis)
+axis := line(a,d)
+profile := (ab := line(a,b)) -> (bc := line(b,c)) -> (cd := line(c,d)) -> (da := line(d,a)) -> close
+body := solid(profile,about: axis)
 ");
     let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
     for (p,d) in [([0.,0.,2.],-1.),([1.,0.,2.],-std::f64::consts::FRAC_1_SQRT_2),

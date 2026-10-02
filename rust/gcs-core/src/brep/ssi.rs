@@ -25,7 +25,7 @@ pub enum Ssi {
 /// `(ρ, z)` with `z` measured along the shared axis from a shared origin.
 #[derive(Clone,Debug)]
 enum Meridian {
-    /// `z = h`: a plane square to the axis.
+    /// `z := h`: a plane square to the axis.
     Level(f64),
     /// The ray from `p` along the unit `d` (`d[1] > 0` or a vertical line `ρ = r`), both ways.
     Line { p: [f64;2],d: [f64;2] },

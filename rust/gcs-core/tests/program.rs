@@ -68,12 +68,12 @@ fn printing_is_a_fixed_point() {
 
 #[test]
 fn flat_rendering_updates_utf8_statement_spans() {
-    let (mut p, errors) = gcs_core::syntax::parse("param café = 1\nparam z = 2");
+    let (mut p, errors) = gcs_core::syntax::parse("café := 1\nz := 2");
     assert!(errors.is_empty(), "{errors:?}");
-    assert_eq!(render_flat(&mut p).unwrap(), "param café = 1\nparam z = 2\n");
+    assert_eq!(render_flat(&mut p).unwrap(), "café := 1\nz := 2\n");
     assert_eq!(p.root().span.slice(p.text()), p.text());
-    assert_eq!(p.root().body[0].span.slice(p.text()), "param café = 1");
-    assert_eq!(p.root().body[1].span.slice(p.text()), "param z = 2");
+    assert_eq!(p.root().body[0].span.slice(p.text()), "café := 1");
+    assert_eq!(p.root().body[1].span.slice(p.text()), "z := 2");
 }
 
 /// The elaborated parameter vector is the loaded one, parameter for parameter.
@@ -260,7 +260,7 @@ fn a_pinned_curve_parameter_survives() {
 fn a_dimension_expression_is_kept_as_written() {
     let sk = examples::case("pythagoras").unwrap();
     let text = to_program(&sk).text().to_string();
-    for want in ["a = 30", "b = 40", "c = hypot(a, b)"] {
+    for want in ["a := 30", "b := 40", "c := hypot(a, b)"] {
         assert!(text.contains(want), "`{want}` is not in\n{text}");
     }
     let back = elaborate(&to_program(&sk)).sketch;
@@ -345,6 +345,7 @@ fn a_name_declared_twice_is_an_error() {
             membership: Default::default(),
             list_span: Default::default(),
             close: None,
+            mint_close: None,
         }));
     }
     render_flat(&mut p).unwrap();
@@ -510,22 +511,22 @@ fn parsing_and_printing_is_a_fixed_point() {
 fn a_program_written_by_hand_draws() {
     let text = "\
 // a square with a hole, written by hand
-point a hint(x: 0, y: 0)
-point b hint(x: 100, y: 0)
-point c hint(x: 100, y: 100)
-point d hint(x: 0, y: 100)
-point o hint(x: 50, y: 50)
-line  ab(a, b)
-line  bc(b, c)
-line  cd(c, d)
-line  da(d, a)
-circle hole(center: o) hint(r: 20)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 100, y: 0)
+c := point hint(x: 100, y: 100)
+d := point hint(x: 0, y: 100)
+o := point hint(x: 50, y: 50)
+ab := line(a, b)
+bc := line(b, c)
+cd := line(c, d)
+da := line(d, a)
+hole := circle(center: o) hint(r: 20)
 
 horizontal ab
 ab perpendicular bc
 bc perpendicular cd
 cd perpendicular da
-a distance(w = 100) b
+a distance(w := 100) b
 b distance(w) c
 radius(w / 5) hole
 ground a
@@ -546,7 +547,7 @@ ground a
 /// A bad line costs one line, and every diagnostic carries a span that slices to the problem.
 #[test]
 fn one_bad_line_costs_one_line() {
-    let text = "point a hint(x: 0, y: 0)\nthis is not a statement\npoint b hint(x: 10, y: 0)\n";
+    let text = "a := point hint(x: 0, y: 0)\nthis is not a statement\nb := point hint(x: 10, y: 0)\n";
     let (p, errs) = gcs_core::syntax::parse(text);
     assert!(!errs.is_empty(), "the bad line is reported");
     let e = elaborate(&p);
@@ -678,7 +679,7 @@ fn phase_of(sk: &Sketch, ci: usize) -> f64 {
 #[test]
 fn a_gear_with_few_teeth() {
     for n in [22usize, 21, 18, 12, 8, 5, 4, 3, 2] {
-        let src = examples::GEAR.replace("g: Gear(N: 30,", &format!("g: Gear(N: {n},"));
+        let src = examples::GEAR.replace("g := Gear(N: 30,", &format!("g := Gear(N: {n},"));
         let (p, errs) = gcs_core::syntax::parse(&src);
         assert!(errs.is_empty(), "N = {n}: {errs:?}");
         let mut e = elaborate(&p);
@@ -796,8 +797,8 @@ fn every_seed_is_written_in_a_hint_clause() {
         assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
         e.sketch
     };
-    let now = read("point a hint(x: 3, y: 4)\npoint b hint(x: 9, y: 1)\nline l(a, b)\n");
-    let flipped = read("point a hint(y: 4, x: 3)\npoint b hint(x: 9, y: 1)\nline l(a, b)\n");
+    let now = read("a := point hint(x: 3, y: 4)\nb := point hint(x: 9, y: 1)\nl := line(a, b)\n");
+    let flipped = read("a := point hint(y: 4, x: 3)\nb := point hint(x: 9, y: 1)\nl := line(a, b)\n");
     assert_eq!(io::dumps(&now, Some(1)), io::dumps(&flipped, Some(1)), "keys in any order");
 
     // and the printer writes the clause, all of it
@@ -808,9 +809,9 @@ fn every_seed_is_written_in_a_hint_clause() {
     for src in [
         "point a at (3, 4)\n",
         "point a hint at (3, 4)\n",
-        "point o hint(x: 0, y: 0)\ncircle c(center: o, r: 25)\n",
-        "point q hint(x: 0, y: 0)\npoint a hint at q\n",
-        "point q hint(x: 0, y: 0)\ncircle k(center: q) hint(r: 5)\npoint a hint at k bearing (30)\n",
+        "o := point hint(x: 0, y: 0)\ncircle c(center: o, r: 25)\n",
+        "q := point hint(x: 0, y: 0)\npoint a hint at q\n",
+        "q := point hint(x: 0, y: 0)\nk := circle(center: q) hint(r: 5)\npoint a hint at k bearing (30)\n",
     ] {
         let (_, errs) = gcs_core::syntax::parse(src);
         assert!(!errs.is_empty(), "{src} still parses");
@@ -827,11 +828,11 @@ fn read_ok(src: &str) -> gcs_core::program::Elaborated {
     e
 }
 
-/// **A declaration need not name its children.**  `line l` makes two points, and `l.p1` is what
+/// **A declaration need not name its children.**  `l := line` makes two points, and `l.p1` is what
 /// they are called — a name earns its place when something says it twice, and these said it once.
 #[test]
 fn a_declaration_may_omit_its_children() {
-    let e = read_ok("line l\nhorizontal l\nground l.p1\n");
+    let e = read_ok("l := line\nhorizontal l\nground l.p1\n");
     assert_eq!(e.sketch.points.len(), 2, "two ends, minted");
     assert_eq!(e.sketch.lines.len(), 1);
     // the dotted path is the name: it resolves, and the map carries it
@@ -848,7 +849,7 @@ fn a_declaration_may_omit_its_children() {
     );
     assert!(d > 1e-3, "a zero-length line has no direction to level: {d}");
 
-    for src in ["circle c\nradius(5) c\n", "arc a\nradius(5) a\n"] {
+    for src in ["c := circle\nradius(5) c\n", "a := arc\nradius(5) a\n"] {
         let e = read_ok(src);
         assert!(!e.sketch.points.is_empty(), "{src}");
     }
@@ -858,9 +859,9 @@ fn a_declaration_may_omit_its_children() {
 /// statements it stands for — same drawing, same freedoms.
 #[test]
 fn a_child_slot_may_hold_a_seed() {
-    let mut anon = read_ok("line l(hint(x: 0, y: 0), hint(x: 60, y: 20))\nground l.p1\n");
+    let mut anon = read_ok("l := line(hint(x: 0, y: 0), hint(x: 60, y: 20))\nground l.p1\n");
     let mut named = read_ok(
-        "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 20)\nline l(a, b)\nground a\n",
+        "a := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 20)\nl := line(a, b)\nground a\n",
     );
     assert_eq!(gcs_core::io::dumps(&anon.sketch, Some(1)), gcs_core::io::dumps(&named.sketch, Some(1)));
     let opts = gcs_core::diagnose::DiagnoseOptions::default();
@@ -875,16 +876,16 @@ fn a_child_slot_may_hold_a_seed() {
 /// one stays an error.
 #[test]
 fn a_slot_left_out_is_an_implicit_child() {
-    // `line l(a)` names one end and leaves the other implicit — minted as `l.p2`, exactly as a
+    // `l := line(a)` names one end and leaves the other implicit — minted as `l.p2`, exactly as a
     // declaration that writes no list at all mints them (spec §6.1); what stays refused is a
     // kind with no arity to conjure children from, and a list with more than the kind holds
-    let (p, errs) = gcs_core::syntax::parse("point a hint(x: 0, y: 0)\nline l(a)\n");
+    let (p, errs) = gcs_core::syntax::parse("a := point hint(x: 0, y: 0)\nl := line(a)\n");
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&p);
     assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
     assert_eq!(e.sketch.points.len(), 2, "the second end is minted");
 
-    for src in ["spline s\n", "point a\npoint b\npoint c\nline l(a, b, c)\n"] {
+    for src in ["s := spline\n", "a := point\nb := point\nc := point\nl := line(a, b, c)\n"] {
         let (p, errs) = gcs_core::syntax::parse(src);
         assert!(errs.is_empty(), "{src}: {errs:?}");
         let e = elaborate(&p);
@@ -896,7 +897,7 @@ fn a_slot_left_out_is_an_implicit_child() {
 /// no name has no name to print.
 #[test]
 fn an_anonymous_child_prints_back_anonymous() {
-    let src = "line l(hint(x: 0, y: 0), hint(x: 60, y: 20))\ncircle c hint(r: 25)\n";
+    let src = "l := line(hint(x: 0, y: 0), hint(x: 60, y: 20))\nc := circle hint(r: 25)\n";
     let (p, errs) = gcs_core::syntax::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut out = String::new();
@@ -919,7 +920,7 @@ fn an_anonymous_child_prints_back_anonymous() {
 /// against and no drag can write back, which is the one outcome worse than an error.
 #[test]
 fn a_seed_in_a_list_slot_is_refused() {
-    let src = "spline s(hint(x: 0, y: 0), hint(x: 1, y: 0), hint(x: 2, y: 1), hint(x: 3, y: 0))\n";
+    let src = "s := spline(hint(x: 0, y: 0), hint(x: 1, y: 0), hint(x: 2, y: 1), hint(x: 3, y: 0))\n";
     let (p, errs) = gcs_core::syntax::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&p);

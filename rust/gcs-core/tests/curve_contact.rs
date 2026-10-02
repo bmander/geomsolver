@@ -12,33 +12,32 @@ use gcs_core::syntax::parse;
 
 const INVOLUTE: &str = "\
 component Involute(c: circle, phase: Angle, u: Angle) {
-  point p = ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
-             c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
+  p := point(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
 }
-point  o hint(x: 0, y: 0)
-circle base(center: o) hint(r: 20)
-curve  inv = Involute(base, phase: 0).p over u in (10, 90)
+o := point hint(x: 0, y: 0)
+base := circle(center: o) hint(r: 20)
+inv := Involute(base, phase: 0).p over u in (10, 90)
 radius(20) base
 ground o
 ";
 
 const UNWIND: &str = "\
 component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
-  point t hint(x: c.center.x + c.r * cos(u + phase), y: c.center.y + c.r * sin(u + phase))
-  point p hint(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), \
+  t := point hint(x: c.center.x + c.r * cos(u + phase), y: c.center.y + c.r * sin(u + phase))
+  p := point hint(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), \
                y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
-  line rad(c.center, t)
-  line s(t, p)
+  rad := line(c.center, t)
+  s := line(t, p)
   t on c
   rad perpendicular s
   datum angle(u + phase) rad
   t distance(c.r * u * pi / 180) p
 }
-point  o hint(x: 0, y: 0)
-point  ax hint(x: 1, y: 0)
-line   datum(o, ax)
-circle base(center: o) hint(r: 20)
-curve  inv = Unwind(base, datum, phase: 0).p over u in (10, 90)
+o := point hint(x: 0, y: 0)
+ax := point hint(x: 1, y: 0)
+datum := line(o, ax)
+base := circle(center: o) hint(r: 20)
+inv := Unwind(base, datum, phase: 0).p over u in (10, 90)
 radius(20) base
 ground o
 ground ax
@@ -58,7 +57,7 @@ fn param_of(e: &Elaborated) -> f64 {
 #[test]
 fn a_line_solves_tangent_to_a_curve() {
     let src = format!(
-        "{INVOLUTE}point a hint(x: 30, y: -5)\npoint b hint(x: 45, y: 25)\nline l(a, b)\n\
+        "{INVOLUTE}a := point hint(x: 30, y: -5)\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
          ground a\na distance(30) b\ninv tangent l hint(t: 45)\n"
     );
     let mut e = build(&src);
@@ -83,7 +82,7 @@ fn a_line_solves_tangent_to_a_curve() {
 #[test]
 fn a_circle_solves_osculating_a_curve() {
     let src = format!(
-        "{INVOLUTE}point k hint(x: 5, y: 20)\ncircle osc(center: k) hint(r: 15)\n\
+        "{INVOLUTE}k := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\n\
          inv curvature osc hint(t: 60)\no distance(12, along: x) k\n"
     );
     let mut e = build(&src);
@@ -109,7 +108,7 @@ fn a_circle_solves_osculating_a_curve() {
 #[test]
 fn a_line_solves_tangent_to_a_traced_curve() {
     let src = format!(
-        "{UNWIND}point a hint(x: 30, y: -5)\npoint b hint(x: 45, y: 25)\nline l(a, b)\n\
+        "{UNWIND}a := point hint(x: 30, y: -5)\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
          ground a\na distance(30) b\ninv tangent l hint(t: 45)\n"
     );
     let mut e = build(&src);
@@ -131,7 +130,7 @@ fn a_line_solves_tangent_to_a_traced_curve() {
 /// A curvature against a traced curve is refused, and says why.
 #[test]
 fn a_curvature_against_a_traced_curve_is_refused() {
-    let src = format!("{UNWIND}point k hint(x: 5, y: 20)\ncircle osc(center: k) hint(r: 15)\ninv curvature osc\n");
+    let src = format!("{UNWIND}k := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\ninv curvature osc\n");
     let (prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);
@@ -147,8 +146,8 @@ fn a_curvature_against_a_traced_curve_is_refused() {
 #[test]
 fn the_contacts_are_operators() {
     let src = format!(
-        "{INVOLUTE}point a hint(x: 30, y: -5)\npoint b hint(x: 45, y: 25)\nline l(a, b)\n\
-         point k hint(x: 5, y: 20)\ncircle osc(center: k) hint(r: 15)\n\
+        "{INVOLUTE}a := point hint(x: 30, y: -5)\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
+         k := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\n\
          inv tangent l\ninv curvature osc\n"
     );
     let e = build(&src);

@@ -9,12 +9,12 @@ use std
 // The pitch plane: the page folded up about its x axis, the gear apex at its
 // datum origin. Its datum stands where the page's does, `span` long.
 component PitchView(front: plane, span: Length) {
-  private point origin hint(x: 0, y: 0)
-  private point toward hint(x: span, y: 0)
+  private origin := point hint(x: 0, y: 0)
+  private toward := point hint(x: span, y: 0)
   origin coincident front.origin
   toward distance(span, along: u) front
   toward distance(0mm, along: v) front
-  plane view(origin: origin, toward: toward, from: front, fold: 0deg)
+  view := plane(origin: origin, toward: toward, from: front, fold: 0deg)
 }
 
 // A view folded square to `parent` about `hinge`, a line drawn in it: its u
@@ -22,19 +22,19 @@ component PitchView(front: plane, span: Length) {
 // on the page's origin and `span` long: about the size of what is drawn in it,
 // which is how far a turn of the view is taken to move its content.
 component FoldedView(parent: plane, hinge: line, span: Length) {
-  private point origin hint(x: 0, y: 0)
-  private point toward hint(x: span, y: 0)
-  plane view(origin: origin, toward: toward, from: parent, fold: along hinge)
+  private origin := point hint(x: 0, y: 0)
+  private toward := point hint(x: span, y: 0)
+  view := plane(origin: origin, toward: toward, from: parent, fold: along hinge)
 }
 
 preview {
   unit mm
-  pitch: PitchView(std.front, span: 40mm)
-  point a hint(x: 0, y: 0) in pitch.view
-  point b hint(x: 40, y: 20) in pitch.view
+  pitch := PitchView(std.front, span: 40mm)
+  a := point hint(x: 0, y: 0) in pitch.view
+  b := point hint(x: 40, y: 20) in pitch.view
   a coincident pitch.view.origin
   a distance(40mm, along: right) b
   a distance(20mm, along: up) b
-  line hinge(a, b) in pitch.view
-  folded: FoldedView(pitch.view, hinge, span: 40mm)
+  hinge := line(a, b) in pitch.view
+  folded := FoldedView(pitch.view, hinge, span: 40mm)
 }

@@ -271,7 +271,7 @@ pub const CASES: [(&str, &str, &str); 43] = [
     ("Hollow reducer · loft", "solid_loft", "Two hollow square component sections joined along a dimensioned line; change either size, the wall, or the length."),
     ("Pocketed tray · solids", "solid_tray", "Named profile extrusions and nested Boolean bodies: cut a pocket, then add four annular standoffs while preserving the floor."),
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
-    ("Square, one line round a cycle", "square", "`cycle 4 { line s -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
+    ("Square, one line round a cycle", "square", "`cycle 4 { (s := line) -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
     ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: corners on a circle, equal sides, the open-jointed cycle welding them round — pure relations, so the closure equality is implied rather than Over, and the seeds walk once round the circle to pick the convex winding no residual can state (1 DOF: it spins about its hub)"),
     ("Tabs on every edge · repeat over a chain", "edge_tabs", "a rectangle written as a named chain, and `repeat e in outline { … }` stating one tab: the flattener makes a copy per edge, in the order the chain walks them, `e` naming that copy's edge — change the width, the height or the rise and all four follow; add an edge to the outline and it gets a tab too"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
@@ -288,7 +288,7 @@ pub const CASES: [(&str, &str, &str); 43] = [
     ("K3,3 framework", "k33", "rigid but triangle-free: the decomposition needs a core merge"),
     ("Concurrent altitudes", "altitudes", "theorem-type dependency: the third incidence is implied (Diagnose → witness); 3 DOF to animate"),
     ("Parallels & perpendiculars", "parallels", "direction classes: parallel/perpendicular/vertical (1 DOF left: slide along the base)"),
-    ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `claim distance == c = hypot(a, b)` is judged a theorem — edit a or b and it stays one"),
+    ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `claim P1 distance(c := hypot(a, b)) P2` is judged a theorem — edit a or b and it stays one"),
     ("Curve and follower", "spline_follower", "a cubic B-spline with a face held tangent to it and a point riding on it — drag a control point and the contact slides along the curve, across knots and all"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
     ("Belt wrap · arc length", "belt_wrap", "an open belt over two pulleys, closed as one tangent chain, with nothing saying how far apart the pulleys are: `length(wrap) big` states the belt in contact with the big pulley — its radius times its sweep — and the centre distance follows.  Edit `wrap` and the second pulley moves"),
@@ -344,26 +344,34 @@ fn document(src: &str, name: &str) -> Sketch {
 /// A document's `param` line, given another number — the one way a case that takes arguments is
 /// still *one* implementation.
 ///
-/// A drawing written as a document already names the numbers it is drawn from (`param w = 100`),
+/// A drawing written as a document already names the numbers it is drawn from (`w := 100`),
 /// so a caller asking for another width is asking for that line to read differently.  Rewriting
 /// it is a splice on the source, which is what every other edit in this project is; building a
 /// second copy of the rectangle in Rust to take the argument is what it is not.  A name the
 /// document does not declare is a caller's mistake and says so in debug.
 fn with_params(src: &str, kv: &[(&str, f64)]) -> String {
-    // the two ways a document names a number: `param w = 100` at elaboration, and `== a = 30`,
-    // which names a dimension the drawing states and other dimensions read
-    let heads = |name: &str| [format!("param {name} = "), format!("== {name} = ")];
+    // the two ways a document names a number: `w := 100` standing as a statement, worked out at
+    // elaboration, and `distance(a := 30)`, which names a dimension the drawing states and other
+    // dimensions read
     let mut out = String::with_capacity(src.len());
     let mut hit = vec![false; kv.len()];
     for line in src.lines() {
         let mut written: Option<String> = None;
         for (i, &(name, v)) in kv.iter().enumerate() {
-            for head in heads(name) {
-                let Some(at) = line.find(&head) else { continue };
-                let keep = &line[..at + head.len()];
-                written = Some(format!("{keep}{}", crate::json::fmt_g(v, 12)));
+            let value = crate::json::fmt_g(v, 12);
+            let head = format!("{name} := ");
+            let lead = line.len() - line.trim_start().len();
+            if line[lead..].starts_with(&head) {
+                written = Some(format!("{}{value}", &line[..lead + head.len()]));
                 hit[i] = true;
+                continue;
             }
+            let inner = format!("({name} := ");
+            let Some(at) = line.find(&inner) else { continue };
+            let from = at + inner.len();
+            let to = line[from..].find([')', ',']).map_or(line.len(), |k| from + k);
+            written = Some(format!("{}{value}{}", &line[..from], &line[to..]));
+            hit[i] = true;
         }
         out.push_str(written.as_deref().unwrap_or(line));
         out.push('\n');

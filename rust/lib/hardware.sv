@@ -12,74 +12,74 @@ use std
 
 // -- bolts, nuts and washers, 1/4"-20 ----------------------------------------------------------
 
-param hexbolt14_d = 6.35mm          // the shank
-param hexbolt14_af = 11.1mm         // the head, across flats (7/16")
-param hexbolt14_ac = 12.8mm         // and across corners
-param hexbolt14_h = 4.4mm           // the head's height
-param hexbolt14_thread = 19mm       // a partially threaded bolt's thread, from the tip (3/4")
-param nut14_af = 11.1mm             // a 1/4"-20 hex nut, across flats
-param nut14_h = 5.6mm               // its height
-param nylock14_h = 7.6mm            // a nylon-insert nut's
-param washer14_id = 7.1mm           // a 1/4" SAE flat washer
-param washer14_od = 15.9mm
-param washer14_t = 1.6mm
-param clearance14 = 6.6mm           // the hole a 1/4" shank turns in
-param fit14 = 6.4mm                 // the hole that locates one without turning: drill it 1/4"
+hexbolt14_d := 6.35mm          // the shank
+hexbolt14_af := 11.1mm         // the head, across flats (7/16")
+hexbolt14_ac := 12.8mm         // and across corners
+hexbolt14_h := 4.4mm           // the head's height
+hexbolt14_thread := 19mm       // a partially threaded bolt's thread, from the tip (3/4")
+nut14_af := 11.1mm             // a 1/4"-20 hex nut, across flats
+nut14_h := 5.6mm               // its height
+nylock14_h := 7.6mm            // a nylon-insert nut's
+washer14_id := 7.1mm           // a 1/4" SAE flat washer
+washer14_od := 15.9mm
+washer14_t := 1.6mm
+clearance14 := 6.6mm           // the hole a 1/4" shank turns in
+fit14 := 6.4mm                 // the hole that locates one without turning: drill it 1/4"
 
 // -- #8-32 -------------------------------------------------------------------------------------
-param screw832_d = 4.2mm
-param screw832_clearance = 4.4mm    // the hole it passes through
-param nut832_af = 8.7mm             // an #8-32 hex nut (11/32")
-param nut832_ac = 10mm
-param nut832_t = 3.2mm
+screw832_d := 4.2mm
+screw832_clearance := 4.4mm    // the hole it passes through
+nut832_af := 8.7mm             // an #8-32 hex nut (11/32")
+nut832_ac := 10mm
+nut832_t := 3.2mm
 
 // -- pins and rod ------------------------------------------------------------------------------
-param clevis14_d = 6.35mm           // a 1/4" clevis pin
-param clevis14_head_d = 9.7mm
-param clevis14_head_t = 2.3mm
-param clevis14_grip_114 = 25mm      // under the head to the cotter hole, the 1-1/4" pin
-param rod516_d = 7.94mm             // 5/16" steel rod: a press fit in a 608 bearing
-param rod316_d = 4.76mm             // 3/16" steel rod
+clevis14_d := 6.35mm           // a 1/4" clevis pin
+clevis14_head_d := 9.7mm
+clevis14_head_t := 2.3mm
+clevis14_grip_114 := 25mm      // under the head to the cotter hole, the 1-1/4" pin
+rod516_d := 7.94mm             // 5/16" steel rod: a press fit in a 608 bearing
+rod316_d := 4.76mm             // 3/16" steel rod
 
 // -- bearings ----------------------------------------------------------------------------------
-param brg608_id = 8mm               // a 608 skateboard bearing
-param brg608_od = 22mm
-param brg608_w = 7mm
+brg608_id := 8mm               // a 608 skateboard bearing
+brg608_od := 22mm
+brg608_w := 7mm
 
 // -- O-rings, AS568 dash numbers: the bore and the section --------------------------------------
-param oring010_id = 6.07mm          // 1/4" × 1/16"
-param oring010_cs = 1.78mm
-param oring014_id = 12.42mm         // 1/2" × 1/16"
-param oring014_cs = 1.78mm
-param oring112_id = 12.37mm         // 1/2" × 3/32"
-param oring112_cs = 2.62mm
+oring010_id := 6.07mm          // 1/4" × 1/16"
+oring010_cs := 1.78mm
+oring014_id := 12.42mm         // 1/2" × 1/16"
+oring014_cs := 1.78mm
+oring112_id := 12.37mm         // 1/2" × 3/32"
+oring112_cs := 2.62mm
 // A groove for a ring in a bore: the ring's section squeezed this much is a moving seal that
 // holds; the groove is this much wider than the section so the ring can roll rather than drag.
-param oring_squeeze = 0.12
-param oring_groove_w = 1.35
+oring_squeeze := 0.12
+oring_groove_w := 1.35
 
 // -- pipe fittings -----------------------------------------------------------------------------
-param npt14_cpl_af = 15.9mm         // a 1/4" NPT brass coupling, across flats (5/8")
-param npt14_cpl_l = 28.6mm          // and long (1-1/8")
-param npt14_drill = 11.1mm          // the tap drill for 1/4" NPT (7/16")
-param mplug_body_d = 12mm           // an industrial ("M-style") quick-release plug, 1/4" NPT
-param mplug_body_l = 14mm
-param mplug_nose_d = 7mm
-param mplug_nose_l = 16mm
+npt14_cpl_af := 15.9mm         // a 1/4" NPT brass coupling, across flats (5/8")
+npt14_cpl_l := 28.6mm          // and long (1-1/8")
+npt14_drill := 11.1mm          // the tap drill for 1/4" NPT (7/16")
+mplug_body_d := 12mm           // an industrial ("M-style") quick-release plug, 1/4" NPT
+mplug_body_l := 14mm
+mplug_nose_d := 7mm
+mplug_nose_l := 16mm
 
 // -- how they are drawn ------------------------------------------------------------------------
 // A washer or a bearing face on: two circles about `c`.
 component Ring(c: point, id: Length, od: Length) {
-  circle outer(center: c) hint(r: od / 2)
+  outer := circle(center: c) hint(r: od / 2)
   radius(od / 2) outer
-  circle inner(center: c) hint(r: id / 2)
+  inner := circle(center: c) hint(r: id / 2)
   radius(id / 2) inner
 }
 
 // A nut or a bolt's head face on: the hex, with the bore through it.
 component Nut(c: point, ref: line, af: Length, bore: Length, phase: Angle) {
-  hex: Hex(c, ref, af: af, phase: phase)
-  circle hole(center: c) hint(r: bore / 2)
+  hex := Hex(c, ref, af: af, phase: phase)
+  hole := circle(center: c) hint(r: bore / 2)
   radius(bore / 2) hole
 }
 
@@ -104,20 +104,20 @@ component Nut(c: point, ref: line, af: Length, bore: Length, phase: Angle) {
 // is its section: `w` wide at `z` down the axis, from the bore out to the squeezed diameter.
 component Groove(body: solid, f: plane,
                  r: Length, z: Length, cs: Length, seal: group) {
-  line ax(f.origin, f.toward)
-  param rb = r - (1 - seal.squeeze) * cs   // the groove's bottom, off the axis
-  param w = seal.width_factor * cs             // and how wide it is along the axis
-  point g0 hint(x: f.origin.x + (z) * f.c - (rb) * f.s,
+  ax := line(f.origin, f.toward)
+  rb := r - (1 - seal.squeeze) * cs   // the groove's bottom, off the axis
+  w := seal.width_factor * cs             // and how wide it is along the axis
+  g0 := point hint(x: f.origin.x + (z) * f.c - (rb) * f.s,
                     y: f.origin.y + (z) * f.s + (rb) * f.c)
-  point g1 hint(x: f.origin.x + (z) * f.c - (r) * f.s,
+  g1 := point hint(x: f.origin.x + (z) * f.c - (r) * f.s,
                     y: f.origin.y + (z) * f.s + (r) * f.c)
-  point g2 hint(x: f.origin.x + (z - w) * f.c - (r) * f.s,
+  g2 := point hint(x: f.origin.x + (z - w) * f.c - (r) * f.s,
                     y: f.origin.y + (z - w) * f.s + (r) * f.c)
-  point g3 hint(x: f.origin.x + (z - w) * f.c - (rb) * f.s,
+  g3 := point hint(x: f.origin.x + (z - w) * f.c - (rb) * f.s,
                     y: f.origin.y + (z - w) * f.s + (rb) * f.c)
-  line e0(g0, g1)  -> line e1(g1, g2)  ->
-    line e2(g2, g3)  -> line e3(g3, g0)  -> close
-  face gf(e0, e1, e2, e3)
+  (e0 := line(g0, g1))  -> (e1 := line(g1, g2))  ->
+    (e2 := line(g2, g3))  -> (e3 := line(g3, g0))  -> close
+  gf := face(e0, e1, e2, e3)
   e0 perpendicular ax
   e1 parallel ax
   e2 perpendicular ax
@@ -128,21 +128,21 @@ component Groove(body: solid, f: plane,
   g0 distance(z, along: u) f
   claim g0 distance(w) g3
   claim g0 distance(rb) ax
-  solid groove(gf, about: ax)
+  groove := solid(gf, about: ax)
   groove cut body
 }
 
 // Caller-selected seal proportions, passed explicitly to Groove.
-group seal_dims(squeeze: oring_squeeze, width_factor: oring_groove_w)
+seal_dims := group(squeeze: oring_squeeze, width_factor: oring_groove_w)
 
 // A circular through-hole pattern. The polygon supplies constrained centers, with
 // its edges private to this component. n >= 3, as for Polygon.
 component BoltPattern(body: solid, center: point, ref: line,
                       n: Int, pitch_r: Length, hole_r: Length, phase: Angle) {
-  private construction layout: Polygon(center, ref, n: n, r: pitch_r, phase: phase)
+  private construction layout := Polygon(center, ref, n: n, r: pitch_r, phase: phase)
   repeat n as i {
-    radius(hole_r) circle hole(center: layout.v[i])
-    private solid drill(face(hole), through: body)
+    hole := radius(hole_r) circle(center: layout.v[i])
+    private drill := solid(face(hole), through: body)
     drill cut body
   }
 }

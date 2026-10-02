@@ -18,24 +18,24 @@ use components.dims
 use components.parts
 
 component Disc(f: plane, dims: group) {
-  param pinpocketd = dims.pinhead + 0.5mm   // diametral clearance around the clevis head
-  circle rim(center: f.origin) hint(r: dims.rdisc)
+  pinpocketd := dims.pinhead + 0.5mm   // diametral clearance around the clevis head
+  rim := circle(center: f.origin) hint(r: dims.rdisc)
   radius(dims.rdisc) rim
-  circle bore(center: f.origin) hint(r: dims.dhub / 2)
+  bore := circle(center: f.origin) hint(r: dims.dhub / 2)
   radius(dims.dhub / 2) bore
-  circle ph(center: f.toward) hint(r: dims.pinclr / 2)
+  ph := circle(center: f.toward) hint(r: dims.pinclr / 2)
   radius(dims.pinclr / 2) ph
-  circle pkt(center: f.toward) hint(r: pinpocketd / 2)
+  pkt := circle(center: f.toward) hint(r: pinpocketd / 2)
   radius(pinpocketd / 2) pkt
   // the set screw, square to the arm so its pocket stays clear of the pin's
-  point se hint(x: f.origin.x + (0mm) * f.c - (-dims.rdisc) * f.s,
+  se := point hint(x: f.origin.x + (0mm) * f.c - (-dims.rdisc) * f.s,
                     y: f.origin.y + (0mm) * f.s + (-dims.rdisc) * f.c)
-  line ssa(f.origin, se)
-  line reference(f.origin, f.toward)
+  ssa := line(f.origin, se)
+  reference := line(f.origin, f.toward)
   se on rim
   ssa perpendicular reference
-  plane screw_axes(origin: f.origin, toward: se)
-  gs: Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rdisc, dims: dims)
+  screw_axes := plane(origin: f.origin, toward: se)
+  gs := Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rdisc, dims: dims)
   claim radius(dims.dhub / 2) bore
   claim radius(dims.pinclr / 2) ph
   claim radius(pinpocketd / 2) pkt
@@ -48,11 +48,11 @@ component Disc(f: plane, dims: group) {
   // thickness either way, and the pin's head sits in a pocket `pinpocket` deep in the back —
   // the face toward the plate, which a view from the right sees on its own right.
   // Each circle is a loop by itself.
-  solid plate(face(rim), from: -dims.tdisc / 2, to: dims.tdisc / 2)
-  solid hub(face(bore), from: -dims.tdisc / 2, to: dims.tdisc / 2)
-  solid pinhole(face(ph), from: -dims.tdisc / 2, to: dims.tdisc / 2)
-  solid pinpkt(face(pkt), from: -dims.tdisc / 2, to: -dims.tdisc / 2 + dims.pinpocket)
-  solid body(plate)
+  plate := solid(face(rim), from: -dims.tdisc / 2, to: dims.tdisc / 2)
+  hub := solid(face(bore), from: -dims.tdisc / 2, to: dims.tdisc / 2)
+  pinhole := solid(face(ph), from: -dims.tdisc / 2, to: dims.tdisc / 2)
+  pinpkt := solid(face(pkt), from: -dims.tdisc / 2, to: -dims.tdisc / 2 + dims.pinpocket)
+  body := solid(plate)
   hub cut body
   pinhole cut body
   pinpkt cut body
@@ -63,10 +63,10 @@ component Disc(f: plane, dims: group) {
 // ../disc.svd arranges three projections of this preview.
 preview {
   unit mm
-  point pin hint(x: std.up.origin.x + (R) * std.up.c - (0mm) * std.up.s,
+  pin := point hint(x: std.up.origin.x + (R) * std.up.c - (0mm) * std.up.s,
                     y: std.up.origin.y + (R) * std.up.s + (0mm) * std.up.c)
   std.origin vertical pin
   std.origin distance(R) pin
-  plane disc_axes(origin: std.origin, toward: pin)
-  disc: Disc(disc_axes, dims: vtwin_dims)
+  disc_axes := plane(origin: std.origin, toward: pin)
+  disc := Disc(disc_axes, dims: vtwin_dims)
 }

@@ -394,9 +394,9 @@ fn levelled_chains_decompose_separately_and_into_corners() {
 #[test]
 fn a_recorded_ccw_replays_as_the_triangle_it_names() {
     let src = "unit mm\n\
-               point a hint(x: 0, y: 0)\n\
-               point b hint(x: 10, y: 0)\n\
-               point c hint(x: 5, y: -4)\n\
+               a := point hint(x: 0, y: 0)\n\
+               b := point hint(x: 10, y: 0)\n\
+               c := point hint(x: 5, y: -4)\n\
                ground a\n\
                ground b\n\
                a distance(6) c\n\

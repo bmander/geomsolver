@@ -36,7 +36,7 @@ crown-center placement and implicit envelopes in the model source.
 line/arc/circle boundaries of an existing Solvent revolution. Positions and first derivatives
 come from the solved source geometry, independently of faceting. It returns snapshots;
 the caller must re-read after a model change. Solvent now names these patches with
-`surface flank(crown, edge: rack.outer)`. A `surface` is an evaluated spatial reference:
+`flank := surface(crown, edge: rack.outer)`. A `surface` is an evaluated spatial reference:
 it owns no solver coordinates and can be private, tagged, or passed through a component
 formal. It follows its source geometry across edits; copy/paste and dependency deletion
 carry that relationship. The browser's `surfaceSample` API reads positions and exact
@@ -343,13 +343,13 @@ robustness to mounting errors; those have not been included in this nominal geom
 Keep gear knowledge in components. The reusable language capabilities needed are:
 
 1. **Implemented:** named analytic surfaces from existing solids provide the initial generating
-   geometry: `surface flank(crown, rack.outer)` and `surface root(crown, rack.outer_round)`
+   geometry: `flank := surface(crown, rack.outer)` and `root := surface(crown, rack.outer_round)`
    refer to the cone and torus. General spatial
    surfaces traced by a component member over two formals can extend this later, coherently
    with existing computed and constrained curves; the gear need not await or bypass that
    design with a separate formula language.
-2. **Implemented:** `motion crown(about: crown_axis)` and
-   `motion generating(crown, relative_to: blank)` express constant-ratio rotational families
+2. **Implemented:** `crown := motion(about: crown_axis)` and
+   `generating := motion(crown, relative_to: blank)` express constant-ratio rotational families
    about solved lines. The matched-reference component declares crown, pinion and gear
    motions, with ratios `1`, `1 / sin(pinion_angle)` and `-1 / sin(gear_angle)`. The envelope
    verifier now evaluates these named relationships, including exact frame derivatives.
@@ -357,7 +357,7 @@ Keep gear knowledge in components. The reusable language capabilities needed are
    constraints place the reference axes at `(center_x, center_y, 0)`. The verifier no longer
    translates source patches. A fixed rotation only expresses results in its independent
    initial local shaft coordinate convention.
-3. **Implemented:** `envelope flank(source, under: generating, from: -35deg, to: 35deg)`
+3. **Implemented:** `flank := envelope(source, under: generating, from: -35deg, to: 35deg)`
    names the zero-normal-velocity locus over a finite motion domain. The pair component
    declares its flank, root-transition and root-cone reference envelopes. Numerical section
    intersections read these declarations. Crown surfaces now declare their source semicircles

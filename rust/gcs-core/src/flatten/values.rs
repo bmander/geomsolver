@@ -58,8 +58,8 @@ pub(super) fn value_of(text: &str, env: &BTreeMap<String, Aff>, units: Units) ->
 /// `param`, an argument to a nested instance and a dimension all carry on.  Only a caller that
 /// needs a number (`value_of`: a seed, a count, an index) refuses one.
 ///
-/// A `param`'s dimension has to survive into the names that read it, or `param R = m * N / 2`
-/// would forget that `m` was declared a `Length` and `param Rt = R + m` would read as a plain
+/// A `param`'s dimension has to survive into the names that read it, or `R := m * N / 2`
+/// would forget that `m` was declared a `Length` and `Rt := R + m` would read as a plain
 /// number added to a length — the very thing the check exists to catch, missed because the check
 /// threw the answer away.
 pub(crate) fn value_aff(
@@ -113,7 +113,7 @@ fn fold(sub: &str, text: &str, units: Units) -> Result<String, String> {
                 // a definition keeps its name: it is the document's, not the component's
                 let value = a.dim.number_text(v, units);
                 return Ok(match &p.name {
-                    Some(n) => format!("{n} = {value}"),
+                    Some(n) => format!("{n} := {value}"),
                     None => value,
                 });
             }
@@ -378,23 +378,23 @@ impl<'a> Walk<'a> {
 
     /// Work out every `param` a body declares, before any statement of the body is walked —
     /// and every **named dimension**, which declares its name in the body the same way
-    /// (§6.3, issue #47 item 7): `a distance(w = 60) b` says what `w` is as much as
-    /// `param w = 60` does, and both are read by everything in the body.
+    /// (§6.3, issue #47 item 7): `a distance(w := 60) b` says what `w` is as much as
+    /// `w := 60` does, and both are read by everything in the body.
     ///
-    /// A body is a set (spec P2): `param h = w / 2` may stand above `param w = 60`, so the
+    /// A body is a set (spec P2): `h := w / 2` may stand above `w := 60`, so the
     /// definitions are taken in *dependency* order and not in line order — a definition is
     /// ready when none of the names it reads is another of this body still waiting, and the
     /// ready ones are worked out until none is left.  What remains then reads itself, through
     /// however many others, which is the cyclic definitional dependency spec §11 names E041.
     /// A second `w` in one body — a param or a dimension, either way — is the E001 a second
-    /// `point w` is, and the first stands (#43.13); a definition that fails is reported once,
+    /// `w := point` is, and the first stands (#43.13); a definition that fails is reported once,
     /// where it is written, and the params that read it are left unsaid rather than each
     /// repeating the cause (#45.1).
     ///
     /// A named dimension's number goes into `vals`, where a `param`, a seed or a count reads
     /// it; its name goes into `graph`, where a dimension's text reads it — kept as a *name*,
     /// so the expression graph ties the two dimensions and the tie survives on the drawing.  A
-    /// dimension whose number cannot be worked out here (`w = s`, over a free variable) is
+    /// dimension whose number cannot be worked out here (`w := s`, over a free variable) is
     /// still a name, and the graph will say what is wrong with its number.
     pub(super) fn params(
         &mut self,
@@ -448,7 +448,7 @@ impl<'a> Walk<'a> {
                     else {
                         continue;
                     };
-                    let rhs = text.split_once('=').map(|(_, r)| r.trim()).unwrap_or("");
+                    let rhs = text.split_once(":=").map(|(_, r)| r.trim()).unwrap_or("");
                     Def { name, name_span: span, text: rhs.to_string(), span, dim: true, group_ref: false }
                 }
                 _ => continue,

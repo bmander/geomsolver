@@ -8,8 +8,8 @@ pub(super) enum Tok {
     Num(f64),
     /// `(` `)` `[` `]` `,` `:` `.` `-` `{` `}`
     P(char),
-    /// `=` — an assignment.
-    Eq,
+    /// `:=` — a definition: the name before it is the value after it (§5).
+    Define,
     /// `==` — a constraint
     EqEq,
     /// `->` — a chain's joint marker: the two links beside it share a boundary point (§6.6)
@@ -67,14 +67,15 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                 i = (i + 2).min(b.len());
                 comments.push(Span::new(lo, i));
             }
-            '=' => {
-                if b.get(i + 1) == Some(&b'=') {
-                    i += 2;
-                    toks.push((Tok::EqEq, Span::new(lo, i)));
-                } else {
-                    i += 1;
-                    toks.push((Tok::Eq, Span::new(lo, i)));
-                }
+            // `==` pins a slot; a lone `=` is no token the grammar has, and is read as stray
+            // punctuation so the statement holding it is refused where it stands
+            '=' if b.get(i + 1) == Some(&b'=') => {
+                i += 2;
+                toks.push((Tok::EqEq, Span::new(lo, i)));
+            }
+            ':' if b.get(i + 1) == Some(&b'=') => {
+                i += 2;
+                toks.push((Tok::Define, Span::new(lo, i)));
             }
             // `->` is the joint marker (§6.6).  `>` is not a token on its own, so the pair is
             // claimed here before `-` can read as punctuation.

@@ -16,10 +16,10 @@ pub fn module(name: &str) -> Option<String> { crate::module(&project(),name) }
 /// the shafts in millimetres, the pressure shift and the crown's spiral in degrees, the shafts
 /// square, with no backlash, no tip relief and no end relief.
 pub fn configuration(teeth: [u32;2],mean_module: f64,offset: f64,shift: f64,spiral: f64) -> String {
-    format!("param pinion_teeth = {}\nparam gear_teeth = {}\nparam mean_module = {mean_module}mm\n\
-        param shaft_angle = 90deg\nparam offset = {offset}mm\nparam pressure_shift = {shift}deg\n\
-        param spiral_angle = {spiral}deg\nparam backlash = 0mm\nparam tip_relief = 0mm\n\
-        param end_relief = 0mm\n",teeth[0],teeth[1])
+    format!("pinion_teeth := {}\ngear_teeth := {}\nmean_module := {mean_module}mm\n\
+        shaft_angle := 90deg\noffset := {offset}mm\npressure_shift := {shift}deg\n\
+        spiral_angle := {spiral}deg\nbacklash := 0mm\ntip_relief := 0mm\n\
+        end_relief := 0mm\n",teeth[0],teeth[1])
 }
 
 /// The parameters `configure` reads in millimetres; every other is in degrees.
@@ -30,13 +30,12 @@ const LENGTHS: [&str;4] = ["offset","backlash","tip_relief","end_relief"];
 /// dropped wherever it stands and the value written at the end. Every other module unchanged.
 pub fn configure(name: &str,text: String,params: &[(&str,f64)]) -> String {
     if name != "configuration" { return text; }
-    let lines: Vec<String> = params.iter().map(|(p,_)| format!("param {p}")).collect();
-    // `param offset` must not take a `param offset_…`: a name ends at a space or an `=`.
-    let names = |l: &str| lines.iter().any(|p| l.trim_start().strip_prefix(p.as_str())
-        .is_some_and(|rest| rest.starts_with([' ','='])));
+    // `offset` must not take an `offset_…`: a name ends at a space or its `:=`.
+    let names = |l: &str| params.iter().any(|(p,_)| l.trim_start().strip_prefix(p)
+        .is_some_and(|rest| rest.starts_with([' ',':'])));
     let unit = |p: &str| if LENGTHS.contains(&p) { "mm" } else { "deg" };
     text.lines().filter(|l| !names(l)).map(|l| format!("{l}\n")).collect::<String>()
-        + &params.iter().map(|(p,v)| format!("param {p} = {v}{}\n",unit(p))).collect::<String>()
+        + &params.iter().map(|(p,v)| format!("{p} := {v}{}\n",unit(p))).collect::<String>()
 }
 
 /// The gear design: the offset between the shafts in millimetres, the pressure shift and the
@@ -71,10 +70,10 @@ pub fn one_space(text: &str) -> String {
 /// by the tip, less the toe and the back) and `extra` after it. The member's own blank term
 /// gives up its instance name to the solid.
 pub fn publish_blank(text: &str,extra: &str) -> String {
-    let member = "  solid body(design.heel)\n  blank: MemberBlank(body, design)\n";
+    let member = "  body := solid(design.heel)\n  blank := MemberBlank(body, design)\n";
     assert!(text.contains(member),"the member's body is the heel under its blank term");
-    text.replace(member,&format!("  solid body(design.heel)\n  body_blank: MemberBlank(body, design)\n  \
-        construction solid blank(design.heel)\n  published: MemberBlank(blank, design)\n{extra}"))
+    text.replace(member,&format!("  body := solid(design.heel)\n  body_blank := MemberBlank(body, design)\n  \
+        construction blank := solid(design.heel)\n  published := MemberBlank(blank, design)\n{extra}"))
 }
 
 /// The `design` module with each member's roll limit in degrees (`pinion_roll`, `gear_roll`).

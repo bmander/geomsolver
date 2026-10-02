@@ -45,15 +45,15 @@ fn frame(sample: &[f64;15]) {
 
 const BOX: &str = "unit mm
 use std
-profile: CenteredRectangle(std.origin,w: 2mm,h: 2mm)
-solid stock(face(profile.loop),depth: 2mm)
-solid body(stock)
+profile := CenteredRectangle(std.origin,w: 2mm,h: 2mm)
+stock := solid(face(profile.loop),depth: 2mm)
+body := solid(stock)
 ";
 
 #[test]
 fn a_blind_hole_has_a_concave_floor_edge() {
-    let e = fixtures::gear::read(&format!("{BOX}circle c(center: std.origin)\nradius(0.5mm) c\n\
-        solid drill(face(c),from: -1mm,to: 3mm)\ndrill cut body\n"),Path::new("."));
+    let e = fixtures::gear::read(&format!("{BOX}c := circle(center: std.origin)\nradius(0.5mm) c\n\
+        drill := solid(face(c),from: -1mm,to: 3mm)\ndrill cut body\n"),Path::new("."));
     let cad = native::Session::new().unwrap();
     let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("body").unwrap().i()).unwrap()).unwrap();
     let rows = boundary(&cad,solid);
@@ -73,8 +73,8 @@ fn a_blind_hole_has_a_concave_floor_edge() {
 fn trimmed_cube_and_hole_edges_have_material_normals() {
     let cad = native::Session::new().unwrap();
     for hole in [false,true] {
-        let source = format!("{BOX}{}",if hole { "circle c(center: std.origin)\nradius(0.5mm) c\n\
-            solid drill(face(c),from: -3mm,to: 3mm)\ndrill cut body\n" } else { "" });
+        let source = format!("{BOX}{}",if hole { "c := circle(center: std.origin)\nradius(0.5mm) c\n\
+            drill := solid(face(c),from: -3mm,to: 3mm)\ndrill cut body\n" } else { "" });
         let e = fixtures::gear::read(&source,Path::new("."));
         let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("body").unwrap().i()).unwrap()).unwrap();
         let rows = boundary(&cad,solid);
@@ -121,10 +121,10 @@ fn trimmed_cube_and_hole_edges_have_material_normals() {
 fn periodic_seams_and_collapsed_poles_remain_explicit() {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
     let sphere = fixtures::gear::read(include_str!("../../examples/solid_generating_sweep.sv"),&base);
-    let torus = fixtures::gear::read("unit mm\npoint a hint(x: 0,y: 0)\nground a\n\
-        point b hint(x: 0,y: 1)\nground b\nline axis(a,b)\n\
-        point c hint(x: 10,y: 2)\nground c\ncircle ring(center: c)\nradius(2) ring\n\
-        solid tool(face(ring),about: axis)\n",Path::new("."));
+    let torus = fixtures::gear::read("unit mm\na := point hint(x: 0,y: 0)\nground a\n\
+        b := point hint(x: 0,y: 1)\nground b\naxis := line(a,b)\n\
+        c := point hint(x: 10,y: 2)\nground c\nring := circle(center: c)\nradius(2) ring\n\
+        tool := solid(face(ring),about: axis)\n",Path::new("."));
     let cad = native::Session::new().unwrap();
     for (e,is_sphere) in [(&sphere,true),(&torus,false)] {
         let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("tool").unwrap().i()).unwrap()).unwrap();
@@ -188,9 +188,9 @@ fn native_cutter_edges_agree_with_the_independent_source_material() {
 fn a_sliver_is_sampled_between_its_faces() {
     let mut text = String::from("unit mm\n");
     for (name,x,y) in [("a",0.,0.),("b",20.,10.),("c",40.,0.),("d",40.,0.004),("e",20.,10.004),("f",0.,0.004)] {
-        text += &format!("point {name} hint(x: {x}, y: {y})\nground {name}\n");
+        text += &format!("{name} := point hint(x: {x}, y: {y})\nground {name}\n");
     }
-    text += "solid sliver(face(a, b, c, d, e, f, -> close), depth: 10mm)\n";
+    text += "sliver := solid(face(a, b, c, d, e, f, -> close), depth: 10mm)\n";
     let e = fixtures::gear::read(&text,Path::new("."));
     let cad = native::Session::new().unwrap();
     let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("sliver").unwrap().i()).unwrap()).unwrap();

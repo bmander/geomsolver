@@ -14,30 +14,30 @@ use crown.rounding
 component MateSection(lp: point, rp: point, inner_along: line, outer_along: line,
                       design: group, normal_module: Length) {
   // Seeds only: RackSection's, the leans exchanged and the tip down.
-  param inner_lean = (design.pressure - design.shift) / 1rad
-  param outer_lean = (design.pressure + design.shift) / 1rad
-  param base_depth = design.base * 2 / pi
-  param tip_depth = design.dedendum * 2 / pi
-  param join_depth = (design.dedendum - design.rounding) * 2 / pi
-  param end_depth = (design.dedendum - design.rounding / 2) * 2 / pi
-  param corner = design.rounding * 2 / pi
-  private point bi hint(x: lp.x - (rp.x - lp.x) * base_depth * inner_lean,
+  inner_lean := (design.pressure - design.shift) / 1rad
+  outer_lean := (design.pressure + design.shift) / 1rad
+  base_depth := design.base * 2 / pi
+  tip_depth := design.dedendum * 2 / pi
+  join_depth := (design.dedendum - design.rounding) * 2 / pi
+  end_depth := (design.dedendum - design.rounding / 2) * 2 / pi
+  corner := design.rounding * 2 / pi
+  private bi := point hint(x: lp.x - (rp.x - lp.x) * base_depth * inner_lean,
                         y: lp.y + (rp.x - lp.x) * base_depth)
-  private point bo hint(x: rp.x + (rp.x - lp.x) * base_depth * outer_lean, y: bi.y)
-  private point ij hint(x: lp.x + (rp.x - lp.x) * join_depth * inner_lean,
+  private bo := point hint(x: rp.x + (rp.x - lp.x) * base_depth * outer_lean, y: bi.y)
+  private ij := point hint(x: lp.x + (rp.x - lp.x) * join_depth * inner_lean,
                         y: lp.y - (rp.x - lp.x) * join_depth)
-  private point it hint(x: lp.x + (rp.x - lp.x) * (end_depth * inner_lean + corner),
+  private it := point hint(x: lp.x + (rp.x - lp.x) * (end_depth * inner_lean + corner),
                         y: lp.y - (rp.x - lp.x) * tip_depth)
-  private point ot hint(x: rp.x - (rp.x - lp.x) * (end_depth * outer_lean + corner), y: it.y)
-  private point oj hint(x: rp.x - (rp.x - lp.x) * join_depth * outer_lean, y: ij.y)
-  private point ci hint(x: it.x, y: ij.y)
-  private point co hint(x: ot.x, y: ij.y)
-  construction line pitch(lp, rp)
-  profile = line base(bo, bi) -> line inner(bi, ij) -> tangent
-            arc inner_round(center: ci) hint(r: abs(it.y - ci.y)) -> tangent
-            line tip(it, ot) -> tangent
-            arc outer_round(center: co) hint(r: abs(it.y - ci.y)) -> tangent
-            line outer(oj, bo) -> close
+  private ot := point hint(x: rp.x - (rp.x - lp.x) * (end_depth * outer_lean + corner), y: it.y)
+  private oj := point hint(x: rp.x - (rp.x - lp.x) * join_depth * outer_lean, y: ij.y)
+  private ci := point hint(x: it.x, y: ij.y)
+  private co := point hint(x: ot.x, y: ij.y)
+  construction pitch := line(lp, rp)
+  profile := (base := line(bo, bi)) -> (inner := line(bi, ij)) -> tangent
+            (inner_round := arc(center: ci) hint(r: abs(it.y - ci.y))) -> tangent
+            (tip := line(it, ot)) -> tangent
+            (outer_round := arc(center: co) hint(r: abs(it.y - ci.y))) -> tangent
+            (outer := line(oj, bo)) -> close
   inner_along angle(180deg) inner
   outer_along angle(180deg) outer
   // Each flank a quarter of the backlash outside its shared line; with none, on it.
@@ -49,25 +49,25 @@ component MateSection(lp: point, rp: point, inner_along: line, outer_along: line
     lp on inner
     rp on outer
   }
-  rounding: TipRounding(pitch, base, tip, inner_round, outer_round, design,
+  rounding := TipRounding(pitch, base, tip, inner_round, outer_round, design,
     normal_module: normal_module)
 }
 
 preview {
   unit mm
   // The preview crown section's outer mate: the tooth one width outward on its flanks.
-  param pitch_radius = 0.8 * 2mm * hypot(24, 48) / 2
-  group proportions(pressure: 20deg, shift: 0deg,
+  pitch_radius := 0.8 * 2mm * hypot(24, 48) / 2
+  proportions := group(pressure: 20deg, shift: 0deg,
                     base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0)
-  point lp hint(x: pitch_radius - 1.3mm, y: 0)
-  point rp hint(x: pitch_radius + 1.3mm, y: 0)
-  point far hint(x: pitch_radius + 3.9mm, y: 0)
+  lp := point hint(x: pitch_radius - 1.3mm, y: 0)
+  rp := point hint(x: pitch_radius + 1.3mm, y: 0)
+  far := point hint(x: pitch_radius + 3.9mm, y: 0)
   std.origin distance(pitch_radius - 1.3mm, along: right) lp
   std.origin distance(0mm, along: up) lp
   std.origin distance(pitch_radius + 1.3mm, along: right) rp
   std.origin distance(0mm, along: up) rp
-  rack: RackSection(lp, rp, proportions, normal_module: 2mm)
-  construction line span(lp, far)
+  rack := RackSection(lp, rp, proportions, normal_module: 2mm)
+  construction span := line(lp, far)
   rp midpoint span
-  mate: MateSection(rp, far, rack.outer, rack.inner, proportions, normal_module: 2mm)
+  mate := MateSection(rp, far, rack.outer, rack.inner, proportions, normal_module: 2mm)
 }

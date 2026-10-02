@@ -2,26 +2,26 @@
 use gcs_core::{io,model::MotionDef,program,solid::{ApproximationPolicy::Report,WorldPoint},solve,syntax};
 
 const SOURCE: &str = "unit mm
-point a hint(x: 1,y: 0)
-point b hint(x: 3,y: 0)
-point c hint(x: 3,y: 2)
-point d hint(x: 1,y: 2)
-point o hint(x: 0,y: 0)
-point z hint(x: 0,y: 1)
+a := point hint(x: 1,y: 0)
+b := point hint(x: 3,y: 0)
+c := point hint(x: 3,y: 2)
+d := point hint(x: 1,y: 2)
+o := point hint(x: 0,y: 0)
+z := point hint(x: 0,y: 1)
 ground a
 ground b
 ground c
 ground d
 ground o
 ground z
-line axis(o,z)
-line ab(a,b)
-line bc(b,c)
-line cd(c,d)
-line da(d,a)
-face profile(ab,bc,cd,da)
-solid stock(profile, from: 0mm, to: 2mm)
-motion turn(about: axis)
+axis := line(o,z)
+ab := line(a,b)
+bc := line(b,c)
+cd := line(c,d)
+da := line(d,a)
+profile := face(ab,bc,cd,da)
+stock := solid(profile, from: 0mm, to: 2mm)
+turn := motion(about: axis)
 ";
 
 fn read(src: &str) -> program::Elaborated {
@@ -39,7 +39,7 @@ fn solid(e: &program::Elaborated,name: &str) -> std::rc::Rc<gcs_core::solid::Eva
 
 #[test]
 fn placed_solids_have_rotated_material_closed_meshes_and_face_names() {
-    let e = read(&format!("{SOURCE}solid moved(stock, under: turn, at: 90deg)\n"));
+    let e = read(&format!("{SOURCE}moved := solid(stock, under: turn, at: 90deg)\n"));
     let s = solid(&e,"moved");
     assert!((s.volume()-8.).abs() < 1e-9);
     assert!(s.contains_world(WorldPoint([1.,2.,1.])));
@@ -52,9 +52,9 @@ fn placed_solids_have_rotated_material_closed_meshes_and_face_names() {
 
 #[test]
 fn nested_placements_transform_composite_sources_and_invalidate_motion_caches() {
-    let mut e = read(&format!("{SOURCE}\nsolid body(stock)\n\
-        solid first(body, under: turn, at: 45deg)\n\
-        solid moved(first, under: turn, at: 45deg)\n"));
+    let mut e = read(&format!("{SOURCE}\nbody := solid(stock)\n\
+        first := solid(body, under: turn, at: 45deg)\n\
+        moved := solid(first, under: turn, at: 45deg)\n"));
     let old = solid(&e,"moved");
     assert!(old.contains_world(WorldPoint([1.,2.,1.])));
     let m = e.map.ent_named("turn").unwrap().i();
@@ -69,7 +69,7 @@ fn nested_placements_transform_composite_sources_and_invalidate_motion_caches() 
 
 #[test]
 fn placement_print_copy_and_paste_retain_source_and_motion_dependencies() {
-    let e = read(&format!("solid moved(stock, under: turn, at: 90deg)\n{SOURCE}"));
+    let e = read(&format!("moved := solid(stock, under: turn, at: 90deg)\n{SOURCE}"));
     let mut program = e.program.clone();
     let text = syntax::render_flat(&mut program).unwrap().to_string();
     assert!(text.contains("under: turn, at: 90deg"),"{text}");
@@ -111,10 +111,10 @@ fn indexed_pattern_stl_must_have_closed_encoded_topology() {
 
 #[test]
 fn malformed_placements_and_cycles_are_refused() {
-    for bad in ["solid bad(stock, under: turn)","solid bad(stock, at: 90deg)",
-        "solid bad(stock, under: turn, at: 90deg, depth: 2mm)",
-        "solid bad(stock, under: axis, at: 90deg)","solid bad(stock, under: turn, at: 2mm)",
-        "solid bad(profile, under: turn, at: 90deg)","solid bad(bad, under: turn, at: 90deg)"] {
+    for bad in ["bad := solid(stock, under: turn)","bad := solid(stock, at: 90deg)",
+        "bad := solid(stock, under: turn, at: 90deg, depth: 2mm)",
+        "bad := solid(stock, under: axis, at: 90deg)","bad := solid(stock, under: turn, at: 2mm)",
+        "bad := solid(profile, under: turn, at: 90deg)","bad := solid(bad, under: turn, at: 90deg)"] {
         let (p,errors) = syntax::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);
         assert!(!errors.is_empty() || !e.ok() ||
@@ -127,14 +127,14 @@ fn solids_bind_final_motion_indices_after_dependency_ordering() {
     // Declaration order, alphabetical order and dependency order all differ.
     // Each solid must retain its named motion, including through a formal.
     let e = read(&format!("{SOURCE}\n\
-        motion z_turn(about: axis,phase: 90deg)\n\
-        motion a_relative(z_turn,relative_to: turn)\n\
+        z_turn := motion(about: axis,phase: 90deg)\n\
+        a_relative := motion(z_turn,relative_to: turn)\n\
         component Copy(stock: solid,movement: motion) {{\n\
-          solid moved(stock,under: movement,at: 0deg)\n\
-          solid swept(stock,under: movement,from: -10deg,to: 10deg)\n\
+          moved := solid(stock,under: movement,at: 0deg)\n\
+          swept := solid(stock,under: movement,from: -10deg,to: 10deg)\n\
         }}\n\
-        copy: Copy(stock,a_relative)\n\
-        solid direct(stock,under: z_turn,at: 0deg)\n"));
+        copy := Copy(stock,a_relative)\n\
+        direct := solid(stock,under: z_turn,at: 0deg)\n"));
     use gcs_core::model::SolidDef;
     for (name,expected) in [("copy.moved","a_relative"),("copy.swept","a_relative"),("direct","z_turn")] {
         let s = &e.sketch.solids[e.map.ent_named(name).unwrap().i()];

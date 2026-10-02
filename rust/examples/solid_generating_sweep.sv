@@ -3,21 +3,21 @@ unit mm
 use std
 
 component GeneratingCut(tool: solid, generating: motion, start: Angle, finish: Angle) {
-  solid body(tool, under: generating, from: start, to: finish)
+  body := solid(tool, under: generating, from: start, to: finish)
 }
 
-construction centerline line spindle(std.origin, std.up.toward)
-private point center
+construction centerline spindle := line(std.origin, std.up.toward)
+private center := point
 center distance(3mm, along: u) std.front
 center distance(0mm, along: v) std.front
-private point bottom hint(x: 3, y: -1)
-private point top hint(x: 3, y: 1)
-private line diameter(bottom, top)
+private bottom := point hint(x: 3, y: -1)
+private top := point hint(x: 3, y: 1)
+private diameter := line(bottom, top)
 center midpoint diameter
 diameter parallel spindle
 distance(2mm) diameter
-private arc meridian(center: center, start: bottom, end: top)
+private meridian := arc(center: center, start: bottom, end: top)
 radius(1mm) meridian
-construction solid tool(face(meridian, diameter), about: diameter)
-motion generating(about: spindle)
-removal: GeneratingCut(tool, generating, start: -60deg, finish: 60deg)
+construction tool := solid(face(meridian, diameter), about: diameter)
+generating := motion(about: spindle)
+removal := GeneratingCut(tool, generating, start: -60deg, finish: 60deg)

@@ -127,6 +127,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         membership: lift_plane(sk, e),
         list_span: Span::default(),
         close: None,
+        mint_close: None,
     }
 }
 

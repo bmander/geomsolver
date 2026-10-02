@@ -4,8 +4,8 @@ use gcs_core::{edge::EdgeTolerance,model::{EntRef,FaceSupport},spatial_face::Spa
 
 const SOURCE: &str = include_str!("../../fixtures/spatial_faces.sv");
 const FACES: &str = "
-construction face lower_face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope)
-face upper_face(left_high,top_edge,right_high,middle_edge,on: second_envelope)
+construction lower_face := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope)
+upper_face := face(left_high,top_edge,right_high,middle_edge,on: second_envelope)
 ";
 
 fn source() -> String { SOURCE.to_string() }
@@ -112,18 +112,18 @@ fn spatial_face_dependencies_roundtrip_copy_delete_and_retain_owned_snapshots() 
 #[test]
 fn spatial_faces_reject_wrong_support_identity_open_loops_and_planar_sweep_use() {
     for declaration in [
-        "face bad(left_low,middle_edge,right_low,bottom_edge,on: second_envelope)",
-        "face bad(left_low,middle_edge,right_high,bottom_edge,on: first_envelope)",
-        "face bad(left_low,middle_edge,right_low,on: first_envelope)",
-        "face bad(left_low,middle_edge,right_low,left_low,on: first_envelope)",
-        "face bad(left_low,middle_edge,right_low,bottom_edge,on: axis)",
-        "face bad(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,on: first_envelope)",
-        "face bad(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,-> close)",
-        "face bad(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,holes: globe)",
-        "solid bad(lower_face,depth: 1mm)",
-        "solid bad(lower_face,about: axis)",
-        "solid bad(lower_face,along: axis)",
-        "solid bad(face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope),depth: 1mm)",
+        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: second_envelope)",
+        "bad := face(left_low,middle_edge,right_high,bottom_edge,on: first_envelope)",
+        "bad := face(left_low,middle_edge,right_low,on: first_envelope)",
+        "bad := face(left_low,middle_edge,right_low,left_low,on: first_envelope)",
+        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: axis)",
+        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,on: first_envelope)",
+        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,-> close)",
+        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,holes: globe)",
+        "bad := solid(lower_face,depth: 1mm)",
+        "bad := solid(lower_face,about: axis)",
+        "bad := solid(lower_face,along: axis)",
+        "bad := solid(face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope),depth: 1mm)",
     ] {
         let (p,errors) = syntax::parse(&format!("{}{declaration}\n",source()));
         assert!(!errors.is_empty() || !program::elaborate(&p).ok(),"accepted {declaration}");
@@ -136,8 +136,8 @@ fn spatial_faces_reject_wrong_support_identity_open_loops_and_planar_sweep_use()
     assert!(gcs_core::solid::validate(&sk,body).is_err());
     assert!(gcs_core::solid::face_poly(&sk,index,1.).is_none());
     // A separately declared coincident support still has different identity.
-    let src = format!("{}\nenvelope lookalike(first_surface,under: roll,from: -20deg,to: 20deg)\n\
-        face bad(left_low,middle_edge,right_low,bottom_edge,on: lookalike)\n",source());
+    let src = format!("{}\nlookalike := envelope(first_surface,under: roll,from: -20deg,to: 20deg)\n\
+        bad := face(left_low,middle_edge,right_low,bottom_edge,on: lookalike)\n",source());
     assert!(build(&src).errors().any(|d| d.message.contains("exact named support")));
     assert!(SpatialFaceBoundary::named(&e.sketch,index,&[],controls()).is_err());
     let mut invalid = controls(); invalid.point.incidence = f64::NAN;
@@ -152,13 +152,13 @@ fn spatial_faces_reject_wrong_support_identity_open_loops_and_planar_sweep_use()
 #[test]
 fn spatial_face_support_paths_formals_and_privacy_use_ordinary_component_rules() {
     let src = format!("component F(a: edge,b: edge,c: edge,d: edge,s: envelope) {{\n\
-        private face hidden(a,b,c,d,on: s)\nface public(a,b,c,d,on: hidden.on)\n}}\n\
-        instance: F(left_low,middle_edge,right_low,bottom_edge,first_envelope)\n{}",source());
+        private hidden := face(a,b,c,d,on: s)\npublic := face(a,b,c,d,on: hidden.on)\n}}\n\
+        instance := F(left_low,middle_edge,right_low,bottom_edge,first_envelope)\n{}",source());
     let e = solved(&src);
     let face = e.map.ent_named("instance.public").unwrap();
     assert_eq!(e.sketch.faces[face.i()].support,FaceSupport::Surface(e.map.ent_named("first_envelope").unwrap()));
     assert!(e.map.entity_path(&e.sketch,"instance.hidden").is_none());
-    assert!(build(&format!("{src}\nface leak(left_low,middle_edge,right_low,bottom_edge,on: instance.hidden.on)\n"))
+    assert!(build(&format!("{src}\nleak := face(left_low,middle_edge,right_low,bottom_edge,on: instance.hidden.on)\n"))
         .errors().any(|d| d.message.contains("private member")));
     let clip = io::copy(&e.sketch,&[EntRef::face(face.i())]);
     assert_eq!(clip.faces.iter().filter(|f| f.on().is_some()).count(),1);
@@ -169,8 +169,8 @@ fn surface_supported_boundaries_check_incidence_without_asserting_a_disk_interio
     // Two distinct edges trace the same arc in opposite directions. Their loop
     // has valid declared incidence but no disk interior: this reader must not be
     // confused with the still-separate geometric face/solid validity check.
-    let e = solved(&format!("{}\nedge other_bottom(low_cut,from: bl,to: br,along: axis)\n\
-        face loop_only(bottom_edge,other_bottom,on: lower.wall)\n",source()));
+    let e = solved(&format!("{}\nother_bottom := edge(low_cut,from: bl,to: br,along: axis)\n\
+        loop_only := face(bottom_edge,other_bottom,on: lower.wall)\n",source()));
     let face = face(&e,"loop_only");
     let support = gcs_core::solid::RevolvedSurface::named(&e.sketch,face.support().i()).unwrap();
     for fraction in [0.,0.25,0.5,0.75,1.] {

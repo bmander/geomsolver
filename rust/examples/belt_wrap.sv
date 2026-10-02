@@ -15,23 +15,23 @@
 // is why the chain goes round counter-clockwise: the big wrap runs from the bottom run to the
 // top one round the far side.
 
-param r = 10        // the small pulley
-param R = 25        // the big one
-param wrap = 90     // belt in contact with the big pulley
+r := 10        // the small pulley
+R := 25        // the big one
+wrap := 90     // belt in contact with the big pulley
 
-point c1 hint(x: 0, y: 0)
-point c2 hint(x: 66, y: 0)
+c1 := point hint(x: 0, y: 0)
+c2 := point hint(x: 66, y: 0)
 
 // where the runs touch the pulleys: seeds only, for the side each run passes on
-point sb hint(x: -2, y: -10)
-point bb hint(x: 60, y: -24)
-point bt hint(x: 60, y: 24)
-point st hint(x: -2, y: 10)
+sb := point hint(x: -2, y: -10)
+bb := point hint(x: 60, y: -24)
+bt := point hint(x: 60, y: 24)
+st := point hint(x: -2, y: 10)
 
-line bottom(sb, bb) -> tangent
-arc big(center: c2) hint(r: R) -> tangent
-line top(bt, st) -> tangent
-arc small(center: c1) hint(r: r) -> tangent close
+(bottom := line(sb, bb)) -> tangent
+(big := arc(center: c2) hint(r: R)) -> tangent
+(top := line(bt, st)) -> tangent
+(small := arc(center: c1) hint(r: r)) -> tangent close
 
 radius(r) small
 radius(R) big

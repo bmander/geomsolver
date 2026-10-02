@@ -554,7 +554,7 @@ fn curve_entity(
         return Err((
             Code::E103,
             st.span,
-            "a curve is `curve name = instance.point over formal in (a, b)`".to_string(),
+            "a curve is `name := instance.point over formal in (a, b)`".to_string(),
         ));
     };
     // the instance the point belongs to — found by the flattener, which reported it if it

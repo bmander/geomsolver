@@ -44,41 +44,48 @@ line ends with a chain joint (1.7).
 |---|---|---|
 | `hint(x: 0, y: 0)`, `hint(r: 25)`, `hint(t: 0.4)` | seed | where the solve begins; the solver may move it |
 | `distance(80)`, `angle(30deg)`, `t == 0.4` | constraint | must hold; never rewritten |
-| `param w = 100` | neither | arithmetic done while elaborating; never an unknown |
+| `w := 100` | neither | arithmetic done while elaborating; never an unknown |
 
 **The brackets after a name are what the thing is made of; the `hint(…)` after them is where the
-solve begins.** So `circle c(center: o) hint(r: 25)`, never `circle c(center: o, r: 25)`: the
+solve begins.** So `c := circle(center: o) hint(r: 25)`, never `c := circle(center: o, r: 25)`: the
 centre is structure and the radius is a guess.
 
 Callout selection and placement belong in `.svd`, independently of model constraints.
 
 ### 1.3 Statement forms
 
+**A name is defined one way, `NAME := VALUE`** (1.6): the value is a number, an element, a
+chain joined by `->`, an instance, a group or a curve, and the name is that value. `(NAME := VALUE)`
+is the value too, so a name may stand where its value does: a chain link, `(ab := line(a, b)) ->
+…`, or a dimension's number, `a distance(w := 60) b`. `:=` binds loosest, so a link is named in
+parentheses. A `label:` never defines a name: it fills a slot of what is being called or declared
+(an argument, a child, a `hint(…)` key, a group member, a formal).
+
 ```
 use NAME[.NAME...]                      bring in a module's components and params   (1.12)
 unit NAME                               what the document's numbers are in          (1.6)
-param NAME = EXPR                       a number worked out while elaborating       (1.6)
-group NAME(LABEL: VALUE, ...)           numbers and geometry passed as one argument (1.8)
-[private] [construction] KIND [NAME][(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)]
+NAME := EXPR                            a number worked out while elaborating       (1.6)
+NAME := group(LABEL: VALUE, ...)        numbers and geometry passed as one argument (1.8)
+[private] [construction] [NAME :=] KIND[(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)]
      [knots [...]] [in REF]             an entity declaration; every part is optional (1.4)
-point NAME = (XEXPR, YEXPR)             a computed point, drawn only as a curve      (1.9)
-plane [NAME](origin: R, toward: R[, from: R, fold: E | , from: R, offset: E
+NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve      (1.9)
+[NAME :=] plane(origin: R, toward: R[, from: R, fold: E | , from: R, offset: E
                                       | , u: (E,E,E), v: (E,E,E)[, o: (E,E,E)]])
                                         the datum, and a view with a stated attitude (1.13)
-plane NAME(origin: R, toward: R, from: R, fold: NAME | fold: along LINE | ..., through: R
-           | attitude: free[, offset: free]) [hint(fold: E | u: .., v: ..)]
+NAME := plane(origin: R, toward: R, from: R, fold: NAME | fold: along LINE | ..., through: R
+              | attitude: free[, offset: free]) [hint(fold: E | u: .., v: ..)]
                                         a view the solve places                     (1.13)
-sphere NAME(center: R) | cone NAME(axis: LINE) | cylinder NAME(axis: LINE)  [hint(...)]
+NAME := sphere(center: R) | cone(axis: LINE) | cylinder(axis: LINE)  [hint(...)]
                                         a surface in space, on no sheet             (1.13)
 in REF { statement* }                   every declaration inside is drawn in that plane
-NAME = CHAIN                            a chain, named as one traversal             (1.14)
-face NAME(EDGE, ..., holes: LOOP, ...)  a planar region with optional holes        (1.14)
-solid NAME(FACE, SWEEP...)              that face swept: depth:/from:/to:/through:, about:, along:
-solid NAME(SOLID)                       a body, made of a stock
-solid NAME(SOLID, under: MOTION, at: E | from: E, to: E)   placed by, or swept through, a motion
+NAME := CHAIN                           a chain joined by `->`, named as one traversal (1.14)
+NAME := face(EDGE, ..., holes: LOOP, ...)  a planar region with optional holes     (1.14)
+NAME := solid(FACE, SWEEP...)           that face swept: depth:/from:/to:/through:, about:, along:
+NAME := solid(SOLID)                    a body, made of a stock
+NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E)   placed by, or swept through, a motion
 REF on REF | REF cut REF | REF bound REF   material added to, taken from, kept within a body
 REF.FACE against REF.FACE               a mate: the placed part's plane stands off the other's
-surface | motion | envelope | patch | seam | vertex | edge NAME(...)
+NAME := surface | motion | envelope | patch | seam | vertex | edge(...)
                                         named spatial geometry, read after the solve (1.14)
 WORD[(ARGS)] REF  |  REF WORD[(ARGS)] REF
      [hint(SLOT: E, ...)]
@@ -87,19 +94,19 @@ claim CONSTRAINT                        judged, never solved for                
 ground REF                              pin both coordinates of a point
 fix REF.FIELD                           pin one scalar: fix c.r
 ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation
-[NAME:] Component(ARGS) [in REF]        an instance                                 (1.8)
-component NAME(FORMALS) { statement* }  a definition
+[NAME :=] Component(ARGS) [in REF]      an instance                                 (1.8)
+component NAME(FORMALS) { statement* }  a definition of a component, which is not a value
 repeat N [as i] { ... }                 N copies, unrelated                         (1.7)
 cycle N [as i] { ... }                  N copies that close; `next` and `prev` are in scope
 repeat e in CHAIN [as i] { ... }        a copy per edge of a named chain, `e` that edge
 cycle e in CHAIN [as i] { ... }         the same over a closed chain, closing
-curve NAME = INSTANCE.POINT over FORMAL in (A, B)          a curve                  (1.9)
-curve NAME = Component(ARGS).POINT over FORMAL in (A, B)
+NAME := INSTANCE.POINT over FORMAL in (A, B)          a curve                       (1.9)
+NAME := Component(ARGS).POINT over FORMAL in (A, B)
 preview { statement* }                  drawn when the file is opened, not when it is `use`d (1.4)
 ```
 
 A reference is `name`, `name.field`, or `name[expr]`, the copy of a repeated statement (the
-expression may read any `param` or binder in scope). An index may stand on a dotted name and take
+expression may read any defined number or binder in scope). An index may stand on a dotted name and take
 a field after it: `l.e[2].p1` is the `p1` of copy 2 of the `e` inside instance `l`; `cyl[0].small`
 reaches into copy 0's instance `cyl`.
 
@@ -118,35 +125,34 @@ reaches into copy 0's instance `cyl`.
 | `cone` | `axis` (a line; its start is the apex) | `half`, the half-angle | |
 | `cylinder` | `axis` (a line) | `r` | |
 
-**Seeds.** Every scalar is seeded by name in the trailing clause: `point p hint(x: 0, y: 0)`,
-`circle c(center: o) hint(r: 25)`, `arc a(center: c, start: s, end: e) hint(r: 5)`. Keys come in
+**Seeds.** Every scalar is seeded by name in the trailing clause: `p := point hint(x: 0, y: 0)`,
+`c := circle(center: o) hint(r: 25)`, `a := arc(center: c, start: s, end: e) hint(r: 5)`. Keys come in
 any order. An omitted coordinate is 0. An omitted radius is computed from the geometry, never 0.
 A point with no clause at all starts where the implementation puts it, off the origin and apart
 from every other unseeded point, and a solve writes the pose it reached back in as the clause.
 
 **Children.** Give them positionally or by label; a label lets you skip an earlier one
-(`line l(p2: c)` leaves `p1` for a chain to thread). Any slot may be left implicit, and a slot may
+(`l := line(p2: c)` leaves `p1` for a chain to thread). Any slot may be left implicit, and a slot may
 hold a `hint(…)` instead of a name, which mints an anonymous seeded point:
 
 ```
-line   l                                          two points: l.p1, l.p2
-circle c hint(r: 25)                              an unnamed centre, a seeded radius
-arc    a                                          a.center, a.start, a.end
-line   l(hint(x: 0, y: 0), hint(x: 60, y: 20))    two points, seeded
-line   alt_a(A, hint(x: 15, y: 5))                one named end and one not
+l := line                                          two points: l.p1, l.p2
+c := circle hint(r: 25)                              an unnamed centre, a seeded radius
+a := arc                                          a.center, a.start, a.end
+l := line(hint(x: 0, y: 0), hint(x: 60, y: 20))    two points, seeded
+alt_a := line(A, hint(x: 15, y: 5))                one named end and one not
 ```
 
 **The dotted path is the name.** `l.p1` is an ordinary point: it constrains, drags, and takes a
 dimension. Name a point yourself when several statements mention it. A spline is the exception to
 all of this: its control points must be declared points and every one must be named
-(`spline s(k0, k1, k2, k3)`), so `spline s` alone is an error.
+(`s := spline(k0, k1, k2, k3)`), so `s := spline` alone is an error.
 
 **The element's own name is optional too.** `line`, `line(p1, p2)`, `point hint(x: 3, y: 4)` and
-`arc(center: c)` are all statements. The token after the kind
-keyword decides, so a word that may follow a declaration (an element keyword, a constraint word,
-`hint`, `knots`, `class`, `at`, `close`, `in`) cannot be a declaration's name. When the source
-must later reference an anonymous element (a constraint applied from the app, say), a name is
-spliced into its declaration. `curve` always requires a name.
+`arc(center: c)` are all statements; `l := line(p1, p2)` names one. When the source must later
+reference an anonymous element (a constraint applied from the app, say), a name is spliced in
+before it: `l0 := line(…)` for a statement, `(l0 := line(…))` for a link of a chain. A curve is
+always a definition's value, so it always has a name.
 
 **A seed may read geometry.** `hint(x: k.center.x + k.r, y: pin.y)` reads another scalar's *seed*,
 never a solved value, so the clause is still only a starting point. Two keys name a place
@@ -155,7 +161,7 @@ puts it on the circle's rim at that bearing; a clause with `at` carries no `x` o
 component the names are the formals'. Seeds
 settle in statement order, so a seed reading one written below it reads that one's provisional
 start. Where the document names a `unit`, a geometry read is a length: write `pin.x - 10mm`, not
-`pin.x - 10`. A `param` may **not** read geometry; it feeds constraints, and a seed must never
+`pin.x - 10`. A param may **not** read geometry; it feeds constraints, and a seed must never
 change what a document says.
 
 A **plane** is the datum: an origin, a point it is turned toward, and a unit rotor slaved to the
@@ -168,14 +174,14 @@ Use a datum to state **signed local coordinates**. Its u axis points from `origi
 and v points to the left of u:
 
 ```sv
-point p                          // f is a plane: a datum
+p := point                          // f is a plane: a datum
 p distance(20mm, along: u) f
 p distance(-3mm, along: v) f
 ```
 
 Each ordinate is an ordinary constraint. Either can be zero, negative, or an unknown solved
 by other constraints. The datum can move in response to constraints on `p`, including constraints
-outside the component that declares it. Plane membership is independent: `point p in front`
+outside the component that declares it. Plane membership is independent: `p := point in front`
 assigns membership, while a relation to `f` measures against that datum. `in` on a component
 instance passes membership through its nested components. No component owns an implicit frame.
 
@@ -201,7 +207,7 @@ geometry, created once only when referenced. A short upright preview is:
 ```sv
 preview {
   unit mm
-  cyl: Cylinder(std.up, fw: 12mm, dims: vtwin_dims)
+  cyl := Cylinder(std.up, fw: 12mm, dims: vtwin_dims)
 }
 ```
 
@@ -350,22 +356,26 @@ names of geometry, never numbers. A length reads as a `Length` in a document wit
 an angle as an `Angle`, so `length(a) / length(b)` is a plain ratio. They stand only where a number
 is read *after* the solve, which is a motion's `ratio:`, `phase:` and `advance:` (1.14);
 everywhere else the number is needed before there is a solve to measure, and a measurement there
-is **E107**: a `param` (it feeds constraints), a seed (it is where the solve starts), a
+is **E107**: a param (it feeds constraints), a seed (it is where the solve starts), a
 constraint's own number (it is what the solve solves for) and a solid's extent or placement angle
 (settled at elaboration).
 
-A dimension may be **named** and read elsewhere:
+A definition whose value is a number, `w := 60` standing as a statement, is a **param**: worked
+out while elaborating, never an unknown and never a seed. A dimension may be **named** and read
+elsewhere, by writing the same definition where its number goes:
 
 ```
 // a fragment: two statements of a larger document
-a distance(w = 60) b            // states 60 and names it w
+a distance(w := 60) b            // states 60 and names it w
 c distance(w / 2) d             // reads it
 ```
 
-A named dimension **declares its name in the body it is written in**, exactly as `param w = 60`
-would: a `param`, a seed or a count may read its number (`param h = w / 2`), and a second `w` in
-the same body — a param or a dimension, either way — is declared twice (E001). The two differ
-only in where the number is edited: a `param` in the source, a named dimension on the drawing.
+A named dimension **declares its name in the body it is written in**, exactly as the statement
+`w := 60` would: a param, a seed or a count may read its number (`h := w / 2`), and a second `w`
+in the same body — a param or a dimension, either way — is declared twice (E001). The two differ
+only in where the number is edited: a param in the source, a named dimension on the drawing. Only
+the outermost form of a number may define a name: `distance(2 * (w := 30))` does not parse. A
+drawn callout reads `w = 60`, the draughtsman's spelling.
 
 A name nothing defines is a **free variable**: one unknown of the sketch, tying together every
 dimension that reads it (the CLI reports it as W111). Where all it ties is two angles, say so
@@ -387,8 +397,8 @@ A number may say what it is:
 
 ```
 unit mm                             // what this document's numbers are in
-param phi = 20deg
-param ivp = tan(phi) * 1rad - phi   // inv(phi) = tan(phi) - phi holds only in radians, and says so
+phi := 20deg
+ivp := tan(phi) * 1rad - phi   // inv(phi) = tan(phi) - phi holds only in radians, and says so
 
 a distance(80mm) b
 c distance(1' 6 3/16") d            // one literal: the space tells the readings apart, as in 3 1/2
@@ -397,8 +407,8 @@ l angle(45deg) m
 
 **Without a `unit` line the document is in drawing units**, a length with no name; a suffix like
 `mm` or `"` is then refused, since there is nothing to convert to. A name is worth a number, and
-where it is *used* decides what it is: `w = 80` in a length slot does not make `w` a length, but
-`w = 80mm` does, as does a component formal declared `Length`.
+where it is *used* decides what it is: `w := 80` in a length slot does not make `w` a length, but
+`w := 80mm` does, as does a component formal declared `Length`.
 
 A bare fraction with a unit is a division, not a fraction: `3/16"` is 3 divided by 16 inches (a
 `Length^-1`), so a lone fractional inch is written `0.1875"` or as a mixed literal (`0 3/16"`).
@@ -408,10 +418,10 @@ number. **There is no string literal**: `"` is the inch mark, and a word argumen
 (`at: start`).
 
 **A built-in name cannot be declared over.** Every expression knows the constants and the
-functions before it knows the document, so a `param`, a component formal or a block's index named
+functions before it knows the document, so a param, a component formal or a block's index named
 `tau`, `pi`, `min`, … does *not* shadow the built-in: substituting a text reads the declaration
-and working a number out reads the built-in, which is one name with two values (`param tau =
-35deg` handed to a `tau: Angle` formal arrives as a full turn). Naming a *dimension* that way is
+and working a number out reads the built-in, which is one name with two values (`tau := 35deg`
+handed to a `tau: Angle` formal arrives as a full turn). Naming a *dimension* that way is
 refused outright; the other three are **W112** at the declaration, and the fix is the rename.
 
 ### 1.7 Chains and repetition
@@ -433,14 +443,14 @@ absence says they do not. So:
 - `->` alone is a plain corner; `-> tangent` is a corner that is also tangent there, which
   desugars to the regular at-the-point form.
 - The shared point may be named by one side (or both, agreeing), or by neither, in which case the
-  chain mints it: `line l1 -> line l2` is two lines and three points, one shared.
+  chain mints it: `(l1 := line) -> (l2 := line)` is two lines and three points, one shared.
 - A joint may state several relations: `A -> equal angle(30deg) B`. The marker may stand on
   either side of the words or both.
 - A word with no marker states only the relation: `a_br equal a_tr` welds nothing, and
-  `line l1(a, b) perpendicular line l2(c, d)` is two separate lines at a right angle.
+  `(l1 := line(a, b)) perpendicular (l2 := line(c, d))` is two separate lines at a right angle.
 - Declarations and names may mix. At a corner with an element declared elsewhere, the declared
   side names the shared point, usually by the other element's own child:
-  `line t(p3, k.start) -> tangent k`.
+  `(t := line(p3, k.start)) -> tangent k`.
 - `-> close` seals a loop back to the first link. Links may be anonymous:
   `line -> tangent arc -> tangent line` is a full contour with no names at all.
 - `equal` is polymorphic (a length between lines, a radius between round things).
@@ -456,7 +466,7 @@ copy's first link. `cycle` wraps, so the loop closes with no `close`; a `repeat`
 copy leaves it unstated, so `repeat N { line -> angle(a) }` is an open polyline of N sides. Both
 boundary links must be the body's own declarations, and at most one of the two boundary slots may
 name its point. A statement inside braces ends at the `}`, so a block fits one line:
-`cycle 4 { line s -> perpendicular equal }` is a square but for a size and a pose.
+`cycle 4 { (s := line) -> perpendicular equal }` is a square but for a size and a pose.
 
 **Repetition over a chain's edges.** `repeat e in CHAIN { … }` makes one copy of the body per
 link of a named chain (1.14), in the order the chain walks them, with `e` naming that copy's
@@ -470,12 +480,12 @@ its index (`holes.sv`):
 
 ```
 unit mm
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 40)
-point d hint(x: 0, y: 40)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 40)
+d := point hint(x: 0, y: 40)
 ground a
-outline = line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+outline := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 horizontal ab
 vertical bc
 horizontal cd
@@ -484,9 +494,9 @@ distance(60) ab
 distance(40) bc
 
 repeat e in outline as i {
-  point m
+  m := point
   m midpoint e
-  circle hole(center: m) hint(r: 3)
+  hole := circle(center: m) hint(r: 3)
   radius(2mm + i * 1mm) hole
 }
 ```
@@ -514,12 +524,12 @@ surface, envelope and material region — one block per section.
 
 ```
 component Rung(a: point, b: point, len: Length) {
-  line e(a, b)
+  e := line(a, b)
   horizontal e
   a distance(len) b
-  point mid                // reached from outside as t0.mid, like everything the body makes
+  mid := point                // reached from outside as t0.mid, like everything the body makes
 }
-t0: Rung(l0, r0, len: 50)
+t0 := Rung(l0, r0, len: 50)
 ```
 
 A formal is a `group`, an entity kind (`point`, `line`, `circle`, `arc`, `plane`, …), or a number
@@ -540,9 +550,9 @@ functions remain available. Repetition blocks share the enclosing component's lo
 `use std` provides an axis-aligned rectangle centered on an existing point:
 
 ```solvent
-outer: CenteredRectangle(center, w: 18mm, h: 18mm)
-inner: CenteredRectangle(center, w: 14mm, h: 14mm)
-face section(outer.loop, holes: inner.loop)
+outer := CenteredRectangle(center, w: 18mm, h: 18mm)
+inner := CenteredRectangle(center, w: 14mm, h: 14mm)
+section := face(outer.loop, holes: inner.loop)
 ```
 
 Its public `loop` is the rectangular boundary, and `a`, `b`, `c`, `d` are its corners.
@@ -559,10 +569,10 @@ A reusable pattern can hide its polygon layout while exposing its holes:
 ```solvent
 component BoltPattern(body: solid, center: point, ref: line,
                       n: Int, pitch_r: Length, hole_r: Length, phase: Angle) {
-  private construction layout: Polygon(center, ref, n: n, r: pitch_r, phase: phase)
+  private construction layout := Polygon(center, ref, n: n, r: pitch_r, phase: phase)
   repeat n as i {
-    radius(hole_r) circle hole(center: layout.v[i])
-    private solid drill(face(hole), through: body)
+    hole := radius(hole_r) circle(center: layout.v[i])
+    private drill := solid(face(hole), through: body)
     drill cut body
   }
 }
@@ -580,17 +590,17 @@ Use a **group** to pass related dimensions or layout geometry together:
 unit mm
 use std
 
-group sizes(length: 20mm)
-group layout(frame: std.front, origin: std.origin)
+sizes := group(length: 20mm)
+layout := group(frame: std.front, origin: std.origin)
 component Bar(layout: group, dims: group) {
-  point tip hint(x: layout.origin.x + dims.length * layout.frame.c,
+  tip := point hint(x: layout.origin.x + dims.length * layout.frame.c,
                  y: layout.origin.y + dims.length * layout.frame.s)
-  line reference(layout.frame.origin, layout.frame.toward)
-  line axis(layout.origin, tip)
+  reference := line(layout.frame.origin, layout.frame.toward)
+  axis := line(layout.origin, tip)
   axis parallel reference
   distance(dims.length) axis
 }
-bar: Bar(layout, dims: sizes)
+bar := Bar(layout, dims: sizes)
 ```
 
 Groups may contain numbers, geometry references, and other groups. Numeric members keep
@@ -620,12 +630,12 @@ interval**. There is no curve family: an involute, a cycloid and a walking leg's
 components.
 
 ```
-curve NAME = INSTANCE.POINT over FORMAL in (A, B)          a drawn instance's point
-curve NAME = Component(ARGS).POINT over FORMAL in (A, B)    an instance written in place
+NAME := INSTANCE.POINT over FORMAL in (A, B)          a drawn instance's point
+NAME := Component(ARGS).POINT over FORMAL in (A, B)    an instance written in place
 ```
 
-**Over a drawn instance.** `leg: Leg(axle, pivot)` is drawn once, and
-`curve path = leg.toe over theta in (0, 360)` is where its toe goes as `theta` runs. The trace is
+**Over a drawn instance.** `leg := Leg(axle, pivot)` is drawn once, and
+`path := leg.toe over theta in (0, 360)` is where its toe goes as `theta` runs. The trace is
 anchored at the drawing's own pose, so the component needs no seeds for the curve's sake. Leave
 `theta` unbound and the crank is the drawing's freedom; the curve follows wherever it stands
 (`jansen.sv`, `peaucellier.sv`).
@@ -636,13 +646,13 @@ formal, or the interval's start when it gives none.
 
 **The ellipse is one of these.** `use std` brings in `Ellipse(f: plane, a: Length, b: Length,
 u: Angle)`, a computed point at eccentric angle `u` on the datum `f`, and
-`curve e = Ellipse(f, a: 40, b: 25).p over u in (0, 360)` is the rim: `p on e`, `e tangent l`
+`e := Ellipse(f, a: 40, b: 25).p over u in (0, 360)` is the rim: `p on e`, `e tangent l`
 and `e curvature k` are the curve's contacts, exact to third order. There is no `ellipse`
 element; the word is refused with this spelling.
 
 A component's point is placed one of two ways:
 
-- **Computed**: `point p = (XEXPR, YEXPR)`, coordinates as expressions over the formals and
+- **Computed**: `p := point(x: XEXPR, y: YEXPR)`, coordinates as expressions over the formals and
   params. A component with a computed point can only be traced, never drawn (2.8).
 - **Placed by constraints**: any point the body declares, held where the body's statements put it
   as the formal runs. This is how a person actually states a curve: "the end of a taut string as
@@ -703,7 +713,7 @@ use std                  // the datums std.front, std.up, std.origin (1.4); Thre
 use hardware             // fasteners and fittings by name: hexbolt14_af, brg608_od, oring014_cs, …
 ```
 
-A module is a Solvent document read for its `component`s and its top-level `param`s and groups; its own
+A module is a Solvent document read for its `component`s and its top-level params and groups; its own
 drawing is not drawn, so `gear.sv` is a module as it stands. A module's own `use`s are followed,
 once each. No such module is E070, a component defined twice is E071, and a module's own error is
 reported at the `use` that brought it in. `rust/examples/engine.sv` is the worked case: a
@@ -737,10 +747,10 @@ The standard library lays out the three views once (2.10).
 seeds only those (2.11 and 2.13 are worked cases):
 
 ```
-plane side(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
-plane aux(origin: o3, toward: t3, from: front, fold: along l)
+side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
+aux := plane(origin: o3, toward: t3, from: front, fold: along l)
 plane cut(origin: o4, toward: t4, from: front, fold: 0deg, through: m)
-plane q(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1))
+q := plane(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1))
 ```
 
 `fold: beta` over a name nothing defines is a free variable (W111) the solve answers; `fold:
@@ -776,20 +786,20 @@ page (its datum's origin and toward) is presentation: those points are held wher
 and the ledger does not count them, unless a statement names them. A free view with nothing else
 in it reports DOF 4 — its attitude and its offset — with no `ground` written.
 
-**A sphere** is `sphere s(center: p) hint(r: 12)`: a centre drawn in some view (`in side`) and a
+**A sphere** is `s := sphere(center: p) hint(r: 12)`: a centre drawn in some view (`in side`) and a
 radius, on no sheet (the glass box draws it as three great circles). `radius(12) s`, `a on s`,
 `s tangent l` and `s tangent s2` are all in space. `k on s` puts a whole circle drawn in a view
 on the sphere — its centre on the circle's axis, and the radii and the gap a right triangle —
 which is what a gear blank's toe or heel circle is to its end sphere. `s tangent k` is refused: a
 circle and a sphere may touch at a point or all the way round. A sphere's centre is its only
-child, so `sphere s(p)` says the same.
+child, so `s := sphere(p)` says the same.
 
 **A cone and a cylinder** are built about a line already drawn in a view, and each owns one
 number, as a sphere owns its radius:
 
 ```
-cone gc(axis: gax) hint(half: 60deg)
-cylinder bore(axis: ax) hint(r: 8)
+gc := cone(axis: gax) hint(half: 60deg)
+bore := cylinder(axis: ax) hint(r: 8)
 ```
 
 A cone's apex is its axis's start and it opens toward the end; its half-angle is written in
@@ -816,9 +826,9 @@ A feature tree is imperative because it is a *history*: step *n* acts on the ano
 step *n − 1*, and names faces by the order they were cut in. Solvent names everything, so **a solid
 is a term, never a step** — a face swept, or a stock plus everything `on` it minus everything
 that `cut`s it within everything that `bound`s it — and the implementation finds the order the way
-it finds the order of `h = w / 2`.
+it finds the order of `h := w / 2`.
 **The order lives inside a term and never between statements**, so `bore cut body` may be
-written above the `solid body(…)` it belongs to or fifty lines below it and says the same thing.
+written above the `body := solid(…)` it belongs to or fifty lines below it and says the same thing.
 
 **Nothing about a solid is solved for.** A solid owns no parameter. Numeric extents are
 expressions the elaborator works out; a
@@ -832,8 +842,8 @@ A section may also have holes. Write its outer boundary first, then `holes:` wit
 circles or named closed loops:
 
 ```solvent
-face groove_section(barrel, holes: core)
-solid groove(groove_section, from: z, to: z + width)
+groove_section := face(barrel, holes: core)
+groove := solid(groove_section, from: z, to: z + width)
 groove cut body
 ```
 
@@ -844,22 +854,22 @@ The same section works with an extrusion or a revolution.
 
 ```
 unit mm
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 40)
-point d hint(x: 0, y: 40)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 40)
+d := point hint(x: 0, y: 40)
 
-horizontal line ab(a, b) ->
-vertical   line bc(b, c) ->
-horizontal line cd(c, d) ->
-vertical   line da(d, a) -> close
+horizontal (ab := line(a, b)) ->
+vertical   (bc := line(b, c)) ->
+horizontal (cd := line(c, d)) ->
+vertical   (da := line(d, a)) -> close
 
 a distance(60) b
 b distance(40) c
 ground a
 
-face sec(ab, bc, cd, da)
-solid block(sec, depth: 30mm)
+sec := face(ab, bc, cd, da)
+block := solid(sec, depth: 30mm)
 ```
 
 ```
@@ -871,7 +881,7 @@ block.sv: solved
 
 Six unknowns and six equations: the count is the rectangle's own, and the face and the solid added
 nothing to it. The edges are given in traversal order and each must share a point with the next; a
-**circle is a whole loop by itself**, so `face hole_f(hole)` is a face and a circle among lines is
+**circle is a whole loop by itself**, so `hole_f := face(hole)` is a face and a circle among lines is
 refused. A section's inner loops are its `holes:` (above); a hole *through a part* is usually
 better written as a solid that `cut`s the body (below), which keeps the section simple and names
 the bore's wall.
@@ -880,20 +890,20 @@ the bore's wall.
 statement needs to list its edges again:
 
 ```solvent
-profile = line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
-solid block(profile, depth: 30mm)
+profile := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
+block := solid(profile, depth: 30mm)
 ```
 
 With the rectangle's points and dimensions above, this gives the same volume, 72000, and adds
 no unknowns or equations. In a component the chain is a normal member:
-`solid iboss(boss.profile, depth: 8mm)`. The constituent edge is still `boss.ab`. The two `Box`
+`iboss := solid(boss.profile, depth: 8mm)`. The constituent edge is still `boss.ab`. The two `Box`
 helpers in the engine and V-twin libraries expose `profile` this way.
 
-`trail = line ab(a, b) -> line bc(b, c) -> line cd(c, d)` names an **open chain**. A sweep
+`trail := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d))` names an **open chain**. A sweep
 requires a closed loop, so use `face(trail, -> close)` to supply the missing closing edge, or
 finish the original chain with `-> line da(d, a) -> close`. Every joint in a named chain must
 carry `->`; its prefix and joint constraints work just as in an unnamed chain. Anonymous links
-also work: `profile = line -> line -> line -> close` names a triangle, whose dimensions and pose
+also work: `profile := line -> line -> line -> close` names a triangle, whose dimensions and pose
 remain to be constrained. Named chains can stand in plane blocks and repeated components, and
 `repeat e in profile { … }` makes a copy of a block per edge (1.7).
 
@@ -902,7 +912,7 @@ walk goes straight to and straight on from; `-> close` — the chain's own word 
 to the first item. So the rectangle above needs no `ab` and no `da`:
 
 ```
-face brief(a, bc, cd, -> close)
+brief := face(a, bc, cd, -> close)
 ```
 
 which mints exactly the two straight runs the source would otherwise have declared, in the two
@@ -916,7 +926,7 @@ Three things it will not do. The gap between the **last** item and the first is 
 `-> close` says so, so "the loop closes" stays something the source states. And an interior gap
 between two *edges* is still refused: a point in a list can mean nothing else, but two edges that do not meet
 are edges listed out of order. For the same reason an edge standing between two gaps is refused —
-`face bad(a, bc, d, -> close)` could be walked `b`-first or `c`-first, and nothing there says
+`bad := face(a, bc, d, -> close)` could be walked `b`-first or `c`-first, and nothing there says
 which — so an edge takes its direction from a neighbour it actually meets.
 
 **A curve stands in a face as a stretch.** A spline whose knots are clamped ends at its first and
@@ -928,18 +938,18 @@ loop with its chord:
 ```
 unit mm
 component Par(o: point, u: Length) {
-  point p = (o.x + u, o.y + u * u / 1mm)
+  p := point(x: o.x + u, y: o.y + u * u / 1mm)
 }
-point o hint(x: 0mm, y: 0mm)
+o := point hint(x: 0mm, y: 0mm)
 ground o
-curve k = Par(o).p over u in (-2mm, 2mm)
-point a hint(x: -1mm, y: 1mm)
-point b hint(x: 1mm, y: 1mm)
+k := Par(o).p over u in (-2mm, 2mm)
+a := point hint(x: -1mm, y: 1mm)
+b := point hint(x: 1mm, y: 1mm)
 a on k hint(t: -1)
 b on k hint(t: 1)
 fix a.x
 fix b.x
-solid cap(face(k from a to b, -> close), depth: 3mm)
+cap := solid(face(k from a to b, -> close), depth: 3mm)
 ```
 
 `4 params, 4 equations; DOF 0`, and `cap` is the parabola's cap, 4/3 across and 3 deep: 4 mm³. A
@@ -954,13 +964,13 @@ tip.
 brackets, without a separate name:
 
 ```
-solid block(face(ab, bc, cd, da), depth: 30mm)
+block := solid(face(ab, bc, cd, da), depth: 30mm)
 // Or close the same section through its corners:
-solid brief(face(a, bc, cd, -> close), from: -30mm, to: 0mm)
+brief := solid(face(a, bc, cd, -> close), from: -30mm, to: 0mm)
 ```
 
 Both have volume 72000, like the named section above. `face(…)` also works with `about:` for a
-revolution, and a circle stands alone in its loop: `solid bore(face(hole), depth: 30mm)`.
+revolution, and a circle stands alone in its loop: `bore := solid(face(hole), depth: 30mm)`.
 Boundary names resolve in the surrounding component, and the section gets its plane from those
 boundaries. Keep a named face when several sweeps reuse it, as the throttle's `barrel_f` and
 `core_f` do in `vtwin/components/throttle.sv`.
@@ -972,8 +982,8 @@ written out when the face is somewhere other than an end, as a boss standing off
 A **guided sweep or loft** follows solved geometry:
 
 ```
-solid duct(section, along: guide)
-solid reducer(inlet.profile, outlet.profile, along: guide)
+duct := solid(section, along: guide)
+reducer := solid(inlet.profile, outlet.profile, along: guide)
 ```
 
 The guide is a directed line or circular arc. The start section lies perpendicular to the
@@ -993,8 +1003,8 @@ turn, `sweep: 90deg` is a quarter of one, and `sense: cw` turns it the other way
 An **analytic surface** names one of that revolution's profile boundaries:
 
 ```sv
-surface flank(crown, edge: rack.outer)
-surface root_transition(crown, edge: rack.outer_round)
+flank := surface(crown, edge: rack.outer)
+root_transition := surface(crown, edge: rack.outer_round)
 ```
 
 The edge must be a line, circular arc or circle belonging to the unmodified revolution's
@@ -1009,7 +1019,7 @@ s(crown, edge: e) }` (1.7), which is how `spiral_bevel/verification.sv` names it
 Write `from:` and `to:` angles to retain part of the generating revolution:
 
 ```sv
-surface flank(crown, edge: rack.outer, from: 180deg, to: 360deg)
+flank := surface(crown, edge: rack.outer, from: 180deg, to: 360deg)
 ```
 
 Angles follow the source's sweep direction. Both bounds must lie within that sweep. They
@@ -1020,9 +1030,9 @@ the declared span; a caller reads the domain instead of supplying its own branch
 A **motion** describes how generating geometry moves relative to another rotating member:
 
 ```sv
-motion crown(about: crown_axis)
-motion blank(about: blank_axis, ratio: 2, phase: 10deg)
-motion generating(crown, relative_to: blank)
+crown := motion(about: crown_axis)
+blank := motion(about: blank_axis, ratio: 2, phase: 10deg)
+generating := motion(crown, relative_to: blank)
 ```
 
 All three use one shared angle. The first turns about the directed `crown_axis` line; the
@@ -1036,8 +1046,8 @@ A **translation** slides `along:` a directed line by `advance:` per turn without
 which is a plunge or a feed; a plunge of 20mm is then one turn of the parameter.
 
 ```sv
-motion tap(about: hole_axis, advance: 1.5mm)
-motion plunge(along: spindle, advance: 20mm)
+tap := motion(about: hole_axis, advance: 1.5mm)
+plunge := motion(along: spindle, advance: 20mm)
 ```
 
 A motion can be private or passed through a `motion` component formal. Core and browser
@@ -1051,23 +1061,23 @@ instead of typed beside it:
 
 ```sv
 unit mm
-point o hint(x: 0, y: 0)
-point z hint(x: 0, y: 1)
+o := point hint(x: 0, y: 0)
+z := point hint(x: 0, y: 1)
 ground o
 ground z
-line axis(o, z)
-point c hint(x: 0, y: -2)
-point d hint(x: 25, y: -2)
+axis := line(o, z)
+c := point hint(x: 0, y: -2)
+d := point hint(x: 25, y: -2)
 ground c
-horizontal line wheel_radius(c, d)
+wheel_radius := horizontal line(c, d)
 c distance(30mm) d
-point e hint(x: 0, y: -4)
-point f hint(x: 12, y: -4)
+e := point hint(x: 0, y: -4)
+f := point hint(x: 12, y: -4)
 ground e
-horizontal line pinion_radius(e, f)
+pinion_radius := horizontal line(e, f)
 e distance(10mm) f
-motion wheel(about: axis)
-motion pinion(about: axis, ratio: -length(wheel_radius) / length(pinion_radius))
+wheel := motion(about: axis)
+pinion := motion(about: axis, ratio: -length(wheel_radius) / length(pinion_radius))
 ```
 
 ```
@@ -1087,7 +1097,7 @@ same measurement where the solve has not happened is refused:
 ```
 $ solventc wrong.sv            # motion bad(about: axis, ratio: length(wheel_radius))
 wrong.sv:19:1: error[E080]: `ratio` is Scalar, and this is Length
-$ solventc refused.sv          # param k = length(wheel_radius)
+$ solventc refused.sv          # k := length(wheel_radius)
 refused.sv:19:11: error[E107]: `k`: `length(wheel_radius)` measures the solved drawing, and only a motion's `ratio:`, `phase:` and `advance:` are read after the solve; a param, a seed, a constraint's number and a solid's extent are needed before it
 ```
 
@@ -1096,9 +1106,9 @@ refused.sv:19:11: error[E107]: `k`: `length(wheel_radius)` measures the solved d
 (`solventc lantern_generation.sv --stl out.stl --stl-backend mesh` meshes it in a couple of
 seconds). Edit either pitch radius and the roll, and so the cut, follows.
 
-**A motion moves a solid.** `solid indexed(tool, under: indexing, at: 90deg)` is one copy of a
+**A motion moves a solid.** `indexed := solid(tool, under: indexing, at: 90deg)` is one copy of a
 solid at the motion's pose for a constant angle (`solid_indexed_pattern.sv` repeats it round a
-circle); `solid removal(tool, under: turn, from: -75deg, to: 75deg)` is the union of the tool's
+circle); `removal := solid(tool, under: turn, from: -75deg, to: 75deg)` is the union of the tool's
 material over the whole interval, a continuous sweep and not a row of copies (`swept_torus.sv`,
 `lantern_generation.sv`). `at:` and `from:`/`to:` are exclusive, a sweep of a sweep is refused,
 and a swept solid is a Boolean operand a body may only `cut`. It is meshed from its material
@@ -1107,7 +1117,7 @@ field (`docs/field-meshing.md`), which the app refines in the background.
 Name its generated envelope with:
 
 ```sv
-envelope flank(crown_flank, under: generating, from: -35deg, to: 35deg)
+flank := envelope(crown_flank, under: generating, from: -35deg, to: 35deg)
 ```
 
 This describes the source surface's zero-normal-velocity locus over the stated roll interval.
@@ -1123,7 +1133,7 @@ toe/heel and conical tip/root/back boundaries.
 A spatial patch can state which material region retains a source surface or envelope:
 
 ```sv
-patch bounded(flank, inside: tip_body, inside: heel_body,
+bounded := patch(flank, inside: tip_body, inside: heel_body,
               outside: root_body, outside: toe_body)
 ```
 
@@ -1137,7 +1147,7 @@ Where two generated faces meet tangentially at a shared vertex of their source p
 name their common characteristic once:
 
 ```sv
-seam flank_join(flank_region, transition_region)
+flank_join := seam(flank_region, transition_region)
 ```
 
 The operands can be envelopes or trimmed patches of envelopes. They must share the source
@@ -1148,8 +1158,8 @@ root fillet refer to the same boundary geometry.
 An envelope also meets a finite boundary surface along a named seam:
 
 ```sv
-seam tip_edge(flank_region, tip.wall)
-seam toe_edge(flank_region, toe.wall)
+tip_edge := seam(flank_region, tip.wall)
+toe_edge := seam(flank_region, toe.wall)
 ```
 
 Here the generated face comes first and a surface reference comes second. The evaluator
@@ -1160,8 +1170,8 @@ can read these named edges instead of rebuilding their intersection equations.
 Name shared corners through their incident seams:
 
 ```sv
-vertex tip_toe(tip_edge, toe_edge)
-vertex join_toe(flank_join, toe_edge)
+tip_toe := vertex(tip_edge, toe_edge)
+join_toe := vertex(flank_join, toe_edge)
 ```
 
 The first form meets two finite boundaries on the same named generated face. The second
@@ -1175,7 +1185,7 @@ assemble no analytic solid from the surrounding faces.
 Give a seam finite extent between those corners:
 
 ```sv
-edge toe_span(toe_edge, from: join_toe, to: tip_toe, along: shaft_axis)
+toe_span := edge(toe_edge, from: join_toe, to: tip_toe, along: shaft_axis)
 ```
 
 `along` supplies a geometric slicing direction. A fraction from zero to one selects a
@@ -1187,8 +1197,8 @@ turning point or curve approximation bound.
 An ordered finite-edge loop can name its analytic support:
 
 ```sv
-face working(toe_span, tip_span, heel_span, join_span, on: flank_region)
-face transition(round_toe_span, join_span, round_heel_span, root_span, on: fillet_region)
+working := face(toe_span, tip_span, heel_span, join_span, on: flank_region)
+transition := face(round_toe_span, join_span, round_heel_span, root_span, on: fillet_region)
 ```
 
 Both faces share `join_span` and traverse it in opposite directions. Each edge must
@@ -1200,19 +1210,19 @@ is not validated as a disk or assembled into a solid; see
 
 ```
 unit mm
-point p0 hint(x: 10, y: 0)
-point p1 hint(x: 14, y: 0)
-point p2 hint(x: 14, y: 6)
-point p3 hint(x: 10, y: 6)
+p0 := point hint(x: 10, y: 0)
+p1 := point hint(x: 14, y: 0)
+p2 := point hint(x: 14, y: 6)
+p3 := point hint(x: 10, y: 6)
 
-horizontal line e0(p0, p1) ->
-vertical   line e1(p1, p2) ->
-horizontal line e2(p2, p3) ->
-vertical   line e3(p3, p0) -> close
+horizontal (e0 := line(p0, p1)) ->
+vertical   (e1 := line(p1, p2)) ->
+horizontal (e2 := line(p2, p3)) ->
+vertical   (e3 := line(p3, p0)) -> close
 
-point q0 hint(x: 0, y: 0)
-point q1 hint(x: 0, y: 10)
-vertical line ax(q0, q1)
+q0 := point hint(x: 0, y: 0)
+q1 := point hint(x: 0, y: 10)
+ax := vertical line(q0, q1)
 ground q0
 q0 distance(10) q1
 q0 distance(10, along: x) p0
@@ -1220,8 +1230,8 @@ q0 distance(0, along: y) p0
 p0 distance(4) p1
 p1 distance(6) p2
 
-face sec(e0, e1, e2, e3)
-solid ring(sec, about: ax)
+sec := face(e0, e1, e2, e3)
+ring := solid(sec, about: ax)
 ```
 
 ```
@@ -1232,7 +1242,7 @@ ring.sv: solved
 ```
 
 Pappus, from the source: a 4 × 6 section whose centroid stands 12 from the axis is
-`2π · 12 · 24 = 1809.557`, and the faceted turn comes to 1809.45. Write `solid ring(sec, about:
+`2π · 12 · 24 = 1809.557`, and the faceted turn comes to 1809.45. Write `ring := solid(sec, about:
 ax, sweep: 90deg)` and the report says `452.364`, a quarter of it, with `ring.start.area` and
 `ring.end.area` both 24 — the face itself, at each end of the turn. Round faces are read as fine polygons, so every volume here is exact to
 that faceting and not beyond it.
@@ -1241,16 +1251,16 @@ that faceting and not beyond it.
 that `cut`s it, within everything that `bound`s it**. Add to the plate above:
 
 ```
-point o hint(x: 30, y: 20)
+o := point hint(x: 30, y: 20)
 a distance(30, along: x) o
 a distance(20, along: y) o
-circle hole(center: o) hint(r: 5)
+hole := circle(center: o) hint(r: 5)
 radius(5) hole
-face hole_f(hole)
+hole_f := face(hole)
 
-solid stock(sec, depth: 30mm)
-solid bore(hole_f, depth: 30mm)
-solid body(stock)
+stock := solid(sec, depth: 30mm)
+bore := solid(hole_f, depth: 30mm)
+body := solid(stock)
 bore cut body
 ```
 
@@ -1261,8 +1271,8 @@ plate.sv: solved
   body.volume = 69644.2
 ```
 
-`72000 − π · 5² · 30 = 69643.8`, and the faceted bore takes a little less. Swap the last two lines — `bore cut body` before the `solid
-body(stock)` it belongs to — and the number is the same, because both sides of the rule are *sets*
+`72000 − π · 5² · 30 = 69643.8`, and the faceted bore takes a little less. Swap the last two lines — `bore cut body` before the `body :=
+solid(stock)` it belongs to — and the number is the same, because both sides of the rule are *sets*
 and a set has no order.
 
 **Body-relative cutter extents.**
@@ -1270,7 +1280,7 @@ and a set has no order.
 Use `through:` to let a cutter span a part, and `cut` to subtract it:
 
 ```solvent
-solid pinhole(face(hole), through: body)
+pinhole := solid(face(hole), through: body)
 pinhole cut body
 ```
 
@@ -1284,7 +1294,7 @@ pocket, keep an explicit `depth:` or `from:`/`to:` extent and apply it with the 
 which is one statement rather than `heel − (heel − tip)` through a named intermediate:
 
 ```solvent
-solid body(heel)
+body := solid(heel)
 tip bound body
 toe cut body
 ```
@@ -1298,21 +1308,21 @@ the boss. Name the intermediate the feature tree would have left anonymous:
 
 ```
 // the plate again, with `o` at its middle
-circle rim(center: o) hint(r: 15)
-circle stud(center: o) hint(r: 5)
+rim := circle(center: o) hint(r: 15)
+stud := circle(center: o) hint(r: 5)
 radius(15) rim
 radius(5) stud
-face rim_f(rim)
-face stud_f(stud)
+rim_f := face(rim)
+stud_f := face(stud)
 
-solid stock(sec, depth: 30mm)
-solid pocket(rim_f, depth: 10mm)
-solid boss(stud_f, from: -10mm, to: -4mm)
+stock := solid(sec, depth: 30mm)
+pocket := solid(rim_f, depth: 10mm)
+boss := solid(stud_f, from: -10mm, to: -4mm)
 
-solid shell(stock)
+shell := solid(stock)
 pocket cut shell
 
-solid body(shell)
+body := solid(shell)
 boss on body
 ```
 
@@ -1323,7 +1333,7 @@ step 2", and this is the language letting you say it.
 
 **Where a part stands is what it bears against.** `k.far against m.near` says two caps touch. The
 part `k` is drawn in a *placed* plane, written `from:` another with neither `fold:` nor `offset:`
-(`plane back(origin: o, toward: q, from: front)`), and the mate works out its offset: two faces in
+(`back := plane(origin: o, toward: q, from: front)`), and the mate works out its offset: two faces in
 contact are at the same point along the normal they share, so a stack of parts keeps its numbers
 in step by itself. A mate is between the caps a sweep makes; a side face runs the whole depth and
 is refused (E082, "a mate is between the caps a sweep makes"), and a placed plane needs exactly
@@ -1372,7 +1382,7 @@ sheets load those files directly. For example, the flywheel preview is simply:
 ```sv
 preview {
   unit mm
-  fw: Flywheel(std.up, dims: vtwin_dims)
+  fw := Flywheel(std.up, dims: vtwin_dims)
 }
 ```
 
@@ -1407,18 +1417,18 @@ and what is a reference are the design, and a sheet still states those.
 
 | written | reported |
 |---|---|
-| `face bad(ab, cd, bc, da)` | E080 — "`ab` and `cd` share no point: a face is a loop, walked in order" |
-| `face bad(a, bc, d, -> close)` | E080 — "`bc` meets neither of its neighbours: a face is a loop, walked in order" |
-| `face bad(ab, hole)` | E080 — "a circle is a whole loop: it stands in a face by itself" |
-| `face bad(a, b)` | E080 — "`b` and `a` share no point: a face is a loop, and one that does not come back to where it started closes with `-> close`" |
-| `solid bad(ab, depth: 3mm)` | E080 — "a swept solid is written over a face, and this is a line" |
-| `solid bad(sec)`, `sec` a face | E080 — "a body is made of solids, and this is a face" |
-| `solid bad(sec, from: 0mm, to: 0mm)` | E080 — "a prism swept nowhere is no solid" |
-| `solid bad(sec, about: ax, sweep: -90deg)` | E040 — "a sweep is a magnitude: which way it turns is `sense: cw`" |
-| `solid bad(sec, about: a)` | E081 — "a face turns about a line, and `a` is a point" |
-| `solid bad(sec, depth: 3mm, about: ax)` | E001 — "a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned about a line (`about:`), not both" |
+| `bad := face(ab, cd, bc, da)` | E080 — "`ab` and `cd` share no point: a face is a loop, walked in order" |
+| `bad := face(a, bc, d, -> close)` | E080 — "`bc` meets neither of its neighbours: a face is a loop, walked in order" |
+| `bad := face(ab, hole)` | E080 — "a circle is a whole loop: it stands in a face by itself" |
+| `bad := face(a, b)` | E080 — "`b` and `a` share no point: a face is a loop, and one that does not come back to where it started closes with `-> close`" |
+| `bad := solid(ab, depth: 3mm)` | E080 — "a swept solid is written over a face, and this is a line" |
+| `bad := solid(sec)`, `sec` a face | E080 — "a body is made of solids, and this is a face" |
+| `bad := solid(sec, from: 0mm, to: 0mm)` | E080 — "a prism swept nowhere is no solid" |
+| `bad := solid(sec, about: ax, sweep: -90deg)` | E040 — "a sweep is a magnitude: which way it turns is `sense: cw`" |
+| `bad := solid(sec, about: a)` | E081 — "a face turns about a line, and `a` is a point" |
+| `bad := solid(sec, depth: 3mm, about: ax)` | E001 — "a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned about a line (`about:`), not both" |
 | `x cut y` and `y cut x` | E041 — "`x` is made of itself" |
-| `h cut s`, `s` a face swept | E080 — "`s` is a face swept, and only a body takes features: give it a stock (`solid s(s_stock)`) and write them there" |
+| `h cut s`, `s` a face swept | E080 — "`s` is a face swept, and only a body takes features: give it a stock (`s := solid(s_stock)`) and write them there" |
 
 The `h cut s` one carries the most: only a *body* takes features, so a face swept is a
 primitive and a body is the term over primitives, and the two are never the same name. The negative
@@ -1466,10 +1476,10 @@ Each was run through `solventc`; the DOF and state quoted are what it reported.
 ### 2.1 One dimensioned line: DOF 0, well
 
 ```
-point a hint(x: 0, y: 0)
-point b hint(x: 30, y: 10)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 30, y: 10)
 
-line ab(a, b)
+ab := line(a, b)
 horizontal ab
 a distance(40) b
 
@@ -1482,50 +1492,50 @@ the answer and need not be: it says which side of `a` to put `b` on, and nothing
 ### 2.2 A rectangle, as a chain: DOF 0, well
 
 ```
-param w = 60
-param h = 40
+w := 60
+h := 40
 
-point p0 hint(x: 0, y: 0)
-point p1 hint(x: w, y: 0)
-point p2 hint(x: w, y: h)
-point p3 hint(x: 0, y: h)
+p0 := point hint(x: 0, y: 0)
+p1 := point hint(x: w, y: 0)
+p2 := point hint(x: w, y: h)
+p3 := point hint(x: 0, y: h)
 
-horizontal line bottom(p0, p1) ->
-vertical   line right(p1, p2) ->
-horizontal line top(p2, p3) ->
-vertical   line left(p3, p0) -> close
+horizontal (bottom := line(p0, p1)) ->
+vertical   (right := line(p1, p2)) ->
+horizontal (top := line(p2, p3)) ->
+vertical   (left := line(p3, p0)) -> close
 
 p0 distance(w) p1
 p1 distance(h) p2
 ground p0
 ```
 
-`param` is arithmetic done while reading: `w` is 60 wherever it appears and never an unknown. A
-`param` may read another written anywhere in its body or an enclosing one, in any order; one
+A param is arithmetic done while reading: `w` is 60 wherever it appears and never an unknown. A
+param may read another written anywhere in its body or an enclosing one, in any order; one
 defined in terms of itself is E041. The chain states nothing four separate `horizontal`/`vertical`
 lines would not; it reads as the outline it is.
 
 ### 2.3 Naming a dimension: DOF 0, well
 
 ```
-// substitute for the two dimensions in 2.2, and drop its param lines
-p0 distance(w = 60) p1          // states it and names it
+// substitute for the two dimensions in 2.2, and drop its `w :=` and `h :=` lines
+p0 distance(w := 60) p1          // states it and names it
 p1 distance(w / 2) p2           // reads it: the height follows the width
 ```
 
 Edit the 60 and the height follows. A number stated once and read everywhere is the difference
-between a drawing and a picture of one. The name is declared in the body like a `param`'s, so
-`param h = w / 2` may read it too, and `hint(x: w)` may seed from it.
+between a drawing and a picture of one. The name is declared in the body like a param's, so
+`h := w / 2` may read it too, and `hint(x: w)` may seed from it.
 
 ### 2.4 A free variable: DOF 1, under, on purpose
 
 ```
-point a hint(x: 0, y: 0)
-point b hint(x: 10, y: 0)
-point c hint(x: 0, y: 9)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 10, y: 0)
+c := point hint(x: 0, y: 9)
 
-line ab(a, b)
-line ac(a, c)
+ab := line(a, b)
+ac := line(a, c)
 horizontal ab
 vertical ac
 a distance(s) b         // s is defined nowhere...
@@ -1541,15 +1551,15 @@ formal left unbound.
 ### 2.5 An arc, tangent to what it joins: DOF 0, well
 
 ```
-point a hint(x: 0, y: 0)
-point b hint(x: 30, y: 0)
-point c hint(x: 40, y: 10)
-point d hint(x: 40, y: 40)
-point o hint(x: 30, y: 10)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 30, y: 0)
+c := point hint(x: 40, y: 10)
+d := point hint(x: 40, y: 40)
+o := point hint(x: 30, y: 10)
 
-horizontal line run(a, b) -> tangent
-arc fillet(center: o) hint(r: 10) -> tangent
-vertical line rise(c, d)
+horizontal (run := line(a, b)) -> tangent
+(fillet := arc(center: o) hint(r: 10)) -> tangent
+vertical (rise := line(c, d))
 
 radius(10) fillet
 a distance(30) b
@@ -1566,20 +1576,20 @@ corners.
 
 ```
 component Rung(a: point, b: point, len: Length) {
-  line e(a, b)
+  e := line(a, b)
   horizontal e
   a distance(len) b
 }
 
-point l0 hint(x: 0, y: 0)
-point r0 hint(x: 50, y: 0)
-point l1 hint(x: 0, y: 20)
-point r1 hint(x: 50, y: 20)
+l0 := point hint(x: 0, y: 0)
+r0 := point hint(x: 50, y: 0)
+l1 := point hint(x: 0, y: 20)
+r1 := point hint(x: 50, y: 20)
 
-t0: Rung(l0, r0, len: 50)
-t1: Rung(l1, r1, len: 50)
+t0 := Rung(l0, r0, len: 50)
+t1 := Rung(l1, r1, len: 50)
 
-line stile(l0, l1)
+stile := line(l0, l1)
 vertical stile
 l0 distance(20) l1
 ground l0
@@ -1590,12 +1600,12 @@ The formals alias the actuals; nothing is added at the boundary.
 ### 2.7 Repetition: DOF 5, under
 
 ```
-param n = 6
-param r = 40
+n := 6
+r := 40
 
 cycle n as i {
-  point p hint(x: r, y: i * 60)
-  line e(p, next.p)
+  p := point hint(x: r, y: i * 60)
+  e := line(p, next.p)
   e equal next.e
 }
 ground p[0]
@@ -1610,7 +1620,7 @@ corners at all. DOF 1, under:
 
 ```
 cycle 4 {
-  line s -> perpendicular equal
+  (s := line) -> perpendicular equal
 }
 s[0].p1 distance(50) s[0].p2
 ground s[0].p1
@@ -1629,15 +1639,14 @@ winding is a branch only a seed can choose.
 
 ```
 component Involute(c: circle, phase: Angle, u: Angle) {
-  point p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
-             c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
+  p := point(x: c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)))
 }
 
-point o hint(x: 0, y: 0)
-circle base(center: o) hint(r: 20)
-curve f = Involute(base, phase: 0).p over u in (0, 90)
+o := point hint(x: 0, y: 0)
+base := circle(center: o) hint(r: 20)
+f := Involute(base, phase: 0).p over u in (0, 90)
 
-point t hint(x: 25, y: 8)
+t := point hint(x: 25, y: 8)
 t on f
 ground o
 fix base.r
@@ -1652,24 +1661,24 @@ moves. Seed it with `t on f hint(t: 30)` or pin it with `t on(t == 30) f` (which
 
 ```
 component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
-  point t
-  point p
-  line rad(c.center, t)
-  line s(t, p)
+  t := point
+  p := point
+  rad := line(c.center, t)
+  s := line(t, p)
   t on c                                                 // the string leaves the circle...
   datum angle(u + phase) rad                             // ...at bearing u from the datum,
   rad perpendicular s                                    // square to the radius there,
   p distance(-(c.r * u / 1rad)) rad                      // and taut: as long as the arc
 }
 
-point o hint(x: 0, y: 0)
-point x hint(x: 20, y: 0)
-circle base(center: o) hint(r: 20)
-line datum(o, x)
+o := point hint(x: 0, y: 0)
+x := point hint(x: 20, y: 0)
+base := circle(center: o) hint(r: 20)
+datum := line(o, x)
 
-curve f = Unwind(base, datum, phase: 0).p over u in (0, 90)
+f := Unwind(base, datum, phase: 0).p over u in (0, 90)
 
-point g hint(x: 25, y: 8)
+g := point hint(x: 25, y: 8)
 g on f
 
 ground o
@@ -1690,23 +1699,23 @@ states it, read at the anchor and carried by continuity.
 
 ```
 component Crank(o: point, datum: line, theta: Angle) {
-  point p hint(x: 20, y: 10)
-  line arm(o, p)
+  p := point hint(x: 20, y: 10)
+  arm := line(o, p)
   o distance(30) p
   datum angle(theta) arm
 }
 
-point o hint(x: 0, y: 0)
-point x hint(x: 10, y: 0)
-line datum(o, x)
+o := point hint(x: 0, y: 0)
+x := point hint(x: 10, y: 0)
+datum := line(o, x)
 ground o
 ground x
 
-c: Crank(o, datum)                                  // theta unbound: the crank turns
-curve rim = c.p over theta in (0, 360)
+c := Crank(o, datum)                                  // theta unbound: the crank turns
+rim := c.p over theta in (0, 360)
 ```
 
-`c: Crank(o, datum)` leaves `theta` unbound, so `c.theta` is the one freedom (reported as a free
+`c := Crank(o, datum)` leaves `theta` unbound, so `c.theta` is the one freedom (reported as a free
 variable), and `rim` is where the drawn `p` goes as it runs a full turn. The trace is anchored at
 the pose on the sheet: drag `c.p` and the anchor moves with it. `jansen.sv` is this at full size.
 
@@ -1714,15 +1723,15 @@ the pose on the sheet: drag `c.p` and the anchor moves with it. `jansen.sv` is t
 
 ```
 // a 60-wide, 40-tall, 30-deep block, three views, one corner tied across them
-point Af hint(x: 0, y: 0) in front
-point qf hint(x: 40, y: 0)
-plane front(origin: Af, toward: qf)                             // the page itself
-point At hint(x: 0, y: 90) in top
-point qt hint(x: 40, y: 90)
-plane top(origin: At, toward: qt, from: front, fold: 0deg)      // folded up from the x-axis
-point Ar hint(x: 150, y: 0) in right
-point qr hint(x: 150, y: -40)
-plane right(origin: Ar, toward: qr, from: front, fold: -90deg)  // folded from z, turned so z is up
+Af := point hint(x: 0, y: 0) in front
+qf := point hint(x: 40, y: 0)
+front := plane(origin: Af, toward: qf)                             // the page itself
+At := point hint(x: 0, y: 90) in top
+qt := point hint(x: 40, y: 90)
+top := plane(origin: At, toward: qt, from: front, fold: 0deg)      // folded up from the x-axis
+Ar := point hint(x: 150, y: 0) in right
+qr := point hint(x: 150, y: -40)
+right := plane(origin: Ar, toward: qr, from: front, fold: -90deg)  // folded from z, turned so z is up
 ground Af
 ground qf
 ground At
@@ -1730,11 +1739,11 @@ ground qt
 ground Ar
 ground qr
 
-point Bf hint(x: 60, y: 40) in front
+Bf := point hint(x: 60, y: 40) in front
 Af distance(60, along: x) Bf
 Af distance(40, along: y) Bf
-point Bt in top
-point Br in right
+Bt := point in top
+Br := point in right
 Bf project Bt          // width agrees front <-> top
 Bf project Br          // height agrees front <-> right
 Bt project Br          // depth agrees top <-> right
@@ -1756,17 +1765,17 @@ folded at the bearing of an inclined face.
 // two shafts at a stated angle and offset: the gear's axis drawn in the front view, the
 // pinion's in a view folded from it by a fold the drawing solves for
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
-line gax(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
+gax := line(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
 ground gax.p1
 ground gax.p2
 
-point o2 hint(x: 120, y: 0)
-point t2 hint(x: 160, y: 0)
-plane side(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
-line pax(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
+o2 := point hint(x: 120, y: 0)
+t2 := point hint(x: 160, y: 0)
+side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
+pax := line(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
 pax.p1 distance(0, along: u) side
 pax.p2 distance(60, along: u) side
 pax.p1 horizontal pax.p2
@@ -1792,35 +1801,35 @@ of the solved axes; `skew_axes.sv` is it with a shaft about each axis, in the ap
 
 ```
 unit mm
-param module = 4mm
-param Rg = 48 * module / 2
-param Rp = 24 * module / 2
-param E = 20mm
+module := 4mm
+Rg := 48 * module / 2
+Rp := 24 * module / 2
+E := 20mm
 
 // the pitch plane, and M on it
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane P(origin: o, toward: t)
-point M hint(x: 0, y: 0) in P
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+P := plane(origin: o, toward: t)
+M := point hint(x: 0, y: 0) in P
 ground M
-point O hint(x: 110, y: 0) in P
-point A hint(x: 95, y: 18) in P
-line gen_g(O, M) in P
-line gen_p(A, M) in P
+O := point hint(x: 110, y: 0) in P
+A := point hint(x: 95, y: 18) in P
+gen_g := line(O, M) in P
+gen_p := line(A, M) in P
 horizontal gen_g
 
 // the axial views, folded square to P along the generators
-point og hint(x: 0, y: 200)
-point tg hint(x: 40, y: 200)
-plane G(origin: og, toward: tg, from: P, fold: along gen_g)
-point oq hint(x: 0, y: -200)
-point tq hint(x: 40, y: -200)
-plane Q(origin: oq, toward: tq, from: P, fold: along gen_p)
+og := point hint(x: 0, y: 200)
+tg := point hint(x: 40, y: 200)
+G := plane(origin: og, toward: tg, from: P, fold: along gen_g)
+oq := point hint(x: 0, y: -200)
+tq := point hint(x: 40, y: -200)
+Q := plane(origin: oq, toward: tq, from: P, fold: along gen_p)
 
 // each axis in its axial view, from its apex: the apex's image is on the fold line (on P) and
 // projects to the apex drawn in P; how long an axis is drawn says nothing about the cone
-line gax(hint(x: -110, y: 200), hint(x: -50, y: 304)) in G
-line pax(hint(x: -97, y: -200), hint(x: -28, y: -239)) in Q
+gax := line(hint(x: -110, y: 200), hint(x: -50, y: 304)) in G
+pax := line(hint(x: -97, y: -200), hint(x: -28, y: -239)) in Q
 gax.p1 on P
 O project gax.p1
 pax.p1 on P
@@ -1849,38 +1858,38 @@ every one of those against the lifted geometry.
 
 ```
 unit mm
-param module = 4mm
-param Rg = 48 * module / 2
-param Rp = 24 * module / 2
-param E = 20mm
+module := 4mm
+Rg := 48 * module / 2
+Rp := 24 * module / 2
+E := 20mm
 
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane P(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+P := plane(origin: o, toward: t)
 ground o
 ground t
-point M hint(x: 0, y: 0) in P
+M := point hint(x: 0, y: 0) in P
 ground M
 
 // the gear's axial plane, square to P about its vertical axis; the pinion's, solved, through M
-point og hint(x: 0, y: 200)
-point tg hint(x: 40, y: 200)
-plane G(origin: og, toward: tg, from: P, fold: 90deg)
+og := point hint(x: 0, y: 200)
+tg := point hint(x: 40, y: 200)
+G := plane(origin: og, toward: tg, from: P, fold: 90deg)
 ground og
 ground tg
-point oq hint(x: 0, y: -200)
-point tq hint(x: 40, y: -200)
-plane Q(origin: oq, toward: tq, attitude: free, through: M) hint(u: (0.1618, -0.4935, -0.8546), v: (0.0918, 0.8698, -0.4847))
+oq := point hint(x: 0, y: -200)
+tq := point hint(x: 40, y: -200)
+Q := plane(origin: oq, toward: tq, attitude: free, through: M) hint(u: (0.1618, -0.4935, -0.8546), v: (0.0918, 0.8698, -0.4847))
 
-line gax(hint(x: 110.85, y: 200), hint(x: 50.85, y: 303.9)) in G
-line pax(hint(x: -84.62, y: -248), hint(x: -4.62, y: -248)) in Q
+gax := line(hint(x: 110.85, y: 200), hint(x: 50.85, y: 303.9)) in G
+pax := line(hint(x: -84.62, y: -248), hint(x: -4.62, y: -248)) in Q
 gax.p1 on P
 gax.p1 distance(120) gax.p2
 pax.p1 distance(80) pax.p2
 horizontal pax
 
-cone gc(axis: gax) hint(half: 60deg)
-cone pc(axis: pax) hint(half: 30deg)
+gc := cone(axis: gax) hint(half: 60deg)
+pc := cone(axis: pax) hint(half: 30deg)
 angle(60deg) gc
 M on gc
 M on pc
@@ -1904,11 +1913,11 @@ the glass box shows the two cones touching on P.
 ### 2.14 An arc placed by its length: DOF 0, well
 
 ```
-point o hint(x: 0, y: 0)
-point s hint(x: 10, y: 0)
-point e hint(x: 3, y: 9)
+o := point hint(x: 0, y: 0)
+s := point hint(x: 10, y: 0)
+e := point hint(x: 3, y: 9)
 
-arc a(o, s, e)
+a := arc(o, s, e)
 radius(10) a
 length(5 * pi) a        // a quarter of the circumference: the sweep is 90°
 o horizontal s
@@ -1926,14 +1935,14 @@ a radius of 25 (π + 2·asin(15 / 66.0205) = 3.6 rad).
 ### 2.15 A bisector, stated as two equal angles: DOF 0, well
 
 ```
-point a hint(x: 0, y: 0)
-point b hint(x: 40, y: 0)
-point c hint(x: 10, y: 30)
-point d hint(x: 25, y: 10)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 40, y: 0)
+c := point hint(x: 10, y: 30)
+d := point hint(x: 25, y: 10)
 
-line ab(a, b)
-line ac(a, c)
-line ad(a, d)
+ab := line(a, b)
+ac := line(a, c)
+ad := line(a, d)
 horizontal ab
 ab angle(60deg) ac
 a distance(40) b

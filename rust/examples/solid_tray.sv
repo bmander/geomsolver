@@ -2,44 +2,44 @@
 // hollow the stock first, then add the bosses inside the pocket.
 unit mm
 use std
-param width = 72mm
-param height = 48mm
-param depth = 16mm
-param wall = 3mm
-param boss_radius = 5mm
-param screw_radius = 2mm
-param boss_height = 8mm
+width := 72mm
+height := 48mm
+depth := 16mm
+wall := 3mm
+boss_radius := 5mm
+screw_radius := 2mm
+boss_height := 8mm
 
 component Rectangle(center: point, w: Length, h: Length) {
-  point a hint(x: center.x - w / 2, y: center.y - h / 2)
-  point b hint(x: center.x + w / 2, y: center.y - h / 2)
-  point c hint(x: center.x + w / 2, y: center.y + h / 2)
-  point d hint(x: center.x - w / 2, y: center.y + h / 2)
-  profile = horizontal line ab(a, b) -> vertical line bc(b, c) ->
-            horizontal line cd(c, d) -> vertical line da(d, a) -> close
+  a := point hint(x: center.x - w / 2, y: center.y - h / 2)
+  b := point hint(x: center.x + w / 2, y: center.y - h / 2)
+  c := point hint(x: center.x + w / 2, y: center.y + h / 2)
+  d := point hint(x: center.x - w / 2, y: center.y + h / 2)
+  profile := horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
+            horizontal (cd := line(c, d)) -> vertical (da := line(d, a)) -> close
   distance(w) ab
   distance(h) bc
-  line diagonal(a, c)
+  diagonal := line(a, c)
   center midpoint diagonal
 }
-outer: Rectangle(std.origin, w: width, h: height)
-inner: Rectangle(std.origin, w: width - 2 * wall, h: height - 2 * wall)
-solid stock(outer.profile, depth: depth)
-solid pocket(inner.profile, depth: depth - wall)
-solid shell(stock)
+outer := Rectangle(std.origin, w: width, h: height)
+inner := Rectangle(std.origin, w: width - 2 * wall, h: height - 2 * wall)
+stock := solid(outer.profile, depth: depth)
+pocket := solid(inner.profile, depth: depth - wall)
+shell := solid(stock)
 pocket cut shell
-solid body(shell)
+body := solid(shell)
 
 // Boss centers follow an inset rectangle: each boss clears the pocket walls by 2mm.
-centers: Rectangle(std.origin, w: width - 2 * (wall + boss_radius + 2mm),
+centers := Rectangle(std.origin, w: width - 2 * (wall + boss_radius + 2mm),
                               h: height - 2 * (wall + boss_radius + 2mm))
 component Standoff(body: solid, c: point, r: Length, screw_r: Length, base_depth: Length, h: Length) {
-    circle rim(center: c)
-    circle screw(center: c)
+    rim := circle(center: c)
+    screw := circle(center: c)
     radius(r) rim
     radius(screw_r) screw
     // Annular bosses leave blind screw holes; the floor stays intact underneath.
-    solid boss(face(rim, holes: screw), from: base_depth, to: base_depth + h)
+    boss := solid(face(rim, holes: screw), from: base_depth, to: base_depth + h)
     boss on body
 }
 // The contour's corner references, rather than independently calculated coordinates.

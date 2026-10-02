@@ -5,28 +5,28 @@
 unit mm
 use std
 
-param coil_r = 12mm     // from the axis to the wire's centre
-param wire_r = 2mm      // the wire's radius
-param pitch = 8mm       // how far it climbs each turn
-param turns = 2         // how many turns
+coil_r := 12mm     // from the axis to the wire's centre
+wire_r := 2mm      // the wire's radius
+pitch := 8mm       // how far it climbs each turn
+turns := 2         // how many turns
 
 // A sphere of radius `r` about `center`: a half disc turned about its upright diameter.
 component Sphere(center: point, r: Length) {
-  private point bottom hint(x: center.x, y: center.y - r)
-  private point top hint(x: center.x, y: center.y + r)
-  private line diameter(bottom, top)
+  private bottom := point hint(x: center.x, y: center.y - r)
+  private top := point hint(x: center.x, y: center.y + r)
+  private diameter := line(bottom, top)
   center midpoint diameter
   vertical diameter
-  private arc meridian(center: center, start: bottom, end: top) hint(r: r)
+  private meridian := arc(center: center, start: bottom, end: top) hint(r: r)
   radius(r) meridian
-  solid body(face(meridian, diameter), about: diameter)
+  body := solid(face(meridian, diameter), about: diameter)
 }
 
-construction centerline line spindle(std.origin, std.up.toward)
-private point start hint(x: coil_r, y: 0)
+construction centerline spindle := line(std.origin, std.up.toward)
+private start := point hint(x: coil_r, y: 0)
 std.origin horizontal start
 std.origin distance(coil_r, along: right) start
-private ball: Sphere(start, r: wire_r)
+private ball := Sphere(start, r: wire_r)
 
-motion climb(about: spindle, advance: pitch)
-solid spring(ball.body, under: climb, from: 0deg, to: turns * 360deg)
+climb := motion(about: spindle, advance: pitch)
+spring := solid(ball.body, under: climb, from: 0deg, to: turns * 360deg)

@@ -38,27 +38,27 @@ fn refused(src: &str, code: Code, needle: &str) {
 /// standing between `lo` and `hi` along that plane's normal.
 fn part(tag: &str, plane: &str, w: f64, lo: &str, hi: &str) -> String {
     format!(
-        "point a{tag} hint(x: 0, y: 0) in {plane}\npoint b{tag} hint(x: {w}, y: 0) in {plane}\n\
-         point c{tag} hint(x: {w}, y: {w}) in {plane}\npoint d{tag} hint(x: 0, y: {w}) in {plane}\n\
-         line p{tag}(a{tag}, b{tag}) -> line q{tag}(b{tag}, c{tag}) -> \
-         line r{tag}(c{tag}, d{tag}) -> line s{tag}(d{tag}, a{tag}) -> close\n\
+        "a{tag} := point hint(x: 0, y: 0) in {plane}\nb{tag} := point hint(x: {w}, y: 0) in {plane}\n\
+         c{tag} := point hint(x: {w}, y: {w}) in {plane}\nd{tag} := point hint(x: 0, y: {w}) in {plane}\n\
+         (p{tag} := line(a{tag}, b{tag})) -> (q{tag} := line(b{tag}, c{tag})) -> \
+         (r{tag} := line(c{tag}, d{tag})) -> (s{tag} := line(d{tag}, a{tag})) -> close\n\
          horizontal p{tag}\nvertical q{tag}\nhorizontal r{tag}\nvertical s{tag}\n\
          a{tag} distance({w}) b{tag}\na{tag} distance({w}) d{tag}\na{tag} coincident o\n\
-         face f{tag}(p{tag}, q{tag}, r{tag}, s{tag})\n\
-         solid {tag}(f{tag}, from: {lo}, to: {hi})\n"
+         f{tag} := face(p{tag}, q{tag}, r{tag}, s{tag})\n\
+         {tag} := solid(f{tag}, from: {lo}, to: {hi})\n"
     )
 }
 
 /// The page, and one plane parallel to it that a mate must place.
 const HEAD: &str = "\
 unit mm
-point o hint(x: 0, y: 0)
-point qq hint(x: 40, y: 0)
+o := point hint(x: 0, y: 0)
+qq := point hint(x: 40, y: 0)
 ground o
-horizontal line ref(o, qq)
+ref := horizontal line(o, qq)
 o distance(40) qq
-plane front(origin: o, toward: qq)
-plane back(origin: o, toward: qq, from: front)
+front := plane(origin: o, toward: qq)
+back := plane(origin: o, toward: qq, from: front)
 ";
 
 /// How far a solid reaches **along the page's own normal**, as the report gives it.
@@ -102,7 +102,7 @@ fn a_stack_of_three_is_worked_out_in_order() {
     // washer, then part: each stands on the last, and the walk finds the order the way
     // `expr::evaluate` finds a dimension's
     let src = format!(
-        "{HEAD}plane mid(origin: o, toward: qq, from: front)\n{}{}{}\
+        "{HEAD}mid := plane(origin: o, toward: qq, from: front)\n{}{}{}\
          mid_part.far against front_part.near\nback_part.far against mid_part.near\n",
         part("front_part", "front", 30.0, "-6mm", "0mm"),
         part("mid_part", "mid", 25.0, "-2mm", "0mm"),
@@ -149,7 +149,7 @@ fn a_document_that_says_nothing_or_two_things_about_where_a_part_stands_is_refus
 #[test]
 fn a_stack_that_stands_on_itself_is_refused() {
     let src = format!(
-        "{HEAD}plane mid(origin: o, toward: qq, from: front)\n{}{}\
+        "{HEAD}mid := plane(origin: o, toward: qq, from: front)\n{}{}\
          mid_part.far against back_part.near\nback_part.far against mid_part.near\n",
         part("mid_part", "mid", 25.0, "-2mm", "0mm"),
         part("back_part", "back", 20.0, "-10mm", "0mm")
@@ -170,35 +170,35 @@ fn a_feature_carries_its_own_rule() {
 unit mm
 use std
 use hardware
-point fo
-point fq hint(x: -10, y: 0)
-plane f(origin: fo, toward: fq)
-point o hint(x: 0, y: 0) in f
-point up hint(x: 0, y: 40) in f
-point side hint(x: -10, y: 0) in f
+fo := point
+fq := point hint(x: -10, y: 0)
+f := plane(origin: fo, toward: fq)
+o := point hint(x: 0, y: 0) in f
+up := point hint(x: 0, y: 40) in f
+side := point hint(x: -10, y: 0) in f
 ground o
-line ax(o, up)
-line ac(o, side)
+ax := line(o, up)
+ac := line(o, side)
 vertical ax
 horizontal ac
 o distance(40) up
 o distance(10) side
-point p0 hint(x: 0, y: 0) in f
-point p1 hint(x: 8, y: 0) in f
-point p2 hint(x: 8, y: 20) in f
-point p3 hint(x: 0, y: 20) in f
-line e0(p0, p1) -> line e1(p1, p2) -> line e2(p2, p3) -> line e3(p3, p0) -> close
+p0 := point hint(x: 0, y: 0) in f
+p1 := point hint(x: 8, y: 0) in f
+p2 := point hint(x: 8, y: 20) in f
+p3 := point hint(x: 0, y: 20) in f
+(e0 := line(p0, p1)) -> (e1 := line(p1, p2)) -> (e2 := line(p2, p3)) -> (e3 := line(p3, p0)) -> close
 p0 coincident o
 horizontal e0
 vertical e1
 p0 distance(8) p1
 p1 distance(20) p2
 horizontal e2
-face sec(e0, e1, e2, e3)
-solid blank(sec, about: ax)
-solid pis(blank)
-plane groove_axes(origin: o, toward: ax.p2)
-g: Groove(body: pis, f: groove_axes, r: 8mm, z: 15mm, cs: oring014_cs, seal: seal_dims) in f
+sec := face(e0, e1, e2, e3)
+blank := solid(sec, about: ax)
+pis := solid(blank)
+groove_axes := plane(origin: o, toward: ax.p2)
+g := Groove(body: pis, f: groove_axes, r: 8mm, z: 15mm, cs: oring014_cs, seal: seal_dims) in f
 ";
     let (prog, errs, linked) = gcs_core::library::parse_linked(src);
     assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");

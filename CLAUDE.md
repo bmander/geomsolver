@@ -26,14 +26,14 @@ for project modules beside the opened model and then in its ancestors before the
 ordinates relative to a plane's datum, independent of membership. Hints can read `f.c`/`f.s`
 and `f.angle`. The standard library has no coordinate-placement helper: model contours with
 alignments, incidences, symmetry, and dimensions, rather than two ordinates for every corner. Components
-still have no implicit frame. A caller supplies membership with `instance: Part(f) in view`
+still have no implicit frame. A caller supplies membership with `instance := Part(f) in view`
 when the component does not need to name multiple planes. Datum intrinsics are reseeded after
 geometric point hints settle. Component aliases retain subentity paths such as `f.origin`.
 `use std` provides lazy shared `std.front` (u right), `std.up` (u up), and `std.origin`,
 expanded from the library's `StandardDatums` only when referenced. Both datums are fixed at
 page zero, with no implied membership. Calls may omit `name:`; anonymous instance keys stay
 out of user-facing names. The cylinder preview keeps `cyl:` for its `.svd` references and uses
-`cyl: Cylinder(std.up, fw: fwA, dims: vtwin_dims)` with no explicit origin, ground, plane, or Axes setup.
+`cyl := Cylinder(std.up, fw: fwA, dims: vtwin_dims)` with no explicit origin, ground, plane, or Axes setup.
 
 
 
@@ -49,14 +49,14 @@ attitude root (`from:` with no fold); a solved datum offset makes a `CKind::Mate
 **Closed components:** model dependencies enter through arguments, including standard datums.
 Visible component definitions and built-in functions/constants remain callable. Component scopes
 contain only their own formals and declarations; repetitions share that lexical scope.
-`group dims(width: 20mm, origin: o)` bundles values and geometry aliases; `dims: group` is a
+`dims := group(width: 20mm, origin: o)` bundles values and geometry aliases; `dims: group` is a
 required formal, usable positionally or by label. Groups nest, and a component instance may be
 passed as a layout group exposing its geometry. They add no solver state. Numeric member units
 survive substitution; missing members are errors. Curves still need fixed scalar/entity formals.
 The V-twin and inline-four examples pass `vtwin_dims` and `engine_dims` explicitly. Frame takes
 `Frame(layout, dims: vtwin_dims)`; its layout names the front datum, origin, and reference axis.
 
-**Analytic surface references:** `surface flank(crown, edge: rack.outer)` names a line/arc/circle
+**Analytic surface references:** `flank := surface(crown, edge: rack.outer)` names a line/arc/circle
 patch of an unmodified revolution. It is spatial, owns no solver parameters, and is not a 2D
 drawing primitive. `solid::RevolvedSurface::named` reads its current solved geometry into an
 exact snapshot; re-read after model changes. Normalized `u` follows the source edge and `v`
@@ -76,8 +76,8 @@ have the full [0,1] interval. Their browser counterparts are `surfaceDomain` / `
 The spiral-bevel source declares the crown semicircles; its verifier reads those domains
 and starts local solves at their midpoint. Surface spans and envelope roll bounds share
 syntax/IR `AngularSpan`; neither is a hint or an additional solve unknown.
-**Named motions:** `motion turn(about: axis, ratio: 2, phase: 10deg)` and
-`motion relative(turn, relative_to: observer)` describe rigid families over a shared angle.
+**Named motions:** `turn := motion(about: axis, ratio: 2, phase: 10deg)` and
+`relative := motion(turn, relative_to: observer)` describe rigid families over a shared angle.
 `motion::evaluate` takes radians and returns the exact pose and derivative per radian, reading
 solved world axes through `Sketch::world_point`. Relative means observer inverse times source,
 including both derivatives. Motion is spatial, ABI kind 10, with no solver parameters or 2D
@@ -92,7 +92,7 @@ compiled text and `MotionE::rotation`/`advance` work it out from the solved sket
 (`Family::read`, `solid::reads`'s motion key), so nothing stale is stored and caches follow the
 geometry. Everywhere else `expr::eval` refuses one, and the elaborator codes that message E107.
 
-**Solid placement:** `solid indexed(source, under: indexing, at: 90deg)` places one source
+**Solid placement:** `indexed := solid(source, under: indexing, at: 90deg)` places one source
 solid at a named motion's pose. `at:` is a constant Angle, converted to radians at elaboration;
 it is neither a hint nor a sweep interval. Instances can be repeated, nested, and used as
 Boolean operands. Copy retains the source and transitive motion dependencies. The mesh cache
@@ -113,7 +113,7 @@ and `mesh::stl_shells` checks all exactly encoded components, including cavities
 welding. Validation failure preserves all old outputs; renames are individually atomic,
 not a transaction across files. Legacy mesh defects must not be hidden by native-path tests.
 
-**Named envelopes:** `envelope flank(source, under: generating, from: -35deg, to: 35deg)`
+**Named envelopes:** `flank := envelope(source, under: generating, from: -35deg, to: 35deg)`
 binds a surface and motion over a finite increasing roll interval. It is an implicit
 zero-normal-velocity locus, spatial and parameter-free (ABI kind 11). `GeneratedEnvelope`
 reads solved surface/motion snapshots, evaluates a trial's contact data and residual, and
@@ -127,7 +127,7 @@ component semantics. `GeneratedEnvelope::intersect_boundaries` solves against tw
 patches and checks their finite incidence errors at the result, refusing roots on undeclared
 continuations.
 
-**Trimmed spatial patches:** `patch flank(source, inside: tip, outside: root)` intersects
+**Trimmed spatial patches:** `flank := patch(source, inside: tip, outside: root)` intersects
 material-side conditions on an existing surface or envelope. Repeat the label on every
 clipping solid. `patch::TrimmedPatch` is a solved snapshot with explicit axis, trim and
 envelope residual tolerances. Clipping currently accepts unmodified full revolutions with
@@ -227,7 +227,7 @@ its own cone's `1 / sin`. `tests/hypoid_layout.rs` holds the layout to recorded 
 material at twelve designs. The mesh export refuses a sectioned sheet whose boundary a
 placement carries inside the blank, and the CLI test readers zero the offset because the
 recorded volumes are the bevel pair's.
-**Continuous motion solids:** `solid removal(tool, under: generating, from: -30deg, to: 30deg)`
+**Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 uses finite increasing Angle bounds, converted to radians at elaboration. It means the union
 of material over the complete interval, not a sequence of posed meshes. `at:` and interval
 labels are exclusive. Formals, repeats, forward references, print/copy/delete and Boolean
@@ -521,7 +521,7 @@ accuracy instead of selecting an optimizer as a workaround, and still check geom
 operands. Do not reintroduce parallel untrimmed and trimmed copies of a generating face.
 Snapshot domains are private and returned by value; source edits require new snapshots.
 
-**Shared generating seams:** `seam join(flank, transition)` takes two envelopes or patches
+**Shared generating seams:** `join := seam(flank, transition)` takes two envelopes or patches
 of envelopes. They must share one actual profile vertex, a source revolution and a named
 motion. `seam::EnvelopeSeam` snapshots them after solving, checks coincidence and tangent-plane
 agreement with explicit `SeamTolerance`, and intersects their angular domains. Its first-source
@@ -533,7 +533,7 @@ Local singular intersections are refused; global regularity and face-loop topolo
 separate. Browser `core/seam.ts` exposes domain and checked contacts; ABI kind 13. Contacts
 carry the first face's normal and generating velocity, not the seam's curve derivative.
 
-**Envelope/boundary seams:** `seam tip_edge(flank_region, tip.wall)` names an envelope (or
+**Envelope/boundary seams:** `tip_edge := seam(flank_region, tip.wall)` names an envelope (or
 its material patch) intersected by a finite analytic surface. `seam::BoundarySeam` reads one
 `EnvelopePatch` and one `SurfaceProjector`; the first source's full [u,v,roll] domain stays
 available. Its section solve uses the existing intersection adapter with envelope, boundary
@@ -543,7 +543,7 @@ does not borrow the generating-junction tangency tolerances. Browser `boundarySe
 and `boundarySeamSample` in `core/seam.ts` expose the checked snapshot through the same
 seam entity kind 13. Reading a seam does not assert a regular branch or an oriented face loop.
 
-**Shared spatial vertices:** `vertex corner(tip_edge,toe_edge)` meets two boundary seams on
+**Shared spatial vertices:** `corner := vertex(tip_edge,toe_edge)` meets two boundary seams on
 the same exact named generating face. A generating junction may also meet a boundary seam
 on either of its faces. Separate coincident declarations retain distinct identity. The
 `BoundaryVertex` snapshot owns one face and two boundaries; `JunctionVertex` owns one junction
@@ -554,7 +554,7 @@ with no artificial corner normal. Domains are immutable snapshots; local solves 
 but do not certify global uniqueness. Formals, privacy and copy/delete are ordinary; ABI kind
 14, browser `core/vertex.ts`. Finite edge branches and analytic face assembly remain separate.
 
-**Finite spatial edges:** `edge extent(seam,from: a,to: b,along: axis)` names a finite
+**Finite spatial edges:** `extent := edge(seam,from: a,to: b,along: axis)` names a finite
 axial slicing interval between spatial vertices. `edge::SpatialEdge::named` rechecks endpoint
 parameter witnesses and maps junction endpoint u into the correct incident-face chart.
 At a junction, a boundary on the other exact incident face shares the same corner through
@@ -577,7 +577,7 @@ float32 coordinates, identifying exact equals and normalizing signed zero. Neith
 check establishes geometric incidence, non-self-intersection, outward material orientation,
 or surface-deviation error. See `docs/shell-topology.md` before connecting analytic faces.
 
-**Spatial face boundaries:** `face working(toe,tip,heel,join,on: region)` binds an ordered
+**Spatial face boundaries:** `working := face(toe,tip,heel,join,on: region)` binds an ordered
 finite-edge loop to an exact named surface/envelope/patch. `FaceSupport` distinguishes
 inherited planes from spatial supports; `FaceE::plane()` refuses the latter, never treating
 them as page profiles. Spatial faces build/copy after edges and keep `on` as an ordinary
@@ -718,8 +718,21 @@ one bundle is what the page loads.  It is bundled rather than fetched from a CDN
 the wasm is beside the bundle — the app opens from a file as readily as from a server.
 
 Conventions:
+- **A name is defined one way, `NAME := VALUE`** ([plan](docs/definitions-plan.md), Solvent §5,
+  [0.29]).  `w := 100` is a param, `c := circle(…)` a declaration, `t := Tooth(…)` an instance,
+  `dims := group(…)` a group, `profile := (ab := line(a, b)) -> line -> close` a chain whose link
+  is named in place, `k := leg.toe over u in (a, b)` a curve, `p := point(x: e, y: e)` a computed
+  point, `a distance(w := 60) b` a named dimension (only as the number's outermost form).  `:=` is
+  `Tok::Define`; a lone `=` is no token.  `:=` binds loosest, so a link is named in parentheses;
+  with no `->` in the statement the name goes to the one declaration (`l := horizontal line(a,
+  b)`: a prefix word's value is its operand).  `P::definition` reads the value and lowers to the
+  `StmtKind`s that were there before (`Param`, `Group`, `Instance`, `Decl`, `Chain`), so nothing
+  below the parser knows; `syntax::words::named_link_at` is the one lookahead telling `(l := line)`
+  from an operator's own parentheses (`distance(w := 60)`).  `label:` never defines: it fills a
+  slot.  A drawn callout prints a definition as `w = 60` (`io::as_written`), the draughtsman's
+  spelling.  A name in a child slot (`line(a, q := hint(…))`) is not implemented yet.
 - **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4):
-  `point p hint(x: 0, y: 0)`, `circle c(center: o) hint(r: 25)`,
+  `p := point hint(x: 0, y: 0)`, `c := circle(center: o) hint(r: 25)`,
   `point_on_spline(p, s) hint(t: 0.4)`.  Keys in any order, an omitted coordinate is 0 — an
   omitted *radius* is computed from the geometry (`UNSEEDED_RADIUS` where it gives none), since
   0 is a stationary point of every on-circle row in `r` (#45.6) — and the
@@ -728,7 +741,7 @@ Conventions:
   which is what `circle c(center: o, r: 25)` got wrong, putting a number the solver will move
   inside the same brackets as the structure it may not.  §4.3's rule is then lexical and exact:
   *a number inside a `hint(…)` is a seed, and every other number is not* — which `=` never was,
-  since `param w = 100` is written with one and is not a seed.  The four retired spellings
+  since `w := 100` is written with one and is not a seed.  The four retired spellings
   (`at (0, 0)`, `hint at (0, 0)`, a scalar in a constructor arg, and `hint at REF [bearing (…)]`)
   do **not** parse, and each errors saying where the number belongs.
   **A place is two keys of the same clause** (issue #47, item 2): `point b hint(at: orbit,
@@ -863,7 +876,7 @@ Conventions:
   dotted name (`five.s[0].p1`, `t0.mid`), so a port was a second name for a thing that had one:
   its declaring form is a `point` of the body, its alias form is the caller writing the entity's
   own name, and the one real construct under the keyword — the **computed point** — is
-  `point p = (xexpr, yexpr)` (`Decl::computed`, the same brackets-say-what-it-is-made-of rule as
+  `p := point(x: xexpr, y: yexpr)` (`Decl::computed`, the same brackets-say-what-it-is-made-of rule as
   every other declaration), refused on the sheet by the flattener and compiled to two tapes when
   traced.  The parser keeps the word in `OPENERS` only to refuse it naming the three forms.
   Aliasing is untouched: it is a property of argument passing (`bind_instance`), not of ports.
@@ -884,14 +897,14 @@ Conventions:
   drawn under the implicit class `.point` (`EntKind::implicit_class`), read once per repaint
   through `styleNamed('point')`.  The idiom for a drawing dense with dimensions is
   `style .dimension { display: none }` and `class shown` on the few to draw.
-- **A declaration need not name its children** (Solvent §6.1, §6.2).  `line l` mints two points,
-  `circle c` one, `arc a` three; a child slot may hold a `hint(…)` instead of a reference
-  (`line alt_a(A, hint(x: 15, y: 5))`), which is the same clause standing in for a child rather
+- **A declaration need not name its children** (Solvent §6.1, §6.2).  `l := line` mints two points,
+  `c := circle` one, `a := arc` three; a child slot may hold a `hint(…)` instead of a reference
+  (`alt_a := line(A, hint(x: 15, y: 5))`), which is the same clause standing in for a child rather
   than qualifying the declaration it follows.  `Decl::children` is therefore `Vec<Vec<Kid>>` —
   a name *or* a seed, and no third form, since "anonymous and unseeded" is spelled by an *empty
   slot*: a slot the list leaves out is an **implicit child**, minted by `program::build` exactly
   as a wholly-unwritten list's are, which is what lets a chain's marker fill only the ends it
-  speaks for (`line l1 -> line l2` is three points, one shared).  E103 now refuses only a list
+  speaks for (`(l1 := line) -> (l2 := line)` is three points, one shared).  E103 now refuses only a list
   with *more* children than the kind has slots.  A joint threads a *name*, so a seeded slot
   reads as unfilled there and the other side may say where the two meet — and between two
   declarations where neither does, `thread` mints the name itself (the earlier-built side's
@@ -909,16 +922,14 @@ Conventions:
   **The element's own name is optional too** (issue #33), independently of everything after it:
   `line`, `line(p1, p2)`, `circle hint(r: 25)` and `arc(center: c)` are all anonymous forms
   (a line owns no scalar, so its ends are seeded in the slots: `line(hint(x: 0, y: 0), hint(x: 60, y: 20))`),
-  and the token after the kind keyword decides — `syntax::names_decl` is the one predicate, asked
-  by `decl()` and the colouring alike, so a trailing-clause word, an operator word or an element
-  keyword can no longer be a declaration's name (`curve` keeps requiring one; contacts address
-  it — the colouring carries the same exception).  A word declined there is remembered
-  (`P::declined`) and named in a note when the line then fails to parse, since the reservation
-  is the cause no other error can see.  An anonymous declaration still carries a `Decl::name`:
-  a key the source cannot write — `#a` and its own offset, the flattener's block-prefix device
-  marked apart — with an **empty span at the point a real name would go** (`hint_span`'s
-  idiom).  **A name is three questions, not one, and each is known where the name is minted and
-  told — never sniffed back out of the characters** (issue #39).  The three: does it
+  and a name is written *before* the value (`l := line(p1, p2)`), never after the keyword, so
+  nothing after an element keyword is ever read as a name.  An anonymous declaration still
+  carries a `Decl::name`: a key the source cannot write — `#a` and its keyword's offset, the
+  flattener's block-prefix device marked apart — with an **empty span at the point `name := `
+  would go** (`hint_span`'s idiom): the statement's start, or the link's keyword in a chain, where
+  `Decl::mint_close` says where the `)` of `(name := …)` goes.  **A name is three questions,
+  not one, and each is known where the name is minted and told — never sniffed back out of the
+  characters** (issue #39).  The three: does it
   **resolve**, does the source **call the thing that** (so: shown, published, selected by), and
   may a statement be **written** with it.  `Decl::name` is a **`DeclName`** — the name fused
   with the three-question answer (issue #40): `Written(Name)` (`l0`, `s1.p0`), `Copy(Name)`
@@ -961,7 +972,7 @@ Conventions:
   named since the map was made, or mint.
   Insertions racing for one offset are ordered by `splice`'s stable sort, so reconcile pushes
   appends before flags before names; `tests/anonymous.rs` is the gate.
-  Where an unseeded point *starts* — an implicit child, a declared `point a` with no `hint(…)`
+  Where an unseeded point *starts* — an implicit child, a declared `a := point` with no `hint(…)`
   clause, inside a component or not — is `program::scatter` and is an implementation choice
   the spec must not carry — but it may not be the origin (two endpoints there is a zero-length
   line, with no direction for `horizontal(l)` and a singular row for any tangency; two points
@@ -977,7 +988,7 @@ Conventions:
   centre, where every circle's row is flat, a flank's first step lands on the involute at the
   roll its contact names, where a start a unit off reached the mirror branch.
 - **Presentation is a separate statement from what the drawing is** (`style.rs`, Solvent §13.2).
-  A declaration carries a **class** (`line datum(o, q) class construction`) and a top-level
+  A declaration carries a **class** (`datum := line(o, q) class construction`) and a top-level
   `style .NAME { dash: 7 4; width: 0.5; color: #888888 }` says what a class looks like.
   **No algorithm in the core consults a class** — nothing in the model, the kernels, diagnosis or
   decomposition reads one, and that is the whole point: `construction` was a `bool` on seven
@@ -1162,7 +1173,7 @@ Conventions:
   coordinates — and `cgraph` gives them a `virtual_line` in the ground x-axis's direction class,
   the same trick arc-endpoint tangency uses, so a levelled pair decomposes rather than falling to
   the numeric residue.
-- **The datum is a `plane`** (`plane f(origin: o, toward: q)`, spec §3.2 [0.6]; issue #47,
+- **The datum is a `plane`** (`f := plane(origin: o, toward: q)`, spec §3.2 [0.6]; issue #47,
   item 6 folded `frame` into it — the two were one construct with the attitude optional, and a
   plane with no attitude written is a view of the page, which is what a datum on the sheet is;
   the parser keeps the word `frame` only to refuse it, at a declaration and at a formal).  The
@@ -1202,7 +1213,7 @@ Conventions:
   memoised walk over the `from` chain — the page, `from: P, fold: θ` as `Basis::fold`, or
   `u:`/`v:` orthonormalised by `Basis::explicit`) and stored on `PlaneE`; it is written in the
   brackets with the children because it is what the plane is *made of* and no solve moves it.
-  A point's **membership** is `PointE.plane`, set by `point a in top` — a trailer applying to
+  A point's **membership** is `PointE.plane`, set by `a := point in top` — a trailer applying to
   every point the declaration mints or names, filled in by `program::memberships` after every
   kind is built and before any constraint — and it moves nothing: only `Project` reads it.
   `a project b` is one row over 12 columns (`kernels::project`: both points, both planes'
@@ -1234,7 +1245,7 @@ Conventions:
   what `remove` splices when the plane goes.  The printers spell no clause a statement did not
   write, and a membership edit on a block-stamped declaration is refused with the cause (the
   clause is the header's, not the statement's).  Top level only — inside a body the clause
-  says it per declaration.  **An instance joins a view whole** (`t: Tooth(…) in top`, or an
+  says it per declaration.  **An instance joins a view whole** (`t := Tooth(…) in top`, or an
   instance inside the block): that stamping is the *flattener's* (`Scope::in_plane`, carried
   down the expansion and applied in `stamp_scope_plane` — the ref as written *with the prefixes
   of the scope it was written in*, which is what `rewrite` resolves it against: resolved through
@@ -1333,7 +1344,7 @@ Conventions:
 - **Every case in the library is a Solvent document.**  Each is a `.sv` file in `rust/examples/`,
   and its builder is a one-liner that elaborates the text (`examples::document`).
   A case that takes arguments is still one implementation: `with_params` gives the document's own
-  named numbers — a `param w = 100` line, or a `== a = 30` dimension — the caller's values, since
+  named numbers — a `w := 100` line, or a `distance(a := 30)` dimension — the caller's values, since
   a drawing written as a document already names what it is drawn from, and a second copy in Rust
   is a second drawing the moment one is edited.  A start that is off the solution is `jitter`, a
   function of the sketch: the document says what the figure *is*, not where a solve begins.  A
@@ -1480,7 +1491,7 @@ Conventions:
   are separate.  A chain may mix declarations and names, because each joint states its own
   threading: a link that only names an element offers no list to read or fill, so at a corner
   with one the declared side names the shared point, usually by the existing element's own
-  child (`line t(p3, k.start) -> tangent k` — `follow_building` resolves such a child through
+  child (`(t := line(p3, k.start)) -> tangent k` — `follow_building` resolves such a child through
   the declaration when the entity's kind builds later).  Only lines and arcs are threaded; a
   circle has no ends — which is the radius-as-Param discussion again — but may stand in a chain
   no marker reaches.  `equal` is the second polymorphic word beside `tangent`
@@ -1524,7 +1535,7 @@ Conventions:
   reads it, rather than once per token above the match.
   **A block body may end mid-joint** (issue #38): a *threaded* trailing joint at the body's `}`
   threads the chain onto the next copy's first link — every pair in a `cycle` (the wrap
-  seals the loop: `cycle 4 { line s -> perpendicular equal }` is the square), all but the last
+  seals the loop: `cycle 4 { (s := line) -> perpendicular equal }` is the square), all but the last
   in a `repeat`, whose final corner is simply unstated.  The parser records it on the block
   (`Block::joint`, an `OpenJoint`): the word statements are minted at parse through the same
   `joint_relation` — both links' kinds are known, being the body's own declarations, so a
@@ -1771,19 +1782,19 @@ Conventions:
   `build_face` mints the straight line between them, class `.closure`, which the base sheet hides.
   Thirty-two of the V-twin's forty-two `class gone` lines were exactly that run written out by
   hand: they carry no design, nothing draws them, and they exist because a region needs a
-  boundary — `face pist_f(crown, pL0, pL1, pL2, pL3, pL4, s0.p, -> close)` is one statement
-  where there were four, and `face hole_f(x0.p, x1.p, x2.p, x3.p, -> close)` one where there
+  boundary — `pist_f := face(crown, pL0, pL1, pL2, pL3, pL4, s0.p, -> close)` is one statement
+  where there were four, and `hole_f := face(x0.p, x1.p, x2.p, x3.p, -> close)` one where there
   were five.  **Every part sheet's SVG is byte-identical and every reported volume unchanged**,
   which is the check: a minted run is the line the source used to declare, in the same place and
   in the same direction, so it names a face of whatever is swept from the loop (`close0`,
   `close1`, … in mint order, skipping existing edge names).
   **The shorthand may not swallow a mistake**, and that is three rules.  An interior gap
   between two *edges* is still E080 — a point in a list can mean nothing else, while two edges that do not meet are
-  edges listed out of order, and minting there would silently turn `face f(ab, cd, bc, da)` into
+  edges listed out of order, and minting there would silently turn `f := face(ab, cd, bc, da)` into
   a bowtie.  And **an edge takes its direction from a neighbour it actually meets**, so one
-  standing between two gaps is refused: `face bad(a, bc, d, -> close)` walks `b`-first or
+  standing between two gaps is refused: `bad := face(a, bc, d, -> close)` walks `b`-first or
   `c`-first and nothing there says which, which is why `bore_f` names the corner the wall starts
-  at (`face bore_f(m0.p, b_br.p, bore_r, hx.p, -> close)`) rather than leaving it to be guessed.
+  at (`bore_f := face(m0.p, b_br.p, bore_r, hx.p, -> close)`) rather than leaving it to be guessed.
   The wrap is minted only under `-> close`, so "the loop closes" stays something the source
   states; `-> close` on a loop that already meets says something true and mints nothing.
   `tests/solid_lang.rs` is the gate.
@@ -2097,7 +2108,7 @@ Conventions:
   `90 / N + ivp` is an error, and `90deg / N + ivp` is the answer.  A **name** is worth a number
   and where it is used decides what it is (`w = 80` in a Length slot does not make `w` a length);
   a unit on the literal and a component formal's declared `Ty` are what *do* travel, and the
-  formal is what catches `param x = w + phi` — `flatten::settle` substitutes a parameter away, so
+  formal is what catches `x := w + phi` — `flatten::settle` substitutes a parameter away, so
   a dimension that did not travel with the number would leave nothing to check.
   A literal may carry a unit, converted **to the document's own** by the tokenizer (which is why
   `expr::parse_in` takes `Units`): `unit mm` names it, and without one a suffix is refused rather
@@ -2111,10 +2122,10 @@ Conventions:
   named different ones — `Sketch::rescale`, which is written out by kind because "is this
   parameter a length?" is not a question a `Param` can answer.
 - **A number's three names are one namespace** (issue #47, item 7; Solvent §5, §6.3).  A named
-  dimension (`a distance(w = 60) b`) declares `w` in its body exactly as `param w = 60` does:
+  dimension (`a distance(w := 60) b`) declares `w` in its body exactly as `w := 60` does:
   `flatten::params` collects both as `Def`s and works them out in one dependency order, so a
   `param` may read a named dimension, a second `w` of either kind is "declared twice", and
-  `pythagoras.sv`'s `distance(a = la)` is a param feeding a dimension whose name the sheet then
+  `pythagoras.sv`'s `distance(a := la)` is a param feeding a dimension whose name the sheet then
   reads.  A named dimension is two things in scope — its **number** in `vals`, for a `param`,
   a seed or a count, and its **name** in `Scope::graph` (written name → absolute name), for a
   dimension's text — because a dimension reading it must keep the *name*, or the tie the
@@ -2268,16 +2279,16 @@ Conventions:
   since a curve written in place is given every value and a component of one computed point
   cannot be drawn as an instance whose formal is left free.
 - **A curve is a point of a component, as one of its numeric formals runs** (Solvent §6.5).
-  There is no curve family: `curve path = leg.toe over theta in (0, 360)` asks a *drawn*
+  There is no curve family: `path := leg.toe over theta in (0, 360)` asks a *drawn*
   instance where one of its points goes as one of its formals runs, and
-  `curve e = Involute(base, phase: a0).p over u in (u0, u1)` asks the same of an instance
+  `e := Involute(base, phase: a0).p over u in (u0, u1)` asks the same of an instance
   written in place and never drawn.  `syntax::CurveSpec` is the statement (`CurveTarget`
   `Drawn`/`Anon`, the swept formal, the interval); the flattener records every instance it
   binds (`flatten::InstanceInfo` — prefix, component, the actuals resolved to absolute names,
   the numbers) and resolves a drawn target onto the instance owning the longest prefix, so
   `build_curve` never re-derives which instance a point belongs to.  A component's point is
   placed one of two ways, and `program::compile_curve` picks the body from that: a **computed**
-  point, `point p = (xexpr, yexpr)` (`Decl::computed`), compiles to two `tape.rs` tapes — the
+  point, `p := point(x: xexpr, y: yexpr)` (`Decl::computed`), compiles to two `tape.rs` tapes — the
   formula an involute has — and a component with one is refused on the sheet, since nothing
   there holds a point to a formula; any other point is a **locus**, lowered by `compile_trace`
   from the body's statements.  Either way the tapes are differentiated forward in the swept
@@ -2339,7 +2350,7 @@ Conventions:
   against the involute's closed forms (the tangent is the string; the radius of curvature is
   the string unwound); `tests/common` is the finite-difference Jacobian check the curve tests
   share.
-  **An unbound numeric formal is an unknown of the drawing.**  `leg: Leg(axle, pivot)` with
+  **An unbound numeric formal is an unknown of the drawing.**  `leg := Leg(axle, pivot)` with
   `theta` not given binds it to a *free* `Aff` named under the instance — `leg.theta`, so two
   legs have two cranks — and every reader carries it: `value_aff` passes a free value the scope
   bound (refusing, as it always did, a name nothing binds), so a `param` over it is affine in

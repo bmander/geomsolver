@@ -51,7 +51,7 @@ fn crossing_bars_are_material_interference_even_without_contained_vertices() {
     );
     close(reversed.measured().unwrap(), v.measured().unwrap());
     let unrelated = read(
-        &(source("cross_clear") + "point remote hint(x:1000000000,y:1000000000)\nground remote\n"),
+        &(source("cross_clear") + "remote := point hint(x:1000000000,y:1000000000)\nground remote\n"),
     );
     close(claim(&unrelated, SolidWord::Clear, 0.1).measured().unwrap(), -1.0);
     close(claim(&case("cross_clear_control"), SolidWord::Clear, 0.1).measured().unwrap(), 2.0);
@@ -135,10 +135,10 @@ fn sweep_bounds_use_the_inferred_variable_dimension_and_user_units() {
     let (p, _) = syntax::parse_legacy(&source("sweep_dimensional_error"));
     assert!(program::elaborate(&p).errors().any(|d| d.code == program::Code::E103));
     let src = source("sweep_possible")
-        .replace("circle c(center:o)", "point q hint(x:1,y:0)\nground q\ncircle c(center:o)")
+        .replace("c := circle(center:o)", "q := point hint(x:1,y:0)\nground q\nc := circle(center:o)")
         .replace(
             "o distance(reach,along:x) p",
-            "line datum(o,q)\nline radial(o,p)\ndatum angle(reach) radial",
+            "datum := line(o,q)\nradial := line(o,p)\ndatum angle(reach) radial",
         )
         .replace("(0.1mm,0.9mm)", "(10deg,30deg)");
     let e = read(&src);
@@ -174,7 +174,7 @@ fn input_edge_names_cannot_steal_sweep_cap_names() {
     let e = case("cap_collision_control");
     assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
     let src=source("cap_collision_control").replace("bottom","start")
-        .replace("solid result(f,depth: 2mm)","point ax0 hint(x:-1,y:0)\nground ax0\npoint ax1 hint(x:-1,y:5)\nground ax1\nline axis(ax0,ax1)\nsolid result(f,about:axis,sweep:90deg)");
+        .replace("result := solid(f,depth: 2mm)","ax0 := point hint(x:-1,y:0)\nground ax0\nax1 := point hint(x:-1,y:5)\nground ax1\naxis := line(ax0,ax1)\nresult := solid(f,about:axis,sweep:90deg)");
     let e = read(&src);
     assert!(!program::solid_diagnostics(&e.sketch, &e.map).is_empty());
 }
@@ -290,10 +290,10 @@ fn glb_preserves_local_triangles_and_world_placement_at_large_coordinates() {
 fn box_source(name: &str, x: f64, y: f64, w: f64, h: f64, lo: f64, hi: f64) -> String {
     let mut src = String::new();
     for (i, (x, y)) in [(x, y), (x + w, y), (x + w, y + h), (x, y + h)].into_iter().enumerate() {
-        src += &format!("point {name}p{i} hint(x:{x},y:{y})\nground {name}p{i}\n");
+        src += &format!("{name}p{i} := point hint(x:{x},y:{y})\nground {name}p{i}\n");
     }
     src += &format!(
-        "solid {name}(face({name}p0,{name}p1,{name}p2,{name}p3,-> close),from:{lo}mm,to:{hi}mm)\n"
+        "{name} := solid(face({name}p0,{name}p1,{name}p2,{name}p3,-> close),from:{lo}mm,to:{hi}mm)\n"
     );
     src
 }
@@ -308,7 +308,7 @@ fn interference_checks_respect_voids_and_disconnected_material() {
     let src = "unit mm\n".to_string()
         + &box_source("left", 0.0, 0.0, 1.0, 1.0, -1.0, 0.0)
         + &box_source("right", 8.0, 0.0, 1.0, 1.0, -1.0, 0.0)
-        + "solid result(left)\nright on result\nsolid other(result)\n";
+        + "result := solid(left)\nright on result\nother := solid(result)\n";
     let e = read(&src);
     let v = claim(&e, SolidWord::Clear, 0.0);
     assert_eq!(v.holds(), Some(false));
@@ -332,9 +332,9 @@ fn a_section_clips_crossing_edges_and_removes_occlusion_by_discarded_material() 
 fn negative_clearance_cannot_certify_uncertain_round_surface_contact() {
     let e = read(
         "unit mm\n\
-        point a hint(x:0,y:0)\nground a\ncircle ac(center:a)\nradius(1mm) ac\n\
-        point b hint(x:2,y:0)\nground b\ncircle bc(center:b)\nradius(1mm) bc\n\
-        face af(ac)\nface bf(bc)\nsolid result(af,depth:1mm)\nsolid other(bf,depth:1mm)\n",
+        a := point hint(x:0,y:0)\nground a\nac := circle(center:a)\nradius(1mm) ac\n\
+        b := point hint(x:2,y:0)\nground b\nbc := circle(center:b)\nradius(1mm) bc\n\
+        af := face(ac)\nbf := face(bc)\nresult := solid(af,depth:1mm)\nother := solid(bf,depth:1mm)\n",
     );
     let v = claim(&e, SolidWord::Clear, -1.0);
     assert!(v.measured().unwrap().abs() <= v.tolerance().unwrap(), "{v:?}");
@@ -350,8 +350,8 @@ fn negative_clearance_cannot_certify_uncertain_round_surface_contact() {
 #[test]
 fn named_profiles_preserve_sweep_cap_collision_diagnostics() {
     let src = source("cap_collision")
-        .replace("line near(a,b)\nline right(b,c)\nline top(c,d)\nline left(d,a)\nface f(near,right,top,left)",
-            "f = line near(a,b) -> line right(b,c) -> line top(c,d) -> line left(d,a) -> close");
+        .replace("near := line(a,b)\nright := line(b,c)\ntop := line(c,d)\nleft := line(d,a)\nf := face(near,right,top,left)",
+            "f := (near := line(a,b)) -> (right := line(b,c)) -> (top := line(c,d)) -> (left := line(d,a)) -> close");
     let e = read(&src);
     assert!(program::solid_diagnostics(&e.sketch, &e.map)
         .iter()

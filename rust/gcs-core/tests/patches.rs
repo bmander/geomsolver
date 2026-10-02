@@ -2,36 +2,36 @@ use gcs_core::{diagnose,envelope::{Error,IntersectionOptions},io,model::{EntKind
     patch::TrimmedPatch,program,solve,syntax};
 
 const SOURCE: &str = "unit mm
-point o hint(x: 0,y: 0)
-point q hint(x: 0,y: 1)
-point x hint(x: 1,y: 0)
-point c hint(x: 3,y: 0)
+o := point hint(x: 0,y: 0)
+q := point hint(x: 0,y: 1)
+x := point hint(x: 1,y: 0)
+c := point hint(x: 3,y: 0)
 ground o
 ground q
 ground x
 ground c
-line axis(o,q)
-line spin_axis(o,x)
-circle meridian(center: c)
+axis := line(o,q)
+spin_axis := line(o,x)
+meridian := circle(center: c)
 radius(1mm) meridian
-solid ring(face(meridian),about: axis)
-surface wall(ring,meridian)
-motion roll(about: spin_axis)
-envelope generated(wall,under: roll,from: -20deg,to: 20deg)
+ring := solid(face(meridian),about: axis)
+wall := surface(ring,meridian)
+roll := motion(about: spin_axis)
+generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
 component Sphere(o: point, size: Length) {
-  private point bottom hint(x: 0,y: -size)
-  private point top hint(x: 0,y: size)
+  private bottom := point hint(x: 0,y: -size)
+  private top := point hint(x: 0,y: size)
   ground bottom
   ground top
-  private arc rim(center: o,start: bottom,end: top)
+  private rim := arc(center: o,start: bottom,end: top)
   radius(size) rim
-  private line axis(top,bottom)
-  solid body(face(rim,axis),about: axis)
+  private axis := line(top,bottom)
+  body := solid(face(rim,axis),about: axis)
 }
-inner: Sphere(o, size: 2.5mm)
-outer: Sphere(o, size: 3.5mm)
-patch bounded(wall,inside: outer.body,outside: inner.body)
-patch tooth(generated,inside: outer.body,outside: inner.body)
+inner := Sphere(o, size: 2.5mm)
+outer := Sphere(o, size: 3.5mm)
+bounded := patch(wall,inside: outer.body,outside: inner.body)
+tooth := patch(generated,inside: outer.body,outside: inner.body)
 ";
 
 fn build(src: &str) -> program::Elaborated {
@@ -95,7 +95,7 @@ fn invalid_trim_controls_are_rejected_before_a_section_is_evaluated() {
 #[test]
 fn patch_source_references_roundtrip_and_copy_with_all_clipping_dependencies() {
     let e = solved(SOURCE);
-    let flat = format!("{}patch bounded(wall, inside: ring, inside: ring, outside: ring)\n",
+    let flat = format!("{}bounded := patch(wall, inside: ring, inside: ring, outside: ring)\n",
         SOURCE.split("component Sphere").next().unwrap());
     let mut p = solved(&flat).program;
     let text = syntax::render_flat(&mut p).unwrap().to_string();
@@ -124,33 +124,33 @@ fn patch_source_references_roundtrip_and_copy_with_all_clipping_dependencies() {
 
 #[test]
 fn patch_formals_follow_forward_source_paths_and_private_regions_stay_private() {
-    let forward = format!("component Copy(p: patch,b: solid) {{ patch out(p.source,inside: b) }}\n\
-        copy: Copy(tooth,outer.body)\n{SOURCE}");
+    let forward = format!("component Copy(p: patch,b: solid) {{ out := patch(p.source,inside: b) }}\n\
+        copy := Copy(tooth,outer.body)\n{SOURCE}");
     let e = solved(&forward);
     let copy = e.map.ent_named("copy.out").unwrap();
     assert_eq!(e.sketch.patches[copy.i()].source,e.map.ent_named("generated").unwrap());
     let src = format!("{SOURCE}\ncomponent Part(s: surface,b: solid) {{\n\
-        private construction patch region(s,inside: b)\n}}\npart: Part(wall,outer.body)\n");
+        private construction region := patch(s,inside: b)\n}}\npart := Part(wall,outer.body)\n");
     let e = solved(&src);
     assert!(e.map.entity_path(&e.sketch,"part.region").is_none());
-    let e = build(&format!("{src}patch leak(part.region.source,inside: outer.body)\n"));
+    let e = build(&format!("{src}leak := patch(part.region.source,inside: outer.body)\n"));
     assert!(e.errors().any(|d| d.message.contains("private member")),"{:?}",e.diags);
 }
 
 #[test]
 fn patch_diagnostics_refuse_missing_or_wrong_operands_and_ambiguous_labels() {
     for (tail,want) in [
-        ("patch bad(wall)","at least one"),
-        ("patch bad(wall,inside: axis)","trim names a solid"),
-        ("patch bad(axis,inside: ring)","source must be"),
-        ("patch bad(wall,inside: missing)","no such entity"),
-        ("patch bad(source: wall,source: wall,inside: ring)","exactly one"),
+        ("bad := patch(wall)","at least one"),
+        ("bad := patch(wall,inside: axis)","trim names a solid"),
+        ("bad := patch(axis,inside: ring)","source must be"),
+        ("bad := patch(wall,inside: missing)","no such entity"),
+        ("bad := patch(source: wall,source: wall,inside: ring)","exactly one"),
         ("ground tooth","pins a point"),
     ] {
         let e = build(&format!("{SOURCE}{tail}\n"));
         assert!(e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);
     }
-    for tail in ["patch bad(wall,ring)","patch bad(wall,insdie: ring)"] {
+    for tail in ["bad := patch(wall,ring)","bad := patch(wall,insdie: ring)"] {
         let (_,errors) = syntax::parse(&format!("{SOURCE}{tail}\n"));
         assert!(!errors.is_empty());
     }

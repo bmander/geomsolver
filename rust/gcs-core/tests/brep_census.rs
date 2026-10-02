@@ -90,7 +90,7 @@ fn prism(profile: &Json, extent: Option<(f64, f64)>, out: &mut Vec<Surf>, edges:
                     out.push(Surf::Cylinder { p: vec3(e.get("center").unwrap()), a: n,
                         r: e.get("radius").unwrap().as_f64() });
                 }
-                k => panic!("edge {k}"),
+                k => panic!("{k} := edge"),
             }
         }
     }
@@ -140,7 +140,7 @@ fn revolve(node: &Json, out: &mut Vec<Surf>, edges: &mut BTreeMap<String, usize>
                         out.push(Surf::Torus { c: add(o, scale(a, zc)), a, major: rc, minor: r });
                     }
                 }
-                k => panic!("edge {k}"),
+                k => panic!("{k} := edge"),
             }
         }
     }
@@ -361,9 +361,9 @@ fn an_involute_tooth_is_its_closed_form() {
 
 /// Phase 1's tool: a native kernel's shape dumped as JSON (`SOLVENT_BREP_DUMP`), read into the
 /// core's B-rep, checked, measured and meshed. `BREP_JSON=path cargo test … brep_json_debug -- --ignored --nocapture`;
-/// `BREP_AGAINST=other` lists the faces whose fluxes differ most from the other dump's nearest
-/// (OCCT's reading of a STEP, `PATH.read`), `BREP_SHIFT=d` measures it moved (which a closed
-/// boundary's volume does not see), `BREP_BAR=mm` meshes it to that sag.
+/// `BREP_AGAINST:=other` lists the faces whose fluxes differ most from the other dump's nearest
+/// (OCCT's reading of a STEP, `PATH.read`), `BREP_SHIFT:=d` measures it moved (which a closed
+/// boundary's volume does not see), `BREP_BAR:=mm` meshes it to that sag.
 #[test]
 #[ignore]
 fn brep_json_debug() {

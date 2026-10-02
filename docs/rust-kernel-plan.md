@@ -765,7 +765,7 @@ surface, and only a loft's blend is fitted.
   split at knots. A plane square to a revolution's axis, a coaxial cylinder, cone, sphere or torus
   meets it in circles where the meridians cross (`ssi::spline_cross`); two spline meridians are
   traced. Two faces on one swept surface (a copied or overlapping prism) are one surface.
-- **Traced and formula curves in faces** (`face f(k from p to q)`, spec 0.28): the stretch of a
+- **Traced and formula curves in faces** (`f := face(k from p to q)`, spec 0.28): the stretch of a
   curve between two points held on it by their contacts, minted as a hidden curve whose interval is
   the contacts' parameters (`CurveE::trim`, `Sketch::curve_domain`). The faceted kernel walks it to
   the sheet's flatness (`curve_polyline_within`); the CAD recipe carries the cubic interpolating it

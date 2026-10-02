@@ -2,22 +2,22 @@ use gcs_core::{envelope::{Error,GeneratedEnvelope,IntersectionOptions},io,
     model::EntKind,program,solve,syntax};
 
 const MODEL: &str = "unit mm
-point o hint(x: 0,y: 0)
-point q hint(x: 0,y: 1)
-point x hint(x: 1,y: 0)
-point c hint(x: 3,y: 0)
+o := point hint(x: 0,y: 0)
+q := point hint(x: 0,y: 1)
+x := point hint(x: 1,y: 0)
+c := point hint(x: 3,y: 0)
 ground o
 ground q
 ground x
 ground c
-line axis(o,q)
-line spin_axis(o,x)
-circle meridian(center: c)
+axis := line(o,q)
+spin_axis := line(o,x)
+meridian := circle(center: c)
 radius(1mm) meridian
-solid ring(face(meridian),about: axis)
-surface wall(ring,meridian)
-motion roll(about: spin_axis)
-envelope generated(wall,under: roll,from: -20deg,to: 20deg)
+ring := solid(face(meridian),about: axis)
+wall := surface(ring,meridian)
+roll := motion(about: spin_axis)
+generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
 ";
 fn build(src: &str) -> program::Elaborated {
     let (p,errors) = syntax::parse(src);
@@ -79,8 +79,8 @@ fn retained_contacts_require_the_locus_and_keep_their_snapshot_domain() {
 
 #[test]
 fn envelope_searches_respect_the_declared_source_span() {
-    let e = solved(&MODEL.replace("surface wall(ring,meridian)",
-        "surface wall(ring,meridian,from: 180deg,to: 360deg)"));
+    let e = solved(&MODEL.replace("wall := surface(ring,meridian)",
+        "wall := surface(ring,meridian,from: 180deg,to: 360deg)"));
     let generated = GeneratedEnvelope::named(&e.sketch,0).unwrap();
     assert_eq!(generated.domain()[1],[0.5,1.]);
     assert_eq!(generated.evaluate([0.125,0.,0.1]).unwrap_err(),Error::OutsideDomain);
@@ -125,30 +125,30 @@ fn envelope_declarations_round_trip_and_follow_dependency_copy_delete() {
 #[test]
 fn envelope_formals_alias_forward_source_dependencies_and_private_members() {
     let src = format!("component Copy(e: envelope,limit: Angle) {{\n\
-        private envelope out(e.surface,under: e.motion,from: -limit,to: limit)\n}}\n\
-        copy: Copy(generated,limit: 10deg)\n{MODEL}");
+        private out := envelope(e.surface,under: e.motion,from: -limit,to: limit)\n}}\n\
+        copy := Copy(generated,limit: 10deg)\n{MODEL}");
     let e = solved(&src);
     assert_eq!(e.sketch.envelopes.len(),2);
     assert!(e.map.entity_path(&e.sketch,"copy.out").is_none());
-    let bad = build(&format!("{src}envelope bad(copy.out.surface,under: roll,from: -10deg,to: 10deg)\n"));
+    let bad = build(&format!("{src}bad := envelope(copy.out.surface,under: roll,from: -10deg,to: 10deg)\n"));
     assert!(bad.errors().any(|d| d.message.contains("private member")),"{:?}",bad.diags);
 }
 
 #[test]
 fn envelopes_reject_invalid_dependencies_and_domains() {
     for (tail,want) in [
-        ("envelope bad(axis,roll,from: -1deg,to: 1deg)","valid surface"),
-        ("envelope bad(wall,axis,from: -1deg,to: 1deg)","valid motion"),
-        ("envelope bad(wall,roll,from: 1mm,to: 2mm)","envelope bound"),
-        ("envelope bad(wall,roll,from: 1deg,to: 1deg)","increasing"),
-        ("envelope bad(wall,roll,from: 1deg,to: -1deg)","increasing"),
+        ("bad := envelope(axis,roll,from: -1deg,to: 1deg)","valid surface"),
+        ("bad := envelope(wall,axis,from: -1deg,to: 1deg)","valid motion"),
+        ("bad := envelope(wall,roll,from: 1mm,to: 2mm)","envelope bound"),
+        ("bad := envelope(wall,roll,from: 1deg,to: 1deg)","increasing"),
+        ("bad := envelope(wall,roll,from: 1deg,to: -1deg)","increasing"),
         ("ground generated","pins a point"),
     ] {
         let e = build(&format!("{MODEL}{tail}\n"));
         assert!(!e.ok() && e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);
     }
     for args in ["wall,roll", "wall,roll,from: 0deg", "wall,roll,from: 0deg,to: 1deg,to: 2deg"] {
-        assert!(!syntax::parse(&format!("envelope bad({args})\n")).1.is_empty());
+        assert!(!syntax::parse(&format!("bad := envelope({args})\n")).1.is_empty());
     }
 }
 
@@ -166,7 +166,7 @@ fn envelope_roots_on_domain_edges_are_reached_without_accepting_false_boundary_r
         Error::NotConverged);
     // A surface family with no motion has an identically zero equation; it does not
     // define an isolated characteristic, even though its initial residual is zero.
-    let e = solved(&MODEL.replace("motion roll(about: spin_axis)","motion roll(about: spin_axis,ratio: 0)"));
+    let e = solved(&MODEL.replace("roll := motion(about: spin_axis)","roll := motion(about: spin_axis,ratio: 0)"));
     let stationary = GeneratedEnvelope::named(&e.sketch,0).unwrap();
     assert_eq!(stationary.intersect(|_,_| [0.,0.],[0.125,0.05,0.1],options).unwrap_err(),
         Error::SingularIntersection);

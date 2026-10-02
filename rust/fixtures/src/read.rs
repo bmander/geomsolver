@@ -18,7 +18,12 @@ pub fn elaborate(source: &str,resolver: &mut dyn FnMut(&str) -> Option<String>) 
 
 /// Parse one source, link it through `resolver` and elaborate it, left where its seeds put it.
 pub fn unsolved(source: &str,resolver: &mut dyn FnMut(&str) -> Option<String>) -> program::Elaborated {
-    let (mut p,errors) = syntax::parse(source); assert!(errors.is_empty(),"{errors:?}");
+    let (mut p,errors) = syntax::parse(source);
+    assert!(errors.is_empty(),"{errors:?}\n{}",errors.iter().map(|e| {
+        let lo = source[..e.span.lo as usize].rfind('\n').map_or(0,|k| k+1);
+        let hi = source[e.span.lo as usize..].find('\n').map_or(source.len(),|k| e.span.lo as usize+k);
+        source[lo..hi].to_string()
+    }).collect::<Vec<_>>().join("\n"));
     let errors = gcs_core::modules::link(&mut p,resolver);
     assert!(errors.is_empty(),"{errors:?}");
     let e = program::elaborate(&p); assert!(e.ok(),"{:?}",e.diags);

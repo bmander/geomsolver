@@ -18,26 +18,26 @@
 // length in the unit a person has in hand: `c1 distance(3 1/8"` is 79.375 here.) c2
 unit mm
 
-param length = 80
-param r = 15
-param hole_r = 6
+length := 80
+r := 15
+hole_r := 6
 
-point c1 hint(x: 0, y: 0)
-point c2 hint(x: length, y: 0)
+c1 := point hint(x: 0, y: 0)
+c2 := point hint(x: length, y: 0)
 
-point t1 hint(x: 0, y: r)
-point t2 hint(x: length, y: r)
-line  top(t1, t2)
+t1 := point hint(x: 0, y: r)
+t2 := point hint(x: length, y: r)
+top := line(t1, t2)
 
-point b1 hint(x: length, y: 0 - r)
-point b2 hint(x: 0, y: 0 - r)
-line  bottom(b1, b2)
+b1 := point hint(x: length, y: 0 - r)
+b2 := point hint(x: 0, y: 0 - r)
+bottom := line(b1, b2)
 
-arc a_right(center: c2, start: b1, end: t2) hint(r: r)
-arc a_left(center: c1, start: t1, end: b2) hint(r: r)
+a_right := arc(center: c2, start: b1, end: t2) hint(r: r)
+a_left := arc(center: c1, start: t1, end: b2) hint(r: r)
 
-circle h1(center: c1) hint(r: hole_r)
-circle h2(center: c2) hint(r: hole_r)
+h1 := circle(center: c1) hint(r: hole_r)
+h2 := circle(center: c2) hint(r: hole_r)
 
 a_right tangent(at: start) bottom
 a_right tangent(at: end) top

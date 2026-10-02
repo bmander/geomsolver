@@ -119,7 +119,7 @@ fn build_loop(
         }
     }
     if refs.is_empty() {
-        report(Code::E080, span, "a face is a loop of edges: `face f(ab, bc, cd, da)`".into());
+        report(Code::E080, span, "a face is a loop of edges: `f := face(ab, bc, cd, da)`".into());
         return None;
     }
     // what one item of the walk is: an edge, or a corner the loop goes straight to

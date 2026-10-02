@@ -9,32 +9,32 @@ await initCore();
 
 test('patch sampling requires both the declared material side and source incidence', () => {
   const doc = Document.read(`unit mm
-point o hint(x: 0,y: 0)
-point q hint(x: 0,y: 1)
-point x hint(x: 1,y: 0)
-point c hint(x: 3,y: 0)
-point b hint(x: 0,y: -3.5)
-point t hint(x: 0,y: 3.5)
+o := point hint(x: 0,y: 0)
+q := point hint(x: 0,y: 1)
+x := point hint(x: 1,y: 0)
+c := point hint(x: 3,y: 0)
+b := point hint(x: 0,y: -3.5)
+t := point hint(x: 0,y: 3.5)
 ground o
 ground q
 ground x
 ground c
 ground b
 ground t
-line axis(o,q)
-line spin_axis(o,x)
-circle meridian(center: c)
+axis := line(o,q)
+spin_axis := line(o,x)
+meridian := circle(center: c)
 radius(1mm) meridian
-solid ring(face(meridian),about: axis)
-surface wall(ring,meridian)
-arc rim(center: o,start: b,end: t)
+ring := solid(face(meridian),about: axis)
+wall := surface(ring,meridian)
+rim := arc(center: o,start: b,end: t)
 radius(3.5mm) rim
-line diameter(t,b)
-solid limit(face(rim,diameter),about: diameter)
-motion roll(about: spin_axis)
-envelope generated(wall,under: roll,from: -20deg,to: 20deg)
-patch bounded(wall,inside: limit)
-patch tooth(generated,inside: limit)
+diameter := line(t,b)
+limit := solid(face(rim,diameter),about: diameter)
+roll := motion(about: spin_axis)
+generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
+bounded := patch(wall,inside: limit)
+tooth := patch(generated,inside: limit)
 `);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));

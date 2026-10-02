@@ -995,7 +995,7 @@ test('classes round-trip, and the core resolves what they look like', () => {
 test('a claimed callout takes the dimension rule and then its own', () => {
   // `paint.ts` asks for both classes, because a reference dimension *is* a dimension: a sheet
   // that recoloured `.dimension` alone would otherwise recolour only the unclaimed half
-  const plain = Document.read('point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\n');
+  const plain = Document.read('a := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\n');
   assert.equal(plain.sketch.styleNamed('dimension').color, '#0f6f7a');
   assert.equal(plain.sketch.styleNamed('dimension reference').color, '#7aa7ad');
   assert.equal(plain.sketch.styleNamed('dimension reference').width,
@@ -1003,7 +1003,7 @@ test('a claimed callout takes the dimension rule and then its own', () => {
   plain.dispose();
 
   const styled = Document.read(
-    'style .dimension { color: #b00020; width: 2 }\npoint a hint(x: 0, y: 0)\n');
+    'style .dimension { color: #b00020; width: 2 }\na := point hint(x: 0, y: 0)\n');
   assert.equal(styled.ok, false);
   assert.ok(styled.diagnostics.some(d => d.message.includes('.svd')));
   styled.dispose();
@@ -1263,16 +1263,16 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   // layer's business and not the geometry, whose test is `gcs-core/tests/mesh.rs`.
   const src = [
     'unit mm',
-    'point a hint(x: 0, y: 0)', 'point b hint(x: 60, y: 0)',
-    'point c hint(x: 60, y: 40)', 'point d hint(x: 0, y: 40)',
-    'line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close',
+    'a := point hint(x: 0, y: 0)', 'b := point hint(x: 60, y: 0)',
+    'c := point hint(x: 60, y: 40)', 'd := point hint(x: 0, y: 40)',
+    '(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close',
     'horizontal ab', 'vertical bc', 'a distance(60) b', 'a distance(40) d', 'ground a',
-    'face sec(ab, bc, cd, da)',
-    'point o hint(x: 30, y: 20)',
+    'sec := face(ab, bc, cd, da)',
+    'o := point hint(x: 30, y: 20)',
     'a distance(30, along: x) o', 'a distance(20, along: y) o',
-    'circle hole(center: o) hint(r: 8)', 'radius(8) hole', 'face hole_f(hole)',
-    'solid stock(sec, depth: 30mm)', 'solid bore(hole_f, through: body)',
-    'solid body(stock)', 'bore cut body', '',
+    'hole := circle(center: o) hint(r: 8)', 'radius(8) hole', 'hole_f := face(hole)',
+    'stock := solid(sec, depth: 30mm)', 'bore := solid(hole_f, through: body)',
+    'body := solid(stock)', 'bore cut body', '',
   ].join('\n');
   const doc = Document.read(src);
   assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
@@ -1306,9 +1306,9 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
 
 test('a named component chain reaches the browser as the same swept mesh', () => {
   const src = [
-    'unit mm', 'use components.parts', 'point O hint(x: 0, y: 0)', 'ground O',
-    'boss: Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)',
-    'solid block(boss.profile, depth: 8mm)', '',
+    'unit mm', 'use components.parts', 'O := point hint(x: 0, y: 0)', 'ground O',
+    'boss := Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)',
+    'block := solid(boss.profile, depth: 8mm)', '',
   ].join('\n');
   const doc = Document.read(src);
   const old = Document.read(src.replace('boss.profile', 'face(boss.ab, boss.bc, boss.cd, boss.da)'));
@@ -1318,7 +1318,7 @@ test('a named component chain reaches the browser as the same swept mesh', () =>
   }
   assert.deepEqual(mesh(doc.sketch, doc.solids()[0].index, 2e-3),
     mesh(old.sketch, old.solids()[0].index, 2e-3));
-  const bad = Document.read('trail = line -> line\nsolid bad(trail, depth: 8)\n');
+  const bad = Document.read('trail := line -> line\nbad := solid(trail, depth: 8)\n');
   assert.equal(bad.ok, false);
   assert.ok(bad.diagnostics.some((d) => d.message.includes('open chain')));
 });
@@ -1397,12 +1397,12 @@ function threeDims(texts: [string, string, string]): { sk: Sketch; cs: Constrain
 
 test('dimensions written as expressions are evaluated in dependency order', () => {
   // the reader comes first in the document, the definition last
-  const { sk, cs } = threeDims(['sin(h * 10)', 'h = w * 2', 'w = 1']);
+  const { sk, cs } = threeDims(['sin(h * 10)', 'h := w * 2', 'w := 1']);
   assert.equal(num(cs[2].d), 1);
   assert.equal(num(cs[1].d), 2);
   assert.ok(Math.abs(num(cs[0].d) - Math.sin((20 * Math.PI) / 180)) < 1e-12);
-  assert.equal(cs[1].expr('d'), 'h = w * 2');
-  assert.equal(cs[1].describe(), 'P2 distance(h = w * 2 = 2) P3');
+  assert.equal(cs[1].expr('d'), 'h := w * 2');
+  assert.equal(cs[1].describe(), 'P2 distance(h := w * 2 = 2) P3');
   const items = expressions(sk);
   assert.deepEqual(items.map((it) => it.id), [cs[2].id, cs[1].id, cs[0].id]);
   assert.deepEqual(items[1].deps, ['w']);
@@ -1415,9 +1415,9 @@ test('dimensions written as expressions are evaluated in dependency order', () =
 });
 
 test('editing one dimension moves every proxy that reads it', () => {
-  const { sk, cs } = threeDims(['w = 3', 'h = w * 2', 'h + 1']);
+  const { sk, cs } = threeDims(['w := 3', 'h := w * 2', 'h + 1']);
   assert.equal(cs[2].d, 7);
-  assert.equal(cs[0].setDimension('d', 'w = 5'), null);
+  assert.equal(cs[0].setDimension('d', 'w := 5'), null);
   assert.equal(cs[1].d, 10);                  // re-read from the core, nothing told this proxy
   assert.equal(cs[2].d, 11);
   // a bare number is a constant again; nothing defines `w` now, so it becomes a free variable
@@ -1434,7 +1434,7 @@ test('editing one dimension moves every proxy that reads it', () => {
   assert.match(cs[0].setDimension('d', 'q * q') ?? '', /`q` is free/);
   assert.equal(cs[0].d, 4);
   // a cycle is named
-  cs[0].setDimension('d', 'w = h');
+  cs[0].setDimension('d', 'w := h');
   assert.match(expressions(sk).find((it) => it.id === cs[0].id)?.error ?? '', /circular/);
   // angles are written in degrees — as text at construction too, where a bare number is a
   // constant under the same rule (what the Dimension tool sends)
@@ -1444,7 +1444,7 @@ test('editing one dimension moves every proxy that reads it', () => {
   sk2.add(ang);
   assert.ok(Math.abs(num(ang.theta) - Math.PI / 6) < 1e-12);
   assert.equal(ang.expr('theta'), null);
-  ang.setDimension('theta', 'a = 30');
+  ang.setDimension('theta', 'a := 30');
   assert.ok(Math.abs(num(ang.theta) - Math.PI / 6) < 1e-12);
   assert.equal(expressions(sk2)[0].value, 30);
   sk.dispose();
@@ -1452,10 +1452,10 @@ test('editing one dimension moves every proxy that reads it', () => {
 });
 
 test('expressions round-trip through the document and survive a rebuild', () => {
-  const { sk, cs } = threeDims(['w = 3', 'h = w * 2', 'h + 1']);
+  const { sk, cs } = threeDims(['w := 3', 'h := w * 2', 'h + 1']);
   const sk2 = io.loads(io.dumps(sk));
   assert.equal(io.dumps(sk2), io.dumps(sk));
-  assert.equal(sk2.constraints[1].expr('d'), 'h = w * 2');
+  assert.equal(sk2.constraints[1].expr('d'), 'h := w * 2');
   assert.equal(sk2.constraints[1].d, 6);
   // deleting the definition: nothing defines `w` any more, so it is a free variable — the
   // relation outlives its definition and the readers keep their numbers
@@ -1506,7 +1506,7 @@ test('pythagoras drawn with expressions holds, and stays true when a leg is edit
     for (const ln of sk.lines.slice(-4)) {             // the hypotenuses are the inner square
       assert.ok(Math.abs(Math.hypot(ln.p1.x.value - ln.p2.x.value, ln.p1.y.value - ln.p2.y.value) - c) < 1e-6);
     }
-    const cc = sk.constraints.find((k) => k.expr('d') === 'c = hypot(a, b)')!;
+    const cc = sk.constraints.find((k) => k.expr('d') === 'c := hypot(a, b)')!;
     assert.ok(Math.abs(num(cc.d) - c) < 1e-9);
     assert.ok(cc.claim, 'the hypotenuse is stated as a claim');
     const d = diagnose(sk);
@@ -1518,8 +1518,8 @@ test('pythagoras drawn with expressions holds, and stays true when a leg is edit
     assert.equal(d.conflicts?.length ?? 0, 0);
   };
   check(30, 40);
-  const a = sk.constraints.find((k) => k.expr('d') === 'a = 30')!;
-  assert.equal(a.setDimension('d', 'a = 50'), null);
+  const a = sk.constraints.find((k) => k.expr('d') === 'a := 30')!;
+  assert.equal(a.setDimension('d', 'a := 50'), null);
   check(50, 40);
   sk.dispose();
 });
@@ -1695,9 +1695,9 @@ test('a dimension written as a mixed fraction keeps the way it was written', () 
   // and it reaches the drawing, which is the point of keeping it
   assert.ok(callouts(sk, 0.1).items.some((k) => k.text === '3 1/8'));
 
-  assert.equal(d.setDimension('d', 'w = 12 3/8'), null);
+  assert.equal(d.setDimension('d', 'w := 12 3/8'), null);
   assert.ok(Math.abs(num(d.d) - 12.375) < 1e-12);
-  assert.equal(d.expr('d'), 'w = 12 3/8');
+  assert.equal(d.expr('d'), 'w := 12 3/8');
   assert.throws(() => d.setDimension('d', '3 1/0'));
   sk.dispose();
 });
@@ -1784,9 +1784,9 @@ test('a name nothing defines is a free variable that ties the dimensions reading
 
 test('an ellipse is a curve of the library, and a point solves onto its rim', () => {
   const d = Document.read(
-    'use std\npoint o hint(x: 10, y: 5)\npoint q hint(x: 18, y: 5)\n'
-    + 'plane f(origin: o, toward: q)\ncurve e = Ellipse(f, a: 8, b: 3).p over u in (0, 360)\n'
-    + 'ground o\nground q\npoint p hint(x: 11, y: 9)\np on e hint(t: 80)\n');
+    'use std\no := point hint(x: 10, y: 5)\nq := point hint(x: 18, y: 5)\n'
+    + 'f := plane(origin: o, toward: q)\ne := Ellipse(f, a: 8, b: 3).p over u in (0, 360)\n'
+    + 'ground o\nground q\np := point hint(x: 11, y: 9)\np on e hint(t: 80)\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   const sk = d.sketch;
   assert.equal(sk.curves.length, 1);
@@ -1959,15 +1959,15 @@ test('the overview folds the views into the box, and is flat looked at square on
 });
 
 test('a plane is written through the edit API, and its minted points answer by name', () => {
-  const d = Document.read('point o hint(x: 0, y: 0)\npoint q hint(x: 1, y: 0)\n'
-                          + 'plane front(origin: o, toward: q)\n');
+  const d = Document.read('o := point hint(x: 0, y: 0)\nq := point hint(x: 1, y: 0)\n'
+                          + 'front := plane(origin: o, toward: q)\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   // the places go into the statement: the chord the frame is read off is the one asked for
   const e = d.addEntity('plane', [], [], { from: 'front', fold: '-90deg' }, 'right',
                         [[150, 0], [150, -1]]);
   assert.equal(e.kind, 'structural');
   assert.deepEqual(e.names, ['right']);
-  assert.ok(e.text.includes('plane   right(origin: hint(x: 150, y: 0), toward: hint(x: 150, '
+  assert.ok(e.text.includes('right := plane(origin: hint(x: 150, y: 0), toward: hint(x: 150, '
                             + 'y: -1), from: front, fold: -90deg)'), e.text);
   const next = Document.read(e.text);
   assert.ok(next.ok, JSON.stringify(next.diagnostics));
@@ -1987,7 +1987,7 @@ test('a plane is written through the edit API, and its minted points answer by n
   near3(right.basis.v, [0, 1, 0], 'v');
   // without places the two points are scattered, and the statement carries no seed
   const bare = d.addEntity('plane', [], [], null, 'aux');
-  assert.ok(/plane\s+aux\b/.test(bare.text) && !bare.text.includes('aux(origin: hint'), bare.text);
+  assert.ok(/aux := plane\b/.test(bare.text) && !bare.text.includes('aux := plane(origin: hint'), bare.text);
   // a taken name is refused with the cause; an unnamed plane is minted one, as a view
   assert.ok(d.addEntity('plane', [], [], null, 'front').refused, 'the name is taken');
   assert.deepEqual(d.addEntity('plane', [], []).names, ['v0']);
@@ -1998,7 +1998,7 @@ test('a plane is written through the edit API, and its minted points answer by n
   p.plane = next.sketch.planes[0];
   const r = next.reconcile();
   assert.ok(!r.refused, r.refused ?? '');
-  assert.ok(/point\s+p0 hint\(x: 3, y: 4\) in front/.test(r.text), r.text);
+  assert.ok(/p0 := point hint\(x: 3, y: 4\) in front/.test(r.text), r.text);
   next.dispose();
   d.dispose();
 });
@@ -2020,10 +2020,10 @@ test('a sketch prints as a program and reads back the same', () => {
 
 test('a program written by hand draws', () => {
   const d = Document.read([
-    'point a hint(x: 0, y: 0)',
-    'point b hint(x: 100, y: 0)',
-    'line  ab(a, b)',
-    'a distance(w = 60) b',
+    'a := point hint(x: 0, y: 0)',
+    'b := point hint(x: 100, y: 0)',
+    'ab := line(a, b)',
+    'a distance(w := 60) b',
     'horizontal ab',
     'ground a',
   ].join('\n'));
@@ -2034,7 +2034,7 @@ test('a program written by hand draws', () => {
 });
 
 test('a program with a bad line reports it and draws the rest', () => {
-  const d = Document.read('point a hint(x: 0, y: 0)\nnonsense here\npoint b hint(x: 5, y: 5)\n');
+  const d = Document.read('a := point hint(x: 0, y: 0)\nnonsense here\nb := point hint(x: 5, y: 5)\n');
   assert.ok(!d.ok);
   assert.ok(d.diagnostics.length > 0);
   assert.ok(d.diagnostics[0].line >= 1 && d.diagnostics[0].code.length === 4);
@@ -2049,7 +2049,7 @@ test('the source map says where each entity was written', () => {
   assert.ok(d.map.entities.length >= sk.points.length);
   const p0 = d.map.entities.find((x) => x.name === 'p0')!;
   assert.ok(p0, 'p0 is in the map');
-  assert.ok(text.slice(p0.lo, p0.hi).startsWith('point'), text.slice(p0.lo, p0.hi));
+  assert.ok(text.slice(p0.lo, p0.hi).startsWith('p0 := point'), text.slice(p0.lo, p0.hi));
   d.dispose();
   sk.dispose();
 });
@@ -2098,16 +2098,16 @@ test('the gear is a program, and its flanks are involutes the language defines',
 
 const TRIANGLE = `\
 // a triangle, and this comment must survive every edit
-point a hint(x: 0, y: 0)
-point b hint(x: 100, y: 0)
-point c hint(x: 40, y: 70)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 100, y: 0)
+c := point hint(x: 40, y: 70)
 
-line ab(a, b)      // the base
-line bc(b, c)
-line ca(c, a)
+ab := line(a, b)      // the base
+bc := line(b, c)
+ca := line(c, a)
 
 horizontal ab
-a distance(w = 140) b
+a distance(w := 140) b
 ground a
 `;
 
@@ -2117,7 +2117,7 @@ test('an edit is a new text, and the document is unchanged until it is applied',
   const e = d.addPoint(12.5, -3);
   assert.equal(e.kind, 'structural');
   assert.deepEqual(e.names, ['p0']);
-  assert.ok(e.text.includes('point   p0 hint(x: 12.5, y: -3)'), e.text);
+  assert.ok(e.text.includes('p0 := point hint(x: 12.5, y: -3)'), e.text);
   assert.equal(d.text, TRIANGLE, 'the document has not moved');
   assert.equal(d.sketch.points.length, 3);
   const next = Document.read(e.text);
@@ -2133,13 +2133,13 @@ test('a solve writes the seeds back and touches nothing else', () => {
   const e = d.commitSeeds();
   assert.equal(e.kind, 'numeric', 'a seed is not a statement');
   assert.ok(e.text.includes('// a triangle, and this comment must survive every edit'));
-  assert.ok(e.text.includes('line ab(a, b)      // the base'));
-  assert.ok(e.text.includes('a distance(w = 140) b'), 'the dimension is not a seed');
+  assert.ok(e.text.includes('ab := line(a, b)      // the base'));
+  assert.ok(e.text.includes('a distance(w := 140) b'), 'the dimension is not a seed');
   const before = TRIANGLE.split('\n');
   const after = e.text.split('\n');
   assert.equal(before.length, after.length);
   for (let i = 0; i < before.length; i++) {
-    if (before[i].startsWith('point ')) continue;
+    if (before[i].includes(' := point ')) continue;
     assert.equal(after[i], before[i], `line ${i + 1} changed`);
   }
   d.dispose();
@@ -2200,7 +2200,7 @@ test('an anonymous element is named the moment the source must say it', () => {
   d.sketch.add(new C.Horizontal(d.sketch.lines[0]));
   const e = d.reconcile();
   assert.ok(!e.refused, e.refused ?? '');
-  assert.ok(e.text.includes('line l0('), e.text);
+  assert.ok(e.text.includes('l0 := line('), e.text);
   assert.ok(e.text.includes('horizontal l0'), e.text);
   const next = Document.read(e.text);
   assert.ok(next.ok, JSON.stringify(next.diagnostics));
@@ -2215,7 +2215,7 @@ test('the rect tool writes a component instance, and the component once', () => 
   assert.equal(first.kind, 'structural');
   assert.equal(first.names[0], 'r0');
   assert.ok(first.text.includes('component Rectangle(w: Length, h: Length)'), first.text);
-  assert.ok(first.text.includes('r0: Rectangle(w: 120, h: 60)'), first.text);
+  assert.ok(first.text.includes('r0 := Rectangle(w: 120, h: 60)'), first.text);
   d.dispose();
   d = Document.read(first.text);
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
@@ -2250,7 +2250,7 @@ test('editing a number splices the number, and a name is a column', () => {
   assert.equal(again.kind, 'numeric', 'a bare number cannot move the topology');
   assert.ok(again.text.includes('a distance(170) b'), again.text);
 
-  const named = plain.setDimension(same.id, 'd', 'w = 170');
+  const named = plain.setDimension(same.id, 'd', 'w := 170');
   assert.equal(named.kind, 'structural', 'a name may be a free variable');
   plain.dispose();
   d.dispose();
@@ -2259,9 +2259,9 @@ test('editing a number splices the number, and a name is a column', () => {
 test('deleting a point takes the statements that named it', () => {
   const d = Document.read(TRIANGLE);
   const e = d.remove([d.sketch.points[2]]);
-  assert.ok(!e.text.includes('point c at'), e.text);
-  assert.ok(!e.text.includes('line bc'), e.text);
-  assert.ok(e.text.includes('line ab(a, b)      // the base'));
+  assert.ok(!e.text.includes('c := point'), e.text);
+  assert.ok(!e.text.includes('bc := line'), e.text);
+  assert.ok(e.text.includes('ab := line(a, b)      // the base'));
   const next = Document.read(e.text);
   assert.equal(next.sketch.points.length, 2);
   assert.equal(next.sketch.lines.length, 1);
@@ -2302,10 +2302,10 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
   // the gear's centre is declared well past the em dash, so its span is only right if converted
   const centre = d.map.entities.find((x) => x.name === 'g.center')!;
   assert.ok(centre && centre.lo > dash, 'the centre is in the map, past the em dash');
-  assert.equal(text.slice(centre.lo, centre.hi), 'point center hint(x: 0, y: 0)');
+  assert.equal(text.slice(centre.lo, centre.hi), 'center := point hint(x: 0, y: 0)');
   const lo = d.map.entities.find((x) => x.name?.endsWith('.t.r.lo'))!;
   assert.ok(lo, 'a flank end is in the map');
-  assert.equal(text.slice(lo.lo, lo.hi), 'point lo hint(x: 0, y: 0)');
+  assert.equal(text.slice(lo.lo, lo.hi), 'lo := point hint(x: 0, y: 0)');
   d.dispose();
 
   // and a diagnostic points at the words it is about, on a line past the em dash
@@ -2344,10 +2344,10 @@ test('dragging the gear does not rewrite the gear', () => {
 
 test('a rectangle joins the view it is drawn in, whole', () => {
   const d = Document.read(
-    'point o hint(x: 0, y: 0)\npoint q hint(x: 40, y: 0)\nplane front(origin: o, toward: q)\n',
+    'o := point hint(x: 0, y: 0)\nq := point hint(x: 40, y: 0)\nfront := plane(origin: o, toward: q)\n',
   );
   const e = d.addRectangle(30, 20, 'front');
-  assert.ok(e.text.includes(': Rectangle(w: 30, h: 20) in front'), e.text);
+  assert.ok(e.text.includes(' := Rectangle(w: 30, h: 20) in front'), e.text);
   const d2 = Document.read(e.text);
   assert.ok(d2.ok, d2.diagnostics.map((x) => x.message).join());
   const front = d2.sketch.planes[0];
@@ -2358,8 +2358,8 @@ test('a rectangle joins the view it is drawn in, whole', () => {
 });
 
 test('a module the host hands over resolves a use before the library', async () => {
-  const doc = 'use demo.parts\npoint o hint(x: 0, y: 0)\nground o\nr: Rung(o)\n';
-  const mod = 'component Rung(a: point) {\n  point b\n  line e(a, b)\n  horizontal e\n  a distance(10) b\n}\n';
+  const doc = 'use demo.parts\no := point hint(x: 0, y: 0)\nground o\nr := Rung(o)\n';
+  const mod = 'component Rung(a: point) {\n  b := point\n  e := line(a, b)\n  horizontal e\n  a distance(10) b\n}\n';
   assert.deepEqual(modules.uses(doc), ['demo.parts']);
   assert.equal(modules.pathOf('demo.parts'), 'demo/parts.sv');
   const unresolved = Document.read(doc);

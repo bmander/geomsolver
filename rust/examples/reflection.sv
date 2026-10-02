@@ -18,30 +18,30 @@
 // diagnosis judges the claim a theorem — true, and adding nothing the equal angles had not
 // already said.  Drag the source or the target (or edit a number) and it stays one.
 
-point m1 hint(x: 0, y: 0)
-point m2 hint(x: 100, y: 0)
-line m(m1, m2)
+m1 := point hint(x: 0, y: 0)
+m2 := point hint(x: 100, y: 0)
+m := line(m1, m2)
 horizontal m
 m1 distance(100) m2
 ground m1
 
 // the source and the target, each a station along the mirror and a height above it
-point s hint(x: 10, y: 40)
-point t hint(x: 90, y: 20)
+s := point hint(x: 10, y: 40)
+t := point hint(x: 90, y: 20)
 m1 distance(10, along: x) s
 s distance(40, side: left) m
 m1 distance(90, along: x) t
 t distance(20, side: left) m
 
 // the ray, and the one statement that places where it strikes
-point p hint(x: 50, y: 0)
+p := point hint(x: 50, y: 0)
 p on m
-line incoming(s, p)
-line outgoing(p, t)
+incoming := line(s, p)
+outgoing := line(p, t)
 incoming angle(m, outgoing) m
 
 // the image of the source in the mirror lies on the line from the strike to the target
-point image hint(x: 10, y: -40)
+image := point hint(x: 10, y: -40)
 s symmetry(m) image
-line sight(image, t)
+sight := line(image, t)
 claim p on sight

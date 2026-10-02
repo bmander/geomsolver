@@ -1,17 +1,17 @@
 use gcs_core::{diagnose,io,model::{EntKind,EntRef},program,solid::RevolvedSurface,solve,syntax};
 
 const MODEL: &str = "unit mm
-point o hint(x: 0, y: 0)
-point q hint(x: 0, y: 1)
-point c hint(x: 3, y: 0)
+o := point hint(x: 0, y: 0)
+q := point hint(x: 0, y: 1)
+c := point hint(x: 3, y: 0)
 ground o
 ground q
 ground c
-line axis(o,q)
-circle meridian(center: c)
+axis := line(o,q)
+meridian := circle(center: c)
 radius(1mm) meridian
-solid ring(face(meridian), about: axis)
-surface wall(ring, meridian)
+ring := solid(face(meridian), about: axis)
+wall := surface(ring, meridian)
 ";
 
 fn build(src: &str) -> program::Elaborated {
@@ -113,15 +113,15 @@ fn surface_references_survive_flat_printing_copy_paste_and_dependency_deletion()
 
 #[test]
 fn surfaces_pass_through_components_and_keep_private_names_private() {
-    let inner = MODEL.replace("unit mm\n","").replace("surface wall", "private surface wall");
-    let src = format!("unit mm\ncomponent Part() {{\n{inner}}}\np: Part()\n");
+    let inner = MODEL.replace("unit mm\n","").replace("wall := surface", "private wall := surface");
+    let src = format!("unit mm\ncomponent Part() {{\n{inner}}}\np := Part()\n");
     let e = solved(&src);
     assert!(e.map.entity_path(&e.sketch,"p.wall").is_none());
-    let e = build(&format!("{src}surface forbidden(p.wall.solid,p.wall.edge)\n"));
+    let e = build(&format!("{src}forbidden := surface(p.wall.solid,p.wall.edge)\n"));
     assert!(e.errors().any(|d| d.message.contains("private member")),"{:?}",e.diags);
     // A surface formal aliases the source, including declared child paths before it is built.
-    let forwarded = format!("component Copy(s: surface) {{ surface out(s.solid,s.edge) }}\n\
-        copy: Copy(wall)\n{MODEL}");
+    let forwarded = format!("component Copy(s: surface) {{ out := surface(s.solid,s.edge) }}\n\
+        copy := Copy(wall)\n{MODEL}");
     let e = solved(&forwarded);
     assert_eq!(e.sketch.surfaces.len(),2);
     let a = e.map.ent_named("copy.out").unwrap();
@@ -131,9 +131,9 @@ fn surfaces_pass_through_components_and_keep_private_names_private() {
 
 #[test]
 fn angular_surface_spans_keep_source_parameters_and_finite_incidence() {
-    let src = MODEL.replace("surface wall(ring, meridian)",
-        "param begin = 180deg\nparam end = begin + 180deg\n\
-         surface wall(ring, meridian, from: begin, to: end)");
+    let src = MODEL.replace("wall := surface(ring, meridian)",
+        "begin := 180deg\nend := begin + 180deg\n\
+         wall := surface(ring, meridian, from: begin, to: end)");
     let e = solved(&src);
     let s = RevolvedSurface::named(&e.sketch,0).unwrap();
     assert_eq!(s.domain(),[[0.,1.],[0.5,1.]]);
@@ -164,8 +164,8 @@ fn angular_surface_spans_keep_source_parameters_and_finite_incidence() {
 fn surface_spans_follow_sweep_sense_and_component_angles() {
     let source = MODEL.replace("about: axis)","about: axis, sweep: 90deg, sense: cw)");
     let source = format!("component Portion(s: solid,e: circle,start: Angle,end: Angle) {{\n\
-        surface part(s,e,from: start,to: end)\n}}\n\
-        portion: Portion(ring,meridian,start: 30deg,end: 60deg)\n{source}");
+        part := surface(s,e,from: start,to: end)\n}}\n\
+        portion := Portion(ring,meridian,start: 30deg,end: 60deg)\n{source}");
     let e = solved(&source);
     let part = e.map.ent_named("portion.part").unwrap();
     let s = RevolvedSurface::named(&e.sketch,part.i()).unwrap();
@@ -180,15 +180,15 @@ fn surface_spans_follow_sweep_sense_and_component_angles() {
 #[test]
 fn surface_spans_refuse_missing_reversed_and_out_of_sweep_angles() {
     for bounds in ["from: 30deg", "from: 30deg, from: 40deg, to: 60deg"] {
-        let (_,errors) = syntax::parse(&MODEL.replace("surface wall(ring, meridian)",
-            &format!("surface wall(ring, meridian, {bounds})")));
+        let (_,errors) = syntax::parse(&MODEL.replace("wall := surface(ring, meridian)",
+            &format!("wall := surface(ring, meridian, {bounds})")));
         assert!(!errors.is_empty());
     }
     for (bounds,want) in [("from: 30deg, to: 20deg","increasing"),
         ("from: -1deg, to: 90deg","within"),("from: 0deg, to: 361deg","within"),
         ("from: 0mm, to: 90deg","Angle")] {
-        let e = build(&MODEL.replace("surface wall(ring, meridian)",
-            &format!("surface wall(ring, meridian, {bounds})")));
+        let e = build(&MODEL.replace("wall := surface(ring, meridian)",
+            &format!("wall := surface(ring, meridian, {bounds})")));
         assert!(e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);
     }
 }
@@ -196,10 +196,10 @@ fn surface_spans_refuse_missing_reversed_and_out_of_sweep_angles() {
 #[test]
 fn a_surface_refuses_wrong_solids_edges_and_planar_constraints() {
     for (tail,want) in [
-        ("surface bad(meridian,meridian)","first argument is a solid"),
-        ("surface bad(ring,axis)","not a boundary"),
-        ("solid prism(face(meridian),depth: 2mm)\nsurface bad(prism,meridian)","unmodified revolution"),
-        ("surface bad(missing,meridian)","no such entity"),
+        ("bad := surface(meridian,meridian)","first argument is a solid"),
+        ("bad := surface(ring,axis)","not a boundary"),
+        ("prism := solid(face(meridian),depth: 2mm)\nbad := surface(prism,meridian)","unmodified revolution"),
+        ("bad := surface(missing,meridian)","no such entity"),
         ("ground wall","pins a point"),
     ] {
         let e = build(&format!("{MODEL}{tail}\n"));
@@ -239,21 +239,21 @@ fn analytic_projection_preserves_orientation_and_distinguishes_finite_patches() 
 #[test]
 fn straight_meridian_sphere_sections_return_all_finite_roots() {
     let e = solved("unit mm
-point a hint(x: 1,y: -2)
-point b hint(x: 1,y: 2)
-point c hint(x: 0,y: 2)
-point d hint(x: 0,y: -2)
+a := point hint(x: 1,y: -2)
+b := point hint(x: 1,y: 2)
+c := point hint(x: 0,y: 2)
+d := point hint(x: 0,y: -2)
 ground a
 ground b
 ground c
 ground d
-line side(a,b)
-line top(b,c)
-line axis(d,c)
-line bottom(d,a)
-face profile(side,top,axis,bottom)
-solid drum(profile,about: axis)
-surface wall(drum,side)
+side := line(a,b)
+top := line(b,c)
+axis := line(d,c)
+bottom := line(d,a)
+profile := face(side,top,axis,bottom)
+drum := solid(profile,about: axis)
+wall := surface(drum,side)
 ");
     let s = RevolvedSurface::named(&e.sketch,0).unwrap();
     let [p,d,dd] = s.generating_profile_jet_bounds(gcs_core::interval::Interval::new(0.,1.).unwrap()).unwrap();

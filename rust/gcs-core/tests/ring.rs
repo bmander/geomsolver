@@ -8,15 +8,15 @@
 use gcs_core::syntax::parse;
 
 const SPOKES: &str = "
-point hub hint(x: 0, y: 0)
-circle rim(center: hub) hint(r: 40)
+hub := point hint(x: 0, y: 0)
+rim := circle(center: hub) hint(r: 40)
 ground hub
 ring 4 about hub as i {
-  point tip hint(x: 40 * cos(90 * i), y: 40 * sin(90 * i))
+  tip := point hint(x: 40 * cos(90 * i), y: 40 * sin(90 * i))
   hub distance(40) tip
   tip on rim
 }
-point after hint(x: 1, y: 2)
+after := point hint(x: 1, y: 2)
 ";
 
 #[test]

@@ -18,20 +18,20 @@
 // sits is presentation, not geometry.
 
 unit mm
-param shaft_angle = 90deg
-param offset = 17.5mm
+shaft_angle := 90deg
+offset := 17.5mm
 
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
-line gax(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
+gax := line(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
 ground gax.p1
 ground gax.p2
 
-point o2 hint(x: 120, y: 0)
-point t2 hint(x: 160, y: 0)
-plane side(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
-line pax(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
+o2 := point hint(x: 120, y: 0)
+t2 := point hint(x: 160, y: 0)
+side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
+pax := line(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
 pax.p1 distance(0, along: u) side
 pax.p2 distance(60, along: u) side
 pax.p1 horizontal pax.p2
@@ -40,7 +40,7 @@ gax angle(shaft_angle) pax      // the shaft angle, in space
 gax distance(offset) pax        // the offset: their common perpendicular, in space
 
 // the shafts themselves, for the box: a cylinder about each axis, drawn as two rings and four rulings
-cylinder gear_shaft(axis: gax) hint(r: 6)
-cylinder pinion_shaft(axis: pax) hint(r: 4)
+gear_shaft := cylinder(axis: gax) hint(r: 6)
+pinion_shaft := cylinder(axis: pax) hint(r: 4)
 radius(6) gear_shaft
 radius(4) pinion_shaft

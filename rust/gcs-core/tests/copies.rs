@@ -9,14 +9,14 @@ use gcs_core::syntax::parse;
 fn an_instance_inside_a_copy_is_indexed_like_a_declaration() {
     let src = "\
 component Rung(a: point) {
-  point b hint(x: a.x + 10, y: a.y)
-  line l(a, b)
+  b := point hint(x: a.x + 10, y: a.y)
+  l := line(a, b)
   a distance(10) b
   horizontal l
 }
 repeat 3 as i {
-  point p hint(x: 0, y: i * 20)
-  r: Rung(p)
+  p := point hint(x: 0, y: i * 20)
+  r := Rung(p)
 }
 ground p[0]
 p[1] distance(5) r[2].b

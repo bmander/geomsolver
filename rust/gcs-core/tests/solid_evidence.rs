@@ -116,7 +116,7 @@ fn coverage_derives_success_partial_failure_and_counterexamples() {
 }
 
 fn round_claim(form: &str) -> String {
-    format!("unit mm\npoint a hint(x:0,y:0)\nground a\ncircle ac(center:a)\nradius(1mm) ac\npoint b hint(x:2,y:0)\nground b\ncircle bc(center:b)\nradius(1mm) bc\nface af(ac)\nface bf(bc)\nsolid result(af,depth:1mm)\nsolid other(bf,depth:1mm)\nclaim result {form} other\n")
+    format!("unit mm\na := point hint(x:0,y:0)\nground a\nac := circle(center:a)\nradius(1mm) ac\nb := point hint(x:2,y:0)\nground b\nbc := circle(center:b)\nradius(1mm) bc\naf := face(ac)\nbf := face(bc)\nresult := solid(af,depth:1mm)\nother := solid(bf,depth:1mm)\nclaim result {form} other\n")
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn unresolved_predicates_and_spacing_are_independent_of_negative_gaps() {
         assert!(report::solid_claim_text(&v).contains("containment"));
     }
     // A sampled, valid but uncertain pose also prevents sampled success.
-    let prefix = fixture().split("point resultfp0").next().unwrap().to_string();
+    let prefix = fixture().split("resultfp0 := point").next().unwrap().to_string();
     let src = prefix
         + &round_claim("clear(-100mm)").replace("unit mm\n", "").replace(
             "claim result clear(-100mm) other",
@@ -194,7 +194,7 @@ fn invalid_geometry_and_invalid_legacy_arguments_have_explicit_failures() {
 #[test]
 fn empty_boundaries_are_explicitly_unbounded_and_cannot_certify() {
     let src = fixture()
-        .replace("claim over", "solid removed(result)\nresult cut removed\nclaim over")
+        .replace("claim over", "removed := solid(result)\nresult cut removed\nclaim over")
         .replace("{ result clear(1mm) other }", "{ removed clear(1mm) other }");
     let v = verdict(&src);
     assert_eq!(v.outcome(), SolidOutcome::Indeterminate);
@@ -209,10 +209,10 @@ fn empty_boundaries_are_explicitly_unbounded_and_cannot_certify() {
 #[test]
 fn angular_coverage_and_failure_reports_keep_degrees() {
     let src = fixture()
-        .replace("circle c(center:o)", "point q hint(x:1,y:0)\nground q\ncircle c(center:o)")
+        .replace("c := circle(center:o)", "q := point hint(x:1,y:0)\nground q\nc := circle(center:o)")
         .replace(
             "o distance(reach,along:x) p",
-            "line datum(o,q)\nline radial(o,p)\ndatum angle(reach) radial",
+            "datum := line(o,q)\nradial := line(o,p)\ndatum angle(reach) radial",
         )
         .replace("(0.1mm,0.9mm)", "(10deg,30deg)");
     let v = verdict(&src);

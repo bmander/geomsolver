@@ -44,10 +44,10 @@ fn said(e: &Elaborated) -> Vec<String> {
 /* -- arc length ---------------------------------------------------------------------------- */
 
 const QUARTER: &str = "\
-point o hint(x: 0, y: 0)
-point s hint(x: 10, y: 0)
-point e hint(x: 3, y: 9)
-arc a(o, s, e)
+o := point hint(x: 0, y: 0)
+s := point hint(x: 10, y: 0)
+e := point hint(x: 3, y: 9)
+a := arc(o, s, e)
 radius(10) a
 o horizontal s
 ground o
@@ -73,12 +73,12 @@ fn an_arc_of_radius_ten_and_length_five_pi_sweeps_a_quarter_turn() {
 #[test]
 fn a_length_and_a_sweep_make_the_radius() {
     let src = "\
-point o hint(x: 0, y: 0)
-point s hint(x: 14, y: 0)
-point e hint(x: 0, y: 14)
-arc a(o, s, e)
-line l1(o, s)
-line l2(o, e)
+o := point hint(x: 0, y: 0)
+s := point hint(x: 14, y: 0)
+e := point hint(x: 0, y: 14)
+a := arc(o, s, e)
+l1 := line(o, s)
+l2 := line(o, e)
 horizontal l1
 l1 angle(90deg) l2
 length(5 * pi) a
@@ -93,17 +93,17 @@ ground o
 #[test]
 fn two_arc_lengths_tied_by_a_free_variable() {
     let src = "\
-point o1 hint(x: 0, y: 0)
-point s1 hint(x: 10, y: 0)
-point e1 hint(x: 0, y: 10)
-arc a1(o1, s1, e1)
+o1 := point hint(x: 0, y: 0)
+s1 := point hint(x: 10, y: 0)
+e1 := point hint(x: 0, y: 10)
+a1 := arc(o1, s1, e1)
 o1 horizontal s1
 ground o1
 ground e1
-point o2 hint(x: 50, y: 0)
-point s2 hint(x: 70, y: 0)
-point e2 hint(x: 60, y: 15)
-arc a2(o2, s2, e2)
+o2 := point hint(x: 50, y: 0)
+s2 := point hint(x: 70, y: 0)
+e2 := point hint(x: 60, y: 15)
+a2 := arc(o2, s2, e2)
 radius(20) a2
 o2 horizontal s2
 ground o2
@@ -139,13 +139,13 @@ fn an_arc_length_is_drawn_as_a_concentric_arc() {
 /* -- an angle as another angle ------------------------------------------------------------- */
 
 const FAN: &str = "\
-point a hint(x: 0, y: 0)
-point b hint(x: 40, y: 0)
-point c hint(x: 10, y: 30)
-point d hint(x: 25, y: 10)
-line ab(a, b)
-line ac(a, c)
-line ad(a, d)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 40, y: 0)
+c := point hint(x: 10, y: 30)
+d := point hint(x: 25, y: 10)
+ab := line(a, b)
+ac := line(a, c)
+ad := line(a, d)
 horizontal ab
 a distance(40) b
 a distance(30) c
@@ -198,8 +198,8 @@ fn equal_angles_say_what_a_shared_free_variable_said() {
 fn both_words_print_back_as_written() {
     let src = format!(
         "{FAN}ab angle(ad, ac) ad\nab angle(ab, ac, sense: cw) ad\n\
-         point o hint(x: 100, y: 0)\npoint s hint(x: 110, y: 0)\npoint e hint(x: 100, y: 10)\n\
-         arc k(o, s, e)\nlength(5 * pi) k\n"
+         o := point hint(x: 100, y: 0)\ns := point hint(x: 110, y: 0)\ne := point hint(x: 100, y: 10)\n\
+         k := arc(o, s, e)\nlength(5 * pi) k\n"
     );
     let (e, d) = read(&src);
     assert!(e.ok(), "{d:?}");

@@ -39,37 +39,37 @@ fn refused(src: &str, code: Code, needle: &str) {
 /// A 60 × 40 rectangle on the page, fully dimensioned and grounded, as `sec`.
 const RECT: &str = "\
 unit mm
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 40)
-point d hint(x: 0, y: 40)
-line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 40)
+d := point hint(x: 0, y: 40)
+(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 horizontal ab
 vertical bc
 a distance(60) b
 a distance(40) d
 ground a
-face sec(ab, bc, cd, da)
+sec := face(ab, bc, cd, da)
 ";
 
 /// A circle of radius 5 at the middle of that rectangle, as `hole_f`.
 const HOLE: &str = "\
-point o hint(x: 30, y: 20)
+o := point hint(x: 30, y: 20)
 a distance(30, along: x) o
 a distance(20, along: y) o
-circle hole(center: o) hint(r: 5)
+hole := circle(center: o) hint(r: 5)
 radius(5) hole
-face hole_f(hole)
+hole_f := face(hole)
 ";
 
 #[test]
 fn solid_operands_follow_surface_children_before_surfaces_are_built() {
     for statements in [
-        "solid body(side.solid)\nside.solid cut body\nside.solid on body\n",
-        "side.solid on body\nside.solid cut body\nsolid body(side.solid)\n",
+        "body := solid(side.solid)\nside.solid cut body\nside.solid on body\n",
+        "side.solid on body\nside.solid cut body\nbody := solid(side.solid)\n",
     ] {
-        let e = read(&format!("{statements}{RECT}\nline axis(a,d)\n\
-            solid stock(sec, about: axis)\nsurface side(stock, bc)\n"));
+        let e = read(&format!("{statements}{RECT}\naxis := line(a,d)\n\
+            stock := solid(sec, about: axis)\nside := surface(stock, bc)\n"));
         let stock = e.map.ent_named("stock").unwrap().idx;
         let body = e.map.ent_named("body").unwrap().i();
         let gcs_core::model::SolidDef::Body {stock:s,on,through,..} = &e.sketch.solids[body].def
@@ -97,7 +97,7 @@ fn volume(e: &gcs_core::program::Elaborated, name: &str) -> f64 {
 
 #[test]
 fn a_part_written_once_reports_itself() {
-    let e = read(&format!("{RECT}solid block(sec, depth: 30mm)\n"));
+    let e = read(&format!("{RECT}block := solid(sec, depth: 30mm)\n"));
     assert!((volume(&e, "block") - 72000.0).abs() < 1e-6);
     // and the report carries where its faces are, which is the only picture of an object no
     // view of the sheet shows whole (issue #48, item 3)
@@ -109,7 +109,7 @@ fn a_part_written_once_reports_itself() {
 
 #[test]
 fn an_extent_is_an_expression_and_never_an_unknown() {
-    let e = read(&format!("param t = 30mm\n{RECT}solid block(sec, depth: t)\n"));
+    let e = read(&format!("t := 30mm\n{RECT}block := solid(sec, depth: t)\n"));
     assert!((volume(&e, "block") - 72000.0).abs() < 1e-6);
     // P3's other half: nothing about the solid is a parameter, so no solve can move it
     let before = e.sketch.params.len();
@@ -124,9 +124,9 @@ fn inline_sections_have_the_same_geometry_and_reports_as_named_sections() {
         ("a, bc, cd, -> close", "from: face, to: back"),
         ("hole", "depth: 30mm"),
     ] {
-        let base = format!("{RECT}{HOLE}param face = -30mm\nparam back = 0mm\n");
-        let named = read(&format!("{base}face section({boundary})\nsolid block(section, {sweep})\n"));
-        let src = format!("{base}solid block(face({boundary}), {sweep})\n");
+        let base = format!("{RECT}{HOLE}face := -30mm\nback := 0mm\n");
+        let named = read(&format!("{base}section := face({boundary})\nblock := solid(section, {sweep})\n"));
+        let src = format!("{base}block := solid(face({boundary}), {sweep})\n");
         let inline = read(&src);
         let report = |e: &Elaborated| gcs_core::report::positions(&e.sketch, &e.map)
             .into_iter().filter(|(n, _)| n.starts_with("block.")).collect::<Vec<_>>();
@@ -145,7 +145,7 @@ fn inline_sections_have_the_same_geometry_and_reports_as_named_sections() {
 
 #[test]
 fn inline_sections_preserve_depth_validation_when_printed() {
-    let src = format!("{RECT}solid block(face(ab, bc, cd, da), depth: 2mm - 7mm)\n");
+    let src = format!("{RECT}block := solid(face(ab, bc, cd, da), depth: 2mm - 7mm)\n");
     let (mut p, errors) = parse(&src);
     assert!(errors.is_empty(), "{errors:?}");
     let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
@@ -158,11 +158,11 @@ fn inline_sections_preserve_depth_validation_when_printed() {
 fn inline_sections_resolve_component_formals_and_repeated_instances() {
     let src = format!("{RECT}\n\
         component Slab(a: Point, b: Point, c: Point, d: Point, t: Length) {{\n\
-          solid block(face(a, b, c, d, -> close), depth: t)\n\
+          block := solid(face(a, b, c, d, -> close), depth: t)\n\
         }}\n\
-        first: Slab(a, b, c, d, t: 2mm)\n\
-        second: Slab(a, b, c, d, t: 3mm)\n\
-        repeat 2 as i {{\ncopy: Slab(a, b, c, d, t: (i + 1) * 1mm)\n}}\n");
+        first := Slab(a, b, c, d, t: 2mm)\n\
+        second := Slab(a, b, c, d, t: 3mm)\n\
+        repeat 2 as i {{\ncopy := Slab(a, b, c, d, t: (i + 1) * 1mm)\n}}\n");
     let e = read(&src);
     assert!((volume(&e, "first.block") - 4800.0).abs() < 1e-6);
     assert!((volume(&e, "second.block") - 7200.0).abs() < 1e-6);
@@ -173,19 +173,19 @@ fn inline_sections_resolve_component_formals_and_repeated_instances() {
 
 #[test]
 fn inline_sections_inherit_the_boundary_plane_and_coexist_with_forward_faces() {
-    let src = "unit mm\npoint o\npoint q hint(x: 40)\n\
-        plane front(origin: o, toward: q, u: (1, 0, 0), v: (0, 1, 0))\n\
-        plane back(origin: o, toward: q, from: front, offset: 12mm)\n\
-        in back {\npoint a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\n\
-        point c hint(x: 60, y: 40)\npoint d hint(x: 0, y: 40)\n}\n\
-        solid slab(face(a, b, c, d, -> close), from: 0mm, to: 2mm)\n\
-        solid named(sec, from: 0mm, to: 2mm)\nface sec(a, b, c, d, -> close)\n";
+    let src = "unit mm\no := point\nq := point hint(x: 40)\n\
+        front := plane(origin: o, toward: q, u: (1, 0, 0), v: (0, 1, 0))\n\
+        back := plane(origin: o, toward: q, from: front, offset: 12mm)\n\
+        in back {\na := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\n\
+        c := point hint(x: 60, y: 40)\nd := point hint(x: 0, y: 40)\n}\n\
+        slab := solid(face(a, b, c, d, -> close), from: 0mm, to: 2mm)\n\
+        named := solid(sec, from: 0mm, to: 2mm)\nsec := face(a, b, c, d, -> close)\n";
     let e = read(src);
     assert!(e.sketch.faces.iter().all(|f| f.plane() == Ok(Some(1))));
     let p = gcs_core::report::positions(&e.sketch, &e.map);
     assert!(p.iter().any(|(n, v)| n == "slab.bounds.z0" && (*v - 12.0).abs() < 1e-9));
     assert_eq!(volume(&e, "slab"), volume(&e, "named"));
-    refused(&src.replace("point d hint(x: 0, y: 40)\n}", "}\npoint d hint(x: 0, y: 40)"),
+    refused(&src.replace("d := point hint(x: 0, y: 40)\n}", "}\nd := point hint(x: 0, y: 40)"),
         Code::E080, "one plane");
 }
 
@@ -198,7 +198,7 @@ fn invalid_inline_sections_report_the_loop_and_leave_no_geometry() {
         ("a, b, c, d, -> close", "", "made of solids"),
         ("a, b, c, d, -> close", "sec, depth: 2mm", "over one face"),
     ] {
-        let src = format!("{RECT}solid bad(face({boundary}), {sweep})\nsolid good(sec, depth: 2mm)\n");
+        let src = format!("{RECT}bad := solid(face({boundary}), {sweep})\ngood := solid(sec, depth: 2mm)\n");
         refused(&src, Code::E080, needle);
         let (p, _) = parse(&src);
         let e = elaborate(&p);
@@ -210,21 +210,21 @@ fn invalid_inline_sections_report_the_loop_and_leave_no_geometry() {
             assert_eq!(d.span.slice(&src), "(a, b, -> close)");
         }
     }
-    refused(&format!("{RECT}solid bad(face(missing), depth: 2mm)\n"), Code::E101, "missing");
-    refused("face bad(face(a, b, c, -> close))\n", Code::E100, "a solid's section");
-    refused("solid bad(face(a, -> close, b), depth: 2mm)\n", Code::E100, "last thing");
+    refused(&format!("{RECT}bad := solid(face(missing), depth: 2mm)\n"), Code::E101, "missing");
+    refused("bad := face(face(a, b, c, -> close))\n", Code::E100, "a solid's section");
+    refused("bad := solid(face(a, -> close, b), depth: 2mm)\n", Code::E100, "last thing");
 }
 
 #[test]
 fn the_body_rule_does_not_care_what_order_it_was_written_in() {
     // P2 at the language: `bore cut body` says what `body` *is*, wherever it stands
     let after = format!(
-        "{RECT}{HOLE}solid stock(sec, depth: 30mm)\nsolid bore(hole_f, depth: 30mm)\n\
-         solid body(stock)\nbore cut body\n"
+        "{RECT}{HOLE}stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
+         body := solid(stock)\nbore cut body\n"
     );
     let before = format!(
-        "{RECT}{HOLE}solid stock(sec, depth: 30mm)\nsolid bore(hole_f, depth: 30mm)\n\
-         bore cut body\nsolid body(stock)\n"
+        "{RECT}{HOLE}stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
+         bore cut body\nbody := solid(stock)\n"
     );
     let (x, y) = (volume(&read(&after), "body"), volume(&read(&before), "body"));
     assert!((x - y).abs() < 1e-9, "one body, whichever order: {x} vs {y}");
@@ -235,46 +235,46 @@ fn the_body_rule_does_not_care_what_order_it_was_written_in() {
 fn a_body_keeps_what_lies_within_everything_that_bounds_it() {
     // `bound` is the body rule's third side: the block within the bore is the bore's own
     // polygon (what `cut` takes out of it), and it is a set like the other two
-    let stock = format!("{RECT}{HOLE}solid stock(sec, depth: 30mm)\nsolid bore(hole_f, depth: 30mm)\n");
-    let within = volume(&read(&format!("{stock}solid body(stock)\nbore bound body\n")), "body");
-    let before = volume(&read(&format!("{stock}bore bound body\nsolid body(stock)\n")), "body");
-    let cut = volume(&read(&format!("{stock}solid body(stock)\nbore cut body\n")), "body");
+    let stock = format!("{RECT}{HOLE}stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n");
+    let within = volume(&read(&format!("{stock}body := solid(stock)\nbore bound body\n")), "body");
+    let before = volume(&read(&format!("{stock}bore bound body\nbody := solid(stock)\n")), "body");
+    let cut = volume(&read(&format!("{stock}body := solid(stock)\nbore cut body\n")), "body");
     assert!((within - before).abs() < 1e-9, "one body, whichever order: {within} vs {before}");
     assert!((within + cut - 72000.0).abs() < 1e-6, "within plus cut is the stock: {within} + {cut}");
     assert!(within > 2300.0 && within < 2400.0, "the bore's own polygon: {within}");
     // difference and intersection commute, so a body bounded and cut is the same either way
     let both = format!(
-        "{RECT}{HOLE}point q hint(x: 30, y: 20)\na distance(30, along: x) q\na distance(20, along: y) q\n\
-         circle wide(center: q) hint(r: 15)\nradius(15) wide\nface wide_f(wide)\n\
-         solid stock(sec, depth: 30mm)\nsolid bore(hole_f, depth: 30mm)\nsolid disc(wide_f, depth: 30mm)\n\
-         solid body(stock)\ndisc bound body\nbore cut body\n"
+        "{RECT}{HOLE}q := point hint(x: 30, y: 20)\na distance(30, along: x) q\na distance(20, along: y) q\n\
+         wide := circle(center: q) hint(r: 15)\nradius(15) wide\nwide_f := face(wide)\n\
+         stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\ndisc := solid(wide_f, depth: 30mm)\n\
+         body := solid(stock)\ndisc bound body\nbore cut body\n"
     );
     let disc = volume(&read(&both), "body");
-    let annulus = volume(&read(&format!("{RECT}{HOLE}point q hint(x: 30, y: 20)\na distance(30, along: x) q\n\
-         a distance(20, along: y) q\ncircle wide(center: q) hint(r: 15)\nradius(15) wide\nface wide_f(wide)\n\
-         solid bore(hole_f, depth: 30mm)\nsolid disc(wide_f, depth: 30mm)\nsolid body(disc)\nbore cut body\n")), "body");
+    let annulus = volume(&read(&format!("{RECT}{HOLE}q := point hint(x: 30, y: 20)\na distance(30, along: x) q\n\
+         a distance(20, along: y) q\nwide := circle(center: q) hint(r: 15)\nradius(15) wide\nwide_f := face(wide)\n\
+         bore := solid(hole_f, depth: 30mm)\ndisc := solid(wide_f, depth: 30mm)\nbody := solid(disc)\nbore cut body\n")), "body");
     assert!((disc - annulus).abs() < 1e-6, "bounded then cut is the annulus: {disc} vs {annulus}");
     refused(
-        &format!("{RECT}solid s(sec, depth: 3mm)\nsolid x(s)\nsolid y(x)\nx bound y\ny bound x\n"),
+        &format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\ny := solid(x)\nx bound y\ny bound x\n"),
         Code::E041,
         "made of itself",
     );
-    refused(&format!("{RECT}solid s(sec, depth: 3mm)\nsolid x(s)\nx bound x\n"), Code::E080, "is bound itself");
+    refused(&format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\nx bound x\n"), Code::E080, "is bound itself");
 }
 
 #[test]
 fn a_boss_is_written_with_the_word_the_kinds_of_its_operands_choose() {
     // `on` is already five constraints; between two solids it is the body rule (§9.2)
     let src = format!(
-        "{RECT}point e hint(x: 20, y: 10)\npoint f hint(x: 40, y: 10)\n\
-         point g hint(x: 40, y: 30)\npoint h hint(x: 20, y: 30)\n\
-         line ef(e, f) -> line fg(f, g) -> line gh(g, h) -> line he(h, e) -> close\n\
+        "{RECT}e := point hint(x: 20, y: 10)\nf := point hint(x: 40, y: 10)\n\
+         g := point hint(x: 40, y: 30)\nh := point hint(x: 20, y: 30)\n\
+         (ef := line(e, f)) -> (fg := line(f, g)) -> (gh := line(g, h)) -> (he := line(h, e)) -> close\n\
          a distance(20, along: x) e\na distance(10, along: y) e\n\
          a distance(40, along: x) g\na distance(30, along: y) g\n\
          horizontal ef\nvertical fg\nhorizontal gh\nvertical he\n\
-         face boss_f(ef, fg, gh, he)\n\
-         solid block(sec, depth: 30mm)\nsolid boss(boss_f, from: 0mm, to: 10mm)\n\
-         solid body(block)\nboss on body\n"
+         boss_f := face(ef, fg, gh, he)\n\
+         block := solid(sec, depth: 30mm)\nboss := solid(boss_f, from: 0mm, to: 10mm)\n\
+         body := solid(block)\nboss on body\n"
     );
     let e = read(&src);
     let want = 60.0 * 40.0 * 30.0 + 20.0 * 20.0 * 10.0;
@@ -285,14 +285,14 @@ fn a_boss_is_written_with_the_word_the_kinds_of_its_operands_choose() {
 fn a_revolution_turns_about_a_line_in_its_own_plane() {
     let src = "\
 unit mm
-point p0 hint(x: 10, y: 0)
-point p1 hint(x: 14, y: 0)
-point p2 hint(x: 14, y: 6)
-point p3 hint(x: 10, y: 6)
-line e0(p0, p1) -> line e1(p1, p2) -> line e2(p2, p3) -> line e3(p3, p0) -> close
-point q0 hint(x: 0, y: 0)
-point q1 hint(x: 0, y: 10)
-line ax(q0, q1)
+p0 := point hint(x: 10, y: 0)
+p1 := point hint(x: 14, y: 0)
+p2 := point hint(x: 14, y: 6)
+p3 := point hint(x: 10, y: 6)
+(e0 := line(p0, p1)) -> (e1 := line(p1, p2)) -> (e2 := line(p2, p3)) -> (e3 := line(p3, p0)) -> close
+q0 := point hint(x: 0, y: 0)
+q1 := point hint(x: 0, y: 10)
+ax := line(q0, q1)
 ground q0
 vertical ax
 horizontal e0
@@ -303,8 +303,8 @@ p0 distance(4) p1
 p1 distance(6) p2
 horizontal e2
 vertical e3
-face sec(e0, e1, e2, e3)
-solid ring(sec, about: ax)
+sec := face(e0, e1, e2, e3)
+ring := solid(sec, about: ax)
 ";
     let e = read(src);
     let want = std::f64::consts::TAU * 12.0 * 24.0;
@@ -312,8 +312,8 @@ solid ring(sec, about: ax)
     assert!((got - want).abs() < 2e-3 * want, "Pappus from the source: want ≈ {want}, got {got}");
     for sweep in ["", ", sweep: 90deg, sense: cw"] {
         let named = src.replace("about: ax)", &format!("about: ax{sweep})"));
-        let inline = named.replace("face sec(e0, e1, e2, e3)\n", "")
-            .replace("solid ring(sec,", "solid ring(face(e0, e1, e2, e3),");
+        let inline = named.replace("sec := face(e0, e1, e2, e3)\n", "")
+            .replace("ring := solid(sec,", "ring := solid(face(e0, e1, e2, e3),");
         assert_eq!(volume(&read(&inline), "ring"), volume(&read(&named), "ring"));
         let (mut p, _) = parse(&inline);
         let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
@@ -328,9 +328,9 @@ fn a_face_written_with_its_corners_is_the_face_written_with_its_edges() {
     // `a` is a corner the loop goes straight to and straight on from; `bc` and `cd` are edges
     // the drawing already has, and `-> close` seals the run back to `a`.  Two straight runs are
     // minted — `a`→`b` and `d`→`a` — which is `ab` and `da` by another name.
-    let long = read(&format!("{RECT}solid block(sec, depth: 30mm)\n"));
+    let long = read(&format!("{RECT}block := solid(sec, depth: 30mm)\n"));
     let short = read(&format!(
-        "{RECT}face brief(a, bc, cd, -> close)\nsolid block(brief, depth: 30mm)\n"
+        "{RECT}brief := face(a, bc, cd, -> close)\nblock := solid(brief, depth: 30mm)\n"
     ));
     assert!((volume(&short, "block") - volume(&long, "block")).abs() < 1e-9);
     assert!((volume(&short, "block") - 72000.0).abs() < 1e-6);
@@ -352,24 +352,24 @@ fn a_face_written_with_its_corners_is_the_face_written_with_its_edges() {
     assert!(has("block.bc.area"), "beside the edges the source wrote");
     // and the marker survives a print: the source is the document, so what is written must be
     // what comes back
-    let (mut prog, _) = gcs_core::syntax::parse("face brief(a, bc, cd, -> close)\n");
+    let (mut prog, _) = gcs_core::syntax::parse("brief := face(a, bc, cd, -> close)\n");
     let text = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
     assert_eq!(text.split_whitespace().collect::<Vec<_>>().join(" "),
-        "face brief(a, bc, cd, -> close)");
+        "brief := face(a, bc, cd, -> close)");
 }
 
 /// A loop of nothing but corners: the rectangle again, with no line drawn at all.
 #[test]
 fn a_face_may_be_written_as_its_corners_alone() {
-    let e = read(&format!("{RECT}face quad(a, b, c, d, -> close)\nsolid slab(quad, depth: 2mm)\n"));
+    let e = read(&format!("{RECT}quad := face(a, b, c, d, -> close)\nslab := solid(quad, depth: 2mm)\n"));
     assert!((volume(&e, "slab") - 4800.0).abs() < 1e-6, "{}", volume(&e, "slab"));
 }
 
 #[test]
 fn closing_lines_do_not_take_an_existing_edges_name() {
     let e = read(&format!(
-        "{RECT}line close0(b, c)\nface brief(a, close0, cd, -> close)\n\
-         solid block(brief, depth: 2mm)\n"
+        "{RECT}close0 := line(b, c)\nbrief := face(a, close0, cd, -> close)\n\
+         block := solid(brief, depth: 2mm)\n"
     ));
     let positions = gcs_core::report::positions(&e.sketch, &e.map);
     for (name, want) in [("close0", 80.0), ("close1", 120.0), ("close2", 80.0)] {
@@ -382,13 +382,13 @@ fn closing_lines_do_not_take_an_existing_edges_name() {
 /// `-> close` on a loop that already meets says something true, and mints nothing.
 #[test]
 fn a_loop_that_already_meets_may_still_say_it_closes() {
-    let plain = read(&format!("{RECT}solid block(sec, depth: 30mm)\n"));
+    let plain = read(&format!("{RECT}block := solid(sec, depth: 30mm)\n"));
     let said = read(&format!(
-        "{RECT}face same(ab, bc, cd, da, -> close)\nsolid block(same, depth: 30mm)\n"
+        "{RECT}same := face(ab, bc, cd, da, -> close)\nblock := solid(same, depth: 30mm)\n"
     ));
     assert_eq!(said.sketch.lines.len(), plain.sketch.lines.len(), "nothing to mint");
     assert!((volume(&said, "block") - volume(&plain, "block")).abs() < 1e-9);
-    let circle = read(&format!("{RECT}{HOLE}face same(hole, -> close)\n"));
+    let circle = read(&format!("{RECT}{HOLE}same := face(hole, -> close)\n"));
     assert_eq!(circle.sketch.lines.len(), plain.sketch.lines.len());
     assert_eq!(circle.sketch.faces.last().unwrap().edges.len(), 1);
 }
@@ -397,7 +397,7 @@ fn a_loop_that_already_meets_may_still_say_it_closes() {
 fn a_mixed_faces_seed_writeback_changes_only_the_points() {
     use gcs_core::edit::{self, Kind};
 
-    let src = format!("{RECT}face brief(a, bc, cd, -> close)\nsolid block(brief, depth: 2mm)\n");
+    let src = format!("{RECT}brief := face(a, bc, cd, -> close)\nblock := solid(brief, depth: 2mm)\n");
     let mut e = read(&src);
     let mut sk = std::mem::take(&mut e.sketch);
     let unchanged = edit::commit_seeds(&e, &sk, &e.program);
@@ -407,7 +407,7 @@ fn a_mixed_faces_seed_writeback_changes_only_the_points() {
     let a = e.map.ent_named("a").unwrap();
     let [x, _] = sk.point_params(a.i());
     sk.params[x as usize].value = -5.0;
-    let want = src.replace("point a hint(x: 0, y: 0)", "point a hint(x: -5, y: 0)");
+    let want = src.replace("a := point hint(x: 0, y: 0)", "a := point hint(x: -5, y: 0)");
     let moved = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(moved.kind, Kind::Numeric);
     assert_eq!(moved.text, want);
@@ -424,16 +424,16 @@ fn closing_lines_stay_implicit_across_reconciliation_and_reload() {
     use gcs_core::edit::{self, Kind};
 
     for src in [
-        format!("{RECT}face quad(a, b, c, d, -> close)\n"),
-        format!("{RECT}solid slab(face(a, b, c, d, -> close), depth: 2mm)\n"),
+        format!("{RECT}quad := face(a, b, c, d, -> close)\n"),
+        format!("{RECT}slab := solid(face(a, b, c, d, -> close), depth: 2mm)\n"),
         format!(
             "unit mm\ncomponent Patch() {{\n{}\
-             solid slab(face(a, bc, cd, -> close), depth: 2mm)\n}}\npart: Patch()\n",
+             slab := solid(face(a, bc, cd, -> close), depth: 2mm)\n}}\npart := Patch()\n",
             RECT.trim_start_matches("unit mm\n"),
         ),
-        "component Patch() {\npoint a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\n\
-         point c hint(x: 0, y: 40)\nface tri(a, b, c, -> close)\n}\n\
-         part: Patch()\n".to_string(),
+        "component Patch() {\na := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\n\
+         c := point hint(x: 0, y: 40)\ntri := face(a, b, c, -> close)\n}\n\
+         part := Patch()\n".to_string(),
     ] {
         let initial = read(&src).sketch.lines.len();
         let mut text = src.clone();
@@ -462,7 +462,7 @@ fn closing_lines_stay_implicit_across_reconciliation_and_reload() {
 #[test]
 fn a_face_must_leave_each_edge_where_the_next_item_starts() {
     for walk in ["a, ab, a, c, -> close", "ab, a, c, a", "c, a, ab, a, -> close"] {
-        let src = format!("{RECT}face bad({walk})\n");
+        let src = format!("{RECT}bad := face({walk})\n");
         refused(&src, Code::E080, "along the walk");
         let (p, _) = parse(&src);
         let e = elaborate(&p);
@@ -471,7 +471,7 @@ fn a_face_must_leave_each_edge_where_the_next_item_starts() {
     }
     // A failure after minting some lines must also leave nothing for reconciliation to
     // interpret as newly drawn geometry.
-    let (p, _) = parse(&format!("{RECT}face bad(a, c, d)\n"));
+    let (p, _) = parse(&format!("{RECT}bad := face(a, c, d)\n"));
     let e = elaborate(&p);
     assert!(!e.ok());
     assert_eq!(e.sketch.lines.len(), 4);
@@ -479,12 +479,12 @@ fn a_face_must_leave_each_edge_where_the_next_item_starts() {
 
 #[test]
 fn an_arc_and_its_chord_share_both_ends_and_still_form_a_loop() {
-    let src = "unit mm\npoint o hint(x: 0, y: 0)\npoint a hint(x: -5, y: 0)\n\
-               point b hint(x: 5, y: 0)\narc rim(center: o, start: a, end: b) hint(r: 5)\n\
-               line chord(a, b)\n";
+    let src = "unit mm\no := point hint(x: 0, y: 0)\na := point hint(x: -5, y: 0)\n\
+               b := point hint(x: 5, y: 0)\nrim := arc(center: o, start: a, end: b) hint(r: 5)\n\
+               chord := line(a, b)\n";
     let mut volumes = Vec::new();
     for walk in ["rim, chord", "chord, rim", "a, rim, b, -> close", "b, rim, a, -> close"] {
-        let e = read(&format!("{src}face half({walk})\nsolid slab(half, depth: 2mm)\n"));
+        let e = read(&format!("{src}half := face({walk})\nslab := solid(half, depth: 2mm)\n"));
         let v = volume(&e, "slab");
         assert!((v - 25.0 * std::f64::consts::PI).abs() < 0.2, "{walk}: {v}");
         volumes.push(v);
@@ -496,61 +496,61 @@ fn an_arc_and_its_chord_share_both_ends_and_still_form_a_loop() {
 fn what_is_written_wrong_is_refused_where_it_is_written() {
     // a loop that does not close
     refused(
-        &format!("{RECT}point z hint(x: 90, y: 90)\nline zz(z, a)\nface bad(ab, zz, cd, da)\n"),
+        &format!("{RECT}z := point hint(x: 90, y: 90)\nzz := line(z, a)\nbad := face(ab, zz, cd, da)\n"),
         Code::E080,
         "share no point",
     );
     // a circle standing in a loop rather than being one
-    refused(&format!("{RECT}{HOLE}face bad(ab, hole)\n"), Code::E080, "a whole loop");
+    refused(&format!("{RECT}{HOLE}bad := face(ab, hole)\n"), Code::E080, "a whole loop");
     // a face of something that is neither an edge nor a corner
-    refused(&format!("{RECT}face bad(sec)\n"), Code::E080, "bounded by lines");
+    refused(&format!("{RECT}bad := face(sec)\n"), Code::E080, "bounded by lines");
     // -- and the shorthand does not swallow a mistake (issue #49, item 1) --------------------
     // a loop whose last item does not come back to its first says so, or says `-> close`
-    refused(&format!("{RECT}face bad(a, ab, bc)\n"), Code::E080, "`-> close`");
+    refused(&format!("{RECT}bad := face(a, ab, bc)\n"), Code::E080, "`-> close`");
     // an edge between two gaps has two readings and no statement choosing one
-    refused(&format!("{RECT}face bad(a, bc, d, -> close)\n"), Code::E080, "meets neither");
+    refused(&format!("{RECT}bad := face(a, bc, d, -> close)\n"), Code::E080, "meets neither");
     // a straight loop between two corners is a line drawn twice
-    refused(&format!("{RECT}face bad(a, b, -> close)\n"), Code::E080, "three corners");
+    refused(&format!("{RECT}bad := face(a, b, -> close)\n"), Code::E080, "three corners");
     // and one item is a loop only when it is a circle
-    refused(&format!("{RECT}face bad(ab)\n"), Code::E080, "not a loop by itself");
+    refused(&format!("{RECT}bad := face(ab)\n"), Code::E080, "not a loop by itself");
     // `-> close` seals a loop, and only a face is one
-    refused(&format!("{RECT}line bad(a, -> close)\n"), Code::E100, "not a loop");
-    refused(&format!("{RECT}face bad(a, -> close, ab)\n"), Code::E100, "last thing in the list");
+    refused(&format!("{RECT}bad := line(a, -> close)\n"), Code::E100, "not a loop");
+    refused(&format!("{RECT}bad := face(a, -> close, ab)\n"), Code::E100, "last thing in the list");
     // a swept solid over something that is not a face
-    refused(&format!("{RECT}solid bad(ab, depth: 3mm)\n"), Code::E080, "written over a face");
+    refused(&format!("{RECT}bad := solid(ab, depth: 3mm)\n"), Code::E080, "written over a face");
     // a body made of what is not a solid
-    refused(&format!("{RECT}solid bad(sec)\n"), Code::E080, "made of solids");
+    refused(&format!("{RECT}bad := solid(sec)\n"), Code::E080, "made of solids");
     // a prism swept nowhere
     refused(
-        &format!("{RECT}solid bad(sec, from: 0mm, to: 0mm)\n"),
+        &format!("{RECT}bad := solid(sec, from: 0mm, to: 0mm)\n"),
         Code::E080,
         "swept nowhere",
     );
     // **a selector is a word, never a sign**: a negative sweep is refused at the value
     refused(
-        &format!("{RECT}point q0\npoint q1 hint(y: 10)\nline ax(q0, q1)\n\
-                  solid bad(sec, about: ax, sweep: -90deg)\n"),
+        &format!("{RECT}q0 := point\nq1 := point hint(y: 10)\nax := line(q0, q1)\n\
+                  bad := solid(sec, about: ax, sweep: -90deg)\n"),
         Code::E040,
         "which way it turns is `sense: cw`",
     );
     // a revolution about something that is not a line
-    refused(&format!("{RECT}solid bad(sec, about: a)\n"), Code::E081, "turns about a line");
+    refused(&format!("{RECT}bad := solid(sec, about: a)\n"), Code::E081, "turns about a line");
     // a body made of itself
     refused(
-        &format!("{RECT}solid s(sec, depth: 3mm)\nsolid x(s)\nsolid y(x)\nx cut y\ny cut x\n"),
+        &format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\ny := solid(x)\nx cut y\ny cut x\n"),
         Code::E041,
         "made of itself",
     );
     // a feature written into a solid that is a face swept, not a body
     refused(
-        &format!("{RECT}{HOLE}solid s(sec, depth: 3mm)\nsolid h(hole_f, depth: 3mm)\nh cut s\n"),
+        &format!("{RECT}{HOLE}s := solid(sec, depth: 3mm)\nh := solid(hole_f, depth: 3mm)\nh cut s\n"),
         Code::E080,
         "only a body takes features",
     );
     // a mixture of the two sweeps
     refused(
-        &format!("{RECT}point q0\npoint q1 hint(y: 10)\nline ax(q0, q1)\n\
-                  solid bad(sec, depth: 3mm, about: ax)\n"),
+        &format!("{RECT}q0 := point\nq1 := point hint(y: 10)\nax := line(q0, q1)\n\
+                  bad := solid(sec, depth: 3mm, about: ax)\n"),
         Code::E100,
         "not both",
     );
@@ -562,10 +562,10 @@ fn a_plane_may_be_stood_off_another_and_the_projector_rule_is_untouched() {
     // the offset is along the normal, so the fold line two views share cannot see it (§6.7)
     let e = read("\
 unit mm
-point o
-point q hint(x: 40)
-plane front(origin: o, toward: q)
-plane back(origin: o, toward: q, from: front, offset: 12mm)
+o := point
+q := point hint(x: 40)
+front := plane(origin: o, toward: q)
+back := plane(origin: o, toward: q, from: front, offset: 12mm)
 ");
     let b = |n: usize| e.sketch.basis(n);
     assert_eq!(b(0).u, b(1).u, "parallel");
@@ -579,14 +579,14 @@ plane back(origin: o, toward: q, from: front, offset: 12mm)
 
 // Issue #49.3: naming the traversal must not change the drawing it traverses.
 fn named_rect() -> String {
-    RECT.replace("line ab(a, b)", "profile = line ab(a, b)")
-        .replace("face sec(ab, bc, cd, da)\n", "")
+    RECT.replace("(ab := line(a, b))", "profile := (ab := line(a, b))")
+        .replace("sec := face(ab, bc, cd, da)\n", "")
 }
 
 #[test]
 fn named_chains_sweep_the_same_geometry_and_keep_edge_names() {
-    let old = read(&format!("{RECT}solid block(sec, depth: 8mm)\n"));
-    let src = format!("{}solid block(profile, depth: 8mm)\n", named_rect());
+    let old = read(&format!("{RECT}block := solid(sec, depth: 8mm)\n"));
+    let src = format!("{}block := solid(profile, depth: 8mm)\n", named_rect());
     let new = read(&src);
     assert_volume(volume(&new, "block"), 19200.0);
     assert_eq!(new.sketch.params.len(), old.sketch.params.len());
@@ -598,7 +598,7 @@ fn named_chains_sweep_the_same_geometry_and_keep_edge_names() {
         .into_iter().filter(|(n, _)| n.starts_with("block.")).collect::<Vec<_>>();
     assert_eq!(report(&new), report(&old));
     let written = gcs_core::edit::commit_seeds(&new, &new.sketch, &new.program);
-    assert!(written.text.contains("profile = line ab"), "{}", written.text);
+    assert!(written.text.contains("profile := (ab := line(a, b))"), "{}", written.text);
     assert_eq!(volume(&read(&written.text), "block"), volume(&new, "block"));
     let no_change = gcs_core::edit::remove(&new, &new.program, &new.sketch,
         &[new.map.ent_named("profile").unwrap()], &[]);
@@ -607,27 +607,30 @@ fn named_chains_sweep_the_same_geometry_and_keep_edge_names() {
 
 #[test]
 fn named_chains_support_anonymous_links_and_constraint_words() {
-    let e = read("profile = distance(10) line -> equal line -> equal line -> close\n\
-                  solid block(profile, depth: 8)\n");
+    let e = read("profile := distance(10) line -> equal line -> equal line -> close\n\
+                  block := solid(profile, depth: 8)\n");
     assert_eq!(e.sketch.points.len(), 3);
     assert_eq!(e.sketch.lines.len(), 3);
     assert_eq!(e.sketch.faces.len(), 1);
     assert_eq!(e.sketch.user_constraints().len(), 3);
     assert!(e.map.ent_named("profile").is_some());
-    let single = read("trail = line\n");
+    // with no `->` there is no traversal: the definition names the line, which deletes whole
+    let single = read("trail := line\n");
     assert_eq!(single.sketch.lines.len(), 1);
     assert_eq!(single.sketch.faces.len(), 0);
+    assert!(single.map.ent_named("trail") == Some(gcs_core::model::EntRef::line(0)));
     let edit = gcs_core::edit::remove(&single, &single.program, &single.sketch,
         &[gcs_core::model::EntRef::line(0)], &[]);
-    assert!(edit.refused.is_some());
+    assert!(edit.refused.is_none());
+    assert_eq!(edit.text.trim(), "");
 }
 
 #[test]
 fn anonymous_chain_sides_have_stable_names_without_hiding_named_sides() {
-    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 10, y: 0)\n\
-        point c hint(x: 0, y: 10)\n\
-        profile = line(a, b) -> line edge0(b, c) -> line(c, a) -> close\n\
-        solid part(profile, depth: 8)\n";
+    let src = "a := point hint(x: 0, y: 0)\nb := point hint(x: 10, y: 0)\n\
+        c := point hint(x: 0, y: 10)\n\
+        profile := line(a, b) -> (edge0 := line(b, c)) -> line(c, a) -> close\n\
+        part := solid(profile, depth: 8)\n";
     let old = read(src);
     let moved = read(&format!("// Moving source text must not rename surfaces.\n{src}"));
     let report = |e: &Elaborated| gcs_core::report::positions(&e.sketch, &e.map)
@@ -646,16 +649,16 @@ fn anonymous_chain_sides_have_stable_names_without_hiding_named_sides() {
 fn named_chains_are_component_members_and_resolve_forward_and_through_formals() {
     let src = "unit mm\n\
         component Shape() {\n\
-          point a hint(x: 0, y: 0)\npoint b hint(x: 10, y: 0)\n\
-          point c hint(x: 10, y: 20)\npoint d hint(x: 0, y: 20)\n\
-          profile = line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close\n\
+          a := point hint(x: 0, y: 0)\nb := point hint(x: 10, y: 0)\n\
+          c := point hint(x: 10, y: 20)\nd := point hint(x: 0, y: 20)\n\
+          profile := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n\
         }\n\
-        component Slab(section: face, t: Length) {\nsolid body(section, depth: t)\n}\n\
-        solid first(s.profile, depth: 2mm)\n\
-        x: Slab(s.profile, t: 3mm)\n\
-        repeat 2 as i {\ncopy: Shape()\nsolid prism(copy.profile, depth: (i + 1) * 1mm)\n}\n\
-        solid selected(copy[1].profile, depth: 4mm)\n\
-        s: Shape()\n";
+        component Slab(section: face, t: Length) {\nbody := solid(section, depth: t)\n}\n\
+        first := solid(s.profile, depth: 2mm)\n\
+        x := Slab(s.profile, t: 3mm)\n\
+        repeat 2 as i {\ncopy := Shape()\nprism := solid(copy.profile, depth: (i + 1) * 1mm)\n}\n\
+        selected := solid(copy[1].profile, depth: 4mm)\n\
+        s := Shape()\n";
     let e = read(src);
     assert_eq!(e.sketch.faces.len(), 3);
     assert_eq!(e.sketch.solids.len(), 5);
@@ -667,64 +670,64 @@ fn named_chains_are_component_members_and_resolve_forward_and_through_formals() 
 
 #[test]
 fn named_open_chains_can_be_closed_explicitly_but_cannot_be_swept_directly() {
-    let src = named_rect().replace(" -> line da(d, a) -> close", "");
+    let src = named_rect().replace(" -> (da := line(d, a)) -> close", "");
     let e = read(&src);
     assert_eq!(e.sketch.lines.len(), 3);
     assert_eq!(e.sketch.faces.len(), 0);
-    refused(&format!("{src}solid bad(profile, depth: 8mm)\n"), Code::E080, "open chain");
-    refused(&format!("{src}face bad(profile)\n"), Code::E080, "share no point");
-    let e = read(&format!("{src}solid block(face(profile, -> close), depth: 8mm)\n"));
+    refused(&format!("{src}bad := solid(profile, depth: 8mm)\n"), Code::E080, "open chain");
+    refused(&format!("{src}bad := face(profile)\n"), Code::E080, "share no point");
+    let e = read(&format!("{src}block := solid(face(profile, -> close), depth: 8mm)\n"));
     assert_eq!(e.sketch.lines.len(), 4);
     assert_volume(volume(&e, "block"), 19200.0);
-    let e = read(&format!("{src}face sec(profile, a)\nsolid block(sec, depth: 8mm)\n"));
+    let e = read(&format!("{src}sec := face(profile, a)\nblock := solid(sec, depth: 8mm)\n"));
     assert_volume(volume(&e, "block"), 19200.0);
 }
 
 #[test]
 fn named_chains_inherit_planes_and_revolve_with_arcs() {
-    let src = "unit mm\npoint o\npoint q hint(x: 10)\n\
-        plane front(origin: o, toward: q, u: (1, 0, 0), v: (0, 1, 0))\n\
-        plane back(origin: o, toward: q, from: front, offset: 12mm)\n\
-        in back {\npoint a hint(x: 0, y: -5)\npoint b hint(x: 0, y: 5)\n\
-          point c hint(x: 0, y: 0)\n\
-          profile = arc rim(center: c, start: a, end: b) hint(r: 5) -> line axis(b, a) -> close\n\
-          solid ball(profile, about: axis)\n}\n";
+    let src = "unit mm\no := point\nq := point hint(x: 10)\n\
+        front := plane(origin: o, toward: q, u: (1, 0, 0), v: (0, 1, 0))\n\
+        back := plane(origin: o, toward: q, from: front, offset: 12mm)\n\
+        in back {\na := point hint(x: 0, y: -5)\nb := point hint(x: 0, y: 5)\n\
+          c := point hint(x: 0, y: 0)\n\
+          profile := (rim := arc(center: c, start: a, end: b) hint(r: 5)) -> (axis := line(b, a)) -> close\n\
+          ball := solid(profile, about: axis)\n}\n";
     let e = read(src);
     assert_eq!(e.sketch.faces[0].plane(), Ok(Some(1)));
     // Reports integrate the faceted surface; the analytic sphere is an independent check.
     let want = 4.0 / 3.0 * std::f64::consts::PI * 125.0;
     assert!((volume(&e, "ball") / want - 1.0).abs() < 0.002,
         "sphere volume: {} versus {want}", volume(&e, "ball"));
-    let old = src.replace("profile = ", "")
-        .replace("solid ball(profile,", "face sec(rim, axis)\nsolid ball(sec,");
+    let old = src.replace("profile := ", "")
+        .replace("ball := solid(profile,", "sec := face(rim, axis)\nball := solid(sec,");
     assert_eq!(volume(&e, "ball"), volume(&read(&old), "ball"));
     assert!(gcs_core::program::solid_diagnostics(&e.sketch, &e.map).is_empty());
 }
 
 #[test]
 fn named_chains_validate_names_links_and_plane_membership() {
-    refused("profile = circle\n", Code::E080, "lines and arcs");
-    refused("profile = line equal line\n", Code::E100, "every pair");
-    refused("component A() { profile = line -> }\na: A()\n",
+    refused("profile := line equal line\n", Code::E100, "every pair");
+    refused("component A() { profile := line -> }\na := A()\n",
         Code::E100, "must finish");
-    refused("profile = line\npoint profile\n", Code::E001, "declared twice");
-    refused("point profile\nprofile = line\n", Code::E001, "declared twice");
-    refused("circle c\nprofile = c\n", Code::E080, "lines and arcs");
-    refused("profile = missing\n", Code::E101, "missing");
-    refused("point p\npoint q\n\
-        profile = line a(p, q) -> profile.nope -> line b(q, p) -> close\n",
+    refused("profile := line\nprofile := point\n", Code::E001, "declared twice");
+    refused("profile := point\nprofile := line\n", Code::E001, "declared twice");
+    refused("p := point\nq := point\nc := circle\n\
+        profile := (a := line(p, q)) -> c -> (b := line(q, p)) -> close\n",
         Code::E080, "lines and arcs");
-    refused(&format!("{}solid bad(profile.typo, depth: 8mm)\n", named_rect()),
+    refused("p := point\nq := point\n\
+        profile := (a := line(p, q)) -> profile.nope -> (b := line(q, p)) -> close\n",
+        Code::E080, "lines and arcs");
+    refused(&format!("{}bad := solid(profile.typo, depth: 8mm)\n", named_rect()),
         Code::E080, "not a member");
     let src = named_rect();
-    let src = format!("plane v(origin: a, toward: b)\n{}", src)
-        .replace("point d hint(x: 0, y: 40)", "point d hint(x: 0, y: 40) in v");
+    let src = format!("v := plane(origin: a, toward: b)\n{}", src)
+        .replace("d := point hint(x: 0, y: 40)", "d := point hint(x: 0, y: 40) in v");
     refused(&src, Code::E080, "plane");
 }
 
 #[test]
 fn named_chain_source_is_retained_and_its_binding_is_highlighted() {
-    let src = "profile = line -> line -> line -> close\n";
+    let src = "profile := line -> line -> line -> close\n";
     let (mut p, errors) = parse(src);
     assert!(errors.is_empty(), "{errors:?}");
     assert_eq!(gcs_core::syntax::render_flat(&mut p).unwrap_err().construct, "named chains");
@@ -737,8 +740,8 @@ fn named_chain_source_is_retained_and_its_binding_is_highlighted() {
 #[test]
 fn named_chain_syntax_errors_point_to_the_offending_joint() {
     for (src, message, joint) in [
-        ("trail = line equal line\npoint unrelated\n", "every pair", "equal"),
-        ("component A() { trail = line -> }\npoint unrelated\n", "must finish", "->"),
+        ("trail := line equal line\nunrelated := point\n", "every pair", "equal"),
+        ("component A() { trail := line -> }\nunrelated := point\n", "must finish", "->"),
     ] {
         let (_, errors) = parse(src);
         let error = errors.iter().find(|e| e.message.contains(message)).unwrap();
@@ -748,8 +751,8 @@ fn named_chain_syntax_errors_point_to_the_offending_joint() {
 
 #[test]
 fn a_refused_named_loop_does_not_misnumber_later_sections() {
-    let src = format!("broken = line -> line -> close\n{}\n\
-        solid block(profile, depth: 8mm)\n", named_rect());
+    let src = format!("broken := line -> line -> close\n{}\n\
+        block := solid(profile, depth: 8mm)\n", named_rect());
     let (p, errors) = parse(&src);
     assert!(errors.is_empty(), "{errors:?}");
     let e = elaborate(&p);
@@ -762,10 +765,10 @@ fn a_refused_named_loop_does_not_misnumber_later_sections() {
 #[test]
 fn through_extent_spans_additions_but_only_cut_subtracts() {
     let src = format!("{RECT}{HOLE}\n\
-        solid stock(sec, depth: 10mm)\n\
-        solid boss(sec, from: 0mm, to: 5mm)\n\
-        solid body(stock)\nboss on body\n\
-        solid bore(hole_f, through: body)\n");
+        stock := solid(sec, depth: 10mm)\n\
+        boss := solid(sec, from: 0mm, to: 5mm)\n\
+        body := solid(stock)\nboss on body\n\
+        bore := solid(hole_f, through: body)\n");
     let uncut = read(&src);
     assert_volume(volume(&uncut, "body"), 36000.0);
     let cut = read(&format!("{src}bore cut body\n"));
@@ -793,11 +796,11 @@ fn through_extent_spans_additions_but_only_cut_subtracts() {
 #[test]
 fn through_extent_is_order_independent_and_ignores_other_cutters() {
     let declarations = [
-        "solid stock(sec, depth: 10mm)",
-        "solid body(stock)",
-        "solid bore(hole_f, through: body)",
+        "stock := solid(sec, depth: 10mm)",
+        "body := solid(stock)",
+        "bore := solid(hole_f, through: body)",
         "bore cut body",
-        "solid huge(hole_f, from: -1000mm, to: 1000mm)",
+        "huge := solid(hole_f, from: -1000mm, to: 1000mm)",
         "huge cut body",
     ];
     let mut expected: Option<f64> = None;
@@ -819,11 +822,11 @@ fn through_extent_is_order_independent_and_ignores_other_cutters() {
 fn through_targets_resolve_inside_components_and_round_trip() {
     let src = format!("{RECT}{HOLE}\n\
         component Drill(section: face, target: solid) {{\n\
-          solid tool(section, through: target)\ntool cut target\n}}\n\
-        d: Drill(hole_f, body)\nsolid body(stock)\nsolid stock(sec, depth: 10mm)\n");
+          tool := solid(section, through: target)\ntool cut target\n}}\n\
+        d := Drill(hole_f, body)\nbody := solid(stock)\nstock := solid(sec, depth: 10mm)\n");
     let e = read(&src);
     assert!(volume(&e, "body") < 24000.0);
-    let flat = format!("{RECT}{HOLE}solid stock(sec, depth: 10mm)\nsolid body(stock)\nsolid tool(hole_f, through: body)\ntool cut body\n");
+    let flat = format!("{RECT}{HOLE}stock := solid(sec, depth: 10mm)\nbody := solid(stock)\ntool := solid(hole_f, through: body)\ntool cut body\n");
     let (mut p, _) = parse(&flat);
     let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(printed.contains("through: body") && printed.contains("tool cut body"));
@@ -841,27 +844,27 @@ fn through_targets_resolve_inside_components_and_round_trip() {
 #[test]
 fn through_extent_refuses_mixed_labels_bad_targets_and_real_cycles() {
     for label in ["depth: 3mm", "from: 0mm, to: 3mm", "about: ab", "sweep: 90deg", "sense: cw"] {
-        refused(&format!("{RECT}solid s(sec, through: target, {label})\n"), Code::E100, "cannot be combined");
+        refused(&format!("{RECT}s := solid(sec, through: target, {label})\n"), Code::E100, "cannot be combined");
     }
-    refused(&format!("{RECT}solid s(sec, through: a)\n"), Code::E080, "solid target");
-    refused(&format!("{RECT}solid s(sec, through: missing)\n"), Code::E101, "no such entity");
-    refused(&format!("{RECT}solid s(sec, through: s)\n"), Code::E041, "made of itself");
-    refused(&format!("{RECT}solid s(sec, through: body)\nsolid body(s)\n"), Code::E041, "made of itself");
-    refused(&format!("{RECT}solid stock(sec, depth: 10mm)\nsolid s(sec, through: body)\nsolid body(stock)\ns on body\n"), Code::E041, "made of itself");
-    refused(&format!("{RECT}solid a1(sec, through: b1)\nsolid b1(sec, through: a1)\n"), Code::E041, "made of itself");
-    refused(&format!("{RECT}solid stock(sec, depth: 10mm)\nsolid body(stock)\nstock through body\n"), Code::E100, "now `cut`");
+    refused(&format!("{RECT}s := solid(sec, through: a)\n"), Code::E080, "solid target");
+    refused(&format!("{RECT}s := solid(sec, through: missing)\n"), Code::E101, "no such entity");
+    refused(&format!("{RECT}s := solid(sec, through: s)\n"), Code::E041, "made of itself");
+    refused(&format!("{RECT}s := solid(sec, through: body)\nbody := solid(s)\n"), Code::E041, "made of itself");
+    refused(&format!("{RECT}stock := solid(sec, depth: 10mm)\ns := solid(sec, through: body)\nbody := solid(stock)\ns on body\n"), Code::E041, "made of itself");
+    refused(&format!("{RECT}a1 := solid(sec, through: b1)\nb1 := solid(sec, through: a1)\n"), Code::E041, "made of itself");
+    refused(&format!("{RECT}stock := solid(sec, depth: 10mm)\nbody := solid(stock)\nstock through body\n"), Code::E100, "now `cut`");
 }
 
 #[test]
 fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
-    let src = format!("unit mm\npoint origin hint(x: 0, y: 0)\npoint toward hint(x: 1, y: 0)\n\
-        plane front(origin: origin, toward: toward, u: (1, 0, 0), v: (0, 1, 0))\n\
-        plane side0(origin: origin, toward: toward, u: (1, 0, 0), v: (0, 0, 1))\n\
-        plane side(origin: origin, toward: toward, from: side0, offset: 80mm)\n\
+    let src = format!("unit mm\norigin := point hint(x: 0, y: 0)\ntoward := point hint(x: 1, y: 0)\n\
+        front := plane(origin: origin, toward: toward, u: (1, 0, 0), v: (0, 1, 0))\n\
+        side0 := plane(origin: origin, toward: toward, u: (1, 0, 0), v: (0, 0, 1))\n\
+        side := plane(origin: origin, toward: toward, from: side0, offset: 80mm)\n\
         in front {{\n{}\n}}\n\
-        in side {{\npoint hc hint(x: 30, y: -5)\ncircle h(center: hc) hint(r: 2)\nface hf(h)\n}}\n\
-        solid stock(sec, depth: 10mm)\nsolid body(stock)\n\
-        solid tool(hf, through: body)\ntool cut body\n", RECT.replace("unit mm\n", ""));
+        in side {{\nhc := point hint(x: 30, y: -5)\nh := circle(center: hc) hint(r: 2)\nhf := face(h)\n}}\n\
+        stock := solid(sec, depth: 10mm)\nbody := solid(stock)\n\
+        tool := solid(hf, through: body)\ntool cut body\n", RECT.replace("unit mm\n", ""));
     let mut e = read(&src);
     let explicit = read(&src.replace("through: body", "from: -121mm, to: -79mm"));
     let want = volume(&explicit, "body");
@@ -906,12 +909,12 @@ fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
     }
 }
 
-const ANNULUS: &str = "unit mm\npoint center hint(x: 0, y: 0)\ncircle outer(center: center) hint(r: 10)\ncircle inner(center: center) hint(r: 5)\nface section(outer, holes: inner)\n";
+const ANNULUS: &str = "unit mm\ncenter := point hint(x: 0, y: 0)\nouter := circle(center: center) hint(r: 10)\ninner := circle(center: center) hint(r: 5)\nsection := face(outer, holes: inner)\n";
 
 #[test]
 fn section_holes_sweep_and_cut_with_source_face_names() {
     use gcs_core::solid::{ApproximationPolicy::Report, WorldPoint};
-    let e = read(&format!("{ANNULUS}solid sleeve(section, depth: 3mm)\nsolid stock(face(outer), depth: 6mm)\nsolid body(stock)\nsleeve cut body\n"));
+    let e = read(&format!("{ANNULUS}sleeve := solid(section, depth: 3mm)\nstock := solid(face(outer), depth: 6mm)\nbody := solid(stock)\nsleeve cut body\n"));
     let ring = e.sketch.evaluated_solid(e.map.ent_named("sleeve").unwrap().i(), Report).unwrap();
     assert!((ring.volume() - 225.0 * std::f64::consts::PI).abs() < 0.6);
     assert!(!ring.contains_world(WorldPoint([0.0, 1.0, 0.0])));
@@ -929,7 +932,7 @@ fn section_holes_sweep_and_cut_with_source_face_names() {
 #[test]
 fn section_holes_round_trip_copy_delete_and_invalidate() {
     use gcs_core::{model::EntRef, solid::ApproximationPolicy::Report};
-    let src = format!("{ANNULUS}solid sleeve(face(outer, holes: inner), from: 1mm, to: 4mm)\n");
+    let src = format!("{ANNULUS}sleeve := solid(face(outer, holes: inner), from: 1mm, to: 4mm)\n");
     let (mut p, _) = parse(&src);
     let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(printed.contains("holes: inner"));
@@ -950,7 +953,7 @@ fn section_holes_round_trip_copy_delete_and_invalidate() {
 
 #[test]
 fn section_holes_work_in_through_cutters_and_their_targets() {
-    let e = read(&format!("{ANNULUS}solid stock(section, depth: 8mm)\nsolid body(stock)\nsolid tool(face(outer, holes: inner), through: body)\ntool cut body\n"));
+    let e = read(&format!("{ANNULUS}stock := solid(section, depth: 8mm)\nbody := solid(stock)\ntool := solid(face(outer, holes: inner), through: body)\ntool cut body\n"));
     assert!(volume(&e, "body").abs() < 1e-8);
     assert!(volume(&e, "tool") > volume(&e, "stock"));
 }
@@ -960,13 +963,13 @@ fn section_holes_accept_multiple_component_loops_and_revolutions() {
     // A section of area 2400 - 100 - 100 = 2200, with both holes at x=30.
     // Revolving about the left edge gives 2*pi*30*2200 by Pappus's theorem.
     let src = format!("{RECT}\ncomponent Hole(y: Length) {{\n\
-        point p hint(x: 25, y: y)\npoint q hint(x: 35, y: y)\n\
-        point r hint(x: 35, y: y + 10mm)\npoint s hint(x: 25, y: y + 10mm)\n\
-        profile = line a(p,q) -> line b(q,r) -> line c(r,s) -> line d(s,p) -> close\n}}\n\
-        h0: Hole(y: 5mm)\nh1: Hole(y: 25mm)\n\
-        face section(ab, bc, cd, da, holes: h0.profile, h1.profile)\n\
-        solid slab(section, depth: 3mm)\nsolid turned(section, about: da)\n\
-        solid quarter(section, about: da, sweep: 90deg)\n");
+        p := point hint(x: 25, y: y)\nq := point hint(x: 35, y: y)\n\
+        r := point hint(x: 35, y: y + 10mm)\ns := point hint(x: 25, y: y + 10mm)\n\
+        profile := (a := line(p,q)) -> (b := line(q,r)) -> (c := line(r,s)) -> (d := line(s,p)) -> close\n}}\n\
+        h0 := Hole(y: 5mm)\nh1 := Hole(y: 25mm)\n\
+        section := face(ab, bc, cd, da, holes: h0.profile, h1.profile)\n\
+        slab := solid(section, depth: 3mm)\nturned := solid(section, about: da)\n\
+        quarter := solid(section, about: da, sweep: 90deg)\n");
     let e = read(&src);
     let slab = e.sketch.evaluated_solid(e.map.ent_named("slab").unwrap().i(),
         gcs_core::solid::ApproximationPolicy::Report).unwrap();
@@ -993,27 +996,27 @@ fn section_holes_refuse_invalid_boundaries() {
         (4, 3, ", second", "disjoint"),
         (7, 2, ", second", "disjoint"),
     ] {
-        let src = format!("unit mm\npoint o hint(x: 0, y: 0)\npoint h hint(x: {x}, y: 0)\ncircle outer(center: o) hint(r: 10)\ncircle inner(center: h) hint(r: {r})\ncircle second(center: o) hint(r: 5)\nsolid sleeve(face(outer, holes: inner{extra}), depth: 3mm)\n");
+        let src = format!("unit mm\no := point hint(x: 0, y: 0)\nh := point hint(x: {x}, y: 0)\nouter := circle(center: o) hint(r: 10)\ninner := circle(center: h) hint(r: {r})\nsecond := circle(center: o) hint(r: 5)\nsleeve := solid(face(outer, holes: inner{extra}), depth: 3mm)\n");
         let e = read(&src);
         let err = e.sketch.evaluated_solid(0, Report).err().expect("invalid section must be refused");
         assert!(err.contains(message), "{src}\n{err}");
     }
-    refused(&format!("{ANNULUS}line bad(center, center)\nface badface(outer, holes: bad)\n"), Code::E080, "circle or named closed loop");
-    refused("unit mm\nplane other\npoint o\ncircle outer(center: o) hint(r: 10)\nin other { point h\ncircle inner(center: h) hint(r: 2) }\nface bad(outer, holes: inner)\n", Code::E080, "one plane");
+    refused(&format!("{ANNULUS}bad := line(center, center)\nbadface := face(outer, holes: bad)\n"), Code::E080, "circle or named closed loop");
+    refused("unit mm\nother := plane\no := point\nouter := circle(center: o) hint(r: 10)\nin other { h := point\ninner := circle(center: h) hint(r: 2) }\nbad := face(outer, holes: inner)\n", Code::E080, "one plane");
 }
 
 #[test]
 fn section_holes_check_source_arc_and_line_tangencies_on_a_placed_plane() {
     use gcs_core::solid::ApproximationPolicy::Report;
     for (x, valid) in [(1, false), (2, true), (4, false)] {
-        let src = format!("unit mm\npoint o\npoint q hint(x: 10)\n\
-            plane front(origin: o, toward: q, u: (1, 0, 0), v: (0, 1, 0))\n\
-            plane back(origin: o, toward: q, from: front, offset: 12mm)\n\
-            in back {{\npoint c hint(x: 0, y: 0)\n\
-            point a hint(x: 0, y: -5)\npoint b hint(x: 0, y: 5)\n\
-            outline = arc rim(center: c, start: a, end: b) hint(r: 5) -> line side(b,a) -> close\n\
-            point h hint(x: {x}, y: 0)\ncircle inner(center: h) hint(r: 1)\n\
-            solid sleeve(face(outline, holes: inner), depth: 2mm)\n}}\n");
+        let src = format!("unit mm\no := point\nq := point hint(x: 10)\n\
+            front := plane(origin: o, toward: q, u: (1, 0, 0), v: (0, 1, 0))\n\
+            back := plane(origin: o, toward: q, from: front, offset: 12mm)\n\
+            in back {{\nc := point hint(x: 0, y: 0)\n\
+            a := point hint(x: 0, y: -5)\nb := point hint(x: 0, y: 5)\n\
+            outline := (rim := arc(center: c, start: a, end: b) hint(r: 5)) -> (side := line(b,a)) -> close\n\
+            h := point hint(x: {x}, y: 0)\ninner := circle(center: h) hint(r: 1)\n\
+            sleeve := solid(face(outline, holes: inner), depth: 2mm)\n}}\n");
         let e = read(&src);
         let result = e.sketch.evaluated_solid(0, Report);
         assert_eq!(result.is_ok(), valid, "x={x}: {:?}", result.as_ref().err());
@@ -1027,12 +1030,12 @@ fn section_holes_check_source_arc_and_line_tangencies_on_a_placed_plane() {
 #[test]
 fn section_holes_keep_component_paths_in_named_and_inline_sections() {
     let e = read("unit mm\n\
-        component Bore(x: Length) {\npoint c hint(x: x, y: 0)\ncircle bore(center: c) hint(r: 1)\n}\n\
-        component Part() {\npoint o\ncircle outer(center: o) hint(r: 10)\n\
-        left: Bore(x: -3mm)\nright: Bore(x: 3mm)\n\
-        face section(outer, holes: left.bore, right.bore)\n\
-        solid named(section, depth: 2mm)\n\
-        solid inline(face(outer, holes: left.bore, right.bore), depth: 2mm)\n}\np: Part()\n");
+        component Bore(x: Length) {\nc := point hint(x: x, y: 0)\nbore := circle(center: c) hint(r: 1)\n}\n\
+        component Part() {\no := point\nouter := circle(center: o) hint(r: 10)\n\
+        left := Bore(x: -3mm)\nright := Bore(x: 3mm)\n\
+        section := face(outer, holes: left.bore, right.bore)\n\
+        named := solid(section, depth: 2mm)\n\
+        inline := solid(face(outer, holes: left.bore, right.bore), depth: 2mm)\n}\np := Part()\n");
     for name in ["p.named", "p.inline"] {
         let solid = e.sketch.evaluated_solid(e.map.ent_named(name).unwrap().i(),
             gcs_core::solid::ApproximationPolicy::Report).unwrap();
@@ -1045,11 +1048,11 @@ fn section_holes_keep_component_paths_in_named_and_inline_sections() {
 
 #[test]
 fn section_holes_keep_repeat_paths_stable_when_statements_are_inserted() {
-    let source = "unit mm\npoint center\ncircle outer(center: center) hint(r: 10)\n\
-        repeat 2 as i {\npoint c hint(x: (i * 6 - 3) * 1mm, y: 0)\n\
-        circle bore(center: c) hint(r: 1)\n}\n\
-        solid sleeve(face(outer, holes: bore[0], bore[1]), depth: 2mm)\n";
-    for src in [source.to_string(), format!("point unrelated\n{source}")] {
+    let source = "unit mm\ncenter := point\nouter := circle(center: center) hint(r: 10)\n\
+        repeat 2 as i {\nc := point hint(x: (i * 6 - 3) * 1mm, y: 0)\n\
+        bore := circle(center: c) hint(r: 1)\n}\n\
+        sleeve := solid(face(outer, holes: bore[0], bore[1]), depth: 2mm)\n";
+    for src in [source.to_string(), format!("unrelated := point\n{source}")] {
         let e = read(&src);
         let solid = e.sketch.evaluated_solid(e.map.ent_named("sleeve").unwrap().i(),
             gcs_core::solid::ApproximationPolicy::Report).unwrap();
@@ -1062,8 +1065,8 @@ fn section_holes_keep_repeat_paths_stable_when_statements_are_inserted() {
 #[test]
 fn section_holes_preserve_explicit_closure_winding_and_failed_face_cleanup() {
     let (p, errors) = parse(&format!("{RECT}{HOLE}\n\
-        face bad(a,b,c,d, holes: ab, -> close)\n\
-        face good(d,c,b,a, holes: hole, -> close)\nsolid slab(good, depth: 2mm)\n"));
+        bad := face(a,b,c,d, holes: ab, -> close)\n\
+        good := face(d,c,b,a, holes: hole, -> close)\nslab := solid(good, depth: 2mm)\n"));
     assert!(errors.is_empty());
     let e = elaborate(&p);
     assert!(e.diags.iter().any(|d| d.code == Code::E080));
@@ -1071,7 +1074,7 @@ fn section_holes_preserve_explicit_closure_winding_and_failed_face_cleanup() {
     assert_eq!(e.sketch.lines.len(), 8, "only the good face retains its four closing edges");
     let expected = (2400.0 - 25.0 * std::f64::consts::PI) * 2.0;
     assert!((volume(&e, "slab") - expected).abs() < 0.1);
-    let src = format!("{RECT}{HOLE}\nsolid slab(face(a,b,c,d, holes: hole, -> close), depth: 2mm)\n");
+    let src = format!("{RECT}{HOLE}\nslab := solid(face(a,b,c,d, holes: hole, -> close), depth: 2mm)\n");
     let (mut p, _) = parse(&src);
     let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!((volume(&read(&printed), "slab") - volume(&e, "slab")).abs() < 1e-8);
@@ -1122,22 +1125,22 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
     use gcs_core::{plane, solid::{ApproximationPolicy, WorldPoint}};
     for (phi, height, page_x, page_y, offset) in [(0, 0, 0, 0, 0), (35, 72, 100, -80, 7)] {
         let src = format!("unit mm\nuse components.dims\nuse components.parts\nuse components.throttle\n\
-            param torgb = 2 * rbar - 2 * (1 - oring_squeeze) * tor\n\
-            param torw = oring_groove_w * tor\n\
-            point O hint(x: {page_x}, y: {page_y})\nground O\n\
-            point q hint(x: {}, y: {page_y})\nO distance(40mm, along: x) q\nO distance(0mm, along: y) q\n\
-            plane datum(origin: O, toward: q)\n\
-            plane front(origin: O, toward: q, from: datum, offset: {offset}mm)\n\
-            in front {{\nc: At(O, dx: 0mm, dy: {height}mm)\naxes: Axes(O)\n\
-            circle core(center: c.p) hint(r: torgb / 2)\nradius(torgb / 2) core\n}}\n\
-            thr: Throttle(front, c.p, axes.ax, phi: {phi}deg, dims: vtwin_dims)\n\
-            solid old_barrel(face(thr.barrel), from: -(bossz / 2 + tback), to: bossz / 2)\n\
-            solid old_hub(face(thr.hub), from: bossz / 2, to: bossz / 2 + levw)\n\
-            face groove_section(thr.barrel, holes: core)\n\
-            solid groove0(groove_section, from: torz - torw / 2, to: torz + torw / 2)\n\
-            solid groove1(groove_section, from: -torz - torw / 2, to: -torz + torw / 2)\n\
-            solid groove2(groove_section, from: -(bossz / 2 + tretain) - torw / 2, to: -(bossz / 2 + tretain) + torw / 2)\n\
-            solid reference(old_barrel)\nold_hub on reference\nthr.arm on reference\nthr.knob_s on reference\n\
+            torgb := 2 * rbar - 2 * (1 - oring_squeeze) * tor\n\
+            torw := oring_groove_w * tor\n\
+            O := point hint(x: {page_x}, y: {page_y})\nground O\n\
+            q := point hint(x: {}, y: {page_y})\nO distance(40mm, along: x) q\nO distance(0mm, along: y) q\n\
+            datum := plane(origin: O, toward: q)\n\
+            front := plane(origin: O, toward: q, from: datum, offset: {offset}mm)\n\
+            in front {{\nc := At(O, dx: 0mm, dy: {height}mm)\naxes := Axes(O)\n\
+            core := circle(center: c.p) hint(r: torgb / 2)\nradius(torgb / 2) core\n}}\n\
+            thr := Throttle(front, c.p, axes.ax, phi: {phi}deg, dims: vtwin_dims)\n\
+            old_barrel := solid(face(thr.barrel), from: -(bossz / 2 + tback), to: bossz / 2)\n\
+            old_hub := solid(face(thr.hub), from: bossz / 2, to: bossz / 2 + levw)\n\
+            groove_section := face(thr.barrel, holes: core)\n\
+            groove0 := solid(groove_section, from: torz - torw / 2, to: torz + torw / 2)\n\
+            groove1 := solid(groove_section, from: -torz - torw / 2, to: -torz + torw / 2)\n\
+            groove2 := solid(groove_section, from: -(bossz / 2 + tretain) - torw / 2, to: -(bossz / 2 + tretain) + torw / 2)\n\
+            reference := solid(old_barrel)\nold_hub on reference\nthr.arm on reference\nthr.knob_s on reference\n\
             thr.cross cut reference\ngroove0 cut reference\ngroove1 cut reference\ngroove2 cut reference\n", page_x + 40);
         let (p, errors, linked) = gcs_core::library::parse_linked(&src);
         assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
@@ -1178,18 +1181,18 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
     }
 }
 
-/// A parabola `y = x²` about `o`, as a formula curve, with `a` and `b` held on it at `x = ∓1`.
+/// A parabola `y := x²` about `o`, as a formula curve, with `a` and `b` held on it at `x = ∓1`.
 const PARABOLA: &str = "\
 unit mm
 component Par(o: point, u: Length) {
-  point p = (o.x + u, o.y + u * u / 1mm)
+  p := point(x: o.x + u, y: o.y + u * u / 1mm)
 }
-point o hint(x: 0mm, y: 0mm)
+o := point hint(x: 0mm, y: 0mm)
 ground o
-curve k = Par(o).p over u in (-2mm, 2mm)
-point a hint(x: -1mm, y: 1mm)
-point b hint(x: 1mm, y: 1mm)
-point c hint(x: 0mm, y: 3mm)
+k := Par(o).p over u in (-2mm, 2mm)
+a := point hint(x: -1mm, y: 1mm)
+b := point hint(x: 1mm, y: 1mm)
+c := point hint(x: 0mm, y: 3mm)
 ground c
 a on k hint(t: -1)
 b on k hint(t: 1)
@@ -1200,7 +1203,7 @@ fix b.x
 #[test]
 fn a_face_runs_along_the_stretch_of_a_curve_between_two_points_held_on_it() {
     // the parabola from a to b and the chord back: 2 − 2/3 across, 3 deep
-    let e = read(&format!("{PARABOLA}solid s(face(k from a to b, -> close), depth: 3mm)\n"));
+    let e = read(&format!("{PARABOLA}s := solid(face(k from a to b, -> close), depth: 3mm)\n"));
     let v = volume(&e, "s");
     assert!((v - 4.0).abs() < 2e-3, "{v}");
     // the exact kernel reads the stretch as a B-spline fitted within `FIT_MM` of the curve
@@ -1213,22 +1216,22 @@ fn a_face_runs_along_the_stretch_of_a_curve_between_two_points_held_on_it() {
     let exact = gcs_core::brep::props::volume(&b);
     assert!((exact - 4.0).abs() <= 3.0 * 2.0 * 3.0 * gcs_core::solid::cad::FIT_MM, "{exact}");
     // either way round, and printed as written
-    let back = read(&format!("{PARABOLA}solid s(face(k from b to a, -> close), depth: 3mm)\n"));
+    let back = read(&format!("{PARABOLA}s := solid(face(k from b to a, -> close), depth: 3mm)\n"));
     assert!((volume(&back, "s") - 4.0).abs() < 2e-3);
-    let (prog, _) = parse("face f(k from a to b, -> close)\n");
+    let (prog, _) = parse("f := face(k from a to b, -> close)\n");
     let mut text = String::new();
     gcs_core::syntax::write_stmt_to(&mut text, &prog.stmts().next().unwrap().kind).unwrap();
-    assert!(text.contains("f(k from a to b, -> close)"), "{text}");
+    assert!(text.contains("f := face(k from a to b, -> close)"), "{text}");
 }
 
 #[test]
 fn a_curve_in_a_face_is_a_stretch_between_points_held_on_it() {
-    refused(&format!("{PARABOLA}face f(k, -> close)\n"), Code::E080, "name the stretch");
-    refused(&format!("{PARABOLA}face f(k from a to c, -> close)\n"), Code::E080, "`c` is not held on `k`");
-    refused(&format!("{PARABOLA}face f(k from a to a, -> close)\n"), Code::E080, "to itself");
-    refused(&format!("{PARABOLA}line l(a, c)\nface f(l from a to c, -> close)\n"), Code::E080, "runs along a curve");
-    refused(&format!("{PARABOLA}face f(k from a to b, k from b to a)\n"), Code::E080, "twice");
+    refused(&format!("{PARABOLA}f := face(k, -> close)\n"), Code::E080, "name the stretch");
+    refused(&format!("{PARABOLA}f := face(k from a to c, -> close)\n"), Code::E080, "`c` is not held on `k`");
+    refused(&format!("{PARABOLA}f := face(k from a to a, -> close)\n"), Code::E080, "to itself");
+    refused(&format!("{PARABOLA}l := line(a, c)\nf := face(l from a to c, -> close)\n"), Code::E080, "runs along a curve");
+    refused(&format!("{PARABOLA}f := face(k from a to b, k from b to a)\n"), Code::E080, "twice");
     // and a face refused after minting one stretch leaves no stretch behind
-    let (prog, _) = parse(&format!("{PARABOLA}face f(k from a to b, k from b to a)\n"));
+    let (prog, _) = parse(&format!("{PARABOLA}f := face(k from a to b, k from b to a)\n"));
     assert_eq!(elaborate(&prog).sketch.curves.len(), 1);
 }

@@ -293,7 +293,7 @@ fn exports() -> std::path::PathBuf {
 }
 
 fn read_stl(path: &std::path::Path) -> Vec<Tri> {
-    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e} (export the pair first)",path.display()));
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{} := {e} (export the pair first)",path.display()));
     let (v,t) = gcs_core::solid::agreement::stl_triangles(&bytes,1.).unwrap();
     t.iter().map(|t| t.map(|i| v[i as usize])).collect()
 }

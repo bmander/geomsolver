@@ -66,7 +66,7 @@ using an ordinary component and a named motion. Both STL and native STEP support
 
 ```solvent
 repeat teeth as i {
-  solid indexed(tool, under: indexing, at: i * 360deg / teeth)
+  indexed := solid(tool, under: indexing, at: i * 360deg / teeth)
   indexed cut body
 }
 ```
@@ -77,7 +77,7 @@ The motion's ratio, phase and relative frame apply as usual.
 A continuous generating operation has angular bounds instead of a single pose:
 
 ```solvent
-solid removal(tool, under: generating, from: -30deg, to: 30deg)
+removal := solid(tool, under: generating, from: -30deg, to: 30deg)
 removal cut body
 ```
 

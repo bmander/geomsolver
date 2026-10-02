@@ -4,22 +4,22 @@ use std
 
 component IndexedCuts(tool: solid, target: solid, indexing: motion, count: Int) {
   repeat count as i {
-    solid indexed(tool, under: indexing, at: i * 360deg / count)
+    indexed := solid(tool, under: indexing, at: i * 360deg / count)
     indexed cut target
   }
 }
 
-construction centerline line shaft(std.origin, std.up.toward)
-motion turn(about: shaft)
-plane top(origin: std.origin, toward: std.front.toward, u: (1,0,0), v: (0,1,0))
+construction centerline shaft := line(std.origin, std.up.toward)
+turn := motion(about: shaft)
+top := plane(origin: std.origin, toward: std.front.toward, u: (1,0,0), v: (0,1,0))
 in top {
-  radius(20mm) circle rim(center: std.origin)
-  solid stock(face(rim), depth: 5mm)
-  private point hole_center
+  rim := radius(20mm) circle(center: std.origin)
+  stock := solid(face(rim), depth: 5mm)
+  private hole_center := point
   hole_center distance(12mm, along: u) top
   hole_center distance(0mm, along: v) top
-  radius(2mm) circle hole(center: hole_center)
-  construction solid tool(face(hole), through: body)
+  hole := radius(2mm) circle(center: hole_center)
+  construction tool := solid(face(hole), through: body)
 }
-solid body(stock)
-pattern: IndexedCuts(tool, body, turn, count: 6)
+body := solid(stock)
+pattern := IndexedCuts(tool, body, turn, count: 6)

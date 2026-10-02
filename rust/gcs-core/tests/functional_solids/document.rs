@@ -16,22 +16,22 @@ fn field(e: &program::Elaborated,name: &str) -> SpatialField {
     SpatialField::read(&e.sketch,e.map.ent_named(name).unwrap().i(),1e-10).unwrap()
 }
 const SPHERE: &str = "unit mm
-point o hint(x: 3,y: 0)
-point a hint(x: 3,y: -1)
-point b hint(x: 3,y: 1)
+o := point hint(x: 3,y: 0)
+a := point hint(x: 3,y: -1)
+b := point hint(x: 3,y: 1)
 ground o
 ground a
 ground b
-arc rim(center: o,start: a,end: b)
+rim := arc(center: o,start: a,end: b)
 radius(1) rim
-line axis(b,a)
-solid ball(face(rim,axis),about: axis)
-point z hint(x: 0,y: 0)
-point q hint(x: 0,y: 1)
+axis := line(b,a)
+ball := solid(face(rim,axis),about: axis)
+z := point hint(x: 0,y: 0)
+q := point hint(x: 0,y: 1)
 ground z
 ground q
-line spindle(z,q)
-motion indexing(about: spindle)
+spindle := line(z,q)
+indexing := motion(about: spindle)
 ";
 
 #[test]
@@ -62,16 +62,16 @@ fn source_sphere_sweep_matches_a_torus_and_keeps_snapshot_geometry() {
 
 #[test]
 fn source_bodies_holes_and_nested_placements_keep_material_and_finite_support() {
-    let e = read(&format!("{SPHERE}\nsolid first(ball,under: indexing,at: 45deg)\n\
-        solid moved(first,under: indexing,at: 45deg)\nsolid body(ball)\nmoved on body\n"));
+    let e = read(&format!("{SPHERE}\nfirst := solid(ball,under: indexing,at: 45deg)\n\
+        moved := solid(first,under: indexing,at: 45deg)\nbody := solid(ball)\nmoved on body\n"));
     let body = field(&e,"body");
     for p in [[3.,0.,0.],[0.,3.,0.]] { assert!(body.bounds(point(p)).unwrap().bounds()[1] < -0.99); }
     assert!(body.bounds(point([0.;3])).unwrap().bounds()[0] > 1.99);
     assert!(body.support_bounds().unwrap().is_some());
-    let e = read("unit mm\npoint o hint(x: 0,y: 0)\npoint z hint(x: 0,y: 1)\n\
-        point c hint(x: 3,y: 0)\nground o\nground z\nground c\nline axis(o,z)\n\
-        circle outer(center: c)\nradius(1) outer\ncircle inner(center: c)\nradius(0.4) inner\n\
-        solid body(face(outer,holes: inner),about: axis)\n");
+    let e = read("unit mm\no := point hint(x: 0,y: 0)\nz := point hint(x: 0,y: 1)\n\
+        c := point hint(x: 3,y: 0)\nground o\nground z\nground c\naxis := line(o,z)\n\
+        outer := circle(center: c)\nradius(1) outer\ninner := circle(center: c)\nradius(0.4) inner\n\
+        body := solid(face(outer,holes: inner),about: axis)\n");
     let body = field(&e,"body");
     for x in 0..=40 {
         let x = x as f64/8.; let d = (x-3.).abs();
@@ -100,13 +100,13 @@ fn rounded_crown_source_matches_independent_analytic_material_queries() {
 
 #[test]
 fn major_arcs_and_reversed_edges_keep_their_finite_sector() {
-    let source = "unit mm\npoint o hint(x: 0,y: 0)\npoint z hint(x: 0,y: 1)\n\
-        point c hint(x: 3,y: 0)\npoint a hint(x: 4,y: 0)\npoint b hint(x: 3,y: -1)\n\
-        ground o\nground z\nground c\nground a\nground b\nline axis(o,z)\n\
-        arc round(center: c,start: a,end: b)\nradius(1) round\nline chord(a,b)\n\
-        face profile(round,chord)\nsolid body(profile,about: axis)\n";
-    for source in [source.to_string(),source.replace("profile(round,chord)","profile(chord,round)"),
-        source.replace("axis(o,z)","axis(z,o)")] {
+    let source = "unit mm\no := point hint(x: 0,y: 0)\nz := point hint(x: 0,y: 1)\n\
+        c := point hint(x: 3,y: 0)\na := point hint(x: 4,y: 0)\nb := point hint(x: 3,y: -1)\n\
+        ground o\nground z\nground c\nground a\nground b\naxis := line(o,z)\n\
+        round := arc(center: c,start: a,end: b)\nradius(1) round\nchord := line(a,b)\n\
+        profile := face(round,chord)\nbody := solid(profile,about: axis)\n";
+    for source in [source.to_string(),source.replace("profile := face(round,chord)","profile := face(chord,round)"),
+        source.replace("axis := line(o,z)","axis := line(z,o)")] {
         let e = read(&source);
         let field = field(&e,"body");
         for ir in 10..=50 { for iz in -20..=20 {
@@ -150,12 +150,12 @@ fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
         assert!(if inside { got[1] < 0. } else { got[0] > 0. },"{p:?}: {got:?}");
     }
     // A reflex corner is no longer refused: the loop reads as its signed boundary distance.
-    let e = read("unit mm\npoint o hint(x: 0,y: 0)\npoint z hint(x: 0,y: 1)\n\
-        ground o\nground z\nline axis(o,z)\n\
-        point a hint(x: 1,y: 0)\npoint b hint(x: 4,y: 0)\npoint c hint(x: 4,y: 3)\n\
-        point d hint(x: 2,y: 1)\npoint e hint(x: 1,y: 3)\n\
+    let e = read("unit mm\no := point hint(x: 0,y: 0)\nz := point hint(x: 0,y: 1)\n\
+        ground o\nground z\naxis := line(o,z)\n\
+        a := point hint(x: 1,y: 0)\nb := point hint(x: 4,y: 0)\nc := point hint(x: 4,y: 3)\n\
+        d := point hint(x: 2,y: 1)\ne := point hint(x: 1,y: 3)\n\
         ground a\nground b\nground c\nground d\nground e\n\
-        face profile(a,b,c,d,e,-> close)\nsolid body(profile,about: axis)\n");
+        profile := face(a,b,c,d,e,-> close)\nbody := solid(profile,about: axis)\n");
     let body = SpatialField::read(&e.sketch,0,1e-10).unwrap();
     for (p,inside) in [([3.,0.,0.5],true),([0.,1.4,2.],true),([2.2,0.,2.],false),([0.5,0.,1.],false)] {
         let got = body.bounds(point(p)).unwrap().bounds();

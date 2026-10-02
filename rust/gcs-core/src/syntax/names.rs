@@ -111,7 +111,7 @@ pub fn num(v: f64) -> String {
 /// the bare kind and used to be refused here by the same character test the printer ran.
 pub(crate) fn decl_head(kind: EntKind, name: &DeclName) -> String {
     match name.written() {
-        Some(n) => format!("{} {}", kind.as_str(), n.text),
+        Some(n) => format!("{} := {}", n.text, kind.as_str()),
         None => kind.as_str().to_string(),
     }
 }

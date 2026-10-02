@@ -17,7 +17,7 @@ import { initCore } from '../core/wasm.js';
 await initCore();
 
 const TORUS = readFileSync(new URL('../../../rust/examples/swept_torus.sv', import.meta.url), 'utf8');
-const PLAIN = 'unit mm\npoint o hint(x: 0, y: 0)\nground o\n';
+const PLAIN = 'unit mm\no := point hint(x: 0, y: 0)\nground o\n';
 
 class Stub implements MeshWorker {
   posted: Job[] = [];
@@ -211,8 +211,8 @@ test('a picture of swept solids alone is the same at every zoom; one of a static
   // the torus example's preview projects its swept part, which is one surface whatever the zoom
   assert.ok(derived(swept.sketch, 0.1).length > 0);
   assert.equal(derivedDetailFree(swept.sketch), true);
-  const plain = Document.read('unit mm\npoint o hint(x: 0, y: 0)\nground o\ncircle c(center: o) hint(r: 5)\n'
-    + 'radius(5mm) c\nsolid body(face(c), depth: 3mm)\n');
+  const plain = Document.read('unit mm\no := point hint(x: 0, y: 0)\nground o\nc := circle(center: o) hint(r: 5)\n'
+    + 'radius(5mm) c\nbody := solid(face(c), depth: 3mm)\n');
   showSolids(plain.sketch);
   assert.ok(derived(plain.sketch, 0.1).length > 0);
   assert.equal(derivedDetailFree(plain.sketch), false, 'a static solid is cut finer as the zoom asks');

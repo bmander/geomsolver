@@ -1,6 +1,6 @@
 //! One namespace for the three ways a number gets a name (issue #47, item 7).
 //!
-//! `param w = 60`, `a distance(w = 60) b` and a bare `w` nothing defines used to be resolved by
+//! `w := 60`, `a distance(w := 60) b` and a bare `w` nothing defines used to be resolved by
 //! two machineries with different rules: a `param` was the flattener's, lexically scoped, and
 //! a named dimension the expression graph's, one global table — so a `param` could not read a
 //! named dimension, a name defined both ways collided as a stray `=`, and a bare name inside a
@@ -15,9 +15,9 @@ use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::syntax::parse;
 
-const BASE: &str = "point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 40)
+const BASE: &str = "a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 40)
 ground a
 a horizontal b
 b vertical c
@@ -46,7 +46,7 @@ fn dist(sk: &gcs_core::model::Sketch, i: usize, j: usize) -> f64 {
 /// A `param` reads a named dimension: the two are one kind of definition.
 #[test]
 fn a_param_reads_a_named_dimension() {
-    let (e, d) = read(&format!("{BASE}a distance(w = 60) b\nparam h = w / 2\nb distance(h) c\n"));
+    let (e, d) = read(&format!("{BASE}a distance(w := 60) b\nh := w / 2\nb distance(h) c\n"));
     assert!(d.is_empty(), "{d:?}");
     let sk = solved(e);
     assert!((dist(&sk, 1, 2) - 30.0).abs() < 1e-9);
@@ -57,7 +57,7 @@ fn a_param_reads_a_named_dimension() {
 /// name used to leave behind.
 #[test]
 fn a_name_defined_both_ways_is_declared_twice() {
-    let (_, d) = read(&format!("param w = 60\n{BASE}a distance(w = 60) b\n"));
+    let (_, d) = read(&format!("w := 60\n{BASE}a distance(w := 60) b\n"));
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].starts_with("E001") && d[0].contains("`w` is declared twice"), "{d:?}");
 }
@@ -67,8 +67,8 @@ fn a_name_defined_both_ways_is_declared_twice() {
 #[test]
 fn a_bare_name_in_a_component_is_the_instances_own_unknown() {
     let doc = format!(
-        "component T(p: point, q: point) {{ p distance(w) q }}\n{BASE}point d hint(x: 0, y: 40)\n\
-         t1: T(a, b)\nt2: T(b, c)\nt3: T(c, d)\n"
+        "component T(p: point, q: point) {{ p distance(w) q }}\n{BASE}d := point hint(x: 0, y: 40)\n\
+         t1 := T(a, b)\nt2 := T(b, c)\nt3 := T(c, d)\n"
     );
     let (e, d) = read(&doc);
     let free: Vec<&String> = d.iter().filter(|m| m.starts_with("W111")).collect();
@@ -90,7 +90,7 @@ fn a_bare_name_in_a_component_is_the_instances_own_unknown() {
 fn a_component_receives_a_named_dimension_as_an_argument() {
     let doc = format!(
         "component T(p: point, q: point, w: Length) {{ p distance(w / 2) q }}\n\
-         {BASE}a distance(w = 60) b\nt: T(b, c, w: w)\n"
+         {BASE}a distance(w := 60) b\nt := T(b, c, w: w)\n"
     );
     let (e, d) = read(&doc);
     assert!(d.is_empty(), "{d:?}");
@@ -104,7 +104,7 @@ fn a_component_receives_a_named_dimension_as_an_argument() {
 fn a_modules_component_does_not_read_the_callers_names() {
     let mut shelf: BTreeMap<&str, &str> = BTreeMap::new();
     shelf.insert("lib.t", "component T(p: point, q: point, w: Length) { p distance(w) q }\n");
-    let src = format!("use lib.t\n{BASE}a distance(w = 60) b\nt: T(b, c)\n");
+    let src = format!("use lib.t\n{BASE}a distance(w := 60) b\nt := T(b, c)\n");
     let (mut prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let linked = link(&mut prog, &mut |name| shelf.get(name).map(|t| t.to_string()));
@@ -122,9 +122,9 @@ fn a_modules_component_does_not_read_the_callers_names() {
 #[test]
 fn a_named_dimension_in_an_instance_is_read_by_its_dotted_path() {
     let doc = format!(
-        "component T(p: point, q: point) {{ p distance(w = 60) q }}\n\
-         component U(p: point, q: point, r: point) {{ t: T(p, q)\n  q distance(t.w / 2) r }}\n\
-         {BASE}point d hint(x: 0, y: 40)\nu: U(a, b, c)\nc distance(u.t.w) d\n"
+        "component T(p: point, q: point) {{ p distance(w := 60) q }}\n\
+         component U(p: point, q: point, r: point) {{ t := T(p, q)\n  q distance(t.w / 2) r }}\n\
+         {BASE}d := point hint(x: 0, y: 40)\nu := U(a, b, c)\nc distance(u.t.w) d\n"
     );
     let (e, d) = read(&doc);
     assert!(d.is_empty(), "{d:?}");
@@ -145,10 +145,10 @@ fn a_named_dimension_in_an_instance_is_read_by_its_dotted_path() {
 #[test]
 fn a_block_copy_declares_its_own_names_and_shares_the_bodys_unknowns() {
     let (e, d) = read(
-        "point o hint(x: 0, y: 0)\nground o\n\
-         cycle 2 { point z hint(x: 5, y: 5)\n  point y hint(x: 9, y: 2)\n\
-         point x hint(x: 3, y: 8)\n\
-         o distance(w = 60) z\n  o distance(w / 2) y\n  o distance(s) x }\n",
+        "o := point hint(x: 0, y: 0)\nground o\n\
+         cycle 2 { z := point hint(x: 5, y: 5)\n  y := point hint(x: 9, y: 2)\n\
+         x := point hint(x: 3, y: 8)\n\
+         o distance(w := 60) z\n  o distance(w / 2) y\n  o distance(s) x }\n",
     );
     let free: Vec<&String> = d.iter().filter(|m| m.starts_with("W111")).collect();
     assert_eq!(d.len(), free.len(), "{d:?}");
@@ -168,7 +168,7 @@ fn a_block_copy_declares_its_own_names_and_shares_the_bodys_unknowns() {
 fn an_unbound_formal_inside_a_block_is_a_name_the_graph_reads() {
     let (e, d) = read(
         "component T(p: point, q: point, w: Length) { p distance(w) q }\n\
-         point o hint(x: 0, y: 0)\nground o\ncycle 3 { point a hint(x: 10, y: 0)\n  t: T(o, a) }\n",
+         o := point hint(x: 0, y: 0)\nground o\ncycle 3 { a := point hint(x: 10, y: 0)\n  t := T(o, a) }\n",
     );
     assert!(d.iter().all(|m| m.starts_with("W111")), "{d:?}");
     assert_eq!(e.sketch.free_vars.len(), 3, "{:?}", e.sketch.free_vars);
@@ -179,12 +179,12 @@ fn an_unbound_formal_inside_a_block_is_a_name_the_graph_reads() {
 /// name a number.
 #[test]
 fn a_param_may_not_read_a_free_variable() {
-    let (_, d) = read(&format!("{BASE}a distance(s) b\nparam q = s * 2\n"));
+    let (_, d) = read(&format!("{BASE}a distance(s) b\nq := s * 2\n"));
     let said = d.iter().any(|m| m.starts_with("E103") && m.contains("`s` is not a number here"));
     assert!(said, "{d:?}");
 }
 
-/// **A name declared over a built-in is said** (issue #48, item 2).  `param tau = 35deg` read
+/// **A name declared over a built-in is said** (issue #48, item 2).  `tau := 35deg` read
 /// 35° where the flattener substituted the text and a full turn where `expr::eval` worked a
 /// number out, so one name had two values and the lever it turned stood at 360° with nothing
 /// said.  W112 at every declaration of a number's name: a `param`, a formal, a block's index —
@@ -194,24 +194,24 @@ fn a_name_that_shadows_a_built_in_is_said() {
     let w112 = |src: &str| -> Vec<String> {
         read(src).1.into_iter().filter(|m| m.starts_with("W112")).collect()
     };
-    let d = w112(&format!("param tau = 35deg\n{BASE}"));
+    let d = w112(&format!("tau := 35deg\n{BASE}"));
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].contains("`tau`") && d[0].contains("a `param`"), "{d:?}");
     // a formal, in a component nothing instantiates: the name is wrong wherever it is written
-    let d = w112("component Lever(o: point, tau: Angle) { point q hint(x: o.x + cos(tau)) }\n");
+    let d = w112("component Lever(o: point, tau: Angle) { q := point hint(x: o.x + cos(tau)) }\n");
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].contains("a formal"), "{d:?}");
     // a block's index
-    let d = w112(&format!("{BASE}cycle 3 as pi {{ point p hint(x: 10 * pi, y: 0) }}\n"));
+    let d = w112(&format!("{BASE}cycle 3 as pi {{ p := point hint(x: 10 * pi, y: 0) }}\n"));
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].contains("a block's index"), "{d:?}");
     // a function's name is built in as much as a constant's
-    let d = w112(&format!("param min = 3\n{BASE}"));
+    let d = w112(&format!("min := 3\n{BASE}"));
     assert!(d[0].contains("a built-in function"), "{d:?}");
     // and every other name is a name: said once, at the declaration, and about nothing else
-    assert!(w112(&format!("param taut = 35deg\nparam pit = 2\n{BASE}")).is_empty());
+    assert!(w112(&format!("taut := 35deg\npit := 2\n{BASE}")).is_empty());
     // a named dimension is refused where it is parsed, and is not warned about twice
-    let (_, d) = read(&format!("{BASE}a distance(tau = 40) b\n"));
+    let (_, d) = read(&format!("{BASE}a distance(tau := 40) b\n"));
     assert!(d.iter().any(|m| m.contains("`tau` is built in and cannot be defined")), "{d:?}");
     assert!(d.iter().all(|m| !m.starts_with("W112")), "{d:?}");
 }

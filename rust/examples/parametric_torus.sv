@@ -4,13 +4,13 @@
 unit mm
 use std
 
-param ring = 20mm       // from the axis to the tube's centre
-param tube = 6mm        // the tube's radius
+ring := 20mm       // from the axis to the tube's centre
+tube := 6mm        // the tube's radius
 
-construction centerline line spine(std.origin, std.up.toward)
-private point centre hint(x: ring, y: 0)
+construction centerline spine := line(std.origin, std.up.toward)
+private centre := point hint(x: ring, y: 0)
 std.origin horizontal centre
 std.origin distance(ring, along: right) centre
-private circle section(center: centre) hint(r: tube)
+private section := circle(center: centre) hint(r: tube)
 radius(tube) section
-solid torus(face(section), about: spine)
+torus := solid(face(section), about: spine)

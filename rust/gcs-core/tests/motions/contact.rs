@@ -7,9 +7,9 @@ fn family(source_rate: f64,observer_rate: f64,source_phase: f64,observer_phase: 
 }
 fn from_axes(axes: &str,source_rate: f64,observer_rate: f64,source_phase: f64,observer_phase: f64) -> motion::Family {
     let e = solved(&format!("{axes}\n\
-        motion source(about: axis,ratio: {source_rate},phase: {source_phase}deg)\n\
-        motion observer(about: other,ratio: {observer_rate},phase: {observer_phase}deg)\n\
-        motion relative(source,relative_to: observer)\n"));
+        source := motion(about: axis,ratio: {source_rate},phase: {source_phase}deg)\n\
+        observer := motion(about: other,ratio: {observer_rate},phase: {observer_phase}deg)\n\
+        relative := motion(source,relative_to: observer)\n"));
     motion::Family::read(&e.sketch,e.map.ent_named("relative").unwrap().i()).unwrap()
 }
 
@@ -21,8 +21,8 @@ fn temporal_coefficients_match_full_motion_with_offset_axes_and_signed_rates() {
         SurfacePoint {position:[1.,-2.,0.5],du:[-1.,1.,0.],dv:[0.,-2.,1.]},
     ];
     let (mut roots,mut empty) = (0,0);
-    let shifted = AXES.replace("point o hint(x: 0,y: 0)","point o hint(x: -1,y: 2)")
-        .replace("point x hint(x: 1,y: 0)","point x hint(x: 3,y: 1)");
+    let shifted = AXES.replace("o := point hint(x: 0,y: 0)","o := point hint(x: -1,y: 2)")
+        .replace("x := point hint(x: 1,y: 0)","x := point hint(x: 3,y: 1)");
     for axes in [AXES,shifted.as_str()] {
     for source_rate in [-2.,0.,0.7] { for observer_rate in [-0.5,0.,3.] {
         let family = from_axes(axes,source_rate,observer_rate,31.,-47.);
@@ -100,9 +100,9 @@ fn empty_constant_and_double_root_contacts_are_not_confused() {
     let stationary = family(0.,0.5,90.,0.);
     assert_eq!(stationary.normal_velocity(surface(2.)).unwrap().roots([-1.,1.],1e-10,8)
         .unwrap_err(),Error::Degenerate);
-    let e = solved(&format!("{AXES}\nmotion spin(about: axis)\n\
-        motion identity(spin,relative_to: spin)\n\
-        motion nested(identity,relative_to: spin)\n"));
+    let e = solved(&format!("{AXES}\nspin := motion(about: axis)\n\
+        identity := motion(spin,relative_to: spin)\n\
+        nested := motion(identity,relative_to: spin)\n"));
     let read = |name| motion::Family::read(&e.sketch,e.map.ent_named(name).unwrap().i()).unwrap();
     assert_eq!(read("spin").normal_velocity(surface(2.)).unwrap().roots([-1.,1.],1e-10,8)
         .unwrap_err(),Error::Degenerate);

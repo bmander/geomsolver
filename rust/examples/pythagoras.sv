@@ -18,19 +18,19 @@
 
 // the legs, as numbers the drawing is placed from; `a` and `b` below are the dimensions that
 // state them, and every other leg reads those names rather than these
-param la = 30
-param lb = 40
-param s = la + lb
+la := 30
+lb := 40
+s := la + lb
 
-point O hint(x: 0, y: 0)
-point E hint(x: s, y: 0)
-point F hint(x: s, y: s)
-point G hint(x: 0, y: s)
+O := point hint(x: 0, y: 0)
+E := point hint(x: s, y: 0)
+F := point hint(x: s, y: s)
+G := point hint(x: 0, y: s)
 
-line bottom(O, E)
-line right(E, F)
-line top(F, G)
-line left(G, O)
+bottom := line(O, E)
+right := line(E, F)
+top := line(F, G)
+left := line(G, O)
 
 bottom perpendicular right
 right perpendicular top
@@ -39,10 +39,10 @@ horizontal bottom
 bottom equal left
 
 // one point on each side, `a` along from the corner it follows going round
-point P1 hint(x: la, y: 0)
-point P2 hint(x: s, y: la)
-point P3 hint(x: lb, y: s)
-point P4 hint(x: 0, y: lb)
+P1 := point hint(x: la, y: 0)
+P2 := point hint(x: s, y: la)
+P3 := point hint(x: lb, y: s)
+P4 := point hint(x: 0, y: lb)
 
 P1 on bottom
 P2 on right
@@ -50,18 +50,18 @@ P3 on top
 P4 on left
 
 // the two legs, named here and read everywhere else
-O distance(a = la) P1
-P1 distance(b = lb) E
+O distance(a := la) P1
+P1 distance(b := lb) E
 E distance(a) P2
 F distance(a) P3
 G distance(a) P4
 
 // the hypotenuses, which are the inner square
-line h1(P1, P2)
-line h2(P2, P3)
-line h3(P3, P4)
-line h4(P4, P1)
+h1 := line(P1, P2)
+h2 := line(P2, P3)
+h3 := line(P3, P4)
+h4 := line(P4, P1)
 
 // the theorem, stated as a claim: judged against the figure, never imposed on it
-claim P1 distance(c = hypot(a, b)) P2
+claim P1 distance(c := hypot(a, b)) P2
 ground O

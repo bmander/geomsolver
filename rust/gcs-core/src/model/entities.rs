@@ -369,7 +369,7 @@ impl EntRef {
 pub struct PointE {
     pub x: u32,
     pub y: u32,
-    /// The plane this point is an image on, if it says (`point a in top`) — what `Project`
+    /// The plane this point is an image on, if it says (`a := point in top`) — what `Project`
     /// reads to know which two views it relates.  A membership, not a constraint: it moves
     /// nothing, and a point with none is simply on the page.
     pub plane: Option<u32>,

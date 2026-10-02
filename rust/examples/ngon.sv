@@ -16,17 +16,17 @@ component Ngon(n: Int, side: Length) {
   // seeds track both parameters: the radius the side demands, not a number frozen at one size —
   // seeded at 30, the solve must inflate the figure by side/(2 sin(pi/n))/30 and runs out of
   // iterations near n = 185; seeded here, n runs to the flattener's statement cap
-  param r0 = side / (2 * sin(tau / (2 * n)))
-  circle c hint(r: r0)
+  r0 := side / (2 * sin(tau / (2 * n)))
+  c := circle hint(r: r0)
   cycle n as i {
-    point p hint(x: r0 * cos(tau * i / n), y: r0 * sin(tau * i / n))
+    p := point hint(x: r0 * cos(tau * i / n), y: r0 * sin(tau * i / n))
     p on c
-    line s(p) -> equal
+    (s := line(p)) -> equal
   }
   // one side sized, and the radius follows — a dimensioned radius would let the sides collapse
   s[0].p1 distance(side) s[0].p2
 }
 
 // the hub and the sides are reached by their names: `five.c`, `five.s[0]`
-five: Ngon(n: 5, side: 40)
+five := Ngon(n: 5, side: 40)
 ground five.c.center

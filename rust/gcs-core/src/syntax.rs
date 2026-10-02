@@ -193,11 +193,11 @@ pub enum StmtKind {
     /// — kept verbatim so a document never silently loses one.  A choice that *is* a triple is
     /// written `ccw(a, b, c)`, a relation like any other (`CKind::Ccw`).
     Branch(Branch),
-    /// `t: Tooth(root, tip, slot: 360 / N)` — a component, elaborated in place.
+    /// `t := Tooth(root, tip, slot: 360 / N)` — a component, elaborated in place.
     Instance(Instance),
-    /// `param R = m * N / 2` — a number worked out while elaborating, never an unknown.
+    /// `R := m * N / 2` — a number worked out while elaborating, never an unknown.
     Param(ParamDecl),
-    /// `group dims(bore: 16mm, axis: datum)` — named values, without new geometry.
+    /// `dims := group(bore: 16mm, axis: datum)` — named values, without new geometry.
     Group(GroupDecl),
     /// `repeat`, `cycle` — see `Block`.
     Block(Block),
@@ -219,7 +219,7 @@ pub enum StmtKind {
     Unit(Name),
 }
 
-/// `profile = line -> line -> line -> close`. The links remain declarations of the
+/// `profile := line -> line -> line -> close`. The links remain declarations of the
 /// enclosing scope; this value groups their traversal without copying their geometry.
 #[derive(Clone, Debug)]
 pub struct NamedChain {
@@ -312,12 +312,12 @@ pub struct Instance {
     pub component: Name,
     pub args: Vec<InstArg>,
     pub span: Span,
-    /// The view the instance is drawn in — `t: Tooth(…) in top` (§6.7): every point-bearing
+    /// The view the instance is drawn in — `t := Tooth(…) in top` (§6.7): every point-bearing
     /// declaration its expansion makes joins the plane, the block's rule over the statements
     /// one statement stands for.  Carried into the expansion by the flattener
     /// (`Scope::in_plane`), never resolved here.
     pub membership: Membership,
-    /// `t2: Throw(…) class phantom` — every declaration the expansion makes carries these
+    /// `t2 := Throw(…) class phantom` — every declaration the expansion makes carries these
     /// classes under its own (§13.2), the way `in` puts the whole instance in a view.
     pub class: Classes,
 }
@@ -567,7 +567,7 @@ impl DeclName {
     }
 }
 
-/// `point p0 hint(x: 0, y: 0)`, `circle c0(center: p2) hint(r: 25)`,
+/// `p0 := point hint(x: 0, y: 0)`, `c0 := circle(center: p2) hint(r: 25)`,
 /// `spline s0(p3, p4, p5, p6) knots [...]`.
 #[derive(Clone, Debug)]
 pub struct Decl {
@@ -579,7 +579,7 @@ pub struct Decl {
     /// name or a block's id.
     pub name: DeclName,
     /// One per `Child`/`List` field of `EntKind::fields`, in that order; a `List` field holds as
-    /// many as were written.  Empty throughout — `line l` — is the anonymous form: the kind's
+    /// many as were written.  Empty throughout — `l := line` — is the anonymous form: the kind's
     /// children are minted, unnamed, and reached as `l.p1`.
     pub children: Vec<Vec<Kid>>,
     /// One per `Scalar` field — the entity's seed, and hint-class.
@@ -598,13 +598,13 @@ pub struct Decl {
     pub knots: Option<Vec<f64>>,
     /// A curve: what it is a curve *of* (§6.5).  `None` for every other kind.
     pub curve: Option<CurveSpec>,
-    /// A **computed** point, `point p = (xexpr, yexpr)` (§6.5): its coordinates are expressions
-    /// over the component's formals and params, and no constraint places it.  The brackets
-    /// after a name say what the thing is made of, and this one is made of a formula — text,
-    /// like a dimension's.  It is drawn only as a curve: a component with one is traced, never
+    /// A **computed** point, `p := point(x: xexpr, y: yexpr)` (§6.5): its coordinates are
+    /// expressions over the component's formals and params, and no constraint places it.  The
+    /// brackets say what the thing is made of, and this one is made of a formula — text, like a
+    /// dimension's.  It is drawn only as a curve: a component with one is traced, never
     /// instantiated on the sheet.  `None` for every placed declaration.
     pub computed: Option<[(String, Span); 2]>,
-    /// The classes it carries, in written order: `line l(a, b) class centerline heavy`.
+    /// The classes it carries, in written order: `l := line(a, b) class centerline heavy`.
     /// Presentation, and nothing the core computes reads it (spec §14).
     pub class: Classes,
     /// Where `class …` sits in the source, so a toggle rewrites the words and not the statement
@@ -628,7 +628,7 @@ pub struct Decl {
     pub motion: Option<MotionSpec>,
     /// A source surface's angular span or an envelope's roll interval.
     pub angular_span: Option<AngularSpan>,
-    /// The plane this declaration's points are on — `point a in top`, and for a line, a circle,
+    /// The plane this declaration's points are on — `a := point in top`, and for a line, a circle,
     /// an arc, a spline or an ellipse, every point it mints or names (§6.7).  Its span is at
     /// the end of the trailers, so an appended clause lands after `hint`/`class` and never
     /// races `class_span`'s offset.
@@ -639,6 +639,42 @@ pub struct Decl {
     pub list_span: Span,
     /// An explicit closing edge (`-> close`). Its span includes the marker and word.
     pub close: Option<Span>,
+    /// Where the `)` goes when a name is minted for this anonymous declaration: a chain link
+    /// is named in parentheses, `(l := line(a, b)) -> …`, since `:=` binds looser than `->`.
+    /// `None` where `name := ` alone stands at the name's span — a statement's whole value.
+    pub mint_close: Option<usize>,
+}
+
+impl Decl {
+    /// `k := leg.toe over theta in (0, 360)` — the declaration a curve definition makes.
+    pub fn curve(name: DeclName, curve: CurveSpec, class: Classes, class_span: Span) -> Decl {
+        Decl {
+            annotations: Default::default(),
+            kind: EntKind::Curve,
+            name,
+            children: Vec::new(),
+            seed: Vec::new(),
+            seed_text: Vec::new(),
+            seed_spans: Vec::new(),
+            hint_span: None,
+            knots: None,
+            curve: Some(curve),
+            class,
+            class_span,
+            computed: None,
+            seed_at: None,
+            seed_names: Vec::new(),
+            attitude: Attitude::Page,
+            sweep: None,
+            motion: None,
+            angular_span: None,
+            plane: Default::default(),
+            membership: Membership::default(),
+            list_span: Span::default(),
+            close: None,
+            mint_close: None,
+        }
+    }
 }
 
 /// Plane membership and its provenance (§6.7). Written clauses may be edited;
@@ -904,7 +940,7 @@ pub enum Sweep {
     /// `about: ax` — a full turn about a line in the face's own plane, or `sweep:` of one,
     /// `sense: cw` the other way round.
     Revolve { axis: Ref, sweep: Option<Arg>, sense: Sense },
-    /// `solid body(block)` — a stock, or a term: what it is made of is in the list, and the
+    /// `body := solid(block)` — a stock, or a term: what it is made of is in the list, and the
     /// `on`/`cut` statements say the rest.
     Body,
 }
@@ -960,14 +996,14 @@ pub enum Sense {
 /// `D` is a syntax declaration here and an IR declaration after lowering.
 #[derive(Clone, Debug)]
 pub enum Kid<D = Decl> {
-    /// `line l(a, b)` — the point is named, and named somewhere else.
+    /// `l := line(a, b)` — the point is named, and named somewhere else.
     Ref(Ref),
     /// `line l(hint(x: 0, y: 0), …)` — an anonymous point, and where its solve begins.  The
     /// same clause as everywhere else in the language, one level down.
     Hint(KidSeed),
-    /// `solid block(face(a, b, c, -> close), depth: t)` — a private section.
+    /// `block := solid(face(a, b, c, -> close), depth: t)` — a private section.
     Face { decl: Box<D>, span: Span },
-    /// `face tooth(root, flank from p to q, tip)` — the stretch of a curve between two points
+    /// `tooth := face(root, flank from p to q, tip)` — the stretch of a curve between two points
     /// held on it (`p on flank`), a face's edge (§6.8).  Only a face's loop holds one.
     Trim { curve: Ref, from: Ref, to: Ref, span: Span },
 }

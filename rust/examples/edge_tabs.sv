@@ -6,16 +6,16 @@
 // drawn four times, and a fifth edge in the outline would get a fifth tab with nothing else
 // edited.  The copies are an ordinary `repeat`'s: `tip[2]` is the third tab's apex.
 unit mm
-param width = 60mm
-param height = 40mm
-param rise = 12mm
+width := 60mm
+height := 40mm
+rise := 12mm
 
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 40)
-point d hint(x: 0, y: 40)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 40)
+d := point hint(x: 0, y: 40)
 ground a
-outline = line ad(a, d) -> line dc(d, c) -> line cb(c, b) -> line ba(b, a) -> close
+outline := (ad := line(a, d)) -> (dc := line(d, c)) -> (cb := line(c, b)) -> (ba := line(b, a)) -> close
 vertical ad
 horizontal dc
 vertical cb
@@ -26,9 +26,9 @@ distance(height) ad
 // The outline runs clockwise, so outside is on each edge's left.  The apex stands `rise`
 // off its edge, and the tab's two sides are equal — which puts the apex over the edge's middle.
 repeat e in outline {
-  point tip
+  tip := point
   tip distance(rise, side: left) e
-  line up(e.p1, tip)
-  line down(tip, e.p2)
+  up := line(e.p1, tip)
+  down := line(tip, e.p2)
   up equal down
 }

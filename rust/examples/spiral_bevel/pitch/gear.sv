@@ -8,26 +8,26 @@ use views
 
 component GearCone(p: plane, g: plane, design: group) {
   // Seeds only, rough: the triangle's foot on the side of OM its apex angle opens to.
-  param r = design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
+  r := design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
   in p {
-    point O hint(x: 0, y: 0)
-    point M hint(x: r, y: 0)
-    line generator(O, M)
+    O := point hint(x: 0, y: 0)
+    M := point hint(x: r, y: 0)
+    generator := line(O, M)
   }
   O coincident p.origin
   M distance(0mm, along: v) p
   in g {
-    point apex hint(x: 0, y: 0)
-    point mean hint(x: r, y: 0)
-    point foot hint(x: r / 4, y: r / 2)
-    point top hint(x: 0, y: -r)
-    point mirror hint(x: 0, y: r)
-    line pitch_line(apex, mean)
-    line to_apex(mean, apex)
-    line to_foot(mean, foot)
-    line axis(apex, foot)
-    line crown_axis(apex, top)
-    line opposite(apex, mirror)
+    apex := point hint(x: 0, y: 0)
+    mean := point hint(x: r, y: 0)
+    foot := point hint(x: r / 4, y: r / 2)
+    top := point hint(x: 0, y: -r)
+    mirror := point hint(x: 0, y: r)
+    pitch_line := line(apex, mean)
+    to_apex := line(mean, apex)
+    to_foot := line(mean, foot)
+    axis := line(apex, foot)
+    crown_axis := line(apex, top)
+    opposite := line(apex, mirror)
   }
   apex on p
   mean on p
@@ -45,7 +45,7 @@ component GearCone(p: plane, g: plane, design: group) {
 
 preview {
   unit mm
-  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
+  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
+  gear := GearCone(pitch.view, g.view, hypoid_design)
+  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
 }

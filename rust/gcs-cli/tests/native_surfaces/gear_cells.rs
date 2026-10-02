@@ -13,7 +13,7 @@ use std::f64::consts::PI;
 pub(super) fn read_gears_with(base: &Path,rewrite: &mut dyn FnMut(&str,String) -> String) -> program::Elaborated {
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     fixtures::gear::read_with(&source,base,&mut |name,text| {
-        let text = if name == "members" { fixtures::gear::publish_blank(&text,"  construction solid single(design.heel)\n  \
+        let text = if name == "members" { fixtures::gear::publish_blank(&text,"  construction single := solid(design.heel)\n  \
             design.tip bound single\n  design.toe cut single\n  design.back cut single\n  removal cut single\n") } else { text };
         rewrite(name,text)
     })
@@ -143,19 +143,19 @@ fn generic_sheet_reproduces_the_gear_tooth_space() { single_space("gear",117.137
 /// station family parameterizes the envelope. It is refused, not mis-built; the
 /// closed-form torus check of the arrangement itself lives in `cells.rs`.
 const BEAD: &str = "
-private point bc
+private bc := point
 bc distance(3.8mm, along: u) std.front
 bc distance(0mm, along: v) std.front
-private point bb hint(x: 3.8, y: -1)
-private point bt hint(x: 3.8, y: 1)
-private line bd(bb, bt)
+private bb := point hint(x: 3.8, y: -1)
+private bt := point hint(x: 3.8, y: 1)
+private bd := line(bb, bt)
 bc midpoint bd
 bd parallel spindle
 distance(2mm) bd
-private arc bm(center: bc, start: bb, end: bt)
+private bm := arc(center: bc, start: bb, end: bt)
 radius(1mm) bm
-construction solid bead(face(bm, bd), about: bd)
-solid part(bead)
+construction bead := solid(face(bm, bd), about: bd)
+part := solid(bead)
 removal.body cut part
 ";
 

@@ -15,16 +15,16 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
   // pitch points solve, and the whole-system solve can then stall just under the
   // interactive acceptance, a section's narrow tip collapsing. H's is rough: behind M, on
   // its right.
-  param r = design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
-  param rc = design.cutter_radius
+  r := design.module * sqrt(design.pinion_teeth^2 + design.gear_teeth^2) / 2
+  rc := design.cutter_radius
   in p {
-    point C hint(x: r - rc * sin(design.spiral), y: rc * cos(design.spiral))
-    point H hint(x: r / 4, y: -r / 2)
-    point K hint(x: r - design.module, y: 0)
-    line normal(C, generator.p2)
-    line heading(generator.p2, H)
-    line foot(generator.p1, H)
-    circle trace(center: C) hint(r: rc)
+    C := point hint(x: r - rc * sin(design.spiral), y: rc * cos(design.spiral))
+    H := point hint(x: r / 4, y: -r / 2)
+    K := point hint(x: r - design.module, y: 0)
+    normal := line(C, generator.p2)
+    heading := line(generator.p2, H)
+    foot := line(generator.p1, H)
+    trace := circle(center: C) hint(r: rc)
   }
   generator.p2 distance(design.cutter_radius) C
   generator angle(90deg - design.spiral, sense: cw) normal
@@ -38,8 +38,8 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
 
 preview {
   unit mm
-  pitch: PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear: GearCone(pitch.view, g.view, hypoid_design)
-  g: FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
-  trace: ToothTrace(pitch.view, gear.generator, hypoid_design)
+  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
+  gear := GearCone(pitch.view, g.view, hypoid_design)
+  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
+  trace := ToothTrace(pitch.view, gear.generator, hypoid_design)
 }

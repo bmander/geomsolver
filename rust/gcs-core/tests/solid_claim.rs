@@ -31,14 +31,14 @@ fn verdicts(e: &Elaborated) -> Vec<gcs_core::diagnose::SolidVerdict> {
 /// `lo` and `hi` along the page's own normal — face `f{tag}` and solid `s{tag}_`.
 fn block(tag: &str, x: f64, y: f64, w: f64, lo: f64, hi: f64) -> String {
     format!(
-        "point a{tag} hint(x: {x}, y: {y})\npoint b{tag} hint(x: {}, y: {y})\n\
-         point c{tag} hint(x: {}, y: {})\npoint d{tag} hint(x: {x}, y: {})\n\
-         line p{tag}(a{tag}, b{tag}) -> line q{tag}(b{tag}, c{tag}) -> \
-         line r{tag}(c{tag}, d{tag}) -> line s{tag}(d{tag}, a{tag}) -> close\n\
+        "a{tag} := point hint(x: {x}, y: {y})\nb{tag} := point hint(x: {}, y: {y})\n\
+         c{tag} := point hint(x: {}, y: {})\nd{tag} := point hint(x: {x}, y: {})\n\
+         (p{tag} := line(a{tag}, b{tag})) -> (q{tag} := line(b{tag}, c{tag})) -> \
+         (r{tag} := line(c{tag}, d{tag})) -> (s{tag} := line(d{tag}, a{tag})) -> close\n\
          horizontal p{tag}\nvertical q{tag}\nhorizontal r{tag}\nvertical s{tag}\n\
          a{tag} distance({w}) b{tag}\na{tag} distance({w}) d{tag}\nground a{tag}\n\
-         face f{tag}(p{tag}, q{tag}, r{tag}, s{tag})\n\
-         solid s{tag}_(f{tag}, from: {lo}mm, to: {hi}mm)\n",
+         f{tag} := face(p{tag}, q{tag}, r{tag}, s{tag})\n\
+         s{tag}_ := solid(f{tag}, from: {lo}mm, to: {hi}mm)\n",
         x + w,
         x + w,
         y + w,
@@ -91,28 +91,28 @@ fn a_swept_claim_finds_the_worst_pose() {
     // V-twin's port timing and disc clearance were checked by.
     let src = "\
 unit mm
-point o hint(x: 0, y: 0)
+o := point hint(x: 0, y: 0)
 ground o
-point p hint(x: 10, y: 0)
+p := point hint(x: 10, y: 0)
 o distance(reach, along: x) p
 o distance(0, along: y) p
-point q hint(x: 14, y: 0)
+q := point hint(x: 14, y: 0)
 p distance(4, along: x) q
 p distance(0, along: y) q
-point r hint(x: 14, y: 4)
+r := point hint(x: 14, y: 4)
 q distance(0, along: x) r
 q distance(4, along: y) r
-point s hint(x: 10, y: 4)
+s := point hint(x: 10, y: 4)
 p distance(0, along: x) s
 p distance(4, along: y) s
-line e0(p, q) -> line e1(q, r) -> line e2(r, s) -> line e3(s, p) -> close
-face arm_f(e0, e1, e2, e3)
-solid arm(arm_f, depth: 3mm)
-point w0 hint(x: 50, y: 0)
-point w1 hint(x: 56, y: 0)
-point w2 hint(x: 56, y: 4)
-point w3 hint(x: 50, y: 4)
-line g0(w0, w1) -> line g1(w1, w2) -> line g2(w2, w3) -> line g3(w3, w0) -> close
+(e0 := line(p, q)) -> (e1 := line(q, r)) -> (e2 := line(r, s)) -> (e3 := line(s, p)) -> close
+arm_f := face(e0, e1, e2, e3)
+arm := solid(arm_f, depth: 3mm)
+w0 := point hint(x: 50, y: 0)
+w1 := point hint(x: 56, y: 0)
+w2 := point hint(x: 56, y: 4)
+w3 := point hint(x: 50, y: 4)
+(g0 := line(w0, w1)) -> (g1 := line(w1, w2)) -> (g2 := line(w2, w3)) -> (g3 := line(w3, w0)) -> close
 ground w0
 horizontal g0
 vertical g1
@@ -120,8 +120,8 @@ w0 distance(6) w1
 w1 distance(4) w2
 horizontal g2
 vertical g3
-face wall_f(g0, g1, g2, g3)
-solid wall(wall_f, depth: 3mm)
+wall_f := face(g0, g1, g2, g3)
+wall := solid(wall_f, depth: 3mm)
 claim over reach in (10mm, 40mm) { arm clear(1mm) wall }
 claim arm clear(1mm) wall
 ";

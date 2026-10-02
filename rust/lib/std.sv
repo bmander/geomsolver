@@ -7,14 +7,14 @@
 // front has u to the right and v up; up has u up and v to the left.
 // Reading a datum does not assign plane membership: unplaced geometry stays on the page.
 component StandardDatums() {
-  point origin hint(x: 0, y: 0)
+  origin := point hint(x: 0, y: 0)
   ground origin
-  point rightward hint(x: 1, y: 0)
+  rightward := point hint(x: 1, y: 0)
   ground rightward
-  point upward hint(x: 0, y: 1)
+  upward := point hint(x: 0, y: 1)
   ground upward
-  plane front(origin: origin, toward: rightward)
-  plane up(origin: origin, toward: upward)
+  front := plane(origin: origin, toward: rightward)
+  up := plane(origin: origin, toward: upward)
 }
 
 // The three principal views of third-angle projection (§6.7), laid out on one sheet: the page is
@@ -36,40 +36,40 @@ component StandardDatums() {
 // reference.
 component ThreeViews(o: point, right: Length, up: Length) {
   // each view's `toward` point sets which way it is turned on the page; a hand's breadth away
-  point qf
+  qf := point
   o distance(40, along: x) qf
   o distance(0, along: y) qf
-  plane front(origin: o, toward: qf)
+  front := plane(origin: o, toward: qf)
 
-  point right_origin
-  point qr
+  right_origin := point
+  qr := point
   o distance(right, along: x) right_origin
   o distance(0, along: y) right_origin
   right_origin distance(0, along: x) qr
   right_origin distance(40, along: down) qr
-  plane right(origin: right_origin, toward: qr, from: front, fold: -90deg)
+  right := plane(origin: right_origin, toward: qr, from: front, fold: -90deg)
 
-  point top_origin
-  point qt
+  top_origin := point
+  qt := point
   o distance(0, along: x) top_origin
   o distance(up, along: y) top_origin
   top_origin distance(40, along: x) qt
   top_origin distance(0, along: y) qt
-  plane top(origin: top_origin, toward: qt, from: front, fold: 0deg)
+  top := plane(origin: top_origin, toward: qt, from: front, fold: 0deg)
 }
 
 // An axis-aligned rectangle about a supplied center. The public loop is a face boundary;
 // the diagonal only constrains the center and stays private construction geometry.
 component CenteredRectangle(center: point, w: Length, h: Length) {
-  point a hint(x: center.x - w / 2, y: center.y - h / 2)
-  point b hint(x: center.x + w / 2, y: center.y - h / 2)
-  point c hint(x: center.x + w / 2, y: center.y + h / 2)
-  point d hint(x: center.x - w / 2, y: center.y + h / 2)
-  loop = horizontal line ab(a, b) -> vertical line bc(b, c) ->
-         horizontal line cd(c, d) -> vertical line da(d, a) -> close
+  a := point hint(x: center.x - w / 2, y: center.y - h / 2)
+  b := point hint(x: center.x + w / 2, y: center.y - h / 2)
+  c := point hint(x: center.x + w / 2, y: center.y + h / 2)
+  d := point hint(x: center.x - w / 2, y: center.y + h / 2)
+  loop := horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
+         horizontal (cd := line(c, d)) -> vertical (da := line(d, a)) -> close
   distance(w) ab
   distance(h) bc
-  private construction line diagonal(a, c)
+  private construction diagonal := line(a, c)
   center midpoint diagonal
 }
 
@@ -88,8 +88,7 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
 // item 4 — this replaces the entity kind the language once had, whose rim, tangent and
 // curvature were three kernels of their own).
 component Ellipse(f: plane, a: Length, b: Length, u: Angle) {
-  point p = ( f.origin.x + a * cos(u) * cos(f.angle) - b * sin(u) * sin(f.angle),
-              f.origin.y + a * cos(u) * sin(f.angle) + b * sin(u) * cos(f.angle) )
+  p := point(x: f.origin.x + a * cos(u) * cos(f.angle) - b * sin(u) * sin(f.angle), y: f.origin.y + a * cos(u) * sin(f.angle) + b * sin(u) * cos(f.angle))
 }
 
 // A regular polygon: `n` vertices on a circle of radius `r` about `c`, the first at `phase`
@@ -109,10 +108,10 @@ component Ellipse(f: plane, a: Length, b: Length, u: Angle) {
 //   claim pocket.p.e[1] distance(11.1) pocket.p.e[4]      // across the flats
 component Polygon(c: point, ref: line, n: Int, r: Length, phase: Angle) {
   cycle n as i {
-    point v hint(x: c.x + r * cos(atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x) + phase + i * 360deg / n),
+    v := point hint(x: c.x + r * cos(atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x) + phase + i * 360deg / n),
                  y: c.y + r * sin(atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x) + phase + i * 360deg / n))
     c distance(r) v
-    line e(v, next.v)
+    e := line(v, next.v)
     repeat 1 - min(i, 1) {
       ref angle(phase + 90deg + 180deg / n) e
     }
@@ -126,5 +125,5 @@ component Polygon(c: point, ref: line, n: Int, r: Length, phase: Angle) {
 // the first vertex at `phase` from `ref`, so `phase: 0deg` puts a corner along the reference
 // and `phase: 30deg` a flat square to it.
 component Hex(c: point, ref: line, af: Length, phase: Angle) {
-  p: Polygon(c, ref, n: 6, r: af / (2 * cos(30deg)), phase: phase)
+  p := Polygon(c, ref, n: 6, r: af / (2 * cos(30deg)), phase: phase)
 }

@@ -17,8 +17,7 @@
 // point touching a curve is a single statement whichever component the curve belongs to.
 
 component Involute(c: circle, phase: Angle, u: Angle) {
-  point p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
-             c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
+  p := point(x: c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)))
 }
 
 // One flank: the piece of an involute between the root circle and the tip.
@@ -32,14 +31,14 @@ component Involute(c: circle, phase: Angle, u: Angle) {
 // solves, from a worse start.
 component Flank(base: circle, root: circle, tip: circle,
                 phase: Angle, u0: Angle, u1: Angle) {
-  curve e = Involute(base, phase: phase).p over u in (u0, u1)
+  e := Involute(base, phase: phase).p over u in (u0, u1)
   // Seeded at the centre on purpose.  Where along the flank each end sits is the contact's own
   // `hint(t: …)` below; from the centre — where every circle's row is flat — the first step
   // puts the point on the curve at exactly that roll, and the solve is nine iterations.  Left
   // unseeded, a point starts a unit or so off the centre at a bearing of its own, and from
   // there the root and tip circles pull against the flank.
-  point lo hint(x: 0, y: 0)
-  point hi hint(x: 0, y: 0)
+  lo := point hint(x: 0, y: 0)
+  hi := point hint(x: 0, y: 0)
 
   lo on e hint(t: u0)
   hi on e hint(t: u1)
@@ -51,16 +50,16 @@ component Tooth(base: circle, root: circle, tip: circle,
                 a0: Angle, half: Angle, u0: Angle, u1: Angle) {
   // the two flanks of one tooth: one involute unwinding one way from the tooth's leading edge,
   // the other the opposite way from its trailing one, which is a negative roll
-  r: Flank(base, root, tip, phase: a0 - half, u0: u0, u1: u1)
-  l: Flank(base, root, tip, phase: a0 + half, u0: -u0, u1: -u1)
+  r := Flank(base, root, tip, phase: a0 - half, u0: u0, u1: u1)
+  l := Flank(base, root, tip, phase: a0 + half, u0: -u0, u1: -u1)
 
-  line crown(r.hi, l.hi)
+  crown := line(r.hi, l.hi)
 }
 
 component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
-  param R = m * N / 2            // the pitch circle: where a tooth is half the pitch thick
-  param Rt = R + m               // the tip
-  param Rb = R * cos(phi)        // the base circle the involute unwinds from
+  R := m * N / 2            // the pitch circle: where a tooth is half the pitch thick
+  Rt := R + m               // the tip
+  Rb := R * cos(phi)        // the base circle the involute unwinds from
 
   // **Below the base circle there is no involute.**  A tooth's flank is only a flank down to
   // `Rb`; under that a real gear runs a fillet, which is a different curve for a different
@@ -81,23 +80,23 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   //
   // Where the dedendum fits — every count from about 22 up, at these proportions — `Rr` is the
   // textbook root and none of this is doing anything at all.
-  param clear = 0.02
-  param Rr = max(R - ded * m, Rb * (1 + clear))
+  clear := 0.02
+  Rr := max(R - ded * m, Rb * (1 + clear))
 
-  param pitch = tau / N
+  pitch := tau / N
   // half a tooth's angular thickness, measured from the base circle.  `inv(u) = u - atan(u)`,
   // and the roll at the pitch circle is `tan(phi)` — the two facts an involute gear needs.
-  param ivp = tan(phi) * 1rad - phi
-  param half = 90deg / N + ivp
+  ivp := tan(phi) * 1rad - phi
+  half := 90deg / N + ivp
   // the rolls that reach the root and the tip: r(u) = Rb sqrt(1 + u²), so u = sqrt((r/Rb)² - 1),
   // in degrees because that is what the curve runs on
-  param u0 = sqrt((Rr / Rb) ^ 2 - 1) * 1rad
-  param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 1rad
+  u0 := sqrt((Rr / Rb) ^ 2 - 1) * 1rad
+  u1 := sqrt((Rt / Rb) ^ 2 - 1) * 1rad
 
-  point center hint(x: 0, y: 0)
-  circle base(center: center) hint(r: Rb)
-  circle root(center: center) hint(r: Rr)
-  circle tip(center: center) hint(r: Rt)
+  center := point hint(x: 0, y: 0)
+  base := circle(center: center) hint(r: Rb)
+  root := circle(center: center) hint(r: Rr)
+  tip := circle(center: center) hint(r: Rt)
 
   // `r:` above only *seeds* a radius — a seed is where a solve starts, not something it must
   // honour — so without these the three circles would breathe.
@@ -110,13 +109,13 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   // because the wheel is *claimed* to be symmetric.  Spec §12.3 makes the two equivalent when the
   // symmetry is stated as constraints; stating it is what `ring` would add.
   cycle N as i {
-    t: Tooth(base, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)
+    t := Tooth(base, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)
     // the gap to the next tooth, drawn across the root circle
-    line gap(t.l.lo, next.t.r.lo)
+    gap := line(t.l.lo, next.t.r.lo)
   }
 }
 
-g: Gear(N: 30, m: 3, phi: 25, ded: 1)
+g := Gear(N: 30, m: 3, phi: 25, ded: 1)
 
 // Diagnosed: fully constrained.  Every number here is a length, a bearing or a tooth count; the
 // two rolls per flank are the solver's answers, and there is no closed form for either.

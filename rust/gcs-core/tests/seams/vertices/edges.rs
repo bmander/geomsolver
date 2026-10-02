@@ -2,14 +2,14 @@ use super::*;
 use gcs_core::edge::{EdgeTolerance,SpatialEdge};
 
 const EDGES: &str = "
-end_offset: Sphere(shifted,size: sqrt(10.25-cos(0.2rad))*1mm)
-end_join_cut: Sphere(shifted,size: sqrt(11-2*cos(0.2rad))*1mm)
-seam end_edge(first_envelope,end_offset.wall)
-seam end_join_edge(second_envelope,end_join_cut.wall)
-vertex finish(radial,end_edge)
-vertex finish_join(shared,end_join_edge)
-edge bounded(radial,from: corner,to: finish,along: axis)
-edge joined(shared,from: junction,to: finish_join,along: axis)
+end_offset := Sphere(shifted,size: sqrt(10.25-cos(0.2rad))*1mm)
+end_join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.2rad))*1mm)
+end_edge := seam(first_envelope,end_offset.wall)
+end_join_edge := seam(second_envelope,end_join_cut.wall)
+finish := vertex(radial,end_edge)
+finish_join := vertex(shared,end_join_edge)
+bounded := edge(radial,from: corner,to: finish,along: axis)
+joined := edge(shared,from: junction,to: finish_join,along: axis)
 ";
 
 fn source() -> String { format!("{MODEL}{CORNERS}{EDGES}") }
@@ -53,7 +53,7 @@ fn reversing_an_edge_or_its_axis_preserves_the_same_locus() {
     // Reversing the revolution axis also reverses its source chart, so use a
     // separate along line to test direction reversal without changing the surface.
     let along = solved(&source().replace("along: axis","along: reverse")
-        .replace("line axis(o,q)","line axis(o,q)\nline reverse(q,o)"));
+        .replace("axis := line(o,q)","axis := line(o,q)\nreverse := line(q,o)"));
     for (index,u) in [(0,0.5),(1,1.)] {
         let forward = edge(&original,index,u);
         let backward = SpatialEdge::named(&reversed.sketch,index,
@@ -68,11 +68,11 @@ fn reversing_an_edge_or_its_axis_preserves_the_same_locus() {
 
 #[test]
 fn a_junction_endpoint_is_mapped_into_the_boundary_seams_second_face_chart() {
-    let src = format!("{}\nheight: Sphere(o,size: sqrt(9+1.05*1.05)*1mm)\n\
-        seam second_join_edge(second_envelope,join_cut.wall)\n\
-        seam upper_edge(second_envelope,height.wall)\nvertex upper(second_join_edge,upper_edge)\n\
-        edge second_face(second_join_edge,from: junction,to: upper,along: axis)\n",
-        source().replace("seam join_edge(second_envelope,","seam join_edge(first_envelope,"));
+    let src = format!("{}\nheight := Sphere(o,size: sqrt(9+1.05*1.05)*1mm)\n\
+        second_join_edge := seam(second_envelope,join_cut.wall)\n\
+        upper_edge := seam(second_envelope,height.wall)\nupper := vertex(second_join_edge,upper_edge)\n\
+        second_face := edge(second_join_edge,from: junction,to: upper,along: axis)\n",
+        source().replace("\njoin_edge := seam(second_envelope,","\njoin_edge := seam(first_envelope,"));
     let e = solved(&src);
     let h = 1.05;
     let angle = ((h*h-1.+2.*0.1f64.cos())/(2.*h)).acos();
@@ -83,20 +83,20 @@ fn a_junction_endpoint_is_mapped_into_the_boundary_seams_second_face_chart() {
         let h = 1.+p.parameters[0];
         near(p.position,[3.,-h*p.parameters[2].sin(),h*p.parameters[2].cos()]);
     }
-    let bad = format!("{src}\nlookalike: Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)\n\
-        seam other(second_envelope,lookalike.wall)\nedge bad(other,junction,upper,axis)\n");
+    let bad = format!("{src}\nlookalike := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)\n\
+        other := seam(second_envelope,lookalike.wall)\nbad := edge(other,junction,upper,axis)\n");
     assert!(build(&bad).errors().any(|d| d.message.contains("declared faces and boundary")));
 }
 
 #[test]
 fn finite_edges_reject_lookalike_endpoints_wrong_types_and_degenerate_slices() {
     for tail in [
-        "edge bad(radial,from: corner,to: corner,along: axis)",
-        "edge bad(radial,from: corner,to: finish_join,along: axis)",
-        "edge bad(radial,from: o,to: finish,along: axis)",
-        "edge bad(radial,from: corner,to: finish,along: o)",
-        "edge bad(first_envelope,from: corner,to: finish,along: axis)",
-        "edge bad(radial,from: corner,to: finish)",
+        "bad := edge(radial,from: corner,to: corner,along: axis)",
+        "bad := edge(radial,from: corner,to: finish_join,along: axis)",
+        "bad := edge(radial,from: o,to: finish,along: axis)",
+        "bad := edge(radial,from: corner,to: finish,along: o)",
+        "bad := edge(first_envelope,from: corner,to: finish,along: axis)",
+        "bad := edge(radial,from: corner,to: finish)",
         "ground bounded",
     ] {
         let (p,errors) = syntax::parse(&format!("{}{tail}\n",source()));
@@ -122,8 +122,8 @@ fn finite_edges_reject_lookalike_endpoints_wrong_types_and_degenerate_slices() {
 #[test]
 fn edge_formals_forward_references_privacy_and_dependency_copy_are_ordinary() {
     let src = format!("component Copy(e: edge) {{\n\
-        construction edge out(e.seam,from: e.from,to: e.to,along: e.along)\n}}\n\
-        copy: Copy(bounded)\n{}",source());
+        construction out := edge(e.seam,from: e.from,to: e.to,along: e.along)\n}}\n\
+        copy := Copy(bounded)\n{}",source());
     let mut e = solved(&src);
     let out = e.map.ent_named("copy.out").unwrap();
     let original = SpatialEdge::named(&e.sketch,out.i(),witnesses(0.5),controls()).unwrap();
@@ -141,11 +141,11 @@ fn edge_formals_forward_references_privacy_and_dependency_copy_are_ordinary() {
     let removed = io::without(&e.sketch,&[e.map.ent_named("finish").unwrap()],&[]);
     assert_eq!(removed.edges.len(),1); // The independent generating-junction edge survives.
     let src = format!("{}\ncomponent Private(s: seam,a: vertex,b: vertex,l: line) {{\n\
-        private edge hidden(s,from: a,to: b,along: l)\n}}\n\
-        part: Private(radial,corner,finish,axis)\n",source());
+        private hidden := edge(s,from: a,to: b,along: l)\n}}\n\
+        part := Private(radial,corner,finish,axis)\n",source());
     let p = solved(&src);
     assert!(p.map.entity_path(&p.sketch,"part.hidden").is_none());
-    let p = build(&format!("{src}edge leak(part.hidden.seam,corner,finish,axis)\n"));
+    let p = build(&format!("{src}leak := edge(part.hidden.seam,corner,finish,axis)\n"));
     assert!(p.errors().any(|d| d.message.contains("private member")));
     let surface = e.map.ent_named("end_offset.wall").unwrap().i();
     e.sketch.surfaces[surface].span = Some([90f64.to_radians(),180f64.to_radians()]);

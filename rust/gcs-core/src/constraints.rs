@@ -1825,7 +1825,7 @@ pub struct Constraint {
     /// does not compare it.
     pub class: crate::style::Classes,
     /// Its dimension **as the statement wrote it**, where that is not the text the number is
-    /// worked out from: `l1 distance(w) r2` under `param w = 100` reaches the sketch as `100`,
+    /// worked out from: `l1 distance(w) r2` under `w := 100` reaches the sketch as `100`,
     /// since the flattener settles a `param` to its number, and the callout draws `w`.  Set by
     /// the elaborator only for a statement at the document's root, where a name has one value
     /// (`program::relations::written`); inside a component the same text is a different number

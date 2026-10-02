@@ -223,15 +223,14 @@ fn two_curve_families_get_their_own_kernels() {
 fn a_curve_written_in_the_language_draws() {
     let src = "\
 component Involute(c: circle, phase: Angle, u: Angle) {
-  point p = ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
-             c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
+  p := point(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
 }
 
-point  o hint(x: 0, y: 0)
-circle base(center: o) hint(r: 20)
-curve  flank = Involute(base, phase: 0).p over u in (0, 60)
+o := point hint(x: 0, y: 0)
+base := circle(center: o) hint(r: 20)
+flank := Involute(base, phase: 0).p over u in (0, 60)
 
-point  p hint(x: 40, y: 40)
+p := point hint(x: 40, y: 40)
 p on flank
 radius(20) base
 ground o
@@ -303,9 +302,9 @@ fn the_names_match_the_parameters() {
 #[test]
 fn a_curve_over_a_spline_is_refused() {
     let (prog, _) = gcs_core::syntax::parse(
-        "component bad(s: spline, u: Angle) {\n  point p = ( u, u )\n}\n\
-         point a hint(x: 0, y: 0)\npoint b hint(x: 1, y: 1)\npoint c hint(x: 2, y: 1)\n\
-         point d hint(x: 3, y: 0)\nspline s(a, b, c, d)\ncurve w = bad(s).p over u in (0, 1)\n",
+        "component bad(s: spline, u: Angle) {\n  p := point(x: u, y: u)\n}\n\
+         a := point hint(x: 0, y: 0)\nb := point hint(x: 1, y: 1)\nc := point hint(x: 2, y: 1)\n\
+         d := point hint(x: 3, y: 0)\ns := spline(a, b, c, d)\nw := bad(s).p over u in (0, 1)\n",
     );
     let e = gcs_core::program::elaborate(&prog);
     assert!(!e.ok());

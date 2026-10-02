@@ -27,8 +27,8 @@ fn report_of(doc: &str) -> String {
 
 #[test]
 fn a_host_module_resolves_a_use_and_is_forgotten_on_request() {
-    let doc = "use demo.parts\npoint o hint(x: 0, y: 0)\nground o\nr: Rung(o)\n";
-    let module = "component Rung(a: point) {\n  point b\n  line e(a, b)\n  horizontal e\n  a distance(10) b\n}\n";
+    let doc = "use demo.parts\no := point hint(x: 0, y: 0)\nground o\nr := Rung(o)\n";
+    let module = "component Rung(a: point) {\n  b := point\n  e := line(a, b)\n  horizontal e\n  a distance(10) b\n}\n";
     let name = "demo.parts";
     unsafe {
         // what the document asks for, as written

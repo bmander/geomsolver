@@ -33,31 +33,31 @@ fn read(src: &str) -> Elaborated {
 /// A 60 × 40 plate with a Ø16 hole through it, and a side view beside the front.
 const PART: &str = "\
 unit mm
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 40)
-point d hint(x: 0, y: 40)
-line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 40)
+d := point hint(x: 0, y: 40)
+(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 horizontal ab
 vertical bc
 a distance(60) b
 a distance(40) d
 ground a
-face sec(ab, bc, cd, da)
-plane front(origin: a, toward: b)
-point o hint(x: 30, y: 20)
+sec := face(ab, bc, cd, da)
+front := plane(origin: a, toward: b)
+o := point hint(x: 30, y: 20)
 a distance(30, along: x) o
 a distance(20, along: y) o
-circle hole(center: o) hint(r: 8)
+hole := circle(center: o) hint(r: 8)
 radius(8) hole
-face hole_f(hole)
-solid stock(sec, depth: 30mm)
-solid bore(hole_f, depth: 30mm)
-solid body(stock)
+hole_f := face(hole)
+stock := solid(sec, depth: 30mm)
+bore := solid(hole_f, depth: 30mm)
+body := solid(stock)
 bore cut body
-point p2 hint(x: 110, y: 0)
-point q2 hint(x: 150, y: 0)
-plane side(origin: p2, toward: q2, from: front, fold: -90deg)
+p2 := point hint(x: 110, y: 0)
+q2 := point hint(x: 150, y: 0)
+side := plane(origin: p2, toward: q2, from: front, fold: -90deg)
 ground p2
 p2 distance(40, along: x) q2
 p2 distance(0, along: y) q2

@@ -3,11 +3,11 @@
 use super::P;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{names_decl, over_chain, BLOCKS};
+use crate::syntax::words::{over_chain, BLOCKS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
-    DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership, Name,
-    OpenJoint, ParamDecl, Ref, SolidRel, Source, Span, Stmt, StmtKind, SynErr, Ty, Use,
+    Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
+    Name, OpenJoint, ParamDecl, Ref, SolidRel, Source, Span, Stmt, StmtKind, SynErr, Ty, Use,
 };
 
 /// Apply block membership recursively. Faces and solids inherit their geometry's plane;
@@ -55,16 +55,6 @@ impl<'a> P<'a> {
             return None;
         };
         match w.as_str() {
-            "group" => {
-                self.i += 1;
-                let name = self.ident()?;
-                let fields = self.inst_args()?;
-                if fields.iter().any(|f| f.label.is_none()) {
-                    self.fail("every group member needs a name: `group dims(bore: 16mm)`");
-                    return None;
-                }
-                Some(StmtKind::Group(crate::syntax::GroupDecl { name, fields }))
-            }
             "unit" => {
                 self.i += 1;
                 Some(StmtKind::Unit(self.ident()?))
@@ -116,8 +106,8 @@ impl<'a> P<'a> {
                 // a datum, traced as a curve, whose contacts are the curve's
                 self.fail(
                     "`ellipse` is a library component now: `use std`, then \
-                     `curve e = Ellipse(f, a: …, b: …).p over u in (0, 360)` over a datum \
-                     `plane f(origin: c, toward: m)` — `p on e`, `e tangent l` and \
+                     `e := Ellipse(f, a: …, b: …).p over u in (0, 360)` over a datum \
+                     `f := plane(origin: c, toward: m)` — `p on e`, `e tangent l` and \
                      `e curvature k` are the curve's contacts",
                 );
                 None
@@ -126,7 +116,7 @@ impl<'a> P<'a> {
                 // folded into `plane` (bmander/geomsolver#47, item 6): a plane with no attitude
                 // written is the datum a frame was, on the page
                 self.fail(
-                    "`frame` is folded into `plane`: write `plane f(origin: o, toward: q)` — a \
+                    "`frame` is folded into `plane`: write `f := plane(origin: o, toward: q)` — a \
                      datum with no attitude written is a view of the page, and a formal \
                      `f: plane` offers `f.angle` as `frame` did",
                 );
@@ -137,25 +127,10 @@ impl<'a> P<'a> {
                 // its dotted name, so a port was a second name for a thing that had one
                 self.fail(
                     "`port` is retired: an instance's entities are reached by dotted name \
-                     (`inst.p`), so declare the point (`point p hint(…)`), compute it \
-                     (`point p = (x, y)`) or name the aliased entity itself",
+                     (`inst.p`), so declare the point (`p := point hint(…)`), compute it \
+                     (`p := point(x: …, y: …)`) or name the aliased entity itself",
                 );
                 None
-            }
-            "param" => {
-                self.i += 1;
-                let name = self.ident()?;
-                if self.peek() != Some(&Tok::Eq) {
-                    self.fail("a param is `param name = expression`");
-                    return None;
-                }
-                let after = self.here().hi as usize;
-                self.i += 1;
-                let (text, span, _, end) = self.raw_dimension(after);
-                while self.i < self.t.len() && (self.t[self.i].1.lo as usize) < end {
-                    self.i += 1;
-                }
-                Some(StmtKind::Param(ParamDecl { name, text, span }))
             }
             b if BLOCKS.contains(&b) => {
                 self.i += 1;
@@ -214,9 +189,8 @@ impl<'a> P<'a> {
                     span: Span::new(lo, self.prev_hi()),
                 }))
             }
-            // `claim vertical(rail)` — a relation stated as expected to add no rank.  The colon
-            // guard keeps an instance *named* claim (`claim: Tooth(…)`) an instance.
-            "claim" if !matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P(':'))) => {
+            // `claim vertical(rail)` — a relation stated as expected to add no rank
+            "claim" => {
                 self.i += 1;
                 let mut r = self.relation()?;
                 r.claim = true;
@@ -225,64 +199,9 @@ impl<'a> P<'a> {
             // `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The
             // brackets are what it is a picture of, `in` is the trailer it already is
             "view" | "section" | "dimensions" => {
-                let lo = self.here().lo as usize;
-                let sect = w == "section";
-                let dims = w == "dimensions";
-                self.i += 1;
-                let name = match self.peek() {
-                    Some(Tok::Ident(n)) if names_decl(n) => DeclName::Written(self.ident()?),
-                    _ => {
-                        let at = self.prev_hi();
-                        DeclName::Key(Name { text: format!("#a{at}"), span: Span::new(at, at) })
-                    }
-                };
-                if !self.want_p('(') {
-                    return None;
-                }
-                let solid = self.refr()?;
-                let mut at = None;
-                if self.eat_p(',') {
-                    let Some(l) = self.slot_label() else {
-                        self.fail("a section is cut `at:` a plane");
-                        return None;
-                    };
-                    if l != "at" {
-                        self.fail(&format!(
-                            "`{l}` is not what a {w} takes; a section is cut `at:` a plane"
-                        ));
-                        return None;
-                    }
-                    at = Some(self.refr()?);
-                }
-                if !self.want_p(')') {
-                    return None;
-                }
-                if sect && at.is_none() {
-                    self.fail("a section is cut at a plane: `section(body, at: mid) in front`");
-                    return None;
-                }
-                if !sect && at.is_some() {
-                    self.fail("`at:` cuts a section; a view of a solid takes none");
-                    return None;
-                }
-                if !self.peek_word("in") {
-                    self.fail("a picture is drawn in a view: `view(body) in views.right`");
-                    return None;
-                }
-                self.i += 1;
-                let plane = self.refr()?;
-                let end = self.prev_hi();
-                let (class, _) = self.class_clause(end);
-                self.end_of_stmt();
-                Some(StmtKind::Derived(DerivedDecl {
-                    name,
-                    solid,
-                    plane,
-                    at,
-                    dims,
-                    class,
-                    span: Span::new(lo, self.prev_hi()),
-                }))
+                let at = self.here().lo as usize;
+                let name = DeclName::Key(Name { text: format!("#a{at}"), span: Span::new(at, at) });
+                self.derived(name)
             }
             // `bore cut cyl` — the body rule's own word, and the one statement whose shape
             // is two names with a word between them that is not a constraint.  Read by a
@@ -316,54 +235,214 @@ impl<'a> P<'a> {
                     span: Span::new(lo, self.prev_hi()),
                 }))
             }
-            // A named instance, or a bare component call when no source name is needed.
-            _ if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P(':')))
-                || (matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')))
-                    && !crate::constraints::is_operator(&w)) => {
+            // a bare component call, when no source name is needed
+            _ if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')))
+                && !crate::constraints::is_operator(&w) =>
+            {
                 let lo = self.here().lo as usize;
-                let name = if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P(':'))) {
-                    let name = self.ident()?;
-                    self.i += 1;
-                    name
-                } else {
-                    Name { text: format!("#i{lo}"), span: Span::new(lo, lo) }
-                };
-                let component = self.ident()?;
-                let args = self.inst_args()?;
-                // the trailers an instance takes, in either order: `in top` — drawn in a view
-                // (§6.7) — and `class phantom` — every declaration it makes carries the class
-                let mut membership = Membership::default();
-                let mut class = Classes::default();
-                loop {
-                    if membership.plane().is_none() && self.peek_word("in") {
-                        let plo = self.here().lo as usize;
-                        self.i += 1;
-                        let r = self.refr()?;
-                        membership = Membership::written_at(r, Span::new(plo, self.prev_hi()));
-                    } else if class.is_empty() && self.peek_word("class") {
-                        let (c, _) = self.class_clause(self.here().lo as usize);
-                        if c.is_empty() {
-                            self.fail("`class` names at least one class");
-                            return None;
-                        }
-                        class = c;
-                    } else {
-                        break;
-                    }
-                }
-                self.end_of_stmt();
-                Some(StmtKind::Instance(Instance {
-                    annotations: Default::default(),
-                    name,
-                    component,
-                    args,
-                    span: Span::new(lo, self.prev_hi()),
-                    membership,
-                    class,
-                }))
+                let name = Name { text: format!("#i{lo}"), span: Span::new(lo, lo) };
+                self.instance(name, lo).map(StmtKind::Instance)
             }
             _ => self.relation().map(StmtKind::Relation),
         }
+    }
+
+    /// `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The brackets are
+    /// what it is a picture of, `in` is the trailer it already is.
+    fn derived(&mut self, name: DeclName) -> Option<StmtKind> {
+        let lo = self.here().lo as usize;
+        let w = self.word_at(self.i).unwrap_or_default().to_string();
+        let sect = w == "section";
+        let dims = w == "dimensions";
+        self.i += 1;
+        if !self.want_p('(') {
+            return None;
+        }
+        let solid = self.refr()?;
+        let mut at = None;
+        if self.eat_p(',') {
+            let Some(l) = self.slot_label() else {
+                self.fail("a section is cut `at:` a plane");
+                return None;
+            };
+            if l != "at" {
+                self.fail(&format!(
+                    "`{l}` is not what a {w} takes; a section is cut `at:` a plane"
+                ));
+                return None;
+            }
+            at = Some(self.refr()?);
+        }
+        if !self.want_p(')') {
+            return None;
+        }
+        if sect && at.is_none() {
+            self.fail("a section is cut at a plane: `section(body, at: mid) in front`");
+            return None;
+        }
+        if !sect && at.is_some() {
+            self.fail("`at:` cuts a section; a view of a solid takes none");
+            return None;
+        }
+        if !self.peek_word("in") {
+            self.fail("a picture is drawn in a view: `view(body) in views.right`");
+            return None;
+        }
+        self.i += 1;
+        let plane = self.refr()?;
+        let end = self.prev_hi();
+        let (class, _) = self.class_clause(end);
+        self.end_of_stmt();
+        Some(StmtKind::Derived(DerivedDecl {
+            name,
+            solid,
+            plane,
+            at,
+            dims,
+            class,
+            span: Span::new(lo, self.prev_hi()),
+        }))
+    }
+
+    /// `Tooth(base, a0: 30) in top class phantom` — the call and its trailers, the name already
+    /// read (or minted, for a bare call).
+    fn instance(&mut self, name: Name, lo: usize) -> Option<Instance> {
+        let component = self.ident()?;
+        let args = self.inst_args()?;
+        // the trailers an instance takes, in either order: `in top` — drawn in a view
+        // (§6.7) — and `class phantom` — every declaration it makes carries the class
+        let mut membership = Membership::default();
+        let mut class = Classes::default();
+        loop {
+            if membership.plane().is_none() && self.peek_word("in") {
+                let plo = self.here().lo as usize;
+                self.i += 1;
+                let r = self.refr()?;
+                membership = Membership::written_at(r, Span::new(plo, self.prev_hi()));
+            } else if class.is_empty() && self.peek_word("class") {
+                let (c, _) = self.class_clause(self.here().lo as usize);
+                if c.is_empty() {
+                    self.fail("`class` names at least one class");
+                    return None;
+                }
+                class = c;
+            } else {
+                break;
+            }
+        }
+        self.end_of_stmt();
+        Some(Instance {
+            annotations: Default::default(),
+            name,
+            component,
+            args,
+            span: Span::new(lo, self.prev_hi()),
+            membership,
+            class,
+        })
+    }
+
+    /// `name :=` at the head of a statement, consumed — the name, or nothing and nothing eaten.
+    fn defines(&mut self) -> Option<Name> {
+        match (self.peek(), self.t.get(self.i + 1).map(|(t, _)| t)) {
+            (Some(Tok::Ident(_)), Some(Tok::Define)) => {
+                let name = self.ident()?;
+                self.i += 1;
+                Some(name)
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether the statement from here holds a word at the top bracket level before it ends.
+    pub(super) fn statement_has(&self, want: impl Fn(&Tok) -> bool) -> bool {
+        let (mut paren, mut brace) = (0i32, 0i32);
+        for (t, _) in &self.t[self.i..] {
+            match t {
+                Tok::Nl => return false,
+                Tok::P('(') | Tok::P('[') => paren += 1,
+                Tok::P(')') | Tok::P(']') => paren -= 1,
+                Tok::P('{') => brace += 1,
+                Tok::P('}') if brace == 0 => return false,
+                Tok::P('}') => brace -= 1,
+                t if paren == 0 && brace == 0 && want(t) => return true,
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// `w := m * N / 2` — the number after `:=`, through the line's end.
+    fn param(&mut self, name: Name) -> Option<StmtKind> {
+        let after = self.t[self.i - 1].1.hi as usize;
+        let (text, span, _, end) = self.raw_dimension(after);
+        if text.is_empty() {
+            self.fail("a definition says what the name is: `name := expression`");
+            return None;
+        }
+        while self.i < self.t.len() && (self.t[self.i].1.lo as usize) < end {
+            self.i += 1;
+        }
+        Some(StmtKind::Param(ParamDecl { name, text, span }))
+    }
+
+    /// **`name := expression`, the one way a name is defined** (§5): what stands after `:=` is
+    /// the value, and the name is that value — a number (a param), an element, a chain joined
+    /// by `->`, an instance, a group, a curve, a picture.
+    fn definition(&mut self, name: Name, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        let lo = name.span.lo as usize;
+        if matches!(self.peek(), Some(Tok::Nl) | None) {
+            self.fail("a definition says what the name is: `name := expression`");
+            return None;
+        }
+        let word = self.word_at(self.i).map(str::to_string);
+        let call = matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')));
+        let kind = match word.as_deref() {
+            Some("group") if call => {
+                self.i += 1;
+                let fields = self.inst_args()?;
+                if fields.iter().any(|f| f.label.is_none()) {
+                    self.fail("every group member needs a name: `dims := group(bore: 16mm)`");
+                    return None;
+                }
+                self.end_of_stmt();
+                StmtKind::Group(crate::syntax::GroupDecl { name, fields })
+            }
+            Some("view" | "section" | "dimensions") if call => {
+                self.derived(DeclName::Written(name))?
+            }
+            // `k := leg.toe over theta in (0, 360)` — a point of a component as one of its
+            // formals runs (§6.5); `over` is what says the value is a curve
+            _ if self.statement_has(|t| matches!(t, Tok::Ident(w) if w == "over")) => {
+                let curve = self.curve_spec()?;
+                let at = self.prev_hi();
+                let (class, class_span) = self.class_clause(at);
+                if self.peek_word("in") {
+                    self.fail("`in` puts points on a plane, and a curve has none of its own");
+                    return None;
+                }
+                self.end_of_stmt();
+                StmtKind::Decl(Decl::curve(DeclName::Written(name), curve, class, class_span))
+            }
+            // a param may bear an element keyword's spelling (`face := -(fw + d)`), so arithmetic
+            // after one is a number read, not a declaration
+            Some(_) if matches!(self.t.get(self.i + 1).map(|(t, _)| t),
+                Some(Tok::P('+' | '-' | '*' | '/' | '^'))) => self.param(name)?,
+            _ if self.chain_starts() => return self.chain(next_id, out, Some(name)),
+            Some(w) if call
+                && !crate::constraints::is_operator(w)
+                && crate::expr::builtin(w).is_none()
+                && !crate::expr::MEASURES.iter().any(|m| m.0 == w) =>
+            {
+                StmtKind::Instance(self.instance(name, lo)?)
+            }
+            // anything else is a number worked out while elaborating: a param
+            _ => self.param(name)?,
+        };
+        let span = Span::new(lo, self.prev_hi());
+        let id = self.mint_stmt(next_id, span)?;
+        out.push(Stmt { id, kind, span, chained: Chained::No });
+        Some(())
     }
 
     /// Parse a statement or desugar a chain, recovering at the next terminator on failure.
@@ -407,7 +486,7 @@ impl<'a> P<'a> {
             if !geometry { self.errs.push(SynErr { span: start,
                 message: "a geometry modifier needs a declaration or component instance".into() }); }
             // The modifier belongs to geometry, not a desugared unary constraint. Removing
-            // `radius(...)` from `construction radius(...) circle c` must retain the role.
+            // `radius(...)` from `construction c := radius(...) circle` must retain the role.
             if let Some(st) = out[first..].iter_mut().find(|st|
                 matches!(st.kind, StmtKind::Decl(_) | StmtKind::Instance(_) | StmtKind::Chain(_))) {
                 st.span.lo = start.lo;
@@ -417,10 +496,8 @@ impl<'a> P<'a> {
     }
 
     fn unannotated_chain_or_one(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
-        self.declined = None;
         // `in top { … }` before anything else: `in` opens no chain and no statement of any
-        // other kind — the one look this could be confused with is an instance named `in`,
-        // which `is_name` already refuses, and the colon after it tells even that apart
+        // other kind, and no name may be called `in`
         if self.peek_word("in")
             && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
         {
@@ -429,32 +506,17 @@ impl<'a> P<'a> {
             }
             return self.in_block(next_id, out);
         }
-        let before = self.errs.len();
-        let got = if self.named_chain_starts() || self.chain_starts() {
-            self.chain(next_id, out)
-        } else {
-            let lo = self.here().lo as usize;
-            let kind = self.stmt(next_id)?;
-            let id = self.mint_stmt(next_id, Span::new(lo, self.prev_hi()))?;
-            out.push(Stmt { id, kind, span: Span::new(lo, self.prev_hi()), chained: Chained::No });
-            Some(())
-        };
-        // The name in a declaration is optional, and the words that may follow one are reserved
-        // (§6.1) — so a statement that *named* a declaration with one of them no longer parses,
-        // and what went wrong is a reservation the errors above cannot see.  Said only beside a
-        // failure: `line tangent arc` is a chain, and needs no remark.
-        if self.errs.len() > before {
-            if let Some((w, span)) = self.declined.take() {
-                self.errs.push(SynErr {
-                    span,
-                    message: format!(
-                        "note: `{w}` cannot be a declaration's name — the words that may follow \
-                         a declaration are reserved (spec §6.1)"
-                    ),
-                });
-            }
+        if let Some(name) = self.defines() {
+            return self.definition(name, next_id, out);
         }
-        got
+        if self.chain_starts() {
+            return self.chain(next_id, out, None);
+        }
+        let lo = self.here().lo as usize;
+        let kind = self.stmt(next_id)?;
+        let id = self.mint_stmt(next_id, Span::new(lo, self.prev_hi()))?;
+        out.push(Stmt { id, kind, span: Span::new(lo, self.prev_hi()), chained: Chained::No });
+        Some(())
     }
 
     /// Hoist an `in PLANE` body and stamp its declarations with inherited membership.

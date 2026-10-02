@@ -15,10 +15,10 @@ fn the_spans_tile_the_text() {
     for src in [
         GEAR,
         "",
-        "point p hint(x: 0, y: 0)",
+        "p := point hint(x: 0, y: 0)",
         "// nothing but a comment",
         "/* unclosed",
-        "horizontal line a(p1, p2) -> tangent\narc k(center: c) hint(r: 5) -> close",
+        "horizontal (a := line(p1, p2)) -> tangent\n(k := arc(center: c) hint(r: 5)) -> close",
     ] {
         let mut end = 0usize;
         for (tint, s) in highlight(src) {
@@ -51,32 +51,32 @@ fn tint_of(src: &str, what: &str) -> Option<Tint> {
 fn a_statement_is_coloured_by_what_it_declares() {
     let src = "\
 component Gear(N: Int, m: Length, c: circle) {
-  param R = m * N / 2
-  point hub
-  point center hint(x: 0, y: 0)
-  circle base(center: center) hint(r: R) class construction
+  R := m * N / 2
+  hub := point
+  center := point hint(x: 0, y: 0)
+  base := circle(center: center) hint(r: R) class construction
   radius(R) base
   ground center
   cycle N as i {
-    t: Tooth(base, a0: i * R)
+    t := Tooth(base, a0: i * R)
   }
 }
-g: Gear(N: 30, m: 3)  // one wheel
+g := Gear(N: 30, m: 3)  // one wheel
 ";
     assert_eq!(tint_of(src, "component"), Some(Tint::Word));
     assert_eq!(tint_of(src, "Gear"), Some(Tint::Def));
     assert_eq!(tint_of(src, "N:"), Some(Tint::Label));
     assert_eq!(tint_of(src, "Int"), Some(Tint::Type));
     assert_eq!(tint_of(src, "circle)"), Some(Tint::Type));
-    assert_eq!(tint_of(src, "param"), Some(Tint::Word));
-    assert_eq!(tint_of(src, "R ="), Some(Tint::Def));
+    assert_eq!(tint_of(src, "R :="), Some(Tint::Def));
     assert_eq!(tint_of(src, "2\n"), Some(Tint::Num));
-    assert_eq!(tint_of(src, "point hub"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "point\n"), Some(Tint::Word));
     assert_eq!(tint_of(src, "hub"), Some(Tint::Def));
-    assert_eq!(tint_of(src, "point center"), Some(Tint::Word));
-    assert_eq!(tint_of(src, "center hint"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "point hint"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "center :="), Some(Tint::Def));
     assert_eq!(tint_of(src, "hint("), Some(Tint::Word));
-    assert_eq!(tint_of(src, "base(center"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "base :="), Some(Tint::Def));
+    assert_eq!(tint_of(src, "circle(center"), Some(Tint::Word));
     assert_eq!(tint_of(src, "class"), Some(Tint::Word));
     assert_eq!(tint_of(src, "construction"), Some(Tint::Class));
     assert_eq!(tint_of(src, "radius"), Some(Tint::Relation));
@@ -85,21 +85,20 @@ g: Gear(N: 30, m: 3)  // one wheel
     assert_eq!(tint_of(src, "cycle"), Some(Tint::Word));
     assert_eq!(tint_of(src, "as"), Some(Tint::Word));
     assert_eq!(tint_of(src, "i {"), Some(Tint::Def));
-    // an instance is a name, a colon and a component — the one type written without a `:` first
-    assert_eq!(tint_of(src, "t:"), Some(Tint::Def));
+    // every definition is a name before `:=`, and an instance's component reads as a type
+    assert_eq!(tint_of(src, "t :="), Some(Tint::Def));
     assert_eq!(tint_of(src, "Tooth"), Some(Tint::Type));
-    assert_eq!(tint_of(src, "g:"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "g :="), Some(Tint::Def));
     assert_eq!(tint_of(src, "// one wheel"), Some(Tint::Comment));
 }
 
 /// A seed and a claim are different statements about the same number, and read as such.
 ///
-/// The colouring does not key on `=` any more — `param w = 100` is written with one and is not a
-/// seed.  What makes a number a seed is the clause it stands in, which is §4.3's whole rule: a
+/// The colouring does not key on `:=` — `w := 100` is written with one and is not a seed.  What makes a number a seed is the clause it stands in, which is §4.3's whole rule: a
 /// number inside a `hint(…)` is a seed, and every other number is not.
 #[test]
 fn a_seed_and_a_claim_are_told_apart() {
-    let src = "lo on e hint(t: 3)\ns on(t == 4) k\nparam w = 100";
+    let src = "lo on e hint(t: 3)\ns on(t == 4) k\nw := 100";
     assert_eq!(tint_of(src, "on e"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "hint("), Some(Tint::Word));
     assert_eq!(tint_of(src, "t: 3"), Some(Tint::Label));
@@ -113,20 +112,20 @@ fn a_seed_and_a_claim_are_told_apart() {
 #[test]
 fn a_computed_point_is_arithmetic() {
     let src = "component Involute(c: circle, phase: Angle, u: Angle) {\n\
-               point p = ( c.center.x + c.r * 180, 0 )\n}";
+               p := point(x: c.center.x + c.r * 180, y: 0)\n}";
     assert_eq!(tint_of(src, "component"), Some(Tint::Word));
     assert_eq!(tint_of(src, "Involute"), Some(Tint::Def));
     assert_eq!(tint_of(src, "Angle"), Some(Tint::Type));
     assert_eq!(tint_of(src, "180"), Some(Tint::Num));
 }
 
-/// A curve reads as what it is: a declaration, its `over` and `in` the words that shape it,
+/// A curve reads as what it is: a definition, its `over` and `in` the words that shape it,
 /// and the component's statements colour like any other statements.
 #[test]
 fn a_curve_is_coloured() {
-    let src = "component unwind(c: circle, u: Angle) {\n  point p\n  p on c\n}\n\
-               curve w = unwind(c).p over u in (0, 1)";
-    assert_eq!(tint_of(src, "curve"), Some(Tint::Word));
+    let src = "component unwind(c: circle, u: Angle) {\n  p := point\n  p on c\n}\n\
+               w := unwind(c).p over u in (0, 1)";
+    assert_eq!(tint_of(src, "w :="), Some(Tint::Def));
     assert_eq!(tint_of(src, "over"), Some(Tint::Word));
     assert_eq!(tint_of(src, "in ("), Some(Tint::Word));
     assert_eq!(tint_of(src, "on c"), Some(Tint::Relation));
@@ -146,7 +145,7 @@ fn the_gear_is_coloured() {
 /// `//` by line would get wrong, and the reason this is the core's scan and not a second one.
 #[test]
 fn a_block_comment_is_one_run() {
-    let src = "point p\n/* two\n   lines */\nline l(p, p)";
+    let src = "p := point\n/* two\n   lines */\nl := line(p, p)";
     let ts = highlight(src);
     let (tint, span) = ts.iter().find(|&&(t, _)| t == Tint::Comment).expect("a comment");
     assert_eq!(*tint, Tint::Comment);
@@ -163,8 +162,8 @@ fn a_block_comment_is_one_run() {
 fn a_class_and_a_style_block_read_as_presentation() {
     let src = "\
 style .centerline { dash: 12 3 2 3; width: 0.5; color: #888888 }
-point a hint(x: 0, y: 0)
-line ab(a, a) class centerline heavy
+a := point hint(x: 0, y: 0)
+ab := line(a, a) class centerline heavy
 ";
     assert_eq!(tint_of(src, "style"), Some(Tint::Word));
     assert_eq!(tint_of(src, "centerline {"), Some(Tint::Class));
@@ -186,9 +185,9 @@ line ab(a, a) class centerline heavy
 #[test]
 fn an_operator_is_coloured_through_its_own_parentheses() {
     let src = "\
-point p hint(x: 0, y: 0)
-point q hint(x: 60, y: 0)
-point r hint(x: 60, y: 40)
+p := point hint(x: 0, y: 0)
+q := point hint(x: 60, y: 0)
+r := point hint(x: 60, y: 40)
 p distance(80) q
 p distance(20, along: y) r
 q equal r
@@ -202,10 +201,10 @@ horizontal p
 
 #[test]
 fn a_faces_close_marker_is_distinct_from_an_edge_named_close() {
-    for src in ["face f(a, b, c, -> close)", "face f(a, b, c, -> close,)"] {
+    for src in ["f := face(a, b, c, -> close)", "f := face(a, b, c, -> close,)"] {
         assert_eq!(tint_of(src, "close"), Some(Tint::Word), "{src}");
     }
-    assert_eq!(tint_of("face f(ab, bc, close)", "close"), None);
+    assert_eq!(tint_of("f := face(ab, bc, close)", "close"), None);
 }
 
 /// A declaration's name is **optional** (issue #33), so the word after an element keyword is a
@@ -216,16 +215,18 @@ fn a_faces_close_marker_is_distinct_from_an_edge_named_close() {
 #[test]
 fn an_anonymous_declaration_gives_its_name_tint_to_nobody() {
     let src = "\
-point a hint(x: 0, y: 0)
+a := point hint(x: 0, y: 0)
 point hint(x: 1, y: 0)
 line class construction
 line -> tangent arc -> tangent line
 ";
-    assert_eq!(tint_of(src, "a hint"), Some(Tint::Def), "a written name still tints");
+    assert_eq!(tint_of(src, "a :="), Some(Tint::Def), "a written name still tints");
     assert_eq!(tint_of(src, "hint(x: 1"), Some(Tint::Word), "an anonymous point's clause");
     assert_eq!(tint_of(src, "class"), Some(Tint::Word), "an anonymous line's clause");
     assert_eq!(tint_of(src, "tangent arc"), Some(Tint::Relation), "a joint on an anonymous link");
-    // a curve's name is not optional (`decl()` makes the same exception), so its next word is a
-    // name whatever it spells — the parser accepts `curve tangent = …` and the colour agrees
-    assert_eq!(tint_of("curve tangent = involute(c)\n", "tangent"), Some(Tint::Def));
+    // a link named where it stands names itself, and the word after it is still a joint
+    let named = "(ab := line) -> tangent arc\n";
+    assert_eq!(tint_of(named, "ab"), Some(Tint::Def));
+    assert_eq!(tint_of(named, "line"), Some(Tint::Word));
+    assert_eq!(tint_of(named, "tangent"), Some(Tint::Relation));
 }

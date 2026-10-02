@@ -52,6 +52,7 @@ impl Edit {
 }
 
 /// One replacement in the source.
+#[derive(Clone)]
 struct Splice {
     at: Span,
     with: String,
@@ -79,7 +80,7 @@ fn splice(text: &str, mut edits: Vec<Splice>) -> String {
 /// > and is reached by exactly one instance path.
 ///
 /// The first is lexical, which is what makes this a test rather than an analysis: a number in a
-/// `hint(…)` is one a solve may move, and every other number — `== 80`, `param w = 100` — is not.
+/// `hint(…)` is one a solve may move, and every other number — `== 80`, `w := 100` — is not.
 /// The second keeps `hint(r: Rr)` — a radius written in terms of a component's parameter — from
 /// being overwritten with the number it happened to come to.  The third is why a point inside a
 /// `cycle` of thirty does not write back at all: thirty instances share one statement, and there
@@ -215,7 +216,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             continue;
         }
         // Something the source never wrote has moved — an omitted radius, an endpoint of a bare
-        // `line l`.  There is nowhere to splice, so what the source left out is written: the
+        // `l := line`.  There is nowhere to splice, so what the source left out is written: the
         // argument list, the `hint(…)` clause, or both.
         let Some(at) = d.hint_span else { continue };
         let mut pose = d.seed.clone();
@@ -493,11 +494,11 @@ fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit {
     }
 }
 
-/// `point pN hint(x: …, y: …)`
+/// `pN := point hint(x: …, y: …)`
 /// The rectangle the Rect tool draws: a **reusable component**, defined once per document, and
 /// one instance per gesture.  The definition is the chain a person would write — four lines
 /// welded corner to corner at right angles, the first two carrying the width and the height —
-/// so what a gesture leaves in the source is one statement, `r0: Rectangle(w: 120, h: 60)`,
+/// so what a gesture leaves in the source is one statement, `r0 := Rectangle(w: 120, h: 60)`,
 /// and the drawing owns a `Rectangle` any later statement may instance again.  Where the
 /// figure *sits* is not in the statement: an instance's geometry is written in the component's
 /// terms, so its pose is the session's (the tool seeds it at the gesture) and a reload starts
@@ -511,9 +512,9 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
         .iter()
         .any(|c| c.name.as_ref().is_some_and(|n| n.text == "Rectangle"))
     {
-        let definition = "component Rectangle(w: Length, h: Length) {\n  distance(w) line l1 -> \
-             perpendicular distance(h) line l2 -> perpendicular line l3 -> perpendicular \
-             line l4 -> close\n}\n\n";
+        let definition = "component Rectangle(w: Length, h: Length) {\n  \
+             distance(w) (l1 := line) -> perpendicular distance(h) (l2 := line) -> \
+             perpendicular (l3 := line) -> perpendicular (l4 := line) -> close\n}\n\n";
         if let Some(preview) = prog.preview {
             let start = preview.lo as usize;
             edits.push(Splice { at: Span::new(start, start), with: definition.into() });
@@ -589,6 +590,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         membership: Default::default(),
         list_span: Span::default(),
         close: None,
+        mint_close: None,
     };
     append(prog, StmtKind::Decl(d), vec![name])
 }
@@ -693,6 +695,7 @@ fn add_entity_with(
         membership: Default::default(),
         list_span: Span::default(),
         close: None,
+        mint_close: None,
     };
     append(prog, StmtKind::Decl(d), vec![name])
 }
@@ -841,6 +844,13 @@ pub fn remove(
             None => return refuse(),
         }
     }
+    // a prefix word stands inside the statement of the declaration it qualifies once a name is
+    // written before both (`l := horizontal line(a, b)`): the declaration's splice takes it
+    let inside = |e: &Splice, f: &Splice| {
+        f.at.lo <= e.at.lo && e.at.hi <= f.at.hi && (f.at.lo, f.at.hi) != (e.at.lo, e.at.hi)
+    };
+    let edits: Vec<Splice> =
+        edits.iter().filter(|e| !edits.iter().any(|f| inside(e, f))).cloned().collect();
     let text = splice(prog.text(), edits);
     // and where a chain was touched, the result must still parse: a chain can weave what no
     // set of per-statement splices unpicks — a name link left dangling between two doomed
@@ -1278,7 +1288,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
                 )),
             );
         }
-        // a declaration with no clause whose every point is declared elsewhere — `line l(a, b)`
+        // a declaration with no clause whose every point is declared elsewhere — `l := line(a, b)`
         // — says nothing about planes; its points' own declarations do.  **Before the straddle
         // refusal below**: a line drawn between a point in a view and a point on the page is
         // exactly that declaration, and refusing it would stop the source tracking the drawing
@@ -1365,7 +1375,15 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         let mut made_ents = e.map.ents_made_by(site.stmt);
         let Some(parent) = made_ents.next() else { continue };
         let name = next_name(&mut taken, d.kind);
-        named.push(Splice { at: d.name.span(), with: format!(" {name}") });
+        // `name := ` before the statement's value, or round a chain link's declaration, since
+        // `:=` binds looser than `->` (`Decl::mint_close`)
+        match d.mint_close {
+            None => named.push(Splice { at: d.name.span(), with: format!("{name} := ") }),
+            Some(hi) => {
+                named.push(Splice { at: d.name.span(), with: format!("({name} := ") });
+                named.push(Splice { at: Span::new(hi, hi), with: ")".to_string() });
+            }
+        }
         // a name this edit gave a declaration, which is what `Edit::names` reports — a caller
         // reads it to refer to what it just made, and a name minted into a declaration that
         // was already there is as much this edit's doing as one on a statement it appended

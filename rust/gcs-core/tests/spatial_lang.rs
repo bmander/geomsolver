@@ -19,20 +19,20 @@ use crate::common::{ends, ent, off_line, read, refused, unit};
 /// front view, the pinion's in a view folded from it by a fold the document solves for.
 const AXES: &str = "\
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
 ground o
 ground t
-line gax(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
+gax := line(hint(x: 0, y: 0), hint(x: 0, y: 50)) in front
 ground gax.p1
 ground gax.p2
-point o2 hint(x: 120, y: 0)
-point t2 hint(x: 160, y: 0)
-plane side(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
+o2 := point hint(x: 120, y: 0)
+t2 := point hint(x: 160, y: 0)
+side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
 ground o2
 ground t2
-line pax(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
+pax := line(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
 pax.p1 distance(0, along: u) side
 pax.p2 distance(60, along: u) side
 pax.p1 horizontal pax.p2
@@ -67,7 +67,7 @@ fn the_shaft_angle_and_the_offset_solve_the_fold() {
     assert!((gap - offset).abs() < 1e-9, "the offset is {offset}: {gap}");
     // and the fold came to a half turn's multiple, from a seed of 30°
     let beta = sk.params[sk.free_vars["beta"] as usize].value;
-    assert!(beta.rem_euclid(180.0).min(180.0 - beta.rem_euclid(180.0)) < 1e-7, "beta = {beta}");
+    assert!(beta.rem_euclid(180.0).min(180.0 - beta.rem_euclid(180.0)) < 1e-7, "beta := {beta}");
 }
 
 /// The gate fixture's statements in space, stated through the Rust API rather than in words.
@@ -125,16 +125,16 @@ fn a_fold_is_a_turn_in_the_parents_axes() {
 #[test]
 fn the_clauses_print_back() {
     let src = "\
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
-line l(hint(x: 0, y: 0), hint(x: 30, y: 10)) in front
-point m hint(x: 5, y: 7) in front
-plane a(origin: o, toward: t, from: front, fold: beta) hint(fold: 30deg)
-plane b(origin: o, toward: t, from: front, fold: along l)
-plane c(origin: o, toward: t, from: front, fold: 0deg, through: m)
-plane d(origin: o, toward: t, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
-plane f(origin: o, toward: t, from: front, offset: free) hint(offset: 12)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
+l := line(hint(x: 0, y: 0), hint(x: 30, y: 10)) in front
+m := point hint(x: 5, y: 7) in front
+a := plane(origin: o, toward: t, from: front, fold: beta) hint(fold: 30deg)
+b := plane(origin: o, toward: t, from: front, fold: along l)
+c := plane(origin: o, toward: t, from: front, fold: 0deg, through: m)
+d := plane(origin: o, toward: t, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
+f := plane(origin: o, toward: t, from: front, offset: free) hint(offset: 12)
 ";
     let print = |text: &str| -> String {
         let (prog, errs) = parse(text);
@@ -160,21 +160,21 @@ plane f(origin: o, toward: t, from: front, offset: free) hint(offset: 12)
 fn a_fold_along_a_line_follows_the_line() {
     let doc = |deg: f64| format!("\
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
 ground o
 ground t
-line base(hint(x: 0, y: 0), hint(x: 50, y: 0)) in front
+base := line(hint(x: 0, y: 0), hint(x: 50, y: 0)) in front
 ground base.p1
 ground base.p2
-line l(hint(x: 10, y: 5), hint(x: 40, y: 20)) in front
+l := line(hint(x: 10, y: 5), hint(x: 40, y: 20)) in front
 ground l.p1
 l.p1 distance(40) l.p2
 base angle({deg}deg) l
-point o2 hint(x: 120, y: 0)
-point t2 hint(x: 160, y: 0)
-plane side(origin: o2, toward: t2, from: front, fold: along l)
+o2 := point hint(x: 120, y: 0)
+t2 := point hint(x: 160, y: 0)
+side := plane(origin: o2, toward: t2, from: front, fold: along l)
 ground o2
 ground t2
 ");
@@ -204,17 +204,17 @@ ground t2
 fn a_plane_through_a_point_follows_it() {
     let doc = |h: f64| format!("\
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
 ground o
 ground t
-point m hint(x: 12, y: 3) in front
+m := point hint(x: 12, y: 3) in front
 o distance(12, along: x) m
 o distance({h}, along: y) m
-point o3 hint(x: 0, y: 100)
-point t3 hint(x: 40, y: 100)
-plane top(origin: o3, toward: t3, from: front, fold: 0deg, through: m)
+o3 := point hint(x: 0, y: 100)
+t3 := point hint(x: 40, y: 100)
+top := plane(origin: o3, toward: t3, from: front, fold: 0deg, through: m)
 ground o3
 ground t3
 ");
@@ -238,11 +238,11 @@ ground t3
 fn a_free_view_starts_at_its_seed() {
     let e = read("\
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
 ground o
 ground t
-plane q(origin: o, toward: t, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
+q := plane(origin: o, toward: t, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
 ");
     let mut sk = e.sketch.clone();
     let q = e.map.ent_named("q").unwrap().i();
@@ -253,11 +253,11 @@ plane q(origin: o, toward: t, attitude: free, offset: free) hint(u: (0, 1, 0), v
     assert_eq!(view_freedoms(&sk, &d), vec!["q.attitude".to_string(), "q.offset".to_string()]);
     // held, the attitude alone is three
     let e = read("\
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
 ground o
 ground t
-plane q(origin: o, toward: t, attitude: free)
+q := plane(origin: o, toward: t, attitude: free)
 ");
     let mut sk = e.sketch.clone();
     let d = diagnose(&mut sk, DiagnoseOptions::default());
@@ -273,7 +273,7 @@ plane q(origin: o, toward: t, attitude: free)
 /// A stated view reports what it always did: no `.u`, no `.o`.
 #[test]
 fn a_stated_view_reports_as_before() {
-    let e = read("point o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\nplane q(origin: o, toward: t)\n");
+    let e = read("o := point hint(x: 0, y: 0)\nt := point hint(x: 40, y: 0)\nq := plane(origin: o, toward: t)\n");
     let at = gcs_core::report::positions(&e.sketch, &e.map);
     assert!(!at.iter().any(|(n, _)| n.starts_with("q.u.") || n.starts_with("q.o.")));
 }
@@ -284,20 +284,20 @@ fn a_stated_view_reports_as_before() {
 fn a_projection_between_a_stated_and_a_solved_view() {
     let e = read("\
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
 ground o
 ground t
-point o2 hint(x: 120, y: 0)
-point t2 hint(x: 160, y: 0)
-plane side(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 20deg)
+o2 := point hint(x: 120, y: 0)
+t2 := point hint(x: 160, y: 0)
+side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 20deg)
 ground o2
 ground t2
-point a hint(x: 30, y: 40) in front
+a := point hint(x: 30, y: 40) in front
 o distance(30, along: x) a
 o distance(40, along: y) a
-point b hint(x: 160, y: 0) in side
+b := point hint(x: 160, y: 0) in side
 o2 distance(0, along: y) b
 o2 distance(50, along: x) b
 a project b
@@ -310,7 +310,7 @@ a project b
     // b is on the fold line (its v is 0), 50 along it: a's image on the fold line is that far
     // along, so cos β·30 + sin β·40 = 50 — β = atan2(40, 30)
     let beta = sk.params[sk.free_vars["beta"] as usize].value;
-    assert!((beta - 40f64.atan2(30.0).to_degrees()).abs() < 1e-4, "beta = {beta}");
+    assert!((beta - 40f64.atan2(30.0).to_degrees()).abs() < 1e-4, "beta := {beta}");
     assert!(solid_diagnostics(&sk, &e.map).is_empty());
 }
 
@@ -318,12 +318,12 @@ a project b
 #[test]
 fn views_that_come_out_parallel_are_said() {
     let e = read("\
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
-plane q(origin: o, toward: t, attitude: free) hint(u: (1, 0, 0), v: (0, 0, 1))
-point a hint(x: 3, y: 4) in front
-point b hint(x: 3, y: 4) in q
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
+q := plane(origin: o, toward: t, attitude: free) hint(u: (1, 0, 0), v: (0, 0, 1))
+a := point hint(x: 3, y: 4) in front
+b := point hint(x: 3, y: 4) in q
 a project b
 ");
     let diags = solid_diagnostics(&e.sketch, &e.map);
@@ -332,45 +332,45 @@ a project b
 }
 
 const VIEWS: &str = "\
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
-point o2 hint(x: 100, y: 0)
-point t2 hint(x: 140, y: 0)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
+o2 := point hint(x: 100, y: 0)
+t2 := point hint(x: 140, y: 0)
 ";
 
 #[test]
 fn a_seed_for_a_stated_quantity_is_refused_at_its_key() {
-    refused(&format!("{VIEWS}plane s(origin: o2, toward: t2, from: front, fold: 30deg) hint(fold: 10deg)\n"),
+    refused(&format!("{VIEWS}s := plane(origin: o2, toward: t2, from: front, fold: 30deg) hint(fold: 10deg)\n"),
             "E040", "the fold is stated", "fold");
-    refused(&format!("{VIEWS}plane s(origin: o2, toward: t2, from: front, fold: 0deg) hint(u: (1, 0, 0))\n"),
+    refused(&format!("{VIEWS}s := plane(origin: o2, toward: t2, from: front, fold: 0deg) hint(u: (1, 0, 0))\n"),
             "E040", "the attitude is stated", "u");
-    refused(&format!("{VIEWS}plane s(origin: o2, toward: t2, from: front, offset: 4) hint(offset: 3)\n"),
+    refused(&format!("{VIEWS}s := plane(origin: o2, toward: t2, from: front, offset: 4) hint(offset: 3)\n"),
             "E040", "the offset is stated", "offset");
     // a seed of the wrong kind of number, and half a direction
-    refused(&format!("{VIEWS}plane s(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 5mm)\n"),
+    refused(&format!("{VIEWS}s := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 5mm)\n"),
             "E103", "5mm", "5mm");
-    refused(&format!("{VIEWS}plane s(origin: o2, toward: t2, attitude: free) hint(u: (1, 0, 0))\n"),
+    refused(&format!("{VIEWS}s := plane(origin: o2, toward: t2, attitude: free) hint(u: (1, 0, 0))\n"),
             "E103", "both `u:` and `v:`", "u");
 }
 
 #[test]
 fn a_fold_along_a_line_of_another_view_is_refused() {
-    refused(&format!("{VIEWS}line l(hint(x: 0, y: 0), hint(x: 5, y: 5))\n\
-                      plane s(origin: o2, toward: t2, from: front, fold: along l)\n"),
+    refused(&format!("{VIEWS}l := line(hint(x: 0, y: 0), hint(x: 5, y: 5))\n\
+                      s := plane(origin: o2, toward: t2, from: front, fold: along l)\n"),
             "E064", "not drawn in `front`", "l");
 }
 
 #[test]
 fn a_position_stated_twice_is_refused() {
-    refused(&format!("{VIEWS}point m hint(x: 1, y: 2) in front\n\
-                      plane s(origin: o2, toward: t2, from: front, offset: 4, through: m)\n"),
+    refused(&format!("{VIEWS}m := point hint(x: 1, y: 2) in front\n\
+                      s := plane(origin: o2, toward: t2, from: front, offset: 4, through: m)\n"),
             "E064", "stated twice", "m");
-    refused(&format!("{VIEWS}line l(hint(x: 0, y: 0), hint(x: 5, y: 5)) in front\n\
-                      plane s(origin: o2, toward: t2, from: front, fold: along l, offset: free)\n"),
+    refused(&format!("{VIEWS}l := line(hint(x: 0, y: 0), hint(x: 5, y: 5)) in front\n\
+                      s := plane(origin: o2, toward: t2, from: front, fold: along l, offset: free)\n"),
             "E064", "stated twice", "free");
-    refused(&format!("{VIEWS}point m hint(x: 101, y: 2) in s\n\
-                      plane s(origin: o2, toward: t2, from: front, fold: 0deg, through: m)\n"),
+    refused(&format!("{VIEWS}m := point hint(x: 101, y: 2) in s\n\
+                      s := plane(origin: o2, toward: t2, from: front, fold: 0deg, through: m)\n"),
             "E064", "drawn in `s` itself", "m");
 }
 
@@ -380,15 +380,15 @@ fn a_position_stated_twice_is_refused() {
 #[test]
 fn against_places_only_a_plane_written_to_be_placed() {
     let square = |tag: &str, plane: &str, lo: &str, hi: &str| format!(
-        "point a{tag} hint(x: 0, y: 0) in {plane}\npoint b{tag} hint(x: 20, y: 0) in {plane}\n\
-         point c{tag} hint(x: 20, y: 20) in {plane}\npoint d{tag} hint(x: 0, y: 20) in {plane}\n\
-         line p{tag}(a{tag}, b{tag}) -> line q{tag}(b{tag}, c{tag}) -> \
-         line r{tag}(c{tag}, d{tag}) -> line s{tag}(d{tag}, a{tag}) -> close\n\
-         face f{tag}(p{tag}, q{tag}, r{tag}, s{tag})\n\
-         solid {tag}(f{tag}, from: {lo}, to: {hi})\n");
-    let src = format!("unit mm\npoint o hint(x: 0, y: 0)\npoint qq hint(x: 40, y: 0)\n\
-        plane front(origin: o, toward: qq)\n\
-        plane back(origin: o, toward: qq, from: front, offset: free) hint(offset: 20)\n\
+        "a{tag} := point hint(x: 0, y: 0) in {plane}\nb{tag} := point hint(x: 20, y: 0) in {plane}\n\
+         c{tag} := point hint(x: 20, y: 20) in {plane}\nd{tag} := point hint(x: 0, y: 20) in {plane}\n\
+         (p{tag} := line(a{tag}, b{tag})) -> (q{tag} := line(b{tag}, c{tag})) -> \
+         (r{tag} := line(c{tag}, d{tag})) -> (s{tag} := line(d{tag}, a{tag})) -> close\n\
+         f{tag} := face(p{tag}, q{tag}, r{tag}, s{tag})\n\
+         {tag} := solid(f{tag}, from: {lo}, to: {hi})\n");
+    let src = format!("unit mm\no := point hint(x: 0, y: 0)\nqq := point hint(x: 40, y: 0)\n\
+        front := plane(origin: o, toward: qq)\n\
+        back := plane(origin: o, toward: qq, from: front, offset: free) hint(offset: 20)\n\
         {}{}back_part.far against front_part.near\n",
         square("front_part", "front", "-6mm", "0mm"), square("back_part", "back", "-2mm", "2mm"));
     refused(&src, "E083", "already says where it stands", "back_part.far against front_part.near");
@@ -437,16 +437,16 @@ fn a_skew_side_left_out_of_a_document_is_read_off_the_geometry() {
 /// or point is deleted, and goes with it — as a view folded from a deleted view does.
 #[test]
 fn deleting_what_a_view_stands_on_deletes_the_view() {
-    let src = format!("{VIEWS}line l(hint(x: 0, y: 0), hint(x: 5, y: 5)) in front\n\
-                       point m hint(x: 1, y: 2) in front\n\
-                       plane s(origin: o2, toward: t2, from: front, fold: along l)\n\
-                       plane u(origin: o2, toward: t2, from: front, fold: 0deg, through: m)\n");
+    let src = format!("{VIEWS}l := line(hint(x: 0, y: 0), hint(x: 5, y: 5)) in front\n\
+                       m := point hint(x: 1, y: 2) in front\n\
+                       s := plane(origin: o2, toward: t2, from: front, fold: along l)\n\
+                       u := plane(origin: o2, toward: t2, from: front, fold: 0deg, through: m)\n");
     let e = read(&src);
     let out = edit::remove(&e, &e.program, &e.sketch, &[ent(&e, "l")], &[]);
-    assert!(!out.text.contains("plane s(") && out.text.contains("plane u("), "{}", out.text);
+    assert!(!out.text.contains("s := plane(") && out.text.contains("u := plane("), "{}", out.text);
     let m = e.map.ent_named("m").unwrap();
     let out = edit::remove(&e, &e.program, &e.sketch, &[m], &[]);
-    assert!(out.text.contains("plane s(") && !out.text.contains("plane u("), "{}", out.text);
+    assert!(out.text.contains("s := plane(") && !out.text.contains("u := plane("), "{}", out.text);
     read(&out.text);
 }
 
@@ -455,16 +455,16 @@ fn deleting_what_a_view_stands_on_deletes_the_view() {
 #[test]
 fn a_solved_fold_in_a_component_is_the_instances_own() {
     let e = read("\
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
 component Wing(f: plane) {
-  point a hint(x: 100, y: 0)
-  point b hint(x: 140, y: 0)
-  plane w(origin: a, toward: b, from: f, fold: beta) hint(fold: 15deg)
+  a := point hint(x: 100, y: 0)
+  b := point hint(x: 140, y: 0)
+  w := plane(origin: a, toward: b, from: f, fold: beta) hint(fold: 15deg)
 }
-one: Wing(front)
-two: Wing(front)
+one := Wing(front)
+two := Wing(front)
 ");
     let names: Vec<&String> = e.sketch.free_vars.keys().collect();
     assert_eq!(names.len(), 2, "{names:?}");
@@ -519,17 +519,17 @@ fn the_gate_in_words_solves_the_fold() {
 /// Two stated views, square to each other, with a point, a line and a circle drawn in each.
 const TWO_VIEWS: &str = "\
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
-point o2 hint(x: 120, y: 0)
-point t2 hint(x: 160, y: 0)
-plane side(origin: o2, toward: t2, from: front, fold: 90deg)
-point a hint(x: 10, y: 20) in front
-point b hint(x: 130, y: 5) in side
-line la(hint(x: 0, y: 0), hint(x: 30, y: 10)) in front
-line lb(hint(x: 125, y: 3), hint(x: 150, y: 20)) in side
-circle cb(hint(x: 140, y: 10)) hint(r: 8) in side
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
+o2 := point hint(x: 120, y: 0)
+t2 := point hint(x: 160, y: 0)
+side := plane(origin: o2, toward: t2, from: front, fold: 90deg)
+a := point hint(x: 10, y: 20) in front
+b := point hint(x: 130, y: 5) in side
+la := line(hint(x: 0, y: 0), hint(x: 30, y: 10)) in front
+lb := line(hint(x: 125, y: 3), hint(x: 150, y: 20)) in side
+cb := circle(hint(x: 140, y: 10)) hint(r: 8) in side
 ";
 
 /// The kind one statement over `TWO_VIEWS` settles to.
@@ -607,7 +607,7 @@ fn a_word_with_no_meaning_in_space_is_refused_across_views() {
     refused_as("la angle(60deg, sense: cw) lb", "E040", "unsigned", "sense");
     refused_as("a distance(5, side: left) lb", "E040", "magnitude", "side");
     // a point on the page has no place in space, nor a datum point read beside another view
-    refused_as("point pg hint(x: 1, y: 1)\npg distance(5) b", "E062", "on the page", "pg distance(5) b");
+    refused_as("pg := point hint(x: 1, y: 1)\npg distance(5) b", "E062", "on the page", "pg distance(5) b");
     refused_as("o2 distance(5) a", "E062", "on the page", "o2 distance(5) a");
     // a point on its own view
     refused_as("b on side", "E061", "every point of a view is on it", "b on side");
@@ -629,8 +629,8 @@ fn a_solved_views_page_placement_is_held_silently() {
     let ed = edit::commit_seeds(&e, &sk, &e.program);
     assert!(!ed.text.contains("ground o"), "{}", ed.text);
     // a free view alone is its attitude and its offset, and nothing of where it is drawn
-    let free = "point o hint(x: 0, y: 0)\npoint t hint(x: 40, y: 0)\n\
-                plane q(origin: o, toward: t, attitude: free, offset: free)\n";
+    let free = "o := point hint(x: 0, y: 0)\nt := point hint(x: 40, y: 0)\n\
+                q := plane(origin: o, toward: t, attitude: free, offset: free)\n";
     let mut sk = read(free).sketch;
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.dof, 4, "{}", gcs_core::diagnose::summary(&d));
@@ -658,8 +658,8 @@ fn a_held_views_unit_row_is_not_counted() {
 #[test]
 fn a_sphere_takes_its_words_in_space() {
     let with = |stmt: &str| format!(
-        "{TWO_VIEWS}sphere s(hint(x: 140, y: 10)) hint(r: 12) in side\n\
-         sphere s2(hint(x: 10, y: 40)) hint(r: 5) in front\n{stmt}\n");
+        "{TWO_VIEWS}s := sphere(hint(x: 140, y: 10)) hint(r: 12) in side\n\
+         s2 := sphere(hint(x: 10, y: 40)) hint(r: 5) in front\n{stmt}\n");
     let kind = |stmt: &str| read(&with(stmt)).sketch.user_constraints()[0].kind;
     assert_eq!(kind("a on s"), CKind::SphereOn);
     assert_eq!(kind("radius(12) s"), CKind::SphereRadius);
@@ -836,22 +836,22 @@ fn a_lifted_program_keeps_its_folds_along_lines() {
 fn a_lifted_program_keeps_free_attitudes_and_offsets() {
     let e = read("\
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
 ground o
 ground t
-point m hint(x: 12, y: 3) in front
+m := point hint(x: 12, y: 3) in front
 o distance(12, along: x) m
 o distance(8, along: y) m
-point o3 hint(x: 0, y: 100)
-point t3 hint(x: 40, y: 100)
-plane top(origin: o3, toward: t3, from: front, fold: 0deg, through: m)
-point o4 hint(x: 100, y: 0)
-point t4 hint(x: 140, y: 0)
-plane q(origin: o4, toward: t4, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
-plane w(origin: o4, toward: t4, attitude: free) hint(u: (0, 0, 1), v: (1, 0, 0))
-plane r(origin: o4, toward: t4, from: w, offset: 7)
+o3 := point hint(x: 0, y: 100)
+t3 := point hint(x: 40, y: 100)
+top := plane(origin: o3, toward: t3, from: front, fold: 0deg, through: m)
+o4 := point hint(x: 100, y: 0)
+t4 := point hint(x: 140, y: 0)
+q := plane(origin: o4, toward: t4, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
+w := plane(origin: o4, toward: t4, attitude: free) hint(u: (0, 0, 1), v: (1, 0, 0))
+r := plane(origin: o4, toward: t4, from: w, offset: 7)
 ");
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -906,25 +906,25 @@ fn the_page_gauge_is_kept_by_a_document() {
 fn a_circle_on_a_sphere_is_on_it_all_the_way_round() {
     for free in [false, true] {
         let side = if free {
-            "plane side(origin: o2, toward: t2, attitude: free) hint(u: (0, 1, 0), v: (0, 0, 1))"
+            "side := plane(origin: o2, toward: t2, attitude: free) hint(u: (0, 1, 0), v: (0, 0, 1))"
         } else {
-            "plane side(origin: o2, toward: t2, from: front, fold: 90deg)"
+            "side := plane(origin: o2, toward: t2, from: front, fold: 90deg)"
         };
         let e = read(&format!("\
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
 ground o
 ground t
-point o2 hint(x: 120, y: 0)
-point t2 hint(x: 160, y: 0)
+o2 := point hint(x: 120, y: 0)
+t2 := point hint(x: 160, y: 0)
 {side}
 ground o2
 ground t2
-sphere s(hint(x: 10, y: 20)) hint(r: 30) in front
+s := sphere(hint(x: 10, y: 20)) hint(r: 30) in front
 radius(30) s
-circle k(hint(x: 135, y: 12)) hint(r: 15) in side
+k := circle(hint(x: 135, y: 12)) hint(r: 15) in side
 radius(18) k
 k on s
 "));
@@ -948,19 +948,19 @@ k on s
         let d = diagnose(&mut sk, DiagnoseOptions::default());
         let without = read(&format!("\
 unit mm
-point o hint(x: 0, y: 0)
-point t hint(x: 40, y: 0)
-plane front(origin: o, toward: t)
+o := point hint(x: 0, y: 0)
+t := point hint(x: 40, y: 0)
+front := plane(origin: o, toward: t)
 ground o
 ground t
-point o2 hint(x: 120, y: 0)
-point t2 hint(x: 160, y: 0)
+o2 := point hint(x: 120, y: 0)
+t2 := point hint(x: 160, y: 0)
 {side}
 ground o2
 ground t2
-sphere s(hint(x: 10, y: 20)) hint(r: 30) in front
+s := sphere(hint(x: 10, y: 20)) hint(r: 30) in front
 radius(30) s
-circle k(hint(x: 135, y: 12)) hint(r: 15) in side
+k := circle(hint(x: 135, y: 12)) hint(r: 15) in side
 radius(18) k
 "));
         let mut wk = without.sketch.clone();
@@ -981,10 +981,10 @@ ground t2
 ground lb.p1
 ground la.p1
 ground la.p2
-point c hint(x: 20, y: 5) in front
+c := point hint(x: 20, y: 5) in front
 c midpoint lb
-point d hint(x: 5, y: 30) in front
-point f hint(x: 130, y: 30) in side
+d := point hint(x: 5, y: 30) in front
+f := point hint(x: 130, y: 30) in side
 d symmetry(la) f
 "));
     let mut sk = e.sketch.clone();

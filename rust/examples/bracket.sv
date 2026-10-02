@@ -14,31 +14,31 @@
 // x-axis), from the right (`right`, folded from the front's z-axis and laid flat beside it) and
 // square-on to the incline (`aux`, folded from the front along the incline's own bearing).
 
-param width = 60
-param depth = 30
-param base = 15
-param leg = 15
-param rise = 40
-param toe = 30
-param tilt = atan((rise - toe) / leg)   // the incline's bearing in the front view
+width := 60
+depth := 30
+base := 15
+leg := 15
+rise := 40
+toe := 30
+tilt := atan((rise - toe) / leg)   // the incline's bearing in the front view
 
 // the four datums.  Each view's origin is the part's corner A as that view sees it, so the
 // origins are all images of one point and no projection between them needs stating; the
 // `toward` points set which way each view is turned on the page.  Third-angle layout: the top
 // view above the front, the right view beside it turned so its z is up and its depth grows to
 // the right, the auxiliary across the incline's fold line.
-point Af hint(x: 0, y: 0) in front
-point qf hint(x: 40, y: 0)
-plane front(origin: Af, toward: qf)
-point At hint(x: 0, y: 90) in top
-point qt hint(x: 40, y: 90)
-plane top(origin: At, toward: qt, from: front, fold: 0deg)
-point Ar hint(x: 150, y: 0) in right
-point qr hint(x: 150, y: -40)
-plane right(origin: Ar, toward: qr, from: front, fold: -90deg)
-point oa hint(x: -70, y: 70)
-point qa hint(x: -36.7, y: 92.2)
-plane aux(origin: oa, toward: qa, from: front, fold: tilt)
+Af := point hint(x: 0, y: 0) in front
+qf := point hint(x: 40, y: 0)
+front := plane(origin: Af, toward: qf)
+At := point hint(x: 0, y: 90) in top
+qt := point hint(x: 40, y: 90)
+top := plane(origin: At, toward: qt, from: front, fold: 0deg)
+Ar := point hint(x: 150, y: 0) in right
+qr := point hint(x: 150, y: -40)
+right := plane(origin: Ar, toward: qr, from: front, fold: -90deg)
+oa := point hint(x: -70, y: 70)
+qa := point hint(x: -36.7, y: 92.2)
+aux := plane(origin: oa, toward: qa, from: front, fold: tilt)
 ground Af
 ground qf
 ground At
@@ -50,13 +50,13 @@ ground qa
 
 // the front view: the profile, and every dimension the part is made to
 in front {
-  point Bf hint(x: 60, y: 0)
-  point Cf hint(x: 60, y: 15)
-  point Df hint(x: 15, y: 15)
-  point Ef hint(x: 15, y: 40)
-  point Ff hint(x: 0, y: 30)
-  horizontal line ab(Af, Bf) -> vertical line bc(Bf, Cf) -> horizontal line cd(Cf, Df) ->
-    vertical line de(Df, Ef) -> line ef(Ef, Ff) -> vertical line fa(Ff, Af)
+  Bf := point hint(x: 60, y: 0)
+  Cf := point hint(x: 60, y: 15)
+  Df := point hint(x: 15, y: 15)
+  Ef := point hint(x: 15, y: 40)
+  Ff := point hint(x: 0, y: 30)
+  horizontal (ab := line(Af, Bf)) -> vertical (bc := line(Bf, Cf)) -> horizontal (cd := line(Cf, Df)) ->
+    vertical (de := line(Df, Ef)) -> (ef := line(Ef, Ff)) -> vertical (fa := line(Ff, Af))
   Af distance(width) Bf
   Bf distance(base) Cf
   Af distance(leg, along: x) Df
@@ -68,21 +68,21 @@ in front {
 // show — the depth.  F sits under A from above, so its image here is stated as coincident
 // with A's, which is what the auxiliary view will project from.
 in top {
-  point Bt
-  point A2t
-  point B2t
-  point Et
-  point E2t
-  horizontal line t1(At, Bt) -> vertical line t2(Bt, B2t) -> horizontal line t3(B2t, A2t) ->
-    vertical line t4(A2t, At)
-  vertical line ridge_t(Et, E2t)
+  Bt := point
+  A2t := point
+  B2t := point
+  Et := point
+  E2t := point
+  horizontal (t1 := line(At, Bt)) -> vertical (t2 := line(Bt, B2t)) -> horizontal (t3 := line(B2t, A2t)) ->
+    vertical (t4 := line(A2t, At))
+  ridge_t := vertical line(Et, E2t)
   At horizontal Et
   A2t horizontal E2t
   At distance(depth, along: y) A2t
   Bf project Bt
   Ef project Et
-  point Ft
-  point F2t
+  Ft := point
+  F2t := point
   Ft coincident At
   F2t coincident A2t
 }
@@ -90,17 +90,17 @@ in top {
 // the right view: the L's silhouette, the step, and the incline's lower edge hidden behind the
 // upright.  Heights come across from the front, the depth up from the top.
 in right {
-  point A2r
-  point Er
-  point E2r
-  point Cr
-  point C2r
-  point Fr
-  point F2r
-  horizontal line r1(Ar, A2r) -> vertical line r2(A2r, E2r) -> horizontal line r3(E2r, Er) ->
-    vertical line r4(Er, Ar)
-  horizontal line step_r(Cr, C2r)
-  horizontal line toe_r(Fr, F2r)
+  A2r := point
+  Er := point
+  E2r := point
+  Cr := point
+  C2r := point
+  Fr := point
+  F2r := point
+  horizontal (r1 := line(Ar, A2r)) -> vertical (r2 := line(A2r, E2r)) -> horizontal (r3 := line(E2r, Er)) ->
+    vertical (r4 := line(Er, Ar))
+  step_r := horizontal line(Cr, C2r)
+  toe_r := horizontal line(Fr, F2r)
   Ar vertical Cr
   A2r vertical C2r
   Ar vertical Fr
@@ -115,11 +115,11 @@ in right {
 // alone — along the incline from the front, and in depth from the top — so the view is wholly
 // derived and the face comes out the rectangle it is.
 in aux {
-  point Fa
-  point Ea
-  point F2a
-  point E2a
-  line a1(Fa, Ea) -> line a2(Ea, E2a) -> line a3(E2a, F2a) -> line a4(F2a, Fa)
+  Fa := point
+  Ea := point
+  F2a := point
+  E2a := point
+  (a1 := line(Fa, Ea)) -> (a2 := line(Ea, E2a)) -> (a3 := line(E2a, F2a)) -> (a4 := line(F2a, Fa))
   Ff project Fa
   Ef project Ea
   Ff project F2a

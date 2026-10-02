@@ -11,11 +11,11 @@
 // So the drawing reports as fully determined and the solve has nowhere to go, and holding those
 // two facts at once without pretending either away is what the case is for.
 
-point a hint(x: 0, y: 0)
-point b hint(x: 10, y: 0)
-point c hint(x: 5, y: 5)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 10, y: 0)
+c := point hint(x: 5, y: 5)
 
-line ab(a, b)
+ab := line(a, b)
 
 a distance(10) b
 b distance(1) c

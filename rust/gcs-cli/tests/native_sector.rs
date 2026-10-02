@@ -13,7 +13,7 @@ use fixtures::{tools::{indexed_ring,sphere},motions::{Observer,cradle_roll}};
 use gcs_core::solid::{admission,cad};
 
 fn ring(count: usize) -> gcs_core::program::Elaborated {
-    fixtures::read(&format!("{}{}construction solid removal(tool, under: turn, from: -35deg, to: 35deg)\n{}",sphere(2.),
+    fixtures::read(&format!("{}{}construction removal := solid(tool, under: turn, from: -35deg, to: 35deg)\n{}",sphere(2.),
         cradle_roll(2.5,Observer::Parallel),indexed_ring(count,3.5,4.2,1.7,2.3)))
 }
 
@@ -101,20 +101,20 @@ fn a_blank_of_revolutions_is_its_meridian_section_turned_and_any_other_its_boole
         session.faces(booleans).unwrap().len(),meridian.origin,meridian.axis);
     assert!((a-b).abs() <= 1e-9*b,"{a} against {b}");
     assert_eq!(session.faces(turned).unwrap().len(),session.faces(booleans).unwrap().len());
-    let boxed = fixtures::read(&format!("{}{}construction solid removal(tool, under: turn, from: -35deg, to: 35deg)\n{}\
-private point b0 hint(x: -5, y: 1)
-private point b1 hint(x: 5, y: 1)
-private point b2 hint(x: 5, y: 3)
-private point b3 hint(x: -5, y: 3)
+    let boxed = fixtures::read(&format!("{}{}construction removal := solid(tool, under: turn, from: -35deg, to: 35deg)\n{}\
+private b0 := point hint(x: -5, y: 1)
+private b1 := point hint(x: 5, y: 1)
+private b2 := point hint(x: 5, y: 3)
+private b3 := point hint(x: -5, y: 3)
 ground b0
 ground b1
 ground b2
 ground b3
-private line bb(b0, b1)
-private line bw(b1, b2)
-private line bt(b2, b3)
-private line ba(b3, b0)
-construction solid holder(face(bb, bw, bt, ba), from: -5mm, to: 5mm)
+private bb := line(b0, b1)
+private bw := line(b1, b2)
+private bt := line(b2, b3)
+private ba := line(b3, b0)
+construction holder := solid(face(bb, bw, bt, ba), from: -5mm, to: 5mm)
 holder bound part
 ",sphere(2.),cradle_roll(2.5,Observer::Parallel),indexed_ring(6,3.5,4.2,1.7,2.3)));
     let recipe = cad::recipe_static(&boxed.sketch,fixtures::solid(&boxed,"part")).unwrap();

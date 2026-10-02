@@ -54,12 +54,12 @@ fn refused(src: &str, code: &str, needle: &str) {
 /// the corners, so the figure is rigid once `a` is grounded and turned.
 const SQUARE: &str = "\
 unit mm
-point a hint(x: 0, y: 0)
-point b hint(x: 40, y: 0)
-point c hint(x: 40, y: 30)
-point d hint(x: 0, y: 30)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 40, y: 0)
+c := point hint(x: 40, y: 30)
+d := point hint(x: 0, y: 30)
 ground a
-square = line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+square := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 horizontal ab
 vertical bc
 horizontal cd
@@ -73,7 +73,7 @@ distance(30) bc
 /// take exactly as many equations — the DOF is the rectangle's, and it is zero.
 #[test]
 fn a_point_at_every_edges_midpoint() {
-    let src = format!("{SQUARE}repeat e in square as i {{\n  point m\n  m midpoint e\n}}\n");
+    let src = format!("{SQUARE}repeat e in square as i {{\n  m := point\n  m midpoint e\n}}\n");
     let mut e = read(&src);
     assert_eq!(e.sketch.points.len(), 8, "four corners and four midpoints");
     assert_eq!(
@@ -109,14 +109,14 @@ fn the_edge_is_a_reference_like_any_other() {
     let src = format!(
         "{SQUARE}\
 component Tick(l: line) {{
-  point t
+  t := point
   t distance(0mm) l
   l.p1 distance(5mm) t
 }}
 repeat e in square as i {{
-  point m
+  m := point
   m midpoint e
-  k: Tick(e)
+  k := Tick(e)
   e.p2 distance(i * 1mm + 10mm) m
 }}
 m[0] distance(1mm) m[1]
@@ -148,17 +148,17 @@ m[0] distance(1mm) m[1]
 fn a_surface_per_edge_of_a_revolved_profile() {
     let src = "\
 unit mm
-point o hint(x: 0, y: 0)
-point q hint(x: 0, y: 10)
+o := point hint(x: 0, y: 0)
+q := point hint(x: 0, y: 10)
 ground o
 ground q
-line axis(o, q)
+axis := line(o, q)
 component Rect(w: Length, h: Length) {
-  point a hint(x: 2, y: 0)
-  point b hint(x: 2mm + w, y: 0)
-  point c hint(x: 2mm + w, y: h)
-  point d hint(x: 2, y: h)
-  profile = line bottom(a, b) -> line right(b, c) -> line top(c, d) -> line left(d, a) -> close
+  a := point hint(x: 2, y: 0)
+  b := point hint(x: 2mm + w, y: 0)
+  c := point hint(x: 2mm + w, y: h)
+  d := point hint(x: 2, y: h)
+  profile := (bottom := line(a, b)) -> (right := line(b, c)) -> (top := line(c, d)) -> (left := line(d, a)) -> close
   horizontal bottom
   vertical right
   horizontal top
@@ -166,22 +166,22 @@ component Rect(w: Length, h: Length) {
   distance(w) bottom
   distance(h) right
 }
-r: Rect(w: 4mm, h: 3mm)
+r := Rect(w: 4mm, h: 3mm)
 r.a distance(2mm, along: x) o
 r.a distance(0mm, along: y) o
-solid ring(r.profile, about: axis)
+ring := solid(r.profile, about: axis)
 repeat e in r.profile as i {
-  surface s(ring, edge: e)
+  s := surface(ring, edge: e)
 }
 component Walls(body: solid, rect: group) {
   repeat e in rect.profile {
-    surface wall(body, e)
+    wall := surface(body, e)
   }
 }
-w: Walls(ring, r)
-group g(profile: r.profile)
+w := Walls(ring, r)
+g := group(profile: r.profile)
 repeat f in g.profile {
-  surface t(ring, f)
+  t := surface(ring, f)
 }
 ";
     let mut e = read(src);
@@ -208,7 +208,7 @@ repeat f in g.profile {
 #[test]
 fn a_cycle_over_a_closed_chain_reads_next() {
     let src = format!(
-        "{SQUARE}cycle e in square {{\n  point m\n  m midpoint e\n  line(m, next.m)\n}}\n"
+        "{SQUARE}cycle e in square {{\n  m := point\n  m midpoint e\n  line(m, next.m)\n}}\n"
     );
     let mut e = read(&src);
     assert_eq!(e.sketch.lines.len(), 8, "four sides and a diamond");
@@ -231,19 +231,19 @@ fn an_open_chain_and_a_forward_reference() {
     let src = "\
 unit mm
 repeat e in trail {
-  point m
+  m := point
   m midpoint e
 }
 repeat e in late.p {
-  point n
+  n := point
   n midpoint e
 }
-trail = line t1(hint(x: 0, y: 0), hint(x: 10, y: 0)) ->
-  line t2(hint(x: 10, y: 0), hint(x: 10, y: 10)) -> line t3
+trail := (t1 := line(hint(x: 0, y: 0), hint(x: 10, y: 0))) ->
+  (t2 := line(hint(x: 10, y: 0), hint(x: 10, y: 10))) -> (t3 := line)
 component Late() {
-  p = line(hint(x: 0, y: 20), hint(x: 5, y: 20)) -> line
+  p := line(hint(x: 0, y: 20), hint(x: 5, y: 20)) -> line
 }
-late: Late()
+late := Late()
 ";
     let e = read(src);
     assert_eq!(e.sketch.lines.len(), 5);
@@ -259,14 +259,14 @@ fn chain_blocks_nest() {
         "{SQUARE}\
 repeat e in square as i {{
   repeat 2 as j {{
-    point m
+    m := point
     m on e
   }}
 }}
 repeat 2 as k {{
-  z = line(hint(x: 0, y: 50 + k), hint(x: 10, y: 50 + k)) -> line
+  z := line(hint(x: 0, y: 50 + k), hint(x: 10, y: 50 + k)) -> line
   repeat e in z {{
-    point n
+    n := point
     n midpoint e
   }}
 }}
@@ -289,15 +289,15 @@ fn what_is_not_a_named_chain_is_refused() {
     refused(&format!("{SQUARE}repeat e in ab {{ }}\n"), "E103", "`ab` is not a named chain");
     refused(&format!("{SQUARE}repeat e in nothing {{ }}\n"), "E101", "no such entity: `nothing`");
     refused(
-        "open = line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\ncycle e in open { }\n",
+        "open := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\ncycle e in open { }\n",
         "E103",
         "is an open chain",
     );
-    let twice = format!("{SQUARE}repeat e in square {{ point e }}\n");
+    let twice = format!("{SQUARE}repeat e in square {{ e := point }}\n");
     refused(&twice, "E001", "`e` is declared twice");
     refused(
-        "component Hid() {\n  private p = line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\n}\n\
-         h: Hid()\nrepeat e in h.p { }\n",
+        "component Hid() {\n  private p := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\n}\n\
+         h := Hid()\nrepeat e in h.p { }\n",
         "E101",
         "private member",
     );
@@ -315,11 +315,11 @@ fn what_is_not_a_named_chain_is_refused() {
 #[test]
 fn the_block_is_kept_as_written() {
     let src = format!(
-        "{SQUARE}repeat e in square as i {{\n  point m hint(x: 1, y: 1)\n  m midpoint e\n}}\n"
+        "{SQUARE}repeat e in square as i {{\n  m := point hint(x: 1, y: 1)\n  m midpoint e\n}}\n"
     );
     // the block standing before the chain it runs over, so the printer meets it first
-    let early = "repeat e in sq {\n  point m\n  m midpoint e\n}\n\
-                 sq = line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\n";
+    let early = "repeat e in sq {\n  m := point\n  m midpoint e\n}\n\
+                 sq := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\n";
     let (mut prog, _) = parse(early);
     assert_eq!(render_flat(&mut prog).unwrap_err().construct, "repeat and cycle blocks");
     assert_eq!(prog.text(), early, "and the source is kept");
@@ -330,7 +330,7 @@ fn the_block_is_kept_as_written() {
     e.sketch.line(p, q);
     let ed = reconciled(&mut e);
     assert_eq!(ed.kind, Kind::Structural, "{:?}", ed.refused);
-    let block = "repeat e in square as i {\n  point m hint(x: 1, y: 1)\n";
+    let block = "repeat e in square as i {\n  m := point hint(x: 1, y: 1)\n";
     assert!(ed.text.contains(block), "{}", ed.text);
     let back = read(&ed.text);
     assert_eq!(back.sketch.points.len(), e.sketch.points.len());
@@ -341,12 +341,12 @@ fn the_block_is_kept_as_written() {
 /// one pose to write, and a gesture on one copy is refused with the cause.
 #[test]
 fn edits_inside_the_body_behave_as_in_a_repeat() {
-    let src = format!("{SQUARE}repeat e in square {{\n  point m hint(x: 1, y: 1)\n  m on e\n}}\n");
+    let src = format!("{SQUARE}repeat e in square {{\n  m := point hint(x: 1, y: 1)\n  m on e\n}}\n");
     let (prog, _) = parse(&src);
     let mut e = elaborate(&prog);
     assert!(solve::solve(&mut e.sketch, SolveOpts::default()).success);
     let ed = edit::commit_seeds(&e, &e.sketch, &prog);
-    assert!(ed.text.contains("point m hint(x: 1, y: 1)"), "four poses, one seed:\n{}", ed.text);
+    assert!(ed.text.contains("m := point hint(x: 1, y: 1)"), "four poses, one seed:\n{}", ed.text);
     let copy = EntRef::point(4);
     let copy_name = e.map.name_of(copy).cloned().unwrap();
     assert!(copy_name.starts_with('#') && copy_name.ends_with(".0.m"), "{copy_name}");
@@ -373,16 +373,16 @@ fn the_edge_is_coloured_as_a_declaration() {
 #[test]
 fn the_copies_stand_where_the_block_is_written() {
     let src = "\
-point a hint(x: 0, y: 0)
-point b hint(x: 10, y: 0)
-point c hint(x: 0, y: 10)
-point before hint(x: -5, y: -5)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 10, y: 0)
+c := point hint(x: 0, y: 10)
+before := point hint(x: -5, y: -5)
 repeat e in tri {
-  point m
+  m := point
   m midpoint e
 }
-point after hint(x: 5, y: 5)
-tri = line(a, b) -> line(b, c) -> line(c, a) -> close
+after := point hint(x: 5, y: 5)
+tri := line(a, b) -> line(b, c) -> line(c, a) -> close
 ";
     let e = read(src);
     let at = |n: &str| e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`")).i();

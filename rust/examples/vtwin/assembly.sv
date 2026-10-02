@@ -34,19 +34,19 @@ use components.side_view
 
 // the page is the view along the crank axis, where the V is; the side view stands to its right,
 // its origin the crank axis on the plate's front face
-point O hint(x: 0, y: 0)
+O := point hint(x: 0, y: 0)
 ground O
-views: ThreeViews(O, right: 240, up: 150)
-point up hint(x: 0, y: 40) in views.front
+views := ThreeViews(O, right: 240, up: 150)
+up := point hint(x: 0, y: 40) in views.front
 O distance(0, along: x) up
 O distance(40, along: y) up
-line ref(O, up)
+ref := line(O, up)
 
-group layout(front: views.front, origin: O, axis: ref)
-plate: Frame(layout, dims: vtwin_dims)
-crank: Crank(O, ref, dims: vtwin_dims) in views.front
-bankR: Bank(crank.pin, plate.r.piv, fw: fwB, dim: 1, dims: vtwin_dims) in views.front
-bankL: Bank(crank.pin, plate.l.piv, fw: fwA, dim: 0, dims: vtwin_dims) in views.front
+layout := group(front: views.front, origin: O, axis: ref)
+plate := Frame(layout, dims: vtwin_dims)
+crank := Crank(O, ref, dims: vtwin_dims) in views.front
+bankR := Bank(crank.pin, plate.r.piv, fw: fwB, dim: 1, dims: vtwin_dims) in views.front
+bankL := Bank(crank.pin, plate.l.piv, fw: fwA, dim: 0, dims: vtwin_dims) in views.front
 // **the plate's side view is asked for, not drawn** (§6.11) — the part is a solid, so the
 // assembly's side view of it is a reading of that solid and cannot disagree with the front view
 // about how thick the plate is or how far the bearing boss stands off it
@@ -56,10 +56,10 @@ bankL: Bank(crank.pin, plate.l.piv, fw: fwA, dim: 0, dims: vtwin_dims) in views.
 // ordinates are measured from the plate's front face, which stands half a thickness in front of
 // the plate's own zero: the plate is sectioned on its mid-plane (`components.frame`), and a solid's
 // derived view stands where its plane's origin is
-point so hint(x: views.right_origin.x - tp / 2, y: 0) in views.right
+so := point hint(x: views.right_origin.x - tp / 2, y: 0) in views.right
 views.right_origin distance(-tp / 2, along: x) so
 views.right_origin distance(0, along: y) so       // the same height: the crank axis
-side: SideView(so, dims: vtwin_dims) in views.right
+side := SideView(so, dims: vtwin_dims) in views.right
 
 // the two views agree: every height the side view shows is the front view's
 crank.pin project side.pin_s             // the pin

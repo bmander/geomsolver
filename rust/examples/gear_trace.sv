@@ -27,10 +27,10 @@
 // component that hands it down.
 
 component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
-  point t
-  point p
-  line rad(c.center, t)
-  line s(t, p)
+  t := point
+  p := point
+  rad := line(c.center, t)
+  s := line(t, p)
   t on c                                       // the string leaves the circle...
   datum angle(u + phase) rad                   // ...at bearing u from the datum,
   rad perpendicular s                          // perpendicular to the radius there,
@@ -44,15 +44,15 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
 
 component Flank(base: circle, datum: line, root: circle, tip: circle,
                 phase: Angle, u0: Angle, u1: Angle) {
-  curve e = Unwind(base, datum, phase: phase).p over u in (u0, u1)
+  e := Unwind(base, datum, phase: phase).p over u in (u0, u1)
   // Seeded at the centre, as gear.sv's are and for the same reason: from there the first step
   // puts each end on the flank at the roll its contact's `hint(t: …)` names.  Started a unit
   // or so off-centre, the solve reached the *mirror* branch of the string — the same radii,
   // the wrong bearings, a tooth flaring the wrong way — and `over (u0, u1)` is what now refuses
   // that: a contact off the drawn interval is put back and held, and the drawing either solves
   // on the flank or says it did not.
-  point lo hint(x: 0, y: 0)
-  point hi hint(x: 0, y: 0)
+  lo := point hint(x: 0, y: 0)
+  hi := point hint(x: 0, y: 0)
 
   lo on e hint(t: u0)
   hi on e hint(t: u1)
@@ -62,33 +62,33 @@ component Flank(base: circle, datum: line, root: circle, tip: circle,
 
 component Tooth(base: circle, datum: line, root: circle, tip: circle,
                 a0: Angle, half: Angle, u0: Angle, u1: Angle) {
-  r: Flank(base, datum, root, tip, phase: a0 - half, u0: u0, u1: u1)
-  l: Flank(base, datum, root, tip, phase: a0 + half, u0: -u0, u1: -u1)
+  r := Flank(base, datum, root, tip, phase: a0 - half, u0: u0, u1: u1)
+  l := Flank(base, datum, root, tip, phase: a0 + half, u0: -u0, u1: -u1)
 
-  line crown(r.hi, l.hi)
+  crown := line(r.hi, l.hi)
 }
 
 component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
-  param R = m * N / 2
-  param Rt = R + m
-  param Rb = R * cos(phi)
+  R := m * N / 2
+  Rt := R + m
+  Rb := R * cos(phi)
   // the root stays clear of the base circle — twelve teeth is stub-tooth territory, and below
   // `Rb` there is no involute to trace.  gear.sv says why at length; the reasons transfer.
-  param clear = 0.02
-  param Rr = max(R - ded * m, Rb * (1 + clear))
+  clear := 0.02
+  Rr := max(R - ded * m, Rb * (1 + clear))
 
-  param pitch = tau / N
-  param ivp = tan(phi) * 1rad - phi
-  param half = 90deg / N + ivp
-  param u0 = sqrt((Rr / Rb) ^ 2 - 1) * 1rad
-  param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 1rad
+  pitch := tau / N
+  ivp := tan(phi) * 1rad - phi
+  half := 90deg / N + ivp
+  u0 := sqrt((Rr / Rb) ^ 2 - 1) * 1rad
+  u1 := sqrt((Rt / Rb) ^ 2 - 1) * 1rad
 
-  point center hint(x: 0, y: 0)
-  point anchor hint(x: R, y: 0)
-  line  datum(center, anchor)
-  circle base(center: center) hint(r: Rb)
-  circle root(center: center) hint(r: Rr)
-  circle tip(center: center) hint(r: Rt)
+  center := point hint(x: 0, y: 0)
+  anchor := point hint(x: R, y: 0)
+  datum := line(center, anchor)
+  base := circle(center: center) hint(r: Rb)
+  root := circle(center: center) hint(r: Rr)
+  tip := circle(center: center) hint(r: Rt)
 
   radius(Rb) base
   radius(Rr) root
@@ -97,12 +97,12 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   ground anchor
 
   cycle N as i {
-    t: Tooth(base, datum, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)
-    line gap(t.l.lo, next.t.r.lo)
+    t := Tooth(base, datum, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)
+    gap := line(t.l.lo, next.t.r.lo)
   }
 }
 
-g: Gear(N: 12, m: 3, phi: 25, ded: 1)
+g := Gear(N: 12, m: 3, phi: 25, ded: 1)
 
 // Diagnosed: fully constrained.  The two rolls per flank are still the solver's answers — and so
 // now is every point of every flank in between.

@@ -16,21 +16,21 @@
 // differ when `n` is even, and written this way the arithmetic settles it instead of each step
 // having to ask which kind it is.
 
-param n = 32
-param copies = 3
+n := 32
+copies := 3
 
 repeat copies as c {
   // the staircase's own points: up 5 on every odd step, along 3 on every even one
   repeat n as i {
-    point p hint(x: 4 * n * c + 3 * floor(i / 2), y: 5 * floor((i + 1) / 2))
+    p := point hint(x: 4 * n * c + 3 * floor(i / 2), y: 5 * floor((i + 1) / 2))
   }
 
   repeat floor(n / 2) as k {
-    line v(p[2 * k], p[2 * k + 1])
+    v := line(p[2 * k], p[2 * k + 1])
     vertical v
   }
   repeat floor((n - 1) / 2) as k {
-    line h(p[2 * k + 1], p[2 * k + 2])
+    h := line(p[2 * k + 1], p[2 * k + 2])
     horizontal h
   }
 }

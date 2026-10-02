@@ -16,28 +16,28 @@
 // and the curve cannot simply shrug it off.  `8.666667` is where the straight edge starts
 // looking for its contact — a starting guess, not a statement.
 
-point k0 hint(x: 0, y: 26)
-point k1 hint(x: 20, y: 0)
-point k2 hint(x: 40, y: 26)
-point k3 hint(x: 60, y: 0)
-point k4 hint(x: 80, y: 26)
-point k5 hint(x: 100, y: 0)
-point k6 hint(x: 120, y: 26)
+k0 := point hint(x: 0, y: 26)
+k1 := point hint(x: 20, y: 0)
+k2 := point hint(x: 40, y: 26)
+k3 := point hint(x: 60, y: 0)
+k4 := point hint(x: 80, y: 26)
+k5 := point hint(x: 100, y: 0)
+k6 := point hint(x: 120, y: 26)
 
 // `cam` rather than `curve`: a statement now begins with a *name* and a name that is also an
 // element keyword could not lead one.
-spline cam(k0, k1, k2, k3, k4, k5, k6)
+cam := spline(k0, k1, k2, k3, k4, k5, k6)
 
 // the follower: a level face resting against the curve, touching wherever it must
-point f1 hint(x: 0, y: 8.666667)
-point f2 hint(x: 120, y: 8.666667)
-line  flat(f1, f2)
+f1 := point hint(x: 0, y: 8.666667)
+f2 := point hint(x: 120, y: 8.666667)
+flat := line(f1, f2)
 horizontal flat
 cam tangent flat
 
 // and a point riding on the curve, held off a grounded anchor above it
-point rider hint(x: 60, y: 8.666667)
-point anchor hint(x: 60, y: 68.666667)
+rider := point hint(x: 60, y: 8.666667)
+anchor := point hint(x: 60, y: 68.666667)
 rider on cam
 anchor distance(60) rider
 

@@ -9,10 +9,6 @@ use crate::constraints::{CKind, Fixity, SpecKind};
 use crate::model::{EntKind, Field};
 use crate::style::Style;
 
-/// How wide the entity keyword column is: seven, once `ellipse`'s length, and a constant — so
-/// the aligned look never makes one edit reflow the whole file.
-const KW: usize = 7;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrintError {
     pub construct: &'static str,
@@ -102,6 +98,10 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         StmtKind::Relation(r) => write_relation(out, r),
         StmtKind::Branch(b) => out.push_str(&format!("branch({}, {})", b.key, b.value)),
         StmtKind::Derived(d) => {
+            if let Some(n) = d.name.written() {
+                out.push_str(&n.text);
+                out.push_str(" := ");
+            }
             out.push_str(if d.dims {
                 "dimensions"
             } else if d.at.is_some() {
@@ -109,10 +109,6 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             } else {
                 "view"
             });
-            if let Some(n) = d.name.written() {
-                out.push(' ');
-                out.push_str(&n.text);
-            }
             out.push('(');
             write_ref(out, &d.solid);
             if let Some(at) = &d.at {
@@ -135,7 +131,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         StmtKind::Instance(i) => {
             i.annotations.write(out);
             if !i.name.text.starts_with('#') {
-                out.push_str(&format!("{}: ", i.name.text));
+                out.push_str(&format!("{} := ", i.name.text));
             }
             write_instance_call(out, i);
             // only a clause this statement wrote — `Membership::written` is the one guard
@@ -148,9 +144,9 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 out.push_str(&i.class.0.join(" "));
             }
         }
-        StmtKind::Param(p) => out.push_str(&format!("param {} = {}", p.name.text, p.text)),
+        StmtKind::Param(p) => out.push_str(&format!("{} := {}", p.name.text, p.text)),
         StmtKind::Group(g) => {
-            out.push_str(&format!("group {}(", g.name.text));
+            out.push_str(&format!("{} := group(", g.name.text));
             for (i, f) in g.fields.iter().enumerate() {
                 if i > 0 { out.push_str(", "); }
                 if let Some(label) = &f.label { out.push_str(&format!("{}: ", label.text)); }
@@ -207,9 +203,8 @@ fn write_instance_call(out: &mut String, i: &Instance) {
     out.push(')');
 }
 
-/// ` = leg.toe over theta in (0, 360)` — what a curve is a curve of (§6.5).
+/// `leg.toe over theta in (0, 360)` — what a curve is a curve of (§6.5).
 fn write_curve_spec(out: &mut String, c: &CurveSpec) {
-    out.push_str(" = ");
     match &c.target {
         CurveTarget::Drawn(r) => write_ref(out, r),
         CurveTarget::Anon(inst, point) => {
@@ -223,26 +218,21 @@ fn write_curve_spec(out: &mut String, c: &CurveSpec) {
 
 fn write_decl(out: &mut String, d: &Decl) {
     d.annotations.write(out);
-    let kw = d.kind.as_str();
-    out.push_str(kw);
     // an anonymous declaration has no name to spell — its key is the elaboration's, not the
-    // source's — so the keyword stands alone and the tail glues to it
+    // source's — so the value stands alone
     if let Some(n) = d.name.written() {
-        for _ in kw.len()..KW {
-            out.push(' ');
-        }
-        out.push(' ');
         out.push_str(&n.text);
+        out.push_str(" := ");
     }
-
     // a computed point is its formula, and carries no clause a solve could write
     if let Some([(x, _), (y, _)]) = &d.computed {
-        out.push_str(&format!(" = ({x}, {y})"));
+        out.push_str(&format!("point(x: {x}, y: {y})"));
         return;
     }
     if let Some(c) = &d.curve {
         write_curve_spec(out, c);
     } else {
+        out.push_str(d.kind.as_str());
         out.push_str(&decl_tail(d, &d.seed));
     }
     if let Some(u) = &d.knots {

@@ -19,9 +19,9 @@ fn read(src: &str) -> Sketch {
 }
 
 const PLAIN: &str = "\
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-line ab(a, b) class construction
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+ab := line(a, b) class construction
 a distance(60) b
 horizontal ab
 ground a
@@ -69,9 +69,9 @@ fn a_later_class_wins_only_what_it_says() {
     let src = "\
 style .centerline { dash: 12 3 2 3; width: 0.5; color: #888888 }
 style .heavy      { width: 2.5 }
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-line ab(a, b) class centerline heavy
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+ab := line(a, b) class centerline heavy
 ";
     let sk = read(src);
     let s = sk.style_of(EntRef::new(EntKind::Line, 0));
@@ -85,7 +85,7 @@ line ab(a, b) class centerline heavy
 /// destination says about them, or nothing.
 #[test]
 fn an_unmatched_class_is_not_an_error() {
-    let sk = read("point a hint(x: 0, y: 0)\npoint b hint(x: 1, y: 0)\nline ab(a, b) class nobody\n");
+    let sk = read("a := point hint(x: 0, y: 0)\nb := point hint(x: 1, y: 0)\nab := line(a, b) class nobody\n");
     let l = EntRef::new(EntKind::Line, 0);
     assert!(sk.class_of(l).has("nobody"));
     assert_eq!(sk.style_of(l), gcs_core::style::Style::default());
@@ -178,10 +178,10 @@ fn a_document_rule_beats_a_shipped_one_on_a_later_class() {
 fn an_svg_export_draws_a_claimed_dimension_in_the_documents_ink() {
     let src = "\
 style .dimension { color: #b00020 }
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
 ground a
-line ab(a, b)
+ab := line(a, b)
 horizontal ab
 a distance(60) b at (10, -20)
 claim a distance(60, along: x) b at (10, 20)
@@ -217,13 +217,13 @@ fn a_property_with_no_value_says_nothing() {
 #[test]
 fn a_statement_inserted_above_does_not_move_a_callout() {
     let src = "\
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
 a distance(60) b at (12, -4)
 a horizontal b at (3, 5)
 ";
     let before = read(src);
-    let after = read(&src.replace("point a hint", "point z hint(x: 9, y: 9)\npoint a hint"));
+    let after = read(&src.replace("a := point hint", "z := point hint(x: 9, y: 9)\na := point hint"));
     let places = |sk: &Sketch| -> Vec<(f64, f64)> {
         sk.user_constraints().iter().filter_map(|c| sk.placements.get(&c.id).copied()).collect()
     };
@@ -236,7 +236,7 @@ a horizontal b at (3, 5)
 /// sketch, `Sketch::remove` drops it with the constraint.
 #[test]
 fn a_placement_dies_with_its_dimension() {
-    let mut sk = read("point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\na distance(60) b at (12, -4)\n");
+    let mut sk = read("a := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\na distance(60) b at (12, -4)\n");
     let id = sk.user_constraints()[0].id;
     assert_eq!(sk.placements.get(&id).copied(), Some((12.0, -4.0)));
     sk.remove(id);
@@ -247,7 +247,7 @@ fn a_placement_dies_with_its_dimension() {
 /// Copying a figure brings its callouts, and pasting it twice gives two sets.
 #[test]
 fn copying_a_figure_brings_its_callouts() {
-    let sk = read("point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\na distance(60) b at (12, -4)\n");
+    let sk = read("a := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\na distance(60) b at (12, -4)\n");
     let clip = gcs_core::io::copy(&sk, &[EntRef::point(0), EntRef::point(1)]);
     assert_eq!(clip.placements.len(), 1, "the callout came with the figure");
     let mut dst = Sketch::new();
@@ -264,11 +264,11 @@ fn a_relations_class_says_how_its_callout_looks() {
     let src = "\
 style .dimension { display: none }
 style .shown { display: inline; color: #ff0000 }
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-point c hint(x: 60, y: 40)
-line ab(a, b)
-line bc(b, c)
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+c := point hint(x: 60, y: 40)
+ab := line(a, b)
+bc := line(b, c)
 a distance(60) b class shown
 b distance(40) c
 horizontal ab
@@ -310,10 +310,10 @@ fn display_none_leaves_a_thing_out_of_the_export() {
     let src = "\
 style .gone { display: none }
 style .point { display: none }
-point a hint(x: 0, y: 0)
-point b hint(x: 60, y: 0)
-line ab(a, b)
-line cd(hint(x: 0, y: 20), hint(x: 60, y: 20)) class gone
+a := point hint(x: 0, y: 0)
+b := point hint(x: 60, y: 0)
+ab := line(a, b)
+cd := line(hint(x: 0, y: 20), hint(x: 60, y: 20)) class gone
 ground a
 ";
     let sk = read(src);
@@ -328,18 +328,18 @@ ground a
     assert!(sk.style_of(EntRef::new(EntKind::Line, 1)).shown());
 }
 
-/// `t: Throw(…) class phantom` — every declaration the instance makes carries the class, under
+/// `t := Throw(…) class phantom` — every declaration the instance makes carries the class, under
 /// its own (§13.2), the way `in` puts the whole instance in a view.
 #[test]
 fn an_instance_takes_a_class_whole() {
     let sk = read(
         "component Two(a: point) {\n\
-           line l(a, hint(x: 1, y: 1))\n\
-           circle k(center: a) hint(r: 2) class heavy\n\
+           l := line(a, hint(x: 1, y: 1))\n\
+           k := circle(center: a) hint(r: 2) class heavy\n\
          }\n\
-         point o hint(x: 0, y: 0)\n\
-         t: Two(o) class phantom\n\
-         u: Two(o)\n",
+         o := point hint(x: 0, y: 0)\n\
+         t := Two(o) class phantom\n\
+         u := Two(o)\n",
     );
     assert_eq!(sk.class_of(EntRef::new(EntKind::Line, 0)), Classes::one("phantom"));
     // the assembly's word is the later, stronger one: over the declaration's own
@@ -357,15 +357,15 @@ style .dimension { display: none }
 style .shown { display: inline }
 style .phantom { dash: 6 3; display: geometry }
 component Bar(a: point) {
-  point b hint(x: a.x + 30, y: a.y)
-  line l(a, b)
+  b := point hint(x: a.x + 30, y: a.y)
+  l := line(a, b)
   a distance(30) b class shown
   horizontal l
 }
-point o hint(x: 0, y: 0)
+o := point hint(x: 0, y: 0)
 ground o
-r: Bar(o)
-g: Bar(o) class phantom
+r := Bar(o)
+g := Bar(o) class phantom
 ";
     let sk = read(src);
     let shown: Vec<u32> = gcs_core::callout::layout(&sk, 1.0).iter().map(|c| c.id).collect();

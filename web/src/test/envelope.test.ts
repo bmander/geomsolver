@@ -10,24 +10,24 @@ await initCore();
 
 test('a named envelope exposes its defining residual and enforces the declared roll domain', () => {
   const doc = Document.read(`unit mm
-point o hint(x: 0,y: 0)
-point q hint(x: 0,y: 1)
-point x hint(x: 1,y: 0)
-point c hint(x: 3,y: 0)
+o := point hint(x: 0,y: 0)
+q := point hint(x: 0,y: 1)
+x := point hint(x: 1,y: 0)
+c := point hint(x: 3,y: 0)
 ground o
 ground q
 ground x
 ground c
-line axis(o,q)
-line spin_axis(o,x)
-circle meridian(center: c)
+axis := line(o,q)
+spin_axis := line(o,x)
+meridian := circle(center: c)
 radius(1mm) meridian
-solid ring(face(meridian),about: axis)
-surface wall(ring,meridian)
-motion roll(about: spin_axis)
-envelope generated(wall,under: roll,from: -20deg,to: 20deg)
-surface half(ring,meridian,from: 180deg,to: 360deg)
-envelope limited(half,under: roll,from: -20deg,to: 20deg)
+ring := solid(face(meridian),about: axis)
+wall := surface(ring,meridian)
+roll := motion(about: spin_axis)
+generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
+half := surface(ring,meridian,from: 180deg,to: 360deg)
+limited := envelope(half,under: roll,from: -20deg,to: 20deg)
 `);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));

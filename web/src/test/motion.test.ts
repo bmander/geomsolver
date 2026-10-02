@@ -9,14 +9,14 @@ await initCore();
 
 test('a named relative motion returns world position and exact velocity through the ABI', () => {
   const doc = Document.read(`unit mm
-point a hint(x: 2,y: 0)
-point b hint(x: 2,y: 1)
+a := point hint(x: 2,y: 0)
+b := point hint(x: 2,y: 1)
 ground a
 ground b
-line axis(a,b)
-motion relative(turn,relative_to: observer)
-motion turn(about: axis,ratio: 3,phase: 90deg)
-motion observer(about: axis,ratio: 1)
+axis := line(a,b)
+relative := motion(turn,relative_to: observer)
+turn := motion(about: axis,ratio: 3,phase: 90deg)
+observer := motion(about: axis,ratio: 1)
 `);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
@@ -36,22 +36,22 @@ motion observer(about: axis,ratio: 1)
 
 test('a ratio measured off the drawing is read through the ABI once the drawing is solved', () => {
   const doc = Document.read(`unit mm
-point a hint(x: 0,y: 0)
-point b hint(x: 0,y: 1)
+a := point hint(x: 0,y: 0)
+b := point hint(x: 0,y: 1)
 ground a
 ground b
-line axis(a,b)
-point c hint(x: 0,y: -2)
-point d hint(x: 25,y: -2)
+axis := line(a,b)
+c := point hint(x: 0,y: -2)
+d := point hint(x: 25,y: -2)
 ground c
-horizontal line big(c,d)
+big := horizontal line(c,d)
 c distance(30mm) d
-point e hint(x: 0,y: -4)
-point f hint(x: 12,y: -4)
+e := point hint(x: 0,y: -4)
+f := point hint(x: 12,y: -4)
 ground e
-horizontal line small(e,f)
+small := horizontal line(e,f)
 e distance(10mm) f
-motion turn(about: axis, ratio: length(big) / length(small))
+turn := motion(about: axis, ratio: length(big) / length(small))
 `);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
@@ -65,10 +65,10 @@ motion turn(about: axis, ratio: length(big) / length(small))
 
 test('a measurement where a number is needed before the solve is refused as E107', () => {
   const doc = Document.read(`unit mm
-point c hint(x: 0,y: -2)
-point d hint(x: 25,y: -2)
-line big(c,d)
-param k = length(big)
+c := point hint(x: 0,y: -2)
+d := point hint(x: 25,y: -2)
+big := line(c,d)
+k := length(big)
 `);
   try {
     assert.ok(doc.diagnostics.some(d => d.code === 'E107'), JSON.stringify(doc.diagnostics));

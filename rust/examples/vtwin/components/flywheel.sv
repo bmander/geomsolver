@@ -14,23 +14,23 @@ use components.dims
 use components.parts
 
 component Flywheel(f: plane, dims: group) {
-  circle rim(center: f.origin) hint(r: dims.rfw)
+  rim := circle(center: f.origin) hint(r: dims.rfw)
   radius(dims.rfw) rim
-  circle bore(center: f.origin) hint(r: dims.dhub / 2)
+  bore := circle(center: f.origin) hint(r: dims.dhub / 2)
   radius(dims.dhub / 2) bore
-  point se hint(x: f.origin.x + (0mm) * f.c - (-dims.rfw) * f.s,
+  se := point hint(x: f.origin.x + (0mm) * f.c - (-dims.rfw) * f.s,
                     y: f.origin.y + (0mm) * f.s + (-dims.rfw) * f.c)
-  line ssa(f.origin, se)
-  line reference(f.origin, f.toward)
+  ssa := line(f.origin, se)
+  reference := line(f.origin, f.toward)
   se on rim
   ssa perpendicular reference
-  plane screw_axes(origin: f.origin, toward: se)
-  gs: Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rfw, dims: dims)
+  screw_axes := plane(origin: f.origin, toward: se)
+  gs := Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rfw, dims: dims)
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
-  solid plate(face(rim), from: -dims.wfw / 2, to: dims.wfw / 2)
-  solid hub(face(bore), from: -dims.wfw / 2, to: dims.wfw / 2)
-  solid body(plate)
+  plate := solid(face(rim), from: -dims.wfw / 2, to: dims.wfw / 2)
+  hub := solid(face(bore), from: -dims.wfw / 2, to: dims.wfw / 2)
+  body := solid(plate)
   hub cut body
   gs.bore cut body
 }
@@ -38,5 +38,5 @@ component Flywheel(f: plane, dims: group) {
 // Open this file to preview the flywheel; ../flywheel.svd arranges its three projections.
 preview {
   unit mm
-  fw: Flywheel(std.up, dims: vtwin_dims)
+  fw := Flywheel(std.up, dims: vtwin_dims)
 }

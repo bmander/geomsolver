@@ -21,34 +21,34 @@ component ConRod(end: plane, side: plane, secv: plane,
                  pin: point, axis: line, pin_s: point, sm_s: point, at: point,
                  draw_end: Int, draw_side: Int, draw_sec: Int, dims: group) {
   // the rod's own dimensions
-  param wB = dims.pinlen - 4mm     // big end, along the crank axis: the pin less 2 of clearance a side
-  param wS = 22mm             // small end, along the crank axis
-  param rB = dims.rp + 1.5mm       // big-end bore: the crank pin and a bearing shell
-  param rS = dims.rpin + 1mm       // small-end bore: the piston pin and a bush
-  param eB = 30mm             // big-end eye, outside
-  param eS = 16mm             // small-end eye, outside
-  param hB = 12mm             // shank half-width where it leaves the big end…
-  param hS = 9mm              // …and where it meets the small end
-  param rf = 6mm              // fillet between shank and eye
-  param bolt = 22mm           // cap bolt centres, off the rod's axis
-  param capd = 26mm           // the bolt reaches this far into the cap…
-  param rodd = 20mm           // …and this far into the rod
-  param fl = 18mm             // I-section: flange width, the shank's thickness across the engine
-  param ft = 4mm              // flange thickness
-  param wt = 5mm              // web thickness
-  param hM = (hB + hS) / 2    // the shank's half-width at mid-length, where the section is cut
-  param oil = 1.5mm           // the oil passage, half its bore
+  wB := dims.pinlen - 4mm     // big end, along the crank axis: the pin less 2 of clearance a side
+  wS := 22mm             // small end, along the crank axis
+  rB := dims.rp + 1.5mm       // big-end bore: the crank pin and a bearing shell
+  rS := dims.rpin + 1mm       // small-end bore: the piston pin and a bush
+  eB := 30mm             // big-end eye, outside
+  eS := 16mm             // small-end eye, outside
+  hB := 12mm             // shank half-width where it leaves the big end…
+  hS := 9mm              // …and where it meets the small end
+  rf := 6mm              // fillet between shank and eye
+  bolt := 22mm           // cap bolt centres, off the rod's axis
+  capd := 26mm           // the bolt reaches this far into the cap…
+  rodd := 20mm           // …and this far into the rod
+  fl := 18mm             // I-section: flange width, the shank's thickness across the engine
+  ft := 4mm              // flange thickness
+  wt := 5mm              // web thickness
+  hM := (hB + hS) / 2    // the shank's half-width at mid-length, where the section is cut
+  oil := 1.5mm           // the oil passage, half its bore
 
   repeat draw_end {
     in end {
       // the small end rides the bore axis one rod length from the pin
-      point sm hint(x: pin.x, y: pin.y + dims.L)
+      sm := point hint(x: pin.x, y: pin.y + dims.L)
       sm on axis
       pin distance(dims.L) sm
-      line cl(pin, sm)
-      circle bigbore(center: pin) hint(r: rB)
+      cl := line(pin, sm)
+      bigbore := circle(center: pin) hint(r: rB)
       radius(rB) bigbore
-      circle smallbore(center: sm) hint(r: rS)
+      smallbore := circle(center: sm) hint(r: rS)
       radius(rS) smallbore
 
       // the shank's two flanks, each filleted into both eyes.  A fillet is an arc whose centre
@@ -57,38 +57,38 @@ component ConRod(end: plane, side: plane, secv: plane,
       // bare circle–circle tangency has) and the flank square to it, the tangency stated at
       // that point (§1.5).  The eyes themselves are drawn as the arcs left between the
       // fillets, the long way round.
-      point cbl hint(x: pin.x - (hB + rf), y: pin.y + 31.2mm)
-      point cbr hint(x: pin.x + (hB + rf), y: pin.y + 31.2mm)
-      point csl hint(x: sm.x - (hS + rf), y: sm.y - 16.1mm)
-      point csr hint(x: sm.x + (hS + rf), y: sm.y - 16.1mm)
+      cbl := point hint(x: pin.x - (hB + rf), y: pin.y + 31.2mm)
+      cbr := point hint(x: pin.x + (hB + rf), y: pin.y + 31.2mm)
+      csl := point hint(x: sm.x - (hS + rf), y: sm.y - 16.1mm)
+      csr := point hint(x: sm.x + (hS + rf), y: sm.y - 16.1mm)
       // (that the centre is `eB + rf` from the pin follows: the contact is on the ray, on the
       // eye and on the fillet, so it is not stated a second time)
       cbl distance(hB + rf, side: left) cl
       cbr distance(hB + rf, side: right) cl
       csl distance(hS + rf, side: left) cl
       csr distance(hS + rf, side: right) cl
-      line rayBL(pin, cbl)
-      line rayBR(pin, cbr)
-      line raySL(sm, csl)
-      line raySR(sm, csr)
-      point sbl hint(x: pin.x - 15mm, y: pin.y + 26mm)
-      point sbr hint(x: pin.x + 15mm, y: pin.y + 26mm)
-      point ssl hint(x: sm.x - 10.9mm, y: sm.y - 11.7mm)
-      point ssr hint(x: sm.x + 10.9mm, y: sm.y - 11.7mm)
+      rayBL := line(pin, cbl)
+      rayBR := line(pin, cbr)
+      raySL := line(sm, csl)
+      raySR := line(sm, csr)
+      sbl := point hint(x: pin.x - 15mm, y: pin.y + 26mm)
+      sbr := point hint(x: pin.x + 15mm, y: pin.y + 26mm)
+      ssl := point hint(x: sm.x - 10.9mm, y: sm.y - 11.7mm)
+      ssr := point hint(x: sm.x + 10.9mm, y: sm.y - 11.7mm)
       sbl on rayBL
       sbr on rayBR
       ssl on raySL
       ssr on raySR
-      point ebl hint(x: pin.x - hB, y: pin.y + 31mm)
-      point ebr hint(x: pin.x + hB, y: pin.y + 31mm)
-      point esl hint(x: sm.x - hS, y: sm.y - 16mm)
-      point esr hint(x: sm.x + hS, y: sm.y - 16mm)
-      line flank_l(ebl, esl)
-      line flank_r(ebr, esr)
-      arc fbl(center: cbl, start: sbl, end: ebl) hint(r: rf)
-      arc fbr(center: cbr, start: ebr, end: sbr) hint(r: rf)
-      arc fsl(center: csl, start: esl, end: ssl) hint(r: rf)
-      arc fsr(center: csr, start: ssr, end: esr) hint(r: rf)
+      ebl := point hint(x: pin.x - hB, y: pin.y + 31mm)
+      ebr := point hint(x: pin.x + hB, y: pin.y + 31mm)
+      esl := point hint(x: sm.x - hS, y: sm.y - 16mm)
+      esr := point hint(x: sm.x + hS, y: sm.y - 16mm)
+      flank_l := line(ebl, esl)
+      flank_r := line(ebr, esr)
+      fbl := arc(center: cbl, start: sbl, end: ebl) hint(r: rf)
+      fbr := arc(center: cbr, start: ebr, end: sbr) hint(r: rf)
+      fsl := arc(center: csl, start: esl, end: ssl) hint(r: rf)
+      fsr := arc(center: csr, start: ssr, end: esr) hint(r: rf)
       radius(rf) fbl
       radius(rf) fbr
       radius(rf) fsl
@@ -97,24 +97,24 @@ component ConRod(end: plane, side: plane, secv: plane,
       flank_l tangent(at: p2) fsl
       flank_r tangent(at: p1) fbr
       flank_r tangent(at: p2) fsr
-      arc eyeB(center: pin, start: sbl, end: sbr) hint(r: eB)
-      arc eyeS(center: sm, start: ssr, end: ssl) hint(r: eS)
+      eyeB := arc(center: pin, start: sbl, end: sbr) hint(r: eB)
+      eyeS := arc(center: sm, start: ssr, end: ssl) hint(r: eS)
       radius(eB) eyeB
       radius(eS) eyeS
 
       // the cap: a parting line through the pin square to the rod, and the two bolts through it
-      point pl0 hint(x: pin.x - eB, y: pin.y)
-      point pl1 hint(x: pin.x + eB, y: pin.y)
-      line parting(pl0, pl1)
+      pl0 := point hint(x: pin.x - eB, y: pin.y)
+      pl1 := point hint(x: pin.x + eB, y: pin.y)
+      parting := line(pl0, pl1)
       pin midpoint parting
       parting perpendicular cl
       pl0 on eyeB
-      point bl0 hint(x: pin.x - bolt, y: pin.y - capd)
-      point bl1 hint(x: pin.x - bolt, y: pin.y + rodd)
-      point br0 hint(x: pin.x + bolt, y: pin.y - capd)
-      point br1 hint(x: pin.x + bolt, y: pin.y + rodd)
-      line bolt_l(bl0, bl1)
-      line bolt_r(br0, br1)
+      bl0 := point hint(x: pin.x - bolt, y: pin.y - capd)
+      bl1 := point hint(x: pin.x - bolt, y: pin.y + rodd)
+      br0 := point hint(x: pin.x + bolt, y: pin.y - capd)
+      br1 := point hint(x: pin.x + bolt, y: pin.y + rodd)
+      bolt_l := line(bl0, bl1)
+      bolt_r := line(br0, br1)
       bl0 distance(bolt, side: left) cl
       bl1 distance(bolt, side: left) cl
       br0 distance(bolt, side: right) cl
@@ -126,12 +126,12 @@ component ConRod(end: plane, side: plane, secv: plane,
       claim bl0 distance(2 * bolt) br0
 
       // the oil passage, drilled from the big-end bore to the small-end bore
-      point ol0 hint(x: pin.x - oil, y: pin.y + rB)
-      point ol1 hint(x: sm.x - oil, y: sm.y - rS)
-      point or0 hint(x: pin.x + oil, y: pin.y + rB)
-      point or1 hint(x: sm.x + oil, y: sm.y - rS)
-      line oil_l(ol0, ol1)
-      line oil_r(or0, or1)
+      ol0 := point hint(x: pin.x - oil, y: pin.y + rB)
+      ol1 := point hint(x: sm.x - oil, y: sm.y - rS)
+      or0 := point hint(x: pin.x + oil, y: pin.y + rB)
+      or1 := point hint(x: sm.x + oil, y: sm.y - rS)
+      oil_l := line(ol0, ol1)
+      oil_r := line(or0, or1)
       ol0 on bigbore
       or0 on bigbore
       ol1 on smallbore
@@ -146,38 +146,38 @@ component ConRod(end: plane, side: plane, secv: plane,
   repeat draw_side {
     in side {
       // the big end: a block `wB` along the axis, the parting line across it, a bolt down it
-      point ba hint(x: pin_s.x - wB / 2, y: pin_s.y - eB)
-      point bb hint(x: pin_s.x + wB / 2, y: pin_s.y - eB)
-      bc: At(pin_s, dx: wB / 2, dy: eB)
-      bd: At(pin_s, dx: -wB / 2, dy: eB)
-      line b1(ba, bb) -> line b2(bb, bc.p) -> line b3(bc.p, bd.p) -> line b4(bd.p, ba) -> close
+      ba := point hint(x: pin_s.x - wB / 2, y: pin_s.y - eB)
+      bb := point hint(x: pin_s.x + wB / 2, y: pin_s.y - eB)
+      bc := At(pin_s, dx: wB / 2, dy: eB)
+      bd := At(pin_s, dx: -wB / 2, dy: eB)
+      (b1 := line(ba, bb)) -> (b2 := line(bb, bc.p)) -> (b3 := line(bc.p, bd.p)) -> (b4 := line(bd.p, ba)) -> close
       pin_s distance(-wB / 2, along: x) ba
       pin_s distance(-eB, along: y) ba
       pin_s distance(-eB, along: y) bb
       ba distance(wB) bb
-      pa: At(pin_s, dx: -wB / 2, dy: 0mm)
-      pb: At(pin_s, dx: wB / 2, dy: 0mm)
-      line parting_s(pa.p, pb.p)
-      b0: At(pin_s, dx: 0mm, dy: -capd)
-      b1s: At(pin_s, dx: 0mm, dy: rodd)
-      line bolt_s(b0.p, b1s.p)
+      pa := At(pin_s, dx: -wB / 2, dy: 0mm)
+      pb := At(pin_s, dx: wB / 2, dy: 0mm)
+      parting_s := line(pa.p, pb.p)
+      b0 := At(pin_s, dx: 0mm, dy: -capd)
+      b1s := At(pin_s, dx: 0mm, dy: rodd)
+      bolt_s := line(b0.p, b1s.p)
       // the small end
-      point sa hint(x: sm_s.x - wS / 2, y: sm_s.y - eS)
-      point sb hint(x: sm_s.x + wS / 2, y: sm_s.y - eS)
-      sc: At(sm_s, dx: wS / 2, dy: eS)
-      sd: At(sm_s, dx: -wS / 2, dy: eS)
-      line s1(sa, sb) -> line s2(sb, sc.p) -> line s3(sc.p, sd.p) -> line s4(sd.p, sa) -> close
+      sa := point hint(x: sm_s.x - wS / 2, y: sm_s.y - eS)
+      sb := point hint(x: sm_s.x + wS / 2, y: sm_s.y - eS)
+      sc := At(sm_s, dx: wS / 2, dy: eS)
+      sd := At(sm_s, dx: -wS / 2, dy: eS)
+      (s1 := line(sa, sb)) -> (s2 := line(sb, sc.p)) -> (s3 := line(sc.p, sd.p)) -> (s4 := line(sd.p, sa)) -> close
       sm_s distance(-wS / 2, along: x) sa
       sm_s distance(-eS, along: y) sa
       sm_s distance(-eS, along: y) sb
       sa distance(wS) sb
       // the shank's flanges between them
-      point ka hint(x: pin_s.x - fl / 2, y: pin_s.y + eB)
-      point kb hint(x: pin_s.x + fl / 2, y: pin_s.y + eB)
-      point kc hint(x: sm_s.x + fl / 2, y: sm_s.y - eS)
-      point kd hint(x: sm_s.x - fl / 2, y: sm_s.y - eS)
-      line k1(ka, kd)
-      line k2(kb, kc)
+      ka := point hint(x: pin_s.x - fl / 2, y: pin_s.y + eB)
+      kb := point hint(x: pin_s.x + fl / 2, y: pin_s.y + eB)
+      kc := point hint(x: sm_s.x + fl / 2, y: sm_s.y - eS)
+      kd := point hint(x: sm_s.x - fl / 2, y: sm_s.y - eS)
+      k1 := line(ka, kd)
+      k2 := line(kb, kc)
       pin_s distance(-fl / 2, along: x) ka
       pin_s distance(eB, along: y) ka
       pin_s distance(eB, along: y) kb
@@ -197,21 +197,21 @@ component ConRod(end: plane, side: plane, secv: plane,
   // section A-A: the shank's I-section at mid-length, about `at`
   repeat draw_sec {
     in secv {
-      q0: At(at, dx: -fl / 2, dy: -hM)
-      point q1 hint(x: at.x + fl / 2, y: at.y - hM)
-      point q2 hint(x: at.x + fl / 2, y: at.y - hM + ft)
-      point q3 hint(x: at.x + wt / 2, y: at.y - hM + ft)
-      q4: At(at, dx: wt / 2, dy: hM - ft)
-      q5: At(at, dx: fl / 2, dy: hM - ft)
-      q6: At(at, dx: fl / 2, dy: hM)
-      point q7 hint(x: at.x - fl / 2, y: at.y + hM)
-      q8: At(at, dx: -fl / 2, dy: hM - ft)
-      q9: At(at, dx: -wt / 2, dy: hM - ft)
-      q10: At(at, dx: -wt / 2, dy: -hM + ft)
-      q11: At(at, dx: -fl / 2, dy: -hM + ft)
-      line a1(q0.p, q1) -> line a2(q1, q2) -> line a3(q2, q3) -> line a4(q3, q4.p) ->
-        line a5(q4.p, q5.p) -> line a6(q5.p, q6.p) -> line a7(q6.p, q7) -> line a8(q7, q8.p) ->
-        line a9(q8.p, q9.p) -> line a10(q9.p, q10.p) -> line a11(q10.p, q11.p) -> line a12(q11.p, q0.p) -> close
+      q0 := At(at, dx: -fl / 2, dy: -hM)
+      q1 := point hint(x: at.x + fl / 2, y: at.y - hM)
+      q2 := point hint(x: at.x + fl / 2, y: at.y - hM + ft)
+      q3 := point hint(x: at.x + wt / 2, y: at.y - hM + ft)
+      q4 := At(at, dx: wt / 2, dy: hM - ft)
+      q5 := At(at, dx: fl / 2, dy: hM - ft)
+      q6 := At(at, dx: fl / 2, dy: hM)
+      q7 := point hint(x: at.x - fl / 2, y: at.y + hM)
+      q8 := At(at, dx: -fl / 2, dy: hM - ft)
+      q9 := At(at, dx: -wt / 2, dy: hM - ft)
+      q10 := At(at, dx: -wt / 2, dy: -hM + ft)
+      q11 := At(at, dx: -fl / 2, dy: -hM + ft)
+      (a1 := line(q0.p, q1)) -> (a2 := line(q1, q2)) -> (a3 := line(q2, q3)) -> (a4 := line(q3, q4.p)) ->
+        (a5 := line(q4.p, q5.p)) -> (a6 := line(q5.p, q6.p)) -> (a7 := line(q6.p, q7)) -> (a8 := line(q7, q8.p)) ->
+        (a9 := line(q8.p, q9.p)) -> (a10 := line(q9.p, q10.p)) -> (a11 := line(q10.p, q11.p)) -> (a12 := line(q11.p, q0.p)) -> close
       at distance(-hM, along: y) q1
       q0.p distance(fl) q1
       at distance(fl / 2, along: x) q2
