@@ -73,6 +73,9 @@ export class CodeEditor {
    *  re-lexes the document, and a repaint that only moved the *mark* has the same text and so
    *  the same runs — which used to be paid for again anyway. */
   private lastRuns: { text: string; runs: Run[] } | null = null;
+  /** Show the text uncoloured.  The colouring is the core's reading of Solvent, and prose read
+   *  as statements — a README beside the sources — would be tinted at random. */
+  plain = false;
 
   /** Build the two layers inside `host`, which is expected to be positioned (the stylesheet makes
    *  `#pcode` so).  The copy goes first so the box paints over it and takes the clicks. */
@@ -169,7 +172,7 @@ export class CodeEditor {
       }
     };
     let at = 0;
-    if (text.length <= MAX_COLOUR) {
+    if (!this.plain && text.length <= MAX_COLOUR) {
       for (const r of this.runs(text)) {
         put(at, r.lo, '');
         put(r.lo, r.hi, r.cls);

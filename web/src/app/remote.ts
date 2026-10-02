@@ -5,8 +5,13 @@ import * as modules from '../core/modules.js';
 import { info, type DrawingBundle } from '../core/drawing.js';
 import { fromSketch } from '../core/program.js';
 import { exampleTarget } from './example-catalog.js';
+import { projectFile } from './project-explorer.js';
 
-export interface ExampleBundle extends DrawingBundle { key: string; directory?: string }
+/** `source` is the file selected, which may be a text file; `entry` is the drawing or model the
+ *  project opens on, which a text file is shown beside. */
+export interface ExampleBundle extends DrawingBundle {
+  key: string; directory?: string; entry: string;
+}
 
 async function fetchText(path: string): Promise<string | null> {
   try {
@@ -78,7 +83,7 @@ export async function drawing(key: string, selectedFile?: string): Promise<Examp
   if (directory) {
     const index = await fetchText('examples/index.json');
     const paths: string[] = index === null ? Object.keys(fallback) : JSON.parse(index);
-    const members = paths.filter((p) => p.startsWith(`${directory}/`) && /\.svd?$/.test(p));
+    const members = paths.filter((p) => p.startsWith(`${directory}/`) && projectFile(p));
     await Promise.all(members.map(read));
     // Read all files, including part drawings unreachable from the assembly. Follow their
     // external dependencies too, while the core remains responsible for resolving names.
@@ -91,5 +96,5 @@ export async function drawing(key: string, selectedFile?: string): Promise<Examp
   }
   const selected = selectedFile ?? entry.file;
   return { source: selected && selected in files ? selected : main, files,
-    key: entry.key, directory };
+    key: entry.key, directory, entry: main };
 }

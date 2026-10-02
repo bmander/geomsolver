@@ -48,6 +48,11 @@ test('menu examples open files or directories with one V-twin choice', async (t)
     'crown/reach', 'crown/space', 'crown/relief']) {
     assert.ok(gears.files[`spiral_bevel/${name}.sv`], name);
   }
+  // the text beside the sources is part of the project, shown and never elaborated
+  assert.match(gears.files['spiral_bevel/README.md'], /^# /);
+  const readme = await remote.drawing('spiral_bevel', 'spiral_bevel/README.md');
+  assert.equal(readme.source, 'spiral_bevel/README.md');
+  assert.equal(readme.entry, 'spiral_bevel/gears.sv');
   const vtwin = await remote.drawing('vtwin');
   assert.equal(vtwin.directory, 'vtwin');
   assert.ok(vtwin.files['vtwin/components/frame.sv']);

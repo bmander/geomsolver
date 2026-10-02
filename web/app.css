@@ -290,17 +290,24 @@ dialog input[type=search] {
 #project-toggle[aria-expanded="true"] .project-disclosure,
 #project-tree details[open] > summary > .project-disclosure { transform: rotate(90deg); }
 #project-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#project-tree { overflow: auto; flex: 1; min-height: 0; padding: 5px; font-size: 12px; }
+/* A folder and a file are one row: the same padding, then an icon column of one width (a folder's
+   disclosure, a file's glyph), then the name — so every name at one depth starts at one x, and a
+   folder's children indent by exactly that column, putting their icons under its name. */
+#project-tree { --tree-icon: 14px; --tree-gap: 6px; overflow: auto; flex: 1; min-height: 0;
+  padding: 5px; font-size: 12px; }
 #project-tree[hidden] { display: none; }
-#project-tree summary { display: flex; align-items: center; gap: 6px; list-style: none;
-  padding: 4px 6px; cursor: pointer; color: var(--muted); }
+#project-tree summary, .project-file { display: flex; align-items: center; gap: var(--tree-gap);
+  padding: 4px 8px; border-radius: 3px; white-space: nowrap; }
+#project-tree summary { list-style: none; cursor: pointer; color: var(--muted); }
 #project-tree summary::-webkit-details-marker { display: none; }
-.project-folder { padding-left: 14px; }
-.project-file { display: block; width: 100%; border: 0; border-radius: 3px;
-  background: transparent; color: var(--text); text-align: left; padding: 4px 8px;
-  font: inherit; white-space: nowrap; }
-.project-file::before { content: '◇'; margin-right: 7px; color: var(--muted); }
+#project-tree summary > .project-disclosure { width: var(--tree-icon); height: var(--tree-icon); }
+.project-folder { padding-left: calc(var(--tree-icon) + var(--tree-gap)); }
+.project-file { width: 100%; border: 0; background: transparent; color: var(--text);
+  text-align: left; font: inherit; }
+.project-file::before { content: '◇'; flex: none; width: var(--tree-icon); text-align: center;
+  color: var(--muted); }
 .project-file.drawing-file::before { content: '▤'; }
+.project-file.text-file::before { content: '¶'; }
 .project-file[aria-current] { background: var(--accent-soft); color: var(--accent); }
 #program-name { padding: 6px 10px; font: 12px var(--mono); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid var(--line); }

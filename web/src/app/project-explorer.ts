@@ -1,3 +1,8 @@
+/** A file the tree shows: Solvent sources, and the plain text beside them (a README). */
+export const projectFile = (path: string): boolean => /\.(?:svd?|md|txt)$/.test(path);
+/** A file the core reads.  Any other project file is text to show, never to elaborate. */
+export const sourceFile = (path: string): boolean => /\.svd?$/.test(path);
+
 /** A directory pane with native, keyboard-accessible folder toggles and file buttons. */
 export class ProjectExplorer {
   private readonly buttons = new Map<string, HTMLButtonElement>();
@@ -43,7 +48,8 @@ export class ProjectExplorer {
       const button = document.createElement('button');
       button.type = 'button'; button.textContent = relative.slice(slash + 1);
       button.title = path; button.dataset.path = path;
-      button.className = path.endsWith('.svd') ? 'project-file drawing-file' : 'project-file';
+      button.className = `project-file${path.endsWith('.svd') ? ' drawing-file'
+        : sourceFile(path) ? '' : ' text-file'}`;
       button.addEventListener('click', () => this.onSelect(path));
       folder(slash < 0 ? '' : relative.slice(0, slash)).append(button);
       this.buttons.set(path, button);

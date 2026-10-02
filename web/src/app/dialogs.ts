@@ -67,7 +67,7 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
       else url.searchParams.delete('file');
       if (url.href !== location.href) history[method === 'push' ? 'pushState' : 'replaceState'](null, '', url);
     };
-    openProject(bundle, { directory: bundle.directory,
+    openProject(bundle, { directory: bundle.directory, entry: bundle.entry,
       onSelect: (path) => updateUrl(path, 'replace') });
     if (navigation !== 'none') {
       updateUrl(file || bundle.key !== key ? bundle.source : undefined, navigation);

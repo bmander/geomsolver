@@ -20,7 +20,7 @@ import type { DrawingBundle } from '../core/drawing.js';
 import { drawingActive, pickDrawingFolder, renderDrawing, showDrawing } from './drawing.js';
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { download, toast } from './ui.js';
-import { ProjectExplorer } from './project-explorer.js';
+import { ProjectExplorer, projectFile, sourceFile } from './project-explorer.js';
 
 /** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
  *  owns what the text *means* — which document it came from and what applying it does. */
@@ -40,11 +40,23 @@ const explorer = new ProjectExplorer(document.getElementById('project-pane')!,
 let directory: string | undefined;
 let onProjectFile: ((path: string) => void) | undefined;
 let activeFile = '';
+/** The project's `.sv` the canvas holds, which a text file shown in the panel leaves in place. */
+let modelFile = '';
 let filesFor: string | null = null;
 let files: modules.SourceFile[] = [];
 let project: DrawingBundle | null = null;
 let switching = false;
 const positions = new Map<string, { start: number; end: number; top: number; left: number }>();
+
+/** The panel shows a project's text file (a README): kept and saved, never elaborated. */
+function showingText(): boolean {
+  return project !== null && !sourceFile(activeFile);
+}
+
+/** What the canvas came to belongs to the model it holds, whichever file the panel shows. */
+function keepModel(): void {
+  if (project && modelFile && !drawingActive() && !typed) project.files[modelFile] = view.source;
+}
 
 function refreshFiles(): void {
   if (project) return;
@@ -68,7 +80,7 @@ function selectFile(name: string): void {
   positions.set(activeFile, { start: ptext.selectionStart, end: ptext.selectionEnd,
     top: ptext.scrollTop, left: ptext.scrollLeft });
   if (project) {
-    if (!drawingActive() && !typed) project.files[activeFile] = view.source;
+    keepModel();
     if (!activateProjectFile(name)) { filePicker.value = activeFile; return; }
   }
   activeFile = name;
@@ -90,25 +102,30 @@ export function resetProgramFiles(): void {
   directory = undefined; onProjectFile = undefined;
   explorer.show([]); programName.hidden = true;
   showDrawing(null);
-  activeFile = '';
+  activeFile = ''; modelFile = '';
+  ped.plain = false;
   filesFor = null;
   positions.clear();
   revertProgram();
 }
 
-/** Both source kinds live in one project; the selected extension chooses the left-hand view. */
+/** Both source kinds live in one project; the selected extension chooses the left-hand view.
+ *  A text file is shown in the panel beside whichever source the left-hand view last held, so a
+ *  project opened on its README draws its entry (`options.entry`) there. */
 export function openProject(bundle: DrawingBundle, options: {
-  directory?: string; onSelect?: (path: string) => void;
+  directory?: string; entry?: string; onSelect?: (path: string) => void;
 } = {}): void {
-  const names = Object.keys(bundle.files).filter((p) => /\.svd?$/.test(p)).sort();
-  const main = names.includes(bundle.source) ? bundle.source
-    : names.find((p) => p.endsWith('.svd')) ?? names[0];
+  const names = Object.keys(bundle.files).filter(projectFile).sort();
+  const sources = names.filter(sourceFile);
+  const source = (p?: string) => p !== undefined && sources.includes(p) ? p : undefined;
+  const main = source(bundle.source) ?? source(options.entry)
+    ?? sources.find((p) => p.endsWith('.svd')) ?? sources[0];
   if (!main) { toast('This project has no .sv or .svd files'); return; }
   view.pauseEditing();
   project = { source: main, files: { ...bundle.files } };
   directory = options.directory; onProjectFile = options.onSelect;
   positions.clear();
-  activeFile = main;
+  activeFile = main; modelFile = '';
   filePicker.replaceChildren(new Option(main, main),
     ...names.filter((p) => p !== main).map((p) => new Option(p, p)));
   filePicker.value = main;
@@ -116,6 +133,7 @@ export function openProject(bundle: DrawingBundle, options: {
   explorer.show(names, directory); explorer.select(main);
   activateProjectFile(main);
   revertProgram();
+  if (bundle.source !== main && names.includes(bundle.source)) selectFile(bundle.source);
 }
 
 export async function openDrawing(): Promise<void> {
@@ -135,12 +153,15 @@ function activateProjectFile(name: string): boolean {
   if (!project || !(name in project.files)) return false;
   switching = true;
   try {
-    if (name.endsWith('.svd')) {
+    if (!sourceFile(name)) {
+      // the left-hand view stays on what it was showing
+    } else if (name.endsWith('.svd')) {
       view.pauseEditing();
       showDrawing({ source: name, files: project.files });
     } else {
       modules.provideProject(name, project.files);
       if (!view.openProjectFile(project.files[name])) return false;
+      modelFile = name;
       showDrawing(null);
     }
     typed = false;
@@ -240,7 +261,7 @@ function setPanelWidth(px: number): void {
 /** Re-print, unless the panel is being typed in or already says this. */
 export function refreshProgram(): void {
   if (switching) return;
-  if (project && !drawingActive() && !typed) project.files[activeFile] = view.source;
+  keepModel();
   if (ppanel.hidden) return;
   refreshFiles();
   programName.hidden = directory === undefined;
@@ -259,10 +280,12 @@ export function refreshProgram(): void {
     : files.find((f) => f.name === activeFile)?.text ?? view.source;
   if (text === shown) return;
   shown = text;
-  ped.setText(text, imported || drawingActive() ? [] : marks());
+  const quiet = imported || drawingActive() || showingText();
+  ped.plain = showingText();
+  ped.setText(text, quiet ? [] : marks());
   ppanel.classList.remove('dirty');
   ppanelState.textContent = imported ? ' — imported file, read only' : '';
-  showDiags(imported || drawingActive() ? [] : view.doc.diagnostics);
+  showDiags(quiet ? [] : view.doc.diagnostics);
 }
 
 /** Apply what is in the box.  One undo entry, one solve, one diagnosis — like every other edit.
@@ -271,6 +294,8 @@ export function refreshProgram(): void {
  *  statement is not an instruction to delete anything. */
 export function applyProgram(): boolean {
   if (!project && activeFile) return false;
+  // a text file is kept as it is typed, and applying it re-renders whatever the left side shows
+  if (showingText()) return drawingActive() ? renderDrawing() : true;
   if (drawingActive() && !typed) return renderDrawing();
   const text = ptext.value;
   if (project) project.files[activeFile] = text;
@@ -389,7 +414,8 @@ function marks(): Mark[] {
  *  marking something nobody can read yet.  The gesture ends in `onChanged`, which comes back
  *  through here. */
 export function markStatement(): void {
-  if (switching || drawingActive() || ppanel.hidden || (!project && activeFile) || typed || view.gesture) return;
+  if (switching || drawingActive() || showingText() || ppanel.hidden || (!project && activeFile)
+    || typed || view.gesture) return;
   ped.setMarks(marks());
 }
 
@@ -397,7 +423,7 @@ export function markStatement(): void {
  *  under one.  Called from both funnels: `view.onSelect` for the drawing, `hooks.focusChanged`
  *  for a constraint, so picking either way says the same thing here. */
 export function showStatementFor(): void {
-  if (switching || drawingActive()) return;
+  if (switching || drawingActive() || showingText()) return;
   markStatement();
   const where = litSpan();
   // the scroll is only for a box nobody is in: moving it under somebody who is typing would take
@@ -424,6 +450,11 @@ export function bindProgramPanel(): void {
   filePicker.addEventListener('change', () => selectFile(filePicker.value));
   ptext.addEventListener('input', () => {
     if (!project && activeFile) return;
+    if (showingText()) {
+      project!.files[activeFile] = shown = ptext.value;
+      ped.repaint();
+      return;
+    }
     typed = true;
     // colour what was just typed, not what the drawing came from: half a statement is still the
     // program somebody is looking at, and the core colours it as far as it goes
@@ -451,7 +482,7 @@ export function bindProgramPanel(): void {
   });
   // a click in the text says which statement, and the drawing lights what it made
   ptext.addEventListener('click', () => {
-    if (drawingActive() || (!project && activeFile)) return;
+    if (drawingActive() || showingText() || (!project && activeFile)) return;
     const off = ptext.selectionStart;
     // the innermost statement containing the caret: a statement inside a block is inside its
     // block's span, and the one that made something is the one a click there means

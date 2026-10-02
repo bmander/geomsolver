@@ -2,6 +2,7 @@
 import * as drawing from '../core/drawing.js';
 import { download } from './ui.js';
 import { DrawingViewport } from './drawing-viewport.js';
+import { projectFile } from './project-explorer.js';
 
 export async function pickDrawingFolder(): Promise<drawing.DrawingBundle | null> {
   const picked = await new Promise<File[]>((resolve) => {
@@ -13,7 +14,7 @@ export async function pickDrawingFolder(): Promise<drawing.DrawingBundle | null>
   });
   if (!picked.length) return null;
   const files: Record<string, string> = {};
-  await Promise.all(picked.filter((f) => /\.svd?$/.test(f.name)).map(async (f) => {
+  await Promise.all(picked.filter((f) => projectFile(f.name)).map(async (f) => {
     const path = (f.webkitRelativePath || f.name).replace(/^[^/]+\//, '');
     files[path] = await f.text();
   }));
