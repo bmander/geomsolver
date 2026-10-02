@@ -31,8 +31,8 @@ when the component does not need to name multiple planes. Datum intrinsics are r
 geometric point hints settle. Component aliases retain subentity paths such as `f.origin`.
 `use std` provides lazy shared `std.front` (u right), `std.up` (u up), and `std.origin`,
 expanded from the library's `StandardDatums` only when referenced. Both datums are fixed at
-page zero, with no implied membership. Calls may omit `name:`; anonymous instance keys stay
-out of user-facing names. The cylinder preview keeps `cyl:` for its `.svd` references and uses
+page zero, with no implied membership. Calls may omit `name :=`; anonymous instance keys stay
+out of user-facing names. The cylinder preview keeps `cyl :=` for its `.svd` references and uses
 `cyl := Cylinder(std.up, fw: components.dims.fwA, dims: components.dims.vtwin_dims)` with no
 explicit origin, ground, plane, or Axes setup.
 

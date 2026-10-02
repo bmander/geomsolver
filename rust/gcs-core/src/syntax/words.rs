@@ -138,21 +138,16 @@ pub(super) fn opens_link(w: &str, next: Option<&str>) -> bool {
     (EntKind::parse(n).is_some() || prefix_word(n)) && prefix_word(w)
 }
 
-/// The words a name may not be: an element keyword, a trailing clause or joint, and the words a
-/// statement is shaped by.  `at` stays reserved so the retired seed spelling gets its diagnostic.
-fn names_decl(w: &str) -> bool {
-    EntKind::parse(w).is_none()
-        && !trails_decl(w)
-        && !["at", "group", "cut", "bound", "private", "construction", "centerline"].contains(&w)
-}
-
-/// A valid identifier that is not reserved by the grammar. Used by source edits
-/// that introduce names.
+/// A valid identifier that is not reserved by the grammar — no element keyword, trailing clause
+/// or joint, and none of the words a statement is shaped by.  Used by source edits that
+/// introduce names.  `at` stays reserved so the retired seed spelling gets its diagnostic.
 pub fn is_name(s: &str) -> bool {
     let mut cs = s.chars();
     matches!(cs.next(), Some(c) if ident_start(c))
         && cs.all(ident_char)
-        && names_decl(s)
+        && EntKind::parse(s).is_none()
+        && !trails_decl(s)
+        && !["group", "cut", "bound"].contains(&s)
         && !MODIFIERS.contains(&s)
         && !OPENERS.contains(&s)
 }

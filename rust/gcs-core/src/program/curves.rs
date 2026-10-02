@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 /// it must match kernel Jacobian columns.
 /// `id` is the component's identity across the program (`Program::component_id`), which keys
 /// the definition, and `written` how the call spelled it, which a lifted program writes.
-#[allow(clippy::too_many_arguments)]
 fn compile_curve(
     prog: &Program,
     comp: &crate::syntax::Component,

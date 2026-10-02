@@ -134,8 +134,3 @@ pub fn localize(p: &Program, diags: &mut [Diag]) {
 pub fn relink(prog: &mut Program, like: &Program) -> Vec<Diag> {
     link(prog, &mut |name| like.module_text(name))
 }
-
-/// The component a program's document defines under `name`.
-pub fn component<'a>(prog: &'a Program, name: &str) -> Option<&'a Component> {
-    prog.component(name)
-}

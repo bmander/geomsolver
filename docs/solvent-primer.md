@@ -743,7 +743,7 @@ folds or given outright as `u: (…), v: (…)`. `from: P, offset: 12mm` with no
 line, so that is a stack rather than a projection, and it is where a section is cut (1.14).
 
 `in top { … }` writes the membership once for every declaration in the block, a `cycle`'s copies
-included; the statements are otherwise ordinary. An instance joins a view whole: `t: Tooth(…) in
+included; the statements are otherwise ordinary. An instance joins a view whole: `t := Tooth(…) in
 top`. Inside a component body, `in view { … }` blocks over plane formals let a part carry its own
 views, so the whole design of a connecting rod is one module (`engine/conrod.sv`); `repeat flag
 { … }` over a 0-or-1 `Int` formal leaves a view undrawn for an instance that does not show in it.

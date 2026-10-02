@@ -387,10 +387,9 @@ impl<'a> P<'a> {
     /// Whether the statement from here holds a token at the top bracket level before it ends —
     /// a word standing as itself, not as one segment of a dotted path (`lib.over.Long`).
     pub(super) fn statement_has(&self, want: impl Fn(&Tok) -> bool) -> bool {
+        let dot = |j: usize| self.t.get(j).map(|(t, _)| t) == Some(&Tok::P('.'));
         let (mut paren, mut brace) = (0i32, 0i32);
-        for (k, (t, _)) in self.t[self.i..].iter().enumerate() {
-            let dot = |j: usize| self.t.get(j).map(|(t, _)| t) == Some(&Tok::P('.'));
-            let j = self.i + k;
+        for (j, (t, _)) in self.t.iter().enumerate().skip(self.i) {
             if matches!(t, Tok::Ident(_)) && (dot(j + 1) || (j > 0 && dot(j - 1))) {
                 continue;
             }

@@ -80,7 +80,7 @@ named intermediate, which was the only spelling of an intersection until now.
 **[0.21] Explicit datum coordinates.** Signed ordinates use the existing distance operator:
 `p distance(u, along: u) f` and `p distance(v, along: v) f`, where `f` is a plane used
 as a datum. They are ordinary constraints in the shared solve. Components acquire no implicit
-origin, orientation, or geometric result. Plane membership remains independent (`inst: Part(f)
+origin, orientation, or geometric result. Plane membership remains independent (`inst := Part(f)
 in view`). The standard library has no coordinate-placement component; profiles are expressed
 through geometric relationships, with datum ordinates used for design measurements.
 
