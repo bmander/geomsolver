@@ -1,1352 +1,825 @@
 # geomsolver
 
-**Model/drawing split (0.20):** `.sv` is geometry, constraints, hints, and assertions only.
-Presentation belongs in `.svd`; read [docs/solvent-drawing.md](docs/solvent-drawing.md).
-This supersedes the older presentation instructions below: do not write `class`, `style`,
-`view`, `section`, `dimensions`, or callout placements in model source. Renderer adapters
-retain presentation data internally, but model serialization and reconciliation omit it.
-The drawing compiler and renderer stay in the core; hosts supply source texts.
-Browser examples are file or directory entry points in `app/example-catalog.ts`, loaded through
-`app/remote.ts`. V-twin is one directory (`rust/examples/vtwin/`, shared modules in `components/`).
-Directory examples have a separate file pane above the source editor. `.svd` shows the paper
-preview, `.sv` the editable model canvas. `app/program.ts` keeps each file's source across switches.
-Example choices update the URL; the `file` query parameter preserves the selected project file.
-Every parsed file has an anonymous root, even if empty; component definitions are not instances.
-An optional file-level `preview { … }` contributes ordinary root statements when opened as a
-model, including via `.svd`, and is omitted entirely on `use` (units and params included).
-Each V-twin part's setup lives in its component's `preview` block, including the plate in
-`vtwin/components/frame.sv`. The `.svd` part sheets load those files directly; only the assembly
-has a separate top-level `.sv` model.
-Source edits add geometry inside the preview and reusable definitions outside it. Hosts look
-for project modules beside the opened model and then in its ancestors before the library.
-`web/tools/copy-examples.js` packages example sources for static hosts; live files override them.
+**Model/drawing split (0.20):** `.sv` is geometry, constraints, hints and assertions only;
+presentation belongs in `.svd` ([docs/solvent-drawing.md](docs/solvent-drawing.md)). This
+supersedes older presentation instructions below: never write `class`, `style`, `view`, `section`,
+`dimensions` or callout placements in model source. Model serialization and reconciliation omit
+presentation. The drawing compiler and renderer stay in the core; hosts supply texts. Browser
+examples are file or directory entries in `app/example-catalog.ts`, loaded via `app/remote.ts`;
+V-twin is `rust/examples/vtwin/` (shared modules in `components/`). `.svd` shows the paper preview,
+`.sv` the model canvas; `app/program.ts` keeps each file's source across switches; the `file` URL
+parameter keeps the selected file. Every parsed file has an anonymous root; component definitions
+are not instances. A file-level `preview { … }` adds root statements when opened as a model (also
+via `.svd`) and is omitted entirely on `use` (units and params included). Each V-twin part's setup
+is its component's `preview` block (the plate's in `vtwin/components/frame.sv`); only the assembly
+has a top-level `.sv`. Source edits add geometry inside the preview, reusable definitions outside.
+Hosts look for modules beside the model, then its ancestors, then the library.
+`web/tools/copy-examples.js` packages sources for static hosts; live files override them.
 
-
-**Datum coordinates (0.21):** `p distance(d, along: u) f` and `along: v` are signed
-ordinates relative to a plane's datum, independent of membership. Hints can read `f.c`/`f.s`
-and `f.angle`. The standard library has no coordinate-placement helper: model contours with
-alignments, incidences, symmetry, and dimensions, rather than two ordinates for every corner. Components
-still have no implicit frame. A caller supplies membership with `instance := Part(f) in view`
-when the component does not need to name multiple planes. Datum intrinsics are reseeded after
-geometric point hints settle. Component aliases retain subentity paths such as `f.origin`.
-`use std` provides lazy shared `std.front` (u right), `std.up` (u up), and `std.origin`,
-expanded from the library's `StandardDatums` only when referenced. Both datums are fixed at
-page zero, with no implied membership. Calls may omit `name :=`; anonymous instance keys stay
-out of user-facing names. The cylinder preview keeps `cyl :=` for its `.svd` references and uses
-`cyl := Cylinder(std.up, fw: components.dims.fwA, dims: components.dims.vtwin_dims)` with no
-explicit origin, ground, plane, or Axes setup.
+**Datum coordinates (0.21):** `p distance(d, along: u) f` / `along: v` are signed ordinates from a
+plane's datum, independent of membership. Hints can read `f.c`/`f.s`/`f.angle`. No
+coordinate-placement helper: model contours with alignments, incidences, symmetry and dimensions.
+Components have no implicit frame; `instance := Part(f) in view` supplies membership. Datum
+intrinsics are reseeded after point hints settle. Aliases keep subentity paths (`f.origin`).
+`use std` gives lazy `std.front` (u right), `std.up` (u up), `std.origin` from `StandardDatums`,
+fixed at page zero, no implied membership. Calls may omit `name :=`; anonymous keys stay out of
+user-facing names. E.g. `cyl := Cylinder(std.up, fw: components.dims.fwA, dims:
+components.dims.vtwin_dims)`, with no explicit origin, ground, plane or Axes.
 
 **Nothing is imported bare (Solvent §14.4, [0.30]):** a used module's component, param or group
-is written with the module's full path — `engine.parts.Crank(…)`, `hardware.nut14_af`,
-`components.dims.vtwin_dims` — and only through a `use` the file wrote itself; a module names
-its own definitions bare. `Program::resolve_component(name, from)` resolves a call from the file
-it is written in (`Scope::module`, set on entering a component's body), and `component_id` is a
-component's program-wide identity (it keys `CurveDef`s). `Walk::used_params` qualifies a module's
-numbers (`module_params` keeps only the module's own), and module groups register under their
-path. Two modules may define one name; E071 is two in one file. `std.front` needs a `use std`
-of the document's own. A drawn callout drops a used module's path (`relations::unqualified`).
+is written by full path — `engine.parts.Crank(…)`, `hardware.nut14_af`,
+`components.dims.vtwin_dims` — only through the file's own `use`; a module names its own bare.
+`Program::resolve_component(name, from)` resolves from the calling file (`Scope::module`);
+`component_id` is program-wide identity (keys `CurveDef`s). `Walk::used_params` qualifies module
+numbers (`module_params` keeps the module's own); groups register under their path. E071 is a
+name twice in one file. `std.front` needs the document's own `use std`. A drawn callout drops a
+module path (`relations::unqualified`).
 
+**Cones and cylinders** (`docs/spatial-constraints-plan.md`): `cone k(axis: l) hint(half: 30deg)`
+and `cylinder c(axis: l) hint(r: 10)` stand about a line in a view (cone apex at its start), one
+Param each (half-angle in radians, written in degrees: `Sketch::seed_value`). Words: `p on k|c`,
+`angle(θ) k`, `radius(r) c`, `c tangent l`, `k1 tangent(M) k2` (with `M on` each). Cone kernels
+use forward-mode `Dual<N>` (`kernels.rs`). `against` with solved views needs a shared attitude
+root (`from:` no fold); a solved datum offset is a `CKind::Mate` row. `o:` beside `u:`/`v:` is
+where a stated basis stands (`to_program` writes it for a stand-off plane).
 
+**Closed components:** model dependencies enter through arguments, standard datums included.
+Definitions and built-ins stay callable. A component scope holds only its formals and
+declarations; repetitions share it. `dims := group(width: 20mm, origin: o)` bundles values and
+geometry aliases; `dims: group` is a required formal. Groups nest; an instance may pass as a
+layout group. No solver state; member units survive substitution; missing members are errors.
+Curves need fixed scalar/entity formals. The V-twin and inline-four pass
+`components.dims.vtwin_dims` / `engine.dims.engine_dims` explicitly; `Frame(layout, dims: …)`
+takes a layout naming the front datum, origin and reference axis.
 
-**Cones and cylinders** (`docs/spatial-constraints-plan.md`): `cone k(axis: l) hint(half:
-30deg)` and `cylinder c(axis: l) hint(r: 10)` are built about a line drawn in a view (a cone's
-apex is its start) and own one Param each (a half-angle in radians, written in degrees:
-`Sketch::seed_value`). Words: `p on k|c`, `angle(θ) k`, `radius(r) c`, `c tangent l`,
-`k1 tangent(M) k2` (one tangent plane at M; `M on` each stated beside it). The cone kernels take
-their Jacobians by the forward-mode `Dual<N>` in `kernels.rs`. `against` with solved views works when the planes share an
-attitude root (`from:` with no fold); a solved datum offset makes a `CKind::Mate` row. `o:` beside
-`u:`/`v:` is where a stated basis stands, which `to_program` writes for a stand-off plane.
-
-**Closed components:** model dependencies enter through arguments, including standard datums.
-Component definitions remain callable (the file's own bare, a used module's by its path) and so
-do built-in functions/constants. Component scopes
-contain only their own formals and declarations; repetitions share that lexical scope.
-`dims := group(width: 20mm, origin: o)` bundles values and geometry aliases; `dims: group` is a
-required formal, usable positionally or by label. Groups nest, and a component instance may be
-passed as a layout group exposing its geometry. They add no solver state. Numeric member units
-survive substitution; missing members are errors. Curves still need fixed scalar/entity formals.
-The V-twin and inline-four examples pass `components.dims.vtwin_dims` and
-`engine.dims.engine_dims` explicitly. `Frame(layout, dims: components.dims.vtwin_dims)` takes a
-layout naming the front datum, origin, and reference axis.
-
-**Analytic surface references:** `flank := surface(crown, edge: rack.outer)` names a line/arc/circle
-patch of an unmodified revolution. It is spatial, owns no solver parameters, and is not a 2D
-drawing primitive. `solid::RevolvedSurface::named` reads its current solved geometry into an
-exact snapshot; re-read after model changes. Normalized `u` follows the source edge and `v`
-the declared revolution, so tangent orientation is not automatically an outward material
-normal. Surface formals, privacy, roles and copy/delete dependencies follow ordinary component
-rules. Browser access is `core/surface.ts`; the ABI returns position, `du`, `dv` in nine doubles.
-`RevolvedSurface::projector` / `SurfaceProjector::named` read an analytic incidence evaluator
-for one-sided line/circle meridians. `project` returns an oriented meridian residual, its
-normal, unbounded support parameters, a bounded patch point, and incidence error to that
-point. The residual is not a global distance and cannot certify membership in a finite patch;
-use incidence error. `surfaceProjection` exposes those values through `gcs_surface_project`.
-`line_on_sphere` returns every finite root of a straight meridian's sphere section.
-Optional `from:` / `to:` Angles select a source-revolution span along its declared sense.
-They restrict the original `v` chart without renumbering parameters or reversing normals.
-Read `RevolvedSurface::domain` / `GeneratedEnvelope::domain`; do not assume all named surfaces
-have the full [0,1] interval. Their browser counterparts are `surfaceDomain` / `envelopeDomain`.
-The spiral-bevel source declares the crown semicircles; its verifier reads those domains
-and starts local solves at their midpoint. Surface spans and envelope roll bounds share
-syntax/IR `AngularSpan`; neither is a hint or an additional solve unknown.
-**Named motions:** `turn := motion(about: axis, ratio: 2, phase: 10deg)` and
-`relative := motion(turn, relative_to: observer)` describe rigid families over a shared angle.
-`motion::evaluate` takes radians and returns the exact pose and derivative per radian, reading
-solved world axes through `Sketch::world_point`. Relative means observer inverse times source,
-including both derivatives. Motion is spatial, ABI kind 10, with no solver parameters or 2D
-glyph. Forward references, formals, privacy and copy/delete dependencies are supported;
-cycles and dependency depth over 64 are refused. Browser `core/motion.ts` samples position
-and velocity in six doubles. `motion::Family::read` retains a solved snapshot for repeated
-sampling; re-read after axis edits. Dependency height is checked even with cached subgraphs.
+**Analytic surface references:** `flank := surface(crown, edge: rack.outer)` names a
+line/arc/circle patch of an unmodified revolution: spatial, parameter-free, not 2D.
+`solid::RevolvedSurface::named` snapshots it; re-read after model changes. `u` follows the edge,
+`v` the revolution, so tangent orientation is not an outward normal. Browser `core/surface.ts`
+(position, `du`, `dv`: nine doubles). `RevolvedSurface::projector` / `SurfaceProjector::named`:
+`project` gives an oriented meridian residual, normal, support parameters, a bounded patch point
+and incidence error. The residual is no global distance and cannot certify finite-patch
+membership; use incidence error (`surfaceProjection`, `gcs_surface_project`). `line_on_sphere`
+returns every finite root. `from:` / `to:` Angles restrict the `v` chart without renumbering or
+reversing normals; read `RevolvedSurface::domain` / `GeneratedEnvelope::domain` (`surfaceDomain`
+/ `envelopeDomain`), never assume [0,1]. Spans and roll bounds share `AngularSpan`; neither is a
+hint or unknown.
+**Named motions:** `turn := motion(about: axis, ratio: 2, phase: 10deg)`,
+`relative := motion(turn, relative_to: observer)`. `motion::evaluate` takes radians, returns exact
+pose and derivative via `Sketch::world_point`; relative is observer inverse times source. Spatial,
+ABI kind 10. Cycles and depth over 64 refused (checked with cached subgraphs too). Browser
+`core/motion.ts` (six doubles). `motion::Family::read` snapshots; re-read after axis edits.
 **Measurements read after the solve** (`measure.rs`, `expr::Measure`): `length(l)`, `radius(c)`,
-`distance(a, b)`, `angle(l1, l2)` may stand in a motion's `ratio:`/`phase:`/`advance:` only. The
-flattener resolves their names like references (`rescope_measures`); `MotionE::measured` holds the
-compiled text and `MotionE::rotation`/`advance` work it out from the solved sketch on every read
-(`Family::read`, `solid::reads`'s motion key), so nothing stale is stored and caches follow the
-geometry. Everywhere else `expr::eval` refuses one, and the elaborator codes that message E107.
+`distance(a, b)`, `angle(l1, l2)` only in a motion's `ratio:`/`phase:`/`advance:`; resolved by
+`rescope_measures`, held as text in `MotionE::measured`, evaluated by `MotionE::rotation`/`advance`
+on every read (`Family::read`, `solid::reads`), never stored. Elsewhere `expr::eval` refuses (E107).
 
-**Solid placement:** `indexed := solid(source, under: indexing, at: 90deg)` places one source
-solid at a named motion's pose. `at:` is a constant Angle, converted to radians at elaboration;
-it is neither a hint nor a sweep interval. Instances can be repeated, nested, and used as
-Boolean operands. Copy retains the source and transitive motion dependencies. The mesh cache
-reads the solved pose and source geometry; face provenance follows the placed instance.
-`make solventc OCCT=1` enables native STEP export through a C ABI wrapper around OCCT C++.
-The Rust core supplies analytic construction data; the CLI owns native shapes and catches
-kernel exceptions. STEP export supports profiles, extrusions, revolutions, placements and
-Booleans, and preserves the old output on failure. A written STEP is parsed back by our own
-checker (`native::step_check`: every reference, the topology's counts, units, and each face's
-surface and numbers against the solid's); `--verify-step full` (`SOLVENT_STEP_VERIFY=full`, the
-slow tier) also reads it back through the kernel with its repairs. Along-guide
-lofts and continuous generating-motion sweeps remain unsupported by this native host.
-Native builds default `--stl` to OCCT too; `--stl-backend mesh` selects the legacy path.
-Requesting STEP and STL together builds once, stages and checks both, then replaces each file.
-Native coordinates are mm. STL uses 0.01 mm absolute deflection and 0.2 rad angular control;
-these are meshing settings, not an end-to-end error bound. Every CAD face must be meshed,
-and `mesh::stl_shells` checks all exactly encoded components, including cavities, without
-welding. Validation failure preserves all old outputs; renames are individually atomic,
-not a transaction across files. Legacy mesh defects must not be hidden by native-path tests.
+**Solid placement:** `indexed := solid(source, under: indexing, at: 90deg)` places a solid at a
+motion's pose; `at:` is a constant Angle, not a hint or sweep. Repeatable, nestable, Boolean
+operands; copy keeps source and motions. `make solventc OCCT=1` enables native STEP via a C ABI
+over OCCT; the core supplies construction data, the CLI owns shapes and catches exceptions. A
+written STEP is parsed back by `native::step_check`; `--verify-step full`
+(`SOLVENT_STEP_VERIFY=full`, slow tier) also reads it through the kernel. Native `--stl` defaults
+to OCCT (`--stl-backend mesh` legacy). STEP+STL build once, check both, then replace each. Native
+units are mm; STL 0.01 mm deflection, 0.2 rad — settings, not an error bound. Every CAD face must
+be meshed; `mesh::stl_shells` checks every component, cavities included, unwelded. Failure keeps
+old outputs; renames are atomic per file, not across files. Native-path tests must not hide legacy
+mesh defects.
 
-**Named envelopes:** `flank := envelope(source, under: generating, from: -35deg, to: 35deg)`
-binds a surface and motion over a finite increasing roll interval. It is an implicit
-zero-normal-velocity locus, spatial and parameter-free (ABI kind 11). `GeneratedEnvelope`
-reads solved surface/motion snapshots, evaluates a trial's contact data and residual, and
-intersects the locus with two section equations through the shared DogLeg loop. A nonzero
-trial residual is off the envelope; a local root is not a global regularity or material-side
-certificate. Bounds restrict the search and may fix parameters exactly. `TrustRegion` has a
-default no-op `restrict_step`; the envelope adapter limits steps to its box and still checks
-all original equations and rank. Browser `core/envelope.ts` returns position, normal, velocity
-and normal velocity in 10 doubles. Formals, privacy and copy/delete dependencies are ordinary
-component semantics. `GeneratedEnvelope::intersect_boundaries` solves against two analytic
-patches and checks their finite incidence errors at the result, refusing roots on undeclared
-continuations.
+**Named envelopes:** `flank := envelope(source, under: generating, from: -35deg, to: 35deg)`: a
+zero-normal-velocity locus over a finite increasing roll interval (ABI kind 11).
+`GeneratedEnvelope` intersects it with two section equations via the shared DogLeg loop. A nonzero
+trial residual is off the envelope; a local root certifies no global regularity or material side.
+`TrustRegion::restrict_step` (default no-op) limits steps to the box; all equations and rank are
+still checked. Browser `core/envelope.ts` (10 doubles). `intersect_boundaries` checks two
+patches' finite incidence and refuses roots on undeclared continuations.
 
-**Trimmed spatial patches:** `flank := patch(source, inside: tip, outside: root)` intersects
-material-side conditions on an existing surface or envelope. Repeat the label on every
-clipping solid. `patch::TrimmedPatch` is a solved snapshot with explicit axis, trim and
-envelope residual tolerances. Clipping currently accepts unmodified full revolutions with
-line/arc/circle profiles and holes. `solid::RevolvedRegion` evaluates analytic meridian
-membership and distance separately from the faceted CSG kernel; profile topology still
-uses the existing solid validator. Full-circle seams, arc shared vertices and disappearing
-axis edges need special care. Never turn a sphere's construction diameter into a wall.
-Intersection trials may leave the trim; the final root must satisfy it and the envelope
-equation. Browser `core/patch.ts` exposes checked surface and envelope samples; ABI kind 12.
-Patches do not yet select a connected branch, oriented face loop or closed surface-bounded solid.
+**Trimmed spatial patches:** `flank := patch(source, inside: tip, outside: root)`; repeat the label
+per clipping solid. `patch::TrimmedPatch` has explicit axis, trim and residual tolerances; clips
+unmodified full revolutions (line/arc/circle profiles, holes). `solid::RevolvedRegion` is analytic
+meridian membership apart from the CSG kernel. Mind full-circle seams, arc shared vertices,
+vanishing axis edges; never turn a sphere's construction diameter into a wall. The final root must
+satisfy trim and envelope. `core/patch.ts`; ABI kind 12. No branch, face loop or closed solid yet.
 
-**Whole-interval geometry bounds:** `interval::Interval` has private finite endpoints and
-outward-rounded arithmetic, square and sqrt; division containing zero, overflow and invalid
-domains fail closed. `sin_cos` uses Taylor polynomials and explicit remainders on [-8,8],
-not platform libm accuracy or approximate argument reduction. `generating_profile_bounds`
-on a revolved-surface snapshot bounds its pre-revolution profile and du; browser access is
-`generatingProfileBounds`. Core `generating_profile_jet_bounds` also bounds duu without
-changing the first-order query's finite domain. The circular-crown verifier covers whole
-u/rho rectangles for sphere transversality, one continuous roll branch and a nonzero
-generated area factor, including fillet endpoints. Its standalone rational checker audits
-every margin, area-factor enclosure and exact cover. These establish nominal differential
-regularity, not source-solve error transfer, injectivity or interference. See `docs/interval-geometry.md`.
+**Whole-interval geometry bounds:** `interval::Interval`: private finite endpoints,
+outward-rounded arithmetic; zero-straddling division, overflow and invalid domains fail closed.
+`sin_cos` is Taylor with remainders on [-8,8], not libm. `generating_profile_bounds`
+(`generatingProfileBounds`) bounds profile and du; `generating_profile_jet_bounds` also duu. The
+circular-crown verifier and its rational checker establish nominal differential regularity, not
+source-error transfer, injectivity or interference (`docs/interval-geometry.md`).
 
-**Geometry validation contracts:** see `docs/geometry-validation.md` for the failure categories.
-The spiral-bevel [roadmap](docs/spiral-bevel-roadmap.md) now investigates continuous volume
-subtraction before more manual cap/face assembly. `interval::minimum::enclose` refines a
-complete parameter interval using a caller-supplied enclosure oracle; unresolved budgets
-and resolution limits retain bounds, never guessed membership. Motion families expose an
-outward-rounded inverse-point speed bound for the mathematical solved motion. This does not
-bound floating-point pose evaluation or source-solve error. `Family::bounds` and its owned
-`MotionBounds` enclose mathematical poses and forward/inverse point boxes using interval
-axis normalization, trigonometry and relative-frame composition. Coefficients stay private.
-A rotation's angle past `sin_cos`'s [-8,8] goes through `Interval::sin_cos_periodic`, a justified
-reduction (a period's width is [-1,1]; otherwise a whole number of turns off, 2π enclosed between
-the doubles either side of TAU), so a coil's several turns are bounded; an angle whose reduction
-overflows still fails. They do not certify the original nonlinear source solve.
-`solid::PlanarField` and `RevolvedField` define explicit analytic fields from half-planes,
-disks, Booleans and a revolution frame. Bounds use interval arithmetic; their material is
-closure({f<0}). Boolean fields remain one-Lipschitz but are not necessarily signed distances,
-and a zero value alone is not a material boundary (A minus A is the negative control).
-The pair experiment uses these fields with interval pose boxes, without an assumed
-evaluation-error band. Its coefficients are exact binary64 data extracted from the solved
-section; source-error transfer remains unproved. `docs/continuous-volumes.md` records the
-construction and independent rational audit of attained upper-bound witnesses. That audit
-does not certify global lower bounds or a finished gear solid/export.
-Indexing the full closed reference sections reveals a gear overcut from an inactive wall;
-`indexed_full_crown_union_exposes_neighboring_gear_overcut` preserves that rejected
-candidate. The replacement experiment intersects the two active one-sided fields after a
-crown-pitch rotation of the neighboring side; selected boundary/indexing checks pass.
-`SpatialField` now composes immutable revolved fields with fixed poses and Booleans; per-query
-memoization keys include node identity and the entire input box. Shared DAGs must not expand
-exponentially or conflate transformed coordinates. Spatial depth is bounded separately from
-planar leaf depth. The member workbench now subtracts every indexed sweep from each finite
-spherical/conical blank, including interval index transforms and budget-retaining box queries.
-This remains selected evidence, not whole-space verification or a public finished solid.
-Schema-5 member evidence now includes complete positive roll covers. The independent rational
-checker recomputes speed/field bounds and exact coverage, establishing selected point signs
-across every index and roll. It does not certify the tighter primary minimum intervals,
-source-error transfer, whole-space geometry or exported boundaries.
-`solid::SweptField` now owns a typed one-Lipschitz spatial source, a solved motion and a
-finite immutable roll domain. Its `SweepEvaluator` keeps a caller-capped pose cache and
-returns the interval refiner's enclosure/status for whole point boxes. Evidence observers
-receive raw oracle bounds but cannot define the geometry or prune the search. The gear
-workbench uses this core evaluator; do not reintroduce a separate callback-based oracle.
-`SpatialField::read` reads ordinary prisms (`depth:`/`from:`/`to:` and `through:`), full
-revolutions, Boolean bodies and motion placements; `SweptField::read` binds such a solid and a
-named motion directly from the solved sketch. `solid::ExtrudedField` is the prism leaf: the
-profile's planar field intersected with a slab along the face's normal, in a frame
-Gram–Schmidt orthonormalized in interval arithmetic so the map is an isometry. A `through:`
-extent spans the material sources' `support_bounds` (unknown support refuses). Every profile
-loop goes through `PlanarField::from_loops` (`solid/field/profile.rs`, exact lines/arcs/
-circles in the plane's view coordinates, no tessellation): `ordered` reconstructs the walk (joining within the larger of the conversion's roundoff and the axis tolerance a revolved snapshot was read with, since an endpoint put on the axis moved by up to that),
-`turning` checks one full turn and reads convexity, a convex loop is the exact intersection
-of outward half-planes and finite circular sectors, and any other simple loop is
-`Node::Profile` — the signed boundary distance, with segment/arc distances enclosed over a
-box by intervals and the sign read by ray parity at the box centre only when the box clears
-every wall (otherwise `[-d, d]`). Holes are subtracted. Axis spines disappear, and finite
-support comes from an enclosing disk. Partial revolutions and lofts remain explicit refusals.
-Snapshot construction uses floating-point solved curves and numeric convexity checks;
-interval evaluation does not certify that conversion or source-solve/axis-snapping error.
-**The body rule's third side (0.22):** `tip bound body` keeps of a body what lies within `tip`:
-a solid is its stock, plus everything in `union` with it, minus everything that `cut`s it, within
-everything that `bound`s it. `SolidDef::Body` carries `bound` beside `through`; `Term::Inter` is the term;
-the facet kernel, the fields and the CAD recipe (`"bound"`, OCCT `BRepAlgoAPI_Common`) all
-evaluate it. Union first; `cut` and `bound` commute. A swept solid may only
-be `cut` for now. `bound` and `union` (0.32) are body words like `cut`, so they are no
-declaration names; `on` is a constraint word only, and between two solids is refused. The spiral
-bevel blank is `heel` bounded by `tip`, and the gear cutter the outer crown bounded by its
-indexed neighbour; the `A − (A − B)` intermediate is gone. The spiral bevel's steps are modules
-(`design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`, `generation.sv`, `layout.sv`'s
-`HypoidLayout`, `members.sv`'s `HypoidPair`; the example's README walks them), drawn in views
-folded from the pitch plane through the mean point. `gears.sv` elaborates the pair alone;
-`pair.sv` is the layout with the analytic faces the generating checks read
-(`verification.sv`, `ReferenceFaces`). `configuration.sv` states the shafts (`shaft_angle`,
-`offset`; E = 0 is the bevel pair), the pinion's cone is solved against the gear's
-(`pitch/pinion.sv`), and each member rolls at `N_c / N` measured off the gear's triangle, not
-its own cone's `1 / sin`. `tests/hypoid_layout.rs` holds the layout to recorded quantities and
-material at twelve designs. The mesh export refuses a sectioned sheet whose boundary a
-placement carries inside the blank, and the CLI test readers zero the offset because the
-recorded volumes are the bevel pair's.
+**Geometry validation contracts:** `docs/geometry-validation.md`; the spiral-bevel
+[roadmap](docs/spiral-bevel-roadmap.md). `interval::minimum::enclose` refines with an enclosure
+oracle; exhausted budgets keep bounds, never guess membership. `Family::bounds` / `MotionBounds`
+enclose mathematical poses and point boxes (coefficients private), not float evaluation or
+source error; past [-8,8] angles use `Interval::sin_cos_periodic`. `solid::PlanarField` /
+`RevolvedField`: material is closure({f<0}); Boolean fields are one-Lipschitz, not signed
+distances, and zero alone is no boundary (A minus A is the negative control). See
+`docs/continuous-volumes.md`; `indexed_full_crown_union_exposes_neighboring_gear_overcut` keeps a
+rejected candidate. `SpatialField` memo keys include node identity and the whole box; shared DAGs
+must not expand exponentially or conflate transformed coordinates; spatial depth is bounded apart
+from planar. `solid::SweptField` owns a one-Lipschitz source, a motion and a roll domain; its
+`SweepEvaluator` has a capped pose cache. Evidence observers cannot define geometry or prune; do
+not reintroduce a callback-based oracle. `SpatialField::read` takes prisms
+(`depth:`/`from:`/`to:`/`through:`), full revolutions, bodies and placements; `SweptField::read`
+binds a solid and motion. `solid::ExtrudedField` is the prism leaf (interval Gram–Schmidt frame);
+`through:` spans `support_bounds` (unknown refuses). Profiles go through `PlanarField::from_loops`
+(`solid/field/profile.rs`, exact, no tessellation): `ordered` joins within the larger of roundoff
+and axis tolerance, `turning` checks one turn and convexity; convex loops are half-planes and
+sectors, others `Node::Profile` (ray-parity sign only when the box clears every wall, else
+`[-d, d]`). Partial revolutions and lofts refuse.
+**The body rule's third side (0.22):** `tip bound body` keeps what lies within `tip`: a solid is its
+stock, plus `union`, minus what `cut`s it, within what `bound`s it. `SolidDef::Body` carries
+`bound`; `Term::Inter`; facets, fields and the CAD recipe (`"bound"`, `BRepAlgoAPI_Common`) all
+evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `cut`. `bound` and
+`union` (0.32) are body words, not names; `on` between two solids is refused. Spiral bevel: blank
+`heel` bound by `tip`; modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
+`generation.sv`, `layout.sv` (`HypoidLayout`), `members.sv` (`HypoidPair`) (README walks them).
+`gears.sv` is the pair; `pair.sv` adds faces for checks (`verification.sv`, `ReferenceFaces`).
+`configuration.sv` states `shaft_angle`, `offset` (E = 0 is bevel); the pinion's cone solves
+against the gear's (`pitch/pinion.sv`); members roll at `N_c / N` off the gear's triangle, not
+`1 / sin`. `tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement
+carries inside the blank; CLI test readers zero the offset.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
-uses finite increasing Angle bounds, converted to radians at elaboration. It means the union
-of material over the complete interval, not a sequence of posed meshes. `at:` and interval
-labels are exclusive. Formals, repeats, forward references, print/copy/delete and Boolean
-operands use the ordinary solid dependency graph. `MaterialField::read` retains static DAGs
-and promotes them when a sweep appears; placed/composed sweeps share immutable source nodes.
-Nested continuous sweeps are refused. Cache reads include the whole motion graph, since equal
-endpoint poses do not determine the swept material. The native CAD recipe rejects every graph
-containing a sweep; `EvaluatedSolid` takes one from its material field instead (`from_surface`:
-`solid::FieldMesher`), one mesh for every view's pixel length. The terminal and tests mesh in
-place (`FieldMeshing::Now`). **The page never does**: its sketch's `field_meshing` is
-`Deferred`; what to mesh is the core's `Sketch::field_jobs` (swept objects, each keyed by a
-digest of `solid::reads`), and `app/field-preview.ts` compares keys only and runs
-`app/mesh-worker.ts` (its own core, the page's text and parameter values), which checks its
-drawing names the same jobs and posts each swept object's surface every ~120 ms, worst facet
-first, to `supply_field` (checked in the core); a provisional surface draws, and exports only
-through the preview choice. Options ▸ mesh fineness is view state: the job carries it to
-`FieldMesher::with_fineness` (facets that many times smaller, surface distance its square;
-the core offers 0.25–4 and refuses the rest), and a change meshes every swept object again.
-**A swept object of the generating class also gets its exact surface**: other instances of the
-same worker (one an object, up to four) step `brep::export::Builder` — admitted (a quarter of the
-export's samples each way), the blank, each sheet, the sector, the cut, the pattern, a display mesh
-at `DISPLAY_SAG` and `DISPLAY_ANGULAR` — saying what each next stage does, which the footer shows
-with a bar, a spinner and a clock the page keeps ticking through a stage's silent seconds. The
-surface replaces the field's preview through `supply_field` with `ExactFaces` (each triangle's face,
-which faces are curved, the B-rep's volume: `from_exact_surface`), ends the preview's job, and is
-kept across fineness changes; one the build refuses keeps its field's surface. A gear member is
-about 12 s in the browser, its sector's split most of it.
-**Field meshing** ([docs/field-meshing.md](docs/field-meshing.md)): Delaunay refinement of the
-material field (`delaunay::refine::Progressive`, resumable, over a regular triangulation with
-exact predicates; what it meshes is a `refine::Domain`), sharp edges protected by weighted points. `FieldMesher` runs two passes: an
-unprotected first pass on `MaterialField::tight_support` (the preview), then `solid::crease`
-traces the creases the first pass's operands disagree across, and the final pass refines with
-them protected. A crease is where the deciding operand changes — a leaf, a piece of its boundary
-(`PlanarField::carrier`, lifted by revolutions and prisms, which add caps) and a sweep's contact
-time; `OperandId::whole` reads a leaf as the field sees it. A crease point needs the field at
-zero *and* both leaves active; a tangent takeover hands the crease on, any other ends it at an
-exact corner, and `End` says why. Crease reads a `crease::CreaseSource` (whole reading, one
-operand's, symmetries) and nothing else of the field, so it is tested on analytic planes too.
-Rays seed from beside the centre, never on it. `MaterialField::reading` gives value, gradient,
-the deciding `OperandId` (opaque: leaf, piece or whole, a sweep's contact time; none where a
-bound or a cached value settled it) and a crease flag. A field is read through its term compiled
-once (`material/plan.rs`, `tape.rs`'s shape): shared nodes one op, each knowing its leaf count,
-so a leaf's number is fixed by offsets and an operand is found by descent; support, lower bounds
-and the interval enclosure are `Fold`s over it, the sign and the reading bespoke walks. Every point query is `MaterialField::query(p,
-&mut Query)` — `Want::Sign | Reading`, `Source::Exact | Cached(Resolution) | Warm {hints,local}` —
-with `side` and `reading` its two shorthands; a sweep's half (`SweptField::query`) takes box, floor
-table, cached field, search in that one order. Readings are branch and bound (exact below a cap, a
-proven lower bound above it), and crossings are
-placed by safeguarded Newton on them and memoised across rebuilds. A `construction` solid is
-never an object. The spiral bevel pair is the app's example `spiral_bevel` (web-only catalog
-entry, `gears.sv`). `solventc --stl-backend refine` meshes the same way, skipping admission and
-gated by the field-agreement probe (`SOLVENT_FEATURES=field` takes the features from the field
-as the app does).
-**Meshing speed (2026-09-25):** the mesher reads sweeps from adaptive distance fields
-(`solid/field/adf.rs`, `SweptField::cached`, `Source::Cached`):
-an octree per sweep and `Resolution`, exact corners, trilinear between, split while wider than a
-facet or while its centre reads off the interpolation by more than a tenth of the facet distance.
-Readings, never claims; creases and admission still read exactly. Every plain sweep reading is
-one `RollSearch` (`swept.rs`) under a `Goal` (`AtLeast`/`Floor`/`Sign`/`Minimum`); a sweep's caches
-are one `SweepCaches` every clone shares, and the field's keys and locks are `field/memo.rs`
-(immutable snapshots: nothing is invalidated). Brent, bisection and the Newton step onto two or
-three zero sets are `crate::roots`, shared with crease tracing and the refinement. A body's cuts are one union,
-subtracted once and folded in pairs (`document.rs`), and a union keeps its flattened operands with
-a lazily filled cell table of lower bounds (`Spread`, from coarse floor cubes), so a query reads
-the two or three tooth spaces near it, not all 48. `MaterialField::symmetries` reads the maps
-between an indexed cut's placements, kept only if the whole field reads alike at sampled points
-(support and first-pass vertices) and their images; `crease::creases_under` traces each crease
-once and adds its images. The whole gear went from 430 s (114,584 triangles, over-refined by the
-normal-angle criterion) to 4.5 s (17,256), the pinion from 24 s to 3 s, natively. Measure with
-instructions retired (`/usr/bin/time -l`): Spotlight indexing a fresh target directory doubles
-wall-clock noise.
+is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
+`MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches
+read the whole motion graph. The native recipe rejects sweeps; `EvaluatedSolid` meshes the field
+(`from_surface`, `solid::FieldMesher`). Terminal and tests mesh in place (`FieldMeshing::Now`).
+**The page never does**: `field_meshing` is `Deferred`; `Sketch::field_jobs` keys swept objects
+by a digest of `solid::reads`; `app/field-preview.ts` compares keys and runs `app/mesh-worker.ts`
+(own core), posting surfaces (~120 ms, worst facet first) to `supply_field`; a provisional
+surface exports only via the preview choice. Mesh fineness is view state
+(`FieldMesher::with_fineness`, 0.25–4).
+**A swept object of the generating class also gets its exact surface**: worker instances (up to
+four) step `brep::export::Builder` (admitted, blank, sheets, sector, cut, pattern, display mesh at
+`DISPLAY_SAG`/`DISPLAY_ANGULAR`), shown in the footer; the result replaces the preview via
+`supply_field` with `ExactFaces` (`from_exact_surface`), kept across fineness; a refused build
+keeps the field surface.
+**Field meshing** ([docs/field-meshing.md](docs/field-meshing.md)): resumable Delaunay refinement
+(`delaunay::refine::Progressive`, exact predicates, a `refine::Domain`), sharp edges protected by
+weighted points. A first pass on `MaterialField::tight_support`, `solid::crease` traces creases,
+the final pass protects them. A crease is where the deciding operand changes (leaf,
+`PlanarField::carrier` piece, sweep contact time; `OperandId::whole`); a point needs the field at
+zero and both leaves active; `End` says why one ends. Crease reads only `crease::CreaseSource`.
+Rays seed beside the centre, never on it. `MaterialField::reading`: value, gradient, `OperandId`,
+crease flag. Terms compile once (`material/plan.rs`); support, bounds, enclosure are `Fold`s. Every
+point query is `MaterialField::query(p, &mut Query)` (`Want::Sign | Reading`, `Source::Exact |
+Cached(Resolution) | Warm {hints,local}`; shorthands `side`, `reading`); `SweptField::query` takes
+box, floor table, cache, search, in order. Readings are branch and bound; crossings by safeguarded
+Newton, memoised. A `construction` solid is never an object. App example `spiral_bevel`
+(`gears.sv`). `solventc --stl-backend refine` skips admission, gated by field agreement
+(`SOLVENT_FEATURES=field`).
+**Meshing speed (2026-09-25):** sweeps read from adaptive distance fields (`solid/field/adf.rs`,
+`SweptField::cached`, `Source::Cached`): an octree per sweep and `Resolution`, exact corners,
+trilinear between, split while wider than a facet or its centre reads off by over a tenth of the
+facet distance. Readings, never claims; creases and admission read
+exactly. Sweep readings are one `RollSearch` (`swept.rs`) under a `Goal`; clones share
+`SweepCaches`; keys and locks in `field/memo.rs` (immutable). Root finders are `crate::roots`. A
+body's cuts are one union (`document.rs`, `Spread` lower bounds); `MaterialField::symmetries` /
+`crease::creases_under` trace each crease once. Measure with instructions retired
+(`/usr/bin/time -l`); Spotlight on a fresh target doubles wall-clock noise.
 **Generating sweeps and the native export** ([docs/generating-sweeps.md](docs/generating-sweeps.md)):
-`solventc --step/--stl` builds a body with swept cuts only for the class that generates bevel and
-hypoid gears. `solid::admission::admit_body` asks rows T1–E4 of a body's swept cuts (revolved
-line/arc tools or their intersections, a single or relative rotation whose contact condition
-changes over the roll, clear of the blank at both limits, one contact per tool point, no fold, no
-self-crossing) and refuses with the row and a witness; it is sampled and says so, and checks a
-placement once when the blank reads alike at every point its checks read. A fold is judged by the
-sign of the area factor times the contact condition's rate. Admitted, the body is built in
-`gcs-cli/src/cad/native/sweep_boundary.rs`: each native cutter sectioned by meridian half-planes
-(`backend/sections.cpp`) into a profile sampled in augmented arc length, each sample's contact
-time from `SweepContacts::at_point_normal_over` (a typed `PointContactError`), each station's
-contact curve traced and the sheet resampled by the core (`solid::contact_trace`, which the host
-feeds with section samples and nothing else), the sheet indexed by the declared motion, the
-blank split by the kernel (fuzzy 1e-5 mm), every cell judged by `MaterialEvaluator::probe`, the
-material cells fused. A sheet's rows stop outside the blank before any column's time leaps
-(`contact_trace::charted`; OCCT averages chord-length parameters over the columns), and fall by
-walk length, or by length in space where that fit misses or folds (`contact_trace::Rows`; the fit
-contract scans the face a quarter cell apart). The configured gear takes the second
-(docs/native-hypoid-plan.md). `UnifySameDomain` widens tolerances on vertices shared with its
-input, so unify a copy. `solid::agreement` then probes the mesh 0.1 mm off each side against the
-material field (a one-sided disagreement is withdrawn only where the centroid reads on the
-boundary), and nothing is written unless it agrees: every backend's output goes through
-`cad::output::Staged` (staged beside the target, checked, renamed), and native swept construction
-takes the core's `admission::Admission`, which only `admit_body` makes. The mesh and cell
-contracts are the core's (`solid::contracts`), and every refusal, from admission to the gate, is one
-`solid::export::ExportRefusal` — its `Stage` (the keys `SOLVENT_STAGE_TRACE` records, with a
-`refused:` line for the stage refused at), the class row and a witness when known — reported at
-the solid's statement. The refine backend's features are `solid::blank_features`, read off the
-native blank's topology through `BlankTopology`. The configured pair is a true hypoid 25 mm
-off, designed out of undercut (`pressure_shift`, `spiral_angle` in `configuration.sv`, chosen
-with `admission.rs::the_admission_grid`); tests with recorded numbers pin theirs through
-`fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, the dev-only crate both suites' readers,
-gear rewrites and small sweep tools live in), and `tests/native_surfaces/gear_cells.rs` holds
-the recorded tooth-space volumes. `tests/generating_harness.rs` (ignored, minutes) locates each
-refusal by stage over fixtures, the gear controls and a 48-design sweep.
-The configured pair carries **backlash** (each crown's flanks a quarter of it off the lines tooth
-and mate share; zero keeps the old incidences through `repeat design.lashed`), **tip relief**
-(`crown/relief.sv`: a second, semi-topping sweep per member, under `relieved`) and **end relief**
-(`blank/ends.sv`: a cone band chamfering the tip cone's corner with each end sphere, a static ring
-cut under `ends_relieved`). `fixtures::gear::design` pins all three to zero, as every recorded
-number was taken; `fixtures::gear::fabricated` sets them. The fabrication files are
-`build/exports/hypoid-{pinion,gear}.{step,stl}` (README, "Making the pair");
-`gcs-cli/tests/pair_check.rs` (ignored tool, ~35 s) checks the pair from the STLs alone: shafts
-from inertia, overlap and flank clearance over a gear pitch, backlash, contact pattern.
-**Export tolerance ([plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (0.01 mm
-when no length follows; a bare number is in the document's unit) holds a native export for
-fabrication, and `solid::export::Tolerance` states every bar once. A fitted sheet passes within half
-of it of every withheld contact (cell centres and side middles, `contact_trace::Withheld::Sides`),
-its normal within `Tolerance::turn`; one that misses is refined where it misses, distance first
-(`contact_trace::marked`, `Grid::refined`, graded 2:1; `Layout` reads each contact once), at most
-four times and 480×400 nodes. Each grid is fitted with chord-length and with centripetal
-parameters and the better fit is the sheet (`cad/native/sweep_boundary/fit.rs`); feet are local
-searches from the fold grid (`surface_feet_near`). The STL is meshed at half the tolerance and
-meshed finer until its measured sag (`mesh_sag`) is within that, since OCCT's deflection is a
-control and not a bound; the mesh contract counts clusters (`TinyTriangles::clustered`) and the
-field is probed at max(2 tol, 2 µm). `--measure FILE` reads an export against the exact surface
-(`solid::accuracy`: the analytic projection and the material field, two independent routes) and,
-with a tolerance, exits 1 when an exact face exceeds it. Without `--tolerance` the gross bars stand.
-**One sector, sewn round ([plan](docs/native-speed-plan.md)):** a body whose swept cuts are turns of
-one placement about one axis (`solid::sector::indexing`), from a blank alike under the turn, is built
-as one sector (`cad/native/sweep_boundary/sector.rs`): its side runs midway across the gaps the cuts'
-contacts leave between neighbours in each slice (`sector::Boundary`, sliced by spheres about the
-blank's sphere centres or planes square to the axis; a spiral tooth space turns across its face by
-most of a pitch, so no flat half-plane clears it), is read back against the gaps and the field, and
-with its turn by a pitch splits the blank (made again about the axis, `solvent_cad_revolved`, its
-parameters starting opposite the sector) into the sector, whose own sheets split it. Its material
-is turned round and sewn (`solvent_cad_pattern`, no face intersected): faces of revolution are put
-on the source's surfaces with their pcurves shifted by the turn, and a ring's pieces moved into one
-period and split at the seam, so the rings close on an iso line (closed on a copy junction, a ring's
-parameters overran the period and the mesher left 0.1 mm chords). Any failed premise builds the body
-whole and says why; `SOLVENT_SECTOR=off` asks for that, `SOLVENT_SECTOR_DEBUG` narrates. Faces and
-volume are the whole construction's; the native exports' bytes are not. **Speed (phases 3–4):** the
-STL is the sector's mesh turned into every copy, seam points shared bit for bit (`solvent_cad_sector_stl`;
-`SOLVENT_SECTOR_STL=off` meshes whole); sheet faces are written on B-splines cut to their parameter box;
-the pattern and its STEP reading are measured as copies of one (flux about the axis; `SOLVENT_SECTOR_CHECK=full`,
-`SOLVENT_STEP_CHECK` measure whole). Volumes, admission, sections, splits, cells, probes and the field
-agreement run on every core (`gcs_core::par`, serial on wasm, answers in order); the native session is
-thread-safe, the sweeps' sheets are built side by side and beside the blank and the admission, the STEP
-beside the mesh, each thread's lines said in order (`progress::side_by_side`/`beside`/`under`). A cutter
-of revolution is sectioned once and turned. OCCT's parallel `BRepCheck_Analyzer` is unreliable (a valid
-pinion came back invalid): `valid_solid` checks faces in separate analyzers. **Phase 5:** the admission
-proves the placements alike from the solid graph when every blank operand is a full revolution about the
-indexing line or a ball centred on it (`admission::Equivalence::Revolved`, 1e-12 of the blank's size;
-otherwise `Sampled`, as before); such a blank is its meridian section turned once
-(`Session::construct_meridian`, `solvent_cad_revolve_region`; `SOLVENT_BLANK=booleans`); an indexed
-body's field agreement turns each probe into one sector and reads the cuts not proved positive over its
-box (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whole`); a STEP model's
-entities are formatted on every core, the kernel's text to the byte (`SOLVENT_STEP_TEXT_CHECK`); a
-sheet's stations are traced side by side. 8.6–14.6 s a member (40–55×); the floor is OCCT's
-STEP transfer, parse and repairing read-back, its Boolean split and the cutters' Booleans.
-**The Rust B-rep kernel** ([plan](docs/rust-kernel-plan.md), rungs 1–2; clean-room — OCCT is LGPL
-and this repo MIT, so its code is never translated, only its behaviour and conventions studied):
-`gcs_core::brep` — `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed
-distances; lines, circles, ellipses, `Traced` intersections read by pulling a chord onto both
-surfaces), `topo` (`Brep`: loops of oriented uses with pcurves, degenerate poles; `check`,
-`pinches`), `build` (prisms, revolutions and lofts of line/arc/circle/spline profiles), `props` (volume by Green's
-theorem round each face's loops), `query`, `ssi` (closed forms, else traced; under a degree refused
-by name), `boolean` (split, arrange in each face's parameters, classify, assemble; faces on one
-surface and tangent touches handled), `mesh` (constrained Delaunay in scaled parameters, refined to
-a measured sag), `step` (AP214 with pcurves and seam curves), `recipe` (the CAD recipe's nodes).
-**This kernel is every export's default** (phase 5): `solventc --step/--stl` builds with it whether or
-not the binary has OCCT, which answers only `--kernel occt` / `--stl-backend occt` /
-`SOLVENT_KERNEL=occt` (the oracle), checking its STEP by `step_check` against `Solid::of`. `gcs-cli
-tests/brep_oracle.rs` builds every corpus recipe node both ways (the slow tier reads our STEP back
-by OCCT); `tests/brep_census.rs` holds a census and `brep_body_debug`; `SOLVENT_BREP_DEBUG`
-narrates and `SOLVENT_BREP_TIME` times a Boolean's slow steps. OCCT's volume of a STEP it reads is good to ~1e-5, not a gate on our files' accuracy.
-Rung 1 is done: every corpus solid with a recipe agrees with OCCT (volume 1e-9, faces by kind),
-but for named refusals of designs that touch themselves — surfaces meeting under 1° (the crown
-cutters' fillet tori touch; the gear's phase needs measured tolerances for them) and pinches.
-An explicit `--kernel occt` / `--stl-backend occt` in a build without OCCT still refuses.
-**Phase 1 (OCCT's shape, our files):** `SOLVENT_WRITER=rust` reads the solid the native export
-built into `brep` (`backend/dump.cpp` → `Session::brep_json` → `brep::json::read`: each face
-dumped forward and a reversed one's loops turned, left-handed placements made right-handed, the
-uses ordered by vertex and parameters since OCCT's wire explorer misreads a closed edge) and
-writes its STEP and STL by our writer and mesher, built whole. `Surface::BSpline` is a tensor
-non-rational `nurbs::Net`; `Pcurve::Curve` a kernel's 2D curve read at the edge's parameter and
-written exactly; `Edge::tol` is measured (curve against each pcurve's image and its vertices),
-and `check` honours it — so it no longer proves pcurves meet their edges: a reader holds the
-tolerances to a bar itself. The volume (`props::fluxes`) tables a B-spline face's `G` exactly per
-span and **closes every loop in the face's parameters** across the kernel's gaps: `G` across a
-small chart is large, and unclosed the pinion was off 3e-6 and moved with the origin. The mesher
-is a neighbour-array CDT (walked location, Bowyer–Watson cavities, Sloan recovery, refinement by
-insert-and-legalize), faces side by side, refined for sag **and** for a facet turning from the
-surface's outward normal (signed: where a chart's metric changes fast a triangle wound right in the
-scaled parameters comes out turned over in space, near the surface, and the pair check sorts
-flanks by facet normals); a sliver gets a point off its longest side, and a face's points nearer
-than 1e-9 of the solid are welded. `Mesh::turned` counts facets still facing against their surface
-(thicker than bar/100), and the export refuses any.
-**Phase 2 (the pattern ours):** a body built as one sector has the kernel's sector read and turned
-into the whole by `brep::pattern` (the kernel's union is never made): its sides are the face pair one
-of which turned a pitch lies on the other, far vertices and edges are matched to the near ones turned
-once, faces of revolution about the axis keep the sector's surface with pcurves shifted along `u`
-(homed within half a turn of the sector's middle; a piece continuing one across the last copy reads
-a period on), pieces of one surface meeting across a side become one face, and a ring keeps its
-last junction as its seam (one edge used twice, pcurves a period apart). Sheets are cut to their
-faces (`Net::segment`, exact knot insertion). `Built::mesh` meshes the sector once, its far side
-sampled as its near side turned (`mesh::mesh_with`), and turns it into every copy sharing seam
-points by index, so the STL is as symmetric as the solid. Full verification reads our STEP back by OCCT and
-measures that reading by `props` (1e-5; OCCT's reader moves its own STEP 1.1e-6, and its volume is
-held only to 1e-4).
-**Phases 3–5 (the gear without OCCT):** `brep::sweep` builds an admitted swept body: the blank
-from its meridian region (`brep::planar`'s Booleans of lines and arcs, turned once:
-`recipe::meridian`), each cutter sectioned exactly (`brep::section`, revolutions about parallel lines
-through a `planar::Chart`), each sheet traced and fitted (`sweep::sheet`, `nurbs::interpolate_net`,
-centripetal at the gross bars), the blank split by the sector's sides and the sheets
-(`boolean::split`) and its cells judged by the material field (`sweep::sector`) — or, where a
-sector's premises fail (a sweep placed once), the whole blank split and judged (`sector::whole`) —
-and the sector patterned. `brep::export::{exact,step,stl}` is what `solventc` and the app's export
-worker (`app/export-worker.ts`, `gcs_solid_exact`) both call, so a file is one file wherever it is
-written: the native and wasm files are byte-identical because the core's trigonometry, `exp`,
-`ln`, `pow` and `hypot` are its own (`fmath`, reached as `x.dsin()` through `Det`; no platform
-libm), which also moved the solver's bits once. With OCCT and `--verify-step full`, the CLI reads
-our STEP back by the kernel (`cad::read_back`; a reader's rational pcurve is taken as the
-`Pcurve::Inverse` of its edge). Pinion and gear 8–9.5 s a member, 10 µm met. A cutter face the
-meridian section meets twice is told apart by occurrence (`cutter::OCCURRENCE`); a trace ends where
-it leaves a sheet's patch (`Surface::off_patch` — the signed distance runs on along the tangent
-extension past the edge); interpolations past `nurbs::BANDED` points are solved in their band; a
-gross sheet falls back from centripetal to chord length. The harness exports 28 of its 48 designs.
-**Rung 3 (the app reads the exact solid):** an `EvaluatedSolid` of a static solid is the B-rep's
-(`solid::Exact`, `Sketch::exact_solid`, cached against `solid::reads` alone; `from_brep`): the CAD
-recipe built about the solid's own origin (`cad::shifted`, a Boolean floor for the coordinates'
-rounding), every face named by its document path (a placed copy's renamed, a prism's and a
-sweep's caps leading as the facet term's do, so an edge is named alike), meshed within the
-policy's sagitta and never coarser than `BREP_RELATIVE_SAG` of the solid or 64 steps a turn, and
-handed in as one polyhedral `Prim` (`exact`: whole paths, faces meet at creases); its volume is
-the B-rep's. The facet term answers whatever the exact path refuses (the cutters' touching tori,
-an empty solid) and `SOLVENT_SOLIDS=facets` throughout. A view's silhouettes on its curved faces
-are traced on the surfaces (`EvaluatedSolid::silhouettes`: n·eye's zero set across each facet from
-its corners' exact normals, put back on the surface), never the mesh's seams, which zigzag on an
-irregular mesh (the V-twin cylinder's sheet: 44 s and 6.4 MB drawn from seams, 0.7 s traced).
-Hidden lines and sections classified against the surfaces are a later step.
-Rung 2 is done ([plan](docs/rust-kernel-plan.md)): clamped spline profiles (`Curve::BSpline`,
-`brep::nurbs`; `Surface::Extrusion`/`Revolution`, written as STEP's surfaces of linear extrusion and
-revolution); a face's stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, fitted
-within `cad::FIT_MM` for the recipe); lofts of any edge pairs along a line or an arc
-(`Surface::Blend` and its `Curve::Iso` rails, STEP-fitted within `step::FIT`), paired at the same
-fraction of each edge's parameter. A swept surface's signed distance runs on past its curve's ends,
-so `curve_surface` drops roots off the surface. The meter reads a static body through this kernel's
-B-rep (`accuracy::Exact`) and a field taking splines as chords within `CHORD_SLACK`. A midpoint
-flatness test misses a cubic's S-bend, so edge sampling and `curve::tessellate` test quarter points.
-Phase 0 (measured, in the plan): `SOLVENT_ABI_TRACE=FILE` has the native backend log every entry
-point's time and thread, every Boolean's intersecting face pairs (`backend/probe.hpp`, from OCCT's
-`BOPDS_InterfFF`) and the exported shape's smallest pieces, with stages marked on one clock;
-`rust/gcs-cli/tools/abi_trace.py` makes the tables.
-**Removed tracks (2026-09-25):** the certified general swept boundary (`solid/swept_boundary`,
-its Phase 0–3 records and fixtures), the traced-sheet Manifold arrangement (`--stl-backend
-manifold`, `solid::sweep_candidates`), the CGAL Mesh_3 backend and the Ju et al. reference
-experiment; and (2026-09-26) the candidate construction before them — contact covers, joined
-curves and paths, meridian charts, `envelope::edge_contact`, `solid::tool_faces`, native pcurves,
-face splitting and endpoint caps, their tests and `rust/examples/swept_boundary/`. Git history
-keeps them; do not revive them without a new plan.
-`solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
-Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
-domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted
-operands are never omitted. Query-local memoization includes the input box, while indexed
-clones of one sweep share its capped pose cache. Evidence observers index the returned
-sweep-query list; cached visits do not repeat evidence. An interval containing zero remains
-unresolved. This is a core snapshot capability, not yet an editable solid/export integration.
-`MaterialField::support_bounds` derives a conservative finite box for all material, or an
-explicit unknown. `MaterialEvaluator::boundary` uses that support, complete spatial cells,
-strict corner signs and two-sided spatial distance evidence before returning `FieldBoundary`.
-`BoundaryOptions::domain` lets a caller hand it one box instead — for extracting a single
-neighbourhood, as a gap fill needs — padded and gridded the same way, and unset it derives the
-support as before; but a given box **is** an arbitrary crop, so its faces' exterior signs prove
-nothing about a component beyond it and the shell comes back closed only where the box holds a
-whole one.  That judgement is then the caller's, and the extractor claims nothing outside the box.
-Never substitute an arbitrary crop, residual magnitude or same-sign corners for coverage.
-Ambiguous vertices, missing nearby mesh evidence, work limits and failed topology refuse
-extraction. The independent sphere checker audits the partition and both distance directions
-with rational inequalities. Read `docs/field-boundary-extraction.md` for scope and controls;
-this does not yet certify the whole gear, embedding, source accuracy or application export.
-`docs/implicit-meshing-methods.md` compares adaptive contouring, certified smooth-surface
-meshing and spacetime continuation. Keep the current extractor as a measured baseline;
-evaluate documented methods before extending uniform surface refinement further.
-`SolveOpts::acceptance_tol` controls both hard-row success and the existing DogLeg-to-LM retry;
-`tol` controls numerical stopping. Defaults retain interactive behavior. Analytic callers request
-accuracy instead of selecting an optimizer as a workaround, and still check geometric errors.
-`GeneratedEnvelope::evaluate` returns trials; `at` requires the envelope equation. Internal
-`EnvelopePatch` owns one source with its material conditions for standalone patches and seam
-operands. Do not reintroduce parallel untrimmed and trimmed copies of a generating face.
-Snapshot domains are private and returned by value; source edits require new snapshots.
+`solventc --step/--stl` builds swept cuts only for the bevel/hypoid generating class.
+`solid::admission::admit_body` checks rows T1–E4 (revolved line/arc tools, rotation with changing
+contact, clear at both limits, one contact per point, no fold, no self-crossing), sampled, refusing
+with row and witness; it checks a placement once when the blank reads alike at every point
+checked. A fold is the sign of the area factor times the contact condition's rate. Built in
+`gcs-cli/src/cad/native/sweep_boundary.rs`: cutters sectioned (`backend/sections.cpp`), contact
+times from `SweepContacts::at_point_normal_over` (`PointContactError`), sheets traced and
+resampled by the core (`solid::contact_trace`, fed section samples and nothing else; rows stop
+outside the blank before a time leaps: `charted`; fall by walk length, or by length in space where
+that fit misses or folds: `Rows`), indexed by the declared motion, blank split (fuzzy 1e-5 mm),
+cells judged by `MaterialEvaluator::probe`.
+`UnifySameDomain` widens shared tolerances: unify a copy. `solid::agreement` probes 0.1 mm each
+side (a one-sided disagreement withdrawn only where the centroid reads on the boundary); nothing
+is written unless it agrees: outputs go through `cad::output::Staged`; native swept
+construction needs `admission::Admission` (only `admit_body` makes one). Contracts in
+`solid::contracts`; every refusal is one `solid::export::ExportRefusal` (`Stage`,
+`SOLVENT_STAGE_TRACE`), reported at the solid's statement. Refine features:
+`solid::blank_features` (`BlankTopology`). The configured pair is a 25 mm hypoid
+(`pressure_shift`, `spiral_angle`, `admission.rs::the_admission_grid`); recorded tests pin
+`fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, dev-only);
+`tests/native_surfaces/gear_cells.rs` holds the recorded tooth-space volumes;
+`tests/generating_harness.rs` (ignored) locates refusals by stage.
+The pair carries **backlash** (`repeat design.lashed`), **tip relief** (`crown/relief.sv`,
+`relieved`) and **end relief** (`blank/ends.sv`, `ends_relieved`); `fixtures::gear::design` pins
+all to zero, `fixtures::gear::fabricated` sets them. Files:
+`build/exports/hypoid-{pinion,gear}.{step,stl}`; `gcs-cli/tests/pair_check.rs` (ignored) checks
+the pair from the STLs.
+**Export tolerance ([plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
+0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets
+pass within half of it of withheld contacts (`contact_trace::Withheld::Sides`), normals within
+`Tolerance::turn`, refined where they miss (`marked`, `Grid::refined`, ≤4 times, 480×400). Fit:
+`cad/native/sweep_boundary/fit.rs`, `surface_feet_near`. STL meshed until `mesh_sag` is within
+half (OCCT's deflection is no bound); the mesh contract counts clusters
+(`TinyTriangles::clustered`); the field is probed at max(2 tol, 2 µm).
+`--measure FILE` checks an export (`solid::accuracy`) and exits 1 over tolerance.
+**One sector, sewn round ([plan](docs/native-speed-plan.md)):** a body whose swept cuts are turns
+of one placement about one axis (`solid::sector::indexing`), from a blank alike under the turn, is
+built as one sector (`cad/native/sweep_boundary/sector.rs`): its side runs midway across the gaps
+between neighbours' contacts (`sector::Boundary`, sliced by spheres about the blank's centres or
+planes square to the axis — a spiral tooth space turns most of a pitch, so no flat half-plane
+clears it), is read back against gaps and field, and with its pitch turn splits the blank (remade
+about the axis, `solvent_cad_revolved`). Its material is turned and sewn (`solvent_cad_pattern`, no
+face intersected); a ring's pieces are moved into one period and split at the seam so rings close
+on an iso line. A failed premise builds whole and says why (`SOLVENT_SECTOR=off` forces it,
+`SOLVENT_SECTOR_DEBUG` narrates). Faces and volume are the whole construction's; bytes are not.
+**Speed (phases 3–4):** the STL is the sector's mesh turned, seam points shared bit for bit
+(`solvent_cad_sector_stl`; `SOLVENT_SECTOR_STL=off`); pattern and STEP are measured as copies of
+one (`SOLVENT_SECTOR_CHECK=full`, `SOLVENT_STEP_CHECK` measure whole). Volumes, admission,
+sections, splits, cells, probes and agreement run on every core (`gcs_core::par`, serial on wasm,
+answers in order; `progress::side_by_side`/`beside`/`under`). A revolved cutter is sectioned once
+and turned. OCCT's parallel `BRepCheck_Analyzer` is unreliable: `valid_solid` checks faces in
+separate analyzers. **Phase 5:** admission proves placements alike from the solid graph when every
+blank operand is a full revolution about the indexing line or a ball on it
+(`admission::Equivalence::Revolved`, 1e-12 of the blank; else `Sampled`); such a blank is its
+meridian section turned once (`Session::construct_meridian`, `solvent_cad_revolve_region`;
+`SOLVENT_BLANK=booleans`); field agreement probes one sector, reading cuts not proved positive
+(`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whole`); STEP text is
+formatted on every core, the kernel's to the byte (`SOLVENT_STEP_TEXT_CHECK`).
+**The Rust B-rep kernel** ([plan](docs/rust-kernel-plan.md)); clean-room — OCCT is LGPL, this repo
+MIT: its code is never translated, only its behaviour and conventions studied. `gcs_core::brep`:
+`geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`
+intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `check`, `pinches`),
+`build` (prisms, revolutions, lofts of line/arc/circle/spline profiles), `props` (volume by Green's
+theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
+assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
+seam curves), `recipe`.
+**This kernel is every export's default** (phase 5): OCCT answers only `--kernel occt` /
+`--stl-backend occt` / `SOLVENT_KERNEL=occt` (the oracle; refused in a build without OCCT), its
+STEP checked by `step_check` against `Solid::of`. `gcs-cli tests/brep_oracle.rs` builds every
+corpus recipe node both ways; `tests/brep_census.rs` holds a census and `brep_body_debug`;
+`SOLVENT_BREP_DEBUG` narrates, `SOLVENT_BREP_TIME` times slow Boolean steps. OCCT's volume of a
+STEP it reads (~1e-5) is no gate on our accuracy. Rung 1 is done: every corpus solid with a recipe
+agrees with OCCT (volume 1e-9, faces by kind) but for named refusals of self-touching designs
+(surfaces meeting under 1°, pinches).
+**Phase 1 (OCCT's shape, our files):** `SOLVENT_WRITER=rust` reads OCCT's solid into `brep`
+(`backend/dump.cpp` → `Session::brep_json` → `brep::json::read`; uses ordered by vertex and
+parameters since OCCT's wire explorer misreads a closed edge) and writes STEP/STL by ours.
+`Surface::BSpline` is a non-rational `nurbs::Net`; `Pcurve::Curve` written exactly; `Edge::tol` is
+measured and `check` honours it, so it no longer proves pcurves meet edges: a reader holds
+tolerances to a bar itself. `props::fluxes` tables a B-spline face's `G` per span and **closes every
+loop in the face's parameters** across the kernel's gaps (unclosed, the volume moved with the
+origin). The mesher is a neighbour-array CDT, refined for sag **and** for a facet turning from the
+surface's outward normal (signed); slivers get a point off the longest side; points nearer than
+1e-9 are welded. `Mesh::turned` counts facets facing against their surface (thicker than bar/100);
+the export refuses any.
+**Phase 2 (the pattern ours):** `brep::pattern` turns a one-sector body into the whole (the
+kernel's union is never made): sides matched by a pitch's turn, revolution faces keep the sector's
+surface with pcurves shifted along `u`, pieces of one surface across a side become one face, a ring
+keeps its last junction as seam. `Net::segment` cuts sheets exactly. `Built::mesh` meshes the
+sector once (`mesh::mesh_with`) and shares seam points by index. Full verification reads our STEP
+back by OCCT and measures it by `props` (1e-5; OCCT's volume held only to 1e-4).
+**Phases 3–5 (the gear without OCCT):** `brep::sweep` builds an admitted swept body: blank from its
+meridian region (`brep::planar`, `recipe::meridian`), cutters sectioned exactly (`brep::section`,
+`planar::Chart`), sheets traced and fitted (`sweep::sheet`, `nurbs::interpolate_net`), blank split
+(`boolean::split`), cells judged by the field (`sweep::sector`; else `sector::whole`), sector
+patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/export-worker.ts`
+(`gcs_solid_exact`), so native and wasm files are byte-identical: the core's trigonometry, `exp`,
+`ln`, `pow`, `hypot` are its own (`fmath`, `x.dsin()` via `Det`; no platform libm). With OCCT and
+`--verify-step full` the CLI reads our STEP back (`cad::read_back`). A face met twice is told apart
+by `cutter::OCCURRENCE`; a trace ends off a sheet's patch (`Surface::off_patch`); interpolations
+past `nurbs::BANDED` points solve banded; a gross sheet falls back to chord length.
+**Rung 3 (the app reads the exact solid):** a static solid's `EvaluatedSolid` is the B-rep's
+(`solid::Exact`, `Sketch::exact_solid`, cached against `solid::reads`; `from_brep`), built about its
+own origin (`cad::shifted`), faces named by document path (caps leading as the facet term's, so
+edges are named alike), meshed no coarser than `BREP_RELATIVE_SAG` or 64 steps a turn, one
+polyhedral `Prim`. The facet term answers what the exact path refuses (touching tori, empty
+solids); `SOLVENT_SOLIDS=facets` throughout. Silhouettes on curved faces are traced on the surfaces
+(`EvaluatedSolid::silhouettes`), never the mesh's seams, which zigzag.
+Rung 2 is done: `Curve::BSpline` (`brep::nurbs`), `Surface::Extrusion`/`Revolution`, a face's
+stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, `cad::FIT_MM`), lofts
+(`Surface::Blend`, `Curve::Iso` rails, `step::FIT`) paired at equal parameter fractions.
+`curve_surface` drops roots off the surface. The meter reads a static body by `accuracy::Exact` and
+a field taking splines as chords within `CHORD_SLACK`. Edge sampling and `curve::tessellate` test
+quarter points (a midpoint misses a cubic's S-bend).
+Phase 0: `SOLVENT_ABI_TRACE=FILE` logs native entry points, Boolean face pairs
+(`backend/probe.hpp`, `BOPDS_InterfFF`) and smallest pieces; `rust/gcs-cli/tools/abi_trace.py`.
+**Removed tracks (2026-09-25/26):** the certified swept boundary (`solid/swept_boundary`), the
+Manifold arrangement (`--stl-backend manifold`, `solid::sweep_candidates`), CGAL Mesh_3, the Ju et
+al. experiment, and the candidate construction (contact covers, meridian charts,
+`envelope::edge_contact`, `solid::tool_faces`, `rust/examples/swept_boundary/`). Git history keeps
+them; do not revive them without a new plan.
+`solid::MaterialField` composes static and swept operands; its evaluator keeps every sweep query's
+domain, witness, enclosure and status. Budgets apply per sweep query; exhausted operands are never
+omitted; memo includes the input box; indexed clones share a capped pose cache; cached visits
+repeat no evidence. An interval containing zero stays unresolved.
+`MaterialField::support_bounds` is a conservative box or explicit unknown.
+`MaterialEvaluator::boundary` needs that support, complete cells, strict corner signs and two-sided
+distance evidence for `FieldBoundary`. `BoundaryOptions::domain` takes a caller's box instead, but
+it **is** an arbitrary crop: its signs prove nothing beyond it, and closure is the caller's
+judgement. Never substitute a crop, residual magnitude or same-sign corners for coverage.
+Ambiguous vertices, missing mesh evidence, work limits and failed topology refuse extraction (see
+`docs/field-boundary-extraction.md`). Keep the extractor as a measured baseline; evaluate
+`docs/implicit-meshing-methods.md` before extending uniform refinement.
+`SolveOpts::acceptance_tol` controls hard-row success and the DogLeg-to-LM retry; `tol` controls
+stopping; defaults keep interactive behavior. Analytic callers request accuracy instead of
+switching optimizers, and still check geometric errors. `GeneratedEnvelope::evaluate` returns
+trials; `at` requires the envelope equation. `EnvelopePatch` owns one source with its material
+conditions; do not reintroduce parallel untrimmed and trimmed copies of a generating face.
+Snapshot domains are private, returned by value; source edits require new snapshots.
 
-**Shared generating seams:** `join := seam(flank, transition)` takes two envelopes or patches
-of envelopes. They must share one actual profile vertex, a source revolution and a named
-motion. `seam::EnvelopeSeam` snapshots them after solving, checks coincidence and tangent-plane
-agreement with explicit `SeamTolerance`, and intersects their angular domains. Its first-source
-u is fixed at the junction. `SeamIntersectionOptions` exposes only [v,roll]; `intersect` solves
-both envelope equations and one spatial section through the existing DogLeg adapter, using
-one normal-velocity tolerance for both faces. The final root checks both envelopes and both
-material trims. A seam is not a nearest-point weld or an arbitrary surface intersection.
-Local singular intersections are refused; global regularity and face-loop topology remain
-separate. Browser `core/seam.ts` exposes domain and checked contacts; ABI kind 13. Contacts
-carry the first face's normal and generating velocity, not the seam's curve derivative.
+**Shared generating seams:** `join := seam(flank, transition)` takes two envelopes or patches of
+envelopes sharing one actual profile vertex, a source revolution and a named motion.
+`seam::EnvelopeSeam` snapshots them after solving, checks coincidence and tangent-plane agreement
+with explicit `SeamTolerance`, and intersects their angular domains; first-source u is fixed at the
+junction. `SeamIntersectionOptions` exposes only [v,roll]; `intersect` solves both envelope
+equations and one section through the DogLeg adapter (one normal-velocity tolerance for both
+faces), and the final root checks both envelopes and material trims. Not a nearest-point weld or
+an arbitrary surface intersection. Local singular intersections are refused. Browser
+`core/seam.ts`; ABI kind 13. Contacts carry the first face's normal and generating velocity, not
+the seam's curve derivative.
 
-**Envelope/boundary seams:** `tip_edge := seam(flank_region, tip.wall)` names an envelope (or
-its material patch) intersected by a finite analytic surface. `seam::BoundarySeam` reads one
-`EnvelopePatch` and one `SurfaceProjector`; the first source's full [u,v,roll] domain stays
-available. Its section solve uses the existing intersection adapter with envelope, boundary
-support and section equations in that order, then checks finite incidence and material trims.
-This is a separate snapshot type from `EnvelopeSeam`: it has three possible unknowns and
-does not borrow the generating-junction tangency tolerances. Browser `boundarySeamDomain`
-and `boundarySeamSample` in `core/seam.ts` expose the checked snapshot through the same
-seam entity kind 13. Reading a seam does not assert a regular branch or an oriented face loop.
+**Envelope/boundary seams:** `tip_edge := seam(flank_region, tip.wall)` names an envelope (or its
+patch) cut by a finite analytic surface. `seam::BoundarySeam` reads one `EnvelopePatch` and one
+`SurfaceProjector`, keeping the full [u,v,roll] domain; it solves envelope, boundary support and
+section equations in that order, then checks finite incidence and trims. A separate type from
+`EnvelopeSeam`: three unknowns, no junction tangency tolerances. Browser `boundarySeamDomain` /
+`boundarySeamSample` in `core/seam.ts`, kind 13. Reading a seam asserts no regular branch or
+oriented face loop.
 
-**Shared spatial vertices:** `corner := vertex(tip_edge,toe_edge)` meets two boundary seams on
-the same exact named generating face. A generating junction may also meet a boundary seam
-on either of its faces. Separate coincident declarations retain distinct identity. The
-`BoundaryVertex` snapshot owns one face and two boundaries; `JunctionVertex` owns one junction
-and one boundary. Their solve options expose three and two unknowns respectively. The latter
-checks finite incidence on the particular face named by the boundary seam; a coarser seam
-coincidence tolerance cannot transfer finer boundary membership. `position` returns only xyz,
-with no artificial corner normal. Domains are immutable snapshots; local solves check rank
-but do not certify global uniqueness. Formals, privacy and copy/delete are ordinary; ABI kind
-14, browser `core/vertex.ts`. Finite edge branches and analytic face assembly remain separate.
+**Shared spatial vertices:** `corner := vertex(tip_edge,toe_edge)` meets two boundary seams on one
+exact named generating face; a generating junction may also meet a boundary seam on either face.
+Coincident declarations keep distinct identity. `BoundaryVertex` owns one face and two boundaries
+(three unknowns); `JunctionVertex` one junction and one boundary (two), checking finite incidence
+on the face the boundary seam names — a coarser seam tolerance cannot transfer finer boundary
+membership. `position` is xyz only, no artificial corner normal. Local solves check rank, not
+global uniqueness. Ordinary formals/privacy/copy; ABI kind 14, `core/vertex.ts`.
 
-**Finite spatial edges:** `extent := edge(seam,from: a,to: b,along: axis)` names a finite
-axial slicing interval between spatial vertices. `edge::SpatialEdge::named` rechecks endpoint
-parameter witnesses and maps junction endpoint u into the correct incident-face chart.
-At a junction, a boundary on the other exact incident face shares the same corner through
-boundary identity; never infer this from proximity or require duplicate corners. The
-snapshot owns one seam, its endpoint positions and a solved world direction. `sample`
-solves the original equations through existing seam APIs, checks local rank/material/finite
-incidence in the interior, and reuses exact stored endpoints checked by their full vertex
-constraints. Do not re-solve a known endpoint with a potentially tangent slicing equation.
-Fraction means linear projection along the
-line, not arc length. Separate local samples are not a global branch certificate. No planar
-coordinates or glyph; ordinary formals/privacy/copy, ABI kind 15, browser `core/edge.ts`.
+**Finite spatial edges:** `extent := edge(seam,from: a,to: b,along: axis)` names a finite axial
+slicing interval between spatial vertices. `edge::SpatialEdge::named` rechecks endpoint witnesses
+and maps junction endpoint u into the correct incident-face chart. At a junction a boundary on the
+other incident face shares the corner through boundary identity; never infer this from proximity
+or require duplicate corners. `sample` solves via seam APIs, checks local rank/material/incidence
+inside, and reuses stored endpoints checked by their full vertex constraints. Never re-solve a
+known endpoint with a potentially tangent slicing equation. Fraction is linear projection along
+the line, not arc length; local samples are no global branch certificate. No planar coordinates or
+glyph; ABI kind 15, `core/edge.ts`.
 
 **Checked shell topology:** `topology::ClosedShell` owns explicit edge endpoint identities and
-ordered directed uses in connected faces with boundary loops. Construction checks closure,
-two opposed uses per edge, one circular link per vertex, and face connectivity; periodic
-self-uses and annular faces are supported. This is separate from planar `FaceE`, and contains
-no coordinates or tolerance weld. `from_triangles` uses index identity. The gear workbench
-retains the checked shell before export; `mesh::stl_topology` then verifies the actual encoded
-float32 coordinates, identifying exact equals and normalizing signed zero. Neither topology
-check establishes geometric incidence, non-self-intersection, outward material orientation,
-or surface-deviation error. See `docs/shell-topology.md` before connecting analytic faces.
+ordered directed uses in connected faces with boundary loops; construction checks closure, two
+opposed uses per edge, one circular link per vertex and face connectivity (periodic self-uses and
+annular faces supported). Separate from planar `FaceE`; no coordinates or tolerance weld.
+`from_triangles` uses index identity. `mesh::stl_topology` verifies the encoded float32 coordinates
+(exact equals, signed zero normalized). Neither establishes incidence, non-self-intersection,
+outward orientation or deviation error. See `docs/shell-topology.md` before connecting faces.
 
 **Spatial face boundaries:** `working := face(toe,tip,heel,join,on: region)` binds an ordered
-finite-edge loop to an exact named surface/envelope/patch. `FaceSupport` distinguishes
-inherited planes from spatial supports; `FaceE::plane()` refuses the latter, never treating
-them as page profiles. Spatial faces build/copy after edges and keep `on` as an ordinary
-dependency. `spatial_face::SpatialFaceBoundary` reads canonical vertex witnesses, validates
-shared identity and maps junction parameters to this face's chart. Each sample preserves
-edge xyz and checks this support's finite incidence. Loops currently have no holes or
-repeated vertices/edges; geometry still needs an interior/embedding certificate before
-solid assembly. Browser `spatial-face.ts` marshals loop metadata and samples. See
-`docs/analytic-face-boundaries.md`; do not equate a closed boundary walk with a valid disk.
+finite-edge loop to an exact named surface/envelope/patch. `FaceSupport` distinguishes inherited
+planes from spatial supports; `FaceE::plane()` refuses the latter, never treating them as page
+profiles. Spatial faces build/copy after edges, `on` an ordinary dependency.
+`spatial_face::SpatialFaceBoundary` validates shared vertex identity and maps junction parameters
+to this face's chart; samples keep edge xyz and check this support's incidence. No holes or
+repeated vertices/edges yet; solid assembly still needs an interior/embedding certificate. Browser
+`spatial-face.ts`. See `docs/analytic-face-boundaries.md`; a closed boundary walk is not a valid
+disk.
 
 A geometric constraint solver, and **Solvent**, the language a drawing in it is written as.
 
-**Start here.** Asked to *draw* something — write or edit a sketch, add constraints, work out why
-a figure will not solve — read [`docs/solvent-primer.md`](docs/solvent-primer.md) first.  It is
-the language as the implementation actually accepts it, with every example run through the solver
-and its degrees of freedom quoted from what the solver said.  `solvent-spec.md` is the normative
-specification and is the authority on what the language *should* be, but it specifies constructs
-that do not parse yet (`hint` as a statement, `path`), so write from the primer and reach
-for the spec when the question is what a rule ought to be.  Asked to work on the *solver* —
-kernels, diagnosis, decomposition, the bindings, the app — the rest of this file is the contract,
+**Start here.** Asked to *draw* something — a sketch, constraints, why a figure will not solve —
+read [`docs/solvent-primer.md`](docs/solvent-primer.md) first: the language as the implementation
+accepts it. `solvent-spec.md` is the normative specification but specifies constructs that do not
+parse yet (`hint` as a statement, `path`), so write from the primer.  Asked to work on the *solver*
+— kernels, diagnosis, decomposition, the bindings, the app — the rest of this file is the contract,
 and `gcs-solver-program.md` is the staged program it is built to.
 
-Currently: **Stage 5 done, and Stage 7a/7b — solids** (issue #48, items 9 and 10), in **one**
-implementation —
+Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementation —
 
 * **core** (`rust/gcs-core/`): the whole engine in Rust, no dependencies.  Model and constraints
-  (`model.rs`, `constraints.rs`), vectorized kernels and the compile-to-plan `System`
-  (`kernels.rs`, `system.rs`), our own DogLeg/LM plus the dense and sparse linear algebra
-  (`newton.rs`, `linalg.rs`, `sparse.rs`), structural diagnosis (`graph.rs`, `diagnose.rs`),
-  decomposition into cached solve plans (`cgraph.rs`, `decompose.rs`), witness analysis
-  (`witness.rs`), presentation (`style.rs`), drag/solution management (`solve.rs`,
-  `homotopy.rs`), dimension callouts (`callout.rs`), dimension expressions (`expr.rs`),
-  parametric curves (`curve.rs`), **solids** — the term, its evaluation and what is drawn of it
-  (`solid.rs`, `csg.rs`, `mesh.rs`, `hidden.rs`) — the **Solvent** language the document is
-  written in
-  (`syntax.rs`, `flatten.rs`, `program.rs`, `edit.rs`, `tape.rs`), JSON export
-  (`io.rs`, `json.rs`) and the reference sketches
-  (`examples.rs`, over the documents in `rust/examples/`).
+  (`model.rs`, `constraints.rs`), vectorized kernels and the compile-to-plan `System` (`kernels.rs`,
+  `system.rs`), our own DogLeg/LM plus dense and sparse linear algebra (`newton.rs`, `linalg.rs`,
+  `sparse.rs`), structural diagnosis (`graph.rs`, `diagnose.rs`), decomposition into solve plans
+  (`cgraph.rs`, `decompose.rs`), witness analysis (`witness.rs`), presentation (`style.rs`),
+  drag/solution management (`solve.rs`, `homotopy.rs`), dimension callouts (`callout.rs`), dimension
+  expressions (`expr.rs`), parametric curves (`curve.rs`), **solids** (`solid.rs`, `csg.rs`,
+  `mesh.rs`, `hidden.rs`), the **Solvent** language (`syntax.rs`, `flatten.rs`, `program.rs`,
+  `edit.rs`, `tape.rs`), JSON export (`io.rs`, `json.rs`) and the reference sketches (`examples.rs`,
+  over `rust/examples/`).
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a self-contained
-  `wasm32-unknown-unknown` module for the browser and a native `cdylib` for anything else that
-  speaks C.  The native build is also where the *panic boundary* is checked
-  (`gcs-ffi/tests/panic_boundary.rs`): `guard`'s `catch_unwind` only ever catches on native,
-  since `wasm32-unknown-unknown` aborts whatever the profile says, which is why the release
-  profile carries `panic = "unwind"`.
-* **binding**: `web/src/core/` (TypeScript, WebAssembly) — the only one.  It is *thin*: proxies
-  over handles, buffers for hot-path numbers, JSON for ragged results.  It contains no
-  algorithm — and re-derives no number the report already carries (a motion's `movingParams` is
-  the core's reading of its own velocities, not a threshold the binding picks), since two copies
-  of a rule are two rules the moment one of them is edited.  **A `use` resolves against what
-  the host handed over, then the library**: the browser has no filesystem, so `gcs_module_set`
-  is its "beside the document" — `core/modules.ts` asks `gcs_program_uses` what a text uses,
-  fetches each through a function the app supplies, hands it over, and follows the fetched
-  texts' uses too; the linking itself stays the core's (`modules::link`, in the CLI's order).
-  The dev server serves `rust/examples/` as `examples/…` and `app/remote.ts` asks it first, so
-  with `npm run serve` up a case is the file on disk and an edit shows on refresh with no wasm
-  rebuilt; without a server nothing fetches and the compiled-in copy is read as before.
-* **CLI** (`rust/gcs-cli/`): `solventc`, which parses, elaborates, solves, diagnoses and reports
-  on a document from a terminal — the first way to check a drawing without a browser, and where
-  module resolution lives: `use engine.parts` is `engine/parts.sv` beside the document or in an ancestor, then the
-  library compiled into the core (`library::MODULES`).  It **invents no wording**: a per-document
-  line is `diagnose::summary`, a culprit is `io::describe_with` (the core's wording over the
-  `SourceMap`'s names — `corner distance(60) along`, never `P0`; the app reaches the same through
-  `gcs_elab_describe`), `--json` is `report::*_json`, so it and the app cannot come to describe
-  one drawing differently.  **Where a name landed is part of the report** (issue #48, item 3):
-  `report::positions` zips `EntKind::scalar_names` against `Sketch::entity_params` — one list
-  twice, as names and as parameters — so `hinge.x`, `base.r` and `view.angle` are the source map's
-  names against the sketch's numbers and nothing there learns what a circle is made of.  One walk,
-  two readers: `--where NAME` filters it for a terminal (a name matches its own numbers and
-  everything written under it) and `--json` publishes the whole table, narrowed by the same flag.
-  Exit codes 0/1/2 are what
-  `Diag::severity` and `SolveResult::success` already say, given a process to say it to.  The
-  seam an importer will need is there already — a `Source { name, text }` list in, a report per
-  source out — because **the core takes text and has no filesystem**: it runs in wasm and must
-  not learn how to open a file, so the thing with a working directory is this binary.
-  `--stl` writes a solid as binary STL through `gcs_core::mesh` — the one output of a drawing
-  that is not a picture, and the reason a printer can be given a part at all; `--solid` says
-  which, and a document with one part need not.
-  `--output` writes an SVG through `gcs_core::svg`, in the core for the reason callout layout
-  is — and the app's `File ▸ Export SVG` calls the same function, so the button and the command
-  line are one picture of one drawing and not two.  An SVG has no screen, so the export
-  **chooses a `unit`** from the page width (`--width`, or the canvas's own) and every constant
-  size follows: callout text and arrowheads, a curve's flatness, a sheet's dashes and weights.
-  The *camera* is deliberately not consulted — an export is of the drawing, not of the view, so
-  the file is the same whatever the pan and zoom were.
-* **app** (`web/src/app/`): an HTML5-canvas sketcher, the only front end.  Two halves, each
-  a handful of modules rather than one slab.  The *view* is the canvas: `view.ts` holds the
-  state — the camera, selection, tool, plan, diagnosis — and the modules beside it take that
-  view as their first argument and do the work (`paint`, `gesture`, `tools`, `dimension`,
-  `edit`), with `camera` the one that holds where the drawing sits on the canvas and
-  `underlay` the picture traced over — **view state, never the document**: a photograph is
-  scaffolding for the person drawing, so nothing about it is saved, exported, solved or
-  undone.  It is nonetheless handled the way everything else on the canvas is — clicked,
-  dragged, deleted, under the ordinary select tool and with no mode of its own — and two
-  rules keep that from spoiling the tracing it exists for: **the drawing outranks it** (the
-  geometry is offered a press first), and **only its frame is clickable, never its
-  interior** — nothing in this drawing is picked by an area, a circle being picked by its rim
-  and not by the disc inside it, so the edge is where you take hold of it and the middle is
-  where you draw.  Selected, the whole of it drags, so placing it is not a fight with a
-  two-pixel border.  It is not a `Primitive` and so never joins `selected` — it would have to
-  be answered for at every seam that reads one — but the two selections are exclusive, which
-  is what leaves Delete unambiguous.  Each direction of that is **one place**: `pickImage`
-  clears `selected`, and `selected` is a *setter* that lets the picture go, so paste, a rubber
-  band and the constraint list inherit the rule rather than each remembering it — enforced at
-  the call sites instead, the one that forgets fails silently, by deleting the photograph
-  instead of what was just pasted.  Which pick outranks which is likewise stated once, in
-  `gesture::whatIsAt`, since a press and the cursor that promises what it will do must not walk
-  two copies of the order.  Its placement is a similarity in world coordinates and
-  reaches the screen only through `camera`, so it pans and zooms with the drawing and this
-  file writes no minus sign in front of a y either;
-  `SketchView` keeps a one-line delegator for each verb the shell calls, so a caller holds one
-  object.  The *shell* is the page around it: `shell.ts` (the elements, the view, the focused
-  constraint, and where the core is started), `commands` (the constraints bar), `dialogs` (what
-  the menus open), `lists` (the constraints window, the banner and the status line), `dimbox`
-  (a dimension's number, edited on the drawing), `program` (the source, beside the drawing it
-  makes) over `editor` (the code box it is typed in, which knows nothing of Solvent),
-  `ui` (dialogs and bar widgets), and `main.ts`, which is only wiring.  `index.html` is structure and `app.css` is the whole of the styling.
+  `wasm32-unknown-unknown` module and a native `cdylib`, where the *panic boundary* is checked
+  (`gcs-ffi/tests/panic_boundary.rs`): `guard`'s `catch_unwind` only catches on native (wasm
+  aborts), hence `panic = "unwind"` in release.
+* **binding**: `web/src/core/` (TypeScript, WebAssembly) — *thin*: proxies over handles, buffers for
+  hot-path numbers, JSON for ragged results.  It contains no algorithm and re-derives no number the
+  report carries (a motion's `movingParams`).  **A `use` resolves against what the host handed over,
+  then the library**: `gcs_module_set` is the browser's "beside the document" — `core/modules.ts`
+  asks `gcs_program_uses`, fetches each through the app and hands it over, transitively; linking
+  stays the core's (`modules::link`, in the CLI's order).  The dev server serves `rust/examples/` as
+  `examples/…` and `app/remote.ts` asks it first (edits show on refresh, no wasm rebuild), else the
+  compiled-in copy is read.
+* **CLI** (`rust/gcs-cli/`): `solventc` parses, elaborates, solves, diagnoses and reports on a
+  document, and resolves modules (`engine/parts.sv` beside the document or an ancestor, then
+  `library::MODULES`). It **invents no wording**: a per-document line is `diagnose::summary`, a
+  culprit is `io::describe_with` (`SourceMap` names, never `P0`; the app uses `gcs_elab_describe`),
+  `--json` is `report::*_json`.
+  **Where a name landed is part of the report**: `report::positions` zips `EntKind::scalar_names`
+  against `Sketch::entity_params` (`hinge.x`, `base.r`); `--where NAME` filters it (a name and
+  everything under it), `--json` publishes it, narrowed by the same flag. Exit codes 0/1/2 are
+  `Diag::severity` and `SolveResult::success`.  The importer seam is a `Source { name, text }` list
+  in, a report per source out — **the core takes text and has no filesystem** (it runs in wasm).
+  `--stl` writes binary STL through `gcs_core::mesh` (`--solid` says which).  `--output` writes SVG
+  through `gcs_core::svg`, as `File ▸ Export SVG` does; it **chooses a `unit`** from the page width
+  (`--width`) and every constant size follows.  The *camera* is never consulted.
+* **app** (`web/src/app/`): an HTML5-canvas sketcher, the only front end.  The *view* is the canvas:
+  `view.ts` holds the state and modules take that view as first argument (`paint`, `gesture`,
+  `tools`, `dimension`, `edit`, `camera`); `underlay` is the picture traced over — **view state,
+  never the document** (never saved, exported, solved or undone), handled by the ordinary select
+  tool, with two rules: **the drawing outranks it**, and **only its frame is clickable, never its
+  interior**.  It is not a `Primitive` and never joins `selected`, but the two selections are
+  exclusive, so Delete is unambiguous.  Each direction is **one place**: `pickImage` clears
+  `selected`, and `selected` is a *setter* that lets the picture go, so paste, a rubber band and the
+  constraint list inherit the rule.  Pick precedence is stated once, in `gesture::whatIsAt`.
+  `SketchView` keeps a one-line delegator for each verb the shell calls.  The *shell*: `shell.ts`,
+  `commands` (constraints bar), `dialogs`, `lists`, `dimbox` (a dimension's number), `program` over
+  `editor` (knows nothing of Solvent), `ui`, `main.ts` (only wiring). `index.html` is structure and
+  `app.css` the whole of the styling.
 
 Commands:
 `make` (native `build/libgcs.dylib`), `make solventc` (`build/solventc`),
 `make wasm` (`web/src/wasm/gcs.wasm`),
 `make test` (both released artefacts, cargo and the web suite),
 `cargo test --manifest-path rust/Cargo.toml` (**never `--release`**: the suite runs under
-`[profile.test]` — optimised, no LTO, no debuginfo — and `rust/Cargo.toml` says what each of
-the three would cost; one file of the core suite is filtered as `cargo test chain::`),
-`cd web && npm test`, `make bench` (the native `bench` binary and `npm run bench`, meant to be
-read side by side), `cd web && npm run serve`.
+`[profile.test]` — optimised, no LTO, no debuginfo; `rust/Cargo.toml` says why; one file of the
+core suite is filtered as `cargo test chain::`),
+`cd web && npm test`, `make bench` (the native `bench` binary and `npm run bench`, read side by
+side), `cd web && npm run serve`.
 
-`npm run build` is `tsc` (module per file, which is what `node --test` and the test suite run
-against) then esbuild, which rolls `dist/app/main.js` and everything it reaches into one
-`dist/app/bundle.js` — what the page loads, so splitting a module further costs the browser
-nothing.  The bundle stands in for the entry module, so it is written *beside* it: `core/wasm.ts`
-finds the core at `../wasm/gcs.wasm` relative to `import.meta.url`, which under bundling is the
-bundle's own URL, and a bundle written anywhere else would look for it somewhere else.  The
-node-only fallback imports in `wasm.ts` are left external; a browser never evaluates them.
-**three.js is the project's one runtime dependency** and the bundle carries it: 208 kB became
-1.3 MB, which is what a depth buffer for the glass box costs and is paid on the sheet too, since
-one bundle is what the page loads.  It is bundled rather than fetched from a CDN for the reason
-the wasm is beside the bundle — the app opens from a file as readily as from a server.
+`npm run build` is `tsc` (module per file, what `node --test` runs against) then esbuild, which
+rolls `dist/app/main.js` into one `dist/app/bundle.js`, what the page loads.  The bundle is written
+*beside* the entry module: `core/wasm.ts` finds the core at `../wasm/gcs.wasm` relative to
+`import.meta.url`, which under bundling is the bundle's URL.  The node-only fallback imports in
+`wasm.ts` are left external.  **three.js is the project's one runtime dependency**, bundled (not
+from a CDN) so the app opens from a file.
 
 Conventions:
 - **A name is defined one way, `NAME := VALUE`** ([plan](docs/definitions-plan.md), Solvent §5,
   [0.29]).  `w := 100` is a param, `c := circle(…)` a declaration, `t := Tooth(…)` an instance,
-  `dims := group(…)` a group, `profile := (ab := line(a, b)) -> line -> close` a chain whose link
-  is named in place, `k := leg.toe over u in (a, b)` a curve, `p := point(x: e, y: e)` a computed
+  `dims := group(…)` a group, `profile := (ab := line(a, b)) -> line -> close` a chain whose link is
+  named in place, `k := leg.toe over u in (a, b)` a curve, `p := point(x: e, y: e)` a computed
   point, `a distance(w := 60) b` a named dimension (only as the number's outermost form).  `:=` is
   `Tok::Define`; a lone `=` is no token.  `:=` binds loosest, so a link is named in parentheses;
-  with no `->` in the statement the name goes to the one declaration (`l := horizontal line(a,
-  b)`: a prefix word's value is its operand).  `P::definition` reads the value and lowers to the
-  `StmtKind`s that were there before (`Param`, `Group`, `Instance`, `Decl`, `Chain`), so nothing
-  below the parser knows; `syntax::words::named_link_at` is the one lookahead telling `(l := line)`
-  from an operator's own parentheses (`distance(w := 60)`).  `label:` never defines: it fills a
-  slot.  A drawn callout prints a definition as `w = 60` (`io::as_written`), the draughtsman's
-  spelling.  A name in a child slot (`line(a, q := hint(…))`) is not implemented yet.
-- **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4):
-  `p := point hint(x: 0, y: 0)`, `c := circle(center: o) hint(r: 25)`,
-  `point_on_spline(p, s) hint(t: 0.4)`.  Keys in any order, an omitted coordinate is 0 — an
-  omitted *radius* is computed from the geometry (`UNSEEDED_RADIUS` where it gives none), since
-  0 is a stationary point of every on-circle row in `r` (#45.6) — and the
-  clause joins the trailing-clause loop beside `knots` and `class`.  **The brackets after
-  the name are what the thing is made of; the `hint(…)` after them is where the solve begins** —
-  which is what `circle c(center: o, r: 25)` got wrong, putting a number the solver will move
-  inside the same brackets as the structure it may not.  §4.3's rule is then lexical and exact:
-  *a number inside a `hint(…)` is a seed, and every other number is not* — which `=` never was,
-  since `w := 100` is written with one and is not a seed.  The four retired spellings
-  (`at (0, 0)`, `hint at (0, 0)`, a scalar in a constructor arg, and `hint at REF [bearing (…)]`)
-  do **not** parse, and each errors saying where the number belongs.
-  **A place is two keys of the same clause** (issue #47, item 2): `point b hint(at: orbit,
-  bearing: u + f.angle)`, `point p hint(at: pin)` — a seed given as geometry rather than as a
-  pair of numbers, on the sheet and inside a traced component alike.  `hint_body` reads `at:` as
-  a reference (`Hint::place`) wherever the clause stands, and the declaration's trailer loop is
-  the one table that takes it, into `Decl::seed_at` (an `AtRef`: the place and its bearing
-  text); a clause with `at:` and a scalar, or `bearing:` without `at:`, is refused at the key.
-  Both lower to the same tapes the coordinate spelling would, so nothing below the parser knows
-  there are two — and there is no second grammar, no `bearing` keyword and no second print arm.
-  One exception, and it is the rule rather than against it.  A **pin** stays in the argument
-  list — `point_on_spline(p, s, t == 0.4)` — because `hint` marks what a solve revises and a pin
-  is precisely what it does not; it is a stated number, beside every other stated number.
-  **What `hint` marks is that a solve revises the number, not that the number is seed-class** —
-  the two are different sets, and that is why a **callout placement keeps its bare `at`**.  A
-  placement is every bit as inert (delete it and the drawing is the same), but nothing in the
-  solve path ever writes one: `callout::drag` and `callout::reset` are a person acting, and the
-  layout derives it until they do.  A coordinate seed is an input the solver overwrites; a
-  placement is a preference it never touches.  Ask §4.3, not the keyword, for what may be
-  deleted without changing the drawing.
-- **A seed may read geometry, and reads its seed** (Solvent §6.4).  `hint(x: k.center.x + k.r,
-  y: pin.y)`, `hint(at: pin)`, `hint(at: k, bearing: b)` — on the sheet and in a child slot alike.
-  The flattener settles a seed text over the parameters in scope and, where that
-  fails and the text names a dotted scalar, keeps it (`settle_seed`, `reads_geometry`) with every
-  dotted name resolved to the entity's absolute name in `Decl::seed_names` (`rescope_seeds`, the
-  same `lookup` every reference goes through — so a formal reads as its actual and a block copy as
-  itself, and never rewritten into the text, since `side.#282.0.small` is no name the expression
-  language can spell); `program::build` records each as a `Deferred` and `settle_deferred` works
-  them out after every kind is built, in statement order, off the built seeds (`seed_read`,
-  `place_of`).  A read is a `Length` where the document names a unit and a bare number where it
-  does not (`seed_eval`).  A `param` may not read geometry — it feeds constraints — and
-  `commit_seeds` never writes an expression back, so P3 holds.  The bearing of a sheet
-  `hint(at: …)` is `substitute`d over the scope's numbers, which print **with their unit** (`of_vals`: an
-  `Angle` as `(180deg)`, a `Length` as `(150mm)`), or `phi + atan2(…)` reads as a plain number
-  added to an angle.  **A place may be a step** ([0.33]): `hint(at: a, toward: b, by: f, turn: θ)`,
-  or `along: l` for `toward:` (`AtRef::{toward, along, by, turn}`, `entities::place_of`), so a
-  midpoint, reflection or quarter turn is a clause and not coordinate arithmetic.  A place in
-  another view is read in space and projected into the seeded point's (`seed_in`), which needs
-  the memberships and the views' seeded poses, so `program::build` settles the seeds a second
-  time after `solve_planes` when one crosses (`crosses_views`), and only then.  An unwritten arc
-  radius settles with them (`Deferred::Radius`).  A traced point refuses a step.  Components are
-  closed over their arguments: only their own parameters and formals are available.
-  `module_params` exports values to importing root bodies, where they can be bundled in groups
-  and passed explicitly. `tests/seeds.rs` and `tests/closed_scopes.rs` are the gates.
+  with no `->` in the statement the name goes to the one declaration (`l := horizontal line(a, b)`:
+  a prefix word's value is its operand).  `P::definition` lowers to the existing `StmtKind`s
+  (`Param`, `Group`, `Instance`, `Decl`, `Chain`), so nothing below the parser knows;
+  `syntax::words::named_link_at` tells `(l := line)` from `distance(w := 60)`.  `label:` never
+  defines: it fills a slot.  A drawn callout prints a definition as `w = 60` (`io::as_written`).  A
+  name in a child slot (`line(a, q := hint(…))`) is not implemented yet.
+- **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4): `p :=
+  point hint(x: 0, y: 0)`, `c := circle(center: o) hint(r: 25)`, `point_on_spline(p, s) hint(t:
+  0.4)`.  Keys in any order, an omitted coordinate is 0 — an omitted *radius* is computed from the
+  geometry (`UNSEEDED_RADIUS` where it gives none; 0 is stationary for on-circle rows); the clause
+  sits in the trailer loop beside `knots`, `class`.  **The brackets after the name are what the
+  thing is made of; the `hint(…)` is where the solve begins.**  §4.3's rule is lexical: *a number
+  inside a `hint(…)` is a seed, and every other number is not*.  The four retired spellings (`at (0,
+  0)`, `hint at (0, 0)`, a scalar in a constructor arg, and `hint at REF [bearing (…)]`) do **not**
+  parse, and each errors saying where the number belongs.
+  **A place is two keys of the same clause** (issue #47, item 2): `point b hint(at: orbit, bearing:
+  u + f.angle)`, `point p hint(at: pin)`. `hint_body` reads `at:` as a reference (`Hint::place`),
+  and the declaration's trailer loop is the one table that takes it, into `Decl::seed_at` (an
+  `AtRef`); a clause with `at:` and a scalar, or `bearing:` without `at:`, is refused at the key.
+  Both lower to the coordinate spelling's tapes — no second grammar or `bearing` keyword.
+  A **pin** stays in the argument list — `point_on_spline(p, s, t == 0.4)` — because `hint` marks
+  what a solve revises and a pin is what it does not.  **What `hint` marks is that a solve revises
+  the number, not that the number is seed-class** — so a **callout placement keeps its bare `at`**:
+  inert, but nothing in the solve path writes one (`callout::drag`/`callout::reset` are a person
+  acting).
+- **A seed may read geometry, and reads its seed** (Solvent §6.4).  `hint(x: k.center.x + k.r, y:
+  pin.y)`, `hint(at: k, bearing: b)`, on the sheet and in a child slot. The flattener settles a seed
+  text over scope parameters; failing that, a text naming a dotted scalar is kept (`settle_seed`,
+  `reads_geometry`) with every dotted name resolved to its absolute name in `Decl::seed_names`
+  (`rescope_seeds`, via `lookup`; never rewritten into the text); `program::build` records each as a
+  `Deferred` and `settle_deferred` works them out after every kind is built, in statement order
+  (`seed_read`, `place_of`).  A read is a `Length` where the document names a unit, else a bare
+  number (`seed_eval`).  A `param` may not read geometry, and `commit_seeds` never writes an
+  expression back, so P3 holds.  A sheet `hint(at: …)` bearing is `substitute`d over the scope's
+  numbers, printed **with their unit** (`of_vals`: `(180deg)`, `(150mm)`).
+  **A place may be a step** ([0.33]): `hint(at: a, toward: b, by: f, turn: θ)`, or `along: l` for
+  `toward:` (`AtRef::{toward, along, by, turn}`, `entities::place_of`), not coordinate arithmetic. A
+  place in another view is read in space and projected into the seeded point's (`seed_in`), so
+  `program::build` settles seeds a second time after `solve_planes` when one crosses
+  (`crosses_views`), and only then.  An unwritten arc radius settles with them (`Deferred::Radius`).
+  A traced point refuses a step.  Components are closed over their arguments: only their own
+  parameters and formals are available. `module_params` exports values to importing root bodies, to
+  be passed explicitly. `tests/seeds.rs` and `tests/closed_scopes.rs` are the gates.
 - **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
-  block form is allowed inside a component body — the plane is a formal, and nothing the
-  document deletes reaches the header — and still refused inside a root block.  With
-  `repeat flag { … }` over a 0/1 `Int` formal for the views an instance does not show in, a
-  part's whole design is one module (`engine/block.sv`, `engine/head.sv`,
-  `engine/crankshaft.sv`, `engine/conrod.sv`), the castings included; the view modules hold only
-  what the assembly adds (the bore axis, the pistons on it, the timing drive).  Instances inside a block copy are indexed like declarations
-  (`cyl[0].small`: `copy_of` returns the copy's prefix and `lookup` reads the rest under it).
-- **Which way is a word, not a sign** (Solvent §9.2, §9.4; issue #48, item 4).  A distance
-  measured *from a line* (`PointLineDistance`, `ParallelDistance`) is a **magnitude**: its kernel
-  is `|g| − d` (`kernels::point_line_magnitude`, degree 1 — **not** the squared form, whose
-  gradient vanishes at `distance(0)`, an idiom a drawing writes thirty times in one cylinder),
-  both sides are solutions, and the seed picks between them, which is what P3 already says a seed
-  may do and what every other sketcher does.  `side: left|right` pins one, and then the *signed*
-  kernel runs with the word's sign — so a pinned statement costs no new kernel and an unpinned one
-  is the new one.  `CKind::side_words` is the one table of "the words a slot takes and what each
-  means as a sign": `left` is +1 of a line and −1 along the page, opposite numbers and the same
-  English, which is exactly why the word is what a document writes.  A negative magnitude is E040
-  **by value**, so `p distance(-hw) axis` is refused; where a sign is arithmetic rather than a
-  convention, use a signed datum ordinate for that measurement.  The run, the rise and the directed angle keep their signs
-  (a component computes those, and by settling time the flattener has folded the text into a
-  number that no longer says how it was written) and gain `along: right|left|up|down` and
-  `sense: cw|ccw` as the spelling a drawing should use.  `io::dimension_text` draws the number the
-  statement **makes**, so a `sense: cw` label and the arc beside it agree.  A component takes a
-  side as `Ty::Side` — a word in `Scope::sides`, never a ±1 in `vals`, since encoding it as a
-  number would put the unreadable idiom back inside every helper.  `cgraph`'s PL edge asks
-  `Constraint::signed_gap`, which is the word where one is pinned and the *pose* where none is,
-  because a plan moves a figure that already satisfies its constraints rather than choosing among
-  their solutions.  `tests/refusals.rs` is the gate, and the corpus is the proof: every drawing
-  renders byte-identical to before the change.
-- **A selector says what it means, or it is refused** (Solvent §9.2; issue #48, item 4).
-  `CKind::words(slot)` is the vocabulary a `Str` slot takes (`at: start|end`, `at: p1|p2`) and
-  `constraints::ALONG` is the one table `along:` is read by — the choice *and* the message, since
-  a second list is a second answer.  Three silences went with them: a key naming no slot was
-  dropped and the statement settled without it (`Written::assemble` checked only `Slot` keys), a
-  word outside a slot's set fell through `contact_point`'s `s == "start"` and silently meant the
-  other end, and `along: z` came back as "`distance` does not relate a point to a point" — an
-  error about the operands for a mistake in the selector.  All three are E040 **at the key**
-  (`Written::key_span`, since a selector's value carries no span of its own), and
-  `report::registry_json` publishes each slot's words so a front end offers what the core accepts.
-  `tests/refusals.rs` is the gate.  `along: n` is the one entry naming no page
-  axis: a point's signed distance along a plane's normal, in space (`PointPlaneDistance`).
-- **A recorded root choice is one record of one triangle** (`decompose::branch_record`; issue #48,
-  item 4).  Three points can be named six ways, and `ccw(a, b, c)` ("c left of a→b") is the same
-  fact as `ccw(a, c, b)` with the sign turned — so a record is **canonical**: the point indices
-  ascending, the sign read against that order, and the sorting permutation's parity folded into
-  the sign.  Written in whichever order each writer used, the document's choice and the plan's
-  were two records that never met: `apply_gauge` wrote `ppp:a|b|c` and the plan looked up
-  `ppp:a|c|b` (`Step::stated` — it builds the corner as "y left of x→z"), so a document's `ccw`
-  matched no step and decided nothing, and a step's own choice lifted back into source named a
-  different triple.  Every writer goes through `branch_record` — the elaborator, the plan's
-  `branches`/`apply_branches`, `io::graft`, `Part::branches_out` — and `io::from_json`
-  **re-records** what it reads, so a document written before the rule migrates on load, the
-  `"construction": true` bargain again.  `tests/decompose.rs` and `tests/order.rs` are the gates.
+  block form is allowed inside a component body (the plane is a formal) and still refused inside a
+  root block.  With `repeat flag { … }` over a 0/1 `Int` formal for the views an instance does not
+  show in, a part's whole design is one module (`engine/block.sv`, `engine/head.sv`,
+  `engine/crankshaft.sv`, `engine/conrod.sv`); view modules hold only what the assembly adds.
+  Instances inside a block copy are indexed like declarations (`cyl[0].small`, `copy_of`).
+- **Which way is a word, not a sign** (Solvent §9.2, §9.4; issue #48, item 4).  A distance measured
+  *from a line* (`PointLineDistance`, `ParallelDistance`) is a **magnitude**: its kernel is `|g| −
+  d` (`kernels::point_line_magnitude`, degree 1 — **not** the squared form, whose gradient vanishes
+  at `distance(0)`), both sides are solutions, and the seed picks.  `side: left|right` pins one, and
+  then the *signed* kernel runs with the word's sign. `CKind::side_words` is the one table of words
+  and signs (`left`: +1 of a line, −1 along the page).  A negative magnitude is E040 **by value**,
+  so `p distance(-hw) axis` is refused; where a sign is arithmetic, use a signed datum ordinate. The
+  run, the rise and the directed angle keep their signs and gain `along: right|left|up|down` and
+  `sense: cw|ccw`.  `io::dimension_text` draws the number the statement **makes**.  A component
+  takes a side as `Ty::Side` — a word in `Scope::sides`, never a ±1 in `vals`.  `cgraph`'s PL edge
+  asks `Constraint::signed_gap`: the word where pinned, the *pose* where not. `tests/refusals.rs` is
+  the gate.
+- **A selector says what it means, or it is refused** (Solvent §9.2). `CKind::words(slot)` is the
+  vocabulary a `Str` slot takes (`at: start|end`, `at: p1|p2`) and `constraints::ALONG` the one
+  table `along:` is read by (choice and message).  A key naming no slot, a word outside a slot's
+  set, and a bad `along:` (e.g. `along: z`) are all E040 **at the key** (`Written::key_span`), never
+  silently dropped or misread; `report::registry_json` publishes each slot's words.
+  `tests/refusals.rs` is the gate.  `along: n` is the one entry naming no page axis: a point's
+  signed distance along a plane's normal, in space (`PointPlaneDistance`).
+- **A recorded root choice is one record of one triangle** (`decompose::branch_record`).  `ccw(a, b,
+  c)` ("c left of a→b") is the same fact as `ccw(a, c, b)` with the sign turned, so a record is
+  **canonical**: point indices ascending, the sorting permutation's parity folded into the sign
+  (else `apply_gauge` and `Step::stated` write different keys).  Every writer goes through
+  `branch_record` — the elaborator, the plan's `branches`/`apply_branches`, `io::graft`,
+  `Part::branches_out` — and `io::from_json` **re-records** what it reads, so older documents
+  migrate on load.  `tests/decompose.rs` and `tests/order.rs` are the gates.
 - **A name declared over a built-in is said** (Solvent §3.3, §5; `program::shadowing`, W112).
-  `expr::eval` knows `expr::CONSTANTS` and `FUNCTIONS` before it knows the document and
-  `flatten::substitute_with` knows only the document, so a `param`, a formal or a block's index
-  called `tau` does not shadow the constant — it reads 35° where a text is substituted and a full
-  turn where a number is worked out, which is how a lever came to stand at 360° with nothing said
-  (issue #48, item 2).  A *named dimension* of a built-in name is already refused where it is
-  parsed (`expr::parse_in`); the other three are the **warning**, since what is wrong is the name
-  and not the drawing.  Asked of the text, like every question about how a statement is written:
-  every component the program holds, instantiated or not, and every module's own body, each
-  declaration once.  `expr::builtin` is the one table — "is this built in" and "what is it" are
-  one question — and `tests/names.rs` is the gate.
+  `expr::eval` knows `expr::CONSTANTS` and `FUNCTIONS` before the document and
+  `flatten::substitute_with` only the document, so a `param`, formal or block index called `tau`
+  reads differently in the two.  A *named dimension* of a built-in name is refused where parsed
+  (`expr::parse_in`); the other three are the **warning**. Asked of the text (every component,
+  instantiated or not, and every module body).  `expr::builtin` is the one table; `tests/names.rs`
+  is the gate.
 - **A call is the entities by position and the numbers by label** (Solvent §4.1,
-  `flatten::check_call`).  `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw,
-  o_s: o_s, o_t: o_t)`: an argument bound by position must fill an *entity* formal and must stand
-  before every label, and either mistake is **E004** at the argument.  Position is a count, and a
-  count is the one thing a reader of a long formal list cannot check — an argument written a
-  place off lands on the formal beside the one it was meant for, and what comes back is a
-  complaint about something else entirely (issue #48, item 1: `views` "is not a number here",
-  `n` is Scalar and this is an Angle, a hex whose `phase` had arrived as its side count).  The
-  question is about the **text**, so it is asked of the text: once per written call, before
-  anything is bound, however many times the walk binds it — thirty copies of a `cycle` are one
-  mistake.  `tests/components.rs` is the gate.
+  `flatten::check_call`).  `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw, o_s: o_s,
+  o_t: o_t)`: an argument bound by position must fill an *entity* formal and must stand before every
+  label; either mistake is **E004** at the argument.  Asked of the **text**: once per written call,
+  before anything is bound.  `tests/components.rs` is the gate.
 - **Modules** (Solvent §14.4, `modules.rs`, `library.rs`).  `use engine.parts` is parsed into
-  `Program::uses`; `modules::link(prog, resolver)` resolves each once, transitively, parsing the
-  module with `syntax::parse_from(text, base, first_id)` — **every span is one integer into one
-  virtual text**: the document, then each module after a one-byte gap, so no consumer learns a
-  second coordinate and a splice (root body only) never meets a module span.  `Program::source_at`
-  says which text an offset is in; `modules::localize` (run by `link` and by `elaborate`) shows a
-  module's diagnostic at the `use` that brought it in (`Module::via`) with `name:line:col` in
-  front of the message.  A module contributes its components (`Component::module` says which)
-  and its top-level params and groups, each reached by the module's full path (`engine.parts.Crank`,
-  [0.30]); its own drawing is not drawn.  **The core has no filesystem**: the
-  resolver is the host's — `solventc` reads `engine.parts` as `engine/parts.sv` beside the
-  document, then `library::resolve`; the FFI and `examples::document` use `library::parse_linked`,
-  over `library::MODULES` (compiled in with `include_str!`, which is how the app opens the
-  engine).  **`rust/lib/` is the standard library** — `std` (`std.ThreeViews`: the three principal
-  views laid out from one grounded point) — and is in the Makefile's `RUST_SRC` so editing it
-  rebuilds what compiled it in.  `program::reparse` relinks from the texts already in hand (`modules::relink`), so an
-  edit never asks the host.  E070 no module, E071 defined twice in one file.  `tests/modules.rs` is the gate.
-- **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its
-  dotted name (`five.s[0].p1`, `t0.mid`), so a port was a second name for a thing that had one:
-  its declaring form is a `point` of the body, its alias form is the caller writing the entity's
-  own name, and the one real construct under the keyword — the **computed point** — is
-  `p := point(x: xexpr, y: yexpr)` (`Decl::computed`, the same brackets-say-what-it-is-made-of rule as
-  every other declaration), refused on the sheet by the flattener and compiled to two tapes when
-  traced.  The parser keeps the word in `OPENERS` only to refuse it naming the three forms.
-  Aliasing is untouched: it is a property of argument passing (`bind_instance`), not of ports.
-- **A class stands on a relation and on an instance, and `display: none` hides** (Solvent
-  §13.2).  `Relation::class` is parsed in both trailing-clause loops (a chain's and a lone
-  relation's, before `at`), set on `Constraint::class` by `constrain`, written by `io::dumps`,
-  read by `from_json`, carried by `graft`, printed by `write_relation`, and **not** in the
-  binding's constraint record (identity and arguments only).  `callout::style_of` resolves
-  `.dimension` (`.reference` for a claim) under the statement's classes, and `layout` skips one
-  that is not `shown()`, so neither front end lays out or picks a hidden dimension.
-  `Instance::class` is carried down the expansion as `Scope::in_class` and stamped **over** each
-  emitted declaration's and relation's own (`stamp_scope_plane`, the Relation arm of `body`) —
-  the assembly's word is the stronger — the way `in` is.  `Style::display` is
-  `display: none | inline | geometry` (`style::Display`): `shown()` is what an entity asks,
-  `dimensioned()` what `callout::layout` asks, and `geometry` is drawn but never dimensioned —
-  a phantom position, `style .phantom { …; display: geometry }` on a ghosted instance of a
-  dimensioned part.  `svg::render` and `paint.ts` skip what is not shown, and every point is
-  drawn under the implicit class `.point` (`EntKind::implicit_class`), read once per repaint
-  through `styleNamed('point')`.  The idiom for a drawing dense with dimensions is
-  `style .dimension { display: none }` and `class shown` on the few to draw.
+  `Program::uses`; `modules::link(prog, resolver)` resolves each once, transitively, via
+  `syntax::parse_from(text, base, first_id)` — **every span is one integer into one virtual text**:
+  the document, then each module after a one-byte gap (a splice, root body only, never meets a
+  module span).  `Program::source_at` maps an offset to its text; `modules::localize` shows a
+  module's diagnostic at its `use` (`Module::via`) with `name:line:col` in front.  A module
+  contributes its components (`Component::module` says which) and its top-level params and groups,
+  each reached by the module's full path (`engine.parts.Crank`, [0.30]); its own drawing is not
+  drawn.  **The core has no filesystem**: the resolver is the host's — `solventc` reads
+  `engine/parts.sv` beside the document, then `library::resolve`; the FFI and `examples::document`
+  use `library::parse_linked`, over `library::MODULES`.  **`rust/lib/` is the standard library**
+  (`std`: `std.ThreeViews`), in the Makefile's `RUST_SRC`.  `program::reparse` relinks from the
+  texts in hand (`modules::relink`), so an edit never asks the host.  E070 no module, E071 defined
+  twice in one file.  `tests/modules.rs` is the gate.
+- **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its dotted
+  name (`five.s[0].p1`).  The **computed point** is `p := point(x: xexpr, y: yexpr)`
+  (`Decl::computed`), refused on the sheet by the flattener and compiled to two tapes when traced.
+  The parser keeps the word in `OPENERS` only to refuse it.  Aliasing is untouched: it is argument
+  passing (`bind_instance`).
+- **A class stands on a relation and on an instance, and `display: none` hides** (Solvent §13.2).
+  `Relation::class` is parsed in both trailing-clause loops (a chain's and a lone relation's, before
+  `at`) into `Constraint::class`, through `io::dumps`, `from_json`, `graft` and `write_relation`,
+  and **not** in the binding's record.  `callout::style_of` resolves `.dimension` (`.reference` for
+  a claim), and `layout` skips one not `shown()`. `Instance::class` (`Scope::in_class`) is stamped
+  **over** each emitted declaration's and relation's own (`stamp_scope_plane`), the way `in` is.
+  `Style::display` is `display: none | inline | geometry` (`style::Display`): `shown()` is what an
+  entity asks, `dimensioned()` what `callout::layout` asks; `geometry` is drawn but never
+  dimensioned (`style .phantom { …; display: geometry }`).  `svg::render` and `paint.ts` skip what
+  is not shown, and every point is drawn under the implicit class `.point`
+  (`EntKind::implicit_class`, `styleNamed('point')`).  The idiom for a dense drawing is `style
+  .dimension { display: none }` and `class shown` on the few to draw.
 - **A declaration need not name its children** (Solvent §6.1, §6.2).  `l := line` mints two points,
   `c := circle` one, `a := arc` three; a child slot may hold a `hint(…)` instead of a reference
-  (`alt_a := line(A, hint(x: 15, y: 5))`), which is the same clause standing in for a child rather
-  than qualifying the declaration it follows.  `Decl::children` is therefore `Vec<Vec<Kid>>` —
-  a name *or* a seed, and no third form, since "anonymous and unseeded" is spelled by an *empty
-  slot*: a slot the list leaves out is an **implicit child**, minted by `program::build` exactly
-  as a wholly-unwritten list's are, which is what lets a chain's marker fill only the ends it
-  speaks for (`(l1 := line) -> (l2 := line)` is three points, one shared).  E103 now refuses only a list
-  with *more* children than the kind has slots.  A joint threads a *name*, so a seeded slot
-  reads as unfilled there and the other side may say where the two meet — and between two
-  declarations where neither does, `thread` mints the name itself (the earlier-built side's
-  dotted boundary, `l1.p2`), refusing only when a side is a name-link whose kind no boundary
-  field can be read off.
-  **The dotted path is the name.**  An anonymous child has no name in the source, so `l.p1` *is*
-  its name: `program::build` mints the point *with* that name, binds it in `map.names`, and
-  records it against the parent's statement — which is what makes it resolve, constrain, drag,
-  be picked, be dimensioned (`edit`'s `name_of` reads the map), survive a re-elaboration
-  (`Document.entity`) and read as `l.p1` in the status line.  Nothing in the bindings changed.
-  Writeback follows it down: an anonymous child's seed lives in the *parent's* statement, in a
-  slot, so `commit_seeds` walks the parent's children and splices inside `Kid::Hint`'s spans —
-  and where the source wrote no list at all, writes the whole argument list at `hint_span` in
-  one edit, since two splices at one offset are two insertions racing for it.
-  **The element's own name is optional too** (issue #33), independently of everything after it:
-  `line`, `line(p1, p2)`, `circle hint(r: 25)` and `arc(center: c)` are all anonymous forms
-  (a line owns no scalar, so its ends are seeded in the slots: `line(hint(x: 0, y: 0), hint(x: 60, y: 20))`),
-  and a name is written *before* the value (`l := line(p1, p2)`), never after the keyword, so
-  nothing after an element keyword is ever read as a name.  An anonymous declaration still
-  carries a `Decl::name`: a key the source cannot write — `#a` and its keyword's offset, the
-  flattener's block-prefix device marked apart — with an **empty span at the point `name := `
-  would go** (`hint_span`'s idiom): the statement's start, or the link's keyword in a chain, where
-  `Decl::mint_close` says where the `)` of `(name := …)` goes.  **A name is three questions,
-  not one, and each is known where the name is minted and told — never sniffed back out of the
-  characters** (issue #39).  The three: does it
-  **resolve**, does the source **call the thing that** (so: shown, published, selected by), and
-  may a statement be **written** with it.  `Decl::name` is a **`DeclName`** — the name fused
-  with the three-question answer (issue #40): `Written(Name)` (`l0`, `s1.p0`), `Copy(Name)`
-  (`#3.0.p`, one copy of a block) and `Key(Name)` (`#a41`, an anonymous declaration's minted
-  key).  Fused, not a `bool` beside a string, so no reader can take the text without picking the
-  accessor that says which question it asks — `key()` (resolution, every declaration's),
-  `shown()` and `written()` (each an `Option` the compiler makes a new reader answer), `span()`
-  (where a name is or would go) — where eleven guard sites used to be a convention policed by
-  memory, four of which were not written.  It is stamped by the two mints that know: the parser
-  took an identifier or declined to, and **the flattener knows whether the prefix it is putting
-  on the front is an instance's own name or a block's id** (`Scope::copies`, and
-  `DeclName::prefixed` — a key is prefixed like any name, since two copies of one block hold two
-  entities the resolver must tell apart).  `SourceMap::bind` is then told (`DeclName::named`,
-  the bare answer, is its vocabulary), and files each name into as many of its three tables as
-  apply: `by_name` always, `names` when `shown()`, `writable` when `writable()`.
-  So `map.names` is exactly "what the source calls the thing" — `name_of` is `names.first()`, an
-  anonymous entity has no entry — and `writable_name` is the narrower one `edit::reconcile`'s
-  gate asks, refusing a gesture on one copy of a block *with the cause* instead of writing the
-  prefix out for `adopt` to fail on.  Two answers would not do: a predicate over characters can
-  separate `Copy` from `Key` only by the `#a` marker the anonymous mint happens to use, which is
-  the fragility the issue names, and it is `Copy` — unwritable but shown — that makes the two
-  spellings disagree.  `syntax::hidden` survives only where the question really is about
-  characters and only a `Ref` is in hand: a thread-filled slot's `Kid::Ref`, whose root names
-  *another* link's boundary.
-  The key is what a chain's corner welds by and what `res` resolves, and it must
-  never reach the source: `write_decl` spells the statement without it,
-  `commit_seeds` leaves a thread-filled slot holding one *empty* — forcing labels on the kept
-  children when a gap precedes them (`decl_args`), since a line's slots count by position — and
-  diagnostics spell the kind instead.  `edit::reconcile` **mints on demand**: the moment an
-  appended statement must reference an anonymous element (a constraint from the app, a gauge on
-  a fixed point — `held_refs` is the one walk `gauges` shares), a real name is spliced into the
-  declaration at that empty span, **every entity the statement made** renamed with it — a child
-  by the dotted path `program::child_names` would have given it, read off its *position* among
-  the parent's children, which is where the path came from in the first place — and `bind`ed
-  `Named::Written`, so the next gesture in the same elaboration reads a name where it read
-  nothing.  What a statement made, in the order `build` made it, is `SourceMap::ents_made_by`,
-  which `commit_seeds` and `reconcile` share so the ordering invariant is stated once.
-  Its four guards are then one question, "does the source call this anything": named, no
-  statement of the root's to name it on (refused with the cause, before anything is written),
-  named since the map was made, or mint.
-  Insertions racing for one offset are ordered by `splice`'s stable sort, so reconcile pushes
-  appends before flags before names; `tests/anonymous.rs` is the gate.
-  Where an unseeded point *starts* — an implicit child, a declared `a := point` with no `hint(…)`
-  clause, inside a component or not — is `program::scatter` and is an implementation choice
-  the spec must not carry — but it may not be the origin (two endpoints there is a zero-length
-  line, with no direction for `horizontal(l)` and a singular row for any tangency; two points
-  there put a `distance` at a stationary point of its own residual, and the first document
-  anybody writes solved as a conflict), and minted points may not pile up or seed a contour as a
-  self-crossing quad: a collapsed side satisfies every direction constraint on it, so that basin
-  must not be where a solve begins.  `scatter` therefore walks the bearing a fixed irrational
-  step per minted point, in creation order — which for a chain is traversal order, so a contour
-  seeds as a simple polygon.  "No clause" is the empty `hint_span` the parser leaves where one
-  would go (a lifted declaration has `None` and keeps its numbers), and `commit_seeds` then
-  writes the solved pose in as the clause.  A component's points take the same clause, and
-  `gear.sv` / `gear_trace.sv` state theirs: from the
-  centre, where every circle's row is flat, a flank's first step lands on the involute at the
-  roll its contact names, where a start a unit off reached the mirror branch.
+  (`alt_a := line(A, hint(x: 15, y: 5))`).  `Decl::children` is `Vec<Vec<Kid>>` — a name *or* a
+  seed; "anonymous and unseeded" is an *empty slot*: an **implicit child**, minted by
+  `program::build` (`(l1 := line) -> (l2 := line)` is three points).  E103 refuses only a list with
+  *more* children than slots.  A joint threads a *name*, so a seeded slot reads as unfilled there;
+  where neither side names it, `thread` mints the earlier-built side's dotted boundary (`l1.p2`),
+  refusing only a name-link whose kind has no boundary field.
+  **The dotted path is the name.**  `program::build` mints an anonymous child *with* `l.p1`, binds
+  it in `map.names`, and records it against the parent's statement, so it resolves, constrains,
+  drags, picks and survives re-elaboration (`Document.entity`).  Its seed lives in the *parent's*
+  statement, so `commit_seeds` splices inside `Kid::Hint`'s spans — and where the source wrote no
+  list, writes the whole argument list at `hint_span` in one edit (two splices at one offset race).
+  **The element's own name is optional too**: `line`, `line(p1, p2)`, `circle hint(r: 25)` and
+  `arc(center: c)` are anonymous forms, and a name is written *before* the value (`l := line(p1,
+  p2)`), never after the keyword. An anonymous declaration carries a `Decl::name` key the source
+  cannot write — `#a` and its keyword's offset — with an **empty span where `name := ` would go**
+  (`hint_span`'s idiom); in a chain `Decl::mint_close` says where the `)` of `(name := …)` goes.
+  **A name is three questions, each known where the name is minted — never sniffed back out of the
+  characters**: does it **resolve**, does the source **call the thing that** (shown, selected by),
+  and may a statement be **written** with it.  `Decl::name` is a **`DeclName`** fusing the answer:
+  `Written(Name)` (`l0`, `s1.p0`), `Copy(Name)` (`#3.0.p`, a block copy) and `Key(Name)` (`#a41`);
+  accessors `key()`, `shown()`, `written()`, `span()`.  Stamped by the parser and by **the
+  flattener, which knows whether a prefix is an instance's name or a block's id** (`Scope::copies`,
+  `DeclName::prefixed`).  `SourceMap::bind` (vocabulary `DeclName::named`) files each name into
+  `by_name` always, `names` when `shown()`, `writable` when `writable()`.  So `map.names` is "what
+  the source calls the thing" (`name_of` is `names.first()`); `writable_name` is `edit::reconcile`'s
+  gate, refusing a gesture on a block copy *with the cause*.  `syntax::hidden` survives only for a
+  thread-filled slot's `Kid::Ref`.
+  The key (what a corner welds by, what `res` resolves) must never reach the source: `write_decl`
+  omits it, `commit_seeds` leaves a thread-filled slot *empty* — forcing labels on kept children
+  after a gap (`decl_args`) — and diagnostics spell the kind.
+  `edit::reconcile` **mints on demand**: when an appended statement must reference an anonymous
+  element (a constraint, a gauge on a fixed point — `held_refs` is the one walk `gauges` shares), a
+  real name is spliced in at that empty span, **every entity the statement made** renamed with it (a
+  child by the path `program::child_names` gives its *position*) and `bind`ed `Named::Written`.
+  `SourceMap::ents_made_by` (build order) is shared by `commit_seeds` and `reconcile`.  The guards
+  are one question, "does the source call this anything": named, no root statement to name it on
+  (refused with the cause), named since the map was made, or mint.  Insertions racing for one offset
+  are ordered by `splice`'s stable sort, so reconcile pushes appends before flags before names;
+  `tests/anonymous.rs` is the gate.
+  Where an unseeded point *starts* (an implicit child, `a := point` with no `hint(…)`) is
+  `program::scatter`, an implementation choice the spec must not carry — never the origin (a
+  zero-length line, a `distance` at a stationary point), and minted points may not pile up or seed
+  a self-crossing contour (a collapsed side satisfies every direction constraint).  `scatter` walks
+  the bearing a fixed irrational step per minted point in creation order (a chain's traversal
+  order: a simple polygon).
+  "No clause" is the empty `hint_span` (a lifted declaration has `None`), and `commit_seeds` writes
+  the solved pose in as the clause.  A component's points take the same clause; `gear.sv` /
+  `gear_trace.sv` state theirs (else a flank's first step can reach the mirror branch).
 - **Presentation is a separate statement from what the drawing is** (`style.rs`, Solvent §13.2).
   A declaration carries a **class** (`datum := line(o, q) class construction`) and a top-level
   `style .NAME { dash: 7 4; width: 0.5; color: #888888 }` says what a class looks like.
-  **No algorithm in the core consults a class** — nothing in the model, the kernels, diagnosis or
-  decomposition reads one, and that is the whole point: `construction` was a `bool` on seven
-  entity structs, serialized, grafted, exported, published and given a toggle, all to reach one
-  arm in `paint.ts`, and each new look cost the same again.  A class is one string in the same
-  places, once, and the count goes into the sheet instead.
-  `construction` is therefore no longer a word in the language: it is a class, and
+  **No algorithm in the core consults a class**.  `construction` is a class, not a word:
   `style .construction { dash: 7 4 }` is the one rule in `style::base()`, which a document may
-  override.  **The core resolves and the front end strokes** — the same seam `callout.rs` and
-  `curve::tessellate` sit on, so `paint.ts` reads `ent.style` (dash, width, colour) and knows
-  what a class is nowhere; `app/edit.ts`'s toggle sets and clears the *name*.  A sheet's lengths
-  are **screen pixels**, never world units: a dashed line does not change its pattern when you
-  zoom.  An unmatched class is not a diagnostic — it has no rule, as in CSS, which is also what
-  makes paste work.  The cascade is **two layers, not one interleaved pass**: the whole base
-  sheet under the whole document's, each in written order, so what a document says beats what
-  the implementation ships whichever class it is written on.  Resolved a class at a time, a
-  later class's shipped rule would override an earlier class's *stated* one.  A base rule
-  therefore states only what its class **adds** — `.reference` is the lighter ink and nothing
-  else, because a reference dimension *is* a dimension and is drawn `class dimension reference`;
-  restating the shared weight there would make it a complete rule, and one
-  `style .dimension { width: 2 }` would come out thick on half the callouts.  A value the sheet
-  cannot read (`color:` with nothing after it) is **dropped**, exactly as an unknown property is
-  — `Some("")` is not nullish and reached `ctx.fillStyle`, which ignores what it cannot parse.
-  `Sketch::style_epoch` is bumped by the one write path (`set_class`,
-  `set_sheet`) so a binding may cache a resolved table against it.  JSON writes `"class"` and
-  **reads `"construction": true`** and never writes it, the same bargain `from_json` already
-  strikes with the pre-§13.1 placements table.
+  override.  **The core resolves and the front end strokes**: `paint.ts` reads `ent.style` (dash,
+  width, colour) and knows what a class is nowhere; `app/edit.ts`'s toggle sets and clears the
+  *name*.  A sheet's lengths are **screen pixels**, never world units.  An unmatched class is not
+  a diagnostic (no rule, as in CSS).  The cascade is **two layers, not one interleaved pass**: the
+  whole base sheet under the whole document's, each in written order, so a document beats what
+  ships whichever class it is written on.  A base rule states only what its class **adds**
+  (`.reference` is the lighter ink only; a reference dimension is `class dimension reference`).
+  A value the sheet cannot read (`color:` with nothing after it) is **dropped**, as an unknown
+  property is.  `Sketch::style_epoch` is bumped by the one write path (`set_class`, `set_sheet`)
+  so a binding may cache against it.  JSON writes `"class"` and **reads `"construction": true`**
+  and never writes it.
 - A constraint may own *unknowns* of its own: a `SpecKind::Param` slot in its `spec`, allocated
   by `Sketch::add` and moved by the solver like any other parameter.  The slot holds a seed
-  number on the way in — which is what a document stores, what `graft` copies, and what
-  `constraints::seed_param` supplies when a caller omits it (the `Param` counterpart of
-  `infers_arg`) — and an index into `Sketch::params` once added.  It is not a value anyone
-  states: `describe` leaves it out, both bindings publish it read-only, and `same_constraint`
-  ignores it, since two contacts of the same point on the same curve say the same thing however
-  far apart their seeds started.  `Sketch::remove` retires an orphaned one to `fixed` (a free
-  parameter no equation mentions is a DOF the sketch does not have); the rebuild walk reclaims
-  the slot outright.
+  number on the way in (what a document stores, `graft` copies, and `constraints::seed_param`
+  supplies when omitted — the `Param` counterpart of `infers_arg`) and an index into
+  `Sketch::params` once added.  It is not a stated value: `describe` leaves it out, both bindings
+  publish it read-only, `same_constraint` ignores it.  `Sketch::remove` retires an orphaned one to
+  `fixed` (a parameter no equation mentions is no DOF); the rebuild walk reclaims the slot.
 - **The core owns every algorithm.**  A change to the model, a constraint type, diagnosis,
   decomposition or the solvers lands in `rust/gcs-core/` with a Rust test in
-  `rust/gcs-core/tests/` — **a new file there is listed in `tests/main.rs`**, since the core
-  suite is one binary (`autotests = false`; the note at the top of `main.rs` says why) and a
-  file nobody lists is a test nobody runs, which `every_file_is_a_module` fails the suite
-  over.  A binding changes only when the *surface* changes.  If you find
-  yourself writing geometry or numerics in TypeScript, it belongs in Rust instead.
+  `rust/gcs-core/tests/` — **a new file there is listed in `tests/main.rs`** (one binary,
+  `autotests = false`; `every_file_is_a_module` fails an unlisted file).  A binding changes only
+  when the *surface* changes.  Geometry or numerics in TypeScript belong in Rust instead.
 - A new *entity* kind stops the build in the exhaustive `match e.kind` arms — `model.rs`
   (`entity_params`, `own_params`, `own_length_params`, `children`, `min_children`, `count`,
   `bounds`, `distance_between`, `point_to_drawn`, `class_of`, `set_class`, `spatial`), `io::graft`'s
   remap, `overview::drawable`, `svg::entity`, `program`'s build and `set_class`,
   `syntax::kind_initial` and the FFI's `ent`/`kind_id`.  Give it an arm in each; `primitives()`
-  and `topology_key` are where it joins the document.  A kind that is **evaluated rather than
-  drawn** answers `spatial()` and owns no parameter, which is the whole of how `Face` and `Solid`
-  sit in the same enum as a line without being on the sheet.
+  and `topology_key` are where it joins the document.  A kind **evaluated rather than drawn**
+  (`Face`, `Solid`) answers `spatial()` and owns no parameter.
 - Every new constraint type = a vectorized kernel in `kernels.rs` (added to `KERNELS`; the
   registration order **is** the kernel id) declaring its `degree` — the power of length its
   residual carries, 1 for a signed distance and 2 for a squared one — a `CKind` variant in
   `constraints.rs` declaring its `spec` (constructor args as (attr, kind) pairs), `params()`,
   `consts()` and `default_arg()`, and a row in `rust/gcs-core/tests/jacobians.rs` (FD check,
-  spec round-trip).  Both bindings generate their classes from `report::registry_json`, so
-  neither needs touching.
+  spec round-trip).  Both bindings generate their classes from `report::registry_json`.
 - A type whose spec carries a `Length` or an `Angle` is a *dimension*, and dimensions are drawn.
-  `callout.rs` matches `CKind` exhaustively in two places, so adding any type stops the build
-  there: give it a `Pen` arm (its drafting figure) and a `frame` arm (the `Frame` its placement
-  is written in), or list it in `undrawn!`.  `every_dimension_is_drawn` then checks the arm you
-  wrote actually produces a figure.
-- A parametric curve (`curve.rs`) is one that is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ`
-  — every B-spline, so every Bézier.  It has no usable implicit form, so a contact with one
-  carries its own curve parameter as a `Param` slot and says `p − C(t) = 0`: two residuals, one
-  new unknown, the net one equation the contact is worth.  A contact kernel needs the basis
-  values and their first two t-derivatives and nothing else about the curve, which is the whole
-  extension point — a second curve family is a second basis, not a second constraint family.
-  A line against a curve is a tangency; a *circle* against one is a curvature constraint —
-  `SplineCurvature` makes it the curve's osculating circle, which is the circle a draughtsman
-  would call the radius there.  It is written as "the centre is the centre of curvature", which
-  says touching, tangent and equally-bent all at once and needs no `side` to infer.  Dividing by
-  the turning rather than multiplying by it is load-bearing: multiplied through, every row would
-  vanish as `C'` did and the solver would satisfy the constraint by bunching the control points
-  until the parameterisation collapsed, which it promptly does given the freedom.
-  Control points are ordinary `Point`s, so they drag, snap and constrain with the tools that
-  already exist, the same trick as an arc being a centre and two real points.  Local support is
-  what keeps the plan's fixed-width blocks: only `DEGREE + 1` control points are non-zero at any
-  t, so a contact addresses one *span*, whichever span t is in.  The span is derived from t, not
-  stored, and `Sketch::topology_key` carries it — a contact walking past a knot is a recompile,
-  the same event as any other topology change.
-- A control polygon is edited by three operations, and they are not the same shape of thing.
-  *Inserting* a control point is `curve::insert_control` — Boehm's knot insertion, so C(t) is
-  identical afterwards and every contact keeps both its parameter and its place on the drawing;
-  `DEGREE - 1` neighbours move, keeping their identity, and if one of them is constrained the
-  next solve honours that instead, which is a stronger thing than "keep the shape".  *Deleting*
-  one shortens the curve rather than destroying it: `Sketch::min_children` is the general rule
-  (an entity survives while enough children do — for a line or an arc that is all of them), and
-  `curve::knots_without` gives up one interior knot per lost control point, so deletion is very
-  nearly the inverse of insertion.  *Interpolating* is `Sketch::spline_through_held`: chord-length
-  parameters, averaged knots and one collocation solve give a control polygon whose curve passes
-  through the given places.  A place that came from empty space is construction input and leaves
-  nothing behind — the same bargain `arc_through` strikes with its third click; a place that came
-  from a Point is *held*, by a `PointOnSpline` whose parameter is **pinned** at the value the fit
-  chose.  The pin is what makes the answer determinate: a contact with a free parameter says only
-  "the curve meets this point somewhere along its length", so without it a curve through m points
-  keeps m degrees of freedom and could slide along itself, and a fit to fully constrained points
-  would come out under-constrained.  The fit knows where along, so that is knowledge and not an
-  unknown.  A pin travels in the seed: `Arg::Seed { value, pinned }` is what a `Param` slot holds on the
-  way in, and `Sketch::add` consumes both halves at the one seam that turns a number into a
-  Param — so a document, a paste, a rebuild and a constructor all carry it without knowing pins
-  exist.  `clamp_contacts` leaves a pinned parameter alone: somebody said where along, and the
-  solver is not to argue.
-- A curve parameter is bounded (`t0 <= t <= t1`) and a least-squares problem cannot say so: left
-  alone the solver puts a tangency on the phantom polynomial past the end of the drawn curve.
-  `System::solve` says it instead — clamp, compare `curve::contact_spans` against the spans it was
-  compiled from, rebuild itself when one moved — so *every* caller gets it: the one-shot `solve`,
-  the plan solver's fallback and a front end that compiled a system for itself alike.  A clamped
-  parameter is *pinned* for the retry: free, the next solve walks straight back off the end.  A
-  contact *seeded* off the end is the other case and is clamped **before** the first solve and
-  left free — a seed says only where the search begins (P3), and pinned, `hint(t: 2)` nailed the
-  point to the curve's last control point and a solvable document read UNSOLVED (#45.7).
-  `SolveOpts::rehome` turns it off for the one caller owning a *pair* of systems that must stay
-  in step — `PullPolish`, which re-homes both together, lifting its drag target out to rebuild.
-  All of it is behind an empty span map, so a sketch with no curves pays nothing.
+  `callout.rs` matches `CKind` exhaustively in two places: give a new type a `Pen` arm (its
+  drafting figure) and a `frame` arm (the `Frame` its placement is written in), or list it in
+  `undrawn!`.  `every_dimension_is_drawn` checks the arm produces a figure.
+- A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
+  B-spline).  A contact carries its own curve parameter as a `Param` slot and says
+  `p − C(t) = 0`: two residuals, one new unknown.  A contact kernel needs only the basis values
+  and two t-derivatives — a second curve family is a second basis, not a second constraint
+  family.  A line against a curve is a tangency; a *circle* against one is `SplineCurvature`, the
+  osculating circle ("the centre is the centre of curvature", no `side` to infer).  It divides by
+  the turning rather than multiplying: multiplied, every row vanishes with `C'` and the solver
+  collapses the parameterisation.  Control points are ordinary `Point`s.  Only `DEGREE + 1`
+  control points are non-zero at any t, so a contact addresses one *span* (fixed-width blocks);
+  the span is derived from t, not stored, and `Sketch::topology_key` carries it — a contact
+  walking past a knot is a recompile.
+- A control polygon is edited three ways.  *Inserting* is `curve::insert_control` (Boehm's knot
+  insertion: C(t) unchanged, every contact keeps parameter and place; `DEGREE - 1` neighbours
+  move, keeping identity).  *Deleting* shortens the curve: `Sketch::min_children` is the general
+  rule (an entity survives while enough children do), and `curve::knots_without` drops one
+  interior knot per lost control point.  *Interpolating* is `Sketch::spline_through_held`
+  (chord-length parameters, averaged knots, one collocation solve).  A place from empty space
+  leaves nothing behind; a place from a Point is *held* by a `PointOnSpline` whose parameter is
+  **pinned** at the fit's value (unpinned, the curve keeps m DOF sliding along itself).  A pin
+  travels in the seed: `Arg::Seed { value, pinned }`, consumed by `Sketch::add` at the one seam
+  turning a number into a Param.  `clamp_contacts` leaves a pinned parameter alone.
+- A curve parameter is bounded (`t0 <= t <= t1`), which least squares cannot say.
+  `System::solve` does — clamp, compare `curve::contact_spans` against the compiled spans,
+  rebuild when one moved — so *every* caller gets it.  A clamped parameter is *pinned* for the
+  retry.  A contact *seeded* off the end is clamped **before** the first solve and left free (a
+  seed says only where the search begins, P3; #45.7).  `SolveOpts::rehome` turns it off for
+  `PullPolish`, which owns a pair of systems and re-homes both together.  An empty span map
+  costs nothing.
 - A block's columns and its constants are ONE compile-time choice: which span of a spline a
   contact sits on.  `System::new` makes it once and passes it to both `params_on` and
   `consts_on`, and remembers it — so `refresh_consts` skips curve contacts outright (their knots
   are document data no solve moves) rather than re-deriving a span that may since have walked.
-- `Param::scale` is the world length one unit of a parameter is worth — 1 for a coordinate or a
-  radius, the curve's mean speed |C'| for a curve parameter, which `System::new` reads off the
-  curve itself so it is a fact about the compile and cannot go stale.  `System` gathers it into
-  `col_scale` and solves in `z = x * col_scale`, so the trust region and the minimum-norm step
-  measure motion in world units.  It is not a nicety: unscaled, a tangency that converges in nine
-  iterations at one size stalls at ten times the size, because the t column is wrong by a factor
-  of the curve's length.  Systems where every scale is 1 take the untouched path.
+- `Param::scale` is the world length one unit of a parameter is worth — 1 for a coordinate or
+  radius, the curve's mean speed |C'| for a curve parameter (read by `System::new`).  `System`
+  solves in `z = x * col_scale`, so trust region and minimum-norm step measure world units;
+  unscaled, tangencies stall as a drawing grows.  All-1 systems take the untouched path.
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
-  (`extent^degree`).  Never one absolute threshold for the whole system — half the kernels are
-  linear in length and half quadratic, so one threshold is wrong for one of the halves.  **And
-  the iteration sees the same vector**: `residuals_into` and `compute_csr` divide every row by
-  `row_scale` where it is produced, so the dogleg's merit function, its ratio test and its
-  Cauchy step weigh an `angle` row (radians, O(1)) and a `distance` row (a squared length,
-  O(L²)) alike.  Minimised raw, a four-bar linkage with its crank angle stated turned about a
-  degree an iteration and did not solve at all past forty units across (issue #43).  Anything
-  reading a residual off a `System` — a test comparing against a kernel — multiplies by
-  `row_scale` to get the raw one back.  A pose that is *not* a solution is one of two things,
-  and `System::stationary` tells them apart: at a stationary point the residual left is what the
-  constraints cannot agree on, and the diagnosis may call it a conflict; anywhere else the solver
-  merely stopped, the diagnosis solves a scratch copy to find out which, and a consistent
-  drawing is `State::Unsolved` — no conflict set, no culprits, the unsatisfied rows listed as
-  what they are.
-- Its Jacobian twin: a rank or a null space is judged on `System::conditioned` — the hard rows
-  over `extent^(degree−1)` (a degree-`d` residual's derivative with respect to a length carries
-  one power fewer), columns already in world length — against one absolute, dimensionless
-  `system::RANK_TOL`.  Never a raw `J`, and never relative to `σ₀`: `σ₀` belongs to whichever
-  row is largest, and that row may be a dimension in another figure entirely, so a relative
-  rule lets an unrelated part of the drawing decide whether two constraints on a circle are
-  dependent.  `Conditioned` is the only matrix the *diagnosis* will judge, and its methods take
-  only an absolute tolerance, so the comparison cannot be written the other way — the `Tol`-taking
-  factorisations are `pub(crate)` for the same reason.  (`decompose::deficiency` and `homotopy`
-  keep their own relative rank on their own synthetic matrices, which are neither the sketch's
-  Jacobian nor in the sketch's units.)  `jacobian_dense` stays the raw `∂r/∂z` for the solvers
-  and the finite-difference checks.
-- A tangency whose contact is a point the drawing already holds to the curve is stated *at*
-  that point, or it is a double root: `PointOnCircle(p, C)` + `TangentLineCircle(L, C)` with p
-  an endpoint of L say "tangent at p" with a Jacobian that is rank-deficient at *every*
-  solution (the contact "swims" along the line to first order, blocked at second), which no
-  rank tolerance can read correctly.  `TangentLineCircleAt(line, circle, at)` — the
-  `tangent_arc_line` kernel reused, the radius perpendicular to the line at the named endpoint
-  — is regular, and `commands::cTangent` states it whenever the picked line has an end already
-  on the circle, exactly as it already did for an arc's own endpoints.  The on-circle stays the
-  user's constraint; the pair is the statement.  For the degenerate pairs that still arise (an
-  old document, a tangency applied before the endpoint was snapped on), the diagnosis and the
-  witness settle-test the surplus motions: step along a null direction, let the solver settle,
-  and a motion that walks back (a double root has no solution out there) is `shaky` — counted
-  out of the DOF, reported as "blocked at second order", never painted as under- or
-  over-constrained.  `numeric_rank` already includes them, so nothing downstream adds `shaky`
-  back.  Every guard is inside `witness::screen`, because a caller that writes one itself will
-  write it differently: the sketch must be at a solution (or the settle measures the solve, not
-  the geometry), it must contain a tangency at all (the only thing a double root is made of —
-  which is what keeps the solves off the ordinary theorem-type dependency, `polygon_chain`
-  paying eight solves an edit for a freedom that is perfectly real), the removals are capped at
-  what the matching cannot account for (so a settle that lands short can never eat a genuine
-  DOF), and there are never more than `SCREEN_MAX` of them.  A candidate cannot be recognised
-  more cheaply than by trying it: reached exactly, a double root's singular value is as small as
-  a real freedom's, so there is nothing in the spectrum to sort on.
+  (`extent^degree`).  Never one absolute threshold — kernels are of degree 1 and 2.  **The
+  iteration sees the same vector**: `residuals_into` and `compute_csr` divide every row by
+  `row_scale`, so the dogleg weighs an `angle` row and a `distance` row alike (issue #43).  A
+  test comparing against a kernel multiplies by `row_scale` to get the raw residual.
+  `System::stationary` tells apart two non-solutions: at a stationary point the residual is what
+  the constraints cannot agree on (a conflict); elsewhere the solver merely stopped, the
+  diagnosis solves a scratch copy, and a consistent drawing is `State::Unsolved` — no conflict
+  set, no culprits, the unsatisfied rows listed.
+- Its Jacobian twin: rank and null space are judged on `System::conditioned` — hard rows over
+  `extent^(degree−1)`, columns in world length — against one absolute, dimensionless
+  `system::RANK_TOL`.  Never a raw `J`, never relative to `σ₀` (the largest row may be in another
+  figure).  `Conditioned` is the only matrix the *diagnosis* judges, taking only an absolute
+  tolerance; the `Tol`-taking factorisations are `pub(crate)`.  (`decompose::deficiency` and
+  `homotopy` keep a relative rank on their own synthetic matrices.)  `jacobian_dense` stays the
+  raw `∂r/∂z` for solvers and finite-difference checks.
+- A tangency whose contact the drawing already holds to the curve is stated *at* that point, or
+  it is a double root: `PointOnCircle(p, C)` + `TangentLineCircle(L, C)` with p an endpoint of L
+  is rank-deficient at *every* solution.  `TangentLineCircleAt(line, circle, at)` (the
+  `tangent_arc_line` kernel) is regular, and `commands::cTangent` states it whenever the line has
+  an end already on the circle.  For degenerate pairs that still arise, the diagnosis and the
+  witness settle-test the surplus motions: step along a null direction, settle, and a motion that
+  walks back is `shaky` — out of the DOF, "blocked at second order", never painted under- or
+  over-constrained.  `numeric_rank` already includes them; nothing adds `shaky` back.  Every
+  guard is inside `witness::screen`: at a solution, a tangency present, removals capped at what
+  the matching cannot account for, at most `SCREEN_MAX`.  A double root's singular value is as
+  small as a real freedom's, so a candidate is recognised only by trying it.
 - `Horizontal`/`Vertical` level a line; `HorizontalPoints`/`VerticalPoints` level a *pair of
-  points*, which is the same statement about the segment between them and needs no line drawn
-  there.  They reuse the line kernels unchanged — those four columns were always two points'
-  coordinates — and `cgraph` gives them a `virtual_line` in the ground x-axis's direction class,
-  the same trick arc-endpoint tangency uses, so a levelled pair decomposes rather than falling to
-  the numeric residue.
-- **The datum is a `plane`** (`f := plane(origin: o, toward: q)`, spec §3.2 [0.6]; issue #47,
-  item 6 folded `frame` into it — the two were one construct with the attitude optional, and a
-  plane with no attitude written is a view of the page, which is what a datum on the sheet is;
-  the parser keeps the word `frame` only to refuse it, at a declaration and at a formal).  The
-  two points alias, and the attitude is a **unit rotor** `(c, s)` — two owned scalars slaved to
-  the chord by two intrinsic constraints minted in `Sketch::plane` and nowhere else (the arc's
-  bargain, since
-  intrinsics are never serialized): `frame_unit` is `c² + s² − 1`, **degree 0** (dimensionless,
-  judged absolute — the `angle` kernel's rationale), and `frame_align` is `(t − o) − r·(c, s)`
-  with the chord's length `r` a `Param` slot of its own — two rows, net one equation, and
-  *directed*, where a bare cross-product row would admit the reversed frame.  Net **0 DOF**
-  beyond the two points; `c`,`s` get `Param::scale` = the chord's length.  A rotor rather than a
-  stored angle because it has no mod-2π seam, its rows are polynomial, and it is the 2D unit
-  quaternion — a 3D workplane changes the component count, not the construct.  `.angle` is
-  **derived, never stored**: `Tape::compile`'s one exception to the misspelling rule turns
-  `f.angle` into `atan2(f.s, f.c)` (degrees) wherever the table holds the rotor — which is what
-  lets a traced seed say `bearing: u + f.angle` and follow a tilted datum (issue #10;
-  `tests/frame.rs` holds the mirror-elbow document that page-fixed seeds quietly get wrong).
-  A datum is also the shortest formal list a traced component can be written over — it *is*
-  an origin, a second point and a bearing, so passing those beside it states one datum three
-  times: the Peaucellier cell went from 20 variable-table columns to 12 by taking `(orbit, f)`
-  where it had taken `(o, q, datum, orbit, f)`, which is what kept it under `tape::MAX_VARS`.  Raising that constant is the wrong reflex — `get`/`map`/
-  `zip` zero a `[f64; MAX_VARS]` per operand, so its width is a cost every tape pays whatever it
-  reads, and 16 → 24 measured +7–14% on tapes as narrow as four variables.  Both intrinsics
-  are `unsupported` in `cgraph` for now, so a document with a datum drags on the numeric path;
-  the direction-class promotion is a follow-up.  `FrameE` is the datum half of a `PlaneE`, and
-  `SpecKind::Plane` is what the two intrinsics take.  A document written before the fold loads:
-  `io::from_json` reads a `"frames"` table as planes with the page's attitude and never writes
-  one — the `"construction": true` bargain again.
-- A **`plane`** (Solvent §6.7) is also a **view**: the datum's origin, toward point and rotor
-  (the two intrinsics, minted by `Sketch::plane` through `datum`/`slave`), plus a constant
-  attitude in space, `plane::Basis` `(u, v)`, with
-  `n = u × v` toward the viewer.  **Nothing three-dimensional is solved for** unless the
-  brackets name an unknown (`fold: beta`, `fold: along l`, `attitude: free`, `offset: free`,
-  `through: M` — `program/views.rs` mints the `att` and the `Hinge` rows; see
-  `docs/spatial-constraints-plan.md`): otherwise the basis is
-  document data like a spline's knots, resolved at elaboration (`program::plane_bases`, a
-  memoised walk over the `from` chain — the page, `from: P, fold: θ` as `Basis::fold`, or
-  `u:`/`v:` orthonormalised by `Basis::explicit`) and stored on `PlaneE`; it is written in the
-  brackets with the children because it is what the plane is *made of* and no solve moves it.
-  A point's **membership** is `PointE.plane`, set by `a := point in top` — a trailer applying to
-  every point the declaration mints or names, filled in by `program::memberships` after every
-  kind is built and before any constraint — and it moves nothing: only `Project` reads it.
-  `a project b` is one row over 12 columns (`kernels::project`: both points, both planes'
-  origins and rotors) with the fold line the planes share as consts (`plane::fold_line`).  The
-  two plane slots are real entity slots — so `io::Part`, `topology_key`, the graft and a
-  deletion follow the planes with no new code — and **inferred**: `infers_arg` marks them, the
-  registry publishes null, the source and the bindings write two points, and
-  **`io::seed_omitted` is the one seam** that fills them (`constraints::infer_entity`) and
-  refuses what the model refuses (`constraints::validate`: no plane, one plane, parallel
-  planes) — returning `Result`, so the elaborator (E061 at the statement), `from_json`, the
-  FFI's `gcs_constraint_add` and `Constraint::project` are refused by one rule.  `operator_text`
-  skips an inferred entity slot, so `describe` and a lifted statement both say `a project b`.
-  A plane's minted label starts with `v` (`syntax::kind_initial`, now exhaustive): `p` is the
-  point's, and a plane on the page is a view — as a curve's starts with `k`, `c` being the
-  circle's.  It draws its chord as a datum glyph — the kind's
-  *implicit class* `.plane` (`EntKind::implicit_class`, resolved under the declaration's own in
-  `style_of`, so a document's `style .plane` rule wins and the JSON never writes it) — and is
-  picked by that chord, its points outranking it as everywhere.  Deleting a plane from the source
-  (`edit::remove`) dooms a plane folded from it (`mentions` counts `Attitude::From`), splices
-  the `in` clause out of every surviving declaration (a membership is a label, not a
-  dependency), and dooms every statement whose *elaborated* constraint named it — a projection
-  never spells its planes.  `commit_seeds` replaces the bracket list at `Decl::list_span` rather
-  than inserting a second one beside a list that stated an attitude and no children.
-  **`in top { … }` is the clause written once**: the parser **hoists** the body's statements
-  into the enclosing body, stamping each declaration (`Decl::plane_from_block`, `stamp_plane`
-  recursing into `repeat`/`cycle` bodies so a contour drawn round a cycle is drawn in
-  the view) — so writeback, carets, the DOF ledger and `edit::in_root` see ordinary root
-  statements, and only the header and brace are the block's (`Program::in_blocks`), which is
-  what `remove` splices when the plane goes.  The printers spell no clause a statement did not
-  write, and a membership edit on a block-stamped declaration is refused with the cause (the
-  clause is the header's, not the statement's).  Top level only — inside a body the clause
-  says it per declaration.  **An instance joins a view whole** (`t := Tooth(…) in top`, or an
-  instance inside the block): that stamping is the *flattener's* (`Scope::in_plane`, carried
-  down the expansion and applied in `stamp_scope_plane` — the ref as written *with the prefixes
-  of the scope it was written in*, which is what `rewrite` resolves it against: resolved through
-  the emitted statement's own chain, a body declaration called `top` took the caller's view,
-  #45.4), skipping datum and curve kinds,
-  refusing a plane given twice, and reaching an aliased argument point through any body
-  declaration that names it.  `add_rectangle` takes the plane, which is how the rect tool
-  joins the current view.
-  Not commutative (`same_args` swaps only the first two entity slots).  `cgraph` leaves it
-  unsupported, so a multiview drawing drags on the numeric path.  `bracket.sv` is the case;
-  `tests/plane.rs` and `tests/plane_lang.rs` are the gates.
-  **Across views a word means space** (`program/reading.rs`): after `constrain` resolves the
-  arguments, `in_space` reads each operand's points' views by the **role rule** — a plane's own
-  origin/toward is layout among datum points, its view's beside that view's points, otherwise its
-  membership — and where they differ maps the 2D kind to its twin in space (`Distance3`,
-  `PointLine3`, `LineLine3`, `Angle3`, `PointOnLine3`, `EqualLength3`, …) or refuses (E062, and
-  E040 for `side:`/`sense:`).  Radii, `along: u`/`v` and `project` are view-free.  `on`/`distance
-  (along: n)` to a plane, and the `sphere`, `cone` and `cylinder` kinds' words, are spatial from
-  `infix_op` itself.  `tests/cross_view_audit.rs` asserts the corpus's 215 cross-membership
-  relations keep their 2D kinds.  **A solved view's page placement is held silently**: `reading::hold_page_placement`
-  fixes a view-with-`att`'s datum points no statement names and records them in
-  `Sketch::page_held`, so `edit::held_refs` writes no `ground` for them; and a held view's
-  `quat_unit` row with no free column is compiled as not hard, so the ledger's equations equal
-  its rank.
-- A **`claim`** (Solvent §9.7) is a constraint-shaped statement that is *judged, never solved
-  for*: **no** `System` compiles a row for it, and decomposition (`cgraph`), the drag-part walk
-  (`io::Part`) and the witness's jitter all skip it, so a claim can never move geometry, weld two
-  figures into one drag part, or paint a sketch Over or Conflict.  The exclusion is written twice
-  and deliberately: `Constraint::acts()` is the named half, which `hard_constraints`/`hard_ids`
-  ask so a consumer added later inherits it rather than having to remember; the seams that need a
-  row index or an enumeration spell it out inline, exactly as `soft` already is.  Anything that
-  reads a constraint list to learn what determines the drawing — `known_radii`, the entity
-  colouring, the conflict candidates, `duplicated` — must go through the named half, or a claim
-  silently acts.  The diagnosis alone reads it, at the *end* of `diagnose_with` and through
-  `System::conditioned_with`, which stacks a claim's rows onto the system already compiled:
-  *theorem* (holds, and adds no rank), *violated* (does not hold), or *consuming* (holds only by
-  the pose — enforcing it would have taken a freedom).  Judging it by compiling a second `System`
-  is the thing not to do — a compile calls `locus::forget`, so a system built beside a live one
-  throws that one's remembered trace poses away and every contact re-walks its march from the
-  home: 834 µs a diagnosis on `peaucellier` against 69 µs now.  A claim may not own a `Param`
-  slot and may not bind a free variable, since its unknown would sit in no equation:
-  `CKind::claimable` is that rule, elaboration turns it into an E040 with a span, the document
-  readers (untrusted input) drop the flag, and `expr::evaluate` refuses the free binding.  The
-  flag travels like any other: `graft`, the document (`"claim"` in JSON, written only when set)
-  and both bindings' records.  `peaucellier.sv` is the case, `tests/claim.rs` the gate.
-  **What the front end shows is the core's wording, not its own**: `io::describe` prefixes
-  `claim `, so every constraint list says which statements are claims, and `callout.rs` draws a
-  claimed dimension **parenthesised** — the draughtsman's *reference dimension*, which says "this
-  is what it measures, and it is not what controls it", a claim exactly.  The parentheses wrap
-  the whole label (`(R50)`, never `R(50)`) and wrap *before* the text is measured, so the lane it
-  is given and the box it is picked by are the size of what is drawn.
-  **A verdict is shown where the claim is written, and quietly.**  The app is for *sketching*;
-  proving is a remark in the margin, so there is no banner and no status — just a wash of colour
-  behind the statement in the program panel (`app/program.ts::marks`, `.claim-proved` /
-  `.claim-refuted` / `.claim-independent`), legible when looked at and invisible when not.
-  `proved` is the faintest, being the expected answer; `refuted` the strongest, being the only
-  one that is news.  The words are the classical trichotomy and are meant exactly: *proved* (the
-  document entails it), *refuted* (this drawing is a counterexample), *independent* (true here,
-  but not implied — stating it would have cost a freedom).  Not "inconsistent": under-constrained,
-  a refuted claim may still hold at some other solution, so what is known is the counterexample
-  and not the contradiction.
-  `CodeEditor` therefore carries a *set* of marks rather than one lit range, and they may overlap
-  (a picked statement that is also judged) — a mark tints and **never changes the face**, and
-  background/box-shadow/outline are the safe properties while border/padding are not.  The
-  splitting that composes overlapping marks is what `npm run overlay` guards: it drives the real
-  `CodeEditor` in headless Chrome, and it is the only check that can see a dropped or repeated
-  character moving every glyph after it.  Run it when you touch `editor.ts` — `make test` cannot,
-  since it needs Chrome.
+  points* with the same line kernels, and `cgraph` gives them a `virtual_line` in the ground
+  x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.
+- **The datum is a `plane`** (`f := plane(origin: o, toward: q)`, spec §3.2 [0.6]; `frame` is
+  refused by the parser, at a declaration and a formal).  The two points alias, and the attitude
+  is a **unit rotor** `(c, s)` slaved to the chord by two intrinsics minted in `Sketch::plane`
+  and nowhere else (never serialized): `frame_unit` `c² + s² − 1`, **degree 0** (judged
+  absolute), and `frame_align` `(t − o) − r·(c, s)` with `r` a `Param` slot — two rows, net one,
+  *directed*.  Net **0 DOF** beyond the points; `c`,`s` get `Param::scale` = the chord's length.
+  `.angle` is **derived, never stored**: `Tape::compile` turns `f.angle` into `atan2(f.s, f.c)`
+  (degrees), so a traced seed can say `bearing: u + f.angle` (`tests/frame.rs`).  Pass a traced
+  component the datum, not its points and bearing too, to stay under `tape::MAX_VARS`; do not
+  raise that constant (every tape zeroes a `[f64; MAX_VARS]` per operand).  Both intrinsics are
+  `unsupported` in `cgraph`, so a datum drags on the numeric path.  `FrameE` is the datum half of
+  a `PlaneE`; `SpecKind::Plane` is what the intrinsics take.  `io::from_json` reads an old
+  `"frames"` table as page planes and never writes one.
+- A **`plane`** (Solvent §6.7) is also a **view**: the datum plus a constant attitude in space,
+  `plane::Basis` `(u, v)`, `n = u × v` toward the viewer.  **Nothing three-dimensional is solved
+  for** unless the brackets name an unknown (`fold: beta`, `fold: along l`, `attitude: free`,
+  `offset: free`, `through: M` — `program/views.rs` mints the `att` and the `Hinge` rows; see
+  `docs/spatial-constraints-plan.md`); otherwise the basis is document data resolved at
+  elaboration (`program::plane_bases`, memoised over the `from` chain: the page, `from: P,
+  fold: θ` as `Basis::fold`, or `u:`/`v:` by `Basis::explicit`) and stored on `PlaneE`.
+  A point's **membership** is `PointE.plane`, set by `a := point in top` (every point the
+  declaration mints or names; filled by `program::memberships` after every kind is built, before
+  any constraint); it moves nothing — only `Project` reads it.  `a project b` is one row over 12
+  columns (`kernels::project`) with the shared fold line as consts (`plane::fold_line`).  The two
+  plane slots are real entity slots and **inferred**: `infers_arg` marks them, the registry
+  publishes null, and **`io::seed_omitted` is the one seam** that fills them
+  (`constraints::infer_entity`) and refuses (`constraints::validate`: no plane, one plane,
+  parallel planes) — so the elaborator (E061), `from_json`, `gcs_constraint_add` and
+  `Constraint::project` share one rule.  `operator_text` skips an inferred slot (`a project b`).
+  A plane's minted label starts with `v` (`syntax::kind_initial`).  It draws its chord under the
+  *implicit class* `.plane` (`EntKind::implicit_class`, resolved in `style_of`; JSON never writes
+  it), picked by that chord, its points outranking it.  Deleting a plane (`edit::remove`) dooms a
+  plane folded from it (`mentions` counts `Attitude::From`), splices the `in` clause out of every
+  surviving declaration, and dooms every statement whose *elaborated* constraint named it.
+  `commit_seeds` replaces the bracket list at `Decl::list_span`.
+  **`in top { … }` is the clause written once**: the parser **hoists** the body into the
+  enclosing body, stamping each declaration (`Decl::plane_from_block`, `stamp_plane` into
+  `repeat`/`cycle` bodies), so writeback, carets, the DOF ledger and `edit::in_root` see root
+  statements; only header and brace are the block's (`Program::in_blocks`, spliced by
+  `remove`).  Printers spell no clause a statement did not write; a membership edit on a
+  block-stamped declaration is refused with the cause.  Top level only.  **An instance joins a
+  view whole** (`t := Tooth(…) in top`): the flattener stamps it (`Scope::in_plane`,
+  `stamp_scope_plane`, the ref resolved with the prefixes of the scope it was written in, #45.4),
+  skipping datum and curve kinds and refusing a plane given twice.  `add_rectangle` takes the
+  plane.  Not commutative (`same_args` swaps only the first two entity slots).  `cgraph` leaves it
+  unsupported.  `bracket.sv` is the case; `tests/plane.rs` and `tests/plane_lang.rs` the gates.
+  **Across views a word means space** (`program/reading.rs`): `in_space` reads each operand's
+  points' views by the **role rule** (a plane's own origin/toward is layout among datum points,
+  its view's beside that view's points, else membership) and where they differ maps the 2D kind
+  to its twin in space (`Distance3`, `PointLine3`, `LineLine3`, `Angle3`, `PointOnLine3`,
+  `EqualLength3`, …) or refuses (E062; E040 for `side:`/`sense:`).  Radii, `along: u`/`v` and
+  `project` are view-free; `on`/`distance(along: n)` to a plane and the `sphere`, `cone`,
+  `cylinder` words are spatial from `infix_op`.  `tests/cross_view_audit.rs` asserts the corpus's
+  cross-membership relations keep their 2D kinds.  **A solved view's page placement is held
+  silently**: `reading::hold_page_placement` fixes a view-with-`att`'s unnamed datum points into
+  `Sketch::page_held` (so `edit::held_refs` writes no `ground`), and a held view's `quat_unit` row
+  with no free column is not hard, so the ledger's equations equal its rank.
+- A **`claim`** (Solvent §9.7) is *judged, never solved for*: **no** `System` compiles a row for
+  it, and `cgraph`, `io::Part` and the witness's jitter skip it, so it never moves geometry,
+  welds drag parts, or paints Over or Conflict.  `Constraint::acts()` is the named half, asked by
+  `hard_constraints`/`hard_ids`; seams needing a row index spell it out inline, as `soft` is.
+  Anything learning what determines the drawing (`known_radii`, entity colouring, conflict
+  candidates, `duplicated`) must go through `acts()`.  The diagnosis reads it at the *end* of
+  `diagnose_with` via `System::conditioned_with`, stacking its rows onto the compiled system:
+  *theorem*, *violated*, or *consuming* (holds only by the pose).  Never judge it by compiling a
+  second `System` — a compile calls `locus::forget`.  A claim may not own a `Param` slot nor bind
+  a free variable (`CKind::claimable`; E040 at elaboration; document readers drop the flag;
+  `expr::evaluate` refuses the binding).  The flag travels through `graft`, JSON (`"claim"`,
+  written only when set) and both bindings.  `peaucellier.sv` is the case, `tests/claim.rs` the
+  gate.  `io::describe` prefixes `claim `; `callout.rs` draws a claimed dimension
+  **parenthesised** — the whole label (`(R50)`, never `R(50)`), wrapped *before* measuring.
+  **A verdict is shown where the claim is written, quietly**: a wash behind the statement
+  (`app/program.ts::marks`, `.claim-proved` / `.claim-refuted` / `.claim-independent`), no banner.
+  *proved* (entailed), *refuted* (this drawing is a counterexample), *independent* (true here, not
+  implied) — never "inconsistent".  `CodeEditor` carries a *set* of overlapping marks; a mark
+  tints and **never changes the face** (background/box-shadow/outline, not border/padding).  Run
+  `npm run overlay` (headless Chrome, the real `CodeEditor`) when you touch `editor.ts`;
+  `make test` cannot.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
-  numbers — same type, same entities, same flags.  A repeated *relation* is refused by the app
-  (`edit::applyConstraints`): it says nothing the sketch does not already say and adds equations
-  without adding rank, which the structural check cannot see.  A **dimension is never deduped by
-  the UI** — not a run on a pair that already has a length, and not the same number stated twice.
-  Whether a second number is redundant or a contradiction is the solve and the diagnosis's
-  reading, and it comes back as `over` naming both, which is something the drawing can show and
-  the user can act on; a button that guessed would instead decide it silently, and would have to
-  decide from the type alone that the run somebody asked for is an edit of the length they had.
-  So `gcs_constraint_stating` is a question the core answers and the front end no longer asks:
-  `commands::dimension` states, `commands::editDimension` opens one already on the drawing (the
-  constraint list's and the callout's double-click), and that is the whole of the distinction.
+  numbers.  A repeated *relation* is refused by the app (`edit::applyConstraints`): equations
+  without rank.  A **dimension is never deduped by the UI**: redundant or contradictory is the
+  diagnosis's reading (`over` naming both).  `gcs_constraint_stating` is the core's question;
+  `commands::dimension` states, `commands::editDimension` opens an existing one (double-click).
 - An argument the core reads off the geometry (a tangency's side or sense) declares
   `CKind::infers_arg`; the registry publishes a null default for it so a binding leaves it
   omitted and the core fills it in.  A binding that substitutes a constant picks the branch.
@@ -1362,54 +835,32 @@ Conventions:
   dimension takes part in it — editing that dimension is the next conflict; one among pure
   relations is a theorem that nothing can break, so its wholly-implied constraints are
   `implied`: noted, never painted as an error.
-- **Every case in the library is a Solvent document.**  Each is a `.sv` file in `rust/examples/`,
-  and its builder is a one-liner that elaborates the text (`examples::document`).
-  A case that takes arguments is still one implementation: `with_params` gives the document's own
-  named numbers — a `w := 100` line, or a `distance(a := 30)` dimension — the caller's values, since
-  a drawing written as a document already names what it is drawn from, and a second copy in Rust
-  is a second drawing the moment one is edited.  A start that is off the solution is `jitter`, a
-  function of the sketch: the document says what the figure *is*, not where a solve begins.  A
-  document's **seeds must track its parameters** (`pythagoras.sv` places its square from `la`/`lb`)
-  — a case is asked for unsolved, so seeds frozen at one size are a wrong drawing at another.
-  `tests/examples_sv.rs` holds each document to what the library advertises about it.
-- **What is not a drawing is not a case** (`fixtures.rs`).  `laman` and `henneberg_edges` make a
-  *random* graph and then measure the positions they happened to place: there is no statement
-  behind any of their numbers and no document that could express one.  They are the generator all
-  three language test suites run their property tests over, so they stay in the core — the core
-  owns algorithms — but in their own module, out of the case library and off the app's menu, so
-  that nothing mistakes a fixture for an example.  The rule that sorts them: a case belongs in
-  Solvent when its numbers are things a person would state, and stays a generator when they are
-  things a program measured.
+- **Every case in the library is a Solvent document**: a `.sv` file in `rust/examples/` whose
+  builder elaborates the text (`examples::document`).  `with_params` gives the document's own
+  named numbers (`w := 100`, `distance(a := 30)`) the caller's values — no second copy in Rust.
+  A start off the solution is `jitter`, a function of the sketch.  **Seeds must track
+  parameters** (`pythagoras.sv` places its square from `la`/`lb`).  `tests/examples_sv.rs` holds
+  each document to what the library advertises.
+- **What is not a drawing is not a case** (`fixtures.rs`).  `laman` and `henneberg_edges` make
+  random graphs for property tests; they stay in the core, in their own module, off the case
+  library and the app's menu.  A case belongs in Solvent when its numbers are things a person
+  would state, and stays a generator when a program measured them.
 - **The document is the Solvent source (`gear.sv`, `syntax.rs`, `program.rs`, `edit.rs`).**  The
-  drawing is what elaborating it produces, and drawing is a way to edit it.  So *every* edit is a
-  **splice** — a few characters replaced in the text somebody wrote — and **never a reprint**: a
-  reprint would flatten a hand-written `component` into the entities it elaborates to, throw away
-  every comment and reflow every line, on the first drag.  A gear written as thirty instances of
-  one tooth stays written that way while its hundred and twenty points are dragged.
+  drawing is what elaborating it produces; *every* edit is a **splice** of the text somebody
+  wrote and **never a reprint** (which would flatten components and drop comments).
   `edit.rs` is the whole of it: `commit_seeds` (a solve), `reconcile` (a gesture), `remove`,
-  `set_dimension`, `add_point`/`add_entity`/`add_relation`, and `mint` for a name.
-  Three edit classes, and **the core says which — the front end never guesses**: `Structural`
-  (statements added or removed), `Numeric` (only numbers a solve may move, so a compiled plan
-  survives — which is what keeps editing a dimension instant), `None`.
-  Writeback is one lexical rule: *a seed is writable iff it is inside a `hint(…)` clause, is a
-  literal and not an expression, and is reached by exactly one instance path.*  "Inside
-  `hint(…)`" is the stronger test the `=`/`==` one was reaching for — it cannot be confused with
-  a `param`.
-  A seed the source **never wrote** has no span to splice and a solve moves it all the same (a
-  radius, a frame's rotor), so `Decl::hint_span` carries both cases at once: where the clause
-  *is*, and — an empty span — where it *would go*.  `commit_seeds` splices each seed in place
-  when every one it needs has a span, and writes the whole clause at that point when one does
-  not.  Appending, rather than leaving it, because otherwise a drawing has a pose its source
-  cannot express; a decl seeded by *place* (`hint(at: t)`) is skipped, having no coordinates to
-  write.
+  `set_dimension`, `add_point`/`add_entity`/`add_relation`, and `mint` for a name.  Three edit
+  classes, and **the core says which — the front end never guesses**: `Structural`, `Numeric`
+  (only numbers a solve may move, so a compiled plan survives), `None`.  Writeback is one
+  lexical rule: *a seed is writable iff it is inside a `hint(…)` clause, is a literal and not an
+  expression, and is reached by exactly one instance path.*  `Decl::hint_span` carries where the
+  clause *is* or — empty — where it *would go*; `commit_seeds` splices each seed in place when
+  all have spans, else writes the whole clause there; a decl seeded by *place* is skipped.
   `reconcile` and `retext` **apply themselves to the `Elaborated` and do not rebuild the
-  drawing** — nothing about the drawing changed, the source is only catching up, and rebuilding
-  would invalidate every proxy a half-finished tool is holding.  `retext` re-parses (same
-  statements, same ids); `adopt` extends the map onto the statements just written.
-  `reconcile` reads only the *append*: entities and constraints are appended to their vectors, so
-  past the map's high-water mark is new and anything the map names that is gone was removed.  A
-  mutation that **renumbers** is not something it can follow, which is why deletion is
-  `edit::remove` and not `io::without`.
+  drawing** (that would invalidate a half-finished tool's proxies).  `retext` re-parses (same
+  ids); `adopt` extends the map onto new statements.  `reconcile` reads only the *append* (past
+  the map's high-water mark); it cannot follow a **renumbering**, so deletion is `edit::remove`
+  and not `io::without`.
 - Deletion, copy and paste are one rebuild walk (`io::graft`): every surviving entity is
   renumbered into the destination and every reference follows, and a constraint comes along
   exactly when all its entities did.  `without` keeps what is not deleted, `copy` keeps the
@@ -1423,178 +874,111 @@ Conventions:
   — the word, its one or two operands, and everything else in the parentheses on the word: the
   number, a selector (`side: -1`, `at: start`, `along: x`), a third entity, a pin (`t == 0.4`).
   A *seed* for an owned slot stays the trailing `hint(t: 0.4)`, where every seed is.
-  **A pin and a seed are one `OpArg::Slot { key: Name, arg: Arg }`** — the word is the whole of
-  the difference between them, and all three of the things that went wrong when they were three
-  variants of two fields were the *same* omission.  A pin kept only its parsed number, and
-  `value_text` parses no expression, so `t == t0` inside a component pinned the contact at 0 with
-  nothing reported; the key was thrown away, so one naming no slot at all filled whichever
-  `Param` slot the settled kind had; and `write_written` guessed the name `t`, which is right on
-  a spline and was wrong on a curve (`PointOnCurve`'s was `u` until issue #47, item 6, made every
-  contact's `t`), so it disagreed with `operator_text`
-  about one statement.  The value is **`syntax::Arg` and not a second encoding of it**: `assemble`
-  hands it straight on, and `flatten::settle_arg` is the one walk that reads a component's
-  parameters out of an argument — a statement carries its arguments twice, as the operator was
-  written and in spec order, and both halves are the same type.  `Written::assemble` matches the
-  key against the spec; an unknown one is an E040 **at the key's own span** and in the word the
-  writer typed, which is why the key is a `Name` and why `assemble` returns a `Result` and
-  `settle` carries a `Span` beside its message, in the `(Span, String)` order every other
-  fallible path in `program.rs` uses.  `syntax::slot_text` is the one place a slot is spelled,
-  read by both printers, as `hint_of` is for the clause around it.
-  **The shape is the library's, not a rule imposed on it**: every user-facing kind has one or two
-  entity slots, always first in spec order, with `Symmetric` the single three-slot exception the
-  parentheses absorb.  Several kinds share a word and that is the saving — **`on` is five,
-  `distance` is six, `tangent` is six** — and `horizontal`/`vertical` are two each with the
-  *fixity* doing the work, which is exactly the distinction `HorizontalPoints` was added to draw.
+  **A pin and a seed are one `OpArg::Slot { key: Name, arg: Arg }`** — the word is the only
+  difference (as separate variants a pin lost its expression, a key naming no slot filled any
+  `Param` slot, and `write_written` disagreed with `operator_text`).  The value is
+  **`syntax::Arg` and not a second encoding of it**: `assemble` hands it straight on, and
+  `flatten::settle_arg` is the one walk that reads a component's parameters out of an argument.
+  `Written::assemble` matches the key against the spec; an unknown one is an E040 **at the key's
+  own span**, so the key is a `Name`, `assemble` returns a `Result` and `settle` carries a `Span`
+  beside its message, in `program.rs`'s `(Span, String)` order.  `syntax::slot_text` is the one
+  place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
+  **The shape is the library's**: every user-facing kind has one or two entity slots, always first
+  in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
+  **`on` is five, `distance` is six, `tangent` is six** — and `horizontal`/`vertical` are two each
+  with the *fixity* doing the work.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
-  elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` (the word, the
-  operands, what was in the parentheses) and `program::settle` turns it into a `CKind` plus
-  arguments in spec order, through `constraints::infix_op` / `prefix_op` and `Written::assemble`.
-  One path, where 0.6 had a longhand and a chain: a **lone infix statement is a one-joint chain**,
-  and what a chain adds is the corner — which end two links meet at — that an operator between two
-  names cannot know.  `CKind::operator()` is the inverse and is matched exhaustively, so a new
-  kind stops the build there; `syntax::operator_text` is the one printer, read by `write_relation`
-  and by `io::describe`, so the drawing, the constraint list and the program panel cannot spell
-  one constraint three ways.  **The surface word and the wire name are separate**: the registry
-  goes on publishing snake_case `name`, which the binding and the JSON export key on, and
-  `operator`/`fixity`/`operands` are new information beside it — **the binding is untouched**.
-  `ccw`/`cw` keep a call — `Fixity::Call`, every operand in the parentheses: under the general
-  rule they would be `a ccw(c) b`, which reorders three points that are symmetric, and the
-  predicate is about the *triangle*.
-  **The gauges and the orientation predicates are entries of the same table** (issue #47,
-  item 5): `CKind::Ground`, `Fix`, `Ccw`, `Cw`, read by the one relation parser (so a class, a
-  placement and the chain's lookahead treat them as any word) and settled by the word alone
-  (`constraints::gauge_op`, before the operands' kinds are asked — `fix c.r` names a number, a
-  `SpecKind::Scalar` slot, and `ccw(a, b, c)` has no operand outside its parentheses).  They
-  are **applied, not added**: `program::apply_gauge` marks the parameters fixed or records the
-  root choice, `constrain` returns no id, and no `Constraint` the sketch holds is one — so they
-  are not in `ALL_KINDS`, the registry never publishes them, the binding is untouched, and
-  `CKind::gauge` is the question every table that would reach for a kernel asks first.  A
-  `claim` on one is refused (E040): a claim is judged by rank, and a gauge adds no row.
-  `edit::reconcile` reads a held parameter's statement off the word (`gauge_key`) and appends
-  one built by `program::lift_gauge`; a root choice under a key no triple spells stays the
+  elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
+  `program::settle` turns it into a `CKind` plus arguments in spec order, through
+  `constraints::infix_op` / `prefix_op` and `Written::assemble`.  A **lone infix statement is a
+  one-joint chain**.  `CKind::operator()` is the inverse and is matched exhaustively, so a new
+  kind stops the build there; `syntax::operator_text` is the one printer, read by
+  `write_relation` and `io::describe`.  **The surface word and the wire name are separate**: the
+  registry goes on publishing snake_case `name`, which the binding and the JSON export key on,
+  with `operator`/`fixity`/`operands` beside it — **the binding is untouched**.  `ccw`/`cw` keep a
+  call (`Fixity::Call`, every operand in the parentheses): the predicate is about the *triangle*.
+  **The gauges and the orientation predicates are entries of the same table** (issue #47):
+  `CKind::Ground`, `Fix`, `Ccw`, `Cw`, read by the one relation parser and settled by the word
+  alone (`constraints::gauge_op`, before the operands' kinds are asked — `fix c.r` names a
+  `SpecKind::Scalar` slot, and `ccw(a, b, c)` has no operand outside its parentheses).  They are
+  **applied, not added**: `program::apply_gauge` marks the parameters fixed or records the root
+  choice, `constrain` returns no id, and no `Constraint` is one — so they are not in `ALL_KINDS`,
+  the registry never publishes them, and `CKind::gauge` is the question every table that would
+  reach for a kernel asks first.  A `claim` on one is refused (E040): a gauge adds no row.
+  `edit::reconcile` reads a held parameter's statement off the word (`gauge_key`) and appends one
+  built by `program::lift_gauge`; a root choice under a key no triple spells stays the
   `branch(KEY, ±1)` statement (`StmtKind::Branch`).
-  Operand order carries meaning now — `arc tangent line` is `TangentArcLine` and `line tangent
-  circle` is `TangentLineCircle` — and a name that is also an element keyword can no longer lead
-  a statement (`spline_follower.sv`'s spline is `cam`, not `curve`).
+  Operand order carries meaning — `arc tangent line` is `TangentArcLine`, `line tangent circle`
+  is `TangentLineCircle` — and a name that is also an element keyword cannot lead a statement
+  (`spline_follower.sv`'s spline is `cam`, not `curve`).
 - A **chain** (Solvent §6.6) is parser-level sugar and nothing else: `horizontal line bottom(b1,
   b2) -> tangent arc a(center: c) hint(r: r) -> tangent …` desugars in `syntax.rs` into the
   ordinary statements it stands for — a prefix word (any `CKind` whose spec is one entity slot)
-  becomes that unary relation, and a joint's word becomes the relation between its two
-  neighbours: `tangent` maps per pair of kinds, and any binary `CKind` whose spec is two entity
-  slots (`perpendicular`, `equal_length`, `equal_radius`, …) is an infix spelling of itself,
-  type-checked against the pair — and no other module knows the construct exists.
+  becomes that unary relation, and a joint's word the relation between its two neighbours:
+  `tangent` maps per pair of kinds, and any binary `CKind` (`perpendicular`, `equal_length`, …)
+  is an infix spelling of itself, type-checked against the pair.  No other module knows chains.
   **Threading is a statement, not an inference** (issue #31): the `->` marker on a joint says
   its two links share a boundary point, threaded left-to-right (`p1 → p2`; `start → end`, CCW),
-  and its absence says they do not — so `->` alone is the plain corner (`to` is retired into
-  it), `-> tangent` is a corner that is also tangent there, and a bare word states the relation
-  and welds nothing.  A joint may state *several* relations — `-> equal angle(30deg)`
-  states each word as a statement of its own at that corner, and the marker may stand on
-  either side of the words or both.  The run ends at the first word that opens the next link
-  — an element keyword, or a prefix word standing before one — so fixity sorts a joint's
-  infix words from the next link's prefix words with no punctuation.  A doomed word splices
-  out where it stands (`Chained::Member`), leaving the corner and the rest; the whole joint
-  doomed at once — an entity deletion dooms every relation naming it — has no word left to
-  hold the line, so each member carries the joint's written word count and its one-word doom
-  (`of`, `fall`, `out_of`) and `edit::doomed_splices` composes that single splice for
-  `remove` and `reconcile` alike — counted against the words as *written*, so a word the
-  desugarer refused holds its joint's text — and `remove` refuses outright a doom set whose
-  splices leave text that no longer parses (a name link dangling between two doomed joints).
-  A trailing placement attaches to the line's **one** relation and is refused on a line
-  stating several; where none is written the parser records the spot one *would* take
-  (`place_span` as an empty span — `hint_span`'s device), so the callout writeback splices
-  where the parser said and re-derives nothing, and a line with no spot (it ends in a
-  declaration) leaves the callout's pose to the layout.  At a threaded joint the shared point is named by exactly one side (or
-  both, in agreement) and fills the boundary field a declared side left out, so a threaded
-  `tangent` always desugars to the regular At-form (`TangentArcLine`/`TangentLineCircleAt`, or
-  `Parallel` between two lines, which over the shared corner is collinearity) — never the bare
-  pair that is rank-deficient at every solution; the `at:` argument is only ever supplied by a
-  threaded joint, and an *unthreaded* `tangent` is the plain pair, correct exactly when the two
-  are separate.  A chain may mix declarations and names, because each joint states its own
-  threading: a link that only names an element offers no list to read or fill, so at a corner
-  with one the declared side names the shared point, usually by the existing element's own
-  child (`(t := line(p3, k.start)) -> tangent k` — `follow_building` resolves such a child through
-  the declaration when the entity's kind builds later).  Only lines and arcs are threaded; a
-  circle has no ends — which is the radius-as-Param discussion again — but may stand in a chain
-  no marker reaches.  `equal` is the second polymorphic word beside `tangent`
-  (`syntax::equal_kind`): a length between lines, a radius between circles or arcs, an error
-  between one of each; a name may be declared further down the file or come from a component,
-  so `Relation::poly` carries the word and `program::constrain` settles it once the entities
-  resolve, **before** reading the spec, since the spec is what the arguments are type-checked
-  against.  Each desugared statement keeps an id of its own and a
-  span into the chain's text (a chain is several statements from one *line*, where a `cycle` is
-  many instances of one *statement*), so writeback, culprits and carets need nothing new.
+  and its absence says they do not — `->` alone is the plain corner (`to` is retired into it),
+  `-> tangent` a corner also tangent there, and a bare word states the relation and welds nothing.
+  A joint may state *several* relations (`-> equal angle(30deg)`), the marker on either side or
+  both; the run ends at the first word opening the next link, so fixity sorts them.  A doomed word
+  splices out where it stands (`Chained::Member`); for a whole joint doomed at once each member
+  carries the joint's written word count and one-word doom (`of`, `fall`, `out_of`) and
+  `edit::doomed_splices` composes the single splice for `remove` and `reconcile` alike, and
+  `remove` refuses a doom set whose splices leave text that no longer parses.
+  A trailing placement attaches to the line's **one** relation and is refused on a line stating
+  several; where none is written the parser records the spot (`place_span`, an empty span), so
+  callout writeback splices where the parser said and re-derives nothing.
+  At a threaded joint the shared point is named by exactly one side (or both, in agreement), so a
+  threaded `tangent` always desugars to the regular At-form (`TangentArcLine`/
+  `TangentLineCircleAt`, or `Parallel` between lines) — never the bare pair, rank-deficient at
+  every solution; `at:` is only supplied by a threaded joint, and an *unthreaded* `tangent` is the
+  plain pair, correct exactly when the two are separate.  At a corner with a name-link the
+  declared side names the shared point (`(t := line(p3, k.start)) -> tangent k`;
+  `follow_building` resolves such a child when the entity's kind builds later).  Only lines and
+  arcs are threaded.  `equal` is the second polymorphic word (`syntax::equal_kind`): length
+  between lines, radius between circles/arcs; `Relation::poly` carries it and
+  `program::constrain` settles it once the entities resolve, **before** reading the spec.  Each
+  desugared statement keeps its own id and a span into the chain's text.
   **How a statement is spelled is recorded, never sniffed back out of the characters**:
-  `Stmt::chained` is a `Chained` (`No`/`Link`/`Prefix`/`Joint`/`Infix`/`Member`/`Stuck`/`Close`) written
-  by the desugarer, and `edit::doom_splice` matches on it — a doomed threaded joint steps down
-  to the bare corner `->`, a doomed unthreaded joint becomes a statement break (its span grown
-  at desugar time over a terminal name-link a break would leave dangling; inside a closed chain
-  there is no safe break, which is `Stuck` and refused), a doomed prefix word goes where it
-  stands, and a link has *no* splice, which is how deleting one is refused (no splice takes a
-  link out and leaves a chain behind).  Reading it back off the text instead would
-  rest on "a longhand relation always carries a `(`", which nothing states and a qualified joint
-  would quietly break.  Which slots a chain threads through is `EntKind::ends()` in `model.rs`,
-  beside the `fields()` table it indexes and exhaustive, so a new kind with ends stops the build
-  rather than silently threading the wrong children.  A line ending in a joint — the marker or
-  a word — continues its chain onto the next; `-> close` seals a loop back to the first link's
-  entry, and a `close` with no marker is an error, since a loop is a thread.
-  The colouring asks `opens_link` — the *same* predicate `chain_starts` asks — since written
-  twice the two drifted at once on whether `horizontal(bottom)` is a prefix.  Both reach it
-  through `past_args`, the lookahead **stepping over the operator's own parentheses**: now that a
-  word carries its number, the token after `radius` is `(` and not the element keyword, so
-  reading `i + 1` had `radius(25) circle base(…)` open no chain — it fell to `relation()`, whose
-  `refr()` swallowed the keyword `circle` as an operand — while the identical form parsed
-  mid-chain, where `link` reads the arguments itself.  The same miss left every parenthesised
-  infix uncoloured, which is most of the constraints in a document.  It returns an **index**, the
-  shape `past_ref` already uses, because a caller asks two things at that position — what word is
-  there, and whether the line ends there — and a lookahead answering only the first left
-  `p distance(80)` at the end of a line reading as neither.  What it must *not* cost is the guard
-  that keeps a bare name plain: a name in an argument list is followed by `,` or `)`, neither a
-  word nor the end of a line, so `tangent` used as a point stays untinted.
-  It runs per keystroke, so every guard there puts the pointer test before the registry lookup
-  (`chain_kind` allocates); reversing those two operands cost 65% of a highlight pass — which is
-  also why `tint_word` takes the token slice and computes the lookahead in the one arm that
-  reads it, rather than once per token above the match.
+  `Stmt::chained` is a `Chained` (`No`/`Link`/`Prefix`/`Joint`/`Infix`/`Member`/`Stuck`/`Close`)
+  and `edit::doom_splice` matches on it — a doomed threaded joint steps down to `->`, a doomed
+  unthreaded joint becomes a statement break (inside a closed chain there is no safe break:
+  `Stuck`, refused), a doomed prefix word goes where it stands, and a link has *no* splice, which
+  is how deleting one is refused.  Which slots a chain threads is `EntKind::ends()` in `model.rs`,
+  exhaustive, so a new kind with ends stops the build.  A line ending in a joint continues its
+  chain onto the next; `-> close` seals a loop, and a `close` with no marker is an error.
+  The colouring asks `opens_link` — the *same* predicate `chain_starts` asks.  Both reach it
+  through `past_args`, the lookahead **stepping over the operator's own parentheses**, returning
+  an **index** (like `past_ref`) since callers ask both what word is there and whether the line
+  ends there.  A bare name in an argument list (followed by `,` or `)`) stays untinted.  It runs
+  per keystroke: put the pointer test before the registry lookup (`chain_kind` allocates), and
+  `tint_word` computes the lookahead only in the arm that reads it.
   **A block body may end mid-joint** (issue #38): a *threaded* trailing joint at the body's `}`
-  threads the chain onto the next copy's first link — every pair in a `cycle` (the wrap
-  seals the loop: `cycle 4 { (s := line) -> perpendicular equal }` is the square), all but the last
-  in a `repeat`, whose final corner is simply unstated.  The parser records it on the block
-  (`Block::joint`, an `OpenJoint`): the word statements are minted at parse through the same
-  `joint_relation` — both links' kinds are known, being the body's own declarations, so a
-  tangency is the regular At-form across the copy seam — with the right operand spelled
-  `next.<leaf>`, which `flatten::lookup`'s own `next` arm resolves per pair under a scope given
-  the block's `cyc` whatever the kind (the joint is the *block's* statement, so a `repeat` body
-  still may not say `next`).  The weld is the flattener's (`weld`/`fill`): the earlier-built
-  side's boundary name is written into the later-built side's slot — `builds_first` generalized
-  to (kind, copy, statement), because `follow_building` rightly refuses a reach into an unbuilt
-  entity's implicit child, and at a cycle's wrap the earlier side is the *first* copy.  At most
-  one boundary slot may name its point (both named are two different points across the seam,
-  refused); a name-link boundary is refused until #35 teaches `thread` to read one.  A statement
-  inside a braced body ends at the `}` as at a line break (`end_of_stmt`), so the one-line
-  spelling reads, and the colouring reads the brace the same way.  `square.sv` and `ngon.sv`
-  (a component taking `n`) are the cases; `tests/open_joint.rs` is the gate.
-  `tests/chain.rs` holds the gate: the chain spelling of `rect_fillets` states exactly what the
-  shipped longhand does.
-- A statement expanded by `flatten` **keeps the id of the statement it came from**: a `cycle` of
-  thirty makes thirty things from one line, and the line is what a span points at, a caret lands
-  on and a splice edits.  What tells the thirty apart is the `path` every `Site` carries.  Minting
-  an id per copy made each look like a statement of its own, so every consumer that turns an id
-  back into source found nothing there — and the multiplicity a fresh id hid is exactly what
-  `commit_seeds` needs to see.  `Program::stmts` walks into block bodies for the same reason;
-  whether a statement is one the *root* may splice on its own is a different question, asked
-  against `root().body` (`edit::in_root`).
-- **`ring` is refused by name** (issue #47, item 3): the parser reports the word once, saying
-  `cycle N { … }` is the spelling whose copies are congruent by the numbers each is given, and
-  consumes the block (`skip_block`) so its body is not read as loose lines.  It had been
-  unrolled into exactly that cycle plus three rules and a warning (W112 on every run, E021,
-  E022, a mandatory `about`) guarding a symmetry no solve held; the spec keeps §12.3–12.5 as
-  the target and the word comes back with the fundamental-domain solve, for which
-  `tests/ring.rs` is the gate.  A diagnostic that carries its own code (E041) goes through
-  `Expansion::coded`, since the plain `errors` are sorted into E101/E103 by message.
-  Likewise an expression's failure is an `expr::ExprError` with a `Fault`
-  — `Dimension` (E103, §3.3: `distance(45deg)` is an error, never a coercion), `ClaimFree`
-  (E040, §9.7) or `Uncomputable` (W110, the last number stands) — because three different things
-  were one warning.  A point-to-point distance and a radius are `CKind::magnitude`, and a
-  negative literal in one is E040 where it is written: the kernel would square the sign away.
+  threads onto the next copy's first link — every pair in a `cycle` (`cycle 4 { (s := line) ->
+  perpendicular equal }` is the square), all but the last in a `repeat`.  Recorded as
+  `Block::joint` (an `OpenJoint`), its word statements minted through `joint_relation` with the
+  right operand `next.<leaf>`, which `flatten::lookup`'s `next` arm resolves under the block's
+  `cyc` (a `repeat` body still may not say `next`).  The weld is the flattener's (`weld`/`fill`):
+  `builds_first` generalized to (kind, copy, statement), since `follow_building` refuses a reach
+  into an unbuilt entity's implicit child.  At most one boundary slot may name its point; a
+  name-link boundary is refused until #35.  A statement in a braced body ends at the `}`
+  (`end_of_stmt`).  `square.sv`, `ngon.sv` are the cases; `tests/open_joint.rs` is the gate, and
+  `tests/chain.rs` holds `rect_fillets`'s chain spelling to the shipped longhand.
+- A statement expanded by `flatten` **keeps the id of the statement it came from**: the line is
+  what a span points at, a caret lands on and a splice edits; the `path` every `Site` carries
+  tells copies apart, and `commit_seeds` needs to see the multiplicity.  `Program::stmts` walks
+  into block bodies; whether the *root* may splice a statement on its own is asked against
+  `root().body` (`edit::in_root`).
+- **`ring` is refused by name** (issue #47): the parser reports it once, naming `cycle N { … }`,
+  and consumes the block (`skip_block`).  §12.3–12.5 stay the target; `tests/ring.rs` gates its
+  return with the fundamental-domain solve.  A diagnostic carrying its own code (E041) goes
+  through `Expansion::coded`, since plain `errors` are sorted into E101/E103 by message.  An
+  expression's failure is an `expr::ExprError` with a `Fault` — `Dimension` (E103, §3.3:
+  `distance(45deg)` is an error, never a coercion), `ClaimFree` (E040, §9.7) or `Uncomputable`
+  (W110, the last number stands).  A point-to-point distance and a radius are
+  `CKind::magnitude`; a negative literal in one is E040 where written.
 - Decomposition maps constraints onto F–H elements in `cgraph::build`; a new constraint type is
   either an edge (PP/PL), a direction relation, or `unsupported` (numeric residual).  Merge
   decisions use generic-rank at witness poses; chirality of PPP merges is the triangle
@@ -1603,191 +987,98 @@ Conventions:
   sketch is on is "nearest the identity"; alternatives are applied by writing geometry, not by
   caching transforms.
 - **A solid is a term, and a verb is a noun that has not been given a name** (Solvent §6.9,
-  `solid.rs`; issue #48, items 9 and 10).  What makes a CAD feature tree imperative is not that it
-  is ordered but that it is *stateful*: step *n* acts on "the body as of step *n − 1*", an
-  anonymous thing, and names faces by the order they were made in.  Solvent names everything —
-  which is why `port` was retired — so a solid is its **stock, plus everything in `union` with it,
-  minus everything that `cut`s it**, over primitives that are faces swept.  Both groups are *sets*, so
-  the statements filling them may be written anywhere in any order (P2), and the order that does
-  exist lives inside one term over names, exactly as it lives inside `h = w / 2`.  A design that
-  needs the other order (a pocket with a boss standing in it) **names the intermediate**, which
-  is honest: there are two things there.
+  `solid.rs`; issue #48).  A solid is its **stock, plus everything in `union` with it, minus
+  everything that `cut`s it**, over primitives that are faces swept — no stateful feature tree.
+  Both groups are *sets*, filled anywhere in any order (P2).  A design needing the other order
+  (a pocket with a boss in it) **names the intermediate**.
   **A swept solid takes features too** (§6.9, [0.31]): the first `union`/`cut`/`bound` naming one
   makes it the body over its own sweep (`program/solids.rs`'s body pass) — the name keeps its
-  index, so every reader sees the whole object, and the sweep moves to a stock of the same name
-  (`SourceMap::also_made`), which `operand_paths` gives no step, so `plate.near` stays its name.
+  index, and the sweep moves to a stock of the same name (`SourceMap::also_made`), which
+  `operand_paths` gives no step, so `plate.near` stays its name.
   **Nothing three-dimensional is solved for past the sketch** (a view's attitude may be, with the
-  sketch and before anything below reads it).  `EntKind::Face` and `EntKind::Solid` own no
-  `Param` — `entity_params` returns nothing for either, so no column of the Jacobian is one —
-  and every extent is an `Extent`: the text a person wrote and the number the *flattener* settled
-  it to, the `fold:` bargain.  The strata run one way with no edge back: the sketch solves, the
-  depths are worked out, the terms are ordered (`solid::resolve`), the outputs are read.  No
-  `SpecKind` takes a face or a solid, so a 2D constraint cannot name one — the stratification is
-  a *type* fact rather than a rule anybody has to remember.  Built after every other kind
-  including `Curve` (`program::solids`), since a face is written over edges and a solid over
-  faces and solids.
-  **The kernel is the term and nothing is built or stored**: a view, a section, a volume, a mesh
-  and a clearance are all questions asked of `Csg` by classification (Requicha & Voelcker's
-  boundary evaluation), memoised against `solid::reads` — every scalar of every edge the term
-  reaches, each plane's pose and basis, every extent, and `unit` — which is `curve_polyline`'s
-  bargain.  There is no B-rep, which is why the crate still has no dependency, and STEP is
-  therefore deferred while STL is not.
-  Two findings are load-bearing and each is written where the rule is.  **The classifier must
-  read the facets the candidates are cut from**: classify against the true circle while cutting
-  facets and every facet centroid of a bore's wall sits inside the true bore by the sagitta, both
-  its samples read *outside*, and the wall silently vanishes.  And **a BSP prunes what a split
-  loop cannot** (`csg.rs`): cutting every facet by every plane that reaches it is exact on a
-  square hole, but the pieces go as the *square* of the facets — a block's cap against a
-  six-hundred-facet bore is the arrangement of six hundred lines, twenty-five thousand cells for
-  the six hundred the drawing needs.  Descending a tree, a piece wholly in front of a node is
-  decided and goes no further; same planes, same answer, and it stops asking once it knows.
-  There is **no coordinate snap grid**: a grid fine enough to leave the drawing's numbers alone
-  is finer than the noise it was meant to collapse, and one coarse enough to collapse the noise
-  moves every vertex (a block sixty across came out `72000.0036`).  What keeps the classifier out
-  of the gap is `EPS`, four orders coarser than the solve's own noise, and `same_plane`, which
-  reads two near-coincident planes as one and never splits a facet by its own plane.
-  **A face is a loop and a loop is walked in order**, so an arc in one is entered by whichever end
-  the walk arrives at — and *how far* it goes is the arc's own fact while *which way* is the
-  walk's.  Entered by its `end` it is walked backwards over the same stretch of circle, never
-  forwards over the rest of it: normalising `a0 - a1` gave `TAU - extent` there, so a channel
-  between two concentric arcs — the V-twin plate's plenum, and the shape any annular duct is —
-  closed as a bowtie of twelve times its area and meshed with seventy-six unpaired edges.  No
-  drawing in the corpus had entered an arc by its end until a part was written as a solid, which
-  is the whole reason the migration found it.
-  `tests/solid.rs` is the gate and it checks against **arithmetic, not against a second kernel**:
-  a block is `w·h·d` exactly, a bore takes exactly the polygon it is faceted into, a flush bore
-  and one drilled past are one solid, a boss adds and the shared face is counted once, a
-  revolution is Pappus.  Two bugs only that could have caught: a prism's caps wound against their
-  declared normals (invisible wherever a cap sits on the origin and contributes no flux), and a
-  revolution's walls facing inward, which reads as a negative volume and nothing else.
-  `tests/solid_lang.rs` holds the language, `tests/derived.rs` the pictures.
-- **The sheet is a report** (Solvent §6.12, `hidden::generated`; issue #48, item 10).
-  `dimensions(body) in views.right` asks for the callouts that *follow from the object*: the
-  part's overall extents in that view, and the diameter of every round feature the view sees
-  square on.  They go through `callout::layout`'s own pen and lanes, which is the whole of what
-  "laid out by the engine that already exists" means — a generated dimension stands off a stated
-  one because neither knows the other is different — and their ids start at `callout::GENERATED`,
-  past any constraint, so a front end resolving one back to a statement finds nothing there.
-  That is the truth: it is a reading of the drawing, not a statement in it, and it reads the
-  *solved* pose.
-  **The boundary is the feature.**  What a machine can decide is what the object says; which
-  datum a stack is measured from, which fit is critical, what is a reference and what controls —
-  those are the design, and a machine that chose them would be guessing.  A sheet states the rest
-  as it always did.  `tests/sheet.rs` asserts both halves: the three it makes, and that it makes
-  no fourth.
-- **A claim about a solid is judged, and can never act** (Solvent §9.8, `clear.rs`; issue #48,
-  items 6 and 7).  §9.7's bargain one stratum out: `disc clear(2mm) cyl`, `head fits(0.15mm)
-  trap`, `piston inside bore` compile **no row**, so a solid claim cannot move geometry, take a
-  freedom or paint a sketch Over — checked by `tests/solid_claim.rs`, which adds two and asserts
-  the parameter count, the equation count and the DOF are all unchanged.  The three words are in
-  `constraints::OPERATORS` so a statement reads the way every other statement does, and they
-  settle to no `CKind` because a `CKind` is a thing with a kernel; `constraints::solid_word` is
-  where the word is read, asked before the spec is, the way `gauge_op` is.
-  **What a reader is owed is the measurement**, not a yes or no — `clear(4mm)` failing by a
-  millimetre and by a metre are different drawings — and the verdict carries the *sagitta* beside
-  it: the faceting is honest about being faceting, and a claim decided within it comes back
-  **undecided**, which is a third answer and not a failure.  The measurement is exact on the
-  faceted solids: the implicit min/max reading of a term is only a lower bound for a difference,
-  so it culls, and the answer is piece against piece with the boxes doing the work.
-  **`claim over crank.theta in (0deg, 360deg) { … }`** (item 6) judges its body as the drawing
-  runs along one of its own **free variables** — a `param` is a number the document already
-  fixed, and sweeping a constant is not a question — reporting the *worst* pose, since a fact
-  about a cycle is not a fact about one angle.  It is **sampling** at `SWEEP_STEPS` and says so.
-  Two orderings are load-bearing.  The claims are read in a pass of their own **after phase 4**,
-  because a free variable is what `expr::evaluate` allocates and a claim read beside the solids
-  would find `theta` declared nowhere.  And the interval is read **in the unknown's own units** —
-  `(0deg, 360deg)` is radians to the kernels and `(0mm, 20mm)` is a length unchanged — where
-  converting everything as an angle made a sweep of millimetres sixty times too small and
-  reported a claim that held over almost none of its interval.
-- **A solid leaves as glTF, and that is the format this kernel's data already is** (`gltf.rs`).
-  STL carries triangles and nothing else — no face named, no unit recorded, the grouping thrown
-  away at the door.  STEP carries both and is a *boundary representation*, which this kernel
-  deliberately is not.  glTF is positions, normals and a named group per face, which is precisely
-  `mesh::Mesh`, so the mapping is nearly an identity — and its container is a twelve-byte header
-  and two chunks, one of them JSON that `json.rs` already writes, so it needs no ZIP and no
-  dependency where a `.3mf` would have wanted both.
-  **Every face of every object is a named node**, so a viewer's outliner is the document's own
-  tree of names — and the path is carried **twice**, as `name` for a person and in `extras` for a
-  program, because a loader may sanitise one: three.js strips the dots out of `body.bore.wall`,
-  its own animation paths being written with them, and passes `extras` through untouched as
-  `userData`.  Verified by loading the file in three.js, which is the only test of an
-  interchange format worth having.
-  **Metres, because the spec says so normatively**: a document naming `mm` is scaled on the way
-  out so a forty-millimetre part opens as one, with its own unit in `asset.extras` so the scaling
-  loses nothing; one naming no unit is written as it stands.  What is exported is the document's
-  *objects* (`overview::objects`, now public) — a bore is a hole in a part and not a part beside
-  it — and glTF holds a scene, so unlike an STL it need not be told which part of an assembly to
-  be.  `solventc --gltf`, `File ▸ Export solid (glTF)`, and `File ▸ Export solid (STL)` beside it
-  for a printer.
-- **A mesh is welded, and grouped by face** (`mesh.rs`) — the two things a boundary evaluation
-  does not give on its own, and between them the whole of what a mesh was said to need a B-rep
-  for.  A viewer and a slicer both take *triangles*; what they want of them is that the edges pair
-  up and that the triangles say which face they belong to.
-  **Welding** is a T-junction fix and not a vertex merge.  Neighbouring facets are cut by
-  different planes, so one leaves a vertex partway along an edge the other still spans whole —
-  and no amount of merging fixes that, since the neighbour has no vertex there to merge with.
-  `weld` finds the vertices lying on an edge's interior and puts them in it: the V-twin cylinder
-  went from 4,474 unpaired directed edges of 141,468 to **zero**, with the volume unchanged to
-  the digit.  Two sizes are independent and conflating them cost a hundredfold: a hash **cell**
-  need only be at least the weld tolerance, so it is sized to the object (`scale / 128`) while
-  the tolerance stays at `1e-9` — sized at the tolerance, an edge walked its own length in cells.
-  And `triangles` fans **from a corner where a piece has only corners, and from the centroid where
-  it does not**: a vertex fan covers every boundary edge except the sub-edges of the two it stands
-  on, which come out zero-area, and dropping those (which a printer's validator wants) re-opens
-  exactly the T-junctions the weld had just closed.  Most pieces the weld never touched, so the
-  test is per piece and is the condition itself — has this polygon a vertex that is not a corner?
-  Always fanning from the centroid cost 78% more triangles than the mesh needed.
-  **Grouping** is `mesh::grouped`: the same triangles in face-path order, with a normal per
-  vertex — the facet's own where the face is flat, and the average of the facets meeting there
-  where the face is `smooth`, so a bore's wall shades round and the rim where it meets a cap
-  stays a corner.  Across the ABI as **buffers plus a small table** (`gcs_solid_mesh`,
-  `gcs_solid_normals`, `gcs_solid_faces_json`), the division `gcs_entity_params` already draws;
-  all three read one memoised `Want::Mesh`.  `Document.solids()` names them, since a solid has no
-  proxy — it is on no sheet and owns no parameter.  `tests/mesh.rs` is the gate and asserts the
-  *before* as well as the after, so a weld that stopped working could not pass.
+  sketch).  `EntKind::Face` and `EntKind::Solid` own no `Param`, and every extent is an `Extent`:
+  the text written and the number the *flattener* settled.  The strata run one way: the sketch
+  solves, depths are worked out, terms are ordered (`solid::resolve`), outputs are read.  No
+  `SpecKind` takes a face or a solid, so a 2D constraint cannot name one.  Built after every other
+  kind including `Curve` (`program::solids`).
+  **The kernel is the term and nothing is built or stored**: a view, section, volume, mesh and
+  clearance are questions asked of `Csg` by classification (Requicha & Voelcker), memoised against
+  `solid::reads` — every scalar of every edge the term reaches, each plane's pose and basis,
+  every extent, and `unit`.
+  **The classifier must read the facets the candidates are cut from** (against the true circle a
+  bore's wall vanishes).  **A BSP prunes what a split loop cannot** (`csg.rs`): splitting every
+  facet by every plane goes as the square of the facets.  **No coordinate snap grid**; `EPS`, four
+  orders coarser than the solve's noise, and `same_plane` (near-coincident planes read as one; a
+  facet is never split by its own plane) keep the classifier out of the gap.
+  **A face is a loop walked in order**: an arc entered by its `end` is walked backwards over the
+  same stretch of circle, never forwards over the rest (*how far* is the arc's, *which way* the
+  walk's).
+  `tests/solid.rs` is the gate and checks against **arithmetic, not a second kernel**: a block is
+  `w·h·d`, a bore takes exactly its faceted polygon, a flush bore and one drilled past are one
+  solid, a boss's shared face counts once, a revolution is Pappus.  `tests/solid_lang.rs` holds
+  the language, `tests/derived.rs` the pictures.
+- **The sheet is a report** (Solvent §6.12, `hidden::generated`; issue #48).
+  `dimensions(body) in views.right` asks for the callouts that *follow from the object*: overall
+  extents in that view and the diameter of every round feature seen square on.  They go through
+  `callout::layout`'s pen and lanes, and their ids start at `callout::GENERATED`, past any
+  constraint: a reading of the *solved* drawing, not a statement in it.
+  **The boundary is the feature.**  Which datum, which fit, what is reference or controlling is
+  design, which the sheet states.  `tests/sheet.rs` asserts the three it makes and no fourth.
+- **A claim about a solid is judged, and can never act** (Solvent §9.8, `clear.rs`; issue #48).
+  `disc clear(2mm) cyl`, `head fits(0.15mm) trap`, `piston inside bore` compile **no row** —
+  `tests/solid_claim.rs` asserts parameter count, equation count and DOF unchanged.  The words
+  are in `constraints::OPERATORS` and settle to no `CKind`; `constraints::solid_word` reads the
+  word before the spec, like `gauge_op`.
+  **What a reader is owed is the measurement**, not a yes or no, with the *sagitta* beside it: a
+  claim decided within the faceting is **undecided**, a third answer.  The implicit min/max
+  reading of a term is only a lower bound for a difference, so it culls; the answer is piece
+  against piece.
+  **`claim over crank.theta in (0deg, 360deg) { … }`** sweeps one of the drawing's **free
+  variables** (never a `param`), reporting the *worst* pose; it is **sampling** at `SWEEP_STEPS`
+  and says so.  Claims are read **after phase 4** (a free variable is what `expr::evaluate`
+  allocates), and the interval **in the unknown's own units**, never converted as an angle.
+- **A solid leaves as glTF, and that is the format this kernel's data already is** (`gltf.rs`):
+  positions, normals and a named group per face — `mesh::Mesh` — in a header and two chunks, one
+  JSON from `json.rs`; no ZIP, no dependency.  STEP is a B-rep, which this kernel is not.
+  **Every face of every object is a named node**, the path carried **twice**, as `name` and in
+  `extras`, because a loader may sanitise one (three.js strips dots; `extras` becomes `userData`).
+  **Metres, because the spec says so normatively**: a `mm` document is scaled out, its unit in
+  `asset.extras`; one naming no unit is written as it stands.  Exported are the document's
+  *objects* (`overview::objects`) — a bore is a hole in a part, not a part — and glTF holds a
+  scene, so it need not be told which part of an assembly to be.  `solventc --gltf`,
+  `File ▸ Export solid (glTF)` / `(STL)`.
+- **A mesh is welded, and grouped by face** (`mesh.rs`).
+  **Welding** is a T-junction fix and not a vertex merge: `weld` puts the vertices lying on an
+  edge's interior into it.  A hash **cell** is sized to the object (`scale / 128`) while the
+  tolerance stays `1e-9`; never conflate them.  `triangles` fans **from a corner where a piece has
+  only corners, and from the centroid where it does not** (a vertex fan's zero-area sub-edges,
+  dropped, re-open the T-junctions).  The test is per piece: has this polygon a vertex that is
+  not a corner?
+  **Grouping** is `mesh::grouped`: triangles in face-path order, a normal per vertex — the
+  facet's own where flat, averaged where the face is `smooth`.  Across the ABI as **buffers plus a
+  small table** (`gcs_solid_mesh`, `gcs_solid_normals`, `gcs_solid_faces_json`), all reading one
+  memoised `Want::Mesh`.  `Document.solids()` names them (a solid has no proxy).  `tests/mesh.rs`
+  is the gate and asserts the *before* as well as the after.
 - **A mesh is cut to the object and a volume to the report** (`solid::mesh_unit`, `MESH_SAGITTA`).
-  Two requirements, and giving them one number cost an order of magnitude: `REPORT_UNIT` is
-  chosen so a *volume* is good to one part in ten thousand, and a mesh inheriting it cut the
-  V-twin cylinder's 16 mm bore into 257 flats — a six ten-thousandths of a millimetre sagitta,
-  a hundred times under what a printer resolves — for 98,000 triangles where 8,000 are
-  indistinguishable.  A mesh is cut to a sagitta that fraction of the *solid's own diagonal*,
-  which is scale-free and so says the same thing in millimetres and in inches, and is asked of
-  the primitives' boxes rather than an evaluated boundary: paying for a fine boundary to decide
-  how fine a boundary to build is the tail wagging the dog.  The cylinder's STL went from
-  97,772 triangles and 2.3 MB to 8,092 and 395 KB, and from 3.1 s to 0.37 s, still with zero
-  unpaired edges.  `gcs_solid_mesh_unit` publishes the number so a viewer may take it or pass its
-  own — and **a unit at or below zero *is* that choice**, resolved at the one seam every
-  evaluation goes through (`Sketch::cut_unit`, read by `solid_boundary`, `solid_edges` and
-  `solid_mesh`).  It had been written into `gcs_solid_glb` and `gcs_solid_stl` and nowhere else,
-  so a caller that asked for a *mesh* at 0 got a sagitta of zero — an arc cut into an unbounded
-  number of facets, which is not a coarse answer or a slow one but no answer at all: it took the
-  browser tab with it.  `tests/mesh.rs` asks it of all three walks, since one of the three having
-  the rule is exactly the state that was wrong.
-  **The glass box asks with 0, and that is why zooming is free.**  `unit` is the world length of
-  one screen pixel — the right refinement for strokes on a page being looked at, and the wrong
-  one for a scene handed to a renderer with a camera of its own.  Cut by it, every wheel tick
-  re-evaluated the term (158 ms for the V-twin cylinder's edges and 332 ms for its mesh,
-  natively, and finer without bound as you zoomed *in*, since a pixel is a smaller world length
-  the closer you get), while an orbit moved only the camera — which is exactly what one felt
-  like against the other.  `overview::scene3d` asks the same way (`SCENE_PX` for its drawn
-  polylines, `0` for the object's edges so they share the mesh's one evaluation), so nothing in
-  the box is a function of the zoom and `Box3D`'s rebuild key does not mention it.
+  `REPORT_UNIT` makes a *volume* good to 1e-4; a mesh is cut to a sagitta that fraction of the
+  *solid's own diagonal* (scale-free), asked of the primitives' boxes.  `gcs_solid_mesh_unit`
+  publishes it, and **a unit at or below zero *is* that choice**, resolved at the one seam
+  (`Sketch::cut_unit`, read by `solid_boundary`, `solid_edges`, `solid_mesh`) — never per entry
+  point (a sagitta of zero hangs the tab).  `tests/mesh.rs` asks it of all three.
+  **The glass box asks with 0, and that is why zooming is free**: `unit` (a screen pixel) is
+  wrong for a scene with its own camera.  `overview::scene3d` asks the same way (`SCENE_PX` for
+  drawn polylines, `0` for the object's edges), so `Box3D`'s rebuild key omits the zoom.
 - **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
-  edges the drawing already has, on the one plane every point of every edge agrees about — *read*
-  off the memberships and never written on the face, so a face inside `in swing { … }` is on the
-  plane the block stamped.  There are **no holes**: a hole is a solid that `cut`s the body, and that
-  is the body rule saying it already, one construct fewer.  An `in` block leaves a face and a
-  solid alone the way it leaves a datum alone, but for a different reason — they bear no points,
-  *and* they are written over the geometry the block just stamped, so refusing them would put the
-  design and the solid it is a section of in two different blocks.
-  A boolean **never renames**, so the topological-naming problem every history-based kernel has
-  does not arise: `block.near`, `block.far`, `block.side_l` (a prism), `bore.axis`, `bore.start`
-  (a revolution), and a body's through its operands — `body.bore.wall`, `part.base.pocket.floor`.
-  A name whose face a boolean ate is a *fact the report carries* (its surviving area, or nothing),
-  never an error: the name was true of the operand and remains so.
+  edges on the one plane every point agrees about — *read* off the memberships, never written on
+  the face.  There are **no holes**: a hole is a solid that `cut`s the body.  An `in` block leaves
+  a face and a solid alone, as it does a datum — they bear no points, and refusing them would
+  split the design and the solid it is a section of across blocks.
+  A boolean **never renames**: `block.near`, `block.far`, `block.side_l` (a prism), `bore.axis`,
+  `bore.start` (a revolution), and through operands — `body.bore.wall`, `part.base.pocket.floor`.
+  A name whose face a boolean ate is a *fact the report carries*, never an error.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E083 a stack that contradicts itself, E084 a section cut across its own view.
-- **A chain is a named traversal** (§6.6; issue #49, item 3). `profile = line -> … -> close`
+- **A chain is a named traversal** (§6.6; issue #49, item 3). `profile := line -> … -> close`
   records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
   scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the
   grouping is `boss.profile`. Closed traversals build ordinary faces and can be swept directly.
@@ -1800,669 +1091,403 @@ Conventions:
   `e` an alias to that link in each copy (`#<id>.<k>.e`); the count is the chain's, so the block
   is set aside where it stands and expanded once the chain resolves (`flatten::expand_pending`),
   through instances and group formals alike. `tests/chain_edges.rs` is the gate.
-- **A face closes itself** (§6.8, `program::build_face`; issue #49, item 1).  What the brackets
-  hold is a *walk*, and an item may be a **point**: a corner the walk goes straight to and
-  straight on from, with `-> close` — the chain's own word, in the other place the language draws
-  a loop — sealing the run back to the first item.  Where two neighbours do not already meet,
-  `build_face` mints the straight line between them, class `.closure`, which the base sheet hides.
-  Thirty-two of the V-twin's forty-two `class gone` lines were exactly that run written out by
-  hand: they carry no design, nothing draws them, and they exist because a region needs a
-  boundary — `pist_f := face(crown, pL0, pL1, pL2, pL3, pL4, s0.p, -> close)` is one statement
-  where there were four, and `hole_f := face(x0.p, x1.p, x2.p, x3.p, -> close)` one where there
-  were five.  **Every part sheet's SVG is byte-identical and every reported volume unchanged**,
-  which is the check: a minted run is the line the source used to declare, in the same place and
-  in the same direction, so it names a face of whatever is swept from the loop (`close0`,
-  `close1`, … in mint order, skipping existing edge names).
-  **The shorthand may not swallow a mistake**, and that is three rules.  An interior gap
-  between two *edges* is still E080 — a point in a list can mean nothing else, while two edges that do not meet are
-  edges listed out of order, and minting there would silently turn `f := face(ab, cd, bc, da)` into
-  a bowtie.  And **an edge takes its direction from a neighbour it actually meets**, so one
-  standing between two gaps is refused: `bad := face(a, bc, d, -> close)` walks `b`-first or
-  `c`-first and nothing there says which, which is why `bore_f` names the corner the wall starts
-  at (`bore_f := face(m0.p, b_br.p, bore_r, hx.p, -> close)`) rather than leaving it to be guessed.
-  The wrap is minted only under `-> close`, so "the loop closes" stays something the source
-  states; `-> close` on a loop that already meets says something true and mints nothing.
-  `tests/solid_lang.rs` is the gate.
+- **A face closes itself** (§6.8, `program::build_face`; issue #49).  The brackets hold a *walk*,
+  and an item may be a **point**, with `-> close` sealing the run back to the first item.  Where
+  two neighbours do not meet, `build_face` mints the straight line between them, class
+  `.closure` (hidden by the base sheet): `pist_f := face(crown, pL0, pL1, pL2, pL3, pL4, s0.p,
+  -> close)`, `hole_f := face(x0.p, x1.p, x2.p, x3.p, -> close)`.  A minted run names a face
+  of what is swept (`close0`, `close1`, … in mint order, skipping existing edge names).
+  **The shorthand may not swallow a mistake**: an interior gap between two *edges* is still E080
+  (`face(ab, cd, bc, da)` must not become a bowtie); **an edge takes its direction from a
+  neighbour it actually meets**, so one between two gaps is refused (`bad := face(a, bc, d, ->
+  close)`; name the corner: `bore_f := face(m0.p, b_br.p, bore_r, hx.p, -> close)`); and the wrap
+  is minted only under `-> close`, so "the loop closes" stays something the source states (on a
+  loop that already meets it mints nothing).  `tests/solid_lang.rs` is the gate.
 - **`from:` says which plane a plane is derived from, and the clause beside it says how**
-  (§6.7).  `fold:` turns it; **`offset:` stands it off along the normal**, which is what a stack
-  of parts is written in.  0.10's rule that an omitted fold meant `fold: 0deg` is withdrawn — no
-  document in the corpus used it, and a plane naming another and folding nothing most plainly
-  says *the same plane, moved*.  `plane::Basis` therefore carries the point its origin stands at,
-  and **only along the normal**: the fold line is perpendicular to both normals, so `d·o = 0` and
-  `fold_line` — the whole of what `Project` reads — cannot see the move.  Every plane in every
-  document written before solids has `o = 0`, which is why no existing test changed.
-- **Where a part stands is what it bears against** (Solvent §6.10, `program::place`; issue #48,
-  item 8).  `cylB.block.far against plate.body.near` says the two faces touch, and the offset of
-  the plane cylinder B is drawn in *follows* — which is what `zA = fwA + D / 2` and the chain of
-  subtractions under it were, three files keeping one number in step by hand.  Two faces in
-  contact are at the same point along the normal they share, so `offset(P) = offset(Q) + ord(G) −
-  ord(F)`: one equation a statement, worked out in dependency order the way `expr::evaluate`
-  works out a dimension, and nothing here is solved for either.
-  **A mate is between the caps a sweep makes**: a side face is not at one ordinate — it runs the
-  whole depth — and a revolution's walls are not flat, so neither is something a stack can bear
-  on (E082, with the reason).  A *placed* plane is one written `from: P` with neither `fold:` nor
-  `offset:`, recorded in `Sketch::placed_planes` where the attitude as **written** is still in
-  hand; exactly one `against` places one, and none or two is E083.
-  The delta is computed **when the mate is applied and not when it is collected**: a washer
-  between two parts stands on the first before the second stands on it, and an offset worked out
-  up front reads a zero the walk was about to fill in.
-  `hardware.Groove` is item 5 in the same commit: the O-ring rule — 10–20% squeeze on the ring's
-  section, a groove a third wider than it — stated once in `hardware` and cut by a component that
-  reads it, so `dims.sv` derives `grooveb` and `groovew` where it used to type 12.9 and 2.4.
+  (§6.7).  `fold:` turns it; **`offset:` stands it off along the normal**.  An omitted fold is
+  *the same plane, moved*, not `fold: 0deg`.  `plane::Basis` carries its origin's point **only
+  along the normal**, so `d·o = 0` and `fold_line` (all `Project` reads) cannot see the move.
+- **Where a part stands is what it bears against** (Solvent §6.10, `program::place`; issue #48).
+  `cylB.block.far against plate.body.near` says the faces touch, and the offset of cylinder B's
+  plane *follows*: `offset(P) = offset(Q) + ord(G) − ord(F)`, worked out in dependency order like
+  `expr::evaluate`, solved for nothing.
+  **A mate is between the caps a sweep makes**: side faces and revolution walls cannot bear (E082,
+  with the reason).  A *placed* plane is `from: P` with neither `fold:` nor `offset:`, recorded in
+  `Sketch::placed_planes`; exactly one `against` places one, none or two is E083.  The delta is
+  computed **when the mate is applied, not when collected** (a washer stands on the first part
+  before the second stands on it).
+  `hardware.Groove` states the O-ring rule once (10–20% squeeze, a groove a third wider), so
+  `dims.sv` derives `grooveb` and `groovew`.
   **A component contributes a `cut` to a body it was handed**, which is the body rule being a
   set and not a sequence: the feature owns the void it cuts.
 - **A part carries no views; a sheet asks for them** (§6.11, `hidden.rs`).  `view(body) in
   views.right` and `section(body, at: swing) in views.front` are *outputs*: no `Int` draw flag, no
   `repeat draw_side { … }`, no second copy of the geometry and no `project` to keep in step.
-  Three draughtsman's rules, each written where it is enforced.  **A corner is drawn and a
-  tessellation seam is not** — a `smooth` seam is drawn only where it is a *silhouette*, which is
-  the two lines a cylinder is drawn as and not the sixty-four its facets would give.  **What the
-  material covers is dashed, not dropped** — the eye's ray is classified against the term and the
-  piece carries `.hidden`, the class every part sheet already styles.  And **coincident page lines
-  are drawn once, visible winning** — which has to be an *interval* rule and not a segment one: a
-  block seen square on puts its far corners exactly behind its near ones and the two agree segment
-  for segment, but a cylinder's rim seen edge-on folds in half onto its own image and the visible
-  and hidden halves split at different places, so nothing matches end to end.  Every stroke is laid
-  on the line it belongs to, the visible stretches are unioned and the hidden are what is left
-  over; drawn any other way a solid outline gets a dashed one laid under it, which at a printer's
-  resolution reads as neither.
-  Everything comes back in **page coordinates** through `plane::on_page` (written beside
-  `in_view` for that function's own reason), so a derived view sits at its plane's own origin and
-  rotor — exactly where a hand-drawn one tied by `project` would, which is `tests/derived.rs`'s
-  strongest gate: extrude a face along its own normal, look at it square on, and the outline that
-  comes back is the outline that was drawn.  **The core projects and the front end strokes**, the
-  seam `callout.rs` sits on: `hidden::layout` resolves the ink through the sheet, `svg::render`
-  and `paint.ts` stroke what they are handed, and neither owns a line of 3D arithmetic or a rule
-  about what a hidden line looks like.
-  **Moving the camera reuses the projected picture.** `app/derived.ts` keeps those page-coordinate
-  polylines against the sketch, the inputs of the projected solids and planes, and its style epoch.
-  `hidden::inputs` publishes those dependencies through a flat ABI buffer: unrelated coordinates
-  do not invalidate a picture. The display cache allows screen-scaled roundoff, compared against
-  the stored picture rather than the previous frame so small real moves accumulate. Exact input
-  comparisons mistook the stationary plate's ~1e-13 solver drift for motion, making a V-twin drag
-  spend ~800 ms projecting it beside a ~5 ms solve; dependency-aware reuse brings the whole frame
-  to ~11 ms. A pan only transforms the picture;
-  zooming out keeps the finer picture, and zooming in refines once redraws have rested for 150 ms.
-  Geometry changes refresh immediately, and `afterEdit` and `settle` clear both the picture and
-  its pending refinement, including edits to solid extents that move no coordinate. Exports
-  still ask the core directly at their output resolution. Reclassifying on every frame cost
-  the throttle sheet about 493 ms per pan and 1662 ms per zoom in Chrome; retaining the picture
-  made both about 1 ms. `app.test.ts` checks reuse, final refinement and edit/load invalidation.
-  **Every part of the V-twin is written this way** — `vtwin/components/cylinder.sv`, `piston.sv`, `disc.sv`,
-  `flywheel.sv`, `throttle.sv` and the plate in `frame.sv` — one section and the solid it is a
-  section of, with the other two views asked for.  The cylinder went from 144 lines and 12 formals
-  to 119 and 6 and its sheet from 69 points and 50 lines to 30 and 22; the plate's sheet from 166
-  and 141 to 89 and 77, the piston's from 56 to 26, the disc's 59 to 20, the throttle's 63 to 22.
-  **Where a part's turned features are is where its section has to be**, and that is the one rule
-  the migration keeps teaching: a turn about a line lying in the section puts what it makes *on*
-  that plane whatever else is written, so the crank disc's section is its mid-plane because the
-  set screw runs through it, and the plate's is its mid-plane because the plenum, the boss, the
-  vents and the coupling's hole are all centred there — which `tp`'s own comment said before any
-  of this ("thick enough to carry the plenum on its mid-plane").
-  Two things do not survive the crossing and are named where they are: a **hex pocket about a
-  radial line** (the set screw's nut, `parts.Grub`) is neither a sweep along the plane's normal
-  nor a turn about a line in it, so it stays four hidden lines a printer reads; and a feature the
-  drawing carries as a *centreline* (the plate's exhaust vents) has to be told how wide it is,
-  which is `wch`, the channel width the plenum and the passage already use.
-- The **overview** (`overview.rs`) is the drawing folded back into the glass box it was unfolded
-  from: each view standing on its own plane in space, and the object the views are *of*
-  reconstructed between them.  **Nothing is solved for and nothing is stored** — a point drawn in
-  view P has view coordinates `plane::in_view` (the same reading `project`'s residual takes, and
-  the same function, so the two cannot drift), sits in space at `a·u_P + b·v_P` (`Basis::lift`),
-  and a corner tied by `project` into two non-parallel views is over-determined and exact: four
-  rows in three unknowns, consistent *because* the projection holds.  "Non-parallel" is
-  `overview::RCOND`, about a degree: past that the rank test passes and the residual is amplified
-  by 1/σ₃, which flings a corner across the page — `validate` refuses only the exactly-parallel
-  pair, and an explicit `u:`/`v:` basis can be as close as it likes.  A corner is a **pair of
-  images and never a transitive class** — in the front view the near and far ends of a vertical
-  edge coincide, so merging `Ff project Fa` with `Ff project F2a` collapses the object along every
-  edge that runs away from a view — and its images are **ordered by plane**, never by the order
-  the statement named them, which is what lets the edge walk compare image to image.  An object
-  edge is one both views draw, deduped by its **3D segment to a tolerance** (`SAME_POINT`), since
-  one stroke in one view is two edges of the part and two pairs of views agree on a corner only
-  to the solve.  Where a point *stands* is `overview::view_of` — its membership, or, for a datum's
-  own origin and `toward` (members of nothing, since they place the view rather than being drawn
-  in it), that plane: every origin is the one shared origin, and `Insert ▸ Three views` stamps
-  nothing.  A line stands with each end where that end is, so a projector between two views is
-  neither a stray stroke on the page nor anyone's.
-  The **core projects and the front end strokes**, the seam `callout.rs` sits on: the scene comes
-  out in 2D world coordinates already orbited and flattened, so `camera.ts` stays the whole of the
-  app's linear algebra and no 3D arithmetic exists above the ABI.  `Part` names what an item is
-  (`Face`/`Axis`/`Drawn`/`Solid`) and `Item::in_plane` names the view it belongs to, so a front end
-  never works out a second time and in its own words which view a thing is in; `overview::drawable`
-  is the per-kind polyline walk `svg::entity` and `paint.ts` each make for their own output, said
-  once as geometry, refined to `curve::flatness`.
-  **Every plane is a pane** — drawn in or not, because a view is a place to draw and one that did
-  not show until something was in it could not be gone to — and `overview::pane` is the *one* rule
-  for how far one reaches, so its face and its axes cannot disagree: the geometry standing on it
-  and its origin, grown a little, and never thinner than `LEAST_SIDE` either way (a view holding
-  only its origin, or points along one line, is a pane like any other).  Its **x and y run right
-  across it**, crossing at the origin: the sheet's own axes folded up, since a pane is a little
-  sheet and what makes it read as one is its axes.  A screen-constant tick would be truer to a
-  datum glyph and is what this was; at the size a box is looked at it disappeared into whatever
-  the view had drawn near its corner.
+  Three draughtsman's rules.  **A corner is drawn and a tessellation seam is not** — a `smooth`
+  seam is drawn only where it is a *silhouette*.  **What the material covers is dashed, not
+  dropped** — the eye's ray is classified against the term and the piece carries `.hidden`.
+  **Coincident page lines are drawn once, visible winning** — an *interval* rule, not a segment
+  one (a rim seen edge-on folds onto itself, splitting at different places): every stroke is laid
+  on its line, the visible stretches unioned, the hidden what is left over.
+  Everything comes back in **page coordinates** through `plane::on_page` (beside `in_view`), so a
+  derived view sits at its plane's own origin and rotor, where a hand-drawn one tied by `project`
+  would — `tests/derived.rs`'s strongest gate.  **The core projects and the front end strokes**:
+  `hidden::layout` resolves the ink through the sheet, `svg::render` and `paint.ts` stroke what
+  they are handed, and neither owns 3D arithmetic or a rule about hidden lines.
+  **Moving the camera reuses the projected picture.** `app/derived.ts` keeps those polylines
+  against the sketch, the inputs of the projected solids and planes, and its style epoch;
+  `hidden::inputs` publishes those dependencies through a flat ABI buffer, so unrelated
+  coordinates do not invalidate a picture. The cache allows screen-scaled roundoff, compared
+  against the stored picture rather than the previous frame so small real moves accumulate. A
+  pan only transforms the picture; zooming out keeps the finer one, zooming in refines once
+  redraws rest for 150 ms. Geometry changes refresh immediately, and `afterEdit` and `settle`
+  clear the picture and its pending refinement, including solid-extent edits that move no
+  coordinate. Exports ask the core directly at their resolution. `app.test.ts` is the gate.
+  **Every part of the V-twin is written this way** — `vtwin/components/cylinder.sv`, `piston.sv`,
+  `disc.sv`, `flywheel.sv`, `throttle.sv` and the plate in `frame.sv`: one section and its solid.
+  **Where a part's turned features are is where its section has to be**: a turn about a line in
+  the section puts what it makes *on* that plane (the disc's and plate's sections are mid-planes).
+  A **hex pocket about a radial line** (`parts.Grub`) is neither sweep nor turn, so it stays four
+  hidden lines; a feature drawn as a *centreline* (the exhaust vents) is told its width, `wch`.
+- The **overview** (`overview.rs`) is the drawing folded back into the glass box: each view on its
+  own plane in space, the object reconstructed between them.  **Nothing is solved for and nothing
+  is stored** — a point in view P has view coordinates `plane::in_view` (the function `project`'s
+  residual reads), sits at `a·u_P + b·v_P` (`Basis::lift`), and a corner tied by `project` into
+  two non-parallel views is four rows in three unknowns, exact *because* the projection holds.
+  "Non-parallel" is `overview::RCOND`, about a degree (past it 1/σ₃ flings a corner); `validate`
+  refuses only the exactly-parallel pair.  A corner is a **pair of images and never a transitive
+  class** (merging `Ff project Fa` with `Ff project F2a` collapses the object), its images
+  **ordered by plane**, never by the statement.  An object edge is one both views draw, deduped by
+  its **3D segment to a tolerance** (`SAME_POINT`).  Where a point *stands* is `overview::view_of`
+  — its membership, or for a datum's own origin and `toward`, that plane: every origin is the one
+  shared origin, and `Insert ▸ Three views` stamps nothing.  A line stands with each end where
+  that end is.
+  **The core projects and the front end strokes**: the scene comes out in 2D world coordinates
+  already orbited and flattened, so `camera.ts` stays the app's whole linear algebra and no 3D
+  arithmetic exists above the ABI.  `Part` names what an item is (`Face`/`Axis`/`Drawn`/`Solid`)
+  and `Item::in_plane` its view; `overview::drawable` is the per-kind polyline walk `svg::entity`
+  and `paint.ts` share, refined to `curve::flatness`.
+  **Every plane is a pane**, drawn in or not; `overview::pane` is the *one* rule for its reach
+  (geometry and origin, grown a little, never thinner than `LEAST_SIDE`), so face and axes agree.
+  Its **x and y run right across it**, crossing at the origin.
   The mode is **read-only, and that is two gates**: the pointer, once, in `gesture::onPointerDown`
-  (a press picks and then orbits, nothing else), and `SketchView.mayEdit` at every verb that
-  reaches the document *without* a pointer — `apply`, the constraints bar, paste, the class and
-  fix toggles, a dimension, a branch flip — which says why when it refuses.  `setOverview`
-  abandons whatever is in flight (a gesture, a carried dimension, an animation) before it refits,
-  since the fit changes what a screen position means.  Hovering a pane's **edge** bolds it —
-  never its interior, the rule everything on this canvas is picked by — but a *click* on one
-  selects nothing: selecting a plane arms it as the view the next thing is drawn in, and that is
-  the double-click's meaning.  A double-click on anything belonging to a view (its pane, its axes,
-  its geometry) leaves the box and arms that plane without selecting it, so no constraints window
-  opens over the drawing you came to make.  A drag orbits with the y inverted: the pointer pushes
-  the box about as if it were held.  The scene is memoised against the drawing, the zoom and the
-  orbit (`SketchView.scene`), because a pointer move asks for it twice and the box is read-only.
+  (a press picks and then orbits), and `SketchView.mayEdit` at every verb reaching the document
+  *without* a pointer — `apply`, the constraints bar, paste, class and fix toggles, a dimension, a
+  branch flip — saying why it refuses.  `setOverview` abandons whatever is in flight before it
+  refits.  Hovering a pane's **edge** bolds it, never its interior; a *click* selects nothing; a
+  double-click on anything of a view leaves the box and arms that plane without selecting it.  A
+  drag orbits, y inverted.  The scene is memoised against drawing, zoom and orbit
+  (`SketchView.scene`).
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
-  when nothing else is made of it (`overview::objects`).  A part is a stock, the holes cut out of
-  it, and the body that is the term over them: four names for one thing and three voids, and
-  drawn whole each void was an object in its own right, hidden-line tested against *itself*, so a
-  bore floated in front of the face it is drilled through.
-  **The box is drawn by three.js** (`app/box3d.ts`), and it is the one place in the app where a
-  renderer of somebody else's is used.  The reason is a single problem the 2D canvas could not
-  solve: a painter's order compares *centroids*, and ordering is only ever right between polygons
-  that do not overlap in the picture — which a part with a bore through it is exactly not.  A
-  depth buffer settles it per pixel.  **The seam did not move**: the core still says what is in
-  the box and where (`overview::scene3d` — the same walk `scene` is, handing over the panes, their
-  axes and the views' geometry in *space* rather than flattened — and `mesh::grouped` for the
-  object), and this file turns that into three.js objects and works out no coordinate of its own.
-  Its camera is set from `v.orbit` and `v.camera` through the same `overview::eye` basis the core
-  flattens with, which is what keeps a click landing on the thing under the cursor; the WebGL
-  canvas sits *under* the 2D one with `pointer-events: none`, so **not one line of gesture code
-  changed** — the picking, the hover and the double-click still run against `overview::scene`'s
-  flat projection, which is now what that projection is *for* (and is never asked `shaded`).
-  Selection and the hovered pane are a **material write per frame** and never a rebuild, so a
-  pointer move never re-uploads a mesh; the ink rule itself is `paint.ts`'s `chromeOf`, so a line
-  picked on the sheet and the same line in the box light the same colour.
-  Of the object, `scene3d` carries the **creases and nothing else** — a `smooth` seam is dropped
-  outright rather than tested against an eye direction, because a silhouette is a fact about a
-  viewpoint and this scene has none: what draws the round of a cylinder here is the shading, and
-  what is left for a line to say is where the surface actually breaks.  Nothing is hidden-line
-  removed either.
-  **`⇧⌘B` shows the solid's surfaces** as well as its creases — view state like the orbit, never
-  saved or undone — and it is **on by default**, which it was not while the box was strokes on a
-  flat canvas: there a surface cost the boundary of every solid *and* the painter's order above.
-  Off is still worth having, a wireframe being how you see the far side of a part.  The flat
-  shaded path (`Part::Shell`, `overview::shell`, `Item.shade`) is still what `overview_json`
-  offers a front end without a depth buffer, and its rule is that **a piece is kept when nothing
-  stands between it and the eye**, a ray from its centroid against every other piece, with a face
-  *partly* covered still all-or-nothing — the honest limit of a schematic with no depth buffer.
-    **Where the document has a solid, that is the object and there is nothing to reconstruct**:
-  the box shows the term's own edges, classified against the orbit's eye rather than against a
-  view's normal, so a box of a part shows what a part *is* and not what two pictures of it happen
-  to agree about.  The corner-and-edge walk is skipped outright then; it is what a drawing with
-  no solid in it can still be shown as — several views of an object nothing in the document names.
+  when nothing else is made of it (`overview::objects`).
+  **The box is drawn by three.js** (`app/box3d.ts`), the app's one foreign renderer, because a
+  painter's order is wrong between overlapping polygons and a depth buffer is not.  **The seam did
+  not move**: the core says what is in the box and where (`overview::scene3d`, the walk `scene`
+  is, in *space*; `mesh::grouped` for the object), and this file computes no coordinate.  Its
+  camera is set from `v.orbit` and `v.camera` through the core's `overview::eye` basis; the WebGL
+  canvas sits *under* the 2D one with `pointer-events: none`, so picking, hover and double-click
+  run against `overview::scene`'s flat projection (never asked `shaded`).  Selection and the
+  hovered pane are a **material write per frame**, never a rebuild; the ink is `paint.ts`'s
+  `chromeOf`.  Of the object, `scene3d` carries the **creases and nothing else** — a `smooth` seam
+  is dropped (no viewpoint, no silhouette; shading draws the round), and nothing is hidden-line
+  removed.
+  **`⇧⌘B` shows the solid's surfaces** — view state, **on by default**; off is a wireframe.  The
+  flat shaded path (`Part::Shell`, `overview::shell`, `Item.shade`) is what `overview_json` offers
+  a front end without a depth buffer: **a piece is kept when nothing stands between it and the
+  eye** (a ray from its centroid), a partly covered face all-or-nothing.
+  **Where the document has a solid, that is the object and there is nothing to reconstruct**:
+  the box shows the term's own edges, classified against the orbit's eye, and the corner-and-edge
+  walk is skipped.
   The mode, the orbit and the hovered pane are *view state*, `underlay`'s rule: never saved,
-  exported, solved or undone — and **the box exists only where there are views**: a document
-  with no plane has nothing to fold, so a load or an edit that leaves none returns to the sheet
-  (`swap`) and ⌘B on one says why it stays, since shown in the box such a drawing is a tilted,
-  read-only, empty-looking sheet on which every tool click silently does nothing.
-- Slow tests are gated by `#[ignore]` (cargo). The **slow tier** — tests of ten seconds to a few
-  minutes that should still pass on every landing (the gear pair's whole-member verifications, a
-  native tooth space) — is `#[cfg_attr(not(feature = "slow"), ignore = "slow tier, …")]`, run by
-  `make test-slow` (`OCCT=1` for the native one); `make test` leaves it out.
-- **Measure compile time and test time separately**; the measurements and reproduction are in
-  [`docs/build-performance.md`](docs/build-performance.md). `make test` still builds both release
-  artefacts and runs every integration suite and documentation test. Release builds use
-  incremental ThinLTO with 16 codegen units; the native test profile uses optimisation level 2,
-  debug assertions and no debuginfo. The core suite is one binary (`gcs-core/tests/main.rs`),
-  and the libraries and binaries have `test = false` because all their tests live in `tests/`;
-  adding an in-source unit test requires enabling that target's harness again. One Cargo
-  invocation builds both release targets, then Make overlaps the Rust and web suites. The
-  TypeScript cache lives inside `web/dist`, so removing the output also removes its cache.
-  macOS assesses every fresh executable on its first launch; a `target/debug/deps` with
-  hundreds of thousands of unpacked debuginfo objects also makes launches slow. Keep
-  `debug = 0`; `cargo clean --profile dev` clears an existing accumulation.
-- Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.  The
-  native half is `rust/gcs-core/src/bin/bench.rs` (`cargo run --release -p gcs-core --bin bench`)
-  and the wasm half is `npm run bench`; `make bench` runs both.  Wall-clock medians and nothing
-  else — a benchmark harness would be the core's first dependency.
-- The front end is two layers and they are kept orthogonal.  *Geometry* is the core's, and it
-  is asked in world coordinates: what a click picks is `model::pick` (which measures what is
-  *drawn* — a line's segment, an arc's sweep, the curve itself — as against `point_to`, which
-  measures the idealised entity a dimension means, an infinite line and a whole circle), a
-  callout is laid out and hit-tested by `callout.rs`, a curve is tessellated by `curve.rs`.
-  *Linear algebra* is the front end's, and the whole of it is `app/camera.ts`: a similarity —
-  uniform scale, translation, and the flip that comes of the canvas putting y downwards — so it
-  carries lengths and angles faithfully, which is exactly what lets every geometric question be
-  asked out where the geometry is.  A tolerance therefore travels as a world length
-  (`PICK_PX * unit`, the same `unit` the callouts are sized through) and never as pixels.
-  Nothing outside `camera.ts` multiplies by `scale` or writes a minus sign in front of a y, and
-  nothing in `app/` measures a distance to an entity itself.
-- Dimension callouts (`callout.rs`) are geometry, so the whole figure — extension lines, heads,
-  radial leaders, angular arcs, the label's box and the hit test — is laid out in the core and
-  the front end only strokes what it is handed.  Sizes are screen-constant through `unit`, the
-  world length of one screen pixel — as is the pick tolerance, so a front end never converts.
-  Where a callout sits is a *placement*: two numbers in a frame that follows the geometry,
-  automatic until someone drags it and then `Sketch.placements` document state, **saved on the
-  statement it qualifies** — `at (t, r)` after the dimension in Solvent, `"place"` inside the
-  constraint object in JSON.  **It stays there, and the sheet takes everything it shares**
-  (issue #16, spec §13.1): a class is a rule many statements share and a placement is a fact
-  about one, so `style .dimension` / `.reference` / `.extension` own the ink, the weight and the
-  dash — `paint.ts` asks `styleNamed` three times a repaint and holds no callout ink of its own
-  — and the statement keeps the one pair of numbers that is about that statement alone.  The
-  alternatives all fail a rule §13.1 already states: a position or an index fails *silently*, a
-  selector on type-and-arguments cannot always name one dimension (the app deliberately never
-  dedups them), and a minted id collides the first time somebody copies a block of text.  Naming
-  the dimension is the one that works, and costs every dimension anyone has dragged a name
-  nobody asked for.  A placement whose dimension is gone is gone with it — `Sketch::remove`
-  drops it, and in the source it rides on the statement the splice takes.  Never by position in a list and never by entity index (Solvent
-  §13.1): both follow the position rather than the thing, and both fail silently — a callout
-  reappears on another dimension, a recorded root choice goes inert while the document still
-  carries it.  `io::from_json` still *reads* the old position-keyed `placements` table, so an
-  older document loads; it never writes one.  The number a dimension states
-  comes from `io::dimension_text`, so the drawing and the constraint list cannot print it
-  differently — and a bare number is read through `io::reading`, one constant
-  (`READING_SIG`, six digits) for the callout, `arg_text` and `describe` alike, since
-  `syntax::num` is the *source* printer and prints every digit a double has.  A written literal
-  that names its unit (`60deg`) is drawn as written and given no second sign
-  (`expr::names_unit`) — but a literal past six significant digits is read at six wherever it
-  stands in printed text (`io::read_literals`), since that is a value the flattener wrote back in
-  full (`flatten::fold`: `13.333333333333334mm`), never one a person typed.  A callout is painted *over* the geometry, so `callout::pick` also owns what
-  outranks it: a point within the same tolerance beats the figure's lines — a radius runs its
-  leader out of the centre it measures from, and the one point a circle has has to stay
-  clickable once it is dimensioned — but not the number's own box, which is filled solid, and
-  picking through a thing the drawing covers up would be a lie about the drawing.  The rule is
-  the core's because the figure is, so a front end asks once and every front end agrees.
+  exported, solved or undone — and **the box exists only where there are views**: a load or an
+  edit that leaves no plane returns to the sheet (`swap`) and ⌘B on one says why it stays.
+- Slow tests are gated by `#[ignore]` (cargo). The **slow tier** — ten seconds to minutes, still
+  passing on every landing (gear whole-member verifications, a native tooth space) — is
+  `#[cfg_attr(not(feature = "slow"), ignore = "slow tier, …")]`, run by `make test-slow`
+  (`OCCT=1` for the native one); `make test` leaves it out.
+- **Measure compile time and test time separately**
+  ([`docs/build-performance.md`](docs/build-performance.md)). `make test` builds both release
+  artefacts and runs every integration suite and doc test. Release: incremental ThinLTO, 16
+  codegen units; native test profile: opt-level 2, debug assertions, no debuginfo. The core suite
+  is one binary (`gcs-core/tests/main.rs`); libraries and binaries have `test = false`, so an
+  in-source unit test needs that target's harness enabled again. The TypeScript cache lives in
+  `web/dist`, so removing the output removes it.
+  Unpacked debuginfo in `target/debug/deps` makes macOS launches slow: keep `debug = 0`;
+  `cargo clean --profile dev` clears an existing accumulation.
+- Benchmark on a quiet machine (`uptime`; a JVM indexer often runs here).  Native:
+  `rust/gcs-core/src/bin/bench.rs` (`cargo run --release -p gcs-core --bin bench`); wasm: `npm run
+  bench`; `make bench` runs both.  Wall-clock medians only — no harness dependency.
+- The front end is two layers and they are kept orthogonal.  *Geometry* is the core's, asked in
+  world coordinates: a click picks by `model::pick` (what is *drawn*, as against `point_to`, the
+  idealised entity a dimension means), callouts by `callout.rs`, curves by `curve.rs`.  *Linear
+  algebra* is the front end's, and the whole of it is `app/camera.ts`: a similarity (uniform
+  scale, translation, the y flip).  A tolerance travels as a world length (`PICK_PX * unit`),
+  never pixels.  Nothing outside `camera.ts` multiplies by `scale` or writes a minus sign in front
+  of a y, and nothing in `app/` measures a distance to an entity itself.
+- Dimension callouts (`callout.rs`) are geometry: extension lines, heads, leaders, arcs, the
+  label's box and the hit test are laid out in the core, the front end only strokes.  Sizes are
+  screen-constant through `unit` (world length of one pixel), as is the pick tolerance.  Where a
+  callout sits is a *placement*: two numbers in a frame following the geometry, automatic until
+  dragged, then `Sketch.placements` document state **saved on the statement it qualifies** —
+  `at (t, r)` after the dimension, `"place"` in the constraint's JSON.  **The sheet takes
+  everything it shares** (issue #16, §13.1): `style .dimension` / `.reference` / `.extension` own
+  ink, weight and dash (`paint.ts` asks `styleNamed`, holding no callout ink).  Never by position
+  in a list, entity index, type-and-arguments selector or minted id — each fails silently or
+  collides.  A placement goes with its dimension (`Sketch::remove`; in the source, the splice).
+  `io::from_json` *reads* the old position-keyed `placements` table and never writes one.
+  The stated number comes from `io::dimension_text`; a bare number is read through `io::reading`
+  (`READING_SIG`, six digits) for the callout, `arg_text` and `describe`, since `syntax::num` is
+  the *source* printer.  A literal naming its unit (`60deg`) is drawn as written with no second
+  sign (`expr::names_unit`), but one past six significant digits reads at six in printed text
+  (`io::read_literals`): the flattener wrote it (`flatten::fold`: `13.333333333333334mm`).
+  `callout::pick` owns what outranks a callout: a point within the tolerance beats its lines, but
+  not the number's box, filled solid.
 - One straight dimension figure, `Pen::linear`, draws them all: it measures along a *given*
   direction, puts a head where each point falls on that line and runs an extension line out to
-  each point from wherever it is.  `Pen::aligned` is the case where the direction is the pair's
-  own (a length: both extension lines come out the same); a run or a rise passes a page axis
-  instead, and everything else follows.
-- A dimension between two points is three dimensions — `Distance`, `HorizontalDistance`,
-  `VerticalDistance` — and which one is *stated by where the number is put*.
-  `callout::pair_dimension` picks the nearest of the three lines a dimension line could lie
-  along (the pair's own, the page's x, the page's y) to the direction from the middle of the
-  pair out to the placement.  Nearest, so the borders are the bisectors and there is no
-  threshold; a tie goes to the length.  It lives beside the frames because it has to agree
-  with the figure that then gets drawn.  The front end asks (`gcs_dimension_pair_kind` → a
-  registry index) and swaps the constraint for another as the pointer moves — see
-  `SketchView.startDimension`, which is also the seam where a dimension is written at all: it
-  is stated at once, at what it measures, and its number is edited on the drawing where it
-  will be read.  Nothing reaches the undo stack until the number is accepted, and Escape takes
-  the constraint back out.  *Nothing is solved while it is being carried* either — `afterEdit`
-  skips the solve while `liveDim.placing`, so stating it, swapping it for another kind and
-  moving it about leave the geometry alone; `placeDimension` (the click that plants it, and
-  the release that ends a later drag of it) is the one solve, and the editor stays open past
-  it because where it sits and what it says are settled separately.
-  The run and the rise are signed from the first point to the second
-  (`(qx - px) - d`, a constant Jacobian — the best-conditioned row there is, and still so with
-  the two points one above the other, which is the pose someone reaches for a run in).  So
-  they do not commute, and a front end orders the pair to make the number read positive.  In
-  `cgraph` they are `unsupported` on purpose: the cluster vocabulary has no element for the
-  line they are really measured from.
+  each point.  `Pen::aligned` is the case where the direction is the pair's own; a run or a rise
+  passes a page axis instead.
+- A dimension between two points is three — `Distance`, `HorizontalDistance`,
+  `VerticalDistance` — *stated by where the number is put*: `callout::pair_dimension` picks the
+  line (pair's own, page x, page y) nearest the direction from the pair's middle to the
+  placement; bisector borders, no threshold, a tie to the length.  The front end asks
+  (`gcs_dimension_pair_kind` → a registry index) and swaps the constraint as the pointer moves
+  (`SketchView.startDimension`, where a dimension is written: stated at once, number edited on
+  the drawing).  Nothing reaches the undo stack until the number is accepted; Escape takes it out.
+  *Nothing is solved while it is carried*: `afterEdit` skips the solve while `liveDim.placing`;
+  `placeDimension` (planting click, or release of a later drag) is the one solve.
+  The run and the rise are signed from the first point to the second (`(qx - px) - d`, a constant
+  Jacobian), so a front end orders the pair to read positive.  In `cgraph` they are `unsupported`
+  on purpose: no cluster element for the line they are measured from.
 - A dimension's number may be an *expression* (`expr.rs`): `Arg::Expr { text, value }` in a
-  `Length`/`Angle` slot, where `value` is what the kernels read (arg units — radians for an
-  angle) and `text` is what a person wrote, in the units they read (degrees).  `w = 80` names
-  its value, `h = w / 2` reads one; the names make a graph over the document's dimensions and
-  `expr::evaluate` is a Kahn walk of it (earliest in the document first among the ready ones),
-  writing every value and reporting, per expression, its name, deps and error — a name defined
-  twice, one nothing defines, a cycle, a non-number.  An expression that cannot be computed
-  keeps its last number, so the solver always has a constant.  Trigonometry is in degrees.
-  A number may be written as a mixed fraction — `3 1/2` is three and a half, the way a drawing
-  writes it — which the tokenizer folds into one `Num`.  The space is what tells the readings
-  apart, so `31/2` and a bare `1/2` are still divisions, and the fraction itself is written
-  tight.  `expr::literal` deliberately does *not* claim it, so it is kept as text with the value
-  it came to: `expr::notation` says that text is a number written a particular way rather than a
-  computation, so `arg_text` — the constraint list — prints it as written where a *formula* there
-  prints the text and what it came to (`h = w * 2 = 80`).  A **callout carries the expression**:
-  `io::dimension_text` draws every written dimension as written, since `h = w / 2` and `3 1/8`
-  each tell a reader what 40 and 3.125 do not, and what a dimension came to is the one thing a
-  reader can measure off the drawing.  That includes a `param`: the flattener settles
-  `distance(w)` to `100`, so a statement's spelling is read back off the source at the
-  argument's span into `Constraint::written` (`program::relations::written`), presentation only,
-  dropped by any write of a number — at the root, and in a component body written in the same
-  file, whose formula over its formals (`design.module`, no module path taken off) is true of
-  every instance.  A module's body and a block copy draw the number.  A block's copies are one statement, so its dimension is one callout:
-  `program::relations::repeated` marks each later copy drawing the same label
-  (`Constraint::repeated`), the full layout leaves it out, and a request by id still draws it.
-  `expr::set_dimension` is the one write path for text (a bare number becomes `Arg::Num`, with
-  the angle conversion — the app converts nothing); `Sketch::add` and `io::from_json` evaluate;
-  `Sketch::set_constraint_num` is the write path for a number, and re-evaluates when it dropped
-  an expression.  Documents save `{"expr", "value"}` and accept a bare
-  string; the bindings' records keep the number in `args` and put the text under `exprs`, and
-  their proxies `sync()` before handing out a value, since an edit elsewhere can move it.
-- **Every number has a dimension, and it is checked** (`units.rs`, Solvent §3.3).  Two bases — a
-  **length** and an **angle** — with *rational* exponents, because `sqrt` halves one.  `*` and
-  `/` derive, `+` and `-` demand agreement, `^` takes a whole power on a dimensioned base, and
-  what an expression comes to is checked against its slot (`SpecKind::dim()`, so nothing is
-  written per constraint type).  `Aff` carries the dimension beside the value: one walk, because
-  the dimension of `a * b` is a fact about the same two operands the number came from.
-  **The asymmetry between `Dim::fits` and `Dim::agree` is the design.**  A *context* — a slot, a
-  function's argument — may take a bare number, which is the whole of what "a document with no
-  `unit` line is in drawing units" means.  Two *operands* are not a context, so mixing one that
-  said what it was with one that did not is a question the language asks rather than answers:
-  `90 / N + ivp` is an error, and `90deg / N + ivp` is the answer.  A **name** is worth a number
-  and where it is used decides what it is (`w = 80` in a Length slot does not make `w` a length);
-  a unit on the literal and a component formal's declared `Ty` are what *do* travel, and the
-  formal is what catches `x := w + phi` — `flatten::settle` substitutes a parameter away, so
-  a dimension that did not travel with the number would leave nothing to check.
-  A literal may carry a unit, converted **to the document's own** by the tokenizer (which is why
-  `expr::parse_in` takes `Units`): `unit mm` names it, and without one a suffix is refused rather
-  than guessed.  **Feet-and-inches is one literal** — `1' 6 3/16"` — by the rule the language
-  already had, that *a space tells the readings apart*; so the language has **no string literal**
-  at all (`"` is the inch mark, a `Str` argument is a bare word, a raw branch key is bare).
-  `pi` is dimensionless and `tau`/`turn` are a **turn**, so `tau == 2 * pi * 1rad` holds; the nine
-  `* 180 / pi` conversions are `* 1rad`, which is not noise but the statement that
-  `inv φ = tan φ − φ` holds only in radians.  Storing the unit costs the solve nothing (every
-  kernel is homogeneous in length), and `io::paste` converts a figure between two documents that
-  named different ones — `Sketch::rescale`, which is written out by kind because "is this
-  parameter a length?" is not a question a `Param` can answer.
+  `Length`/`Angle` slot, `value` in arg units (radians) for the kernels, `text` as written
+  (degrees).  `w = 80` names a value, `h = w / 2` reads one; `expr::evaluate` is a Kahn walk of
+  the graph (earliest first among the ready), reporting per expression its name, deps and error —
+  defined twice, undefined, a cycle, a non-number.  One that cannot be computed keeps its last
+  number.  Trigonometry is in degrees.
+  A mixed fraction — `3 1/2` — is one `Num` from the tokenizer (`31/2` and `1/2` are divisions).
+  `expr::literal` does *not* claim it; `expr::notation` marks it notation, so `arg_text` prints it
+  as written where a *formula* prints text and value (`h = w * 2 = 80`).  A **callout carries the
+  expression** (`io::dimension_text`), a `param` included: the flattener settles `distance(w)` to
+  `100`, so the spelling is read back at the argument's span into `Constraint::written`
+  (`program::relations::written`), presentation only, dropped by any write of a number — at the
+  root and in a same-file component body (`design.module`).  A module's body and a block copy draw
+  the number; `program::relations::repeated` marks later copies drawing the same label
+  (`Constraint::repeated`), left out of the full layout, drawn when requested by id.
+  `expr::set_dimension` is the one write path for text (a bare number becomes `Arg::Num`, angle
+  converted — the app converts nothing); `Sketch::add` and `io::from_json` evaluate;
+  `Sketch::set_constraint_num` writes a number and re-evaluates when it dropped an expression.
+  Documents save `{"expr", "value"}` and accept a bare string; binding records keep the number in
+  `args`, the text under `exprs`, and proxies `sync()` before handing out a value.
+- **Every number has a dimension, and it is checked** (`units.rs`, Solvent §3.3).  Two bases,
+  **length** and **angle**, with *rational* exponents (`sqrt` halves one).  `*` and `/` derive,
+  `+` and `-` demand agreement, `^` takes a whole power on a dimensioned base, and the result is
+  checked against its slot (`SpecKind::dim()`).  `Aff` carries the dimension beside the value.
+  **The asymmetry between `Dim::fits` and `Dim::agree` is the design.**  A *context* (a slot, a
+  function's argument) may take a bare number; two *operands* may not mix: `90 / N + ivp` is an
+  error, `90deg / N + ivp` the answer.  A **name** is worth a number (`w = 80` in a Length slot
+  does not make `w` a length); a literal's unit and a formal's declared `Ty` *do* travel, so the
+  formal catches `x := w + phi` after `flatten::settle` substitutes a parameter away.
+  A literal's unit is converted **to the document's own** by the tokenizer (`expr::parse_in`
+  takes `Units`): `unit mm` names it, and without one a suffix is refused.  **Feet-and-inches is
+  one literal** — `1' 6 3/16"` — so there is **no string literal** (`"` is the inch mark, a `Str`
+  argument and a raw branch key are bare words).  `pi` is dimensionless and `tau`/`turn` a
+  **turn**, so `tau == 2 * pi * 1rad`; radians are written `* 1rad`, not `* 180 / pi`.  Storing
+  the unit costs the solve nothing, and `io::paste` converts between documents' units
+  (`Sketch::rescale`, written out by kind: a `Param` cannot say it is a length).
 - **A number's three names are one namespace** (issue #47, item 7; Solvent §5, §6.3).  A named
-  dimension (`a distance(w := 60) b`) declares `w` in its body exactly as `w := 60` does:
-  `flatten::params` collects both as `Def`s and works them out in one dependency order, so a
-  `param` may read a named dimension, a second `w` of either kind is "declared twice", and
-  `pythagoras.sv`'s `distance(a := la)` is a param feeding a dimension whose name the sheet then
-  reads.  A named dimension is two things in scope — its **number** in `vals`, for a `param`,
-  a seed or a count, and its **name** in `Scope::graph` (written name → absolute name), for a
-  dimension's text — because a dimension reading it must keep the *name*, or the tie the
-  expression graph makes and the callout shows would be folded away.  `settle_text` is the one
-  pass over a dimension's text: a name in `graph` reads as its absolute name (`w` → `t1.w`),
-  a formal or a `param` as its number, and **a name nothing in scope declares as the
-  instance's own unknown** (`Scope::instance_prefix`: `t1.w`, the name an unbound formal
-  already gets — a block copy's prefix is skipped, so a `cycle` shares its body's unknowns),
-  which is what stops a component reading the document it is drawn in by writing a name the
-  document happens to define.  One pass, because a second would find a formal's name inside
-  the absolute name the first had just written — which is also why `substitute_with` reads a
-  dotted path as one word.  A name declared inside a block copy is `#3.0.w`, so the expression
-  lexer reads a `#`-led key as an identifier.  The file's named dimensions reach its components
-  through `Walk::file_graph` beside `file_vals`, formals shadowing both; a module's are numbers
-  only (`module_params`), its drawing never being elaborated.  `tests/names.rs` is the gate.
-- A name **nothing defines is a free variable** (`expr::Free`): an unknown of the sketch rather
-  than an error, so the dimensions reading it are tied to each other and what they come to is
-  left to the solver — one degree of freedom where two stated numbers would have been none.
-  `expr::evaluate` owns them: it allocates one Param per free name into `Sketch::free_vars`,
-  retires it to `fixed` when the last reader stops reading it — keeping the *slot*, so reading the
-  name again reuses the unknown rather than leaking a new one and moving the parameter count that
-  `topology_key` ends with — and rewrites every binding (`Constraint::free`, at most one, which is
-  why it is on the constraint and not the argument) from scratch each run, so a document, a paste
-  and a rebuild carry only the text and the number and let the next evaluation work the rest out
-  again.  It runs on every edit that can touch one: `Sketch::add`, `remove`, `set_constraint_num`,
-  `set_dimension`, `from_json`, `report::exprs_json`.  A caller adding a *whole document* one
-  constraint at a time uses `Sketch::add_quiet` and evaluates once at the end (`io::graft`,
-  `io::from_json`): per-add evaluation is quadratic in the expression count, and would make a
-  dimension whose definition has not arrived yet briefly a free variable.
-  The tie is **affine in one free name** — `a`, `a / 2`, `2 * a + 5` — because `value = m*a + c`
-  is the whole of what a fixed-width block can carry: `expr::eval` works in `Aff`, so ordinary
-  evaluation is the `free: None` case and "a free name may only be scaled and offset" falls out
-  of the arithmetic rather than being checked for.  `a * a`, `sin(a)` and two free names in one
-  dimension are errors, and an erroring dimension keeps its last number like any other.
-  Every type carrying a `Length` or an `Angle` therefore needs a *second* kernel, its free twin
-  — the same rows and one more column, the unknown where the constant was, with (m, c) as the
-  constants — declared in `CKind::free_kernel`, which matches `CKind` exhaustively so a new
-  dimension type stops the build there; `every_dimension_can_be_written_free` checks the shape.
-  Nothing else in the solve path is per-type: `params_on` appends the free column (it is always
-  last), `consts_on` returns `[m, c]` turned by the statement's `side:`, `along:` or `sense:`
-  word as a stated number is turned (and a skew distance's by its seed's side), and `kernel_id`
-  picks the twin.  A fresh free variable seeds from the number the dimension already stated, or —
-  when it states none — from the geometry, by Newton on that one row (`expr::settle`), which asks
-  the kernel and no table and reads the same turned constants, so it starts on the named side.  A
-  free dimension is `unsupported` in `cgraph` (the cluster vocabulary has no element for a
-  relation *between* dimensions), is never jittered by the witness (it states no number to make
-  generic), is part of `topology_key` (which unknown it names is a column), and joins `io::Part`'s
-  walk (two dimensions sharing an unknown move together, which is as real a tie as a shared
-  point).  `expr::sync_free` brings the numbers they *show* back into step with the unknown, from
-  every seam that writes parameters without going through the others — `Sketch::set_x`,
-  `io::Part::write_back` and the wave's direct writes — since a solve moves the unknown and a
-  stale callout is a wrong drawing.
+  dimension (`a distance(w := 60) b`) declares `w` exactly as `w := 60` does: `flatten::params`
+  collects both as `Def`s in one dependency order, so a `param` may read a named dimension and a
+  second `w` of either kind is "declared twice" (`pythagoras.sv`'s `distance(a := la)`).  It is
+  two things in scope — its **number** in `vals` (for a `param`, a seed or a count) and its
+  **name** in `Scope::graph` (written → absolute name) for a dimension's text, which must keep the
+  name or the tie is folded away.  `settle_text` is the one pass over that text: a `graph` name
+  reads as its absolute name (`w` → `t1.w`), a formal or `param` as its number, and **a name
+  nothing in scope declares as the instance's own unknown** (`Scope::instance_prefix`; a block
+  copy's prefix skipped, so a `cycle` shares its unknowns) — a component never reads its host
+  document.  One pass, since a second would find a formal's name inside an absolute name (and
+  `substitute_with` reads a dotted path as one word).  A block copy's name is `#3.0.w`, so the
+  expression lexer reads a `#`-led key as an identifier.  The file's named dimensions reach its
+  components through `Walk::file_graph` beside `file_vals`, formals shadowing both; a module's
+  are numbers only (`module_params`).  `tests/names.rs` is the gate.
+- A name **nothing defines is a free variable** (`expr::Free`): an unknown of the sketch tying
+  the dimensions that read it.  `expr::evaluate` allocates one Param per free name into
+  `Sketch::free_vars`, retires it to `fixed` when unread — keeping the *slot*, so the parameter
+  count `topology_key` ends with does not move — and rewrites every binding (`Constraint::free`,
+  at most one) from scratch each run.  It runs on `Sketch::add`, `remove`, `set_constraint_num`,
+  `set_dimension`, `from_json`, `report::exprs_json`; a whole document uses `Sketch::add_quiet`
+  and evaluates once (`io::graft`, `io::from_json`), since per-add evaluation is quadratic.
+  The tie is **affine in one free name** — `a`, `a / 2`, `2 * a + 5`, `value = m*a + c`, all a
+  fixed-width block carries; `expr::eval` works in `Aff`, so `a * a`, `sin(a)` and two free names
+  are errors by arithmetic, and an erroring dimension keeps its last number.
+  Every `Length`/`Angle` type needs a *free twin* kernel (one more column, (m, c) as constants) in
+  `CKind::free_kernel`, exhaustive; `every_dimension_can_be_written_free` checks it.  `params_on`
+  appends the free column (always last), `consts_on` returns `[m, c]` turned by `side:`, `along:`
+  or `sense:` (a skew distance's by its seed's side), `kernel_id` picks the twin.  A fresh one
+  seeds from the stated number, else by Newton on its row (`expr::settle`).  A free dimension is
+  `unsupported` in `cgraph`, never jittered by the witness, part of `topology_key`, and joins
+  `io::Part`'s walk.  `expr::sync_free` updates the numbers shown from every seam writing
+  parameters directly — `Sketch::set_x`, `io::Part::write_back`, the wave's writes.
 - The page is the drawing *and the source it is written as*: the program panel is a permanent
-  second child of `<main>`, because the source is not a remark about the drawing — it is what the
-  drawing **is**.  Everything else the shell has to *say* is still said beside what is picked, and
-  there is no other sidebar.  A component selected names itself in the status line (`describeEntity`) and
-  brings up one floating window listing the constraints that reach it, and only those.  The
-  window is open on a `subject` — the selection while there is one, and otherwise whatever it
-  was last opened on, so focusing a constraint (which empties the selection) does not pull the
-  window out from under the pointer that clicked the row.  Nothing infers where a pick came
-  from: `openPanel` is how the two things that pick without selecting say so — a callout
-  clicked on the drawing, the banner's culprits — and `closePanel`, wired to `onSelect`, is a
-  press that hit nothing.
+  second child of `<main>`; there is no other sidebar.  A component selected names itself in the
+  status line (`describeEntity`) and brings up one floating window listing the constraints that
+  reach it, and only those, open on a `subject` — the selection, else what it was last opened on,
+  so focusing a constraint does not pull it away.  `openPanel` is how a clicked callout or the
+  banner's culprits pick without selecting; `closePanel`, wired to `onSelect`, is a press on
+  nothing.
 - **The colouring is the parser's own scan** (`syntax::highlight`), not a second lexer in
-  TypeScript: told to keep the comments and to say what each token turned out to be, so what a
-  colour says a word is and what the parser makes of it cannot disagree — and a regex highlighter
-  would part company on the first thing the language learned (`==` against `=`, a mixed fraction,
-  a block comment, a new constraint's name, which `CKind::from_name` supplies here for free).
-  `Tint` names the classes and the stylesheet says what they look like; the front end writes one
-  element per run with the gaps between them plain, so it describes no whitespace and parses
-  nothing.  A function of the *text* and not of an `Elaborated`, since the program being looked at
-  is usually the one half-typed.
-- Offsets cross the ABI in **UTF-8 bytes** and index a **UTF-16 string** on the other side, and
-  `gear.sv` has an em dash in its second line — so this is not a corner case but the ordinary one.
-  `core/program.ts::Offsets` is the conversion and `Document.adopt` is the **one seam** every
-  report crosses: the diagnostics, the source map and the coloured runs are all string indices by
-  the time anyone sees them, so no consumer holds the wrong unit and no two of them disagree.  A
-  wholly-ASCII program builds nothing and answers in a comparison; otherwise it is a binary search,
-  since a source map's offsets do not arrive in order.  Nothing sends an offset back the other way.
+  TypeScript, so a colour and the parser cannot disagree.  `Tint` names the classes and the
+  stylesheet says what they look like; the front end writes one element per run, parsing nothing.
+  A function of the *text*, not of an `Elaborated`, since the program is usually half-typed.
+- Offsets cross the ABI in **UTF-8 bytes** and index a **UTF-16 string** on the other side
+  (`gear.sv` has an em dash).  `core/program.ts::Offsets` is the conversion and `Document.adopt`
+  is the **one seam** every report crosses: diagnostics, source map and coloured runs are string
+  indices by the time anyone sees them.  A wholly-ASCII program builds nothing; otherwise it is a
+  binary search, since offsets do not arrive in order.  Nothing sends an offset back.
 - The box it is typed in is `app/editor.ts` — a `CodeEditor`, which knows nothing of Solvent and is
-  handed the text and a function saying which runs of it are what.  It is a `<textarea>` over a
-  `<pre>` of the same text, because a textarea cannot colour its contents and a `contenteditable`
-  gets the caret, undo and the platform's keys wrong.  Everything hard about that is one sentence:
-  **the two layers must put every character in the same place**, or the caret sits somewhere other
-  than the text it is in front of — and sharing the CSS is necessary and not sufficient, because
-  the box is one run per line where the copy is one element per colour.  Four rules, each of which
-  has already been the bug: the line height is a whole number of pixels; kerning and ligatures are
-  off; a run may change the colour and **never the face** (an italic or a bold is a different font,
-  and the box has no spans to match it); and the copy is **translated** to follow the box, never
-  scrolled — the box carries scrollbars and the copy does not, so its scroll *range* is a
-  scrollbar shorter and an assignment clamps at the bottom of a long file, which is precisely a
-  caret that is fine at the top and a line out at the end.  None of it is visible to a unit test,
-  so `npm run overlay` (`web/tools/overlay.mjs`) drives headless Chrome against the *real*
-  `CodeEditor` and checks the three things that can break: the metrics agree, the colouring moves
-  no glyph off where the plain text puts it, and the copy follows the box to both ends.  It is not
-  in `npm test` because it needs Chrome, and `make test` must not.
-- `SketchView` holds a `Document` (`core/program.ts`), not a `Sketch`: `view.sketch` is a getter
-  for what the source came to and `view.source` is the document.  **A new document is one
-  verb**, `SketchView.load` (File ▸ New is `newDocument`, Open and a test case reach it too):
-  the outgoing text goes on the undo stack as one step, so a load is undoable and ⌘Z after one
-  cannot land on an older state of a drawing that is gone; `settle()` is the one list of what
-  is in flight — a gesture, an animation, a carried dimension, a tool's half-collected clicks,
-  the remembered scene — cleared before any swap and before the box.  `setProgram` is the
-  *edit* of the same shape, the panel replacing the text, and keeps the history its own way.
-  Undo is program text, so it
-  restores what somebody wrote, comments and all.  A selection crosses a re-elaboration **by
-  name** (`Document.nameOf` / `Document.entity`) — a proxy is interned per `Sketch` and dies with
-  it; a name is what the source calls the thing.  `swap` is the one seam that replaces the
-  drawing, and it disposes the outgoing document.
+  handed the text and a function saying which runs are what: a `<textarea>` over a `<pre>` of the
+  same text.  **The two layers must put every character in the same place**; shared CSS is not
+  sufficient.  Four rules: the line height is a whole number of pixels; kerning and ligatures are
+  off; a run may change the colour and **never the face**; and the copy is **translated** to
+  follow the box, never scrolled (the box's scrollbars shorten its range).  `npm run overlay`
+  (`web/tools/overlay.mjs`) drives headless Chrome against the *real* `CodeEditor`: metrics agree,
+  colouring moves no glyph, the copy follows to both ends.  Not in `npm test`: it needs Chrome,
+  and `make test` must not.
+- `SketchView` holds a `Document` (`core/program.ts`), not a `Sketch`: `view.sketch` is what the
+  source came to and `view.source` the document.  **A new document is one verb**,
+  `SketchView.load` (File ▸ New is `newDocument`; Open and a test case too): the outgoing text is
+  one undo step; `settle()` is the one list of what is in flight — a gesture, an animation, a
+  carried dimension, a tool's half-collected clicks, the remembered scene — cleared before any
+  swap and before the box.  `setProgram` is the *edit* of the same shape.  Undo is program text,
+  comments and all.  A selection crosses a re-elaboration **by name** (`Document.nameOf` /
+  `Document.entity`); a proxy dies with its `Sketch`.  `swap` is the one seam that replaces the
+  drawing, and disposes the outgoing document.
   The source catches up at exactly two seams and **never per frame**: `syncSeeds` at the end of a
   drag (`gesture::endGesture`, guaranteed numeric) and `syncSource` at the end of `afterEdit`.
   The panel is wired to `onProgram`, never to `onDragFrame`.
 - A drag is an operation on the dragged point's *part* of the document (`io::Part`): what is
-  reached from it through shared points and constraints, stopping at fixed entities.  `PlanDrag`
-  builds its plan, systems and numeric fallback on that part alone and writes each frame back, so
-  a drag costs the figure, never the document, and separate figures cost it nothing; anything a
-  drag exchanges by point index (guards, flips, branch keys) crosses through the part's maps.
-- A drag made `PlanDrag::on` the document's own `PlanSolver` — the app passes `view.plan()`,
-  cached per topology and pinned for the gesture — starts with one pass over the residuals
-  (`PlanSolver::ensure_solved`) and runs on the document itself; `PlanDrag::new` is the
-  self-contained form, which builds a plan over the part.  The plan comes back with every
-  `move_to`/`guard_triangles`/`branches` (`None` for a drag of its own), and `part` is `None`
-  exactly while the drag moves the document directly.
-- Within the part, a frame costs the *region*, not the figure: `decompose::Wave` moves the plan's
-  roots as rigid bodies — the ones holding the dragged point, growing by shared elements only
-  while the cursor is out of reach — with every element shared with the rest held as an anchor
-  and every direction class the rest carries pinning a rotation.  Pull (cursor row) then polish
-  (anchors only, min-norm from the pulled pose) on the tiny merge system, rotations about each
-  body's centroid scaled by `TURN_COST` × its gyration radius so least-norm is least motion and a
-  free body slides rather than spins.  The wave keeps its bodies' and anchors' poses and never
-  re-reads what it moved, so nothing compounds over a long gesture; it starts from a solved
-  configuration (`PlanDrag::new` solves first) and hands over to the numeric `Drag` only for
-  unsupported constraints, a region past `WAVE_MAX`, or a body solve that will not converge.
+  reached through shared points and constraints, stopping at fixed entities.  `PlanDrag` builds its
+  plan, systems and numeric fallback on that part alone and writes each frame back, so a drag
+  costs the figure, never the document; anything exchanged by point index (guards, flips, branch
+  keys) crosses through the part's maps.
+- A drag made `PlanDrag::on` the document's own `PlanSolver` (`view.plan()`, cached per topology
+  and pinned for the gesture) starts with one pass over the residuals
+  (`PlanSolver::ensure_solved`) and runs on the document itself; `PlanDrag::new` builds a plan
+  over the part.  The plan comes back with every `move_to`/`guard_triangles`/`branches` (`None`
+  for a drag of its own), and `part` is `None` exactly while the drag moves the document directly.
+- Within the part, a frame costs the *region*: `decompose::Wave` moves the plan's roots as rigid
+  bodies — those holding the dragged point, growing by shared elements only while the cursor is
+  out of reach — with every element shared with the rest an anchor and every direction class the
+  rest carries pinning a rotation.  Pull (cursor row) then polish (anchors only, min-norm from the
+  pulled pose) on the tiny merge system, rotations about each body's centroid scaled by
+  `TURN_COST` × its gyration radius so a free body slides rather than spins.  The wave keeps its
+  poses and never re-reads what it moved, so nothing compounds; it starts solved (`PlanDrag::new`
+  solves first) and hands over to the numeric `Drag` only for unsupported constraints, a region
+  past `WAVE_MAX`, or a body solve that will not converge.
 - In `decompose`, a direction class is a *relation*, not an *adjacency*: merge candidates, the
   worklist refresh and the core frontier come from shared elements (`neighbours`), and the class
-  counts toward a candidate's rank once it is on the table (`pair_rel`, `relation_bound`).
-  `Horizontal`/`Vertical` put every levelled line in one class, so counting it as adjacency made
-  every cluster a neighbour of every other.  `relation_bound` must stay an upper bound on the
-  merge rank (an under-count loses a determined merge to the numeric fallback): validate a change
-  by forcing the factorisation on every call and asserting `rank <= bound` across the cases.
+  counts toward rank once on the table (`pair_rel`, `relation_bound`) — as adjacency, one
+  `Horizontal` class made every cluster a neighbour of every other.  `relation_bound` must stay an
+  upper bound on the merge rank: validate a change by forcing the factorisation on every call and
+  asserting `rank <= bound` across the cases.
 - **The ellipse is a library component** (issue #47, item 4): `Ellipse(f: plane, a, b, u)` in
   `rust/lib/std.sv`, a computed point at eccentric angle `u` on a datum, traced as a curve — so
-  `p on e`, `e tangent l` and `e curvature k` are the curve contacts, exact to third order, and
-  the entity kind with its three kernels and three `CKind`s is gone from every exhaustive arm,
-  the FFI, the binding and the app (the ellipse *tool* went with it: a tool that writes a
-  `use std`, a datum and a curve statement is a follow-up).  The parser keeps the word only to
-  refuse it, naming the spelling; `io::from_json` refuses a document carrying the old
-  `"ellipses"` table rather than reading it short.  `tests/ellipse.rs` holds the rim, the
-  tangent and the osculating circle against the closed forms the document never states, and
-  the rim turning with its datum.  An axis is a value the curve takes — stated or a `param` —
-  since a curve written in place is given every value and a component of one computed point
-  cannot be drawn as an instance whose formal is left free.
+  `p on e`, `e tangent l` and `e curvature k` are the curve contacts, exact to third order; the
+  entity kind, its kernels and `CKind`s are gone from every arm, the FFI, the binding and the app
+  (an ellipse *tool* is a follow-up).  The parser keeps the word only to refuse it, naming the
+  spelling; `io::from_json` refuses a document carrying the old `"ellipses"` table.
+  `tests/ellipse.rs` holds the rim, the tangent and the osculating circle against closed forms,
+  and the rim turning with its datum.  An axis is a value the curve takes — stated or a `param` —
+  since a component of one computed point cannot be drawn as an instance whose formal is left
+  free.
 - **A curve is a point of a component, as one of its numeric formals runs** (Solvent §6.5).
-  There is no curve family: `path := leg.toe over theta in (0, 360)` asks a *drawn*
-  instance where one of its points goes as one of its formals runs, and
-  `e := Involute(base, phase: a0).p over u in (u0, u1)` asks the same of an instance
-  written in place and never drawn.  `syntax::CurveSpec` is the statement (`CurveTarget`
-  `Drawn`/`Anon`, the swept formal, the interval); the flattener records every instance it
-  binds (`flatten::InstanceInfo` — prefix, component, the actuals resolved to absolute names,
-  the numbers) and resolves a drawn target onto the instance owning the longest prefix, so
-  `build_curve` never re-derives which instance a point belongs to.  A component's point is
-  placed one of two ways, and `program::compile_curve` picks the body from that: a **computed**
-  point, `p := point(x: xexpr, y: yexpr)` (`Decl::computed`), compiles to two `tape.rs` tapes — the
-  formula an involute has — and a component with one is refused on the sheet, since nothing
-  there holds a point to a formula; any other point is a **locus**, lowered by `compile_trace`
-  from the body's statements.  Either way the tapes are differentiated forward in the swept
-  formal *and* in every coordinate they read: `∂C/∂u` is which way a contact may slide, `∂C/∂θ`
-  is how the curve moves when its geometry does, and without it a point solves once and falls
-  off the moment the circle is dragged.
+  No curve family: `path := leg.toe over theta in (0, 360)` asks a *drawn* instance, and
+  `e := Involute(base, phase: a0).p over u in (u0, u1)` one written in place and never drawn.
+  `syntax::CurveSpec` is the statement (`CurveTarget` `Drawn`/`Anon`, swept formal, interval);
+  the flattener records every instance it binds (`flatten::InstanceInfo` — prefix, component,
+  absolute actuals, numbers) and resolves a drawn target onto the instance owning the longest
+  prefix, so `build_curve` never re-derives it.  `program::compile_curve` picks the body: a
+  **computed** point, `p := point(x: xexpr, y: yexpr)` (`Decl::computed`), compiles to two
+  `tape.rs` tapes, and a component with one is refused on the sheet; any other point is a
+  **locus**, lowered by `compile_trace`.  Either way the tapes are differentiated forward in the
+  swept formal *and* every coordinate they read (`∂C/∂θ`), or a point falls off when the circle
+  is dragged.
   **The body is expanded by the real flattener, symbolically** (`flatten::expand_component`,
-  `Sym`): the entity formals are names the body may reach, and every numeric formal is bound
-  as a *free value named after itself* — the same `Aff` an unbound formal becomes on the sheet
-  — so the ordinary machinery carries it: `substitute` writes a free value back out by name (or
-  as `(m * name + c)` for a `param` affine in it), `settle` keeps a dimension that comes to no
-  number, and the mode adds one policy, `Walk::keep_text`: a text nothing can work out at all
-  (a `param` or an argument over `sin(u)`) is kept as text and written in where it is read
-  (`Sym::texts`, keyed by absolute name and looked up through the scope's prefixes like any
-  name), where the sheet would report it.  A nested instance, a `repeat` and a formal's alias
-  are the flattener's as they are on the sheet — and a nested instance's *own* unbound formal is
-  its own unknown there too (`#c12.i.u`), no column of the curve, and reported rather than
+  `Sym`): every numeric formal is a *free value named after itself* (the `Aff` an unbound
+  formal is on the sheet): `substitute` writes it back by name (or `(m * name + c)`), `settle`
+  keeps a dimension with no number, and `Walk::keep_text` keeps a text nothing can work out
+  (`sin(u)`) as text where it is read (`Sym::texts`, keyed by absolute name, looked up through the
+  scope's prefixes).  A nested
+  instance's *own* unbound formal is its own unknown (`#c12.i.u`), no column of the curve, never
   captured by an outer formal of the same name (`tests/curve_of.rs`).  One expansion per
-  `(component, point, formal)` — `CurveDef::key` — and every instance asked for the same
-  shares the definition.  Which instance a drawn point belongs to is `Walk::owner_of`: the
-  innermost drawn instance owning the name's prefix *whose component has the swept formal*,
-  handed to the elaborator as `CurveSpec::of` rather than re-derived there.
-  The variable table is the swept formal, then every scalar the entity formals contribute
-  **in `entity_params` order** (`EntKind::scalar_names`), then the other numeric formals —
-  which is also `params_on`'s column order, so a tape's gradient *is* a row of the Jacobian.
-  `EntKind::Curve` is the one kind whose children need not be points, and the one that must be
-  built and grafted **last**, since its arguments may be of any other kind.
-  A curve's kernel belongs to its **definition**, not its type: two definitions read different
-  numbers of coordinates and cannot share a fixed-width block.  So `CKind::kernel()` panics for
-  the three curve kinds, `kernel_id_in(sk)` returns `N_KERNELS + 3·def + slot`, `System` owns a
-  table of the static kernels plus **three per definition** — the contact `PointOnCurve`, the
-  tangency `CurveTangentLine` (`inv tangent l`: the spline tangency's two rows over the curve's
-  frame) and the curvature `CurveCurvature` (`inv curvature k`: the spline curvature's three) —
-  and the registry publishes `kernel: -1` for all three, which the bindings' exhaustive tests key
-  on rather than on a name.  The tapes ride in the constraint's `consts`, so no kernel signature
-  learns about curves and `KERNELS` stays `'static`.  What a tangency and a curvature need is the
-  curve's **frame** (`kernels::CurveFrame`): `C` to `C'''` in the parameter and the gradient of
-  the first three orders in `[u, θ…]`.  A formula gives all of it exactly from
-  `tape::eval_series_flat` — truncated Taylor arithmetic to third order with the gradient
-  carried through the same recurrences (`tape::Series`, checked against finite differences of
-  the first-order evaluator in `tests/tape.rs`).  A trace gives `C` and `C'` exactly (the implicit
-  function theorem, as the contact already had) and `C'`'s gradient by **forward difference** of
-  that exact velocity from the memoised centre (`locus::kernel_frame`: one warm block solve per
-  column, from the contact's remembered pose, so the branch cannot change under it) — accurate
-  enough for a Jacobian, which is all it is used for, since the residual is exact.  **A residual
-  never builds the frame**: `curve_value` gives the derivatives alone (for a trace, the memoised
-  contact evaluation), and only a Jacobian pays for the gradient — the `EllFrame` bargain, since
-  a rejected trust-region step evaluates residuals without ever asking for one, and for a trace
-  the gradient is a sweep of block solves.  It gives no `C''`: that would need second derivatives
-  of the block's kernels, and a residual by difference would solve to a slightly wrong circle and
-  call it right, so `constraints::validate` refuses a curvature against a traced curve and its
-  slot in the table is the `refused` kernel (every row NaN, which `System` reads as not
-  converged).  Which kernel a kind runs through is `CKind::family_kernel` — `FamilyKernel`, whose
-  discriminant is the slot and which knows its row count — read by `kernel_id_in`,
-  `n_residuals`, the registry's `kernel: -1` and `kernel_table` alike, so a fourth per-definition
-  kind is one arm.  `Sketch::curve_polyline` is memoised against everything it reads (the
-  variables at the interval's start, the interval, the anchor and its pose), because a pick
-  walks every drawn curve on every pointer move.  `tests/curve_contact.rs` holds both contacts
-  against the involute's closed forms (the tangent is the string; the radius of curvature is
-  the string unwound); `tests/common` is the finite-difference Jacobian check the curve tests
-  share.
-  **An unbound numeric formal is an unknown of the drawing.**  `leg := Leg(axle, pivot)` with
-  `theta` not given binds it to a *free* `Aff` named under the instance — `leg.theta`, so two
-  legs have two cranks — and every reader carries it: `value_aff` passes a free value the scope
-  bound (refusing, as it always did, a name nothing binds), so a `param` over it is affine in
-  it, an argument handing it to a nested instance binds that formal to the same unknown, and
-  `substitute` writes the name into every dimension that reads it, where the language already
-  makes a name nothing defines a free variable (`expr::Free`).  A drawn mechanism is therefore
-  drawn once with its crank free, and the curve's anchor follows the unknown: `CurveE::home`
-  is `Home::Free(name)` and `Sketch::curve_home` reads it, since the unknown is allocated after
-  the curve is built and moves with every solve.
+  `(component, point, formal)` — `CurveDef::key` — shared by every instance.  `Walk::owner_of`:
+  the innermost drawn instance owning the prefix *whose component has the swept formal*, handed
+  on as `CurveSpec::of`.
+  The variable table is the swept formal, then the entity formals' scalars **in `entity_params`
+  order** (`EntKind::scalar_names`), then the other numeric formals — `params_on`'s column order,
+  so a tape's gradient *is* a Jacobian row.  `EntKind::Curve` is the one kind whose children
+  need not be points, built and grafted **last**.
+  A curve's kernel belongs to its **definition**, not its type (definitions differ in width).
+  `CKind::kernel()` panics for the three curve kinds, `kernel_id_in(sk)` returns
+  `N_KERNELS + 3·def + slot`, and `System` owns the static kernels plus **three per definition**
+  — `PointOnCurve`, `CurveTangentLine` (`inv tangent l`) and `CurveCurvature`
+  (`inv curvature k`); the registry publishes `kernel: -1` for all three, which the bindings'
+  tests key on.  The tapes ride in `consts`, so `KERNELS` stays `'static`.  Tangency and
+  curvature need the **frame** (`kernels::CurveFrame`): `C` to `C'''` and the gradient of the
+  first three orders in `[u, θ…]`.  A formula gives it exactly (`tape::eval_series_flat`,
+  `tape::Series`, checked in `tests/tape.rs`).  A trace gives `C`, `C'` exactly and `C'`'s
+  gradient by **forward difference** from the memoised centre (`locus::kernel_frame`: one warm
+  block solve per column from the remembered pose, so the branch cannot change).  **A residual
+  never builds the frame**: `curve_value` gives derivatives alone, only a Jacobian pays for the
+  gradient (the `EllFrame` bargain).  A trace gives no `C''`, so `constraints::validate` refuses
+  curvature against a traced curve and its slot is the `refused` kernel (rows NaN, not
+  converged).  `CKind::family_kernel` (`FamilyKernel`: discriminant = slot, knows its row count)
+  is read by `kernel_id_in`, `n_residuals`, the registry and `kernel_table`, so a fourth kind is
+  one arm.  `Sketch::curve_polyline` is memoised against everything it reads (picks walk every
+  curve per pointer move).  `tests/curve_contact.rs` holds the contacts against the
+  involute's closed forms; `tests/common` is the shared finite-difference Jacobian check.
+  **An unbound numeric formal is an unknown of the drawing.**  `leg := Leg(axle, pivot)` without
+  `theta` binds a *free* `Aff` named `leg.theta`, one per instance; `value_aff` passes it
+  (refusing a name nothing binds), a `param` over it is affine in it, a nested instance shares
+  it, and `substitute` writes the name into dimensions (`expr::Free`).  The curve's anchor
+  follows it: `CurveE::home` is `Home::Free(name)`, read by `Sketch::curve_home`, since the
+  unknown is allocated after the curve is built.
 - A **locus** (`locus.rs`) is what a traced point is: the curve is wherever the body's
-  constraints put `p`, which is how a person states an involute ("the end of a taut string as
-  it unwinds") without ever deriving it.  The body is lowered once, when the curve is first
-  built (`program::compile_trace`), through a scratch sketch and `Constraint::params_on` — the
-  real column mapping, never a second copy — into rows of the static kernels over one variable
-  table `[u, θ, values, q, w]`: `q` the body's own coordinates, `w` a dimension written over `u`
-  and the geometry, computed by a tape and read by the dimension's **free twin** kernel with
-  `(m, c)` the unit conversion, so no new derivative code exists anywhere.  Evaluating `C(u)`
-  is a small damped Newton solve of the rows and its derivatives are the implicit function
-  theorem at the solution — `∂C/∂u` and `∂C/∂θ` from one factorisation of the inner Jacobian —
-  which is what keeps a contact on the curve when the geometry it is written over is dragged.
-  The whole compiled body encodes to flat `f64` and rides in the contact's consts exactly as
-  the tapes do (`locus::eval_at` is the one evaluator — kernel, tessellation and tests all run
-  the flat form — with `eval_flat` its cold entry), so `System` only picks `trace_kernel` over
-  `curve_kernel` per definition and the bindings are untouched.  A trace contact's constants
-  are `[anchor, n_values, values…, has_pose, flat…, pose…]` (`kernel_eval` reads them,
-  `consts_on` writes them, `kernel_table` sizes them; the flat's own header says how wide the
-  pose is, and `view` ignores what trails it): the anchor parameter, the numbers, and — for a
-  curve of a **drawn** instance — the **pose on the sheet**, read off the instance's own points
-  at every compile and refresh (`CurveDef::pose_of` names each inner unknown's owner by its own
-  scalars, `CurveE::pose` the resolved entities, `Sketch::curve_pose` the one reader, and
-  `model::whole` the one statement that a pose with a hole is no pose), which is where the
-  anchor solve starts (`locus::Anchor`).  The polyline sweep walks its samples **outward from
-  the anchor** — down to `u0`, then from the anchor's pose again up to `u1` — so every solve
-  is a sample; marching to `u0` first paid for that stretch twice on every repaint.  Chirality —
-  which way the string unwinds — is a *branch*, and no regular residual can state one (a
-  residual zero at exactly one direction has a vanishing gradient there).  A body states its
-  way onto a branch by three instruments, in order of strength (spec §6.5): a **signed
-  constraint** where the vocabulary has one (`point_line_distance` is signed, so "taut" written
-  against the radius line makes the winding algebraic in the sign of the roll); an
-  **orientation predicate** — `ccw(a, b, x)` contributes no residual and selects the solution
-  component, its third point one the body places, enforced only at the **anchor** (the drawn
-  pose, or the value an instance written in place gave the swept formal) by
-  reflect-and-resolve, with deterministic restarts (fixed-seed `rng::Rng`, scaled by the entity
-  formals' coordinates and by *nothing else* — scaled by every outer value, a tooth's `phase`
-  of 129° threw the restarts eight radii from the circle, and the target `u` made the anchor
-  solve a lottery per evaluation) when there is no pose and the seeds leave it nowhere to
-  start; and a **seed** for what neither can say.  Continuity carries the branch from the
-  anchor everywhere else — evaluation is one warm-started march, the same walk the polyline
-  sweep does, and a body with predicates never trusts a direct solve *from the seeds* at the
-  target (it could land in a forbidden component).  A branch once carried is **kept**: the
-  outer solver moves `(u, θ)` a little and asks the same contact again, which is a
-  continuation step like any other, so each contact's pose is remembered and the next
-  evaluation *resumes* from it instead of re-walking the march.  Replaying it cost thirty-four
-  block solves for every one it needed — 92% of a traced gear's solve.  A resumed step is
-  trusted only as far as `locus::continues` can check it, against the tangent the pose's own
-  `∂C/∂(u, θ)` predicted (a correction second order in the step is the same branch; one the
-  size of the gap between branches is not), and what fails falls back to the anchor and the
-  full march, so the doctrine above still decides every branch.  A pose is addressed by *where
-  its contact's constants live* — `refresh_consts` rewrites a trace contact's in place, so the
-  address is its own for the life of the system, and the values that rewrite may change ride in
-  `outer` too and so miss rather than read stale.  Only a recompile can put another contact at
-  that address, which is why `System::new` calls `locus::forget`.  The kernel path therefore
-  carries a history where the drawing path is always cold, which is the intended reading: a
-  contact is a point that reached its `u` by a road, and the two agree because every step of
-  that road was checked against the curve's own tangent.
-  A seed is a *place*, named geometrically where it can be: `hint(at: c, bearing: u + phase)`
-  is the point at the edge of the circle, `hint(at: t)` is where another point starts
-  (`program::at_seed` lowers both to the tapes the coordinate spelling would be), and
-  `hint(x: xexpr, y: yexpr)` remains for a place with no name — in a component that is only
-  ever traced, since on the sheet a seed is a number a solve writes back (`build` refuses a
-  drawn one).
+  constraints put `p`.  The body is lowered once (`program::compile_trace`) through a scratch
+  sketch and `Constraint::params_on` — never a second column mapping — into static-kernel rows
+  over `[u, θ, values, q, w]`: `q` the body's coordinates, `w` a dimension over `u` computed by a
+  tape and read by its **free twin** kernel (`(m, c)` the unit conversion), so no new derivative
+  code exists.  `C(u)` is a small damped Newton solve, its derivatives the implicit function
+  theorem from one factorisation.  The body encodes to flat `f64` in the contact's consts
+  (`locus::eval_at` the one evaluator, `eval_flat` its cold entry); `System` picks
+  `trace_kernel` over `curve_kernel` per definition, bindings untouched.  A trace contact's
+  constants are `[anchor, n_values, values…, has_pose, flat…, pose…]` (`kernel_eval` reads,
+  `consts_on` writes, `kernel_table` sizes; `view` ignores what trails): for a **drawn**
+  instance the **pose on the sheet**, read at every compile and refresh (`CurveDef::pose_of`,
+  `CurveE::pose`, `Sketch::curve_pose` the one reader, `model::whole`: a pose with a hole is no
+  pose), where the anchor solve starts (`locus::Anchor`).  The polyline sweep walks **outward
+  from the anchor**, down to `u0` then up to `u1`.  Chirality is a *branch*, which no regular
+  residual can state.  Three instruments, by strength (spec §6.5): a **signed constraint**
+  (`point_line_distance`); an **orientation predicate** — `ccw(a, b, x)`, no residual, enforced
+  only at the **anchor** by reflect-and-resolve, with deterministic restarts (fixed-seed
+  `rng::Rng`, scaled by the entity formals' coordinates and *nothing else*) when there is no
+  pose; and a **seed**.  Continuity carries the branch elsewhere — one warm-started march, and a
+  body with predicates never trusts a direct solve *from the seeds* at the target.  A carried
+  branch is **kept**: each contact's pose is remembered and the next evaluation *resumes*,
+  trusted only as far as `locus::continues` checks it against the tangent `∂C/∂(u, θ)`
+  predicted; a failure falls back to the anchor and full march.  A pose is addressed by *where
+  its contact's constants live* (`refresh_consts` rewrites in place; values it may change ride
+  in `outer` and miss rather than read stale), so `System::new` calls `locus::forget`.
+  A seed is a *place*: `hint(at: c, bearing: u + phase)`, `hint(at: t)` (`program::at_seed`
+  lowers both to tapes), and `hint(x: xexpr, y: yexpr)` only in a component that is only ever
+  traced (`build` refuses a drawn one, since on the sheet a seed is a number a solve writes).
   A traced body must be square — as many rows as inner coordinates — or elaboration refuses it.
-  `tests/trace.rs` holds the taut-string involute checked against the closed form it never
-  states (with seeds wrong by 3× on purpose), a gear run on traced flanks, and — the guard on
-  the resume — the same parameters asked in three orders, since an answer that depended on what
-  was evaluated before it would be a warm start that had changed one; `tests/jansen.rs` holds
-  the drawn-instance form against an independent circle-intersection model at 24 crank angles.
-- A curve is *geometry*, so like a dimension callout it is laid out in the core and the front end
-  only strokes what it is handed: `curve::tessellate` refines to `FLATNESS_PX` screen pixels
-  through `unit` (the world length of one screen pixel), and `curve::closest` is the pick test
-  and the seed for a fresh contact, so the two agree about where "on the curve" is.  No binding
-  evaluates a basis function, and none writes the degree down: `report::registry_json` publishes
-  `curve.minCtrl`, so a front end's tool and its messages cannot drift from what
-  `Sketch::spline_with` will accept.
+  `tests/trace.rs` holds the taut-string involute against its closed form (seeds 3× wrong), a
+  gear on traced flanks, and the same parameters asked in three orders (guarding the resume);
+  `tests/jansen.rs` holds the drawn form against a circle-intersection model at 24 angles.
+- A curve is *geometry*, laid out in the core and only stroked by the front end:
+  `curve::tessellate` refines to `FLATNESS_PX` through `unit`, and `curve::closest` is the pick
+  test and a fresh contact's seed.  No binding evaluates a basis function or writes the degree:
+  `report::registry_json` publishes `curve.minCtrl`, matching `Sketch::spline_with`.
 - `solve::Drag` is the one point-drag implementation (pull + polish), `RadiusDrag` its scalar
   counterpart for circle/arc radii (a `Radius` with `soft` set — its residual is already
   r − target, so no kernel of its own); the front end only translates coordinates.
@@ -2475,32 +1500,25 @@ Conventions:
 - The trust-region loop is `newton::dogleg` over a `TrustRegion`; a new thing to minimise
   implements the trait rather than copying the loop.
 - **Block-triangular solve** ([docs/block-triangular-solve-plan.md](docs/block-triangular-solve-plan.md)):
-  `System::block_order` (memoised per compile) is the DM-matched square part sorted into
-  strongly connected blocks (`graph::blocks`: Tarjan, then the lowest row first), over/under
-  parts beside it — the coarse DM puts everything a redundant row reaches in the over part.
-  `System::subset` evaluates some instances against some columns through the same helpers as
-  the whole system, so its numbers are the whole system's to the bit (a trace's consts at their
-  memo address); `BlockTr` minimises one block with `newton::dogleg`, compiling no `System`.
+  `System::block_order` (memoised per compile) is the DM-matched square part in strongly
+  connected blocks (`graph::blocks`: Tarjan, lowest row first), over/under parts beside it.
+  `System::subset` evaluates through the whole system's helpers, so its numbers match to the bit;
+  `BlockTr` minimises one block with `newton::dogleg`, compiling no `System`.
   `SolveOpts::blocks`: `Rescue` (default) runs the pass and a whole-system DogLeg polish after a
-  failed DogLeg, before LM, only with `retry` and ≥2 blocks, kept only if it solves — a document
-  that solves or conflicts is untouched; `First` (before the DogLeg) is for measurement, and
-  would change half the corpus's bits and four documents' roots. Blocks run with `BLOCK_XTOL`
-  1e-15 and are accepted at `acceptance_tol`. The spiral bevel relies on it: its normal module
-  is constructed and its seeds are rough (C's stays exact), and `hypoid_layout.rs` holds rough
-  starts to the recorded pair. The module previews are held to convergence.
+  failed DogLeg, before LM, only with `retry` and ≥2 blocks, kept only if it solves; `First` is
+  for measurement only (it changes bits and roots). `BLOCK_XTOL` 1e-15, accepted at
+  `acceptance_tol`. The spiral bevel relies on it (`hypoid_layout.rs` holds rough starts).
 - **Settled** ([docs/iteration-limit-rescue-plan.md](docs/iteration-limit-rescue-plan.md)):
   `SolveResult::settled` is `success && status != 4`; a DogLeg accepted on its iteration limit
   can be 1e-3 of the extent off. With `retry` and `Rescue`, `System::block_rescue` tries the block
   pass on an unsettled DogLeg: a failure from the start, kept if it succeeds; a limit stop from
   the stop, kept if it converges (status 0), else from the start, kept if it settles, else the
-  first pass that settled, else the stop bit for bit. From the start alone it changes roots; from
-  the stop alone it finishes stalls. Drags (`retry` off) never see it.
+  first pass that settled, else the stop bit for bit. Drags (`retry` off) never see it.
 - Nothing in the project is auto-formatted: there is no `rustfmt.toml`, and `cargo fmt` would
   reformat every file.  Match the surrounding style by hand (100 columns).
 - No LAPACK/BLAS: the QR, complete-orthogonal, SVD and LDLᵀ routines are ours, and
-  `rust/gcs-core/tests/linalg.rs` checks them against `nalgebra` — the one place two
-  implementations are still compared, on purpose.  **The library has no dependencies; its tests
-  have one reference implementation**, and it is a `[dev-dependencies]` entry precisely so that
-  nothing it brings links into the cdylib or the wasm.  Each test also states the property the
-  reference cannot (`A ≈ QR` on the pivots, `NᵀN ≈ I`, a minimum-norm solution orthogonal to the
-  null space): a reference agreeing is evidence, a property holding is the contract.
+  `rust/gcs-core/tests/linalg.rs` checks them against `nalgebra`, on purpose.  **The library has
+  no dependencies; its tests have one reference implementation**, a `[dev-dependencies]` entry so
+  nothing links into the cdylib or wasm.  Each test also states the property (`A ≈ QR`,
+  `NᵀN ≈ I`, minimum-norm orthogonal to the null space): agreement is evidence, the property the
+  contract.
