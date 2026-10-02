@@ -246,6 +246,15 @@ first, to `supply_field` (checked in the core); a provisional surface draws, and
 through the preview choice. Options ▸ mesh fineness is view state: the job carries it to
 `FieldMesher::with_fineness` (facets that many times smaller, surface distance its square;
 the core offers 0.25–4 and refuses the rest), and a change meshes every swept object again.
+**A swept object of the generating class also gets its exact surface**: other instances of the
+same worker (one an object, up to four) step `brep::export::Builder` — admitted (a quarter of the
+export's samples each way), the blank, each sheet, the sector, the cut, the pattern, a display mesh
+at `DISPLAY_SAG` and `DISPLAY_ANGULAR` — saying what each next stage does, which the footer shows
+with a bar, a spinner and a clock the page keeps ticking through a stage's silent seconds. The
+surface replaces the field's preview through `supply_field` with `ExactFaces` (each triangle's face,
+which faces are curved, the B-rep's volume: `from_exact_surface`), ends the preview's job, and is
+kept across fineness changes; one the build refuses keeps its field's surface. A gear member is
+about 12 s in the browser, its sector's split most of it.
 **Field meshing** ([docs/field-meshing.md](docs/field-meshing.md)): Delaunay refinement of the
 material field (`delaunay::refine::Progressive`, resumable, over a regular triangulation with
 exact predicates; what it meshes is a `refine::Domain`), sharp edges protected by weighted points. `FieldMesher` runs two passes: an

@@ -26,6 +26,13 @@ pub fn inputs(sk: &Sketch) -> Vec<f64> {
     out
 }
 
+/// Whether the pictures are the same at every pixel length: every solid they project is swept, and
+/// a swept solid is one surface (its field's, or its exact B-rep's mesh) whatever the unit asked.
+/// A host keeping a picture through a zoom then has nothing to refine once the camera rests.
+pub fn detail_free(sk: &Sketch) -> bool {
+    sk.derived.iter().all(|d| sk.is_swept(d.solid as usize))
+}
+
 /// Project a document solid in one of its named planes.
 pub fn view(sk: &Sketch, si: usize, plane_i: Option<usize>, unit: f64) -> Vec<Stroke> {
     render(sk, si, plane_i, unit, None)

@@ -25,12 +25,22 @@ pub enum Built { Sector { sector: sector::Sector,pattern: Patterned },Whole(crat
 /// take them for one (mm): the far side is the near one turned, so they agree to rounding.
 const PATTERN_MATCH: f64 = 1e-6;
 
-/// `body` (its static recipe and its admission to the generating-sweep class, which only
-/// `admission::admit_body` makes) built as one sector patterned, or — where a sector's premises do
-/// not hold, which is said — whole, or refused with the stage that refused it.
-pub fn build(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admission,tolerance: Option<Tolerance>,say: &Say)
-    -> Result<Built,ExportRefusal> {
-    let name = &sk.solids[body].name;
+/// What every stage of a swept body's build reads: millimetres a model unit, the static
+/// remainder's analytic field, the distinct sweeps and their cuts, and the blank (mm).
+pub struct Prepared { scale: f64,field: crate::solid::SpatialField,distinct: Vec<usize>,cuts: Vec<sheet::SweptCut>,
+    blank: crate::brep::topo::Brep }
+
+impl Prepared {
+    /// How many distinct sweeps the body cuts, each one sheet.
+    pub fn sweeps(&self) -> usize { self.cuts.len() }
+    /// The document's name of sweep `k`.
+    pub fn sweep_name<'a>(&self,sk: &'a Sketch,k: usize) -> &'a str { &sk.solids[self.distinct[k]].name }
+}
+
+/// The first stage: the body's field, its sweeps and its blank, by its meridian where it is a solid
+/// of revolution. `admission` must be this body's (which only `admission::admit_body` makes).
+pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admission,say: &Say) -> Result<Prepared,ExportRefusal> {
+    let name = sk.solids[body].name.clone();
     if admission.body() != body {
         return Err(ExportRefusal::at(Stage::Admission,format!("`{name}`: the admission presented is another body's")))
     }
@@ -39,7 +49,6 @@ pub fn build(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admission
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
     let cuts = distinct.iter().map(|&swept| sheet::SweptCut::read(sk,swept)).collect::<Result<Vec<_>,_>>()?;
-    // the blank, by its meridian where it is a solid of revolution
     let started = crate::clock::Instant::now();
     let blank = match crate::brep::recipe::meridian(&recipe.recipe,[1.,0.,0.]).at(Stage::Blank)? {
         Ok((b,..)) => b,
@@ -48,18 +57,46 @@ pub fn build(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admission
     (say.stage)(&format!("`{name}`: the static blank by this kernel: {:.6} mm³, {} faces ({:?})",crate::brep::props::volume(&blank),
         blank.faces.len(),started.elapsed()));
     (say.mark)(Stage::Blank);
-    // each sweep's sheet, side by side where the target has threads
+    Ok(Prepared {scale,field,distinct,cuts,blank})
+}
+
+/// Sweep `k`'s sheet, traced and fitted against the blank (`sheet::swept_sheet`).
+pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<sheet::Fitted,ExportRefusal> {
+    let (field,scale) = (&prepared.field,prepared.scale);
     let inside = |points: &[[f64;3]]| -> Result<Vec<bool>,String> { Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect()) };
     let near = |p: [f64;3]| field.value(p.map(|x| x/scale))*scale;
-    let sheets = crate::par::map(&cuts,|cut| sheet::swept_sheet(cut,&inside,&near,tolerance,say)).into_iter().collect::<Result<Vec<_>,_>>()?;
-    let premises = match sector::premises(sk,body,recipe,&blank,&field,&distinct,&sheets,scale,say) {
-        Ok(premises) => premises,
-        Err(why) => {
-            (say.stage)(&format!("built whole, not as one sector: {why}"));
-            return Ok(Built::Whole(sector::whole(sk,body,recipe,&blank,&distinct,&sheets,scale,say).at(Stage::Split)?))
-        }
-    };
-    let sector = sector::construct(recipe,&distinct,premises,say).at(Stage::Split)?;
+    sheet::swept_sheet(&prepared.cuts[k],&inside,&near,tolerance,say)
+}
+
+/// How the body is cut from its blank: as one sector, its premises holding, or whole, and why.
+pub enum Plan { Sector(sector::Premises),Whole(String) }
+
+/// Whether the body's sweeps are turns of one placement about one axis with a side through their
+/// gaps (`sector::premises`), or it is built whole.
+pub fn plan(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,sheets: &[sheet::Fitted],say: &Say) -> Plan {
+    match sector::premises(sk,body,recipe,&prepared.blank,&prepared.field,&prepared.distinct,sheets,prepared.scale,say) {
+        Ok(premises) => Plan::Sector(premises),
+        Err(why) => { (say.stage)(&format!("built whole, not as one sector: {why}")); Plan::Whole(why) }
+    }
+}
+
+/// The body's material by its plan: the sector cut from the blank by its sides and sheets, its cells
+/// judged, or the whole blank so cut (the `Whole` built already).
+pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,sheets: &[sheet::Fitted],plan: Plan,say: &Say)
+    -> Result<Cut,ExportRefusal> {
+    Ok(match plan {
+        Plan::Sector(premises) => Cut::Sector(sector::construct(recipe,&prepared.distinct,premises,say).at(Stage::Split)?),
+        Plan::Whole(_) => Cut::Whole(sector::whole(sk,body,recipe,&prepared.blank,&prepared.distinct,sheets,prepared.scale,say)
+            .at(Stage::Split)?),
+    })
+}
+
+/// The material cut: one sector, or the whole body.
+pub enum Cut { Sector(sector::Sector),Whole(crate::brep::topo::Brep) }
+
+/// The body built from its cut material: a sector patterned round its axis, or the whole as it is.
+pub fn finish(cut: Cut,say: &Say) -> Result<Built,ExportRefusal> {
+    let sector = match cut { Cut::Sector(sector) => sector,Cut::Whole(solid) => return Ok(Built::Whole(solid)) };
     let started = crate::clock::Instant::now();
     let pattern = pattern::pattern(&sector.piece,sector.origin,sector.axis,sector.count,PATTERN_MATCH).at(Stage::Fuse)?;
     (say.stage)(&format!("turned the sector into {} copies: its sides faces {} and {}, their vertices matched within {:.1e} mm ({:?})",
@@ -67,3 +104,16 @@ pub fn build(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admission
     (say.mark)(Stage::Fuse);
     Ok(Built::Sector {sector,pattern})
 }
+
+/// `body` (its static recipe and its admission to the generating-sweep class, which only
+/// `admission::admit_body` makes) built as one sector patterned, or — where a sector's premises do
+/// not hold, which is said — whole, or refused with the stage that refused it: the stages above in
+/// turn, each sweep's sheet side by side where the target has threads.
+pub fn build(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admission,tolerance: Option<Tolerance>,say: &Say)
+    -> Result<Built,ExportRefusal> {
+    let prepared = prepare(sk,body,recipe,admission,say)?;
+    let sheets = crate::par::indices(prepared.sweeps(),|k| sheet(&prepared,k,tolerance,say)).into_iter().collect::<Result<Vec<_>,_>>()?;
+    let plan = plan(sk,body,recipe,&prepared,&sheets,say);
+    finish(cut(sk,body,recipe,&prepared,&sheets,plan,say)?,say)
+}
+

@@ -523,6 +523,19 @@ impl Sketch {
         if surface.triangles.iter().flatten().any(|&v| v as usize >= n) {
             return Err(format!("`{}`: a supplied triangle names a vertex past the {n} given", self.solids[i].name));
         }
+        // an exact surface is a finished one, and says the face of every triangle
+        if let Some(x) = &surface.exact {
+            let name = &self.solids[i].name;
+            if surface.provisional { return Err(format!("`{name}`: an exact surface is never provisional")); }
+            if x.of.len() != surface.triangles.len() {
+                return Err(format!("`{name}`: an exact surface names the faces of {} of its {} triangles", x.of.len(),
+                    surface.triangles.len()));
+            }
+            if x.of.iter().any(|&f| f as usize >= x.smooth.len()) {
+                return Err(format!("`{name}`: an exact surface's triangle names a face past the {} given", x.smooth.len()));
+            }
+            if !(x.volume.is_finite()) { return Err(format!("`{name}`: an exact surface's volume is not a number")); }
+        }
         let key = crate::solid::reads(self, i, 0.0);
         self.field_surfaces.borrow_mut().insert(i, (key, std::rc::Rc::new(surface)));
         self.solid_cache.borrow_mut().retain(|(index, _), _| *index != i);

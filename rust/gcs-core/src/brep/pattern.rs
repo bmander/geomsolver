@@ -35,6 +35,8 @@ pub struct Built {
 }
 
 impl Built {
+    /// The sector the copies are made of: the faces `mesh`'s triangles say they are of.
+    pub fn sector(&self) -> &Brep { &self.sector }
     /// The solid's mesh within `bar` (`mesh::mesh`), made as the sector's — its sides left out, its far
     /// side sampled as its near side turned — turned into every copy, the copies sharing their seam
     /// points by index: the same in every copy to the turn's rounding, as the solid is.

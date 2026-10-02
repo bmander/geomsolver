@@ -6,8 +6,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { readFileSync } from 'node:fs';
-import { FieldPreview, type Frame, type Job, type MeshJob, type MeshWorker } from '../app/field-preview.js';
-import { fieldJobs, type FieldSurface } from '../core/field.js';
+import { FieldPreview, type ExactJob, type Frame, type Job, type MeshJob, type MeshWorker, type Refining } from '../app/field-preview.js';
+import { ExactBuilder, fieldJobs, type FieldSurface } from '../core/field.js';
+import { derived, derivedDetailFree, preview as showSolids } from '../core/derived.js';
 import { mesh, provisional } from '../core/mesh.js';
 import * as modules from '../core/modules.js';
 import { Document } from '../core/program.js';
@@ -139,4 +140,82 @@ test('a new fineness meshes the drawing again, finished surfaces and all, and sa
   assert.equal(arrived.length, 1);
   doc.dispose();
   next.dispose();
+});
+
+test('a swept object\'s exact surface is built a stage at a time, and replaces its preview', async () => {
+  const doc = Document.read(TORUS);
+  const [{ solid, key }] = fieldJobs(doc.sketch);
+  // the core's builder, as the exact worker steps it: what each next stage does, then the surface
+  const builder = ExactBuilder.create(doc.sketch, solid);
+  const said: string[] = [builder.progress().doing];
+  while (!builder.step()) said.push(builder.progress().doing);
+  const built = builder.surface();
+  const total = builder.progress().total;
+  builder.dispose();
+  assert.equal(said[0], 'admitting its sweeps to the generating class');
+  assert.ok(said.includes('cutting the blank by its sheets'), said.join(' / '));
+  assert.equal(said.length, total);
+  assert.ok(built.exact && built.exact.of.length === built.triangles.length / 3);
+
+  // the page: a field job and an exact job; the exact surface, arriving, is applied in place of
+  // the preview and ends the field's job, which asks for nothing else
+  const field = new Stub(), exact = new Stub();
+  const told: Refining[][] = [];
+  const fp = new FieldPreview(() => {}, (r) => told.push(r.map((x) => ({ ...x, exact: x.exact && { ...x.exact } }))),
+    () => field, () => exact);
+  fp.start(doc);
+  assert.equal((field.last as MeshJob).kind, 'mesh');
+  const job = exact.last as ExactJob;
+  assert.equal(job.kind, 'exact');
+  assert.deepEqual(job.solids.map((s) => s.key), [key]);
+  exact.send({ id: job.id, solid, key, exact: { doing: 'cutting the blank by its sheets', done: 4, total: 7, said: null } });
+  assert.equal(told[told.length - 1][0].exact?.doing, 'cutting the blank by its sheets');
+  exact.send({ id: job.id, solid, key, exact: { doing: 'built', done: 7, total: 7, said: null }, surface: built });
+  await wait(100);
+  assert.ok(told[told.length - 1][0].exact?.built);
+  assert.equal(provisional(doc.sketch, solid), false);
+  assert.equal(mesh(doc.sketch, solid, 0).positions.length / 9, built.triangles.length / 3);
+  assert.equal((field.last as Job).kind, 'cancel', 'the preview asks for nothing the exact surface has given');
+  // a later elaboration of the same drawing is given the exact surface, and asks for nothing
+  const posted = [field.posted.length, exact.posted.length];
+  const again = Document.read(TORUS);
+  fp.start(again);
+  assert.deepEqual([field.posted.length, exact.posted.length], posted);
+  assert.equal(mesh(again.sketch, solid, 0).positions.length / 9, built.triangles.length / 3);
+  doc.dispose();
+  again.dispose();
+});
+
+test('an object the exact build refuses keeps its field\'s surface, and says so', () => {
+  const doc = Document.read(TORUS);
+  const [{ solid, key }] = fieldJobs(doc.sketch);
+  const field = new Stub(), exact = new Stub();
+  const told: Refining[][] = [];
+  const fp = new FieldPreview(() => {}, (r) => told.push(r.map((x) => ({ ...x, exact: x.exact && { ...x.exact } }))),
+    () => field, () => exact);
+  fp.start(doc);
+  const job = exact.last as ExactJob;
+  exact.send({ id: job.id, solid, key, exactError: 'outside the generating-sweep class' });
+  assert.equal(told[told.length - 1][0].exact?.error, 'outside the generating-sweep class');
+  assert.equal((field.last as Job).kind, 'mesh', 'the preview goes on');
+  // and is not asked for again by the same drawing
+  const posted = exact.posted.length;
+  fp.start(doc);
+  assert.equal(exact.posted.length, posted);
+  doc.dispose();
+});
+
+test('a picture of swept solids alone is the same at every zoom; one of a static solid is not', () => {
+  const swept = Document.read(TORUS);
+  showSolids(swept.sketch);
+  // the torus example's preview projects its swept part, which is one surface whatever the zoom
+  assert.ok(derived(swept.sketch, 0.1).length > 0);
+  assert.equal(derivedDetailFree(swept.sketch), true);
+  const plain = Document.read('unit mm\npoint o hint(x: 0, y: 0)\nground o\ncircle c(center: o) hint(r: 5)\n'
+    + 'radius(5mm) c\nsolid body(face(c), depth: 3mm)\n');
+  showSolids(plain.sketch);
+  assert.ok(derived(plain.sketch, 0.1).length > 0);
+  assert.equal(derivedDetailFree(plain.sketch), false, 'a static solid is cut finer as the zoom asks');
+  swept.dispose();
+  plain.dispose();
 });

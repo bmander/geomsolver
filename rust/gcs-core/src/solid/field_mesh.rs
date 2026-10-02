@@ -37,12 +37,23 @@ const FIELD_DISTANCE: f64 = 2000.0;
 pub const FINENESS: std::ops::RangeInclusive<f64> = 0.25..=4.0;
 
 /// A swept solid's surface in world coordinates: outward triangles over shared vertices.
-/// `provisional` while the refinement that made it is still going, when it may be open.
+/// `provisional` while the refinement that made it is still going, when it may be open; `exact`
+/// where it is no field's surface but the exact B-rep's mesh (`brep::export::Builder`).
 #[derive(Clone, Debug, Default)]
 pub struct FieldSurface {
     pub vertices: Vec<[f64; 3]>,
     pub triangles: Vec<[u32; 3]>,
     pub provisional: bool,
+    pub exact: Option<ExactFaces>,
+}
+
+/// What a supplied surface that is an exact B-rep's mesh says of itself (`brep::export::Display`):
+/// the face each triangle is of, whether each face is curved, and the solid's exact volume.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ExactFaces {
+    pub of: Vec<u32>,
+    pub smooth: Vec<bool>,
+    pub volume: f64,
 }
 
 /// One surface a host that meshes swept solids elsewhere has to mesh (`Sketch::field_jobs`):
@@ -315,7 +326,7 @@ impl FieldMesher {
                 }
                 let coarse = self.run.snapshot();
                 self.first = Some(FieldSurface { vertices: coarse.vertices.clone(), triangles: coarse.triangles.clone(),
-                    provisional: true });
+                    provisional: true, exact: None });
                 self.phase = Phase::Tracing(coarse, second);
                 Ok(false)
             }
@@ -350,13 +361,13 @@ impl FieldMesher {
         let m = self.run.snapshot();
         if m.triangles.is_empty() { if let Some(first) = &self.first { return first.clone(); } }
         let finished = matches!(self.phase, Phase::Final) && self.run.done();
-        FieldSurface { vertices: m.vertices, triangles: m.triangles, provisional: self.failed || !finished }
+        FieldSurface { vertices: m.vertices, triangles: m.triangles, provisional: self.failed || !finished, exact: None }
     }
 
     /// Refine to the end: the closed surface, or why there is none.
     pub fn finish(mut self) -> Result<FieldSurface, String> {
         while !self.step(usize::MAX)? {}
         let m = self.run.finished()?;
-        Ok(FieldSurface { vertices: m.vertices, triangles: m.triangles, provisional: false })
+        Ok(FieldSurface { vertices: m.vertices, triangles: m.triangles, provisional: false, exact: None })
     }
 }

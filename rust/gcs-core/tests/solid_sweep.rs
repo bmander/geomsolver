@@ -244,7 +244,7 @@ fn field_jobs_name_the_swept_objects_and_supplied_surfaces_are_checked() {
     let moved = read(&source.replace("finish: 60deg","finish: 50deg"));
     assert_ne!(moved.sketch.field_jobs()[0].key,jobs[0].key,"another drawing is another surface");
 
-    let square = solid::FieldSurface {vertices: vec![[0.;3],[1.,0.,0.],[0.,1.,0.]],triangles: vec![[0,1,2]],provisional: true};
+    let square = solid::FieldSurface {vertices: vec![[0.;3],[1.,0.,0.],[0.,1.,0.]],triangles: vec![[0,1,2]],provisional: true,exact: None};
     let refused = |k: usize,s: solid::FieldSurface| e.sketch.supply_field(k,s).unwrap_err();
     assert!(refused(e.sketch.solids.len(),square.clone()).contains("names no solid"));
     let plain = (0..e.sketch.solids.len()).find(|&k| !e.sketch.is_swept(k)).unwrap();

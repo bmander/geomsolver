@@ -13,7 +13,7 @@ mod visibility;
 mod spatial;
 
 pub use dimensions::{generated, Dim};
-pub use document::{inputs, layout, layout_with_stats, section, view, Drawn};
+pub use document::{detail_free, inputs, layout, layout_with_stats, section, view, Drawn};
 use std::cell::{Cell, OnceCell};
 use spatial::Bvh;
 use crate::{csg::Edge, plane::Basis, solid::{EvaluatedSolid, LocalPoint, PageFrame}};

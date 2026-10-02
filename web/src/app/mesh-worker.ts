@@ -3,12 +3,16 @@
  * It has its own copy of the core: it elaborates the page's text, writes the page's parameter
  * values over the result, and refines every swept object a step at a time, in turn, posting each
  * surface as it stands at most every `FRAME_MS` and when it is finished. Between steps it lets messages in,
- * so a newer job — the page has been edited — ends this one at its next step. */
-import { FieldMesher, fieldJobs, unpaired, type MeshProgress } from '../core/field.js';
+ * so a newer job — the page has been edited — ends this one at its next step.
+ *
+ * A second instance builds the exact surfaces (an `exact` job): each swept object's exact B-rep a
+ * stage at a time (`ExactBuilder`), saying after each stage what the next does — a stage of a gear
+ * takes seconds, and the page shows the work going on — and posting the surface once built. */
+import { ExactBuilder, FieldMesher, fieldJobs, unpaired, type MeshProgress } from '../core/field.js';
 import { install } from '../core/modules.js';
 import { Document } from '../core/program.js';
 import { initCore } from '../core/wasm.js';
-import type { Frame, Job, MeshJob } from './field-preview.js';
+import type { ExactJob, Frame, Job, MeshJob } from './field-preview.js';
 
 /** Facets refined between looks at the message queue. */
 const BUDGET = 40;
@@ -25,19 +29,74 @@ let latest = 0;
 scope.onmessage = (ev) => {
   const job = ev.data;
   latest = job.id;                    // a cancel is only this: the job in hand ends at its next step
-  if (job.kind !== 'mesh') return;
+  if (job.kind === 'cancel') return;
   // a core that will not start, or a job that throws past its own handling, fails every solid
   // of it aloud rather than leaving the page waiting
-  ready.then(() => run(job)).catch((e: unknown) => {
-    for (const { solid, key } of job.solids) post({ id: job.id, solid, key, error: String(e) });
-  });
+  const fail = (e: unknown): void => {
+    for (const { solid, key } of job.solids) {
+      post(job.kind === 'exact' ? { id: job.id, solid, key, exactError: String(e) } : { id: job.id, solid, key, error: String(e) });
+    }
+  };
+  ready.then(() => (job.kind === 'exact' ? exact(job) : run(job))).catch(fail);
 };
 
-const pause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+/** Let messages in — a newer job, a cancel — before the next step. By a message to itself and not a
+ *  timer: a page out of sight has its timers throttled to one a second or slower, and meshing
+ *  between them crawled while the tab was in the background. */
+const pause = (): Promise<void> => new Promise((resolve) => {
+  const channel = new MessageChannel();
+  channel.port1.onmessage = () => { channel.port1.close(); resolve(); };
+  channel.port2.postMessage(0);
+});
 
 function post(frame: Frame): void {
   const s = frame.surface;
-  scope.postMessage(frame, s ? [s.vertices.buffer, s.triangles.buffer] : []);
+  const buffers: Transferable[] = s ? [s.vertices.buffer, s.triangles.buffer] : [];
+  if (s?.exact) buffers.push(s.exact.of.buffer, s.exact.smooth.buffer);
+  scope.postMessage(frame, buffers);
+}
+
+/** Build each swept object's exact surface in turn, a stage at a time, saying after each what the
+ *  next does; a newer job ends it between stages. */
+async function exact(job: ExactJob): Promise<void> {
+  await pause();
+  // (an empty job is how an idle worker is told a newer drawing: what it held has ended)
+  if (job.id !== latest || !job.solids.length) return;
+  install(job.modules);
+  let doc: Document;
+  try {
+    doc = Document.read(job.text);
+    doc.sketch.setX(job.x);
+    const why = unpaired(job.solids, fieldJobs(doc.sketch));
+    if (why) throw new Error(why);
+  } catch (e) {
+    for (const { solid, key } of job.solids) post({ id: job.id, solid, key, exactError: String(e) });
+    return;
+  }
+  try {
+    for (const { solid, key } of job.solids) {
+      let builder: ExactBuilder;
+      try { builder = ExactBuilder.create(doc.sketch, solid); }
+      catch (e) { post({ id: job.id, solid, key, exactError: String(e) }); continue; }
+      try {
+        post({ id: job.id, solid, key, exact: builder.progress() });
+        for (;;) {
+          await pause();
+          if (job.id !== latest) return;
+          const built = builder.step();
+          const progress = builder.progress();
+          if (built) { post({ id: job.id, solid, key, exact: progress, surface: builder.surface() }); break; }
+          post({ id: job.id, solid, key, exact: progress });
+        }
+      } catch (e) {
+        post({ id: job.id, solid, key, exactError: String(e) });
+      } finally {
+        builder.dispose();
+      }
+    }
+  } finally {
+    doc.dispose();
+  }
 }
 
 async function run(job: MeshJob): Promise<void> {

@@ -1731,6 +1731,13 @@ pub unsafe extern "C" fn gcs_derived_json(h: *mut Sketch, unit: f64) -> *mut u8 
     guard(std::ptr::null_mut(), move || out_json(report::derived_json(sk(h), unit)))
 }
 
+/// 1 where the projected pictures are the same at every pixel length (`renderer::detail_free`):
+/// a host need not refine them once a zoom rests.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_derived_detail_free(h: *mut Sketch) -> i32 {
+    guard(0, move || gcs_core::renderer::detail_free(sk(h)) as i32)
+}
+
 /// Numeric projection inputs, for retaining an unchanged picture during a drag. Returns the
 /// required number of doubles and writes as many as `cap` permits, like a curve polyline.
 #[no_mangle]
@@ -1842,10 +1849,114 @@ pub unsafe extern "C" fn gcs_solid_supply_field(
             vertices: v.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
             triangles: t.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
             provisional: provisional != 0,
+            exact: None,
         };
         match sk(h).supply_field(usize::try_from(idx).unwrap_or(usize::MAX), surface) {
             Ok(()) => 0,
             Err(message) => { set_error(message); -1 }
+        }
+    })
+}
+
+/// Give swept solid `idx` its exact surface, built elsewhere (`gcs_exact_builder_*`): `nv` vertices
+/// and `nt` triangles as for `gcs_solid_supply_field`, `of` the face of each triangle, `smooth`
+/// whether each of `nf` faces is curved, and the solid's exact volume. 0, or −1 with the reason.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_supply_exact(
+    h: *mut Sketch,
+    idx: i32,
+    vertices: *const f64,
+    nv: i32,
+    triangles: *const u32,
+    nt: i32,
+    of: *const u32,
+    smooth: *const u8,
+    nf: i32,
+    volume: f64,
+) -> i32 {
+    guard(-1, move || {
+        let (nv, nt, nf) = (nv.max(0) as usize, nt.max(0) as usize, nf.max(0) as usize);
+        let v = if nv == 0 { &[][..] } else { std::slice::from_raw_parts(vertices, 3 * nv) };
+        let t = if nt == 0 { &[][..] } else { std::slice::from_raw_parts(triangles, 3 * nt) };
+        let o = if nt == 0 { &[][..] } else { std::slice::from_raw_parts(of, nt) };
+        let m = if nf == 0 { &[][..] } else { std::slice::from_raw_parts(smooth, nf) };
+        let surface = gcs_core::solid::FieldSurface {
+            vertices: v.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
+            triangles: t.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
+            provisional: false,
+            exact: Some(gcs_core::solid::ExactFaces { of: o.to_vec(), smooth: m.iter().map(|&x| x != 0).collect(), volume }),
+        };
+        match sk(h).supply_field(usize::try_from(idx).unwrap_or(usize::MAX), surface) {
+            Ok(()) => 0,
+            Err(message) => { set_error(message); -1 }
+        }
+    })
+}
+
+/// A swept solid's exact surface, built a stage at a time (`brep::export::Builder`).
+pub struct ExactBuilder(gcs_core::brep::export::Builder);
+
+/// Start building swept solid `idx`'s exact surface: a handle, or null with the reason.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_exact_builder_new(h: *mut Sketch, idx: i32) -> *mut ExactBuilder {
+    guard(std::ptr::null_mut(), move || {
+        let s = sk(h);
+        if let Some((_, message)) = gcs_core::solid::bearing_errors(s).into_iter().next() {
+            set_error(message);
+            return std::ptr::null_mut();
+        }
+        match gcs_core::brep::export::Builder::new(s, usize::try_from(idx).unwrap_or(usize::MAX)) {
+            Ok(b) => Box::into_raw(Box::new(ExactBuilder(b))),
+            Err(refusal) => { set_error(format!("{} (at {})", refusal.message, refusal.stage.key())); std::ptr::null_mut() }
+        }
+    })
+}
+
+/// Run the next stage: 0 still going, 1 built, −1 refused with the reason (and the stage).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_exact_builder_step(b: *mut ExactBuilder) -> i32 {
+    guard(-1, move || match (*b).0.step() {
+        Ok(done) => done as i32,
+        Err(refusal) => { set_error(format!("{} (at {})", refusal.message, refusal.stage.key())); -1 }
+    })
+}
+
+/// Where the build stands: `{ "doing", "done", "total", "said" }` — what the next stage does, the
+/// stages run and in all, and the last thing a stage said (or null).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_exact_builder_progress(b: *mut ExactBuilder) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let b = &(*b).0;
+        let (done, total) = b.stages();
+        out_json(Json::Obj(vec![
+            ("doing".into(), Json::Str(b.doing())),
+            ("done".into(), Json::Int(done as i64)),
+            ("total".into(), Json::Int(total as i64)),
+            ("said".into(), b.said().map_or(Json::Null, Json::Str)),
+        ]))
+    })
+}
+
+/// The built surface as doubles: `[nv, nt, nf, volume, vertices (3 nv), triangles (3 nt), of (nt),
+/// smooth (nf, 0 or 1)]`, or null with the reason while it is not built.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_exact_builder_surface(b: *mut ExactBuilder) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let Some(d) = (*b).0.display() else { set_error("the exact surface is not built yet"); return std::ptr::null_mut() };
+        let mut out: Vec<f64> = vec![d.vertices.len() as f64, d.triangles.len() as f64, d.smooth.len() as f64, d.volume];
+        out.extend(d.vertices.iter().flatten());
+        out.extend(d.triangles.iter().flatten().map(|&i| i as f64));
+        out.extend(d.of.iter().map(|&f| f as f64));
+        out.extend(d.smooth.iter().map(|&m| if m { 1. } else { 0. }));
+        out_bytes(out.iter().flat_map(|x| x.to_le_bytes()).collect())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gcs_exact_builder_free(b: *mut ExactBuilder) {
+    guard((), move || {
+        if !b.is_null() {
+            drop(Box::from_raw(b));
         }
     })
 }

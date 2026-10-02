@@ -140,3 +140,132 @@ pub fn field_agreement(sk: &Sketch,body: usize,stl: &[u8],tolerance: Option<Tole
         message:format!("`{}`: the exported surface disagrees with the material field at {} of {} probes; nothing was written",
         sk.solids[body].name,report.disagreements.len(),report.probes)})
 }
+
+/// A swept body's exact surface as the page draws it: its patterned (or whole) B-rep meshed at the
+/// solid's own mesh unit, in model units and world coordinates, each triangle with the B-rep face
+/// it is of (`of`, the sector's for a pattern, so every copy of a face is one face), whether each
+/// face is curved, and the solid's exact volume (model units cubed).
+#[derive(Clone,Debug,Default)]
+pub struct Display { pub vertices: Vec<[f64;3]>,pub triangles: Vec<[u32;3]>,pub of: Vec<u32>,pub smooth: Vec<bool>,pub volume: f64 }
+
+/// Where a swept body's exact build stands for its display, a stage at a time (`Builder::step`).
+enum State {
+    Admit,
+    Prepare(admission::Admission),
+    Sheets(super::sweep::Prepared,Vec<super::sweep::sheet::Fitted>),
+    Plan(super::sweep::Prepared,Vec<super::sweep::sheet::Fitted>),
+    Cut(super::sweep::Prepared,Vec<super::sweep::sheet::Fitted>,super::sweep::Plan),
+    Finish(super::sweep::Cut),
+    Mesh(super::sweep::Built),
+    Done(Display),
+    Failed,
+}
+
+/// **A swept body's exact surface, built a stage at a time** — admitted, its blank, each sweep's
+/// sheet, its sector's premises, the cut, the pattern, the mesh — so a host that cannot hear from
+/// a call while it runs (a page's worker: the core's module has no imports) can say between stages
+/// what it is doing, and stop between them for a newer drawing. The stages are `export::exact`'s,
+/// without a file written or the field's agreement asked: what it builds is for looking at.
+pub struct Builder { sk: Sketch,body: usize,recipe: cad::StaticRecipe,state: State,lines: std::sync::Mutex<Vec<String>>,done: usize }
+
+impl Builder {
+    /// The build of swept solid `body` of `sk` (a copy of the sketch is kept), or why it has none:
+    /// a solid with no swept cut is the static path's.
+    pub fn new(sk: &Sketch,body: usize) -> Result<Builder,ExportRefusal> {
+        if body >= sk.solids.len() { return Err(ExportRefusal::at(Stage::Blank,"no such solid in this drawing")) }
+        let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
+        if recipe.sweeps.is_empty() {
+            return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solids[body].name)))
+        }
+        Ok(Builder {sk:sk.clone(),body,recipe,state:State::Admit,lines:Default::default(),done:0})
+    }
+    /// Run the next stage: `Ok(true)` once the surface is built, or the refusal that stopped it.
+    pub fn step(&mut self) -> Result<bool,ExportRefusal> {
+        let lines = &self.lines;
+        let say = Say {stage:&|line: &str| lines.lock().unwrap_or_else(|e| e.into_inner()).push(line.to_string()),mark:&|_| {}};
+        let (sk,body,recipe) = (&self.sk,self.body,&self.recipe);
+        let state = std::mem::replace(&mut self.state,State::Failed);
+        let next = (|| -> Result<State,ExportRefusal> { Ok(match state {
+            State::Admit => State::Prepare(admission::admit_body(sk,body,&DISPLAY_ADMISSION)?),
+            State::Prepare(admitted) => State::Sheets(super::sweep::prepare(sk,body,recipe,&admitted,&say)?,Vec::new()),
+            State::Sheets(prepared,mut sheets) => {
+                sheets.push(super::sweep::sheet(&prepared,sheets.len(),None,&say)?);
+                if sheets.len() == prepared.sweeps() { State::Plan(prepared,sheets) } else { State::Sheets(prepared,sheets) }
+            }
+            State::Plan(prepared,sheets) => { let plan = super::sweep::plan(sk,body,recipe,&prepared,&sheets,&say); State::Cut(prepared,sheets,plan) }
+            State::Cut(prepared,sheets,plan) => State::Finish(super::sweep::cut(sk,body,recipe,&prepared,&sheets,plan,&say)?),
+            State::Finish(cut) => State::Mesh(super::sweep::finish(cut,&say)?),
+            State::Mesh(built) => State::Done(display(sk,&built)?),
+            done @ State::Done(_) => done,
+            State::Failed => return Err(ExportRefusal::at(Stage::Blank,"the build has failed already")),
+        }) })();
+        match next {
+            Ok(state) => { self.done += 1; self.state = state; Ok(matches!(self.state,State::Done(_))) }
+            Err(refusal) => Err(refusal),
+        }
+    }
+    /// What the next stage does, in a page's words.
+    pub fn doing(&self) -> String {
+        let name = |k: usize,p: &super::sweep::Prepared| format!("fitting the sheet of `{}` ({} of {})",p.sweep_name(&self.sk,k),k+1,p.sweeps());
+        match &self.state {
+            State::Admit => "admitting its sweeps to the generating class".into(),
+            State::Prepare(_) => "building the blank".into(),
+            State::Sheets(p,sheets) => name(sheets.len(),p),
+            State::Plan(..) => "laying out the sector".into(),
+            State::Cut(_,_,super::sweep::Plan::Sector(_)) => "cutting the sector by its sheets".into(),
+            State::Cut(_,_,super::sweep::Plan::Whole(_)) => "cutting the blank by its sheets".into(),
+            State::Finish(_) => "turning the sector round".into(),
+            State::Mesh(_) => "meshing the exact surface".into(),
+            State::Done(_) => "built".into(),
+            State::Failed => "failed".into(),
+        }
+    }
+    /// The stages run, and their number in all: admission, the blank, a sheet a distinct sweep, the
+    /// plan, the cut, the pattern and the mesh.
+    pub fn stages(&self) -> (usize,usize) {
+        let mut sweeps: Vec<usize> = self.recipe.sweeps.iter().map(|s| s.swept).collect();
+        sweeps.sort(); sweeps.dedup();
+        (self.done,6+sweeps.len())
+    }
+    /// The last thing a stage said (its own words: what it built, and in what time).
+    pub fn said(&self) -> Option<String> { self.lines.lock().unwrap_or_else(|e| e.into_inner()).last().cloned() }
+    /// The surface, once built.
+    pub fn display(&self) -> Option<&Display> { match &self.state { State::Done(d) => Some(d),_ => None } }
+}
+
+/// The admission a display asks: a quarter of the export's samples each way, on both its grids. A
+/// display is looked at, not made: a design the export's sampling would refuse is still refused
+/// there, and the build's own stages refuse what they cannot construct. On a gear member it is a
+/// second in the browser's core where the export's took six.
+const DISPLAY_ADMISSION: admission::Options = admission::Options {rows:25,columns:100,coarse_rows:6,coarse_columns:360,
+    axis_tolerance:cad::AXIS_TOLERANCE,margin:1e-6,root_tolerance:1e-9,least_factor:1e-3};
+
+/// How far a display's mesh may sag, as a fraction of the solid's diagonal (a gear's 0.2 mm), and
+/// how far its chords and facets may turn (radians): a gear's half-millimetre fillets are what an
+/// export's 0.2 radians cut finest, and what a screen shows least. A gear member is then 17–26
+/// thousand triangles, as many as its field's preview: at 0.05 mm and 0.5 rad it was 39–63
+/// thousand, and a page panning and zooming the pair could not keep up.
+const DISPLAY_SAG: f64 = 2e-3;
+const DISPLAY_ANGULAR: f64 = 0.8;
+
+/// A built swept body meshed for display, within `DISPLAY_SAG` of its size.
+fn display(sk: &Sketch,built: &super::sweep::Built) -> Result<Display,ExportRefusal> {
+    let mm = cad::millimetres(sk).at(Stage::Mesh)?;
+    let size = match built { super::sweep::Built::Sector {pattern,..} => pattern.solid.size(),super::sweep::Built::Whole(solid) => solid.size() };
+    let bar = DISPLAY_SAG*size;
+    // (a pattern's volume is its sector's times its copies, which are turns of it: measured whole,
+    // a gear's 291 faces took seconds where its sector's 11 take a few hundredths)
+    let (m,faces,volume) = match built {
+        super::sweep::Built::Sector {sector,pattern} => (pattern.mesh(bar,DISPLAY_ANGULAR).at(Stage::Mesh)?,&pattern.sector().faces,
+            super::props::volume(&sector.piece)*sector.count as f64),
+        super::sweep::Built::Whole(solid) => (super::mesh::mesh(solid,bar,DISPLAY_ANGULAR).at(Stage::Mesh)?,&solid.faces,
+            super::props::volume(solid)),
+    };
+    Ok(Display {
+        vertices: m.pts.iter().map(|p| p.map(|x| x/mm)).collect(),
+        triangles: m.tris.clone(),
+        of: m.of.clone(),
+        smooth: faces.iter().map(|f| !matches!(f.surface,super::geom::Surface::Plane(_))).collect(),
+        volume: volume/(mm*mm*mm),
+    })
+}

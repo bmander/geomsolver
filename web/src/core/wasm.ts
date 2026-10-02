@@ -197,6 +197,14 @@ export interface Abi {
   gcs_field_mesher_vertices(m: number, out: number, cap: number): number;
   gcs_field_mesher_triangles(m: number, out: number, cap: number): number;
   gcs_field_mesher_free(m: number): void;
+  gcs_derived_detail_free(h: number): number;
+  gcs_solid_supply_exact(h: number, idx: number, vertices: number, nv: number, triangles: number,
+    nt: number, of: number, smooth: number, nf: number, volume: number): number;
+  gcs_exact_builder_new(h: number, idx: number): number;
+  gcs_exact_builder_step(b: number): number;
+  gcs_exact_builder_progress(b: number): number;
+  gcs_exact_builder_surface(b: number): number;
+  gcs_exact_builder_free(b: number): void;
   gcs_solid_glb(h: number, idx: number, unit: number): number;
   gcs_solid_objects_json(h: number): number;
   gcs_solid_stl(h: number, idx: number, unit: number): number;

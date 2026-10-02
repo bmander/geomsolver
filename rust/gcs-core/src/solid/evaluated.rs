@@ -337,6 +337,9 @@ impl EvaluatedSolid {
     /// nothing.
     fn from_surface(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64,
         surface: &FieldSurface) -> Result<Self, String> {
+        if let Some(exact) = &surface.exact {
+            return Self::from_exact_surface(sk, si, policy, unit, surface, exact);
+        }
         let name = sk.solid_name(si);
         let mut world = Box3::empty();
         for &v in &surface.vertices { world.add(v); }
@@ -381,6 +384,81 @@ impl EvaluatedSolid {
             round: Vec::new(),
             surface: Surface::Field { provisional: surface.provisional },
             corner_normals: Vec::new(),
+            exact: None,
+            edges: OnceCell::new(),
+            mesh: OnceCell::new(),
+            ray_indices: OnceCell::new(),
+        })
+    }
+    /// A swept solid from its exact B-rep's mesh, built elsewhere and supplied
+    /// (`brep::export::Builder`): `from_brep`'s solid without the B-rep — one polyhedral primitive
+    /// whose facets keep their faces, so the faces meet at creases and a curved one's seams are a
+    /// tessellation's; its silhouettes traced across corner normals averaged over each face's own
+    /// facets; its volume the B-rep's. Every face is the path `<solid>.surface`: the construction
+    /// names none of them.
+    fn from_exact_surface(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64,
+        surface: &FieldSurface, exact: &super::ExactFaces) -> Result<Self, String> {
+        let name = sk.solid_name(si);
+        let mut world = Box3::empty();
+        for &v in &surface.vertices { world.add(v); }
+        if world.is_empty() { return Err(format!("`{name}`: its exact surface is empty")); }
+        let centre: [f64; 3] = std::array::from_fn(|k| 0.5 * (world.lo[k] + world.hi[k]));
+        let origin = WorldPoint(centre);
+        let local = |v: [f64; 3]| -> [f64; 3] { std::array::from_fn(|k| v[k] - centre[k]) };
+        // each vertex's normal on each face it is of: its facets' area-weighted sum
+        let mut normals: BTreeMap<(u32, u32), [f64; 3]> = BTreeMap::new();
+        let mut kept = Vec::with_capacity(surface.triangles.len());
+        for (t, &face) in surface.triangles.iter().zip(&exact.of) {
+            let [a, b, c] = t.map(|i| local(surface.vertices[i as usize]));
+            let n = crate::space::cross(crate::space::sub(b, a), crate::space::sub(c, a));
+            let l = crate::space::norm(n);
+            if !(l > 0.0 && l.is_finite()) { continue }
+            for &i in t {
+                let m = normals.entry((i, face)).or_insert([0.0; 3]);
+                for k in 0..3 { m[k] += n[k]; }
+            }
+            kept.push((*t, face, [a, b, c], n.map(|x| x / l)));
+        }
+        if kept.is_empty() { return Err(format!("`{name}`: its exact surface has no area")); }
+        let mut facets = Vec::with_capacity(kept.len());
+        let mut corner_normals = Vec::with_capacity(kept.len());
+        let mut bbox = Box3::empty();
+        for (t, face, pts, n) in kept {
+            let smooth = exact.smooth[face as usize];
+            corner_normals.push(smooth.then(|| t.map(|i| {
+                let m = normals[&(i, face)];
+                let l = crate::space::norm(m);
+                if l > 0.0 { m.map(|x| x / l) } else { n }
+            })));
+            for p in pts { bbox.add(p); }
+            facets.push(Facet { pts: pts.to_vec(), n, face: face as usize, smooth });
+        }
+        let path = format!("{}.surface", sk.solids[si].name);
+        let faces = vec![path.clone(); exact.smooth.len()];
+        let prim = Prim { facets, bbox, faces, of: String::new(), exact: true };
+        let csg = Csg { prims: vec![prim], term: Term::Prim(0) };
+        let epsilon = csg.epsilon();
+        if !epsilon.is_finite() || epsilon <= 0.0 {
+            return Err("solid scale is not representable".into());
+        }
+        let prim = &csg.prims[0];
+        let boundary: Vec<Piece> = prim.facets.iter().map(|f| Piece {
+            pts: f.pts.clone(), n: f.n, path: path.clone(), prim: 0, smooth: f.smooth,
+        }).collect();
+        Ok(Self {
+            name,
+            origin,
+            policy,
+            unit,
+            epsilon,
+            bounds: bbox,
+            surviving: [path].into_iter().collect(),
+            boundary: OnceCell::from(boundary),
+            csg,
+            paths: operand_paths(sk, si),
+            round: Vec::new(),
+            surface: Surface::Brep { volume: exact.volume },
+            corner_normals,
             exact: None,
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
@@ -496,17 +574,18 @@ impl EvaluatedSolid {
     pub fn silhouettes(&self, eye: [f64; 3]) -> Option<Vec<Edge>> {
         if !matches!(self.surface, Surface::Brep { .. }) { return None; }
         let prim = &self.csg.prims[0];
-        let (exact, faces) = self.exact.as_ref()?;
-        let mm = exact.mm;
         // a point interpolated on a chord stands inside the surface by up to the sag: put back on
-        // it, it is on the silhouette to second order, and a straight one comes out straight
-        let on = |fi: u32, p: [f64; 3]| -> [f64; 3] {
-            let surface = &exact.brep.faces[fi as usize].surface;
+        // it (where the B-rep is in hand), it is on the silhouette to second order, and a straight
+        // one comes out straight
+        let on = |k: usize, p: [f64; 3]| -> [f64; 3] {
+            let Some((exact, faces)) = &self.exact else { return p };
+            let mm = exact.mm;
+            let surface = &exact.brep.faces[faces[k] as usize].surface;
             let q = surface.point(surface.inverse(p.map(|x| x * mm))).map(|x| x / mm);
             if q.iter().all(|x| x.is_finite()) { q } else { p }
         };
         let mut out = Vec::new();
-        for ((f, normals), &fi) in prim.facets.iter().zip(&self.corner_normals).zip(faces) {
+        for (fi, (f, normals)) in prim.facets.iter().zip(&self.corner_normals).enumerate() {
             let Some(normals) = normals else { continue };
             let g = normals.map(|n| plane::dot(n, eye));
             let mut at = Vec::with_capacity(2);

@@ -219,10 +219,22 @@ function exactExport(kind: 'step' | 'stl'): void {
  *  its phase (the rough first pass, tracing sharp edges, the final pass, and a repair's rebuilds),
  *  a bar of its estimated progress, its triangles so far and the time taken. The estimate is how
  *  far the worst facet waiting has come toward the criteria, and no count of work left, which no
- *  refinement knows. Finished, the line says so for a few seconds; failed, it stays with why. */
+ *  refinement knows. Finished, the line says so for a few seconds; failed, it stays with why.
+ *
+ *  **An exact surface's build is said beside its preview**: the stage it is on in the core's
+ *  words, a bar of the stages done, a spinner and a clock. A stage of a gear runs for seconds with
+ *  nothing said, so the page ticks the spinner and the clock itself while one is building: work
+ *  going on never looks like work that has stopped. Built, the entry says so; refused, the preview
+ *  is the surface and the entry says it is the field's. */
 let refineTimer = 0;
+let refineTick = 0;
+let refineList: Refining[] = [];
+const SPIN = '◐◓◑◒';
 function showRefining(list: Refining[]): void {
+  refineList = list;
   clearTimeout(refineTimer);
+  clearInterval(refineTick);
+  refineTick = 0;
   if (!list.length) { refining(''); return; }
   const clock = (ms: number): string => {
     const s = Math.floor(ms / 1000);
@@ -233,19 +245,34 @@ function showRefining(list: Refining[]): void {
     return '▰'.repeat(n) + '▱'.repeat(8 - n);
   };
   const short = (name: string): string => name.split('.').filter((w) => w !== 'body').pop() ?? name;
-  const failed = list.filter((r) => r.error || r.progress?.failed);
+  const building = (r: Refining): boolean => !!r.exact && !r.exact.built && !r.exact.error;
+  const spin = SPIN[Math.floor(performance.now() / 250) % SPIN.length];
+  const failed = list.filter((r) => (r.error || r.progress?.failed) && !r.exact?.built);
   const parts = list.map((r) => {
     const p = r.progress;
-    if (r.error || p?.failed) return `${short(r.name)}: failed — ${r.error ?? p?.stage}`;
-    if (r.done) return `${short(r.name)}: refined · ${r.triangles.toLocaleString()} triangles · ${clock(r.elapsed)}`;
-    // what it is doing is the core's words (`FieldProgress::doing`), shown as they are
-    const what = p?.doing ?? 'starting';
-    // the bar is the pass in hand, as the core estimates it
-    return `${short(r.name)}: ${what} ${bar(p?.within ?? 0)} ${r.triangles.toLocaleString()} triangles · ${clock(r.elapsed)}`;
+    const x = r.exact;
+    if (x?.built) return `${short(r.name)}: exact solid · ${x.triangles.toLocaleString()} triangles · ${clock(performance.now() - r.since)}`;
+    // the preview, as it stands: refined, or the pass in hand (what it is doing is the core's words)
+    const preview = r.error || p?.failed ? `failed — ${r.error ?? p?.stage}`
+      : r.done ? `refined · ${r.triangles.toLocaleString()} triangles`
+      : `${p?.doing ?? 'starting'} ${bar(p?.within ?? 0)} ${r.triangles.toLocaleString()} triangles`;
+    if (x && building(r)) {
+      const shown = r.done ? `preview ${r.triangles.toLocaleString()} triangles` : `preview ${r.triangles.toLocaleString()} triangles…`;
+      return `${short(r.name)}: exact solid ${spin} ${x.doing} ${bar(x.done / Math.max(1, x.total))} ${clock(performance.now() - r.since)}`
+        + ` · ${shown}`;
+    }
+    const field = x?.error ? ' (the field\'s surface: no exact solid for it)' : '';
+    return `${short(r.name)}: ${preview}${field} · ${clock(r.elapsed)}`;
   });
   const text = parts.join('   |   ');
+  if (list.some(building)) {
+    // the stage in hand says nothing till it ends: the clock and the spinner say it is going
+    refineTick = window.setInterval(() => showRefining(refineList), 250);
+    refining(text);
+    return;
+  }
   if (failed.length) { refining(text, 'failed'); return; }
-  if (list.every((r) => r.done)) {
+  if (list.every((r) => r.done || r.exact?.built)) {
     refining(text, 'finished');
     refineTimer = window.setTimeout(() => refining(''), 5000);
     return;
