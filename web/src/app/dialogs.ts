@@ -76,6 +76,17 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
   catch (e) { toast(`Could not open example: ${(e as Error).message}`); }
 }
 
+/** The address names an example only while that example is the document: another one (File ▸
+ *  New, Open, a drawing folder) takes `example` and `file` off it, in place — a step back to the
+ *  bare address would open the default example — and an example still on its way is dropped. */
+export function leaveExample(): void {
+  ++exampleRequest;
+  const url = new URL(location.href);
+  url.searchParams.delete('example');
+  url.searchParams.delete('file');
+  if (url.href !== location.href) history.replaceState(null, '', url);
+}
+
 /** Everything that changes how the solve runs, gathered behind one item.  The controls are
  *  built from the view each time the sheet opens, so none of them can go stale, and each
  *  takes effect as it is switched. */

@@ -49,8 +49,8 @@ import type { ExportJob, ExportReply } from './export-worker.js';
 import { drawingActive, exportDrawingSvg } from './drawing.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
 import {
-  about, alternatives, doOpen, flipBranch, insertPlane, openCase, openExample, options, report,
-  reportSolve, showDiagnosis,
+  about, alternatives, doOpen, flipBranch, insertPlane, leaveExample, openCase, openExample, options,
+  report, reportSolve, showDiagnosis,
 } from './dialogs.js';
 import { threeViews } from './tools.js';
 import { editValue, onDimension } from './dimbox.js';
@@ -319,7 +319,8 @@ const MENUS: [string, (MenuItem | null)[]][] = [
   ['File', [
     { label: 'New', onClick: () => view.newDocument() },
     { label: 'Open…', onClick: () => void doOpen() },
-    { label: 'Open drawing folder…', onClick: () => void openDrawing() },
+    { label: 'Open drawing folder…',
+      onClick: () => void openDrawing().then((opened) => { if (opened) leaveExample(); }) },
     { label: 'Open examples…', onClick: () => void openCase() },
     null,
     { label: 'Save', onClick: () => {
@@ -501,7 +502,7 @@ view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a
 // number was spliced.  Never per frame: `onDragFrame` is the frame seam and this is not wired to it
 view.onProgram = () => { refreshProgram(); };
-view.onLoad = resetProgramFiles;
+view.onLoad = () => { if (resetProgramFiles()) leaveExample(); };
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;
 view.onRefine = showRefining;

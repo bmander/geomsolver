@@ -96,8 +96,10 @@ function selectFile(name: string): void {
   ptext.dispatchEvent(new Event('scroll'));
 }
 
-export function resetProgramFiles(): void {
-  if (switching) return;
+/** Close whatever project the panel holds, as a new document replaces it; false where a project's
+ *  own file is being shown, which is no new document. */
+export function resetProgramFiles(): boolean {
+  if (switching) return false;
   project = null;
   directory = undefined; onProjectFile = undefined;
   explorer.show([]); programName.hidden = true;
@@ -107,6 +109,7 @@ export function resetProgramFiles(): void {
   filesFor = null;
   positions.clear();
   revertProgram();
+  return true;
 }
 
 /** Both source kinds live in one project; the selected extension chooses the left-hand view.
@@ -114,13 +117,13 @@ export function resetProgramFiles(): void {
  *  project opened on its README draws its entry (`options.entry`) there. */
 export function openProject(bundle: DrawingBundle, options: {
   directory?: string; entry?: string; onSelect?: (path: string) => void;
-} = {}): void {
+} = {}): boolean {
   const names = Object.keys(bundle.files).filter(projectFile).sort();
   const sources = names.filter(sourceFile);
   const source = (p?: string) => p !== undefined && sources.includes(p) ? p : undefined;
   const main = source(bundle.source) ?? source(options.entry)
     ?? sources.find((p) => p.endsWith('.svd')) ?? sources[0];
-  if (!main) { toast('This project has no .sv or .svd files'); return; }
+  if (!main) { toast('This project has no .sv or .svd files'); return false; }
   view.pauseEditing();
   project = { source: main, files: { ...bundle.files } };
   directory = options.directory; onProjectFile = options.onSelect;
@@ -134,13 +137,16 @@ export function openProject(bundle: DrawingBundle, options: {
   activateProjectFile(main);
   revertProgram();
   if (bundle.source !== main && names.includes(bundle.source)) selectFile(bundle.source);
+  return true;
 }
 
-export async function openDrawing(): Promise<void> {
+/** Open a folder the person picks as the project; whether one was opened. */
+export async function openDrawing(): Promise<boolean> {
   try {
     const bundle = await pickDrawingFolder();
-    if (bundle) openProject(bundle, { directory: '' });
+    if (bundle) return openProject(bundle, { directory: '' });
   } catch (e) { toast(`Could not read drawing folder: ${(e as Error).message}`); }
+  return false;
 }
 
 /** Save the selected source, including a draft that has not compiled yet. */
