@@ -1660,7 +1660,9 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
         // and it is what somebody typed.  A *formula* still shows what it came to.
         (k, Arg::Expr(e)) if expr::notation(&e.text) => as_written(k, &e.text),
         // the formula and what it came to: `h = w * 2 = 80`, `sin(h * 10) = 0.342`
-        (k, Arg::Expr(e)) => format!("{} = {}", e.text, arg_text(k, &Arg::Num(e.value))),
+        (k, Arg::Expr(e)) => {
+            format!("{} = {}", read_literals(&e.text), arg_text(k, &Arg::Num(e.value)))
+        }
         (SpecKind::Angle, a) => format!("{}°", reading(kind, a.num())),
         (SpecKind::Length, a) | (SpecKind::Float, a) => reading(kind, a.num()),
         (_, Arg::Bool(b)) => if *b { "True" } else { "False" }.to_string(),
@@ -1676,8 +1678,57 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
 fn as_written(kind: SpecKind, text: &str) -> String {
     // a dimension named where it is stated reads `w = 60` on paper: `:=` is the language's word
     // for a definition, and a drawing is read by people who never typed one
-    let t = text.trim().replacen(" := ", " = ", 1);
+    let t = read_literals(text.trim()).replacen(" := ", " = ", 1);
     if kind == SpecKind::Angle && !expr::names_unit(&t) { format!("{t}°") } else { t }
+}
+
+/// A dimension's text with every decimal literal longer than `READING_SIG` significant digits
+/// read at `READING_SIG`, its unit and everything around it untouched: `13.333333333333334mm`
+/// is drawn `13.3333mm`, as the bare number would be.  Such a literal is the flattener's — a
+/// formal or a `param` worked out and written back in full (`flatten::fold`), since that text is
+/// what the value is computed from — and printed whole it was sixteen digits on the drawing.
+/// Only for a reader: nothing parses what this returns.  A word's digits are left alone (`x1`,
+/// a copy key's `#3.0.w`), and a literal of six digits or fewer is printed as it was written, so
+/// `2.5`, `3 1/8` and `1' 6 3/16"` read as they always did.
+fn read_literals(text: &str) -> String {
+    let b = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < b.len() {
+        let in_word = i > 0 && (b[i - 1].is_ascii_alphanumeric() || b"_.#".contains(&b[i - 1]));
+        if !b[i].is_ascii_digit() || in_word {
+            let ch = text[i..].chars().next().unwrap_or_default();
+            out.push(ch);
+            i += ch.len_utf8().max(1);
+            continue;
+        }
+        let start = i;
+        while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'.') {
+            i += 1;
+        }
+        // an exponent only where digits follow it: `2em` is a number and a word
+        if i < b.len() && (b[i] | 0x20) == b'e' {
+            let mut j = i + 1;
+            if j < b.len() && (b[j] == b'+' || b[j] == b'-') {
+                j += 1;
+            }
+            if j < b.len() && b[j].is_ascii_digit() {
+                while j < b.len() && b[j].is_ascii_digit() {
+                    j += 1;
+                }
+                i = j;
+            }
+        }
+        let lit = &text[start..i];
+        let mantissa = lit.split(['e', 'E']).next().unwrap_or_default();
+        let digits =
+            mantissa.trim_start_matches(['0', '.']).bytes().filter(u8::is_ascii_digit).count();
+        match lit.parse::<f64>() {
+            Ok(v) if digits > READING_SIG => out.push_str(&fmt_g(v, READING_SIG)),
+            _ => out.push_str(lit),
+        }
+    }
+    out
 }
 
 /// The number a dimensioned constraint states, as its callout prints it — the first Length or
@@ -1776,11 +1827,11 @@ fn lift_arg(
         // the formula and what it came to: `h = w * 2 = 80`, `sin(h * 10) = 0.342`.  A number
         // written a particular way keeps the way — `3 1/8` says more than 3.125 does.
         Arg::Expr(e) if expr::notation(&e.text) => S::Dim {
-            text: e.text.clone(),
+            text: read_literals(&e.text),
             span: crate::syntax::Span::default(),
         },
         Arg::Expr(e) => S::Dim {
-            text: format!("{} = {}", e.text, arg_text(kind, &Arg::Num(e.value))),
+            text: format!("{} = {}", read_literals(&e.text), arg_text(kind, &Arg::Num(e.value))),
             span: crate::syntax::Span::default(),
         },
     })

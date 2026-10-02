@@ -322,28 +322,37 @@ pub(super) fn constrain(
     Some(sk.add_quiet(c))
 }
 
-/// A root statement's dimension as it was written, when that differs from the text it reached
-/// here as — see `Constraint::written`.  At the root the only thing the flattener writes into a
-/// dimension's text is a number a name stood for (a `param`, a module's or a group's member), so
-/// a difference is exactly a name worked out; a named dimension keeps its name already.  Read
-/// off the source at the argument's span, which is the document's own text only at the root: a
-/// copy of a block or an instance's body (a non-empty path) is one spelling with many numbers,
-/// and a module's span indexes a text this is not.
+/// A dimension as it was written, when that differs from the text it reached here as — see
+/// `Constraint::written`.  The only thing the flattener writes into a dimension's text is a number
+/// a name stood for (a `param`, a formal, a module's or a group's member), so a difference is
+/// exactly a name worked out; a named dimension keeps its name already.  Read off the source at
+/// the argument's span, so only where that span is the document's own text: a statement of the
+/// root, or of a component body written in this file — a module's span indexes a text this is
+/// not.  An instance's body draws its formula over the formals, true of every instance, so
+/// `design.module` reads as itself and not as the 2 one caller passed; no module path is taken
+/// off it, since a closed body names no module's number and `design` there is a formal.  A copy
+/// of a block keeps its numbers: its copies share a label, and `repeated` would draw one of them.
 fn written(
     args: &[Option<Arg>],
     spec: &[(&str, SpecKind)],
     st: &Stmt,
     doc: &crate::syntax::Program,
 ) -> Option<String> {
-    if !st.path.is_empty() {
+    if st.path.iter().any(|s| matches!(s, PathStep::Copy { .. })) {
         return None;
     }
     let (text, span) = spec.iter().zip(args).find_map(|((_, k), a)| match a {
         Some(Arg::Dim { text, span }) if k.is_dimension() => Some((text, *span)),
         _ => None,
     })?;
+    if !doc.owns(span) {
+        return None;
+    }
     let was = doc.text().get(span.lo as usize..span.hi as usize)?.trim();
-    (!was.is_empty() && was != text.trim()).then(|| unqualified(was, doc))
+    if was.is_empty() || was == text.trim() {
+        return None;
+    }
+    Some(if st.path.is_empty() { unqualified(was, doc) } else { was.to_string() })
 }
 
 /// A dimension's text as a drawing shows it: a used module's path taken off the names it reads,

@@ -2057,7 +2057,9 @@ Conventions:
   (`READING_SIG`, six digits) for the callout, `arg_text` and `describe` alike, since
   `syntax::num` is the *source* printer and prints every digit a double has.  A written literal
   that names its unit (`60deg`) is drawn as written and given no second sign
-  (`expr::names_unit`).  A callout is painted *over* the geometry, so `callout::pick` also owns what
+  (`expr::names_unit`) — but a literal past six significant digits is read at six wherever it
+  stands in printed text (`io::read_literals`), since that is a value the flattener wrote back in
+  full (`flatten::fold`: `13.333333333333334mm`), never one a person typed.  A callout is painted *over* the geometry, so `callout::pick` also owns what
   outranks it: a point within the same tolerance beats the figure's lines — a radius runs its
   leader out of the centre it measures from, and the one point a circle has has to stay
   clickable once it is dimensioned — but not the number's own box, which is filled solid, and
@@ -2108,10 +2110,11 @@ Conventions:
   `io::dimension_text` draws every written dimension as written, since `h = w / 2` and `3 1/8`
   each tell a reader what 40 and 3.125 do not, and what a dimension came to is the one thing a
   reader can measure off the drawing.  That includes a `param`: the flattener settles
-  `distance(w)` to `100`, so a root statement's spelling is read back off the source at the
+  `distance(w)` to `100`, so a statement's spelling is read back off the source at the
   argument's span into `Constraint::written` (`program::relations::written`), presentation only,
-  dropped by any write of a number.  Inside a component or a block copy one spelling is many
-  numbers, and the number is drawn.  A block's copies are one statement, so its dimension is one callout:
+  dropped by any write of a number — at the root, and in a component body written in the same
+  file, whose formula over its formals (`design.module`, no module path taken off) is true of
+  every instance.  A module's body and a block copy draw the number.  A block's copies are one statement, so its dimension is one callout:
   `program::relations::repeated` marks each later copy drawing the same label
   (`Constraint::repeated`), the full layout leaves it out, and a request by id still draws it.
   `expr::set_dimension` is the one write path for text (a bare number becomes `Arg::Num`, with

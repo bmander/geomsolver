@@ -1827,10 +1827,11 @@ pub struct Constraint {
     /// Its dimension **as the statement wrote it**, where that is not the text the number is
     /// worked out from: `l1 distance(w) r2` under `w := 100` reaches the sketch as `100`,
     /// since the flattener settles a `param` to its number, and the callout draws `w`.  Set by
-    /// the elaborator only for a statement at the document's root, where a name has one value
-    /// (`program::relations::written`); inside a component the same text is a different number
-    /// in every instance, and the number is what is drawn.  Presentation, like `class`: nothing
-    /// that solves reads it, and writing a number (`set_num`, `expr::set_dimension`) drops it.
+    /// the elaborator where the statement is the document's own text — at the root, or in a
+    /// component body written in this file, whose formula over its formals is true of every
+    /// instance (`program::relations::written`); a module's body and a block's copies draw the
+    /// number.  Presentation, like `class`: nothing that solves reads it, and writing a number
+    /// (`set_num`, `expr::set_dimension`) drops it.
     pub written: Option<String>,
     /// A dimension **another copy of its block already states**: `repeat n { radius(hole_r)
     /// circle hole … }` is one statement, and six holes are drawn with one callout and not six.

@@ -156,7 +156,7 @@ fn a_datum_reports_its_angle() {
 #[test]
 fn a_dimension_written_over_a_param_is_drawn_with_the_name() {
     // the flattener settles `w` to 100 before the sketch sees it; the callout draws what was
-    // written, at the root, where each name has one value
+    // written
     let e = read(
         "w := 100
          a := 30deg
@@ -181,12 +181,85 @@ fn a_dimension_written_over_a_param_is_drawn_with_the_name() {
     let id = sk.user_constraints()[1].id;
     gcs_core::expr::set_dimension(&mut sk, id, "d", "60").unwrap();
     assert_eq!(io::dimension_text(sk.constraint(id).unwrap()).unwrap(), "60");
-    // inside a component the same text is a different number in every instance: drawn as one
+    // a component written in this file draws its formula over its formals, which is true of
+    // every instance
     let e = read(
-        "component Bar(a: point, b: point, len: Length) { a distance(len) b }
+        "component Bar(a: point, b: point, len: Length, d: group) {
+           a distance(len) b
+           a distance(d.w / 2) b
+           a distance(40) b
+         }
+         o := point hint(x: 0, y: 0)
+         p := point hint(x: 40, y: 0)
+         dims := group(w: 80)
+         one := Bar(o, p, len: 40, d: dims)
+         two := Bar(o, p, len: 40, d: dims)",
+    );
+    assert_eq!(dims(&e.sketch), ["len", "d.w / 2", "40", "len", "d.w / 2", "40"]);
+    // a block's copies share one label and one callout, so they keep the number they came to
+    let e = read(
+        "component Bar(a: point, b: point, len: Length) {
+           repeat 1 as i { a distance(len) b }
+         }
          o := point hint(x: 0, y: 0)
          p := point hint(x: 40, y: 0)
          bar := Bar(o, p, len: 40)",
     );
     assert_eq!(dims(&e.sketch), ["40"]);
+    // a module's body is a text the document is not: its number is drawn.  And a formal named
+    // like a used module keeps its name, since a closed body reads no module's number
+    let (mut prog, errs) = gcs_core::syntax::parse(
+        "use parts
+         component Local(a: point, b: point, parts: group) { a distance(parts.w / 2) b }
+         o := point hint(x: 0, y: 0)
+         p := point hint(x: 40, y: 0)
+         dims := group(w: 80)
+         bar := parts.Bar(o, p, len: 40)
+         local := Local(o, p, parts: dims)",
+    );
+    assert!(errs.is_empty(), "{errs:?}");
+    let linked = gcs_core::modules::link(&mut prog, &mut |name| {
+        (name == "parts").then(|| {
+            "component Bar(a: point, b: point, len: Length) { a distance(len) b }\n".to_string()
+        })
+    });
+    assert!(linked.is_empty(), "{linked:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    assert_eq!(dims(&e.sketch), ["40", "parts.w / 2"]);
+}
+
+#[test]
+fn a_number_worked_out_with_its_unit_is_read_at_six_digits() {
+    // a formal worked out inside a module's body reaches the sketch as the full-precision text
+    // it is computed from, `13.333333333333334mm`; the drawing and the list read it as they read
+    // a bare number, and a number somebody wrote with six digits or fewer is left as written
+    let (mut prog, errs) = gcs_core::syntax::parse(
+        "unit mm
+         use parts
+         o := point hint(x: 0, y: 0)
+         p := point hint(x: 40, y: 0)
+         bar := parts.Bar(o, p, len: 40mm / 3, turn: 100deg / 3)",
+    );
+    assert!(errs.is_empty(), "{errs:?}");
+    let linked = gcs_core::modules::link(&mut prog, &mut |name| {
+        (name == "parts").then(|| {
+            "component Bar(a: point, b: point, len: Length, turn: Angle) {
+               a distance(len) b
+               a distance(len / 3) b
+               a distance(1' 6 3/16\") b
+               a distance(2.5mm) b
+               l := line(a, b)
+               m := line(a, b)
+               l angle(turn) m
+             }\n"
+                .to_string()
+        })
+    });
+    assert!(linked.is_empty(), "{linked:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    assert_eq!(dims(&e.sketch), ["13.3333mm", "4.44444mm", "1' 6 3/16\"", "2.5mm", "33.3333deg"]);
+    let list: Vec<String> = e.sketch.user_constraints().iter().map(|c| io::describe(c)).collect();
+    assert!(list[0].contains("distance(13.3333mm)"), "{}", list[0]);
 }
