@@ -1,24 +1,23 @@
-// Step 4, how far the gear's space cutter reaches: a cap in N standing |CO| + reach
-// from the cutter's axis, clear of every blank point (crown/space.sv closes the
-// cutter's sections there).
+// Step 4, how far the gear's space cutter reaches: a cap in N standing |CO| + reach from the
+// cutter's axis, clear of every blank point. crown/space.sv closes the cutter's sections there.
 use std
 use design
 use views
 use pitch.gear
 use pitch.trace
 use crown.thickness
-use crown.section
 use crown.tooth
 use crown.mate
 
-// The cap: in the pitch plane, the point `reach` past the apex on the ray from C
-// through it, carried onto the trace normal beyond C, and its image in N; drawn
-// there along the cutter's `axis`.
+// The cap: in the pitch plane, the point `reach` past the apex on the ray from C through it,
+// carried onto the trace normal beyond C; and its image in N, drawn there along the cutter's
+// `axis`.
 component CutterReach(p: plane, n: plane, apex: point, normal: line, axis: line, reach: Length) {
   in p {
     // Seeds, rough: beyond the apex from C, and about as far again beyond C from M.
     beyond := point hint(x: 2 * apex.x - normal.p1.x, y: 2 * apex.y - normal.p1.y)
-    radial := point hint(x: 3 * normal.p1.x - 2 * normal.p2.x, y: 3 * normal.p1.y - 2 * normal.p2.y)
+    radial := point hint(x: 3 * normal.p1.x - 2 * normal.p2.x,
+                         y: 3 * normal.p1.y - 2 * normal.p2.y)
     private to_apex := line(normal.p1, apex)
     private past := line(apex, beyond)
     private reach_line := line(normal.p1, beyond)
@@ -46,13 +45,14 @@ preview {
   gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
   g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
   trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
-  thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal, design.hypoid_design)
+  thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal,
+    design.hypoid_design)
   n := views.FoldedView(pitch.view, trace.normal, span: design.hypoid_design.cutter_radius)
-  tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
-    design.hypoid_design) in n.view
-  // Alone, the tooth's depths are in the trace's normal module: K stands that far from MC.
-  trace.K distance(tooth.normal_module) trace.normal
+  tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch,
+    thickness.outer_pitch, design.hypoid_design) in n.view
   mate := crown.mate.CrownMate(tooth, design.hypoid_design) in n.view
+  // Alone, each component's normal module is its own unknown: the trace constructs it.
+  trace.K distance(tooth.normal_module) trace.normal
   trace.K distance(mate.normal_module) trace.normal
   reach := CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
     reach: design.hypoid_design.space_reach)

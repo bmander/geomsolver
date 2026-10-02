@@ -1,5 +1,5 @@
-// The pair's layout and its analytic faces, read by the generating-system checks
-// (tests/envelope/paired.rs). gears.sv is the export entry point.
+// The layout alone with its analytic faces, for the generating-system checks
+// (tests/envelope/paired.rs). gears.sv is the pair to export.
 unit mm
 use std
 use design

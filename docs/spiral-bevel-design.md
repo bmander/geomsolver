@@ -436,7 +436,7 @@ Keep gear knowledge in components. The reusable language capabilities needed are
     pass this gate. This proves local differential regularity of the nominal map, while
     source error transfer, global injectivity/interference and final analytic face assembly
     remain unfinished. See [Whole-interval geometry bounds](interval-geometry.md).
-12. **Supported analytic face boundaries implemented:** the source uses `ToothSideFaces`
+12. **Supported analytic face boundaries implemented:** the source uses `ToothSide`
     to declare the eight working/transition faces with the existing `face` construct and
     explicit `on:` support. Their ordered finite edges share corners and traverse every
     flank/fillet join in opposite directions. Face samples map the support chart and retain

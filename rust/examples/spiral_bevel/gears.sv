@@ -1,5 +1,5 @@
-// Both members as ordinary solids, laid out step by step (layout.sv, members.sv).
-// `solventc --stl` or `--step` exports either body; see README.md.
+// The pair, both members as ordinary solids: `pair.pinion.body` and `pair.gear.body`.
+// `solventc --step` or `--stl` exports either; see README.md.
 unit mm
 use std
 use design

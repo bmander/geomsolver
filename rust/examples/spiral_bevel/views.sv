@@ -1,13 +1,11 @@
-// The views the layout is drawn in. The pitch plane is the page folded flat to
-// the crown; every other view is folded square to it about a line through the
-// mean point M, so it stands through M and needs no angle of its own:
-//   G, gear axial:      along O -> M          (pitch/gear.sv)
-//   Q, pinion axial:    along M -> the pinion apex (pitch/pinion.sv)
-//   N, normal section:  along C -> M, the tooth-trace normal (crown/)
+// The views the layout is drawn in. The pitch plane P is the page; every other view folds
+// square to it about a line through the mean point M, so it needs no angle of its own:
+//   G, the gear's axial view:    along O -> M, the gear apex to M  (pitch/gear.sv)
+//   Q, the pinion's axial view:  along M -> A, the pinion apex     (pitch/pinion.sv)
+//   N, the normal section:       along C -> M, the trace normal    (crown/)
 use std
 
-// The pitch plane: the page folded up about its x axis, the gear apex at its
-// datum origin. Its datum stands where the page's does, `span` long.
+// The pitch plane: the page, the gear apex at its datum origin, the datum `span` long.
 component PitchView(front: plane, span: Length) {
   private origin := point hint(x: 0, y: 0)
   private toward := point hint(x: span, y: 0)
@@ -17,10 +15,9 @@ component PitchView(front: plane, span: Length) {
   view := plane(origin: origin, toward: toward, from: front, fold: 0deg)
 }
 
-// A view folded square to `parent` about `hinge`, a line drawn in it: its u
-// runs along the hinge, and the solve places it. Its datum is held where drawn,
-// on the page's origin and `span` long: about the size of what is drawn in it,
-// which is how far a turn of the view is taken to move its content.
+// A view folded square to `parent` about `hinge`, a line drawn in it; its u runs along the
+// hinge. Its datum is held where drawn, `span` long: about the size of what it shows, which is
+// how far a turn of the view is taken to move it.
 component FoldedView(parent: plane, hinge: line, span: Length) {
   private origin := point hint(x: 0, y: 0)
   private toward := point hint(x: span, y: 0)

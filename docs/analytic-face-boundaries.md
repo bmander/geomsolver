@@ -12,8 +12,9 @@ envelope or material patch that contains those edges. The ordered loop determine
 the directed uses. Here the working face traverses `join` in reverse and the transition
 traverses it forward; both keep the same edge and corner identities.
 
-The spiral-bevel source packages this pattern as `ToothSideFaces`, called once for each
-of its four tooth sides. It declares eight supported faces. The rim's toe and heel
+The spiral-bevel source packages this pattern as `ToothSide` (`verification.sv`), which
+also declares the seams, corners and edges, called once for each of its four tooth sides.
+It declares eight supported faces. The rim's toe and heel
 contours now read those face boundaries, including their correct support parameters,
 rather than addressing edge names separately.
 

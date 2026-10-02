@@ -70,10 +70,11 @@ pub fn one_space(text: &str) -> String {
 /// by the tip, less the toe and the back) and `extra` after it. The member's own blank term
 /// gives up its instance name to the solid.
 pub fn publish_blank(text: &str,extra: &str) -> String {
-    let member = "  body := solid(design.heel)\n  blank := MemberBlank(body, design)\n";
+    let member = "  body := solid(design.heel)\n  blank := blank.member.MemberBlank(body, design)\n";
     assert!(text.contains(member),"the member's body is the heel under its blank term");
-    text.replace(member,&format!("  body := solid(design.heel)\n  body_blank := MemberBlank(body, design)\n  \
-        construction blank := solid(design.heel)\n  published := MemberBlank(blank, design)\n{extra}"))
+    text.replace(member,&format!("  body := solid(design.heel)\n  \
+        body_blank := blank.member.MemberBlank(body, design)\n  construction blank := solid(design.heel)\n  \
+        published := blank.member.MemberBlank(blank, design)\n{extra}"))
 }
 
 /// The `design` module with each member's roll limit in degrees (`pinion_roll`, `gear_roll`).

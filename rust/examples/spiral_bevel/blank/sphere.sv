@@ -1,14 +1,14 @@
-// Step 3, a member's ends: the face width centred on the mean point along the
-// pitch generator, and the toe and heel spheres about the apex through its ends.
-// A sphere's poles stand square to the generator, and its meridian runs from
-// pole to pole through the rim, so it turns about its diameter clear of the cones.
+// Step 3, a member's ends: the face width centred on the mean point along the pitch generator,
+// and the toe and heel spheres about the apex through its ends. A sphere's meridian runs pole
+// to pole through the rim, its poles square to the generator, so it turns about its diameter
+// clear of the cones.
 use std
 
 // The face width along `generator` (apex -> mean point), centred on the mean point.
 component FaceSpan(generator: line, width: Length) {
-  // Seeds only, rough: a tenth of the generator back from the mean point.
+  // Seeds only, rough: a tenth of the generator either side of the mean point.
   toe := point hint(x: generator.p2.x - (generator.p2.x - generator.p1.x) / 10,
-                 y: generator.p2.y - (generator.p2.y - generator.p1.y) / 10)
+                    y: generator.p2.y - (generator.p2.y - generator.p1.y) / 10)
   heel := point hint(x: 2 * generator.p2.x - toe.x, y: 2 * generator.p2.y - toe.y)
   span := line(toe, heel)
   generator.p2 midpoint span

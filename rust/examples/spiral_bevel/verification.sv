@@ -1,54 +1,71 @@
-// The analytic faces of the pair's layout (layout.sv): each generated flank as an
-// envelope of its crown surface, trimmed to its member's limits, with the seams,
-// corners and edges its face loop is built from. The generating-system checks
-// (tests/envelope/paired.rs) read these through pair.sv; the exported bodies do not.
+// The analytic faces of the layout (layout.sv), for the generating-system checks
+// (tests/envelope/paired.rs, through pair.sv); the exported bodies do not read them. Each
+// generated flank is the envelope of its crown surface under its member's generating roll,
+// trimmed to the member's limits and bounded by one face loop.
 
-// A surface region is the common part of these material-side conditions. Its generating
-// envelope keeps its own parameter domain; branch selection and solid closure are separate.
+// A generated surface's material: within the tip cone and the heel sphere, outside the root
+// cone and the toe sphere.
 component ToothRegion(source: envelope, limits: group) {
   bounded := patch(source, inside: limits.tip, inside: limits.heel,
-                outside: limits.root, outside: limits.toe)
+                   outside: limits.root, outside: limits.toe)
 }
 
-// Exact end intersections share their supporting surfaces with the tooth boundaries.
-component EndCircles(wall: surface, toe: surface, heel: surface) {
-  near := seam(wall, toe)
-  far := seam(wall, heel)
+// Where `wall` meets a member's toe and heel spheres.
+component EndCircles(wall: surface, blank: group) {
+  near := seam(wall, blank.toe.wall)
+  far := seam(wall, blank.heel.wall)
 }
 
-// The working flank and its root transition share one finite join edge.
-// Loop order makes their uses of that edge opposite.
-component ToothSideFaces(flank: patch, fillet: patch,
-                         tip: edge, join: edge, root: edge,
-                         toe: edge, heel: edge, round_toe: edge, round_heel: edge) {
-  working := face(toe, tip, heel, join, on: flank)
-  transition := face(round_toe, join, round_heel, root, on: fillet)
+// Where each of a member's cones meets its ends.
+component BlankEnds(blank: group) {
+  tip := EndCircles(blank.tip.wall, blank)
+  root := EndCircles(blank.root.wall, blank)
+  back := EndCircles(blank.back.wall, blank)
+}
+
+// One side of a tooth on a member's `blank`: the working `flank` and its `round`, which meets
+// the envelope of the crown's tip, the member's `root`. Their seams with each other, the tip
+// cone and the end spheres meet at six corners; the seven edges between them, sliced along the
+// member's `axis`, close the two faces, which use their join edge in opposite directions.
+component ToothSide(flank: patch, round: patch, root: patch, blank: group, axis: line) {
+  join := seam(flank, round)
+  root_join := seam(round, root)
+  tip_edge := seam(flank, blank.tip.wall)
+  toe_edge := seam(flank, blank.toe.wall)
+  heel_edge := seam(flank, blank.heel.wall)
+  round_toe_edge := seam(round, blank.toe.wall)
+  round_heel_edge := seam(round, blank.heel.wall)
+
+  tip_toe := vertex(tip_edge, toe_edge)
+  join_toe := vertex(join, toe_edge)
+  root_toe := vertex(root_join, round_toe_edge)
+  tip_heel := vertex(tip_edge, heel_edge)
+  join_heel := vertex(join, heel_edge)
+  root_heel := vertex(root_join, round_heel_edge)
+
+  tip_span := edge(tip_edge, from: tip_toe, to: tip_heel, along: axis)
+  join_span := edge(join, from: join_toe, to: join_heel, along: axis)
+  root_span := edge(root_join, from: root_toe, to: root_heel, along: axis)
+  toe_span := edge(toe_edge, from: join_toe, to: tip_toe, along: axis)
+  heel_span := edge(heel_edge, from: join_heel, to: tip_heel, along: axis)
+  round_toe_span := edge(round_toe_edge, from: root_toe, to: join_toe, along: axis)
+  round_heel_span := edge(round_heel_edge, from: root_heel, to: join_heel, along: axis)
+
+  working := face(toe_span, tip_span, heel_span, join_span, on: flank)
+  transition := face(round_toe_span, join_span, round_heel_span, root_span, on: round)
 }
 
 // `refs` is a HypoidLayout.
 component ReferenceFaces(refs: group) {
-  // The generating roll the envelopes are verified over. The removal sweeps in
-  // members.sv declare their own, longer for the gear.
+  // The roll the envelopes are verified over; the gear's removal sweep (members.sv) rolls further.
   roll_span := 35deg
-  pinion_tip_ends := EndCircles(refs.pinion_blank.tip.wall, refs.pinion_blank.toe.wall,
-      refs.pinion_blank.heel.wall)
-  pinion_root_ends := EndCircles(refs.pinion_blank.root.wall, refs.pinion_blank.toe.wall,
-      refs.pinion_blank.heel.wall)
-  pinion_back_ends := EndCircles(refs.pinion_blank.back.wall, refs.pinion_blank.toe.wall,
-      refs.pinion_blank.heel.wall)
-  gear_tip_ends := EndCircles(refs.gear_blank.tip.wall, refs.gear_blank.toe.wall,
-      refs.gear_blank.heel.wall)
-  gear_root_ends := EndCircles(refs.gear_blank.root.wall, refs.gear_blank.toe.wall,
-      refs.gear_blank.heel.wall)
-  gear_back_ends := EndCircles(refs.gear_blank.back.wall, refs.gear_blank.toe.wall,
-      refs.gear_blank.heel.wall)
 
-  // One generated flank per edge of each crown section's profile: the edge's crown
-  // surface, on the semicircle about the cutter's axis holding the tooth trace (every
-  // section is drawn in the normal view through M, so the trace stands at 180deg);
-  // its implicit envelope under the generating roll; and the envelope's material
-  // region, through an ordinary component. The face and material boundaries are
-  // defined separately. Copy k holds the profile's k-th edge, in traversal order.
+  pinion_ends := BlankEnds(refs.pinion_blank)
+  gear_ends := BlankEnds(refs.gear_blank)
+
+  // One envelope per edge of each crown section, copy k on the profile's k-th edge: the edge's
+  // crown surface over the semicircle holding the trace (in N the trace stands at 180deg),
+  // generated by the member's roll, and its material.
   repeat e in refs.tooth.rack.profile {
     pinion := surface(refs.tooth.crown, e, from: 90deg, to: 270deg)
     pinion_envelope := envelope(pinion, under: refs.generation.pinion_generation,
@@ -67,164 +84,25 @@ component ReferenceFaces(refs: group) {
       from: -roll_span, to: roll_span)
     gear_inner_region := ToothRegion(gear_inner_envelope, limits: refs.gear_design)
   }
-  // The flanks the checks read, by where each stands in its profile: the tooth's
-  // (RackSection: base, outer, outer_round, tip, inner_round, inner) and its mate's,
-  // which walks the other way round (MateSection: base, inner, inner_round, tip,
-  // outer_round, outer). The bases, and each mate section's far side, are made with
-  // the rest and read by nothing below.
-  outer := 1
-  outer_round := 2
+
+  // Each section's edges by where they stand in its walk after the base: the tooth's run
+  // outer, outer_round, tip, inner_round, inner (RackSection), its mate's the other way round
+  // (MateSection). The bases and each mate section's far side go unread.
+  first := 1
+  first_round := 2
   tip := 3
-  inner_round := 4
-  inner := 5
-  mate_inner := 1
-  mate_inner_round := 2
-  mate_outer_round := 4
-  mate_outer := 5
+  last_round := 4
+  last := 5
 
-  // Shared characteristics at the tangent generating-profile vertices. Both faces
-  // refer to one curve, including their common toe and heel and material limits.
-  pinion_outer_join := seam(pinion_region[outer].bounded, pinion_region[outer_round].bounded)
-  pinion_outer_root_join := seam(pinion_region[outer_round].bounded, pinion_region[tip].bounded)
-  pinion_inner_join := seam(pinion_region[inner].bounded, pinion_region[inner_round].bounded)
-  pinion_inner_root_join := seam(pinion_region[inner_round].bounded, pinion_region[tip].bounded)
-  gear_outer_inner_join := seam(gear_outer_region[mate_inner].bounded,
-      gear_outer_region[mate_inner_round].bounded)
-  gear_outer_inner_root_join := seam(gear_outer_region[mate_inner_round].bounded,
-      gear_outer_region[tip].bounded)
-  gear_inner_outer_join := seam(gear_inner_region[mate_outer].bounded,
-      gear_inner_region[mate_outer_round].bounded)
-  gear_inner_outer_root_join := seam(gear_inner_region[mate_outer_round].bounded,
-      gear_inner_region[tip].bounded)
-
-  // Intersections with finite analytic boundaries belong to the model as well.
-  // These seams retain the generated face's material conditions and source chart.
-  pinion_outer_tip_edge := seam(pinion_region[outer].bounded, refs.pinion_blank.tip.wall)
-  pinion_outer_toe_edge := seam(pinion_region[outer].bounded, refs.pinion_blank.toe.wall)
-  pinion_outer_heel_edge := seam(pinion_region[outer].bounded, refs.pinion_blank.heel.wall)
-  pinion_outer_round_toe_edge := seam(pinion_region[outer_round].bounded, refs.pinion_blank.toe.wall)
-  pinion_outer_round_heel_edge := seam(pinion_region[outer_round].bounded, refs.pinion_blank.heel.wall)
-  pinion_inner_tip_edge := seam(pinion_region[inner].bounded, refs.pinion_blank.tip.wall)
-  pinion_inner_toe_edge := seam(pinion_region[inner].bounded, refs.pinion_blank.toe.wall)
-  pinion_inner_heel_edge := seam(pinion_region[inner].bounded, refs.pinion_blank.heel.wall)
-  pinion_inner_round_toe_edge := seam(pinion_region[inner_round].bounded, refs.pinion_blank.toe.wall)
-  pinion_inner_round_heel_edge := seam(pinion_region[inner_round].bounded, refs.pinion_blank.heel.wall)
-  gear_outer_inner_tip_edge := seam(gear_outer_region[mate_inner].bounded, refs.gear_blank.tip.wall)
-  gear_outer_inner_toe_edge := seam(gear_outer_region[mate_inner].bounded, refs.gear_blank.toe.wall)
-  gear_outer_inner_heel_edge := seam(gear_outer_region[mate_inner].bounded, refs.gear_blank.heel.wall)
-  gear_outer_inner_round_toe_edge := seam(gear_outer_region[mate_inner_round].bounded,
-      refs.gear_blank.toe.wall)
-  gear_outer_inner_round_heel_edge := seam(gear_outer_region[mate_inner_round].bounded,
-      refs.gear_blank.heel.wall)
-  gear_inner_outer_tip_edge := seam(gear_inner_region[mate_outer].bounded, refs.gear_blank.tip.wall)
-  gear_inner_outer_toe_edge := seam(gear_inner_region[mate_outer].bounded, refs.gear_blank.toe.wall)
-  gear_inner_outer_heel_edge := seam(gear_inner_region[mate_outer].bounded, refs.gear_blank.heel.wall)
-  gear_inner_outer_round_toe_edge := seam(gear_inner_region[mate_outer_round].bounded,
-      refs.gear_blank.toe.wall)
-  gear_inner_outer_round_heel_edge := seam(gear_inner_region[mate_outer_round].bounded,
-      refs.gear_blank.heel.wall)
-
-  // Shared corner identities. The adjacent face loops can reuse these vertices.
-  // The two supported forms meet finite boundary seams or a generating junction.
-  pinion_outer_tip_toe := vertex(pinion_outer_tip_edge, pinion_outer_toe_edge)
-  pinion_outer_join_toe := vertex(pinion_outer_join, pinion_outer_toe_edge)
-  pinion_outer_root_toe := vertex(pinion_outer_root_join, pinion_outer_round_toe_edge)
-  pinion_outer_tip_heel := vertex(pinion_outer_tip_edge, pinion_outer_heel_edge)
-  pinion_outer_join_heel := vertex(pinion_outer_join, pinion_outer_heel_edge)
-  pinion_outer_root_heel := vertex(pinion_outer_root_join, pinion_outer_round_heel_edge)
-  pinion_inner_tip_toe := vertex(pinion_inner_tip_edge, pinion_inner_toe_edge)
-  pinion_inner_join_toe := vertex(pinion_inner_join, pinion_inner_toe_edge)
-  pinion_inner_root_toe := vertex(pinion_inner_root_join, pinion_inner_round_toe_edge)
-  pinion_inner_tip_heel := vertex(pinion_inner_tip_edge, pinion_inner_heel_edge)
-  pinion_inner_join_heel := vertex(pinion_inner_join, pinion_inner_heel_edge)
-  pinion_inner_root_heel := vertex(pinion_inner_root_join, pinion_inner_round_heel_edge)
-  gear_outer_inner_tip_toe := vertex(gear_outer_inner_tip_edge, gear_outer_inner_toe_edge)
-  gear_outer_inner_join_toe := vertex(gear_outer_inner_join, gear_outer_inner_toe_edge)
-  gear_outer_inner_root_toe := vertex(gear_outer_inner_root_join, gear_outer_inner_round_toe_edge)
-  gear_outer_inner_tip_heel := vertex(gear_outer_inner_tip_edge, gear_outer_inner_heel_edge)
-  gear_outer_inner_join_heel := vertex(gear_outer_inner_join, gear_outer_inner_heel_edge)
-  gear_outer_inner_root_heel := vertex(gear_outer_inner_root_join, gear_outer_inner_round_heel_edge)
-  gear_inner_outer_tip_toe := vertex(gear_inner_outer_tip_edge, gear_inner_outer_toe_edge)
-  gear_inner_outer_join_toe := vertex(gear_inner_outer_join, gear_inner_outer_toe_edge)
-  gear_inner_outer_root_toe := vertex(gear_inner_outer_root_join, gear_inner_outer_round_toe_edge)
-  gear_inner_outer_tip_heel := vertex(gear_inner_outer_tip_edge, gear_inner_outer_heel_edge)
-  gear_inner_outer_join_heel := vertex(gear_inner_outer_join, gear_inner_outer_heel_edge)
-  gear_inner_outer_root_heel := vertex(gear_inner_outer_root_join, gear_inner_outer_round_heel_edge)
-  // Finite boundary extents share corner identity and use axial sections.
-  pinion_outer_tip_span := edge(pinion_outer_tip_edge, from: pinion_outer_tip_toe,
-      to: pinion_outer_tip_heel, along: refs.pinion.axis)
-  pinion_outer_join_span := edge(pinion_outer_join, from: pinion_outer_join_toe,
-      to: pinion_outer_join_heel, along: refs.pinion.axis)
-  pinion_outer_root_span := edge(pinion_outer_root_join, from: pinion_outer_root_toe,
-      to: pinion_outer_root_heel, along: refs.pinion.axis)
-  pinion_outer_toe_span := edge(pinion_outer_toe_edge, from: pinion_outer_join_toe,
-      to: pinion_outer_tip_toe, along: refs.pinion.axis)
-  pinion_outer_round_toe_span := edge(pinion_outer_round_toe_edge, from: pinion_outer_root_toe,
-      to: pinion_outer_join_toe, along: refs.pinion.axis)
-  pinion_outer_heel_span := edge(pinion_outer_heel_edge, from: pinion_outer_join_heel,
-      to: pinion_outer_tip_heel, along: refs.pinion.axis)
-  pinion_outer_round_heel_span := edge(pinion_outer_round_heel_edge, from: pinion_outer_root_heel,
-      to: pinion_outer_join_heel, along: refs.pinion.axis)
-  pinion_inner_tip_span := edge(pinion_inner_tip_edge, from: pinion_inner_tip_toe,
-      to: pinion_inner_tip_heel, along: refs.pinion.axis)
-  pinion_inner_join_span := edge(pinion_inner_join, from: pinion_inner_join_toe,
-      to: pinion_inner_join_heel, along: refs.pinion.axis)
-  pinion_inner_root_span := edge(pinion_inner_root_join, from: pinion_inner_root_toe,
-      to: pinion_inner_root_heel, along: refs.pinion.axis)
-  pinion_inner_toe_span := edge(pinion_inner_toe_edge, from: pinion_inner_join_toe,
-      to: pinion_inner_tip_toe, along: refs.pinion.axis)
-  pinion_inner_round_toe_span := edge(pinion_inner_round_toe_edge, from: pinion_inner_root_toe,
-      to: pinion_inner_join_toe, along: refs.pinion.axis)
-  pinion_inner_heel_span := edge(pinion_inner_heel_edge, from: pinion_inner_join_heel,
-      to: pinion_inner_tip_heel, along: refs.pinion.axis)
-  pinion_inner_round_heel_span := edge(pinion_inner_round_heel_edge, from: pinion_inner_root_heel,
-      to: pinion_inner_join_heel, along: refs.pinion.axis)
-  gear_outer_inner_tip_span := edge(gear_outer_inner_tip_edge, from: gear_outer_inner_tip_toe,
-      to: gear_outer_inner_tip_heel, along: refs.gear.axis)
-  gear_outer_inner_join_span := edge(gear_outer_inner_join, from: gear_outer_inner_join_toe,
-      to: gear_outer_inner_join_heel, along: refs.gear.axis)
-  gear_outer_inner_root_span := edge(gear_outer_inner_root_join, from: gear_outer_inner_root_toe,
-      to: gear_outer_inner_root_heel, along: refs.gear.axis)
-  gear_outer_inner_toe_span := edge(gear_outer_inner_toe_edge, from: gear_outer_inner_join_toe,
-      to: gear_outer_inner_tip_toe, along: refs.gear.axis)
-  gear_outer_inner_round_toe_span := edge(gear_outer_inner_round_toe_edge,
-      from: gear_outer_inner_root_toe, to: gear_outer_inner_join_toe, along: refs.gear.axis)
-  gear_outer_inner_heel_span := edge(gear_outer_inner_heel_edge, from: gear_outer_inner_join_heel,
-      to: gear_outer_inner_tip_heel, along: refs.gear.axis)
-  gear_outer_inner_round_heel_span := edge(gear_outer_inner_round_heel_edge,
-      from: gear_outer_inner_root_heel, to: gear_outer_inner_join_heel, along: refs.gear.axis)
-  gear_inner_outer_tip_span := edge(gear_inner_outer_tip_edge, from: gear_inner_outer_tip_toe,
-      to: gear_inner_outer_tip_heel, along: refs.gear.axis)
-  gear_inner_outer_join_span := edge(gear_inner_outer_join, from: gear_inner_outer_join_toe,
-      to: gear_inner_outer_join_heel, along: refs.gear.axis)
-  gear_inner_outer_root_span := edge(gear_inner_outer_root_join, from: gear_inner_outer_root_toe,
-      to: gear_inner_outer_root_heel, along: refs.gear.axis)
-  gear_inner_outer_toe_span := edge(gear_inner_outer_toe_edge, from: gear_inner_outer_join_toe,
-      to: gear_inner_outer_tip_toe, along: refs.gear.axis)
-  gear_inner_outer_round_toe_span := edge(gear_inner_outer_round_toe_edge,
-      from: gear_inner_outer_root_toe, to: gear_inner_outer_join_toe, along: refs.gear.axis)
-  gear_inner_outer_heel_span := edge(gear_inner_outer_heel_edge, from: gear_inner_outer_join_heel,
-      to: gear_inner_outer_tip_heel, along: refs.gear.axis)
-  gear_inner_outer_round_heel_span := edge(gear_inner_outer_round_heel_edge,
-      from: gear_inner_outer_root_heel, to: gear_inner_outer_join_heel, along: refs.gear.axis)
-  pinion_outer_faces := ToothSideFaces(pinion_region[outer].bounded,
-      pinion_region[outer_round].bounded,
-      pinion_outer_tip_span, pinion_outer_join_span, pinion_outer_root_span,
-      pinion_outer_toe_span, pinion_outer_heel_span, pinion_outer_round_toe_span,
-      pinion_outer_round_heel_span)
-  pinion_inner_faces := ToothSideFaces(pinion_region[inner].bounded,
-      pinion_region[inner_round].bounded,
-      pinion_inner_tip_span, pinion_inner_join_span, pinion_inner_root_span,
-      pinion_inner_toe_span, pinion_inner_heel_span, pinion_inner_round_toe_span,
-      pinion_inner_round_heel_span)
-  gear_outer_inner_faces := ToothSideFaces(gear_outer_region[mate_inner].bounded,
-      gear_outer_region[mate_inner_round].bounded,
-      gear_outer_inner_tip_span, gear_outer_inner_join_span, gear_outer_inner_root_span,
-      gear_outer_inner_toe_span, gear_outer_inner_heel_span, gear_outer_inner_round_toe_span,
-      gear_outer_inner_round_heel_span)
-  gear_inner_outer_faces := ToothSideFaces(gear_inner_region[mate_outer].bounded,
-      gear_inner_region[mate_outer_round].bounded,
-      gear_inner_outer_tip_span, gear_inner_outer_join_span, gear_inner_outer_root_span,
-      gear_inner_outer_toe_span, gear_inner_outer_heel_span, gear_inner_outer_round_toe_span,
-      gear_inner_outer_round_heel_span)
+  // The four sides that work: the pinion tooth's two, and the gear's two facing them.
+  pinion_outer := ToothSide(pinion_region[first].bounded, pinion_region[first_round].bounded,
+    pinion_region[tip].bounded, refs.pinion_blank, refs.pinion.axis)
+  pinion_inner := ToothSide(pinion_region[last].bounded, pinion_region[last_round].bounded,
+    pinion_region[tip].bounded, refs.pinion_blank, refs.pinion.axis)
+  gear_outer_inner := ToothSide(gear_outer_region[first].bounded,
+    gear_outer_region[first_round].bounded, gear_outer_region[tip].bounded, refs.gear_blank,
+    refs.gear.axis)
+  gear_inner_outer := ToothSide(gear_inner_region[last].bounded,
+    gear_inner_region[last_round].bounded, gear_inner_region[tip].bounded, refs.gear_blank,
+    refs.gear.axis)
 }

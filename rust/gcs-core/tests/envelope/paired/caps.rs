@@ -20,7 +20,7 @@ fn end_circles_match_independent_cone_sphere_sections_for_every_pair_configurati
                         let radius = rho*angle.sin();
                         let z = rho*angle.cos();
                         let transverse = (1.-(d/rho).powi(2)).sqrt();
-                        let seam = &pair.surface_seams[&format!("faces.{name}_{role}_ends.{end}")];
+                        let seam = &pair.surface_seams[&format!("faces.{name}_ends.{role}.{end}")];
                         for i in 0..=8 {
                             let v = i as f64/8.;
                             let found = seam.intersect(|p,_| p[1]-v,[fraction-0.5,0.5],

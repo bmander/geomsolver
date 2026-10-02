@@ -200,8 +200,8 @@ impl Pair {
         RevolvedSurface::named(&self.model.sketch,self.flanks[&format!("faces.{rack}_{edge}")]).unwrap()
     }
 
-    /// What the checks call a flank, `faces.pinion_outer` — the stem of its seams' and faces'
-    /// names, which the source writes out by edge.
+    /// What the checks call a flank, `faces.pinion_outer` — the `ToothSide` holding its seams,
+    /// corners, edges and faces.
     fn label(&self,surface: &RevolvedSurface) -> &str {
         &self.labels[&surface.name]
     }
@@ -218,7 +218,7 @@ impl Pair {
     }
 
     fn seam(&self,flank: &RevolvedSurface,root: bool) -> &gcs_core::seam::EnvelopeSeam {
-        &self.seams[&format!("{}_{}join",self.label(flank),if root { "root_" } else { "" })]
+        &self.seams[&format!("{}.{}join",self.label(flank),if root { "root_" } else { "" })]
     }
 
     fn seam_at(&self,member: usize,seam: &gcs_core::seam::EnvelopeSeam,rho: f64)
@@ -316,7 +316,7 @@ fn finite_edges_follow_independent_characteristics_and_declared_axial_slices() {
                     let flank = pair.patch(member,side,name);
                     let round = pair.patch(member,side,&format!("{name}_round"));
                     for role in ["tip","join","root","toe","heel","round_toe","round_heel"] {
-                        let edge = &pair.edges[&format!("{}_{role}_span",pair.label(&flank))];
+                        let edge = &pair.edges[&format!("{}.{role}_span",pair.label(&flank))];
                         let source = if role == "root" || role.starts_with("round_") { &round } else { &flank };
                         let [a,b] = edge.endpoints().map(|p| frame.point(p.position));
                         for fraction in [0.,0.25,0.5,0.75,1.] {
@@ -380,11 +380,12 @@ fn declared_boundary_seams_match_independent_spheres_and_tip_cones_across_sizes_
                         near(tip.contact.position,expected.contact.position,module*1e-7);
                         if fraction == 1. { continue; }
                         let end = if fraction < 1. { "toe" } else { "heel" };
-                        let corner = pair.corners[&format!("{}_tip_{end}",pair.label(&flank))];
+                        let corner = pair.corners[&format!("{}.tip_{end}",pair.label(&flank))];
                         near(corner.parameters,expected.parameters,1e-8);
                         near(pair.local_frame(member).point(corner.position),expected.contact.position,module*1e-7);
                         for source in [&flank,&round] {
-                            let seam = &pair.boundary_seams[&format!("{}_{end}_edge",pair.label(source))];
+                            let role = if source.name == flank.name { "" } else { "round_" };
+                            let seam = &pair.boundary_seams[&format!("{}.{role}{end}_edge",pair.label(&flank))];
                             for s in [0.2,0.5,0.8] {
                                 let u = if source.name == flank.name {
                                     join+s*(expected.parameters[0]-join)
@@ -438,7 +439,7 @@ fn declared_seams_agree_with_independent_characteristics_across_ratios_and_sizes
                             if fraction != 1. {
                                 let end = if fraction < 1. { "toe" } else { "heel" };
                                 let role = if root { "root" } else { "join" };
-                                let corner = pair.corners[&format!("{}_{role}_{end}",pair.label(&flank))];
+                                let corner = pair.corners[&format!("{}.{role}_{end}",pair.label(&flank))];
                                 near(corner.parameters,expected.parameters,1e-8);
                                 near(pair.local_frame(member).point(corner.position),expected.contact.position,module*1e-7);
                             }

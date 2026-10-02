@@ -15,7 +15,7 @@ fn spherical(rho: f64, theta: f64, phi: f64) -> V {
 impl Pair {
     pub(super) fn tip(&self, member: usize, surface: &RevolvedSurface, rho: f64,
         seed: [f64;3]) -> envelope::Intersection {
-        let seam = &self.boundary_seams[&format!("{}_tip_edge",self.label(surface))];
+        let seam = &self.boundary_seams[&format!("{}.tip_edge",self.label(surface))];
         let mut result = seam.intersect(
             |c| {
                 let p = c.position;
@@ -50,7 +50,7 @@ impl Pair {
                 let label = self.label(surface);
                 let (base,role) = label.strip_suffix("_round")
                     .map_or((label,"working"),|base| (base,"transition"));
-                let face = &self.faces[&format!("{base}_faces.{role}")];
+                let face = &self.faces[&format!("{base}.{role}")];
                 let (slot,fraction) = if end == "toe" { (0,fraction) } else { (2,1.-fraction) };
                 let p = face.sample_boundary(slot,fraction,100)
                     .unwrap_or_else(|e| panic!("{}: {e:?}",face.name));

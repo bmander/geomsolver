@@ -1,6 +1,6 @@
-// Step 4, what every crown section shares: a base parallel to the pitch line and a tip
-// running back along it, at their depths, and two tip roundings of one radius. The
-// chain walks the section counter-clockwise, so the pitch line lies left of both.
+// Step 4, what every crown section shares: a base parallel to the pitch line and a tip running
+// back along it, at their depths, and two tip roundings of one radius. The chain walks the
+// section counter-clockwise, so the pitch line lies left of both.
 use std
 
 component TipRounding(pitch: line, base: line, tip: line, first: arc, second: arc,
@@ -26,8 +26,10 @@ preview {
   std.origin distance(5mm, along: right) pitch.p2
   std.origin distance(0mm, along: up) pitch.p2
   profile := (base := line(bi, bo)) -> (outer := line(bo, oj)) ->
-            tangent (outer_round := arc(center: hint(x: 6, y: 2))) -> tangent (tip := line(ot, it)) ->
-            tangent (inner_round := arc(center: hint(x: 0, y: 2))) -> tangent (inner := line(ij, bi)) -> close
+             tangent (outer_round := arc(center: hint(x: 6, y: 2))) -> tangent
+             (tip := line(ot, it)) -> tangent
+             (inner_round := arc(center: hint(x: 0, y: 2))) -> tangent
+             (inner := line(ij, bi)) -> close
   base angle(110deg) outer
   base angle(250deg) inner
   std.origin on inner

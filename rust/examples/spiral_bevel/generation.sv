@@ -1,10 +1,9 @@
-// Step 5, generation. Every roll shares the crown's angle, and each member turns
-// at the crown's tooth count over its own, 2R / m over N, so both stay conjugate
-// through the one crown: read off the gear's triangle after the solve, its
-// hypotenuse R over the gear's pitch radius, and over its short leg, N_p m / 2, for
-// the pinion. The pinion's own cone, solved off the bevel, rolls at another ratio.
-// Indexing is one member angle; the crown's neighbour is one crown pitch round,
-// four quarter pitches of the mean pitch circle.
+// Step 5, generation. Every roll shares the crown's angle, and each member turns at the crown's
+// tooth count over its own, N_c / N with N_c = 2R / m, so both stay conjugate through the one
+// crown. The ratios are read off the gear's triangle after the solve: its hypotenuse R over the
+// gear's pitch radius, and over the short leg N_p m / 2 for the pinion, whose own cone, solved
+// off the bevel, would roll at another. Indexing turns a member; the crown's neighbour is one
+// crown pitch round, four quarter pitches of the mean pitch circle.
 use std
 use design
 use views
@@ -36,6 +35,7 @@ preview {
   trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
   pinion := pitch.pinion.PinionCone(pitch.view, q.view, gear, trace.foot, design.hypoid_design)
   q := views.FoldedView(pitch.view, pinion.hinge, span: design.hypoid_design.cutter_radius)
-  thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal, design.hypoid_design)
+  thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal,
+    design.hypoid_design)
   generation := Generation(gear, pinion, thickness)
 }
