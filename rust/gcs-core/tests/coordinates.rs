@@ -25,7 +25,7 @@ fn standard_datums_are_shared_fixed_and_only_built_when_used() {
     let unused = build("use std\np := point\n");
     assert_eq!(unused.sketch.points.len(), 1);
     assert!(unused.sketch.planes.is_empty());
-    let explicit = build("use std\nstd := StandardDatums()\na := point hint(x: 3, y: 4)\na distance(3, along: u) std.front\na distance(4, along: v) std.front\n");
+    let explicit = build("use std\nstd := std.StandardDatums()\na := point hint(x: 3, y: 4)\na distance(3, along: u) std.front\na distance(4, along: v) std.front\n");
     assert_eq!(explicit.sketch.planes.len(), 2, "an explicit std binding is not duplicated");
     let mut e = build("unit mm\nuse std\n\
         a := point hint(x: 3, y: 4)\na distance(3mm, along: u) std.front\na distance(4mm, along: v) std.front\n\
@@ -228,12 +228,12 @@ fn vtwin_variant(src: &str, edits: &[(&str, &str, &str)]) -> program::Elaborated
 
 #[test]
 fn vtwin_cylinder_follows_piston_travel_and_wall_thickness() {
-    let src = "unit mm\nuse std\nuse components.bank\n\
-        bottom_pin := point hint(x: 0mm, y: -R)\nstd.origin vertical bottom_pin\nstd.origin distance(R) bottom_pin\n\
-        top_pin := point hint(x: 0mm, y: R)\nstd.origin vertical top_pin\nstd.origin distance(R) top_pin\n\
-        pivot := point hint(x: 0mm, y: H)\nstd.origin vertical pivot\nstd.origin distance(H) pivot\n\
-        bottom := Bank(bottom_pin, pivot, fw: fwA, dim: 0, dims: vtwin_dims)\n\
-        top := Bank(top_pin, pivot, fw: fwA, dim: 0, dims: vtwin_dims)\n";
+    let src = "unit mm\nuse std\nuse components.dims\nuse components.bank\n\
+        bottom_pin := point hint(x: 0mm, y: -components.dims.R)\nstd.origin vertical bottom_pin\nstd.origin distance(components.dims.R) bottom_pin\n\
+        top_pin := point hint(x: 0mm, y: components.dims.R)\nstd.origin vertical top_pin\nstd.origin distance(components.dims.R) top_pin\n\
+        pivot := point hint(x: 0mm, y: components.dims.H)\nstd.origin vertical pivot\nstd.origin distance(components.dims.H) pivot\n\
+        bottom := components.bank.Bank(bottom_pin, pivot, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims)\n\
+        top := components.bank.Bank(top_pin, pivot, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims)\n";
     for (before, after, wall) in [
         ("R := 10mm", "R := 12mm", 4.0),
         ("L := 46mm", "L := 49mm", 4.0),

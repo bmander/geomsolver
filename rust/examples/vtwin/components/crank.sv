@@ -6,6 +6,7 @@
 // the callout shows whatever angle the crank is at, and dragging the pin turns it.  Everything
 // in both banks follows from where the pin is; `theta0` in the table is only where it starts.
 
+use std
 use components.dims
 use components.parts
 use components.disc
@@ -21,12 +22,12 @@ component Crank(o: point, ref: line, dims: group) {
   kp := circle(center: pin) hint(r: dims.rpin)
   radius(dims.rpin) kp
   disc_axes := plane(origin: o, toward: pin)
-  disc := Disc(disc_axes, dims: dims)
+  disc := components.disc.Disc(disc_axes, dims: dims)
 }
 
 // Open this file to preview the crank; drag its pin to turn it.
 preview {
   unit mm
   ref := line(std.origin, std.up.toward)
-  crank := Crank(std.origin, ref, dims: vtwin_dims)
+  crank := Crank(std.origin, ref, dims: components.dims.vtwin_dims)
 }

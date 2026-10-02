@@ -7,8 +7,8 @@ outlet_size := 12mm
 wall := 2mm
 
 component Section(c: point, size: Length, wall: Length) {
-  private construction outer := CenteredRectangle(c, w: size, h: size)
-  private construction inner := CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
+  private construction outer := std.CenteredRectangle(c, w: size, h: size)
+  private construction inner := std.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
   profile := face(outer.loop, holes: inner.loop)
 }
 

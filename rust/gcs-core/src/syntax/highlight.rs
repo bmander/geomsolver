@@ -248,6 +248,10 @@ fn tint_word(
             if next == Some(&Tok::Define) {
                 return (Some(Tint::Def), Next::Word);
             }
+            // `engine.parts.Crank(…)` — a used module's component, named by its full path
+            if prev == Some(&Tok::P('.')) && next == Some(&Tok::P('(')) {
+                return (Some(Tint::Type), Next::Word);
+            }
             // `3in` is one literal to the parser and two tokens here: the inch mark after a
             // number is a unit, plain like `mm` and `deg`, and not the membership clause
             if w == "in" && matches!(prev, Some(Tok::Num(_))) {

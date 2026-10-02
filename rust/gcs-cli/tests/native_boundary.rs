@@ -45,7 +45,7 @@ fn frame(sample: &[f64;15]) {
 
 const BOX: &str = "unit mm
 use std
-profile := CenteredRectangle(std.origin,w: 2mm,h: 2mm)
+profile := std.CenteredRectangle(std.origin,w: 2mm,h: 2mm)
 stock := solid(face(profile.loop),depth: 2mm)
 body := solid(stock)
 ";

@@ -1307,7 +1307,7 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
 test('a named component chain reaches the browser as the same swept mesh', () => {
   const src = [
     'unit mm', 'use components.parts', 'O := point hint(x: 0, y: 0)', 'ground O',
-    'boss := Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)',
+    'boss := components.parts.Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)',
     'block := solid(boss.profile, depth: 8mm)', '',
   ].join('\n');
   const doc = Document.read(src);
@@ -1785,7 +1785,7 @@ test('a name nothing defines is a free variable that ties the dimensions reading
 test('an ellipse is a curve of the library, and a point solves onto its rim', () => {
   const d = Document.read(
     'use std\no := point hint(x: 10, y: 5)\nq := point hint(x: 18, y: 5)\n'
-    + 'f := plane(origin: o, toward: q)\ne := Ellipse(f, a: 8, b: 3).p over u in (0, 360)\n'
+    + 'f := plane(origin: o, toward: q)\ne := std.Ellipse(f, a: 8, b: 3).p over u in (0, 360)\n'
     + 'ground o\nground q\np := point hint(x: 11, y: 9)\np on e hint(t: 80)\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   const sk = d.sketch;
@@ -2358,7 +2358,7 @@ test('a rectangle joins the view it is drawn in, whole', () => {
 });
 
 test('a module the host hands over resolves a use before the library', async () => {
-  const doc = 'use demo.parts\no := point hint(x: 0, y: 0)\nground o\nr := Rung(o)\n';
+  const doc = 'use demo.parts\no := point hint(x: 0, y: 0)\nground o\nr := demo.parts.Rung(o)\n';
   const mod = 'component Rung(a: point) {\n  b := point\n  e := line(a, b)\n  horizontal e\n  a distance(10) b\n}\n';
   assert.deepEqual(modules.uses(doc), ['demo.parts']);
   assert.equal(modules.pathOf('demo.parts'), 'demo/parts.sv');

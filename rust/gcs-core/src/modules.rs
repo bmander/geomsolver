@@ -85,29 +85,21 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
         if let Some(preview) = mp.preview {
             root.body.retain(|st| !preview.contains(st.span.lo));
         }
+        let mut comps_seen: BTreeSet<String> = BTreeSet::new();
         for mut c in comps {
             c.module = Some(k);
             let Some(cname) = c.name.as_ref() else { continue };
-            if let Some(other) = prog.components.iter().find(|o| {
-                o.name.as_ref().is_some_and(|n| n.text == cname.text)
-            }) {
-                // at the definition a reader of the document can edit — its own, where the
-                // clash is with one; otherwise the module's, shown at the `use`
-                let (span, where_) = match other.module {
-                    Some(j) => (c.span, format!("in `{}`", prog.modules[j].name)),
-                    None => (other.span, "in this document".to_string()),
-                };
+            // a module's names are its own (§14.4): only two definitions in one file clash
+            if comps_seen.contains(&cname.text) {
                 diags.push(Diag {
                     code: Code::E071,
-                    span,
+                    span: c.span,
                     stmt: None,
-                    message: format!(
-                        "`{}` is defined twice: in `{name}` and {where_}",
-                        cname.text
-                    ),
+                    message: format!("`{}` is defined twice in `{name}`", cname.text),
                 });
                 continue;
             }
+            comps_seen.insert(cname.text.clone());
             let root_at = prog.components.len() - 1;
             prog.components.insert(root_at, c);
         }
@@ -141,9 +133,4 @@ pub fn localize(p: &Program, diags: &mut [Diag]) {
 /// a re-parse of the same document that must not ask the host again.
 pub fn relink(prog: &mut Program, like: &Program) -> Vec<Diag> {
     link(prog, &mut |name| like.module_text(name))
-}
-
-/// The component a program defines under `name`, wherever it was read from.
-pub fn component<'a>(prog: &'a Program, name: &str) -> Option<&'a Component> {
-    prog.components.iter().find(|c| c.name.as_ref().is_some_and(|n| n.text == name))
 }

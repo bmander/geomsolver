@@ -1124,22 +1124,22 @@ fn vtwin_intake_passages_connect_without_opening_into_the_exhaust() {
 fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
     use gcs_core::{plane, solid::{ApproximationPolicy, WorldPoint}};
     for (phi, height, page_x, page_y, offset) in [(0, 0, 0, 0, 0), (35, 72, 100, -80, 7)] {
-        let src = format!("unit mm\nuse components.dims\nuse components.parts\nuse components.throttle\n\
-            torgb := 2 * rbar - 2 * (1 - oring_squeeze) * tor\n\
-            torw := oring_groove_w * tor\n\
+        let src = format!("unit mm\nuse hardware\nuse components.dims\nuse components.parts\nuse components.throttle\n\
+            torgb := 2 * components.dims.rbar - 2 * (1 - hardware.oring_squeeze) * components.dims.tor\n\
+            torw := hardware.oring_groove_w * components.dims.tor\n\
             O := point hint(x: {page_x}, y: {page_y})\nground O\n\
             q := point hint(x: {}, y: {page_y})\nO distance(40mm, along: x) q\nO distance(0mm, along: y) q\n\
             datum := plane(origin: O, toward: q)\n\
             front := plane(origin: O, toward: q, from: datum, offset: {offset}mm)\n\
-            in front {{\nc := At(O, dx: 0mm, dy: {height}mm)\naxes := Axes(O)\n\
+            in front {{\nc := components.parts.At(O, dx: 0mm, dy: {height}mm)\naxes := components.parts.Axes(O)\n\
             core := circle(center: c.p) hint(r: torgb / 2)\nradius(torgb / 2) core\n}}\n\
-            thr := Throttle(front, c.p, axes.ax, phi: {phi}deg, dims: vtwin_dims)\n\
-            old_barrel := solid(face(thr.barrel), from: -(bossz / 2 + tback), to: bossz / 2)\n\
-            old_hub := solid(face(thr.hub), from: bossz / 2, to: bossz / 2 + levw)\n\
+            thr := components.throttle.Throttle(front, c.p, axes.ax, phi: {phi}deg, dims: components.dims.vtwin_dims)\n\
+            old_barrel := solid(face(thr.barrel), from: -(components.dims.bossz / 2 + components.dims.tback), to: components.dims.bossz / 2)\n\
+            old_hub := solid(face(thr.hub), from: components.dims.bossz / 2, to: components.dims.bossz / 2 + components.dims.levw)\n\
             groove_section := face(thr.barrel, holes: core)\n\
-            groove0 := solid(groove_section, from: torz - torw / 2, to: torz + torw / 2)\n\
-            groove1 := solid(groove_section, from: -torz - torw / 2, to: -torz + torw / 2)\n\
-            groove2 := solid(groove_section, from: -(bossz / 2 + tretain) - torw / 2, to: -(bossz / 2 + tretain) + torw / 2)\n\
+            groove0 := solid(groove_section, from: components.dims.torz - torw / 2, to: components.dims.torz + torw / 2)\n\
+            groove1 := solid(groove_section, from: -components.dims.torz - torw / 2, to: -components.dims.torz + torw / 2)\n\
+            groove2 := solid(groove_section, from: -(components.dims.bossz / 2 + components.dims.tretain) - torw / 2, to: -(components.dims.bossz / 2 + components.dims.tretain) + torw / 2)\n\
             reference := solid(old_barrel)\nold_hub on reference\nthr.arm on reference\nthr.knob_s on reference\n\
             thr.cross cut reference\ngroove0 cut reference\ngroove1 cut reference\ngroove2 cut reference\n", page_x + 40);
         let (p, errors, linked) = gcs_core::library::parse_linked(&src);

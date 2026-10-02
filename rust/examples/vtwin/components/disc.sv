@@ -35,7 +35,7 @@ component Disc(f: plane, dims: group) {
   se on rim
   ssa perpendicular reference
   screw_axes := plane(origin: f.origin, toward: se)
-  gs := Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rdisc, dims: dims)
+  gs := components.parts.Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rdisc, dims: dims)
   claim radius(dims.dhub / 2) bore
   claim radius(dims.pinclr / 2) ph
   claim radius(pinpocketd / 2) pkt
@@ -63,10 +63,10 @@ component Disc(f: plane, dims: group) {
 // ../disc.svd arranges three projections of this preview.
 preview {
   unit mm
-  pin := point hint(x: std.up.origin.x + (R) * std.up.c - (0mm) * std.up.s,
-                    y: std.up.origin.y + (R) * std.up.s + (0mm) * std.up.c)
+  pin := point hint(x: std.up.origin.x + (components.dims.R) * std.up.c - (0mm) * std.up.s,
+                    y: std.up.origin.y + (components.dims.R) * std.up.s + (0mm) * std.up.c)
   std.origin vertical pin
-  std.origin distance(R) pin
+  std.origin distance(components.dims.R) pin
   disc_axes := plane(origin: std.origin, toward: pin)
-  disc := Disc(disc_axes, dims: vtwin_dims)
+  disc := Disc(disc_axes, dims: components.dims.vtwin_dims)
 }

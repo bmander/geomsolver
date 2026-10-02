@@ -230,3 +230,12 @@ line -> tangent arc -> tangent line
     assert_eq!(tint_of(named, "line"), Some(Tint::Word));
     assert_eq!(tint_of(named, "tangent"), Some(Tint::Relation));
 }
+
+/// A used module's component is called by its full path, and the component's name reads as one.
+#[test]
+fn a_module_call_is_coloured_by_its_component() {
+    let src = "use engine.parts\nc := engine.parts.Crank(o, dims: engine.dims.engine_dims)\n";
+    assert_eq!(tint_of(src, "Crank"), Some(Tint::Type));
+    assert_eq!(tint_of(src, "c :="), Some(Tint::Def));
+    assert_eq!(tint_of(src, "dims:"), Some(Tint::Label));
+}

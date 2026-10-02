@@ -18,8 +18,8 @@ component Lobe(c: point, ref: line, phi: Angle, dn: Length, dims: group) {
   ref angle(phi) spine
   nose := circle(center: n) hint(r: dims.rn)
   radius(dims.rn) nose
-  fl := Span(base, nose, side: 1)
-  fr := Span(base, nose, side: -1)
+  fl := engine.parts.Span(base, nose, side: 1)
+  fr := engine.parts.Span(base, nose, side: -1)
 }
 
 // A valve on the axis from its seat centre `seat` toward the cam centre at `axis.p2`, lifted

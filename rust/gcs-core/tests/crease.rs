@@ -52,7 +52,7 @@ const BLOCK: &str = "unit mm\nuse std\n\
 private mid := point hint(x: 0, y: -6)\n\
 std.origin vertical mid\n\
 std.origin distance(6mm, along: down) mid\n\
-private outline := CenteredRectangle(mid, w: 40mm, h: 12mm)\n\
+private outline := std.CenteredRectangle(mid, w: 40mm, h: 12mm)\n\
 block := solid(outline.loop, from: -20mm, to: 20mm)\n";
 
 #[test]

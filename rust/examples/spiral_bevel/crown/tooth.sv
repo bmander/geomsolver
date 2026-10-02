@@ -29,7 +29,7 @@ component CrownTooth(p: plane, normal: line, inner: point, outer: point, design:
   normal.p1 project center
   inner project lp
   outer project rp
-  rack := RackSection(lp, rp, design, normal_module: normal_module)
+  rack := crown.section.RackSection(lp, rp, design, normal_module: normal_module)
   // The cutter's axis, pointing out of the tooth's tip.
   axis := line(center, top)
   rack.pitch angle(90deg) axis
@@ -39,14 +39,14 @@ component CrownTooth(p: plane, normal: line, inner: point, outer: point, design:
 
 preview {
   unit mm
-  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear := GearCone(pitch.view, g.view, hypoid_design)
-  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
-  trace := ToothTrace(pitch.view, gear.generator, hypoid_design)
-  thickness := CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
-  n := FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
+  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
+  gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
+  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
+  thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal, design.hypoid_design)
+  n := views.FoldedView(pitch.view, trace.normal, span: design.hypoid_design.cutter_radius)
   tooth := CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
-    hypoid_design) in n.view
+    design.hypoid_design) in n.view
   // Alone, the tooth's depths are in the trace's normal module: K stands that far from MC.
   trace.K distance(tooth.normal_module) trace.normal
 }

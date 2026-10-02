@@ -9,8 +9,8 @@ bend_angle := 90deg
 center := point hint(x: bend_radius, y: 0mm)
 std.origin horizontal center
 std.origin distance(bend_radius) center
-outer := CenteredRectangle(center, w: 2 * half_size, h: 2 * half_size)
-inner := CenteredRectangle(center, w: 2 * (half_size - wall), h: 2 * (half_size - wall))
+outer := std.CenteredRectangle(center, w: 2 * half_size, h: 2 * half_size)
+inner := std.CenteredRectangle(center, w: 2 * (half_size - wall), h: 2 * (half_size - wall))
 annulus := face(outer.loop, holes: inner.loop)
 
 // The guide is drawn in plan; the section stands perpendicular to its start tangent.

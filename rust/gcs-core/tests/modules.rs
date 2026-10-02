@@ -1,6 +1,7 @@
 //! Modules (§14.4): `use NAME` at the top of a document, resolved by the host and linked by
-//! `modules::link` — a module's components join the document's, its top-level `param`s are read
-//! by the root bodies of files that `use` it, and its own drawing is its own.
+//! `modules::link` — a module's components are called, and its top-level params and groups read
+//! by the root bodies of files that `use` it, **by the module's full path** (`lib.rung.Rung`,
+//! `lib.rung.len`); nothing is imported bare, and its own drawing is its own.
 
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::modules::{link, relink};
@@ -25,11 +26,11 @@ l0 := point hint(x: 0, y: 0)
 r0 := point hint(x: 50, y: 0)
 l1 := point hint(x: 0, y: 20)
 r1 := point hint(x: 50, y: 20)
-t0 := Rung(l0, r0, len: len)
-t1 := Rung(l1, r1, len: len)
+t0 := lib.rung.Rung(l0, r0, len: lib.rung.len)
+t1 := lib.rung.Rung(l1, r1, len: lib.rung.len)
 stile := line(l0, l1)
 vertical stile
-l0 distance(len) l1
+l0 distance(lib.rung.len) l1
 ground l0
 ";
 
@@ -38,10 +39,10 @@ fn shelf() -> BTreeMap<&'static str, &'static str> {
     m.insert("lib.rung", RUNG);
     m.insert("lib.bad", "component Bad(a: point) {\n  l := line(a,\n}\n");
     m.insert("lib.rung2", "use lib.rung\ncomponent Rung(a: point) { }\n");
-    m.insert("lib.diamond", "use lib.rung\ncomponent Step(a: point, b: point, len: Length) { r := Rung(a, b, len: len) }\n");
+    m.insert("lib.diamond", "use lib.rung\ncomponent Step(a: point, b: point, len: Length) { r := lib.rung.Rung(a, b, len: len) }\n");
     m.insert("lib.loop_a", "use lib.loop_b\npa := 1\ncomponent A(p: point) { }\n");
     m.insert("lib.loop_b", "use lib.loop_a\npb := 2\ncomponent B(p: point) { }\n");
-    m.insert("lib.over", "use lib.rung\ntwice := 2 * len\ncomponent Long(a: point, b: point, twice: Length) { a distance(twice) b }\n");
+    m.insert("lib.over", "use lib.rung\ntwice := 2 * lib.rung.len\ncomponent Long(a: point, b: point, twice: Length) { a distance(twice) b }\n");
     m.insert("lib.units", "size := 10mm\ncomponent UnitLink(a: point, b: point, size: Length) { a distance(size) b }\n");
     m
 }
@@ -84,7 +85,7 @@ fn preview_solves_only_when_its_file_is_opened() {
     // The caller can use the same setup names and different units. Neither the preview's
     // geometry nor its params/named dimensions may become part of the importing document.
     let (mut caller, errs) = parse("unit mm\nuse part\npreview_size := 11mm\n\
-        sample := Sample(size: preview_size + shared)\n");
+        sample := part.Sample(size: preview_size + part.shared)\n");
     assert!(errs.is_empty());
     let linked = link(&mut caller, &mut |_| Some(src.into()));
     assert!(linked.is_empty(), "{linked:?}");
@@ -133,7 +134,7 @@ fn a_module_contributes_its_components_and_its_params() {
     let mut sk = e.sketch.clone();
     gcs_core::solve::solve(&mut sk, Default::default());
     let d = diagnose(&mut sk, DiagnoseOptions::default());
-    // `l0 distance(len) l1` read the module's `len` from the document: 50 up as well as across
+    // `l0 distance(lib.rung.len) l1` read the module's `len`: 50 up as well as across
     assert_eq!((d.dof, d.status), (0, State::Well));
     let (x, y) = sk.point_xy(2);
     assert!((x - 0.0).abs() < 1e-6 && (y - 50.0).abs() < 1e-6, "{x} {y}");
@@ -149,20 +150,50 @@ fn a_module_nothing_resolves_is_said_at_the_use() {
     assert!(e.ok(), "the rest of the document still elaborates");
 }
 
+/// A module's names are its own: the document may define a `Rung` beside `lib.rung`'s, and two
+/// modules may each define one.  Only two definitions in one file clash.
 #[test]
-fn a_component_defined_twice_is_refused_at_the_documents_own() {
-    let src = "use lib.rung\ncomponent Rung(a: point) { }\np := point\n";
-    let (_, linked) = read(src);
+fn two_files_may_define_one_name_and_one_file_may_not() {
+    let src = "use lib.rung\nuse lib.rung2\ncomponent Rung(a: point) { b := point }\n\
+               p := point\nq := point\nmine := Rung(p)\ntheirs := lib.rung2.Rung(p)\n\
+               used := lib.rung.Rung(p, q, len: 10)\n";
+    let (e, linked) = read(src);
+    assert!(linked.is_empty(), "{linked:?}");
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    assert!(e.map.ent_named("mine.b").is_some(), "the document's own Rung");
+    assert!(e.map.ent_named("used.e").is_some(), "lib.rung's");
+    let (mut p, _) = parse("use lib.twice\n");
+    let twice = "component A(p: point) { }\ncomponent A(p: point) { }\n";
+    let linked = link(&mut p, &mut |_| Some(twice.into()));
     assert_eq!(linked.len(), 1, "{linked:?}");
     assert_eq!(linked[0].code.as_str(), "E071");
-    assert_eq!(linked[0].span.lo as usize, src.find("component").unwrap());
-    // and across two modules, at the `use` that brought the later one in
-    let src2 = "use lib.rung\nuse lib.rung2\np := point\n";
-    let (_, linked) = read(src2);
-    assert_eq!(linked.len(), 1, "{linked:?}");
-    assert_eq!(linked[0].code.as_str(), "E071");
-    assert_eq!(linked[0].span.lo as usize, src2.find("use lib.rung2").unwrap());
-    assert!(linked[0].message.starts_with("lib.rung2:"), "{}", linked[0].message);
+}
+
+/// **Nothing is imported bare** (§14.4): a module's component, param or group is written with
+/// the module's full path, and only through a `use` the file itself wrote.
+#[test]
+fn a_module_name_is_reached_only_by_its_full_path() {
+    // bare: refused, with the spelling that works
+    let (e, _) = read("use lib.rung\na := point\nb := point\nr := Rung(a, b, len: 10)\n");
+    let said: Vec<&String> = e.errors().map(|d| &d.message).collect();
+    assert!(said.iter().any(|m| m.contains("written `lib.rung.Rung`")), "{said:?}");
+    let (e, _) = read("use lib.rung\nw := len * 2\n");
+    assert!(!e.ok() || e.diags.iter().any(|d| d.message.contains("len")), "{:?}", e.diags);
+    // through a module the file did not `use` itself: refused, naming the `use` to write
+    let (e, _) = read("use lib.diamond\na := point\nb := point\nr := lib.rung.Rung(a, b, len: 10)\n");
+    let said: Vec<&String> = e.errors().map(|d| &d.message).collect();
+    assert!(said.iter().any(|m| m.contains("write `use lib.rung`")), "{said:?}");
+    // the standard datums too: `hardware` uses `std`, and that is `hardware`'s business
+    let (prog, _, linked) = gcs_core::library::parse_linked(
+        "use hardware\na := point\na distance(1, along: u) std.front\n");
+    assert!(linked.is_empty(), "{linked:?}");
+    assert!(!elaborate(&prog).ok(), "`std.front` without a `use std` of the file's own");
+    let (prog, _, _) = gcs_core::library::parse_linked(
+        "use std\na := point\na distance(1, along: u) std.front\n");
+    assert!(elaborate(&prog).ok());
+    // and a name the module does not define
+    let (e, _) = read("use lib.rung\na := point\nr := lib.rung.Nope(a)\n");
+    assert!(e.errors().any(|d| d.message.contains("defines no component `Nope`")));
 }
 
 #[test]
@@ -177,21 +208,25 @@ fn a_modules_parse_error_is_shown_at_the_use_with_its_own_place() {
 
 #[test]
 fn a_diamond_links_once_and_a_cycle_ends() {
-    let (e, linked) = read("use lib.rung\nuse lib.diamond\na := point\nb := point\ns := Step(a, b, len: len)\n");
+    let (e, linked) = read("use lib.rung\nuse lib.diamond\na := point\nb := point\n\
+                            s := lib.diamond.Step(a, b, len: lib.rung.len)\n");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     assert_eq!(e.sketch.lines.len(), 1);
-    let (e, linked) = read("use lib.loop_a\np := point\nq := A(p)\nr := B(p)\n");
+    let (e, linked) = read("use lib.loop_a\nuse lib.loop_b\np := point\nq := lib.loop_a.A(p)\n\
+                            r := lib.loop_b.B(p)\n");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok());
     assert_eq!(e.program.modules.len(), 2);
 }
 
-/// A module's own params may read the params of the modules it uses, and the document's may
-/// read every module's: the used come first, so `twice := 2 * len` is 100 and not free.
+/// A module's own params may read the params of the modules it uses, by their path, and the
+/// document's read the module's: `twice := 2 * lib.rung.len` is 100 and not free.
 #[test]
 fn a_files_params_read_the_modules_it_uses() {
-    let (e, linked) = read("use lib.over\na := point hint(x: 0, y: 0)\nb := point hint(x: 100, y: 0)\nl := Long(a, b, twice: twice)\nground a\nb distance(twice, along: y) a\n");
+    let (e, linked) = read("use lib.over\na := point hint(x: 0, y: 0)\nb := point hint(x: 100, y: 0)\n\
+        l := lib.over.Long(a, b, twice: lib.over.twice)\nground a\n\
+        b distance(lib.over.twice, along: y) a\n");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch.clone();
@@ -224,7 +259,7 @@ fn every_span_is_one_integer_into_one_virtual_text() {
     let m = &p.modules[0];
     assert_eq!(m.base, LADDER.len() + 1);
     // the module's component sits past the document, and the map says which text it is in
-    let rung = gcs_core::modules::component(p, "Rung").expect("linked");
+    let rung = &p.components[p.resolve_component("lib.rung.Rung", None).expect("linked")];
     assert_eq!(rung.module, Some(0));
     assert!(rung.span.lo as usize >= m.base);
     assert_eq!(p.source_at(rung.span.lo as usize).0, Some(0));
@@ -237,7 +272,7 @@ fn every_span_is_one_integer_into_one_virtual_text() {
 #[test]
 fn the_standard_library_lays_out_three_views() {
     let (prog, errs, linked) = gcs_core::library::parse_linked(
-        "use std\nO := point hint(x: 0, y: 0)\nground O\nv := ThreeViews(O, right: 100, up: 80)\n\
+        "use std\nO := point hint(x: 0, y: 0)\nground O\nv := std.ThreeViews(O, right: 100, up: 80)\n\
          a := point in v.front\nb := point in v.top\nc := point in v.right\na project b\na project c\nb project c\n\
          O distance(30, along: x) a\nO distance(20, along: y) a\nv.top_origin distance(10, along: y) b\n",
     );

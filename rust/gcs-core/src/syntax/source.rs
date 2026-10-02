@@ -210,9 +210,70 @@ impl Program {
         id
     }
 
-    /// Find a named component, including components imported from linked modules.
+    /// The document's own component of that name — not one a module defines, which is reached
+    /// by its qualified name (`resolve_component`).
     pub fn component(&self, name: &str) -> Option<&Component> {
-        self.components.iter().find(|c| c.name.as_ref().map(|n| n.text.as_str()) == Some(name))
+        self.component_in(None, name)
+    }
+
+    /// The component `name` defined in `module` (`None`: the document's own).
+    pub fn component_in(&self, module: Option<usize>, name: &str) -> Option<&Component> {
+        self.components
+            .iter()
+            .find(|c| c.module == module && c.name.as_ref().is_some_and(|n| n.text == name))
+    }
+
+    /// The modules a body read `from` the document (`None`) or a module may name: exactly the
+    /// ones its own file `use`s (§14.4) — a module brought in by another is that one's business.
+    pub fn uses_of(&self, from: Option<usize>) -> Vec<&str> {
+        match from {
+            None => self.uses.iter().map(|u| u.name.as_str()).collect(),
+            Some(k) => self.modules.get(k).map_or(Vec::new(), |m| {
+                m.uses.iter().map(String::as_str).collect()
+            }),
+        }
+    }
+
+    /// **The component a call names, from where it is written** (§14.4): a bare name is one its
+    /// own file defines, and a module's is reached only by its full path, `engine.parts.Crank`,
+    /// through a `use` of that file.  The index into `components`, or why there is none.
+    pub fn resolve_component(&self, name: &str, from: Option<usize>) -> Result<usize, String> {
+        let find = |module: Option<usize>, base: &str| {
+            self.components.iter().position(|c| {
+                c.module == module && c.name.as_ref().is_some_and(|n| n.text == base)
+            })
+        };
+        let uses = self.uses_of(from);
+        if let Some((path, base)) = name.rsplit_once('.') {
+            if !uses.contains(&path) {
+                return Err(format!("no module `{path}` is used here: write `use {path}`"));
+            }
+            let m = self.modules.iter().position(|m| m.name == path);
+            return find(m, base).ok_or_else(|| format!("`{path}` defines no component `{base}`"));
+        }
+        if let Some(i) = find(from, name) {
+            return Ok(i);
+        }
+        // a module this file uses defines it: the one mistake worth naming the fix for
+        for path in uses {
+            let m = self.modules.iter().position(|m| m.name == path);
+            if m.is_some() && find(m, name).is_some() {
+                return Err(format!("no component named `{name}` here: `{path}` defines one, \
+                                    written `{path}.{name}`"));
+            }
+        }
+        Err(format!("no component named `{name}`"))
+    }
+
+    /// A component's identity across the whole program: its module's path in front of its name
+    /// (`engine.parts.Crank`), and its bare name where the document defines it.
+    pub fn component_id(&self, i: usize) -> String {
+        let c = &self.components[i];
+        let name = c.name.as_ref().map_or("", |n| n.text.as_str());
+        match c.module.and_then(|k| self.modules.get(k)) {
+            Some(m) => format!("{}.{name}", m.name),
+            None => name.to_string(),
+        }
     }
 
     pub fn stmt(&self, id: StmtId) -> Option<&Stmt> {

@@ -143,10 +143,10 @@ component Piston(f: plane, dims: group) {
 // ../piston.svd arranges three projections of this preview.
 preview {
   unit mm
-  pin := point hint(x: std.up.origin.x + (-L) * std.up.c - (0mm) * std.up.s,
-                    y: std.up.origin.y + (-L) * std.up.s + (0mm) * std.up.c)
+  pin := point hint(x: std.up.origin.x + (-components.dims.L) * std.up.c - (0mm) * std.up.s,
+                    y: std.up.origin.y + (-components.dims.L) * std.up.s + (0mm) * std.up.c)
   std.origin vertical pin
-  std.origin distance(L) pin
+  std.origin distance(components.dims.L) pin
   piston_axes := plane(origin: std.origin, toward: pin)
-  pis := Piston(piston_axes, dims: vtwin_dims)
+  pis := Piston(piston_axes, dims: components.dims.vtwin_dims)
 }

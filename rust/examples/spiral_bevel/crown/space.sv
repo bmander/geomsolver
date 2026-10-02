@@ -42,20 +42,20 @@ component ComplementarySpace(axis: line, outside: group, inside: group, indexing
 
 preview {
   unit mm
-  pitch := PitchView(std.front, span: hypoid_design.cutter_radius)
-  gear := GearCone(pitch.view, g.view, hypoid_design)
-  g := FoldedView(pitch.view, gear.generator, span: hypoid_design.cutter_radius)
-  trace := ToothTrace(pitch.view, gear.generator, hypoid_design)
-  thickness := CrownThickness(pitch.view, gear.generator, trace.normal, hypoid_design)
-  n := FoldedView(pitch.view, trace.normal, span: hypoid_design.cutter_radius)
-  tooth := CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
-    hypoid_design) in n.view
+  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
+  gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
+  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
+  thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal, design.hypoid_design)
+  n := views.FoldedView(pitch.view, trace.normal, span: design.hypoid_design.cutter_radius)
+  tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch, thickness.outer_pitch,
+    design.hypoid_design) in n.view
   // Alone, the tooth's depths are in the trace's normal module: K stands that far from MC.
   trace.K distance(tooth.normal_module) trace.normal
-  mate := CrownMate(tooth, hypoid_design) in n.view
+  mate := crown.mate.CrownMate(tooth, design.hypoid_design) in n.view
   trace.K distance(mate.normal_module) trace.normal
-  reach := CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
-    reach: hypoid_design.space_reach)
+  reach := crown.reach.CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
+    reach: design.hypoid_design.space_reach)
   crown_neighbor := motion(about: gear.crown_axis,
     phase: -4 * length(thickness.ahead) / radius(thickness.ahead) * 1rad)
   space := ComplementarySpace(mate.axis, mate.outer, mate.inner, crown_neighbor, reach.cap) in n.view

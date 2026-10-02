@@ -12,9 +12,13 @@ use std::collections::BTreeMap;
 /// Compile a component point over a numeric formal. Variable order is the swept
 /// formal, entity-formal coordinates in model order, then other numeric formals;
 /// it must match kernel Jacobian columns.
+/// `id` is the component's identity across the program (`Program::component_id`), which keys
+/// the definition, and `written` how the call spelled it, which a lifted program writes.
 fn compile_curve(
     prog: &Program,
     comp: &crate::syntax::Component,
+    id: &str,
+    written: &str,
     swept: &str,
     point: &str,
     units: crate::units::Units,
@@ -98,8 +102,8 @@ fn compile_curve(
         }
     };
     Ok(crate::model::CurveDef {
-        name: crate::model::CurveDef::key(&cname, point, swept),
-        component: cname,
+        name: crate::model::CurveDef::key(id, point, swept),
+        component: written.to_string(),
         port: point.to_string(),
         formals,
         values,
@@ -561,7 +565,8 @@ fn curve_entity(
     // found none
     let Some(of) = &c.of else { return Ok(None) };
     let Some(info) = insts.iter().find(|i| i.prefix == of.instance) else { return Ok(None) };
-    let Some(comp) = prog.component(&info.component) else { return Ok(None) };
+    let comp = &prog.components[info.comp];
+    let id = prog.component_id(info.comp);
     let swept = c.swept.text.as_str();
     let numeric = comp
         .formals
@@ -575,11 +580,11 @@ fn curve_entity(
         ));
     }
     // one definition per (component, point, formal), shared by every instance asked for it
-    let key = crate::model::CurveDef::key(&info.component, &of.point, swept);
+    let key = crate::model::CurveDef::key(&id, &of.point, swept);
     let di = match sk.curve_defs.iter().position(|x| x.name == key) {
         Some(i) => i,
         None => {
-            let def = compile_curve(prog, comp, swept, &of.point, sk.units)
+            let def = compile_curve(prog, comp, &id, &info.component, swept, &of.point, sk.units)
                 .map_err(|(span, m)| (Code::E103, span, m))?;
             sk.curve_defs.push(def);
             sk.curve_defs.len() - 1

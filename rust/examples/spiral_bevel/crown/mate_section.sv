@@ -49,7 +49,7 @@ component MateSection(lp: point, rp: point, inner_along: line, outer_along: line
     lp on inner
     rp on outer
   }
-  rounding := TipRounding(pitch, base, tip, inner_round, outer_round, design,
+  rounding := crown.rounding.TipRounding(pitch, base, tip, inner_round, outer_round, design,
     normal_module: normal_module)
 }
 
@@ -66,7 +66,7 @@ preview {
   std.origin distance(0mm, along: up) lp
   std.origin distance(pitch_radius + 1.3mm, along: right) rp
   std.origin distance(0mm, along: up) rp
-  rack := RackSection(lp, rp, proportions, normal_module: 2mm)
+  rack := crown.section.RackSection(lp, rp, proportions, normal_module: 2mm)
   construction span := line(lp, far)
   rp midpoint span
   mate := MateSection(rp, far, rack.outer, rack.inner, proportions, normal_module: 2mm)

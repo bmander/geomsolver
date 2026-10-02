@@ -23,5 +23,5 @@ body := solid(plate)
 hub on body
 
 construction centerline reference := line(std.origin, std.front.toward)
-pattern := BoltPattern(body, std.origin, reference,
+pattern := hardware.BoltPattern(body, std.origin, reference,
                      n: bolts, pitch_r: bolt_circle, hole_r: bolt_radius, phase: 0deg)

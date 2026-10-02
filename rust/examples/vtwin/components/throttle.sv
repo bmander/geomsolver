@@ -118,24 +118,24 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
     section_center := point hint(x: front.origin.x - (c.y - front.origin.y), y: front.origin.y)
     section_center on fold
     section_center project c
-    back_axis := At(section_center, dx: 0mm, dy: -zback)
-    back := At(section_center, dx: dims.rbar, dy: -zback)
-    retain0 := At(section_center, dx: dims.rbar, dy: -zkeep + torw / 2)
-    retain1 := At(section_center, dx: torgb / 2, dy: -zkeep + torw / 2)
-    retain2 := At(section_center, dx: torgb / 2, dy: -zkeep - torw / 2)
-    retain3 := At(section_center, dx: dims.rbar, dy: -zkeep - torw / 2)
-    seal0 := At(section_center, dx: dims.rbar, dy: dims.torz + torw / 2)
-    seal1 := At(section_center, dx: torgb / 2, dy: dims.torz + torw / 2)
-    seal2 := At(section_center, dx: torgb / 2, dy: dims.torz - torw / 2)
-    seal3 := At(section_center, dx: dims.rbar, dy: dims.torz - torw / 2)
-    seal4 := At(section_center, dx: dims.rbar, dy: -dims.torz + torw / 2)
-    seal5 := At(section_center, dx: torgb / 2, dy: -dims.torz + torw / 2)
-    seal6 := At(section_center, dx: torgb / 2, dy: -dims.torz - torw / 2)
-    seal7 := At(section_center, dx: dims.rbar, dy: -dims.torz - torw / 2)
-    shoulder := At(section_center, dx: dims.rbar, dy: -dims.bossz / 2)
-    hub_back := At(section_center, dx: dims.hubr, dy: -dims.bossz / 2)
-    hub_front := At(section_center, dx: dims.hubr, dy: -(dims.bossz / 2 + dims.levw))
-    front_axis := At(section_center, dx: 0mm, dy: -(dims.bossz / 2 + dims.levw))
+    back_axis := components.parts.At(section_center, dx: 0mm, dy: -zback)
+    back := components.parts.At(section_center, dx: dims.rbar, dy: -zback)
+    retain0 := components.parts.At(section_center, dx: dims.rbar, dy: -zkeep + torw / 2)
+    retain1 := components.parts.At(section_center, dx: torgb / 2, dy: -zkeep + torw / 2)
+    retain2 := components.parts.At(section_center, dx: torgb / 2, dy: -zkeep - torw / 2)
+    retain3 := components.parts.At(section_center, dx: dims.rbar, dy: -zkeep - torw / 2)
+    seal0 := components.parts.At(section_center, dx: dims.rbar, dy: dims.torz + torw / 2)
+    seal1 := components.parts.At(section_center, dx: torgb / 2, dy: dims.torz + torw / 2)
+    seal2 := components.parts.At(section_center, dx: torgb / 2, dy: dims.torz - torw / 2)
+    seal3 := components.parts.At(section_center, dx: dims.rbar, dy: dims.torz - torw / 2)
+    seal4 := components.parts.At(section_center, dx: dims.rbar, dy: -dims.torz + torw / 2)
+    seal5 := components.parts.At(section_center, dx: torgb / 2, dy: -dims.torz + torw / 2)
+    seal6 := components.parts.At(section_center, dx: torgb / 2, dy: -dims.torz - torw / 2)
+    seal7 := components.parts.At(section_center, dx: dims.rbar, dy: -dims.torz - torw / 2)
+    shoulder := components.parts.At(section_center, dx: dims.rbar, dy: -dims.bossz / 2)
+    hub_back := components.parts.At(section_center, dx: dims.hubr, dy: -dims.bossz / 2)
+    hub_front := components.parts.At(section_center, dx: dims.hubr, dy: -(dims.bossz / 2 + dims.levw))
+    front_axis := components.parts.At(section_center, dx: 0mm, dy: -(dims.bossz / 2 + dims.levw))
     axis := line(back_axis.p, front_axis.p)
     profile := face(back_axis.p, back.p, retain0.p, retain1.p, retain2.p, retain3.p,
                  seal0.p, seal1.p, seal2.p, seal3.p, seal4.p, seal5.p, seal6.p, seal7.p,
@@ -157,5 +157,5 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
 preview {
   unit mm
   ref := line(std.origin, std.up.toward) in std.front
-  thr := Throttle(std.front, std.origin, ref, phi: 0deg, dims: vtwin_dims)
+  thr := Throttle(std.front, std.origin, ref, phi: 0deg, dims: components.dims.vtwin_dims)
 }

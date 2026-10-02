@@ -118,7 +118,7 @@ pub(super) fn constrain(
     res: &Resolver,
     r: &Relation,
     st: &Stmt,
-    source: &str,
+    doc: &crate::syntax::Program,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
     // **`on` between two solids is the body rule and not a constraint** (§6.9).  A word means
@@ -341,7 +341,7 @@ pub(super) fn constrain(
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
     c.class = r.class.clone();
-    c.written = written(&r.args, r.kind.spec(), st, source);
+    c.written = written(&r.args, r.kind.spec(), st, doc);
     Some(sk.add_quiet(c))
 }
 
@@ -352,8 +352,12 @@ pub(super) fn constrain(
 /// off the source at the argument's span, which is the document's own text only at the root: a
 /// copy of a block or an instance's body (a non-empty path) is one spelling with many numbers,
 /// and a module's span indexes a text this is not.
-fn written(args: &[Option<Arg>], spec: &[(&str, SpecKind)], st: &Stmt, source: &str)
-    -> Option<String> {
+fn written(
+    args: &[Option<Arg>],
+    spec: &[(&str, SpecKind)],
+    st: &Stmt,
+    doc: &crate::syntax::Program,
+) -> Option<String> {
     if !st.path.is_empty() {
         return None;
     }
@@ -361,8 +365,34 @@ fn written(args: &[Option<Arg>], spec: &[(&str, SpecKind)], st: &Stmt, source: &
         Some(Arg::Dim { text, span }) if k.is_dimension() => Some((text, *span)),
         _ => None,
     })?;
-    let was = source.get(span.lo as usize..span.hi as usize)?.trim();
-    (!was.is_empty() && was != text.trim()).then(|| was.to_string())
+    let was = doc.text().get(span.lo as usize..span.hi as usize)?.trim();
+    (!was.is_empty() && was != text.trim()).then(|| unqualified(was, doc))
+}
+
+/// A dimension's text as a drawing shows it: a used module's path taken off the names it reads,
+/// so `engine.dims.D` is drawn `D` — the path says where a number comes from, which is the
+/// source's business and not the sheet's.
+fn unqualified(text: &str, doc: &crate::syntax::Program) -> String {
+    let mut paths: Vec<&str> = doc.uses.iter().map(|u| u.name.as_str()).collect();
+    paths.sort_by_key(|p| std::cmp::Reverse(p.len()));
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    'scan: while !rest.is_empty() {
+        let starts_word =
+            out.chars().last().is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '.'));
+        if starts_word {
+            for p in &paths {
+                if let Some(after) = rest.strip_prefix(*p).and_then(|r| r.strip_prefix('.')) {
+                    rest = after;
+                    continue 'scan;
+                }
+            }
+        }
+        let ch = rest.chars().next().unwrap_or_default();
+        out.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+    out
 }
 
 /// Mark a dimension another copy of the same block already states — see

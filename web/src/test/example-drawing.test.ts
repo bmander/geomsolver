@@ -17,7 +17,8 @@ const staticFetch = async (path: string | URL | Request) =>
     { status: String(path) === 'dist/examples/sources.json' ? 200 : 404 });
 
 test('a bare cylinder preview accepts a standard datum without placement boilerplate', () => {
-  const text = 'unit mm\nuse components.cylinder\npreview { Cylinder(std.front, fw: 12mm, dims: vtwin_dims) }\n';
+  const text = 'unit mm\nuse std\nuse components.dims\nuse components.cylinder\n'
+    + 'preview { components.cylinder.Cylinder(std.front, fw: 12mm, dims: components.dims.vtwin_dims) }\n';
   const doc = Document.read(text);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));

@@ -59,7 +59,7 @@ component Cylinder(f: plane, fw: Length, dims: group) {
   radius(dims.trapfit / 2) shank
 
   // The bolt head slides in from the left; the slot holds it against the face wall.
-  pkt := Hex(f.origin, axis, af: dims.boltaf, phase: 90deg)
+  pkt := std.Hex(f.origin, axis, af: dims.boltaf, phase: 90deg)
   t0 := point hint(x: f.origin.x + (trapw / 2) * f.c - (hw) * f.s,
                     y: f.origin.y + (trapw / 2) * f.s + (hw) * f.c)
   t1 := point hint(x: f.origin.x + (trapw / 2) * f.c - (-trapd) * f.s,
@@ -140,5 +140,5 @@ component Cylinder(f: plane, fw: Length, dims: group) {
 // ../cylinder.svd arranges the three projections of this same preview.
 preview {
   unit mm
-  cyl := Cylinder(std.up, fw: fwA, dims: vtwin_dims)
+  cyl := Cylinder(std.up, fw: components.dims.fwA, dims: components.dims.vtwin_dims)
 }

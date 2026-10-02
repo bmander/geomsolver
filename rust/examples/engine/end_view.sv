@@ -15,12 +15,12 @@ component Drive(o: point, cam_i: point, cam_e: point, dims: group) {
   radius(dims.rcp) pcrank
   radius(dims.rcam) pcam_i
   radius(dims.rcam) pcam_e
-  b1 := Span(pcrank, pcam_i, side: -1)
-  b2 := Span(pcam_i, pcam_e, side: -1)
-  b3 := Span(pcam_e, pcrank, side: -1)
+  b1 := engine.parts.Span(pcrank, pcam_i, side: -1)
+  b2 := engine.parts.Span(pcam_i, pcam_e, side: -1)
+  b3 := engine.parts.Span(pcam_e, pcrank, side: -1)
 }
 
 component EndSection(o: point, dims: group) {
-  top := At(o, dx: 0mm, dy: dims.deck + 30mm)
+  top := engine.parts.At(o, dx: 0mm, dy: dims.deck + 30mm)
   bore := line(o, top.p)
 }

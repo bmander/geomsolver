@@ -17,7 +17,7 @@ use std
 o := point hint(x: 10, y: 5)
 q := point hint(x: 18, y: 5)
 f := plane(origin: o, toward: q)
-e := Ellipse(f, a: 8, b: 3).p over u in (0, 360)
+e := std.Ellipse(f, a: 8, b: 3).p over u in (0, 360)
 ground o
 ground q
 ";
@@ -174,10 +174,10 @@ fn the_rim_is_picked_and_bounded() {
 fn an_axis_left_out_is_refused_by_name() {
     let (prog, errs, _) = gcs_core::library::parse_linked(
         "use std\no := point hint(x: 10, y: 5)\nq := point hint(x: 18, y: 5)\n\
-         f := plane(origin: o, toward: q)\ne := Ellipse(f, a: 8).p over u in (0, 360)\n",
+         f := plane(origin: o, toward: q)\ne := std.Ellipse(f, a: 8).p over u in (0, 360)\n",
     );
     assert!(errs.is_empty());
     let e = elaborate(&prog);
     let m: Vec<String> = e.errors().map(|d| d.message.clone()).collect();
-    assert!(m.iter().any(|m| m.contains("`Ellipse` was not given `b`")), "{m:?}");
+    assert!(m.iter().any(|m| m.contains("`std.Ellipse` was not given `b`")), "{m:?}");
 }

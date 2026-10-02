@@ -507,11 +507,8 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
     let (at, lead) = append_at(prog);
     let mut with = lead;
     let mut edits = Vec::new();
-    if !prog
-        .components
-        .iter()
-        .any(|c| c.name.as_ref().is_some_and(|n| n.text == "Rectangle"))
-    {
+    // the document's own: a module's `Rectangle` is no name a bare call reaches (§14.4)
+    if prog.component("Rectangle").is_none() {
         let definition = "component Rectangle(w: Length, h: Length) {\n  \
              distance(w) (l1 := line) -> perpendicular distance(h) (l2 := line) -> \
              perpendicular (l3 := line) -> perpendicular (l4 := line) -> close\n}\n\n";
