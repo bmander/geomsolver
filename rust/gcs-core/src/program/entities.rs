@@ -265,6 +265,11 @@ pub(super) fn build(
             let ai = sk.arc(kids[0], kids[1], kids[2], &show);
             let rp = sk.arcs[ai].radius as usize;
             sk.params[rp].value = if wrote(0) { seed(0) } else { nonzero(sk.params[rp].value) };
+            // and computed again once the places are settled, since a centre or an end seeded
+            // by one stands where it was placed only then
+            if !wrote(0) {
+                deferred.push(Deferred::Radius { arc: ai });
+            }
             ai
         }
         EntKind::Spline => {
@@ -446,6 +451,9 @@ fn build_axial(
 pub(super) enum Deferred {
     Text { param: u32, text: String, names: Vec<(String, String)>, span: Span, stmt: StmtId },
     At { point: usize, at: AtRef, names: Vec<(String, String)>, span: Span, stmt: StmtId },
+    /// An arc's radius the source left unwritten: its centre to its start, as `Sketch::arc`
+    /// first computed it.
+    Radius { arc: usize },
 }
 
 /// The seed a dotted name reads: `pin.x`, `k.center.y`, `base.r`, `e.b` — `dotted` as the
@@ -528,12 +536,21 @@ pub(super) fn settle_deferred(
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
             Deferred::At { point, at, names, span, stmt } => {
-                let r = place_of(sk, res, at, names).map(|(x, y)| {
+                let r = place_of(sk, res, *point, at, names).map(|(x, y)| {
                     let [px, py] = sk.point_params(*point);
                     sk.params[px as usize].value = x;
                     sk.params[py as usize].value = y;
                 });
                 (*span, *stmt, r)
+            }
+            Deferred::Radius { arc } => {
+                let a = &sk.arcs[*arc];
+                let ((cx, cy), (sx, sy)) =
+                    (sk.point_xy(a.center as usize), sk.point_xy(a.start as usize));
+                let r = (sx - cx).dhypot(sy - cy);
+                let rp = a.radius as usize;
+                sk.params[rp].value = if r.abs() > 1e-9 { r } else { UNSEEDED_RADIUS };
+                continue;
             }
         };
         if let Err(message) = result {
@@ -542,39 +559,130 @@ pub(super) fn settle_deferred(
     }
 }
 
-/// Where `hint(at: …)` puts a point on the sheet: the seed of the point it names, or the edge
-/// of the circle it names at the bearing given — `at_seed`'s two places, read as numbers.
+/// Where `hint(at: …)` puts `point` on the sheet: the seed of the point it names, the edge of
+/// the circle it names at the bearing given, or a step from the point it names — `by:` (1 if
+/// unsaid) of the way toward another or of a line's run — turned `turn:` about it.  Each place
+/// is read in `point`'s view (`seed_in`); `at_seed` is the traced counterpart.
 fn place_of(
     sk: &Sketch,
     res: &Resolver,
+    point: usize,
     a: &AtRef,
     names: &[(String, String)],
 ) -> Result<(f64, f64), String> {
-    let e = *res
-        .of
-        .get(&a.what.root.text)
-        .ok_or_else(|| format!("no such entity: `{}`", a.what.root.text))?;
-    let e = follow(sk, e, &a.what.path)?;
-    match (e.kind, &a.bearing) {
-        (EntKind::Point, None) => Ok(sk.point_xy(e.i())),
-        (EntKind::Point, Some(_)) => {
+    let view = sk.plane_of(point);
+    let e = place(sk, res, &a.what)?;
+    // a place's number: what the text comes to, or what an unwritten key means
+    let number = |t: &Option<(String, Span)>, unsaid: f64| match t {
+        Some((text, _)) => seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}")),
+        None => Ok(unsaid),
+    };
+    // the step a place takes: toward a point, or a line's run
+    let step = match (&a.toward, &a.along) {
+        (Some(t), _) => {
+            let b = place(sk, res, t)?;
+            if b.kind != EntKind::Point {
+                return Err(format!("a step is taken toward a point, not a {}", b.kind.as_str()));
+            }
+            Some((e.i(), b.i()))
+        }
+        (None, Some(l)) => {
+            let l = place(sk, res, l)?;
+            if l.kind != EntKind::Line {
+                return Err(format!("a step is taken along a line, not a {}", l.kind.as_str()));
+            }
+            Some((sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize))
+        }
+        (None, None) => None,
+    };
+    match (e.kind, &a.bearing, step) {
+        (EntKind::Point, None, None) => Ok(seed_in(sk, e.i(), view)),
+        (EntKind::Point, None, Some((from, to))) => {
+            let (ax, ay) = seed_in(sk, e.i(), view);
+            let (fx, fy) = seed_in(sk, from, view);
+            let (tx, ty) = seed_in(sk, to, view);
+            let f = number(&a.by, 1.0)?;
+            let (dx, dy) = (tx - fx, ty - fy);
+            // a turn is an angle, and what it comes to is in degrees, as a bearing's is
+            let (dx, dy) = match &a.turn {
+                None => (dx, dy),
+                Some(_) => {
+                    let (s, c) = number(&a.turn, 0.0)?.to_radians().dsin_cos();
+                    (c * dx - s * dy, s * dx + c * dy)
+                }
+            };
+            Ok((ax + f * dx, ay + f * dy))
+        }
+        (EntKind::Point, Some(_), _) => {
             Err("a point is already a place; a bearing needs a circle".to_string())
         }
-        (EntKind::Circle, Some((text, _))) => {
+        (EntKind::Circle, Some(_), None) => {
             let c = &sk.circles[e.i()];
-            let (cx, cy) = sk.point_xy(c.center as usize);
+            let (cx, cy) = seed_in(sk, c.center as usize, view);
             let r = sk.params[c.radius as usize].value;
             // a bearing is an angle, so the text may say `90deg` or read a `param` already
             // written in; what it comes to is in the document's angle unit, which is degrees
-            let b = seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}"))?;
-            let b = b.to_radians();
+            let b = number(&a.bearing, 0.0)?.to_radians();
             Ok((cx + r * b.dcos(), cy + r * b.dsin()))
         }
-        (EntKind::Circle, None) => {
+        (EntKind::Circle, _, Some(_)) => {
+            Err("a step starts at a point; a circle's place is its edge at a bearing".to_string())
+        }
+        (EntKind::Circle, None, None) => {
             Err("where on the edge?  `hint(at: c, bearing: …)` says the bearing".to_string())
         }
-        (k, _) => Err(format!("a seed cannot be at a {}", k.as_str())),
+        (k, _, _) => Err(format!("a seed cannot be at a {}", k.as_str())),
     }
+}
+
+/// The entity a place key names.
+fn place(sk: &Sketch, res: &Resolver, r: &crate::syntax::Ref) -> Result<EntRef, String> {
+    let e = *res.of.get(&r.root.text).ok_or_else(|| format!("no such entity: `{}`", r.root.text))?;
+    follow(sk, e, &r.path)
+}
+
+/// Where point `p`'s seed stands in `view`'s page coordinates (`None`: the page): its own seed
+/// where it is drawn in that view, and otherwise where it stands in space projected into the
+/// view — a pitch-plane point read in a view folded from it is its image there, which is what
+/// `project` says of the pair.  Before memberships are read every point is on the page, so the
+/// first settle reads every seed as written.
+fn seed_in(sk: &Sketch, p: usize, view: Option<usize>) -> (f64, f64) {
+    if sk.plane_of(p) == view {
+        return sk.point_xy(p);
+    }
+    let w = sk.world_point(p);
+    match view {
+        None => crate::plane::Basis::page().view_coords(w),
+        Some(v) => {
+            let f = &sk.planes[v].frame;
+            let (c, s) = (sk.params[f.c as usize].value, sk.params[f.s as usize].value);
+            crate::plane::on_page(c, s, sk.point_xy(f.origin as usize), sk.basis(v).view_coords(w))
+        }
+    }
+}
+
+/// Whether a place reads a point of another view than the point it seeds: then the seeds are
+/// settled again once memberships and the views' poses are in (`program::build`).
+pub(super) fn crosses_views(sk: &Sketch, res: &Resolver, deferred: &[Deferred]) -> bool {
+    deferred.iter().any(|d| {
+        let Deferred::At { point, at, .. } = d else { return false };
+        let view = sk.plane_of(*point);
+        let point_of = |e: EntRef| match e.kind {
+            EntKind::Point => Some(e.i()),
+            EntKind::Circle => Some(sk.circles[e.i()].center as usize),
+            _ => None,
+        };
+        let line_ends = |r: &crate::syntax::Ref| match place(sk, res, r) {
+            Ok(e) if e.kind == EntKind::Line => {
+                vec![sk.lines[e.i()].p1 as usize, sk.lines[e.i()].p2 as usize]
+            }
+            _ => vec![],
+        };
+        std::iter::once(&at.what).chain(at.toward.iter())
+            .filter_map(|r| place(sk, res, r).ok().and_then(point_of))
+            .chain(at.along.iter().flat_map(line_ends))
+            .any(|p| sk.plane_of(p) != view)
+    })
 }
 
 fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {

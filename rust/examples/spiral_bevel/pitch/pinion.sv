@@ -33,7 +33,7 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group)
     virtual := point hint(x: d, y: 0)
     tip := point hint(x: d - r * design.gear_teeth / design.crown_teeth,
                       y: -r * design.pinion_teeth / design.crown_teeth)
-    virtual_tip := point hint(x: tip.x, y: tip.y)
+    virtual_tip := point hint(at: tip)
     pitch_line := line(apex, mean)
     axis := line(apex, tip)
     virtual_line := line(virtual, mean)

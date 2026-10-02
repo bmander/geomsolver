@@ -21,7 +21,8 @@ struct Hint {
     value: Option<f64>,
     text: String,
     span: Span,
-    /// `at: REF` — the one key whose value is a *reference* and not a number: a place (§6.4).
+    /// `at: REF`, `toward: REF`, `along: REF` — the keys whose value is a *reference* and not a
+    /// number: a place (§6.4).
     /// Read wherever the clause stands, since the grammar is the clause's own; which tables
     /// take one is the caller's question, and a declaration's is the only one that does.
     place: Option<Ref>,
@@ -377,11 +378,13 @@ impl<'a> P<'a> {
                 self.fail(&format!("a hint names what it seeds: `hint({eg})`"));
                 return None;
             };
-            let (value, text, span, place) = if key == "at" {
+            let (value, text, span, place) = if ["at", "toward", "along"].contains(&key.as_str()) {
                 // a place, not a number — `at: pin`, `at: k` — so it is read as a reference;
                 // `at: (3, 4)` is the coordinate pair the keys replaced, and says so
                 if self.peek() == Some(&Tok::P('(')) {
-                    self.fail("`at:` names a place; a coordinate seed is `hint(x: …, y: …)`");
+                    self.fail(&format!(
+                        "`{key}:` names a place; a coordinate seed is `hint(x: …, y: …)`"
+                    ));
                     return None;
                 }
                 let r = self.refr()?;

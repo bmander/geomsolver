@@ -1049,12 +1049,33 @@ pub struct KidSeed {
 }
 
 /// `hint(at: c, bearing: u + phase)` — a place given as geometry: at a point, or at the edge
-/// of a circle at a bearing from the page's x-axis.  The `at:` and `bearing:` keys of the one
-/// seed clause (§6.4), read out of it beside the scalars.
+/// of a circle at a bearing from the page's x-axis; or a step from point `a`:
+/// `hint(at: a, toward: b, by: f, turn: θ)` is the fraction `f` (1 if unsaid) of the way to
+/// point `b`, turned `θ` about `a`, and `along: l` in place of `toward:` steps by `f` times line
+/// `l`'s own run, `p1` to `p2`.  The place keys of the one seed clause (§6.4), read out of it
+/// beside the scalars.
+/// A place drawn in another view than the seeded point is read where it stands in space and
+/// projected into the seeded point's view.
 #[derive(Clone, Debug)]
 pub struct AtRef {
     pub what: Ref,
     pub bearing: Option<(String, Span)>,
+    pub toward: Option<Ref>,
+    pub along: Option<Ref>,
+    pub by: Option<(String, Span)>,
+    pub turn: Option<(String, Span)>,
+}
+
+impl AtRef {
+    /// The texts the place reads numbers from — a bearing, a fraction, a turn — for the walks
+    /// that resolve and substitute them.
+    pub fn texts_mut(&mut self) -> impl Iterator<Item = &mut (String, Span)> {
+        [&mut self.bearing, &mut self.by, &mut self.turn].into_iter().flatten()
+    }
+
+    pub fn texts(&self) -> impl Iterator<Item = &(String, Span)> {
+        [&self.bearing, &self.by, &self.turn].into_iter().flatten()
+    }
 }
 
 /// One written operator argument: a selector, entity, owned slot, or dimension.

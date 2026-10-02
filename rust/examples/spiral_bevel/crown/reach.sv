@@ -14,10 +14,9 @@ use crown.mate
 // `axis`.
 component CutterReach(p: plane, n: plane, apex: point, normal: line, axis: line, reach: Length) {
   in p {
-    // Seeds, rough: beyond the apex from C, and about as far again beyond C from M.
-    beyond := point hint(x: 2 * apex.x - normal.p1.x, y: 2 * apex.y - normal.p1.y)
-    radial := point hint(x: 3 * normal.p1.x - 2 * normal.p2.x,
-                         y: 3 * normal.p1.y - 2 * normal.p2.y)
+    // Seeds, rough: as far beyond the apex as C is short of it, and twice |CM| beyond C.
+    beyond := point hint(at: apex, toward: normal.p1, by: -1)
+    radial := point hint(at: normal.p1, toward: normal.p2, by: -2)
     private to_apex := line(normal.p1, apex)
     private past := line(apex, beyond)
     private reach_line := line(normal.p1, beyond)
@@ -28,9 +27,9 @@ component CutterReach(p: plane, n: plane, apex: point, normal: line, axis: line,
   normal angle(180deg) cap_radius
   cap_radius equal reach_line
   in n {
-    // Seed, rough: about twice the reach beyond the cutter's axis, away from M.
-    foot := point hint(x: axis.p1.x - 2 * reach, y: 0)
-    end := point hint(x: foot.x, y: foot.y + axis.p2.y - axis.p1.y)
+    // Seeds: the image of `radial`, and the axis's run along from it.
+    foot := point hint(at: radial)
+    end := point hint(at: foot, along: axis)
     cap := line(foot, end)
   }
   foot on p

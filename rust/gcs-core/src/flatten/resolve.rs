@@ -31,9 +31,9 @@ fn rescope_seeds(
             }
         }
     }
-    // a bearing is a text over the same names — `atan2(k2.center.y - k1.center.y, …)`
-    if let Some((b, span)) = d.seed_at.as_ref().and_then(|a| a.bearing.as_ref()) {
-        rescope_text(b, *span, sc, names_seen, alias, units, &mut names, bad);
+    // a place's numbers are texts over the same names — `atan2(k2.center.y - k1.center.y, …)`
+    for (t, span) in d.seed_at.iter().flat_map(|a| a.texts()) {
+        rescope_text(t, *span, sc, names_seen, alias, units, &mut names, bad);
     }
     d.seed_names = names.into_iter().collect();
 }
@@ -456,6 +456,9 @@ fn rewrite(
             }
             if let Some(at) = d.seed_at.as_mut() {
                 fix(&mut at.what, bad);
+                for r in at.toward.iter_mut().chain(at.along.iter_mut()) {
+                    fix(r, bad);
+                }
             }
         }
         // `bore cut body` names two solids, and inside a component both wear the prefix

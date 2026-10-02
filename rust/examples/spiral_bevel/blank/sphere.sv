@@ -7,9 +7,8 @@ use std
 // The face width along `generator` (apex -> mean point), centred on the mean point.
 component FaceSpan(generator: line, width: Length) {
   // Seeds only, rough: a tenth of the generator either side of the mean point.
-  toe := point hint(x: generator.p2.x - (generator.p2.x - generator.p1.x) / 10,
-                    y: generator.p2.y - (generator.p2.y - generator.p1.y) / 10)
-  heel := point hint(x: 2 * generator.p2.x - toe.x, y: 2 * generator.p2.y - toe.y)
+  toe := point hint(at: generator.p2, toward: generator.p1, by: 0.1)
+  heel := point hint(at: generator.p2, toward: generator.p1, by: -0.1)
   span := line(toe, heel)
   generator.p2 midpoint span
   distance(width) span
@@ -19,8 +18,8 @@ component FaceSpan(generator: line, width: Length) {
 // The sphere about `apex` through `rim`, a point of `generator` (apex -> mean point).
 component SphericalBoundary(apex: point, generator: line, rim: point) {
   // Seeds: the rim turned a quarter either way about the apex.
-  private bottom := point hint(x: apex.x + rim.y - apex.y, y: apex.y - rim.x + apex.x)
-  private top := point hint(x: apex.x - rim.y + apex.y, y: apex.y + rim.x - apex.x)
+  private bottom := point hint(at: apex, toward: rim, turn: -90deg)
+  private top := point hint(at: apex, toward: rim, turn: 90deg)
   private meridian := arc(center: apex, start: bottom, end: top)
   private diameter := line(top, bottom)
   apex on diameter

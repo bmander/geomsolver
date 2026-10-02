@@ -141,9 +141,15 @@ starts somewhere off the origin and apart from other unseeded points, and a solv
 it reached back into the source as its clause.
 
 **A seed may read geometry**, but only other seeds, never solved values:
-`hint(x: k.center.x + k.r, y: pin.y)`. Two keys name a place outright: `hint(at: pin)` starts a
-point where another starts; `hint(at: k, bearing: 90deg)` starts it on circle `k`'s rim at that
-bearing. A clause with `at` has no `x` or `y`. Seeds settle in statement order, so a seed reading
+`hint(x: k.center.x + k.r, y: pin.y)`. Prefer naming a place, which needs no arithmetic:
+`hint(at: pin)` starts a point where another starts; `hint(at: k, bearing: 90deg)` starts it on
+circle `k`'s rim at that bearing; and `hint(at: a, toward: b, by: 0.5, turn: 90deg)` steps from
+`a` the fraction `by` (1 if unsaid) of the way to `b`, turned `turn` about `a` — `by: 0.5` a
+midpoint, `by: -1` a reflection. `along: l` in place of `toward:` steps by `by` times line `l`'s
+run. A place drawn in another view is read in space and projected into the seeded point's view,
+so `lp := point hint(at: inner) in n` starts at `inner`'s image in `n`. A clause with `at` has no
+`x` or `y`. A seed whose constraints fix it without a choice (a midpoint, where two lines cross)
+needs none at all. Seeds settle in statement order, so a seed reading
 one written below reads its provisional start. With a `unit` line, a geometry read is a length:
 write `pin.x - 10mm`, not `pin.x - 10`. A param may **not** read geometry: it feeds constraints,
 and a seed must never change what a document says. Where a numeric formal is unbound (1.8), hints

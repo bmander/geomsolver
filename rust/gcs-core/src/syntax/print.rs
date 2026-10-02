@@ -505,6 +505,18 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
         if let Some((b, _)) = &at.bearing {
             parts.push(format!("bearing: {b}"));
         }
+        for (key, r) in [("toward", &at.toward), ("along", &at.along)] {
+            if let Some(r) = r {
+                let mut text = String::new();
+                write_ref(&mut text, r);
+                parts.push(format!("{key}: {text}"));
+            }
+        }
+        for (key, text) in [("by", &at.by), ("turn", &at.turn)] {
+            if let Some((t, _)) = text {
+                parts.push(format!("{key}: {t}"));
+            }
+        }
         return hint_of(&parts);
     }
     let mut parts: Vec<String> = Vec::new();

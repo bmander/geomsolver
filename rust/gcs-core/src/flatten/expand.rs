@@ -354,10 +354,10 @@ impl<'a> Walk<'a> {
                 }
             }
         }
-        if let Some((b, _)) = d.seed_at.as_mut().and_then(|a| a.bearing.as_mut()) {
-            // the bearing is a text over the parameters in scope, read later — by the trace
-            // compile off its variable table, or by the build off the geometry's seeds — so
-            // the numbers in force are written in and the rest is left for that reader
+        for (b, _) in d.seed_at.iter_mut().flat_map(|a| a.texts_mut()) {
+            // a place's numbers are texts over the parameters in scope, read later — by the
+            // trace compile off its variable table, or by the build off the geometry's seeds —
+            // so the numbers in force are written in and the rest is left for that reader
             *b = if self.sym.is_some() {
                 self.subst_sym(b, vals, scope)
             } else {

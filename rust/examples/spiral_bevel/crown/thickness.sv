@@ -12,7 +12,8 @@ use pitch.trace
 // `generator` runs from the gear apex O to M, `normal` from C to M.
 component CrownThickness(p: plane, generator: line, normal: line, design: group) {
   // Seeds only, rough: the quarter pitch's ends straight across from M, and the trace circles
-  // seven tenths of a module either side of the cutter radius.
+  // seven tenths of a module either side of the cutter radius, the pitch points on them beyond
+  // C.
   r := design.cone_distance
   rc := design.cutter_radius
   ri := rc - 0.7 * design.module
@@ -24,10 +25,8 @@ component CrownThickness(p: plane, generator: line, normal: line, design: group)
     behind := arc(center: generator.p1, start: behind_end, end: generator.p2) hint(r: r)
     inner := circle(center: normal.p1) hint(r: ri)
     outer := circle(center: normal.p1) hint(r: ro)
-    inner_pitch := point hint(x: normal.p1.x + (normal.p1.x - normal.p2.x) * ri / rc,
-                              y: normal.p1.y + (normal.p1.y - normal.p2.y) * ri / rc)
-    outer_pitch := point hint(x: normal.p1.x + (normal.p1.x - normal.p2.x) * ro / rc,
-                              y: normal.p1.y + (normal.p1.y - normal.p2.y) * ro / rc)
+    inner_pitch := point hint(at: normal.p1, toward: normal.p2, by: -ri / rc)
+    outer_pitch := point hint(at: normal.p1, toward: normal.p2, by: -ro / rc)
     to_inner := line(normal.p1, inner_pitch)
     to_outer := line(normal.p1, outer_pitch)
   }

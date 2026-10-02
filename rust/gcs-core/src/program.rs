@@ -69,7 +69,7 @@ use crate::expr;
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::syntax::{Name, Program, Stmt, StmtId, StmtKind};
 pub(crate) use entities::child_names;
-use entities::{build, settle_deferred, Deferred};
+use entities::{build, crosses_views, settle_deferred, Deferred};
 pub(crate) use lift::{lift_decl, lift_gauge, lift_relation};
 use planes::{memberships, plane_bases};
 pub(crate) use planes::{plane_of_entity, plane_of_entity_by};
@@ -338,26 +338,10 @@ pub fn elaborate(p: &Program) -> Elaborated {
 
     // seeds named by geometry, once every entity has a seed to be read: in statement order, so
     // a seed that reads a seed read from a third is settled after both (§6.4)
+    let first = diags.len();
     settle_deferred(&mut sk, &res, &deferred, &mut diags);
-    // Datums were constructed before geometry-dependent point hints settled. Refresh
-    // their intrinsic seeds from the final chord so a provisional chord cannot choose
-    // the opposite rotor branch for every coordinate written over it.
-    for i in 0..sk.planes.len() {
-        let f = &sk.planes[i].frame;
-        let (cp, sp) = (f.c as usize, f.s as usize);
-        let ((c, s), length) = sk.frame_chord(f.origin as usize, f.toward as usize);
-        sk.params[cp].value = c;
-        sk.params[sp].value = s;
-        sk.params[cp].scale = length;
-        sk.params[sp].scale = length;
-    }
-    for c in &sk.constraints {
-        if c.kind == crate::constraints::CKind::FrameAlign {
-            let f = sk.frame_of(c.args[0].ent());
-            let (_, length) = sk.frame_chord(f.origin as usize, f.toward as usize);
-            sk.params[c.args[1].param() as usize].value = length;
-        }
-    }
+    let settled = first..diags.len();
+    refresh_frames(&mut sk);
 
     // memberships, once every kind is built and before any constraint reads one: `point a in
     // top` names a plane built after the point, and `project` infers its planes from these
@@ -365,6 +349,18 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // views whose attitude or offset is solved for, once every membership is in and before any
     // relation: a relation over a solved view is stated against its unknowns from the first
     views::solve_planes(&mut sk, &res, &mut map, &body, &skip, &mut diags);
+    // a place drawn in another view is read in space, which needs the memberships and the views'
+    // poses just worked out: the seeds are settled again, in statement order, so a seed reading
+    // one projected is settled after it.  Only then — a document whose places are all in their
+    // own views settles once, as it always did.  (A view's pose read off a hinge seeded across
+    // views keeps the first reading.)
+    if crosses_views(&sk, &res, &deferred) {
+        // the second reading's findings stand where the first's did
+        let mut again = Vec::new();
+        settle_deferred(&mut sk, &res, &deferred, &mut again);
+        diags.splice(settled, again);
+        refresh_frames(&mut sk);
+    }
 
     // -- phase 3: constraints, in statement order
     let mut arrays = BTreeSet::new();
@@ -470,4 +466,26 @@ pub fn elaborate(p: &Program) -> Elaborated {
     }
     crate::modules::localize(p, &mut diags);
     Elaborated { sketch: sk, map, diags, program: p.clone(), taken: false }
+}
+
+/// Datums are constructed before geometry-dependent point hints settle. Refresh their intrinsic
+/// seeds from the final chord so a provisional chord cannot choose the opposite rotor branch for
+/// every coordinate written over it.
+fn refresh_frames(sk: &mut Sketch) {
+    for i in 0..sk.planes.len() {
+        let f = &sk.planes[i].frame;
+        let (cp, sp) = (f.c as usize, f.s as usize);
+        let ((c, s), length) = sk.frame_chord(f.origin as usize, f.toward as usize);
+        sk.params[cp].value = c;
+        sk.params[sp].value = s;
+        sk.params[cp].scale = length;
+        sk.params[sp].scale = length;
+    }
+    for c in &sk.constraints {
+        if c.kind == crate::constraints::CKind::FrameAlign {
+            let f = sk.frame_of(c.args[0].ent());
+            let (_, length) = sk.frame_chord(f.origin as usize, f.toward as usize);
+            sk.params[c.args[1].param() as usize].value = length;
+        }
+    }
 }

@@ -23,9 +23,9 @@ use crown.space
 // the `kink` stands `tip_relief` beyond it toward the pitch line, square to the base, and
 // `level` runs through the mark along the base.
 component Kink(flank: line, base: line, design: group, normal_module: Length) {
-  // Seeds, rough: halfway along the flank.
-  mark := point hint(x: (flank.p1.x + flank.p2.x) / 2, y: (flank.p1.y + flank.p2.y) / 2)
-  along := point hint(x: mark.x + base.p2.x - base.p1.x, y: mark.y + base.p2.y - base.p1.y)
+  // Seeds, rough: halfway along the flank, and the base's run on from there.
+  mark := point hint(at: flank.p1, toward: flank.p2, by: 0.5)
+  along := point hint(at: mark, along: base)
   kink := point hint(at: mark)
   level := line(mark, along)
   mark on flank
@@ -48,23 +48,14 @@ component ChamferTop(kink: group, top: line, design: group, normal_module: Lengt
 // radius into a `top` running back along the base.
 component LeavingChamfer(flank: line, base: line, design: group, normal_module: Length) {
   at := Kink(flank, base, design, normal_module: normal_module)
-  // Seeds, in fractions of the flank from its base end and of the base toward the section's
-  // inside. They choose the branch: the round's centre stands inside the section, above the
-  // kink, where a round on the far side of the slope would turn the wrong way.
-  foot := point hint(x: flank.p1.x - 0.35 * (base.p1.x - base.p2.x),
-                     y: flank.p1.y - 0.35 * (base.p1.y - base.p2.y))
-  rc := point hint(
-    x: flank.p1.x + 0.41 * (flank.p2.x - flank.p1.x) + 0.1 * (base.p1.x - base.p2.x),
-    y: flank.p1.y + 0.41 * (flank.p2.y - flank.p1.y) + 0.1 * (base.p1.y - base.p2.y))
-  slope_end := point hint(
-    x: flank.p1.x + 0.42 * (flank.p2.x - flank.p1.x) + 0.02 * (base.p1.x - base.p2.x),
-    y: flank.p1.y + 0.42 * (flank.p2.y - flank.p1.y) + 0.02 * (base.p1.y - base.p2.y))
-  top_start := point hint(
-    x: flank.p1.x + 0.51 * (flank.p2.x - flank.p1.x) + 0.1 * (base.p1.x - base.p2.x),
-    y: flank.p1.y + 0.51 * (flank.p2.y - flank.p1.y) + 0.1 * (base.p1.y - base.p2.y))
-  top_end := point hint(
-    x: flank.p1.x + 0.51 * (flank.p2.x - flank.p1.x) + 0.2 * (base.p1.x - base.p2.x),
-    y: flank.p1.y + 0.51 * (flank.p2.y - flank.p1.y) + 0.2 * (base.p1.y - base.p2.y))
+  // Seeds, in runs of the flank from its base end and of the base toward the section's inside.
+  // They choose the branch: the round's centre stands inside the section, above the kink, where
+  // a round on the far side of the slope would turn the wrong way.
+  foot := point hint(at: flank.p1, along: base, by: 0.35)
+  slope_end := point hint(at: flank.p1, along: flank, by: 0.42)
+  rc := point hint(at: slope_end, along: base, by: -0.1)
+  top_start := point hint(at: rc, along: flank, by: 0.1)
+  top_end := point hint(at: top_start, along: base, by: -0.1)
   (slope := line(foot, slope_end)) -> tangent
     (round := arc(center: rc) hint(r: design.rounding * normal_module)) -> tangent
     (top := line(top_start, top_end))
@@ -81,20 +72,11 @@ component LeavingChamfer(flank: line, base: line, design: group, normal_module: 
 component ArrivingChamfer(flank: line, base: line, design: group, normal_module: Length) {
   at := Kink(flank, base, design, normal_module: normal_module)
   // Seeds as LeavingChamfer's, from the flank's second point.
-  foot := point hint(x: flank.p2.x - 0.35 * (base.p2.x - base.p1.x),
-                     y: flank.p2.y - 0.35 * (base.p2.y - base.p1.y))
-  rc := point hint(
-    x: flank.p2.x + 0.41 * (flank.p1.x - flank.p2.x) + 0.1 * (base.p2.x - base.p1.x),
-    y: flank.p2.y + 0.41 * (flank.p1.y - flank.p2.y) + 0.1 * (base.p2.y - base.p1.y))
-  top_start := point hint(
-    x: flank.p2.x + 0.51 * (flank.p1.x - flank.p2.x) + 0.2 * (base.p2.x - base.p1.x),
-    y: flank.p2.y + 0.51 * (flank.p1.y - flank.p2.y) + 0.2 * (base.p2.y - base.p1.y))
-  top_end := point hint(
-    x: flank.p2.x + 0.51 * (flank.p1.x - flank.p2.x) + 0.1 * (base.p2.x - base.p1.x),
-    y: flank.p2.y + 0.51 * (flank.p1.y - flank.p2.y) + 0.1 * (base.p2.y - base.p1.y))
-  slope_start := point hint(
-    x: flank.p2.x + 0.42 * (flank.p1.x - flank.p2.x) + 0.02 * (base.p2.x - base.p1.x),
-    y: flank.p2.y + 0.42 * (flank.p1.y - flank.p2.y) + 0.02 * (base.p2.y - base.p1.y))
+  foot := point hint(at: flank.p2, along: base, by: -0.35)
+  slope_start := point hint(at: flank.p2, along: flank, by: -0.42)
+  rc := point hint(at: slope_start, along: base, by: 0.1)
+  top_end := point hint(at: rc, along: flank, by: -0.1)
+  top_start := point hint(at: top_end, along: base, by: 0.1)
   (top := line(top_start, top_end)) -> tangent
     (round := arc(center: rc) hint(r: design.rounding * normal_module)) -> tangent
     (slope := line(slope_start, foot))

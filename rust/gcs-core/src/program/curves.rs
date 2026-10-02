@@ -475,6 +475,10 @@ fn at_seed(
             ))
         }
     };
+    if let Some(t) = a.toward.as_ref().or(a.along.as_ref()) {
+        // composing the two places' seed tapes with the step is the case nobody has asked for
+        return Err((t.span, "a traced point's seed is a place, not a step toward one".to_string()));
+    }
     match (e.kind, &a.bearing) {
         (EntKind::Point, None) => {
             let ps = sk.point_params(e.i());

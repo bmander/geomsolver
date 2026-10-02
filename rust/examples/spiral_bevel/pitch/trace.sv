@@ -14,15 +14,15 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
   // short of acceptance, a section's narrow tip collapsing. H's is rough: behind M, on its
   // right.
   r := design.cone_distance
-  rc := design.cutter_radius
   in p {
-    C := point hint(x: r - rc * sin(design.spiral), y: rc * cos(design.spiral))
+    C := point hint(at: generator.p2, toward: generator.p1, by: design.cutter_radius / r,
+                    turn: design.spiral - 90deg)
     H := point hint(x: r / 4, y: -r / 2)
-    K := point hint(x: r - design.module, y: 0)
+    K := point hint(at: generator.p2, toward: generator.p1, by: design.module / r)
     normal := line(C, generator.p2)
     heading := line(generator.p2, H)
     foot := line(generator.p1, H)
-    trace := circle(center: C) hint(r: rc)
+    trace := circle(center: C) hint(r: design.cutter_radius)
   }
   generator.p2 distance(design.cutter_radius) C
   generator angle(90deg - design.spiral, sense: cw) normal

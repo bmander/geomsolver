@@ -560,26 +560,38 @@ impl<'a> P<'a> {
         loop {
             if let Some(lo) = self.eat_hint_clause() {
                 // `hint(x: 0, y: 12)` — keyed, keys in any order, an omitted scalar is 0 — or a
-                // place named geometrically, `hint(at: t)`, `hint(at: c, bearing: u + phase)`:
+                // place named geometrically, `hint(at: t)`, `hint(at: c, bearing: u + phase)`,
+                // `hint(at: a, toward: b, by: 0.5, turn: 90deg)`, `hint(at: a, along: l, by: 2)`:
                 // the same clause, since a seed is what is inside one and nothing else is
-                // (§4.3), and a place is a seed given as geometry rather than as numbers.
-                // `at:` and `bearing:` are keys beside the scalars; a clause naming a place
-                // carries no coordinate, and a bearing without a place says where on nothing.
-                let mut bearing: Option<(String, Span)> = None;
-                let mut bearing_at = Span::default();
+                // (§4.3), and a place is a seed given as geometry rather than as numbers.  The
+                // place keys stand beside the scalars; a clause naming a place carries no
+                // coordinate, and every other place key says something about the place `at:`
+                // names, so it needs one.
+                let mut at: Option<Ref> = None;
+                let mut toward: Option<Ref> = None;
+                let mut along: Option<Ref> = None;
+                let mut texts: [Option<(String, Span, Span)>; 3] = [None, None, None];
                 let mut coord: Option<Span> = None;
                 for h in self.hint_body("x: 0, y: 0")? {
                     if let Some(what) = h.place {
-                        if seed_at.is_some() {
-                            self.fail_at(h.at, "`at:` is written twice");
+                        let slot = match h.key.as_str() {
+                            "at" => &mut at,
+                            "toward" => &mut toward,
+                            _ => &mut along,
+                        };
+                        if slot.is_some() {
+                            self.fail_at(h.at, &format!("`{}:` is written twice", h.key));
                             continue;
                         }
-                        seed_at = Some(AtRef { what, bearing: None });
+                        *slot = Some(what);
                         continue;
                     }
-                    if h.key == "bearing" {
-                        bearing = Some((h.text, h.span));
-                        bearing_at = h.at;
+                    if let Some(k) = ["bearing", "by", "turn"].iter().position(|&w| w == h.key) {
+                        if texts[k].is_some() {
+                            self.fail_at(h.at, &format!("`{}:` is written twice", h.key));
+                            continue;
+                        }
+                        texts[k] = Some((h.text, h.span, h.at));
                         continue;
                     }
                     // a plane's solved quantities are seeded here too: whether the brackets
@@ -622,19 +634,59 @@ impl<'a> P<'a> {
                     seed_text[i] = (h.value.is_none()).then_some(h.text);
                     seed_spans[i] = h.span;
                 }
-                match (&mut seed_at, bearing) {
-                    (Some(at), b) => {
-                        at.bearing = b;
+                let [bearing, by, turn] = texts;
+                let key_at = |t: &Option<(String, Span, Span)>| t.as_ref().map(|t| t.2);
+                let text = |t: Option<(String, Span, Span)>| t.map(|(text, span, _)| (text, span));
+                match at {
+                    Some(what) => {
                         if let Some(sp) = coord {
                             let m = "`at:` names the place; a clause with it carries no scalar";
                             self.fail_at(sp, m);
                         }
+                        let step = toward.as_ref().or(along.as_ref()).map(|r| r.span);
+                        if let (Some(_), Some(sp)) = (&toward, along.as_ref().map(|r| r.span)) {
+                            let m = "a step is `toward:` a point or `along:` a line: one or the \
+                                     other";
+                            self.fail_at(sp, m);
+                        }
+                        if let (Some(sp), Some(_)) = (key_at(&bearing), step) {
+                            let m = "`bearing:` is a place on a circle's edge and a step is from \
+                                     a point: one or the other";
+                            self.fail_at(sp, m);
+                        }
+                        if step.is_none() {
+                            if let Some(sp) = key_at(&by).or(key_at(&turn)) {
+                                let m = "`by:` and `turn:` say how far a step goes, and need \
+                                         `toward:` or `along:`";
+                                self.fail_at(sp, m);
+                            }
+                        }
+                        if seed_at.is_some() {
+                            self.fail_at(what.span, "the place is seeded twice");
+                        }
+                        seed_at = Some(AtRef {
+                            what,
+                            bearing: text(bearing),
+                            toward,
+                            along,
+                            by: text(by),
+                            turn: text(turn),
+                        });
                     }
-                    (None, Some(_)) => {
-                        let m = "`bearing:` says where on a circle's edge, and needs `at:`";
-                        self.fail_at(bearing_at, m);
+                    None => {
+                        let lone = [
+                            ("toward", toward.as_ref().map(|r| r.span)),
+                            ("along", along.as_ref().map(|r| r.span)),
+                            ("bearing", key_at(&bearing)),
+                            ("by", key_at(&by)),
+                            ("turn", key_at(&turn)),
+                        ];
+                        let first = lone.into_iter().find(|(_, sp)| sp.is_some());
+                        if let Some((key, Some(sp))) = first {
+                            let m = format!("`{key}:` says where from a place, and needs `at:`");
+                            self.fail_at(sp, &m);
+                        }
                     }
-                    (None, None) => {}
                 }
                 hint_span = Span::new(lo, self.prev_hi());
             } else if self.eat_word("knots") {

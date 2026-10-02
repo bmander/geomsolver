@@ -13,11 +13,10 @@ use crown.mate_section
 
 // The mate of `tooth`, a CrownTooth.
 component CrownMate(tooth: group, design: group, normal_module: Length) {
-  outer_far := point hint(x: 2 * tooth.rack.pitch.p2.x - tooth.rack.pitch.p1.x,
-                          y: tooth.rack.pitch.p2.y)
-  inner_far := point hint(x: 2 * tooth.rack.pitch.p1.x - tooth.rack.pitch.p2.x,
-                          y: tooth.rack.pitch.p1.y)
-  bottom := point hint(x: tooth.axis.p1.x, y: 2 * tooth.axis.p1.y - tooth.axis.p2.y)
+  // Seeds: the tooth's pitch points reflected through each other, and its axis turned.
+  outer_far := point hint(at: tooth.rack.pitch.p2, toward: tooth.rack.pitch.p1, by: -1)
+  inner_far := point hint(at: tooth.rack.pitch.p1, toward: tooth.rack.pitch.p2, by: -1)
+  bottom := point hint(at: tooth.axis.p1, toward: tooth.axis.p2, by: -1)
   construction outer_span := line(tooth.rack.pitch.p1, outer_far)
   construction inner_span := line(inner_far, tooth.rack.pitch.p2)
   tooth.rack.pitch.p2 midpoint outer_span

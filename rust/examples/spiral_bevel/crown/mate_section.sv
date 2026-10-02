@@ -12,31 +12,28 @@ use crown.rounding
 // and inner flank lines, carried a tooth's width.
 component MateSection(lp: point, rp: point, inner_along: line, outer_along: line,
                       design: group, normal_module: Length) {
-  // Seeds only: RackSection's, the leans exchanged and the tip down.
-  inner_lean := (design.pressure - design.shift) / 1rad
-  outer_lean := (design.pressure + design.shift) / 1rad
+  // Seeds only: RackSection's, the angles exchanged and the tip down.
+  inner_angle := design.pressure - design.shift
+  outer_angle := design.pressure + design.shift
   base_depth := design.base * 2 / pi
-  tip_depth := design.dedendum * 2 / pi
   join_depth := (design.dedendum - design.rounding) * 2 / pi
-  end_depth := (design.dedendum - design.rounding / 2) * 2 / pi
   corner := design.rounding * 2 / pi
-  private bi := point hint(x: lp.x - (rp.x - lp.x) * base_depth * inner_lean,
-                           y: lp.y + (rp.x - lp.x) * base_depth)
-  private bo := point hint(x: rp.x + (rp.x - lp.x) * base_depth * outer_lean, y: bi.y)
-  private ij := point hint(x: lp.x + (rp.x - lp.x) * join_depth * inner_lean,
-                           y: lp.y - (rp.x - lp.x) * join_depth)
-  private it := point hint(x: lp.x + (rp.x - lp.x) * (end_depth * inner_lean + corner),
-                           y: lp.y - (rp.x - lp.x) * tip_depth)
-  private ot := point hint(x: rp.x - (rp.x - lp.x) * (end_depth * outer_lean + corner), y: it.y)
-  private oj := point hint(x: rp.x - (rp.x - lp.x) * join_depth * outer_lean, y: ij.y)
-  private ci := point hint(x: it.x, y: ij.y)
-  private co := point hint(x: ot.x, y: ij.y)
   construction pitch := line(lp, rp)
+  private bi := point hint(at: lp, along: pitch, by: base_depth / cos(inner_angle),
+                           turn: 90deg + inner_angle)
+  private bo := point hint(at: rp, along: pitch, by: base_depth / cos(outer_angle),
+                           turn: 90deg - outer_angle)
+  private ij := point hint(at: lp, along: pitch, by: join_depth / cos(inner_angle),
+                           turn: inner_angle - 90deg)
+  private oj := point hint(at: rp, along: pitch, by: join_depth / cos(outer_angle),
+                           turn: -90deg - outer_angle)
+  private ci := point hint(at: ij, along: pitch, by: corner)
+  private co := point hint(at: oj, along: pitch, by: -corner)
+  private it := point hint(at: ci, along: pitch, by: corner, turn: -90deg)
+  private ot := point hint(at: co, along: pitch, by: corner, turn: -90deg)
   profile := (base := line(bo, bi)) -> (inner := line(bi, ij)) -> tangent
-             (inner_round := arc(center: ci) hint(r: abs(it.y - ci.y))) -> tangent
-             (tip := line(it, ot)) -> tangent
-             (outer_round := arc(center: co) hint(r: abs(it.y - ci.y))) -> tangent
-             (outer := line(oj, bo)) -> close
+             (inner_round := arc(center: ci)) -> tangent (tip := line(it, ot)) -> tangent
+             (outer_round := arc(center: co)) -> tangent (outer := line(oj, bo)) -> close
   inner_along angle(180deg) inner
   outer_along angle(180deg) outer
   // Each flank a quarter of the backlash outside its shared line; with none, on it.

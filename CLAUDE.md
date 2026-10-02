@@ -790,10 +790,16 @@ Conventions:
   `commit_seeds` never writes an expression back, so P3 holds.  The bearing of a sheet
   `hint(at: …)` is `substitute`d over the scope's numbers, which print **with their unit** (`of_vals`: an
   `Angle` as `(180deg)`, a `Length` as `(150mm)`), or `phi + atan2(…)` reads as a plain number
-  added to an angle. Components are closed over their arguments: only their own parameters
-  and formals are available. `module_params` exports values to importing root bodies, where
-  they can be bundled in groups and passed explicitly. `tests/seeds.rs` and
-  `tests/closed_scopes.rs` are the gates.
+  added to an angle.  **A place may be a step** ([0.33]): `hint(at: a, toward: b, by: f, turn: θ)`,
+  or `along: l` for `toward:` (`AtRef::{toward, along, by, turn}`, `entities::place_of`), so a
+  midpoint, reflection or quarter turn is a clause and not coordinate arithmetic.  A place in
+  another view is read in space and projected into the seeded point's (`seed_in`), which needs
+  the memberships and the views' seeded poses, so `program::build` settles the seeds a second
+  time after `solve_planes` when one crosses (`crosses_views`), and only then.  An unwritten arc
+  radius settles with them (`Deferred::Radius`).  A traced point refuses a step.  Components are
+  closed over their arguments: only their own parameters and formals are available.
+  `module_params` exports values to importing root bodies, where they can be bundled in groups
+  and passed explicitly. `tests/seeds.rs` and `tests/closed_scopes.rs` are the gates.
 - **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
   block form is allowed inside a component body — the plane is a formal, and nothing the
   document deletes reaches the header — and still refused inside a root block.  With

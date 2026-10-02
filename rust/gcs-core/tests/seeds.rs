@@ -149,6 +149,108 @@ fn a_seed_that_reads_geometry_is_never_written_back() {
     assert!(out.text.contains("c := point hint(at: a)"), "{}", out.text);
 }
 
+/// **A place is a step from a point** (§6.4): `toward:` a point, `by:` of the way (all of it
+/// unsaid), `turn:`ed about the start — or `along:` a line's run in place of `toward:`.  A
+/// midpoint, a reflection, an extension and a quarter turn are each one clause, read off the
+/// seeds of what they name in statement order, as every other place is; the printer spells the
+/// clause back as it was read, and a commit never writes one back.
+#[test]
+fn a_place_is_a_step_from_a_point() {
+    let src = "a := point hint(x: 10, y: 0)\n\
+         b := point hint(x: 30, y: 0)\n\
+         l := line(a, b)\n\
+         mid := point hint(at: a, toward: b, by: 0.5)\n\
+         back := point hint(at: a, toward: b, by: -1)\n\
+         up := point hint(at: a, toward: b, turn: 90deg)\n\
+         on := point hint(at: mid, along: l, by: 2, turn: -90deg)\n\
+         a distance(20) b\n";
+    let e = read(src);
+    for (name, want) in [("mid", (20.0, 0.0)), ("back", (-10.0, 0.0)), ("up", (10.0, 20.0)),
+                         ("on", (20.0, -40.0))] {
+        let (x, y) = xy(&e, name);
+        assert!((x - want.0).abs() < 1e-9 && (y - want.1).abs() < 1e-9, "{name}: {x} {y}");
+    }
+    let (prog, errs) = parse("q := point hint(at: a, toward: b.p2, by: 0.5, turn: 90deg)\n\
+                              r := point hint(at: a, along: l, by: -2)\n");
+    assert!(errs.is_empty(), "{errs:?}");
+    let printed: Vec<String> = prog.root().body.iter().map(|st| {
+        let mut out = String::new();
+        gcs_core::syntax::write_stmt_to(&mut out, &st.kind).unwrap();
+        out.split_whitespace().collect::<Vec<_>>().join(" ")
+    }).collect();
+    assert_eq!(printed, ["q := point hint(at: a, toward: b.p2, by: 0.5, turn: 90deg)",
+                         "r := point hint(at: a, along: l, by: -2)"]);
+    let mut sk = e.sketch.clone();
+    gcs_core::solve::solve(&mut sk, Default::default());
+    let out = edit::commit_seeds(&e, &sk, &e.program);
+    assert!(out.text.contains("mid := point hint(at: a, toward: b, by: 0.5)"), "{}", out.text);
+    let a = "a := point hint(x: 0, y: 0)\nl := line(a, a)\n";
+    for (clause, want) in [
+        ("hint(at: a, by: 0.5)", "need `toward:` or `along:`"),
+        ("hint(toward: a)", "`toward:` says where from a place"),
+        ("hint(at: a, toward: a, along: l)", "one or the other"),
+        ("hint(at: a, toward: a, bearing: 3)", "one or the other"),
+    ] {
+        let (_, errs) = parse(&format!("{a}q := point {clause}\n"));
+        let said: Vec<_> = errs.iter().map(|e| &e.message).collect();
+        assert!(said.iter().any(|m| m.contains(want)), "expected `{want}` from {clause}: {said:?}");
+    }
+    let k = "a := point hint(x: 0, y: 0)\nk := circle(center: a) hint(r: 3)\n";
+    refused(&format!("{k}q := point hint(at: k, toward: a)\n"), "a step starts at a point");
+    refused(&format!("{k}q := point hint(at: a, toward: k)\n"), "toward a point, not a circle");
+    refused(&format!("{k}q := point hint(at: a, along: a)\n"), "along a line, not a point");
+}
+
+/// **A place in another view is read in space** and projected into the seeded point's view,
+/// which is what `project` says of the pair: a page point on the fold line of a view folded
+/// square to the page starts at its own image there.  The memberships and the views' poses
+/// that reading needs are worked out after the first settle, so the seeds are settled again in
+/// statement order — a seed reading a projected one follows it — and the second settle's
+/// findings replace the first's rather than doubling them.
+#[test]
+fn a_place_in_another_view_is_read_in_space() {
+    let views = "o := point hint(x: 0, y: 0)\n\
+         t := point hint(x: 10, y: 0)\n\
+         front := plane(origin: o, toward: t)\n\
+         side := plane(origin: o, toward: t, from: front, fold: 90deg)\n\
+         p := point hint(x: 7, y: 3) in front\n";
+    // the page is u = x, v = z, and the fold at 90 degrees is u = z, v = y: `p` at (7, 3) on
+    // the page is (3, 0) in `side`, and a step from it toward the datum's far end goes halfway
+    let e = read(&format!("{views}q := point hint(at: p) in side\n\
+         r := point hint(at: p, toward: t, by: 0.5) in side\n\
+         s := point hint(at: r, toward: q, by: 2) in side\n\
+         u := point hint(at: q) in front\n"));
+    let wants = [("q", (3.0, 0.0)), ("r", (1.5, 0.0)), ("s", (4.5, 0.0)), ("u", (0.0, 3.0))];
+    for (name, want) in wants {
+        let (x, y) = xy(&e, name);
+        assert!((x - want.0).abs() < 1e-9 && (y - want.1).abs() < 1e-9, "{name}: {x} {y}");
+    }
+    // the same findings as a document settled once, though these seeds were settled twice
+    let findings = |src: String| {
+        let (prog, errs) = parse(&src);
+        assert!(errs.is_empty(), "{errs:?}");
+        elaborate(&prog).errors().map(|d| d.message.clone()).collect::<Vec<_>>()
+    };
+    let bad = "w := point hint(x: nobody.x, y: 0)\n";
+    let once = findings(format!("{views}q := point hint(x: 3, y: 0) in side\n{bad}"));
+    assert!(!once.is_empty());
+    assert_eq!(findings(format!("{views}q := point hint(at: p) in side\n{bad}")), once);
+}
+
+/// An arc's radius the source leaves unwritten is its centre to its start — and read once the
+/// places are settled, since a centre seeded by one stands where it was placed only then.
+#[test]
+fn an_unwritten_arc_radius_reads_its_placed_centre() {
+    let e = read("a := point hint(x: 0, y: 0)\n\
+         b := point hint(x: 20, y: 0)\n\
+         s := point hint(x: 0, y: 10)\n\
+         f := point hint(x: 20, y: 10)\n\
+         c := point hint(at: a, toward: b, by: 0.5)\n\
+         k := arc(center: c, start: s, end: f)\n");
+    let r = e.sketch.params[e.sketch.arcs[0].radius as usize].value;
+    assert!((r - 200f64.sqrt()).abs() < 1e-9, "{r}");
+}
+
 #[test]
 fn what_a_seed_may_read_is_checked() {
     refused("a := point hint(x: 0, y: 0)\nb := point hint(x: a.z, y: 0)\n", "has no `z`");

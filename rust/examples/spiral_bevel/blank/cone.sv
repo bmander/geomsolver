@@ -6,10 +6,8 @@ use std
 // Half and one and a half of `generator` (apex -> mean point) from the apex, `near` and `far`,
 // each with a rib square to the generator to where it meets `axis`.
 component ConeSpan(generator: line, axis: line) {
-  near := point hint(x: (generator.p1.x + generator.p2.x) / 2,
-                     y: (generator.p1.y + generator.p2.y) / 2)
-  far := point hint(x: 1.5 * generator.p2.x - 0.5 * generator.p1.x,
-                    y: 1.5 * generator.p2.y - 0.5 * generator.p1.y)
+  near := point hint(at: generator.p1, toward: generator.p2, by: 0.5)
+  far := point hint(at: generator.p1, toward: generator.p2, by: 1.5)
   private extent := line(near, far)
   near midpoint generator
   generator.p2 midpoint extent
@@ -29,14 +27,10 @@ component ConeSpan(generator: line, axis: line) {
 // public for the end relief (blank/ends.sv).
 component ConeBoundary(generator: line, axis: line, offset: Length, lean: Angle) {
   private span := ConeSpan(generator, axis)
-  // Seeds, rough: a step along each rib, toward the axis or away as `lean` says, and the feet
-  // of the caps where the ribs meet the axis.
-  p := point hint(
-    x: span.near.x + (1 - lean / 90deg) * (span.near_cross.x - span.near.x) / 20,
-    y: span.near.y + (1 - lean / 90deg) * (span.near_cross.y - span.near.y) / 20)
-  q := point hint(
-    x: span.far.x + (1 - lean / 90deg) * (span.far_cross.x - span.far.x) / 20,
-    y: span.far.y + (1 - lean / 90deg) * (span.far_cross.y - span.far.y) / 20)
+  // Seeds, rough: a step along each rib turned `lean`, as the meridian stands, and the feet of
+  // the caps where the ribs meet the axis.
+  p := point hint(at: span.near, toward: span.near_cross, by: 0.05, turn: lean)
+  q := point hint(at: span.far, toward: span.far_cross, by: 0.05, turn: lean)
   private a := point hint(at: span.near_cross)
   private b := point hint(at: span.far_cross)
   private near_lift := line(span.near, p)

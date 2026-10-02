@@ -21,7 +21,7 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   private to_rim_in := line(apex, rim_in)
   // On the tip: the corner, as far from the apex as the rim, and the chamfer's end, as far as
   // `rim_in`.
-  corner := point hint(x: (tip.p.x + tip.q.x) / 2, y: (tip.p.y + tip.q.y) / 2)
+  corner := point hint(at: tip.p, toward: tip.q, by: 0.5)
   along_tip := point hint(at: corner)
   corner on tip_line
   along_tip on tip_line
@@ -32,7 +32,7 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   // On the sphere: the chamfer's end on the line `below` the tip, through `mark`, `size` from
   // the corner toward its `foot` on the cone line.
   private foot := point hint(at: cone_line.p2)
-  private mark := point hint(x: (corner.x + foot.x) / 2, y: (corner.y + foot.y) / 2)
+  private mark := point hint(at: corner, toward: foot, by: 0.5)
   private level := point hint(at: tip.q)
   foot on cone_line
   private drop := line(corner, foot)
@@ -48,11 +48,12 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   private to_down := line(apex, down_end)
   to_down equal to_rim
   // The ring's section: the chamfer extended its own length past each end, and the point as far
-  // beyond the corner as the chamfer's middle is short of it.
-  private tip_out := point hint(x: 2 * along_tip.x - down_end.x, y: 2 * along_tip.y - down_end.y)
-  private end_out := point hint(x: 2 * down_end.x - along_tip.x, y: 2 * down_end.y - along_tip.y)
-  private middle := point hint(x: (along_tip.x + down_end.x) / 2, y: (along_tip.y + down_end.y) / 2)
-  private beyond := point hint(x: 2 * corner.x - middle.x, y: 2 * corner.y - middle.y)
+  // beyond the corner as the chamfer's middle is short of it. Midpoints place them, so they need
+  // no seed.
+  private tip_out := point
+  private end_out := point
+  private middle := point
+  private beyond := point
   private tip_leg := line(tip_out, down_end)
   private end_leg := line(along_tip, end_out)
   private chord := line(along_tip, down_end)

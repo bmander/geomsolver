@@ -14,17 +14,12 @@ use crown.section
 // `outer` are the pitch points there.
 component CrownTooth(p: plane, normal: line, inner: point, outer: point, design: group,
                      normal_module: Length) {
-  // Seeds: a pitch-plane point's x in N is how far along the trace normal it stands.
-  center := point hint(x: (normal.p1.x * (normal.p2.x - normal.p1.x)
-      + normal.p1.y * (normal.p2.y - normal.p1.y))
-    / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2), y: 0)
-  lp := point hint(x: (inner.x * (normal.p2.x - normal.p1.x)
-      + inner.y * (normal.p2.y - normal.p1.y))
-    / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2), y: 0)
-  rp := point hint(x: (outer.x * (normal.p2.x - normal.p1.x)
-      + outer.y * (normal.p2.y - normal.p1.y))
-    / sqrt((normal.p2.x - normal.p1.x)^2 + (normal.p2.y - normal.p1.y)^2), y: 0)
-  top := point hint(x: center.x, y: -design.cutter_radius)
+  // Seeds: the pitch-plane points read in N, where they lie on the fold, and the axis the trace
+  // normal's length, |CM|, turned square to it.
+  center := point hint(at: normal.p1)
+  lp := point hint(at: inner)
+  rp := point hint(at: outer)
+  top := point hint(at: center, along: normal, turn: -90deg)
   center on p
   lp on p
   rp on p

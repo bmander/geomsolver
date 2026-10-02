@@ -13,10 +13,10 @@ use crown.mate
 use crown.reach
 
 // One active rounded flank, closed at `cap` along its base and tip. The walk enters the flank
-// from whichever end meets its round.
+// from whichever end meets its round. Each end is where two lines cross, so needs no seed.
 component FlankSection(base: line, flank: line, corner: arc, tip: line, cap: line) {
-  private base_end := point hint(x: cap.p1.x, y: base.p1.y)
-  private tip_end := point hint(x: cap.p1.x, y: tip.p1.y)
+  private base_end := point
+  private tip_end := point
   base_end on base
   base_end on cap
   tip_end on tip
