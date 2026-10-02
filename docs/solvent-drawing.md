@@ -114,10 +114,10 @@ model planes for geometric relationships; choose presentation-only orientations 
 A `sketch` presents the model's existing 2D coordinates. Its target can be a model alias, a
 component/member scope, or an individual entity. It has no arbitrary 3D viewing direction.
 Points and plane glyphs are hidden by default; styles can show them. A bare `.sv` still gets an
-automatic editor preview without an authored drawing. It does not automatically annotate
-model constraints. The editor can inspect all constraint values through an explicit option;
-editing a dimension temporarily shows that dimension alone. Opening a model resets this
-inspection overlay. Authored annotations are the drawing's `dimension`, `measure`, and
+automatic editor preview without an authored drawing. The model canvas calls out every
+dimensioned constraint, as an editor does (Options ▸ dimensions turns them off; editing one
+then shows that dimension alone). That is the editor's, not the paper's: a `.sv` puts no
+annotation on a sheet, and authored annotations are the drawing's `dimension`, `measure`, and
 `dimensions` requests.
 
 ## Dimensions and annotations

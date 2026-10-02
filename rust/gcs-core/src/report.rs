@@ -461,6 +461,11 @@ pub fn constraint_json(sk: &Sketch, c: &Constraint) -> Json {
     if !exprs.is_empty() {
         v.set("exprs", Json::Obj(exprs));
     }
+    // the dimension as the statement wrote it, where that is not its text here (`w` for a
+    // `param` worked out to 100): what an editor opened on it shows, since it is what is drawn
+    if let Some(w) = &c.written {
+        v.set("written", Json::Str(w.clone()));
+    }
     v
 }
 

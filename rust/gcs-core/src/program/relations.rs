@@ -4,9 +4,10 @@ use super::resolve::{follow, Resolver};
 use super::solids::is_body_on;
 use super::{Code, Diag};
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
-use crate::ir::{Relation, ResolvedRelation, Statement as Stmt};
+use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Field, Sketch};
-use crate::syntax::{Arg, Ref, RelationForm, Seg, Span};
+use crate::syntax::{Arg, Ref, RelationForm, Seg, Span, StmtId};
+use std::collections::BTreeSet;
 use crate::{decompose, expr, io};
 
 /// Resolve an operator to its constraint kind and registry-ordered arguments.
@@ -117,6 +118,7 @@ pub(super) fn constrain(
     res: &Resolver,
     r: &Relation,
     st: &Stmt,
+    source: &str,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
     // **`on` between two solids is the body rule and not a constraint** (§6.9).  A word means
@@ -339,7 +341,55 @@ pub(super) fn constrain(
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
     c.class = r.class.clone();
+    c.written = written(&r.args, r.kind.spec(), st, source);
     Some(sk.add_quiet(c))
+}
+
+/// A root statement's dimension as it was written, when that differs from the text it reached
+/// here as — see `Constraint::written`.  At the root the only thing the flattener writes into a
+/// dimension's text is a number a name stood for (a `param`, a module's or a group's member), so
+/// a difference is exactly a name worked out; a named dimension keeps its name already.  Read
+/// off the source at the argument's span, which is the document's own text only at the root: a
+/// copy of a block or an instance's body (a non-empty path) is one spelling with many numbers,
+/// and a module's span indexes a text this is not.
+fn written(args: &[Option<Arg>], spec: &[(&str, SpecKind)], st: &Stmt, source: &str)
+    -> Option<String> {
+    if !st.path.is_empty() {
+        return None;
+    }
+    let (text, span) = spec.iter().zip(args).find_map(|((_, k), a)| match a {
+        Some(Arg::Dim { text, span }) if k.is_dimension() => Some((text, *span)),
+        _ => None,
+    })?;
+    let was = source.get(span.lo as usize..span.hi as usize)?.trim();
+    (!was.is_empty() && was != text.trim()).then(|| was.to_string())
+}
+
+/// Mark a dimension another copy of the same block already states — see
+/// `Constraint::repeated`.  The key is the statement, the path to it with every copy index
+/// erased (so two instances of a component are two arrays, and one block's copies are one), and
+/// the label it draws: copies stating *different* numbers (`distance(i * 10)`) are each a
+/// dimension of their own.  Statement order is copy order, so the first copy is the one drawn.
+pub(super) fn repeated(
+    sk: &mut Sketch,
+    id: u32,
+    st: &Stmt,
+    seen: &mut BTreeSet<(StmtId, Vec<PathStep>, String)>,
+) {
+    if !st.path.iter().any(|s| matches!(s, PathStep::Copy { .. })) {
+        return;
+    }
+    let Some(c) = sk.constraint(id) else { return };
+    let Some(label) = io::dimension_text(c) else { return };
+    let path = st.path.iter().map(|s| match s {
+        PathStep::Copy { block, .. } => PathStep::Copy { block: *block, index: 0 },
+        s => s.clone(),
+    });
+    if !seen.insert((st.id, path.collect(), label)) {
+        if let Some(c) = sk.constraint_mut(id) {
+            c.repeated = true;
+        }
+    }
 }
 
 pub(super) fn arg_span(a: &Arg) -> Option<Span> {

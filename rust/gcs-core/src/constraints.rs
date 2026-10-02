@@ -1824,6 +1824,20 @@ pub struct Constraint {
     /// Presentation: nothing that solves, diagnoses or decomposes reads it, and `same_constraint`
     /// does not compare it.
     pub class: crate::style::Classes,
+    /// Its dimension **as the statement wrote it**, where that is not the text the number is
+    /// worked out from: `l1 distance(w) r2` under `param w = 100` reaches the sketch as `100`,
+    /// since the flattener settles a `param` to its number, and the callout draws `w`.  Set by
+    /// the elaborator only for a statement at the document's root, where a name has one value
+    /// (`program::relations::written`); inside a component the same text is a different number
+    /// in every instance, and the number is what is drawn.  Presentation, like `class`: nothing
+    /// that solves reads it, and writing a number (`set_num`, `expr::set_dimension`) drops it.
+    pub written: Option<String>,
+    /// A dimension **another copy of its block already states**: `repeat n { radius(hole_r)
+    /// circle hole … }` is one statement, and six holes are drawn with one callout and not six.
+    /// Set by the elaborator (`program::relations::repeated`) on every copy after the first
+    /// that draws the same label; the full callout layout leaves it out, and asking for it by id
+    /// (editing that one) still draws it.  Presentation, like `class`.
+    pub repeated: bool,
 }
 
 /// `+1` and `−1` as the words a statement writes them with — the one place the two meet, read by
@@ -1869,6 +1883,8 @@ impl Constraint {
             claim: false,
             free: None,
             class: Default::default(),
+            written: None,
+            repeated: false,
         }
     }
 
@@ -2193,6 +2209,7 @@ impl Constraint {
         // that outlived its text would have this constraint compiled against a column it no
         // longer has anything to say about
         self.free = None;
+        self.written = None;
         true
     }
 

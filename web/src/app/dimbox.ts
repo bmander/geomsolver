@@ -11,8 +11,9 @@ import { toast } from './ui.js';
 import type { LiveDim } from './view.js';
 
 /** A dimension's number as a person reads and writes it: what it was written as if it was
- *  written, else what the drawing says it is — the same rounding, so the editor that sits on a
- *  callout shows the callout's own number rather than a longer one that means the same.  In
+ *  written (`w` for a `param`, which is also what its callout says), else what the drawing says
+ *  it is — the same rounding, so the editor that sits on a callout shows the callout's own
+ *  number rather than a longer one that means the same.  In
  *  degrees for an angle, which is the unit the core takes text in either way.
  *
  *  Nothing is written back unless somebody types, so the rounding here costs no precision: a
@@ -22,7 +23,8 @@ function dimensionField(c: Constraint): { attr: string; text: string } | null {
   if (!d) return null;
   const [attr, kind] = d;
   const v = (c as unknown as Record<string, number>)[attr];
-  return { attr, text: c.expr(attr) ?? io.fmt(kind === 'angle' ? (v * 180) / Math.PI : v, 4) };
+  const reading = io.fmt(kind === 'angle' ? (v * 180) / Math.PI : v, 4);
+  return { attr, text: c.written ?? c.expr(attr) ?? reading };
 }
 
 /** Open a dimension's number for editing, on the drawing where it is drawn. */
@@ -95,7 +97,19 @@ function finishDim(commit: boolean, keepOpen = false): void {
   // an untouched number is not written: the dimension keeps the measurement it was stated at,
   // which is exact, rather than the rounded one the editor showed
   const text = dimTyped ? dimBox.value.trim() : '';
-  if (commit && text && !setDimension(live.targets, text)) {
+  // one the source already states is rewritten there, where its names mean what the document
+  // says, and ends itself; one being stated now reaches the source when it is accepted
+  if (commit && text && !live.fresh) {
+    const why = view.rewriteDimension(text);
+    if (why === null) {
+      closeDimBox();
+      invalidateRows();
+      return;
+    }
+    toast(why);
+    if (keepOpen) return;
+    commit = false;
+  } else if (commit && text && !setDimension(live.targets, text)) {
     if (keepOpen) return;
     commit = false;
   }

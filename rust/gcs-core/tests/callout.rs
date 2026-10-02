@@ -478,7 +478,8 @@ fn every_example_lays_out() {
         let dims = sk
             .constraints
             .iter()
-            .filter(|c| !c.soft && !c.intrinsic && c.kind.has_dimension())
+            // a block's later copies are the first copy's callout (`an_array_is_dimensioned_once`)
+            .filter(|c| !c.soft && !c.intrinsic && !c.repeated && c.kind.has_dimension())
             .count();
         assert_eq!(ks.len(), dims, "{name}");
         for k in &ks {
@@ -761,4 +762,38 @@ fn an_angular_callout_sweeps_the_turn_its_number_states() {
     let (text, swept) = turn(PI / 2.0, (2.0, 9.0));
     assert_eq!(text, "90°");
     assert!((swept - PI / 2.0).abs() < 1e-9, "swept {swept}, stated 90°");
+}
+
+fn elaborate(src: &str) -> Sketch {
+    let (p, errors, _) = gcs_core::library::parse_linked(src);
+    assert!(errors.is_empty(), "{errors:?}");
+    let e = gcs_core::program::elaborate(&p);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    e.sketch
+}
+
+/// A block's dimension is one statement, so it is one callout however many copies it makes:
+/// a bolt pattern's six holes draw their radius once, and its pitch circle once.
+#[test]
+fn an_array_is_dimensioned_once() {
+    let sk = elaborate(examples::source("solid_flange").unwrap());
+    let ks = layout(&sk, 0.1);
+    let drawn = |text: &str| ks.iter().filter(|k| k.text == text).count();
+    assert_eq!(drawn("R3mm"), 1, "{:?}", texts(&ks));
+    assert_eq!(drawn("24mm"), 1, "{:?}", texts(&ks));
+    // every copy is still a dimension: the one being edited is drawn when it is asked for
+    let hidden = sk.constraints.iter().find(|c| c.repeated).expect("later copies are marked");
+    let asked = gcs_core::callout::layout_selected(&sk, 0.1, Some(&[hidden.id]));
+    assert_eq!(asked.len(), 1);
+
+    // copies stating different numbers are a dimension each
+    let sk = elaborate(
+        "point o hint(x: 0, y: 0)
+         ground o
+         repeat 3 as i {
+           point p hint(x: 10 + 10 * i, y: 0)
+           o distance(10 + 10 * i) p
+         }",
+    );
+    assert_eq!(texts(&layout(&sk, 0.1)), ["10", "20", "30"]);
 }
