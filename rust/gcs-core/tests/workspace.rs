@@ -168,9 +168,9 @@ fn a_callout_is_picked_where_the_eye_sees_it() {
     );
     for (az, el) in [(0.0, 0.0), (0.6, 0.5)] {
         let proj = Projection::new(sk, az, el);
+        let at = apply(proj.map(Some(plane(&e, "std.side"))), mid);
         let side = Some(plane(&e, "std.side"));
-        let at = apply(proj.map(side), mid);
-        assert_eq!(callout::pick_seen(sk, unit, &proj, at, 8.0), Some(id), "({az}, {el})");
+        assert_eq!(callout::pick_seen(sk, unit, &proj, at, 8.0), Some((id, side)), "({az}, {el})");
         // the page reading of the same spot, which is where the front plane would be, misses
         let wrong = apply(proj.map(None), mid);
         if (wrong.0 - at.0).hypot(wrong.1 - at.1) > 1.0 {
@@ -179,16 +179,14 @@ fn a_callout_is_picked_where_the_eye_sees_it() {
     }
 }
 
-/// The workspace report names every view's map and each entity's view by the wire's codes.
+/// The workspace report says each view's place and each entity's view by the wire's codes.
 #[test]
 fn the_report_says_each_view() {
     let e = build(&format!("{VIEWS}l := line(s, t)\n"));
-    let j = gcs_core::report::workspace_json(&e.sketch, 0.3, 0.2).dump(None);
     let sk: &Sketch = &e.sketch;
-    assert!(j.contains("\"maps\"") && j.contains("\"looks\"") && j.contains("\"views\""), "{j}");
-    let parsed = gcs_core::json::parse(&j).unwrap();
-    let maps = parsed.get("maps").unwrap().arr();
-    assert_eq!(maps.len(), 1 + sk.planes.len());
+    let parsed = gcs_core::json::parse(&gcs_core::report::workspace_json(sk).dump(None)).unwrap();
+    assert_eq!(parsed.get("places").unwrap().arr().len(), 1 + sk.planes.len());
+    assert_eq!(parsed.get("looks").unwrap().arr().len(), 1 + sk.planes.len());
     let lines = parsed.get("views").unwrap().get("line").unwrap().arr();
     // the projector between the side and the top stands in no one view
     let l = e.map.ent_named("l").unwrap();
@@ -199,6 +197,24 @@ fn the_report_says_each_view() {
     let p = e.map.ent_named("p").unwrap();
     assert_eq!(points[p.i()].as_i64(), -1);
     let _ = EntRef::point(0);
+}
+
+/// A view's place is the plane it stands on in space, judged there and not by any eye: `std.up`
+/// is the page turned, so one place with it, and a plane stood off the front along its normal is
+/// another place — though from straight in front the two look the same.
+#[test]
+fn a_place_is_a_plane_in_space() {
+    let e = build("unit mm\nuse std\no := point\nfix(x == 0, y == 0) o\nq := point\nfix(x == 1, y == 0) q\n\
+        back := plane(origin: o, toward: q, from: std.front, offset: 10mm)\n");
+    let views = gcs_core::overview::workspace::Views::new(&e.sketch);
+    let (front, up, back) = (plane(&e, "std.front"), plane(&e, "std.up"), plane(&e, "back"));
+    assert_eq!(views.place(None), None, "the page is its own first place");
+    assert_eq!(views.place(Some(front)), None, "std.front is the page");
+    assert_eq!(views.place(Some(up)), None, "std.up is the page turned");
+    assert_eq!(views.place(Some(back)), Some(back), "stood off is elsewhere");
+    let proj = Projection::new(&e.sketch, -FRAC_PI_2, 0.0);
+    let (m, n) = (proj.map(Some(back)), proj.map(None));
+    assert!(m.iter().zip(n).all(|(a, b)| (a - b).abs() < 1e-12), "though from in front it looks the same");
 }
 
 /// A fit frames what is shown, solids included: the flange's section draws only the half of it

@@ -40,7 +40,8 @@ import * as tools from './tools.js';
 import * as underlay from './underlay.js';
 import type { Bitmap, Underlay } from './underlay.js';
 import {
-  NOWHERE, PAGE, boundsSeen, calloutSeen, mapOf, nearestSeen, pickSeen, workspace,
+  NOWHERE, PAGE, boundsSeen, calloutSeen, lookOf, maps, nearestSeen, ofView, pickSeen, placeOf,
+  workspace,
 } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
 
@@ -292,36 +293,56 @@ export class SketchView {
   get width(): number { return this.canvas.clientWidth; }
   get height(): number { return this.canvas.clientHeight; }
 
-  /** The workspace as the eye now sees it: every view's map and the view each thing stands in.
-   *  Asked once a frame — `draw` forgets it — since a drag can move a plane's own points and so
-   *  its map. */
+  /** What of the workspace does not depend on the eye: the view each thing stands in, each view's
+   *  place and the eye square on to it.  Asked once an edit — `afterEdit` forgets it, and a new
+   *  drawing is a new sketch. */
   workspace(): Workspace {
-    const { az, el } = this.orbit;
     const c = this.wsCache;
-    if (c && c.sketch === this.sketch && c.az === az && c.el === el) return c.ws;
-    const ws = workspace(this.sketch, az, el);
-    this.wsCache = { sketch: this.sketch, az, el, ws };
+    if (c && c.sketch === this.sketch) return c.ws;
+    const ws = workspace(this.sketch);
+    this.wsCache = { sketch: this.sketch, ws };
     return ws;
   }
-  private wsCache: { sketch: Sketch; az: number; el: number; ws: Workspace } | null = null;
+  private wsCache: { sketch: Sketch; ws: Workspace } | null = null;
+
+  /** Every view's camera, the page first: the core's map of it for the orbit, composed with the
+   *  eye's camera.  Built once a frame — `draw` forgets them, since a drag can move a plane's own
+   *  points and so its map — and asked of per point. */
+  private cams(): ViewCam[] {
+    const { az, el } = this.orbit;
+    const k = this.cam;
+    const c = this.camCache;
+    if (c && c.sketch === this.sketch && c.az === az && c.el === el && c.scale === k.scale
+        && c.x === k.originX && c.y === k.originY) return c.cams;
+    const cams = maps(this.sketch, az, el).map((m) => k.through(m));
+    this.camCache = { sketch: this.sketch, az, el, scale: k.scale, x: k.originX, y: k.originY, cams };
+    return cams;
+  }
+  private camCache: { sketch: Sketch; az: number; el: number; scale: number; x: number; y: number;
+                      cams: ViewCam[] } | null = null;
 
   /** The view the painter is drawing in, while it is — see `inView`. */
   private drawing: ViewCam | null = null;
 
-  /** The view a tool works in: the current plane's, else the page's. */
+  /** The plane being drawn on: the current plane's view, else the page's. */
   get activeView(): View {
     return this.plane ? this.plane.index : PAGE;
   }
 
-  /** A view's camera, or null for a figure that stands in no one view. */
-  camOf(view: View): ViewCam | null {
-    const m = mapOf(this.workspace(), view);
-    return m ? this.cam.through(m) : null;
+  /** The view a tool reads its clicks off: the plane being drawn on — except the plane tool, whose
+   *  two points are where a view sits on the page, layout and in no view. */
+  get toolView(): View {
+    return this.tool === 'plane' ? PAGE : this.activeView;
   }
 
-  /** The camera of the view being worked in. */
+  /** A view's camera, or null for a figure that stands in no one view. */
+  camOf(view: View): ViewCam | null {
+    return ofView(this.cams(), view);
+  }
+
+  /** The camera of the view being worked in: the painter's, else the tool's. */
   viewCam(): ViewCam {
-    return this.drawing ?? this.camOf(this.activeView) ?? this.cam.through(this.workspace().maps[0]);
+    return this.drawing ?? this.camOf(this.toolView) ?? this.cams()[0];
   }
 
   /** The view a point stands in. */
@@ -341,12 +362,20 @@ export class SketchView {
     return (this.camOf(this.viewOf(p)) ?? this.viewCam()).w2s(...p.xy);
   }
 
+  /** Where a canvas point is on a view's page — where the eye's ray through it meets that plane. */
+  s2wIn(view: View, sx: number, sy: number): [number, number] {
+    return (this.camOf(view) ?? this.viewCam()).s2w(sx, sy);
+  }
+
   /** Run `fn` in a view: every `w2s`, `s2w` and `len` inside it is that view's.  Nothing runs for
    *  a figure that stands in no one view, which has nowhere to be drawn. */
   inView<T>(view: View, fn: () => T): T | undefined {
-    if (view === NOWHERE) return undefined;
     const cam = this.camOf(view);
-    if (!cam) return undefined;
+    return cam ? this.withCam(cam, fn) : undefined;
+  }
+
+  /** Run `fn` through a view's camera already in hand. */
+  withCam<T>(cam: ViewCam, fn: () => T): T {
     const outer = this.drawing;
     this.drawing = cam;
     try {
@@ -390,8 +419,8 @@ export class SketchView {
       ? this.doc.entityOf({ kind: it.kind, index: it.index }) : undefined;
   }
 
-  /** The view a scene item belongs to, as a `Plane` — the other decode of the wire, for the
-   *  double-click that goes to a view and the hover that bolds one. */
+  /** The view a scene item belongs to, as a `Plane` — the other decode of the wire, for the pane
+   *  `box3d` bolds as the plane being drawn on. */
   planeOf(it: Omit<Item, 'pts' | 'shade'>): Plane | null {
     const p = it.plane !== undefined ? this.doc.entityOf({ kind: 'plane', index: it.plane }) : null;
     return p instanceof Plane ? p : null;
@@ -405,7 +434,6 @@ export class SketchView {
    *  would hand the new sketch the old one's points. */
   private settle(): void {
     this.stopAnimation();             // first: it restores into the sketch it started on
-    this.wsCache = null;
     abandonGesture(this);             // dropped, not ended: `end` would commit into what follows
     if (this.liveDim) this.endDimension(false);
     this.pending = [];
@@ -511,7 +539,6 @@ export class SketchView {
     const heldPlane = carry && this.plane ? this.doc.nameOf(this.plane) : undefined;
     const old = this.doc;
     this.doc = next;
-    this.wsCache = null;
     // the outgoing elaboration owns a core sketch, and a wasm heap only grows
     if (old !== next) old.dispose();
     // the current plane crosses by name too, and only if the name still reaches a plane: an
@@ -868,7 +895,7 @@ export class SketchView {
   // -- painting ------------------------------------------------------------
 
   draw(): void {
-    this.wsCache = null;      // a plane's own points may have moved, and its map with them
+    this.camCache = null;     // a plane's own points may have moved, and its map with them
     if (this.frame) return;
     this.frame = requestAnimationFrame(() => { this.frame = 0; paint(this); });
   }
@@ -890,10 +917,10 @@ export class SketchView {
   pickCallout(sx: number, sy: number): Constraint | null {
     if (!this.showDimensions) return null;
     const { az, el } = this.orbit;
-    const id = calloutSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), PICK_PX);
-    const c = id < 0 ? null : this.sketch.constraintById(id) ?? null;
+    const hit = calloutSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), PICK_PX);
+    const c = hit && (this.sketch.constraintById(hit.id) ?? null);
     // only a callout that is drawn answers a press
-    return c && (c === this.litConstraint || this.showsCallouts(this.calloutView(c))) ? c : null;
+    return c && (c === this.litConstraint || this.showsCallouts(hit.view)) ? c : null;
   }
 
   /** Whether a view's callouts are shown: those of the plane being drawn on, as a CAD tool shows
@@ -901,10 +928,8 @@ export class SketchView {
    *  the page and `std.front` do.  The rest of the workspace's dimensions would be a thicket from
    *  any one eye; the dimension being written or focused is shown wherever it is. */
   showsCallouts(view: View): boolean {
-    if (view === this.activeView) return true;
     const ws = this.workspace();
-    const a = mapOf(ws, view), b = mapOf(ws, this.activeView);
-    return !!a && !!b && a.every((x, i) => Math.abs(x - b[i]) <= 1e-9 * (1 + Math.abs(x)));
+    return view !== NOWHERE && placeOf(ws, view) === placeOf(ws, this.activeView);
   }
 
   /** The view a dimension's callout is laid out in — where a press on it is read, and where it
@@ -991,10 +1016,19 @@ export class SketchView {
    *  standard ones first, whether or not the document has them yet, then every other plane the
    *  document names (`std.up` is the front plane turned, so it is not offered twice). */
   planeChoices(): string[] {
+    const ws = this.workspace();
     const names = new Set<string>(STANDARD_PLANES);
+    // where the standard planes the chooser offers stand: a standard datum standing there too is
+    // one of them turned (`std.up` is the front), and is not offered twice
+    const offered = new Set<View>([PAGE]);
+    for (const n of STANDARD_PLANES) {
+      const pl = this.doc.entity(n);
+      if (pl instanceof Plane) offered.add(placeOf(ws, pl.index));
+    }
     for (const pl of this.sketch.planes) {
       const n = this.doc.nameOf(pl);
-      if (n && n !== 'std.up') names.add(n);
+      if (!n || (n.startsWith('std.') && !names.has(n) && offered.has(placeOf(ws, pl.index)))) continue;
+      names.add(n);
     }
     return [...names];
   }
@@ -1037,19 +1071,11 @@ export class SketchView {
    *  standard library's, read once from a document of nothing but `use std`. */
   private lookFor(name: string): { az: number; el: number } {
     const here = this.doc.entity(name);
-    if (here instanceof Plane) {
-      const [az, el] = this.workspace().looks[here.index + 1];
-      return { az, el };
-    }
-    if (name === 'std.front') {
-      const [az, el] = this.workspace().looks[0];
-      return { az, el };
-    }
+    if (here instanceof Plane) return lookOf(this.workspace(), here.index) ?? { ...this.orbit };
+    if (name === 'std.front') return lookOf(this.workspace(), PAGE) ?? { ...this.orbit };
     const std = standardDocument();
     const pl = std.entity(name);
-    if (!(pl instanceof Plane)) return { ...this.orbit };
-    const [az, el] = workspace(std.sketch, 0, 0).looks[pl.index + 1];
-    return { az, el };
+    return (pl instanceof Plane && lookOf(workspace(std.sketch), pl.index)) || { ...this.orbit };
   }
 
   /** Swing the eye to `to`, the short way round, and redraw as it goes.  The camera's own
@@ -1101,13 +1127,9 @@ export class SketchView {
   /** How a document opens: square on to the front when everything is drawn there, and from three
    *  quarters when it has a solid or anything stands on another plane. */
   private homeOrbit(): { az: number; el: number } {
-    const ws = workspace(this.sketch, FRONT.az, FRONT.el);
-    const page = ws.maps[0];
-    const flat = (v: View): boolean => {
-      const m = mapOf(ws, v);
-      return !!m && m.every((x, i) => Math.abs(x - page[i]) < 1e-9);
-    };
-    const off = Object.values(ws.views).some((vs) => vs.some((v) => v !== PAGE && !flat(v)));
+    const ws = this.workspace();
+    // anything standing elsewhere than the page's place — or across places, a projector
+    const off = Object.values(ws.views).some((vs) => vs.some((v) => placeOf(ws, v) !== PAGE));
     return off || objects(this.sketch).length ? { ...THREE_QUARTER } : { ...FRONT };
   }
 

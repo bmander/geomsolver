@@ -84,8 +84,7 @@ export function bindEvents(v: SketchView): void {
     if (v.tool !== 'select') return;
     const hit = v.pick(...sp);
     if (hit instanceof Spline) {
-      const at = v.inView(v.viewOf(hit.ctrl[0]), () => v.s2w(sp[0], sp[1]));
-      if (at) insertControl(v, hit, ...at);
+      insertControl(v, hit, ...v.s2wIn(v.viewOf(hit.ctrl[0]), ...sp));
     }
   });
   cv.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -183,7 +182,7 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
       v.pushUndo();
       const view = v.viewOf(ent);
       // on the sketch's own plan, compiled once per topology: the drag starts at once
-      const drag = new PlanDrag(v.sketch, ent, ...onPage(v, view, sp), null, 0.05, v.plan());
+      const drag = new PlanDrag(v.sketch, ent, ...v.s2wIn(view, ...sp), null, 0.05, v.plan());
       v.gesture = pointGesture(v, drag, view);
     } else if (isResizable(v, ent) && readable(v, v.viewOf(ent.center))) {
       v.pushUndo();
@@ -261,11 +260,6 @@ export function orbitGesture(v: SketchView, from: [number, number]): Gesture {
   };
 }
 
-/** Where the pointer is on a view's page — where the eye's ray through it meets that plane. */
-function onPage(v: SketchView, view: View, sp: [number, number]): [number, number] {
-  return v.inView(view, () => v.s2w(sp[0], sp[1])) ?? v.s2w(sp[0], sp[1]);
-}
-
 /** Can a place on this view be read off the pointer?  Not when it is seen edge on, where a pixel
  *  spans the whole plane; the status line says so, since a drag that does nothing is a mystery. */
 function readable(v: SketchView, view: View): boolean {
@@ -290,7 +284,7 @@ export function pointGesture(v: SketchView, drag: PlanDrag, view: View): Gesture
   return {
     movedGeometry: true,
     move: (sp) => {
-      v.lastResult = drag.move(...onPage(v, view, sp));
+      v.lastResult = drag.move(...v.s2wIn(view, ...sp));
       if (drag.flips.length > reported) {          // only announce new ones
         reported = drag.flips.length;
         v.onStatus(`⚠ solution branch flipped in ${reported} triangle(s) during this drag`);
@@ -314,7 +308,7 @@ export function radiusGesture(v: SketchView, drag: RadiusDrag, view: View): Gest
     movedGeometry: true,
     abandon: () => drag.end(),
     move: (sp) => {
-      const [wx, wy] = onPage(v, view, sp);
+      const [wx, wy] = v.s2wIn(view, ...sp);
       const e = drag.circle;
       // a circle's rim follows the cursor at its distance from the centre
       const r = Math.hypot(wx - e.center.x.value, wy - e.center.y.value);
@@ -332,7 +326,7 @@ export function radiusGesture(v: SketchView, drag: RadiusDrag, view: View): Gest
 export function calloutGesture(v: SketchView, c: Constraint, from: [number, number]): Gesture {
   // a callout is laid out on the page of the view its dimension is in, and moved there
   const view = v.calloutView(c);
-  const grip = dim.grab(v.sketch, v.unit, c.id, ...onPage(v, view, from));
+  const grip = dim.grab(v.sketch, v.unit, c.id, ...v.s2wIn(view, ...from));
   let moved = false;
   return {
     transient: true,               // the annotation moved, not the geometry
@@ -342,7 +336,7 @@ export function calloutGesture(v: SketchView, c: Constraint, from: [number, numb
         moved = true;
         v.pushUndo();
       }
-      dim.drag(v.sketch, c.id, ...onPage(v, view, sp), grip);
+      dim.drag(v.sketch, c.id, ...v.s2wIn(view, ...sp), grip);
     },
     // where a callout sits is document state, so the drag is a source edit and has to be
     // written down — once, at the release, the same bargain `syncSeeds` strikes for a point

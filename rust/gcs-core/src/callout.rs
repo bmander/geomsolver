@@ -22,6 +22,7 @@ use crate::fmath::Det;
 use crate::constraints::{CKind, Constraint};
 use crate::io::dimension_text;
 use crate::model::{angle_between, seg_distance, signed_point_to_line, EntKind, EntRef, Sketch};
+use crate::overview::workspace::{self, apply, Map, Projection, IDENTITY};
 use std::collections::BTreeMap;
 use std::f64::consts::{FRAC_PI_4, PI};
 
@@ -205,31 +206,40 @@ impl Callout {
         }
     }
 
-    /// How near `p` comes to this callout, or `None` if it misses.  The drawn line, the arc as a
-    /// polyline and the label — solid, since landing in the middle of the number is the most
-    /// obvious way to mean that dimension.  A distance to a segment either way, so the curve is
-    /// flattened here rather than in two front ends, and only when someone is actually picking:
-    /// every frame paints, hardly any frame picks.
-    fn near(&self, p: P) -> f64 {
-        if inside(&self.label, p) {
-            return 0.0; // the number is solid, not an outline
+    /// How near `p` comes to this callout seen under `m` — the identity on its own page, or a
+    /// view's map onto the eye's picture plane — and whether it lands on the number.  The drawn
+    /// line, the arc as a polyline and the label, solid, since landing in the middle of the number
+    /// is the most obvious way to mean that dimension.  Mapped as it is measured, and only when
+    /// someone is actually picking: every frame paints, hardly any frame picks.
+    fn near(&self, m: &Map, p: P) -> (f64, bool) {
+        let label = self.label.map(|q| apply(m, q));
+        if inside(&label, p) {
+            return (0.0, true); // the number is solid, not an outline
         }
-        let edges: [Seg; 4] = std::array::from_fn(|i| Seg(self.label[i], self.label[(i + 1) % 4]));
         let mut best = f64::INFINITY;
-        for s in self.solid.iter().chain(&edges) {
-            best = best.min(seg_distance(p, s.0, s.1));
+        let mut seg = |a: P, b: P| best = best.min(seg_distance(p, apply(m, a), apply(m, b)));
+        for s in &self.solid {
+            seg(s.0, s.1);
+        }
+        for i in 0..4 {
+            seg(self.label[i], self.label[(i + 1) % 4]);
         }
         for a in &self.arcs {
-            let n = 16;
-            let mut prev = along(a.c, ray(a.a0), a.r);
-            for i in 1..=n {
-                let t = a.a0 + (a.a1 - a.a0) * (i as f64 / n as f64);
-                let cur = along(a.c, ray(t), a.r);
-                best = best.min(seg_distance(p, prev, cur));
-                prev = cur;
+            let pts = a.flattened();
+            for w in pts.windows(2) {
+                seg(w[0], w[1]);
             }
         }
-        best
+        (best, false)
+    }
+}
+
+impl CArc {
+    /// The arc as a polyline, fine enough to be picked.
+    fn flattened(&self) -> [P; 17] {
+        std::array::from_fn(|i| {
+            along(self.c, ray(self.a0 + (self.a1 - self.a0) * (i as f64 / 16.0)), self.r)
+        })
     }
 }
 
@@ -673,83 +683,46 @@ pub fn reset(sk: &mut Sketch, id: u32) -> bool {
 /// box, which is painted solid over whatever is behind it — what is under the label is the
 /// label, and picking something the drawing is covering up would be a lie about the drawing.
 pub fn pick(sk: &Sketch, unit: f64, at: P, tol_px: f64) -> Option<u32> {
-    let tol = tol_px * unit;
-    let mut best: Option<(f64, u32, bool)> = None;
-    for k in layout(sk, unit) {
-        let d = k.near(at);
-        if d <= tol && best.is_none_or(|(bd, _, _)| d < bd) {
-            best = Some((d, k.id, inside(&k.label, at)));
-        }
-    }
-    let (_, id, on_label) = best?;
-    let (near, d) = sk.nearest_point(at.0, at.1);
-    if !on_label && near.is_some() && d <= tol {
-        return None;
-    }
-    Some(id)
+    pick_by(sk, unit, at, tol_px, |_| Some((IDENTITY, ())), sk.nearest_point(at.0, at.1)).map(|(id, ())| id)
 }
 
 /// `pick`, asked where the eye sees each callout (`overview::workspace`): every figure is laid out
-/// in its own view's page and mapped onto the eye's picture plane with that view's map, and `at`,
-/// `unit` and the nearest point are all measured there.  A callout whose points stand in views
-/// that are not one place in space has nowhere to be drawn, and is never picked.
-pub fn pick_seen(
-    sk: &Sketch,
-    unit: f64,
-    proj: &crate::overview::workspace::Projection,
-    at: P,
-    tol_px: f64,
-) -> Option<u32> {
-    let tol = tol_px * unit;
-    let mut best: Option<(f64, u32, bool)> = None;
-    for k in layout(sk, unit) {
-        let Some(c) = sk.constraint(k.id) else { continue };
-        let Ok(view) = proj.constraint_view(sk, c) else { continue };
-        let seen = k.mapped(proj.map(view));
-        let d = seen.near(at);
-        if d <= tol && best.is_none_or(|(bd, _, _)| d < bd) {
-            best = Some((d, k.id, inside(&seen.label, at)));
-        }
-    }
-    let (_, id, on_label) = best?;
-    let (near, d) = crate::overview::workspace::nearest_point(sk, proj, at);
-    if !on_label && near.is_some() && d <= tol {
-        return None;
-    }
-    Some(id)
+/// on its own view's page and seen through that view's map, and `at`, `unit` and the nearest point
+/// are all measured there.  The view the picked callout is in comes back with it.  A callout whose
+/// points stand in views that are not one place in space has nowhere to be drawn, and is never
+/// picked.
+pub fn pick_seen(sk: &Sketch, unit: f64, proj: &Projection, at: P, tol_px: f64) -> Option<(u32, Option<usize>)> {
+    let view = |k: &Callout| {
+        let v = proj.constraint_view(sk, sk.constraint(k.id)?).ok()?;
+        Some((*proj.map(v), v))
+    };
+    pick_by(sk, unit, at, tol_px, view, workspace::nearest_point(sk, proj, at))
 }
 
-impl Callout {
-    /// The figure under an affine map of the page — a view's, onto the eye's picture plane.  The
-    /// arcs are flattened on the way, since a circle mapped obliquely is no circle.
-    fn mapped(&self, m: &crate::overview::workspace::Map) -> Callout {
-        use crate::overview::workspace::apply;
-        let seg = |s: &Seg| Seg(apply(m, s.0), apply(m, s.1));
-        let mut solid: Vec<Seg> = self.solid.iter().map(seg).collect();
-        for a in &self.arcs {
-            let n = 16;
-            let mut prev = apply(m, along(a.c, ray(a.a0), a.r));
-            for i in 1..=n {
-                let t = a.a0 + (a.a1 - a.a0) * (i as f64 / n as f64);
-                let cur = apply(m, along(a.c, ray(t), a.r));
-                solid.push(Seg(prev, cur));
-                prev = cur;
-            }
-        }
-        Callout {
-            id: self.id,
-            kind: self.kind,
-            text: self.text.clone(),
-            anchor: apply(m, self.anchor),
-            angle: self.angle,
-            label: self.label.map(|p| apply(m, p)),
-            place: self.place,
-            solid,
-            thin: self.thin.iter().map(seg).collect(),
-            arcs: Vec::new(),
-            arrows: Vec::new(),
+/// `pick`'s rule over any way of seeing a callout: `seen` gives the map its figure is seen through
+/// (and what to hand back with it), and `nearest` is the nearest point, seen the same way.
+fn pick_by<V>(
+    sk: &Sketch,
+    unit: f64,
+    at: P,
+    tol_px: f64,
+    seen: impl Fn(&Callout) -> Option<(Map, V)>,
+    nearest: (Option<usize>, f64),
+) -> Option<(u32, V)> {
+    let tol = tol_px * unit;
+    let mut best: Option<(f64, u32, bool, V)> = None;
+    for k in layout(sk, unit) {
+        let Some((m, v)) = seen(&k) else { continue };
+        let (d, on_label) = k.near(&m, at);
+        if d <= tol && best.as_ref().is_none_or(|b| d < b.0) {
+            best = Some((d, k.id, on_label, v));
         }
     }
+    let (_, id, on_label, v) = best?;
+    if !on_label && nearest.0.is_some() && nearest.1 <= tol {
+        return None;
+    }
+    Some((id, v))
 }
 
 /// Is `p` within the convex quad `q`?  Its corners run round in order, so every edge has the

@@ -10,7 +10,6 @@ import {
   threePointArc,
 } from '../core/model.js';
 import { tellDimension } from './dimension.js';
-import { PAGE } from '../core/workspace.js';
 import { paintFrame, paintUnderlay } from './underlay.js';
 import type { SketchView } from './view.js';
 
@@ -32,9 +31,6 @@ export const COL = {
    *  neither is part of the drawing.  Hovered and selected it takes the canvas's own two
    *  colours, so the picture answers a pointer the way everything else does. */
   imageFrame: '#999999',
-  /** A plane's chord, should the sheet say nothing — the base sheet's `.plane` always does,
-   *  so this is the same dead fallback a callout's ink has. */
-  plane: '#8a8a8a',
 };
 /** How foreshortened a view may be before its callouts are left out: a dimension on a plane
  *  seen within about five degrees of edge on is a squashed line of text along a line, and says
@@ -174,11 +170,8 @@ export function paint(v: SketchView): void {
   // a plane is not stroked here: it is a pane of the workspace, drawn in space below, and the
   // plane being drawn on is named in the chooser over the viewport
   ctx.setLineDash([]);
-  // a tool's preview is where its clicks are read: the plane being drawn on, or — for the plane
-  // tool, whose two points are layout — the page
-  if (v.pending.length || v.pendingFit.length) {
-    v.inView(v.tool === 'plane' ? PAGE : v.activeView, () => paintPreview(v));
-  }
+  // a tool's preview is where its clicks are read (`toolView`)
+  if (v.pending.length || v.pendingFit.length) v.inView(v.toolView, () => paintPreview(v));
   if (v.diagnosis?.conflicts?.length) paintConflicts(v);
 
   // one read for every point: a point's style is the sheet's `.point` rule and nothing else
@@ -245,15 +238,20 @@ export function paintCallouts(v: SketchView): void {
   const extension = v.sketch.styleNamed('extension');
   // the colour rule reaches for a constraint by id, so it runs once per callout rather than
   // once per callout per pass
+  // each figure is laid out on the page of the view its dimension is in and drawn through that
+  // view's camera: one whose points stand in views apart in space has nowhere to be drawn, and
+  // one on a plane seen edge on says nothing
   const live = new Set(v.liveDim?.targets.map((c) => c.id) ?? []);
-  const shown = cs.items.filter((k) => live.has(k.id) || k.id === lit?.id || v.showsCallouts(k.view));
-  const painted = shown.map((k) => {
+  const painted = cs.items.flatMap((k) => {
+    if (!live.has(k.id) && k.id !== lit?.id && !v.showsCallouts(k.view)) return [];
+    const cam = v.camOf(k.view);
+    if (!cam?.readable(EDGE_ON)) return [];
     const c = v.sketch.constraintById(k.id);
     const ink = c?.claim ? inkRef : inkDim;
     const col = c && conflicts.has(c) ? COL.conflict
       : c && c === lit ? COL.highlight
       : ink.color ?? COL.point;   // the base sheet always states one, so the fallback is dead
-    return { k, col, lw: ink.width ?? 1 };
+    return [{ k, cam, col, lw: ink.width ?? 1 }];
   });
   const path = (segs: Seg[]): void => {
     ctx.beginPath();
@@ -266,11 +264,8 @@ export function paintCallouts(v: SketchView): void {
 
   ctx.save();
   ctx.lineCap = 'butt';
-  // each figure is laid out on the page of the view its dimension is in, and drawn through that
-  // view's camera; one whose points stand in views apart in space has nowhere to be drawn
-  for (const { k, col, lw } of painted) {
-    v.inView(k.view, () => {
-      if (!v.viewCam().readable(EDGE_ON)) return;
+  for (const { k, cam, col, lw } of painted) {
+    v.withCam(cam, () => {
       ctx.strokeStyle = ctx.fillStyle = col;
       ctx.setLineDash(extension.dash);
       ctx.lineWidth = extension.width ?? lw;   // `callout::ink` composes the thin lines this way
@@ -288,9 +283,8 @@ export function paintCallouts(v: SketchView): void {
   ctx.font = `${cs.font}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  for (const { k, col } of painted) {
-    v.inView(k.view, () => {
-      if (!v.viewCam().readable(EDGE_ON)) return;
+  for (const { k, cam, col } of painted) {
+    v.withCam(cam, () => {
       ctx.fillStyle = COL.bg;
       polyPath(v, k.label);
       ctx.closePath();

@@ -219,11 +219,15 @@ fn views(sk: &Sketch) -> Vec<Option<usize>> {
     (0..sk.points.len()).map(|p| view_of(sk, p)).collect()
 }
 
+/// Where a plane's view sits on the page: its origin there and its rotor `(c, s)`.
+pub fn placement(sk: &Sketch, plane: usize) -> ((f64, f64), f64, f64) {
+    let f = &sk.planes[plane].frame;
+    (sk.point_xy(f.origin as usize), sk.params[f.c as usize].value, sk.params[f.s as usize].value)
+}
+
 /// A point of the page, read in the view it is drawn in.
 pub fn view_xy(sk: &Sketch, plane: usize, p: (f64, f64)) -> (f64, f64) {
-    let f = &sk.planes[plane].frame;
-    let o = sk.point_xy(f.origin as usize);
-    let (c, s) = (sk.params[f.c as usize].value, sk.params[f.s as usize].value);
+    let (o, c, s) = placement(sk, plane);
     crate::plane::in_view(c, s, o, p)
 }
 

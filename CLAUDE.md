@@ -23,9 +23,10 @@ Components have no implicit frame; `instance := Part(f) in view` supplies member
 intrinsics are reseeded after point hints settle. Aliases keep subentity paths (`f.origin`).
 `use std` gives `std.front` (the page), `std.side`, `std.top`, `std.up` (front turned, u up),
 `std.origin` from `StandardDatums`, fixed at page zero, no implied membership — present whenever
-the document says `use std`, named or not (the workspace offers them as places to draw). Calls may omit `name :=`; anonymous keys stay out of
-user-facing names. E.g. `cyl := Cylinder(std.up, fw: components.dims.fwA, dims:
-components.dims.vtwin_dims)`, with no explicit origin, ground, plane or Axes.
+the document says `use std`, named or not (the workspace offers them as places to draw). Calls
+may omit `name :=`; anonymous keys stay out of user-facing names. E.g. `cyl := Cylinder(std.up,
+fw: components.dims.fwA, dims: components.dims.vtwin_dims)`, with no explicit origin, ground,
+plane or Axes.
 
 **Nothing is imported bare (Solvent §14.4, [0.30]):** a used module's component, param or group
 is written by full path — `engine.parts.Crank(…)`, `hardware.nut14_af`,
@@ -1170,8 +1171,11 @@ Conventions:
   view being worked in — the painter's (`inView`), else the current plane's; a drag reads the
   dragged point's view, a callout its dimension's (`calloutView`), the plane tool the page (a
   plane's two points are layout).  A view seen edge on refuses a press (`ViewCam::readable`).
-  The page is the front plane (`Basis::page`); views whose maps agree (the page, `std.front`) are
-  one place.  The chooser in the viewport's upper right (`#plane-select`) lists `std.front`,
+  The page is the front plane (`Basis::page`).  `workspace::Views` is what does not depend on the
+  eye — each view's page placed in space, the view each point and entity stands in, and each
+  view's **place** (the first view on the same plane in space: the page, `std.front`, `std.up`)
+  — read once an edit (`gcs_workspace_json`); the maps are per frame (`gcs_workspace_maps`, a
+  buffer).  The front end compares place ids, never maps.  The chooser in the viewport's upper right (`#plane-select`) lists `std.front`,
   `std.side`, `std.top`, then the document's planes; `choosePlane` sets `v.plane` and swings the
   eye square on (`workspace::look_at`).  A standard plane the document lacks is `pendingPlane`
   until a tool's first press adds `use std` (`edit::add_use`, `ensurePlane`) — choosing writes

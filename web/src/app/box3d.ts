@@ -211,10 +211,10 @@ export class Box3D {
     }
   }
 
-  /** **What the app says about the scene, written per frame.**  Selection and hover are the two
-   *  things that change without the drawing changing, so they are a material write and never a
-   *  rebuild: the ink rule itself is `paint.ts`'s, so picking a line on the sheet and picking it
-   *  in the box light it the same colour. */
+  /** **What the app says about the scene, written per frame.**  The selection and the plane being
+   *  drawn on change without the drawing changing, so they are a material write and never a
+   *  rebuild: the ink rule itself is `paint.ts`'s, so a thing picked is lit the same colour here
+   *  as on the canvas above. */
   private chrome(v: SketchView): void {
     const sel = new Set(v.selected);
     const hl = new Set(v.highlight);

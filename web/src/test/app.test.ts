@@ -10,7 +10,7 @@ import * as C from '../core/constraints.js';
 import { Constraint } from '../core/constraints.js';
 import * as examples from '../core/examples.js';
 import * as io from '../core/io.js';
-import { Plane, Point, Primitive, Sketch } from '../core/model.js';
+import { Plane, Point, Sketch } from '../core/model.js';
 import { Document, fromSketch } from '../core/program.js';
 import type { Diagnosis } from '../core/diagnose.js';
 import { callouts } from '../core/callout.js';
@@ -755,8 +755,9 @@ test('the camera carries a length whichever way it is measured', () => {
   const [bx, by] = view.w2s(5, 12);
   assert.ok(Math.abs(Math.hypot(bx - ax, by - ay) - view.len(13)) < 1e-9);
   // and turns angles into the canvas's, which run the other way
-  assert.equal(view.cam.dir(1, 2)[1], -2);
-  assert.equal(view.cam.angle(Math.PI / 4), -Math.PI / 4);
+  const [dx, dy] = view.viewCam().dir(1, 2);
+  assert.ok(Math.abs(dx - 1 / Math.sqrt(5)) < 1e-12 && Math.abs(dy + 2 / Math.sqrt(5)) < 1e-12);
+  assert.ok(Math.abs(view.viewCam().angle(Math.PI / 4) + Math.PI / 4) < 1e-12);
 });
 
 test('picking measures what is drawn, and does it in the core', () => {

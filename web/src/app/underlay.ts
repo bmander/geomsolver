@@ -31,6 +31,7 @@
  */
 import { PICK_PX } from './view.js';
 import { PAGE } from '../core/workspace.js';
+import type { ViewCam } from './camera.js';
 import { COL, polyPath } from './paint.js';
 import type { Gesture } from './gesture.js';
 import type { SketchView } from './view.js';
@@ -121,16 +122,16 @@ export function contains(u: Underlay, wx: number, wy: number): boolean {
   return Math.abs(px) <= hw && Math.abs(py) <= hh;
 }
 
-/** Run `fn` on the page: a traced picture lies on the page plane — the front — wherever the eye
- *  is, so every place it is drawn at or read from is the page view's. */
-function onPage<T>(v: SketchView, fn: () => T): T {
-  return v.inView(PAGE, fn) as T;
+/** The page's camera: a traced picture lies on the page plane — the front — wherever the eye is,
+ *  so every place it is drawn at or read from is the page view's. */
+function page(v: SketchView): ViewCam {
+  return v.camOf(PAGE) ?? v.viewCam();
 }
 
 /** Put a freshly loaded picture in the middle of what is being looked at, at a size that leaves
  *  its edges in view.  Where it goes after that is the user's. */
 export function place(v: SketchView, image: Bitmap, name: string, url: string | null): Underlay {
-  const [x, y] = onPage(v, () => v.s2w(v.width / 2, v.height / 2));
+  const [x, y] = page(v).s2w(v.width / 2, v.height / 2);
   const span = v.world(Math.min(v.width, v.height)) * FIT;
   const scale = span / Math.max(image.width, image.height, 1);
   return { image, name, x, y, scale, angle: 0, opacity: OPACITY, picked: false, url };
@@ -154,8 +155,9 @@ export function release(u: Underlay | null): void {
 export function handleAt(v: SketchView, sp: [number, number]): number {
   const u = v.underlay;
   if (!u?.picked) return -1;
+  const cam = page(v);
   return corners(u).findIndex(([x, y]) => {
-    const s = onPage(v, () => v.w2s(x, y));
+    const s = cam.w2s(x, y);
     return Math.hypot(s[0] - sp[0], s[1] - sp[1]) < PICK_PX + HANDLE;
   });
 }
@@ -165,15 +167,16 @@ export function handleAt(v: SketchView, sp: [number, number]): number {
 export function bodyAt(v: SketchView, sp: [number, number]): boolean {
   const u = v.underlay;
   if (!u) return false;
-  const at = onPage(v, () => v.s2w(sp[0], sp[1]));
+  const cam = page(v);
+  const at = cam.s2w(sp[0], sp[1]);
   if (u.picked) return contains(u, at[0], at[1]);
-  const pts = corners(u).map(([x, y]) => onPage(v, () => v.w2s(x, y)));
+  const pts = corners(u).map(([x, y]) => cam.w2s(x, y));
   return pts.some((p, i) => segmentDistance(sp, p, pts[(i + 1) % 4]) <= PICK_PX);
 }
 
 /** Distance from a point to a segment, in whatever units all three are in — the frame's own
  *  chrome, measured on the screen. */
-export function segmentDistance(p: [number, number], a: [number, number],
+function segmentDistance(p: [number, number], a: [number, number],
                                 b: [number, number]): number {
   const vx = b[0] - a[0], vy = b[1] - a[1];
   const len2 = vx * vx + vy * vy;
@@ -200,7 +203,7 @@ export function grabHandle(v: SketchView, i: number): Gesture {
   return {
     transient: true,
     move: (to) => {
-      const [wx, wy] = onPage(v, () => v.s2w(to[0], to[1]));
+      const [wx, wy] = page(v).s2w(to[0], to[1]);
       const [dx, dy] = [wx - u.x, wy - u.y];
       const d = Math.hypot(dx, dy);
       if (d > 1e-9) {
@@ -215,12 +218,12 @@ export function grabHandle(v: SketchView, i: number): Gesture {
 /** Drag the picture: it follows the pointer, keeping the place that was grabbed under it. */
 export function grabBody(v: SketchView, sp: [number, number]): Gesture {
   const u = v.underlay!;
-  const at = onPage(v, () => v.s2w(sp[0], sp[1]));
+  const at = page(v).s2w(sp[0], sp[1]);
   const from: [number, number] = [u.x - at[0], u.y - at[1]];
   return {
     transient: true,
     move: (to) => {
-      const [wx, wy] = onPage(v, () => v.s2w(to[0], to[1]));
+      const [wx, wy] = page(v).s2w(to[0], to[1]);
       u.x = wx + from[0];
       u.y = wy + from[1];
       v.draw();
@@ -240,7 +243,7 @@ export function paintUnderlay(v: SketchView): void {
   const u = v.underlay;
   if (!u || u.opacity <= 0 || !(u.scale > 0)) return;
   const ctx = v.ctx;
-  onPage(v, () => {
+  v.withCam(page(v), () => {
     ctx.save();
     ctx.globalAlpha = u.opacity;
     v.viewCam().transform(ctx);
@@ -266,12 +269,11 @@ export function paintUnderlay(v: SketchView): void {
 export function paintFrame(v: SketchView): void {
   const u = v.underlay;
   if (!u) return;
-  const ctx = v.ctx;
   const world = corners(u);
   const hover = v.tool === 'select'
     && (handleAt(v, v.cursor) >= 0 || bodyAt(v, v.cursor));
   const col = u.picked ? COL.sel : hover ? COL.highlight : COL.imageFrame;
-  onPage(v, () => frame(v, u, world, col));
+  v.withCam(page(v), () => frame(v, u, world, col));
 }
 
 function frame(v: SketchView, u: Underlay, world: [number, number][], col: string): void {

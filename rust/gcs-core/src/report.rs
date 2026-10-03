@@ -548,15 +548,14 @@ pub fn callouts_json(sk: &Sketch, unit: f64) -> Json {
 }
 
 pub fn selected_callouts_json(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Json {
-    // the view each figure is laid out in (`workspace::Projection::constraint_view`): -1 the page,
-    // a plane's index, -2 where its points stand in views that are not one place in space.  The
-    // views are the same from every eye, so any eye will do to ask
-    let proj = crate::overview::workspace::Projection::new(sk, 0.0, 0.0);
+    // the view each figure is laid out in (`workspace::Views::constraint_view`): -1 the page, a
+    // plane's index, -2 where its points stand in views that are not one place in space
+    let views = crate::overview::workspace::Views::new(sk);
     let items: Vec<Json> = callout::layout_selected(sk, unit, ids)
         .iter()
         .map(|k| {
             let mut o = callout_json(k);
-            let view = sk.constraint(k.id).map_or(Err(()), |c| proj.constraint_view(sk, c));
+            let view = sk.constraint(k.id).map_or(Err(()), |c| views.constraint_view(sk, c));
             o.set("view", Json::Int(view_code(view)));
             o
         })
@@ -666,28 +665,27 @@ fn view_code(v: Result<Option<usize>, ()>) -> i64 {
     }
 }
 
-/// **The workspace** (`overview::workspace`) from the eye at `az`, `el` (radians): each view's map
-/// of its page onto the eye's picture plane — the page first, then every plane in order — the eye
-/// square on to each, and the view each point and each drawn entity stands in.
-pub fn workspace_json(sk: &Sketch, az: f64, el: f64) -> Json {
+/// **The workspace** (`overview::workspace`), as far as it does not depend on the eye: for every
+/// view, the page first and then each plane, its place (the first view on the same plane in space)
+/// and the eye square on to it; and the view each point and each drawn entity stands in.  The eye's
+/// maps of each view are asked apart (`workspace_maps`), being per frame where these are per edit.
+pub fn workspace_json(sk: &Sketch) -> Json {
     use crate::model::EntKind;
-    use crate::overview::workspace::{look_at_view, Projection};
-    let proj = Projection::new(sk, az, el);
-    let views: Vec<Option<usize>> =
-        std::iter::once(None).chain((0..sk.planes.len()).map(Some)).collect();
-    let maps = views.iter().map(|&v| floats(proj.map(v))).collect();
-    let looks = views
+    let views = crate::overview::workspace::Views::new(sk);
+    let all: Vec<Option<usize>> = std::iter::once(None).chain((0..sk.planes.len()).map(Some)).collect();
+    let places = all.iter().map(|&v| Json::Int(view_code(Ok(views.place(v))))).collect();
+    let looks = all
         .iter()
         .map(|&v| {
-            let (a, e) = look_at_view(sk, v);
+            let (a, e) = views.look(sk, v);
             floats(&[a, e])
         })
         .collect();
     let of = |kind: EntKind, n: usize| -> Json {
-        Json::Arr((0..n).map(|i| Json::Int(view_code(proj.entity_view(sk, EntRef::new(kind, i))))).collect())
+        Json::Arr((0..n).map(|i| Json::Int(view_code(views.entity_view(sk, EntRef::new(kind, i))))).collect())
     };
     object([
-        ("maps", Json::Arr(maps)),
+        ("places", Json::Arr(places)),
         ("looks", Json::Arr(looks)),
         (
             "views",
@@ -704,15 +702,10 @@ pub fn workspace_json(sk: &Sketch, az: f64, el: f64) -> Json {
 }
 
 /// The entities a rubber band from `lo` to `hi` on the eye's picture plane holds whole, as
-/// `[kind, index]` pairs in the registry's kind names.
+/// `[kind, index]` pairs.
 pub fn workspace_inside_json(sk: &Sketch, unit: f64, az: f64, el: f64, lo: (f64, f64), hi: (f64, f64)) -> Json {
     let proj = crate::overview::workspace::Projection::new(sk, az, el);
-    Json::Arr(
-        crate::overview::workspace::inside(sk, &proj, lo, hi, unit)
-            .into_iter()
-            .map(|e| object([("kind", Json::Str(e.kind.as_str().to_string())), ("index", Json::Int(e.idx as i64))]))
-            .collect(),
-    )
+    Json::Arr(crate::overview::workspace::inside(sk, &proj, lo, hi, unit).into_iter().map(ent_json).collect())
 }
 
 pub fn overview3d_json(sk: &Sketch, unit: f64) -> Json {

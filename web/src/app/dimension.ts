@@ -79,8 +79,7 @@ export function moveDimension(v: SketchView, sp: [number, number]): void {
   const live = v.liveDim;
   if (!live) return;
   // read on the page of the view the dimension is drawn in, which is where its figure is laid out
-  const at = v.inView(v.calloutView(live.targets[0]), () => v.s2w(sp[0], sp[1]));
-  if (!at) return;
+  const at = v.s2wIn(v.calloutView(live.targets[0]), ...sp);
   if (live.alt) retarget(v, live, at);
   const c = live.targets[0];
   if (c.id >= 0) dim.drag(v.sketch, c.id, at[0], at[1], [0, 0]);

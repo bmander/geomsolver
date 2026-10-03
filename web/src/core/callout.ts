@@ -66,13 +66,6 @@ export function callouts(sk: Sketch, unit: number, ids?: readonly number[]): Cal
   return takeJson<Callouts>(core().gcs_callouts_json(sk.handle, unit));
 }
 
-/** The constraint whose callout the world point (x, y) lands on, within `tolPx` screen pixels.
- *  Asking the core rather than shipping the hit geometry with every frame keeps the payload to
- *  what is actually painted — and it is the same layout either way. */
-export function pick(sk: Sketch, unit: number, x: number, y: number, tolPx: number): number {
-  return core().gcs_callout_pick(sk.handle, unit, x, y, tolPx);
-}
-
 /** Take hold of a callout at a world point: the two numbers to hand back to `drag` for the rest
  *  of the gesture, so the callout moves with the pointer instead of jumping to it. */
 export function grab(sk: Sketch, unit: number, id: number, x: number, y: number)

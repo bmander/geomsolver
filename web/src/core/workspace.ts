@@ -19,10 +19,13 @@ export type View = number;
 export const PAGE: View = -1;
 export const NOWHERE: View = -2;
 
+/** What of the workspace does not depend on the eye, so is asked once an edit.  Every table over
+ *  views is the page first, then each plane in order (`slot`). */
 export interface Workspace {
-  /** The page's map first, then every plane's in order: `map(view)` reads it. */
-  maps: Map[];
-  /** The eye square on to each view, `[az, el]` in radians, in the same order. */
+  /** Each view's place: the first view standing on the same plane in space.  Two views are one
+   *  place — the page and `std.front`, or `std.up` turned on it — exactly when these agree. */
+  places: View[];
+  /** The eye square on to each view, `[az, el]` in radians. */
   looks: [number, number][];
   /** The view every point and every drawn entity of each kind stands in, by index. */
   views: {
@@ -30,14 +33,41 @@ export interface Workspace {
   };
 }
 
-/** The workspace from the eye at bearing `az` and elevation `el` (radians). */
-export function workspace(sk: Sketch, az: number, el: number): Workspace {
-  return takeJson<Workspace>(core().gcs_workspace_json(sk.handle, az, el));
+/** Where a view sits in a table over views. */
+function slot(view: View): number {
+  return view + 1;
 }
 
-/** A view's map out of a workspace report. */
-export function mapOf(ws: Workspace, view: View): Map | null {
-  return view === NOWHERE ? null : ws.maps[view + 1] ?? null;
+/** The workspace's eye-free half. */
+export function workspace(sk: Sketch): Workspace {
+  return takeJson<Workspace>(core().gcs_workspace_json(sk.handle));
+}
+
+/** A view's place, or `NOWHERE` for a view that is none. */
+export function placeOf(ws: Workspace, view: View): View {
+  return view === NOWHERE ? NOWHERE : ws.places[slot(view)] ?? NOWHERE;
+}
+
+/** The eye square on to a view. */
+export function lookOf(ws: Workspace, view: View): { az: number; el: number } | null {
+  const l = view === NOWHERE ? undefined : ws.looks[slot(view)];
+  return l ? { az: l[0], el: l[1] } : null;
+}
+
+/** Every view's map as the eye at bearing `az` and elevation `el` (radians) sees it, the page
+ *  first — asked per frame, so through a buffer and not JSON. */
+export function maps(sk: Sketch, az: number, el: number): Map[] {
+  const cap = sk.planes.length + 1;
+  return withBuf(6 * cap, 8, (b) => {
+    const n = Math.min(core().gcs_workspace_maps(sk.handle, az, el, b.ptr, cap), cap);
+    return Array.from({ length: Math.max(n, 0) },
+                      (_, k) => Array.from(b.f64.subarray(6 * k, 6 * k + 6)) as Map);
+  });
+}
+
+/** A view's entry in a table over views — `maps`, or anything built from it. */
+export function ofView<T>(all: readonly T[], view: View): T | null {
+  return view === NOWHERE ? null : all[slot(view)] ?? null;
 }
 
 /** What a click at `(x, y)` on the eye's picture plane picks within `tol` (an eye length);
@@ -62,18 +92,22 @@ export function nearestSeen(sk: Sketch, az: number, el: number,
 /** The entities a rubber band between two places on the eye's picture plane holds whole. */
 export function insideSeen(sk: Sketch, unit: number, az: number, el: number,
                            a: [number, number], b: [number, number]): Primitive[] {
-  const hits = takeJson<{ kind: string; index: number }[]>(
+  const hits = takeJson<[string, number][]>(
     core().gcs_workspace_inside_json(sk.handle, unit, az, el, a[0], a[1], b[0], b[1]));
   return hits
-    .map((h) => (KINDS as string[]).includes(h.kind)
-      ? sk.entities(h.kind as Kind)[h.index] : undefined)
+    .map(([kind, index]) => (KINDS as string[]).includes(kind)
+      ? sk.entities(kind as Kind)[index] : undefined)
     .filter((e): e is Primitive => !!e);
 }
 
-/** The dimension whose callout `(x, y)` on the eye's picture plane lands on, or -1. */
+/** The dimension whose callout `(x, y)` on the eye's picture plane lands on, and the view its
+ *  figure is laid out in — or null. */
 export function calloutSeen(sk: Sketch, unit: number, az: number, el: number,
-                            x: number, y: number, tolPx: number): number {
-  return core().gcs_workspace_callout_pick(sk.handle, unit, az, el, x, y, tolPx);
+                            x: number, y: number, tolPx: number): { id: number; view: View } | null {
+  return withBuf(1, 4, (b) => {
+    const id = core().gcs_workspace_callout_pick(sk.handle, unit, az, el, x, y, tolPx, b.ptr);
+    return id < 0 ? null : { id, view: b.i32[0] };
+  });
 }
 
 /** The extent of everything shown, on the eye's picture plane — figures and solids — as

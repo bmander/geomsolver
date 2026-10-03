@@ -126,7 +126,19 @@ pub fn seg_distance(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
 /// tolerance is a world length, so a front end scales it by what one screen pixel is worth and
 /// keeps no geometry of its own.
 pub fn pick(sk: &Sketch, x: f64, y: f64, tol: f64) -> Option<EntRef> {
-    if let (Some(i), d) = sk.nearest_point(x, y) {
+    pick_by(sk, sk.nearest_point(x, y), tol, |e| point_to_drawn(sk, x, y, e))
+}
+
+/// `pick`'s rule over any reading of where things are: the nearest point and how far it is, and
+/// how far each figure is — on the page, or as an eye sees the workspace
+/// (`overview::workspace::pick`).
+pub fn pick_by(
+    sk: &Sketch,
+    nearest: (Option<usize>, f64),
+    tol: f64,
+    distance: impl Fn(EntRef) -> f64,
+) -> Option<EntRef> {
+    if let (Some(i), d) = nearest {
         if d <= tol {
             return Some(EntRef::point(i));
         }
@@ -138,7 +150,7 @@ pub fn pick(sk: &Sketch, x: f64, y: f64, tol: f64) -> Option<EntRef> {
         if e.kind == EntKind::Point {
             continue;
         }
-        let d = point_to_drawn(sk, x, y, e);
+        let d = distance(e);
         if d <= tol && best.map_or(true, |(_, bd)| d < bd) {
             best = Some((e, d));
         }
@@ -162,7 +174,7 @@ fn measure_order(k: EntKind) -> u8 {
 }
 
 /// The nearest a polyline comes to a point.
-fn polyline_distance(pts: &[(f64, f64)], px: f64, py: f64) -> f64 {
+pub(crate) fn polyline_distance(pts: &[(f64, f64)], px: f64, py: f64) -> f64 {
     let mut best = f64::MAX;
     for w in pts.windows(2) {
         best = best.min(seg_distance((px, py), w[0], w[1]));

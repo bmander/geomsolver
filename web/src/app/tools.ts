@@ -5,7 +5,6 @@ import * as C from '../core/constraints.js';
 import { Plane, Point, distanceBetween, onRadius } from '../core/model.js';
 import { Attitude, Document, Edit } from '../core/program.js';
 import { PICK_PX } from './view.js';
-import { PAGE } from '../core/workspace.js';
 import type { Place, SketchView, Tool } from './view.js';
 
 /** How far to the right of its origin a plane points when Enter stands in for the second
@@ -261,22 +260,17 @@ function planeClick(v: SketchView, sp: [number, number]): void {
 }
 
 export function toolClick(v: SketchView, sp: [number, number]): void {
-  // a plane's own two points are where the view sits on the page — layout, never in a view — so
-  // the plane tool reads its clicks off the page whatever plane is being drawn on
-  if (v.tool === 'plane') {
-    if (!v.inView(PAGE, () => v.viewCam().readable())) {
-      v.onStatus('the page is seen edge on — turn the view to place a plane on it');
-      return;
-    }
-    v.inView(PAGE, () => planeClick(v, sp));
-    return;
-  }
   // a standard plane chosen before the document had it is brought in by the first press: the
   // document gains `use std`, and what the press makes is drawn on the plane it now has
-  if (!v.ensurePlane()) return;
-  // a plane seen edge on has no place on it under the pointer
+  if (v.tool !== 'plane' && !v.ensurePlane()) return;
+  // a plane seen edge on has no place on it under the pointer (`toolView` is the one read)
   if (!v.viewCam().readable()) {
-    v.onStatus(`${v.planeName} is seen edge on — turn the view, or choose it again to face it`);
+    v.onStatus(`${v.tool === 'plane' ? 'the page' : v.planeName} is seen edge on — turn the view, `
+               + 'or choose the plane again to face it');
+    return;
+  }
+  if (v.tool === 'plane') {
+    planeClick(v, sp);
     return;
   }
   const sk = v.sketch;

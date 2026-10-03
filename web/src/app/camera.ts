@@ -20,36 +20,13 @@ export class Camera {
   originX = 80;
   originY = 500;
 
-  /** A world point on the canvas. */
-  w2s(x: number, y: number): [number, number] {
-    return [this.originX + x * this.scale, this.originY - y * this.scale];
-  }
-
   /** A canvas point in the world. */
   s2w(sx: number, sy: number): [number, number] {
     return [(sx - this.originX) / this.scale, (this.originY - sy) / this.scale];
   }
 
-  /** A world *direction* on the canvas: the map without its translation, which is where the
-   *  flipped y axis lives.  The length is carried across unchanged, so a unit direction stays
-   *  one — the callers that want pixels ask for them by scaling afterwards. */
-  dir(dx: number, dy: number): [number, number] {
-    return [dx, -dy];
-  }
-
-  /** A world angle (counterclockwise from +x) as the canvas measures one — the same turn seen
-   *  in a mirror, because the canvas's y points the other way. */
-  angle(a: number): number {
-    return -a;
-  }
-
-  /** A world length in screen pixels. */
-  len(w: number): number {
-    return w * this.scale;
-  }
-
-  /** A screen length as the world length it stands for — the inverse of `len`, and how a
-   *  tolerance in pixels reaches the core, which measures out where the geometry is. */
+  /** A screen length as the world length it stands for — how a tolerance in pixels reaches the
+   *  core, which measures out where the geometry is. */
   world(px: number): number {
     return px / this.scale;
   }
@@ -128,7 +105,8 @@ export class ViewCam {
     const m = this.m;
     const d = this.det;
     const [x, y] = [sx - m[2], sy - m[5]];
-    // `+ 0` turns a negative zero into the zero a source would write
+    // `+ 0`: the inverse makes a negative zero where the page has a zero, and the drawing must
+    // hold the number its source reads back as
     return [(m[4] * x - m[1] * y) / d + 0, (-m[3] * x + m[0] * y) / d + 0];
   }
 
@@ -151,12 +129,6 @@ export class ViewCam {
    *  is exact where the view is seen square on. */
   len(w: number): number {
     return w * Math.sqrt(Math.abs(this.det));
-  }
-
-  /** A screen length as the page length it stands for — the inverse of `len`. */
-  world(px: number): number {
-    const k = Math.sqrt(Math.abs(this.det));
-    return k > 0 ? px / k : Infinity;
   }
 
   /** This map as the canvas's own transform, in the canvas's argument order — so a path can be

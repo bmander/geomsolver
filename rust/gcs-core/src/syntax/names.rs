@@ -102,6 +102,10 @@ pub fn num(v: f64) -> String {
         // not parse; 0 is wrong in a way somebody will notice, which is the point
         return "0".to_string();
     }
+    // a negative zero is zero: `-0` is a number nobody wrote, and an inverted map makes them
+    if v == 0.0 {
+        return "0".to_string();
+    }
     format!("{v}")
 }
 /// How a message spells a declaration whose name is optional: the name where the source wrote

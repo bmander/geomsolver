@@ -38,8 +38,9 @@ pub use spatial::{
 pub use construction::{ThreePointArc, three_point_arc};
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
+pub(crate) use measure::polyline_distance;
 pub use measure::{
-    signed_point_to_line, point_to_drawn, seg_distance, pick, angle_between, on_radius,
+    signed_point_to_line, point_to_drawn, seg_distance, pick, pick_by, angle_between, on_radius,
     distance_between, orientation, orientation_xy, increments,
 };
 

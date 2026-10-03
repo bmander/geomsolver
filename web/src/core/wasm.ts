@@ -211,8 +211,8 @@ export interface Abi {
   gcs_solid_stl(h: number, idx: number, unit: number): number;
   gcs_solid_stl_preview(h: number, idx: number, unit: number): number;
   gcs_solid_exact(h: number, idx: number, kind: number, tolerance: number): number;
-  gcs_callout_pick(h: number, unit: number, x: number, y: number, tolPx: number): number;
-  gcs_workspace_json(h: number, az: number, el: number): number;
+  gcs_workspace_json(h: number): number;
+  gcs_workspace_maps(h: number, az: number, el: number, out: number, cap: number): number;
   gcs_workspace_bounds(h: number, unit: number, az: number, el: number, out: number): number;
   gcs_workspace_pick(h: number, unit: number, az: number, el: number, x: number, y: number,
                      tol: number, out: number): number;
@@ -221,7 +221,7 @@ export interface Abi {
   gcs_workspace_inside_json(h: number, unit: number, az: number, el: number,
                             x0: number, y0: number, x1: number, y1: number): number;
   gcs_workspace_callout_pick(h: number, unit: number, az: number, el: number,
-                             x: number, y: number, tolPx: number): number;
+                             x: number, y: number, tolPx: number, outView: number): number;
   gcs_callout_grab(h: number, id: number, unit: number, x: number, y: number,
                    out: number): number;
   gcs_callout_drag(h: number, id: number, x: number, y: number, gu: number, gv: number): number;

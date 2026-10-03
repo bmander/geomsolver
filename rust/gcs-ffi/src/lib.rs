@@ -2219,12 +2219,26 @@ pub unsafe extern "C" fn gcs_overview3d_json(h: *mut Sketch, unit: f64) -> *mut 
 
 /* -- the workspace: every view standing on its plane, seen by one orthographic eye --------- */
 
-/// Each view's map of its page onto the eye's picture plane at bearing `az` and elevation `el`
-/// (radians), the eye square on to each view, and the view every point and drawn entity stands
-/// in (`overview::workspace`).
+/// What of the workspace does not depend on the eye (`overview::workspace::Views`): each view's
+/// place and the eye square on to it, and the view every point and drawn entity stands in.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_workspace_json(h: *mut Sketch, az: f64, el: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || out_json(report::workspace_json(sk(h), az, el)))
+pub unsafe extern "C" fn gcs_workspace_json(h: *mut Sketch) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_json(report::workspace_json(sk(h))))
+}
+
+/// Each view's map of its page onto the eye's picture plane at bearing `az` and elevation `el`
+/// (radians), six doubles each, the page first: writes at most `cap` views and returns how many
+/// there are.  Asked per frame, so a buffer and not JSON.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_maps(h: *mut Sketch, az: f64, el: f64, out: *mut f64,
+                                            cap: usize) -> i32 {
+    guard(-1, move || {
+        let maps = gcs_core::overview::workspace::maps(sk(h), az, el);
+        for (k, m) in maps.iter().take(cap).enumerate() {
+            write(out.add(6 * k), m);
+        }
+        maps.len() as i32
+    })
 }
 
 /// What a click at (x, y) on the eye's picture plane picks within `tol` (an eye length): writes
@@ -2286,14 +2300,22 @@ pub unsafe extern "C" fn gcs_workspace_inside_json(h: *mut Sketch, unit: f64, az
 }
 
 /// The dimension whose callout (x, y) on the eye's picture plane lands on, within `tol_px`
-/// screen pixels, or -1.
+/// screen pixels, or -1 — and the view its figure is laid out in, written to `out_view` (-1 the
+/// page, else the plane's index).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_callout_pick(h: *mut Sketch, unit: f64, az: f64, el: f64,
-                                                    x: f64, y: f64, tol_px: f64) -> i32 {
+                                                    x: f64, y: f64, tol_px: f64,
+                                                    out_view: *mut i32) -> i32 {
     guard(-1, move || {
         let s = sk(h);
         let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
-        callout::pick_seen(s, unit, &proj, (x, y), tol_px).map_or(-1, |id| id as i32)
+        match callout::pick_seen(s, unit, &proj, (x, y), tol_px) {
+            Some((id, view)) => {
+                *out_view = view.map_or(-1, |v| v as i32);
+                id as i32
+            }
+            None => -1,
+        }
     })
 }
 
@@ -2314,16 +2336,6 @@ pub unsafe extern "C" fn gcs_selected_callouts_json(h: *mut Sketch, unit: f64,
     guard(std::ptr::null_mut(), move || {
         let ids = if count == 0 { &[] } else { std::slice::from_raw_parts(ids, count) };
         out_json(report::selected_callouts_json(sk(h), unit, Some(ids)))
-    })
-}
-
-/// The dimension whose callout the world point (x, y) lands on, within `tol_px` screen pixels of
-/// it, or -1.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_callout_pick(h: *mut Sketch, unit: f64, x: f64, y: f64,
-                                          tol_px: f64) -> i32 {
-    guard(-1, move || {
-        callout::pick(sk(h), unit, (x, y), tol_px).map_or(-1, |id| id as i32)
     })
 }
 
