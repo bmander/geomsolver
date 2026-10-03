@@ -4,7 +4,7 @@ use std::f64::consts::PI;
 
 /// The contacts of patch `patch` at meridian station `u` and roll `roll`.
 fn at(sweep: &SweepContacts,patch: usize,u: f64,roll: f64,tolerance: f64) -> Result<Vec<RevolvedContact>,Error> {
-    sweep.patches()[patch].contacts(u,sweep.motion().at(roll).map_err(|_| Error::NonFinite)?,tolerance)
+    sweep.patches()[patch].revolved().unwrap().contacts(u,sweep.motion().at(roll).map_err(|_| Error::NonFinite)?,tolerance)
 }
 
 fn swept(extra: &str) -> program::Elaborated {
@@ -39,7 +39,7 @@ fn contact_coefficients_include_translation_and_both_moving_frames() {
         let motion = Motion::rotation([1.,2.,3.],t,1.).unwrap()
             .then(Motion::translation([2.,-3.,1.],[0.4,-0.2,0.3]).unwrap())
             .then(Motion::rotation([1.,0.,0.],-2.*t,-2.).unwrap().inverse());
-        let roots = surface.contacts(u,motion,1e-10).unwrap();
+        let roots = surface.revolved().unwrap().contacts(u,motion,1e-10).unwrap();
         let values: Vec<_> = (0..=1000).map(|i| envelope::contact(
             surface.at(u,i as f64/1000.).unwrap(),motion).unwrap().normal_velocity).collect();
         let crossings = values.windows(2).filter(|v| v[0]*v[1] < 0.).count();
@@ -112,7 +112,7 @@ fn analytic_branch_labels_do_not_swap_at_the_periodic_seam() {
     for i in -10..=10 {
         let phase = PI/2.+i as f64*0.001;
         let motion = Motion::translation([0.;3],[phase.cos(),phase.sin(),0.]).unwrap();
-        let roots = patch.contacts(0.5,motion,1e-10).unwrap();
+        let roots = patch.revolved().unwrap().contacts(0.5,motion,1e-10).unwrap();
         assert_eq!(roots.len(),2);
         let p = [roots[0].contact.position,roots[1].contact.position];
         assert_eq!([roots[0].branch,roots[1].branch],[0,1]);

@@ -311,6 +311,9 @@ impl Meter {
             let contacts = SweepContacts::read(sk,cut.swept,tol)?;
             let mut faces = Vec::new();
             for patch in contacts.patches() {
+                let super::ToolSurface::Revolved(patch) = patch else {
+                    return Err(format!("`{}`: the meter reads the cuts of revolved tools only, not a prism's sides",patch.name()));
+                };
                 let index = surfaces.iter().position(|s: &Surface| s.generated && s.name == patch.name)
                     .unwrap_or_else(|| { surfaces.push(Surface {name:patch.name.clone(),generated:true}); surfaces.len()-1 });
                 faces.push(surface_face(patch,index)?);

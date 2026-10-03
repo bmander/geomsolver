@@ -77,10 +77,10 @@ fn a_single_rotation_is_refused_as_stationary() {
 }
 
 #[test]
-fn a_prism_tool_is_refused() {
+fn a_prism_whose_cap_passes_through_the_blank_is_refused() {
     let r = refused(admit(&document(tools::BOX,&motions::roll(0.25),"turn",-60.,60.)));
     assert_eq!(r.condition,Condition::Tool);
-    assert!(r.message.contains("prism"),"{}",r.message);
+    assert!(r.message.contains("a cap of the prism"),"{}",r.message);
 }
 
 #[test]

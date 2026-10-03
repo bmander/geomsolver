@@ -31,7 +31,8 @@ impl Condition {
     /// What the row asks, in the words the scope document uses.
     pub fn rule(self) -> &'static str {
         match self {
-            Condition::Tool => "the tool is a full revolution of lines and arcs, or an intersection of such",
+            Condition::Tool => "the tool is a full revolution, or a prism with its caps clear of the blank, of lines and arcs, \
+                or an intersection of such",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
             Condition::Motion => "the motion is rotations about fixed axes at constant ratios",
             Condition::Stationary => "the contact condition depends on the motion",
@@ -300,7 +301,8 @@ fn tool(sk: &Sketch,id: usize) -> Result<(),String> {
             if !through.is_empty() { return Err(format!("`{}` cuts solids; only intersections are in the class",solid.name)); }
             std::iter::once(stock).chain(bound).try_for_each(|&o| tool(sk,o as usize))
         }
-        SolidDef::Prism {..} => Err(format!("`{}` is a prism, not a revolution",solid.name)),
+        // a prism's sides are extrusions of lines and arcs, its contact set fixed by the motion
+        SolidDef::Prism {..} => Ok(()),
         SolidDef::Loft {..} => Err(format!("`{}` is a loft, not a revolution",solid.name)),
         SolidDef::Through {..} => Err(format!("`{}` is a through prism, not a revolution",solid.name)),
         SolidDef::Swept {..} => Err(format!("`{}` is itself a sweep",solid.name)),
@@ -329,24 +331,36 @@ struct Sampled { s: SurfacePoint,rate: Option<crate::motion::NormalVelocity>,roo
 /// surface's oriented area factor on the same branch, by central differences, against the tool
 /// surface's own. None where a neighbouring root or point cannot be read, or the tool's own area
 /// vanishes.
-fn area_factor(surface: &super::surface::RevolvedSurface,patch: usize,
+fn area_factor(surface: &super::ToolSurface,patch: usize,
     roots: &(dyn Fn(usize,f64,f64) -> Result<Vec<TimedContact>,String>+Sync),t: &TimedContact,u: f64,v: f64) -> Option<f64> {
     let h = 1e-5;
     let (ua,ub) = ((u-h).max(0.),(u+h).min(1.));
+    // round a revolution `v` comes back; along a prism it stops at the caps
+    let wrap = |vv: f64| if surface.periodic() { vv.rem_euclid(1.) } else { vv };
+    let (va,vb) = if surface.periodic() { (v-h,v+h) } else { ((v-h).max(0.),(v+h).min(1.)) };
     let near = |uu: f64,vv: f64| -> Option<V> {
-        roots(patch,uu,vv.rem_euclid(1.)).ok()?.into_iter()
+        roots(patch,uu,wrap(vv)).ok()?.into_iter()
             .filter(|x| x.root.branch == t.root.branch)
             .min_by(|a,b| (a.root.time-t.root.time).abs().total_cmp(&(b.root.time-t.root.time).abs()))
             .map(|x| x.contact.position)
     };
-    let (Some(fa),Some(fb),Some(ga),Some(gb)) = (near(ua,v),near(ub,v),near(u,v-h),near(u,v+h)) else { return None };
-    let at = |uu: f64,vv: f64| surface.at(uu,vv.rem_euclid(1.)).map(|s| s.position).ok();
-    let (Some(sa),Some(sb),Some(ta),Some(tb)) = (at(ua,v),at(ub,v),at(u,v-h),at(u,v+h)) else { return None };
-    let du = ub-ua;
-    let area = norm(cross(sub(sb,sa).map(|x| x/du),sub(tb,ta).map(|x| x/(2.*h))));
+    let (Some(fa),Some(fb),Some(ga),Some(gb)) = (near(ua,v),near(ub,v),near(u,va),near(u,vb)) else { return None };
+    let at = |uu: f64,vv: f64| surface.at(uu,wrap(vv)).map(|s| s.position).ok();
+    let (Some(sa),Some(sb),Some(ta),Some(tb)) = (at(ua,v),at(ub,v),at(u,va),at(u,vb)) else { return None };
+    let (du,dv) = (ub-ua,vb-va);
+    let area = norm(cross(sub(sb,sa).map(|x| x/du),sub(tb,ta).map(|x| x/dv)));
     if area == 0. { return None; }
-    Some(dot(cross(sub(fb,fa).map(|x| x/du),sub(gb,ga).map(|x| x/(2.*h))),t.contact.normal)/area)
+    Some(dot(cross(sub(fb,fa).map(|x| x/du),sub(gb,ga).map(|x| x/dv)),t.contact.normal)/area)
 }
+
+/// The coarse pass's `j`-th of `n` stations of `v` over a face: round a revolution `n` steps of a
+/// turn, along a prism from one cap to the other, both ends included.
+fn coarse_v(surface: &super::ToolSurface,j: usize,n: usize) -> f64 {
+    if surface.periodic() { j as f64/n as f64 } else { coarse_at(j as f64,n) }
+}
+
+/// Station `at` (fractional) of `n` from one cap to the other.
+fn coarse_at(at: f64,n: usize) -> f64 { (at/(n.max(2)-1) as f64).clamp(0.,1.) }
 
 /// What the fine pass over one tool face found.
 struct Fine { reads: Reads,samples: usize,near_double_roots: usize,hits: Vec<(Hit,usize,usize)>,gaps: Vec<f64>,least: f64,
@@ -476,7 +490,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         for j in 0..options.coarse_columns {
             let Ok(point) = pa.at(ua,j as f64/options.coarse_columns as f64) else { continue };
             if let Some(p) = poses.iter().map(|m| m.point(point.position)).find(|&p| reads.read(inside,p)) {
-                return Err((Condition::Corner,format!("`{}` meets `{}` at a concave corner",pa.name,pb.name),Some(p)));
+                return Err((Condition::Corner,format!("`{}` meets `{}` at a concave corner",pa.name(),pb.name()),Some(p)));
             }
         }
     }
@@ -484,7 +498,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
     let clear = crate::par::map(c.patches(),|surface| -> Result<Reads,Failure> {
         let mut own = Reads::new();
         for i in 0..=options.coarse_rows { for j in 0..options.coarse_columns {
-            let Ok(s) = surface.at(i as f64/options.coarse_rows as f64,j as f64/options.coarse_columns as f64) else { continue };
+            let Ok(s) = surface.at(i as f64/options.coarse_rows as f64,coarse_v(surface,j,options.coarse_columns)) else { continue };
             if !on_tool(s.position) { continue; }
             for limit in &limits {
                 let p = limit.point(s.position);
@@ -495,6 +509,17 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         Ok(own)
     });
     for own in clear { reads.extend(own?); }
+    // T1 for a prism: the class cuts with its sides, so neither cap may pass through the blank
+    // (under a planar sweep a cap, square to the turn, is in contact at every time or none)
+    for surface in c.patches().iter().filter(|s| !s.periodic()) {
+        for v in [0.,1.] { for i in 0..=options.coarse_rows {
+            let Ok(s) = surface.at(i as f64/options.coarse_rows as f64,v) else { continue };
+            if let Some(p) = poses.iter().map(|m| m.point(s.position)).find(|&p| reads.read(inside,p)) {
+                return Err((Condition::Tool,format!("a cap of the prism `{}` bounds passes through the blank, and the class cuts \
+                    with a prism's sides only: make the prism longer than the blank is thick",surface.name()),Some(p)));
+            }
+        } }
+    }
     // M2 at the poles: where a face's profile meets the tool's axis the surface has no normal of
     // its own, so the sampled checks below cannot evaluate it. Its normal is the axis, the limit
     // along the profile; a pole whose contact condition is zero at every time and whose path
@@ -521,7 +546,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
             if !values.iter().all(|x| x.abs() <= options.root_tolerance*scale) { continue; }
             if let Some(p) = poses.iter().map(|m| m.point(s.position)).find(|&p| reads.read(inside,p)) {
                 return Err((Condition::Stationary,format!("the pole of `{}`, where its profile meets its axis, is in contact \
-                    at every time",surface.name),Some(p)));
+                    at every time",surface.name()),Some(p)));
             }
         }
     }
@@ -544,7 +569,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
             let mut own = Reads::new();
             let mut row = vec![false;cv];
             for j in 0..cv {
-                let (u,v) = (i as f64/cu as f64,j as f64/cv as f64);
+                let (u,v) = (i as f64/cu as f64,coarse_v(surface,j,cv));
                 let Ok(s) = surface.at(u,v) else { continue };
                 if !on_tool(s.position) { continue; }
                 if let Ok(list) = roots(patch,u,v) {
@@ -560,7 +585,11 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         let read = |p: V| own.borrow_mut().read(inside,p);
         // The shortest arc of the revolution holding every reaching angle, widened a step.
         let reached: Vec<usize> = (0..cv).filter(|&j| reach[j]).collect();
-        let band = if reached.is_empty() { None } else {
+        let band = if reached.is_empty() { None } else if !surface.periodic() {
+            // along a prism the reaching stretch runs between its least and greatest, widened
+            let (lo,hi) = (reached[0].saturating_sub(2),(reached[reached.len()-1]+2).min(cv-1));
+            Some((lo,hi-lo))
+        } else {
             let mut gap = (0,0);
             for w in 0..reached.len() {
                 let (a,b) = (reached[w],reached[(w+1)%reached.len()]);
@@ -573,7 +602,10 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         // Without a band nothing of this patch reaches the blank in the roll; its clearance
         // and stationarity are still asked over a band of the whole revolution.
         let (start,width) = band.unwrap_or((0,cv));
-        let v_at = |j: usize| ((start as f64+width as f64*j as f64/nv as f64)/cv as f64).rem_euclid(1.);
+        let v_at = |j: usize| {
+            let at = start as f64+width as f64*j as f64/nv as f64;
+            if surface.periodic() { (at/cv as f64).rem_euclid(1.) } else { coarse_at(at,cv) }
+        };
         let mut previous: Vec<Option<V>> = vec![None;nv+1];
         // Each sample's contact equation, to find stationary points between samples.
         let mut equations: Vec<Option<([f64;3],V)>> = vec![None;nv+1];
@@ -625,7 +657,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
                             let centre: V = std::array::from_fn(|n| corners.iter().map(|c| c.1[n]).sum::<f64>()/4.);
                             if let Some(p) = times.iter().map(|m| m.point(centre)).find(|&p| read(p)) {
                                 return Err((Condition::Stationary,format!("a tool point of `{}` inside a sample cell is in contact \
-                                    at every time",surface.name),Some(p)));
+                                    at every time",surface.name()),Some(p)));
                             }
                         }
                     } }
@@ -637,7 +669,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
                             let between: V = std::array::from_fn(|n| 0.5*(q[n]+s.position[n]));
                             if let Some(p) = times.iter().map(|m| m.point(between)).find(|&p| read(p)) {
                                 return Err((Condition::Stationary,format!("tool points between samples of `{}` are in contact at every time",
-                                    surface.name),Some(p)));
+                                    surface.name()),Some(p)));
                             }
                         }
                     }
@@ -705,7 +737,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         if counts[0] > 0 && counts[1] > 0 {
             let minority = usize::from(counts[1] < counts[0]);
             return Err((Condition::Fold,format!("the generated surface of `{}` turns back on itself ({} samples one way, {} the other)",
-                c.patches()[*patch].name,counts[0],counts[1]),at[minority]));
+                c.patches()[*patch].name(),counts[0],counts[1]),at[minority]));
         }
     }
     if hits.is_empty() {
