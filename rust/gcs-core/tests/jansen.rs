@@ -241,3 +241,110 @@ fn a_contact_on_a_closed_stride_wraps_round_the_seam() {
         assert!((got - want).abs() < 1e-6, "seeded at {seed}: pivot {got}, the reference {want}");
     }
 }
+
+/// Where the toe bottoms out near crank angle `around` (a dip of the stride — near the holy
+/// numbers there are two), by golden section within 15° of it: the angle and the height.
+fn dip(l: f64, h: f64, around: f64) -> (f64, f64) {
+    let y = |d: f64| toe_with(d, l, h).1;
+    let (mut a, mut b) = (around - 15.0, around + 15.0);
+    let g = (5f64.sqrt() - 1.0) / 2.0;
+    for _ in 0..80 {
+        let (c, d) = (b - g * (b - a), a + g * (b - a));
+        if y(c) < y(d) { b = d } else { a = c }
+    }
+    let m = (a + b) / 2.0;
+    (m, y(m))
+}
+
+/// The stride's radius of curvature at crank angle `at`, by central differences in the angle:
+/// `|C'|³ / |C' × C''|`.  A step of 1e-2° keeps it to about 1e-6 of itself.
+fn radius_at(l: f64, h: f64, at: f64) -> f64 {
+    let e = 1e-2;
+    let (p, q, r) = (toe_with(at - e, l, h), toe_with(at, l, h), toe_with(at + e, l, h));
+    let (dx, dy) = ((r.0 - p.0) / (2.0 * e), (r.1 - p.1) / (2.0 * e));
+    let (ddx, ddy) = ((r.0 - 2.0 * q.0 + p.0) / (e * e), (r.1 - 2.0 * q.1 + p.1) / (e * e));
+    (dx * dx + dy * dy).powf(1.5) / (dx * ddy - dy * ddx).abs()
+}
+
+/// The jansen document with the heel-to-toe rod a formal the drawn leg leaves unknown (`leg.h`),
+/// a level ground of unstated height under the stride, and `extra` stated about them.
+fn on_level_ground(extra: &str) -> gcs_core::program::Elaborated {
+    let doc = examples::JANSEN
+        .replace(
+            "component Leg(axle: point, pivot: point, theta: Angle) {",
+            "component Leg(axle: point, pivot: point, theta: Angle, h: Length) {",
+        )
+        .replace("  h := 65.7    // heel to toe\n", "")
+        + "\ng0 := point hint(x: -60, y: -92)\ng1 := point hint(x: 0, y: -92)\n\
+           ground := horizontal line(g0, g1)\ng0 distance(60, along: x) g1\nfix(x == -60) g0\n"
+        + extra;
+    let (prog, errs) = gcs_core::syntax::parse(&doc);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>());
+    e
+}
+
+fn rod(e: &gcs_core::program::Elaborated) -> f64 {
+    e.sketch.params[e.sketch.free_vars["leg.h"] as usize].value
+}
+
+/// **A flat stride is one that stands on the ground twice.**  Near the holy numbers the toe's
+/// path has two shallow dips, and the ground held tangent to it at both — two contacts, seeded
+/// one at each — is a line the stride rolls along rather than rocks on.  The toe rod solves so the
+/// two dips are level, and lands within a twentieth of Jansen's 65.7: the holy numbers are, very
+/// nearly, the bitangent leg.
+#[test]
+fn the_stride_stands_on_the_ground_twice() {
+    let mut e = on_level_ground("path tangent ground hint(t: 25)\npath tangent ground hint(t: 315)\n");
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still the one freedom");
+    // the reference: the rod at which the two dips are level, by bisection
+    let (mut lo, mut hi) = (65.6, 65.7);
+    for _ in 0..60 {
+        let m = (lo + hi) / 2.0;
+        if dip(L, m, 35.0).1 < dip(L, m, 329.5).1 { lo = m } else { hi = m }
+    }
+    let want = (lo + hi) / 2.0;
+    assert!((rod(&e) - want).abs() < 1e-6, "the rod solved to {}, the reference {want}", rod(&e));
+    assert!((rod(&e) - H).abs() < 0.05, "and it is the holy number, nearly");
+    let g0 = e.sketch.point_xy(e.map.ent_named("g0").unwrap().i());
+    assert!((g0.1 - dip(L, want, 35.0).1).abs() < 1e-6, "the ground is where both dips are");
+}
+
+/// **How flat, as a statement.**  A circle of radius 150 osculates the stride with the crank at
+/// 314.5° — near where the stride bottoms out — so the stride bends exactly that tightly there,
+/// and the toe rod solves for it.  The curvature is the traced stride's own `C''`
+/// (`locus::higher_orders`): nothing in the document or the core states the coupler curve, and
+/// the reference finds the rod by bisection on the leg built from circle intersections.
+///
+/// The angle is pinned rather than left to the bottom of the stride: a curvature contact and a
+/// tangency are two contacts with two parameters, and near the bottom "the osculating circle
+/// touches the ground" holds to third order in the distance between them, so tying them through
+/// the ground is a degenerate root (it solved 1e-4 of the rod off).
+#[test]
+fn the_stride_bends_at_a_stated_radius() {
+    let mut e = on_level_ground(
+        "k := point hint(x: -45, y: 50)\nosc := circle(center: k) hint(r: 140)\n\
+         path curvature(t == 314.5) osc\nradius(150) osc\nfix(y == -92) g0\n",
+    );
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still the one freedom");
+    // the reference, at the crank's page bearing: `u` is measured from the pivot-to-axle line
+    let at = 314.5 + L.atan2(A).to_degrees();
+    let (mut lo, mut hi) = (66.0, 68.0);
+    for _ in 0..60 {
+        let m = (lo + hi) / 2.0;
+        if radius_at(L, m, at) > 150.0 { lo = m } else { hi = m }
+    }
+    let want = (lo + hi) / 2.0;
+    assert!((rod(&e) - want).abs() < 1e-5, "the rod solved to {}, the reference {want}", rod(&e));
+    // and the circle's centre is the stride's centre of curvature there
+    let toe = toe_with(at, L, rod(&e));
+    let k = e.sketch.point_xy(e.map.ent_named("k").unwrap().i());
+    assert!(((k.0 - toe.0).hypot(k.1 - toe.1) - 150.0).abs() < 1e-6);
+}

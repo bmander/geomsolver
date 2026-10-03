@@ -55,6 +55,7 @@ mod seams;
 mod sector;
 mod motions;
 mod generated_envelopes;
+mod generation;
 mod examples_sv;
 mod expr;
 mod frame;
