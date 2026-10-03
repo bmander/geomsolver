@@ -153,7 +153,7 @@ fn swept_sheets(session: &Session,cut: &SweptCut,cutter: &Cutter,inside: Inside,
         let cutter = &cutter;
         Ok(Station {length:profile.augmented_length(),window,sample:Box::new(move |s| session.sample(cutter,&profile,s))})
     };
-    let band = Band {stations:reach.stations,radius:reach.radius};
+    let band = Band {stations:reach.stations,radius:reach.radius,limit:std::f64::consts::TAU};
     // The columns traced at a pair of margins, which a second row placement at the same margins lays
     // out again without tracing them again.
     let columns: std::cell::RefCell<Option<((f64,f64),Columns)>> = std::cell::RefCell::new(None);

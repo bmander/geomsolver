@@ -89,10 +89,12 @@ pub struct Station<'a> {
 /// How a host makes the station at an angle: called from several threads at once.
 pub type StationAt<'t,'s> = dyn Fn(f64) -> Result<Station<'s>,TraceError>+Sync+'t;
 
-/// The stations' band as a first coarse pass found it: its station angles, and the profile's
-/// mean distance from the axis, for column spacing.
+/// The stations' band as a first coarse pass found it: its station angles, the millimetres one
+/// unit of station is worth across it (the profile's mean distance from the axis), for column
+/// spacing, and how wide it may grow before the sheet is said not to leave the blank (a turn; a
+/// prism's length, where a station is a distance along it).
 #[derive(Clone,Copy,Debug)]
-pub struct Band { pub stations: [f64;2],pub radius: f64 }
+pub struct Band { pub stations: [f64;2],pub radius: f64,pub limit: f64 }
 
 /// Where a sheet's rows fall along each column's contact curve, between the same two unfolded
 /// walk lengths at its ends. `Walk`: at even unfolded walk lengths, one grid for every column.
@@ -488,10 +490,10 @@ impl Tracer<'_> {
         let step = (band.stations[1]-band.stations[0]).max(COLUMN_SPACING/band.radius);
         let [mut lo,mut hi] = band.stations;
         while self.reaches(&station_at(lo-station_margin)?)? {
-            lo -= step; if hi-lo > TAU { return Err("the sheet's band of stations does not leave the blank".into()); }
+            lo -= step; if hi-lo > band.limit { return Err("the sheet's band of stations does not leave the blank".into()); }
         }
         while self.reaches(&station_at(hi+station_margin)?)? {
-            hi += step; if hi-lo > TAU { return Err("the sheet's band of stations does not leave the blank".into()); }
+            hi += step; if hi-lo > band.limit { return Err("the sheet's band of stations does not leave the blank".into()); }
         }
         let span = hi-lo+2.*station_margin;
         let columns = ((span*band.radius/COLUMN_SPACING).ceil() as usize).clamp(24,200);
