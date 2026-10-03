@@ -36,7 +36,7 @@ const PTS: &str = "a := point hint(x: 0, y: 0)\nb := point hint(x: 10, y: 0)\n\
 fn the_value_says_what_the_name_is() {
     let src = format!(
         "{PTS}w := 3 * 4\nl := line(a, b)\nk := circle(center: a) hint(r: w)\n\
-         dims := group(size: w)\n\
+         dims := {{size: w}}\n\
          component Tick(o: point, dims: group) {{ t := point hint(x: dims.size) }}\n\
          t := Tick(a, dims: dims)\n"
     );
@@ -119,7 +119,7 @@ fn only_the_outermost_number_is_named() {
 #[test]
 fn a_printed_definition_reads_back() {
     let src = format!(
-        "{PTS}w := 5\nl := line(a, b)\nk := circle(center: c) hint(r: 3)\nd := group(s: w)\n"
+        "{PTS}w := 5\nl := line(a, b)\nk := circle(center: c) hint(r: 3)\nd := {{s: w}}\n"
     );
     let e = read(&src);
     let mut out = String::new();
@@ -127,7 +127,7 @@ fn a_printed_definition_reads_back() {
         write_stmt_to(&mut out, &st.kind).unwrap();
         out.push('\n');
     }
-    for line in ["w := 5", "l := line(a, b)", "k := circle(center: c) hint(r: 3)", "d := group(s: w)"]
+    for line in ["w := 5", "l := line(a, b)", "k := circle(center: c) hint(r: 3)", "d := {s: w}"]
     {
         assert!(out.contains(line), "`{line}` in\n{out}");
     }

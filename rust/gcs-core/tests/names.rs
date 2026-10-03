@@ -77,12 +77,22 @@ fn a_bare_name_in_a_component_is_the_instances_own_unknown() {
         assert!(free.iter().any(|m| m.contains(&format!("`{n}`"))), "{d:?}");
         assert!(e.sketch.free_vars.contains_key(n), "{:?}", e.sketch.free_vars);
     }
-    // the same drawing with `w` a formal left unbound says the same thing in the same words
+    // the same drawing with `w` a formal left unbound has the same unknowns, and says nothing:
+    // a declared formal is no misspelling
     let formal = doc.replace("q: point)", "q: point, w: Length)");
     let (e2, d2) = read(&formal);
-    assert_eq!(d2, d);
+    assert!(d2.iter().all(|m| !m.starts_with("W111")), "{d2:?}");
     let names = |e: &Elaborated| e.sketch.free_vars.keys().cloned().collect::<Vec<_>>();
     assert_eq!(names(&e2), names(&e));
+}
+
+/// An unknown is said once, however many dimensions read it.
+#[test]
+fn a_free_variable_is_said_once() {
+    let (_, d) = read(&format!("{BASE}a distance(w) b\nb distance(w) c\na distance(2 * w) c\n"));
+    let free: Vec<&String> = d.iter().filter(|m| m.starts_with("W111")).collect();
+    assert_eq!(free.len(), 1, "{d:?}");
+    assert!(free[0].contains("`w`"), "{d:?}");
 }
 
 /// Named dimensions reach a component through an explicit numeric argument.
@@ -112,9 +122,9 @@ fn a_modules_component_does_not_read_the_callers_names() {
     let e = elaborate(&prog);
     let free: Vec<String> =
         e.diags.iter().filter(|d| d.code.as_str() == "W111").map(|d| d.message.clone()).collect();
-    assert_eq!(free.len(), 1, "{free:?}");
-    assert!(free[0].contains("`t.w`"), "{free:?}");
-    assert!(e.sketch.free_vars.contains_key("t.w"));
+    // a formal left unbound is declared, so nothing is said of it
+    assert!(free.is_empty(), "{free:?}");
+    assert!(e.sketch.free_vars.contains_key("t.w"), "{:?}", e.sketch.free_vars);
 }
 
 /// A named dimension inside a component is the instance's — `u.t.w` — and is read by dotted

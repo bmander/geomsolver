@@ -84,6 +84,23 @@ pub(crate) fn value_aff(
     }
 }
 
+/// A group's members by their names under `owner` (`dims.bore`), a group written in place
+/// listed before its own members (`dims.cyl`, then `dims.cyl.bore`).
+fn members_of<'a>(
+    owner: &str,
+    fields: &'a [crate::syntax::InstArg],
+    out: &mut Vec<(String, &'a crate::syntax::Name, &'a crate::syntax::InstArg)>,
+) {
+    for field in fields {
+        let Some(label) = &field.label else { continue };
+        let name = format!("{owner}.{}", label.text);
+        out.push((name.clone(), label, field));
+        if let crate::syntax::InstVal::Group(inner) = &field.value {
+            members_of(&name, inner, out);
+        }
+    }
+}
+
 /// A dimension's text with the names in scope written in (`sub`), folded.
 ///
 /// A text that comes out a plain number is replaced by it: the formula was about parameters the
@@ -414,9 +431,11 @@ impl<'a> Walk<'a> {
                     self.err(Code::E001, g.name.span, format!("`{}` is declared twice", g.name.text));
                 }
                 self.names.insert(abs);
-                for field in &g.fields {
-                    let Some(label) = &field.label else { continue };
-                    let name = format!("{}.{}", g.name.text, label.text);
+                // a group written in place is the outer one's members under its own name, and
+                // a group in its own right: `dims.cyl` may be handed on as `dims` may
+                let mut members = Vec::new();
+                members_of(&g.name.text, &g.fields, &mut members);
+                for (name, label, field) in members {
                     if !here.insert(name.clone()) {
                         self.err(Code::E001, label.span, format!("`{name}` is declared twice"));
                         continue;
@@ -427,6 +446,12 @@ impl<'a> Walk<'a> {
                             written(r)
                         }
                         crate::syntax::InstVal::Expr(t) => t.clone(),
+                        crate::syntax::InstVal::Group(_) => {
+                            let abs = format!("{prefix}{name}");
+                            self.group_names.insert(abs.clone());
+                            self.names.insert(abs);
+                            continue;
+                        }
                     };
                     pending.push(Def { name, name_span: label.span, text, span: field.span,
                         dim: false, group_ref: matches!(field.value, crate::syntax::InstVal::Ref(_)) });

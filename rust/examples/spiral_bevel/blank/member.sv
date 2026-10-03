@@ -40,8 +40,8 @@ component MemberBlank(body: solid, design: group) {
 
 preview {
   unit mm
-  proportions := group(face_width: 10mm, addendum: 1, dedendum: 1.25, back: 4,
-    end_relief: 0.2mm, ends_relieved: 1)
+  proportions := {face_width: 10mm, addendum: 1, dedendum: 1.25, back: 4,
+    end_relief: 0.2mm, ends_relieved: 1}
   mean := point hint(x: 50, y: 0)
   foot := point hint(x: 40, y: 20)
   std.origin distance(50mm, along: right) mean
@@ -52,8 +52,8 @@ preview {
   to_foot perpendicular axis
   generator angle(30deg) axis
   limits := MemberLimits(generator, generator, axis, proportions, normal_module: 2mm)
-  solids := group(heel: limits.heel.wall.solid, toe: limits.toe.wall.solid,
-    tip: limits.tip.wall.solid, back: limits.back.wall.solid)
+  solids := {heel: limits.heel.wall.solid, toe: limits.toe.wall.solid,
+    tip: limits.tip.wall.solid, back: limits.back.wall.solid}
   body := solid(solids.heel)
   blank := MemberBlank(body, solids)
   ends := blank.ends.EndCut(body, limits.toe_end[0].ring, limits.heel_end[0].ring)

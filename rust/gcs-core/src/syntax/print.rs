@@ -2,8 +2,8 @@
 
 use super::names::write_ref;
 use super::{
-    num, snake, Arg, Attitude, CurveSpec, CurveTarget, Decl, InstVal, Instance, Kid, KidSeed,
-    OpArg, Program, Ref, Relation, Sense, Span, StmtKind, Sweep, Written,
+    num, snake, Arg, Attitude, CurveSpec, CurveTarget, Decl, InstArg, InstVal, Instance, Kid,
+    KidSeed, OpArg, Program, Ref, Relation, Sense, Span, StmtKind, Sweep, Written,
 };
 use crate::constraints::{CKind, Fixity, SpecKind};
 use crate::model::{EntKind, Field};
@@ -146,16 +146,8 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         }
         StmtKind::Param(p) => out.push_str(&format!("{} := {}", p.name.text, p.text)),
         StmtKind::Group(g) => {
-            out.push_str(&format!("{} := group(", g.name.text));
-            for (i, f) in g.fields.iter().enumerate() {
-                if i > 0 { out.push_str(", "); }
-                if let Some(label) = &f.label { out.push_str(&format!("{}: ", label.text)); }
-                match &f.value {
-                    crate::syntax::InstVal::Ref(r) => write_ref(out, r),
-                    crate::syntax::InstVal::Expr(t) => out.push_str(t),
-                }
-            }
-            out.push(')');
+            out.push_str(&format!("{} := ", g.name.text));
+            write_members(out, &g.fields);
         }
         StmtKind::Unit(n) => out.push_str(&format!("unit {}", n.text)),
         StmtKind::Style(r) => {
@@ -179,6 +171,25 @@ fn labels_children(k: EntKind) -> bool {
     !matches!(k, EntKind::Line | EntKind::Spline)
 }
 
+/// `{bore: 16mm, cyl: {axis: datum}}` — a group's members, nested groups in their braces.
+fn write_members(out: &mut String, fields: &[InstArg]) {
+    out.push('{');
+    for (i, f) in fields.iter().enumerate() {
+        if i > 0 { out.push_str(", "); }
+        if let Some(label) = &f.label { out.push_str(&format!("{}: ", label.text)); }
+        write_inst_val(out, &f.value);
+    }
+    out.push('}');
+}
+
+fn write_inst_val(out: &mut String, v: &InstVal) {
+    match v {
+        InstVal::Ref(r) => write_ref(out, r),
+        InstVal::Expr(t) => out.push_str(t),
+        InstVal::Group(fields) => write_members(out, fields),
+    }
+}
+
 /// `Tooth(base, a0: 30)` — a component and what it is given, the same spelling for an instance
 /// statement and for an instance written in place inside a curve.
 fn write_instance_call(out: &mut String, i: &Instance) {
@@ -192,10 +203,7 @@ fn write_instance_call(out: &mut String, i: &Instance) {
                 s.push_str(&l.text);
                 s.push_str(": ");
             }
-            match &a.value {
-                InstVal::Ref(r) => write_ref(&mut s, r),
-                InstVal::Expr(t) => s.push_str(t),
-            }
+            write_inst_val(&mut s, &a.value);
             s
         })
         .collect();

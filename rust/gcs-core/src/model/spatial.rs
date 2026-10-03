@@ -497,6 +497,20 @@ impl Sketch {
         value
     }
 
+    /// Give swept solid `i` its exact B-rep, built elsewhere (`brep::export::supply_exact`) against
+    /// the drawing as it stands now: its evaluation then reads the B-rep, as a static solid's does
+    /// (`EvaluatedSolid::from_brep`), until the drawing changes.
+    pub fn supply_exact_solid(&self, i: usize, exact: crate::solid::Exact) {
+        let key = crate::solid::reads(self, i, 0.0);
+        self.exact_cache.borrow_mut().insert(i, (key, Ok(std::rc::Rc::new(exact))));
+    }
+
+    /// The exact B-rep supplied for swept solid `i` against the drawing as it stands, if any.
+    pub fn supplied_exact_solid(&self, i: usize) -> Option<std::rc::Rc<crate::solid::Exact>> {
+        let key = crate::solid::reads(self, i, 0.0);
+        match self.exact_cache.borrow().get(&i) { Some((old, Ok(x))) if *old == key => Some(x.clone()), _ => None }
+    }
+
     /// **What a host meshing swept solids elsewhere has to mesh** (`FieldMeshing::Deferred`): the
     /// objects (`overview::objects`) with a continuous sweep among their operands, each with the
     /// key of the drawing it is a surface of (`FieldJob`). A swept solid that is no object is left

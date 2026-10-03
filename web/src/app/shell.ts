@@ -36,8 +36,8 @@ export const pdiags = document.getElementById('pdiags') as HTMLElement;
 export const componentEl = document.getElementById('component') as HTMLElement;
 export const footerEl = document.querySelector('footer') as HTMLElement;
 
+// the loading modal stays up through the first example's opening (`openExample`), which puts it away
 await initCore();
-(document.getElementById('loading') as HTMLElement).remove();
 
 /** Example routes open an authored drawing after the shell is wired. The model editor
  *  starts empty; opening an example never loads its assembly as the active document. */

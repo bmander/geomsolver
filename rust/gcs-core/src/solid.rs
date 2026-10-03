@@ -61,6 +61,7 @@ mod loft;
 mod surface;
 mod sweep_contacts;
 pub mod admission;
+pub mod constant_twist;
 pub mod agreement;
 pub mod accuracy;
 pub mod contracts;

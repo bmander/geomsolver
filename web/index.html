@@ -43,7 +43,6 @@
         </div>
         <p id="drawing-status" role="status"></p>
       </section>
-      <div id="loading">loading solver…</div>
       <div id="measure" aria-live="polite"></div>
       <div id="cpanel" hidden>
         <h2 id="cpanel-title"></h2>
@@ -74,6 +73,14 @@
     </aside>
   </main>
   <footer><span id="toast"></span><span id="component"></span><span id="stats"></span><span id="refine"></span></footer>
+</div>
+<!-- while the page has nothing worth touching: the solver starting, an example arriving, its solve,
+     its swept solids' first surfaces (`app/loading.ts`) -->
+<div id="loading" role="progressbar" aria-busy="true" aria-labelledby="loading-label">
+  <div class="loading-card">
+    <p id="loading-label">loading solver…</p>
+    <div class="loading-bar"><div id="loading-fill"></div></div>
+  </div>
 </div>
 <dialog id="modal">
   <h3 id="modal-title"></h3>

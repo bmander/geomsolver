@@ -1,6 +1,15 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.34 — October 2026**
+**Specification, Draft 0.36 — October 2026**
+
+**[0.36] A group's member may be a group in braces.** `design := {bar: {at: o, size: {length:
+2cm}}}` nests groups in place (§8.1): `design.bar.size.length` reads the number, and
+`design.bar` is a group a call may be given. A brace after a member's `:` opens a group too;
+braces are not an argument in a call.
+
+**[0.35] A group is its members in braces.** `dims := {width: 20mm, origin: o}` is a group (§8.1);
+`group(…)` is retired. A group's braces hold a list, not a body: like an argument list it may run
+across lines, and a brace is a group's exactly when it stands straight after `:=`.
 
 **[0.34] A `fix` states what it holds.** `fix(x == 0, y == 0) p` holds a point at the numbers it
 states, each pinned with `==` under the field it is, as any pin in a relation's parentheses is;
@@ -38,7 +47,7 @@ modules may define one name.
 **[0.29] One way to define a name.** `NAME := VALUE` is the only form that puts a name in scope,
 and `(NAME := VALUE)` is the value itself, so a name may stand where its value does (§5). `w := 100`
 is a param (§6.3); `c := circle(center: o)` a declaration (§6); `t := Tooth(…)` an instance (§8);
-`dims := group(…)` a group (§8.1); `profile := (ab := line(a, b)) -> line -> close` a chain whose
+`dims := {…}` a group (§8.1) **[0.35]**; `profile := (ab := line(a, b)) -> line -> close` a chain whose
 first link is named in place (§6.6), since `:=` binds looser than `->`; `k := leg.toe over u in (a,
 b)` a curve (§6.5); `p := point(x: e, y: e)` a computed point (§6.5); `a distance(w := 60) b` a
 named dimension (§9.1), where `:=` may only be the outermost form of the number. `param`, `group`
@@ -1271,8 +1280,8 @@ Instantiation elaborates the named component's body into the current scope with 
 unit mm
 use std
 
-sizes := group(length: 20mm)
-layout := group(frame: std.front, origin: std.origin)
+sizes := {length: 20mm}
+layout := {frame: std.front, origin: std.origin}
 
 component Bar(layout: group, dims: group) {
   tip := point hint(x: layout.origin.x + dims.length * layout.frame.c,
@@ -1286,8 +1295,14 @@ component Bar(layout: group, dims: group) {
 bar := Bar(layout, dims: sizes)
 ```
 
-`group NAME(member: VALUE, …)` bundles named numeric values, entity references, and nested
-groups. Members are required to have labels; duplicate members and cyclic definitions are
+**[0.35]** `NAME := {member: VALUE, …}` bundles named numeric values, entity references, and
+nested groups. A brace straight after `:=` opens a group, never a body: its members are separated
+by commas and may run across lines, as an argument list's may. **[0.36]** A member's value may
+itself be a group in braces, `design := {bar: {at: o, size: {length: 2cm}}}`, to any depth: its
+members are the enclosing group's under the member's name (`design.bar.size.length`), and the
+member is a group in its own right, which a call may be given (`Bar(design.bar)`). Written in
+place or defined by name and referred to (`bar := {…}`, `design := {bar: bar}`), a nested group
+is the same group. Braces are a definition's and its members', never a call's argument. Members are required to have labels; duplicate members and cyclic definitions are
 errors. Numeric members retain their dimensions. A group creates no geometry, solver variable,
 or constraint. Geometry members are aliases to existing geometry, including subentities and
 members of repeated instances; grouping does not copy or solve them separately.

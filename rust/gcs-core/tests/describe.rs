@@ -191,7 +191,7 @@ fn a_dimension_written_over_a_param_is_drawn_with_the_name() {
          }
          o := point hint(x: 0, y: 0)
          p := point hint(x: 40, y: 0)
-         dims := group(w: 80)
+         dims := {w: 80}
          one := Bar(o, p, len: 40, d: dims)
          two := Bar(o, p, len: 40, d: dims)",
     );
@@ -213,7 +213,7 @@ fn a_dimension_written_over_a_param_is_drawn_with_the_name() {
          component Local(a: point, b: point, parts: group) { a distance(parts.w / 2) b }
          o := point hint(x: 0, y: 0)
          p := point hint(x: 40, y: 0)
-         dims := group(w: 80)
+         dims := {w: 80}
          bar := parts.Bar(o, p, len: 40)
          local := Local(o, p, parts: dims)",
     );

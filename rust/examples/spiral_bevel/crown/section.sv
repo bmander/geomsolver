@@ -57,8 +57,8 @@ preview {
   // The 24:48 pair's crown at module 2, symmetric, revolved about the page's y axis at eight
   // tenths of the cone distance; crown.svd draws it.
   pitch_radius := 0.8 * 2mm * hypot(24, 48) / 2
-  proportions := group(pressure: 20deg, shift: 0deg,
-                       base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0)
+  proportions := {pressure: 20deg, shift: 0deg,
+                       base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0}
   lp := point hint(x: pitch_radius - 1.3mm, y: 0)
   rp := point hint(x: pitch_radius + 1.3mm, y: 0)
   std.origin distance(pitch_radius - 1.3mm, along: right) lp

@@ -1006,3 +1006,45 @@ fn a_cut_along_a_traced_edge_is_boxed() {
     assert!(r.edges.iter().any(|e| matches!(&e.curve,gcs_core::brep::topo::EdgeCurve::Curve(c) if c.kind() == "traced")));
     boxed(&r,None);
 }
+
+/// A cylinder of radius `r` from `z0` to `z1` about z, its profile in the half-plane at angle `at`
+/// from x: its seam, and its circles' vertices, stand there.
+fn seamed_cylinder(r: f64,z0: f64,z1: f64,at: f64) -> gcs_core::brep::topo::Brep {
+    let (c,s) = (at.cos(),at.sin());
+    let p = |x: f64,z: f64| [x*c,x*s,z];
+    let q = Profile {names:vec![],origin:[0.;3],normal:[-s,c,0.],loops:vec![poly(&[p(0.,z0),p(r,z0),p(r,z1),p(0.,z1)])]};
+    revolve(&q,[0.;3],[0.,0.,1.],TAU).unwrap()
+}
+
+/// Two cylinders on one axis standing end to end, each seamed at its own angle, united: their
+/// shared end circle is one curve that each solid's edges cut at different vertices, and the
+/// Boolean cuts each edge at the other's vertices so the two become one.
+#[test]
+fn coaxial_cylinders_seamed_apart_unite_end_to_end() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let (a,b) = (seamed_cylinder(5.,0.,6.,0.),seamed_cylinder(5.,-3.,0.,0.7));
+    let u = boolean(&a,&b,Op::Union,1e-9).unwrap();
+    u.check(1e-8).unwrap();
+    close(volume(&u),PI*25.*9.);
+    // a narrower one on the wider one's end, seamed apart too: the circles differ, the planes agree
+    let c = seamed_cylinder(3.,-3.,0.,2.1);
+    let v = boolean(&a,&c,Op::Union,1e-9).unwrap();
+    v.check(1e-8).unwrap();
+    close(volume(&v),PI*25.*6.+PI*9.*3.);
+}
+
+/// A cone turned from a profile whose apex is on the axis only to rounding (across it, here) is
+/// placed at its apex with radius zero, never the negative a file's reader refuses.
+#[test]
+fn a_cone_turned_from_an_apex_on_its_axis_has_radius_zero_there() {
+    use gcs_core::brep::geom::Surface;
+    // walked either way round and turned either way, the cone is placed at either end of its line
+    for pts in [[[-1e-11,0.,3.],[2.,0.,0.],[0.,0.,0.]],[[0.,0.,0.],[2.,0.,0.],[-1e-11,0.,3.]]] {
+        for axis in [[0.,0.,1.],[0.,0.,-1.]] {
+            let q = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![poly(&pts)]};
+            let b = revolve(&q,[0.;3],axis,TAU).unwrap();
+            let radii: Vec<f64> = b.faces.iter().filter_map(|f| match f.surface { Surface::Cone(_,r,_) => Some(r),_ => None }).collect();
+            assert!(!radii.is_empty() && radii.iter().all(|&r| r >= 0.),"{radii:?}");
+        }
+    }
+}

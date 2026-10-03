@@ -96,7 +96,7 @@ component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
   web := dims.P / 2 - (wj + wpin) / 2   // a web's thickness along the axis: what the pitch leaves
   rnose := 16mm          // the nose the pulley sits on
   oilr := 2.5mm          // the oil passage, half its bore
-  throw_dims := group(eye: eP, rim: rcw, half_width: hcw, oil_radius: oilr)
+  throw_dims := {eye: eP, rim: rcw, half_width: hcw, oil_radius: oilr}
 
   // -- along the axis: the section through cylinder 1 -------------------------------------
   repeat draw_end {

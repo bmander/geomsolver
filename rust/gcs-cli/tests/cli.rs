@@ -119,6 +119,34 @@ fn a_swept_export_is_refined_into_its_tolerance() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// The twist drill (`twist_drill/drill.sv`, issue #64): its flutes ground under a screw, its point,
+/// its shank, written by the core's kernel within 10 µm and measured against its exact faces —
+/// and, in a build with OCCT, read back by it as a valid solid of the same volume.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: the twist drill exported and measured")]
+fn the_twist_drill_exports_and_measures_within_its_tolerance() {
+    let dir = std::env::temp_dir().join(format!("solventc-drill-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (stl,step) = (dir.join("drill.stl"),dir.join("drill.step"));
+    let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());
+    let drill = examples().join("twist_drill/drill.sv");
+    let drill = drill.to_str().unwrap();
+    let result = run(&[drill,"--stl",stl,"--step",step,"--tolerance","0.01mm","--verify-step","full","--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(0),"{stderr}");
+    assert!(stderr.contains("`drill` built from its swept material by this kernel") && stderr.contains("0 disagree"),"{stderr}");
+    #[cfg(feature="occt")]
+    assert!(stderr.contains("each the solid's, and read back by the kernel as a valid solid of 14 faces"),"{stderr}");
+    let files: &[&str] = if cfg!(feature = "occt") { &[stl,step] } else { &[stl] };
+    for file in files {
+        let measured = run(&[drill,"--measure",file,"--tolerance","0.01mm","--no-diagnose"]);
+        let stdout = String::from_utf8_lossy(&measured.stdout);
+        assert_eq!(measured.status.code(),Some(0),"{stdout}{}",String::from_utf8_lossy(&measured.stderr));
+        assert!(stdout.contains("tolerance 10.000 µm: every exact face within it"),"{stdout}");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[test]
 fn a_tolerance_is_a_positive_length_for_a_native_export() {
     let output = run(&[&doc("swept_torus.sv"),"--tolerance","3furlongs","--step","x.step"]);

@@ -75,7 +75,7 @@ where the value stands: a chain link `(ab := line(a, b)) -> …`, or a dimension
 use NAME[.NAME...]                      import a module                             (1.12)
 unit NAME                               the unit the document's numbers are in       (1.6)
 NAME := EXPR                            a param                                      (1.6)
-NAME := group(LABEL: VALUE, ...)        values and geometry passed as one argument   (1.8)
+NAME := {LABEL: VALUE, ...}             values and geometry passed as one argument   (1.8)
 [private] [construction] [NAME :=] KIND[(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)]
      [knots [...]] [in REF]             an entity declaration; every part optional   (1.4)
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve       (1.9)
@@ -301,10 +301,12 @@ edited — a param in the source, a named dimension on the drawing. Only the out
 define (`distance(2 * (w := 30))` does not parse). A callout reads `w = 60`.
 
 **Free variables.** A name nothing defines is one unknown of the sketch, tying together every
-dimension that reads it (W111). The tie must be affine in one free name (`a`, `a / 2`,
-`2 * a + 5`); `a * a`, `sin(a)` and two free names in one dimension are errors. Inside a component
-the unknown belongs to the instance (`t1.w`, `t2.w`), so a component cannot reach a name the
-enclosing document happens to define. To equate two angles, prefer `l1 angle(l3, l4) l2` (1.5).
+dimension that reads it (W111, said once, where it is first read; a numeric formal left unbound
+is the same unknown, declared, and not warned). The tie must be affine in one free name (`a`,
+`a / 2`, `2 * a + 5`); `a * a`, `sin(a)` and two free names in one dimension are errors. Inside a
+component the unknown belongs to the instance (`t1.w`, `t2.w`), so a component cannot reach a
+name the enclosing document happens to define. To equate two angles, prefer
+`l1 angle(l3, l4) l2` (1.5).
 
 **Dimensions are checked.** Two base dimensions, length and angle. `*` and `/` derive, `+` and `-`
 demand agreement, and the result is checked against its slot: `a distance(45deg) b` is an error,
@@ -486,14 +488,15 @@ inner := std.CenteredRectangle(center, w: 14mm, h: 14mm)
 section := face(outer.loop, holes: inner.loop)
 ```
 
-**Groups** bundle related values and geometry into one argument:
+**Groups** bundle related values and geometry into one argument. The members are written in
+braces straight after `:=`, and may run across lines:
 
 ```solvent
 unit mm
 use std
 
-sizes := group(length: 20mm)
-layout := group(frame: std.front, origin: std.origin)
+sizes := {length: 20mm}
+layout := {frame: std.front, origin: std.origin}
 component Bar(layout: group, dims: group) {
   tip := point hint(x: layout.origin.x + dims.length * layout.frame.c,
                  y: layout.origin.y + dims.length * layout.frame.s)
@@ -505,7 +508,17 @@ component Bar(layout: group, dims: group) {
 bar := Bar(layout, dims: sizes)
 ```
 
-Groups nest. Numeric members keep their units; geometry members alias and add no solver state. A
+Groups nest, by name (`design := {bar: bar}`) or written in place, to any depth:
+
+```solvent
+design := {
+  bar: {at: o, size: {length: 2cm, half: 1cm}},
+  pin: {length: design.bar.size.half, at: o},
+}
+part := Bar(design.bar)          // a nested group is handed on like any group
+```
+
+Numeric members keep their units; geometry members alias and add no solver state. A
 component instance can be passed as a group, exposing its geometry (`layout.pivot`,
 `layout.bank[0].axis`) but not its local params — bundle those in an explicit group. A group
 formal must be supplied, and a missing member is an error. A traced component (1.9) needs fixed
@@ -1077,7 +1090,10 @@ $ solventc refused.sv          # k := length(wheel_radius)
 refused.sv:19:11: error[E107]: `k`: `length(wheel_radius)` measures the solved drawing, and only a motion's `ratio:`, `phase:` and `advance:` are read after the solve; a param, a seed, a constraint's number and a solid's extent are needed before it
 ```
 
-`lantern_generation.sv` is the worked case: a pinion rolls against a wheel blank at that ratio and
+`twist_drill/` grinds flutes with a wheel carried along a screw (`motion(about: axis, advance:
+lead)`): the constant-twist class, whose sheet is the wheel's characteristic carried along the
+helix (docs/generating-sweeps.md); `solventc twist_drill/drill.sv --step drill.step --tolerance 0.01mm`
+writes it. `lantern_generation.sv` is the worked case: a pinion rolls against a wheel blank at that ratio and
 its pin cuts a tooth space (`solventc lantern_generation.sv --stl out.stl --stl-backend mesh`, a
 couple of seconds); edit a pitch radius and the cut follows.
 
@@ -1412,9 +1428,9 @@ c := Crank(o, datum)                                  // theta unbound: the cran
 rim := c.p over theta in (0, 360)
 ```
 
-`c.theta` is the one freedom (reported as a free variable), and `rim` is where `p` goes over a full
-turn, anchored at the pose on the sheet: drag `c.p` and the anchor follows. `jansen.sv` is this at
-full size.
+`c.theta` is the one freedom (a declared formal left unbound, so no W111), and `rim` is where
+`p` goes over a full turn, anchored at the pose on the sheet: drag `c.p` and the anchor follows.
+`jansen.sv` is this at full size.
 
 ### 2.10 Three views: DOF 0, well
 
@@ -1641,7 +1657,7 @@ fix(x == 0, y == 0) a
 
 `6 params, 6 equations, structural rank 6; DOF 0`, with `d.x = 17.3205`, `d.y = 10`: `ad` at 30°.
 With a shared free variable instead (`ab angle(beta) ad`, `ad angle(beta) ac`) it is
-`7 params, 7 equations` plus two W111 warnings — an extra unknown only to be equated away.
+`7 params, 7 equations` plus a W111 warning — an extra unknown only to be equated away.
 `ab angle(ab, ac, sense: cw) ad` puts `ad` at −60°, `ac`'s mirror in `ab`. `reflection.sv` states
 the law of reflection as `incoming angle(m, outgoing) m`, with the classical proof as a `claim`
 judged a theorem.

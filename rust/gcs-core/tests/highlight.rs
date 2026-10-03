@@ -239,3 +239,21 @@ fn a_module_call_is_coloured_by_its_component() {
     assert_eq!(tint_of(src, "c :="), Some(Tint::Def));
     assert_eq!(tint_of(src, "dims:"), Some(Tint::Label));
 }
+
+/// A group's braces open a list of labelled members, not a body of statements, so a member's
+/// label is a label (where a statement's head would read as an instance) and the list may run
+/// across lines.
+#[test]
+fn a_group_is_coloured_as_labelled_members() {
+    let src = "dims := {\n  width: 20mm,\n  origin: o\n}\n";
+    assert_eq!(tint_of(src, "dims"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "width"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "origin"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "20mm"), Some(Tint::Num));
+    // and a member written as a group in place is labelled members too
+    let src = "dims := {\n  cyl: {\n    bore: 16mm,\n    axis: datum\n  }\n}\n";
+    assert_eq!(tint_of(src, "cyl"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "bore"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "axis"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "16mm"), Some(Tint::Num));
+}

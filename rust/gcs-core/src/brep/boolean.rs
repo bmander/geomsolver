@@ -316,6 +316,26 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
             }
         }
     }
+    // 2b. every vertex, either solid's or a crossing's, cuts an edge it lies inside, the faces'
+    // meetings among them: two edges running along one another (a shared circle, each solid
+    // seamed at its own angle; a meeting traced along an edge already there) then share their
+    // vertices, and step 4 takes them for one. Each edge boxed by its curve's enclosure, on every core.
+    let inside = crate::par::indices(edges.len(),|we| -> Vec<(f64,u32)> {
+        let e = &edges[we];
+        let EdgeCurve::Curve(c) = &e.curve else { return Vec::new() };
+        let (lo,hi) = c.bounds(e.t);
+        (0..pool.pts.len() as u32).filter_map(|v| {
+            if v == e.v[0] || v == e.v[1] || cuts[we].iter().any(|&(_,w)| w == v) { return None }
+            let p = pool.pts[v as usize];
+            if (0..3).any(|k| p[k] < lo[k]-pad || p[k] > hi[k]+pad) { return None }
+            let mut t = c.inverse(p);
+            if let Some(period) = c.period() { t = around(t,e.t[0],period); }
+            // a vertex at the edge's end in all but the pool's labelling is its end
+            let near = |q: V| distance(q,p) <= 8.*tol;
+            (t > e.t[0] && t < e.t[1] && near(c.point(t)) && !near(c.point(e.t[0])) && !near(c.point(e.t[1]))).then_some((t,v))
+        }).collect()
+    });
+    for (we,found) in inside.into_iter().enumerate() { cuts[we].extend(found); }
     let t2 = clock.elapsed().as_secs_f64();
     // 3. every original edge split where it was cut: its pieces, in order along it
     let mut pieces_of: Vec<Vec<(u32,[f64;2])>> = Vec::new();
@@ -530,6 +550,14 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
         loop {
             if seen[h] {
                 if h == start { break }
+                if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+                    for (k,x) in halves.iter().enumerate() {
+                        let e = &out[x.edge as usize];
+                        eprintln!("pieces: half {k} edge {} ({}, vertices {:?} at {:?}) along {} nodes {:?} from {:?} to {:?} leave {:.4} back {:.4}{}",
+                            x.edge,match &e.curve { EdgeCurve::Curve(c) => c.kind(),_ => "degenerate" },e.v,e.v.map(|v| pool.pts[v as usize]),
+                            x.along,ends[k],x.from,x.to,leave[k],arrive_back[k],if cycle.contains(&k) { " (this cycle)" } else { "" });
+                    }
+                }
                 return Err(format!("a {}'s pieces do not close",f.surface.kind()))
             }
             seen[h] = true;

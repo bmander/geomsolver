@@ -34,9 +34,13 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
     let mut errs: Vec<SynErr> = Vec::new();
     let mut i = 0usize;
     // A newline ends a statement, but not inside brackets: an argument list may be written across
-    // several lines, and a line break there is a separator like any other whitespace.  Braces do
-    // *not* count — a body is made of statements, and those still end at their line's end.
+    // several lines, and a line break there is a separator like any other whitespace.  A body's
+    // braces do *not* count — a body is made of statements, and those still end at their line's
+    // end — but a group's do (`dims := {width: 20mm, origin: o}`): a brace straight after `:=`
+    // opens a list of members, as one after a member's `:` does (`{cyl: {bore: 16mm}}`), and
+    // `braces` remembers which kind each open brace is.
     let mut depth = 0i32;
+    let mut braces: Vec<bool> = Vec::new();
     while i < b.len() {
         // Decode UTF-8 before classifying; every arm must consume a whole character.
         let c = src[i..].chars().next().unwrap_or(' ');
@@ -91,6 +95,18 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                 match c {
                     '(' | '[' => depth += 1,
                     ')' | ']' => depth = (depth - 1).max(0),
+                    '{' => {
+                        let group = match toks.last() {
+                            Some((Tok::Define, _)) => true,
+                            Some((Tok::P(':'), _)) => braces.last() == Some(&true),
+                            _ => false,
+                        };
+                        braces.push(group);
+                        if group {
+                            depth += 1;
+                        }
+                    }
+                    '}' if braces.pop() == Some(true) => depth = (depth - 1).max(0),
                     _ => {}
                 }
                 toks.push((Tok::P(c), Span::new(lo, i)));

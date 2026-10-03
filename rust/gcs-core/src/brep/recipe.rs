@@ -12,6 +12,15 @@ use std::collections::BTreeMap;
 fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
 fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(format!("recipe: no `{k}`")) }
 
+/// One step of the body rule: `solid` combined with `operand` by `op`, to a tolerance of the two's
+/// size (never under `floor`, mm), and checked.
+pub fn combined(solid: &Brep,operand: &Brep,op: Op,floor: f64) -> Result<Brep,String> {
+    let tol = (1e-9*solid.size().max(operand.size())).max(floor);
+    let out = boolean(solid,operand,op,tol)?;
+    out.check(10.*tol)?;
+    Ok(out)
+}
+
 /// One node of a recipe built from the nodes before it; `Err` names what this kernel does not
 /// build yet.
 pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_named(n,built,&BTreeMap::new(),0.) }
@@ -68,10 +77,8 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             for (key,op) in [("on",Op::Union),("cut",Op::Cut),("bound",Op::Common)] {
                 for x in field(n,key)?.arr() {
                     let operand = built.get(&x.as_i64()).ok_or(format!("recipe: an operand not built before its body"))?;
-                    let tol = (1e-9*solid.size().max(operand.size())).max(floor);
                     let name = built_names.get(&x.as_i64()).cloned().unwrap_or_default();
-                    solid = boolean(&solid,operand,op,tol).map_err(|e| format!("{key} `{name}`: {e}"))?;
-                    solid.check(10.*tol).map_err(|e| format!("{key} `{name}`: {e}"))?;
+                    solid = combined(&solid,operand,op,floor).map_err(|e| format!("{key} `{name}`: {e}"))?;
                 }
             }
             Ok(solid)
