@@ -20,20 +20,29 @@ fn close(a: (f64, f64), b: (f64, f64)) {
     assert!((a.0 - b.0).hypot(a.1 - b.1) < 1e-6, "{a:?} != {b:?}");
 }
 
+/// A document that says `use std` has the standard datums whether or not it names one yet — the
+/// workspace offers front, side and top as places to draw, as a CAD part has its origin planes —
+/// and one that does not say it has none.
 #[test]
-fn standard_datums_are_shared_fixed_and_only_built_when_used() {
+fn standard_datums_are_shared_fixed_and_built_whenever_std_is_used() {
     let unused = build("use std\np := point\n");
-    assert_eq!(unused.sketch.points.len(), 1);
-    assert!(unused.sketch.planes.is_empty());
+    assert_eq!(unused.sketch.points.len(), 5, "p, beside the four datum points");
+    for name in ["std.front", "std.side", "std.top", "std.up"] {
+        assert!(unused.map.ent_named(name).is_some(), "{name}");
+    }
+    assert_eq!(unused.sketch.planes.len(), 4);
+    assert_eq!(unused.sketch.plane_of(unused.map.ent_named("p").unwrap().i()), None);
+    let without = build("p := point\n");
+    assert!(without.sketch.planes.is_empty());
     let explicit = build("use std\nstd := std.StandardDatums()\na := point hint(x: 3, y: 4)\na distance(3, along: u) std.front\na distance(4, along: v) std.front\n");
-    assert_eq!(explicit.sketch.planes.len(), 2, "an explicit std binding is not duplicated");
+    assert_eq!(explicit.sketch.planes.len(), 4, "an explicit std binding is not duplicated");
     let mut e = build("unit mm\nuse std\n\
         a := point hint(x: 3, y: 4)\na distance(3mm, along: u) std.front\na distance(4mm, along: v) std.front\n\
         b := point hint(x: -4, y: 3)\nb distance(3mm, along: u) std.up\nb distance(4mm, along: v) std.up\n\
         c := point hint(x: 6, y: 8)\nc distance(6mm, along: u) std.front\nc distance(8mm, along: v) std.front\n");
     solved(&mut e.sketch);
-    assert_eq!(e.sketch.planes.len(), 2);
-    assert_eq!(e.sketch.points.len(), 6);
+    assert_eq!(e.sketch.planes.len(), 4);
+    assert_eq!(e.sketch.points.len(), 7);
     close(e.sketch.point_xy(e.map.ent_named("a").unwrap().i()), (3.0, 4.0));
     close(e.sketch.point_xy(e.map.ent_named("b").unwrap().i()), (-4.0, 3.0));
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
@@ -64,7 +73,7 @@ fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
         preview {\nSpoke(std.front)\nSpoke(std.up)\n}\n";
     let mut e = build(src);
     solved(&mut e.sketch);
-    assert_eq!(e.sketch.points.len(), 5);
+    assert_eq!(e.sketch.points.len(), 6, "two tips and the four standard datum points");
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
     assert!(e.map.names.values().flatten().all(|n| !n.contains('#')));
     let instances: Vec<_> = e.program.root().body.iter().filter(|s|

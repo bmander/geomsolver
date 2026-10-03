@@ -279,7 +279,8 @@ fn the_standard_library_lays_out_three_views() {
     assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
-    assert_eq!(e.sketch.planes.len(), 3);
+    // the three views, beside the four standard datums every `use std` brings
+    assert_eq!(e.sketch.planes.len(), 7);
     let mut sk = e.sketch.clone();
     assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
     let d = gcs_core::diagnose::diagnose(&mut sk, gcs_core::diagnose::DiagnoseOptions::default());

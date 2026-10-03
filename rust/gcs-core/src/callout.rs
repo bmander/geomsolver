@@ -689,6 +689,69 @@ pub fn pick(sk: &Sketch, unit: f64, at: P, tol_px: f64) -> Option<u32> {
     Some(id)
 }
 
+/// `pick`, asked where the eye sees each callout (`overview::workspace`): every figure is laid out
+/// in its own view's page and mapped onto the eye's picture plane with that view's map, and `at`,
+/// `unit` and the nearest point are all measured there.  A callout whose points stand in views
+/// that are not one place in space has nowhere to be drawn, and is never picked.
+pub fn pick_seen(
+    sk: &Sketch,
+    unit: f64,
+    proj: &crate::overview::workspace::Projection,
+    at: P,
+    tol_px: f64,
+) -> Option<u32> {
+    let tol = tol_px * unit;
+    let mut best: Option<(f64, u32, bool)> = None;
+    for k in layout(sk, unit) {
+        let Some(c) = sk.constraint(k.id) else { continue };
+        let Ok(view) = proj.constraint_view(sk, c) else { continue };
+        let seen = k.mapped(proj.map(view));
+        let d = seen.near(at);
+        if d <= tol && best.is_none_or(|(bd, _, _)| d < bd) {
+            best = Some((d, k.id, inside(&seen.label, at)));
+        }
+    }
+    let (_, id, on_label) = best?;
+    let (near, d) = crate::overview::workspace::nearest_point(sk, proj, at);
+    if !on_label && near.is_some() && d <= tol {
+        return None;
+    }
+    Some(id)
+}
+
+impl Callout {
+    /// The figure under an affine map of the page — a view's, onto the eye's picture plane.  The
+    /// arcs are flattened on the way, since a circle mapped obliquely is no circle.
+    fn mapped(&self, m: &crate::overview::workspace::Map) -> Callout {
+        use crate::overview::workspace::apply;
+        let seg = |s: &Seg| Seg(apply(m, s.0), apply(m, s.1));
+        let mut solid: Vec<Seg> = self.solid.iter().map(seg).collect();
+        for a in &self.arcs {
+            let n = 16;
+            let mut prev = apply(m, along(a.c, ray(a.a0), a.r));
+            for i in 1..=n {
+                let t = a.a0 + (a.a1 - a.a0) * (i as f64 / n as f64);
+                let cur = apply(m, along(a.c, ray(t), a.r));
+                solid.push(Seg(prev, cur));
+                prev = cur;
+            }
+        }
+        Callout {
+            id: self.id,
+            kind: self.kind,
+            text: self.text.clone(),
+            anchor: apply(m, self.anchor),
+            angle: self.angle,
+            label: self.label.map(|p| apply(m, p)),
+            place: self.place,
+            solid,
+            thin: self.thin.iter().map(seg).collect(),
+            arcs: Vec::new(),
+            arrows: Vec::new(),
+        }
+    }
+}
+
 /// Is `p` within the convex quad `q`?  Its corners run round in order, so every edge has the
 /// inside on the same hand.
 fn inside(q: &[P; 4], p: P) -> bool {

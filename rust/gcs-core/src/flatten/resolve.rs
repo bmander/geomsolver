@@ -370,13 +370,10 @@ fn rewrite(
     alias: &BTreeMap<String, String>,
     units: Units,
     bad: &mut Vec<(Span, String)>,
-    needs_standard_datums: &mut bool,
 ) {
-    let needed = std::cell::Cell::new(false);
     let fix = |r: &mut Ref, bad: &mut Vec<(Span, String)>| match lookup(r, sc, names, alias, units)
     {
         Some((abs, rest)) => {
-            needed.set(needed.get() || abs.starts_with("std."));
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
         }
@@ -418,7 +415,6 @@ fn rewrite(
                         let outer = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(), closed: ip.closed, ..sc.clone() };
                         match lookup(r, &outer, names, alias, units) {
                             Some((abs, rest)) => {
-                                needed.set(needed.get() || abs.starts_with("std."));
                                 r.root = Name { text: abs, span: r.root.span };
                                 r.path =
                                     rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
@@ -494,7 +490,6 @@ fn rewrite(
         }
         _ => {}
     }
-    *needs_standard_datums |= needed.get();
 }
 impl<'a> Walk<'a> {
     /// Every alias the walk has made, resolved to the absolute name it denotes — transitively,
@@ -683,18 +678,13 @@ impl<'a> Walk<'a> {
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
             let mut bad: Vec<(Span, String)> = Vec::new();
-            rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad,
-                &mut self.needs_standard_datums);
+            rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
             // a seed that reads geometry names it in the scope it was written in, and is read
             // on the sheet, where only absolute names mean anything — so it is rescoped as the
             // statement's references were.  Not in a trace block, whose kept texts are read
             // off the block's own variable table by the formals' names.
             if self.sym.is_none() {
                 rescope_seeds(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
-                if let StmtKind::Decl(d) = &st.kind {
-                    self.needs_standard_datums |= d.seed_names.iter().any(|(_, name)|
-                        name.starts_with("std."));
-                }
             }
             let clean = bad.is_empty();
             for (span, msg) in bad {

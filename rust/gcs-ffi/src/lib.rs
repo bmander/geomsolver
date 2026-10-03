@@ -2217,6 +2217,68 @@ pub unsafe extern "C" fn gcs_overview3d_json(h: *mut Sketch, unit: f64) -> *mut 
     guard(std::ptr::null_mut(), move || out_json(report::overview3d_json(sk(h), unit)))
 }
 
+/* -- the workspace: every view standing on its plane, seen by one orthographic eye --------- */
+
+/// Each view's map of its page onto the eye's picture plane at bearing `az` and elevation `el`
+/// (radians), the eye square on to each view, and the view every point and drawn entity stands
+/// in (`overview::workspace`).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_json(h: *mut Sketch, az: f64, el: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_json(report::workspace_json(sk(h), az, el)))
+}
+
+/// What a click at (x, y) on the eye's picture plane picks within `tol` (an eye length): writes
+/// [kind, index] and returns 1, or returns 0.  `unit` is the eye length of one screen pixel.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_pick(h: *mut Sketch, unit: f64, az: f64, el: f64,
+                                            x: f64, y: f64, tol: f64, out: *mut f64) -> i32 {
+    guard(0, move || {
+        let s = sk(h);
+        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        match gcs_core::overview::workspace::pick(s, &proj, (x, y), tol, unit) {
+            Some(e) => {
+                write(out, &[kind_id(e.kind) as f64, e.i() as f64]);
+                1
+            }
+            None => 0,
+        }
+    })
+}
+
+/// The point nearest (x, y) on the eye's picture plane and how far it is (-1 when there is none).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_nearest_point(h: *mut Sketch, az: f64, el: f64,
+                                                     x: f64, y: f64, out_dist: *mut f64) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        let (i, d) = gcs_core::overview::workspace::nearest_point(s, &proj, (x, y));
+        *out_dist = d;
+        i.map_or(-1, |v| v as i32)
+    })
+}
+
+/// The entities a rubber band from (x0, y0) to (x1, y1) on the eye's picture plane holds whole.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_inside_json(h: *mut Sketch, unit: f64, az: f64, el: f64,
+                                                   x0: f64, y0: f64, x1: f64, y1: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        out_json(report::workspace_inside_json(sk(h), unit, az, el, (x0, y0), (x1, y1)))
+    })
+}
+
+/// The dimension whose callout (x, y) on the eye's picture plane lands on, within `tol_px`
+/// screen pixels, or -1.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_callout_pick(h: *mut Sketch, unit: f64, az: f64, el: f64,
+                                                    x: f64, y: f64, tol_px: f64) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        callout::pick_seen(s, unit, &proj, (x, y), tol_px).map_or(-1, |id| id as i32)
+    })
+}
+
 /// The dimension callouts for the whole sketch.  `unit` is the world length of one screen pixel;
 /// the layout is screen-constant through it.
 #[no_mangle]

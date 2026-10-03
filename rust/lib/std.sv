@@ -3,9 +3,12 @@
 // `use std` brings it in — from the library compiled into the core, so it is there in the browser
 // as in the terminal; a `std.sv` beside a document would win over it, as any module does.
 
-// Shared fixed datums, expanded once when a model refers to std.front or std.up.
-// front has u to the right and v up; up has u up and v to the left.
-// Reading a datum does not assign plane membership: unplaced geometry stays on the page.
+// Shared fixed datums, which every document that says `use std` has — as a CAD part has its
+// origin planes — so the workspace can offer them as places to draw.  front is the page (x right,
+// z up), top is folded up from it about the x axis (x right, y away), and side is folded from it
+// about the vertical (y right, z up, looked at from +x); up is the front plane turned a quarter,
+// u up and v to the left.  Reading a datum does not assign plane membership: unplaced geometry
+// stays on the page.
 component StandardDatums() {
   origin := point
   fix(x == 0, y == 0) origin
@@ -13,8 +16,12 @@ component StandardDatums() {
   fix(x == 1, y == 0) rightward
   upward := point
   fix(x == 0, y == 1) upward
+  downward := point
+  fix(x == 0, y == -1) downward
   front := plane(origin: origin, toward: rightward)
   up := plane(origin: origin, toward: upward)
+  top := plane(origin: origin, toward: rightward, from: front, fold: 0deg)
+  side := plane(origin: origin, toward: downward, from: front, fold: -90deg)
 }
 
 // The three principal views of third-angle projection (§6.7), laid out on one sheet: the page is

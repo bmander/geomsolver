@@ -28,6 +28,8 @@ use crate::model::{grow, Box2, EntKind, EntRef, Sketch};
 use crate::plane::{dot, Basis};
 use std::collections::BTreeMap;
 
+pub mod workspace;
+
 /// The rank tolerance a corner is placed at, relative to the largest singular value of its four
 /// rows.  Two views make a corner only if they are *views* — for planes at an angle θ the
 /// smallest singular value is about sin θ / √2, so this says two planes within about a degree

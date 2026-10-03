@@ -30,7 +30,8 @@ fn nested_groups_forward_through_components_and_repetitions() {
         component Outer(d: group) { repeat 2 { Inner(d) } }\n\
         Outer(design)\ndesign := group(frame: std.front, sizes: sizes)\n\
         sizes := group(width: 12mm)\n");
-    assert_eq!(e.sketch.points.len(), 5);
+    // the two tips, beside the standard datums' four points
+    assert_eq!(e.sketch.points.len(), 6);
 }
 #[test]
 fn layout_instances_can_be_passed_forward_without_an_extra_solve() {

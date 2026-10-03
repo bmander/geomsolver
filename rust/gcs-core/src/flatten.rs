@@ -222,9 +222,8 @@ struct Walk<'a> {
     /// arguments) carries no span and so is read at most once, which costs nothing: it labels
     /// every number by construction.
     called: BTreeSet<Span>,
-    /// The std library supplies these names; actual geometry is expanded only on demand.
+    /// The document says `use std`, so it has the standard datums (`StandardDatums`).
     standard_datums: bool,
-    needs_standard_datums: bool,
     group_names: BTreeSet<String>,
     group_bindings: Vec<(String, Span)>,
     group_fields: Vec<(String, Span)>,
@@ -317,7 +316,6 @@ impl<'a> Walk<'a> {
             diagnostics: Vec::new(),
             called: BTreeSet::new(),
             standard_datums,
-            needs_standard_datums: false,
             group_names: BTreeSet::new(),
             group_bindings: Vec::new(),
             group_fields: Vec::new(),
@@ -339,8 +337,10 @@ impl<'a> Walk<'a> {
     fn finish(mut self) -> Expansion {
         self.expand_pending();
         let (mut flat, mut aliases) = self.resolve();
-        if self.standard_datums && self.needs_standard_datums {
-            // Keep the datums as ordinary library statements with their own source spans.
+        if self.standard_datums {
+            // A document that says `use std` has the standard datums, as a CAD part has its
+            // origin planes, whether or not anything refers to them yet: the workspace offers
+            // them as places to draw.  They are ordinary library statements with their own spans.
             // They precede consumers for geometry building, but participate in the same solve.
             let k = self.prog.modules.iter().position(|m| m.name == "std");
             let comp = self.prog.component_in(k, "StandardDatums").unwrap();
