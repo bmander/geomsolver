@@ -131,9 +131,15 @@ pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> 
 pub fn stl(sk: &Sketch,body: usize,exact: &Exact,tolerance: Option<Tolerance>,say: &Say) -> Result<Vec<u8>,ExportRefusal> {
     let started = crate::clock::Instant::now();
     let bar = tolerance.map_or(GROSS,|t| t.deflection());
-    // meshed within what float32 coordinates leave of the bar, so the written file is within it
+    // meshed within what float32 coordinates leave of the bar (never finer than an eighth of it),
+    // so the written file is within it; refused at once where the encoding alone passes it
     let (lo,hi) = exact.solid.bounds();
-    let sag = bar-crate::mesh::f32_rounding_within(lo,hi);
+    let rounding = crate::mesh::f32_rounding_within(lo,hi);
+    if rounding >= bar {
+        return Err(ExportRefusal::at(Stage::Stl,format!("float32 STL coordinates may move the surface {:.3} µm at this position, \
+            which passes {:.3} µm; move the solid nearer the origin or ask a coarser tolerance",rounding*1e3,bar*1e3)))
+    }
+    let sag = (bar-rounding).max(bar/8.);
     let m = match &exact.pattern { Some(p) => p.mesh(sag,ANGULAR),None => super::mesh::mesh(&exact.solid,sag,ANGULAR) }.at(Stage::Mesh)?;
     if m.turned > 0 { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh has {} triangles facing against their surfaces",m.turned))) }
     if m.sag > bar { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh sags {:.3} µm against {:.3} µm",m.sag*1e3,bar*1e3))) }
