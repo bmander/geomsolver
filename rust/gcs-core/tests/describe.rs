@@ -263,3 +263,27 @@ fn a_number_worked_out_with_its_unit_is_read_at_six_digits() {
     let list: Vec<String> = e.sketch.user_constraints().iter().map(|c| io::describe(c)).collect();
     assert!(list[0].contains("distance(13.3333mm)"), "{}", list[0]);
 }
+
+/// Which way is drawn, not printed: a distance stated `side: right` of a line, or a run stated
+/// `along: left`, is labelled with its magnitude, the figure standing where the word puts it.
+/// Only a directed angle keeps its minus, since its arc sweeps that way (`refusals.rs`).  The
+/// side used to reach the angle's negation, so a flange's radii read `-15`.
+#[test]
+fn a_side_or_a_way_is_drawn_and_not_printed_as_a_sign() {
+    let e = read(
+        "unit mm
+         r := 15mm
+         o := point
+         t := point
+         p := point hint(x: 15, y: 5)
+         q := point hint(x: -60, y: 0)
+         axis := line(o, t)
+         fix(x == 0, y == 0) o
+         fix(x == 0, y == 1) t
+         p distance(15, side: right) axis
+         p distance(r, side: right) axis
+         p distance(15, side: left) axis
+         o distance(60, along: left) q",
+    );
+    assert_eq!(dims(&e.sketch), ["15", "r", "15", "60"]);
+}

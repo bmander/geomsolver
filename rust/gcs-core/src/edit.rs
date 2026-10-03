@@ -1284,7 +1284,8 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             .membership
             .plane()
             .as_ref()
-            .and_then(|p| e.map.ent_named(&p.root.text))
+            // the whole path: `in std.front` is `std` and a field, and `std` names no plane
+            .and_then(|p| e.map.ent_named(&syntax::ref_text(p)))
             .filter(|p| p.kind == EntKind::Plane)
             .map(|p| p.i());
         if now == was {

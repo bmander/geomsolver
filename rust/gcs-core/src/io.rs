@@ -1743,9 +1743,10 @@ pub fn dimension_text(c: &Constraint) -> Option<String> {
     let (i, _, kind) = c.dimensions().into_iter().next()?;
     // a drawing shows the number the statement *makes*: an angle written `angle(a, sense: cw)`
     // states −a, and the arc beside the label sweeps that way, so the two must agree (§9.4).  The
-    // side of a *distance* never reaches here — its figure is drawn on the side it names and its
-    // label is the magnitude, which is how a drawing has always dimensioned an offset.
-    if c.sense() < 0.0 {
+    // side of a distance (`side: right`) and the way of a run (`along: left`) share the table
+    // but not the rule: the figure is drawn where the word puts it and its label is the
+    // magnitude, which is how a drawing has always dimensioned an offset.
+    if c.kind == CKind::Angle && c.sense() < 0.0 {
         return Some(arg_text(kind, &Arg::Num(-c.args[i].num())));
     }
     // a dimension the elaborator worked out from a name is drawn with the name — `w`, not the

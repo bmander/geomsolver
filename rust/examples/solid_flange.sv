@@ -1,4 +1,4 @@
-// A bored mounting flange: an annular profile, an added hub, and repeated through cuts.
+// A bored mounting flange: one stepped radial section turned about its axis, then a bolt pattern.
 unit mm
 use std
 use hardware
@@ -11,16 +11,36 @@ bolt_circle := 24mm
 bolt_radius := 3mm
 bolts := 6
 
-rim := radius(outer_radius) circle(center: std.origin)
-bore := radius(bore_radius) circle(center: std.origin)
-hub_rim := radius(hub_radius) circle(center: std.origin)
+// The half-section carries the bore, the plate and the hub standing proud of it.
+in std.front {
+  top := point hint(x: 0mm, y: plate_depth + hub_height)
+  construction centerline spindle := vertical line(std.origin, top)
+  a := point hint(x: bore_radius, y: 0mm)
+  b := point hint(x: outer_radius, y: 0mm)
+  c := point hint(x: outer_radius, y: plate_depth)
+  d := point hint(x: hub_radius, y: plate_depth)
+  e := point hint(x: hub_radius, y: plate_depth + hub_height)
+  f := point hint(x: bore_radius, y: plate_depth + hub_height)
+  profile := horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
+            horizontal (cd := line(c, d)) -> vertical (de := line(d, e)) ->
+            horizontal (ef := line(e, f)) -> vertical (fa := line(f, a)) -> close
+  // where the axis meets the top of the plate
+  deck := point hint(x: 0mm, y: plate_depth)
+}
+a horizontal std.origin
+top horizontal f
+deck on spindle
+deck horizontal c
+a distance(bore_radius, side: right) spindle
+b distance(outer_radius, side: right) spindle
+d distance(hub_radius, side: right) spindle
+distance(plate_depth) bc
+distance(hub_height) de
+flange := solid(profile, about: spindle)
 
-// Holes belong to the profile here, so both extrusions already have the shaft bore.
-plate_section := face(rim, holes: bore)
-flange := solid(plate_section, depth: plate_depth)
-hub := solid(face(hub_rim, holes: bore), from: 0mm, to: hub_height)
-hub union flange
-
-construction centerline reference := line(std.origin, std.front.toward)
-pattern := hardware.BoltPattern(flange, std.origin, reference,
-                       n: bolts, pitch_r: bolt_circle, hole_r: bolt_radius, phase: 0deg)
+// The bolt circle is drawn on the top of the plate: a plane folded square to the section about
+// a reference running out along that face from the axis, so it looks down on the face.
+construction centerline reference := line(deck, c)
+plate_top := plane(origin: deck, toward: c, from: std.front, fold: along reference)
+pattern := hardware.BoltPattern(flange, deck, reference, n: bolts, pitch_r: bolt_circle,
+                                hole_r: bolt_radius, phase: 0deg) in plate_top

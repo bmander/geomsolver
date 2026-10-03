@@ -471,6 +471,24 @@ fn a_seed_inside_a_block_splices_in_place() {
     read(&out.text);
 }
 
+/// A block over a plane reached by a path — `in std.front { … }` — is that plane to the gesture
+/// as it is to the build.  Reconcile once read the clause's root alone (`std`), found no plane,
+/// and took every point in the block for one moved out of it: an edit was refused on load.
+#[test]
+fn a_block_over_a_module_plane_is_not_a_membership_to_change() {
+    let src = "unit mm\nuse std\nin std.front {\n  a := point hint(x: 10, y: 5)\n}\n\
+               fix(x == 10, y == 5) a\nb := point hint(x: 3, y: 4)\nfix(x == 3, y == 4) b\n";
+    let (prog, parse, link) = gcs_core::library::parse_linked(src);
+    assert!(parse.is_empty() && link.is_empty(), "{parse:?} {link:?}");
+    let mut e = elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let a = e.map.ent_named("a").unwrap();
+    assert_eq!(e.sketch.plane_of(a.i()), e.map.ent_named("std.front").map(|p| p.i()));
+    let out = reconciled(&mut e);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    assert_eq!(out.text, src, "nothing to write");
+}
+
 #[test]
 fn the_words_are_tinted() {
     let src = "top := plane(origin: o, toward: q, from: front, fold: -90deg)\na := point in top hint(x: 3in, y: 0)\na project b\nunit in\n";
