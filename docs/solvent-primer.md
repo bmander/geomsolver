@@ -1090,7 +1090,10 @@ $ solventc refused.sv          # k := length(wheel_radius)
 refused.sv:19:11: error[E107]: `k`: `length(wheel_radius)` measures the solved drawing, and only a motion's `ratio:`, `phase:` and `advance:` are read after the solve; a param, a seed, a constraint's number and a solid's extent are needed before it
 ```
 
-`lantern_generation.sv` is the worked case: a pinion rolls against a wheel blank at that ratio and
+`twist_drill/` grinds flutes with a wheel carried along a screw (`motion(about: axis, advance:
+lead)`): the constant-twist class, whose sheet is the wheel's characteristic carried along the
+helix (docs/generating-sweeps.md); `solventc twist_drill/drill.sv --step drill.step --tolerance 0.01mm`
+writes it. `lantern_generation.sv` is the worked case: a pinion rolls against a wheel blank at that ratio and
 its pin cuts a tooth space (`solventc lantern_generation.sv --stl out.stl --stl-backend mesh`, a
 couple of seconds); edit a pitch radius and the cut follows.
 

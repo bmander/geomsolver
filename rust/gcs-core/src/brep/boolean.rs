@@ -563,7 +563,6 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
                         eprintln!("pieces: half {k} edge {} ({}, vertices {:?} at {:?}) along {} nodes {:?} from {:?} to {:?} leave {:.4} back {:.4}{}",
                             x.edge,match &e.curve { EdgeCurve::Curve(c) => c.kind(),_ => "degenerate" },e.v,e.v.map(|v| pool.pts[v as usize]),
                             x.along,ends[k],x.from,x.to,leave[k],arrive_back[k],if cycle.contains(&k) { " (this cycle)" } else { "" });
-                        eprintln!("pieces:   samples {:?}",[0.,1e-4,0.01,0.1,0.5,1.].map(|s| at(x,f,out,pool,s)));
                     }
                 }
                 return Err(format!("a {}'s pieces do not close",f.surface.kind()))

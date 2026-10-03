@@ -63,6 +63,12 @@ test('menu examples open files or directories with one V-twin choice', async (t)
     if (name !== 'assembly') assert.ok(!(`vtwin/${name}.sv` in vtwin.files));
   }
   assert.ok(!vtwin.files['engine.svd']);
+  const drill = await remote.drawing('twist_drill');
+  assert.equal(drill.source, 'twist_drill/drill.sv');
+  for (const name of ['drill.sv', 'drill.svd', 'configuration.sv', 'wheel.sv', 'point.sv']) {
+    assert.ok(drill.files[`twist_drill/${name}`], name);
+  }
+  assert.ok(drawings.info(drill.files['twist_drill/drill.svd']).sheets.length);
 });
 
 test('a component preview uses edited project dependencies when opened directly', async (t) => {
