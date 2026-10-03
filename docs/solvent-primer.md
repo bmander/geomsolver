@@ -201,7 +201,7 @@ stands in the parentheses:
 | `distance` | prefix | a line: its length |
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; in space, sphere–line, sphere–sphere, cylinder–line (round thing first); two cones at a point, `k1 tangent(M) k2` |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
-| `curvature` | infix | spline or curve and a circle/arc: the circle becomes the osculating circle there. Refused on a traced curve |
+| `curvature` | infix | spline or curve and a circle/arc: the circle becomes the osculating circle there. On a traced curve, exact (the body's Taylor orders); refused only for a body using a relation with no Taylor form, named in the error |
 | `horizontal`, `vertical` | prefix / infix | a line; or two points with no line between them |
 | `angle` | infix | two lines, directed (below). With a second line pair instead of a number, `l1 angle(l3, l4) l2` equates two angles |
 | `angle` | prefix | a cone: its half-angle |

@@ -67,6 +67,7 @@ pub mod svg;
 pub mod syntax;
 pub mod system;
 pub mod tape;
+pub mod taylor;
 pub mod topology;
 pub mod vertex;
 pub mod edge;

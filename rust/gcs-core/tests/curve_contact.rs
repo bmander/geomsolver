@@ -3,8 +3,8 @@
 //! The involute of a circle has closed forms for both: its tangent at roll `u` is the string
 //! itself, at bearing `u` from the base radius, and its radius of curvature is the length of
 //! string unwound, `Rb · u`.  Neither appears in the document; the constraints are stated and
-//! the solver's answers are checked against them.  A traced curve gives an exact tangent and no
-//! curvature, and both halves of that are checked too.
+//! the solver's answers are checked against them.  A traced curve gives an exact tangent and,
+//! where its block's kernels have Taylor forms, an exact curvature; both are checked too.
 
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
@@ -127,19 +127,71 @@ fn a_line_solves_tangent_to_a_traced_curve() {
     assert!(off < 1e-6, "the contact point is {off} off the line");
 }
 
-/// A curvature against a traced curve is refused, and says why.
+/// **A traced curve has a curvature, exactly.**  The taut string states no formula, yet the
+/// circle solved onto its osculating circle is the involute's — centre where the string leaves
+/// the base circle, radius the string unwound — since `C''` and `C'''` are the block's own
+/// Taylor orders (`locus::higher_orders`), not differences.
 #[test]
-fn a_curvature_against_a_traced_curve_is_refused() {
-    let src = format!("{UNWIND}k := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\ninv curvature osc\n");
-    let (prog, errs) = parse(&src);
+fn a_circle_solves_osculating_a_traced_curve() {
+    let src = format!(
+        "{UNWIND}k := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\n\
+         inv curvature osc hint(t: 60)\no distance(12, along: x) k\n"
+    );
+    let mut e = build(&src);
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    fd_jacobian(&e.sketch, 1e-3);
+    let u = param_of(&e);
+    let rho = 20.0 * u.to_radians();
+    let osc = e.map.ent_named("osc").unwrap();
+    let radius = e.sketch.params[e.sketch.circles[osc.i()].radius as usize].value;
+    assert!((radius - rho).abs() < 1e-6, "radius {radius} against Rb·u = {rho} at u = {u}");
+    let k = e.sketch.point_xy(e.map.ent_named("k").unwrap().i());
+    let t = (20.0 * u.to_radians().cos(), 20.0 * u.to_radians().sin());
+    assert!((k.0 - t.0).abs() < 1e-6 && (k.1 - t.1).abs() < 1e-6, "centre {k:?} against {t:?}");
+}
+
+/// The trace's `C''` and `C'''` against the involute's closed form, at rolls across the
+/// interval: `C = R(cos φ + φ sin φ, sin φ − φ cos φ)` with `φ = u°`, so in `u`,
+/// `C'' = k²R((cos φ, sin φ) + φ(−sin φ, cos φ))` and
+/// `C''' = k³R(2(−sin φ, cos φ) − φ(cos φ, sin φ))`, `k = π/180`.
+#[test]
+fn a_traced_curve_gives_its_higher_orders_exactly() {
+    let e = build(UNWIND);
+    let gcs_core::model::CurveBody::Trace(l) = &e.sketch.curve_defs[0].body else { panic!() };
+    let mut s = gcs_core::locus::Scratch::new();
+    let k = std::f64::consts::PI / 180.0;
+    for u in [10.0, 25.0, 47.5, 70.0, 90.0] {
+        let outer = e.sketch.curve_vars(0, u);
+        let anchor = gcs_core::locus::Anchor { u: e.sketch.curve_home(0), pose: None };
+        let v = gcs_core::locus::eval_flat_higher(&l.flat, &outer, anchor, &mut s);
+        assert!(v.ok && v.higher, "at {u}");
+        let f = u * k;
+        let (c, sn) = (f.cos(), f.sin());
+        let d2 = [k * k * 20.0 * (c - f * sn), k * k * 20.0 * (sn + f * c)];
+        let d3 = [k * k * k * 20.0 * (-2.0 * sn - f * c), k * k * k * 20.0 * (2.0 * c - f * sn)];
+        for i in 0..2 {
+            assert!((v.d2[i] - d2[i]).abs() < 1e-12, "C'' at {u}: {:?} against {d2:?}", v.d2);
+            assert!((v.d3[i] - d3[i]).abs() < 1e-12, "C''' at {u}: {:?} against {d3:?}", v.d3);
+        }
+    }
+}
+
+/// A trace whose block reads a kernel with no Taylor form has no exact `C''`, and a curvature
+/// against it is refused naming the kernel.
+#[test]
+fn a_curvature_against_a_trace_with_no_form_is_refused() {
+    let src = "component Slide(f: plane, u: Length) {\n  p := point hint(x: 1, y: 1)\n  \
+               p distance(u, along: u) f\n  p distance(2, along: v) f\n}\n\
+               o := point\nx := point hint(x: 1, y: 0)\nfr := plane(origin: o, toward: x)\n\
+               fix(x == 0, y == 0) o\nfix(x == 1, y == 0) x\n\
+               s := Slide(fr).p over u in (0, 10)\n\
+               k := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\ns curvature osc\n";
+    let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);
-    assert!(!e.ok());
-    assert!(
-        e.errors().any(|d| d.message.contains("no curvature")),
-        "{:?}",
-        e.errors().map(|d| &d.message).collect::<Vec<_>>()
-    );
+    let said: Vec<&String> = e.errors().map(|d| &d.message).collect();
+    assert!(said.iter().any(|m| m.contains("is traced through a `coordinate_")), "{said:?}");
 }
 
 /// The statements print back as they were written, and describe themselves the same way.

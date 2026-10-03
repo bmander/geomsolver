@@ -1447,13 +1447,18 @@ Conventions:
   tests key on.  The tapes ride in `consts`, so `KERNELS` stays `'static`.  Tangency and
   curvature need the **frame** (`kernels::CurveFrame`): `C` to `C'''` and the gradient of the
   first three orders in `[u, θ…]`.  A formula gives it exactly (`tape::eval_series_flat`,
-  `tape::Series`, checked in `tests/tape.rs`).  A trace gives `C`, `C'` exactly and `C'`'s
-  gradient by **forward difference** from the memoised centre (`locus::kernel_frame`: one warm
-  block solve per column from the remembered pose, so the branch cannot change).  **A residual
-  never builds the frame**: `curve_value` gives derivatives alone, only a Jacobian pays for the
-  gradient (the `EllFrame` bargain).  A trace gives no `C''`, so `constraints::validate` refuses
-  curvature against a traced curve and its slot is the `refused` kernel (rows NaN, not
-  converged).  `CKind::family_kernel` (`FamilyKernel`: discriminant = slot, knows its row count)
+  `tape::Series`, checked in `tests/tape.rs`).  A trace gives `C`, `C'` exactly and, asked
+  (`higher`), `C''`, `C'''` exactly: **Taylor orders of the implicit function**, one solve each
+  with `finish`'s factorisation (`locus::higher_orders`; Wagner–Walther–Schaefer), the rows read
+  over `taylor::Jet`s — each kernel's **Taylor form** (`taylor::form`; affine kernels by their
+  `J`), held to its kernel by `tests/taylor.rs`.  Gradients along θ are a **forward difference**
+  from the memoised centre (`locus::kernel_frame`: one warm block solve per column from the
+  remembered pose, so the branch cannot change); along `u` the exact orders.  **A residual never
+  builds the frame**: `curve_value` gives derivatives alone, only a Jacobian pays for the
+  gradient (the `EllFrame` bargain).  A trace with a row lacking a form
+  (`Locus::without_form`) gives no `C''`: `constraints::validate` refuses curvature naming the
+  kernel and its slot is the `refused` kernel (rows NaN, not converged).  In the plane a
+  generated profile is such a trace (normal through the instant centre; `tests/generation.rs`).  `CKind::family_kernel` (`FamilyKernel`: discriminant = slot, knows its row count)
   is read by `kernel_id_in`, `n_residuals`, the registry and `kernel_table`, so a fourth kind is
   one arm.  `Sketch::curve_polyline` is memoised against everything it reads (picks walk every
   curve per pointer move).  `tests/curve_contact.rs` holds the contacts against the

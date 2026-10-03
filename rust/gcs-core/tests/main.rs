@@ -111,6 +111,7 @@ mod solid_issue51;
 mod stack;
 mod style;
 mod tape;
+mod taylor;
 mod topology;
 mod trace;
 mod units;
