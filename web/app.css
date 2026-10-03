@@ -119,16 +119,21 @@ label.check { display: inline-flex; align-items: center; gap: 4px; cursor: point
 main { flex: 1; display: flex; min-height: 0; }
 #canvas-wrap { flex: 1; position: relative; min-width: 0; }
 canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
-/* The glass box's own canvas, under the sketch's and deaf to the pointer, so every gesture
-   still reaches the one it always talked to and whatever a gesture draws lands over the box.
-   Both halves need saying.  The **stacking**: a positioned element paints above an in-flow one
-   whatever its z-index, so the sketch canvas is given a place in the order too, or the box
-   covers it.  And **`[hidden]`**: the `canvas` rule above sets `display` and outranks the one
-   the browser gives `[hidden]`, so without this the box goes on covering the sheet with an
-   empty frame after ⌘B has put it away. */
+/* The workspace's three.js canvas, under the sketch's and deaf to the pointer, so every gesture
+   reaches the one the sketch is stroked on and whatever a gesture draws lands over the solids.
+   A positioned element paints above an in-flow one whatever its z-index, so the sketch canvas is
+   given a place in the order too, or the solids cover it. */
 #box { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
-#box[hidden] { display: none; }
 #canvas { position: relative; z-index: 1; }
+/* the plane being drawn on, in the viewport's upper right as a CAD tool keeps it: over the
+   canvases, under the windows that float over the drawing */
+#plane-pick { position: absolute; top: 10px; right: 12px; z-index: 3;
+  display: flex; align-items: center; gap: 6px; padding: 3px 6px;
+  font-size: 12px; color: var(--muted); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+#plane-pick select { font: inherit; color: var(--text); }
+.drawing-active #plane-pick { visibility: hidden; }
 canvas.select { cursor: default; }
 
 #drawing-view { position: absolute; inset: 0; z-index: 2; display: flex;

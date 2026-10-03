@@ -18,11 +18,15 @@
   <div id="banner"><span id="banner-text"></span><button id="banner-select">Select culprits</button></div>
   <main>
     <div id="canvas-wrap">
-      <!-- the glass box, rendered by three.js.  Under the sketch canvas and taking no pointer
-           events: every gesture still runs against the 2D one, so the orbit, the picking and the
-           double-click to go to a view are untouched by there being a depth buffer now. -->
-      <canvas id="box" hidden></canvas>
+      <!-- the workspace's depth — solids, panes — rendered by three.js.  Under the sketch canvas
+           and taking no pointer events: every gesture runs against the 2D one, which strokes each
+           sketch on its own plane over it. -->
+      <canvas id="box"></canvas>
       <canvas id="canvas"></canvas>
+      <label id="plane-pick" title="The plane the next thing is drawn on — choosing one also turns the view square on to it">
+        <span>Sketch on</span>
+        <select id="plane-select" aria-label="Sketch plane"></select>
+      </label>
       <section id="drawing-view" aria-label="Drawing view" hidden>
         <div class="drawing-toolbar">
           <label>Sheet <select id="drawing-sheet" aria-label="Sheet"></select></label>

@@ -1,22 +1,18 @@
-/* **The glass box, rendered by three.js.**
+/* **The workspace's depth, rendered by three.js.**
  *
- * The overview used to be strokes on the 2D canvas, which meant the app owned a hidden-surface
- * problem it had no way to solve: a painter's order compares centroids, and ordering is only ever
- * right between polygons that do not overlap in the picture.  A depth buffer settles it per pixel,
- * so what is here instead is the object's own mesh, drawn by a renderer that has one.
+ * Every sketch is stroked on the 2D canvas over this one, each through its own plane's camera
+ * (`paint.ts`), because that is where selection, state colours, callouts and the tools' previews
+ * live.  What is left for a renderer with a depth buffer is what a flat canvas cannot order: the
+ * solids' meshes, the planes' panes and axes, and the kinds that stand in space rather than on a
+ * plane (spheres, cones, cylinders).
  *
- * **The seam is unchanged, and that is the point.**  The core still owns every rule about what is
- * in the box — `overview::scene3d` says which panes exist and how far each reaches, `mesh::grouped`
- * says what the object's faces are and which of them is round — and this file turns that into
- * three.js objects.  It computes no geometry: there is no place here where a coordinate is worked
- * out rather than read.
- *
- * **And every gesture is unchanged.**  The orbit, the zoom, the hover, the picking and the
- * double-click to go to a view all still run against `overview::scene`'s flattened projection,
- * which the core goes on producing.  This canvas sits *under* the 2D one and takes no pointer
- * events at all; three.js's own camera is set from `view.orbit` and `view.camera` so the two agree
- * about where a thing is on screen.  Replacing the input handling as well would have been a second
- * change wearing the same coat.
+ * **The core owns every rule about what is here** — `overview::scene3d` says which panes exist and
+ * how far each reaches, `mesh::grouped` what an object's faces are and which of them is round —
+ * and this file turns that into three.js objects.  It computes no geometry: there is no place here
+ * where a coordinate is worked out rather than read.  This canvas sits *under* the 2D one and
+ * takes no pointer events; three.js's camera is set from `view.orbit` and the eye's camera
+ * (`view.cam`), which is what the core projects every plane for, so the two agree about where a
+ * thing is on screen.
  */
 import * as THREE from 'three';
 
@@ -37,6 +33,9 @@ const INK = {
   edge: 0x3a3f45,
   solid: 0xb0b3b8,
 };
+
+/** The kinds that stand in space and on no one plane, so are this renderer's to draw. */
+const IN_SPACE = new Set(['sphere', 'cone', 'cylinder']);
 
 /** What the scene was built from, so a repaint that changes nothing rebuilds nothing.  The box is
  *  read-only, so between edits only the camera moves — and rebuilding a mesh on every pointer
@@ -129,8 +128,8 @@ export class Box3D {
     const ce = Math.cos(el);
     const eye = new THREE.Vector3(Math.cos(az) * ce, Math.sin(az) * ce, Math.sin(el));
     const up = new THREE.Vector3(-Math.cos(az) * Math.sin(el), -Math.sin(az) * Math.sin(el), ce);
-    // the world length of half the canvas, which is what `camera.ts` reads its scale as
-    const [cx, cy] = v.s2w(v.width / 2, v.height / 2);
+    // the eye length of half the canvas, which is what `camera.ts` reads its scale as
+    const [cx, cy] = v.cam.s2w(v.width / 2, v.height / 2);
     const centre = new THREE.Vector3(-cx, -cy, 0);
     const halfW = (v.width / 2) * v.unit;
     const halfH = (v.height / 2) * v.unit;
@@ -173,7 +172,9 @@ export class Box3D {
       this.frames.push({ it, line: this.lines([it], INK.pane, 0.35, true)! });
     }
     this.lines(items.filter((i) => i.part === 'axis'), INK.axis, 0.55);
-    for (const it of items.filter((i) => i.part === 'drawn')) {
+    // of what is drawn, only what stands in space: a sketch on a plane is stroked on the canvas
+    // above, through its plane's camera, with the selection and the state colours it carries
+    for (const it of items.filter((i) => i.part === 'drawn' && IN_SPACE.has(i.kind ?? ''))) {
       this.frames.push({ it, line: this.lines([it], INK.drawn, 1)! });
     }
     // the object's creases, which stand whether or not its surfaces are drawn: with the
@@ -224,9 +225,8 @@ export class Box3D {
       const chrome = ent ? chromeOf(sel, hl, ent) : null;
       m.color.set(chrome ? chrome[0] : base);
       if (it.part !== 'face') continue;
-      // the pane the pointer is on: its frame bolds, which is the affordance for the
-      // double-click that goes to it
-      m.opacity = v.planeOf(it) === v.hoverPlane ? 0.8 : 0.35;
+      // the plane being drawn on: its frame bolds, so where the next thing goes is in sight
+      m.opacity = v.planeOf(it) === v.plane ? 0.8 : 0.35;
     }
   }
 

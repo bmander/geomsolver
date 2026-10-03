@@ -2258,6 +2258,24 @@ pub unsafe extern "C" fn gcs_workspace_nearest_point(h: *mut Sketch, az: f64, el
     })
 }
 
+/// The extent of everything the workspace shows on the eye's picture plane: writes (xmin, ymin,
+/// xmax, ymax) and returns 1, or 0 when nothing is drawn.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_bounds(h: *mut Sketch, unit: f64, az: f64, el: f64,
+                                              out: *mut f64) -> i32 {
+    guard(0, move || {
+        let s = sk(h);
+        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        match gcs_core::overview::workspace::bounds(s, &proj, unit) {
+            Some((x0, y0, x1, y1)) => {
+                write(out, &[x0, y0, x1, y1]);
+                1
+            }
+            None => 0,
+        }
+    })
+}
+
 /// The entities a rubber band from (x0, y0) to (x1, y1) on the eye's picture plane holds whole.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_inside_json(h: *mut Sketch, unit: f64, az: f64, el: f64,
@@ -3891,6 +3909,14 @@ pub unsafe extern "C" fn gcs_elab_reconcile(h: *mut Elaborated, s: *mut Sketch) 
 pub unsafe extern "C" fn gcs_elab_add_point(h: *mut Elaborated, x: f64, y: f64) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         out_edit(gcs_core::edit::add_point(&(*h).program, x, y))
+    })
+}
+
+/// `use NAME`, as a line of the document's own — nothing when it already says it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_use(h: *mut Elaborated, name: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        out_edit(gcs_core::edit::add_use(&(*h).program, &as_str(name, len)))
     })
 }
 

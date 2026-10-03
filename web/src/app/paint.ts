@@ -5,13 +5,12 @@
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import type { Pt, Seg } from '../core/callout.js';
-import type { Drawn } from '../core/derived.js';
-import type { Item, Part } from '../core/overview.js';
 import {
   Arc, Circle, Line, Plane, Point, Primitive, Spline, Style, onRadius,
   threePointArc,
 } from '../core/model.js';
 import { tellDimension } from './dimension.js';
+import { PAGE } from '../core/workspace.js';
 import { paintFrame, paintUnderlay } from './underlay.js';
 import type { SketchView } from './view.js';
 
@@ -37,7 +36,10 @@ export const COL = {
    *  so this is the same dead fallback a callout's ink has. */
   plane: '#8a8a8a',
 };
-const PLANE_FONT = '11px system-ui, sans-serif';
+/** How foreshortened a view may be before its callouts are left out: a dimension on a plane
+ *  seen within about five degrees of edge on is a squashed line of text along a line, and says
+ *  nothing a reader can use.  The geometry is still drawn — it is where the plane is. */
+const EDGE_ON = 12;
 /* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
  * conflict set rather than from a guess) */
 const COL_STATE: Record<string, string> = {
@@ -49,9 +51,8 @@ const COL_STATE: Record<string, string> = {
  * highlight, colour-by-state — is layered over it here, because that is a view toggle and not a
  * statement in the document.  `paint` knows what a class is nowhere.
  *
- * Module-level rather than a closure so the overview inks its scene by the same rule: an edge of
- * the glass box is the same line as the one on the sheet, and picking it there must light it up
- * the same way. */
+ * Module-level rather than a closure so the three.js layer inks by the same rule (`chromeOf`): a
+ * thing picked is lit the same way wherever it is drawn. */
 function strokeOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
                   base: string, ent: Primitive, st?: Style): [string, number] {
   const lw = st?.width ?? 1.8;   // the other copy is `svg::PLAIN_PX`; the two must agree
@@ -71,23 +72,16 @@ export function chromeOf(sel: Set<Primitive>, hl: Set<Primitive>, ent: Primitive
 }
 
 export function paint(v: SketchView): void {
-  // the box is a different picture of the same document, so it takes the canvas whole
-  if (v.overview) return paintOverview(v);
   const ctx = v.ctx;
   const w = v.width, h = v.height;
+  // this canvas is the upper of two and must be see-through: the ground, the panes and the
+  // solids are three.js's, one canvas down, and every sketch is stroked over them here
+  ctx.clearRect(0, 0, w, h);
+  v.box3d.paint(v);
   ctx.save();
-  ctx.fillStyle = COL.bg;
-  ctx.fillRect(0, 0, w, h);
-  // the picture being traced, under everything: the axes and the drawing read over it
+  // the picture being traced, under the drawing: it lies on the page plane
   paintUnderlay(v);
   ctx.lineCap = 'round';
-  const [ox, oy] = v.w2s(0, 0);
-  ctx.strokeStyle = COL.axis;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, oy + 0.5); ctx.lineTo(w, oy + 0.5);
-  ctx.moveTo(ox + 0.5, 0); ctx.lineTo(ox + 0.5, h);
-  ctx.stroke();
 
   const sk = v.sketch;
   const sel = new Set(v.selected);
@@ -95,6 +89,9 @@ export function paint(v: SketchView): void {
   const strokeFor = (base: string, ent: Primitive, st?: Style): [string, number] =>
     strokeOf(v, sel, hl, base, ent, st);
 
+  // **every figure in its own view**: a line from where each end is seen (a projector between
+  // two views runs between them), and anything round, or a curve, through the camera of the one
+  // view it stands in
   for (const ln of sk.lines) {
     const st = ln.style;
     if (st.hidden) continue;
@@ -103,29 +100,33 @@ export function paint(v: SketchView): void {
     ctx.lineWidth = lw;
     ctx.setLineDash(st.dash);
     ctx.beginPath();
-    ctx.moveTo(...v.w2s(...ln.p1.xy));
-    ctx.lineTo(...v.w2s(...ln.p2.xy));
+    ctx.moveTo(...v.seen(ln.p1));
+    ctx.lineTo(...v.seen(ln.p2));
     ctx.stroke();
   }
   for (const c of sk.circles) {
     const st = c.style;
     if (st.hidden) continue;
     const [col, lw] = strokeFor(COL.circle, c, st);
-    ctx.strokeStyle = col;
-    ctx.lineWidth = lw;
-    ctx.setLineDash(st.dash);
-    circlePath(v, c.center.xy, Math.abs(c.radius.value));
-    ctx.stroke();
+    v.inView(v.viewOfEntity(c), () => {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw;
+      ctx.setLineDash(st.dash);
+      circlePath(v, c.center.xy, Math.abs(c.radius.value));
+      ctx.stroke();
+    });
   }
   for (const a of sk.arcs) {
     const st = a.style;
     if (st.hidden) continue;
     const [col, lw] = strokeFor(COL.arc, a, st);
-    ctx.strokeStyle = col;
-    ctx.lineWidth = lw;
-    ctx.setLineDash(st.dash);
-    arcPath(v, a.center.xy, Math.abs(a.radius.value), ...a.angles());
-    ctx.stroke();
+    v.inView(v.viewOfEntity(a), () => {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw;
+      ctx.setLineDash(st.dash);
+      arcPath(v, a.center.xy, Math.abs(a.radius.value), ...a.angles());
+      ctx.stroke();
+    });
   }
   // curves written in the language: the core lays out the polyline, exactly as it does for a
   // B-spline, so the front end strokes what it is handed and evaluates no expression of its own
@@ -133,82 +134,58 @@ export function paint(v: SketchView): void {
     const st = cv.style;
     if (st.hidden) continue;
     const [col, lw] = strokeFor(COL.spline, cv, st);
-    ctx.strokeStyle = col;
-    ctx.lineWidth = lw;
-    ctx.setLineDash(st.dash);
-    polyPath(v, cv.polyline());
-    ctx.stroke();
-    ctx.setLineDash([]);
+    v.inView(v.viewOfEntity(cv), () => {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw;
+      ctx.setLineDash(st.dash);
+      polyPath(v, cv.polyline());
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
   }
   for (const sp of sk.splines) {
     const st = sp.style;
     if (st.hidden) continue;
     const [col, lw] = strokeFor(COL.spline, sp, st);
-    // the curve arrives as a polyline already refined to this zoom: `unit` is the world
-    // length of one screen pixel, the same number the callouts are laid out against, so the
-    // front end strokes what the core hands it and never evaluates a basis function
-    ctx.strokeStyle = col;
-    ctx.lineWidth = lw;
-    ctx.setLineDash(st.dash);
-    polyPath(v, sp.polyline(v.unit));
-    ctx.stroke();
-    // the control polygon, only while the curve or one of its points is in play: it is how
-    // the shape is edited, and clutter the rest of the time
-    const live = sel.has(sp) || hl.has(sp)
-      || sp.ctrl.some((p) => sel.has(p) || hl.has(p));
-    if (live) {
-      ctx.save();
-      ctx.strokeStyle = COL.preview;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 3]);
-      polyPath(v, sp.ctrl.map((p) => p.xy));
+    v.inView(v.viewOfEntity(sp), () => {
+      // the curve arrives as a polyline already refined to this zoom: `unit` is the eye length of
+      // one screen pixel, the same number the callouts are laid out against, so the front end
+      // strokes what the core hands it and never evaluates a basis function
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw;
+      ctx.setLineDash(st.dash);
+      polyPath(v, sp.polyline(v.unit));
       ctx.stroke();
-      ctx.restore();
-    }
+      // the control polygon, only while the curve or one of its points is in play: it is how
+      // the shape is edited, and clutter the rest of the time
+      const live = sel.has(sp) || hl.has(sp)
+        || sp.ctrl.some((p) => sel.has(p) || hl.has(p));
+      if (live) {
+        ctx.save();
+        ctx.strokeStyle = COL.preview;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        polyPath(v, sp.ctrl.map((p) => p.xy));
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
   }
-  // a plane is its chord — origin to toward, the sheet's dashed light ink — with a tick out of
-  // the origin along the chord's normal and its name beside it, upright, since the page is
-  // read upright whichever way the view is turned.  Its two points are drawn as points below;
-  // nothing marks the points drawn *in* it, which read as ordinary geometry
-  for (const pl of sk.planes) {
-    // one read: `style` crosses the ABI and comes back as JSON, and it is the same answer twice
-    const st = pl.style;
-    if (st.hidden) continue;
-    const [col, lw] = strokeFor(COL.plane, pl, st);
-    // the figure is the core's, laid out at `unit` like a callout's: the chord, then the tick.
-    // Nothing here derives it — the tick's direction is the frame's y-axis and its length is a
-    // screen constant, and both are said in `plane::glyph`
-    const [chord, tick] = pl.glyph(v.unit);
-    ctx.strokeStyle = col;
-    ctx.lineWidth = lw;
-    ctx.setLineDash(st.dash);
-    ctx.beginPath();
-    ctx.moveTo(...v.w2s(...chord[0]));
-    ctx.lineTo(...v.w2s(...chord[1]));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.beginPath();
-    ctx.moveTo(...v.w2s(...tick[0]));
-    ctx.lineTo(...v.w2s(...tick[1]));
-    ctx.stroke();
-    // the name is the app's: a `Sketch` holds no source names, which is the one part of the
-    // glyph the core cannot say
-    const [tx, ty] = v.w2s(...tick[1]);
-    ctx.fillStyle = col;
-    ctx.font = PLANE_FONT;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(v.doc.nameOf(pl) ?? pl.name, tx + 3, ty - 3);
-  }
+  // a plane is not stroked here: it is a pane of the workspace, drawn in space below, and the
+  // plane being drawn on is named in the chooser over the viewport
   ctx.setLineDash([]);
-  if (v.pending.length || v.pendingFit.length) paintPreview(v);
+  // a tool's preview is where its clicks are read: the plane being drawn on, or — for the plane
+  // tool, whose two points are layout — the page
+  if (v.pending.length || v.pendingFit.length) {
+    v.inView(v.tool === 'plane' ? PAGE : v.activeView, () => paintPreview(v));
+  }
   if (v.diagnosis?.conflicts?.length) paintConflicts(v);
 
   // one read for every point: a point's style is the sheet's `.point` rule and nothing else
   const hidePoints = sk.styleNamed('point').hidden;
   for (const p of sk.points) {
     if (hidePoints && !sel.has(p) && !hl.has(p)) continue;
-    const [sx, sy] = v.w2s(...p.xy);
+    const [sx, sy] = v.seen(p);
     const col = sel.has(p) ? COL.sel : hl.has(p) ? COL.highlight : p.isFixed ? COL.fixed
       : v.colorByState ? COL_STATE[v.stateOf(p)] : COL.point;
     ctx.fillStyle = col;
@@ -220,8 +197,6 @@ export function paint(v: SketchView): void {
       ctx.fill();
     }
   }
-  // the derived pictures sit with the geometry, under the callouts that dimension them
-  paintDerived(v);
   paintCallouts(v);
   // the traced picture's frame, over everything: dashed grey while it is scenery, since that
   // edge is the only part of it a press takes hold of and an affordance you cannot see is one
@@ -231,7 +206,7 @@ export function paint(v: SketchView): void {
   if (v.tool !== 'select') {                 // snap indicator
     const sp = v.pickPoint(...v.cursor);
     if (sp) {
-      const [sx, sy] = v.w2s(...sp.xy);
+      const [sx, sy] = v.seen(sp);
       ctx.strokeStyle = COL.sel;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -239,80 +214,6 @@ export function paint(v: SketchView): void {
       ctx.stroke();
     }
   }
-  ctx.restore();
-}
-
-/** The overview, drawn by three.js — see `box3d.ts`.
- *
- *  What used to be here was the box stroked onto this canvas, and it carried a hidden-surface
- *  problem a 2D canvas cannot solve: ordering polygons by depth is only ever right between
- *  polygons that do not overlap in the picture, which is exactly what a part with a bore in it is
- *  not.  A depth buffer settles it per pixel.
- *
- *  **What did not move is the seam.**  The core still says what is in the box and where — it is
- *  `overview::scene3d` and `mesh::grouped` rather than `overview::scene` now, but they come out of
- *  the same walk — and every gesture still runs against the flattened projection, which is why
- *  picking, hover and the double-click to go to a view needed no change at all. */
-export function paintOverview(v: SketchView): void {
-  // this canvas is the *upper* one now and must be see-through, or the sheet's last frame sits
-  // over the box.  Cleared and not filled: the ground is the box's, one canvas down
-  v.ctx.clearRect(0, 0, v.width, v.height);
-  v.box3d.paint(v);
-  // whatever the pointer is in the middle of still draws on the sheet's own canvas, which is
-  // the one over the box: the orbit paints nothing, but the seam should not be the reason
-  v.gesture?.paint?.(v.ctx);
-}
-
-/** A picture's strokes by ink, kept as long as the picture is (`DerivedDrawing` hands the same
- *  array back through a pan or a zoom). One path an ink, stroked once: a picture is thousands of
- *  short strokes in two or three inks — an exact gear pair's silhouettes and creases, sixteen
- *  thousand — and a stroke and a dash set apiece was most of a pan's frame, and grouping them
- *  afresh each frame six milliseconds more. The inks keep the order they first appear in. */
-const inked = new WeakMap<Drawn[], Drawn[][]>();
-function byInk(items: Drawn[]): Drawn[][] {
-  let groups = inked.get(items);
-  if (groups) return groups;
-  const by = new Map<string, Drawn[]>();
-  for (const d of items) {
-    if (d.pts.length < 2) continue;
-    const key = `${d.stroke.color ?? ''}|${d.stroke.width ?? 1}|${(d.stroke.dash ?? []).join(',')}`;
-    const list = by.get(key);
-    if (list) list.push(d); else by.set(key, [d]);
-  }
-  groups = [...by.values()];
-  inked.set(items, groups);
-  return groups;
-}
-
-/** The pictures the document asked of its solids (§6.11): `view(body) in right`, and sections.
- *
- *  One pass, and it owns no rule: the core lays the polylines out in world coordinates and
- *  resolves the ink through the sheet, so what a hidden line looks like is a `style .hidden`
- *  rule the document may override and this file has never heard of.  The same seam the callouts
- *  sit on, which is what keeps the canvas and the SVG export one picture of one drawing. */
-export function paintDerived(v: SketchView): void {
-  const items = v.derived.read(v.sketch, v.unit);
-  if (items.length === 0) return;
-  const ctx = v.ctx;
-  ctx.save();
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  for (const list of byInk(items)) {
-    const ink = list[0].stroke;
-    ctx.strokeStyle = ink.color ?? COL.line;
-    ctx.lineWidth = ink.width ?? 1;
-    ctx.setLineDash(ink.dash ?? []);
-    ctx.beginPath();
-    for (const d of list) {
-      d.pts.forEach((p, i) => {
-        const [x, y] = v.w2s(p[0], p[1]);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-    }
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
   ctx.restore();
 }
 
@@ -344,7 +245,9 @@ export function paintCallouts(v: SketchView): void {
   const extension = v.sketch.styleNamed('extension');
   // the colour rule reaches for a constraint by id, so it runs once per callout rather than
   // once per callout per pass
-  const painted = cs.items.map((k) => {
+  const live = new Set(v.liveDim?.targets.map((c) => c.id) ?? []);
+  const shown = cs.items.filter((k) => live.has(k.id) || k.id === lit?.id || v.showsCallouts(k.view));
+  const painted = shown.map((k) => {
     const c = v.sketch.constraintById(k.id);
     const ink = c?.claim ? inkRef : inkDim;
     const col = c && conflicts.has(c) ? COL.conflict
@@ -363,34 +266,45 @@ export function paintCallouts(v: SketchView): void {
 
   ctx.save();
   ctx.lineCap = 'butt';
+  // each figure is laid out on the page of the view its dimension is in, and drawn through that
+  // view's camera; one whose points stand in views apart in space has nowhere to be drawn
   for (const { k, col, lw } of painted) {
-    ctx.strokeStyle = ctx.fillStyle = col;
-    ctx.setLineDash(extension.dash);
-    ctx.lineWidth = extension.width ?? lw;   // `callout::ink` composes the thin lines this way
-    path(k.thin);
-    ctx.setLineDash([]);
-    ctx.lineWidth = lw;
-    path(k.solid);
-    for (const a of k.arcs) {
-      arcPath(v, a.c, a.r, a.a0, a.a1, a.a1 > a.a0);
-      ctx.stroke();
-    }
-    for (const a of k.arrows) paintArrow(v, a.at, a.dir, cs.arrow, cs.barb);
+    v.inView(k.view, () => {
+      if (!v.viewCam().readable(EDGE_ON)) return;
+      ctx.strokeStyle = ctx.fillStyle = col;
+      ctx.setLineDash(extension.dash);
+      ctx.lineWidth = extension.width ?? lw;   // `callout::ink` composes the thin lines this way
+      path(k.thin);
+      ctx.setLineDash([]);
+      ctx.lineWidth = lw;
+      path(k.solid);
+      for (const a of k.arcs) {
+        arcPath(v, a.c, a.r, a.a0, a.a1, a.a1 > a.a0);
+        ctx.stroke();
+      }
+      for (const a of k.arrows) paintArrow(v, a.at, a.dir, cs.arrow, cs.barb);
+    });
   }
   ctx.font = `${cs.font}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (const { k, col } of painted) {
-    ctx.fillStyle = COL.bg;
-    polyPath(v, k.label);
-    ctx.closePath();
-    ctx.fill();
-    ctx.save();
-    ctx.translate(...v.w2s(k.anchor[0], k.anchor[1]));
-    ctx.rotate(-k.angle);      // the layout turns counterclockwise; the canvas turns the other
-    ctx.fillStyle = col;       // way, because its y axis points down
-    ctx.fillText(k.text, 0, 0);
-    ctx.restore();
+    v.inView(k.view, () => {
+      if (!v.viewCam().readable(EDGE_ON)) return;
+      ctx.fillStyle = COL.bg;
+      polyPath(v, k.label);
+      ctx.closePath();
+      ctx.fill();
+      ctx.save();
+      ctx.translate(...v.w2s(k.anchor[0], k.anchor[1]));
+      // the number reads along its line as the view turns it, and never upside down
+      let turn = v.viewCam().angle(k.angle);
+      if (Math.abs(turn) > Math.PI / 2) turn -= Math.sign(turn) * Math.PI;
+      ctx.rotate(turn);
+      ctx.fillStyle = col;
+      ctx.fillText(k.text, 0, 0);
+      ctx.restore();
+    });
   }
   ctx.restore();
   if (v.liveDim) tellDimension(v, cs.items);   // the layout this frame already made
@@ -402,7 +316,7 @@ export function paintCallouts(v: SketchView): void {
 export function paintArrow(v: SketchView, at: Pt, dir: Pt, size: number, barb: number): void {
   const ctx = v.ctx;
   const [tx, ty] = v.w2s(at[0], at[1]);
-  const [dx, dy] = v.cam.dir(dir[0], dir[1]);
+  const [dx, dy] = v.viewCam().dir(dir[0], dir[1]);
   const [bx, by] = [tx - dx * size, ty - dy * size];
   const [px, py] = [-dy * size * barb, dx * size * barb];
   ctx.beginPath();
@@ -412,21 +326,25 @@ export function paintArrow(v: SketchView, at: Pt, dir: Pt, size: number, barb: n
   ctx.closePath();
   ctx.fill();
 }
-/** A CCW world arc, from a0 to a1 about `centerXY` with world radius `r`.  Everything here is
- *  in world terms and the camera turns all of it — including the angles, which run the other
- *  way on a canvas whose y points down, so the sweep is counterclockwise in canvas terms. */
+/** A page arc, from a0 to a1 about `centerXY` with page radius `r` — counterclockwise on the
+ *  page where `ccw`.  The path is built **in page units** under the view's own transform and
+ *  stroked after it is let go, so a circle on a tilted plane is the ellipse it is seen as while
+ *  the line drawing it stays a constant width in pixels. */
 export function arcPath(v: SketchView, centerXY: readonly [number, number], r: number,
                         a0: number, a1: number, ccw = true): void {
-  const [cx, cy] = v.w2s(...centerXY);
-  v.ctx.beginPath();
-  v.ctx.arc(cx, cy, v.len(r), v.cam.angle(a0), v.cam.angle(a1), ccw);
+  const ctx = v.ctx;
+  ctx.beginPath();
+  ctx.save();
+  v.viewCam().transform(ctx);
+  // on the page an angle grows counterclockwise, which is the canvas's own clockwise sense once
+  // the transform has put the page's y up
+  ctx.arc(centerXY[0], centerXY[1], r, a0, a1, !ccw);
+  ctx.restore();
 }
 
-/** The whole circle of world radius `r` about a world centre. */
+/** The whole circle of page radius `r` about a page centre. */
 export function circlePath(v: SketchView, centerXY: readonly [number, number], r: number): void {
-  const [cx, cy] = v.w2s(...centerXY);
-  v.ctx.beginPath();
-  v.ctx.arc(cx, cy, v.len(r), 0, 2 * Math.PI);
+  arcPath(v, centerXY, r, 0, 2 * Math.PI);
 }
 
 /** Dashed red halo on every entity a culprit constraint references, and a label at each
@@ -442,49 +360,53 @@ export function paintConflicts(v: SketchView): void {
   ctx.strokeStyle = COL.conflict;
   ctx.font = 'bold 13px system-ui, sans-serif';
   for (const c of d.conflicts ?? []) {
+    // where each halo is seen, on screen, so the label sits among them whichever views they are in
     const xs: number[] = [], ys: number[] = [];
+    const at = (s: [number, number]): void => { xs.push(s[0]); ys.push(s[1]); };
     for (const e of c.entities()) {
       if (e instanceof Point) {
-        const [sx, sy] = v.w2s(...e.xy);
+        const [sx, sy] = v.seen(e);
         ctx.beginPath(); ctx.arc(sx, sy, 9, 0, 2 * Math.PI); ctx.stroke();
-        xs.push(e.x.value); ys.push(e.y.value);
+        at([sx, sy]);
       } else if (e instanceof Line) {
         ctx.beginPath();
-        ctx.moveTo(...v.w2s(...e.p1.xy));
-        ctx.lineTo(...v.w2s(...e.p2.xy));
+        ctx.moveTo(...v.seen(e.p1));
+        ctx.lineTo(...v.seen(e.p2));
         ctx.stroke();
-        xs.push(e.p1.x.value, e.p2.x.value);
-        ys.push(e.p1.y.value, e.p2.y.value);
+        at(v.seen(e.p1));
+        at(v.seen(e.p2));
       } else if (e instanceof Circle) {
-        circlePath(v, e.center.xy, Math.abs(e.radius.value));
-        ctx.stroke();
-        xs.push(e.center.x.value); ys.push(e.center.y.value + e.radius.value);
+        v.inView(v.viewOfEntity(e), () => {
+          circlePath(v, e.center.xy, Math.abs(e.radius.value));
+          ctx.stroke();
+          at(v.w2s(e.center.x.value, e.center.y.value + e.radius.value));
+        });
       } else if (e instanceof Arc) {
-        const [a0, a1] = e.angles();
-        arcPath(v, e.center.xy, Math.abs(e.radius.value), a0, a1);
-        ctx.stroke();
-        const am = 0.5 * (a0 + a1);
-        xs.push(e.center.x.value + e.radius.value * Math.cos(am));
-        ys.push(e.center.y.value + e.radius.value * Math.sin(am));
+        v.inView(v.viewOfEntity(e), () => {
+          const [a0, a1] = e.angles();
+          arcPath(v, e.center.xy, Math.abs(e.radius.value), a0, a1);
+          ctx.stroke();
+          const am = 0.5 * (a0 + a1);
+          at(v.w2s(e.center.x.value + e.radius.value * Math.cos(am),
+                   e.center.y.value + e.radius.value * Math.sin(am)));
+        });
       } else if (e instanceof Spline) {
-        polyPath(v, e.polyline(v.unit));
-        ctx.stroke();
-        const [t0, t1] = e.domain;
-        const [mx, my] = e.pointAt(0.5 * (t0 + t1));
-        xs.push(mx);
-        ys.push(my);
+        v.inView(v.viewOfEntity(e), () => {
+          polyPath(v, e.polyline(v.unit));
+          ctx.stroke();
+          const [t0, t1] = e.domain;
+          at(v.w2s(...e.pointAt(0.5 * (t0 + t1))));
+        });
       } else if (e instanceof Plane) {
-        ctx.beginPath();
-        ctx.moveTo(...v.w2s(...e.origin.xy));
-        ctx.lineTo(...v.w2s(...e.toward.xy));
-        ctx.stroke();
-        xs.push(e.origin.x.value);
-        ys.push(e.origin.y.value);
+        // a plane is a pane of the workspace, so it is marked at its origin
+        const [sx, sy] = v.seen(e.origin);
+        ctx.beginPath(); ctx.arc(sx, sy, 9, 0, 2 * Math.PI); ctx.stroke();
+        at([sx, sy]);
       }
     }
     if (!xs.length) continue;
-    const [ax, ay] = v.w2s(xs.reduce((a, b) => a + b, 0) / xs.length,
-                           ys.reduce((a, b) => a + b, 0) / ys.length);
+    const [ax, ay] = [xs.reduce((a, b) => a + b, 0) / xs.length,
+                      ys.reduce((a, b) => a + b, 0) / ys.length];
     const cell = `${Math.floor(ax / 40)},${Math.floor(ay / 40)}`;
     const n = used.get(cell) ?? 0;
     used.set(cell, n + 1);
@@ -505,11 +427,11 @@ export function paintPreview(v: SketchView): void {
   ctx.lineWidth = 1;
   const cur = v.cursor;
   // the fit tool collects places rather than points, so `pending` may be empty here
-  const p0 = v.pending.length ? v.w2s(...v.pending[0].xy) : ([0, 0] as [number, number]);
+  const p0 = v.pending.length ? v.seen(v.pending[0]) : ([0, 0] as [number, number]);
   /** A dashed line from the last point placed to the cursor. */
   const rubber = (): void => {
     ctx.beginPath();
-    ctx.moveTo(...v.w2s(...v.pending[v.pending.length - 1].xy));
+    ctx.moveTo(...v.seen(v.pending[v.pending.length - 1]));
     ctx.lineTo(cur[0], cur[1]);
     ctx.stroke();
   };

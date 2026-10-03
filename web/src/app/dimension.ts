@@ -50,7 +50,7 @@ export interface LiveDim {
 export function startDimension(v: SketchView, targets: Constraint[], fresh: boolean,
                                alt: DimAlt | null): boolean {
   endDimension(v, false);
-  if (!targets.length || !v.mayEdit()) return false;
+  if (!targets.length) return false;
   const before = v.source;
   const impliedBefore = new Set(v.diagnosis?.implied ?? []);
   // the record goes in first: stating the constraint is part of the gesture, so it must not
@@ -78,7 +78,9 @@ export function startDimension(v: SketchView, targets: Constraint[], fresh: bool
 export function moveDimension(v: SketchView, sp: [number, number]): void {
   const live = v.liveDim;
   if (!live) return;
-  const at = v.s2w(sp[0], sp[1]);
+  // read on the page of the view the dimension is drawn in, which is where its figure is laid out
+  const at = v.inView(v.calloutView(live.targets[0]), () => v.s2w(sp[0], sp[1]));
+  if (!at) return;
   if (live.alt) retarget(v, live, at);
   const c = live.targets[0];
   if (c.id >= 0) dim.drag(v.sketch, c.id, at[0], at[1], [0, 0]);
@@ -201,7 +203,9 @@ export function tellDimension(v: SketchView, items: Callout[]): void {
   if (!live) return;
   const k = items.find((i) => i.id === live.targets[0].id);
   if (!k) return v.onDimension(live, null);
-  const [x, y] = v.w2s(k.anchor[0], k.anchor[1]);
+  const seen = v.inView(k.view, () => v.w2s(k.anchor[0], k.anchor[1]));
+  if (!seen) return v.onDimension(live, null);
+  const [x, y] = seen;
   const pad = 24;
   v.onDimension(live, [Math.min(Math.max(x, pad), v.width - pad),
                        Math.min(Math.max(y, pad), v.height - pad)]);

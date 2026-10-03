@@ -29,6 +29,9 @@ export interface Arrow {
 export interface Callout {
   /** The constraint this dimension states — what clicking it selects. */
   id: number;
+  /** The view its figure is laid out in: -1 the page, a plane's index, -2 none — its points
+   *  stand in views that are not one place in space, so it has nowhere to be drawn. */
+  view: number;
   text: string;
   /** The centre of the label's box, the direction it reads in, and the box's four corners. */
   anchor: Pt;

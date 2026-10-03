@@ -21,8 +21,9 @@ plane's datum, independent of membership. Hints can read `f.c`/`f.s`/`f.angle`. 
 coordinate-placement helper: model contours with alignments, incidences, symmetry and dimensions.
 Components have no implicit frame; `instance := Part(f) in view` supplies membership. Datum
 intrinsics are reseeded after point hints settle. Aliases keep subentity paths (`f.origin`).
-`use std` gives lazy `std.front` (u right), `std.up` (u up), `std.origin` from `StandardDatums`,
-fixed at page zero, no implied membership. Calls may omit `name :=`; anonymous keys stay out of
+`use std` gives `std.front` (the page), `std.side`, `std.top`, `std.up` (front turned, u up),
+`std.origin` from `StandardDatums`, fixed at page zero, no implied membership — present whenever
+the document says `use std`, named or not (the workspace offers them as places to draw). Calls may omit `name :=`; anonymous keys stay out of
 user-facing names. E.g. `cyl := Cylinder(std.up, fw: components.dims.fwA, dims:
 components.dims.vtwin_dims)`, with no explicit origin, ground, plane or Axes.
 
@@ -428,7 +429,8 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `--stl` writes binary STL through `gcs_core::mesh` (`--solid` says which).  `--output` writes SVG
   through `gcs_core::svg`, as `File ▸ Export SVG` does; it **chooses a `unit`** from the page width
   (`--width`) and every constant size follows.  The *camera* is never consulted.
-* **app** (`web/src/app/`): an HTML5-canvas sketcher, the only front end.  The *view* is the canvas:
+* **app** (`web/src/app/`): a 3D-workspace sketcher (see **The workspace** below), the only front
+  end.  The *view* is the canvas:
   `view.ts` holds the state and modules take that view as first argument (`paint`, `gesture`,
   `tools`, `dimension`, `edit`, `camera`); `underlay` is the picture traced over — **view state,
   never the document** (never saved, exported, solved or undone), handled by the ordinary select
@@ -557,7 +559,9 @@ Conventions:
   `Program::uses`; `modules::link(prog, resolver)` resolves each once, transitively, via
   `syntax::parse_from(text, base, first_id)` — **every span is one integer into one virtual text**:
   the document, then each module after a one-byte gap (a splice, root body only, never meets a
-  module span).  `Program::source_at` maps an offset to its text; `modules::localize` shows a
+  module span).  Module statements are numbered from `modules::MODULE_STMTS` (2³⁰), so a statement
+  appended to the document never renumbers the library's ones the source map names.
+  `Program::source_at` maps an offset to its text; `modules::localize` shows a
   module's diagnostic at its `use` (`Module::via`) with `name:line:col` in front.  A module
   contributes its components (`Component::module` says which) and its top-level params and groups,
   each reached by the module's full path (`engine.parts.Crank`, [0.30]); its own drawing is not
@@ -774,9 +778,10 @@ Conventions:
   (`constraints::infer_entity`) and refuses (`constraints::validate`: no plane, one plane,
   parallel planes) — so the elaborator (E061), `from_json`, `gcs_constraint_add` and
   `Constraint::project` share one rule.  `operator_text` skips an inferred slot (`a project b`).
-  A plane's minted label starts with `v` (`syntax::kind_initial`).  It draws its chord under the
-  *implicit class* `.plane` (`EntKind::implicit_class`, resolved in `style_of`; JSON never writes
-  it), picked by that chord, its points outranking it.  Deleting a plane (`edit::remove`) dooms a
+  A plane's minted label starts with `v` (`syntax::kind_initial`).  On paper it draws its chord
+  under the *implicit class* `.plane` (`EntKind::implicit_class`, resolved in `style_of`; JSON
+  never writes it); in the workspace it is a pane, chosen in the plane chooser rather than picked.
+  Deleting a plane (`edit::remove`) dooms a
   plane folded from it (`mentions` counts `Attitude::From`), splices the `in` clause out of every
   surviving declaration, and dooms every statement whose *elaborated* constraint named it.
   `commit_seeds` replaces the bracket list at `Decl::list_span`.
@@ -1147,24 +1152,37 @@ Conventions:
   would — `tests/derived.rs`'s strongest gate.  **The core projects and the front end strokes**:
   `hidden::layout` resolves the ink through the sheet, `svg::render` and `paint.ts` stroke what
   they are handed, and neither owns 3D arithmetic or a rule about hidden lines.
-  **Moving the camera reuses the projected picture.** `app/derived.ts` keeps those polylines
-  against the sketch, the inputs of the projected solids and planes, and its style epoch;
-  `hidden::inputs` publishes those dependencies through a flat ABI buffer, so unrelated
-  coordinates do not invalidate a picture. The cache allows screen-scaled roundoff, compared
-  against the stored picture rather than the previous frame so small real moves accumulate. A
-  pan only transforms the picture; zooming out keeps the finer one, zooming in refines once
-  redraws rest for 150 ms. Geometry changes refresh immediately, and `afterEdit` and `settle`
-  clear the picture and its pending refinement, including solid-extent edits that move no
-  coordinate. Exports ask the core directly at their resolution. `app.test.ts` is the gate.
+  Derived views are the `.svd` paper's; the model workspace shows a solid as its mesh.
   **Every part of the V-twin is written this way** — `vtwin/components/cylinder.sv`, `piston.sv`,
   `disc.sv`, `flywheel.sv`, `throttle.sv` and the plate in `frame.sv`: one section and its solid.
   **Where a part's turned features are is where its section has to be**: a turn about a line in
   the section puts what it makes *on* that plane (the disc's and plate's sections are mid-planes).
   A **hex pocket about a radial line** (`parts.Grub`) is neither sweep nor turn, so it stays four
   hidden lines; a feature drawn as a *centreline* (the exhaust vents) is told its width, `wch`.
-- The **overview** (`overview.rs`) is the drawing folded back into the glass box: each view on its
-  own plane in space, the object reconstructed between them.  **Nothing is solved for and nothing
-  is stored** — a point in view P has view coordinates `plane::in_view` (the function `project`'s
+- **The workspace** (`overview/workspace.rs`, `app/view.ts`) is the only model canvas: one scene
+  in space, every sketch on its own plane, solids and panes drawn beneath by three.js
+  (`app/box3d.ts`).  A view's page reaches the eye's picture plane by **one affine map**
+  (`workspace::Projection`: `in_view`, `Basis::lift`, the orthographic `overview::eye`), so
+  `camera.ts` composes it with the eye's similarity (`Camera::through` → `ViewCam`) and no 3D
+  arithmetic exists above the ABI.  **What is under the pointer is asked where the eye sees it**
+  (`workspace::pick`, `nearest_point`, `inside`, `callout::pick_seen`): views lying on one another
+  on the page are apart in space, so nothing is picked in page coordinates.  `w2s`/`s2w` read the
+  view being worked in — the painter's (`inView`), else the current plane's; a drag reads the
+  dragged point's view, a callout its dimension's (`calloutView`), the plane tool the page (a
+  plane's two points are layout).  A view seen edge on refuses a press (`ViewCam::readable`).
+  The page is the front plane (`Basis::page`); views whose maps agree (the page, `std.front`) are
+  one place.  The chooser in the viewport's upper right (`#plane-select`) lists `std.front`,
+  `std.side`, `std.top`, then the document's planes; `choosePlane` sets `v.plane` and swings the
+  eye square on (`workspace::look_at`).  A standard plane the document lacks is `pendingPlane`
+  until a tool's first press adds `use std` (`edit::add_use`, `ensurePlane`) — choosing writes
+  nothing.  Callouts are drawn for the current plane's place only (`showsCallouts`), and the one
+  being written or focused.  Right-drag orbits, middle or ⇧right-drag pans, the wheel zooms.  A
+  flat document opens square on to the front, one with a solid or off-front geometry from three
+  quarters (`homeOrbit`); `workspace::bounds` frames figures and solids.  The orbit is view state
+  (never saved, exported, solved or undone).  `tests/workspace.rs` and `app.test.ts` are the gates.
+- The **glass box scene** (`overview.rs`) folds a multiview drawing into space: each view on its
+  own plane, the object reconstructed between them.  **Nothing is solved for and nothing is
+  stored** — a point in view P has view coordinates `plane::in_view` (the function `project`'s
   residual reads), sits at `a·u_P + b·v_P` (`Basis::lift`), and a corner tied by `project` into
   two non-parallel views is four rows in three unknowns, exact *because* the projection holds.
   "Non-parallel" is `overview::RCOND`, about a degree (past it 1/σ₃ flings a corner); `validate`
@@ -1173,47 +1191,19 @@ Conventions:
   **ordered by plane**, never by the statement.  An object edge is one both views draw, deduped by
   its **3D segment to a tolerance** (`SAME_POINT`).  Where a point *stands* is `overview::view_of`
   — its membership, or for a datum's own origin and `toward`, that plane: every origin is the one
-  shared origin, and `Insert ▸ Three views` stamps nothing.  A line stands with each end where
-  that end is.
-  **The core projects and the front end strokes**: the scene comes out in 2D world coordinates
-  already orbited and flattened, so `camera.ts` stays the app's whole linear algebra and no 3D
-  arithmetic exists above the ABI.  `Part` names what an item is (`Face`/`Axis`/`Drawn`/`Solid`)
-  and `Item::in_plane` its view; `overview::drawable` is the per-kind polyline walk `svg::entity`
-  and `paint.ts` share, refined to `curve::flatness`.
+  shared origin.  A line stands with each end where that end is.  `overview::drawable` is the
+  per-kind polyline walk `svg::entity` and the workspace share, refined to `curve::flatness`.
   **Every plane is a pane**, drawn in or not; `overview::pane` is the *one* rule for its reach
   (geometry and origin, grown a little, never thinner than `LEAST_SIDE`), so face and axes agree.
-  Its **x and y run right across it**, crossing at the origin.
-  The mode is **read-only, and that is two gates**: the pointer, once, in `gesture::onPointerDown`
-  (a press picks and then orbits), and `SketchView.mayEdit` at every verb reaching the document
-  *without* a pointer — `apply`, the constraints bar, paste, class and fix toggles, a dimension, a
-  branch flip — saying why it refuses.  `setOverview` abandons whatever is in flight before it
-  refits.  Hovering a pane's **edge** bolds it, never its interior; a *click* selects nothing; a
-  double-click on anything of a view leaves the box and arms that plane without selecting it.  A
-  drag orbits, y inverted.  The scene is memoised against drawing, zoom and orbit
-  (`SketchView.scene`).
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
-  when nothing else is made of it (`overview::objects`).
-  **The box is drawn by three.js** (`app/box3d.ts`), the app's one foreign renderer, because a
-  painter's order is wrong between overlapping polygons and a depth buffer is not.  **The seam did
-  not move**: the core says what is in the box and where (`overview::scene3d`, the walk `scene`
-  is, in *space*; `mesh::grouped` for the object), and this file computes no coordinate.  Its
-  camera is set from `v.orbit` and `v.camera` through the core's `overview::eye` basis; the WebGL
-  canvas sits *under* the 2D one with `pointer-events: none`, so picking, hover and double-click
-  run against `overview::scene`'s flat projection (never asked `shaded`).  Selection and the
-  hovered pane are a **material write per frame**, never a rebuild; the ink is `paint.ts`'s
-  `chromeOf`.  Of the object, `scene3d` carries the **creases and nothing else** — a `smooth` seam
-  is dropped (no viewpoint, no silhouette; shading draws the round), and nothing is hidden-line
-  removed.
-  **`⇧⌘B` shows the solid's surfaces** — view state, **on by default**; off is a wireframe.  The
-  flat shaded path (`Part::Shell`, `overview::shell`, `Item.shade`) is what `overview_json` offers
-  a front end without a depth buffer: **a piece is kept when nothing stands between it and the
-  eye** (a ray from its centroid), a partly covered face all-or-nothing.
-  **Where the document has a solid, that is the object and there is nothing to reconstruct**:
-  the box shows the term's own edges, classified against the orbit's eye, and the corner-and-edge
-  walk is skipped.
-  The mode, the orbit and the hovered pane are *view state*, `underlay`'s rule: never saved,
-  exported, solved or undone — and **the box exists only where there are views**: a load or an
-  edit that leaves no plane returns to the sheet (`swap`) and ⌘B on one says why it stays.
+  when nothing else is made of it (`overview::objects`).  `box3d.ts` draws what `scene3d` says
+  stands in space — panes, axes, the object's creases (a `smooth` seam dropped: shading draws the
+  round) and the spatial kinds (spheres, cones, cylinders) — and every object's mesh
+  (`mesh::grouped`), computing no coordinate; sketches on planes are the 2D canvas's, stroked over
+  it.  Its camera is set from `v.orbit` and the eye's camera; the current plane's pane is bold, a
+  material write per frame.  **`⇧⌘B` toggles the solid's surfaces** (on by default; off is a
+  wireframe).  The flat shaded path (`Part::Shell`, `overview::shell`, `Item.shade`) is what
+  `overview_json` offers a front end without a depth buffer.
 - Slow tests are gated by `#[ignore]` (cargo). The **slow tier** — ten seconds to minutes, still
   passing on every landing (gear whole-member verifications, a native tooth space) — is
   `#[cfg_attr(not(feature = "slow"), ignore = "slow tier, …")]`, run by `make test-slow`
@@ -1230,13 +1220,14 @@ Conventions:
 - Benchmark on a quiet machine (`uptime`; a JVM indexer often runs here).  Native:
   `rust/gcs-core/src/bin/bench.rs` (`cargo run --release -p gcs-core --bin bench`); wasm: `npm run
   bench`; `make bench` runs both.  Wall-clock medians only — no harness dependency.
-- The front end is two layers and they are kept orthogonal.  *Geometry* is the core's, asked in
-  world coordinates: a click picks by `model::pick` (what is *drawn*, as against `point_to`, the
+- The front end is two layers and they are kept orthogonal.  *Geometry* is the core's: a click
+  picks by `workspace::pick` (what is *drawn*, where the eye sees it, as against `point_to`, the
   idealised entity a dimension means), callouts by `callout.rs`, curves by `curve.rs`.  *Linear
-  algebra* is the front end's, and the whole of it is `app/camera.ts`: a similarity (uniform
-  scale, translation, the y flip).  A tolerance travels as a world length (`PICK_PX * unit`),
-  never pixels.  Nothing outside `camera.ts` multiplies by `scale` or writes a minus sign in front
-  of a y, and nothing in `app/` measures a distance to an entity itself.
+  algebra* is the front end's, and the whole of it is `app/camera.ts`: the eye's similarity
+  (uniform scale, translation, the y flip) and a view's affine composed with it (`ViewCam`).  A
+  tolerance travels as an eye length (`PICK_PX * unit`), never pixels.  Nothing outside
+  `camera.ts` multiplies by `scale` or writes a minus sign in front of a y, and nothing in `app/`
+  measures a distance to an entity itself.
 - Dimension callouts (`callout.rs`) are geometry: extension lines, heads, leaders, arcs, the
   label's box and the hit test are laid out in the core, the front end only strokes.  Sizes are
   screen-constant through `unit` (world length of one pixel), as is the pick tolerance.  Where a

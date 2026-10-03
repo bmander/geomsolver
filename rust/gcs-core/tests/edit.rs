@@ -825,3 +825,42 @@ fn dimensioned_arcs_omit_new_radius_hints_but_authored_hints_are_preserved() {
     let out = edit::commit_seeds(&explicit, &explicit.sketch, &explicit.program);
     assert!(out.text.contains("hint(r:"), "{}", out.text);
 }
+
+/// `use std` lands on a line of its own — after the document's last `use`, or before its first
+/// statement, under a heading and `unit` — and nothing changes when the document already says it.
+#[test]
+fn a_use_is_added_once_on_a_line_of_its_own() {
+    let after = edit::add_use(&prog_of("unit mm\nuse hardware\np := point\n"), "std");
+    assert_eq!(after.text, "unit mm\nuse hardware\nuse std\np := point\n");
+    assert_eq!(after.kind, Kind::Structural);
+    let before = edit::add_use(&prog_of("// a heading\nunit mm\n\np := point\n"), "std");
+    assert_eq!(before.text, "// a heading\nunit mm\n\nuse std\np := point\n");
+    let empty = edit::add_use(&prog_of(""), "std");
+    assert_eq!(empty.text, "use std\n");
+    let again = edit::add_use(&prog_of(&after.text), "std");
+    assert_eq!(again.kind, Kind::None);
+    assert_eq!(again.text, after.text);
+}
+
+/// A module's statements keep their ids when the document grows.  They used to be numbered after
+/// the document's, so a statement a gesture appended renumbered every one of the library's on the
+/// next relink, and the map's sites for the standard datums named the wrong statements: the second
+/// point drawn on `std.side` took the first one's `in` clause away, and the library's fixed origin
+/// was copied into the document as a `fix`.
+#[test]
+fn appending_to_a_document_that_uses_a_module_keeps_the_module_in_the_map() {
+    let (p, errs, linked) = gcs_core::library::parse_linked("use std\nw := 100\n");
+    assert!(errs.is_empty() && linked.is_empty());
+    let mut e = elaborate(&p);
+    let mut sk = e.sketch.clone();
+    let side = e.map.ent_named("std.side").unwrap().i();
+    for (x, y) in [(5.0, 6.0), (7.0, 8.0), (9.0, 1.0)] {
+        let p = sk.point(x, y, false, "");
+        sk.set_plane(p, Some(side));
+        let out = edit::reconcile(&mut e, &sk);
+        assert!(out.refused.is_none(), "{:?}", out.refused);
+    }
+    let text = e.program.text().to_string();
+    assert_eq!(text.matches(" in std.side").count(), 3, "{text}");
+    assert!(!text.contains("fix("), "the library's datums are not the document's: {text}");
+}

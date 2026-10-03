@@ -9,10 +9,11 @@ import { CodeEditor } from './editor.js';
 import { SketchView } from './view.js';
 
 export const canvas = document.getElementById('canvas') as HTMLCanvasElement;
-/** The glass box's own canvas: under the sketch's, deaf to the pointer, and only shown while the
- *  overview is on.  It is a *second surface* and not a second app — every gesture still runs
- *  against the one above it. */
+/** The workspace's three.js canvas: under the sketch's and deaf to the pointer.  It is a *second
+ *  surface* and not a second app — every gesture runs against the one above it. */
 export const boxCanvas = document.getElementById('box') as HTMLCanvasElement;
+/** The plane the next thing is drawn on, chosen in the viewport's upper right. */
+export const planeSelect = document.getElementById('plane-select') as HTMLSelectElement;
 export const menubar = document.getElementById('menubar') as HTMLElement;
 export const aboutBadge = document.getElementById('about') as HTMLButtonElement;
 export const aboutDag = document.getElementById('about-dag') as HTMLTemplateElement;

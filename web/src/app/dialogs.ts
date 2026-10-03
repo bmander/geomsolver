@@ -109,14 +109,9 @@ export function options(): Promise<void> {
                 'Call out every dimensioned constraint on the drawing — click one to select it, '
               + 'drag it where you want it, double-click to change its number.  Off, editing a '
               + 'dimension still shows that one.  A .svd asks for its own annotations on paper');
-    addCheckbox(box, 'overview', view.overview, (v) => { view.setOverview(v); },
-                'Fold the views back into the glass box they were unfolded from, with the object '
-              + 'reconstructed between them.  Drag to orbit, wheel to zoom; the drawing is '
-              + 'read-only in there — a click lights an edge up and nothing edits');
     addCheckbox(box, 'show solid', view.showSolid, (v) => { view.setShowSolid(v); },
-                'In the overview, fill the object\u2019s surfaces as well as drawing its edges. '
-              + 'Only a document with a `solid` in it has surfaces to show; it costs the boundary '
-              + 'of every one, which is why it is a choice');
+                'Fill each object\u2019s surfaces as well as drawing its edges — off, the solid is '
+              + 'a wireframe, which is how you see its far side');
     const fineness = FINENESS.find(([, f]) => f === view.meshFineness)?.[0] ?? 'normal';
     addSelect(box, 'mesh fineness', FINENESS.map(([label]) => label), fineness, (label) => {
       const f = FINENESS.find(([l]) => l === label);
@@ -188,7 +183,6 @@ export async function insertPlane(): Promise<void> {
  *  closed-form constructions that place it (the other circle-circle intersection), recorded
  *  in the sketch's branches and replayed sticky. */
 export function flipBranch(): void {
-  if (!view.mayEdit()) return;
   const c = currentConstraint;
   if (c && C.isType(c, 'TangentLineCircle')) {
     view.pushUndo();
@@ -250,7 +244,7 @@ export async function alternatives(): Promise<void> {
                   : `distance ${io.fmt(a.distance, 3)}`));
   const pick = await askChoice('Alternative solutions',
     `${alts.length} real solutions of this construction:`, labels);
-  if (pick === null || isCurrent(alts[pick]) || !view.mayEdit()) return;
+  if (pick === null || isCurrent(alts[pick])) return;
   view.pushUndo();
   applyAlternative(ps, idx, alts[pick]);
   const res = view.afterEdit();

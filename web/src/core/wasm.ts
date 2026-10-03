@@ -83,6 +83,7 @@ export interface Abi {
   gcs_elab_commit_seeds(h: number, sk: number): number;
   gcs_elab_describe(h: number, sk: number, id: number): number;
   gcs_elab_reconcile(h: number, sk: number): number;
+  gcs_elab_add_use(h: number, name: number, len: number): number;
   gcs_elab_add_point(h: number, x: number, y: number): number;
   gcs_elab_add_rectangle(h: number, w: number, hh: number, plane: number, planeLen: number): number;
   gcs_elab_add_entity(h: number, p: number, n: number): number;
@@ -211,6 +212,16 @@ export interface Abi {
   gcs_solid_stl_preview(h: number, idx: number, unit: number): number;
   gcs_solid_exact(h: number, idx: number, kind: number, tolerance: number): number;
   gcs_callout_pick(h: number, unit: number, x: number, y: number, tolPx: number): number;
+  gcs_workspace_json(h: number, az: number, el: number): number;
+  gcs_workspace_bounds(h: number, unit: number, az: number, el: number, out: number): number;
+  gcs_workspace_pick(h: number, unit: number, az: number, el: number, x: number, y: number,
+                     tol: number, out: number): number;
+  gcs_workspace_nearest_point(h: number, az: number, el: number, x: number, y: number,
+                              outDist: number): number;
+  gcs_workspace_inside_json(h: number, unit: number, az: number, el: number,
+                            x0: number, y0: number, x1: number, y1: number): number;
+  gcs_workspace_callout_pick(h: number, unit: number, az: number, el: number,
+                             x: number, y: number, tolPx: number): number;
   gcs_callout_grab(h: number, id: number, unit: number, x: number, y: number,
                    out: number): number;
   gcs_callout_drag(h: number, id: number, x: number, y: number, gu: number, gv: number): number;

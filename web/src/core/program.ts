@@ -306,6 +306,11 @@ export class Document {
     return edit(core().gcs_elab_add_point(this.h, x, y));
   }
 
+  /** `use NAME` as a line of the document's own — nothing when it already says it. */
+  addUse(name: string): Edit {
+    return edit(withStr(name, (p, n) => core().gcs_elab_add_use(this.h, p, n)));
+  }
+
   /** A `Rectangle` component instance — and the component's definition, the first time. */
   /** `plane` draws the instance in that view — `r0: Rectangle(…) in top` — and the empty
    *  string is the page. */

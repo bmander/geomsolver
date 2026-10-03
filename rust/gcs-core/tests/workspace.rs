@@ -200,3 +200,13 @@ fn the_report_says_each_view() {
     assert_eq!(points[p.i()].as_i64(), -1);
     let _ = EntRef::point(0);
 }
+
+/// A fit frames what is shown, solids included: the flange's section draws only the half of it
+/// right of the axis, and the turned part reaches as far the other way.
+#[test]
+fn the_bounds_reach_past_a_turned_section() {
+    let e = build(gcs_core::examples::source("solid_flange").unwrap());
+    let proj = Projection::new(&e.sketch, -FRAC_PI_2, 0.0);
+    let (x0, _, x1, _) = gcs_core::overview::workspace::bounds(&e.sketch, &proj, 0.05).unwrap();
+    assert!(x0 <= -31.9 && x1 >= 31.9, "{x0} {x1}");
+}

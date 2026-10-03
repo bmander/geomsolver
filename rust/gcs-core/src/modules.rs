@@ -39,6 +39,10 @@ pub fn search_paths(name: &str, source: &str) -> Vec<String> {
 /// the elaborator's: a module nothing resolves (E070, at the `use`), a component defined twice
 /// (E071, at the later definition), and a module's own parse errors (E100, at their place in the
 /// module).  Nothing is said twice: a module asked for by two `use`s is linked once.
+/// Where module statements' ids start: past any a document is ever given (`parse` caps a
+/// document far below it), so a module's ids depend only on the modules before it and its text.
+pub const MODULE_STMTS: u32 = 1 << 30;
+
 pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>) -> Vec<Diag> {
     let mut diags = Vec::new();
     // (name, the `use` that asked, the document's `use` this descends from)
@@ -68,7 +72,10 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
             continue;
         };
         let base = prog.virtual_len();
-        let (mp, errs) = parse_from(&text, base, prog.next_stmt());
+        // a module's statements are numbered in a range of their own, so they keep their ids
+        // when the document grows: a statement appended to the document, then relinked, must not
+        // renumber the library's, or every map entry naming one points at the wrong statement
+        let (mp, errs) = parse_from(&text, base, prog.next_stmt().max(MODULE_STMTS));
         prog.set_next_stmt(mp.next_stmt());
         for e in errs {
             diags.push(Diag { code: Code::E100, span: e.span, stmt: None, message: e.message });

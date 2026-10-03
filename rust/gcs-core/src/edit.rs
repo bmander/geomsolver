@@ -513,6 +513,48 @@ fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit {
     }
 }
 
+/// `use NAME`, so the document reaches a module it did not — the workspace adds `use std` when
+/// something is first drawn on one of the standard planes.  A line of its own, after the last
+/// `use` the document writes, or else before its first statement (below a heading comment and
+/// `unit`); nothing when the document already says it.
+pub fn add_use(prog: &Program, name: &str) -> Edit {
+    if prog.uses.iter().any(|u| u.name == name) {
+        return Edit::none(prog, None);
+    }
+    let text = prog.text();
+    let line = format!("use {name}\n");
+    let at = match prog.uses.iter().map(|u| u.span.hi as usize).filter(|&hi| hi <= text.len()).max() {
+        // the end of the last `use`'s line
+        Some(hi) => match text[hi..].find('\n') {
+            Some(k) => hi + k + 1,
+            None => text.len(),
+        },
+        // the start of the line the first statement or component definition begins on — not
+        // `unit`, which a `use` reads after, and not the document's own anonymous root, which is
+        // a component spanning the whole text
+        None => {
+            let root = prog.root();
+            let first = root.body.iter()
+                .filter(|st| !matches!(st.kind, StmtKind::Unit(_)))
+                .map(|st| st.span.lo as usize)
+                .chain(prog.components.iter().filter(|c| !std::ptr::eq(*c, root)).map(|c| c.span.lo as usize))
+                .filter(|&lo| lo <= text.len())
+                .min();
+            match first {
+                Some(lo) => text[..lo].rfind('\n').map_or(0, |k| k + 1),
+                None => text.len(),
+            }
+        }
+    };
+    let lead = if at == text.len() && !text.is_empty() && !text.ends_with('\n') { "\n" } else { "" };
+    Edit {
+        text: splice(text, vec![Splice { at: Span::new(at, at), with: format!("{lead}{line}") }]),
+        kind: Kind::Structural,
+        names: Vec::new(),
+        refused: None,
+    }
+}
+
 /// `pN := point hint(x: …, y: …)`
 /// The rectangle the Rect tool draws: a **reusable component**, defined once per document, and
 /// one instance per gesture.  The definition is the chain a person would write — four lines

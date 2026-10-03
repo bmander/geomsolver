@@ -24,15 +24,14 @@
  *             *nothing* defines is a free variable: `a` on two dimensions ties them to each
  *             other and leaves what they are worth to the solver
  *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · ⇧Ctrl+Z redo ·
- *             Ctrl+X/C/V cut, copy, paste the selection · wheel zoom · right-drag pan
- *   views     Insert ▸ Plane… asks what the view is and takes two clicks for where it sits;
- *             Insert ▸ Three views lays out front, top and right.  A plane selected on its own
- *             is the one being drawn in — every point a tool mints goes `in` it, and the
- *             status line says so — until Insert ▸ Draw on page.  J projects two points, one
- *             in each of two views, onto one point in space.  Edit ▸ Overview (⌘B) folds the
- *             sheet back into the glass box, the object reconstructed between the panes: drag
- *             to orbit, wheel to zoom, and a click lights an edge up on the sheet.  Nothing in
- *             there edits — it is the drawing looked at, not drawn on
+ *             Ctrl+X/C/V cut, copy, paste the selection
+ *   workspace one scene in space: every sketch stands on its own plane and solids are drawn
+ *             under them.  Right-drag orbits, middle-drag (or ⇧ right-drag) pans, the wheel
+ *             zooms.  The chooser in the viewport's upper right is the plane the next thing is
+ *             drawn on — std.front, std.side, std.top and every plane the document names — and
+ *             choosing one turns the view square on to it.  Insert ▸ Plane… asks what a new
+ *             view is and takes two clicks for where it sits; J projects two points, one in each
+ *             of two views, onto one point in space
  *   menus     File/Edit/Insert/Solution hold everything that is not a tool or a constraint;
  *             the solver's own switches are behind Solution ▸ Options
  *
@@ -59,7 +58,7 @@ import { bindProgramPanel, openDrawing, refreshProgram, resetProgramFiles, saveP
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
   aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, hooks, menubar,
-  view, initialExample,
+  planeSelect, view, initialExample,
 } from './shell.js';
 import {
   MenuItem, ToolbarButton, addButton, addMenu, addSeparator, askChoice, closeMenus, download, openImage,
@@ -364,15 +363,8 @@ const MENUS: [string, (MenuItem | null)[]][] = [
       title: 'A copy of the clipboard, nudged clear and selected, joined to nothing' },
     null,
     { label: 'Fit to screen', onClick: () => view.fit() },
-    { label: 'Overview', key: '⌘b', onClick: () => view.setOverview(!view.overview),
-      title: 'The views folded back into the glass box, with the object reconstructed between '
-        + 'them — drag to orbit, wheel to zoom.  Read-only: a click lights an edge up' },
-    { label: 'Show solid', key: '⇧⌘b', onClick: () => {
-      view.setShowSolid(!view.showSolid);
-      if (!view.overview) view.setOverview(true);
-    },
-      title: 'Fill the object\u2019s surfaces in the overview, not only its edges — a document '
-        + 'with a `solid` in it has surfaces to show' },
+    { label: 'Show solid', key: '⇧⌘b', onClick: () => view.setShowSolid(!view.showSolid),
+      title: 'Fill each object\u2019s surfaces, not only its edges — off, a solid is a wireframe' },
     { label: 'Program', key: '⌘p', onClick: () => toggleProgramPanel(),
       title: 'The program this drawing is written as — edit it and the drawing follows' },
     { label: 'Re-place dimensions', onClick: () => {
@@ -387,9 +379,6 @@ const MENUS: [string, (MenuItem | null)[]][] = [
         + 'explicit basis.  Two clicks then say where it sits' },
     { label: 'Three views', onClick: () => threeViews(view),
       title: 'Front, top and right views in the standard third-angle layout, aligned' },
-    null,
-    { label: 'Draw on page', onClick: () => view.drawOnPage(),
-      title: 'The next points go on the page itself rather than in the current view' },
   ]],
   ['Solution', [
     { label: 'Solve', onClick: () => { view.solveNow(); reportSolve(); } },
@@ -496,8 +485,27 @@ view.onPickConstraint = (c) => {
   view.draw();
 };
 view.onEditConstraint = (c) => editValue(c);
+
+/* -- the plane being drawn on ------------------------------------------------- */
+
+/** The chooser follows the view: the planes on offer and the one being drawn on.  Rebuilt only
+ *  when the list itself changed, so a repaint does not close it under the pointer. */
+function refreshPlanes(): void {
+  const names = view.planeChoices();
+  const current = view.planeName;
+  if (!names.includes(current)) names.push(current);
+  const shown = [...planeSelect.options].map((o) => o.value);
+  if (shown.length !== names.length || names.some((n, i) => shown[i] !== n)) {
+    planeSelect.replaceChildren(...names.map((n) => new Option(n, n)));
+  }
+  planeSelect.value = current;
+}
+planeSelect.addEventListener('change', () => {
+  view.choosePlane(planeSelect.value);
+  planeSelect.blur();              // the keys are the drawing's again: a tool letter, Escape
+});
 view.onDimension = onDimension;
-view.onChanged = () => { refresh(); refreshProgram(); };
+view.onChanged = () => { refresh(); refreshProgram(); refreshPlanes(); };
 view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a
 // number was spliced.  Never per frame: `onDragFrame` is the frame seam and this is not wired to it

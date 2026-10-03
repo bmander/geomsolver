@@ -5,6 +5,7 @@ import * as C from '../core/constraints.js';
 import { Plane, Point, distanceBetween, onRadius } from '../core/model.js';
 import { Attitude, Document, Edit } from '../core/program.js';
 import { PICK_PX } from './view.js';
+import { PAGE } from '../core/workspace.js';
 import type { Place, SketchView, Tool } from './view.js';
 
 /** How far to the right of its origin a plane points when Enter stands in for the second
@@ -244,29 +245,47 @@ export function finishPlane(v: SketchView): void {
   placePlane(v, [x0, y0], [x0 + PLANE_CHORD, y0]);
 }
 
+/** The plane tool's two clicks, as *places* like the rectangle's: the origin, then where the view
+ *  points.  The statement has no coordinates in it until the solve writes the seeds back. */
+function planeClick(v: SketchView, sp: [number, number]): void {
+  if (!v.pendingFit.length) {
+    v.pendingFit = [pickPlace(v, sp)];
+    v.onStatus('click where the view points, or Enter to point it to the right');
+    v.draw();
+  } else {
+    const [x0, y0] = v.pendingFit[0].at;
+    const { at } = pickPlace(v, sp);
+    v.pendingFit = [];
+    placePlane(v, [x0, y0], at);
+  }
+}
+
 export function toolClick(v: SketchView, sp: [number, number]): void {
+  // a plane's own two points are where the view sits on the page — layout, never in a view — so
+  // the plane tool reads its clicks off the page whatever plane is being drawn on
+  if (v.tool === 'plane') {
+    if (!v.inView(PAGE, () => v.viewCam().readable())) {
+      v.onStatus('the page is seen edge on — turn the view to place a plane on it');
+      return;
+    }
+    v.inView(PAGE, () => planeClick(v, sp));
+    return;
+  }
+  // a standard plane chosen before the document had it is brought in by the first press: the
+  // document gains `use std`, and what the press makes is drawn on the plane it now has
+  if (!v.ensurePlane()) return;
+  // a plane seen edge on has no place on it under the pointer
+  if (!v.viewCam().readable()) {
+    v.onStatus(`${v.planeName} is seen edge on — turn the view, or choose it again to face it`);
+    return;
+  }
   const sk = v.sketch;
   // Tools that make geometry as they go take their snapshot on the first click of a run.  The
   // fit tool makes nothing until it finishes and takes its own there, so pushing here would
   // leave an undo entry — and a whole document serialised — per click that changed nothing.
   // The two tools that write a statement (`rect`, `plane`) take theirs in `apply`.
-  if (v.tool !== 'splinefit' && v.tool !== 'rect' && v.tool !== 'plane' && !v.pending.length) {
+  if (v.tool !== 'splinefit' && v.tool !== 'rect' && !v.pending.length) {
     v.pushUndo();
-  }
-  if (v.tool === 'plane') {
-    // two clicks as *places*, like the rectangle's: the origin, then where the view points.
-    // The statement has no coordinates in it until the solve writes the seeds back.
-    if (!v.pendingFit.length) {
-      v.pendingFit = [pickPlace(v, sp)];
-      v.onStatus('click where the view points, or Enter to point it to the right');
-      v.draw();
-    } else {
-      const [x0, y0] = v.pendingFit[0].at;
-      const { at } = pickPlace(v, sp);
-      v.pendingFit = [];
-      placePlane(v, [x0, y0], at);
-    }
-    return;
   }
   if (v.tool === 'point') {
     snapOrNew(v, sp);

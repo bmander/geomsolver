@@ -30,6 +30,7 @@
  * only `paint` and the loader need one.
  */
 import { PICK_PX } from './view.js';
+import { PAGE } from '../core/workspace.js';
 import { COL, polyPath } from './paint.js';
 import type { Gesture } from './gesture.js';
 import type { SketchView } from './view.js';
@@ -120,10 +121,16 @@ export function contains(u: Underlay, wx: number, wy: number): boolean {
   return Math.abs(px) <= hw && Math.abs(py) <= hh;
 }
 
+/** Run `fn` on the page: a traced picture lies on the page plane — the front — wherever the eye
+ *  is, so every place it is drawn at or read from is the page view's. */
+function onPage<T>(v: SketchView, fn: () => T): T {
+  return v.inView(PAGE, fn) as T;
+}
+
 /** Put a freshly loaded picture in the middle of what is being looked at, at a size that leaves
  *  its edges in view.  Where it goes after that is the user's. */
 export function place(v: SketchView, image: Bitmap, name: string, url: string | null): Underlay {
-  const [x, y] = v.s2w(v.width / 2, v.height / 2);
+  const [x, y] = onPage(v, () => v.s2w(v.width / 2, v.height / 2));
   const span = v.world(Math.min(v.width, v.height)) * FIT;
   const scale = span / Math.max(image.width, image.height, 1);
   return { image, name, x, y, scale, angle: 0, opacity: OPACITY, picked: false, url };
@@ -148,7 +155,7 @@ export function handleAt(v: SketchView, sp: [number, number]): number {
   const u = v.underlay;
   if (!u?.picked) return -1;
   return corners(u).findIndex(([x, y]) => {
-    const s = v.w2s(x, y);
+    const s = onPage(v, () => v.w2s(x, y));
     return Math.hypot(s[0] - sp[0], s[1] - sp[1]) < PICK_PX + HANDLE;
   });
 }
@@ -158,15 +165,14 @@ export function handleAt(v: SketchView, sp: [number, number]): number {
 export function bodyAt(v: SketchView, sp: [number, number]): boolean {
   const u = v.underlay;
   if (!u) return false;
-  const at = v.s2w(sp[0], sp[1]);
+  const at = onPage(v, () => v.s2w(sp[0], sp[1]));
   if (u.picked) return contains(u, at[0], at[1]);
-  const pts = corners(u).map(([x, y]) => v.w2s(x, y));
+  const pts = corners(u).map(([x, y]) => onPage(v, () => v.w2s(x, y)));
   return pts.some((p, i) => segmentDistance(sp, p, pts[(i + 1) % 4]) <= PICK_PX);
 }
 
-/** Distance from a point to a segment, in whatever units all three are in.  Shared with the
- *  overview's pick, which asks the same question of a projected polyline: both are the app's own
- *  chrome measured on the screen, and one copy of the arithmetic is enough. */
+/** Distance from a point to a segment, in whatever units all three are in — the frame's own
+ *  chrome, measured on the screen. */
 export function segmentDistance(p: [number, number], a: [number, number],
                                 b: [number, number]): number {
   const vx = b[0] - a[0], vy = b[1] - a[1];
@@ -194,7 +200,7 @@ export function grabHandle(v: SketchView, i: number): Gesture {
   return {
     transient: true,
     move: (to) => {
-      const [wx, wy] = v.s2w(to[0], to[1]);
+      const [wx, wy] = onPage(v, () => v.s2w(to[0], to[1]));
       const [dx, dy] = [wx - u.x, wy - u.y];
       const d = Math.hypot(dx, dy);
       if (d > 1e-9) {
@@ -209,12 +215,12 @@ export function grabHandle(v: SketchView, i: number): Gesture {
 /** Drag the picture: it follows the pointer, keeping the place that was grabbed under it. */
 export function grabBody(v: SketchView, sp: [number, number]): Gesture {
   const u = v.underlay!;
-  const at = v.s2w(sp[0], sp[1]);
+  const at = onPage(v, () => v.s2w(sp[0], sp[1]));
   const from: [number, number] = [u.x - at[0], u.y - at[1]];
   return {
     transient: true,
     move: (to) => {
-      const [wx, wy] = v.s2w(to[0], to[1]);
+      const [wx, wy] = onPage(v, () => v.s2w(to[0], to[1]));
       u.x = wx + from[0];
       u.y = wy + from[1];
       v.draw();
@@ -224,30 +230,26 @@ export function grabBody(v: SketchView, sp: [number, number]): Gesture {
 
 /* -- drawing it -------------------------------------------------------------------- */
 
-/** The picture, under everything.  Called before the axes, so they read over it.
+/** The picture, under the drawing, lying on the page plane.
  *
- * The transform is the camera's composed with the placement's, and it is assembled out of the
- * camera's own answers — where the centre is (`w2s`), how a world angle reads on the canvas
- * (`cam.angle`) and how long a world length is (`cam.len`) — rather than out of `scale` and a
- * minus sign, which is what keeps the front end's linear algebra in one file.
- *
- * There is no flip to undo.  The camera's is what makes the world's +y point up the screen, and
- * an image whose rows run down maps onto that the right way up already: image row 0 is the top
- * of the picture and the top of the picture is what appears at the top. */
+ * The transform is the page view's camera (`ViewCam.transform`, the one place its matrix meets the
+ * canvas) composed with the placement's, so the picture is foreshortened with the plane it lies on
+ * when the eye is turned.  The placement is in page units, with the one flip the page needs: its
+ * y runs up and an image's rows run down, so image row 0 is the top of the picture. */
 export function paintUnderlay(v: SketchView): void {
   const u = v.underlay;
-  if (!u || u.opacity <= 0) return;
+  if (!u || u.opacity <= 0 || !(u.scale > 0)) return;
   const ctx = v.ctx;
-  const k = v.len(u.scale);            // screen pixels per image pixel
-  if (!(k > 0) || !isFinite(k)) return;
-  ctx.save();
-  ctx.globalAlpha = u.opacity;
-  const [sx, sy] = v.w2s(u.x, u.y);
-  ctx.translate(sx, sy);
-  ctx.rotate(v.cam.angle(u.angle));
-  ctx.scale(k, k);
-  ctx.drawImage(u.image as CanvasImageSource, -u.image.width / 2, -u.image.height / 2);
-  ctx.restore();
+  onPage(v, () => {
+    ctx.save();
+    ctx.globalAlpha = u.opacity;
+    v.viewCam().transform(ctx);
+    ctx.translate(u.x, u.y);
+    ctx.rotate(u.angle);
+    ctx.scale(u.scale, -u.scale);
+    ctx.drawImage(u.image as CanvasImageSource, -u.image.width / 2, -u.image.height / 2);
+    ctx.restore();
+  });
 }
 
 /** Its frame, over everything — and the four corner handles once it is selected.
@@ -269,6 +271,11 @@ export function paintFrame(v: SketchView): void {
   const hover = v.tool === 'select'
     && (handleAt(v, v.cursor) >= 0 || bodyAt(v, v.cursor));
   const col = u.picked ? COL.sel : hover ? COL.highlight : COL.imageFrame;
+  onPage(v, () => frame(v, u, world, col));
+}
+
+function frame(v: SketchView, u: Underlay, world: [number, number][], col: string): void {
+  const ctx = v.ctx;
   ctx.save();
   ctx.setLineDash(u.picked ? [] : [6, 4]);
   ctx.lineWidth = u.picked ? 2 : 1;

@@ -52,6 +52,9 @@ fn map_of(basis: &Basis, o: (f64, f64), c: f64, s: f64, right: [f64; 3], up: [f6
 /// Built per question rather than kept: it reads the sketch's current pose, and it costs one pass
 /// over the planes and one over the points.
 pub struct Projection {
+    /// The eye's picture plane, as the two world directions its axes run along.
+    right: [f64; 3],
+    up: [f64; 3],
     page: Map,
     planes: Vec<Map>,
     /// `overview::view_of` for each point: its membership, or the plane it is a datum point of.
@@ -71,10 +74,17 @@ impl Projection {
             })
             .collect();
         Projection {
+            right,
+            up,
             page: map_of(&Basis::page(), (0.0, 0.0), 1.0, 0.0, right, up),
             planes,
             views: views(sk),
         }
+    }
+
+    /// Where a point in space is seen.
+    pub fn seen(&self, x: [f64; 3]) -> (f64, f64) {
+        (dot(self.right, x), dot(self.up, x))
     }
 
     /// The map of a view — `None` is the page.
@@ -220,6 +230,37 @@ pub fn inside(sk: &Sketch, proj: &Projection, lo: (f64, f64), hi: (f64, f64), un
             !fig.is_empty() && fig.iter().flatten().all(within)
         })
         .collect()
+}
+
+/// The extent of everything the workspace shows, on the eye's picture plane, as
+/// `(xmin, ymin, xmax, ymax)` — every drawn figure, and the box round each object seen from here
+/// (its eight corners), since a solid reaches past the profiles it is made from: a turned section
+/// draws half of what it makes.  `None` when nothing is drawn.
+pub fn bounds(sk: &Sketch, proj: &Projection, unit: f64) -> Option<(f64, f64, f64, f64)> {
+    let mut b: Option<(f64, f64, f64, f64)> = None;
+    let mut grow = |p: (f64, f64)| {
+        b = Some(match b {
+            None => (p.0, p.1, p.0, p.1),
+            Some((x0, y0, x1, y1)) => (x0.min(p.0), y0.min(p.1), x1.max(p.0), y1.max(p.1)),
+        });
+    };
+    for e in sk.drawn() {
+        for p in proj.figure(sk, e, unit).into_iter().flatten() {
+            grow(p);
+        }
+    }
+    for i in super::objects(sk) {
+        let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
+        let w = solid.world_bounds();
+        if w.is_empty() {
+            continue;
+        }
+        for k in 0..8 {
+            let pick = |a: usize| if k >> a & 1 == 0 { w.lo[a] } else { w.hi[a] };
+            grow(proj.seen([pick(0), pick(1), pick(2)]));
+        }
+    }
+    b
 }
 
 /// The eye square on to a plane: the bearing and elevation (radians) from which `basis` is seen
