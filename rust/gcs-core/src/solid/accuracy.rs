@@ -196,10 +196,10 @@ pub struct Meter {
     operands: Vec<Operand>,
 }
 
-/// One operand of a body built from swept material: its meter, its own material, its part in the
-/// body rule, and where its faces start among the body's.
+/// One operand of a body built from swept material: its meter (whose field is its material), its
+/// part in the body rule, and where its faces start among the body's.
 #[derive(Clone,Debug)]
-struct Operand { meter: Meter,material: MaterialField,role: Role,first: usize }
+struct Operand { meter: Meter,role: Role,first: usize }
 
 /// What an operand does in the body rule: the stock and what is put on it are united, what cuts
 /// it is taken away, and what bounds it keeps what lies within.
@@ -272,7 +272,7 @@ impl Meter {
         let tol = cad::AXIS_TOLERANCE;
         // a body built from swept material: its operands each read, the body rule over them
         if let SolidDef::Body {stock,on,through,bound} = &sk.solids[body].def {
-            if std::iter::once(stock).chain(on).chain(bound).any(|&o| cad::contains_sweep(sk,o as usize)) {
+            if !cad::swept_operands(sk,body).is_empty() {
                 let mut operands: Vec<Operand> = Vec::new();
                 let mut surfaces = Vec::new();
                 for (ids,role) in [(std::slice::from_ref(stock),Role::Stock),(&on[..],Role::On),(&through[..],Role::Cut),(&bound[..],Role::Bound)] {
@@ -280,7 +280,7 @@ impl Meter {
                         let meter = Meter::read(sk,o as usize,options)?;
                         let first = surfaces.len();
                         surfaces.extend(meter.surfaces.iter().cloned());
-                        operands.push(Operand {material:MaterialField::read(sk,o as usize,tol)?,meter,role,first});
+                        operands.push(Operand {meter,role,first});
                     }
                 }
                 let field = MaterialField::read(sk,body,tol)?;
@@ -406,22 +406,27 @@ impl Meter {
     /// signed as the body's (a cut's material is the body's outside).
     fn composed(&self,p: V) -> Option<Nearest> {
         let trim = self.options.trim;
-        let value = |o: &Operand,x: V| o.material.reading(x).value;
         let mut best: Option<Nearest> = None;
         for (k,op) in self.operands.iter().enumerate() {
             let Some(mut near) = op.meter.nearest(p) else { continue };
+            if best.is_some_and(|b| b.distance.abs() <= near.distance.abs()) { continue }
             let x = near.foot;
-            let united = self.operands.iter().filter(|o| matches!(o.role,Role::Stock|Role::On))
-                .map(|o| value(o,x)).fold(f64::INFINITY,f64::min);
-            let kept = self.operands.iter().enumerate().filter(|&(j,_)| j != k).all(|(_,o)| match o.role {
-                Role::Stock | Role::On => matches!(op.role,Role::Cut|Role::Bound) || value(o,x) >= -trim,
-                Role::Cut => value(o,x) >= -trim,
-                Role::Bound => value(o,x) <= trim,
-            }) && (matches!(op.role,Role::Stock|Role::On) || united <= trim);
-            if !kept { continue }
+            let united = matches!(op.role,Role::Stock|Role::On);
+            // inside every bound, outside every cut, and a united operand's foot outside the other
+            // united operands — a cut's or a bound's inside the united material
+            let mut inside_united = united;
+            let kept = self.operands.iter().enumerate().filter(|&(j,_)| j != k).all(|(_,o)| {
+                let v = o.meter.field(x);
+                match o.role {
+                    Role::Bound => v <= trim,
+                    Role::Cut => v >= -trim,
+                    Role::Stock | Role::On => { inside_united |= v <= trim; !united || v >= -trim }
+                }
+            });
+            if !kept || !inside_united { continue }
             if op.role == Role::Cut { near.distance = -near.distance; near.normal = scale(near.normal,-1.); }
             near.surface += op.first;
-            if best.is_none_or(|b| near.distance.abs() < b.distance.abs()) { best = Some(near); }
+            best = Some(near);
         }
         best.filter(|b| b.distance.abs() <= self.options.reach)
     }
@@ -658,24 +663,28 @@ impl Sweep {
             let count = |speed: f64,most: usize| ((2.*speed/options.cell).ceil() as usize).clamp(8,most);
             let (nu,nv) = (count(speed[0],256),count(speed[1],4096));
             // under a screw a ring's contacts are its characteristic points at every time: each
-            // carried over the roll, a cell's width at most a step
+            // carried along its path (`Screw::carry`) a cell's width a step, over the stretch of
+            // the roll that brings it near the blank's sphere
             if let Some(screw) = self.contacts.motion().screw() {
-                let family = self.contacts.motion();
-                let Ok(twist) = family.at(roll[0]) else { continue };
+                let Ok(twist) = self.contacts.motion().at(roll[0]) else { continue };
+                let Ok(start) = self.contacts.motion().pose_at(roll[0]) else { continue };
                 let mut previous: Option<Vec<V>> = None;
                 for i in 0..=nu {
                     let u = i as f64/nu as f64;
                     let Ok(roots) = patch.contacts(u,twist,1e-9) else { previous = None; continue };
-                    let here: Vec<V> = roots.iter().filter_map(|r| patch.at(u,r.v).ok().map(|s| s.position)).collect();
+                    let here: Vec<V> = roots.iter().filter_map(|r| patch.at(u,r.v).ok().map(|s| start.point(s.position))).collect();
                     for &p0 in &here {
-                        let steps = (((roll[1]-roll[0])*norm(screw.velocity(p0))/options.cell).ceil() as usize).clamp(8,1<<16);
-                        let mut last: Option<V> = None;
-                        for k in 0..=steps {
-                            let Ok(pose) = family.pose_at(roll[0]+(roll[1]-roll[0])*k as f64/steps as f64) else { continue };
-                            let q = pose.point(p0);
-                            if let Some(l) = last { gaps.push(distance(l,q)); }
-                            points.push(q); last = Some(q);
-                        }
+                        let [a,b] = match sphere {
+                            Some((c,d)) => {
+                                let reach = 0.5*d+options.reach+self.cell;
+                                let (x,y) = (screw.time_to(p0,screw.height(c)-reach),screw.time_to(p0,screw.height(c)+reach));
+                                [x.min(y).max(0.),x.max(y).min(roll[1]-roll[0])]
+                            }
+                            None => [0.,roll[1]-roll[0]],
+                        };
+                        if !(a <= b) { continue }
+                        let steps = (((b-a)*norm(screw.velocity(p0))/options.cell).ceil() as usize).clamp(1,1<<16);
+                        points.extend((0..=steps).map(|k| screw.carry(p0,a+(b-a)*k as f64/steps as f64)));
                     }
                     if let Some(prev) = &previous {
                         for p0 in &here { if let Some(d) = prev.iter().map(|q| distance(*q,*p0)).min_by(f64::total_cmp) { gaps.push(d); } }

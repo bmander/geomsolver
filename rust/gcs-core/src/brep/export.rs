@@ -30,7 +30,7 @@ pub struct Exact { pub solid: Brep,pub pattern: Option<Patterned>,pub indexed: O
 /// Solid `body` of the sketch built by this kernel. A body with swept cuts is admitted to the
 /// generating-sweep class first (`admission` where the host made it, else here).
 pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
-    if holds_sweep(sk,body) { return compose(sk,body,tolerance,say) }
+    if !cad::swept_operands(sk,body).is_empty() { return compose(sk,body,tolerance,say) }
     let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
     if !recipe.sweeps.is_empty() {
         let made;
@@ -63,20 +63,12 @@ pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tol
     Ok(Exact {solid,pattern:None,indexed:None,swept:false})
 }
 
-/// Whether `body` is a body whose stock, or a solid put on it or bounding it, holds a sweep: a
-/// body built from swept material, not one a sweep is cut from.
-fn holds_sweep(sk: &Sketch,body: usize) -> bool {
-    let crate::model::SolidDef::Body {stock,on,bound,..} = &sk.solids[body].def else { return false };
-    std::iter::once(stock).chain(on).chain(bound).any(|&o| cad::contains_sweep(sk,o as usize))
-}
-
-/// A body built from swept material (`holds_sweep`): each operand built exactly — a body with
-/// swept cuts by its own construction, the rest by its recipe — and combined by the body rule:
-/// the stock, plus what is put on it, minus what cuts it, within what bounds it. A sweep cut from
-/// it directly as well is refused: the swept material is named apart, as `fluted` is from `drill`.
+/// A body built from swept material (`cad::swept_operands`): each operand built exactly — a body with
+/// swept cuts by its own construction, the rest by its recipe — and combined by the body rule
+/// (`combine`).
 fn compose(sk: &Sketch,body: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
     let started = crate::clock::Instant::now();
-    let built = combine(sk,body,&|o| if cad::contains_sweep(sk,o) { Ok(exact(sk,o,None,tolerance,say)?.solid) } else { built_static(sk,o) })?;
+    let built = combine(sk,body,&mut |o| if cad::contains_sweep(sk,o) { Ok(exact(sk,o,None,tolerance,say)?.solid) } else { built_static(sk,o) })?;
     (say.stage)(&format!("`{}` built from its swept material by this kernel: {:.6} mm³, {} faces ({:?})",sk.solids[body].name,
         super::props::volume(&built),built.faces.len(),started.elapsed()));
     (say.mark)(Stage::Fuse);
@@ -91,7 +83,7 @@ fn built_static(sk: &Sketch,o: usize) -> Result<Brep,ExportRefusal> {
 /// The body rule over operands `part` builds (millimetres): the stock, plus what is put on it, minus
 /// what cuts it, within what bounds it, by this kernel's Booleans. A sweep cut from it directly is
 /// refused: the swept material is named apart, as `fluted` is from `drill`.
-fn combine(sk: &Sketch,body: usize,part: &dyn Fn(usize) -> Result<Brep,ExportRefusal>) -> Result<Brep,ExportRefusal> {
+fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,ExportRefusal>) -> Result<Brep,ExportRefusal> {
     let solid = &sk.solids[body];
     let crate::model::SolidDef::Body {stock,on,through,bound} = &solid.def else { unreachable!("a composed solid is a body") };
     if let Some(&c) = through.iter().find(|&&c| cad::contains_sweep(sk,c as usize)) {
@@ -102,11 +94,8 @@ fn combine(sk: &Sketch,body: usize,part: &dyn Fn(usize) -> Result<Brep,ExportRef
     for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"bound")] {
         for &o in operands {
             let operand = part(o as usize)?;
-            let tol = 1e-9*built.size().max(operand.size());
-            let name = &sk.solids[o as usize].name;
-            built = super::boolean::boolean(&built,&operand,op,tol)
-                .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{name}`: {e}",solid.name)))?;
-            built.check(10.*tol).map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{name}`: {e}",solid.name)))?;
+            built = super::recipe::combined(&built,&operand,op,0.)
+                .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{}`: {e}",solid.name,sk.solids[o as usize].name)))?;
         }
     }
     Ok(built)
@@ -252,9 +241,8 @@ impl Builder {
     pub fn new(sk: &Sketch,body: usize) -> Result<Builder,ExportRefusal> {
         if body >= sk.solids.len() { return Err(ExportRefusal::at(Stage::Blank,"no such solid in this drawing")) }
         // a body built from swept material: its one operand holding sweeps built by the stages
-        let (body,outer) = if holds_sweep(sk,body) {
-            let crate::model::SolidDef::Body {stock,on,bound,..} = &sk.solids[body].def else { unreachable!("a body") };
-            let swept: Vec<usize> = std::iter::once(stock).chain(on).chain(bound).map(|&o| o as usize).filter(|&o| cad::contains_sweep(sk,o)).collect();
+        let swept = cad::swept_operands(sk,body);
+        let (body,outer) = if !swept.is_empty() {
             let [inner] = swept[..] else {
                 return Err(ExportRefusal::at(Stage::Blank,format!("`{}` is built from {} swept bodies; its display is built from one",
                     sk.solids[body].name,swept.len())))
@@ -288,10 +276,9 @@ impl Builder {
             }
             State::Compose(built) => {
                 let outer = self.outer.expect("a composed build has its body");
-                let inner = std::cell::RefCell::new(Some(match built { super::sweep::Built::Sector {pattern,..} => pattern.solid,
-                    super::sweep::Built::Whole(s) => s }));
-                let solid = combine(sk,outer,&|o| if o == body {
-                    inner.borrow_mut().take().ok_or_else(|| ExportRefusal::at(Stage::Fuse,"the swept body is used twice")) } else { built_static(sk,o) })?;
+                let mut inner = Some(built.into_solid());
+                let solid = combine(sk,outer,&mut |o| if o == body {
+                    inner.take().ok_or_else(|| ExportRefusal::at(Stage::Fuse,"the swept body is used twice")) } else { built_static(sk,o) })?;
                 (say.stage)(&format!("`{}` combined from its swept material",sk.solids[outer].name));
                 State::Mesh(super::sweep::Built::Whole(solid))
             }
@@ -339,10 +326,14 @@ impl Builder {
 /// silhouettes traced on the surfaces — reads the B-rep, as it reads a static solid's; a field is
 /// meshed only for an object whose build is refused.
 pub fn supply_exact(sk: &Sketch) {
+    // a sketch that leaves meshing to its host has its surfaces supplied by it
+    if sk.field_meshing.get() != crate::solid::FieldMeshing::Now { return }
     let say = Say {stage:&|_: &str| {},mark:&|_| {}};
     let Ok(mm) = cad::millimetres(sk) else { return };
     for job in sk.field_jobs() {
-        let Ok(built) = exact(sk,job.solid,None,None,&say) else { continue };
+        // admitted as a display is, which is looked at and not made
+        let admitted = cad::swept_operands(sk,job.solid).is_empty().then(|| admission::admit_body(sk,job.solid,&DISPLAY_ADMISSION).ok()).flatten();
+        let Ok(built) = exact(sk,job.solid,admitted.as_ref(),None,&say) else { continue };
         sk.supply_exact_solid(job.solid,crate::solid::Exact {brep:built.solid,mm,origin:[0.;3],leading:Default::default()});
     }
 }

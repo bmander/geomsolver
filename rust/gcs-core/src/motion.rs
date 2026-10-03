@@ -42,22 +42,28 @@ impl Screw {
     /// The velocity per radian of the point at `p` of what the screw carries, in the carried frame
     /// as in the world's: the same at every time, since a screw carries its own axis into itself.
     pub fn velocity(&self,p: [f64;3]) -> [f64;3] {
-        let x: [f64;3] = std::array::from_fn(|k| p[k]-self.origin[k]);
-        let turn = crate::space::cross(self.axis,x);
+        let turn = crate::space::cross(self.axis,crate::space::sub(p,self.origin));
         std::array::from_fn(|k| self.ratio*turn[k]+self.advance/std::f64::consts::TAU*self.axis[k])
     }
     /// How far along the axis `p` stands from the origin.
-    pub fn height(&self,p: [f64;3]) -> f64 { crate::space::dot(std::array::from_fn(|k| p[k]-self.origin[k]),self.axis) }
+    pub fn height(&self,p: [f64;3]) -> f64 { crate::space::dot(crate::space::sub(p,self.origin),self.axis) }
     /// The time at which the screw carries `p` to `height` along its axis.
     pub fn time_to(&self,p: [f64;3],height: f64) -> f64 { (height-self.height(p))*std::f64::consts::TAU/self.advance }
-    /// How far along its axis the screw moves a point between times `a` and `b`.
-    pub fn rise(&self,a: f64,b: f64) -> f64 { (b-a)*self.advance/std::f64::consts::TAU }
+    /// How far along the axis the box from `lo` to `hi` reaches (read in the screw's frame through
+    /// `back`), and how far from the axis.
+    pub fn extent(&self,lo: [f64;3],hi: [f64;3],back: crate::envelope::Motion) -> ([f64;2],f64) {
+        (0..8).map(|k| back.point(std::array::from_fn(|i| if k>>i & 1 == 0 { lo[i] } else { hi[i] })))
+            .fold(([f64::INFINITY,f64::NEG_INFINITY],0_f64),|([a,b],r),p| {
+                let h = self.height(p);
+                let off = crate::space::sub(crate::space::sub(p,self.origin),crate::space::scale(self.axis,h));
+                ([a.min(h),b.max(h)],r.max(crate::space::norm(off)))
+            })
+    }
     /// `p` carried along its own path for a time `t`: turned `ratio·t` about the axis and slid
     /// along it, as the screw's pose at `s + t` is its pose at `s` followed by this one, whatever
     /// the motion's phase (turns and slides about one axis commute).
     pub fn carry(&self,p: [f64;3],t: f64) -> [f64;3] {
-        let x: [f64;3] = std::array::from_fn(|k| p[k]-self.origin[k]);
-        let q = self.turn(x,t);
+        let q = self.turn(crate::space::sub(p,self.origin),t);
         std::array::from_fn(|k| self.origin[k]+q[k]+self.advance*t/std::f64::consts::TAU*self.axis[k])
     }
     /// A direction turned as `carry` turns what it carries.
@@ -325,6 +331,10 @@ impl Pose {
     }
     pub fn point(&self,x: [f64;3]) -> [f64;3] {
         std::array::from_fn(|i| self.r[i][0]*x[0]+self.r[i][1]*x[1]+self.r[i][2]*x[2]+self.p[i])
+    }
+    /// A direction turned by the pose.
+    pub fn vector(&self,v: [f64;3]) -> [f64;3] {
+        std::array::from_fn(|i| self.r[i][0]*v[0]+self.r[i][1]*v[1]+self.r[i][2]*v[2])
     }
     /// Apply this pose, then `next`.
     fn then(self,next: Pose) -> Pose {

@@ -1033,12 +1033,18 @@ fn coaxial_cylinders_seamed_apart_unite_end_to_end() {
     close(volume(&v),PI*25.*6.+PI*9.*3.);
 }
 
-/// A cone placed at its apex carries a radius zero to rounding there: the file writes zero, never
-/// the negative a reader refuses.
+/// A cone turned from a profile whose apex is on the axis only to rounding (across it, here) is
+/// placed at its apex with radius zero, never the negative a file's reader refuses.
 #[test]
-fn a_cone_placed_at_its_apex_is_written_with_no_negative_radius() {
+fn a_cone_turned_from_an_apex_on_its_axis_has_radius_zero_there() {
     use gcs_core::brep::geom::Surface;
-    let cone = Surface::Cone(Frame::new([0.;3],XY,[1.,0.,0.]),-2e-24,1.);
-    let (_,numbers) = gcs_core::brep::step::written(&cone);
-    assert_eq!(numbers[0],0.);
+    // walked either way round and turned either way, the cone is placed at either end of its line
+    for pts in [[[-1e-11,0.,3.],[2.,0.,0.],[0.,0.,0.]],[[0.,0.,0.],[2.,0.,0.],[-1e-11,0.,3.]]] {
+        for axis in [[0.,0.,1.],[0.,0.,-1.]] {
+            let q = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![poly(&pts)]};
+            let b = revolve(&q,[0.;3],axis,TAU).unwrap();
+            let radii: Vec<f64> = b.faces.iter().filter_map(|f| match f.surface { Surface::Cone(_,r,_) => Some(r),_ => None }).collect();
+            assert!(!radii.is_empty() && radii.iter().all(|&r| r >= 0.),"{radii:?}");
+        }
+    }
 }

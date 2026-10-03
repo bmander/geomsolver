@@ -27,13 +27,18 @@ const FLANK: f64 = 35.;
 
 fn lead() -> f64 { PI*DIAMETER/HELIX.to_radians().tan() }
 
-/// Build `body` exactly within `tolerance`, saying nothing; what was said comes back with it.
-fn built(sk: &Sketch,body: usize,tolerance: Option<Tolerance>) -> (export::Exact,String) {
+/// What `f` returns, and the lines it said through the `Say` it is handed.
+fn saying<T>(f: impl FnOnce(&Say) -> T) -> (T,String) {
     let lines = Mutex::new(Vec::<String>::new());
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let exact = export::exact(sk,body,None,tolerance,&say).unwrap_or_else(|r| panic!("{r}\n{}",lines.lock().unwrap().join("\n")));
-    let said = lines.lock().unwrap().join("\n");
-    (exact,said)
+    let out = f(&say);
+    (out,lines.into_inner().unwrap().join("\n"))
+}
+
+/// Build `body` exactly within `tolerance`; what was said comes back with it.
+fn built(sk: &Sketch,body: usize,tolerance: Option<Tolerance>) -> (export::Exact,String) {
+    let (exact,said) = saying(|say| export::exact(sk,body,None,tolerance,say));
+    (exact.unwrap_or_else(|r| panic!("{r}\n{said}")),said)
 }
 
 /// The reduced drill `length` long: one flute, its end square.
@@ -263,13 +268,9 @@ fn the_reduced_drill_exports_by_this_kernel() {
     assert!(said.contains("built whole, not as one sector"),"{said}");
     exact.solid.check(1e-6).unwrap();
     let tolerance = Some(Tolerance::new(0.01).unwrap());
-    let lines = Mutex::new(Vec::<String>::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let step = export::step(exact,"fluted",tolerance,&say).unwrap();
+    let ((step,stl),said) = saying(|say| (export::step(exact,"fluted",tolerance,say).unwrap(),export::stl(&e.sketch,body,exact,tolerance,say).unwrap()));
     assert!(step.starts_with("ISO-10303-21;"));
-    let stl = export::stl(&e.sketch,body,exact,tolerance,&say).unwrap();
     gcs_core::mesh::stl_shells(&stl).unwrap();
-    let said = lines.lock().unwrap().join("\n");
     assert!(said.contains(", 0 disagree"),"{said}");
 }
 
@@ -283,9 +284,7 @@ fn the_reduced_drill_measures_within_its_tolerance() {
     let body = fixtures::solid(&e,"drill");
     let tolerance = Some(Tolerance::new(0.01).unwrap());
     let (exact,_) = built(&e.sketch,body,tolerance);
-    let lines = Mutex::new(Vec::<String>::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let stl = export::stl(&e.sketch,body,&exact,tolerance,&say).unwrap();
+    let (stl,_) = saying(|say| export::stl(&e.sketch,body,&exact,tolerance,say).unwrap());
     let meter = Meter::read(&e.sketch,body,Options::in_units(1.)).unwrap();
     let (vertices,triangles) = gcs_core::solid::agreement::stl_triangles(&stl,1.).unwrap();
     let samples = accuracy::mesh_samples(&vertices,&triangles,2000);
@@ -326,11 +325,8 @@ fn the_whole_drill_exports_by_this_kernel() {
     let tolerance = Some(Tolerance::new(0.01).unwrap());
     let (exact,said) = built(&e.sketch,body,tolerance);
     exact.solid.check(1e-6).unwrap();
-    let lines = Mutex::new(Vec::<String>::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    export::step(&exact,"drill",tolerance,&say).unwrap();
-    export::stl(&e.sketch,body,&exact,tolerance,&say).unwrap();
-    let said = format!("{said}\n{}",lines.lock().unwrap().join("\n"));
+    let (_,more) = saying(|say| { export::step(&exact,"drill",tolerance,say).unwrap(); export::stl(&e.sketch,body,&exact,tolerance,say).unwrap() });
+    let said = format!("{said}\n{more}");
     assert!(said.contains(", 0 disagree"),"{said}");
     eprintln!("{said}");
 }
@@ -345,10 +341,8 @@ fn a_short_pointed_drill_exports_by_this_kernel() {
     let body = fixtures::solid(&e,"fluted");
     let (exact,said) = built(&e.sketch,body,None);
     exact.solid.check(1e-6).unwrap();
-    let lines = Mutex::new(Vec::<String>::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    export::stl(&e.sketch,body,&exact,None,&say).unwrap();
-    let said = format!("{said}\n{}",lines.lock().unwrap().join("\n"));
+    let (_,more) = saying(|say| export::stl(&e.sketch,body,&exact,None,say).unwrap());
+    let said = format!("{said}\n{more}");
     assert!(said.contains(", 0 disagree"),"{said}");
 }
 

@@ -394,7 +394,8 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     let bounds = field.support_bounds().ok().flatten();
     // a placement's check by the class its motion is in
     let check = |contacts: &SweepContacts,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)| match contacts.motion().screw() {
-        Some(screw) => check_screw(contacts,inside,bounds.map(|b| heights(&screw,(b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1])),pose)),options),
+        Some(screw) => check_screw(contacts,inside,bounds.map(|b| screw.extent(b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1]),pose.inverse())),
+            options),
         None => check(contacts,inside,options),
     };
     let inside_at = |pose: Motion| move |p: V| field.value(pose.point(p)) < -options.margin;
@@ -473,7 +474,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
 #[derive(Clone,Copy)]
 struct Hit { source: V,position: V,normal: V }
 
-type Failure = (Condition,String,Option<V>);
+use super::constant_twist::Failure;
 
 /// T2 and E1 for one placement, asked of every class before anything that might be reported in
 /// their place: the blank's reads, and the poses the roll is sampled at.
@@ -784,13 +785,14 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
 /// being the blank read in the sweep's frame, `heights` how far along the screw's axis it reaches
 /// there. A screw's twist is constant, so M2 does not apply: a tool point is on the boundary at
 /// every time or at none, and the boundary is the characteristic carried along.
-fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),heights: Option<[f64;2]>,options: &Options)
+fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),extent: Option<([f64;2],f64)>,options: &Options)
     -> Result<(SweepEvidence,Reads),Failure> {
     let (reads,_) = ends(c,inside,options)?;
     let reads = std::sync::Mutex::new(reads);
-    let read = |p: V| reads.lock().unwrap_or_else(|e| e.into_inner()).read(inside,p);
+    // the blank read outside the lock, the faces' rings side by side
+    let read = |p: V| { let i = inside(p); reads.lock().unwrap_or_else(|e| e.into_inner()).push(p,i); i };
     let ask = super::constant_twist::Ask {rows:options.rows,root_tolerance:options.root_tolerance,least_factor:options.least_factor,
-        roll:c.domain(),heights,inside:&read};
+        roll:c.domain(),heights:extent.map(|e| e.0),radius:extent.map(|e| e.1),inside:&read};
     let found = super::constant_twist::Characteristic::walk(c,&ask)?;
     let [first,last] = found.reach;
     let mut gaps: Vec<f64> = (first..last).map(|w| crate::space::distance(found.nodes[w].position,found.nodes[w+1].position)).collect();
@@ -802,9 +804,3 @@ fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),heights: Opti
     Ok((evidence,reads.into_inner().unwrap_or_else(|e| e.into_inner())))
 }
 
-/// How far along the screw's axis a box reaches, the box read in the sweep's frame through `pose`.
-fn heights(screw: &crate::motion::Screw,bounds: ([f64;3],[f64;3]),pose: Motion) -> [f64;2] {
-    let back = pose.inverse();
-    (0..8).map(|k| screw.height(back.point(std::array::from_fn(|i| if k>>i & 1 == 0 { bounds.0[i] } else { bounds.1[i] }))))
-        .fold([f64::INFINITY,f64::NEG_INFINITY],|[lo,hi],h| [lo.min(h),hi.max(h)])
-}

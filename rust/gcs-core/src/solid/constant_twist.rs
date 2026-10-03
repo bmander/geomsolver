@@ -24,14 +24,14 @@ type V = [f64;3];
 
 /// A row of the class that fails, what was seen and where: in the sweep's frame, at a time the
 /// tool point is in the blank.
-pub type Failure = (Condition,String,Option<V>);
+pub(super) type Failure = (Condition,String,Option<V>);
 
 /// How many rings past the last that reaches the blank the walk goes on each side: the sheet's
 /// margin, which carries its edge out of the blank.
-pub const MARGIN: usize = 3;
+const MARGIN: usize = 3;
 /// The least sine of the half angle between a ring's two roots for a characteristic to be
 /// regular there: below it the roots are about to meet, where the curve turns back on the ring.
-pub const LEAST_SPREAD: f64 = 1e-3;
+const LEAST_SPREAD: f64 = 1e-3;
 /// How far apart, in turns of the screw, a point's path through the blank is read.
 const PATH_STEP: f64 = 1./360.;
 
@@ -77,6 +77,8 @@ pub struct Ask<'a> {
     pub least_factor: f64,
     pub roll: [f64;2],
     pub heights: Option<[f64;2]>,
+    /// How far from the screw's axis the blank reaches, where known: a point farther never enters.
+    pub radius: Option<f64>,
     pub inside: &'a (dyn Fn(V) -> bool+Sync),
 }
 
@@ -89,7 +91,7 @@ struct Walker<'a> { contacts: &'a SweepContacts,ask: &'a Ask<'a>,screw: Screw,mo
 struct Pass { stations: Vec<Vec<f64>>,rings: Vec<Vec<Ring>>,order: Vec<(usize,usize,usize)> }
 
 impl Pass {
-    fn root(&self,(k,i,j): (usize,usize,usize)) -> &Root { let Ring::Roots(r) = &self.rings[k][i] else { unreachable!() }; &r[j] }
+    fn root(&self,x: (usize,usize,usize)) -> &Root { root(&self.rings,x) }
     fn samples(&self) -> usize { self.rings.iter().map(Vec::len).sum() }
 }
 
@@ -111,7 +113,7 @@ impl Walker<'_> {
             let reaching: Vec<&Root> = roots.iter().filter(|r| r.reach.is_some()).collect();
             if reaching.len() > 1 {
                 return Err((Condition::Once,format!("both of a ring's characteristic points on `{}` reach the blank",patches[k].name),
-                    witness(family,reaching[1])))
+                    witness(family,reaching[1].reach,reaching[1].position)))
             }
         } }
         let reaching: Vec<(usize,usize,usize)> = rings.iter().enumerate().flat_map(|(k,face)| face.iter().enumerate()
@@ -120,7 +122,7 @@ impl Walker<'_> {
         let Some(&seed) = reaching.first() else {
             return Err((Condition::Reach,"no point of the tool's characteristic passes through the blank in the roll".into(),None))
         };
-        let root = |(k,i,j): (usize,usize,usize)| -> &Root { let Ring::Roots(r) = &rings[k][i] else { unreachable!() }; &r[j] };
+        let root = |x| root(&rings,x);
         // the walk each way from the seed, to MARGIN rings past the last that reaches
         let walk = |dir: isize| -> Result<Vec<(usize,usize,usize)>,Failure> {
             let mut out = Vec::new();
@@ -130,7 +132,7 @@ impl Walker<'_> {
                 match step(contacts,&stations,&rings,at,dir,self.scale) {
                     Step::Next(next,d) => {
                         if next == seed { return Err((Condition::Regular,format!("the characteristic closes on itself through \
-                            `{}` within the blank's reach",patches[seed.0].name),witness(family,root(seed)))) }
+                            `{}` within the blank's reach",patches[seed.0].name),witness(family,root(seed).reach,root(seed).position))) }
                         let duplicate = next.0 != at.0;
                         out.push(next);
                         at = next; dir = d;
@@ -141,7 +143,7 @@ impl Walker<'_> {
                     Step::End(why) => {
                         let last = out.iter().rev().chain(std::iter::once(&seed)).find(|&&x| root(x).reach.is_some()).copied().unwrap_or(seed);
                         return Err((Condition::Regular,format!("the characteristic on `{}` {why} within {MARGIN} rings of the blank",
-                            patches[at.0].name),witness(family,root(last))))
+                            patches[at.0].name),witness(family,root(last).reach,root(last).position)))
                     }
                 }
             }
@@ -151,16 +153,13 @@ impl Walker<'_> {
         // S2: every ring point that reaches the blank is on this one stretch
         if let Some(&other) = reaching.iter().find(|x| !order.contains(x)) {
             return Err((Condition::Once,format!("the characteristic reaches the blank in more than one stretch (again on `{}`)",
-                patches[other.0].name),witness(family,root(other))))
+                patches[other.0].name),witness(family,root(other).reach,root(other).position)))
         }
         Ok(Pass {stations,rings,order})
     }
 }
 
 impl Characteristic {
-    /// The screw a sweep is under, or none.
-    pub fn screw(contacts: &SweepContacts) -> Option<Screw> { contacts.motion().screw() }
-
     /// Walk the characteristic of `contacts`' tool under its screw through the blank `ask.inside`
     /// reads, or refuse with the row it fails. A coarse pass, `rows` rings along every face, finds
     /// the stretch that reaches the blank; a fine pass then samples that stretch alone `rows` times
@@ -208,7 +207,7 @@ impl Characteristic {
             fine
         };
         let Pass {stations,rings,order} = fine;
-        let root = |(k,i,j): (usize,usize,usize)| -> &Root { let Ring::Roots(r) = &rings[k][i] else { unreachable!() }; &r[j] };
+        let root = |x| root(&rings,x);
         let seed = *order.iter().find(|&&x| root(x).reach.is_some()).expect("a pass reaches");
         // the nodes, a crossing's second point dropped (its station starts the next step)
         let mut nodes: Vec<Node> = Vec::new();
@@ -230,7 +229,7 @@ impl Characteristic {
             let r = root(*x);
             if r.spread < LEAST_SPREAD {
                 return Err((Condition::Regular,format!("the characteristic on `{}` turns back on a ring (its two points {:.1e} \
-                    apart in angle)",patches[x.0].name,r.spread),witness(family,r).or_else(|| witness(family,root(seed)))))
+                    apart in angle)",patches[x.0].name,r.spread),witness(family,r.reach,r.position).or_else(|| witness(family,root(seed).reach,root(seed).position))))
             }
         }
         // S3: the characteristic is nowhere along the screw's velocity, where its sweep would fold.
@@ -243,7 +242,7 @@ impl Characteristic {
             let velocity = screw.velocity(nodes[w].position);
             let factor = dot(cross(tangent,velocity),nodes[w].normal)/(norm(tangent)*norm(velocity));
             if !(factor.abs() >= ask.least_factor) || factor*sign < 0. {
-                let at = nodes[w].reach.or(nodes[w-1].reach).and_then(|t| family.pose_at(t).ok()).map(|pose| pose.point(nodes[w].position));
+                let at = witness(family,nodes[w].reach.or(nodes[w-1].reach),nodes[w].position);
                 return Err((Condition::Edgewise,format!("the characteristic on `{}` runs along the screw's path, where its sweep folds: \
                     the sweep's area factor is {factor:.3e}{}",patches[nodes[w].patch].name,if factor*sign < 0. { " and has turned its sign" } else { "" }),at))
             }
@@ -268,7 +267,7 @@ impl Characteristic {
         let u = b.from+(b.u-b.from)*f;
         // the root nearest the chord between the two nodes: labels may change where a ring's
         // amplitude turns, positions do not jump
-        let guess: V = std::array::from_fn(|k| a.position[k]+(b.position[k]-a.position[k])*f);
+        let guess = crate::space::lerp(a.position,b.position,f);
         let Ring::Roots(roots) = ring(&self.patches[b.patch],u,self.motion,self.tolerance,&|p,n| outward(&self.tool,p,n),&|_| None) else {
             return Err(format!("the characteristic on `{}` has no regular ring at {u:.6}",self.patches[b.patch].name))
         };
@@ -286,40 +285,24 @@ impl Characteristic {
         Ok((self.screw.carry(p,t),self.screw.turn(n,t)))
     }
 
-    /// The section square to the screw's axis at `height` of what the characteristic sweeps:
-    /// each node carried along its own path to that height.
-    pub fn section(&self,family: &Family,height: f64,nodes: std::ops::RangeInclusive<usize>) -> Result<Vec<V>,String> {
-        nodes.map(|w| {
-            let p = self.nodes[w].position;
-            Ok(family.pose_at(self.screw.time_to(p,height))?.point(p))
-        }).collect()
-    }
-
     /// S4: the reach's section square to the axis does not cross itself. The sheet is the same at
     /// every height but turned and raised, so two of its points meet exactly where two points of
     /// one section do.
     fn simple(&self,family: &Family) -> Result<(),Failure> {
         let [first,last] = self.reach;
         let height = self.screw.height(self.nodes[first].position);
-        let points = self.section(family,height,first..=last).map_err(|m| (Condition::Motion,m,None))?;
-        let (e1,e2) = square_to(self.screw.axis);
+        let points: Vec<V> = (first..=last).map(|w| self.on_section(w as f64,height).map(|(p,_)| p)).collect::<Result<_,_>>()
+            .map_err(|m| (Condition::Motion,m,None))?;
+        let crate::brep::geom::Frame {x:e1,y:e2,..} = crate::brep::geom::Frame::about([0.;3],self.screw.axis);
         let flat: Vec<[f64;2]> = points.iter().map(|p| [dot(*p,e1),dot(*p,e2)]).collect();
         if let Some((i,j)) = crossing(&flat) {
             let p: V = std::array::from_fn(|k| 0.5*(points[i][k]+points[i+1][k]));
-            let at = self.nodes[i+first].reach.and_then(|t| family.pose_at(t).ok()).map(|pose| pose.point(self.nodes[i+first].position));
+            let at = witness(family,self.nodes[i+first].reach,self.nodes[i+first].position);
             return Err((Condition::Lead,format!("the sweep crosses itself within a lead: its section square to the axis meets \
                 itself between the characteristic's points {i} and {j}"),at.or(Some(p))))
         }
         Ok(())
     }
-}
-
-/// A unit pair square to `axis` and to each other.
-pub fn square_to(axis: V) -> (V,V) {
-    let seed = if axis[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
-    let e1 = cross(axis,seed);
-    let e1 = e1.map(|x| x/norm(e1));
-    (e1,cross(axis,e1))
 }
 
 /// The first pair of segments of a polyline that meet without being neighbours, by the index of
@@ -371,6 +354,8 @@ fn outward(tool: &super::SpatialField,p: V,n: V) -> V {
 /// The first time within the roll at which the screw carries `p` into the blank: its path read a
 /// degree of turn apart over the stretch of the roll that passes the blank's heights.
 fn reach(family: &Family,screw: &Screw,p: V,ask: &Ask) -> Option<f64> {
+    let off = sub(sub(p,screw.origin),crate::space::scale(screw.axis,screw.height(p)));
+    if ask.radius.is_some_and(|r| norm(off) > r) { return None }
     let [lo,hi] = match ask.heights {
         Some([a,b]) => {
             let (x,y) = (screw.time_to(p,a),screw.time_to(p,b));
@@ -385,9 +370,15 @@ fn reach(family: &Family,screw: &Screw,p: V,ask: &Ask) -> Option<f64> {
         .find(|&t| family.pose_at(t).is_ok_and(|pose| (ask.inside)(pose.point(p))))
 }
 
-/// A root's point carried to where it first enters the blank.
-fn witness(family: &Family,r: &Root) -> Option<V> {
-    r.reach.and_then(|t| family.pose_at(t).ok()).map(|pose| pose.point(r.position))
+/// The root of `rings` the walk stands on (face, ring, root).
+fn root(rings: &[Vec<Ring>],(k,i,j): (usize,usize,usize)) -> &Root {
+    let Ring::Roots(r) = &rings[k][i] else { unreachable!("the walk stands on a root") };
+    &r[j]
+}
+
+/// A tool point carried to the time `reach` its path first enters the blank, if it does.
+fn witness(family: &Family,reach: Option<f64>,p: V) -> Option<V> {
+    reach.and_then(|t| family.pose_at(t).ok()).map(|pose| pose.point(p))
 }
 
 /// One step of the walk: the next ring's root and the direction to go on in, or why there is none.
@@ -396,7 +387,7 @@ enum Step { Next((usize,usize,usize),isize),End(String) }
 /// The root after `(face, ring, root)` going `dir` along the face's stations, or across the edge
 /// the face shares with the next one in its profile, onto the root at the same point there.
 fn step(contacts: &SweepContacts,stations: &[Vec<f64>],rings: &[Vec<Ring>],(k,i,j): (usize,usize,usize),dir: isize,scale: f64) -> Step {
-    let here = match &rings[k][i] { Ring::Roots(r) => r[j],Ring::Degenerate(_) => unreachable!("the walk stands on a root") };
+    let here = *root(rings,(k,i,j));
     let n = rings[k].len()-1;
     let next = i as isize+dir;
     if (0..=n as isize).contains(&next) {

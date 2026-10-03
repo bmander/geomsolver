@@ -584,10 +584,10 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
     // every eighth step's length apart, by length along the trace and not by count: a trace takes
     // small steps where it starts from a seed, and points crowded there beside a stride of full
     // steps make the interpolation hook back at the curve's end
-    let mut steps: Vec<f64> = t.pts.windows(2).map(|w| crate::space::distance(w[0],w[1])).collect();
-    let lengths = steps.clone();
-    steps.sort_by(f64::total_cmp);
-    let stride = STRIDE as f64*steps[steps.len()/2];
+    let lengths: Vec<f64> = t.pts.windows(2).map(|w| crate::space::distance(w[0],w[1])).collect();
+    let mut sorted = lengths.clone();
+    let median = *sorted.select_nth_unstable_by(lengths.len()/2,f64::total_cmp).1;
+    let stride = STRIDE as f64*median;
     let mut regular = vec![0.];
     let mut since = 0.;
     for (i,l) in lengths.iter().enumerate().take(last.saturating_sub(1)) {

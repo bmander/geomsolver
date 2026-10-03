@@ -68,31 +68,29 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     let mids = |x: &[f64]| x.windows(2).map(|w| 0.5*(w[0]+w[1])).collect::<Vec<_>>();
     let grid = Grid {row_mids:mids(&rows),rows,column_mids:mids(&columns),columns};
     // a point of the sheet, in millimetres: the section's point carried, and its normal turned
-    let carried = |(p,n): (V,V),t: f64| -> Result<(V,V),String> {
-        let pose = family.pose_at(t)?;
-        let q = pose.point(p);
-        let m: V = std::array::from_fn(|i| pose.r[i][0]*n[0]+pose.r[i][1]*n[1]+pose.r[i][2]*n[2]);
-        Ok((q.map(|x| x*scale),m))
-    };
+    let carried = |(p,n): (V,V),pose: &crate::motion::Pose| -> (V,V) { (pose.point(p).map(|x| x*scale),pose.vector(n)) };
     let lay = |grid: &Grid,withheld: Withheld| -> Result<Sheet,String> {
         let rows: Vec<(V,V)> = crate::par::map(&grid.rows,|&s| found.on_section(s,height)).into_iter().collect::<Result<_,_>>()?;
         let row_mids: Vec<(V,V)> = crate::par::map(&grid.row_mids,|&s| found.on_section(s,height)).into_iter().collect::<Result<_,_>>()?;
+        // one pose a column
+        let poses = |times: &[f64]| times.iter().map(|&t| family.pose_at(t)).collect::<Result<Vec<_>,_>>();
+        let (columns,column_mids) = (poses(&grid.columns)?,poses(&grid.column_mids)?);
         let (nr,nc) = (grid.rows.len(),grid.columns.len());
         let mut sheet = Sheet {points:Vec::with_capacity(nr*nc),normals:Vec::with_capacity(nr*nc),times:Vec::with_capacity(nr*nc),
             rows:nr,columns:nc,withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};
-        for row in &rows { for &t in &grid.columns {
-            let (p,n) = carried(*row,t)?;
+        for row in &rows { for (pose,&t) in columns.iter().zip(&grid.columns) {
+            let (p,n) = carried(*row,pose);
             sheet.points.push(p); sheet.normals.push(n); sheet.times.push(t);
         } }
         let mut hold = |pn: (V,V),site: [usize;2]| { sheet.withheld.push(pn.0); sheet.withheld_normals.push(pn.1); sheet.sites.push(site) };
         // the cells' centres, and with sides the middles of the cells' sides each way
-        for (c,&t) in grid.column_mids.iter().enumerate() {
-            for (r,row) in row_mids.iter().enumerate() { hold(carried(*row,t)?,[2*r+1,2*c+1]); }
-            if withheld == Withheld::Sides { for (r,row) in rows.iter().enumerate() { hold(carried(*row,t)?,[2*r,2*c+1]); } }
+        for (c,pose) in column_mids.iter().enumerate() {
+            for (r,row) in row_mids.iter().enumerate() { hold(carried(*row,pose),[2*r+1,2*c+1]); }
+            if withheld == Withheld::Sides { for (r,row) in rows.iter().enumerate() { hold(carried(*row,pose),[2*r,2*c+1]); } }
         }
         if withheld == Withheld::Sides {
-            for (c,&t) in grid.columns.iter().enumerate() {
-                for (r,row) in row_mids.iter().enumerate() { hold(carried(*row,t)?,[2*r+1,2*c]); }
+            for (c,pose) in columns.iter().enumerate() {
+                for (r,row) in row_mids.iter().enumerate() { hold(carried(*row,pose),[2*r+1,2*c]); }
             }
         }
         Ok(sheet)

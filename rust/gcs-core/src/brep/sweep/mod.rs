@@ -22,6 +22,11 @@ pub struct Say<'a> { pub stage: &'a (dyn Fn(&str)+Sync),pub mark: &'a (dyn Fn(St
 /// or whole where a sector's premises do not hold.
 pub enum Built { Sector { sector: sector::Sector,pattern: Patterned },Whole(crate::brep::topo::Brep) }
 
+impl Built {
+    /// The whole solid: the pattern's, or the one built whole.
+    pub fn into_solid(self) -> crate::brep::topo::Brep { match self { Built::Sector {pattern,..} => pattern.solid,Built::Whole(s) => s } }
+}
+
 /// How near a sector's far side's vertex must be to its near side's turned for the pattern to
 /// take them for one (mm): the far side is the near one turned, so they agree to rounding.
 const PATTERN_MATCH: f64 = 1e-6;
@@ -75,8 +80,7 @@ pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say
     match &prepared.classes[k] {
         crate::solid::admission::Class::Generating => sheet::swept_sheet(&prepared.cuts[k],&inside,&near,tolerance,say),
         crate::solid::admission::Class::ConstantTwist(found) => {
-            let heights = prepared.bounds.map(|(lo,hi)| (0..8).map(|c| found.screw.height(std::array::from_fn(|i|
-                if c>>i & 1 == 0 { lo[i] } else { hi[i] }))).fold([f64::INFINITY,f64::NEG_INFINITY],|[a,b],h| [a.min(h),b.max(h)]));
+            let heights = prepared.bounds.map(|(lo,hi)| found.screw.extent(lo,hi,crate::envelope::Motion::identity()).0);
             helical::helical_sheet(&prepared.cuts[k],found,heights,&inside,&near,tolerance,say)
         }
     }
