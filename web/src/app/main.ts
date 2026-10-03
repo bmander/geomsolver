@@ -64,8 +64,9 @@ import {
   MenuItem, ToolbarButton, addButton, addMenu, addSeparator, askChoice, closeMenus, download, openImage,
   refining, toast,
 } from './ui.js';
-import type { Refining } from './field-preview.js';
+import { objectName, type Refining } from './field-preview.js';
 import { Tool } from './view.js';
+import { meshing } from './loading.js';
 
 /* -- toolbars ---------------------------------------------------------------- */
 
@@ -243,25 +244,24 @@ function showRefining(list: Refining[]): void {
     const n = Math.round(Math.max(0, Math.min(1, f)) * 8);
     return '▰'.repeat(n) + '▱'.repeat(8 - n);
   };
-  const short = (name: string): string => name.split('.').filter((w) => w !== 'body').pop() ?? name;
   const building = (r: Refining): boolean => !!r.exact && !r.exact.built && !r.exact.error;
   const spin = SPIN[Math.floor(performance.now() / 250) % SPIN.length];
   const failed = list.filter((r) => (r.error || r.progress?.failed) && !r.exact?.built);
   const parts = list.map((r) => {
     const p = r.progress;
     const x = r.exact;
-    if (x?.built) return `${short(r.name)}: exact solid · ${x.triangles.toLocaleString()} triangles · ${clock(performance.now() - r.since)}`;
+    if (x?.built) return `${objectName(r.name)}: exact solid · ${x.triangles.toLocaleString()} triangles · ${clock(performance.now() - r.since)}`;
     // the preview, as it stands: refined, or the pass in hand (what it is doing is the core's words)
     const preview = r.error || p?.failed ? `failed — ${r.error ?? p?.stage}`
       : r.done ? `refined · ${r.triangles.toLocaleString()} triangles`
       : `${p?.doing ?? 'starting'} ${bar(p?.within ?? 0)} ${r.triangles.toLocaleString()} triangles`;
     if (x && building(r)) {
       const shown = r.done ? `preview ${r.triangles.toLocaleString()} triangles` : `preview ${r.triangles.toLocaleString()} triangles…`;
-      return `${short(r.name)}: exact solid ${spin} ${x.doing} ${bar(x.done / Math.max(1, x.total))} ${clock(performance.now() - r.since)}`
+      return `${objectName(r.name)}: exact solid ${spin} ${x.doing} ${bar(x.done / Math.max(1, x.total))} ${clock(performance.now() - r.since)}`
         + ` · ${shown}`;
     }
     const field = x?.error ? ' (the field\'s surface: no exact solid for it)' : '';
-    return `${short(r.name)}: ${preview}${field} · ${clock(r.elapsed)}`;
+    return `${objectName(r.name)}: ${preview}${field} · ${clock(r.elapsed)}`;
   });
   const text = parts.join('   |   ');
   if (list.some(building)) {
@@ -513,7 +513,7 @@ view.onProgram = () => { refreshProgram(); };
 view.onLoad = () => { if (resetProgramFiles()) leaveExample(); };
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;
-view.onRefine = showRefining;
+view.onRefine = (list) => { showRefining(list); meshing(list); };
 hooks.focusChanged = showStatementFor;
 bindProgramPanel();
 new ResizeObserver(() => view.resize()).observe(canvas);

@@ -3,6 +3,7 @@
 import * as C from '../core/constraints.js';
 import { exampleCases } from './example-catalog.js';
 import * as remote from './remote.js';
+import { awaitSurfaces, loaded, loading, opened, painted } from './loading.js';
 import { openProject } from './program.js';
 import * as io from '../core/io.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
@@ -58,7 +59,12 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
   file?: string): Promise<void> {
   const request = ++exampleRequest;
   try {
+    loading(`fetching ${key}…`);
     const bundle = await remote.drawing(key, file);
+    if (request !== exampleRequest) return;
+    // the solve holds the thread, so the modal saying so is painted first
+    loading(`solving ${bundle.source}…`);
+    await painted();
     if (request !== exampleRequest) return;
     const updateUrl = (selected: string | undefined, method: 'push' | 'replace') => {
       const url = new URL(location.href);
@@ -67,13 +73,15 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
       else url.searchParams.delete('file');
       if (url.href !== location.href) history[method === 'push' ? 'pushState' : 'replaceState'](null, '', url);
     };
+    awaitSurfaces();
     openProject(bundle, { directory: bundle.directory, entry: bundle.entry,
       onSelect: (path) => updateUrl(path, 'replace') });
+    opened();
     if (navigation !== 'none') {
       updateUrl(file || bundle.key !== key ? bundle.source : undefined, navigation);
     }
   }
-  catch (e) { toast(`Could not open example: ${(e as Error).message}`); }
+  catch (e) { loaded(); toast(`Could not open example: ${(e as Error).message}`); }
 }
 
 /** The address names an example only while that example is the document: another one (File ▸
@@ -81,6 +89,7 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
  *  bare address would open the default example — and an example still on its way is dropped. */
 export function leaveExample(): void {
   ++exampleRequest;
+  loaded();
   const url = new URL(location.href);
   url.searchParams.delete('example');
   url.searchParams.delete('file');
