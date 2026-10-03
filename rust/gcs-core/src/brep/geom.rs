@@ -444,7 +444,7 @@ impl Surface {
     /// Whether every coordinate is affine along `v` (a plane, cylinder, cone, extrusion, or a loft
     /// carried along a line), so that over any face its extremes lie on the face's boundary: the
     /// line in `v` through an inner point leaves the face across it.
-    pub fn ruled(&self) -> bool {
+    fn ruled(&self) -> bool {
         match self {
             Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Extrusion(..) => true,
             Surface::Blend(_,b) => matches!(b.carry,Carry::Line {..}),
@@ -958,8 +958,8 @@ impl Curve {
         }
     }
     /// A box about the curve over `[t0, t1]`, never smaller than it: exact for a line, circle and
-    /// ellipse (their ends and the turning points between), the poles of a B-spline's stretch (its
-    /// hull), a loft's rail by its ends where it is carried along a line and by the ring about the
+    /// ellipse (their ends and the turning points between), the poles of a B-spline reaching the
+    /// interval (their hull), a loft's rail by its ends where it is carried along a line and by the ring about the
     /// axis it turns round otherwise. A traced curve is its points' box grown by twice the largest
     /// sagitta measured at its chords' midpoints: the one bound measured rather than proved, since
     /// what bounds a trace's sag is the spacing it was traced at.

@@ -196,11 +196,12 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
         -((((u0+u1)/2.)-uc)/TAU).round()*TAU
     }).collect();
     // the turn's shift along u of each face of revolution
+    let size = sector.size();
     let du: Vec<f64> = faces.iter().enumerate().map(|(fi,f)| -> Result<f64,String> {
         if !revolved[fi] { return Ok(0.) }
         let c = &f.loops[0][0];
         let e = &sector.edges[c.edge as usize];
-        shift(&f.surface,&one,step,c.pcurve.at(e.t[0],e,&f.surface,&sector.vertices),tol.max(1e-9*(1.+sector.size())))
+        shift(&f.surface,&one,step,c.pcurve.at(e.t[0],e,&f.surface,&sector.vertices),tol.max(1e-9*(1.+size)))
     }).collect::<Result<_,_>>()?;
 
     // each sheet cut to its face's parameter box (a hundredth of it about it): the sector's sheet is

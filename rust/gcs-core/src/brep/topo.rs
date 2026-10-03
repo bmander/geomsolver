@@ -8,7 +8,7 @@
 //! reversed face's the other way round — which is what lets the volume be read off the loops alone
 //! (`props`). A closed shell uses every edge twice, once each way, except a degenerate edge (a
 //! pole or apex), which its one face uses once.
-use super::geom::{include,widen,Curve,Rigid,Surface,Uv,V,EMPTY};
+use super::geom::{include,widen,Box3,Curve,Rigid,Surface,Uv,V,EMPTY};
 use crate::space::{distance,dot,norm,sub};
 
 /// A point of the boundary.
@@ -147,7 +147,7 @@ impl Brep {
     /// is analytic: its vertices, each edge's `Curve::bounds`, and where a face may bulge past its
     /// edges, its surface's `bounds_over` the parameters its loops reach. What a `through:` cutter
     /// spans and a tool is culled by, so a sample between a curve's extremes is never its edge.
-    pub fn bounds(&self) -> ([f64;3],[f64;3]) {
+    pub fn bounds(&self) -> Box3 {
         let mut b = EMPTY;
         for v in &self.vertices { include(&mut b,v.p); }
         for e in &self.edges { if let EdgeCurve::Curve(c) = &e.curve { widen(&mut b,c.bounds(e.t)); } }
