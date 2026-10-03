@@ -33,6 +33,27 @@ pub enum PlaneRigid {
     Slide { velocity: [f64;3] },
 }
 
+/// A screw read off a motion (`Family::screw`): it turns `ratio` radians a radian about the line
+/// through `origin` along the unit `axis`, and slides `advance` along it a turn of the parameter.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Screw { pub origin: [f64;3], pub axis: [f64;3], pub ratio: f64, pub advance: f64 }
+
+impl Screw {
+    /// The velocity per radian of the point at `p` of what the screw carries, in the carried frame
+    /// as in the world's: the same at every time, since a screw carries its own axis into itself.
+    pub fn velocity(&self,p: [f64;3]) -> [f64;3] {
+        let x: [f64;3] = std::array::from_fn(|k| p[k]-self.origin[k]);
+        let turn = crate::space::cross(self.axis,x);
+        std::array::from_fn(|k| self.ratio*turn[k]+self.advance/std::f64::consts::TAU*self.axis[k])
+    }
+    /// How far along the axis `p` stands from the origin.
+    pub fn height(&self,p: [f64;3]) -> f64 { crate::space::dot(std::array::from_fn(|k| p[k]-self.origin[k]),self.axis) }
+    /// The time at which the screw carries `p` to `height` along its axis.
+    pub fn time_to(&self,p: [f64;3],height: f64) -> f64 { (height-self.height(p))*std::f64::consts::TAU/self.advance }
+    /// How far along its axis the screw moves a point between times `a` and `b`.
+    pub fn rise(&self,a: f64,b: f64) -> f64 { (b-a)*self.advance/std::f64::consts::TAU }
+}
+
 /// A snapshot of a named rigid-motion graph and its solved world axes. Re-read after
 /// changing the sketch. Sampling a snapshot never reads drawing coordinates or solves it.
 #[derive(Clone,Debug)]
@@ -140,6 +161,18 @@ impl Family {
         }
         let root = self.steps.len()-1;
         Ok(speed(self,&own,&image,root,point,false)?.bounds()[1])
+    }
+
+    /// The screw this motion is, when it is one: a single rotation that slides along its axis as
+    /// it turns. Every point's velocity in the moving frame is then the same at every time — the
+    /// twist is constant — which is what `solid::constant_twist` builds a swept boundary from.
+    /// A rotation without advance, a translation and a relative motion are none.
+    pub fn screw(&self) -> Option<Screw> {
+        match *self.steps.as_slice() {
+            [Step::Rotation {origin,axis,ratio,advance,..}] if advance != 0. && ratio != 0. =>
+                Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
+            _ => None,
+        }
     }
 
     /// How this motion carries the plane through `point` with unit `normal`, when it carries it

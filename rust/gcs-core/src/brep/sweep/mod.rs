@@ -5,6 +5,7 @@
 //! with its kernel's shapes is done here with this kernel's, so the export needs no native kernel,
 //! and runs where the core does — in the browser's worker too.
 pub mod cutter;
+pub mod helical;
 pub mod sector;
 pub mod sheet;
 
@@ -26,9 +27,10 @@ pub enum Built { Sector { sector: sector::Sector,pattern: Patterned },Whole(crat
 const PATTERN_MATCH: f64 = 1e-6;
 
 /// What every stage of a swept body's build reads: millimetres a model unit, the static
-/// remainder's analytic field, the distinct sweeps and their cuts, and the blank (mm).
-pub struct Prepared { scale: f64,field: crate::solid::SpatialField,distinct: Vec<usize>,cuts: Vec<sheet::SweptCut>,
-    blank: crate::brep::topo::Brep }
+/// remainder's analytic field and the box it lies in (model units), the distinct sweeps, their cuts and
+/// the class each was admitted to, and the blank (mm).
+pub struct Prepared { scale: f64,field: crate::solid::SpatialField,bounds: Option<([f64;3],[f64;3])>,distinct: Vec<usize>,
+    cuts: Vec<sheet::SweptCut>,classes: Vec<crate::solid::admission::Class>,blank: crate::brep::topo::Brep }
 
 impl Prepared {
     /// How many distinct sweeps the body cuts, each one sheet.
@@ -49,6 +51,10 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
     let cuts = distinct.iter().map(|&swept| sheet::SweptCut::read(sk,swept)).collect::<Result<Vec<_>,_>>()?;
+    let classes = distinct.iter().map(|&swept| admission.sweeps().iter().find(|e| e.sweep == swept).map(|e| e.class.clone())
+        .ok_or_else(|| ExportRefusal::at(Stage::Admission,format!("`{name}`: `{}` was not admitted",sk.solids[swept].name))))
+        .collect::<Result<Vec<_>,_>>()?;
+    let bounds = field.support_bounds().ok().flatten().map(|b| (b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1])));
     let started = crate::clock::Instant::now();
     let blank = match crate::brep::recipe::meridian(&recipe.recipe,[1.,0.,0.]).at(Stage::Blank)? {
         Ok((b,..)) => b,
@@ -57,15 +63,23 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
     (say.stage)(&format!("`{name}`: the static blank by this kernel: {:.6} mm³, {} faces ({:?})",crate::brep::props::volume(&blank),
         blank.faces.len(),started.elapsed()));
     (say.mark)(Stage::Blank);
-    Ok(Prepared {scale,field,distinct,cuts,blank})
+    Ok(Prepared {scale,field,bounds,distinct,cuts,classes,blank})
 }
 
-/// Sweep `k`'s sheet, traced and fitted against the blank (`sheet::swept_sheet`).
+/// Sweep `k`'s sheet fitted against the blank: traced, under a relative rotation
+/// (`sheet::swept_sheet`), or its characteristic carried, under a screw (`helical::helical_sheet`).
 pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<sheet::Fitted,ExportRefusal> {
     let (field,scale) = (&prepared.field,prepared.scale);
     let inside = |points: &[[f64;3]]| -> Result<Vec<bool>,String> { Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect()) };
     let near = |p: [f64;3]| field.value(p.map(|x| x/scale))*scale;
-    sheet::swept_sheet(&prepared.cuts[k],&inside,&near,tolerance,say)
+    match &prepared.classes[k] {
+        crate::solid::admission::Class::Generating => sheet::swept_sheet(&prepared.cuts[k],&inside,&near,tolerance,say),
+        crate::solid::admission::Class::ConstantTwist(found) => {
+            let heights = prepared.bounds.map(|(lo,hi)| (0..8).map(|c| found.screw.height(std::array::from_fn(|i|
+                if c>>i & 1 == 0 { lo[i] } else { hi[i] }))).fold([f64::INFINITY,f64::NEG_INFINITY],|[a,b],h| [a.min(h),b.max(h)]));
+            helical::helical_sheet(&prepared.cuts[k],found,heights,&inside,&near,tolerance,say)
+        }
+    }
 }
 
 /// How the body is cut from its blank: as one sector, its premises holding, or whole, and why.
