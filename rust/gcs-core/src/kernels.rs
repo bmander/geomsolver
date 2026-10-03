@@ -181,8 +181,8 @@ pub fn trace_kernel(n_theta: usize, n_const: usize) -> Kernel {
         n_par: 3 + n_theta,
         n_const,
         degree: 1,
-        res: point_on_trace_res,
-        jac: point_on_trace_jac,
+        res: point_on_body_res::<TRACE>,
+        jac: point_on_body_jac::<TRACE>,
         const_jac: None,
     }
 }
@@ -196,8 +196,8 @@ pub fn envelope_kernel(n_theta: usize, n_const: usize) -> Kernel {
         n_par: 3 + n_theta,
         n_const,
         degree: 1,
-        res: point_on_envelope_res,
-        jac: point_on_envelope_jac,
+        res: point_on_body_res::<ENVELOPE>,
+        jac: point_on_body_jac::<ENVELOPE>,
         const_jac: None,
     }
 }
@@ -222,18 +222,14 @@ type KernelFn = fn(usize, &[f64], &[f64], &mut [f64]);
 /// its block's Taylor orders (`locus::higher_orders`).  A trace whose block has a row with no
 /// Taylor form has no second derivative to give, so its slot is `refused`.
 pub fn curve_curvature_kernel(n_theta: usize, n_const: usize, body: u8, formed: bool) -> Kernel {
-    let (res, jac): (KernelFn, KernelFn) = match (body, formed) {
-        (_, false) => (refused_res, refused_jac),
-        (TRACE, true) => (curve_curvature_res::<TRACE>, curve_curvature_jac::<TRACE>),
-        (ENVELOPE, true) => (curve_curvature_res::<ENVELOPE>, curve_curvature_jac::<ENVELOPE>),
-        _ => (curve_curvature_res::<FORMULA>, curve_curvature_jac::<FORMULA>),
+    let (name, res, jac): (&'static str, KernelFn, KernelFn) = match body {
+        TRACE => ("trace_curvature", curve_curvature_res::<TRACE>, curve_curvature_jac::<TRACE>),
+        ENVELOPE => ("envelope_curvature", curve_curvature_res::<ENVELOPE>, curve_curvature_jac::<ENVELOPE>),
+        _ => ("curve_curvature", curve_curvature_res::<FORMULA>, curve_curvature_jac::<FORMULA>),
     };
+    let (res, jac): (KernelFn, KernelFn) = if formed { (res, jac) } else { (refused_res, refused_jac) };
     Kernel {
-        name: match body {
-            TRACE => "trace_curvature",
-            ENVELOPE => "envelope_curvature",
-            _ => "curve_curvature",
-        },
+        name,
         n_res: 3,
         n_par: 1 + n_theta + 3,
         n_const,
@@ -1453,21 +1449,12 @@ pub const TRACE: u8 = 1;
 pub const ENVELOPE: u8 = 2;
 
 /// `C` and its derivatives in the parameter, for a residual.  `BODY` says which body the
-/// constants hold — a trace's block, or a formula's two tapes; `higher` whether a trace is to
-/// work out `C''` and `C'''` (a formula always gives them).
-fn curve_value<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], higher: bool) -> [[f64; 2]; 4] {
-    if BODY == ENVELOPE {
-        let val = crate::generate::kernel_eval(k, u, theta, higher, false);
+/// constants hold — a formula's two tapes, a trace's block, a generated profile's tool and
+/// motion; `need` how many orders a trace or a profile is to work out (a formula gives all).
+fn curve_value<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], need: u8) -> [[f64; 2]; 4] {
+    if BODY != FORMULA {
+        let val = body_val::<BODY>(k, u, theta, need, false);
         return [[val.x, val.y], [val.dx[0], val.dy[0]], val.d2, val.d3];
-    }
-    if BODY == TRACE {
-        if higher {
-            let val = crate::locus::kernel_eval_higher(k, u, theta);
-            return [[val.x, val.y], [val.dx[0], val.dy[0]], val.d2, val.d3];
-        }
-        let val = crate::locus::kernel_eval_at(k, u, theta);
-        let nan = [f64::NAN; 2];
-        return [[val.x, val.y], [val.dx[0], val.dy[0]], nan, nan];
     }
     CURVE_SCRATCH.with(|sc| {
         let sc = &mut *sc.borrow_mut();
@@ -1480,13 +1467,23 @@ fn curve_value<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], higher: bool) -
     })
 }
 
-/// The whole frame, for a Jacobian.
-fn curve_frame<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], higher: bool) -> CurveFrame {
+/// A trace's or a generated profile's evaluation, orders to `need`, with the gradient along
+/// the columns when `gradient` is asked (a trace's always has it).
+fn body_val<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], need: u8, gradient: bool) -> crate::locus::Val {
+    if BODY == ENVELOPE {
+        crate::generate::kernel_eval(k, u, theta, need, gradient)
+    } else {
+        crate::locus::kernel_eval_to(k, u, theta, need)
+    }
+}
+
+/// The whole frame, for a Jacobian: orders to `need`, and the gradients of one fewer.
+fn curve_frame<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], need: u8) -> CurveFrame {
     if BODY != FORMULA {
         let fr = if BODY == ENVELOPE {
-            crate::generate::kernel_frame(k, u, theta, higher)
+            crate::generate::kernel_frame(k, u, theta, need)
         } else {
-            crate::locus::kernel_frame(k, u, theta, higher)
+            crate::locus::kernel_frame(k, u, theta, need)
         };
         let v = fr.val;
         return CurveFrame {
@@ -1520,7 +1517,7 @@ fn curve_tangent_res<const BODY: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [f6
     let n_theta = n_par - 5;
     for i in 0..n {
         let (o, ko) = (n_par * i, n_const * i);
-        let c = curve_value::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], false);
+        let c = curve_value::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], 1);
         let l = o + 1 + n_theta;
         let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
         let (wx, wy) = (c[0][0] - v[l], c[0][1] - v[l + 1]);
@@ -1540,7 +1537,7 @@ fn curve_tangent_jac<const BODY: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f6
     let (mut dc, mut dl) = ([0.0f64; W], [0.0f64; W]);
     for i in 0..n {
         let (o, ko) = (n_par * i, n_const * i);
-        let f = curve_frame::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], false);
+        let f = curve_frame::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], 2);
         let l = o + 1 + n_theta;
         let ll = l - o;
         let jo = 2 * n_par * i;
@@ -1581,7 +1578,7 @@ fn curve_curvature_res<const BODY: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [
     let n_theta = n_par - 4;
     for i in 0..n {
         let (o, ko) = (n_par * i, n_const * i);
-        let f = curve_value::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], true);
+        let f = curve_value::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], 2);
         let c = o + 1 + n_theta;
         let ([tx, ty], [sx, sy]) = (f[1], f[2]);
         let (dx, dy) = (v[c] - f[0][0], v[c + 1] - f[0][1]);
@@ -1600,7 +1597,7 @@ fn curve_curvature_jac<const BODY: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [
     let n_theta = n_par - 4;
     for i in 0..n {
         let (o, ko) = (n_par * i, n_const * i);
-        let f = curve_frame::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], true);
+        let f = curve_frame::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], 3);
         let c = o + 1 + n_theta;
         let cc = c - o;
         let jo = 3 * n_par * i;
@@ -1705,20 +1702,22 @@ fn point_on_curve_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     });
 }
 
-fn point_on_trace_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+/// A point on a trace's or a generated profile's curve: `p − C(u) = 0`, with `C` and its
+/// gradient along the columns from the body.
+fn point_on_body_res<const BODY: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
     if n_par < 3 || n_const < 2 {
         return;
     }
     for i in 0..n {
         let (o, ko) = (n_par * i, n_const * i);
-        let c = crate::locus::kernel_eval(&k[ko..ko + n_const], &v[o..o + n_par], n_par);
+        let c = body_val::<BODY>(&k[ko..ko + n_const], v[o + 2], &v[o + 3..o + n_par], 1, false);
         r[2 * i] = v[o] - c.x;
         r[2 * i + 1] = v[o + 1] - c.y;
     }
 }
 
-fn point_on_trace_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+fn point_on_body_jac<const BODY: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
     if n_par < 3 || n_const < 2 {
         return;
@@ -1727,7 +1726,7 @@ fn point_on_trace_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         let (o, ko) = (n_par * i, n_const * i);
         let jo = 2 * n_par * i;
         let row1 = jo + n_par;
-        let c = crate::locus::kernel_eval(&k[ko..ko + n_const], &v[o..o + n_par], n_par);
+        let c = body_val::<BODY>(&k[ko..ko + n_const], v[o + 2], &v[o + 3..o + n_par], 1, true);
         for t in 0..2 * n_par {
             j[jo + t] = 0.0;
         }
@@ -1735,41 +1734,6 @@ fn point_on_trace_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         j[row1 + 1] = 1.0;
         // the parameter, then every coordinate the curve reads — the block's own order, which
         // is the tape order, which is the column order
-        for t in 0..n_par - 2 {
-            j[jo + 2 + t] = -c.dx[t];
-            j[row1 + 2 + t] = -c.dy[t];
-        }
-    }
-}
-
-fn point_on_envelope_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    let (n_par, n_const) = curve_widths(n, v, k);
-    if n_par < 3 || n_const < 2 {
-        return;
-    }
-    for i in 0..n {
-        let (o, ko) = (n_par * i, n_const * i);
-        let c = crate::generate::kernel_eval(&k[ko..ko + n_const], v[o + 2], &v[o + 3..o + n_par], false, false);
-        r[2 * i] = v[o] - c.x;
-        r[2 * i + 1] = v[o + 1] - c.y;
-    }
-}
-
-fn point_on_envelope_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let (n_par, n_const) = curve_widths(n, v, k);
-    if n_par < 3 || n_const < 2 {
-        return;
-    }
-    for i in 0..n {
-        let (o, ko) = (n_par * i, n_const * i);
-        let jo = 2 * n_par * i;
-        let row1 = jo + n_par;
-        let c = crate::generate::kernel_eval(&k[ko..ko + n_const], v[o + 2], &v[o + 3..o + n_par], false, true);
-        for t in 0..2 * n_par {
-            j[jo + t] = 0.0;
-        }
-        j[jo] = 1.0;
-        j[row1 + 1] = 1.0;
         for t in 0..n_par - 2 {
             j[jo + 2 + t] = -c.dx[t];
             j[row1 + 2 + t] = -c.dy[t];

@@ -7,7 +7,10 @@
 
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::examples;
+use gcs_core::roots::{bisect, brent};
 use gcs_core::solve::{solve, SolveOpts};
+
+use crate::common::{build, radius_by_differences};
 
 // the holy numbers, as the document names them
 const A: f64 = 38.0;
@@ -39,15 +42,21 @@ fn meet(p: P, rp: f64, q: P, rq: f64, ccw: bool) -> P {
 
 /// The leg at a crank pin at page bearing `deg`, axle at the origin.
 fn leg(deg: f64) -> [(&'static str, P); 8] {
+    leg_with(deg, L, H)
+}
+
+/// `leg` with the pivot `l` below the axle and the heel-to-toe rod `h` long — the two numbers
+/// the tangency tests solve for.
+fn leg_with(deg: f64, l: f64, h: f64) -> [(&'static str, P); 8] {
     let axle = (0.0, 0.0);
-    let pivot = (-A, -L);
+    let pivot = (-A, -l);
     let r = deg.to_radians();
     let pin = (M * r.cos(), M * r.sin());
     let top = meet(pin, J, pivot, B, false);
     let knee = meet(pin, K, pivot, C, true);
     let back = meet(pivot, D, top, E, true);
     let heel = meet(back, F, knee, G, false);
-    let toe = meet(heel, H, knee, I, false);
+    let toe = meet(heel, h, knee, I, false);
     [("axle", axle), ("pivot", pivot), ("pin", pin), ("top", top), ("back", back),
      ("knee", knee), ("heel", heel), ("toe", toe)]
 }
@@ -101,42 +110,36 @@ fn the_stride_is_the_toe_round_the_crank() {
     }
 }
 
-/// The toe at a crank pin at page bearing `deg`, with the pivot `l` below the axle and the
-/// heel-to-toe rod `h` long — `leg` with the two numbers the tangency tests solve for.
+/// The toe at a crank pin at page bearing `deg` — `leg_with`'s last joint.
 fn toe_with(deg: f64, l: f64, h: f64) -> P {
-    let pivot = (-A, -l);
-    let r = deg.to_radians();
-    let pin = (M * r.cos(), M * r.sin());
-    let top = meet(pin, J, pivot, B, false);
-    let knee = meet(pin, K, pivot, C, true);
-    let back = meet(pivot, D, top, E, true);
-    let heel = meet(back, F, knee, G, false);
-    meet(heel, h, knee, I, false)
+    leg_with(deg, l, h)[7].1
 }
 
-/// The lowest the toe goes in a whole turn: sampled, then narrowed by golden section about
-/// the lowest sample (the stride's bottom is one smooth minimum).
+/// The lowest the toe goes within 15° of crank angle `around` (a dip of the stride — near the
+/// holy numbers there are two), by Brent's method: the angle and the height.
+fn dip(l: f64, h: f64, around: f64) -> (f64, f64) {
+    let (y, at) = brent(&|d: f64| toe_with(d, l, h).1, around - 15.0, around + 15.0, 1e-11, 200, |_, _| false);
+    (at, y)
+}
+
+/// The lowest the toe goes in a whole turn: sampled, then the dip about the lowest sample (the
+/// stride's bottom is one smooth minimum).
 fn lowest(l: f64, h: f64) -> f64 {
     let y = |d: f64| toe_with(d, l, h).1;
     let k = (0..720).min_by(|&a, &b| y(a as f64 / 2.0).total_cmp(&y(b as f64 / 2.0))).unwrap();
-    let (mut a, mut b) = (k as f64 / 2.0 - 0.5, k as f64 / 2.0 + 0.5);
-    let g = (5f64.sqrt() - 1.0) / 2.0;
-    for _ in 0..80 {
-        let (c, d) = (b - g * (b - a), a + g * (b - a));
-        if y(c) < y(d) { b = d } else { a = c }
-    }
-    y((a + b) / 2.0)
+    brent(&y, k as f64 / 2.0 - 0.5, k as f64 / 2.0 + 0.5, 1e-11, 200, |_, _| false).0
 }
 
-/// The number `x` in `(lo, hi)` at which the stride's bottom reaches `ground`, by bisection.
-fn reaching(ground: f64, lo: f64, hi: f64, bottom: impl Fn(f64) -> f64) -> f64 {
-    let (mut lo, mut hi) = (lo, hi);
-    let up = bottom(lo) > ground;
-    for _ in 0..60 {
-        let m = (lo + hi) / 2.0;
-        if (bottom(m) > ground) == up { lo = m } else { hi = m }
-    }
+/// The number in `(lo, hi)` at which `keep` stops holding, by bisection to 1e-12.
+fn crossing(lo: f64, hi: f64, keep: impl FnMut(f64) -> bool) -> f64 {
+    let (lo, hi) = bisect(lo, hi, |a, b| (a + b) / 2.0, |a, b| b - a > 1e-12, keep);
     (lo + hi) / 2.0
+}
+
+/// The number `x` in `(lo, hi)` at which the stride's bottom reaches `ground`.
+fn reaching(ground: f64, lo: f64, hi: f64, bottom: impl Fn(f64) -> f64) -> f64 {
+    let up = bottom(lo) > ground;
+    crossing(lo, hi, |m| (bottom(m) > ground) == up)
 }
 
 /// The jansen document with a ground line under the stride, held tangent to it with the contact
@@ -147,11 +150,7 @@ fn grounded_at(seed: f64, edit: impl Fn(String) -> String) -> gcs_core::program:
            ground := horizontal line(g0, g1)\ng0 distance(60, along: x) g1\n\
            fix(x == -60, y == -95) g0\n"
         + &format!("path tangent ground hint(t: {seed})\n");
-    let (prog, errs) = gcs_core::syntax::parse(&doc);
-    assert!(errs.is_empty(), "{errs:?}");
-    let e = gcs_core::program::elaborate(&prog);
-    assert!(e.ok(), "{:?}", e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>());
-    e
+    build(&doc)
 }
 
 /// `grounded_at` with the contact seeded near the stride's bottom.
@@ -242,28 +241,10 @@ fn a_contact_on_a_closed_stride_wraps_round_the_seam() {
     }
 }
 
-/// Where the toe bottoms out near crank angle `around` (a dip of the stride — near the holy
-/// numbers there are two), by golden section within 15° of it: the angle and the height.
-fn dip(l: f64, h: f64, around: f64) -> (f64, f64) {
-    let y = |d: f64| toe_with(d, l, h).1;
-    let (mut a, mut b) = (around - 15.0, around + 15.0);
-    let g = (5f64.sqrt() - 1.0) / 2.0;
-    for _ in 0..80 {
-        let (c, d) = (b - g * (b - a), a + g * (b - a));
-        if y(c) < y(d) { b = d } else { a = c }
-    }
-    let m = (a + b) / 2.0;
-    (m, y(m))
-}
-
-/// The stride's radius of curvature at crank angle `at`, by central differences in the angle:
-/// `|C'|³ / |C' × C''|`.  A step of 1e-2° keeps it to about 1e-6 of itself.
+/// The stride's radius of curvature at crank angle `at`, by central differences in the angle.
+/// A step of 1e-2° keeps it to about 1e-6 of itself.
 fn radius_at(l: f64, h: f64, at: f64) -> f64 {
-    let e = 1e-2;
-    let (p, q, r) = (toe_with(at - e, l, h), toe_with(at, l, h), toe_with(at + e, l, h));
-    let (dx, dy) = ((r.0 - p.0) / (2.0 * e), (r.1 - p.1) / (2.0 * e));
-    let (ddx, ddy) = ((r.0 - 2.0 * q.0 + p.0) / (e * e), (r.1 - 2.0 * q.1 + p.1) / (e * e));
-    (dx * dx + dy * dy).powf(1.5) / (dx * ddy - dy * ddx).abs()
+    radius_by_differences(|d| toe_with(d, l, h), at, 1e-2)
 }
 
 /// The jansen document with the heel-to-toe rod a formal the drawn leg leaves unknown (`leg.h`),
@@ -278,11 +259,7 @@ fn on_level_ground(extra: &str) -> gcs_core::program::Elaborated {
         + "\ng0 := point hint(x: -60, y: -92)\ng1 := point hint(x: 0, y: -92)\n\
            ground := horizontal line(g0, g1)\ng0 distance(60, along: x) g1\nfix(x == -60) g0\n"
         + extra;
-    let (prog, errs) = gcs_core::syntax::parse(&doc);
-    assert!(errs.is_empty(), "{errs:?}");
-    let e = gcs_core::program::elaborate(&prog);
-    assert!(e.ok(), "{:?}", e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>());
-    e
+    build(&doc)
 }
 
 fn rod(e: &gcs_core::program::Elaborated) -> f64 {
@@ -302,12 +279,7 @@ fn the_stride_stands_on_the_ground_twice() {
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
     assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still the one freedom");
     // the reference: the rod at which the two dips are level, by bisection
-    let (mut lo, mut hi) = (65.6, 65.7);
-    for _ in 0..60 {
-        let m = (lo + hi) / 2.0;
-        if dip(L, m, 35.0).1 < dip(L, m, 329.5).1 { lo = m } else { hi = m }
-    }
-    let want = (lo + hi) / 2.0;
+    let want = crossing(65.6, 65.7, |m| dip(L, m, 35.0).1 < dip(L, m, 329.5).1);
     assert!((rod(&e) - want).abs() < 1e-6, "the rod solved to {}, the reference {want}", rod(&e));
     assert!((rod(&e) - H).abs() < 0.05, "and it is the holy number, nearly");
     let g0 = e.sketch.point_xy(e.map.ent_named("g0").unwrap().i());
@@ -336,12 +308,7 @@ fn the_stride_bends_at_a_stated_radius() {
     assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still the one freedom");
     // the reference, at the crank's page bearing: `u` is measured from the pivot-to-axle line
     let at = 314.5 + L.atan2(A).to_degrees();
-    let (mut lo, mut hi) = (66.0, 68.0);
-    for _ in 0..60 {
-        let m = (lo + hi) / 2.0;
-        if radius_at(L, m, at) > 150.0 { lo = m } else { hi = m }
-    }
-    let want = (lo + hi) / 2.0;
+    let want = crossing(66.0, 68.0, |m| radius_at(L, m, at) > 150.0);
     assert!((rod(&e) - want).abs() < 1e-5, "the rod solved to {}, the reference {want}", rod(&e));
     // and the circle's centre is the stride's centre of curvature there
     let toe = toe_with(at, L, rod(&e));

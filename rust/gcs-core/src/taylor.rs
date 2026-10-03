@@ -45,8 +45,37 @@ impl Jet {
         Jet(a)
     }
 
-    /// `d/dε`, one order lost: the coefficients of the derivative series.
-    fn derivative(self) -> Jet {
+    /// The series with the given **derivatives** `f, f', f'', …` (each divided by `k!`).
+    pub fn from_derivatives(d: &[f64]) -> Jet {
+        let mut a = [0.0; ORDER];
+        let mut fact = 1.0;
+        for (k, &x) in d.iter().take(ORDER).enumerate() {
+            fact *= k.max(1) as f64;
+            a[k] = x / fact;
+        }
+        Jet(a)
+    }
+
+    /// The `k`-th derivative at ε = 0: the coefficient times `k!`.
+    pub fn nth(self, k: usize) -> f64 {
+        (1..=k).fold(self.0[k], |acc, j| acc * j as f64)
+    }
+
+    /// `Σ cₖ δᵏ` — this series read as a polynomial in the jet `delta` (no constant term): a
+    /// function's Taylor series about `s₀` composed with a path `s(ε) = s₀ + δ(ε)`.
+    pub fn compose(self, delta: Jet) -> Jet {
+        let mut out = Jet::constant(self.0[0]);
+        let mut pow = Jet::constant(1.0);
+        for k in 1..ORDER {
+            pow = pow * delta;
+            out = out + pow * self.0[k];
+        }
+        out
+    }
+
+    /// `d/dε`, one order lost: the coefficients of the derivative series (the top one 0, since
+    /// it is not known).
+    pub fn derivative(self) -> Jet {
         let a = self.0;
         Jet(std::array::from_fn(|k| if k + 1 < ORDER { (k + 1) as f64 * a[k + 1] } else { 0.0 }))
     }
@@ -108,12 +137,6 @@ impl Jet {
             c[k] = ck / k as f64;
         }
         (Jet(s), Jet(c))
-    }
-
-    /// `d/dε`, one order lost: the coefficients of the derivative series (the top one 0, since
-    /// it is not known).
-    pub fn rate(self) -> Jet {
-        self.derivative()
     }
 
     /// `|a|`, as the kernels read it: the sign of the constant term (`side_of`: zero is +).
@@ -190,6 +213,12 @@ enum Form {
     Jet(fn(&[Jet], &[f64], &mut [Jet])),
 }
 
+/// Each kernel's form, by id: read once from the names they are registered under.
+fn form_of(kid: usize) -> Option<Form> {
+    static FORMS: std::sync::OnceLock<Vec<Option<Form>>> = std::sync::OnceLock::new();
+    FORMS.get_or_init(|| KERNELS.iter().map(form).collect()).get(kid).copied().flatten()
+}
+
 /// A kernel's form, by the name it is registered under — `None` for one that has none yet.
 fn form(kn: &Kernel) -> Option<Form> {
     use Form::*;
@@ -227,28 +256,35 @@ fn form(kn: &Kernel) -> Option<Form> {
 /// Whether kernel `kid` has a form — what a trace's rows are asked before a curvature is stated
 /// against it.
 pub fn has_form(kid: usize) -> bool {
-    KERNELS.get(kid).is_some_and(|kn| form(kn).is_some())
+    form_of(kid).is_some()
 }
 
 /// One row of kernel `kid` over the path `v` (a `Jet` per column), into `r` (`n_res` jets).
 /// `false` where the kernel has no form; `jrow` is scratch an affine form's Jacobian is read into.
 pub fn residual(kid: usize, v: &[Jet], k: &[f64], r: &mut [Jet], jrow: &mut Vec<f64>) -> bool {
-    let Some(kn) = KERNELS.get(kid) else { return false };
-    let Some(f) = form(kn) else { return false };
+    let (Some(kn), Some(f)) = (KERNELS.get(kid), form_of(kid)) else { return false };
     if v.len() != kn.n_par || r.len() != kn.n_res {
         return false;
     }
     match f {
         Form::Jet(f) => f(v, k, r),
         Form::Affine => {
-            let v0: Vec<f64> = v.iter().map(|j| j.0[0]).collect();
-            let mut r0 = vec![0.0; kn.n_res];
-            (kn.res)(1, &v0, k, &mut r0);
+            // an affine kernel is a handful of columns: its point and residuals on the stack
+            const W: usize = 16;
+            if kn.n_par > W || kn.n_res > W {
+                return false;
+            }
+            let (mut v0, mut r0) = ([0.0f64; W], [0.0f64; W]);
+            for (x, j) in v0.iter_mut().zip(v) {
+                *x = j.0[0];
+            }
+            let v0 = &v0[..kn.n_par];
+            (kn.res)(1, v0, k, &mut r0[..kn.n_res]);
             jrow.clear();
             jrow.resize(kn.n_res * kn.n_par, 0.0);
             match kn.const_jac {
                 Some(cj) => jrow.copy_from_slice(cj),
-                None => (kn.jac)(1, &v0, k, jrow),
+                None => (kn.jac)(1, v0, k, jrow),
             }
             for t in 0..kn.n_res {
                 let mut out = [0.0; ORDER];

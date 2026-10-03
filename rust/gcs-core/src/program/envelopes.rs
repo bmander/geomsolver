@@ -1,8 +1,8 @@
 //! Bind implicit envelopes after their source surfaces and motions exist.
 use super::{resolve::{follow_building,Resolver},Code,Diag,Made,SourceMap};
 use crate::{ir::{Kid,Operation,Statement},model::{EntKind,EntRef,EnvelopeE,Sketch},
-    syntax::{Arg,StmtId},units::Dim};
-use std::collections::{BTreeMap,BTreeSet};
+    syntax::{Arg,StmtId}};
+use std::collections::BTreeSet;
 
 pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
     body: &[&Statement], skip: &BTreeSet<StmtId>, diags: &mut Vec<Diag>) {
@@ -22,14 +22,7 @@ pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap
                 }
                 Ok(e.idx)
             };
-            let angle = |a: &Arg| -> Result<f64,String> {
-                let Arg::Dim {text,..} = a else { return Err("an envelope bound needs an angle".into()); };
-                let value = crate::flatten::value_aff(text,&BTreeMap::new(),sk.units)?;
-                value.dim.require(Dim::ANGLE,"envelope bound")?;
-                let value = value.number().ok_or("an envelope bound must be bound")?;
-                if !value.is_finite() { return Err("an envelope bound must be finite".into()); }
-                Ok(value.to_radians())
-            };
+            let angle = |a: &Arg| super::bound_angle(sk,a,"envelope bound").map(f64::to_radians);
             let e = d.angular_span.as_ref().ok_or("an envelope needs angular bounds")?;
             let roll = [angle(&e.from)?,angle(&e.to)?];
             if roll[0] >= roll[1] { return Err("an envelope needs increasing roll bounds".into()); }

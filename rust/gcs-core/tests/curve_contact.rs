@@ -164,8 +164,8 @@ fn a_traced_curve_gives_its_higher_orders_exactly() {
     for u in [10.0, 25.0, 47.5, 70.0, 90.0] {
         let outer = e.sketch.curve_vars(0, u);
         let anchor = gcs_core::locus::Anchor { u: e.sketch.curve_home(0), pose: None };
-        let v = gcs_core::locus::eval_flat_higher(&l.flat, &outer, anchor, &mut s);
-        assert!(v.ok && v.higher, "at {u}");
+        let v = gcs_core::locus::eval_flat_to(&l.flat, &outer, anchor, 3, &mut s);
+        assert!(v.ok && v.orders == 3, "at {u}");
         let f = u * k;
         let (c, sn) = (f.cos(), f.sin());
         let d2 = [k * k * 20.0 * (c - f * sn), k * k * 20.0 * (sn + f * c)];

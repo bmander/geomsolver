@@ -532,3 +532,17 @@ fn refresh_frames(sk: &mut Sketch) {
         }
     }
 }
+
+/// An angle a declaration is bounded by (`from:`, `to:`), in degrees: written as an angle,
+/// bound to a number and finite, each refused naming `what` — a surface's span, an envelope's
+/// roll.  The one reader of such a bound.
+fn bound_angle(sk: &Sketch, a: &crate::syntax::Arg, what: &str) -> Result<f64, String> {
+    let crate::syntax::Arg::Dim { text, .. } = a else { return Err(format!("a {what} needs an angle")) };
+    let value = crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)?;
+    value.dim.require(crate::units::Dim::ANGLE, what)?;
+    let value = value.number().ok_or_else(|| format!("a {what} must be bound"))?;
+    if !value.is_finite() {
+        return Err(format!("a {what} must be finite"));
+    }
+    Ok(value)
+}

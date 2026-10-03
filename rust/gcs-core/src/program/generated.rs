@@ -2,30 +2,27 @@
 //! and a planar motion, compiled to a curve of the drawing (`generate.rs`, spec §6.15.1).
 //!
 //! Built once every primitive and motion is, beside the curves and before any constraint, since
-//! a contact names the curve.  An envelope of a *surface* is the spatial one (§6.15), left to
-//! `envelopes` after the solve; the operand's kind is what tells the two apart.
+//! a contact names the curve.  An envelope of a spatial operand (a surface) is the spatial one
+//! (§6.15), left to `envelopes` after the solve: the operand's stratum is what tells them apart.
 use super::{resolve::{follow_building, Resolver}, Code, Diag, Made, SourceMap};
-use crate::generate::{self, Generated};
+use crate::generate::{Generated, Op, Tool, ToolBody};
 use crate::ir::{Kid, Operation, Statement};
 use crate::model::{CurveBody, CurveDef, CurveE, EntKind, EntRef, Home, MotionDef, Sketch};
-use crate::syntax::{Arg, StmtId};
-use crate::units::Dim;
-use std::collections::{BTreeMap, BTreeSet};
+use crate::syntax::StmtId;
+use std::collections::BTreeSet;
 
-/// The kinds a planar envelope's tool may be.
-fn tool_code(sk: &Sketch, e: EntRef) -> Result<f64, String> {
+/// What a tool of the sheet cuts as.
+fn tool_of(sk: &Sketch, e: EntRef) -> Result<Tool, String> {
     Ok(match e.kind {
-        EntKind::Point => generate::TOOL_POINT,
-        EntKind::Line => generate::TOOL_LINE,
-        EntKind::Circle => generate::TOOL_CIRCLE,
-        EntKind::Arc => generate::TOOL_ARC,
+        EntKind::Point => Tool::Point,
+        EntKind::Line => Tool::Line,
+        EntKind::Circle => Tool::Circle,
+        EntKind::Arc => Tool::Arc,
         EntKind::Curve => match &sk.curve_defs[sk.curves[e.i()].def as usize].body {
-            CurveBody::Exprs { .. } => generate::TOOL_CURVE,
+            CurveBody::Exprs { .. } => Tool::Curve,
             // a profile cut by a line, circle, arc or point: exact to the third order, so what it
             // cuts in turn is exact to the second
-            CurveBody::Envelope(g) if matches!(g.flat.get(1).copied(),
-                Some(generate::TOOL_POINT | generate::TOOL_LINE | generate::TOOL_CIRCLE | generate::TOOL_ARC))
-                => generate::TOOL_ENVELOPE,
+            CurveBody::Envelope(g) if g.tool().is_some_and(Tool::analytic) => Tool::Envelope,
             CurveBody::Envelope(_) => return Err("a generated curve cuts in its turn only when its own \
                                                   tool is a point, line, circle or arc".into()),
             CurveBody::Trace(_) => return Err("a tool curve is one written as a computed point or \
@@ -35,11 +32,17 @@ fn tool_code(sk: &Sketch, e: EntRef) -> Result<f64, String> {
     })
 }
 
-/// The motion as a postfix program over the curve's columns and values, appending the geometry
-/// it is written over to `args` and its numbers to `values`.  `base` is where the motion's
-/// columns start in the outer vector, `vbase` where the values do — both known only once every
-/// argument is, so the program is written with placeholders and fixed up by the caller.
-fn program(sk: &Sketch, m: usize, ops: &mut Vec<(f64, Vec<Slot>)>, args: &mut Vec<EntRef>,
+/// A step of the motion program before its columns are placed: which argument or value each
+/// number is read from.
+enum Step {
+    Turn { centre: usize, ratio: usize, phase: usize },
+    Slide { line: usize, advance: usize },
+    Relative,
+}
+
+/// The motion as a postfix program, appending the geometry it is written over to `args`, its
+/// numbers to `values`, and its shape (for the definition's key) to `shape`.
+fn program(sk: &Sketch, m: usize, steps: &mut Vec<Step>, args: &mut Vec<EntRef>,
            values: &mut Vec<f64>, shape: &mut String, depth: usize) -> Result<(), String> {
     if depth > 16 {
         return Err("a planar motion nests too deeply".into());
@@ -52,22 +55,21 @@ fn program(sk: &Sketch, m: usize, ops: &mut Vec<(f64, Vec<Slot>)>, args: &mut Ve
     match me.def {
         MotionDef::Turn { centre, ratio, phase } => {
             args.push(EntRef::point(centre as usize));
-            ops.push((generate::OP_TURN, vec![Slot::Arg(args.len() - 1), Slot::Value(values.len()),
-                                              Slot::Value(values.len() + 1)]));
+            steps.push(Step::Turn { centre: args.len() - 1, ratio: values.len(), phase: values.len() + 1 });
             values.extend([ratio, phase]);
             shape.push('T');
         }
         MotionDef::Translation { axis, advance } => {
             args.push(EntRef::line(axis as usize));
-            ops.push((generate::OP_SLIDE, vec![Slot::Arg(args.len() - 1), Slot::Value(values.len())]));
+            steps.push(Step::Slide { line: args.len() - 1, advance: values.len() });
             values.push(advance);
             shape.push('S');
         }
         MotionDef::Relative { source, observer } => {
             shape.push('(');
-            program(sk, source as usize, ops, args, values, shape, depth + 1)?;
-            program(sk, observer as usize, ops, args, values, shape, depth + 1)?;
-            ops.push((generate::OP_RELATIVE, Vec::new()));
+            program(sk, source as usize, steps, args, values, shape, depth + 1)?;
+            program(sk, observer as usize, steps, args, values, shape, depth + 1)?;
+            steps.push(Step::Relative);
             shape.push(')');
         }
         MotionDef::Rotation { .. } => {
@@ -79,13 +81,8 @@ fn program(sk: &Sketch, m: usize, ops: &mut Vec<(f64, Vec<Slot>)>, args: &mut Ve
     Ok(())
 }
 
-/// Where an op reads: an argument's first column, or a value.
-#[derive(Clone, Copy)]
-enum Slot {
-    Arg(usize),
-    Value(usize),
-}
-
+/// Each planar envelope, built as a curve; returns the statements built, which the spatial
+/// pass skips.
 pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
     body: &[&Statement], skip: &BTreeSet<StmtId>, diags: &mut Vec<Diag>) -> BTreeSet<StmtId>
 {
@@ -100,9 +97,9 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
             let e = res.lookup(r)?;
             Some(follow_building(sk, res, e, r))
         };
-        // a surface's envelope is the spatial one, built after the solve
+        // an envelope of a spatial operand is the spatial one, built after the solve
         let tool = match operand(0) {
-            Some(Ok(e)) if !matches!(e.kind, EntKind::Surface | EntKind::Patch | EntKind::Envelope) => e,
+            Some(Ok(e)) if !e.kind.spatial() => e,
             _ => continue,
         };
         made.insert(st.id);
@@ -112,15 +109,10 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
                 Some(Ok(e)) if e.kind == EntKind::Motion && e.i() < sk.motions.len() => e.i(),
                 _ => return Err("an envelope is generated `under:` a motion".into()),
             };
-            let code = tool_code(sk, tool)?;
+            let kind = tool_of(sk, tool)?;
             let span = d.angular_span.as_ref().ok_or("an envelope needs `from:` and `to:` rolls")?;
-            let roll = |a: &Arg| -> Result<f64, String> {
-                let Arg::Dim { text, .. } = a else { return Err("a roll is an angle".into()) };
-                let v = crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)?;
-                v.dim.require(Dim::ANGLE, "envelope roll")?;
-                v.number().filter(|x| x.is_finite()).ok_or_else(|| "a roll must be a number".to_string())
-            };
-            let (from, to) = (roll(&span.from)?, roll(&span.to)?);
+            let (from, to) = (super::bound_angle(sk, &span.from, "envelope roll")?,
+                              super::bound_angle(sk, &span.to, "envelope roll")?);
             if from >= to {
                 return Err("an envelope needs increasing rolls".into());
             }
@@ -130,8 +122,8 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
                 Some(w) => return Err(format!("`side: {w}` — an envelope's side is `near` or `far` of the instant centre")),
             };
             let mut named = vec![tool];
-            let (mut ops, mut values, mut shape) = (Vec::new(), Vec::new(), String::new());
-            program(sk, motion, &mut ops, &mut named, &mut values, &mut shape, 0)?;
+            let (mut steps, mut values, mut shape) = (Vec::new(), Vec::new(), String::new());
+            program(sk, motion, &mut steps, &mut named, &mut values, &mut shape, 0)?;
             // where each argument's columns start in `[t, θ…, values…]` — a centre the tool is
             // already written over (a generated tool's own pinion) is read where it already is,
             // not given a second column
@@ -151,50 +143,42 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
                 }
             }
             let n_theta = cols.len();
-            if 1 + n_theta > crate::tape::MAX_VARS || 1 + n_theta + values.len() > generate::OUTER_MAX {
+            if 1 + n_theta > crate::tape::MAX_VARS || 1 + n_theta + values.len() > crate::generate::OUTER_MAX {
                 return Err(format!("an envelope is written over at most {} coordinates; this tool \
                                     and motion are over {n_theta}", crate::tape::MAX_VARS - 1));
             }
-            let mut flat = vec![n_theta as f64, code, side, ops.len() as f64];
-            for (op, slots) in &ops {
-                flat.push(*op);
-                flat.extend(slots.iter().map(|s| match *s {
-                    Slot::Arg(i) => at[i] as f64,
-                    Slot::Value(i) => (1 + n_theta + i) as f64,
-                }));
-            }
-            let mut key = format!("envelope:{code}:{shape}:{side}");
-            if code == generate::TOOL_CURVE {
-                let cv = &sk.curves[tool.i()];
-                let td = &sk.curve_defs[cv.def as usize];
-                let CurveBody::Exprs { x, y } = &td.body else { unreachable!("checked by tool_code") };
-                let n_t = sk.entity_params(tool).len();
-                let (a, b) = sk.curve_domain(tool.i());
-                flat.extend([td.vars.len() as f64, n_t as f64, x.flat.len() as f64, y.flat.len() as f64]);
-                flat.extend_from_slice(&x.flat);
-                flat.extend_from_slice(&y.flat);
-                flat.push(cv.values.len() as f64);
-                flat.extend_from_slice(&cv.values);
-                flat.extend([a.min(b), a.max(b)]);
-                // the tool's constants and interval are baked in: one definition per tool curve
-                key.push_str(&format!(":{}", tool.i()));
-            }
-            if code == generate::TOOL_ENVELOPE {
-                let cv = &sk.curves[tool.i()];
-                let CurveBody::Envelope(g) = &sk.curve_defs[cv.def as usize].body else {
-                    unreachable!("checked by tool_code")
-                };
-                let n_t = sk.entity_params(tool).len();
-                let (a, b) = sk.curve_domain(tool.i());
-                flat.extend([n_t as f64, cv.values.len() as f64]);
-                flat.extend_from_slice(&cv.values);
-                flat.extend([sk.curve_home(tool.i()), a.min(b), a.max(b), g.flat.len() as f64]);
-                flat.extend_from_slice(&g.flat);
-                key.push_str(&format!(":{}", tool.i()));
-            }
-            let def = match sk.curve_defs.iter().position(|x| x.name == key) {
-                Some(i) if code != generate::TOOL_CURVE && code != generate::TOOL_ENVELOPE => i,
-                _ => {
+            let value = |i: usize| 1 + n_theta + i;
+            let ops: Vec<Op> = steps.iter().map(|s| match *s {
+                Step::Turn { centre, ratio, phase } =>
+                    Op::Turn { centre: at[centre], ratio: value(ratio), phase: value(phase) },
+                Step::Slide { line, advance } => Op::Slide { line: at[line], advance: value(advance) },
+                Step::Relative => Op::Relative,
+            }).collect();
+            // a curve or generated tool carries its own constants and interval, so its curve is
+            // its own: definitions are shared only between analytic tools
+            let tool_body = match kind {
+                Tool::Curve | Tool::Envelope => {
+                    let cv = &sk.curves[tool.i()];
+                    let (a, b) = sk.curve_domain(tool.i());
+                    let domain = (a.min(b), a.max(b));
+                    let n_theta = sk.entity_params(tool).len();
+                    match &sk.curve_defs[cv.def as usize].body {
+                        CurveBody::Exprs { x, y } =>
+                            ToolBody::Curve { n_theta, x: &x.flat, y: &y.flat, values: &cv.values, domain },
+                        CurveBody::Envelope(g) => ToolBody::Envelope {
+                            n_theta, flat: &g.flat, values: &cv.values, anchor: sk.curve_home(tool.i()), domain,
+                        },
+                        CurveBody::Trace(_) => unreachable!("refused by tool_of"),
+                    }
+                }
+                _ => ToolBody::None,
+            };
+            let generated = Generated::new(n_theta, kind, side, &ops, tool_body);
+            let key = format!("envelope:{kind:?}:{shape}:{side}");
+            let shared = kind.analytic().then(|| sk.curve_defs.iter().position(|x| x.name == key)).flatten();
+            let def = match shared {
+                Some(i) => i,
+                None => {
                     let mut vars = vec!["t".to_string()];
                     vars.extend((0..n_theta).map(|k| format!("θ{k}")));
                     vars.extend((0..values.len()).map(|k| format!("v{k}")));
@@ -208,7 +192,7 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
                         param: "t".into(),
                         turns: true,
                         vars,
-                        body: CurveBody::Envelope(Generated { flat }),
+                        body: CurveBody::Envelope(generated),
                         pose_of: Vec::new(),
                     });
                     sk.curve_defs.len() - 1

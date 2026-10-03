@@ -30,6 +30,15 @@ pub fn involute_at(cx: f64, cy: f64, rb: f64, u_deg: f64) -> (f64, f64) {
     (cx + rb * (r.cos() + r * r.sin()), cy + rb * (r.sin() - r * r.cos()))
 }
 
+/// The radius of curvature of the plane curve `c` at `t`, by central differences of its points
+/// with step `h`: `|C'|³ / |C' × C''|` — a reference worked out here, never asked of the core.
+pub fn radius_by_differences(c: impl Fn(f64) -> (f64, f64), t: f64, h: f64) -> f64 {
+    let (p, q, r) = (c(t - h), c(t), c(t + h));
+    let (dx, dy) = ((r.0 - p.0) / (2.0 * h), (r.1 - p.1) / (2.0 * h));
+    let (ddx, ddy) = ((r.0 - 2.0 * q.0 + p.0) / (h * h), (r.1 - 2.0 * q.1 + p.1) / (h * h));
+    (dx * dx + dy * dy).powf(1.5) / (dx * ddy - dy * ddx).abs()
+}
+
 /// **The Jacobian the kernels write is the system's own derivative**: every column of the
 /// assembled Jacobian against a central difference of the assembled residuals, so a tape's
 /// gradient, a kernel's column order and `params_on`'s are all checked at once.
