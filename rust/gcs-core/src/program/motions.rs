@@ -50,6 +50,25 @@ impl Builder<'_> {
         Ok(value)
     }
 
+    /// Push a built motion and bind its name.
+    fn finish(&mut self, name: &str, st: &Statement, d: &Decl, def: MotionDef,
+        measured: Vec<MotionMeasure>) -> Result<usize,String> {
+        let height = match def {
+            MotionDef::Rotation {..} | MotionDef::Translation {..} | MotionDef::Turn {..} => 1,
+            MotionDef::Relative {source,observer} =>
+                1+self.heights[source as usize].max(self.heights[observer as usize]),
+        };
+        if height > 64 { return Err("motion dependencies exceed 64 levels".into()); }
+        self.heights.push(height);
+        let i = self.sk.motions.len();
+        self.sk.motions.push(MotionE {def,name:name.to_string(),class:d.class.clone(),measured});
+        let e = EntRef::new(EntKind::Motion,i);
+        self.res.of.insert(name.to_string(),e);
+        self.map.bind(name,e,d.name.named());
+        self.map.record(st,Made::Ent(e));
+        Ok(i)
+    }
+
     fn build(&mut self, name: &str) -> Result<usize,String> {
         if let Some(done) = self.done.get(name) { return done.clone(); }
         if self.visiting.contains(name) {
@@ -65,8 +84,19 @@ impl Builder<'_> {
                     let e = self.res.lookup(axis)
                         .ok_or_else(|| format!("no such motion axis: `{}`",axis.root.text))?;
                     let e = follow_building(self.sk,self.res,e,axis)?;
+                    // about a point of a view: a turn in that view, whose centre a profile it
+                    // generates is written over
+                    if e.kind == EntKind::Point && e.i() < self.sk.points.len() {
+                        if advance.is_some() { return Err("a turn about a point has no `advance:`".into()); }
+                        measured.extend(self.measured(ratio,MotionSlot::Ratio)?);
+                        measured.extend(self.measured(phase,MotionSlot::Phase)?);
+                        let def = MotionDef::Turn {centre:e.idx,
+                            ratio:self.number(ratio,1.,Dim::SCALAR,"ratio")?,
+                            phase:self.number(phase,0.,Dim::ANGLE,"phase")?.to_radians()};
+                        return self.finish(name,st,d,def,measured);
+                    }
                     if e.kind != EntKind::Line || e.i() >= self.sk.lines.len() {
-                        return Err("a motion rotates about a directed line".into());
+                        return Err("a motion rotates about a directed line, or turns about a point".into());
                     }
                     measured.extend(self.measured(ratio,MotionSlot::Ratio)?);
                     measured.extend(self.measured(phase,MotionSlot::Phase)?);
@@ -92,20 +122,7 @@ impl Builder<'_> {
                     source:self.dependency(source)? as u32,observer:self.dependency(observer)? as u32,
                 },
             };
-            let height = match def {
-                MotionDef::Rotation {..} | MotionDef::Translation {..} => 1,
-                MotionDef::Relative {source,observer} =>
-                    1+self.heights[source as usize].max(self.heights[observer as usize]),
-            };
-            if height > 64 { return Err("motion dependencies exceed 64 levels".into()); }
-            self.heights.push(height);
-            let i = self.sk.motions.len();
-            self.sk.motions.push(MotionE {def,name:name.to_string(),class:d.class.clone(),measured});
-            let e = EntRef::new(EntKind::Motion,i);
-            self.res.of.insert(name.to_string(),e);
-            self.map.bind(name,e,d.name.named());
-            self.map.record(st,Made::Ent(e));
-            Ok(i)
+            self.finish(name,st,d,def,measured)
         })();
         self.visiting.remove(name);
         self.done.insert(name.to_string(),result.clone());

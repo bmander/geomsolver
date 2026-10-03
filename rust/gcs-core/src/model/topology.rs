@@ -59,6 +59,8 @@ impl Sketch {
             EntKind::Motion => { let m = &self.motions[e.i()]; match m.def {
                 MotionDef::Rotation {axis,..} | MotionDef::Translation {axis,..} => std::iter::once(EntRef::line(axis as usize))
                     .chain(m.measured.iter().flat_map(|x| x.value.ents.values().copied())).collect(),
+                MotionDef::Turn {centre,..} => std::iter::once(EntRef::point(centre as usize))
+                    .chain(m.measured.iter().flat_map(|x| x.value.ents.values().copied())).collect(),
                 MotionDef::Relative {source,observer} => [source,observer].map(|i| EntRef::new(EntKind::Motion,i as usize)).to_vec(),
             } },
             EntKind::Surface => {

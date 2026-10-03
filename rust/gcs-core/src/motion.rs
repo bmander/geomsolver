@@ -195,6 +195,19 @@ impl Family {
                     }
                     Step::Rotation {origin,axis,ratio,phase,advance}
                 }
+                // a turn in a view is a rotation about the line through its centre square to
+                // the view
+                MotionDef::Turn {centre,..} => {
+                    let (ratio,phase,_) = node.rotation(sk)?;
+                    if centre as usize >= sk.points.len() { return Err("no such motion centre".into()); }
+                    let origin = sk.world_point(centre as usize);
+                    let axis = sk.plane_of(centre as usize).map(|i| sk.basis(i))
+                        .unwrap_or_else(crate::plane::Basis::page).normal();
+                    if !origin.iter().all(|x| x.is_finite()) || Motion::rotation(axis,phase,ratio).is_err() {
+                        return Err(format!("`{}` needs a finite centre and angle",node.name));
+                    }
+                    Step::Rotation {origin,axis,ratio,phase,advance:0.}
+                }
                 MotionDef::Translation {axis,..} => {
                     let advance = node.advance(sk)?;
                     let line = sk.lines.get(axis as usize).ok_or("no such motion axis")?;
