@@ -83,6 +83,8 @@ impl CurveDef {
 pub enum CurveBody {
     Exprs { x: crate::tape::Tape, y: crate::tape::Tape },
     Trace(crate::locus::Locus),
+    /// A tool carried by a planar motion, and the envelope it cuts (`generate.rs`).
+    Envelope(crate::generate::Generated),
 }
 
 /// One curve, drawn: a definition, the entities it is written over, and the numbers it was
@@ -177,6 +179,7 @@ impl Sketch {
                 let v = crate::locus::eval_flat(&l.flat, &x, anchor, s);
                 (v.x, v.y)
             }),
+            CurveBody::Envelope(g) => crate::generate::point(&g.flat, &x, self.curve_home(i)),
         }
     }
 
@@ -352,6 +355,9 @@ impl Sketch {
                 let anchor = crate::locus::Anchor { u: self.curve_home(i), pose: pose.as_deref() };
                 crate::locus::sweep(&l.flat, &self.curve_vars(i, a), a, b, n, anchor, &mut s.borrow_mut())
             }),
+            CurveBody::Envelope(g) => {
+                crate::generate::sweep(&g.flat, &self.curve_vars(i, a), self.curve_home(i), a, b, n)
+            }
         }
     }
 

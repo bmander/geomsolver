@@ -897,18 +897,19 @@ fn higher_orders(v: &View, s: &mut Scratch, out: &mut Val) {
         return;
     }
     s.path.clear();
-    s.path.push(Jet([s.xv[0], 1.0, 0.0, 0.0]));
+    s.path.push(Jet::var(s.xv[0]));
     for i in 1..q0 {
         s.path.push(Jet::constant(s.xv[i]));
     }
     for i in 0..n_q {
-        s.path.push(Jet([s.xv[q0 + i], s.q1[i], 0.0, 0.0]));
+        s.path.push(Jet::from(&[s.xv[q0 + i], s.q1[i]]));
     }
     for t in &v.w {
         let sr = tape::eval_series_flat(t, v.n_outer, &s.xv[..v.n_outer], &mut s.ts);
-        s.path.push(Jet([sr.c[0], sr.c[1], sr.c[2] / 2.0, sr.c[3] / 6.0]));
+        s.path.push(Jet::from(&[sr.c[0], sr.c[1], sr.c[2] / 2.0, sr.c[3] / 6.0]));
     }
-    for order in 2..taylor::ORDER {
+    // to the third: a tape's series stops there, and the frame reads no further
+    for order in 2..4 {
         s.rhs.clear();
         s.rhs.resize(n_q, 0.0);
         let mut row0 = 0usize;

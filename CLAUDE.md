@@ -88,6 +88,15 @@ be meshed; `mesh::stl_shells` checks every component, cavities included, unwelde
 old outputs; renames are atomic per file, not across files. Native-path tests must not hide legacy
 mesh defects.
 
+**Planar generation (§6.15.1, #61):** `envelope(tool, under: m, from:, to:, side:)` over a tool of
+the sheet (point/line/circle/arc/formula curve) and a planar motion (`motion(about: point)` is
+`MotionDef::Turn`, a rotation square to its view in space) is a **curve** (`CurveBody::Envelope`,
+`program/generated.rs`, built with motions after the primitives, before constraints):
+`F = X_s × X_t = 0` in the tool parameter, `C`..`C''` exact by `taylor::Jet`s, `C'''` and θ
+gradients by difference (`generate.rs`); tool and motion geometry are its columns (shared ones
+once; the motion's numbers ride past `tape::MAX_VARS` in `OUTER_MAX`).  Analytic tools are exact to
+`C'''`, so a profile they cut may cut in turn (`TOOL_ENVELOPE`, composed by its Taylor series).  Kernels are
+generic over `kernels::{FORMULA,TRACE,ENVELOPE}`.  `tests/generation.rs` is the gate.
 **Named envelopes:** `flank := envelope(source, under: generating, from: -35deg, to: 35deg)`: a
 zero-normal-velocity locus over a finite increasing roll interval (ABI kind 11).
 `GeneratedEnvelope` intersects it with two section equations via the shared DogLeg loop. A nonzero

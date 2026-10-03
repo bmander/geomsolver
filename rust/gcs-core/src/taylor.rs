@@ -18,9 +18,10 @@
 
 use crate::kernels::{Kernel, KERNELS, MIN_LINE_LEN};
 
-/// Orders kept: the value and three derivatives, which is what a curvature's Jacobian reads
-/// (`C'''` is `∂C''/∂u`).
-pub const ORDER: usize = 4;
+/// Coefficients kept: the value and four orders.  A curvature's Jacobian reads `C'''`
+/// (`∂C''/∂u`), and a generated profile's third order reads the motion's translation one order
+/// higher through its rate (`generate::at`), so a fourth is carried.
+pub const ORDER: usize = 5;
 
 /// `a₀ + a₁ε + a₂ε² + a₃ε³`, truncated: Taylor **coefficients**, not derivatives (`a_k` is the
 /// `k`-th derivative over `k!`).
@@ -29,25 +30,38 @@ pub struct Jet(pub [f64; ORDER]);
 
 impl Jet {
     pub fn constant(v: f64) -> Jet {
-        Jet([v, 0.0, 0.0, 0.0])
+        Jet::from(&[v])
+    }
+
+    /// `v + ε`: a variable moving at unit rate.
+    pub fn var(v: f64) -> Jet {
+        Jet::from(&[v, 1.0])
+    }
+
+    /// The leading coefficients given, the rest 0.
+    pub fn from(c: &[f64]) -> Jet {
+        let mut a = [0.0; ORDER];
+        a[..c.len().min(ORDER)].copy_from_slice(&c[..c.len().min(ORDER)]);
+        Jet(a)
     }
 
     /// `d/dε`, one order lost: the coefficients of the derivative series.
     fn derivative(self) -> Jet {
         let a = self.0;
-        Jet([a[1], 2.0 * a[2], 3.0 * a[3], 0.0])
+        Jet(std::array::from_fn(|k| if k + 1 < ORDER { (k + 1) as f64 * a[k + 1] } else { 0.0 }))
     }
 
     /// The series whose derivative is `self` and whose constant term is `c0`.
     fn integral(self, c0: f64) -> Jet {
         let a = self.0;
-        Jet([c0, a[0], a[1] / 2.0, a[2] / 3.0])
+        Jet(std::array::from_fn(|k| if k == 0 { c0 } else { a[k - 1] / k as f64 }))
     }
 
     pub fn sqrt(self) -> Jet {
         let a = self.0;
         let s0 = a[0].sqrt();
-        let mut s = [s0, 0.0, 0.0, 0.0];
+        let mut s = [0.0; ORDER];
+        s[0] = s0;
         // s·s = a, order by order
         for k in 1..ORDER {
             let mut acc = a[k];
@@ -75,6 +89,31 @@ impl Jet {
         use crate::fmath::Det;
         let rate = (x * y.derivative() - y * x.derivative()) / (x * x + y * y);
         rate.integral(y.0[0].datan2(x.0[0]))
+    }
+
+    /// `(sin a, cos a)`, order by order: `s' = c a'` and `c' = −s a'`.
+    pub fn sin_cos(self) -> (Jet, Jet) {
+        use crate::fmath::Det;
+        let a = self.0;
+        let (mut s, mut c) = ([0.0; ORDER], [0.0; ORDER]);
+        s[0] = a[0].dsin();
+        c[0] = a[0].dcos();
+        for k in 1..ORDER {
+            let (mut sk, mut ck) = (0.0, 0.0);
+            for j in 1..=k {
+                sk += j as f64 * a[j] * c[k - j];
+                ck -= j as f64 * a[j] * s[k - j];
+            }
+            s[k] = sk / k as f64;
+            c[k] = ck / k as f64;
+        }
+        (Jet(s), Jet(c))
+    }
+
+    /// `d/dε`, one order lost: the coefficients of the derivative series (the top one 0, since
+    /// it is not known).
+    pub fn rate(self) -> Jet {
+        self.derivative()
     }
 
     /// `|a|`, as the kernels read it: the sign of the constant term (`side_of`: zero is +).
@@ -212,7 +251,8 @@ pub fn residual(kid: usize, v: &[Jet], k: &[f64], r: &mut [Jet], jrow: &mut Vec<
                 None => (kn.jac)(1, &v0, k, jrow),
             }
             for t in 0..kn.n_res {
-                let mut out = [r0[t], 0.0, 0.0, 0.0];
+                let mut out = [0.0; ORDER];
+                out[0] = r0[t];
                 for (c, col) in v.iter().enumerate() {
                     let g = jrow[t * kn.n_par + c];
                     for o in 1..ORDER {

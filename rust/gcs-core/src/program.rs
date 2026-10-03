@@ -16,6 +16,7 @@ mod solids;
 mod surfaces;
 mod motions;
 mod envelopes;
+mod generated;
 mod patches;
 mod seams;
 mod vertices;
@@ -336,6 +337,13 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
 
+    // motions, once every line and point they are written over is built — and before the
+    // profiles a planar motion generates, which are curves of the drawing a contact may name
+    // (§6.15.1).  A motion is evaluated after the solve wherever it is read in space; building it
+    // here only resolves what it is written over.
+    motions::motions(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    let planar = generated::planar_envelopes(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+
     // the numbers `fix` holds, before the seeds that read geometry: a place reading a held
     // point reads where it is held, and a seed never writes a held number (`settle_deferred`)
     for st in &body {
@@ -396,13 +404,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // over faces and other solids; and *evaluated* rather than solved, because nothing about
     // either is an unknown.  This is the stratification as a phase: everything above it is the
     // drawing, everything below reads what the drawing came to.
-    // Motions depend on solved axes, and solids retain their motion indices.
-    // Resolve the motion graph before solids consume indices: dependency order
-    // may differ from the declaration order used by name preallocation.
-    motions::motions(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    // (Motions were built with the primitives: solids retain their indices.)
     solids(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     surfaces::surfaces(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
-    envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    let spatial: BTreeSet<StmtId> = skip.union(&planar).copied().collect();
+    envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &spatial, &mut diags);
     patches::patches(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     seams::seams(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     vertices::vertices(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);

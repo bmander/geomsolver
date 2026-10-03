@@ -523,7 +523,7 @@ impl<'a> P<'a> {
         }
         let angular_span = match (surface_from,surface_to) {
             (None,None) => None,
-            (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to}),
+            (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to,side:None}),
             _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
         };
         let (attitude, position) = match attitude_of(att) {
@@ -939,7 +939,7 @@ impl<'a> P<'a> {
         let start = self.here();
         if !self.want_p('(') { return None; }
         let mut surface = None; let mut motion = None;
-        let mut from = None; let mut to = None;
+        let mut from = None; let mut to = None; let mut side = None;
         while !self.eat_p(')') {
             let label = self.slot_label();
             match label.as_deref() {
@@ -959,7 +959,11 @@ impl<'a> P<'a> {
                     let (text,span) = self.expr_until(',')?;
                     *slot = Some(Arg::Dim {text,span});
                 }
-                _ => { self.fail("an envelope takes a surface, `under:` a motion, `from:` and `to:` angles"); return None; }
+                Some("side") => {
+                    if side.is_some() { self.fail("an envelope's side is given twice"); return None; }
+                    side = Some(self.refr()?.root);
+                }
+                _ => { self.fail("an envelope takes a surface or tool, `under:` a motion, `from:` and `to:` angles, and `side:`"); return None; }
             }
             if self.peek() != Some(&Tok::P(')')) && !self.want_p(',') { return None; }
         }
@@ -973,7 +977,7 @@ impl<'a> P<'a> {
             children:vec![vec![surface],vec![motion]],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],attitude:Attitude::Page,
-            sweep:None,motion:None,angular_span:Some(crate::syntax::AngularSpan {from,to}),plane:Default::default(),
+            sweep:None,motion:None,angular_span:Some(crate::syntax::AngularSpan {from,to,side}),plane:Default::default(),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
         })
     }

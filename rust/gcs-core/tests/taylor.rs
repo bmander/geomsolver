@@ -43,7 +43,7 @@ fn every_taylor_form_is_its_kernel() {
             // (m, c) or a stated number
             let path: Vec<Jet> = (0..kn.n_par)
                 .map(|_| {
-                    Jet([
+                    Jet::from(&[
                         rng.uniform(1.0, 10.0) * if rng.uniform(0.0, 1.0) < 0.5 { -1.0 } else { 1.0 },
                         rng.uniform(-1.0, 1.0),
                         rng.uniform(-1.0, 1.0),
@@ -78,7 +78,7 @@ fn every_taylor_form_is_its_kernel() {
         checked += 1;
     }
     assert!(checked >= 30, "only {checked} kernels have forms");
-    assert_eq!(ORDER, 4);
+    assert_eq!(ORDER, 5);
 }
 
 /// The kernels a 2D trace body is built from all have forms — so a curvature against any trace
@@ -106,12 +106,16 @@ fn the_planar_kernels_have_forms() {
 #[test]
 fn jets_agree_with_closed_forms() {
     // (1 + ε)² under a square root is 1 + ε exactly
-    let a = Jet([1.0, 2.0, 1.0, 0.0]).sqrt();
+    let a = Jet::from(&[1.0, 2.0, 1.0]).sqrt();
     assert!(a.0.iter().zip([1.0, 1.0, 0.0, 0.0]).all(|(x, y)| (x - y).abs() < 1e-15), "{a:?}");
     // atan2(ε, 1) = ε − ε³/3
-    let t = Jet::atan2(Jet([0.0, 1.0, 0.0, 0.0]), Jet::constant(1.0));
+    let t = Jet::atan2(Jet::var(0.0), Jet::constant(1.0));
     assert!(t.0.iter().zip([0.0, 1.0, 0.0, -1.0 / 3.0]).all(|(x, y)| (x - y).abs() < 1e-15), "{t:?}");
     // 1 / (1 − ε) = 1 + ε + ε² + ε³
-    let q = Jet::constant(1.0) / Jet([1.0, -1.0, 0.0, 0.0]);
+    let q = Jet::constant(1.0) / Jet::from(&[1.0, -1.0]);
     assert!(q.0.iter().all(|x| (x - 1.0).abs() < 1e-15), "{q:?}");
+    // sin and cos of ε: ε − ε³/6, 1 − ε²/2 + ε⁴/24
+    let (sn, cs) = Jet::var(0.0).sin_cos();
+    assert!(sn.0.iter().zip([0.0, 1.0, 0.0, -1.0 / 6.0, 0.0]).all(|(x, y)| (x - y).abs() < 1e-15), "{sn:?}");
+    assert!(cs.0.iter().zip([1.0, 0.0, -0.5, 0.0, 1.0 / 24.0]).all(|(x, y)| (x - y).abs() < 1e-15), "{cs:?}");
 }
