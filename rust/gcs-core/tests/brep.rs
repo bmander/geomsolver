@@ -387,6 +387,8 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     let s = loft(&elbow,None,&Guide::Arc {center:[0.;3],axis:[0.,0.,1.],angle:PI/2.}).unwrap();
     s.check(1e-8).unwrap();
     close(volume(&s),(18.*18.-14.*14.)*bend*PI/2.);
+    // the turn's outer wall reaches x = 39 on the start's plane and y = 39 on the end's
+    boxed(&s,Some(([0.,0.,-9.],[39.,39.,9.])));
     // a twisted loft, a square to a diamond: each section the polygon of its corners' mixture, of
     // an area quadratic in the height, so Simpson's rule is exact
     let shoelace = |p: &[[f64;2]]| (0..p.len()).map(|i| { let (a,b) = (p[i],p[(i+1)%p.len()]); a[0]*b[1]-a[1]*b[0] }).sum::<f64>()/2.;
@@ -412,6 +414,9 @@ fn lofts_and_guided_sweeps_are_their_closed_forms() {
     s.check(1e-8).unwrap();
     let want = PI/2./6.*(blend2(6.,4.,0.)+4.*blend2(6.,4.,0.5)+blend2(6.,4.,1.));
     assert!((volume(&s)-want).abs() <= 1e-9*want,"{} against {want}",volume(&s));
+    // its blends carried round the axis, and their rails, boxed by the rings they turn in
+    assert!(s.faces.iter().any(|f| f.surface.kind() == "blend"));
+    boxed(&s,None);
 }
 
 fn dump(b: &gcs_core::brep::topo::Brep) {
