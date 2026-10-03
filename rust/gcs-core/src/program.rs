@@ -452,6 +452,24 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
 
+    // a curve written over a number its drawn instance left unknown reads that unknown as a
+    // column, and only the expression graph allocates one — when a dimension of the drawing
+    // reads it.  One nothing reads would leave the curve a column short
+    for (i, cv) in sk.curves.iter().enumerate() {
+        for n in cv.unknowns.iter().filter(|n| !sk.free_vars.contains_key(*n)) {
+            let site = map.site_of(EntRef::new(EntKind::Curve, i));
+            diags.push(Diag {
+                code: Code::E103,
+                span: site.map(|s| s.span).unwrap_or_default(),
+                stmt: site.map(|s| s.stmt),
+                message: format!(
+                    "`{n}` is left unknown, and nothing on the sheet reads it: give the \
+                     instance a number for it, or state what it is"
+                ),
+            });
+        }
+    }
+
     // -- phase 5: a root choice under a key no triple of points spells, kept verbatim
     for st in &body {
         if let StmtKind::Branch(b) = &st.kind {

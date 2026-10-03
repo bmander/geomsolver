@@ -700,3 +700,18 @@ fn an_orientations_mistakes_are_named() {
         );
     }
 }
+
+/// **A whole turn closes a curve only when it comes back.**  The string unwound a whole turn
+/// ends a circumference out from where it began: open, so a contact is clamped at its ends.
+/// The circle a point on it traces (`rim`) comes back: closed, so a contact wraps.
+#[test]
+fn a_whole_turn_closes_a_curve_only_when_it_comes_back() {
+    let src = DOC.replace("over u in (5, 60)", "over u in (5, 365)")
+        + "component rim(c: circle, u: Angle) {\n  p := point(x: c.center.x + c.r * cos(u), \
+           y: c.center.y + c.r * sin(u))\n}\nround := rim(base).p over u in (0, 360)\n\
+           half := rim(base).p over u in (0, 180)\n";
+    let e = build(&src);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let closed: Vec<bool> = (0..e.sketch.curves.len()).map(|i| e.sketch.curve_closed(i)).collect();
+    assert_eq!(closed, vec![false, false, true, false], "formula, string, round, half");
+}

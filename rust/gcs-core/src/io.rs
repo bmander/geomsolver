@@ -939,6 +939,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.curves.push(crate::model::CurveE {
             def: at as u32,
             args,
+            unknowns: cv.unknowns.clone(),
             values: cv.values.clone(),
             domain: cv.domain,
             home: cv.home.clone(),

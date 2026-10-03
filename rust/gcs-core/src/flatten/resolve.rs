@@ -674,6 +674,33 @@ impl<'a> Walk<'a> {
                 *actual = alias.get(&format!("{}{formal}", info.prefix)).cloned();
             }
         }
+        // a dimension reading a number of the geometry (`k.r`, `k.center.x`): the longest name
+        // its path resolves to is a declaration, not an instance, with a field left over.  A
+        // traced body reads one as a column of its curve (§6.5); here the expression graph would
+        // mint it a free variable of its own, and a drawn instance and its own trace would
+        // disagree about what the component says
+        for (name, span, sc) in std::mem::take(&mut self.dim_reads) {
+            let segs: Vec<&str> = name.split('.').collect();
+            let r = Ref {
+                root: Name { text: segs[0].to_string(), span },
+                path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
+                span,
+            };
+            let Some((abs, rest)) = lookup_raw(&r, &sc, &self.names, &alias, self.units) else {
+                continue;
+            };
+            if !rest.is_empty() && !self.group_names.contains(&abs) {
+                self.err(
+                    Code::E103,
+                    span,
+                    format!(
+                        "`{name}` is a number of the geometry, which only a traced body's \
+                         dimension reads (§6.5); here state the relation (`equal`, `radius`) or \
+                         pass a number"
+                    ),
+                );
+            }
+        }
         let out = std::mem::take(&mut self.out);
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {

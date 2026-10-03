@@ -103,7 +103,7 @@ fn a_circle_solves_osculating_a_curve() {
 }
 
 /// **A tangency to a traced curve is exact in its residual** — the velocity is the implicit
-/// function theorem's — and its Jacobian, a central difference of that velocity, is close
+/// function theorem's — and its Jacobian, a forward difference of that velocity, is close
 /// enough for the solver to reach the same tangent the formula's does.
 #[test]
 fn a_line_solves_tangent_to_a_traced_curve() {

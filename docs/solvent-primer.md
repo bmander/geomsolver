@@ -1405,6 +1405,11 @@ tooth. `angle` is **directed**, so `t` sits at bearing `u + phase` rather than o
 `ccw` needed. For a genuinely discrete choice (which of two intersections), `ccw(a, b, x)` states
 it.
 
+A traced body's dimension may read the numbers of the geometry it is written over (`c.r`): they
+are columns of the curve. Nowhere else may a dimension: `distance(k.r) l` on the sheet, or in a
+component that is drawn, is **E103** (a free variable would be minted for `k.r`, and a drawn
+instance would disagree with its own trace). State the relation instead (`l equal m`).
+
 ### 2.9.1 A curve of a drawn instance: DOF 1, under
 
 ```
@@ -1428,6 +1433,12 @@ rim := c.p over theta in (0, 360)
 `c.theta` is the one freedom (a declared formal left unbound, so no W111), and `rim` is where
 `p` goes over a full turn, anchored at the pose on the sheet: drag `c.p` and the anchor follows.
 `jansen.sv` is this at full size.
+
+`rim` comes back where it started after its whole turn, so it is **closed**: a contact on it wraps
+across the seam at 0/360 instead of stopping there. Any other numeric formal the drawn instance
+leaves unbound (`component Crank(…, theta: Angle, len: Length)`, `c := Crank(o, datum)`) is an
+unknown `c.len` and a **column** of the curve: `ground tangent rim` can then solve the length.
+(Passed as an expression in another unknown — `len: 2 * k` — it is E103.)
 
 ### 2.10 Three views: DOF 0, well
 
