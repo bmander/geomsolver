@@ -893,6 +893,7 @@ fn the_dimpled_ring_example_is_the_ring_less_the_ball_it_shares() {
 /// cutter stop short of the stock).
 fn boxed(b: &gcs_core::brep::topo::Brep,want: Option<(V,V)>) {
     let (lo,hi) = b.bounds();
+    assert!(lo.iter().chain(&hi).all(|x| x.is_finite()),"{lo:?} {hi:?}");
     let slack = 1e-12*(1.+gcs_core::space::distance(lo,hi));
     let m = gcs_core::brep::mesh::mesh(b,1e-3*b.size(),0.1).unwrap();
     for p in &m.pts {

@@ -151,15 +151,13 @@ impl Brep {
         let mut b = EMPTY;
         for v in &self.vertices { include(&mut b,v.p); }
         for e in &self.edges { if let EdgeCurve::Curve(c) = &e.curve { widen(&mut b,c.bounds(e.t)); } }
-        for f in &self.faces {
-            if f.surface.ruled() { continue }
-            if let Some(uv) = self.parameter_range(f) { widen(&mut b,f.surface.bounds_over(uv)); }
-        }
+        for f in self.faces.iter().filter(|f| !f.loops.is_empty()) { widen(&mut b,f.surface.bounds_over(|| self.parameter_range(f))); }
         b
     }
-    /// The parameters a face's loops reach: read at 17 points along each use and widened by the
-    /// largest step between two of them, so a range read off an inverted pcurve is not short.
-    fn parameter_range(&self,f: &Face) -> Option<[[f64;2];2]> {
+    /// The parameters a face's loops (one or more) reach: read at 17 points along each use and
+    /// widened by the largest step between two of them, so a range read off an inverted pcurve is
+    /// not short.
+    fn parameter_range(&self,f: &Face) -> [[f64;2];2] {
         const N: usize = 16;
         let (mut lo,mut hi,mut step) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2],[0f64;2]);
         for c in f.loops.iter().flatten() {
@@ -174,7 +172,7 @@ impl Brep {
                 last = Some(uv);
             }
         }
-        lo[0].is_finite().then(|| [[lo[0]-step[0],hi[0]+step[0]],[lo[1]-step[1],hi[1]+step[1]]])
+        [[lo[0]-step[0],hi[0]+step[0]],[lo[1]-step[1],hi[1]+step[1]]]
     }
     /// The diagonal of `bounds`, the scale tolerances are taken against.
     pub fn size(&self) -> f64 {

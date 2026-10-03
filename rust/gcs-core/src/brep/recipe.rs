@@ -4,7 +4,7 @@
 use crate::fmath::Det;
 use super::boolean::{boolean,Op};
 use super::build::{loft,prism,revolve,Guide,Profile};
-use super::geom::{Rigid,V};
+use super::geom::{widen,Rigid,V,EMPTY};
 use super::topo::Brep;
 use crate::json::Json;
 use std::collections::BTreeMap;
@@ -46,12 +46,11 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             // a prism spanning its sources' material along the profile's normal (their `bounds`
             // enclose it, issue #59), padded as the native host pads it
             let profile = Profile::from_json(field(n,"profile")?)?;
-            let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+            let mut sources = EMPTY;
             for s in field(n,"sources")?.arr() {
-                let b = built.get(&s.as_i64()).ok_or("recipe: a `through` source not built before it")?;
-                let (a,z) = b.bounds();
-                for k in 0..3 { lo[k] = lo[k].min(a[k]); hi[k] = hi[k].max(z[k]); }
+                widen(&mut sources,built.get(&s.as_i64()).ok_or("recipe: a `through` source not built before it")?.bounds());
             }
+            let (lo,hi) = sources;
             let (nrm,o) = (crate::space::scale(profile.normal,1./crate::space::norm(profile.normal)),profile.origin);
             let (mut from,mut to,mut diagonal) = (0.,0.,0.);
             for k in 0..3 {
