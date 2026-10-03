@@ -22,6 +22,10 @@ they are found in closed form. The swept boundary is then a small, known set of 
 - one envelope per profile segment (line, arc or circle), and
 - one sharp-edge sweep (a fan of normals) per convex crease.
 
+A rack (a prism under a translation seen from a rotation, 2026-10-03, issue #61) is simpler
+still: the contact condition of a point of the prism's side is affine in the roll,
+`s n·d − n·(ω×(p−o)) − s t n·(ω×d) = 0` (`NormalVelocity::Affine`), one root in closed form.
+
 Nothing about the boundary has to be discovered by tracing an arbitrary field. If the tool
 clears the blank at both roll limits, the end caps lie outside the blank and need not be
 built. A general tumbling sweep has none of these properties, which is where the
@@ -35,20 +39,34 @@ failure is reported with its witness.
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| T1 | The tool is a full revolution with a line/arc/circle profile, or an intersection (`bound`) of such revolutions, under fixed placements. | Every face has closed-form contacts. An intersection creates only convex creases. | The first operand that is not a revolution, or a union/cut in the tool. |
+| T1 | The tool is a full revolution with a line/arc/circle profile, a prism of lines and arcs whose caps stay clear of the blank over the roll, or an intersection (`bound`) of such, under fixed placements. | Every face has closed-form contacts. An intersection creates only convex creases. A prism cuts with its sides only (`ExtrudedSurface`), so a cap in the blank would be a face the class does not build. | The first operand outside the class, a union/cut in the tool, or the prism whose cap passes through the blank. |
 | T2 | Every profile vertex inside the swept region is convex or tangent. | A convex corner sweeps a fan of normals. A concave corner sweeps nothing, but it trims two envelopes against each other, which is not supported. | The vertex and its turning angle. |
-| M1 | The motion is one rotation about a fixed axis, or one rotation relative to another (`motion turn`, `motion relative`), at constant ratios, with a finite increasing roll. | This is the generating motion of a face-milled bevel or hypoid, including skew axes. | The motion node outside the class. |
+| M1 | The motion is one rotation about a fixed axis, or one rotation (or one translation) relative to another rotation (`motion(about: …)`, `motion(along: …)`, `motion(m, relative_to: n)`), at constant ratios, with a finite increasing roll. | This is the generating motion of a face-milled bevel or hypoid, including skew axes, and of a rack cutting a spur gear. | The motion node outside the class. |
 | M2 | Each tool point's contact condition changes over the roll. | Where it does not, the point is on the boundary at every time or at none, and a contact time cannot parameterize the surface. A single rotation is like that everywhere (its tool-frame twist is constant), so the generator's motion is a relative one. This is the native path's existing refusal. It is checked at the samples, at a pole (whose normal is the axis), and between samples: the equation is C + a cos + b sin in the roll, and where (a, b) turns right round between two samples, or winds round a sample cell, with roots on every side, a point there has C and the amplitude both zero. That happens where the tool's normal passes through the point where two meeting axes cross. | A tool point whose path reaches the blank. |
 | E1 | The tool at both roll limits has no common volume with the blank. | Then no end caps are needed inside the blank (the existing refusal). | The limit and the overlap volume. |
 | E2 | Every source point whose contact reaches the blank has at most one contact time within the roll. | One sheet per placement, as the bevel pinion already satisfies. | The source point and both times. |
 | E3 | The generated area factor J stays away from zero over the region reaching the blank. | A zero is a fold of the envelope: the cusp of undercut. J alone passes through infinity where a point's two contact times merge, which is a fold of the time chart and not of the surface. So the sign is read from J times the rate of the contact condition, which changes sign only at a true fold. | The contact point and the factor. |
 | E4 | A placement's sheet does not cross itself inside the blank. | Sheets of different placements may cross, since the kernel split handles that. A self-crossing sheet is the defect the hypoid investigation found (`split_at_crossings`). | The pair of sheet points. |
 
-Translations, screws and single rotations have constant tool-frame twist. Their contact set is
-fixed on the tool, so they are easier than relative rotations, but by a different construction
-(`solid::constant_twist`, the tracer's characteristics). They are left out only because the
-gear does not need them. Admitting them later is a separate, small extension, not a new
-project.
+Translations, screws and single rotations on their own have constant tool-frame twist. Their
+contact set is fixed on the tool, so they are easier than relative rotations, but by a different
+construction (`solid::constant_twist`, the tracer's characteristics). They are left out only
+because the gears do not need them. Admitting them later is a separate, small extension, not a
+new project.
+
+### A rack (issue #61)
+
+A prism's stations are planes square to its extrusion, a station a distance along it, and its
+section is the profile itself (`brep::sweep::cutter`, `Kind::Extruded`): each edge a face, the
+walk's left turns its convex fans. The reach samples stations along the prism; the band runs
+from the first hit to the last, and may not grow past the prism's own length (`Band::limit`).
+A sector's flat caps join across its sides (`brep::pattern`, `Kept::Flat`): a plane square to
+the axis is kept by the turn, its pcurves turned about the axis's foot, and a ring of it is an
+annulus with no seam. A blank reaching its axis is built whole (neighbouring sectors' sides
+would meet in it), so `rust/examples/rack_cut_spur.sv` has a bore. `tests/rack_cut.rs` is the
+gate: one space's volume against arithmetic (an arc of each circle per roll, unioned over the
+roll) to 1e-4, the whole 20-tooth gear patterned from one sector, field agreement, and the
+toleranced build. The OCCT oracle (`--kernel occt`) sections revolutions only.
 
 ### Undercut is excluded deliberately
 
@@ -67,8 +85,8 @@ the checks read are checked once: the gear's 24 indexed cuts are one check.
 
 Everything outside the class is refused at elaboration or export, never meshed on a
 best-effort basis. The refusal names the condition row and the witness. The tumbling, slid
-and tilted cylinders, the thin plate, the dumbbell and every sweep whose tool is a prism
-are outside the class. Their fixtures stay in the tree as **negative controls**: each must
+and tilted cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its
+caps clear are outside the class. Their fixtures stay in the tree as **negative controls**: each must
 produce its refusal.
 
 ## Acceptance

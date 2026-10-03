@@ -7,8 +7,8 @@ type V = [f64;3];
 
 /// A triangle under this many square millimetres is microscopic.
 pub const TINY_AREA: f64 = 1e-6;
-/// More microscopic triangles than this is a crumpled or folded patch, not a tessellator
-/// meeting a short edge.
+/// More microscopic triangles than this in one millimetre cube is a crumpled or folded patch,
+/// not a tessellator meeting a short edge.
 pub const MOST_TINY: usize = 100;
 
 /// The microscopic triangles of a mesh (millimetres): how many, their area, and the box of
@@ -43,23 +43,13 @@ pub fn tiny_triangles_under(vertices: &[V],triangles: &[[u32;3]],scale: f64,unde
 }
 
 impl TinyTriangles {
-    /// The mesh contract: no cluster of microscopic triangles. A few may come of a tessellator
-    /// meeting a short edge; a hundred under a square micrometre is a crumpled or folded patch of
-    /// surface, whatever a probe sampled by area happens to find there.
-    pub fn verdict(&self) -> Result<(),String> {
-        if self.count > MOST_TINY {
-            return Err(format!("the mesh has {} triangles under {TINY_AREA} mm² ({:.2e} mm² in all) between {:?} and {:?}: \
-                a crumpled or folded patch of surface",self.count,self.area,self.low.map(|x| (x*1e3).round()/1e3),
-                self.high.map(|x| (x*1e3).round()/1e3)));
-        }
-        Ok(())
-    }
-
-    /// The mesh contract held to a tolerance, whose finer mesh has more short edges for a
-    /// tessellator to meet (along every trimmed edge of every tooth): a triangle is microscopic
-    /// under a square a tenth of the mesher's deflection on a side, and a crumpled or folded patch
-    /// is more than `MOST_TINY` of them in one millimetre cube, where the gear's first folded sheet
-    /// put eighteen thousand.
+    /// The mesh contract: no cluster of microscopic triangles (under a square micrometre, or held
+    /// to a tolerance a square a tenth of the mesher's deflection on a side). A few come of a
+    /// tessellator meeting a short edge or a gently curved one (an ear of three boundary points),
+    /// along every trimmed edge of every tooth, so a gear's count grows with its teeth; more than
+    /// `MOST_TINY` in one millimetre cube is a crumpled or folded patch of surface, where the
+    /// gear's first folded sheet put eighteen thousand, whatever a probe sampled by area happens
+    /// to find there.
     pub fn clustered(&self) -> Result<(),String> {
         if self.densest > MOST_TINY {
             return Err(format!("the mesh has {} triangles under {:.1e} mm² within the millimetre cube at {:?} ({} in all, {:.2e} mm²): \

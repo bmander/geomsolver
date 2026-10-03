@@ -35,19 +35,18 @@ fn the_mesh_contract_refuses_a_cluster_of_microscopic_triangles() {
     for k in 1..151u32 { triangles.push([0,k,k+1]); }
     let few = contracts::tiny_triangles(&vertices,&triangles[..contracts::MOST_TINY],1.);
     assert_eq!(few.count,contracts::MOST_TINY);
-    assert!(few.verdict().is_ok());
+    assert!(few.clustered().is_ok());
     let many = contracts::tiny_triangles(&vertices,&triangles,1.);
     assert_eq!((many.count,many.total),(150,150));
-    assert!(many.verdict().unwrap_err().contains("crumpled or folded"));
+    assert!(many.clustered().unwrap_err().contains("crumpled or folded"));
     // At a thousand millimetres a unit the same triangles are large.
     assert_eq!(contracts::tiny_triangles(&vertices,&triangles,1e3).count,0);
 }
 
-/// Held to a tolerance the contract is about clusters: slivers strung along a mesh's edges, a few
-/// in each millimetre, pass however many there are in all; the same count in one millimetre is a
-/// crumpled patch.
+/// The contract is about clusters: slivers strung along a mesh's edges, a few in each millimetre,
+/// pass however many there are in all; the same count in one millimetre is a crumpled patch.
 #[test]
-fn a_tolerance_mesh_contract_refuses_a_cluster_not_a_count() {
+fn the_mesh_contract_refuses_a_cluster_not_a_count() {
     let sliver = |x: f64| [[x,0.,0.],[x+1e-3,0.,0.],[x,1e-5,0.]];
     let strung: Vec<[[f64;3];3]> = (0..3*contracts::MOST_TINY).map(|k| sliver(0.1+k as f64)).collect();
     let bunched: Vec<[[f64;3];3]> = (0..3*contracts::MOST_TINY).map(|k| sliver(0.1+k as f64*1e-3)).collect();
@@ -57,7 +56,7 @@ fn a_tolerance_mesh_contract_refuses_a_cluster_not_a_count() {
     let (v,t) = mesh(&strung);
     let spread = contracts::tiny_triangles_under(&v,&t,1.,1e-7);
     assert_eq!((spread.count,spread.densest),(3*contracts::MOST_TINY,1));
-    assert!(spread.verdict().is_err() && spread.clustered().is_ok());
+    assert!(spread.clustered().is_ok());
     let (v,t) = mesh(&bunched);
     let cluster = contracts::tiny_triangles_under(&v,&t,1.,1e-7);
     assert_eq!(cluster.densest,3*contracts::MOST_TINY);

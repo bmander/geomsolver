@@ -31,6 +31,13 @@ const projects: Example[] = [{
     + 'circle is judged a theorem. Edit `alpha` or the pitch radii.',
   target: { kind: 'file', path: 'generated_spur.sv' },
 }, {
+  label: 'Spur gear, rack cut · swept solid', key: 'rack_cut_spur',
+  description: 'A rack\'s tooth, a trapezoid extruded through the blank, slides along its pitch line '
+    + 'while the blank turns, and what it sweeps through is cut at every tooth: the flanks are '
+    + 'involutes nobody wrote down. Exported exactly (File ▸ Export) as one sector turned into the '
+    + 'whole gear. Edit the module `m` or the pressure angle `alpha`.',
+  target: { kind: 'file', path: 'rack_cut_spur.sv' },
+}, {
   label: 'Skew axes · views solved in space', key: 'skew_axes',
   description: 'Two shafts that do not meet, one drawn in the front view and one in a side view whose '
     + 'fold nobody states: the shaft angle and the offset between them are relations in space, and '

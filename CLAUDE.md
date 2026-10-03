@@ -198,7 +198,11 @@ body's cuts are one union (`document.rs`, `Spread` lower bounds); `MaterialField
 `solid::admission::admit_body` checks rows T1–E4 (revolved line/arc tools, rotation with changing
 contact, clear at both limits, one contact per point, no fold, no self-crossing), sampled, refusing
 with row and witness; it checks a placement once when the blank reads alike at every point
-checked. A fold is the sign of the area factor times the contact condition's rate. Built in
+checked. A rack is in the class (#61): a prism tool with its caps clear of the blank
+(`ToolSurface::Extruded`, sides only), a translation seen from a rotation (contact affine in the
+roll, `NormalVelocity::Affine`), sectioned along its extrusion (`brep::sweep::cutter`, a station a
+distance), flat caps joined across sector sides (`brep::pattern`, `Kept::Flat`); a blank reaching
+its axis is built whole. `tests/rack_cut.rs`, `examples/rack_cut_spur.sv`. A fold is the sign of the area factor times the contact condition's rate. Built in
 `gcs-cli/src/cad/native/sweep_boundary.rs`: cutters sectioned (`backend/sections.cpp`), contact
 times from `SweepContacts::at_point_normal_over` (`PointContactError`), sheets traced and
 resampled by the core (`solid::contact_trace`, fed section samples and nothing else; rows stop

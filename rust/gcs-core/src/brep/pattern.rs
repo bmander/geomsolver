@@ -4,7 +4,9 @@
 //! of revolution about the axis keeps the sector's surface in every copy, its pcurves moved along `u`
 //! by the turn, so the pieces of a blank face continue one another's parameters; a piece meeting both
 //! sides closes round the axis into a ring, whose last junction is kept as its seam (one edge, used
-//! twice, its pcurves a period apart). Nothing is intersected or sewn: every vertex on the far side is
+//! twice, its pcurves a period apart). A plane square to the axis (a spur gear's cap) is kept by the
+//! turn too: its pieces' pcurves turn about the axis's foot in its parameters, and a ring of it is an
+//! annulus, its junctions all left out. Nothing is intersected or sewn: every vertex on the far side is
 //! the near side's turned, matched once in the sector, and every other point is the sector's turned.
 #[allow(unused_imports)]
 use crate::fmath::Det;
@@ -60,12 +62,25 @@ impl Built {
     }
 }
 
-/// Whether `s` is a surface of revolution about the line through `o` along the unit `a`.
-fn about(s: &Surface,o: V,a: V,tol: f64) -> bool {
-    if !matches!(s,Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..)) { return false }
-    let f = s.frame();
-    let off = sub(f.o,o);
-    cross(f.z,a).iter().all(|c| c.abs() <= 1e-12) && norm(cross(off,a)) <= tol
+/// How a face's surface is kept by the turn about the axis: a surface of revolution about it (its
+/// parameters move along `u`), a plane square to it (its parameters turn about the axis's foot,
+/// counter-clockwise where the plane's normal is the axis's), or not (each copy its own surface).
+#[derive(Clone,Copy,Debug,PartialEq)]
+enum Kept { Revolved,Flat { foot: Uv,sense: f64 },No }
+
+impl Kept {
+    /// How surface `s` is kept by turns about the line through `o` along the unit `a`.
+    fn of(s: &Surface,o: V,a: V,tol: f64) -> Kept {
+        let f = s.frame();
+        if !cross(f.z,a).iter().all(|c| c.abs() <= 1e-12) { return Kept::No }
+        match s {
+            Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..)
+                if norm(cross(sub(f.o,o),a)) <= tol => Kept::Revolved,
+            Surface::Plane(f) => { let l = f.local(o); Kept::Flat {foot:[l[0],l[1]],sense:crate::space::dot(f.z,a).signum()} }
+            _ => Kept::No,
+        }
+    }
+    fn kept(self) -> bool { self != Kept::No }
 }
 
 /// The shift along `u` that turning surface `s` (of revolution about the axis) by `angle` makes:
@@ -78,13 +93,13 @@ fn shift(s: &Surface,turn: &Rigid,angle: f64,uv: Uv,tol: f64) -> Result<f64,Stri
     Err(format!("a {} about the axis does not turn along its own u",s.kind()))
 }
 
-/// A pcurve moved along `u` by `du`.
-fn moved_pcurve(p: &Pcurve,du: f64) -> Pcurve {
-    if du == 0. { return p.clone() }
+/// A pcurve moved by a rigid map of the parameters (`z` 0).
+fn moved_pcurve(p: &Pcurve,m: &Rigid) -> Pcurve {
+    let at = |uv: Uv| { let q = m.point([uv[0],uv[1],0.]); [q[0],q[1]] };
     match p {
-        Pcurve::Line {a,b} => Pcurve::Line {a:[a[0]+du,a[1]],b:[b[0]+du,b[1]]},
-        Pcurve::Inverse {a,b} => Pcurve::Inverse {a:[a[0]+du,a[1]],b:[b[0]+du,b[1]]},
-        Pcurve::Curve(c) => Pcurve::Curve(Arc::new(c.moved(&Rigid {t:[du,0.,0.],..Rigid::identity()}))),
+        Pcurve::Line {a,b} => Pcurve::Line {a:at(*a),b:at(*b)},
+        Pcurve::Inverse {a,b} => Pcurve::Inverse {a:at(*a),b:at(*b)},
+        Pcurve::Curve(c) => Pcurve::Curve(Arc::new(c.moved(m))),
     }
 }
 
@@ -102,7 +117,8 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
     let a = { let l = norm(axis); [axis[0]/l,axis[1]/l,axis[2]/l] };
     let pitch = TAU/count as f64;
     let faces = &sector.faces;
-    let revolved: Vec<bool> = faces.iter().map(|f| about(&f.surface,o,a,tol)).collect();
+    let kept: Vec<Kept> = faces.iter().map(|f| Kept::of(&f.surface,o,a,tol)).collect();
+    let revolved: Vec<bool> = kept.iter().map(|k| *k == Kept::Revolved).collect();
     // the sides: a face whose points, turned a pitch, lie on another face's surface
     let samples = |f: &Face| -> Vec<V> {
         let uvs: Vec<Uv> = f.loops.iter().flatten().map(|c| { let e = &sector.edges[c.edge as usize];
@@ -110,8 +126,8 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
         uvs.into_iter().map(|uv| f.surface.point(uv)).collect()
     };
     let mut sides = None;
-    'find: for i in 0..faces.len() { if revolved[i] { continue }
-        for j in 0..faces.len() { if j == i || revolved[j] { continue }
+    'find: for i in 0..faces.len() { if kept[i].kept() { continue }
+        for j in 0..faces.len() { if j == i || kept[j].kept() { continue }
             for sign in [1.,-1.] {
                 let turn = Rigid::turn(o,a,sign*pitch);
                 let lands = samples(&faces[i]).iter().all(|&p| { let q = turn.point(p);
@@ -156,7 +172,7 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
         edge_partner[e as usize] = Some((found.1,found.2));
     }
     // the face across each side edge, and which pieces are one face: copy k's piece across the far
-    // side and copy k + 1's across the near, where both lie on one surface of revolution
+    // side and copy k + 1's across the near, where both lie on one surface the turn keeps
     let across = |e: u32,side: usize| -> Result<usize,String> {
         let mut by = faces.iter().enumerate().filter(|&(fi,f)| fi != side && f.loops.iter().flatten().any(|c| c.edge == e)).map(|(fi,_)| fi);
         by.next().ok_or_else(|| "a side edge with no face across it".to_string())
@@ -170,8 +186,10 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
     for &e in &far_edges {
         let (n,_) = edge_partner[e as usize].unwrap();
         let (fa,fb) = (across(e,sides[1])?,across(n,sides[0])?);
-        if !(revolved[fa] && revolved[fb] && same_surface(&faces[fa].surface,&faces[fb].surface) && faces[fa].reversed == faces[fb].reversed) {
-            return Err(format!("across a side, a {} meets a {}: only pieces of one surface of revolution are joined yet",
+        if !(kept[fa].kept() && kept[fa] == kept[fb] && same_surface(&faces[fa].surface,&faces[fb].surface)
+            && faces[fa].reversed == faces[fb].reversed) {
+            return Err(format!("across a side, a {} meets a {}: only pieces of one surface the turn keeps (of revolution about \
+                the axis, or a plane square to it) are joined",
                 faces[fa].surface.kind(),faces[fb].surface.kind()))
         }
         if fa == fb { ring[fa] = true; }
@@ -240,7 +258,7 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
     let mut eid = vec![u32::MAX;count*sector.edges.len()];
     for k in 0..count { for (e,edge) in sector.edges.iter().enumerate() {
         let near = near_edges.binary_search(&(e as u32)).is_ok();
-        if side_of(e as u32) && !(near && k == 0 && ring[across(e as u32,sides[0])?]) { continue }
+        if side_of(e as u32) && !(near && k == 0 && { let f = across(e as u32,sides[0])?; ring[f] && revolved[f] }) { continue }
         let curve = match &edge.curve { EdgeCurve::Curve(c) => EdgeCurve::Curve(c.moved(&turn(k))),EdgeCurve::Degenerate => EdgeCurve::Degenerate };
         eid[k*sector.edges.len()+e] = out.edge(curve,edge.t,edge.v.map(|v| vertex(k,v)));
     } }
@@ -253,7 +271,7 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
     for members in groups.values() {
         let (k0,f0) = members[0];
         let first = &faces[f0];
-        let surface = if revolved[f0] { surfaces[f0].clone() } else { surfaces[f0].moved(&turn(k0)) };
+        let surface = if kept[f0].kept() { surfaces[f0].clone() } else { surfaces[f0].moved(&turn(k0)) };
         // each piece's place along the face: its copy, but for a face that does not close round the
         // axis, one more than the piece it continues (so a face across the last copy and the first
         // reads its first copy's piece a period on)
@@ -272,21 +290,30 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
                 if !grew { break }
             }
         }
+        // a piece's parameters at its place: moved along u by its copies' turns (revolved), turned
+        // about the axis's foot (flat), or its own (a face of one copy)
+        let moved = |f: usize,place: f64| -> Rigid { match kept[f] {
+            Kept::Revolved => Rigid {t:[home[f]+place*du[f],0.,0.],..Rigid::identity()},
+            Kept::Flat {foot,sense} => Rigid::turn([foot[0],foot[1],0.],[0.,0.,1.],sense*step*place),
+            Kept::No => Rigid::identity(),
+        } };
         let mut uses = Vec::new();
         for &(k,f) in members {
             for c in faces[f].loops.iter().flatten() {
-                let at = home[f]+(if ring[f] { k as i64 } else { place[&(k,f)] }) as f64*du[f];
+                let at = moved(f,(if ring[f] { k as i64 } else { place[&(k,f)] }) as f64);
+                // a flat ring is an annulus: its junctions are all left out, no seam kept
+                let seam = ring[f] && revolved[f];
                 let (edge,reversed,pcurve) = if far_edges.binary_search(&c.edge).is_ok() {
                     // the far side: a ring's last junction is its seam, copy 0's near edge, read a period on
-                    if !(ring[f] && k == count-1) { continue }
+                    if !(seam && k == count-1) { continue }
                     let (n,same) = edge_partner[c.edge as usize].unwrap();
                     let near_use = faces[f].loops.iter().flatten().find(|u| u.edge == n).ok_or("a ring's piece without its near edge")?;
-                    (eid[n as usize],if same { c.reversed } else { !c.reversed },moved_pcurve(&near_use.pcurve,home[f]+count as f64*du[f]))
+                    (eid[n as usize],if same { c.reversed } else { !c.reversed },moved_pcurve(&near_use.pcurve,&moved(f,count as f64)))
                 } else if near_edges.binary_search(&c.edge).is_ok() {
-                    if !(ring[f] && k == 0) { continue }
-                    (eid[c.edge as usize],c.reversed,moved_pcurve(&c.pcurve,home[f]))
+                    if !(seam && k == 0) { continue }
+                    (eid[c.edge as usize],c.reversed,moved_pcurve(&c.pcurve,&moved(f,0.)))
                 } else {
-                    (eid[k*sector.edges.len()+c.edge as usize],c.reversed,moved_pcurve(&c.pcurve,at))
+                    (eid[k*sector.edges.len()+c.edge as usize],c.reversed,moved_pcurve(&c.pcurve,&at))
                 };
                 uses.push(Coedge {edge,reversed,pcurve});
             }

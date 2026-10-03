@@ -1,12 +1,14 @@
 //! **A rack cuts a spur gear, natively** (issue #61): the generating-sweep class widened to a
 //! prism tool under a translation seen from a rotation — the rack rolling on the blank's pitch
 //! circle.  The fixture is one tooth space of a 20-tooth, module-2 gear at a 20° pressure angle:
-//! no undercut, so the class's fold and crossing rows hold.
+//! no undercut, so the class's fold and crossing rows hold.  `gear` indexes it round a bored blank
+//! into the whole gear, built as one sector patterned.
 //!
 //! Every number is in the page: the blank a disc extruded 6 mm along the page's normal (`depth:`
 //! runs from −6 to 0), the rack tooth a trapezoid extruded past both of its faces, −8 to 2 (its
-//! caps clear of the blank), the
-//! blank turning about the page's normal through `o` (`motion(about: o)`).
+//! caps clear of the blank), the blank turning about the page's normal through `o`
+//! (`motion(about: o)`).  What is removed is checked against arithmetic (`space_area`), not a
+//! second kernel.
 
 use gcs_core::solid::admission::{admit_body, Condition, Error, Options};
 
@@ -148,4 +150,93 @@ fn a_racks_tooth_space_is_built() {
     if let Err(r) = export::stl(&e.sketch, gear, &exact, None, &say) {
         panic!("the STL refused at {:?}: {}", r.stage, r.message);
     }
+}
+
+/// The whole gear: a bore of radius 6 through the blank (a sector's sides meet on the axis, so a
+/// blank reaching it is built whole), and the tooth space indexed round the axis `teeth` times.
+pub fn gear(teeth: usize) -> String {
+    SPACE.replace("space cut gear\n", &format!("\
+bore_c := circle(center: o) hint(r: 6)
+radius(6mm) bore_c
+construction bore := solid(face(bore_c), from: -8mm, to: 2mm)
+bore cut gear
+repeat {teeth} as i {{
+  construction indexed := solid(space, under: turn, at: i * 360deg / {teeth})
+  indexed cut gear
+}}
+"))
+}
+
+/// **A rack cuts the whole gear**: the space indexed round the axis, built as one sector and
+/// patterned.  Twenty spaces remove twenty times what one does, and the mesh agrees with the
+/// field.
+#[test]
+fn a_rack_cuts_a_whole_gear() {
+    use gcs_core::brep::{export, sweep::Say};
+    let mut e = build(&gear(20));
+    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let gear = e.map.ent_named("gear").unwrap().i();
+    let say = Say { stage: &|l: &str| eprintln!("{l}"), mark: &|_| {} };
+    let exact = match export::exact(&e.sketch, gear, None, None, &say) {
+        Ok(x) => x,
+        Err(r) => panic!("refused at {:?}: {}", r.stage, r.message),
+    };
+    assert!(exact.pattern.is_some(), "built whole");
+    let removed = PI * (22. * 22. - 6. * 6.) * 6. - gcs_core::brep::props::volume(&exact.solid);
+    let want = 20. * 6. * space_area(400, 4000);
+    eprintln!("removed {removed:.5} mm³, the spaces being {want:.5}");
+    assert!((removed - want).abs() < 0.6, "removed {removed:.5} mm³, the spaces being {want:.5}");
+    if let Err(r) = export::step(&exact, "gear", None, &say) {
+        panic!("the STEP refused at {:?}: {}", r.stage, r.message);
+    }
+    if let Err(r) = export::stl(&e.sketch, gear, &exact, None, &say) {
+        panic!("the STL refused at {:?}: {}", r.stage, r.message);
+    }
+}
+
+
+/// Held to 10 µm the sheet is refined until its fit passes within half of it of every withheld
+/// contact, and the gear is built and agrees with the field the same way.
+#[test]
+fn a_rack_cut_gear_is_held_to_a_tolerance() {
+    use gcs_core::brep::{export, sweep::Say};
+    use gcs_core::solid::export::Tolerance;
+    let mut e = build(&gear(20));
+    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let gear = e.map.ent_named("gear").unwrap().i();
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let held = Some(Tolerance { millimetres: 0.01 });
+    let exact = export::exact(&e.sketch, gear, None, held, &say)
+        .unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
+    assert!(exact.pattern.is_some(), "built whole");
+    let removed = PI * (22. * 22. - 6. * 6.) * 6. - gcs_core::brep::props::volume(&exact.solid);
+    let want = 20. * 6. * space_area(400, 4000);
+    assert!((removed - want).abs() < 0.6, "removed {removed:.5} mm³, the spaces being {want:.5}");
+    export::stl(&e.sketch, gear, &exact, held, &say)
+        .unwrap_or_else(|r| panic!("the STL refused at {:?}: {}", r.stage, r.message));
+}
+
+/// **`rack_cut_spur.sv`**: the same gear written from its teeth, module and pressure angle, the
+/// rack's tooth placed by dimensions from the blank's centre: it solves to the fixture's numbers
+/// (written there to six places) and is admitted, one sweep placed twenty times.
+#[test]
+fn the_rack_cut_spur_example_is_admitted() {
+    let src = include_str!("../../examples/rack_cut_spur.sv");
+    let mut e = build(src);
+    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let at = |name: &str| {
+        let (x, y) = e.sketch.point_xy(e.map.ent_named(name).unwrap().i());
+        [x, y]
+    };
+    let tan = 20f64.to_radians().tan();
+    for (name, want) in [("t0", [18., -(PI / 2. - 2. * tan)]), ("t2", [24., PI / 2. + 4. * tan])] {
+        let got = at(name);
+        assert!((got[0] - want[0]).abs() < 1e-6 && (got[1] - want[1]).abs() < 1e-6, "{name} at {got:?}");
+    }
+    let gear = e.map.ent_named("gear").unwrap().i();
+    let admission = admit_body(&e.sketch, gear, &Options::default()).unwrap_or_else(|e| panic!("refused: {e}"));
+    assert_eq!(admission.sweeps().len(), 1);
 }
