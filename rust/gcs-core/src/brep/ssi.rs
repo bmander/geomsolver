@@ -581,8 +581,29 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
     // (a point it must pass through takes the place of a regular one within half a stride of it,
     // which beside it would leave a gap the grading spreads)
     let must: Vec<f64> = through.iter().map(|w| w.0).filter(|&x| x > 0. && x < last as f64).collect();
-    let mut at: Vec<f64> = (0..last).step_by(STRIDE).map(|i| i as f64).chain([last as f64])
-        .filter(|&x| must.iter().all(|m| (m-x).abs() >= if x == 0. || x == last as f64 { 0.25 } else { STRIDE as f64/2. }))
+    // every eighth step's length apart, by length along the trace and not by count: a trace takes
+    // small steps where it starts from a seed, and points crowded there beside a stride of full
+    // steps make the interpolation hook back at the curve's end
+    let mut steps: Vec<f64> = t.pts.windows(2).map(|w| crate::space::distance(w[0],w[1])).collect();
+    let lengths = steps.clone();
+    steps.sort_by(f64::total_cmp);
+    let stride = STRIDE as f64*steps[steps.len()/2];
+    let mut regular = vec![0.];
+    let mut since = 0.;
+    for (i,l) in lengths.iter().enumerate().take(last.saturating_sub(1)) {
+        since += l;
+        if since >= stride { regular.push((i+1) as f64); since = 0.; }
+    }
+    // the last point, the regular one before it given up where it would leave a gap under half a stride
+    if regular.len() > 1 && lengths[*regular.last().unwrap() as usize..].iter().sum::<f64>() < stride/2. { regular.pop(); }
+    regular.push(last as f64);
+    // how far along the trace a (fractional) index is
+    let mut along = vec![0.];
+    for l in &lengths { along.push(along.last().unwrap()+l); }
+    let length_at = |x: f64| { let i = (x.floor() as usize).min(last.saturating_sub(1)); along[i]+(x-i as f64)*lengths.get(i).copied().unwrap_or(0.) };
+    let mut at: Vec<f64> = regular.into_iter()
+        .filter(|&x| must.iter().all(|&m| if x == 0. || x == last as f64 { (m-x).abs() >= 0.25 } else {
+            (m-x).abs() >= STRIDE as f64/2. && (length_at(m)-length_at(x)).abs() >= stride/2. }))
         .chain(must.iter().copied()).collect();
     at.sort_by(f64::total_cmp);
     at.dedup_by(|x,y| (*x-*y).abs() < 1e-9);
@@ -590,7 +611,9 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
     let point = |x: f64| if x.fract() == 0. { t.pts[x as usize] } else {
         *between.borrow_mut().entry(x.to_bits()).or_insert_with(|| t.at(x))
     };
-    let middle = |a: f64,b: f64| if b-a >= 2. { ((a+b)/2.).floor() } else { (a+b)/2. };
+    // a traced point where one stands near the middle, else the middle itself: a traced point
+    // beside an end (a vertex the fit passes through, between two traced points) would crowd it
+    let middle = |a: f64,b: f64| { let m = ((a+b)/2.).floor(); if b-a >= 2. && (m-a).min(b-m) >= (b-a)/4. { m } else { (a+b)/2. } };
     let debug = std::env::var_os("SOLVENT_BREP_DEBUG").is_some();
     for round in 0..24 {
         let pts: Vec<V> = at.iter().map(|&x| point(x)).collect();
@@ -618,12 +641,13 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
         if debug { eprintln!("brep: fit of a {} × {} trace, round {round}: {} of {} points, {missed} gaps missed",t.a.kind(),t.b.kind(),
             at.len(),t.pts.len()); }
         if missed == 0 { return Some(fit) }
-        // graded: a gap more than twice a neighbour's width (as that neighbour will be) is split too
+        // graded: a gap more than twice a neighbour's length (as that neighbour will be) is split too
         loop {
-            let width = |k: usize,split: &[bool]| { let w = at[k+1]-at[k]; if split[k] { w/2. } else { w } };
+            let width = |k: usize,split: &[bool]| { let w = s[k+1]-s[k]; if split[k] { w/2. } else { w } };
             let mut more = false;
             for k in 0..split.len() {
-                if split[k] { continue }
+                // (a gap an eighth of a step wide is the traced curve's own noise, and never split)
+                if split[k] || at[k+1]-at[k] <= 0.125 { continue }
                 let w = width(k,&split);
                 if (k > 0 && w > 2.*width(k-1,&split)) || (k+1 < split.len() && w > 2.*width(k+1,&split)) { split[k] = true; more = true; }
             }

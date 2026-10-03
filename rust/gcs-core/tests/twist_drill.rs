@@ -99,9 +99,10 @@ fn the_drills_field_has_its_flutes_margins_point_and_shank() {
             assert!(!at(4.9,lip-30.,z) && at(5.-CLEARANCE-0.05,lip-30.,z),"the body clearance at {z}");
         }
     }
-    // the point: the tip on the axis at the stock's end, the outer corners a point's length below
-    assert!(at(0.,0.,39.9) && !at(0.,0.,40.1));
-    let corner = 40.-5./(59f64.to_radians().tan());
+    // the point: the tip on the axis half a millimetre into the stock, the outer corners a point's
+    // length below it
+    assert!(at(0.,0.,39.3) && !at(0.,0.,39.7));
+    let corner = 39.5-5./(59f64.to_radians().tan());
     assert!((0..36).all(|k| !at(4.95,k as f64*10.,corner+0.3)),"ground away above the corners");
     // the shank, whole
     assert!((0..36).all(|k| at(4.95,k as f64*10.,-10.)));
@@ -272,6 +273,30 @@ fn the_reduced_drill_exports_by_this_kernel() {
     assert!(said.contains(", 0 disagree"),"{said}");
 }
 
+/// The reduced drill with its shank, written as an STL within 0.01 mm, measured against the exact
+/// faces it was made from by the accuracy meter (`solventc --measure`): its flute read as the
+/// screw's sweep, the shank as a solid of its own, the body rule over the two.
+#[test]
+fn the_reduced_drill_measures_within_its_tolerance() {
+    use gcs_core::solid::accuracy::{self,Meter,Options};
+    let e = reduced("6mm");
+    let body = fixtures::solid(&e,"drill");
+    let tolerance = Some(Tolerance::new(0.01).unwrap());
+    let (exact,_) = built(&e.sketch,body,tolerance);
+    let lines = Mutex::new(Vec::<String>::new());
+    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
+    let stl = export::stl(&e.sketch,body,&exact,tolerance,&say).unwrap();
+    let meter = Meter::read(&e.sketch,body,Options::in_units(1.)).unwrap();
+    let (vertices,triangles) = gcs_core::solid::agreement::stl_triangles(&stl,1.).unwrap();
+    let samples = accuracy::mesh_samples(&vertices,&triangles,2000);
+    let measurements: Vec<_> = samples.iter().map(|s| meter.measure(s.position)).collect();
+    let (ok,line) = accuracy::within(&meter,&samples,&measurements,0.01,1.);
+    assert!(ok,"{line}");
+    for name in ["flute_wheel.body.round","shank_wall"] {
+        assert!(meter.surfaces().iter().any(|s| s.name == name),"{name} among {:?}",meter.surfaces().iter().map(|s| &s.name).collect::<Vec<_>>());
+    }
+}
+
 /// The page's exact surface of the reduced drill — its fluted body built by stages, then the
 /// shank added by the body rule — has the volume of the drill the export builds, to the fit.
 #[test]
@@ -308,4 +333,41 @@ fn the_whole_drill_exports_by_this_kernel() {
     let said = format!("{said}\n{}",lines.lock().unwrap().join("\n"));
     assert!(said.contains(", 0 disagree"),"{said}");
     eprintln!("{said}");
+}
+
+/// Two flutes 12 mm long with the point ground: the flutes' sheets cross the cylinder where the
+/// cones bound it, and the meetings the kernel traces there pass through the vertices they must
+/// (a fitted curve that hooked back at one turned the cylinder's pieces round: issue #64).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: a short pointed drill exported")]
+fn a_short_pointed_drill_exports_by_this_kernel() {
+    let e = fixtures::drill::read(&[("fluted_length","12mm")]);
+    let body = fixtures::solid(&e,"fluted");
+    let (exact,said) = built(&e.sketch,body,None);
+    exact.solid.check(1e-6).unwrap();
+    let lines = Mutex::new(Vec::<String>::new());
+    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
+    export::stl(&e.sketch,body,&exact,None,&say).unwrap();
+    let said = format!("{said}\n{}",lines.lock().unwrap().join("\n"));
+    assert!(said.contains(", 0 disagree"),"{said}");
+}
+
+/// The drawing (`drill.svd`): its views, section and dimensions compiled from the reduced drill,
+/// the swept body drawn from its exact B-rep (the overall length is the shank's and the flutes'
+/// to the micrometre, not a mesh's reading of it).
+#[test]
+fn the_drawing_compiles_from_the_exact_drill() {
+    let dir = fixtures::drill::project();
+    let svd = std::fs::read_to_string(dir.join("drill.svd")).unwrap();
+    let svg = gcs_core::drawing::compile(&svd,dir.join("drill.svd").to_str().unwrap(),None,&mut |path,from| {
+        let base = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new("."));
+        let p = base.join(path);
+        let name = p.file_stem()?.to_str()?.to_string();
+        let text = std::fs::read_to_string(&p).ok()?;
+        let text = fixtures::drill::configure(&name,text,&[("flutes","1"),("fluted_length","6mm"),("point","0")]);
+        Some((p.to_string_lossy().into_owned(),text))
+    }).unwrap();
+    assert!(svg.contains("<svg"));
+    // the overall length, 30 mm of shank and 6 of flutes, and the diameter
+    assert!(svg.contains(">36<") && svg.contains(">10<"),"the generated dimensions read the exact solid");
 }

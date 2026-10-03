@@ -328,6 +328,19 @@ impl Builder {
     pub fn display(&self) -> Option<&Display> { match &self.state { State::Done(d) => Some(d),_ => None } }
 }
 
+/// Every swept object of `sk` given its exact B-rep where this kernel builds one (`exact`, at the
+/// gross bars), so that what reads the object's surface — a drawing's views and sections, its
+/// silhouettes traced on the surfaces — reads the B-rep, as it reads a static solid's; a field is
+/// meshed only for an object whose build is refused.
+pub fn supply_exact(sk: &Sketch) {
+    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
+    let Ok(mm) = cad::millimetres(sk) else { return };
+    for job in sk.field_jobs() {
+        let Ok(built) = exact(sk,job.solid,None,None,&say) else { continue };
+        sk.supply_exact_solid(job.solid,crate::solid::Exact {brep:built.solid,mm,origin:[0.;3],leading:Default::default()});
+    }
+}
+
 /// The admission a display asks: a quarter of the export's samples each way, on both its grids. A
 /// display is looked at, not made: a design the export's sampling would refuse is still refused
 /// there, and the build's own stages refuse what they cannot construct. On a gear member it is a

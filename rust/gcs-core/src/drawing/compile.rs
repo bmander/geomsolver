@@ -37,6 +37,8 @@ pub fn compile(
             if let Some(d) = e.errors().next() { return Err(fail(d.message.clone())) }
             let r = crate::solve::solve(&mut e.sketch, crate::solve::SolveOpts::default());
             if !r.success { return Err(fail(format!("did not solve: {}", r.message))) }
+            // a swept object drawn from its exact surface where one builds, as the page draws it
+            crate::brep::export::supply_exact(&e.sketch);
             if let Some(d) = crate::program::solid_diagnostics(&e.sketch, &e.map).first() {
                 return Err(fail(d.message.clone()));
             }

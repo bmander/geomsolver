@@ -1006,3 +1006,39 @@ fn a_cut_along_a_traced_edge_is_boxed() {
     assert!(r.edges.iter().any(|e| matches!(&e.curve,gcs_core::brep::topo::EdgeCurve::Curve(c) if c.kind() == "traced")));
     boxed(&r,None);
 }
+
+/// A cylinder of radius `r` from `z0` to `z1` about z, its profile in the half-plane at angle `at`
+/// from x: its seam, and its circles' vertices, stand there.
+fn seamed_cylinder(r: f64,z0: f64,z1: f64,at: f64) -> gcs_core::brep::topo::Brep {
+    let (c,s) = (at.cos(),at.sin());
+    let p = |x: f64,z: f64| [x*c,x*s,z];
+    let q = Profile {names:vec![],origin:[0.;3],normal:[-s,c,0.],loops:vec![poly(&[p(0.,z0),p(r,z0),p(r,z1),p(0.,z1)])]};
+    revolve(&q,[0.;3],[0.,0.,1.],TAU).unwrap()
+}
+
+/// Two cylinders on one axis standing end to end, each seamed at its own angle, united: their
+/// shared end circle is one curve that each solid's edges cut at different vertices, and the
+/// Boolean cuts each edge at the other's vertices so the two become one.
+#[test]
+fn coaxial_cylinders_seamed_apart_unite_end_to_end() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let (a,b) = (seamed_cylinder(5.,0.,6.,0.),seamed_cylinder(5.,-3.,0.,0.7));
+    let u = boolean(&a,&b,Op::Union,1e-9).unwrap();
+    u.check(1e-8).unwrap();
+    close(volume(&u),PI*25.*9.);
+    // a narrower one on the wider one's end, seamed apart too: the circles differ, the planes agree
+    let c = seamed_cylinder(3.,-3.,0.,2.1);
+    let v = boolean(&a,&c,Op::Union,1e-9).unwrap();
+    v.check(1e-8).unwrap();
+    close(volume(&v),PI*25.*6.+PI*9.*3.);
+}
+
+/// A cone placed at its apex carries a radius zero to rounding there: the file writes zero, never
+/// the negative a reader refuses.
+#[test]
+fn a_cone_placed_at_its_apex_is_written_with_no_negative_radius() {
+    use gcs_core::brep::geom::Surface;
+    let cone = Surface::Cone(Frame::new([0.;3],XY,[1.,0.,0.]),-2e-24,1.);
+    let (_,numbers) = gcs_core::brep::step::written(&cone);
+    assert_eq!(numbers[0],0.);
+}

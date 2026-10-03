@@ -66,14 +66,15 @@ repeat configuration.flutes as i {
   clearance_at cut fluted
 }
 
-// the point: a cone behind each lip, ground into the stock's top so that the lips' outer corners
-// stand a point's length below it, where the flutes' leading edges reach them
-corner := configuration.fluted_length - configuration.point_length
+// the point: a cone behind each lip, ground wholly into the stock, its tip half a millimetre
+// below the stock's end (so no sliver of the end is left beside it), the lips' outer corners a
+// point's length below that, where the flutes' leading edges reach them
+corner := configuration.fluted_length - configuration.point_length - 0.5mm
 lip_at_corner := configuration.lip + 360deg * corner / configuration.lead
-flank := point.PointCone(std.side, top: corner, cone: configuration.cone,
-  tilt: configuration.tilt, height: configuration.apex_height, offset: configuration.apex_offset,
-  reach: configuration.fluted_length + configuration.diameter)
 repeat configuration.point {
+  flank := point.PointCone(std.side, top: corner, cone: configuration.cone,
+    tilt: configuration.tilt, height: configuration.apex_height, offset: configuration.apex_offset,
+    reach: configuration.fluted_length + configuration.diameter)
   repeat configuration.flutes as i {
     construction flank_at := solid(flank.body, under: index, at: lip_at_corner + i * 360deg / configuration.flutes)
     flank_at bound fluted
@@ -82,3 +83,6 @@ repeat configuration.point {
 
 drill := solid(fluted)
 shank union drill
+
+// square to the axis halfway along the flutes: where the drawing cuts its section
+section_plane := plane(origin: std.origin, toward: std.front.toward, from: std.top, offset: configuration.fluted_length / 2)

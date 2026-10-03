@@ -191,7 +191,20 @@ pub struct Meter {
     sweeps: Vec<Sweep>,
     field: MaterialField,
     options: Options,
+    /// A body built from swept material (its stock, or a solid put on it or bounding it, holds a
+    /// sweep): each operand read by a meter of its own, with its part in the body rule.
+    operands: Vec<Operand>,
 }
+
+/// One operand of a body built from swept material: its meter, its own material, its part in the
+/// body rule, and where its faces start among the body's.
+#[derive(Clone,Debug)]
+struct Operand { meter: Meter,material: MaterialField,role: Role,first: usize }
+
+/// What an operand does in the body rule: the stock and what is put on it are united, what cuts
+/// it is taken away, and what bounds it keeps what lies within.
+#[derive(Clone,Copy,Debug,PartialEq)]
+enum Role { Stock,On,Cut,Bound }
 
 const PARAMETER_SLACK: f64 = 1e-9;
 
@@ -257,6 +270,24 @@ impl Meter {
     pub fn read(sk: &Sketch,body: usize,options: Options) -> Result<Self,String> {
         super::validate(sk,body)?;
         let tol = cad::AXIS_TOLERANCE;
+        // a body built from swept material: its operands each read, the body rule over them
+        if let SolidDef::Body {stock,on,through,bound} = &sk.solids[body].def {
+            if std::iter::once(stock).chain(on).chain(bound).any(|&o| cad::contains_sweep(sk,o as usize)) {
+                let mut operands: Vec<Operand> = Vec::new();
+                let mut surfaces = Vec::new();
+                for (ids,role) in [(std::slice::from_ref(stock),Role::Stock),(&on[..],Role::On),(&through[..],Role::Cut),(&bound[..],Role::Bound)] {
+                    for &o in ids {
+                        let meter = Meter::read(sk,o as usize,options)?;
+                        let first = surfaces.len();
+                        surfaces.extend(meter.surfaces.iter().cloned());
+                        operands.push(Operand {material:MaterialField::read(sk,o as usize,tol)?,meter,role,first});
+                    }
+                }
+                let field = MaterialField::read(sk,body,tol)?;
+                let blank = operands[0].meter.blank.clone();
+                return Ok(Self {exact:None,surfaces,blank,faces:Vec::new(),sweeps:Vec::new(),field,options,operands})
+            }
+        }
         let read = |id: u32| -> Result<SpatialField,String> {
             if cad::contains_sweep(sk,id as usize) {
                 return Err(format!("`{}`: the accuracy meter reads sweeps only as a body's cuts",sk.solids[id as usize].name));
@@ -286,7 +317,8 @@ impl Meter {
         if cuts.is_empty() {
             if let Ok(exact) = Exact::read(sk,body) {
                 let field = MaterialField::read(sk,body,tol)?;
-                return Ok(Self {surfaces:exact.names(),exact:Some(exact),blank,faces:Vec::new(),sweeps:Vec::new(),field,options})
+                return Ok(Self {surfaces:exact.names(),exact:Some(exact),blank,faces:Vec::new(),sweeps:Vec::new(),field,options,
+                    operands:Vec::new()})
             }
         }
         let mut surfaces = Vec::new();
@@ -322,7 +354,7 @@ impl Meter {
         let sphere = blank.support_bounds().map_err(field_error)?.map(|b| crate::space::box_centre_diagonal(&b));
         for s in &mut sweeps { s.tabulate(sphere,&options)?; }
         let field = MaterialField::read(sk,body,tol)?;
-        Ok(Self {exact:None,surfaces,blank,faces,sweeps,field,options})
+        Ok(Self {exact:None,surfaces,blank,faces,sweeps,field,options,operands:Vec::new()})
     }
 
     pub fn surfaces(&self) -> &[Surface] { &self.surfaces }
@@ -342,6 +374,7 @@ impl Meter {
     /// face lies beyond the other — the nearest point of the edge the two faces share.
     pub fn nearest(&self,p: V) -> Option<Nearest> {
         if let Some(exact) = &self.exact { return exact.nearest(p).filter(|n| n.distance.abs() <= self.options.reach) }
+        if !self.operands.is_empty() { return self.composed(p) }
         let mut candidates = Vec::new();
         for (i,face) in self.faces.iter().enumerate() {
             if let Some(mut c) = self.blank_face(i,face,p) {
@@ -365,6 +398,32 @@ impl Meter {
             }
         }
         best.filter(|b| b.distance.abs() <= reach)
+    }
+
+    /// The nearest face of a body built from swept material: each operand's nearest, kept where
+    /// the body rule leaves its foot on the body's boundary — a united operand's outside every
+    /// other united operand and every cut, a cut's or a bound's inside the united material — and
+    /// signed as the body's (a cut's material is the body's outside).
+    fn composed(&self,p: V) -> Option<Nearest> {
+        let trim = self.options.trim;
+        let value = |o: &Operand,x: V| o.material.reading(x).value;
+        let mut best: Option<Nearest> = None;
+        for (k,op) in self.operands.iter().enumerate() {
+            let Some(mut near) = op.meter.nearest(p) else { continue };
+            let x = near.foot;
+            let united = self.operands.iter().filter(|o| matches!(o.role,Role::Stock|Role::On))
+                .map(|o| value(o,x)).fold(f64::INFINITY,f64::min);
+            let kept = self.operands.iter().enumerate().filter(|&(j,_)| j != k).all(|(_,o)| match o.role {
+                Role::Stock | Role::On => matches!(op.role,Role::Cut|Role::Bound) || value(o,x) >= -trim,
+                Role::Cut => value(o,x) >= -trim,
+                Role::Bound => value(o,x) <= trim,
+            }) && (matches!(op.role,Role::Stock|Role::On) || united <= trim);
+            if !kept { continue }
+            if op.role == Role::Cut { near.distance = -near.distance; near.normal = scale(near.normal,-1.); }
+            near.surface += op.first;
+            if best.is_none_or(|b| near.distance.abs() < b.distance.abs()) { best = Some(near); }
+        }
+        best.filter(|b| b.distance.abs() <= self.options.reach)
     }
 
     /// Whether a point of the blank lies inside a cut: the nearest generated face reads it outside
@@ -598,6 +657,33 @@ impl Sweep {
             } }
             let count = |speed: f64,most: usize| ((2.*speed/options.cell).ceil() as usize).clamp(8,most);
             let (nu,nv) = (count(speed[0],256),count(speed[1],4096));
+            // under a screw a ring's contacts are its characteristic points at every time: each
+            // carried over the roll, a cell's width at most a step
+            if let Some(screw) = self.contacts.motion().screw() {
+                let family = self.contacts.motion();
+                let Ok(twist) = family.at(roll[0]) else { continue };
+                let mut previous: Option<Vec<V>> = None;
+                for i in 0..=nu {
+                    let u = i as f64/nu as f64;
+                    let Ok(roots) = patch.contacts(u,twist,1e-9) else { previous = None; continue };
+                    let here: Vec<V> = roots.iter().filter_map(|r| patch.at(u,r.v).ok().map(|s| s.position)).collect();
+                    for &p0 in &here {
+                        let steps = (((roll[1]-roll[0])*norm(screw.velocity(p0))/options.cell).ceil() as usize).clamp(8,1<<16);
+                        let mut last: Option<V> = None;
+                        for k in 0..=steps {
+                            let Ok(pose) = family.pose_at(roll[0]+(roll[1]-roll[0])*k as f64/steps as f64) else { continue };
+                            let q = pose.point(p0);
+                            if let Some(l) = last { gaps.push(distance(l,q)); }
+                            points.push(q); last = Some(q);
+                        }
+                    }
+                    if let Some(prev) = &previous {
+                        for p0 in &here { if let Some(d) = prev.iter().map(|q| distance(*q,*p0)).min_by(f64::total_cmp) { gaps.push(d); } }
+                    }
+                    previous = Some(here);
+                }
+                continue
+            }
             let mut grid: Vec<Option<V>> = vec![None;(nu+1)*(nv+1)];
             for i in 0..=nu { for j in 0..=nv {
                 let (u,v) = (i as f64/nu as f64,v0+(v1-v0)*j as f64/nv as f64);

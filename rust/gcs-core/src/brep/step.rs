@@ -73,7 +73,7 @@ impl Out {
                 // about the reversed axis (x kept, y reversed), its normal unchanged
                 let f = if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f };
                 let p = self.placement(&f);
-                self.add(format!("CONICAL_SURFACE('',#{p},{},{})",real(r),real(a.abs())))
+                self.add(format!("CONICAL_SURFACE('',#{p},{},{})",real(cone_radius(r)),real(a.abs())))
             }
             Surface::Sphere(f,r) => { let a = self.placement(&f); self.add(format!("SPHERICAL_SURFACE('',#{a},{})",real(r))) }
             Surface::Torus(f,big,r) => {
@@ -157,13 +157,18 @@ fn bspline(o: &mut Out,pts: &[String],ts: &[f64]) -> usize {
         pts.join(","),mults.join(","),knots.join(",")))
 }
 
+/// A cone's radius at its placement as the file writes it: never below zero, which no reader takes
+/// for a cone. A cone placed at its apex (as a revolution about a profile's own line places it)
+/// carries a radius zero to rounding, either side of it.
+fn cone_radius(r: f64) -> f64 { if r < 0. && r > -1e-12 { 0. } else { r } }
+
 /// A surface as the file writes it: its placement (origin, axis, reference direction) and its
 /// numbers — a cone opening against its axis written about the reversed one.
 pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
     match s.clone() {
         Surface::Plane(f) => (f,vec![]),
         Surface::Cylinder(f,r) => (f,vec![r]),
-        Surface::Cone(f,r,a) => (if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f },vec![r,a.abs()]),
+        Surface::Cone(f,r,a) => (if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f },vec![cone_radius(r),a.abs()]),
         Surface::Sphere(f,r) => (f,vec![r]),
         Surface::Torus(f,big,r) => (f,vec![big,r]),
         Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) => (f,vec![]),
