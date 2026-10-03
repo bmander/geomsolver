@@ -153,7 +153,7 @@ fn a_step_file_is_verified_against_its_solid_and_a_corrupted_one_refused() {
     let shell = text.find("CLOSED_SHELL('',(#").unwrap()+"CLOSED_SHELL('',(".len();
     let end = shell+text[shell..].find(',').unwrap();
     let face = &text[shell..end];
-    let line = text.find(&format!("\n{face} := ADVANCED_FACE")).unwrap()+1;
+    let line = text.find(&format!("\n{face} = ADVANCED_FACE")).unwrap()+1;
     let line_end = line+text[line..].find(";\n").unwrap()+2;
     let missing = format!("{}{}{}",&text[..shell],&text[end+1..line],&text[line_end..]);
     assert!(refused(&missing,"a missing face").contains("faces"));
