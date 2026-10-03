@@ -301,10 +301,12 @@ edited — a param in the source, a named dimension on the drawing. Only the out
 define (`distance(2 * (w := 30))` does not parse). A callout reads `w = 60`.
 
 **Free variables.** A name nothing defines is one unknown of the sketch, tying together every
-dimension that reads it (W111). The tie must be affine in one free name (`a`, `a / 2`,
-`2 * a + 5`); `a * a`, `sin(a)` and two free names in one dimension are errors. Inside a component
-the unknown belongs to the instance (`t1.w`, `t2.w`), so a component cannot reach a name the
-enclosing document happens to define. To equate two angles, prefer `l1 angle(l3, l4) l2` (1.5).
+dimension that reads it (W111, said once, where it is first read; a numeric formal left unbound
+is the same unknown, declared, and not warned). The tie must be affine in one free name (`a`,
+`a / 2`, `2 * a + 5`); `a * a`, `sin(a)` and two free names in one dimension are errors. Inside a
+component the unknown belongs to the instance (`t1.w`, `t2.w`), so a component cannot reach a
+name the enclosing document happens to define. To equate two angles, prefer
+`l1 angle(l3, l4) l2` (1.5).
 
 **Dimensions are checked.** Two base dimensions, length and angle. `*` and `/` derive, `+` and `-`
 demand agreement, and the result is checked against its slot: `a distance(45deg) b` is an error,
@@ -1413,9 +1415,9 @@ c := Crank(o, datum)                                  // theta unbound: the cran
 rim := c.p over theta in (0, 360)
 ```
 
-`c.theta` is the one freedom (reported as a free variable), and `rim` is where `p` goes over a full
-turn, anchored at the pose on the sheet: drag `c.p` and the anchor follows. `jansen.sv` is this at
-full size.
+`c.theta` is the one freedom (a declared formal left unbound, so no W111), and `rim` is where
+`p` goes over a full turn, anchored at the pose on the sheet: drag `c.p` and the anchor follows.
+`jansen.sv` is this at full size.
 
 ### 2.10 Three views: DOF 0, well
 
@@ -1642,7 +1644,7 @@ fix(x == 0, y == 0) a
 
 `6 params, 6 equations, structural rank 6; DOF 0`, with `d.x = 17.3205`, `d.y = 10`: `ad` at 30°.
 With a shared free variable instead (`ab angle(beta) ad`, `ad angle(beta) ac`) it is
-`7 params, 7 equations` plus two W111 warnings — an extra unknown only to be equated away.
+`7 params, 7 equations` plus a W111 warning — an extra unknown only to be equated away.
 `ab angle(ab, ac, sense: cw) ad` puts `ad` at −60°, `ac`'s mirror in `ab`. `reflection.sv` states
 the law of reflection as `incoming angle(m, outgoing) m`, with the classical proof as a `claim`
 judged a theorem.

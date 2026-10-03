@@ -416,6 +416,12 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // it — the one pass of the elaboration that is *below* the expressions
     let post_expr = expr::evaluate(&mut sk);
     solid_claims(&mut sk, &res, &mut map, &body, &skip, &mut diags);
+    // W111 is said once per unknown, where it is first read, and only of a name nothing
+    // declares: that is the misspelling which quietly adds a freedom.  A numeric formal left
+    // unbound was declared, and leaving it is how a component asks the solve for a number.
+    let mut said: BTreeSet<String> = expansion.instances.iter()
+        .flat_map(|i| i.values.values().filter_map(|a| a.free.clone()))
+        .collect();
     for item in post_expr {
         let span = map.site_of_constraint(item.id).map(|s| s.span).unwrap_or_default();
         let stmt = map.site_of_constraint(item.id).map(|s| s.stmt);
@@ -432,16 +438,17 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 expr::Fault::Measure => (Code::E107, ""),
             };
             diags.push(Diag { code, span, stmt, message: format!("`{}`: {err}{tail}", item.text) });
-        } else if !item.free.is_empty() {
-            diags.push(Diag {
-                code: Code::W111,
-                span,
-                stmt,
-                message: format!(
-                    "`{}` is a free variable: the solver answers for it",
-                    item.free.join("`, `")
-                ),
-            });
+        } else {
+            for name in item.free {
+                if said.insert(name.clone()) {
+                    diags.push(Diag {
+                        code: Code::W111,
+                        span,
+                        stmt,
+                        message: format!("`{name}` is a free variable: the solver answers for it"),
+                    });
+                }
+            }
         }
     }
 

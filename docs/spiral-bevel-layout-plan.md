@@ -371,7 +371,8 @@ Ordered by what they unlock. All six are done; the table gives the spelling that
    `l1` to `l2` equals the angle from `l3` to `l4`, directed, `sense: cw` for the mirror image —
    since a joint's `equal angle` already means two statements (primer 1.5, `reflection.sv`).
    It relates lines in one view, so the layout's one angle tie, between G and Q, keeps a
-   shared free variable (`pitch/pinion.sv`).
+   shared unknown: `PinionCone`'s `pinion_angle`, a formal its caller leaves unbound
+   (`pitch/pinion.sv`).
 
 ## Order of work
 

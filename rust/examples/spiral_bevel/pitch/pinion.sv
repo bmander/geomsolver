@@ -14,8 +14,10 @@ use views
 use pitch.gear
 use pitch.trace
 
-// `gear` is the GearCone, `foot` the trace's square from O to its heading.
-component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group) {
+// `gear` is the GearCone, `foot` the trace's square from O to its heading. A caller leaves
+// `pinion_angle` unbound: the two triangles below construct it.
+component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
+                     pinion_angle: Angle) {
   // Seeds only, rough: A and V the offset aside of O and back from it, and in Q the bevel
   // pinion's cone, its apex the offset along its pitch line.
   r := design.cone_distance
