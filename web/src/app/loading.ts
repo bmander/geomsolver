@@ -57,7 +57,8 @@ export function awaitSurfaces(): void {
  *  the modal follows the slowest still without a surface, and goes once none is. */
 export function meshing(list: Refining[]): void {
   if (!surfaces) return;
-  const waiting = list.filter((r) => !(r.triangles > 0 || r.exact?.built || r.error || r.progress?.failed));
+  const waiting = list.filter((r) =>
+    !(r.triangles > 0 || r.exact?.built || r.error || r.progress?.failed));
   left = waiting.length;
   if (!left) { loaded(); return; }
   // the pass in hand's progress where every one waited on has said it; till then (the worker
