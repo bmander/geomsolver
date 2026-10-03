@@ -78,6 +78,11 @@ export interface Refining {
   exact?: ExactStatus;
 }
 
+/** A swept object's name as the page shows it: its last word, a body's own name rather than `body`. */
+export function objectName(name: string): string {
+  return name.split('.').filter((w) => w !== 'body').pop() ?? name;
+}
+
 /** An exact surface's build as the page tells it: its next stage, the stages run and in all, the
  *  last thing a stage said, and whether it is built, or why it will not be. */
 export interface ExactStatus {

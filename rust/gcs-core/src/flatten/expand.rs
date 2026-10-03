@@ -287,6 +287,7 @@ impl<'a> Walk<'a> {
                                     self.settle_arg(arg, vals, scope)
                                 }
                                 crate::syntax::OpArg::Dim(text, span) => {
+                                    self.note_dim_reads(text, *span, vals, scope);
                                     match self.settle_text(text, vals, scope) {
                                         Ok(t) => *text = t,
                                         Err(e) => {

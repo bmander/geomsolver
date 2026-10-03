@@ -16,6 +16,7 @@ mod solids;
 mod surfaces;
 mod motions;
 mod envelopes;
+mod generated;
 mod patches;
 mod seams;
 mod vertices;
@@ -336,6 +337,13 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
 
+    // motions, once every line and point they are written over is built — and before the
+    // profiles a planar motion generates, which are curves of the drawing a contact may name
+    // (§6.15.1).  A motion is evaluated after the solve wherever it is read in space; building it
+    // here only resolves what it is written over.
+    motions::motions(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    let planar = generated::planar_envelopes(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+
     // the numbers `fix` holds, before the seeds that read geometry: a place reading a held
     // point reads where it is held, and a seed never writes a held number (`settle_deferred`)
     for st in &body {
@@ -396,13 +404,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // over faces and other solids; and *evaluated* rather than solved, because nothing about
     // either is an unknown.  This is the stratification as a phase: everything above it is the
     // drawing, everything below reads what the drawing came to.
-    // Motions depend on solved axes, and solids retain their motion indices.
-    // Resolve the motion graph before solids consume indices: dependency order
-    // may differ from the declaration order used by name preallocation.
-    motions::motions(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    // (Motions were built with the primitives: solids retain their indices.)
     solids(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     surfaces::surfaces(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
-    envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    let spatial: BTreeSet<StmtId> = skip.union(&planar).copied().collect();
+    envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &spatial, &mut diags);
     patches::patches(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     seams::seams(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     vertices::vertices(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
@@ -440,6 +446,24 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 message: format!(
                     "`{}` is a free variable: the solver answers for it",
                     item.free.join("`, `")
+                ),
+            });
+        }
+    }
+
+    // a curve written over a number its drawn instance left unknown reads that unknown as a
+    // column, and only the expression graph allocates one — when a dimension of the drawing
+    // reads it.  One nothing reads would leave the curve a column short
+    for (i, cv) in sk.curves.iter().enumerate() {
+        for n in cv.unknowns.iter().filter(|n| !sk.free_vars.contains_key(*n)) {
+            let site = map.site_of(EntRef::new(EntKind::Curve, i));
+            diags.push(Diag {
+                code: Code::E103,
+                span: site.map(|s| s.span).unwrap_or_default(),
+                stmt: site.map(|s| s.stmt),
+                message: format!(
+                    "`{n}` is left unknown, and nothing on the sheet reads it: give the \
+                     instance a number for it, or state what it is"
                 ),
             });
         }
@@ -500,4 +524,18 @@ fn refresh_frames(sk: &mut Sketch) {
             sk.params[c.args[1].param() as usize].value = length;
         }
     }
+}
+
+/// An angle a declaration is bounded by (`from:`, `to:`), in degrees: written as an angle,
+/// bound to a number and finite, each refused naming `what` — a surface's span, an envelope's
+/// roll.  The one reader of such a bound.
+fn bound_angle(sk: &Sketch, a: &crate::syntax::Arg, what: &str) -> Result<f64, String> {
+    let crate::syntax::Arg::Dim { text, .. } = a else { return Err(format!("a {what} needs an angle")) };
+    let value = crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)?;
+    value.dim.require(crate::units::Dim::ANGLE, what)?;
+    let value = value.number().ok_or_else(|| format!("a {what} must be bound"))?;
+    if !value.is_finite() {
+        return Err(format!("a {what} must be finite"));
+    }
+    Ok(value)
 }

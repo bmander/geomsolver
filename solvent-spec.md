@@ -1,6 +1,19 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.34 — October 2026**
+**Specification, Draft 0.36 — October 2026**
+
+**[0.36] Generation by motion in the plane.** `envelope(tool, under: m, from: a, to: b)` over a
+tool of the sheet and a planar motion (`motion(about: point, …)` is a turn in a view) is a curve of
+the drawing: the profile the tool cuts, which takes point, tangent and curvature contacts with the
+tool and the motion's geometry solved for (§6.15.1). A locus supplies `C''` and `C'''` exactly, as
+the implicit function's Taylor orders (§6.5), so `e curvature k` is stated against a traced curve.
+A numeric formal a drawn instance leaves unbound is a column of its curve; a curve over a whole turn
+that comes back is closed, and a contact wraps across its seam. A dimension reads geometry only in
+a traced body.
+
+**[0.35] A group is its members in braces.** `dims := {width: 20mm, origin: o}` is a group (§8.1);
+`group(…)` is retired. A group's braces hold a list, not a body: like an argument list it may run
+across lines, and a brace is a group's exactly when it stands straight after `:=`.
 
 **[0.34] A `fix` states what it holds.** `fix(x == 0, y == 0) p` holds a point at the numbers it
 states, each pinned with `==` under the field it is, as any pin in a relation's parentheses is;
@@ -38,7 +51,7 @@ modules may define one name.
 **[0.29] One way to define a name.** `NAME := VALUE` is the only form that puts a name in scope,
 and `(NAME := VALUE)` is the value itself, so a name may stand where its value does (§5). `w := 100`
 is a param (§6.3); `c := circle(center: o)` a declaration (§6); `t := Tooth(…)` an instance (§8);
-`dims := group(…)` a group (§8.1); `profile := (ab := line(a, b)) -> line -> close` a chain whose
+`dims := {…}` a group (§8.1) **[0.35]**; `profile := (ab := line(a, b)) -> line -> close` a chain whose
 first link is named in place (§6.6), since `:=` binds looser than `->`; `k := leg.toe over u in (a,
 b)` a curve (§6.5); `p := point(x: e, y: e)` a computed point (§6.5); `a distance(w := 60) b` a
 named dimension (§9.1), where `:=` may only be the outermost form of the number. `param`, `group`
@@ -531,7 +544,7 @@ NAME := REF over FORMAL in ( A, B )                    an instance's point
 NAME := Component(ARGS).REF over FORMAL in ( A, B )    an instance written in place
 ```
 
-`REF` names a point the component places — a declaration of its body or a nested instance's; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve, each owning the curve's parameter — spelled `t`, as a spline's is, whatever the swept formal is called **[0.15]** (0.2–0.14 spelled it `u`, which an implementation SHOULD name when refusing the old key): `p on e hint(t: …)` says `p − C(t) = 0`, two residuals and one new unknown; `e tangent l` holds the line through `C(u)` along `C'(u)`, two residuals against the one unknown; `e curvature k` makes the circle the curve's osculating circle at `u`, three residuals against it. A tangency needs `C'` and its derivatives in the geometry — second order — and a curvature `C''` and `C'''`: a computed point supplies them exactly from its expressions, and a locus supplies `C'` exactly (the implicit function theorem) with its derivatives by difference, and no higher order at all, so a curvature stated against a traced curve is an error (**E103**). There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
+`REF` names a point the component places — a declaration of its body or a nested instance's; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve, each owning the curve's parameter — spelled `t`, as a spline's is, whatever the swept formal is called **[0.15]** (0.2–0.14 spelled it `u`, which an implementation SHOULD name when refusing the old key): `p on e hint(t: …)` says `p − C(t) = 0`, two residuals and one new unknown; `e tangent l` holds the line through `C(u)` along `C'(u)`, two residuals against the one unknown; `e curvature k` makes the circle the curve's osculating circle at `u`, three residuals against it. A tangency needs `C'` and its derivatives in the geometry — second order — and a curvature `C''` and `C'''`: a computed point supplies them exactly from its expressions, and a locus supplies `C'` exactly (the implicit function theorem) and `C''`, `C'''` exactly as the implicit function's Taylor orders — each one more linear solve with the same Jacobian of the body, its rows read in truncated Taylor arithmetic — with their derivatives in the geometry by difference **[0.36]**. A body is read that way only through relations whose kernels an implementation has written in Taylor arithmetic; a curvature stated against a locus with any other relation in its body is an error (**E103**) naming the relation, since a residual by difference would solve to a slightly wrong circle and call it right. There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
 
 **Two ways a component places the point.** A **computed** point, `p := point(x: XEXPR, y: YEXPR)` **[0.13]** (`port p = …` in 0.12), gives the coordinates as expressions over the formals and the params; a component with one is drawn only as a curve, and an instance of it on the sheet is an error (**E103**), since nothing on the sheet holds a point to a formula. Any **other** point is placed by the body's statements — the locus form: `C(u)` is where the constraints put the point, given the formal's value and the geometry the component is written over. Traced, the body MUST determine its own coordinates — as many equations as coordinates of its own — or the curve is an error (**E103**): an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Drawn, the same component may be closed from outside like any other.
 
@@ -549,11 +562,13 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
 e := Unwind(base, datum, phase: a0).p over u in (u0, u1)
 ```
 
-**Over a drawn instance.** `path := leg.toe over theta in (0, 360)` names a point of an instance the drawing holds. The trace is **anchored at the drawing**: the pose the instance stands in on the sheet is where evaluation begins, and the value the instance gave the swept formal is the anchor's parameter. An instance that leaves a numeric formal **unbound** makes it an unknown of the drawing — the rule that a name nothing defines is a free variable (§3.4), applied to a formal, named under the instance (`leg.theta`) so two instances leaving the same formal unbound have two unknowns — and the anchor then follows that unknown wherever the solve puts it. This is the form a mechanism is written in: drawn once with its crank free, and traced from the same statements.
+**Over a drawn instance.** `path := leg.toe over theta in (0, 360)` names a point of an instance the drawing holds. The trace is **anchored at the drawing**: the pose the instance stands in on the sheet is where evaluation begins, and the value the instance gave the swept formal is the anchor's parameter. An instance that leaves a numeric formal **unbound** makes it an unknown of the drawing — the rule that a name nothing defines is a free variable (§3.4), applied to a formal, named under the instance (`leg.theta`) so two instances leaving the same formal unbound have two unknowns — and the anchor then follows that unknown wherever the solve puts it. This is the form a mechanism is written in: drawn once with its crank free, and traced from the same statements. **[0.36]** Every other numeric formal a drawn instance leaves unbound is an unknown of the drawing in the same way (`leg.h`), and the curve is written over it as over the entities' coordinates: it is a **column** of the curve, so a contact against the curve may solve for it — a rod's length chosen so the stride touches the ground. Only the unknown itself: a formal given an expression in an unknown (`h: 2 * k`, inside an instance that left `k` unbound) is **E103**, and so is an unknown nothing on the sheet reads, which no solve could allocate.
+
+**Closed curves [0.36].** A curve run over a whole turn of an `Angle` formal (`over theta in (0, 360)`) that comes back where it started — a crank's coupler curve, a cam's profile — is **closed**. A contact on it has no end to stop at: a parameter carried past the seam wraps round onto the interval and stays free, since the seam is only where the interval was written to begin. A curve that does not come back (an involute unwound a whole turn) is open, and a contact on it is held to its ends.
 
 **Over an instance written in place.** `Involute(base, phase: a0).p` binds the arguments as an instance statement would and draws nothing: the curve is the only thing made of it. The anchor is the value it gives the swept formal, or the interval's start when it gives none.
 
-**Requirements.** An implementation MUST differentiate `C` with respect to the swept formal *and* with respect to every coordinate the component reads. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. For a computed point both are mechanical from the expressions; for a locus both come from the implicit function theorem at the body's solution. A name a computed point's expressions cannot reach is an error (**E016**), not a free variable: a curve is written over geometry that exists, and a misspelling there would quietly add a degree of freedom to every point on the curve.
+**Requirements.** An implementation MUST differentiate `C` with respect to the swept formal *and* with respect to every coordinate the component reads. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. For a computed point both are mechanical from the expressions; for a locus both come from the implicit function theorem at the body's solution. A name a computed point's expressions cannot reach is an error (**E016**), not a free variable: a curve is written over geometry that exists, and a misspelling there would quietly add a degree of freedom to every point on the curve. A dimension in a traced body MAY read a number of the geometry the component is written over (`c.r`, `k.center.x`): it is a column of the curve, and is differentiated with the rest. **[0.36] Outside a trace a dimension MUST NOT read geometry** (**E103**): the expression graph has no column for it, and minting a free variable named `k.r` would make a drawn instance of a component state something other than its own trace.
 
 **Branches.** A locus generically has several solutions, and a component states its way onto one — three instruments, in order of strength:
 
@@ -961,6 +976,12 @@ component formals, privacy, and dependency-aware copy/delete are supported.
 These constant-ratio families provide relative generating kinematics. They do not yet specify
 arbitrary motion laws or an assembly-joint solver.
 
+**[0.36] A turn in a view.** `about:` may name a *point*: `cam := motion(about: o, ratio: 1,
+phase: 10deg)` turns the view about `o`, by `phase + ratio * angle`, counter-clockwise as the view
+is drawn — in space, the rotation about the line through `o` square to the view, toward its viewer.
+It takes no `advance:`. A turn is how a planar motion is written: what it generates in its view is
+a curve of the drawing (§6.15.1), with `o`'s coordinates among that curve's columns.
+
 **[0.27] A motion's numbers may measure the solved drawing.** A motion is read after the solve,
 so `ratio:`, `phase:` and `advance:` may call `length(l)` (a line's length, or an arc's along
 itself), `radius(c)` (a circle, arc, sphere or cylinder), `distance(a, b)` (two points, or a point
@@ -1015,6 +1036,50 @@ copy/delete dependencies follow ordinary component rules. A solved evaluator is 
 and must be read again after the source geometry changes. Envelopes are not drawing glyphs
 or completed solids. Declarative trim boundaries and closed solids assembled from bounded
 surfaces remain under development.
+
+#### 6.15.1 Envelopes in the plane **[0.36]**
+
+```
+blank := motion(about: o, ratio: 1)
+rack := motion(along: slide, advance: 2 * pi * 30)
+cutting := motion(rack, relative_to: blank)
+flank := envelope(rack_flank, under: cutting, from: -25deg, to: 25deg)
+profile := envelope(roller, under: follower_on_cam, from: 0deg, to: 360deg, side: near)
+```
+
+The same word over a **tool of the sheet** — a point, line, circle, arc, a curve from a computed
+point, or a profile itself generated by a point, line, circle or arc — and a planar motion (built from turns about points, `along:` slides and `relative_to:`)
+is a **curve of the drawing**, not a spatial envelope: the profile the tool cuts in the moving
+frame, as the roll runs over `[from, to]`. It is a curve like any other (§6.5): it is drawn, and
+`p on f`, `f tangent l` and `f curvature k` hold against it, each owning the roll at its contact
+(`hint(t: …)`, degrees). The tool is drawn where it stands at roll 0. At roll `t` its point `T(s)`
+stands at `X(s, t) = M(t)·T(s)`, and the cutting point is where `F(s, t) = X_s × X_t = 0`: the
+tool's tangent runs along the velocity of the material under it, which in the plane says the
+tool's normal there passes through the instant centre (the law of gearing). A point tool has no
+`s`: its envelope is its path.
+
+**What it is written over is solved for.** The tool's coordinates and the motion's — its turns'
+centres, its slides' lines — are columns of the curve, so a contact on a generated profile moves
+the tool and the motion to suit: a rack's pressure angle chosen so its cut passes a point, a
+cam's roller placed so the profile it cuts bends at a stated radius. The motion's ratios, phases
+and advances are numbers of the curve; a number written as a measurement (§6.14) is read after the
+solve and is an error here (**E080**), as are a rotation about a line in space, a traced tool, and a
+generated tool whose own tool is not a point, line, circle or arc. A generated tool must be
+declared before the profile it cuts.
+
+**Exact orders.** `C`, `C'` and `C''` are exact: the root `s` and the cut are read in truncated
+Taylor arithmetic along the roll, each order of `s` one division by `F_s`. A point, line, circle or
+arc is exact at every order, so a profile it cuts is exact to `C'''` too — and so a profile that
+profile cuts in its turn (a rack-cut tooth cutting its mate) is exact to `C''`, its tool read as
+its Taylor series. An implementation MAY take a `C'''` it cannot read exactly, and the gradients
+along the columns, by difference: they enter only a Jacobian, never a residual.
+
+**Which cut.** A line cuts once. A circle or arc cuts twice, on the line from its centre through
+the instant centre: `side: near` (the default) takes the point nearer the instant centre, `side:
+far` the farther; any other word is **E080**. A curve tool may cut in several places: the roots at
+`from:` are found over the tool's interval, `side` picks among them by their distance from the
+instant centre, and the choice is carried to every other roll by continuity. A generated profile
+over a whole turn that comes back is closed (§6.5).
 
 ---
 
@@ -1271,8 +1336,8 @@ Instantiation elaborates the named component's body into the current scope with 
 unit mm
 use std
 
-sizes := group(length: 20mm)
-layout := group(frame: std.front, origin: std.origin)
+sizes := {length: 20mm}
+layout := {frame: std.front, origin: std.origin}
 
 component Bar(layout: group, dims: group) {
   tip := point hint(x: layout.origin.x + dims.length * layout.frame.c,
@@ -1286,8 +1351,9 @@ component Bar(layout: group, dims: group) {
 bar := Bar(layout, dims: sizes)
 ```
 
-`group NAME(member: VALUE, …)` bundles named numeric values, entity references, and nested
-groups. Members are required to have labels; duplicate members and cyclic definitions are
+**[0.35]** `NAME := {member: VALUE, …}` bundles named numeric values, entity references, and
+nested groups. A brace straight after `:=` opens a group, never a body: its members are separated
+by commas and may run across lines, as an argument list's may. Members are required to have labels; duplicate members and cyclic definitions are
 errors. Numeric members retain their dimensions. A group creates no geometry, solver variable,
 or constraint. Geometry members are aliases to existing geometry, including subentities and
 members of repeated instances; grouping does not copy or solve them separately.

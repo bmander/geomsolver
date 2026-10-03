@@ -2321,6 +2321,16 @@ impl Constraint {
                     }
                     k
                 }
+                // a generated profile carries the roll its root is chosen at, then the
+                // numbers its motion was given, then its tool and motion
+                crate::model::CurveBody::Envelope(g) => {
+                    let mut k = Vec::with_capacity(2 + cv.values.len() + g.flat.len());
+                    k.push(sk.curve_home(curve.i()));
+                    k.push(cv.values.len() as f64);
+                    k.extend_from_slice(&cv.values);
+                    k.extend_from_slice(&g.flat);
+                    k
+                }
             };
         }
         match self.kind {
@@ -2903,17 +2913,19 @@ pub fn infer_entity(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Result<
 /// the FFI and the Rust constructors alike.
 pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
     match kind {
-        // a curvature reads the curve's second derivative, which a traced curve cannot give:
-        // its block's kernels have first derivatives only, and a residual by difference would
-        // solve to a slightly wrong circle and call it right
+        // a curvature reads the curve's second derivative, which a trace gives exactly only
+        // where every row of its block has a Taylor form (`taylor.rs`): a residual by difference
+        // would solve to a slightly wrong circle and call it right
         CKind::CurveCurvature => {
             let cv = &sk.curves[args[0].ent().i()];
-            if let crate::model::CurveBody::Trace(_) = sk.curve_defs[cv.def as usize].body {
-                return Err(format!(
-                    "{} is traced, and a traced curve has no curvature to state a circle \
-                     against — only a curve from a computed point does",
-                    crate::io::entity_name(args[0].ent())
-                ));
+            if let crate::model::CurveBody::Trace(l) = &sk.curve_defs[cv.def as usize].body {
+                if let Some(kernel) = l.without_form() {
+                    return Err(format!(
+                        "{} is traced through a `{kernel}`, whose second derivative is not \
+                         written, so the curve has no curvature to state a circle against",
+                        crate::io::entity_name(args[0].ent())
+                    ));
+                }
             }
             Ok(())
         }

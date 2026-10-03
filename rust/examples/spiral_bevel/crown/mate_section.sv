@@ -53,8 +53,8 @@ preview {
   unit mm
   // The preview crown section's outer mate: the tooth one width outward on its flanks.
   pitch_radius := 0.8 * 2mm * hypot(24, 48) / 2
-  proportions := group(pressure: 20deg, shift: 0deg,
-                       base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0)
+  proportions := {pressure: 20deg, shift: 0deg,
+                       base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0}
   lp := point hint(x: pitch_radius - 1.3mm, y: 0)
   rp := point hint(x: pitch_radius + 1.3mm, y: 0)
   far := point hint(x: pitch_radius + 3.9mm, y: 0)

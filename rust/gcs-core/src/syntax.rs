@@ -197,7 +197,7 @@ pub enum StmtKind {
     Instance(Instance),
     /// `R := m * N / 2` — a number worked out while elaborating, never an unknown.
     Param(ParamDecl),
-    /// `dims := group(bore: 16mm, axis: datum)` — named values, without new geometry.
+    /// `dims := {bore: 16mm, axis: datum}` — named values, without new geometry.
     Group(GroupDecl),
     /// `repeat`, `cycle` — see `Block`.
     Block(Block),
@@ -892,6 +892,9 @@ impl Attitude {
 pub struct AngularSpan {
     pub from: Arg,
     pub to: Arg,
+    /// Which cut a planar envelope takes where its tool cuts twice (`side: near | far` of the
+    /// instant centre, §6.15.1); a word, checked where the envelope is built.
+    pub side: Option<Name>,
 }
 
 /// A rigid rotation (a screw with `advance:`), a translation, or a relative

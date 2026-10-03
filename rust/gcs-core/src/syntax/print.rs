@@ -146,7 +146,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         }
         StmtKind::Param(p) => out.push_str(&format!("{} := {}", p.name.text, p.text)),
         StmtKind::Group(g) => {
-            out.push_str(&format!("{} := group(", g.name.text));
+            out.push_str(&format!("{} := {{", g.name.text));
             for (i, f) in g.fields.iter().enumerate() {
                 if i > 0 { out.push_str(", "); }
                 if let Some(label) = &f.label { out.push_str(&format!("{}: ", label.text)); }
@@ -155,7 +155,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                     crate::syntax::InstVal::Expr(t) => out.push_str(t),
                 }
             }
-            out.push(')');
+            out.push('}');
         }
         StmtKind::Unit(n) => out.push_str(&format!("unit {}", n.text)),
         StmtKind::Style(r) => {

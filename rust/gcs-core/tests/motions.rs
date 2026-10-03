@@ -124,7 +124,7 @@ fn motion_component_formals_preserve_private_dependencies() {
 #[test]
 fn motions_reject_wrong_units_missing_references_and_cycles() {
     for (tail,want) in [
-        ("bad := motion(about: o)","directed line"),
+        ("bad := motion(about: o,advance: 2mm)","no `advance:`"),
         ("bad := motion(about: missing)","no such motion axis"),
         ("bad := motion(about: axis,ratio: 2mm)","ratio"),
         ("bad := motion(about: axis,phase: 2mm)","phase"),
@@ -297,4 +297,19 @@ fn a_pose_alone_is_the_motion_without_its_derivative() {
             }
         }
     }
+}
+
+/// **A turn about a point is a rotation about the line through it square to its view** — how
+/// a planar motion reads in space, so the generators of the plane (§6.15.1) and of space (§6.14)
+/// are one family.  At roll 0.7 a point one unit along x from the centre has turned 0.7·ratio
+/// about it, in the page, the phase added.
+#[test]
+fn a_turn_about_a_point_is_a_rotation_square_to_its_view() {
+    let e = solved(&format!("{AXES}turn := motion(about: a,ratio: 2,phase: 30deg)\n"));
+    let m = e.map.ent_named("turn").unwrap();
+    // the page stands in space as the front view: its points are lifted through its basis
+    let page = gcs_core::plane::Basis::page();
+    let got = motion::evaluate(&e.sketch,m.i(),0.7).unwrap().point(page.lift(3.,0.));
+    let ang = 2.0*0.7 + 30f64.to_radians();
+    near(got,page.lift(2.+ang.cos(),ang.sin()),1e-12);
 }

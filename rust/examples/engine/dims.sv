@@ -94,7 +94,7 @@ rcp := 30mm
 rcam := 2 * rcp
 
 // Explicit design inputs shared by the components.
-engine_dims := group(
+engine_dims := {
   D: D, L: L, P: P, R: R, back: back,
   bulk: bulk, camcap: camcap, camh: camh, camx: camx, capd: capd,
   ch: ch, cycle: cycle, deck: deck, dev: dev, div: div,
@@ -107,4 +107,4 @@ engine_dims := group(
   roof: roof, rp: rp, rpin: rpin, rseal: rseal, rsmall: rsmall,
   stem: stem, sump: sump, theta: theta, va: va, vs: vs,
   wall: wall, wcamb: wcamb, wflange: wflange, wfw: wfw, wmb: wmb
-)
+}

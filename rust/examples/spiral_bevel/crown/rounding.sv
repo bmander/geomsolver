@@ -15,7 +15,7 @@ component TipRounding(pitch: line, base: line, tip: line, first: arc, second: ar
 
 preview {
   unit mm
-  proportions := group(base: 2, dedendum: 1.25, rounding: 0.3)
+  proportions := {base: 2, dedendum: 1.25, rounding: 0.3}
   bi := point hint(x: -5, y: -4)
   bo := point hint(x: 10, y: -4)
   oj := point hint(x: 7, y: 1.5)

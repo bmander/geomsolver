@@ -669,6 +669,12 @@ pub fn clamp_contacts(sk: &mut Sketch) -> Vec<u32> {
             continue;   // pinned: somebody said where along, and the solver is not to argue
         }
         let v = sk.params[t as usize].value;
+        // a closed curve has a seam and no end: a contact past it is the same point a turn
+        // round, moved back onto the interval and left free
+        if e.kind == EntKind::Curve && v.is_finite() && (v < t0 || v > t1) && sk.curve_closed(e.i()) {
+            sk.params[t as usize].value = t0 + (v - t0).rem_euclid(t1 - t0);
+            continue;
+        }
         let c = if v.is_finite() { v.clamp(t0, t1) } else { 0.5 * (t0 + t1) };
         if c != v {
             sk.params[t as usize].value = c;

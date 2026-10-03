@@ -42,7 +42,7 @@ O distance(0, along: x) up
 O distance(40, along: y) up
 ref := line(O, up)
 
-layout := group(front: views.front, origin: O, axis: ref)
+layout := {front: views.front, origin: O, axis: ref}
 plate := components.frame.Frame(layout, dims: components.dims.vtwin_dims)
 crank := components.crank.Crank(O, ref, dims: components.dims.vtwin_dims) in views.front
 bankR := components.bank.Bank(crank.pin, plate.r.piv, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims) in views.front

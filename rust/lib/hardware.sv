@@ -133,7 +133,7 @@ component Groove(body: solid, f: plane,
 }
 
 // Caller-selected seal proportions, passed explicitly to Groove.
-seal_dims := group(squeeze: oring_squeeze, width_factor: oring_groove_w)
+seal_dims := {squeeze: oring_squeeze, width_factor: oring_groove_w}
 
 // A circular through-hole pattern. The polygon supplies constrained centers, with
 // its edges private to this component. n >= 3, as for Polygon.

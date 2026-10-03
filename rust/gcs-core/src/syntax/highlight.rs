@@ -139,6 +139,10 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         if matches!(t, Tok::P('{')) && style > 0 {
             at = Next::Word;
         }
+        // nor is a group's (`dims := {width: 20mm}`): its members are labelled values
+        if matches!(t, Tok::P('{')) && matches!(prev, Some(Tok::Define)) {
+            at = Next::Word;
+        }
         if let Some(tint) = tint {
             out.push((tint, *span));
         }
@@ -196,10 +200,6 @@ fn tint_word(
             }
             if matches!(w, "component" | "use") {
                 return (Some(Tint::Word), Next::Def);
-            }
-            // `dims := group(…)`
-            if w == "group" && next == Some(&Tok::P('(')) {
-                return (Some(Tint::Word), Next::Word);
             }
             // `style .construction { … }` — the class it names is the thing it declares
             if w == "style" {

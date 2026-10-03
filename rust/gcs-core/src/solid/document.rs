@@ -162,6 +162,15 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
                     for p in [axis.p1,axis.p2] { values.extend(sk.world_point(p as usize)); }
                 } else { values.push(f64::NAN); }
             }
+            crate::model::MotionDef::Turn {centre,..} => {
+                let (ratio,phase,_) = m.rotation(sk).unwrap_or((f64::NAN,f64::NAN,f64::NAN));
+                values.extend([3.,centre as f64,ratio,phase]);
+                if (centre as usize) < sk.points.len() {
+                    values.extend(sk.world_point(centre as usize));
+                    let b = sk.plane_of(centre as usize).map(|i| sk.basis(i));
+                    values.extend(b.map_or([0.,0.,1.],|b| b.normal()));
+                } else { values.push(f64::NAN); }
+            }
             crate::model::MotionDef::Relative {source,observer} => {
                 values.extend([1.,source as f64,observer as f64]);
                 pending.extend([observer,source]);

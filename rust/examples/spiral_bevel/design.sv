@@ -9,7 +9,7 @@ use configuration
 crown_teeth := sqrt(configuration.pinion_teeth^2 + configuration.gear_teeth^2)
 mean_cone_distance := configuration.mean_module * crown_teeth / 2
 
-hypoid_design := group(
+hypoid_design := {
   pinion_teeth: configuration.pinion_teeth, gear_teeth: configuration.gear_teeth,
   crown_teeth: crown_teeth, module: configuration.mean_module,
   cone_distance: mean_cone_distance,
@@ -26,7 +26,7 @@ hypoid_design := group(
   tip_relief: configuration.tip_relief, relief_angle: 30deg,
   relieved: min(ceil(configuration.tip_relief / 1mm), 1),
   end_relief: configuration.end_relief,
-  ends_relieved: min(ceil(configuration.end_relief / 1mm), 1))
+  ends_relieved: min(ceil(configuration.end_relief / 1mm), 1)}
 
 preview {
   unit mm

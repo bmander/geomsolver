@@ -75,7 +75,7 @@ where the value stands: a chain link `(ab := line(a, b)) -> …`, or a dimension
 use NAME[.NAME...]                      import a module                             (1.12)
 unit NAME                               the unit the document's numbers are in       (1.6)
 NAME := EXPR                            a param                                      (1.6)
-NAME := group(LABEL: VALUE, ...)        values and geometry passed as one argument   (1.8)
+NAME := {LABEL: VALUE, ...}             values and geometry passed as one argument   (1.8)
 [private] [construction] [NAME :=] KIND[(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)]
      [knots [...]] [in REF]             an entity declaration; every part optional   (1.4)
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve       (1.9)
@@ -201,7 +201,7 @@ stands in the parentheses:
 | `distance` | prefix | a line: its length |
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; in space, sphere–line, sphere–sphere, cylinder–line (round thing first); two cones at a point, `k1 tangent(M) k2` |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
-| `curvature` | infix | spline or curve and a circle/arc: the circle becomes the osculating circle there. Refused on a traced curve |
+| `curvature` | infix | spline or curve and a circle/arc: the circle becomes the osculating circle there. On a traced curve, exact (the body's Taylor orders); refused only for a body using a relation with no Taylor form, named in the error |
 | `horizontal`, `vertical` | prefix / infix | a line; or two points with no line between them |
 | `angle` | infix | two lines, directed (below). With a second line pair instead of a number, `l1 angle(l3, l4) l2` equates two angles |
 | `angle` | prefix | a cone: its half-angle |
@@ -486,14 +486,15 @@ inner := std.CenteredRectangle(center, w: 14mm, h: 14mm)
 section := face(outer.loop, holes: inner.loop)
 ```
 
-**Groups** bundle related values and geometry into one argument:
+**Groups** bundle related values and geometry into one argument. The members are written in
+braces straight after `:=`, and may run across lines:
 
 ```solvent
 unit mm
 use std
 
-sizes := group(length: 20mm)
-layout := group(frame: std.front, origin: std.origin)
+sizes := {length: 20mm}
+layout := {frame: std.front, origin: std.origin}
 component Bar(layout: group, dims: group) {
   tip := point hint(x: layout.origin.x + dims.length * layout.frame.c,
                  y: layout.origin.y + dims.length * layout.frame.s)
@@ -1097,6 +1098,15 @@ source surface's zero-normal-velocity locus over the roll interval. An evaluator
 two section equations and checks the envelope equation too; an arbitrary transformed source point
 is not on it. Declaring one chooses no branch, designates no material and closes no solid.
 
+**Envelopes in the plane are curves** (§6.15.1). Over a tool of the sheet — a point, line, circle,
+arc or formula curve — and a planar motion (`motion(about: o, …)` is a *turn* about a point), the
+same word is a curve the solve sees: the profile the tool cuts in the moving frame.
+`flank := envelope(rack_flank, under: motion(rack, relative_to: blank), from: -25deg, to: 25deg)`
+cuts an involute; `profile := envelope(roller, under: rel, from: 0deg, to: 360deg, side: near)` a
+cam (`side: near|far` of the instant centre, where a circle cuts twice). `on`, `tangent` and
+`curvature` hold against it, and the tool's and the motion's geometry are its columns, so they
+solve to suit — a conjugate is synthesised, not stated. See 2.9.2.
+
 **Patches** state which material keeps a surface or envelope; every condition must hold, and each
 includes its solid's boundary:
 
@@ -1392,6 +1402,11 @@ tooth. `angle` is **directed**, so `t` sits at bearing `u + phase` rather than o
 `ccw` needed. For a genuinely discrete choice (which of two intersections), `ccw(a, b, x)` states
 it.
 
+A traced body's dimension may read the numbers of the geometry it is written over (`c.r`): they
+are columns of the curve. Nowhere else may a dimension: `distance(k.r) l` on the sheet, or in a
+component that is drawn, is **E103** (a free variable would be minted for `k.r`, and a drawn
+instance would disagree with its own trace). State the relation instead (`l equal m`).
+
 ### 2.9.1 A curve of a drawn instance: DOF 1, under
 
 ```
@@ -1415,6 +1430,42 @@ rim := c.p over theta in (0, 360)
 `c.theta` is the one freedom (reported as a free variable), and `rim` is where `p` goes over a full
 turn, anchored at the pose on the sheet: drag `c.p` and the anchor follows. `jansen.sv` is this at
 full size.
+
+`rim` comes back where it started after its whole turn, so it is **closed**: a contact on it wraps
+across the seam at 0/360 instead of stopping there. Any other numeric formal the drawn instance
+leaves unbound (`component Crank(…, theta: Angle, len: Length)`, `c := Crank(o, datum)`) is an
+unknown `c.len` and a **column** of the curve: `ground tangent rim` can then solve the length.
+(Passed as an expression in another unknown — `len: 2 * k` — it is E103.)
+
+### 2.9.2 A profile generated by a motion: DOF 0, well
+
+```
+o := point
+fix(x == 0, y == 0) o
+rk0 := point
+rk1 := point hint(x: 30, y: 10)
+fix(x == 30, y == 0) rk0
+fix(x == 30, y == 10) rk1
+slide := line(rk0, rk1)
+blank := motion(about: o, ratio: 1)                     // the gear blank turns...
+rack := motion(along: slide, advance: 2 * pi * 30)      // ...as the rack rolls on its pitch circle
+cutting := motion(rack, relative_to: blank)
+f0 := point hint(x: 30, y: 5)
+f1 := point hint(x: 39.4, y: 8.4)
+flank := line(f0, f1)                                   // the rack's flank, at roll 0
+fix(x == 30, y == 5) f0
+f0 distance(10) f1
+cut := envelope(flank, under: cutting, from: -25deg, to: 25deg)
+g := point
+fix(x == 31.5, y == -3) g
+g on cut hint(t: 5)                                     // the cut must pass through g
+```
+
+The flank's slope is left free, and `g on cut` decides it: the solve turns the rack's flank until
+the involute it cuts passes through `g`. Nothing states an involute; the cut point at each roll
+is where the flank's normal passes through the instant centre (the pitch point), and that is
+enough. `cut curvature k` and `cut tangent l` work the same way, exactly (`C''` from the roll's
+Taylor orders). A roller (`circle`) cuts a cam, a formula curve cuts its conjugate tooth.
 
 ### 2.10 Three views: DOF 0, well
 

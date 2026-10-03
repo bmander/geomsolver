@@ -232,6 +232,6 @@ component Frame(layout: group, dims: group) {
 preview {
   unit mm
   ref := line(std.origin, std.up.toward) in std.front
-  layout := group(front: std.front, origin: std.origin, axis: ref)
+  layout := {front: std.front, origin: std.origin, axis: ref}
   plate := Frame(layout, dims: components.dims.vtwin_dims)
 }
