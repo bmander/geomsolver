@@ -19,12 +19,12 @@ component Ngon(n: Int, side: Length) {
   r0 := side / (2 * sin(tau / (2 * n)))
   c := circle hint(r: r0)
   cycle n as i {
-    p := point hint(x: r0 * cos(tau * i / n), y: r0 * sin(tau * i / n))
+    p := point hint(at: c, bearing: tau * i / n)
     p on c
     (s := line(p)) -> equal
   }
   // one side sized, and the radius follows — a dimensioned radius would let the sides collapse
-  s[0].p1 distance(side) s[0].p2
+  distance(side) s[0]
 }
 
 // the hub and the sides are reached by their names: `five.c`, `five.s[0]`

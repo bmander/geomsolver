@@ -20,7 +20,7 @@ k3 := point hint(x: 6, y: 26)
 k4 := point hint(x: 34, y: 32)
 k5 := point hint(x: 62, y: 24)
 
-datum := line(k0, k3)
+datum := horizontal line(k0, k3)
 
 k0 distance(26.683328) k3
 k0 distance(46.690470) k4
@@ -33,5 +33,4 @@ k2 distance(41.617304) k4
 k2 distance(26.305893) k5
 
 // the framework is rigid but free to move as a whole; these two settle where it sits
-horizontal datum
 fix(x == 0, y == 0) k0

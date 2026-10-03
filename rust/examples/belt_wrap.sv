@@ -22,19 +22,12 @@ wrap := 90     // belt in contact with the big pulley
 c1 := point
 c2 := point hint(x: 66, y: 0)
 
-// where the runs touch the pulleys: seeds only, for the side each run passes on
-sb := point hint(x: -2, y: -10)
-bb := point hint(x: 60, y: -24)
-bt := point hint(x: 60, y: 24)
-st := point hint(x: -2, y: 10)
+// each run's ends are seeded for the side it passes on; the chain threads them into the arcs
+(bottom := line(hint(x: -2, y: -10), hint(x: 60, y: -24))) -> tangent
+radius(R) (big := arc(center: c2) hint(r: R)) -> tangent
+(top := line(hint(x: 60, y: 24), hint(x: -2, y: 10))) -> tangent
+radius(r) (small := arc(center: c1) hint(r: r)) -> tangent close
 
-(bottom := line(sb, bb)) -> tangent
-(big := arc(center: c2) hint(r: R)) -> tangent
-(top := line(bt, st)) -> tangent
-(small := arc(center: c1) hint(r: r)) -> tangent close
-
-radius(r) small
-radius(R) big
 length(wrap) big
 
 c1 horizontal c2

@@ -18,25 +18,16 @@ base := line(o, e)
 
 a := point hint(x: 0, y: 15)
 b := point hint(x: 40, y: 15)
-l2 := line(a, b)
-
-c := point hint(x: 10, y: 15)
 d := point hint(x: 10, y: 35)
-l3 := line(c, d)
-
-f := point hint(x: 10, y: 35)
-g := point hint(x: 30, y: 30)
-l4 := line(f, g)
-
+l2 := line(a, b)
 base parallel l2
-o distance(15) a
-vertical l3
-c coincident a
-c distance(20) d
+a distance(15, side: left) base
 a distance(40) b
-l3 perpendicular l4
-f coincident d
-f distance(20) g
+
+// l3 rises from l2's start, and l4 leaves l3's top square to it
+vertical (l3 := line(a, d)) -> perpendicular (l4 := line(d, hint(x: 30, y: 30)))
+distance(20) l3
+distance(20) l4
 
 fix(x == 0, y == 0) o
 fix(x == 40, y == 0) e

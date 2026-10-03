@@ -18,9 +18,7 @@ A := point
 B := point
 C := point
 
-ab := line(A, B)
-bc := line(B, C)
-ca := line(C, A)
+(ab := line(A, B)) -> (bc := line(B, C)) -> (ca := line(C, A)) -> close
 
 // Each altitude runs from a vertex to a foot that is free to slide along it.  The feet are
 // written *in the lines* rather than declared above them: nothing else in this file says their

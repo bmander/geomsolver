@@ -18,7 +18,7 @@ type Shape = (usize, usize, usize, usize);
 const DOCS: &[(&str, Shape, i64, State)] = &[
     ("impossible_triangle", (3, 1, 0, 0), 0, State::Conflict),
     ("altitudes", (7, 6, 0, 0), 3, State::Under),
-    ("parallels", (8, 4, 0, 0), 1, State::Under),
+    ("parallels", (6, 4, 0, 0), 1, State::Under),
     ("belt_tangency", (4, 1, 2, 0), 0, State::Well),
     ("belt_wrap", (6, 2, 0, 2), 0, State::Well),
     ("reflection", (6, 4, 0, 0), 0, State::Well),

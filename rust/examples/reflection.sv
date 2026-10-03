@@ -28,9 +28,9 @@ fix(x == 0, y == 0) m1
 // the source and the target, each a station along the mirror and a height above it
 s := point hint(x: 10, y: 40)
 t := point hint(x: 90, y: 20)
-m1 distance(10, along: x) s
+m1 distance(10, along: right) s
 s distance(40, side: left) m
-m1 distance(90, along: x) t
+m1 distance(90, along: right) t
 t distance(20, side: left) m
 
 // the ray, and the one statement that places where it strikes

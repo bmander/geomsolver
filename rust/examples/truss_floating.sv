@@ -24,17 +24,12 @@ repeat bays as i {
 
 // the bottom chord, and the two web members that hang the top node off this bay
 repeat bays as i {
-  chord := line(b[i], b[i + 1])
-  rise := line(b[i], t[i])
-  fall := line(t[i], b[i + 1])
-
-  b[i] distance(span) b[i + 1]
-  b[i] distance(web) t[i]
-  t[i] distance(web) b[i + 1]
+  chord := distance(span) line(b[i], b[i + 1])
+  rise := distance(web) line(b[i], t[i])
+  fall := distance(web) line(t[i], b[i + 1])
 }
 
 // the top chord runs between neighbouring top nodes, so there is one fewer of it
 repeat bays - 1 as i {
-  upper := line(t[i], t[i + 1])
-  t[i] distance(span) t[i + 1]
+  upper := distance(span) line(t[i], t[i + 1])
 }

@@ -26,11 +26,9 @@ repeat copies as c {
   }
 
   repeat floor(n / 2) as k {
-    v := line(p[2 * k], p[2 * k + 1])
-    vertical v
+    v := vertical line(p[2 * k], p[2 * k + 1])
   }
   repeat floor((n - 1) / 2) as k {
-    h := line(p[2 * k + 1], p[2 * k + 2])
-    horizontal h
+    h := horizontal line(p[2 * k + 1], p[2 * k + 2])
   }
 }

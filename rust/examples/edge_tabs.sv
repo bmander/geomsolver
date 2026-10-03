@@ -15,13 +15,8 @@ b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
 d := point hint(x: 0, y: 40)
 fix(x == 0, y == 0) a
-outline := (ad := line(a, d)) -> (dc := line(d, c)) -> (cb := line(c, b)) -> (ba := line(b, a)) -> close
-vertical ad
-horizontal dc
-vertical cb
-horizontal ba
-distance(width) ba
-distance(height) ad
+outline := distance(height) vertical (ad := line(a, d)) -> horizontal (dc := line(d, c)) ->
+  vertical (cb := line(c, b)) -> distance(width) horizontal (ba := line(b, a)) -> close
 
 // The outline runs clockwise, so outside is on each edge's left.  The apex stands `rise`
 // off its edge, and the tab's two sides are equal — which puts the apex over the edge's middle.

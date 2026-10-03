@@ -1323,7 +1323,7 @@ A body ending mid-joint (1.7) writes a closed contour with no corner names. DOF 
 cycle 4 {
   (s := line) -> perpendicular equal
 }
-s[0].p1 distance(50) s[0].p2
+distance(50) s[0]
 fix(x == 0, y == 0) s[0].p1
 ```
 

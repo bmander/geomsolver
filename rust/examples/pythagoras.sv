@@ -27,15 +27,10 @@ E := point hint(x: s, y: 0)
 F := point hint(x: s, y: s)
 G := point hint(x: 0, y: s)
 
-bottom := line(O, E)
-right := line(E, F)
-top := line(F, G)
-left := line(G, O)
-
-bottom perpendicular right
-right perpendicular top
-top perpendicular left
-horizontal bottom
+horizontal (bottom := line(O, E)) -> perpendicular
+(right := line(E, F)) -> perpendicular
+(top := line(F, G)) -> perpendicular
+(left := line(G, O)) -> close
 bottom equal left
 
 // one point on each side, `a` along from the corner it follows going round
@@ -57,10 +52,7 @@ F distance(a) P3
 G distance(a) P4
 
 // the hypotenuses, which are the inner square
-h1 := line(P1, P2)
-h2 := line(P2, P3)
-h3 := line(P3, P4)
-h4 := line(P4, P1)
+(h1 := line(P1, P2)) -> (h2 := line(P2, P3)) -> (h3 := line(P3, P4)) -> (h4 := line(P4, P1)) -> close
 
 // the theorem, stated as a claim: judged against the figure, never imposed on it
 claim P1 distance(c := hypot(a, b)) P2

@@ -15,11 +15,10 @@ a := point
 b := point hint(x: 10, y: 0)
 c := point hint(x: 5, y: 5)
 
-ab := line(a, b)
+ab := horizontal line(a, b)
 
 a distance(10) b
 b distance(1) c
 a distance(1) c
-horizontal ab
 
 fix(x == 0, y == 0) a

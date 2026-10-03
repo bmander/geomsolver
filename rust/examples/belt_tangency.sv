@@ -22,15 +22,13 @@
 c1 := point
 c2 := point
 
-k1 := circle(center: c1) hint(r: 10)
-k2 := circle(center: c2) hint(r: 10)
+k1 := radius(10) circle(center: c1) hint(r: 10)
+k2 := radius(10) circle(center: c2) hint(r: 10)
 
 p := point hint(x: 0, y: 10)
 q := point hint(x: 50, y: 10)
 belt := line(p, q)
 
-radius(10) k1
-radius(10) k2
 p on k1
 q on k2
 belt tangent(side: right) k1

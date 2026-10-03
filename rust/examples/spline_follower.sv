@@ -29,10 +29,7 @@ k6 := point hint(x: 120, y: 26)
 cam := spline(k0, k1, k2, k3, k4, k5, k6)
 
 // the follower: a level face resting against the curve, touching wherever it must
-f1 := point hint(x: 0, y: 8.666667)
-f2 := point hint(x: 120, y: 8.666667)
-flat := line(f1, f2)
-horizontal flat
+flat := horizontal line(hint(x: 0, y: 8.666667), hint(x: 120, y: 8.666667))
 cam tangent flat
 
 // and a point riding on the curve, held off a grounded anchor above it
