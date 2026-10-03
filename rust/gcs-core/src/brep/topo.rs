@@ -8,7 +8,7 @@
 //! reversed face's the other way round — which is what lets the volume be read off the loops alone
 //! (`props`). A closed shell uses every edge twice, once each way, except a degenerate edge (a
 //! pole or apex), which its one face uses once.
-use super::geom::{Curve,Rigid,Surface,Uv,V};
+use super::geom::{include,widen,Box3,Curve,Rigid,Surface,Uv,V,EMPTY};
 use crate::space::{distance,dot,norm,sub};
 
 /// A point of the boundary.
@@ -143,31 +143,36 @@ impl Brep {
         for f in &mut b.faces { f.surface = f.surface.moved(m); }
         b
     }
-    /// A box about every point of the boundary: the corners of its faces' parameter boxes and a
-    /// grid across each (for a face of revolution, the bulge between its edges), so it may be larger
-    /// than the solid but is never smaller than its vertices and edges.
-    pub fn bounds(&self) -> ([f64;3],[f64;3]) {
-            let b = self;
-        let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
-        let mut grow = |p: V| for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); };
-        for v in &b.vertices { grow(v.p); }
-        for f in &b.faces {
-            let (mut ulo,mut uhi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
-            for l in &f.loops { for c in l {
-                let e = &b.edges[c.edge as usize];
-                for j in 0..=16 {
-                    let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/16.;
-                    grow(e.point(t,&b.vertices));
-                    let uv = c.pcurve.at(t,e,&f.surface,&b.vertices);
-                    for k in 0..2 { ulo[k] = ulo[k].min(uv[k]); uhi[k] = uhi[k].max(uv[k]); }
+    /// A box about every point of the boundary, never smaller than it and exact where its geometry
+    /// is analytic: its vertices, each edge's `Curve::bounds`, and where a face may bulge past its
+    /// edges, its surface's `bounds_over` the parameters its loops reach. What a `through:` cutter
+    /// spans and a tool is culled by, so a sample between a curve's extremes is never its edge.
+    pub fn bounds(&self) -> Box3 {
+        let mut b = EMPTY;
+        for v in &self.vertices { include(&mut b,v.p); }
+        for e in &self.edges { if let EdgeCurve::Curve(c) = &e.curve { widen(&mut b,c.bounds(e.t)); } }
+        for f in self.faces.iter().filter(|f| !f.loops.is_empty()) { widen(&mut b,f.surface.bounds_over(|| self.parameter_range(f))); }
+        b
+    }
+    /// The parameters a face's loops (one or more) reach: read at 17 points along each use and
+    /// widened by the largest step between two of them, so a range read off an inverted pcurve is
+    /// not short.
+    fn parameter_range(&self,f: &Face) -> [[f64;2];2] {
+        const N: usize = 16;
+        let (mut lo,mut hi,mut step) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2],[0f64;2]);
+        for c in f.loops.iter().flatten() {
+            let e = &self.edges[c.edge as usize];
+            let mut last: Option<Uv> = None;
+            for j in 0..=N {
+                let uv = c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/N as f64,e,&f.surface,&self.vertices);
+                for k in 0..2 {
+                    lo[k] = lo[k].min(uv[k]); hi[k] = hi[k].max(uv[k]);
+                    if let Some(l) = last { step[k] = step[k].max((uv[k]-l[k]).abs()); }
                 }
-            } }
-            for i in 0..=16 { for j in 0..=16 {
-                let uv = [ulo[0]+(uhi[0]-ulo[0])*i as f64/16.,ulo[1]+(uhi[1]-ulo[1])*j as f64/16.];
-                grow(f.surface.point(uv));
-            } }
+                last = Some(uv);
+            }
         }
-        (lo,hi)
+        [[lo[0]-step[0],hi[0]+step[0]],[lo[1]-step[1],hi[1]+step[1]]]
     }
     /// The diagonal of `bounds`, the scale tolerances are taken against.
     pub fn size(&self) -> f64 {

@@ -140,3 +140,70 @@ fn float32_rounding_is_spent_from_the_tolerance_of_the_written_stl() {
     assert!((one([1_000_000.03,0.,0.])-1./32.).abs() < 1e-9);
     assert!(one([0.,0.,0.]) < 1e-7);
 }
+
+/// Issue #59's stock: a 10 mm disc 2 mm thick about z, its circle's frame `u`, `v` (turned 11.25°
+/// where written so), cut by a 2 mm strip swept along x `through:` it — or from −11 to 11 mm.
+fn strip_cut(frame: &str,cutter: &str,cut: bool) -> String {
+    format!("unit mm
+origin := point hint(x: 0, y: 0)
+toward := point hint(x: 1, y: 0)
+fix(x == 0, y == 0) origin
+fix(x == 1, y == 0) toward
+stock_plane := plane(origin: origin, toward: toward, {frame})
+tool_plane := plane(origin: origin, toward: toward, u: (0, 1, 0), v: (0, 0, 1))
+in stock_plane {{
+  rim := radius(10mm) circle(center: origin) hint(r: 10)
+  stock := solid(face(rim), from: 0mm, to: 2mm)
+}}
+in tool_plane {{
+  a := point hint(x: -1, y: -1)
+  b := point hint(x: 1, y: -1)
+  c := point hint(x: 1, y: 3)
+  d := point hint(x: -1, y: 3)
+  fix(x == -1, y == -1) a
+  fix(x == 1, y == -1) b
+  fix(x == 1, y == 3) c
+  fix(x == -1, y == 3) d
+  cutter := solid(face(a, b, c, d, -> close), {cutter})
+}}
+body := solid(stock)
+{}
+",if cut { "cutter cut body" } else { "" })
+}
+
+/// A `through:` cutter spans its stock wherever the stock's circle starts (issue #59: turned by
+/// 11.25°, every sample of the old box missed the rim's extremes and the cutter stopped 0.19 mm
+/// short, leaving a bridge at each tip and the part in one piece). Volume, a point in the bridge
+/// and the STL's shells, against an explicit cutter and the controls.
+#[test]
+fn a_through_cut_crosses_its_stock_whichever_way_the_stocks_circle_starts() {
+    let turned = "u: (0.9807852804032304, 0.19509032201612825, 0), v: (-0.19509032201612825, 0.9807852804032304, 0)";
+    let aligned = "u: (1, 0, 0), v: (0, 1, 0)";
+    // the disc less the strip |y| ≤ 1, closed form
+    let want = 200.*std::f64::consts::PI-4.*(99f64.sqrt()+100.*0.1f64.asin());
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    let built = |src: &str| {
+        let (prog,errs) = gcs_core::syntax::parse(src);
+        assert!(errs.is_empty(),"{errs:?}");
+        let mut sk = gcs_core::program::elaborate(&prog).sketch;
+        gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
+        let body = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "body").unwrap();
+        let exact = export::exact(&sk,body,None,None,&say).unwrap();
+        exact.solid.check(1e-6).unwrap();
+        let shells = gcs_core::mesh::stl_shells(&export::stl(&sk,body,&exact,None,&say).unwrap()).unwrap().len();
+        (exact.solid,shells)
+    };
+    for (frame,cutter) in [(turned,"through: body"),(aligned,"through: body"),(turned,"from: -11mm, to: 11mm")] {
+        let (solid,shells) = built(&strip_cut(frame,cutter,true));
+        let volume = props::volume(&solid);
+        assert!((volume-want).abs() < 1e-9*want,"{frame}, {cutter}: {volume} against {want}");
+        assert_eq!(shells,2,"{frame}, {cutter}");
+        let at = gcs_core::brep::query::Located::new(&solid,1e-9);
+        assert_eq!(at.solid_place([9.95,0.,1.]),gcs_core::brep::query::Place::Out,"{frame}, {cutter}");
+    }
+    // uncut, the turned frame changes nothing
+    let (solid,shells) = built(&strip_cut(turned,"through: body",false));
+    let volume = props::volume(&solid);
+    assert!((volume-200.*std::f64::consts::PI).abs() < 1e-9*volume,"{volume}");
+    assert_eq!(shells,1);
+}

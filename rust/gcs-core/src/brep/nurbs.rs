@@ -48,6 +48,11 @@ impl BSpline {
     pub fn point(&self,t: f64) -> V { self.d2(t).0 }
     /// The length of the control polygon, a bound on the curve's.
     pub fn hull_length(&self) -> f64 { self.poles.windows(2).map(|w| crate::space::distance(w[0],w[1])).sum() }
+    /// The poles whose basis reaches `[a, b]` (clamped into the domain): their hull holds the curve
+    /// there.
+    pub fn poles_over(&self,[a,b]: [f64;2]) -> &[V] {
+        &self.poles[self.span(a.min(b))-self.degree..=self.span(a.max(b))]
+    }
 }
 
 /// The knot span holding `t`, for `count` poles of `degree`.
@@ -321,6 +326,14 @@ impl Net {
         let (vknots,cols) = segment(&self.vknots,&cols,self.dv,v0,v1);
         let poles = (0..cols[0].len()).map(|i| cols.iter().map(|c| c[i]).collect()).collect();
         Net {du:self.du,dv:self.dv,uknots,vknots,poles}
+    }
+    /// The poles whose basis reaches `[u0, u1] × [v0, v1]` (clamped into the domain): their hull
+    /// holds the surface there.
+    pub fn poles_over(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> impl Iterator<Item=V> + '_ {
+        let (nu,nv) = (self.poles.len(),self.poles[0].len());
+        let (i0,i1) = (span(self.du,&self.uknots,nu,u0.min(u1))-self.du,span(self.du,&self.uknots,nu,u0.max(u1)));
+        let (j0,j1) = (span(self.dv,&self.vknots,nv,v0.min(v1))-self.dv,span(self.dv,&self.vknots,nv,v0.max(v1)));
+        self.poles[i0..=i1].iter().flat_map(move |row| row[j0..=j1].iter().copied())
     }
     /// The distinct knots strictly inside `[a, b]` of parameter `k` (0 for u, 1 for v).
     pub fn breaks(&self,k: usize,[a,b]: [f64;2]) -> Vec<f64> {

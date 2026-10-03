@@ -60,7 +60,6 @@ fn sphere_centres(recipe: &Json,frame: Frame,size: f64) -> Vec<V> {
 }
 
 /// A solid's diagonal (mm).
-fn size_of(b: &Brep) -> f64 { let (lo,hi) = b.bounds(); distance(lo,hi) }
 
 /// A placement's rigid motion in millimetres.
 fn placed(pose: Motion,scale: f64) -> Rigid { Rigid::from_rows(&cad::placement_matrix(pose,scale)) }
@@ -296,7 +295,7 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
             let c: V = std::array::from_fn(|k| centres.iter().map(|p| p[k]).sum::<f64>()/centres.len().max(1) as f64);
             let a = scale(axis,1./norm(axis));
             let r = sub(sub(c,origin),scale(a,dot(sub(c,origin),a)));
-            if norm(r) > 1e-9*size_of(blank) { blank_from(&recipe.recipe,origin,a,scale(r,-1./norm(r)))? } else { blank.clone() }
+            if norm(r) > 1e-9*blank.size() { blank_from(&recipe.recipe,origin,a,scale(r,-1./norm(r)))? } else { blank.clone() }
         }
         Err(_) => blank.clone(),
     };
