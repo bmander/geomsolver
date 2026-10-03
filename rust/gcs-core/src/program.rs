@@ -438,13 +438,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 expr::Fault::Measure => (Code::E107, ""),
             };
             diags.push(Diag { code, span, stmt, message: format!("`{}`: {err}{tail}", item.text) });
-        } else if !item.free.is_empty()
-            // a statement refused already says what is wrong with its number, and the unknown
-            // the graph minted for it is that mistake's, not the document's
-            && !diags.iter().any(|d| {
-                d.severity() == Severity::Error && span.lo <= d.span.lo && d.span.hi <= span.hi
-            })
-        {
+        } else if !item.free.is_empty() {
             diags.push(Diag {
                 code: Code::W111,
                 span,
@@ -530,4 +524,18 @@ fn refresh_frames(sk: &mut Sketch) {
             sk.params[c.args[1].param() as usize].value = length;
         }
     }
+}
+
+/// An angle a declaration is bounded by (`from:`, `to:`), in degrees: written as an angle,
+/// bound to a number and finite, each refused naming `what` — a surface's span, an envelope's
+/// roll.  The one reader of such a bound.
+fn bound_angle(sk: &Sketch, a: &crate::syntax::Arg, what: &str) -> Result<f64, String> {
+    let crate::syntax::Arg::Dim { text, .. } = a else { return Err(format!("a {what} needs an angle")) };
+    let value = crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)?;
+    value.dim.require(crate::units::Dim::ANGLE, what)?;
+    let value = value.number().ok_or_else(|| format!("a {what} must be bound"))?;
+    if !value.is_finite() {
+        return Err(format!("a {what} must be finite"));
+    }
+    Ok(value)
 }

@@ -678,7 +678,8 @@ impl<'a> Walk<'a> {
         // its path resolves to is a declaration, not an instance, with a field left over.  A
         // traced body reads one as a column of its curve (§6.5); here the expression graph would
         // mint it a free variable of its own, and a drawn instance and its own trace would
-        // disagree about what the component says
+        // disagree about what the component says.  Refused, the statement is not emitted
+        let mut refused: Vec<Span> = Vec::new();
         for (name, span, sc) in std::mem::take(&mut self.dim_reads) {
             let segs: Vec<&str> = name.split('.').collect();
             let r = Ref {
@@ -690,6 +691,7 @@ impl<'a> Walk<'a> {
                 continue;
             };
             if !rest.is_empty() && !self.group_names.contains(&abs) {
+                refused.push(span);
                 self.err(
                     Code::E103,
                     span,
@@ -704,6 +706,9 @@ impl<'a> Walk<'a> {
         let out = std::mem::take(&mut self.out);
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
+            if refused.iter().any(|r| st.span.lo <= r.lo && r.hi <= st.span.hi) {
+                continue;
+            }
             let mut bad: Vec<(Span, String)> = Vec::new();
             rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
             // a seed that reads geometry names it in the scope it was written in, and is read

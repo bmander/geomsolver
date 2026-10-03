@@ -215,8 +215,8 @@ impl Sketch {
     /// 360)`) and back where it started — a crank's coupler curve, a cam's profile.  A contact
     /// on one wraps round rather than stopping at the seam (`curve::clamp_contacts`), since the
     /// seam is where the interval was written to start, not an end of anything.  Read off the
-    /// drawn polyline, whose ends are the curve at both ends of the turn: a body linear in its
-    /// angle (an involute's string) comes back somewhere else and is open.
+    /// curve at both ends of the turn — two evaluations, asked only of a contact past an end: a
+    /// body linear in its angle (an involute's string) comes back somewhere else and is open.
     pub fn curve_closed(&self, i: usize) -> bool {
         let cv = &self.curves[i];
         let (a, b) = cv.domain;
@@ -225,16 +225,9 @@ impl Sketch {
         {
             return false;
         }
-        let poly = self.curve_polyline(i);
-        let (Some(&p), Some(&q)) = (poly.first(), poly.last()) else { return false };
-        let (lo, hi) = poly.iter().fold(
-            ((f64::INFINITY, f64::INFINITY), (f64::NEG_INFINITY, f64::NEG_INFINITY)),
-            |(lo, hi), &(x, y)| ((lo.0.min(x), lo.1.min(y)), (hi.0.max(x), hi.1.max(y))),
-        );
-        let size = (hi.0 - lo.0).dhypot(hi.1 - lo.1);
-        // a polyline that never left its first point (a march stuck at a singular home) is no
-        // evidence of anything coming back
-        size.is_finite() && size > 0.0 && (p.0 - q.0).dhypot(p.1 - q.1) <= 1e-6 * size
+        let (p, q) = (self.curve_point(i, a), self.curve_point(i, b));
+        let size = 1.0 + p.0.abs().max(p.1.abs()).max(q.0.abs()).max(q.1.abs());
+        size.is_finite() && (p.0 - q.0).dhypot(p.1 - q.1) <= 1e-9 * size
     }
 
     /// The parameter a curve's trace is anchored at — the drawing's unknown where the swept

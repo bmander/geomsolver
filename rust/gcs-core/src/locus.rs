@@ -201,10 +201,10 @@ impl Locus {
 /// could not be read at all comes back NaN — a residual through it must never read as satisfied,
 /// and `System` already treats NaN as "not converged", never as "no error".
 ///
-/// Asked for (`higher`), it also carries `C''` and `C'''` in `u`, exactly — the Taylor orders
-/// of the implicit function, one more solve each with the factorisation the first derivative
-/// paid for (`higher_orders`).  NaN where they were not asked for or the block has a row with no
-/// Taylor form.
+/// Asked for (`need` above 1), it also carries `C''` and `C'''` in `u`, exactly — the Taylor
+/// orders of the implicit function, one more solve each with the factorisation the first
+/// derivative paid for (`higher_orders`).  NaN where they were not asked for or the block has a
+/// row with no Taylor form.
 #[derive(Clone, Copy, Debug)]
 pub struct Val {
     pub x: f64,
@@ -214,8 +214,8 @@ pub struct Val {
     /// `d²C/du²` and `d³C/du³`, as (x, y).
     pub d2: [f64; 2],
     pub d3: [f64; 2],
-    /// Whether `d2` and `d3` were worked out.
-    pub higher: bool,
+    /// How many orders in `u` are exact: 1 (`C'`), 2 (`C''` too) or 3 (`C'''` too).
+    pub orders: u8,
     pub ok: bool,
 }
 
@@ -228,7 +228,7 @@ impl Default for Val {
             dy: [0.0; tape::MAX_VARS],
             d2: [f64::NAN; 2],
             d3: [f64::NAN; 2],
-            higher: false,
+            orders: 0,
             ok: false,
         }
     }
@@ -325,7 +325,7 @@ struct View<'a> {
 }
 
 /// Decode the flat form.  Trailing numbers past the encoding are ignored: a contact's constants
-/// carry the anchor pose after the flat (`kernel_eval`), and the flat says where it ends.
+/// carry the anchor pose after the flat (`kernel_eval_to`), and the flat says where it ends.
 fn view(flat: &[f64]) -> Option<View<'_>> {
     let g = |i: usize| flat.get(i).copied().filter(|v| v.is_finite() && *v >= 0.0);
     let n_outer = g(0)? as usize;
@@ -650,12 +650,12 @@ fn march(v: &View, s: &mut Scratch, outer: &[f64], from: f64, to: f64, keep_goin
 /// This is the cold form, which starts from the home however often it is called.  A caller that
 /// names a contact (`eval_at`) gets the same walk with a branch it already holds carried into it.
 pub fn eval_flat(flat: &[f64], outer: &[f64], anchor: Anchor, s: &mut Scratch) -> Val {
-    eval_at(flat, outer, anchor, None, false, s)
+    eval_at(flat, outer, anchor, None, 1, s)
 }
 
-/// `eval_flat`, with `C''` and `C'''` worked out too (`Val::higher`).
-pub fn eval_flat_higher(flat: &[f64], outer: &[f64], anchor: Anchor, s: &mut Scratch) -> Val {
-    eval_at(flat, outer, anchor, None, true, s)
+/// `eval_flat`, with the orders in `u` worked out to `need` (`Val::orders`).
+pub fn eval_flat_to(flat: &[f64], outer: &[f64], anchor: Anchor, need: u8, s: &mut Scratch) -> Val {
+    eval_at(flat, outer, anchor, None, need, s)
 }
 
 /// `key` is where this contact's constants live: it both *resumes* from the pose remembered
@@ -674,7 +674,7 @@ fn eval_at(
     outer: &[f64],
     anchor: Anchor,
     key: Option<(usize, usize)>,
-    higher: bool,
+    need: u8,
     s: &mut Scratch,
 ) -> Val {
     let Some(v) = prepare(flat, outer, s) else { return Val::default() };
@@ -686,7 +686,7 @@ fn eval_at(
         // read where it landed before paying `finish` for it: a rejected resume owes no
         // factorisation, and the traced point is all `continues` ever asks about
         if warm(&v, s, u, outer, &prev.q) && continues(&v, s, prev) {
-            let val = finish(&v, s, true, higher);
+            let val = finish(&v, s, true, need);
             if val.ok {
                 return keep(&v, s, key, outer, val);
             }
@@ -696,7 +696,7 @@ fn eval_at(
         refresh(&v, s, u, outer);
         seed(&v, s);
         if newton(&v, s) {
-            let val = finish(&v, s, true, higher);
+            let val = finish(&v, s, true, need);
             return keep(&v, s, key, outer, val);
         }
     }
@@ -704,7 +704,7 @@ fn eval_at(
     if ok && u != anchor.u {
         ok = march(&v, s, outer, anchor.u, u, false);
     }
-    let val = finish(&v, s, ok, higher);
+    let val = finish(&v, s, ok, need);
     keep(&v, s, key, outer, val)
 }
 
@@ -840,8 +840,8 @@ fn reflect(s: &mut Scratch, cols: [usize; 6]) {
 
 /// The implicit function theorem at the solution in `s.xv`: `Jq · S = −B`, and the traced
 /// point's rows of `S` are the derivatives the contact kernel wants — and, asked for, the
-/// higher orders in `u` from the same factorisation (`higher_orders`).
-fn finish(v: &View, s: &mut Scratch, ok: bool, higher: bool) -> Val {
+/// higher orders in `u`, to `need`, from the same factorisation (`higher_orders`).
+fn finish(v: &View, s: &mut Scratch, ok: bool, need: u8) -> Val {
     let n_q = v.n_q;
     let n_dc = 1 + v.n_theta;
     let q0 = v.n_outer;
@@ -851,6 +851,7 @@ fn finish(v: &View, s: &mut Scratch, ok: bool, higher: bool) -> Val {
         dx: [0.0; tape::MAX_VARS],
         dy: [0.0; tape::MAX_VARS],
         ok,
+        orders: 1,
         ..Val::default()
     };
     if !ok {
@@ -878,8 +879,8 @@ fn finish(v: &View, s: &mut Scratch, ok: bool, higher: bool) -> Val {
             s.q1.extend_from_slice(&s.rhs);
         }
     }
-    if higher {
-        higher_orders(v, s, &mut out);
+    if need > 1 {
+        higher_orders(v, s, &mut out, need.min(3));
     }
     out
 }
@@ -891,7 +892,7 @@ fn finish(v: &View, s: &mut Scratch, ok: bool, higher: bool) -> Val {
 /// Taylor arithmetic; with `q_k` not yet known (0), its ε^k coefficient is `R_k`, and
 /// `Jq q_k = −R_k` since `q_k` enters that coefficient only through `Jq`.  Left NaN when a row's
 /// kernel has no form (`taylor::has_form`).
-fn higher_orders(v: &View, s: &mut Scratch, out: &mut Val) {
+fn higher_orders(v: &View, s: &mut Scratch, out: &mut Val, need: u8) {
     let (n_q, q0) = (v.n_q, v.n_outer);
     if s.q1.len() != n_q || v.rows.iter().any(|r| !taylor::has_form(r.0)) {
         return;
@@ -906,10 +907,10 @@ fn higher_orders(v: &View, s: &mut Scratch, out: &mut Val) {
     }
     for t in &v.w {
         let sr = tape::eval_series_flat(t, v.n_outer, &s.xv[..v.n_outer], &mut s.ts);
-        s.path.push(Jet::from(&[sr.c[0], sr.c[1], sr.c[2] / 2.0, sr.c[3] / 6.0]));
+        s.path.push(Jet::from_derivatives(&sr.c));
     }
-    // to the third: a tape's series stops there, and the frame reads no further
-    for order in 2..4 {
+    // to the third at most: a tape's series stops there, and the frame reads no further
+    for order in 2..=need as usize {
         s.rhs.clear();
         s.rhs.resize(n_q, 0.0);
         let mut row0 = 0usize;
@@ -932,10 +933,15 @@ fn higher_orders(v: &View, s: &mut Scratch, out: &mut Val) {
             s.path[q0 + i].0[order] = s.rhs[i];
         }
     }
-    let (xi, yi) = (q0 + v.traced, q0 + v.traced + 1);
-    out.d2 = [2.0 * s.path[xi].0[2], 2.0 * s.path[yi].0[2]];
-    out.d3 = [6.0 * s.path[xi].0[3], 6.0 * s.path[yi].0[3]];
-    out.higher = out.d2.iter().chain(&out.d3).all(|x| x.is_finite());
+    let (x, y) = (s.path[q0 + v.traced], s.path[q0 + v.traced + 1]);
+    out.d2 = [x.nth(2), y.nth(2)];
+    if need >= 3 {
+        out.d3 = [x.nth(3), y.nth(3)];
+    }
+    let known = if need >= 3 { [out.d2, out.d3] } else { [out.d2, out.d2] };
+    if known.iter().flatten().all(|x| x.is_finite()) {
+        out.orders = need;
+    }
 }
 
 /// The curve as a polyline: one march across `[u0, u1]`, each sample warm-started from the last.
@@ -995,31 +1001,18 @@ pub fn sweep(
 /// point, so remembering it is deterministic and halves the block solves.
 ///
 /// It is remembered **per contact** and not once for the whole path.  A block evaluates every
-/// contact of its kernel before the Jacobian pass begins (`point_on_trace_res` walks all `n`,
-/// then `point_on_trace_jac` walks all `n` again), so a single slot holds the *last* contact when
+/// contact of its kernel before the Jacobian pass begins (`point_on_body_res` walks all `n`,
+/// then `point_on_body_jac` walks all `n` again), so a single slot holds the *last* contact when
 /// the Jacobian asks for the *first* and never once hits — the halving it was written for only
 /// ever happened for a block of one.
-pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
-    // the point-on-curve columns: the point, the parameter, then the θ columns
-    let theta = n_par.saturating_sub(3);
-    if v.len() < 3 + theta {
-        return Val::default();
-    }
-    kernel_eval_at(consts, v[2], &v[3..3 + theta])
-}
-
-/// `kernel_eval` given the parameter and the θ columns outright — what a kernel whose columns
-/// are laid out otherwise (a tangency's line after the curve's coordinates) calls.
+///
+/// Given the parameter and the θ columns outright, whatever the kernel's own column layout.
 pub fn kernel_eval_at(consts: &[f64], u: f64, theta_cols: &[f64]) -> Val {
-    kernel_eval_with(consts, u, theta_cols, false)
+    kernel_eval_to(consts, u, theta_cols, 1)
 }
 
-/// `kernel_eval_at` with `C''` and `C'''` too — a curvature's residual.
-pub fn kernel_eval_higher(consts: &[f64], u: f64, theta_cols: &[f64]) -> Val {
-    kernel_eval_with(consts, u, theta_cols, true)
-}
-
-fn kernel_eval_with(consts: &[f64], u: f64, theta_cols: &[f64], higher: bool) -> Val {
+/// `kernel_eval_at` with the orders in `u` worked out to `need` — 2 for a curvature's residual.
+pub fn kernel_eval_to(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> Val {
     let Some((anchor_u, values, has_pose, flat)) = decode(consts) else { return Val::default() };
     let Some(n_q) = view(flat).map(|w| w.n_q) else { return Val::default() };
     if flat.len() < n_q {
@@ -1036,13 +1029,13 @@ fn kernel_eval_with(consts: &[f64], u: f64, theta_cols: &[f64], higher: bool) ->
         // the rewrite may change is the instance's `values`, and those ride in `outer` too, so
         // a changed one misses below rather than reading stale.  Only a **recompile** can put
         // another contact at this address, which is why `System::new` calls `forget`.
-        let key = (flat.as_ptr() as usize, flat.len());
+        let key = key_of(flat);
         if let Some(seen) = s.seen.get(&key) {
-            if seen.outer == outer && (seen.val.higher || !higher) {
+            if seen.outer == outer && seen.val.orders >= need {
                 return seen.val;
             }
         }
-        eval_at(flat, outer, Anchor { u: anchor_u, pose }, Some(key), higher, s)
+        eval_at(flat, outer, Anchor { u: anchor_u, pose }, Some(key), need, s)
     })
 }
 
@@ -1051,22 +1044,36 @@ fn kernel_eval_with(consts: &[f64], u: f64, theta_cols: &[f64], higher: bool) ->
 /// and meaningful when `has_pose` says so, reserved either way so the block's constants are one
 /// width.  The flat handed back still carries the pose after it, which `view` ignores.
 fn decode(consts: &[f64]) -> Option<(f64, &[f64], bool, &[f64])> {
-    let &u = consts.first()?;
-    let &nv = consts.get(1)?;
-    if !(nv >= 0.0 && nv <= tape::MAX_VARS as f64) {
-        return None;
-    }
-    let nv = nv as usize;
-    let values = consts.get(2..2 + nv)?;
-    let &has_pose = consts.get(2 + nv)?;
-    let flat = consts.get(3 + nv..)?;
+    let (u, values, rest) = contact_prefix(consts, tape::MAX_VARS)?;
+    let (&has_pose, flat) = rest.split_first()?;
     Some((u, values, has_pose == 1.0, flat))
 }
 
-/// The outer vector: the parameter column, the θ columns, then the given numbers.
-fn outer_of<'a>(u: f64, theta: &[f64], values: &[f64], into: &'a mut [f64; tape::MAX_VARS]) -> Option<&'a [f64]> {
+/// The prefix every family contact's constants start with — `[anchor, n_values, values…]` —
+/// and what follows it.  At most `max` values.
+pub(crate) fn contact_prefix(consts: &[f64], max: usize) -> Option<(f64, &[f64], &[f64])> {
+    let &u = consts.first()?;
+    let &nv = consts.get(1)?;
+    if !(nv >= 0.0 && nv <= max as f64) {
+        return None;
+    }
+    let nv = nv as usize;
+    Some((u, consts.get(2..2 + nv)?, consts.get(2 + nv..)?))
+}
+
+/// Where a contact's constants live, which is what its remembered pose is keyed by: a compile
+/// is the one thing that moves them.
+pub(crate) fn key_of(flat: &[f64]) -> (usize, usize) {
+    (flat.as_ptr() as usize, flat.len())
+}
+
+/// The outer vector: the parameter column, the θ columns, then the given numbers — the columns
+/// at most `tape::MAX_VARS` wide, the whole at most `N`.
+pub(crate) fn outer_of<'a, const N: usize>(u: f64, theta: &[f64], values: &[f64], into: &'a mut [f64; N])
+    -> Option<&'a [f64]>
+{
     let width = 1 + theta.len() + values.len();
-    if width > tape::MAX_VARS {
+    if width > N || 1 + theta.len() > tape::MAX_VARS {
         return None;
     }
     into[0] = u;
@@ -1084,8 +1091,8 @@ fn warm(v: &View, s: &mut Scratch, u: f64, outer: &[f64], q: &[f64]) -> bool {
 }
 
 /// A traced curve's **frame** at a contact: the point, its exact first derivative in `[u, θ…]`
-/// (the implicit function theorem, as `kernel_eval` gives it), and the Jacobian of that first
-/// derivative — and, asked for (`higher`), `C''`, `C'''` and the Jacobian of `C''`.  Along `u`
+/// (the implicit function theorem, as `kernel_eval_to` gives it), and the Jacobian of that first
+/// derivative — and, asked for (`need` 3), `C''`, `C'''` and the Jacobian of `C''`.  Along `u`
 /// the Jacobians are exact where the block has Taylor forms (`∂C'/∂u` is `C''`, `∂C''/∂u` is
 /// `C'''`); along θ they are a **forward difference** of the exact derivatives from the
 /// memoised centre, one warm-started block solve per column.  A contact's residual is exact;
@@ -1100,8 +1107,8 @@ pub struct Frame {
     pub d2: [[f64; tape::MAX_VARS]; 2],
 }
 
-pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], higher: bool) -> Frame {
-    let val = kernel_eval_with(consts, u, theta_cols, higher);
+pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> Frame {
+    let val = kernel_eval_to(consts, u, theta_cols, need);
     let mut d1 = [[0.0f64; tape::MAX_VARS]; 2];
     let mut d2 = [[f64::NAN; tape::MAX_VARS]; 2];
     if !val.ok {
@@ -1112,7 +1119,7 @@ pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], higher: bool) ->
     let Some(outer) = outer_of(u, theta_cols, values, &mut outer) else {
         return Frame { val, d1, d2 };
     };
-    let key = (flat.as_ptr() as usize, flat.len());
+    let key = key_of(flat);
     LOCUS_SCRATCH.with(|s| {
         let s = &mut *s.borrow_mut();
         // the pose the centre was answered at — `kernel_eval_at` always leaves it here
@@ -1125,31 +1132,31 @@ pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], higher: bool) ->
         let mut probe = [0.0f64; tape::MAX_VARS];
         probe[..outer.len()].copy_from_slice(outer);
         // along u the theorem's own higher orders, where the block gave them
-        let from = if val.higher {
+        let exact = val.orders >= 2;
+        if exact {
             d1[0][0] = val.d2[0];
             d1[1][0] = val.d2[1];
             d2[0][0] = val.d3[0];
             d2[1][0] = val.d3[1];
-            1
-        } else {
-            0
-        };
-        for j in from..1 + theta_cols.len() {
+        }
+        // a probe needs one order fewer than the centre: it is differenced once
+        let probe_need = val.orders.saturating_sub(1).max(1);
+        for j in usize::from(exact)..1 + theta_cols.len() {
             let h = 1e-5 * outer[j].abs().max(1.0);
             probe[j] = outer[j] + h;
             // a continuation step of one difference from the remembered pose, never a cold
             // start, so the branch cannot change under it; the perturbed pose is not kept
             let ok = warm(&vw, s, probe[0], &probe[..outer.len()], &q[..n_q]);
-            let f = if ok { finish(&vw, s, true, val.higher) } else { Val::default() };
+            let f = if ok { finish(&vw, s, true, probe_need) } else { Val::default() };
             probe[j] = outer[j];
-            if !f.ok || f.higher != val.higher {
+            if !f.ok || f.orders < probe_need {
                 d1 = [[f64::NAN; tape::MAX_VARS]; 2];
                 d2 = [[f64::NAN; tape::MAX_VARS]; 2];
                 return;
             }
             d1[0][j] = (f.dx[0] - val.dx[0]) / h;
             d1[1][j] = (f.dy[0] - val.dy[0]) / h;
-            if val.higher {
+            if val.orders >= 3 {
                 d2[0][j] = (f.d2[0] - val.d2[0]) / h;
                 d2[1][j] = (f.d2[1] - val.d2[1]) / h;
             }

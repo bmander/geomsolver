@@ -95,8 +95,10 @@ the sheet (point/line/circle/arc/formula curve) and a planar motion (`motion(abo
 `F = X_s × X_t = 0` in the tool parameter, `C`..`C''` exact by `taylor::Jet`s, `C'''` and θ
 gradients by difference (`generate.rs`); tool and motion geometry are its columns (shared ones
 once; the motion's numbers ride past `tape::MAX_VARS` in `OUTER_MAX`).  Analytic tools are exact to
-`C'''`, so a profile they cut may cut in turn (`TOOL_ENVELOPE`, composed by its Taylor series).  Kernels are
-generic over `kernels::{FORMULA,TRACE,ENVELOPE}`.  `tests/generation.rs` is the gate.
+`C'''`, so a profile they cut may cut in turn (`generate::Tool::Envelope`, read as its Taylor
+series); the encoding is `Generated::new` and `view` only.  Kernels are generic over
+`kernels::{FORMULA,TRACE,ENVELOPE}` and ask a body for the orders they `need`.
+`tests/generation.rs` is the gate.
 **Named envelopes:** `flank := envelope(source, under: generating, from: -35deg, to: 35deg)`: a
 zero-normal-velocity locus over a finite increasing roll interval (ABI kind 11).
 `GeneratedEnvelope` intersects it with two section equations via the shared DogLeg loop. A nonzero
@@ -1457,7 +1459,7 @@ Conventions:
   curvature need the **frame** (`kernels::CurveFrame`): `C` to `C'''` and the gradient of the
   first three orders in `[u, θ…]`.  A formula gives it exactly (`tape::eval_series_flat`,
   `tape::Series`, checked in `tests/tape.rs`).  A trace gives `C`, `C'` exactly and, asked
-  (`higher`), `C''`, `C'''` exactly: **Taylor orders of the implicit function**, one solve each
+  (`need`, `Val::orders`), `C''`, `C'''` exactly: **Taylor orders of the implicit function**, one solve each
   with `finish`'s factorisation (`locus::higher_orders`; Wagner–Walther–Schaefer), the rows read
   over `taylor::Jet`s — each kernel's **Taylor form** (`taylor::form`; affine kernels by their
   `J`), held to its kernel by `tests/taylor.rs`.  Gradients along θ are a **forward difference**
