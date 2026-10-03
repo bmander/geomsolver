@@ -43,8 +43,8 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             Ok(source("source")?.moved(&Rigid::from_rows(&m)))
         }
         "through" => {
-            // a prism spanning its sources' material along the profile's normal, padded as the
-            // native host pads it
+            // a prism spanning its sources' material along the profile's normal (their `bounds`
+            // enclose it, issue #59), padded as the native host pads it
             let profile = Profile::from_json(field(n,"profile")?)?;
             let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
             for s in field(n,"sources")?.arr() {

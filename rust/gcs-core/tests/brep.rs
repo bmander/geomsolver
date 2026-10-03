@@ -882,3 +882,121 @@ fn the_dimpled_ring_example_is_the_ring_less_the_ball_it_shares() {
     let want = 2.*PI*PI*30.*100.-ball_in_torus([at,at,11.],2.,30.,10.);
     assert!((volume(&b)-want).abs() <= 1e-6*4./3.*PI*8.,"{} against {want}",volume(&b));
 }
+
+/// Every point of a mesh of `b` (each on its surface) within `b.bounds()`, and the box `want` to
+/// rounding where it is known (issue #59: a box short of its solid's extremes made a `through:`
+/// cutter stop short of the stock).
+fn boxed(b: &gcs_core::brep::topo::Brep,want: Option<(V,V)>) {
+    let (lo,hi) = b.bounds();
+    let slack = 1e-12*(1.+gcs_core::space::distance(lo,hi));
+    let m = gcs_core::brep::mesh::mesh(b,1e-3*b.size(),0.1).unwrap();
+    for p in &m.pts {
+        assert!((0..3).all(|k| p[k] >= lo[k]-slack && p[k] <= hi[k]+slack),"{p:?} outside {lo:?} {hi:?}");
+    }
+    if let Some((a,z)) = want {
+        for k in 0..3 {
+            assert!((lo[k]-a[k]).abs() <= slack && (hi[k]-z[k]).abs() <= slack,"{lo:?} {hi:?} against {a:?} {z:?}");
+        }
+    }
+}
+
+#[test]
+fn curve_boxes_hold_every_point_and_reach_the_extremes() {
+    use gcs_core::brep::geom::Curve;
+    let n = [0.3,-0.5,0.8];
+    let len = (0.09f64+0.25+0.64).sqrt();
+    for k in 0..37 {
+        let phase = TAU*k as f64/37.+PI/16.;
+        let x = [phase.cos(),phase.sin(),0.];
+        let f = Frame::new([1.,-2.,3.],n,x);
+        for c in [Curve::Circle(f,10.),Curve::Ellipse(f,10.,4.)] {
+            // the whole curve: in each coordinate the centre ± the amplitude, closed form
+            let (lo,hi) = c.bounds([0.,TAU]);
+            if let Curve::Circle(..) = c {
+                for i in 0..3 {
+                    let half = 10.*(1.-(n[i]/len).powi(2)).sqrt();
+                    assert!((hi[i]-(f.o[i]+half)).abs() < 1e-12 && (lo[i]-(f.o[i]-half)).abs() < 1e-12,"{phase}: {lo:?} {hi:?}");
+                }
+            }
+            // and arcs of it, starting anywhere and running any distance up to and past a turn
+            for span in [[0.3,1.1],[-2.,0.5],[phase,phase+4.],[5.,12.]] {
+                let (lo,hi) = c.bounds(span);
+                let (mut a,mut z) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+                for j in 0..=4096 {
+                    let p = c.point(span[0]+(span[1]-span[0])*j as f64/4096.);
+                    for i in 0..3 { a[i] = a[i].min(p[i]); z[i] = z[i].max(p[i]); }
+                }
+                for i in 0..3 {
+                    assert!(lo[i] <= a[i]+1e-12 && hi[i] >= z[i]-1e-12,"{span:?}: {lo:?} {hi:?} misses {a:?} {z:?}");
+                    // no looser than the sampling's own shortfall
+                    assert!(a[i]-lo[i] < 1e-5 && hi[i]-z[i] < 1e-5,"{span:?}: {lo:?} {hi:?} against {a:?} {z:?}");
+                }
+            }
+        }
+    }
+    // a B-spline's stretch: within its poles' hull, so never short of a point
+    let s = cubic(&[[10.,0.,0.],[12.,8.,1.],[9.,13.,-2.],[6.,14.,0.],[0.,10.,3.]],&[0.4]);
+    let c = Curve::BSpline(s);
+    for span in [[0.,1.],[0.1,0.35],[0.3,0.9]] {
+        let (lo,hi) = c.bounds(span);
+        for j in 0..=4096 {
+            let p = c.point(span[0]+(span[1]-span[0])*j as f64/4096.);
+            assert!((0..3).all(|i| p[i] >= lo[i]-1e-12 && p[i] <= hi[i]+1e-12),"{span:?}: {p:?} outside {lo:?} {hi:?}");
+        }
+    }
+}
+
+#[test]
+fn a_cylinder_is_boxed_by_its_rim_whichever_way_its_circle_starts() {
+    // the issue's stock: its circle's frame turned by phases between any samples' (11.25° among
+    // them), the solid the same, its box the same
+    for k in 0..=64 {
+        let phase = TAU*k as f64/64.+if k == 64 { PI/16. } else { 0. };
+        let rim = arc([0.;3],10.,XY,[phase.cos(),phase.sin(),0.],None);
+        let b = prism(&Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![vec![rim]]},0.,2.).unwrap();
+        boxed(&b,Some(([-10.,-10.,0.],[10.,10.,2.])));
+    }
+    // standing on a slant: each cap's centre ± its radius across the axis in each coordinate
+    let n = [1.,1.,1.];
+    let b = prism(&Profile {names:vec![],origin:[1.,2.,3.],normal:n,loops:vec![vec![arc([1.,2.,3.],2.,n,[1.,-1.,0.],None)]]},0.,5.).unwrap();
+    let (across,up) = (2.*(2f64/3.).sqrt(),5./3f64.sqrt());
+    boxed(&b,Some(([1.-across,2.-across,3.-across],[1.+up+across,2.+up+across,3.+up+across])));
+}
+
+#[test]
+fn balls_tori_and_turns_are_boxed_by_their_closed_forms() {
+    boxed(&ball([1.,2.,3.],4.),Some(([-3.,-2.,-1.],[5.,6.,7.])));
+    boxed(&ball_about([1.,2.,3.],4.,[0.6,0.,0.8],[0.,1.,0.]),Some(([-3.,-2.,-1.],[5.,6.,7.])));
+    boxed(&torus(5.,1.5),Some(([-6.5,-6.5,-1.5],[6.5,6.5,1.5])));
+    // turned off its axes: R across the axis in each coordinate, and r every way
+    let m = Rigid::turn([0.;3],[1.,-2.,0.5],0.7);
+    let a = m.vector([0.,0.,1.]);
+    let half: V = std::array::from_fn(|k| 5.*(1.-a[k]*a[k]).sqrt()+1.5);
+    boxed(&torus(5.,1.5).moved(&m),Some((half.map(|h| -h),half)));
+    // a tube turned through one radian, then back by 0.3: it runs from −0.3 to 0.7 about z, its
+    // greatest x (4, at no turn) inside its face and on none of its edges
+    let p = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]]};
+    let back = Rigid::turn([0.;3],[0.,0.,1.],-0.3);
+    let tube = revolve(&p,[0.;3],[0.,0.,1.],1.).unwrap().moved(&back);
+    boxed(&tube,Some(([2.*0.7f64.cos(),-4.*0.3f64.sin(),0.],[4.,4.*0.7f64.sin(),2.])));
+    // a spline turned the same way: a surface of revolution, its box held to its mesh
+    let s = cubic(&[[2.,0.,0.],[5.,0.,1.],[3.,0.,2.],[2.,0.,3.]],&[]);
+    let p = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![ProfileEdge::Spline(s),line([2.,0.,3.],[2.,0.,0.])]]};
+    let turned = revolve(&p,[0.;3],[0.,0.,1.],1.).unwrap().moved(&back);
+    assert!(turned.faces.iter().any(|f| f.surface.kind() == "revolution"));
+    boxed(&turned,None);
+}
+
+#[test]
+fn a_cut_along_a_traced_edge_is_boxed() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let lobe = cubic(&[[10.,0.,0.],[12.,8.,0.],[9.,13.,0.],[6.,14.,0.],[0.,10.,0.]],&[0.4]);
+    let plate = Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![vec![line([0.,0.,0.],[10.,0.,0.]),ProfileEdge::Spline(lobe),line([0.,10.,0.],[0.,0.,0.])]]};
+    let b = prism(&plate,0.,3.).unwrap();
+    boxed(&b,None);
+    // a ball through it meets the spline's extrusion in traced curves
+    let r = boolean(&b,&ball([10.,8.,1.5],2.5),Op::Cut,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    assert!(r.edges.iter().any(|e| matches!(&e.curve,gcs_core::brep::topo::EdgeCurve::Curve(c) if c.kind() == "traced")));
+    boxed(&r,None);
+}

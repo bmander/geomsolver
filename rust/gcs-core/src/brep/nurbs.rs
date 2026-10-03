@@ -48,6 +48,14 @@ impl BSpline {
     pub fn point(&self,t: f64) -> V { self.d2(t).0 }
     /// The length of the control polygon, a bound on the curve's.
     pub fn hull_length(&self) -> f64 { self.poles.windows(2).map(|w| crate::space::distance(w[0],w[1])).sum() }
+    /// The curve over `[a, b]` (within its domain, `a < b`) alone, exactly: the same points at the
+    /// same parameters, only the poles that reach there.
+    pub fn segment(&self,[a,b]: [f64;2]) -> BSpline {
+        let [d0,d1] = self.domain();
+        let rows: Vec<Vec<V>> = self.poles.iter().map(|&p| vec![p]).collect();
+        let (knots,rows) = segment(&self.knots,&rows,self.degree,a.max(d0),b.min(d1));
+        BSpline {degree:self.degree,knots,poles:rows.into_iter().map(|r| r[0]).collect()}
+    }
 }
 
 /// The knot span holding `t`, for `count` poles of `degree`.

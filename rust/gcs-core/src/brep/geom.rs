@@ -14,6 +14,58 @@ const TAU: f64 = std::f64::consts::TAU;
 
 fn unit(a: V) -> V { scale(a,1./norm(a)) }
 
+/// An axis-aligned box: its least and its greatest corner.
+pub type Box3 = (V,V);
+/// The box holding nothing, which anything widens.
+pub const EMPTY: Box3 = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+/// `b` widened to hold `p`.
+pub fn include(b: &mut Box3,p: V) { for k in 0..3 { b.0[k] = b.0[k].min(p[k]); b.1[k] = b.1[k].max(p[k]); } }
+/// `b` widened to hold `other`.
+pub fn widen(b: &mut Box3,other: Box3) { include(b,other.0); include(b,other.1); }
+fn hull(pts: impl IntoIterator<Item=V>) -> Box3 { let mut b = EMPTY; for p in pts { include(&mut b,p); } b }
+
+/// The box about every point within `rho` of the axis through `c` along `a`, between heights `h`
+/// along it: what a turn about that axis keeps a point within, however far it turns.
+fn ring(c: V,a: V,[h0,h1]: [f64;2],rho: f64) -> Box3 {
+    let a = unit(a);
+    let across = |k: usize| rho*(1.-a[k]*a[k]).max(0.).sqrt();
+    (std::array::from_fn(|k| c[k]+(h0*a[k]).min(h1*a[k])-across(k)),std::array::from_fn(|k| c[k]+(h0*a[k]).max(h1*a[k])+across(k)))
+}
+
+/// The heights along the axis through `c` along `a`, and the greatest distance from it, that the
+/// box `b` reaches: both at its corners (one linear, the other convex).
+fn about(c: V,a: V,b: Box3) -> ([f64;2],f64) {
+    let a = unit(a);
+    let (mut h,mut rho) = ([f64::INFINITY,f64::NEG_INFINITY],0f64);
+    for i in 0..8 {
+        let corner: V = std::array::from_fn(|k| if (i>>k)&1 == 0 { b.0[k] } else { b.1[k] });
+        let d = sub(corner,c);
+        let along = dot(d,a);
+        h = [h[0].min(along),h[1].max(along)];
+        rho = rho.max(norm(sub(d,scale(a,along))));
+    }
+    (h,rho)
+}
+
+/// `o + a cos t x + b sin t y` over `[t0, t1]`: its ends, and in each coordinate the turning
+/// points between (`o_k ± hypot(a x_k, b y_k)`, at `φ_k` and `φ_k + π`), exactly.
+fn conic_bounds(f: &Frame,a: f64,b: f64,[t0,t1]: [f64;2],ends: [V;2]) -> Box3 {
+    let mut out = hull(ends);
+    for k in 0..3 {
+        let (p,q) = (a*f.x[k],b*f.y[k]);
+        let amp = p.dhypot(q);
+        if amp == 0. { continue }
+        // o_k + amp cos(t − φ): greatest at φ + 2nπ, least at φ + (2n + 1)π
+        let phi = q.datan2(p);
+        let first = ((t0-phi)/std::f64::consts::PI).ceil();
+        for m in [first,first+1.] {
+            if phi+m*std::f64::consts::PI > t1 { break }
+            if m.rem_euclid(2.) == 0. { out.1[k] = out.1[k].max(f.o[k]+amp) } else { out.0[k] = out.0[k].min(f.o[k]-amp) }
+        }
+    }
+    out
+}
+
 /// A right-handed orthonormal frame: an origin and three axes.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Frame { pub o: V,pub x: V,pub y: V,pub z: V }
@@ -391,6 +443,70 @@ impl Surface {
             Surface::BSpline(..) => [None,None],
             Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) => [Some(TAU),None],
             Surface::Torus(..) => [Some(TAU),Some(TAU)],
+        }
+    }
+    /// Whether every coordinate is affine along `v` (a plane, cylinder, cone, extrusion, or a loft
+    /// carried along a line), so that over any face its extremes lie on the face's boundary: the
+    /// line in `v` through an inner point leaves the face across it.
+    pub fn ruled(&self) -> bool {
+        match self {
+            Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Extrusion(..) => true,
+            Surface::Blend(_,b) => matches!(b.carry,Carry::Line {..}),
+            Surface::Sphere(..) | Surface::Torus(..) | Surface::Revolution(..) | Surface::BSpline(..) => false,
+        }
+    }
+    /// A box about where a face with parameters within `[u0, u1] × [v0, v1]` may reach beyond its
+    /// boundary, never smaller: nothing for a `ruled` surface. About its axis a coordinate of a
+    /// sphere, torus or revolution is sinusoidal in `u`, so a face's inner extremes lie on the
+    /// meridians at `u = φ_k` or `φ_k + π` (or anywhere, where the coordinate does not turn with
+    /// `u`): those within the range are boxed over `[v0, v1]`. A loft carried round an axis is
+    /// boxed by the ring its sections turn in; a B-spline by the poles of its stretch.
+    pub fn bounds_over(&self,[[u0,u1],[v0,v1]]: [[f64;2];2]) -> Box3 {
+        let meridian = |f: &Frame,at: &dyn Fn(f64) -> Box3| -> Box3 {
+            // where the coordinate does not turn with `u`, or on the axis, any meridian will do
+            let mut out = at((u0+u1)/2.);
+            for k in 0..3 {
+                let (p,q) = (f.x[k],f.y[k]);
+                if p.dhypot(q) == 0. { continue }
+                let phi = q.datan2(p);
+                let first = ((u0-phi)/std::f64::consts::PI).ceil();
+                for m in [first,first+1.] {
+                    let u = phi+m*std::f64::consts::PI;
+                    if u > u1 { break }
+                    widen(&mut out,at(u));
+                }
+            }
+            out
+        };
+        // the meridian plane at `u`: the direction out from the axis, and the axis
+        let plane = |f: &Frame,u: f64,o: V| -> Frame {
+            let (s,c) = u.dsin_cos();
+            let out = add(scale(f.x,c),scale(f.y,s));
+            Frame {o,x:out,y:f.z,z:cross(out,f.z)}
+        };
+        match self {
+            Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Extrusion(..) => EMPTY,
+            Surface::Sphere(f,r) => meridian(f,&|u| Curve::Circle(plane(f,u,f.o),*r).bounds([v0,v1])),
+            Surface::Torus(f,big,r) => meridian(f,&|u| {
+                let p = plane(f,u,f.o);
+                Curve::Circle(Frame {o:add(f.o,scale(p.x,*big)),..p},*r).bounds([v0,v1])
+            }),
+            Surface::Revolution(f,c) => meridian(f,&|u| c.moved(&Rigid::turn(f.o,f.z,u)).bounds([v0,v1])),
+            Surface::Blend(_,b) => match b.carry {
+                Carry::Line {..} => EMPTY,
+                Carry::Arc {center,axis,..} => {
+                    let mut sections = b.a.bounds(b.ta);
+                    widen(&mut sections,b.b.bounds(b.tb));
+                    let (h,rho) = about(center,axis,sections);
+                    ring(center,axis,h,rho)
+                }
+            },
+            Surface::BSpline(_,n) => {
+                let [[a0,a1],[b0,b1]] = n.domain();
+                let (u,v) = ([u0.max(a0),u1.min(a1)],[v0.max(b0),v1.min(b1)]);
+                if u[0] < u[1] && v[0] < v[1] { hull(n.segment(u,v).poles.into_iter().flatten()) }
+                else { hull(n.poles.iter().flatten().copied()) }
+            }
         }
     }
     /// `S`, `S_u`, `S_v`.
@@ -857,6 +973,47 @@ impl Curve {
                 (0..=64).map(|j| norm(b.d2(a+(z-a)*j as f64/64.).1)).fold(0.,f64::max)
             }
             Curve::Iso(ref b,u) => (0..=64).map(|j| norm(b.d1([u,j as f64/64.]).2)).fold(0.,f64::max),
+        }
+    }
+    /// A box about the curve over `[t0, t1]`, never smaller than it: exact for a line, circle and
+    /// ellipse (their ends and the turning points between), the poles of a B-spline's stretch (its
+    /// hull), a loft's rail by its ends where it is carried along a line and by the ring about the
+    /// axis it turns round otherwise. A traced curve is its points' box grown by twice the largest
+    /// sagitta measured at its chords' midpoints: the one bound measured rather than proved, since
+    /// what bounds a trace's sag is the spacing it was traced at.
+    pub fn bounds(&self,[t0,t1]: [f64;2]) -> Box3 {
+        let (t0,t1) = (t0.min(t1),t0.max(t1));
+        let ends = [self.point(t0),self.point(t1)];
+        match *self {
+            Curve::Line {..} => hull(ends),
+            Curve::Circle(ref f,r) => conic_bounds(f,r,r,[t0,t1],ends),
+            Curve::Ellipse(ref f,a,b) => conic_bounds(f,a,b,[t0,t1],ends),
+            Curve::BSpline(ref b) => if t1 > t0 { hull(b.segment([t0,t1]).poles) } else { hull(ends) },
+            Curve::Iso(ref b,u) => match b.carry {
+                Carry::Line {..} => hull(ends),
+                Carry::Arc {center,axis,..} => {
+                    // before it is carried, the rail is the straight line between its sections
+                    let ((a,_,_),(z,_,_)) = b.ends(u);
+                    let (h,rho) = about(center,axis,hull([t0,t1].map(|v| add(scale(a,1.-v),scale(z,v)))));
+                    ring(center,axis,h,rho)
+                }
+            },
+            Curve::Traced(ref c) => {
+                let m = c.segments();
+                let mut out = hull(ends);
+                let mut sag = 0f64;
+                let first = t0.floor();
+                let count = ((t1.ceil()-first).max(1.) as usize).min(m);
+                for j in 0..count {
+                    let i = first as i64+j as i64;
+                    let i = if c.closed { i.rem_euclid(m as i64) as usize } else { i.clamp(0,m as i64-1) as usize };
+                    let (a,b) = (c.pts[i],c.pts[i+1]);
+                    include(&mut out,a);
+                    include(&mut out,b);
+                    sag = sag.max(crate::space::distance(c.at(i as f64+0.5),crate::space::lerp(a,b,0.5)));
+                }
+                (out.0.map(|x| x-2.*sag),out.1.map(|x| x+2.*sag))
+            }
         }
     }
     pub fn moved(&self,m: &Rigid) -> Curve {
