@@ -276,6 +276,16 @@ impl Characteristic {
             .map(|r| (r.position,r.normal)).ok_or_else(|| format!("the characteristic on `{}` has no point at {u:.6}",self.patches[b.patch].name))
     }
 
+    /// The point at `s` carried along its path to `height`, and its normal turned with it: the
+    /// sheet's section square to the axis there, which is as smooth as the sheet is. (The
+    /// characteristic itself is not: where the tool's profile changes curvature its direction
+    /// jumps, by a step along the screw's path, which the sweep does not see.)
+    pub fn on_section(&self,s: f64,height: f64) -> Result<(V,V),String> {
+        let (p,n) = self.at(s)?;
+        let t = self.screw.time_to(p,height);
+        Ok((self.screw.carry(p,t),self.screw.turn(n,t)))
+    }
+
     /// The section square to the screw's axis at `height` of what the characteristic sweeps:
     /// each node carried along its own path to that height.
     pub fn section(&self,family: &Family,height: f64,nodes: std::ops::RangeInclusive<usize>) -> Result<Vec<V>,String> {
@@ -313,15 +323,20 @@ pub fn square_to(axis: V) -> (V,V) {
 }
 
 /// The first pair of segments of a polyline that meet without being neighbours, by the index of
-/// each one's first point.
+/// each one's first point: crossing, touching at a point, or overlapping along a line.
 pub fn crossing(points: &[[f64;2]]) -> Option<(usize,usize)> {
     let side = |a: [f64;2],b: [f64;2],c: [f64;2]| (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+    // whether c, on the line through a and b, lies within the segment's box
+    let within = |a: [f64;2],b: [f64;2],c: [f64;2]| c[0] >= a[0].min(b[0]) && c[0] <= a[0].max(b[0]) && c[1] >= a[1].min(b[1]) && c[1] <= a[1].max(b[1]);
+    let meet = |a: [f64;2],b: [f64;2],c: [f64;2],d: [f64;2]| {
+        let (d1,d2,d3,d4) = (side(a,b,c),side(a,b,d),side(c,d,a),side(c,d,b));
+        if d1*d2 < 0. && d3*d4 < 0. { return true }
+        (d1 == 0. && within(a,b,c)) || (d2 == 0. && within(a,b,d)) || (d3 == 0. && within(c,d,a)) || (d4 == 0. && within(c,d,b))
+    };
     let n = points.len();
     for i in 0..n.saturating_sub(1) {
-        for j in i+2..n-1 {
-            let (a,b,c,d) = (points[i],points[i+1],points[j],points[j+1]);
-            let (d1,d2,d3,d4) = (side(a,b,c),side(a,b,d),side(c,d,a),side(c,d,b));
-            if d1*d2 < 0. && d3*d4 < 0. { return Some((i,j)) }
+        for j in i+2..n.saturating_sub(1) {
+            if meet(points[i],points[i+1],points[j],points[j+1]) { return Some((i,j)) }
         }
     }
     None

@@ -374,12 +374,20 @@ fn stl_points(bytes: &[u8]) -> Result<impl Iterator<Item=[[f64;3];3]> + '_,Strin
 /// up to 31 µm). A bound and not a measurement: never less than the displacement, and more where
 /// a coordinate was written exactly.
 pub fn stl_rounding(bytes: &[u8]) -> Result<f64,String> {
-    let half_step = |x: f64| {
-        let a = (x as f32).abs();
-        if !a.is_finite() { return f64::INFINITY }
-        (f32::from_bits(a.to_bits()+1) as f64-a as f64)/2.
-    };
-    Ok(stl_points(bytes)?.flatten().map(|v| v.map(half_step).iter().map(|h| h*h).sum::<f64>().sqrt()).fold(0.,f64::max))
+    Ok(stl_points(bytes)?.flatten().map(|v| v.map(f32_half_step).iter().map(|h| h*h).sum::<f64>().sqrt()).fold(0.,f64::max))
+}
+
+/// How far rounding `x` to float32 may move it: half the step between float32s there.
+pub fn f32_half_step(x: f64) -> f64 {
+    let a = (x as f32).abs();
+    if !a.is_finite() { return f64::INFINITY }
+    (f32::from_bits(a.to_bits()+1) as f64-a as f64)/2.
+}
+
+/// The most rounding to float32 may move a point of the box from `lo` to `hi`: what an STL of a
+/// solid in that box can add to its mesh's sag, known before the mesh is made.
+pub fn f32_rounding_within(lo: [f64;3],hi: [f64;3]) -> f64 {
+    (0..3).map(|k| f32_half_step(lo[k].abs().max(hi[k].abs())).powi(2)).sum::<f64>().sqrt()
 }
 
 /// Reconstruct and validate the topology of the actual binary STL coordinates.

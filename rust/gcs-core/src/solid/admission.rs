@@ -57,12 +57,19 @@ pub struct Refusal {
     pub message: String,
     /// A point in the body's coordinates where the condition fails, when there is one.
     pub witness: Option<V>,
+    /// Whether the sweep is under a screw, so was asked the constant-twist class's rows.
+    pub screw: bool,
+}
+
+impl Refusal {
+    /// The class the sweep was asked to join, by its motion.
+    pub fn class(&self) -> &'static str { if self.screw { "constant-twist class" } else { "generating-sweep class" } }
 }
 
 impl fmt::Display for Refusal {
     fn fmt(&self,f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,"`{}` is outside the generating-sweep class ({}: {}): {}",
-            self.sweep,self.condition.code(),self.condition.rule(),self.message)?;
+        write!(f,"`{}` is outside the {} ({}: {}): {}",
+            self.sweep,self.class(),self.condition.code(),self.condition.rule(),self.message)?;
         if let Some(p) = self.witness { write!(f," at ({:.4}, {:.4}, {:.4})",p[0],p[1],p[2])?; }
         Ok(())
     }
@@ -377,8 +384,12 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         by_sweep.entry(cut.swept).or_default().push(cut.pose);
     }
     let names: BTreeMap<usize,String> = order.iter().map(|&s| (s,sk.solids[s].name.clone())).collect();
+    let screws: BTreeMap<usize,bool> = order.iter().map(|&s| (s,match &sk.solids[s].def {
+        SolidDef::Swept {motion,..} => crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.screw().is_some()),
+        _ => false,
+    })).collect();
     let refuse = |swept: usize,condition,message: String,witness|
-        Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message,witness});
+        Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message,witness,screw:screws[&swept]});
     let field = &field;
     let bounds = field.support_bounds().ok().flatten();
     // a placement's check by the class its motion is in

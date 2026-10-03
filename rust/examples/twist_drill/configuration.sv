@@ -24,8 +24,8 @@ flute_wheel := {rim: 25mm, nearest: web / 2, round: 2.5mm, flank: 35deg, depth: 
 // ground back `clearance` by a wide round wheel on the same screw, turned `clearance_phase`
 // ahead of the flute wheel.
 clearance := 0.25mm
-clearance_wheel := {rim: 45mm, nearest: diameter / 2 - clearance, round: 34mm, flank: 35deg, depth: 18mm}
-clearance_phase := 85deg
+clearance_wheel := {rim: 45mm, nearest: diameter / 2 - clearance, round: 39mm, flank: 35deg, depth: 18mm}
+clearance_phase := 82.5deg
 
 // -- the point --------------------------------------------------------------------------------
 // Each lip's flank is a cone (a conical point): half-angle `cone`, its axis tilted `tilt` from

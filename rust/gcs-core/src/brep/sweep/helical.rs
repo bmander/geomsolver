@@ -28,25 +28,34 @@ const COLUMN_MARGIN: f64 = 2.;
 pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;2]>,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
     tolerance: Option<Tolerance>,say: &Say) -> Result<Fitted,ExportRefusal> {
     let (scale,name,screw,family) = (cut.scale,&cut.name,found.screw,&cut.family);
-    // the stretch of the roll that carries the reach past the blank's heights, widened
+    // rows along the sheet's section square to the axis at the reach's first point's height: the
+    // characteristic's points each carried along its path there, `on_section`. A column is that
+    // section carried by the motion: S(s, t) = M(t)·σ(s), the same surface as M(t)·c(s).
     let [first,last] = found.reach;
+    let height = screw.height(found.nodes[first].position);
+    let section: Vec<V> = (0..found.nodes.len()).map(|w| found.on_section(w as f64,height).map(|(p,_)| p))
+        .collect::<Result<_,_>>().at(Stage::Reach)?;
+    // σ(s) is carried for M(t) at roll time t+τ(s): the columns run over the stretch that carries
+    // the section past the blank's heights, widened, within what the roll carries every row to
     let roll = cut.limits;
+    let delay: Vec<f64> = (0..found.nodes.len()).map(|w| screw.time_to(found.nodes[w].position,height)).collect();
+    let (least,most) = delay.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&d| (a.min(d),b.max(d)));
+    let base = family.pose_at(0.).at(Stage::Reach)?.point(section[first]);
     let window = match heights {
-        Some([lo,hi]) => (first..=last).map(|w| { let p = found.nodes[w].position; (screw.time_to(p,lo),screw.time_to(p,hi)) })
-            .fold([f64::INFINITY,f64::NEG_INFINITY],|[a,b],(x,y)| [a.min(x.min(y)),b.max(x.max(y))]),
-        None => roll,
+        Some([lo,hi]) => { let (x,y) = (screw.time_to(base,lo),screw.time_to(base,hi)); [x.min(y),x.max(y)] }
+        None => [roll[0]-least,roll[1]-most],
     };
     let step = COLUMN_TURN/screw.ratio.abs();
-    let window = [(window[0]-COLUMN_MARGIN*step).max(roll[0]),(window[1]+COLUMN_MARGIN*step).min(roll[1])];
+    let window = [(window[0]-COLUMN_MARGIN*step).max(roll[0]-least),(window[1]+COLUMN_MARGIN*step).min(roll[1]-most)];
     if !(window[0] < window[1]) {
         return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: the roll does not carry the characteristic past the blank")))
     }
     (say.stage)(&format!("`{name}`: its characteristic reaches the blank over {} of its points, carried over {:.1} degrees of the roll",
         last-first+1,(window[1]-window[0]).to_degrees()));
     (say.mark)(Stage::Reach);
-    // rows by length along the characteristic, the walk's own nodes the table
+    // rows by length along the section
     let mut lengths = vec![0.];
-    for w in 1..found.nodes.len() { lengths.push(lengths[w-1]+distance(found.nodes[w-1].position,found.nodes[w].position)); }
+    for w in 1..section.len() { lengths.push(lengths[w-1]+distance(section[w-1],section[w])); }
     let total = *lengths.last().expect("a walk has nodes");
     let at_length = |l: f64| -> f64 {
         let w = lengths.partition_point(|&x| x < l).clamp(1,lengths.len()-1);
@@ -58,7 +67,7 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     let columns: Vec<f64> = (0..columns_n).map(|c| window[0]+(window[1]-window[0])*c as f64/(columns_n-1) as f64).collect();
     let mids = |x: &[f64]| x.windows(2).map(|w| 0.5*(w[0]+w[1])).collect::<Vec<_>>();
     let grid = Grid {row_mids:mids(&rows),rows,column_mids:mids(&columns),columns};
-    // a point of the sheet, in millimetres: the characteristic's point carried, and its normal turned
+    // a point of the sheet, in millimetres: the section's point carried, and its normal turned
     let carried = |(p,n): (V,V),t: f64| -> Result<(V,V),String> {
         let pose = family.pose_at(t)?;
         let q = pose.point(p);
@@ -66,8 +75,8 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
         Ok((q.map(|x| x*scale),m))
     };
     let lay = |grid: &Grid,withheld: Withheld| -> Result<Sheet,String> {
-        let rows: Vec<(V,V)> = crate::par::map(&grid.rows,|&s| found.at(s)).into_iter().collect::<Result<_,_>>()?;
-        let row_mids: Vec<(V,V)> = crate::par::map(&grid.row_mids,|&s| found.at(s)).into_iter().collect::<Result<_,_>>()?;
+        let rows: Vec<(V,V)> = crate::par::map(&grid.rows,|&s| found.on_section(s,height)).into_iter().collect::<Result<_,_>>()?;
+        let row_mids: Vec<(V,V)> = crate::par::map(&grid.row_mids,|&s| found.on_section(s,height)).into_iter().collect::<Result<_,_>>()?;
         let (nr,nc) = (grid.rows.len(),grid.columns.len());
         let mut sheet = Sheet {points:Vec::with_capacity(nr*nc),normals:Vec::with_capacity(nr*nc),times:Vec::with_capacity(nr*nc),
             rows:nr,columns:nc,withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};

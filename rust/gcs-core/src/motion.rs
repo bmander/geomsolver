@@ -52,6 +52,22 @@ impl Screw {
     pub fn time_to(&self,p: [f64;3],height: f64) -> f64 { (height-self.height(p))*std::f64::consts::TAU/self.advance }
     /// How far along its axis the screw moves a point between times `a` and `b`.
     pub fn rise(&self,a: f64,b: f64) -> f64 { (b-a)*self.advance/std::f64::consts::TAU }
+    /// `p` carried along its own path for a time `t`: turned `ratio·t` about the axis and slid
+    /// along it, as the screw's pose at `s + t` is its pose at `s` followed by this one, whatever
+    /// the motion's phase (turns and slides about one axis commute).
+    pub fn carry(&self,p: [f64;3],t: f64) -> [f64;3] {
+        let x: [f64;3] = std::array::from_fn(|k| p[k]-self.origin[k]);
+        let q = self.turn(x,t);
+        std::array::from_fn(|k| self.origin[k]+q[k]+self.advance*t/std::f64::consts::TAU*self.axis[k])
+    }
+    /// A direction turned as `carry` turns what it carries.
+    pub fn turn(&self,v: [f64;3],t: f64) -> [f64;3] {
+        let (s,c) = (self.ratio*t).dsin_cos();
+        let a = self.axis;
+        let along = crate::space::dot(a,v);
+        let across = crate::space::cross(a,v);
+        std::array::from_fn(|k| v[k]*c+across[k]*s+a[k]*along*(1.-c))
+    }
 }
 
 /// A snapshot of a named rigid-motion graph and its solved world axes. Re-read after

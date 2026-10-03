@@ -131,7 +131,10 @@ pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> 
 pub fn stl(sk: &Sketch,body: usize,exact: &Exact,tolerance: Option<Tolerance>,say: &Say) -> Result<Vec<u8>,ExportRefusal> {
     let started = crate::clock::Instant::now();
     let bar = tolerance.map_or(GROSS,|t| t.deflection());
-    let m = match &exact.pattern { Some(p) => p.mesh(bar,ANGULAR),None => super::mesh::mesh(&exact.solid,bar,ANGULAR) }.at(Stage::Mesh)?;
+    // meshed within what float32 coordinates leave of the bar, so the written file is within it
+    let (lo,hi) = exact.solid.bounds();
+    let sag = bar-crate::mesh::f32_rounding_within(lo,hi);
+    let m = match &exact.pattern { Some(p) => p.mesh(sag,ANGULAR),None => super::mesh::mesh(&exact.solid,sag,ANGULAR) }.at(Stage::Mesh)?;
     if m.turned > 0 { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh has {} triangles facing against their surfaces",m.turned))) }
     if m.sag > bar { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh sags {:.3} µm against {:.3} µm",m.sag*1e3,bar*1e3))) }
     let bytes = crate::mesh::stl_of(&m.triangles(),&sk.solids[body].name);
