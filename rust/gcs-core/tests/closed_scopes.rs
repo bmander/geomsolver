@@ -16,7 +16,7 @@ fn groups_pass_units_and_geometry_without_copying_it() {
     let mut e = solved("unit mm\ncomponent Bar(d: group) {\n\
         tip := point hint(x: d.origin.x + d.length, y: d.origin.y)\n\
         d.origin distance(d.length) tip\nd.origin distance(0mm, along: y) tip\n}\n\
-        part := Bar(design)\ndesign := group(length: width, origin: o)\n\
+        part := Bar(design)\ndesign := {length: width, origin: o}\n\
         width := 2cm\no := point\nfix(x == 7mm, y == 3mm) o\n");
     assert_eq!(e.sketch.points.len(), 2);
     let tip = e.sketch.point_xy(e.map.ent_named("part.tip").unwrap().i());
@@ -28,8 +28,8 @@ fn nested_groups_forward_through_components_and_repetitions() {
     let e = solved("unit mm\nuse std\n\
         component Inner(d: group) {\ntip := point hint(x: d.frame.origin.x + d.sizes.width * d.frame.c, y: d.frame.origin.y + d.sizes.width * d.frame.s)\naxis := line(d.frame.origin, d.frame.toward)\ntip on axis\nd.frame.origin distance(d.sizes.width) tip\n}\n\
         component Outer(d: group) { repeat 2 { Inner(d) } }\n\
-        Outer(design)\ndesign := group(frame: std.front, sizes: sizes)\n\
-        sizes := group(width: 12mm)\n");
+        Outer(design)\ndesign := {frame: std.front, sizes: sizes}\n\
+        sizes := {width: 12mm}\n");
     // the two tips, beside the standard datums' four points
     assert_eq!(e.sketch.points.len(), 6);
 }
@@ -57,14 +57,28 @@ fn groups_reject_missing_duplicate_and_wrong_kind_members() {
     for src in [
         "component Bad(d: group) { a := point }\nb := Bad()",
         "component Bad(d: group) { a := point }\np := point\nb := Bad(p)",
-        "component Bad(d: group) { a := point\nb := point\na distance(d.missing) b }\ndims := group(width: 20)\nb := Bad(dims)",
-        "dims := group(width: 20, width: 30)",
-        "unit mm\ncomponent Bad(d: group) { a := point\nb := point\na distance(d.width) b }\ndims := group(width: 20deg)\nb := Bad(dims)",
+        "component Bad(d: group) { a := point\nb := point\na distance(d.missing) b }\ndims := {width: 20}\nb := Bad(dims)",
+        "dims := {width: 20, width: 30}",
+        "dims := group(width: 20)",
+        "unit mm\ncomponent Bad(d: group) { a := point\nb := point\na distance(d.width) b }\ndims := {width: 20deg}\nb := Bad(dims)",
     ] { assert!(!build(src).ok(), "accepted invalid group: {src}"); }
+}
+/// A group's braces hold a list of members, not a body of statements: like an argument list,
+/// it may run across lines (a trailing comma too), and it may stand inside a body's braces.
+#[test]
+fn a_group_may_be_written_across_lines() {
+    let e = solved("unit mm\ncomponent Bar(d: group) {\n\
+        tip := point hint(x: d.origin.x + d.length, y: d.origin.y)\n\
+        d.origin distance(d.length) tip\nd.origin distance(0mm, along: y) tip\n}\n\
+        component Host(o: point) {\n  design := {\n    length: 2cm,\n    origin: o,\n  }\n\
+        part := Bar(design)\n}\n\
+        o := point\nfix(x == 7mm, y == 3mm) o\nh := Host(o)\n");
+    let tip = e.sketch.point_xy(e.map.ent_named("h.part.tip").unwrap().i());
+    assert!((tip.0 - 27.0).abs() < 1e-8 && (tip.1 - 3.0).abs() < 1e-8, "{tip:?}");
 }
 #[test]
 fn groups_round_trip_in_source() {
-    let src = "dims := group(width: 20mm, origin: o)\n";
+    let src = "dims := {width: 20mm, origin: o}\n";
     let (p, errors) = syntax::parse(src);
     assert!(errors.is_empty());
     let mut text = String::new();
@@ -82,11 +96,11 @@ component Layout() {
   }
 }
 component Part(d: group) {
-  local := group(layout: d.layout)
+  local := {layout: d.layout}
   bar := line(local.layout.p[0], local.layout.p[1])
 }
 part := Part(design)
-design := group(layout: sketch)
+design := {layout: sketch}
 sketch := Layout()
 "#);
     assert_eq!(e.sketch.points.len(), 2);
@@ -96,15 +110,15 @@ sketch := Layout()
 #[test]
 fn groups_do_not_create_new_unknowns_or_hide_invalid_definitions() {
     for src in [
-        "bad := group(member: missing)",
-        "bad := group(self: bad)",
-        "a := group(next: b)\nb := group(next: a)",
-        "dims := group(width: 20)\ndims := point",
-        "dims := group(width: 20)\ndims := 3",
-        "component Empty() {}\ndims := group(width: 20)\ndims := Empty()",
-        "component Bad(d: group) { d := group(width: 30) }\ndims := group(width: 20)\nb := Bad(dims)",
-        "component Bad(d: group) { p := point }\ndims := group(width: 20)\nb := Bad(dims, d: dims)",
-        "dims := group(width: 20)\na := point\nb := point\na distance(dims.missing) b",
+        "bad := {member: missing}",
+        "bad := {self: bad}",
+        "a := {next: b}\nb := {next: a}",
+        "dims := {width: 20}\ndims := point",
+        "dims := {width: 20}\ndims := 3",
+        "component Empty() {}\ndims := {width: 20}\ndims := Empty()",
+        "component Bad(d: group) { d := {width: 30} }\ndims := {width: 20}\nb := Bad(dims)",
+        "component Bad(d: group) { p := point }\ndims := {width: 20}\nb := Bad(dims, d: dims)",
+        "dims := {width: 20}\na := point\nb := point\na distance(dims.missing) b",
     ] { assert!(!build(src).ok(), "accepted invalid group: {src}"); }
 }
 
@@ -134,7 +148,7 @@ fn groups_keep_free_formals_local_and_preserve_dimension_types() {
     let e = build(r#"
 unit mm
 component Part(width: Length) {
-  dims := group(width: width)
+  dims := {width: width}
   a := point
   b := point
   a distance(dims.width) b
@@ -145,8 +159,8 @@ two := Part()
     assert!(e.ok(), "{:?}", e.diags);
     assert_eq!(e.sketch.free_vars.keys().map(String::as_str).collect::<Vec<_>>(), vec!["one.width", "two.width"]);
     for src in [
-        "unit mm\ndims := group(width: 20mm)\ncomponent Bad(d: group) { a := point\nb := point\na distance(d.width + 1deg) b }\nb := Bad(dims)",
-        "unit mm\ndims := group(width: -8mm)\na := point\nb := point\naxis := line(a,b)\ncomponent Bad(ax: line,d: group) { p := point\np distance(d.width) ax }\nb := Bad(axis,dims)",
+        "unit mm\ndims := {width: 20mm}\ncomponent Bad(d: group) { a := point\nb := point\na distance(d.width + 1deg) b }\nb := Bad(dims)",
+        "unit mm\ndims := {width: -8mm}\na := point\nb := point\naxis := line(a,b)\ncomponent Bad(ax: line,d: group) { p := point\np distance(d.width) ax }\nb := Bad(axis,dims)",
         "use std\ncomponent Bad(u: Angle) { p := point(x: std.origin.x + cos(u), y: sin(u)) }\nc := Bad().p over u in (0,90)",
     ] { assert!(!build(src).ok(), "accepted invalid component: {src}"); }
 }
@@ -155,7 +169,7 @@ two := Part()
 fn numeric_groups_preserve_derived_dimensions() {
     let e = solved(r#"
 unit mm
-dims := group(area: 400mm * 1mm, root: sqrt(16mm))
+dims := {area: 400mm * 1mm, root: sqrt(16mm)}
 component Part(d: group) {
   length := sqrt(d.area) + d.root * d.root
   a := point

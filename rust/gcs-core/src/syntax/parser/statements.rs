@@ -434,11 +434,11 @@ impl<'a> P<'a> {
         let call = matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')));
         let dotted_call = self.call_at(self.i) == Some(true);
         let kind = match word.as_deref() {
-            Some("group") if call => {
-                self.i += 1;
-                let fields = self.inst_args()?;
+            // `dims := {bore: 16mm, axis: datum}` — a group, its members named in braces
+            None if self.peek() == Some(&Tok::P('{')) => {
+                let fields = self.args_between('{', '}')?;
                 if fields.iter().any(|f| f.label.is_none()) {
-                    self.fail("every group member needs a name: `dims := group(bore: 16mm)`");
+                    self.fail("every group member needs a name: `dims := {bore: 16mm}`");
                     return None;
                 }
                 self.end_of_stmt();
@@ -660,14 +660,19 @@ impl<'a> P<'a> {
 
     /// `(arg, label: arg, …)` — what an instance is given, the `(` not yet eaten.
     fn inst_args(&mut self) -> Option<Vec<InstArg>> {
-        if !self.want_p('(') {
+        self.args_between('(', ')')
+    }
+
+    /// A call's arguments in `( … )`, or a group's members in `{ … }`.
+    fn args_between(&mut self, open: char, close: char) -> Option<Vec<InstArg>> {
+        if !self.want_p(open) {
             return None;
         }
         let mut args = Vec::new();
-        while !self.eat_p(')') {
+        while !self.eat_p(close) {
             args.push(self.inst_arg()?);
-            if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
-                self.fail("expected `,` or `)`");
+            if !self.eat_p(',') && self.peek() != Some(&Tok::P(close)) {
+                self.fail(&format!("expected `,` or `{close}`"));
                 return None;
             }
         }
@@ -885,7 +890,8 @@ impl<'a> P<'a> {
         let reference = if matches!(self.peek(), Some(Tok::Ident(_))) {
             self.refr()
         } else { None };
-        let bare = reference.is_some() && matches!(self.peek(), Some(Tok::P(',')) | Some(Tok::P(')')));
+        let bare = reference.is_some()
+            && matches!(self.peek(), Some(Tok::P(',')) | Some(Tok::P(')')) | Some(Tok::P('}')));
         let value = if bare {
             InstVal::Ref(reference.unwrap())
         } else {
@@ -898,7 +904,7 @@ impl<'a> P<'a> {
                     Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
                     Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
                     Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
-                    Some(Tok::P(',')) if depth == 0 => break,
+                    Some(Tok::P(',')) | Some(Tok::P('}')) if depth == 0 => break,
                     Some(Tok::Nl) => break,
                     _ => {}
                 }

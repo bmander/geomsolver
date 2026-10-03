@@ -197,7 +197,7 @@ pub enum StmtKind {
     Instance(Instance),
     /// `R := m * N / 2` — a number worked out while elaborating, never an unknown.
     Param(ParamDecl),
-    /// `dims := group(bore: 16mm, axis: datum)` — named values, without new geometry.
+    /// `dims := {bore: 16mm, axis: datum}` — named values, without new geometry.
     Group(GroupDecl),
     /// `repeat`, `cycle` — see `Block`.
     Block(Block),

@@ -157,7 +157,7 @@ cplbore := hardware.npt14_drill // its bore, near enough: the tap drill for 1/4"
 
 // Component inputs: shared dimensions, selected hardware, and seal proportions.
 // Each part derives its private sizes from these; extra root-only values stay above.
-vtwin_dims := group(
+vtwin_dims := {
   D: D, H: H, L: L, R: R, Ty: Ty,
   V: V, a: a, alphaL: alphaL, alphaR: alphaR, beta: beta,
   boltH: boltH, boltac: boltac, boltaf: boltaf, boss: boss, bossh: bossh,
@@ -177,4 +177,4 @@ vtwin_dims := group(
   trapz: trapz, tretain: tretain, wall: wall, wbrg: wbrg, wch: wch,
   wfw: wfw, wsh: wsh, zA: zA, zB: zB, zdisc: zdisc,
   zfw: zfw
-)
+}

@@ -47,7 +47,7 @@ where a stated basis stands (`to_program` writes it for a stand-off plane).
 
 **Closed components:** model dependencies enter through arguments, standard datums included.
 Definitions and built-ins stay callable. A component scope holds only its formals and
-declarations; repetitions share it. `dims := group(width: 20mm, origin: o)` bundles values and
+declarations; repetitions share it. `dims := {width: 20mm, origin: o}` bundles values and
 geometry aliases; `dims: group` is a required formal. Groups nest; an instance may pass as a
 layout group. No solver state; member units survive substitution; missing members are errors.
 Curves need fixed scalar/entity formals. The V-twin and inline-four pass
@@ -465,12 +465,13 @@ from a CDN) so the app opens from a file.
 Conventions:
 - **A name is defined one way, `NAME := VALUE`** ([plan](docs/definitions-plan.md), Solvent §5,
   [0.29]).  `w := 100` is a param, `c := circle(…)` a declaration, `t := Tooth(…)` an instance,
-  `dims := group(…)` a group, `profile := (ab := line(a, b)) -> line -> close` a chain whose link is
-  named in place, `k := leg.toe over u in (a, b)` a curve, `p := point(x: e, y: e)` a computed
-  point, `a distance(w := 60) b` a named dimension (only as the number's outermost form).  `:=` is
-  `Tok::Define`; a lone `=` is no token.  `:=` binds loosest, so a link is named in parentheses;
-  with no `->` in the statement the name goes to the one declaration (`l := horizontal line(a, b)`:
-  a prefix word's value is its operand).  `P::definition` lowers to the existing `StmtKind`s
+  `dims := {…}` a group (a brace after `:=` is a list, lexed across lines), `profile := (ab :=
+  line(a, b)) -> line -> close` a chain whose link is named in place, `k := leg.toe over u in (a,
+  b)` a curve, `p := point(x: e, y: e)` a computed point, `a distance(w := 60) b` a named
+  dimension (only as the number's outermost form).  `:=` is `Tok::Define`; a lone `=` is no
+  token.  `:=` binds loosest, so a link is named in parentheses; with no `->` in the statement the
+  name goes to the one declaration (`l := horizontal line(a, b)`: a prefix word's value is its
+  operand).  `P::definition` lowers to the existing `StmtKind`s
   (`Param`, `Group`, `Instance`, `Decl`, `Chain`), so nothing below the parser knows;
   `syntax::words::named_link_at` tells `(l := line)` from `distance(w := 60)`.  `label:` never
   defines: it fills a slot.  A drawn callout prints a definition as `w = 60` (`io::as_written`).  A

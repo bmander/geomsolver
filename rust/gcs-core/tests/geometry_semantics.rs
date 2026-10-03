@@ -36,7 +36,7 @@ fn private_names_work_locally_but_not_through_external_paths() {
         "fix(x == 0, y == 0) p.center",
         "q := point hint(x: p.center.x, y: 0)",
         "component Use(c: point) { fix(x == 0, y == 0) c }\nUse(p.center)",
-        "leaked := group(c: p.center)",
+        "leaked := {c: p.center}",
     ] {
         private_error(&format!("{component}{suffix}"));
     }
@@ -84,7 +84,7 @@ fn privacy_survives_nested_instances_repetition_and_forward_references() {
     );
     private_error(
         "component Owner() { private p := point }\nx := Owner()\n\
-          alias := group(layout: x)\nfix(x == 0, y == 0) alias.layout.p",
+          alias := {layout: x}\nfix(x == 0, y == 0) alias.layout.p",
     );
 }
 

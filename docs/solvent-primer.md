@@ -75,7 +75,7 @@ where the value stands: a chain link `(ab := line(a, b)) -> …`, or a dimension
 use NAME[.NAME...]                      import a module                             (1.12)
 unit NAME                               the unit the document's numbers are in       (1.6)
 NAME := EXPR                            a param                                      (1.6)
-NAME := group(LABEL: VALUE, ...)        values and geometry passed as one argument   (1.8)
+NAME := {LABEL: VALUE, ...}             values and geometry passed as one argument   (1.8)
 [private] [construction] [NAME :=] KIND[(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)]
      [knots [...]] [in REF]             an entity declaration; every part optional   (1.4)
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve       (1.9)
@@ -486,14 +486,15 @@ inner := std.CenteredRectangle(center, w: 14mm, h: 14mm)
 section := face(outer.loop, holes: inner.loop)
 ```
 
-**Groups** bundle related values and geometry into one argument:
+**Groups** bundle related values and geometry into one argument. The members are written in
+braces straight after `:=`, and may run across lines:
 
 ```solvent
 unit mm
 use std
 
-sizes := group(length: 20mm)
-layout := group(frame: std.front, origin: std.origin)
+sizes := {length: 20mm}
+layout := {frame: std.front, origin: std.origin}
 component Bar(layout: group, dims: group) {
   tip := point hint(x: layout.origin.x + dims.length * layout.frame.c,
                  y: layout.origin.y + dims.length * layout.frame.s)

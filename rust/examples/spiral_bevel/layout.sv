@@ -51,14 +51,14 @@ component HypoidLayout(front: plane, design: group, normal_module: Length) {
   }
 
   // What each member is cut from and how its cutter moves.
-  pinion_design := group(heel: pinion_blank.heel.wall.solid, toe: pinion_blank.toe.wall.solid,
+  pinion_design := {heel: pinion_blank.heel.wall.solid, toe: pinion_blank.toe.wall.solid,
     tip: pinion_blank.tip.wall.solid, root: pinion_blank.root.wall.solid,
     back: pinion_blank.back.wall.solid,
-    generation: generation.pinion_generation, indexing: generation.pinion_index)
-  gear_design := group(heel: gear_blank.heel.wall.solid, toe: gear_blank.toe.wall.solid,
+    generation: generation.pinion_generation, indexing: generation.pinion_index}
+  gear_design := {heel: gear_blank.heel.wall.solid, toe: gear_blank.toe.wall.solid,
     tip: gear_blank.tip.wall.solid, root: gear_blank.root.wall.solid,
     back: gear_blank.back.wall.solid,
-    generation: generation.gear_generation, indexing: generation.gear_index)
+    generation: generation.gear_generation, indexing: generation.gear_index}
 }
 
 preview {

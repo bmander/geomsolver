@@ -179,7 +179,7 @@ component Walls(body: solid, rect: group) {
   }
 }
 w := Walls(ring, r)
-g := group(profile: r.profile)
+g := {profile: r.profile}
 repeat f in g.profile {
   t := surface(ring, f)
 }
