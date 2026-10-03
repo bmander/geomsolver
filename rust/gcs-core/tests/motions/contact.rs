@@ -112,3 +112,41 @@ fn empty_constant_and_double_root_contacts_are_not_confused() {
     assert!(family(1e-320,0.5,0.,0.).normal_velocity(surface(2.)).unwrap()
         .roots([-1.,1.],1e-10,8).unwrap().is_empty());
 }
+
+/// **A rack's contact equation is a line in the roll.**  A translation along `other` seen from a
+/// rotation about `axis` (a rack against the blank it cuts) carries the normal unturned, so its
+/// normal velocity is `s n·d − n·(ω × (p − o)) − s t n·(ω × d)`: checked against the full
+/// differentiated motion at every sample, and its one root against bisection of that.
+#[test]
+fn a_racks_contact_equation_is_affine_in_the_roll() {
+    let surfaces = [
+        SurfacePoint {position:[2.,0.,1.],du:[0.,0.,1.],dv:[1.,0.,0.]},
+        SurfacePoint {position:[-1.,2.,3.],du:[1.,2.,3.],dv:[-2.,1.,4.]},
+        SurfacePoint {position:[1.,-2.,0.5],du:[-1.,1.,0.],dv:[0.,-2.,1.]},
+    ];
+    let mut found = 0;
+    for (advance,ratio) in [(5.,0.7),(-3.,-1.5),(12.,2.)] {
+        let e = solved(&format!("{AXES}\n\
+            slide := motion(along: other,advance: {advance})\n\
+            blank := motion(about: axis,ratio: {ratio},phase: 20deg)\n\
+            rack := motion(slide,relative_to: blank)\n"));
+        let family = motion::Family::read(&e.sketch,e.map.ent_named("rack").unwrap().i()).unwrap();
+        for surface in surfaces {
+            let line = family.normal_velocity(surface).unwrap();
+            assert!(matches!(line,motion::NormalVelocity::Affine {..}));
+            let actual = |t| envelope::contact(surface,family.at(t).unwrap()).unwrap().normal_velocity;
+            for i in -40..=40 {
+                let t = i as f64/9.;
+                assert!((line.at(t).unwrap()-actual(t)).abs() < 1e-11,"{advance} {ratio} at {t}");
+            }
+            let roots = line.roots([-4.,4.],1e-10,8).unwrap();
+            let (lo,hi) = (actual(-4.),actual(4.));
+            assert_eq!(roots.len(),usize::from(lo*hi < 0.),"{advance} {ratio}: one root where it changes sign");
+            for root in roots {
+                assert!(actual(root.time).abs() < 1e-10);
+                found += 1;
+            }
+        }
+    }
+    assert!(found >= 3,"only {found} roots among the samples");
+}

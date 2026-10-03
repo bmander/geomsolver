@@ -576,7 +576,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         let v_at = |j: usize| ((start as f64+width as f64*j as f64/nv as f64)/cv as f64).rem_euclid(1.);
         let mut previous: Vec<Option<V>> = vec![None;nv+1];
         // Each sample's contact equation, to find stationary points between samples.
-        let mut equations: Vec<Option<([f64;5],V)>> = vec![None;nv+1];
+        let mut equations: Vec<Option<([f64;3],V)>> = vec![None;nv+1];
         // What each sample says of itself alone — its point, the rate of its contact condition, its
         // roots with whether each is in the blank, and each such root's area factor — worked out on
         // every core a row at a time; what samples say of their neighbours is asked below, in order.
@@ -597,7 +597,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         });
         for sampled in sampled {
             let mut row: Vec<Option<V>> = vec![None;nv+1];
-            let mut here: Vec<Option<([f64;5],V)>> = vec![None;nv+1];
+            let mut here: Vec<Option<([f64;3],V)>> = vec![None;nv+1];
             for (j,sample) in sampled.into_iter().enumerate() {
                 let Some(Sampled {s,rate,roots:list}) = sample else { continue };
                 samples += 1;
@@ -609,7 +609,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
                 // through zero with C: a point between them is in contact at every time, as on a
                 // curve of such points, which no single sample is on.
                 if let Some(g) = &rate {
-                    let k = g.coefficients();
+                    let k = g.variation();
                     here[j] = Some((k,s.position));
                     // An isolated such point lies inside a sample cell rather than on a segment
                     // between two samples: there (a, b) winds right round the cell's corners.
