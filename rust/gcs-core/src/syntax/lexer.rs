@@ -37,7 +37,8 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
     // several lines, and a line break there is a separator like any other whitespace.  A body's
     // braces do *not* count — a body is made of statements, and those still end at their line's
     // end — but a group's do (`dims := {width: 20mm, origin: o}`): a brace straight after `:=`
-    // opens a list of members, and `braces` remembers which kind each open brace is.
+    // opens a list of members, as one after a member's `:` does (`{cyl: {bore: 16mm}}`), and
+    // `braces` remembers which kind each open brace is.
     let mut depth = 0i32;
     let mut braces: Vec<bool> = Vec::new();
     while i < b.len() {
@@ -95,7 +96,11 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                     '(' | '[' => depth += 1,
                     ')' | ']' => depth = (depth - 1).max(0),
                     '{' => {
-                        let group = matches!(toks.last(), Some((Tok::Define, _)));
+                        let group = match toks.last() {
+                            Some((Tok::Define, _)) => true,
+                            Some((Tok::P(':'), _)) => braces.last() == Some(&true),
+                            _ => false,
+                        };
                         braces.push(group);
                         if group {
                             depth += 1;

@@ -1,6 +1,11 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.35 — October 2026**
+**Specification, Draft 0.36 — October 2026**
+
+**[0.36] A group's member may be a group in braces.** `design := {bar: {at: o, size: {length:
+2cm}}}` nests groups in place (§8.1): `design.bar.size.length` reads the number, and
+`design.bar` is a group a call may be given. A brace after a member's `:` opens a group too;
+braces are not an argument in a call.
 
 **[0.35] A group is its members in braces.** `dims := {width: 20mm, origin: o}` is a group (§8.1);
 `group(…)` is retired. A group's braces hold a list, not a body: like an argument list it may run
@@ -1292,7 +1297,12 @@ bar := Bar(layout, dims: sizes)
 
 **[0.35]** `NAME := {member: VALUE, …}` bundles named numeric values, entity references, and
 nested groups. A brace straight after `:=` opens a group, never a body: its members are separated
-by commas and may run across lines, as an argument list's may. Members are required to have labels; duplicate members and cyclic definitions are
+by commas and may run across lines, as an argument list's may. **[0.36]** A member's value may
+itself be a group in braces, `design := {bar: {at: o, size: {length: 2cm}}}`, to any depth: its
+members are the enclosing group's under the member's name (`design.bar.size.length`), and the
+member is a group in its own right, which a call may be given (`Bar(design.bar)`). Written in
+place or defined by name and referred to (`bar := {…}`, `design := {bar: bar}`), a nested group
+is the same group. Braces are a definition's and its members', never a call's argument. Members are required to have labels; duplicate members and cyclic definitions are
 errors. Numeric members retain their dimensions. A group creates no geometry, solver variable,
 or constraint. Geometry members are aliases to existing geometry, including subentities and
 members of repeated instances; grouping does not copy or solve them separately.

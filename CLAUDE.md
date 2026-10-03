@@ -48,8 +48,10 @@ where a stated basis stands (`to_program` writes it for a stand-off plane).
 **Closed components:** model dependencies enter through arguments, standard datums included.
 Definitions and built-ins stay callable. A component scope holds only its formals and
 declarations; repetitions share it. `dims := {width: 20mm, origin: o}` bundles values and
-geometry aliases; `dims: group` is a required formal. Groups nest; an instance may pass as a
-layout group. No solver state; member units survive substitution; missing members are errors.
+geometry aliases; `dims: group` is a required formal. Groups nest, by name or in place
+(`{bar: {at: o}}`, `InstVal::Group`, flattened to dotted members by `members_of`, each nested
+group registered so `Bar(design.bar)` binds); an instance may pass as a layout group. No
+solver state; member units survive substitution; missing members are errors.
 Curves need fixed scalar/entity formals. The V-twin and inline-four pass
 `components.dims.vtwin_dims` / `engine.dims.engine_dims` explicitly; `Frame(layout, dims: …)`
 takes a layout naming the front datum, origin and reference axis.

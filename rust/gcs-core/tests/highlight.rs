@@ -250,4 +250,10 @@ fn a_group_is_coloured_as_labelled_members() {
     assert_eq!(tint_of(src, "width"), Some(Tint::Label));
     assert_eq!(tint_of(src, "origin"), Some(Tint::Label));
     assert_eq!(tint_of(src, "20mm"), Some(Tint::Num));
+    // and a member written as a group in place is labelled members too
+    let src = "dims := {\n  cyl: {\n    bore: 16mm,\n    axis: datum\n  }\n}\n";
+    assert_eq!(tint_of(src, "cyl"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "bore"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "axis"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "16mm"), Some(Tint::Num));
 }

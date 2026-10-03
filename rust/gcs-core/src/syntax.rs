@@ -335,6 +335,10 @@ pub enum InstVal {
     Ref(Ref),
     /// An expression over the enclosing component's own parameters, evaluated while elaborating.
     Expr(String),
+    /// A group written in place as a group's member, `{bore: 16mm, axis: datum}`: its members
+    /// are the outer group's under the member's name (`dims.cyl.bore`), and the member is a
+    /// group a call may be given (`Part(dims.cyl)`).  Only a group's member may be one.
+    Group(Vec<InstArg>),
 }
 
 #[derive(Clone, Debug)]

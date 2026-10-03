@@ -939,8 +939,13 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
     };
     match &st.kind {
         StmtKind::Group(g) => {
-            for field in &g.fields {
-                if let syntax::InstVal::Ref(r) = &field.value { look(r); }
+            let mut fields: Vec<&syntax::InstArg> = g.fields.iter().collect();
+            while let Some(field) = fields.pop() {
+                match &field.value {
+                    syntax::InstVal::Ref(r) => look(r),
+                    syntax::InstVal::Group(inner) => fields.extend(inner),
+                    syntax::InstVal::Expr(_) => {}
+                }
             }
         }
         StmtKind::Chain(c) => {

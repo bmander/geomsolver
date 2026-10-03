@@ -217,6 +217,10 @@ impl<'a> Walk<'a> {
                 continue;
             };
             match (&f.ty, &a.value) {
+                // braces are a definition's, or a member's of one: a call is given a name
+                (_, InstVal::Group(_)) => self.err(Code::E103, a.span, format!(
+                    "a group is written in braces only where it is defined: `{n} := {{…}}`, \
+                     then `{n}: {n}`", n = f.name.text)),
                 (Ty::Group, InstVal::Ref(r)) => {
                     let actual = written(r);
                     let key = format!("{prefix}{}.{}", inst.name.text, f.name.text);
@@ -252,6 +256,7 @@ impl<'a> Walk<'a> {
                         InstVal::Ref(r) if r.path.is_empty() => r.root.text.clone(),
                         InstVal::Ref(r) => r.root.text.clone(),
                         InstVal::Expr(t) => t.clone(),
+                        InstVal::Group(_) => unreachable!("refused by the first arm"),
                     };
                     let w = scope.sides.get(&w).cloned().unwrap_or(w);
                     if w == "left" || w == "right" {

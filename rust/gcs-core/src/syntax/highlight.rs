@@ -139,8 +139,9 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         if matches!(t, Tok::P('{')) && style > 0 {
             at = Next::Word;
         }
-        // nor is a group's (`dims := {width: 20mm}`): its members are labelled values
-        if matches!(t, Tok::P('{')) && matches!(prev, Some(Tok::Define)) {
+        // nor is a group's (`dims := {width: 20mm}`): its members are labelled values, as a
+        // group's written in place as a member is (`{cyl: {bore: 16mm}}`)
+        if matches!(t, Tok::P('{')) && matches!(prev, Some(Tok::Define) | Some(Tok::P(':'))) {
             at = Next::Word;
         }
         if let Some(tint) = tint {

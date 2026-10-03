@@ -206,3 +206,71 @@ fn standard_centered_rectangle_has_dimensioned_sides_and_a_private_diagonal() {
     assert!(e.sketch.roles_of(e.map.ent_named("r.diagonal").unwrap()).construction);
     assert!(!e.sketch.roles_of(e.map.ent_named("c").unwrap()).construction);
 }
+
+/// A group's member may be a group written in place: its members are reached through the
+/// outer group (`d.cyl.bore`), and it is a group of its own, handed on as `dims.cyl`.  Three
+/// levels deep, across lines, and with geometry beside the numbers.
+#[test]
+fn a_group_member_may_be_a_group_written_in_place() {
+    let e = solved("unit mm\n\
+        component Bar(d: group) {\n\
+        tip := point hint(x: d.at.x + d.size.length, y: d.at.y)\n\
+        d.at distance(d.size.length) tip\nd.at distance(0mm, along: y) tip\n}\n\
+        component Pin(s: group) {\nq := point hint(x: s.length, y: 9mm)\n\
+        fix(x == 0mm) q\ns.at distance(s.length) q\n}\n\
+        o := point\nfix(x == 7mm, y == 3mm) o\n\
+        design := {\n  bar: {\n    at: o,\n    size: {length: 2cm, half: 1cm},\n  },\n\
+          pin: {length: design.bar.size.half, at: o},\n}\n\
+        part := Bar(design.bar)\npin := Pin(design.pin)\n");
+    let tip = e.sketch.point_xy(e.map.ent_named("part.tip").unwrap().i());
+    assert!((tip.0 - 27.0).abs() < 1e-8 && (tip.1 - 3.0).abs() < 1e-8, "{tip:?}");
+    let q = e.sketch.point_xy(e.map.ent_named("pin.q").unwrap().i());
+    assert!((q.0 - 0.0).abs() < 1e-8 && ((q.0 - 7.0).hypot(q.1 - 3.0) - 10.0).abs() < 1e-8, "{q:?}");
+    // the members alias and add nothing: the two points drawn, beside `o`
+    assert_eq!(e.sketch.points.len(), 3);
+}
+
+/// Written in place or defined by name and referred to, a nested group is the same group.
+#[test]
+fn a_group_in_place_reads_as_one_referred_to() {
+    let tail = "component Bar(d: group) {\n\
+        tip := point hint(x: d.at.x + d.size.length, y: d.at.y)\n\
+        d.at distance(d.size.length) tip\nd.at distance(0, along: y) tip\n}\n\
+        o := point\nfix(x == 7, y == 3) o\npart := Bar(design.bar)\n";
+    let place = solved(&format!("design := {{bar: {{at: o, size: {{length: 20}}}}}}\n{tail}"));
+    let named = solved(&format!(
+        "size := {{length: 20}}\nbar := {{at: o, size: size}}\ndesign := {{bar: bar}}\n{tail}"));
+    let at = |e: &program::Elaborated| e.sketch.point_xy(e.map.ent_named("part.tip").unwrap().i());
+    assert_eq!(at(&place), at(&named));
+}
+
+#[test]
+fn a_group_in_place_round_trips_in_source() {
+    let src = "dims := {bore: 16mm, cyl: {axis: datum, wall: {t: 2mm}}}\n";
+    let (p, errors) = syntax::parse(src);
+    assert!(errors.is_empty(), "{errors:?}");
+    let mut text = String::new();
+    syntax::write_stmt_to(&mut text, &p.root().body[0].kind).unwrap();
+    assert_eq!(text.trim(), src.trim());
+}
+
+#[test]
+fn a_group_in_place_is_refused_where_a_group_would_be() {
+    for src in [
+        // every member named, at every level
+        "dims := {cyl: {16mm}}",
+        // one name per member, at every level
+        "dims := {cyl: {bore: 16, bore: 20}}",
+        "dims := {cyl: {bore: 16}, cyl: {bore: 20}}",
+        // a member that is not there
+        "dims := {cyl: {bore: 16}}\na := point\nb := point\na distance(dims.cyl.wall) b",
+        // braces in a call: a group is given by name
+        "component Bar(d: group) { a := point }\nb := Bar(d: {w: 20})",
+    ] { assert!(!build_or_parse_fails(src), "accepted invalid group: {src}"); }
+}
+
+/// Whether `src` parses and elaborates cleanly.
+fn build_or_parse_fails(src: &str) -> bool {
+    let (p, errors, linked) = library::parse_linked(src);
+    errors.is_empty() && linked.is_empty() && program::elaborate(&p).ok()
+}

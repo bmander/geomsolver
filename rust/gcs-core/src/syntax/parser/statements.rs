@@ -436,11 +436,7 @@ impl<'a> P<'a> {
         let kind = match word.as_deref() {
             // `dims := {bore: 16mm, axis: datum}` — a group, its members named in braces
             None if self.peek() == Some(&Tok::P('{')) => {
-                let fields = self.args_between('{', '}')?;
-                if fields.iter().any(|f| f.label.is_none()) {
-                    self.fail("every group member needs a name: `dims := {bore: 16mm}`");
-                    return None;
-                }
+                let fields = self.group_members()?;
                 self.end_of_stmt();
                 StmtKind::Group(crate::syntax::GroupDecl { name, fields })
             }
@@ -663,6 +659,16 @@ impl<'a> P<'a> {
         self.args_between('(', ')')
     }
 
+    /// A group's members in `{ … }`, every one named, the `{` not yet eaten.
+    fn group_members(&mut self) -> Option<Vec<InstArg>> {
+        let fields = self.args_between('{', '}')?;
+        if fields.iter().any(|f| f.label.is_none()) {
+            self.fail("every group member needs a name: `dims := {bore: 16mm}`");
+            return None;
+        }
+        Some(fields)
+    }
+
     /// A call's arguments in `( … )`, or a group's members in `{ … }`.
     fn args_between(&mut self, open: char, close: char) -> Option<Vec<InstArg>> {
         if !self.want_p(open) {
@@ -883,6 +889,11 @@ impl<'a> P<'a> {
             }
             _ => None,
         };
+        // a group written in place, `cyl: {bore: 16mm}`; refused in a call by the flattener
+        if self.peek() == Some(&Tok::P('{')) {
+            let fields = self.group_members()?;
+            return Some(InstArg { label, value: InstVal::Group(fields), span: Span::new(lo, self.prev_hi()) });
+        }
         // A whole dotted/indexed path is a reference; a path followed by arithmetic
         // is an expression, e.g. `dims.bore / 2`.
         let checkpoint = self.i;

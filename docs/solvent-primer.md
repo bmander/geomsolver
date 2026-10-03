@@ -508,7 +508,17 @@ component Bar(layout: group, dims: group) {
 bar := Bar(layout, dims: sizes)
 ```
 
-Groups nest. Numeric members keep their units; geometry members alias and add no solver state. A
+Groups nest, by name (`design := {bar: bar}`) or written in place, to any depth:
+
+```solvent
+design := {
+  bar: {at: o, size: {length: 2cm, half: 1cm}},
+  pin: {length: design.bar.size.half, at: o},
+}
+part := Bar(design.bar)          // a nested group is handed on like any group
+```
+
+Numeric members keep their units; geometry members alias and add no solver state. A
 component instance can be passed as a group, exposing its geometry (`layout.pivot`,
 `layout.bank[0].axis`) but not its local params — bundle those in an explicit group. A group
 formal must be supplied, and a missing member is an error. A traced component (1.9) needs fixed
