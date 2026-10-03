@@ -49,6 +49,7 @@
 use crate::fmath::Det;
 use crate::kernels::KERNELS;
 use crate::tape::{self, Tape};
+use crate::taylor::{self, Jet};
 
 /// Bounds on what a document may ask for.  A document is untrusted input and
 /// `wasm32-unknown-unknown` aborts rather than unwinding, so the flat form is range-checked as
@@ -107,6 +108,14 @@ impl Locus {
     /// one decoder of the encoding, so a malformed flat is 0 and never a garbage width.
     pub fn n_q(&self) -> usize {
         view(&self.flat).map_or(0, |v| v.n_q)
+    }
+
+    /// The first kernel among the block's rows with no Taylor form (`taylor.rs`), by name — what
+    /// keeps the curve from giving `C''` exactly, and so what a curvature against it is refused
+    /// for.  `None` when every row has one.
+    pub fn without_form(&self) -> Option<&'static str> {
+        let v = view(&self.flat)?;
+        v.rows.iter().find(|r| !taylor::has_form(r.0)).map(|r| KERNELS[r.0].name)
     }
 
     /// Validate and encode.  An `Err` is a diagnostic for the family, not a panic.
@@ -191,12 +200,22 @@ impl Locus {
 /// then the best found, and the residual the outer solver sees says the rest.  A flat form that
 /// could not be read at all comes back NaN — a residual through it must never read as satisfied,
 /// and `System` already treats NaN as "not converged", never as "no error".
+///
+/// Asked for (`higher`), it also carries `C''` and `C'''` in `u`, exactly — the Taylor orders
+/// of the implicit function, one more solve each with the factorisation the first derivative
+/// paid for (`higher_orders`).  NaN where they were not asked for or the block has a row with no
+/// Taylor form.
 #[derive(Clone, Copy, Debug)]
 pub struct Val {
     pub x: f64,
     pub y: f64,
     pub dx: [f64; tape::MAX_VARS],
     pub dy: [f64; tape::MAX_VARS],
+    /// `d²C/du²` and `d³C/du³`, as (x, y).
+    pub d2: [f64; 2],
+    pub d3: [f64; 2],
+    /// Whether `d2` and `d3` were worked out.
+    pub higher: bool,
     pub ok: bool,
 }
 
@@ -207,6 +226,9 @@ impl Default for Val {
             y: f64::NAN,
             dx: [0.0; tape::MAX_VARS],
             dy: [0.0; tape::MAX_VARS],
+            d2: [f64::NAN; 2],
+            d3: [f64::NAN; 2],
+            higher: false,
             ok: false,
         }
     }
@@ -246,6 +268,13 @@ pub struct Scratch {
     wd: Vec<[f64; tape::MAX_VARS]>,
     v: Vec<f64>,
     jrow: Vec<f64>,
+    /// The first-order coefficients of every inner unknown, and the Taylor path the higher
+    /// orders are read along (`higher_orders`): a `Jet` per column of the variable table, and
+    /// one row's columns and residuals over it.
+    q1: Vec<f64>,
+    path: Vec<Jet>,
+    vj: Vec<Jet>,
+    rj: Vec<Jet>,
     seen: std::collections::BTreeMap<(usize, usize), Seen>,
 }
 
@@ -264,6 +293,10 @@ impl Scratch {
             wd: Vec::new(),
             v: Vec::new(),
             jrow: Vec::new(),
+            q1: Vec::new(),
+            path: Vec::new(),
+            vj: Vec::new(),
+            rj: Vec::new(),
             seen: std::collections::BTreeMap::new(),
         }
     }
@@ -617,7 +650,12 @@ fn march(v: &View, s: &mut Scratch, outer: &[f64], from: f64, to: f64, keep_goin
 /// This is the cold form, which starts from the home however often it is called.  A caller that
 /// names a contact (`eval_at`) gets the same walk with a branch it already holds carried into it.
 pub fn eval_flat(flat: &[f64], outer: &[f64], anchor: Anchor, s: &mut Scratch) -> Val {
-    eval_at(flat, outer, anchor, None, s)
+    eval_at(flat, outer, anchor, None, false, s)
+}
+
+/// `eval_flat`, with `C''` and `C'''` worked out too (`Val::higher`).
+pub fn eval_flat_higher(flat: &[f64], outer: &[f64], anchor: Anchor, s: &mut Scratch) -> Val {
+    eval_at(flat, outer, anchor, None, true, s)
 }
 
 /// `key` is where this contact's constants live: it both *resumes* from the pose remembered
@@ -636,6 +674,7 @@ fn eval_at(
     outer: &[f64],
     anchor: Anchor,
     key: Option<(usize, usize)>,
+    higher: bool,
     s: &mut Scratch,
 ) -> Val {
     let Some(v) = prepare(flat, outer, s) else { return Val::default() };
@@ -647,7 +686,7 @@ fn eval_at(
         // read where it landed before paying `finish` for it: a rejected resume owes no
         // factorisation, and the traced point is all `continues` ever asks about
         if warm(&v, s, u, outer, &prev.q) && continues(&v, s, prev) {
-            let val = finish(&v, s, true);
+            let val = finish(&v, s, true, higher);
             if val.ok {
                 return keep(&v, s, key, outer, val);
             }
@@ -657,7 +696,7 @@ fn eval_at(
         refresh(&v, s, u, outer);
         seed(&v, s);
         if newton(&v, s) {
-            let val = finish(&v, s, true);
+            let val = finish(&v, s, true, higher);
             return keep(&v, s, key, outer, val);
         }
     }
@@ -665,7 +704,7 @@ fn eval_at(
     if ok && u != anchor.u {
         ok = march(&v, s, outer, anchor.u, u, false);
     }
-    let val = finish(&v, s, ok);
+    let val = finish(&v, s, ok, higher);
     keep(&v, s, key, outer, val)
 }
 
@@ -800,8 +839,9 @@ fn reflect(s: &mut Scratch, cols: [usize; 6]) {
 }
 
 /// The implicit function theorem at the solution in `s.xv`: `Jq · S = −B`, and the traced
-/// point's rows of `S` are the derivatives the contact kernel wants.
-fn finish(v: &View, s: &mut Scratch, ok: bool) -> Val {
+/// point's rows of `S` are the derivatives the contact kernel wants — and, asked for, the
+/// higher orders in `u` from the same factorisation (`higher_orders`).
+fn finish(v: &View, s: &mut Scratch, ok: bool, higher: bool) -> Val {
     let n_q = v.n_q;
     let n_dc = 1 + v.n_theta;
     let q0 = v.n_outer;
@@ -811,6 +851,7 @@ fn finish(v: &View, s: &mut Scratch, ok: bool) -> Val {
         dx: [0.0; tape::MAX_VARS],
         dy: [0.0; tape::MAX_VARS],
         ok,
+        ..Val::default()
     };
     if !ok {
         return out;
@@ -832,8 +873,68 @@ fn finish(v: &View, s: &mut Scratch, ok: bool) -> Val {
         crate::linalg::lu_apply(n_q, &s.lu, &s.piv, &mut s.rhs);
         out.dx[d] = s.rhs[v.traced];
         out.dy[d] = s.rhs[v.traced + 1];
+        if d == 0 {
+            s.q1.clear();
+            s.q1.extend_from_slice(&s.rhs);
+        }
+    }
+    if higher {
+        higher_orders(v, s, &mut out);
     }
     out
+}
+
+/// `C''` and `C'''` exactly: the Taylor coefficients of the block's solution in `u`, each order
+/// one solve with the factorisation `finish` already made (Wagner, Walther & Schaefer 2010).
+/// Along the path `u + ε` — the geometry and the values standing, each `q` its coefficients so
+/// far, each derived value `w` its own series from its tape — every row's residual is read in
+/// Taylor arithmetic; with `q_k` not yet known (0), its ε^k coefficient is `R_k`, and
+/// `Jq q_k = −R_k` since `q_k` enters that coefficient only through `Jq`.  Left NaN when a row's
+/// kernel has no form (`taylor::has_form`).
+fn higher_orders(v: &View, s: &mut Scratch, out: &mut Val) {
+    let (n_q, q0) = (v.n_q, v.n_outer);
+    if s.q1.len() != n_q || v.rows.iter().any(|r| !taylor::has_form(r.0)) {
+        return;
+    }
+    s.path.clear();
+    s.path.push(Jet([s.xv[0], 1.0, 0.0, 0.0]));
+    for i in 1..q0 {
+        s.path.push(Jet::constant(s.xv[i]));
+    }
+    for i in 0..n_q {
+        s.path.push(Jet([s.xv[q0 + i], s.q1[i], 0.0, 0.0]));
+    }
+    for t in &v.w {
+        let sr = tape::eval_series_flat(t, v.n_outer, &s.xv[..v.n_outer], &mut s.ts);
+        s.path.push(Jet([sr.c[0], sr.c[1], sr.c[2] / 2.0, sr.c[3] / 6.0]));
+    }
+    for order in 2..taylor::ORDER {
+        s.rhs.clear();
+        s.rhs.resize(n_q, 0.0);
+        let mut row0 = 0usize;
+        for &(kid, cols, consts) in &v.rows {
+            let n_res = KERNELS[kid].n_res;
+            s.vj.clear();
+            s.vj.extend(cols.iter().map(|&c| s.path[c as usize]));
+            s.rj.clear();
+            s.rj.resize(n_res, Jet::default());
+            if !taylor::residual(kid, &s.vj, consts, &mut s.rj, &mut s.jrow) {
+                return;
+            }
+            for t in 0..n_res {
+                s.rhs[row0 + t] = -s.rj[t].0[order];
+            }
+            row0 += n_res;
+        }
+        crate::linalg::lu_apply(n_q, &s.lu, &s.piv, &mut s.rhs);
+        for i in 0..n_q {
+            s.path[q0 + i].0[order] = s.rhs[i];
+        }
+    }
+    let (xi, yi) = (q0 + v.traced, q0 + v.traced + 1);
+    out.d2 = [2.0 * s.path[xi].0[2], 2.0 * s.path[yi].0[2]];
+    out.d3 = [6.0 * s.path[xi].0[3], 6.0 * s.path[yi].0[3]];
+    out.higher = out.d2.iter().chain(&out.d3).all(|x| x.is_finite());
 }
 
 /// The curve as a polyline: one march across `[u0, u1]`, each sample warm-started from the last.
@@ -909,6 +1010,15 @@ pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
 /// `kernel_eval` given the parameter and the θ columns outright — what a kernel whose columns
 /// are laid out otherwise (a tangency's line after the curve's coordinates) calls.
 pub fn kernel_eval_at(consts: &[f64], u: f64, theta_cols: &[f64]) -> Val {
+    kernel_eval_with(consts, u, theta_cols, false)
+}
+
+/// `kernel_eval_at` with `C''` and `C'''` too — a curvature's residual.
+pub fn kernel_eval_higher(consts: &[f64], u: f64, theta_cols: &[f64]) -> Val {
+    kernel_eval_with(consts, u, theta_cols, true)
+}
+
+fn kernel_eval_with(consts: &[f64], u: f64, theta_cols: &[f64], higher: bool) -> Val {
     let Some((anchor_u, values, has_pose, flat)) = decode(consts) else { return Val::default() };
     let Some(n_q) = view(flat).map(|w| w.n_q) else { return Val::default() };
     if flat.len() < n_q {
@@ -927,11 +1037,11 @@ pub fn kernel_eval_at(consts: &[f64], u: f64, theta_cols: &[f64]) -> Val {
         // another contact at this address, which is why `System::new` calls `forget`.
         let key = (flat.as_ptr() as usize, flat.len());
         if let Some(seen) = s.seen.get(&key) {
-            if seen.outer == outer {
+            if seen.outer == outer && (seen.val.higher || !higher) {
                 return seen.val;
             }
         }
-        eval_at(flat, outer, Anchor { u: anchor_u, pose }, Some(key), s)
+        eval_at(flat, outer, Anchor { u: anchor_u, pose }, Some(key), higher, s)
     })
 }
 
@@ -974,28 +1084,33 @@ fn warm(v: &View, s: &mut Scratch, u: f64, outer: &[f64], q: &[f64]) -> bool {
 
 /// A traced curve's **frame** at a contact: the point, its exact first derivative in `[u, θ…]`
 /// (the implicit function theorem, as `kernel_eval` gives it), and the Jacobian of that first
-/// derivative — which the theorem does not give without second derivatives of the block's
-/// kernels, and which is therefore a **forward difference** of the exact velocity from the
-/// memoised centre, one warm-started block solve per column.  A tangency's residual is exact;
+/// derivative — and, asked for (`higher`), `C''`, `C'''` and the Jacobian of `C''`.  Along `u`
+/// the Jacobians are exact where the block has Taylor forms (`∂C'/∂u` is `C''`, `∂C''/∂u` is
+/// `C'''`); along θ they are a **forward difference** of the exact derivatives from the
+/// memoised centre, one warm-started block solve per column.  A contact's residual is exact;
 /// its Jacobian is accurate to the difference, which is what a solver's Jacobian needs and no
-/// more.  A curvature needs the second derivative exactly, and a traced curve cannot give it —
-/// see `constraints::validate`.
+/// more.
 #[derive(Clone, Copy, Debug)]
 pub struct Frame {
     pub val: Val,
-    /// `d1[k][j] = ∂(dC_k/du)/∂outer[j]` for `k` in x, y — by finite difference.
+    /// `d1[k][j] = ∂(dC_k/du)/∂outer[j]` for `k` in x, y.
     pub d1: [[f64; tape::MAX_VARS]; 2],
+    /// `d2[k][j] = ∂(d²C_k/du²)/∂outer[j]` — NaN unless asked for and the block has forms.
+    pub d2: [[f64; tape::MAX_VARS]; 2],
 }
 
-pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64]) -> Frame {
-    let val = kernel_eval_at(consts, u, theta_cols);
+pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], higher: bool) -> Frame {
+    let val = kernel_eval_with(consts, u, theta_cols, higher);
     let mut d1 = [[0.0f64; tape::MAX_VARS]; 2];
+    let mut d2 = [[f64::NAN; tape::MAX_VARS]; 2];
     if !val.ok {
-        return Frame { val, d1 };
+        return Frame { val, d1, d2 };
     }
-    let Some((_, values, _, flat)) = decode(consts) else { return Frame { val, d1 } };
+    let Some((_, values, _, flat)) = decode(consts) else { return Frame { val, d1, d2 } };
     let mut outer = [0.0f64; tape::MAX_VARS];
-    let Some(outer) = outer_of(u, theta_cols, values, &mut outer) else { return Frame { val, d1 } };
+    let Some(outer) = outer_of(u, theta_cols, values, &mut outer) else {
+        return Frame { val, d1, d2 };
+    };
     let key = (flat.as_ptr() as usize, flat.len());
     LOCUS_SCRATCH.with(|s| {
         let s = &mut *s.borrow_mut();
@@ -1008,23 +1123,38 @@ pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64]) -> Frame {
         let Some(vw) = prepare(flat, outer, s) else { return };
         let mut probe = [0.0f64; tape::MAX_VARS];
         probe[..outer.len()].copy_from_slice(outer);
-        for j in 0..1 + theta_cols.len() {
+        // along u the theorem's own higher orders, where the block gave them
+        let from = if val.higher {
+            d1[0][0] = val.d2[0];
+            d1[1][0] = val.d2[1];
+            d2[0][0] = val.d3[0];
+            d2[1][0] = val.d3[1];
+            1
+        } else {
+            0
+        };
+        for j in from..1 + theta_cols.len() {
             let h = 1e-5 * outer[j].abs().max(1.0);
             probe[j] = outer[j] + h;
             // a continuation step of one difference from the remembered pose, never a cold
             // start, so the branch cannot change under it; the perturbed pose is not kept
             let ok = warm(&vw, s, probe[0], &probe[..outer.len()], &q[..n_q]);
-            let f = if ok { finish(&vw, s, true) } else { Val::default() };
+            let f = if ok { finish(&vw, s, true, val.higher) } else { Val::default() };
             probe[j] = outer[j];
-            if !f.ok {
+            if !f.ok || f.higher != val.higher {
                 d1 = [[f64::NAN; tape::MAX_VARS]; 2];
+                d2 = [[f64::NAN; tape::MAX_VARS]; 2];
                 return;
             }
             d1[0][j] = (f.dx[0] - val.dx[0]) / h;
             d1[1][j] = (f.dy[0] - val.dy[0]) / h;
+            if val.higher {
+                d2[0][j] = (f.d2[0] - val.d2[0]) / h;
+                d2[1][j] = (f.d2[1] - val.d2[1]) / h;
+            }
         }
     });
-    Frame { val, d1 }
+    Frame { val, d1, d2 }
 }
 
 /// Drop every remembered pose.  `System::new` calls it: a contact's constants are addressed by

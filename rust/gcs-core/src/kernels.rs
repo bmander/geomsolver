@@ -204,17 +204,24 @@ pub fn curve_tangent_kernel(n_theta: usize, n_const: usize, trace: bool) -> Kern
 }
 
 /// A circle osculating a curve written in the language: `(u, θ…, cx, cy, r)` — the three rows
-/// of `spline_curvature`, with `C`, `C'`, `C''` and `C'''` from the definition's tapes.  A trace
-/// has no second derivative to give, so its slot is `refused`.
-pub fn curve_curvature_kernel(n_theta: usize, n_const: usize, trace: bool) -> Kernel {
+/// of `spline_curvature`, with `C`, `C'`, `C''` and `C'''` from the definition's tapes, or from
+/// its block's Taylor orders (`locus::higher_orders`).  A trace whose block has a row with no
+/// Taylor form has no second derivative to give, so its slot is `refused`.
+pub fn curve_curvature_kernel(n_theta: usize, n_const: usize, trace: bool, formed: bool) -> Kernel {
+    let (res, jac): (fn(usize, &[f64], &[f64], &mut [f64]), fn(usize, &[f64], &[f64], &mut [f64])) =
+        match (trace, formed) {
+            (false, _) => (curve_curvature_res::<false>, curve_curvature_jac::<false>),
+            (true, true) => (curve_curvature_res::<true>, curve_curvature_jac::<true>),
+            (true, false) => (refused_res, refused_jac),
+        };
     Kernel {
         name: if trace { "trace_curvature" } else { "curve_curvature" },
         n_res: 3,
         n_par: 1 + n_theta + 3,
         n_const,
         degree: 1,
-        res: if trace { refused_res } else { curve_curvature_res },
-        jac: if trace { refused_jac } else { curve_curvature_jac },
+        res,
+        jac,
         const_jac: None,
     }
 }
@@ -1406,8 +1413,9 @@ fn curve_x(u: f64, theta: &[f64], values: &[f64], out: &mut [f64]) -> usize {
 /// A curve's **frame** at a contact, whichever way the definition places it: the point and its
 /// first three derivatives in the parameter, and the gradient of the first three orders in the
 /// outer columns `[u, θ…]`.  A formula gives all of it exactly (`tape::Series`); a trace gives
-/// the point and `C'` exactly and `C'`'s gradient by difference (`locus::kernel_frame`), and no
-/// higher order — which is why a curvature is never stated against one (`constraints::validate`).
+/// `C` to `C'''` exactly when asked for its higher orders (`locus::higher_orders`, over the
+/// kernels' Taylor forms) and the gradients along θ by difference (`locus::kernel_frame`) —
+/// without them, `C''` on are NaN, and a curvature is not stated (`constraints::validate`).
 ///
 /// A **residual** reads only the derivatives (`curve_value`), never the gradient: a rejected
 /// trust-region step evaluates residuals without ever asking for a Jacobian, and for a trace the
@@ -1420,9 +1428,14 @@ struct CurveFrame {
 }
 
 /// `C` and its derivatives in the parameter, for a residual.  `TRACE` says which body the
-/// constants hold — a trace's block, or a formula's two tapes.
-fn curve_value<const TRACE: bool>(k: &[f64], u: f64, theta: &[f64]) -> [[f64; 2]; 4] {
+/// constants hold — a trace's block, or a formula's two tapes; `higher` whether a trace is to
+/// work out `C''` and `C'''` (a formula always gives them).
+fn curve_value<const TRACE: bool>(k: &[f64], u: f64, theta: &[f64], higher: bool) -> [[f64; 2]; 4] {
     if TRACE {
+        if higher {
+            let val = crate::locus::kernel_eval_higher(k, u, theta);
+            return [[val.x, val.y], [val.dx[0], val.dy[0]], val.d2, val.d3];
+        }
         let val = crate::locus::kernel_eval_at(k, u, theta);
         let nan = [f64::NAN; 2];
         return [[val.x, val.y], [val.dx[0], val.dy[0]], nan, nan];
@@ -1439,13 +1452,13 @@ fn curve_value<const TRACE: bool>(k: &[f64], u: f64, theta: &[f64]) -> [[f64; 2]
 }
 
 /// The whole frame, for a Jacobian.
-fn curve_frame<const TRACE: bool>(k: &[f64], u: f64, theta: &[f64]) -> CurveFrame {
-    let nan = [[f64::NAN; crate::tape::MAX_VARS]; 2];
+fn curve_frame<const TRACE: bool>(k: &[f64], u: f64, theta: &[f64], higher: bool) -> CurveFrame {
     if TRACE {
-        let fr = crate::locus::kernel_frame(k, u, theta);
+        let fr = crate::locus::kernel_frame(k, u, theta, higher);
+        let v = fr.val;
         return CurveFrame {
-            c: [[fr.val.x, fr.val.y], [fr.val.dx[0], fr.val.dy[0]], [f64::NAN; 2], [f64::NAN; 2]],
-            g: [[fr.val.dx, fr.val.dy], fr.d1, nan],
+            c: [[v.x, v.y], [v.dx[0], v.dy[0]], v.d2, v.d3],
+            g: [[v.dx, v.dy], fr.d1, fr.d2],
         };
     }
     CURVE_SCRATCH.with(|sc| {
@@ -1474,7 +1487,7 @@ fn curve_tangent_res<const TRACE: bool>(n: usize, v: &[f64], k: &[f64], r: &mut 
     let n_theta = n_par - 5;
     for i in 0..n {
         let (o, ko) = (n_par * i, n_const * i);
-        let c = curve_value::<TRACE>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta]);
+        let c = curve_value::<TRACE>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], false);
         let l = o + 1 + n_theta;
         let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
         let (wx, wy) = (c[0][0] - v[l], c[0][1] - v[l + 1]);
@@ -1494,7 +1507,7 @@ fn curve_tangent_jac<const TRACE: bool>(n: usize, v: &[f64], k: &[f64], j: &mut 
     let (mut dc, mut dl) = ([0.0f64; W], [0.0f64; W]);
     for i in 0..n {
         let (o, ko) = (n_par * i, n_const * i);
-        let f = curve_frame::<TRACE>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta]);
+        let f = curve_frame::<TRACE>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], false);
         let l = o + 1 + n_theta;
         let ll = l - o;
         let jo = 2 * n_par * i;
@@ -1523,11 +1536,11 @@ fn curve_tangent_jac<const TRACE: bool>(n: usize, v: &[f64], k: &[f64], j: &mut 
 /* -- a circle osculating a curve: (u, θ…, cx, cy, r) ------------------------------------- */
 
 /// Rows: the spline curvature's — the centre is the centre of curvature, and the radius is the
-/// distance to it — over a formula's frame; a trace has no second derivative and gets the
-/// `refused` kernel instead.  The u column and every θ column go through one formula, since
+/// distance to it — over a formula's frame or a trace's (its higher orders exact, over the
+/// kernels' Taylor forms).  The u column and every θ column go through one formula, since
 /// `g[k][·][0]` is `c[k + 1]`: a column moves C, C' and C'' by its own three gradients, and for
 /// `u` those are C', C'' and C'''.
-fn curve_curvature_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+fn curve_curvature_res<const TRACE: bool>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
     if n_par < 4 || n_const < 2 {
         return;
@@ -1535,7 +1548,7 @@ fn curve_curvature_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let n_theta = n_par - 4;
     for i in 0..n {
         let (o, ko) = (n_par * i, n_const * i);
-        let f = curve_value::<false>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta]);
+        let f = curve_value::<TRACE>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], true);
         let c = o + 1 + n_theta;
         let ([tx, ty], [sx, sy]) = (f[1], f[2]);
         let (dx, dy) = (v[c] - f[0][0], v[c + 1] - f[0][1]);
@@ -1546,7 +1559,7 @@ fn curve_curvature_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     }
 }
 
-fn curve_curvature_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+fn curve_curvature_jac<const TRACE: bool>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
     if n_par < 4 || n_const < 2 {
         return;
@@ -1554,7 +1567,7 @@ fn curve_curvature_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     let n_theta = n_par - 4;
     for i in 0..n {
         let (o, ko) = (n_par * i, n_const * i);
-        let f = curve_frame::<false>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta]);
+        let f = curve_frame::<TRACE>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], true);
         let c = o + 1 + n_theta;
         let cc = c - o;
         let jo = 3 * n_par * i;

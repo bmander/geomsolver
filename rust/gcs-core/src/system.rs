@@ -376,12 +376,12 @@ fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
     use crate::constraints::FamilyKernel;
     for d in &sk.curve_defs {
         let n_theta = d.vars.len().saturating_sub(1 + d.values.len());
-        let (n_const, trace) = match &d.body {
+        let (n_const, trace, formed) = match &d.body {
             crate::model::CurveBody::Exprs { x, y } => {
-                (3 + x.flat.len() + y.flat.len() + d.values.len(), false)
+                (3 + x.flat.len() + y.flat.len() + d.values.len(), false, true)
             }
             crate::model::CurveBody::Trace(l) => {
-                (3 + d.values.len() + l.flat.len() + l.n_q(), true)
+                (3 + d.values.len() + l.flat.len() + l.n_q(), true, l.without_form().is_none())
             }
         };
         for fk in FamilyKernel::ALL {
@@ -390,7 +390,7 @@ fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
                 (FamilyKernel::Contact, true) => kernels::trace_kernel(n_theta, n_const),
                 (FamilyKernel::Tangent, _) => kernels::curve_tangent_kernel(n_theta, n_const, trace),
                 (FamilyKernel::Curvature, _) => {
-                    kernels::curve_curvature_kernel(n_theta, n_const, trace)
+                    kernels::curve_curvature_kernel(n_theta, n_const, trace, formed)
                 }
             });
         }
