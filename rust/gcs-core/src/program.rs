@@ -432,7 +432,13 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 expr::Fault::Measure => (Code::E107, ""),
             };
             diags.push(Diag { code, span, stmt, message: format!("`{}`: {err}{tail}", item.text) });
-        } else if !item.free.is_empty() {
+        } else if !item.free.is_empty()
+            // a statement refused already says what is wrong with its number, and the unknown
+            // the graph minted for it is that mistake's, not the document's
+            && !diags.iter().any(|d| {
+                d.severity() == Severity::Error && span.lo <= d.span.lo && d.span.hi <= span.hi
+            })
+        {
             diags.push(Diag {
                 code: Code::W111,
                 span,
@@ -440,6 +446,24 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 message: format!(
                     "`{}` is a free variable: the solver answers for it",
                     item.free.join("`, `")
+                ),
+            });
+        }
+    }
+
+    // a curve written over a number its drawn instance left unknown reads that unknown as a
+    // column, and only the expression graph allocates one — when a dimension of the drawing
+    // reads it.  One nothing reads would leave the curve a column short
+    for (i, cv) in sk.curves.iter().enumerate() {
+        for n in cv.unknowns.iter().filter(|n| !sk.free_vars.contains_key(*n)) {
+            let site = map.site_of(EntRef::new(EntKind::Curve, i));
+            diags.push(Diag {
+                code: Code::E103,
+                span: site.map(|s| s.span).unwrap_or_default(),
+                stmt: site.map(|s| s.stmt),
+                message: format!(
+                    "`{n}` is left unknown, and nothing on the sheet reads it: give the \
+                     instance a number for it, or state what it is"
                 ),
             });
         }

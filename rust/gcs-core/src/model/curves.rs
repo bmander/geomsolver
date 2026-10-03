@@ -40,12 +40,20 @@ pub struct CurveDef {
     pub port: String,
     /// The entity formals, in order: what an instance must supply, and of what kind.
     pub formals: Vec<(String, EntKind)>,
-    /// The numeric formals other than the swept one, in order.
+    /// The numeric formals a drawn instance left unbound, in order: unknowns of the drawing
+    /// (`leg.h`), so **columns** of the curve, after the entities' scalars — a rod's length a
+    /// contact may solve for.  Part of the key: an instance giving every number shares no
+    /// definition with one leaving a number free, since their kernels differ in width.
+    pub columns: Vec<String>,
+    /// The numeric formals other than the swept one and the columns, in order: constants.
     pub values: Vec<String>,
     /// The swept formal — what the curve runs on.
     pub param: String,
+    /// Whether the swept formal is an `Angle`, so a whole turn of it may close the curve
+    /// (`Sketch::curve_closed`).
+    pub turns: bool,
     /// The variable table the body was compiled over: `param` first, then one name per scalar
-    /// the formals contribute, then the value parameters.  Kept so a definition can be re-read
+    /// the formals contribute, then the columns, then the value parameters.  Kept so a definition can be re-read
     /// and printed.
     pub vars: Vec<String>,
     pub body: CurveBody,
@@ -57,9 +65,14 @@ pub struct CurveDef {
 }
 
 impl CurveDef {
-    /// What one definition is keyed by: the component, the point, the swept formal.
-    pub fn key(component: &str, point: &str, swept: &str) -> String {
-        format!("{component}.{point}/{swept}")
+    /// What one definition is keyed by: the component, the point, the swept formal, and the
+    /// numeric formals that are columns.
+    pub fn key(component: &str, point: &str, swept: &str, columns: &[String]) -> String {
+        if columns.is_empty() {
+            format!("{component}.{point}/{swept}")
+        } else {
+            format!("{component}.{point}/{swept}+{}", columns.join(","))
+        }
     }
 }
 
@@ -79,6 +92,10 @@ pub enum CurveBody {
 pub struct CurveE {
     pub def: u32,
     pub args: Vec<EntRef>,
+    /// The drawing's unknowns standing in the definition's `columns`, by name (`leg.h`) —
+    /// looked up in `free_vars` when read, as `Home::Free` is, since they are allocated after
+    /// the curve is built.
+    pub unknowns: Vec<String>,
     pub values: Vec<f64>,
     /// The interval *this* curve is drawn over — the piece of an involute between two circles
     /// rather than the whole spiral.
@@ -129,9 +146,11 @@ impl Sketch {
     /// its arguments contribute in `entity_params` order, then the numbers it was given.
     ///
     /// That order is the kernel's column order too, which is what lets a tape's gradient *be* a
-    /// row of the Jacobian rather than something a kernel has to rearrange.  The instance's own
-    /// values come last precisely because they are not columns: they are constants of this
-    /// curve, and the gradient in them is computed and ignored.
+    /// row of the Jacobian rather than something a kernel has to rearrange.  The unknowns a drawn
+    /// instance left among its numbers are columns, so `entity_params` reads them with the
+    /// arguments' scalars; the instance's own values come last precisely because they are not
+    /// columns: they are constants of this curve, and the gradient in them is computed and
+    /// ignored.
     pub fn curve_vars(&self, i: usize, u: f64) -> Vec<f64> {
         let mut v = Vec::with_capacity(8);
         v.push(u);
@@ -187,6 +206,32 @@ impl Sketch {
                 _ => None,
             }
         })
+    }
+
+    /// Whether a curve is **closed**: run over a whole turn of an angle (`over theta in (0,
+    /// 360)`) and back where it started — a crank's coupler curve, a cam's profile.  A contact
+    /// on one wraps round rather than stopping at the seam (`curve::clamp_contacts`), since the
+    /// seam is where the interval was written to start, not an end of anything.  Read off the
+    /// drawn polyline, whose ends are the curve at both ends of the turn: a body linear in its
+    /// angle (an involute's string) comes back somewhere else and is open.
+    pub fn curve_closed(&self, i: usize) -> bool {
+        let cv = &self.curves[i];
+        let (a, b) = cv.domain;
+        if cv.trim.is_some() || !self.curve_defs[cv.def as usize].turns
+            || ((b - a).abs() - 360.0).abs() > 1e-9
+        {
+            return false;
+        }
+        let poly = self.curve_polyline(i);
+        let (Some(&p), Some(&q)) = (poly.first(), poly.last()) else { return false };
+        let (lo, hi) = poly.iter().fold(
+            ((f64::INFINITY, f64::INFINITY), (f64::NEG_INFINITY, f64::NEG_INFINITY)),
+            |(lo, hi), &(x, y)| ((lo.0.min(x), lo.1.min(y)), (hi.0.max(x), hi.1.max(y))),
+        );
+        let size = (hi.0 - lo.0).dhypot(hi.1 - lo.1);
+        // a polyline that never left its first point (a march stuck at a singular home) is no
+        // evidence of anything coming back
+        size.is_finite() && size > 0.0 && (p.0 - q.0).dhypot(p.1 - q.1) <= 1e-6 * size
     }
 
     /// The parameter a curve's trace is anchored at — the drawing's unknown where the swept

@@ -31,8 +31,10 @@ fn involute_def() -> CurveDef {
         port: "p".to_string(),
         pose_of: Vec::new(),
         formals: vec![("c".to_string(), EntKind::Circle)],
+        columns: Vec::new(),
         values: Vec::new(),
         param: "u".to_string(),
+        turns: true,
         body: CurveBody::Exprs {
             x: Tape::compile(&expr::parse(x).unwrap().body, &vars).unwrap(),
             y: Tape::compile(&expr::parse(y).unwrap().body, &vars).unwrap(),
@@ -50,6 +52,7 @@ fn involute_sketch() -> (Sketch, usize) {
     sk.curves.push(CurveE {
         def: 0,
         args: vec![EntRef::circle(c)],
+        unknowns: Vec::new(),
         values: Vec::new(),
         domain: (0.0, 90.0),
         home: gcs_core::model::Home::At(0.0),
@@ -170,8 +173,10 @@ fn two_curve_families_get_their_own_kernels() {
         port: "p".to_string(),
         pose_of: Vec::new(),
         formals: vec![("c".to_string(), EntKind::Circle)],
+        columns: Vec::new(),
         values: Vec::new(),
         param: "u".to_string(),
+        turns: true,
         body: CurveBody::Exprs {
             x: Tape::compile(&expr::parse("c.center.x + c.r * cos(u)").unwrap().body, &vars)
                 .unwrap(),
@@ -183,6 +188,7 @@ fn two_curve_families_get_their_own_kernels() {
     sk.curves.push(CurveE {
         def: 1,
         args: vec![EntRef::circle(0)],
+        unknowns: Vec::new(),
         values: Vec::new(),
         domain: (0.0, 90.0),
         home: gcs_core::model::Home::At(0.0),

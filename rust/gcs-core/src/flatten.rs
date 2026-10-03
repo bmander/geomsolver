@@ -227,6 +227,11 @@ struct Walk<'a> {
     group_names: BTreeSet<String>,
     group_bindings: Vec<(String, Span)>,
     group_fields: Vec<(String, Span)>,
+    /// The dotted names a dimension's text reads that nothing numeric in scope answers to, with
+    /// where each was written and the scope to resolve it in: judged once every name is known
+    /// (`resolve`), since only then can `k.r` (a circle's radius) be told from `t.w` (a named
+    /// dimension of the instance `t`).
+    dim_reads: Vec<(String, Span, Scope)>,
     /// Blocks over a chain's edges, waiting for their chain — see `Pending`.
     pending: Vec<Pending>,
     /// Statements held aside in the walk's own output while a deferred block is expanded into a
@@ -319,6 +324,7 @@ impl<'a> Walk<'a> {
             group_names: BTreeSet::new(),
             group_bindings: Vec::new(),
             group_fields: Vec::new(),
+            dim_reads: Vec::new(),
             pending: Vec::new(),
             held: 0,
         }

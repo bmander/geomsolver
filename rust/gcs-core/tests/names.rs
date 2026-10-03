@@ -215,3 +215,29 @@ fn a_name_that_shadows_a_built_in_is_said() {
     assert!(d.iter().any(|m| m.contains("`tau` is built in and cannot be defined")), "{d:?}");
     assert!(d.iter().all(|m| !m.starts_with("W112")), "{d:?}");
 }
+
+/// **A dimension reads no geometry outside a trace** (§6.5).  `distance(c.r)` names the circle's
+/// radius, which the expression graph cannot read: it used to mint `c.r` a free variable of its
+/// own, warned and solved, so a drawn instance and the trace of the same component disagreed
+/// about what the body says.  Refused where the text is settled, on the sheet and in a drawn
+/// body alike; a traced body still reads it (`gear_trace.sv`'s `c.r * u`).
+#[test]
+fn a_dimension_reading_geometry_is_refused_outside_a_trace() {
+    let sheet = format!("{BASE}k := circle(center: a) hint(r: 10)\nradius(10) k\na distance(k.r) b\n");
+    let (_, d) = read(&sheet);
+    assert!(d.iter().any(|m| m.starts_with("E103") && m.contains("`k.r` is a number of the geometry")), "{d:?}");
+    let drawn = format!(
+        "component L(k: circle, p: point, q: point) {{ p distance(k.r) q }}\n\
+         {BASE}k := circle(center: a) hint(r: 10)\nradius(10) k\nl := L(k, a, b)\n"
+    );
+    let (_, d) = read(&drawn);
+    assert!(d.iter().any(|m| m.starts_with("E103") && m.contains("`k.r` is a number of the geometry")), "{d:?}");
+    assert!(!d.iter().any(|m| m.starts_with("W111")), "no unknown minted: {d:?}");
+    let traced = format!(
+        "component L(k: circle, u: Length) {{ p := point hint(x: 1, y: 1)\n  \
+         horizontal line(k.center, p)\n  k.center distance(k.r + u) p }}\n\
+         {BASE}k := circle(center: a) hint(r: 10)\nradius(10) k\ne := L(k).p over u in (0, 5)\n"
+    );
+    let (_, d) = read(&traced);
+    assert!(d.is_empty(), "{d:?}");
+}

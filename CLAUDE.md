@@ -1432,8 +1432,12 @@ Conventions:
   the innermost drawn instance owning the prefix *whose component has the swept formal*, handed
   on as `CurveSpec::of`.
   The variable table is the swept formal, then the entity formals' scalars **in `entity_params`
-  order** (`EntKind::scalar_names`), then the other numeric formals — `params_on`'s column order,
-  so a tape's gradient *is* a Jacobian row.  `EntKind::Curve` is the one kind whose children
+  order** (`EntKind::scalar_names`), then the numeric formals a drawn instance left unbound
+  (`CurveDef::columns`, keyed; `CurveE::unknowns` names them in `free_vars`), then the other
+  numeric formals (constants) — `params_on`'s column order, so a tape's gradient *is* a Jacobian
+  row.  A whole turn of an `Angle` formal that comes back is closed (`Sketch::curve_closed`): a
+  contact wraps across the seam (`clamp_contacts`).  A dimension reads geometry (`c.r`) only in a
+  trace body; elsewhere E103 (`Walk::dim_reads`).  `EntKind::Curve` is the one kind whose children
   need not be points, built and grafted **last**.
   A curve's kernel belongs to its **definition**, not its type (definitions differ in width).
   `CKind::kernel()` panics for the three curve kinds, `kernel_id_in(sk)` returns

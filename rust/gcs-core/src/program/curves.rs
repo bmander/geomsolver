@@ -21,6 +21,7 @@ fn compile_curve(
     written: &str,
     swept: &str,
     point: &str,
+    columns: &[String],
     units: crate::units::Units,
 ) -> Result<crate::model::CurveDef, (Span, String)> {
     use crate::syntax::Ty;
@@ -46,10 +47,15 @@ fn compile_curve(
                 vars.extend(names);
                 formals.push((fo.name.text.clone(), k));
             }
-            _ if fo.name.text != swept => values.push(fo.name.text.clone()),
+            _ if fo.name.text != swept && !columns.contains(&fo.name.text) => {
+                values.push(fo.name.text.clone())
+            }
             _ => {}
         }
     }
+    // the unknowns among the numbers are columns, beside the entities' scalars; the constants
+    // come after, where nothing differentiates in them
+    vars.extend(columns.iter().cloned());
     vars.extend(values.iter().cloned());
     let ex = crate::flatten::expand_component(prog, comp, units);
     if let Some(d) = ex.diagnostics.iter().find(|d| d.severity() == Severity::Error) {
@@ -97,17 +103,20 @@ fn compile_curve(
         }
         None => {
             let (locus, pose_of) =
-                compile_trace(comp.span, &traced, &body, &vars, &formals, values.len(), units)?;
+                compile_trace(comp.span, &traced, &body, &vars, &formals, columns.len(),
+                              values.len(), units)?;
             (crate::model::CurveBody::Trace(locus), pose_of)
         }
     };
     Ok(crate::model::CurveDef {
-        name: crate::model::CurveDef::key(id, point, swept),
+        name: crate::model::CurveDef::key(id, point, swept, columns),
         component: written.to_string(),
         port: point.to_string(),
         formals,
+        columns: columns.to_vec(),
         values,
         param: swept.to_string(),
+        turns: comp.formals.iter().any(|f| f.name.text == swept && f.ty == Ty::Angle),
         vars,
         body,
         pose_of,
@@ -124,6 +133,7 @@ fn compile_trace(
     body: &[&Stmt],
     vars: &[String],
     formals: &[(String, EntKind)],
+    n_columns: usize,
     n_values: usize,
     units: crate::units::Units,
 ) -> Result<(crate::locus::Locus, Vec<(String, usize)>), (Span, String)> {
@@ -168,7 +178,9 @@ fn compile_trace(
         }
         scope.insert(name.clone(), e);
     }
-    let n_theta = next - 1;
+    // the numeric columns follow the entities' scalars; nothing in the block is built over them,
+    // and they are read only through the tapes of the dimensions that name them
+    let n_theta = next - 1 + n_columns;
     let n_outer = vars.len();
     debug_assert_eq!(n_outer, 1 + n_theta + n_values, "variable table shape");
     let tape = |text: &str, span: Span| -> Result<Tape, (Span, String)> {
@@ -583,12 +595,42 @@ fn curve_entity(
             format!("`{swept}` is not a numeric formal of `{}`", info.component),
         ));
     }
-    // one definition per (component, point, formal), shared by every instance asked for it
-    let key = crate::model::CurveDef::key(&id, &of.point, swept);
+    // the numbers a drawn instance left unbound are the drawing's unknowns (`leg.h`), and the
+    // curve is written over them as over its entities: they are its columns.  Only as
+    // themselves — a formal given `2 * w` over an unknown `w` would be a column read through an
+    // affine map no kernel carries
+    let mut columns: Vec<String> = Vec::new();
+    let mut unknowns: Vec<String> = Vec::new();
+    for fo in &comp.formals {
+        let name = fo.name.text.as_str();
+        if name == swept || matches!(fo.ty, crate::syntax::Ty::Ent(_) | crate::syntax::Ty::Group) {
+            continue;
+        }
+        let Some(a) = info.values.get(name) else { continue };
+        let Some(free) = a.free.as_ref().filter(|_| info.drawn && a.number().is_none()) else {
+            continue;
+        };
+        if a.m != 1.0 || a.c != 0.0 {
+            return Err((
+                Code::E103,
+                st.span,
+                format!(
+                    "`{}` is given an expression in the unknown `{free}`, and a curve is written \
+                     over an unknown number only as the number itself",
+                    name
+                ),
+            ));
+        }
+        columns.push(name.to_string());
+        unknowns.push(free.clone());
+    }
+    // one definition per (component, point, formal, columns), shared by every instance asked
+    let key = crate::model::CurveDef::key(&id, &of.point, swept, &columns);
     let di = match sk.curve_defs.iter().position(|x| x.name == key) {
         Some(i) => i,
         None => {
-            let def = compile_curve(prog, comp, &id, &info.component, swept, &of.point, sk.units)
+            let def = compile_curve(prog, comp, &id, &info.component, swept, &of.point, &columns,
+                                    sk.units)
                 .map_err(|(span, m)| (Code::E103, span, m))?;
             sk.curve_defs.push(def);
             sk.curve_defs.len() - 1
@@ -642,6 +684,7 @@ fn curve_entity(
     Ok(Some(crate::model::CurveE {
         def: di as u32,
         args,
+        unknowns,
         values,
         domain,
         home,

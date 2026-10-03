@@ -242,10 +242,13 @@ impl Sketch {
             // whatever its arguments contribute, in argument order — which is the order its
             // tapes were compiled against and so the order of the Jacobian's columns
             EntKind::Curve => {
+                let cv = &self.curves[e.i()];
                 let mut v = Vec::new();
-                for &a in &self.curves[e.i()].args {
+                for &a in &cv.args {
                     v.extend(self.entity_params(a));
                 }
+                // the numbers left unknown, once the expression graph has allocated them
+                v.extend(cv.unknowns.iter().filter_map(|n| self.free_vars.get(n).copied()));
                 v
             }
         }
