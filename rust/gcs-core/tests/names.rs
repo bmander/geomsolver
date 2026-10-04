@@ -306,3 +306,24 @@ fn a_solve_writes_an_unknowns_seed_back_to_its_declaration() {
     let ed = gcs_core::edit::commit_seeds(&e, &sk, &e.program);
     assert!(ed.text.contains("param w: Length hint(80)\n"), "{}", ed.text);
 }
+
+/// **An unknown starts at its seed**, wherever it is read: a dimension's unknown at the number in
+/// its `hint(…)` rather than where a walk from the pose would put it, and a fold's likewise.  A
+/// fold misspelling its unknown is E101 and nothing more — the plane stands, so what is drawn in
+/// it is not refused after it.
+#[test]
+fn an_unknown_starts_at_its_seed_and_a_misspelt_one_is_said_once() {
+    let (e, d) = read(&format!("{BASE}param w: Length hint(25)\na distance(w) b\n"));
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!(e.sketch.params[e.sketch.free_vars["w"] as usize].value, 25.0);
+    let views = "o := point hint(x: 0, y: 0)\nt := point hint(x: 40, y: 0)\n\
+                 front := plane(origin: o, toward: t)\nparam beta: Angle hint(20deg)\n";
+    let side = "side := plane(origin: o, toward: t, from: front, fold: beta)\n\
+                p := point hint(x: 5, y: 5) in side\n";
+    let (e, d) = read(&format!("{views}{side}"));
+    assert!(d.is_empty(), "{d:?}");
+    assert!((e.sketch.params[e.sketch.free_vars["beta"] as usize].value - 20.0).abs() < 1e-12);
+    let (_, d) = read(&format!("{views}{}", side.replace("fold: beta", "fold: betta")));
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].starts_with("E101") && d[0].contains("`betta`"), "{d:?}");
+}
