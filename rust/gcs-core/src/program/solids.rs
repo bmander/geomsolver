@@ -300,3 +300,37 @@ fn res_forget(res: &mut Resolver, name: &str) {
         }
     }
 }
+
+/// **A body takes a fillet with the word its edges call for** (§6.9, issue #66): the ball's
+/// material is added with `union` at a concave edge and taken away with `cut` at a convex one, so
+/// the other word — or a fillet as a body's stock or a bound — is refused where the fillet is
+/// written. A fillet that cannot be rounded at all says so itself (`solid::validate`).
+pub(super) fn fillet_words(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
+    let mut out = Vec::new();
+    for body in &sk.solids {
+        let SolidDef::Body { stock, on, through, bound } = &body.def else { continue };
+        let taken = std::iter::once((*stock, None))
+            .chain(on.iter().map(|&o| (o, Some(true))))
+            .chain(through.iter().map(|&o| (o, Some(false))))
+            .chain(bound.iter().map(|&o| (o, None)));
+        for (f, adds) in taken {
+            let s = &sk.solids[f as usize];
+            if !matches!(s.def, SolidDef::Fillet { .. }) { continue; }
+            let Ok(blend) = sk.fillet_blend(f as usize) else { continue };
+            let (fillet, of) = (&s.name, &body.name);
+            let message = match adds {
+                None => format!("`{fillet}` is a fillet, which `{of}` takes with `union` or `cut`, \
+                                 not as its stock or a bound"),
+                Some(true) if !blend.concave => format!("`{fillet}` rounds convex edges, whose material \
+                                 the ball rolls off: write `{fillet} cut {of}`, not `union`"),
+                Some(false) if blend.concave => format!("`{fillet}` fills concave edges, whose material \
+                                 the ball adds: write `{fillet} union {of}`, not `cut`"),
+                _ => continue,
+            };
+            let site = map.site_of(EntRef::solid(f as usize));
+            out.push(Diag { code: Code::E085, span: site.map(|s| s.span).unwrap_or_default(),
+                stmt: site.map(|s| s.stmt), message });
+        }
+    }
+    out
+}

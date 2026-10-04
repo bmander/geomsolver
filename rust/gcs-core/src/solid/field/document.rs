@@ -1,7 +1,7 @@
 //! Immutable material snapshots of ordinary Solvent solid definitions.
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::{SpatialField,MaterialField,SweptField,ExtrudedField,PlanarField,I,V};
+use super::{SpatialField,MaterialField,SweptField,ExtrudedField,PlanarField,RevolvedField,I,V};
 use crate::model::{EntKind,Sketch,SolidDef};
 use crate::{motion::Family,plane::Basis,syntax::BodyWord};
 use crate::solid::{surface::Edge,RevolvedRegion};
@@ -230,6 +230,33 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     if let Some(cut) = cuts.pop() { body = body.combine(cut,BodyWord::Cut).map_err(error)?; }
                     for &i in bound { body = body.combine(get(i),BodyWord::Bound).map_err(error)?; }
                     body
+                }
+                // each piece's section exactly, swept or turned as the kernels build it
+                SolidDef::Fillet {..} => {
+                    let blend = sk.fillet_blend(i)?;
+                    let mut out: Option<Snapshot> = None;
+                    for p in &blend.pieces {
+                        let w = &p.wedge;
+                        let (start,sweep) = w.arc();
+                        let (s0,c0) = start.dsin_cos();
+                        let (s1,c1) = (start+sweep).dsin_cos();
+                        let ends = [[w.centre[0]+w.r*c0,w.centre[1]+w.r*s0],[w.centre[0]+w.r*c1,w.centre[1]+w.r*s1]];
+                        let edges = vec![
+                            Edge::Line {a:w.corner,b:w.touch[0],axis:false},
+                            Edge::Arc {center:w.centre,radius:w.r,start,sweep,ends},
+                            Edge::Line {a:w.touch[1],b:w.corner,axis:false},
+                        ];
+                        let profile = PlanarField::from_loop(&edges,0.)?;
+                        let leaf: SpatialField = match p.carry {
+                            crate::solid::fillet::Carry::Prism {length} => ExtrudedField::new(profile,
+                                p.section.o,p.section.u,p.section.v,[0.,length]).map_err(error)?.into(),
+                            crate::solid::fillet::Carry::Turn =>
+                                RevolvedField::new(profile,p.section.o,p.section.v).map_err(error)?.into(),
+                        };
+                        let leaf = Snapshot::Static(leaf);
+                        out = Some(match out { None => leaf,Some(o) => o.combine(leaf,BodyWord::Union).map_err(error)? });
+                    }
+                    out.ok_or("a fillet with no pieces")?
                 }
                 SolidDef::Loft {..} => return Err("material fields currently require prisms, \
                     full revolutions, Boolean bodies or named motions".into()),

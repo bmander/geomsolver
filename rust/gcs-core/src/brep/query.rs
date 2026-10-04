@@ -20,6 +20,84 @@ pub enum Meets {
     Along,
 }
 
+/// Where two curves cross, to `tol`, in closed form for lines and circles: each crossing's
+/// parameter on `a` (over `ta`) and its point, where it lies within `b`'s stretch `tb` too. Two
+/// curves running along one another cross nowhere (their shared ends are vertices already), and
+/// any other kind of curve gives `None`: the caller has no closed form to read. A Boolean asks it
+/// of an edge lying in the other solid's surface, against that face's own edges.
+pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
+    use crate::space::{cross,dot,sub};
+    let within = |c: &Curve,t: f64,span: [f64;2]| -> Option<f64> {
+        let t = match c.period() { Some(p) => span[0]+(t-span[0]).rem_euclid(p),None => t };
+        let slack = tol/c.speed().max(1e-300);
+        // a crossing just before the start of a closed curve's stretch is at its start
+        let t = match c.period() { Some(p) if t > span[1]+slack && t-p >= span[0]-slack => t-p,_ => t };
+        (t >= span[0]-slack && t <= span[1]+slack).then_some(t.clamp(span[0],span[1]))
+    };
+    // points of a line through `p` along the unit `d` at distance `r` from `o`, in the plane
+    // through `o` square to `z` the line lies in
+    let line_circle = |p: V,d: V,o: V,z: V,r: f64| -> Vec<V> {
+        let along = dot(d,z);
+        if along.abs() > 1e-12 {
+            let q = add(p,scale(d,dot(sub(o,p),z)/along));
+            return if (distance(q,o)-r).abs() <= tol { vec![q] } else { Vec::new() };
+        }
+        if dot(sub(p,o),z).abs() > tol { return Vec::new(); }
+        let foot = add(p,scale(d,dot(sub(o,p),d)));
+        let h = distance(foot,o);
+        if h > r+tol { return Vec::new(); }
+        let half = (r*r-h*h).max(0.).sqrt();
+        if half <= tol { vec![foot] } else { vec![add(foot,scale(d,-half)),add(foot,scale(d,half))] }
+    };
+    let on = |c: &Curve,q: V| match *c {
+        Curve::Line {p,d} => norm(cross(sub(q,p),d)) <= tol,
+        Curve::Circle(f,r) => dot(sub(q,f.o),f.z).abs() <= tol && (distance(q,f.o)-r).abs() <= tol,
+        _ => false,
+    };
+    let points: Vec<V> = match (a,b) {
+        (&Curve::Line {p:p1,d:d1},&Curve::Line {p:p2,d:d2}) => {
+            let n = cross(d1,d2);
+            if norm(n) <= 1e-12 { return Some(Vec::new()); }
+            // the nearest points of the two lines
+            let w = sub(p1,p2);
+            let (b_,d_,e_) = (dot(d1,d2),dot(d1,w),dot(d2,w));
+            let den = 1.-b_*b_;
+            let (s,t) = ((b_*e_-d_)/den,(e_-b_*d_)/den);
+            let (q1,q2) = (add(p1,scale(d1,s)),add(p2,scale(d2,t)));
+            if distance(q1,q2) <= tol { vec![q1] } else { Vec::new() }
+        }
+        (&Curve::Line {p,d},&Curve::Circle(f,r)) | (&Curve::Circle(f,r),&Curve::Line {p,d}) => line_circle(p,d,f.o,f.z,r),
+        (&Curve::Circle(f1,r1),&Curve::Circle(f2,r2)) => {
+            let n = cross(f1.z,f2.z);
+            if norm(n) <= 1e-12 {
+                if dot(sub(f2.o,f1.o),f1.z).abs() > tol { return Some(Vec::new()); }
+                // coplanar: the radical line, then the first circle along it
+                let between = sub(f2.o,f1.o);
+                let l = norm(between);
+                if l <= tol { return Some(Vec::new()); }
+                let u = scale(between,1./l);
+                let x = (l*l+r1*r1-r2*r2)/(2.*l);
+                let foot = add(f1.o,scale(u,x));
+                line_circle(foot,cross(f1.z,u),f1.o,f1.z,r1)
+            } else {
+                // the line the two planes share, then the first circle along it
+                let d = scale(n,1./norm(n));
+                let (h1,h2) = (dot(f1.o,f1.z),dot(f2.o,f2.z));
+                let c = dot(f1.z,f2.z);
+                let den = 1.-c*c;
+                let p = add(scale(f1.z,(h1-h2*c)/den),scale(f2.z,(h2-h1*c)/den));
+                line_circle(p,d,f1.o,f1.z,r1)
+            }
+        }
+        _ => return None,
+    };
+    Some(points.into_iter().filter(|&q| on(a,q) && on(b,q)).filter_map(|q| {
+        let t = within(a,a.inverse(q),ta)?;
+        within(b,b.inverse(q),tb)?;
+        Some((t,q))
+    }).collect())
+}
+
 /// Where `curve` over `[t0, t1]` meets `surface`, to `tol`: every sign change of the surface's
 /// signed distance along it refined to a root, every sampled minimum of its size that comes within
 /// `tol` refined to a touching point, and an end on the surface a root there.
@@ -234,16 +312,21 @@ impl<'a> Located<'a> {
     }
 
     /// Where a point of face `fi`'s surface stands against the face: `On` within `tol` of its
-    /// boundary.
+    /// boundary. A seam (an edge the face uses twice, once each side) is no boundary: a point on
+    /// one, away from every other edge, is in the face.
     pub fn face_place(&self,fi: usize,p: V) -> Place {
         let f: &Face = &self.b.faces[fi];
+        let seam = |e: u32| f.loops.iter().flatten().filter(|u| u.edge == e).count() > 1;
         let mut closest: Option<(f64,&super::topo::Coedge,f64)> = None;
+        let mut boundary = f64::INFINITY;
         for l in &f.loops { for c in l {
             let (t,d) = self.nearest(c.edge,p);
+            if !seam(c.edge) { boundary = boundary.min(d); }
             if closest.is_none_or(|(best,_,_)| d < best) { closest = Some((d,c,t)); }
         } }
         let Some((d,c,t)) = closest else { return Place::Out };
-        if d <= self.tol { return Place::On }
+        if boundary <= self.tol { return Place::On }
+        if d <= self.tol { return Place::In }
         let uv = self.uv(fi,p);
         let e = &self.b.edges[c.edge as usize];
         if d <= self.coarse && t > e.t[0] && t < e.t[1] {

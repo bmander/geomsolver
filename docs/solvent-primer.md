@@ -1160,6 +1160,37 @@ before `body := solid(stock)` gives the same number: both sides of the body rule
   `P distance(d) Q` with an axis through both origins (1.13); a part's thickness is the distance
   stated, so the stack keeps its numbers in step. There is no mate word.
 
+#### Fillets
+
+A fillet is a noun: the material a ball of radius `r` fills or rolls off along every edge where a
+face of one operand meets a face of the other. An operand is a solid or a face path (`plate.near`,
+`body.boss.wall`). A body adds it with `union` at a concave edge and takes it away with `cut` at a
+convex one — the word its edges call for, refused otherwise:
+
+```
+// the plate again, a boss of radius 8 standing on it at `o`
+boss := solid(boss_f, from: 0mm, to: 20mm)
+plate := solid(sec, depth: 10mm)
+body := solid(plate)
+boss union body
+root := fillet(boss, plate, r: 3mm)   // the ring round the boss's foot
+root union body
+lip := fillet(plate.near, plate.bc, r: 2mm)
+lip cut body
+```
+
+`root`'s volume is its section turned about the boss's axis (Pappus: `2π (r²(R + r/2) − (πr²/4)(R
++ r − 4r/3π))`, 105.216 for R 8, r 3); `lip`'s is `(1 − π/4) r²` along its edge. A fillet's edges
+are those of the union stratum, so `bore cut body` afterwards passes through the filleted boss, and
+a fillet of `body`'s own faces (`fillet(body.plate.near, body.boss.wall, …)`) reads `body` before
+its cuts and fillets. Its faces: `round` (the ball's: `body.root.round`), `a` and `b` (lying on
+the faces it rounds), and a straight fillet's caps `near` and `far`. A fillet that rounds both a
+concave and a convex edge is two fillets. `rust/examples/solid_fillet.sv` is a cast pad written
+this way.
+
+Rung 1 rounds what has a closed form: a straight edge between planes, and a whole circle between
+planes, cylinders and cones about one axis. Everything else is refused with its reason (E085).
+
 #### Writing a part
 
 The statement follows from where the part's axis lies relative to its section. The V-twin piston
@@ -1227,6 +1258,11 @@ sheet's to state.
 | `bad := solid(sec, depth: 3mm, about: ax)` | E001 — "a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned about a line (`about:`), not both" |
 | `x cut y` and `y cut x` | E041 — "`x` is made of itself" |
 | `h cut h` | E080 — "`h` is cut itself" |
+| `lip := fillet(block.near, block.bc, r: 5mm)` with `lip union block` | E085 — "`lip` rounds convex edges, whose material the ball rolls off: write `lip cut block`, not `union`" |
+| `root := fillet(boss, plate, r: 13mm)` on a plate 12 beyond the boss | E085 — "the ball of `boss.k` with `plate.near` is larger than `plate.near` can hold" |
+| a fillet round a rib that ends on the plate | E085 — "… runs on past its end into `plate.near`: a fillet turning a corner is rung 3" |
+| `fillet(ball, plate, r: 1mm)`, a sphere sunk in a plate | E085 — "… only a line between planes, or a circle between planes, cylinders and cones about its axis, is rounded yet (rung 2)" |
+| `root := fillet(boss, plate)` | E100 — "a fillet needs `r:`, the ball's radius" |
 
 ### 1.15 Spatial geometry read after the solve
 

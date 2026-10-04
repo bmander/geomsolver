@@ -955,6 +955,10 @@ pub enum Sweep {
     /// `body := solid(block)` — a stock, or a term: what it is made of is in the list, and the
     /// `union`/`cut`/`bound` statements say the rest.
     Body,
+    /// `root := fillet(boss, plate, r: 3mm)` — the rolling ball's material along every edge where
+    /// a face of the first operand meets a face of the second (issue #66); each operand, in the
+    /// list, is a solid or a face path (`block.near`).
+    Fillet { r: Arg },
 }
 
 impl Sweep {
@@ -968,6 +972,7 @@ impl Sweep {
             Sweep::Prism { from, to } => vec![from, to],
             Sweep::Depth { depth } => vec![depth],
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
+            Sweep::Fillet { r } => vec![r],
             Sweep::Body | Sweep::Through { .. } | Sweep::Along { .. } => Vec::new(),
         }
     }
@@ -979,7 +984,7 @@ impl Sweep {
             Sweep::Revolve { axis, .. } => Some(axis),
             Sweep::Through { body } => Some(body),
             Sweep::Along { guide } => Some(guide),
-            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
+            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body | Sweep::Fillet { .. } => None,
         }
     }
 
@@ -989,7 +994,7 @@ impl Sweep {
             Sweep::Revolve { axis, .. } => Some(axis),
             Sweep::Through { body } => Some(body),
             Sweep::Along { guide } => Some(guide),
-            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
+            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body | Sweep::Fillet { .. } => None,
         }
     }
 }

@@ -276,7 +276,17 @@ pub enum SolidDef {
     /// other order names the intermediate, and then there are two solids because there are
     /// two things.
     Body { stock: u32, on: Vec<u32>, through: Vec<u32>, bound: Vec<u32> },
+    /// **A fillet** (issue #66): the rolling ball's material along every edge where a face of `a`
+    /// meets a face of `b`, worked out after the solve (`solid::fillet`) — what a `union` adds at
+    /// a concave edge and a `cut` takes away at a convex one.  It reads `a` and `b` and is made of
+    /// neither, so it has no Boolean operands.
+    Fillet { a: FilletSide, b: FilletSide, r: Extent },
 }
+
+/// One side of a fillet: a solid, and the path of a face of it (`near`, `boss.wall`), or every
+/// face where the path is empty.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FilletSide { pub solid: u32, pub face: Vec<String> }
 
 /// A solid, as the document names it.
 #[derive(Clone, Debug)]
@@ -411,7 +421,8 @@ impl SolidE {
     pub fn operands(&self) -> Vec<u32> {
         match &self.def {
             SolidDef::Placed { source, .. } | SolidDef::Swept { source, .. } => vec![*source],
-            SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. } | SolidDef::Loft { .. } => Vec::new(),
+            SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. } | SolidDef::Loft { .. }
+                | SolidDef::Fillet { .. } => Vec::new(),
             SolidDef::Body { stock, on, through, bound } => {
                 let mut v = vec![*stock];
                 v.extend(on.iter().copied());
@@ -426,7 +437,7 @@ impl SolidE {
     pub fn face(&self) -> Option<u32> {
         match &self.def {
             SolidDef::Prism { face, .. } | SolidDef::Revolve { face, .. } | SolidDef::Through { face, .. } | SolidDef::Loft { face, .. } => Some(*face),
-            SolidDef::Body { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. } => None,
+            SolidDef::Body { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. } | SolidDef::Fillet { .. } => None,
         }
     }
 }
@@ -508,6 +519,18 @@ impl Sketch {
         }
         let value = crate::solid::build_exact(self, i).map(std::rc::Rc::new);
         self.exact_cache.borrow_mut().insert(i, (key, value.clone()));
+        value
+    }
+
+    /// Fillet `i`'s blend (`solid::fillet::derive`), or why it cannot be rounded exactly: worked
+    /// out once for the geometry it reads.
+    pub fn fillet_blend(&self, i: usize) -> Result<std::rc::Rc<crate::solid::fillet::Blend>, String> {
+        let key = crate::solid::reads(self, i, 0.0);
+        if let Some((old, value)) = self.fillet_cache.borrow().get(&i) {
+            if *old == key { return value.clone(); }
+        }
+        let value = crate::solid::fillet::derive(self, i).map(std::rc::Rc::new);
+        self.fillet_cache.borrow_mut().insert(i, (key, value.clone()));
         value
     }
 

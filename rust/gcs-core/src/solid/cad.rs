@@ -152,6 +152,13 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 ("kind","body".into()),("stock",(*stock).into()),
                 ("on",ids(on)),("cut",ids(through)),("bound",ids(bound)),
             ]),
+            // each edge's piece, a prism or a revolution of its section: a recipe a kernel builds
+            // as it builds any other, unioned
+            SolidDef::Fillet {..} => {
+                let blend = sk.fillet_blend(i).map_err(|e| format!("`{}`: {e}",solid.name))?;
+                object([("kind","fillet".into()),
+                    ("pieces",Json::Arr(blend.pieces.iter().map(|p| fillet_piece(p,scale)).collect()))])
+            }
             SolidDef::Prism {face,from,to} => object([
                 ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),
                 ("from",(from.value*scale).into()),("to",(to.value*scale).into()),
@@ -236,7 +243,7 @@ pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
     };
     let mut out = recipe.clone();
     if let Some(Json::Arr(nodes)) = recipe.get("nodes") {
-        let nodes = nodes.iter().map(|n| {
+        let node = |n: &Json| {
             let mut n = n.clone();
             nearest(&mut n,"origin","axis",false);
             for k in ["profile","end"] { if let Some(p) = n.get(k).filter(|p| matches!(p,Json::Obj(_))).map(&profile) { n.set(k,p); } }
@@ -248,6 +255,15 @@ pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
                     for r in 0..3 { moved[4*r+3] = m[4*r+3]+(0..3).map(|c| m[4*r+c]*by[c]).sum::<f64>()-by[r]; }
                     n.set("matrix",Json::Arr(moved.into_iter().map(Json::from).collect()));
                 }
+            }
+            n
+        };
+        let nodes = nodes.iter().map(|n| {
+            let mut n = node(n);
+            // a fillet's pieces are nodes of their own
+            if let Some(Json::Arr(pieces)) = n.get("pieces") {
+                let pieces = Json::Arr(pieces.iter().map(&node).collect());
+                n.set("pieces",pieces);
             }
             n
         }).collect();
@@ -314,6 +330,31 @@ pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f
         if err <= tol { return Some((ctrl,knots,err)) }
         n *= 2;
         if n > 2048 { return None }
+    }
+}
+
+/// A fillet's piece as a recipe node (millimetres): its section's loop — a line from the corner,
+/// the ball's arc, a line back — swept along the edge, or turned once about the axis.
+fn fillet_piece(p: &super::fillet::Piece,scale: f64) -> Json {
+    let w = &p.wedge;
+    let lift = |q: [f64;2]| p.section.lift(q[0],q[1]).map(|v| v*scale);
+    let normal = p.section.normal();
+    let (start,sweep) = w.arc();
+    let [a,round,b] = super::fillet::EDGE_NAMES;
+    let line = |from: [f64;2],to: [f64;2],name: &str| object([("kind","line".into()),
+        ("start",vector(lift(from))),("end",vector(lift(to))),("name",name.into())]);
+    let arc = object([("kind","circle".into()),("center",vector(lift(w.centre))),
+        ("normal",vector(normal)),("x_dir",vector(p.section.u)),("radius",(w.r*scale).into()),
+        ("angles",Json::Arr(vec![start.into(),(start+sweep).into()])),("name",round.into())]);
+    let profile = object([("loops",Json::Arr(vec![Json::Arr(vec![
+            line(w.corner,w.touch[0],a),arc,line(w.touch[1],w.corner,b)])])),
+        ("origin",vector(p.section.o.map(|v| v*scale))),("normal",vector(normal))]);
+    match p.carry {
+        super::fillet::Carry::Prism {length} => object([("kind","prism".into()),("profile",profile),
+            ("from",0.0.into()),("to",(length*scale).into())]),
+        super::fillet::Carry::Turn => object([("kind","revolve".into()),("profile",profile),
+            ("origin",vector(p.section.o.map(|v| v*scale))),("axis",vector(p.section.v)),
+            ("angle",std::f64::consts::TAU.into())]),
     }
 }
 

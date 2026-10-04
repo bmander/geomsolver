@@ -10,6 +10,9 @@ pub(super) fn build_solid(
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
     let kids = d.children.first().map(Vec::as_slice).unwrap_or(&[]);
+    if let Some(crate::syntax::Sweep::Fillet { r }) = &d.sweep {
+        return build_fillet(sk, res, d, st, kids, r, diags);
+    }
     let mut ops: Vec<EntRef> = Vec::new();
     for k in kids {
         let e = match k {
@@ -263,7 +266,92 @@ pub(super) fn build_solid(
             };
             SolidDef::Body { stock: *stock, on: on.to_vec(), through: Vec::new(), bound: Vec::new() }
         }
+        crate::syntax::Sweep::Fillet { .. } => unreachable!("a fillet is built by `build_fillet`"),
     };
+    let i = sk.solid(def, &d.name.key().text);
+    sk.solids[i].class = d.class.clone();
+    Some(i)
+}
+
+/// **A fillet is written over two solids or faces of them** (issue #66): `fillet(boss, plate, r:
+/// 3mm)`, `fillet(block.near, block.side_l, r: 1mm)`. Each operand is a solid, then the path of a
+/// face of it — what `against` reads — kept as written, since which faces it names is known only
+/// once the solid is evaluated.
+fn build_fillet(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    st: &Stmt,
+    kids: &[Kid],
+    r: &crate::syntax::Arg,
+    diags: &mut Vec<Diag>,
+) -> Option<usize> {
+    let mut say = |code: Code, span: Span, m: String| {
+        diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+    };
+    if kids.len() != 2 {
+        say(Code::E080, st.span, format!(
+            "a fillet rounds where two operands meet, and this names {}", kids.len()));
+        return None;
+    }
+    let mut sides = Vec::new();
+    for k in kids {
+        let Kid::Ref(rf) = k else {
+            say(Code::E080, st.span, "a fillet's operands are solids or faces of them".into());
+            return None;
+        };
+        let mut segs: Vec<&str> = rf.root.text.split('.').collect();
+        for seg in &rf.path {
+            match seg {
+                crate::syntax::Seg::Field(n) => segs.push(&n.text),
+                _ => {
+                    say(Code::E080, rf.span, "a face of a solid is named by its path, not an index".into());
+                    return None;
+                }
+            }
+        }
+        let found = res.lookup(rf).filter(|e| e.kind == EntKind::Solid).map(|e| {
+            let path = rf.path.iter().filter_map(|s| match s {
+                crate::syntax::Seg::Field(n) => Some(n.text.clone()),
+                _ => None,
+            }).collect::<Vec<_>>();
+            (e, path)
+        }).or_else(|| res.dotted(&segs).map(|(e, rest)| (e, rest.iter().filter_map(|s| match s {
+            crate::syntax::Seg::Field(n) => Some(n.text.clone()),
+            _ => None,
+        }).collect())));
+        let Some((e, face)) = found else {
+            say(Code::E101, rf.span, format!("no such solid: `{}`", segs.join(".")));
+            return None;
+        };
+        if e.kind != EntKind::Solid {
+            say(Code::E080, rf.span, format!(
+                "a fillet rounds between solids, and `{}` is a {}", rf.root.text, e.kind.as_str()));
+            return None;
+        }
+        sides.push(crate::model::FilletSide { solid: e.idx, face });
+    }
+    let crate::syntax::Arg::Dim { text, .. } = r else {
+        say(Code::E103, st.span, "a fillet's `r` is not a number".into());
+        return None;
+    };
+    let v = match crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)
+        .map_err(|e| format!("`{text}`: {e}"))
+        .and_then(|v| v.dim.require(crate::units::Dim::LENGTH, "r").map(|_| v))
+    {
+        Ok(v) => v,
+        Err(m) => {
+            say(Code::E103, st.span, m);
+            return None;
+        }
+    };
+    if !(v.c > 0.0) || !v.c.is_finite() {
+        say(Code::E040, st.span, format!("a fillet's radius is a positive length, and `{}` is not", text.trim()));
+        return None;
+    }
+    let b = sides.pop()?;
+    let a = sides.pop()?;
+    let def = SolidDef::Fillet { a, b, r: Extent { text: text.trim().to_string(), value: v.c } };
     let i = sk.solid(def, &d.name.key().text);
     sk.solids[i].class = d.class.clone();
     Some(i)

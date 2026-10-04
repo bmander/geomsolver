@@ -279,7 +279,8 @@ fn write_decl(out: &mut String, d: &Decl) {
     if let Some(c) = &d.curve {
         write_curve_spec(out, c);
     } else {
-        out.push_str(d.kind.as_str());
+        let fillet = matches!(d.sweep, Some(Sweep::Fillet { .. }));
+        out.push_str(if fillet { "fillet" } else { d.kind.as_str() });
         // a declaration written with no `hint(…)` prints none: "no clause" is the empty span
         if d.hint_span.is_some_and(|s| s.is_empty()) && d.seed_at.is_none() {
             out.push_str(&decl_args(d));
@@ -330,6 +331,7 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             vec![text,format!("at: {}",dim(at))]
         }
         Sweep::Body => Vec::new(),
+        Sweep::Fillet { r } => vec![format!("r: {}", dim(r))],
         Sweep::Along { guide } => {
             let mut text = String::from("along: ");
             write_ref(&mut text, guide);

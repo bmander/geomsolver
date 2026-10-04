@@ -1046,8 +1046,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     loop {
         let mut changed = false;
         for (i, s) in src.solids.iter().enumerate() {
-            let required = match s.def {
-                crate::model::SolidDef::Through { body, .. } => vec![body],
+            let required = match &s.def {
+                crate::model::SolidDef::Through { body, .. } => vec![*body],
+                crate::model::SolidDef::Fillet { a, b, .. } => vec![a.solid, b.solid],
                 _ => s.operands(),
             };
             if retained[i] && required.iter().any(|&r| !retained[r as usize]) {
@@ -1095,6 +1096,11 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     face: face(*f), axis: line_map[*axis as usize].unwrap() as u32,
                     sweep: sweep.clone(), sense: *sense,
                 }
+            }
+            crate::model::SolidDef::Fillet { a, b, r } => {
+                let side = |x: &crate::model::FilletSide| crate::model::FilletSide {
+                    solid: sol(&x.solid), face: x.face.clone() };
+                crate::model::SolidDef::Fillet { a: side(a), b: side(b), r: r.clone() }
             }
             crate::model::SolidDef::Body { stock, on, through, bound } => {
                 crate::model::SolidDef::Body {

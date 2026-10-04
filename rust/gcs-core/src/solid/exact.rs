@@ -59,7 +59,7 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
             SolidDef::Body { .. } => {}
             _ => {
                 let caps: &[&str] = match sol.def {
-                    SolidDef::Prism { .. } | SolidDef::Through { .. } => &["near", "far"],
+                    SolidDef::Prism { .. } | SolidDef::Through { .. } | SolidDef::Fillet { .. } => &["near", "far"],
                     SolidDef::Loft { .. } => &["start", "end"],
                     _ => &[],
                 };

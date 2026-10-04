@@ -54,3 +54,8 @@ required-features = ["occt"]
 name = "brep_oracle"
 path = "tests/brep_oracle.rs"
 required-features = ["occt"]
+
+[[test]]
+name = "fillet_oracle"
+path = "tests/fillet_oracle.rs"
+required-features = ["occt"]

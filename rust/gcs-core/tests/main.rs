@@ -55,6 +55,7 @@ mod surfaces;
 mod revolved_regions;
 mod functional_solids;
 mod extruded_fields;
+mod fillet;
 mod patches;
 mod seams;
 mod sector;

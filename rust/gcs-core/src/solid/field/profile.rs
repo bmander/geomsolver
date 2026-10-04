@@ -122,7 +122,12 @@ fn turning(edges: &[Edge]) -> Result<(f64,bool),String> {
             turning += sweep*direction;
         }
         let a = e.tangent(1.); let b = edges[(i+1)%edges.len()].tangent(0.);
-        let turn = (direction*cross(a,b)).datan2(a[0]*b[0]+a[1]*b[1]);
+        let (sine,cosine) = (direction*cross(a,b),a[0]*b[0]+a[1]*b[1]);
+        // a cusp (a fillet's section, where its arc meets a side tangent to it) turns the walk
+        // right round, and in a simple loop always outward: half a turn, whatever sign the
+        // rounding of a solved tangency leaves its sine
+        let reversed = cosine < 0. && sine.abs() <= 1e-9*(a[0].dhypot(a[1])*b[0].dhypot(b[1]));
+        let turn = if reversed { std::f64::consts::PI } else { sine.datan2(cosine) };
         // Tangent junctions inherit the solved source's floating-point residual.
         if turn < -1e-9 { convex = false; }
         turning += turn;

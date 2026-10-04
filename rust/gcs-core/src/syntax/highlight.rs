@@ -228,6 +228,10 @@ fn tint_word(
             if w == "branch" {
                 return (Some(Tint::Relation), Next::Word);
             }
+            // `root := fillet(boss, plate, r: 3mm)` — a solid, spelled by what it rounds (#66)
+            if w == "fillet" && prev == Some(&Tok::Define) && next == Some(&Tok::P('(')) {
+                return (Some(Tint::Word), Next::Word);
+            }
             if next == Some(&Tok::P('(')) && !is_operator(w) {
                 return (Some(Tint::Type), Next::Word);
             }

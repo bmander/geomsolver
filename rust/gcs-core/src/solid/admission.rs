@@ -263,6 +263,8 @@ fn revolution_turns(sk: &Sketch,id: usize,tolerance: f64) -> Option<Vec<Turns>> 
             } }
             Some(vec![match ball { Some((c,_)) if round => Turns::Ball(c),_ => Turns::Line(a,d) }])
         }
+        // a fillet's rings are not proved alike under a turn; its placements are sampled
+        SolidDef::Fillet {..} => None,
         SolidDef::Placed {source,motion,at} => {
             let pose = crate::motion::Family::read(sk,*motion as usize).ok()?.at(at.value).ok()?;
             Some(revolution_turns(sk,*source as usize,tolerance)?.into_iter().map(|t| match t {
@@ -339,6 +341,7 @@ fn tool(sk: &Sketch,id: usize) -> Result<(),String> {
         SolidDef::Loft {..} => Err(format!("`{}` is a loft, not a revolution",solid.name)),
         SolidDef::Through {..} => Err(format!("`{}` is a through prism, not a revolution",solid.name)),
         SolidDef::Swept {..} => Err(format!("`{}` is itself a sweep",solid.name)),
+        SolidDef::Fillet {..} => Err(format!("`{}` is a fillet, not a revolution",solid.name)),
     }
 }
 

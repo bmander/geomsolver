@@ -263,6 +263,23 @@ blank `heel` bound by `tip`; modules `design.sv`, `views.sv`, `pitch/`, `blank/`
 against the gear's (`pitch/pinion.sv`); members roll at `N_c / N` off the gear's triangle, not
 `1 / sin`. `tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement
 carries inside the blank; CLI test readers zero the offset.
+**Fillets (#66, rung 1; [0.49]):** `root := fillet(boss, plate, r: 3mm)` is a noun
+(`Sweep::Fillet`, `SolidDef::Fillet {a, b: FilletSide, r}`): the ball's material along every edge
+of the operands' union where a face of `a` meets one of `b` (a side is a solid or a face path).
+The body takes it with `union` at concave edges, `cut` at convex (`program/solids.rs::fillet_words`,
+E085); an operand that is the body taking it reads its union stratum (`fillet::stands_for`).
+`solid::fillet::derive` (memoised, `Sketch::fillet_blend`) reads the operands' exact B-reps: per
+edge a `Wedge` (corner, touches, arc) in the section square to a plane/plane line or the meridian of
+a coaxial plane/cylinder/cone circle, a `Piece` swept (`Carry::Prism`) or turned (`Carry::Turn`);
+refusals (E085) are closed-form (`holds`: the band crossed by no other edge; `stops`: flush ends),
+never sampled; coplanar seams are skipped. Every consumer reads the pieces as primitives: facets
+(`Piece::face_poly`), the recipe's `fillet` node (`brep::recipe`, native `construct`), the field
+(extruded/revolved leaves). Kernel rules it found: an edge lying along the other solid's face is cut
+where it crosses that face's edges (`query::curve_curve`, closed form); a seam is no boundary
+(`face_place`); a hull corner's fan is walked both ways (`mesh::Tri2::fan`, cusps); a cusp turns a
+profile half a turn (`field/profile.rs::turning`). `tests/fillet.rs`, `gcs-cli/tests/fillet_oracle.rs`
+(OCCT's `BRepFilletAPI_MakeFillet`, `solvent_cad_fillet`, links `TKFillet`),
+`rust/examples/solid_fillet.sv`. Rungs 2–4 (offset/canal surfaces, vertex blends, the con-rod) open.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches

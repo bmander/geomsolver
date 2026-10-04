@@ -83,6 +83,15 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             }
             Ok(solid)
         }
+        "fillet" => {
+            // a fillet's pieces, one per edge it rounds, each a prism or a revolution, unioned
+            let mut solid: Option<Brep> = None;
+            for piece in field(n,"pieces")?.arr() {
+                let b = node_named(piece,built,built_names,floor).map_err(|e| format!("fillet: {e}"))?;
+                solid = Some(match solid { None => b,Some(s) => combined(&s,&b,Op::Union,floor)? });
+            }
+            solid.ok_or_else(|| "recipe: a fillet with no pieces".to_string())
+        }
         k => Err(format!("recipe: a node of kind `{k}`")),
     }
 }

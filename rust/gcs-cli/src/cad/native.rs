@@ -27,6 +27,7 @@ extern "C" {
         angle: f64) -> c_int;
     fn solvent_cad_boolean(cad: *mut c_void,a: c_int,b: c_int,operation: c_int) -> c_int;
     fn solvent_cad_transform(cad: *mut c_void,source: c_int,matrix: *const f64) -> c_int;
+    fn solvent_cad_fillet(cad: *mut c_void,id: c_int,radius: f64,points: *const f64,count: c_int) -> c_int;
     fn solvent_cad_bounds(cad: *mut c_void,ids: *const c_int,count: c_int,out: *mut f64) -> c_int;
     fn solvent_cad_validate(cad: *mut c_void,id: c_int) -> c_int;
     fn solvent_cad_step(cad: *mut c_void,id: c_int,path: *const c_char,full: c_int,unchecked: c_int) -> c_int;
@@ -82,7 +83,7 @@ impl Session {
     }
     /// `operation`: the body rule's word, `on` fusing, `cut` subtracting and
     /// `bound` keeping what the two share.
-    fn boolean(&self,a: c_int,b: c_int,operation: &str) -> Result<c_int,String> {
+    pub(crate) fn boolean(&self,a: c_int,b: c_int,operation: &str) -> Result<c_int,String> {
         let kind = match operation { "on" => 0,"cut" => 1,"bound" => 2,_ => return Err(format!("unknown body operation `{operation}`")) };
         self.result(unsafe { solvent_cad_boolean(self.0,a,b,kind) })
     }
@@ -274,6 +275,13 @@ impl Session {
         Ok(Ok((solid,Meridian {region,origin,axis,seam})))
     }
 
+    /// OCCT's rolling-ball fillet of `radius` (mm) on the edges of `id` nearest `points` (mm): the
+    /// oracle a fillet's pieces are held to (`tests/fillet_oracle.rs`).
+    pub(crate) fn fillet(&self,id: c_int,radius: f64,points: &[[f64;3]]) -> Result<c_int,String> {
+        let flat: Vec<f64> = points.iter().flatten().copied().collect();
+        self.result(unsafe { solvent_cad_fillet(self.0,id,radius,flat.as_ptr(),points.len() as c_int) })
+    }
+
     pub(crate) fn construct(&self,recipe: &Json) -> Result<c_int,String> {
         let mut shapes = BTreeMap::new();
         for node in field(recipe,"nodes").arr() {
@@ -286,6 +294,14 @@ impl Session {
                         }
                     }
                     id
+                } else if field(node,"kind").as_str() == "fillet" {
+                    // each edge's piece built as any primitive is, and fused
+                    let mut id: Option<c_int> = None;
+                    for piece in field(node,"pieces").arr() {
+                        let p = self.primitive(piece,&shapes)?;
+                        id = Some(match id { None => p,Some(sum) => self.boolean(sum,p,"on")? });
+                    }
+                    id.ok_or("a fillet with no pieces")?
                 } else if field(node,"kind").as_str() == "placed" {
                     let matrix: Vec<_> = field(node,"matrix").arr().iter().map(Json::as_f64).collect();
                     self.result(unsafe { solvent_cad_transform(self.0,

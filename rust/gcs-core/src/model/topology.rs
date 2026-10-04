@@ -91,6 +91,11 @@ impl Sketch {
                         v.push(EntRef::line(*axis as usize));
                     }
                     SolidDef::Body { .. } => {}
+                    // what it rounds between, which deleting takes it with
+                    SolidDef::Fillet { a, b, .. } => {
+                        v.push(EntRef::solid(a.solid as usize));
+                        if b.solid != a.solid { v.push(EntRef::solid(b.solid as usize)); }
+                    }
                 }
                 v.extend(s.operands().into_iter().map(|i| EntRef::solid(i as usize)));
                 v

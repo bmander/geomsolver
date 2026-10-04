@@ -531,6 +531,13 @@ impl<'a> P<'a> {
             Some(_) if matches!(self.t.get(self.i + 1).map(|(t, _)| t),
                 Some(Tok::P('+' | '-' | '*' | '/' | '^'))) => self.param(name)?,
             _ if dotted_call => StmtKind::Instance(self.instance(name, lo)?),
+            // `root := fillet(boss, plate, r: 3mm)` — a solid, spelled by what it rounds (#66)
+            Some("fillet") if call => {
+                self.i += 1;
+                let d = self.decl(crate::model::EntKind::Solid, Some(name))?;
+                self.end_of_stmt();
+                StmtKind::Decl(d)
+            }
             _ if self.chain_starts() => return self.chain(next_id, out, Some(name)),
             Some(w) if call
                 && !crate::constraints::is_operator(w)

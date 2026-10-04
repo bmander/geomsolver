@@ -6,7 +6,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{Uv,V};
-use super::query::{face_box,curve_surface_within,Located,Meets,Place};
+use super::query::{curve_curve,face_box,curve_surface_within,Located,Meets,Place};
 use super::ssi::{intersect,Ssi};
 use super::topo::{unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::space::{distance,norm};
@@ -177,7 +177,20 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                         c.speed()*(e.t[1]-e.t[0]),f.surface.kind(),f.surface.feature(),started.elapsed().as_secs_f64());
                 }
                 match meets {
-                    Meets::Along => {}
+                    // lying in the face's surface, it is split only where it crosses the face's
+                    // own edges, which no surface tells: each crossing a vertex on both (a
+                    // fillet's contact circle laid on a cylinder across the cylinder's seam)
+                    Meets::Along => for g in f.loops.iter().flatten() {
+                        let ge = &solids[other].edges[g.edge as usize];
+                        let EdgeCurve::Curve(gc) = &ge.curve else { continue };
+                        for (t,q) in curve_curve(c,e.t,gc,ge.t,tol).unwrap_or_default() {
+                            if debug { eprintln!("brep: edge {i} of {} ({}) along face {fi} crosses its edge {} at {q:?}",
+                                ["A","B"][s],c.kind(),g.edge); }
+                            let v = pool.at(q);
+                            cuts[we].push((t,v));
+                            on_face[other][fi].push(v);
+                        }
+                    },
                     Meets::At(roots) => for (t,touch) in roots {
                         let q = c.point(t);
                         if debug { eprintln!("brep: edge {i} of {} ({}) meets face {fi} ({}) at {q:?}{}: {:?}",["A","B"][s],c.kind(),

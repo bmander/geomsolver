@@ -23,16 +23,30 @@ struct SweepParts {
     along: Option<Ref>,
     sweep: Option<Arg>,
     sense: Option<Sense>,
+    r: Option<Arg>,
 }
 
 /// The labels a solid's brackets may carry beside the face or the operands.
 fn sweep_label(l: &str) -> bool {
-    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along" | "under" | "at")
+    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along" | "under" | "at" | "r")
+}
+
+/// A fillet's brackets (issue #66): its two operands, then `r:` and nothing a sweep takes.
+fn fillet_of(p: SweepParts) -> Result<Sweep, String> {
+    let SweepParts { under: None, at: None, from: None, to: None, depth: None, about: None,
+        through: None, along: None, sweep: None, sense: None, r } = p
+    else {
+        return Err("a fillet takes its two operands and `r:`, the ball's radius".into());
+    };
+    r.map(|r| Sweep::Fillet { r }).ok_or_else(|| "a fillet needs `r:`, the ball's radius".into())
 }
 
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.
 fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
+    if p.r.is_some() {
+        return Err("`r:` is a fillet's radius: `name := fillet(a, b, r: 3mm)`".into());
+    }
     if p.under.is_some() || p.at.is_some() {
         if p.depth.is_some() || p.about.is_some() || p.through.is_some()
             || p.along.is_some() || p.sweep.is_some() || p.sense.is_some() {
@@ -104,6 +118,8 @@ impl<'a> P<'a> {
         // would go, which is where `edit::reconcile` splices one the moment a statement must say
         // it (`Decl::mint_close` says when the name needs parentheses round the declaration).
         let kw = self.t.get(self.i.wrapping_sub(1)).map(|(_, s)| *s).unwrap_or_default();
+        // `fillet(…)` is a solid whose brackets hold two operands and a radius (issue #66)
+        let fillet = kind == EntKind::Solid && self.word_at(self.i.wrapping_sub(1)) == Some("fillet");
         let name = match name {
             // an element keyword names a kind wherever it stands, so a reference to an element
             // called `face` would read as a new face; a param may still bear the word
@@ -314,6 +330,11 @@ impl<'a> P<'a> {
                             None if self.peek_word("face")
                                 && self.t.get(self.i + 1).map(|t| &t.0) == Some(&Tok::P('(')) =>
                             {
+                                if fillet {
+                                    self.fail("a fillet's operands are solids or their faces, \
+                                               not a section");
+                                    return None;
+                                }
                                 if kind != EntKind::Solid {
                                     self.fail("an inline face is a solid's section: \
                                                write `name := solid(face(…), …)`");
@@ -381,7 +402,7 @@ impl<'a> P<'a> {
             _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
         };
         let sweep = if kind == EntKind::Solid {
-            match sweep_of(swp) {
+            match if fillet { fillet_of(swp) } else { sweep_of(swp) } {
                 Ok(sw) => Some(sw),
                 Err(m) => {
                     let head = head();
@@ -695,6 +716,7 @@ impl<'a> P<'a> {
                     "from" => &mut parts.from,
                     "to" => &mut parts.to,
                     "depth" => &mut parts.depth,
+                    "r" => &mut parts.r,
                     _ => &mut parts.sweep,
                 };
                 if slot.is_some() {
