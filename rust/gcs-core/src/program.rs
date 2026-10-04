@@ -174,11 +174,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
 
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.
-    let expansion = crate::flatten::expand(p, sk.units);
+    let mut expansion = crate::flatten::expand(p, sk.units);
     map.private_names = expansion.private_names.clone();
     // the unknowns the source declared — a solved fold and the expression graph read their
     // seeds and dimensions as they are built
-    sk.declared = expansion.unknowns.clone();
+    sk.declared = std::mem::take(&mut expansion.unknowns);
     diags.extend(expansion.diagnostics.iter().cloned());
     let mut res = Resolver::default();
     let mut count: BTreeMap<EntKind, u32> = BTreeMap::new();

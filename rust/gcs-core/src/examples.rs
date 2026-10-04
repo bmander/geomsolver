@@ -351,26 +351,26 @@ fn document(src: &str, name: &str) -> Sketch {
 /// is not.  Only a `param` is an input: a name the document does not declare as one is a
 /// caller's mistake and says so in debug.
 fn with_params(src: &str, kv: &[(&str, f64)]) -> String {
-    let mut out = String::with_capacity(src.len());
-    let mut hit = vec![false; kv.len()];
-    for line in src.lines() {
-        let mut written: Option<String> = None;
-        let rest = line.trim_start();
-        for (i, &(name, v)) in kv.iter().enumerate() {
-            let Some(after) = rest.strip_prefix("param ").map(str::trim_start) else { continue };
-            let declares = after.strip_prefix(name)
-                .is_some_and(|t| t.starts_with([' ', ':']) || t.is_empty());
-            let Some(at) = line.find(":= ").filter(|_| declares) else { continue };
-            written = Some(format!("{}{}", &line[..at + 3], crate::json::fmt_g(v, 12)));
-            hit[i] = true;
-        }
-        out.push_str(written.as_deref().unwrap_or(line));
-        out.push('\n');
+    let (prog, _) = crate::syntax::parse(src);
+    let mut values: Vec<(crate::syntax::Span, String)> = kv
+        .iter()
+        .filter_map(|&(name, v)| {
+            prog.root().body.iter().find_map(|st| match &st.kind {
+                crate::syntax::StmtKind::Param(p)
+                    if p.input.is_some() && p.bound() && p.name.text == name =>
+                {
+                    Some((p.span, crate::json::fmt_g(v, 12)))
+                }
+                _ => None,
+            })
+        })
+        .collect();
+    debug_assert_eq!(values.len(), kv.len(), "a case was given a number that is no input");
+    values.sort_by_key(|(at, _)| std::cmp::Reverse(at.lo));
+    let mut out = src.to_string();
+    for (at, v) in values {
+        out.replace_range(at.lo as usize..at.hi as usize, &v);
     }
-    debug_assert!(
-        hit.iter().all(|&h| h),
-        "a case was given a number its document does not declare an input",
-    );
     out
 }
 

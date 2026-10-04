@@ -353,6 +353,16 @@ impl<'a> P<'a> {
         None
     }
 
+    /// `hint(E)` — the one keyless clause, a single number's seed (an input's, a call's argument):
+    /// `Some(None)` where no clause stands, `None` on one that does not close.
+    fn hint_value(&mut self) -> Option<Option<(String, Span)>> {
+        if self.eat_hint_clause().is_none() {
+            return Some(None);
+        }
+        let (_, text, span) = self.value_text()?;
+        self.want_p(')').then_some(Some((text, span)))
+    }
+
     /// `name:` at the head of a slot — the label and nothing else, consumed.
     ///
     /// Matched through the reference and cloned only in the winning arm, the way `eat_word` is:

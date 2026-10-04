@@ -66,12 +66,7 @@ pub fn to_program(sk: &Sketch) -> Program {
 /// each place contacts share (`Sketch::shared`): an unknown is declared, never implied (§6.3).
 fn unknowns(sk: &Sketch) -> Vec<StmtKind> {
     let free = sk.free_vars.iter().filter(|(_, &p)| !sk.params[p as usize].fixed).map(|(n, &p)| {
-        let ty = match sk.free_dimensions.get(n) {
-            Some(&d) if d == crate::units::Dim::LENGTH => Ty::Length,
-            Some(&d) if d == crate::units::Dim::ANGLE => Ty::Angle,
-            _ => Ty::Scalar,
-        };
-        (n, p, ty)
+        (n, p, sk.free_dimensions.get(n).map_or(Ty::Scalar, |&d| Ty::of_dim(d)))
     });
     let shared = sk.shared.iter().map(|(n, s)| (n, s.param, Ty::Scalar));
     free.chain(shared)

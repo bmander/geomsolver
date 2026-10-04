@@ -104,11 +104,13 @@ fn one(
     // is refused at the key, in the words that say which clause would make it one
     for h in &d.plane.hints {
         let why = match h.key.text.as_str() {
-            "fold" if free_fold.is_none() => {
-                Some("the fold is stated; a seed is for one solved for, `fold: beta`")
-            }
-            "fold" => Some("the fold reads an unknown, which is seeded where it is declared: \
-                            `param beta: Angle hint(30deg)`"),
+            // a fold is seeded where its unknown is declared, or is stated and has none
+            "fold" => Some(if free_fold.is_none() {
+                "the fold is stated; a seed is for one solved for, `fold: beta`"
+            } else {
+                "the fold reads an unknown, which is seeded where it is declared: \
+                 `param beta: Angle hint(30deg)`"
+            }),
             "u" | "v" if !matches!(d.attitude, Attitude::Free { .. }) => {
                 Some("the attitude is stated; a seed is for one solved for, `attitude: free`")
             }
@@ -121,9 +123,8 @@ fn one(
             fail(diags, Code::E040, h.key.span, format!("`{}` on `{name}`: {why}", h.key.text));
             continue;
         }
-        // and a seed is a number of what it seeds: an angle, a length, a direction's component
+        // and a seed is a number of what it seeds: a length, a direction's component
         let want = match h.key.text.as_str() {
-            "fold" => crate::units::Dim::ANGLE,
             "offset" => crate::units::Dim::LENGTH,
             _ => crate::units::Dim::SCALAR,
         };

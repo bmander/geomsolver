@@ -35,20 +35,14 @@ fn split<'a>(target: &'a str, models: &BTreeMap<String, Model<'a>>, span: Span)
     Ok((alias, path, model))
 }
 /// The dimension `dimension m.NAME` asks for: the first, in statement order, of the document's
-/// own dimensions whose number is written as the bare name — `distance(w)` over `param w := 60`,
-/// the one `relations::repeated` leaves drawn where several read it.
+/// own dimensions whose number is written as the bare name — `distance(w)` over `param w := 60`.
 fn written_as(sk: &Sketch, names: &SourceMap, name: &str) -> Option<u32> {
-    let mut found: Vec<(Span, u32)> = sk.constraints.iter().filter_map(|c| {
-        let site = names.site_of_constraint(c.id)?;
-        if !site.path.0.is_empty() { return None }
-        let text = c.written.clone().or_else(|| c.args.iter().find_map(|a| match a {
-            crate::constraints::Arg::Expr(e) => Some(e.text.clone()),
-            _ => None,
-        }))?;
-        (text.trim() == name).then_some((site.span, c.id))
-    }).collect();
-    found.sort_by_key(|&(span, id)| (span.lo, id));
-    found.first().map(|&(_, id)| id)
+    sk.constraints.iter().filter_map(|c| {
+        let site = names.site_of_constraint(c.id).filter(|s| s.path.0.is_empty())?;
+        let (_, attr, _) = *c.dimensions().first()?;
+        let text = c.written.as_deref().or_else(|| c.expr_text(attr))?;
+        (text.trim() == name).then_some((site.span.lo, c.id))
+    }).min().map(|(_, id)| id)
 }
 fn under(name: &str, prefix: &str) -> bool {
     name == prefix || name.strip_prefix(prefix).is_some_and(|s| s.starts_with('.') || s.starts_with('['))
@@ -205,7 +199,6 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
         if !v.annotations.is_empty() && !v.sketch {
             return Err(error(v.span, "named constraint annotations belong in a sketch view; solid views support `dimensions in VIEW`"));
         }
-        crate::expr::evaluate(&mut sk);
         let mut chosen = BTreeSet::new();
         for a in &v.annotations {
             let (owner, path, _) = split(&a.target, models, a.span)?;

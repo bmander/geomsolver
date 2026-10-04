@@ -284,16 +284,7 @@ impl<'a> Walk<'a> {
                                     self.settle_arg(arg, vals, scope)
                                 }
                                 crate::syntax::OpArg::Dim(text, span) => {
-                                    self.note_dim_reads(text, *span, vals, scope);
-                                    match self.settle_text(text, vals, scope) {
-                                        Ok(t) => *text = t,
-                                        Err((code, e)) => {
-                                            if code == Code::E101 {
-                                                self.refused.push(*span);
-                                            }
-                                            self.err(code, *span, format!("`{text}`: {e}"))
-                                        }
-                                    }
+                                    self.settle_dim(text, *span, vals, scope)
                                 }
                                 crate::syntax::OpArg::Ent(_) => {}
                             }

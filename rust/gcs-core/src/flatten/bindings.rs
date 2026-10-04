@@ -314,6 +314,9 @@ impl<'a> Walk<'a> {
                 continue;
             }
             let name = format!("{prefix}{}.{}", inst.name.text, f.name.text);
+            // one table of every unknown, seeded by the call's `hint(…)` where it wrote one
+            let unknown = crate::model::Declared { dim: f.ty.dim(), seed: None };
+            self.unknowns.entry(name.clone()).or_insert(unknown);
             sub.insert(f.name.text.clone(), free(name, f.ty));
         }
         (sub, sides)

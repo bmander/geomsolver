@@ -680,10 +680,6 @@ impl<'a> Walk<'a> {
         // mint it a free variable of its own, and a drawn instance and its own trace would
         // disagree about what the component says.  Refused, the statement is not emitted
         let mut refused: Vec<Span> = std::mem::take(&mut self.refused);
-        // the unknowns a dotted name may read: a formal some call left unbound (`u.t.w`)
-        let unknowns: BTreeSet<String> = self.instances.iter()
-            .flat_map(|i| i.values.values().filter_map(|a| a.free.clone()))
-            .collect();
         for (name, span, sc) in std::mem::take(&mut self.dim_reads) {
             let segs: Vec<&str> = name.split('.').collect();
             let r = Ref {
@@ -693,7 +689,8 @@ impl<'a> Walk<'a> {
             };
             // an unknown an instance left — a formal its call did not bind, `u.t.w` — is the one
             // dotted name a dimension may read that is no declaration's
-            let known = sc.prefixes.iter().any(|p| unknowns.contains(&format!("{p}{name}")));
+            let known =
+                || sc.prefixes.iter().any(|p| self.unknowns.contains_key(&format!("{p}{name}")));
             match lookup_raw(&r, &sc, &self.names, &alias, self.units) {
                 Some((abs, rest)) if !rest.is_empty() && !self.group_names.contains(&abs) => {
                     refused.push(span);
@@ -709,11 +706,7 @@ impl<'a> Walk<'a> {
                 }
                 // a dotted name nothing declares is a misspelling, as a bare one is: never an
                 // unknown of its own making
-                Some((_, rest)) if !rest.is_empty() && !known => {
-                    refused.push(span);
-                    self.err(Code::E101, span, super::values::undefined(&name));
-                }
-                None if !known => {
+                found if found.as_ref().is_none_or(|(_, rest)| !rest.is_empty()) && !known() => {
                     refused.push(span);
                     self.err(Code::E101, span, super::values::undefined(&name));
                 }

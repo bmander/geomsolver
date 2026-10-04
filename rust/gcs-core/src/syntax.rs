@@ -88,33 +88,39 @@ pub enum Ty {
     Ent(EntKind),
 }
 
+/// The words the types other than an entity kind are written as — one table, read both ways.
+const TYPE_WORDS: [(&str, Ty); 6] = [
+    ("Int", Ty::Int),
+    ("Scalar", Ty::Scalar),
+    ("Length", Ty::Length),
+    ("Angle", Ty::Angle),
+    ("Side", Ty::Side),
+    ("group", Ty::Group),
+];
+
 impl Ty {
     /// The word a type is written as.  One table: a formal's type, a curve family's, and the
     /// colouring of the word are the same question, and a second copy of the list would be a
     /// second answer the moment a type is added.
     pub fn parse(s: &str) -> Option<Ty> {
-        Some(match s {
-            "Int" => Ty::Int,
-            "Scalar" => Ty::Scalar,
-            "Length" => Ty::Length,
-            "Angle" => Ty::Angle,
-            "Side" => Ty::Side,
-            "group" => Ty::Group,
-            other => Ty::Ent(EntKind::parse(&other.to_lowercase())?),
-        })
+        match TYPE_WORDS.iter().find(|(w, _)| *w == s) {
+            Some(&(_, ty)) => Some(ty),
+            None => Some(Ty::Ent(EntKind::parse(&s.to_lowercase())?)),
+        }
     }
 
-    /// The word `parse` reads a number type from (`None` for one written as an entity kind).
+    /// The word `parse` reads a type from, by the same table (`None` for an entity kind).
     pub fn word(self) -> Option<&'static str> {
-        Some(match self {
-            Ty::Int => "Int",
-            Ty::Scalar => "Scalar",
-            Ty::Length => "Length",
-            Ty::Angle => "Angle",
-            Ty::Side => "Side",
-            Ty::Group => "group",
-            Ty::Ent(_) => return None,
-        })
+        TYPE_WORDS.iter().find(|(_, ty)| *ty == self).map(|&(w, _)| w)
+    }
+
+    /// The number type of a dimension (`units.rs`): `Length`, `Angle`, else `Scalar`.
+    pub fn of_dim(d: crate::units::Dim) -> Ty {
+        match d {
+            d if d == crate::units::Dim::LENGTH => Ty::Length,
+            d if d == crate::units::Dim::ANGLE => Ty::Angle,
+            _ => Ty::Scalar,
+        }
     }
 
     /// What a formal declared this way *is* (`units.rs`) — the same table one question further

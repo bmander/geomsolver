@@ -49,6 +49,22 @@ impl Edit {
             refused: why,
         }
     }
+
+    /// The source with `edits` applied, an edit of the class `kind`.
+    fn spliced(prog: &Program, edits: Vec<Splice>, kind: Kind) -> Edit {
+        Edit { text: splice(prog.text(), edits), kind, names: Vec::new(), refused: None }
+    }
+}
+
+/// Whether a seed is a number a solve may write over: a literal, or one in notation (`3 1/8`,
+/// `30deg`) — not an expression, which is the author's arithmetic.
+fn writable_seed(text: &str) -> bool {
+    crate::expr::literal(text).is_some() || crate::expr::notation(text)
+}
+
+/// A solved seed as it is written back: in degrees where an angle's text named its unit.
+fn seed_literal(text: &str, v: f64, angle: bool) -> String {
+    if angle && crate::expr::names_unit(text) { format!("{}deg", num(v)) } else { num(v) }
 }
 
 /// One replacement in the source.
@@ -335,12 +351,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
     if edits.is_empty() {
         return Edit::none(prog, None);
     }
-    Edit {
-        text: splice(prog.text(), edits),
-        kind: Kind::Numeric,
-        names: Vec::new(),
-        refused: None,
-    }
+    Edit::spliced(prog, edits, Kind::Numeric)
 }
 
 /// Each unknown the document declares (`param beta: Angle hint(30deg)`), read by a dimension or
@@ -360,22 +371,18 @@ fn unknown_seeds(sk: &Sketch, prog: &Program) -> Vec<Splice> {
             continue;
         };
         let v = sk.params[param as usize].value;
+        let angle = input.ty == Some(syntax::Ty::Angle);
         match &input.seed {
-            Some((text, span)) => {
-                // a bare number, or an angle in degrees: a length in another unit (`2in` in an
-                // `mm` document) is left as written
-                let deg = text.trim().ends_with("deg");
-                let writable = (crate::expr::literal(text).is_some() || crate::expr::notation(text))
-                    && (deg || !crate::expr::names_unit(text));
-                let was = crate::expr::parse_in(text, sk.units).ok()
-                    .and_then(|q| crate::expr::eval(&q.body, &Default::default()).ok())
-                    .and_then(|a| a.number());
-                let moved = was.is_none_or(|was| (was - v).abs() > 1e-12 * (1.0 + v.abs()));
-                if writable && moved && !span.is_empty() {
-                    let with = if deg { format!("{}deg", num(v)) } else { num(v) };
+            // a length written in another unit (`2in` in an `mm` document) is left as written
+            Some((text, span))
+                if writable_seed(text) && (angle || !crate::expr::names_unit(text)) =>
+            {
+                let with = seed_literal(text, v, angle);
+                if !span.is_empty() && span.slice(prog.text()) != with {
                     out.push(Splice { at: *span, with });
                 }
             }
+            Some(_) => {}
             None if v != 0.0 => {
                 out.push(Splice { at: p.span, with: format!(" hint({})", num(v)) });
             }
@@ -396,10 +403,10 @@ fn plane_seeds(sk: &Sketch, prog: &Program, d: &Decl, pi: usize)
 {
     let b = sk.basis(pi);
     // (a solved fold reads an unknown, whose seed is its declaration's: `unknown_seeds`)
-    let mut now: Vec<(&str, Vec<f64>, bool)> = Vec::new();
+    let mut now: Vec<(&str, Vec<f64>)> = Vec::new();
     if matches!(d.attitude, syntax::Attitude::Free { .. }) {
-        now.push(("u", b.u.to_vec(), false));
-        now.push(("v", b.v.to_vec(), false));
+        now.push(("u", b.u.to_vec()));
+        now.push(("v", b.v.to_vec()));
     }
     if matches!(d.plane.position, syntax::Position::Free(_)) {
         // along the normal from the origin the attitude alone gives it: its parent's, or the
@@ -412,27 +419,20 @@ fn plane_seeds(sk: &Sketch, prog: &Program, d: &Decl, pi: usize)
         };
         let n = b.normal();
         let k = crate::plane::dot(n, [b.o[0] - base[0], b.o[1] - base[1], b.o[2] - base[2]]);
-        now.push(("offset", vec![k], false));
+        now.push(("offset", vec![k]));
     }
     let mut splices = Vec::new();
     let mut missing = false;
     let mut hints = d.plane.hints.clone();
-    for (key, vals, angle) in now {
-        let lit = |text: &str, v: f64| {
-            let unit = angle && crate::expr::names_unit(text);
-            if unit { format!("{}deg", num(v)) } else { num(v) }
-        };
-        let writable = |text: &str| {
-            crate::expr::literal(text).is_some() || crate::expr::notation(text)
-        };
+    for (key, vals) in now {
         match hints.iter_mut().find(|h| h.key.text == key) {
             Some(h) => {
                 for (a, &v) in h.args.iter_mut().zip(&vals) {
                     let syntax::Arg::Dim { text, span } = a else { continue };
-                    if !writable(text) {
+                    if !writable_seed(text) {
                         continue;
                     }
-                    let with = lit(text, v);
+                    let with = seed_literal(text, v, false);
                     if !span.is_empty() && span.slice(prog.text()) != with {
                         splices.push(Splice { at: *span, with: with.clone() });
                     }
@@ -449,7 +449,7 @@ fn plane_seeds(sk: &Sketch, prog: &Program, d: &Decl, pi: usize)
                 hints.push(syntax::PlaneHint {
                     key: syntax::Name::new(key),
                     args: vals.iter().map(|&v| syntax::Arg::Dim {
-                        text: if angle { format!("{}deg", num(v)) } else { num(v) },
+                        text: num(v),
                         span: Span::default(),
                     }).collect(),
                     span: Span::default(),
@@ -1248,28 +1248,19 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
     let was = was.as_str();
     // a dimension that reads a `param` (`distance(w)`) is edited where the number is: a plain
     // number typed over it is the param's new value, and every dimension reading it follows
-    if crate::expr::literal(text).is_some() || crate::expr::notation(text) {
+    if writable_seed(text) {
         let param = prog.root().body.iter().find_map(|st| match &st.kind {
             StmtKind::Param(p) if p.name.text == was.trim() && p.bound() => Some(p),
             _ => None,
         });
         if let Some(p) = param {
             let value = Splice { at: p.span, with: text.trim().to_string() };
-            return Edit {
-                text: splice(prog.text(), vec![value]),
-                kind: Kind::Structural,
-                names: Vec::new(),
-                refused: None,
-            };
+            return Edit::spliced(prog, vec![value], Kind::Structural);
         }
     }
     let plain = crate::expr::literal(text).is_some() && crate::expr::literal(was).is_some();
-    Edit {
-        text: splice(prog.text(), vec![Splice { at: span, with: text.trim().to_string() }]),
-        kind: if plain { Kind::Numeric } else { Kind::Structural },
-        names: Vec::new(),
-        refused: None,
-    }
+    let number = Splice { at: span, with: text.trim().to_string() };
+    Edit::spliced(prog, vec![number], if plain { Kind::Numeric } else { Kind::Structural })
 }
 
 /* -- bringing the source back into step ------------------------------------------- */

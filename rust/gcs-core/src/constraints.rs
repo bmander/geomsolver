@@ -2225,10 +2225,10 @@ impl Constraint {
     /// whoever sets a number means the number, not the formula it replaces.
     ///
     /// This is the write on the constraint alone, and dropping an expression is a change to the
-    /// *document*: the name it defined and the free variable it read are other constraints'
-    /// business.  `Sketch::set_constraint_num` is the path that settles them, and is what a
-    /// caller holding a sketch should use; this one is for a constraint that has no document
-    /// behind it yet, or an argument no expression can reach (a soft drag target's own number).
+    /// *document*: the unknown it read is retired only when nothing else reads it.
+    /// `Sketch::set_constraint_num` is the path that settles that, and is what a caller holding a
+    /// sketch should use; this one is for a constraint that has no document behind it yet, or an
+    /// argument no expression can reach (a soft drag target's own number).
     pub fn set_num(&mut self, name: &str, v: f64) -> bool {
         let Some(i) = self.arg_index(name) else { return false };
         self.args[i] = match self.args[i] {

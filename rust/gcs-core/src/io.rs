@@ -622,9 +622,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         }
         seed_omitted(&sk, kind, &mut args, |i| omitted(raw.get(i)))?;
         // `add_quiet`, because the evaluation below is the document's: adding one at a time
-        // would parse every expression again for each, and would make a dimension whose
-        // definition is further down the file briefly a free variable — allocating an unknown
-        // this pass then retires, in a document that has no free variables in it at all
+        // would parse every expression again for each
         let mut nc = Constraint::new(kind, args);
         // a document is untrusted input: a claim on a kind that owns an unknown would mint a
         // degree of freedom no equation mentions, so the flag is dropped rather than honoured
@@ -1330,9 +1328,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         }
         if ok {
             expr |= crate::expr::has_expr(&args);
-            // `add_quiet`: the walk evaluates once at the end, not once per constraint — a
-            // dimension whose definition has not been grafted yet is not a free variable, it is
-            // one whose turn has not come
+            // `add_quiet`: the walk evaluates once at the end, not once per constraint
             let mut nc = Constraint::new(c.kind, args);
             nc.claim = c.claim;
             nc.class = c.class.clone();

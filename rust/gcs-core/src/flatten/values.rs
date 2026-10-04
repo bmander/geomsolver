@@ -11,7 +11,6 @@ pub(super) fn free(name: String, ty: Ty) -> Aff {
 /// One definition of a body — a `param` or a group's member — worked out with the rest.
 struct Def {
     name: String,
-    name_span: Span,
     /// The text after the `:=`.
     text: String,
     span: Span,
@@ -291,7 +290,7 @@ impl<'a> Walk<'a> {
     /// to text as well — in one pass, since a second would find the numbers' names inside the
     /// names it had just written.
     ///
-    /// The text after the `=` is `expr.rs`'s language, so this is where a name written in a body
+    /// The text after the `:=` is `expr.rs`'s language, so this is where a name written in a body
     /// is resolved (§5): a formal or a `param` reads as its number, or as the unknown it is
     /// (`beta`, `leg.theta`) where nothing bound it.  **A name nothing in scope declares is
     /// E101**: an unknown is declared (`param beta: Angle`, a formal), never made by a name
@@ -309,30 +308,57 @@ impl<'a> Walk<'a> {
         if let Some(e) = reads.iter().find_map(|name| out_of_reach(name, vals, scope)) {
             return Err((Code::E103, e));
         }
-        let sym = self.sym.as_ref();
-        let kept = |w: &str| {
-            sym.and_then(|sym| {
-                scope.prefixes.iter().find_map(|p| sym.texts.get(&format!("{p}{w}")).cloned())
-            })
-        };
-        if let Some(name) = reads.iter().find(|n| {
-            !n.contains('.')
-                && !vals.contains_key(*n)
-                && expr::builtin(n).is_none()
-                && kept(n).is_none()
-        }) {
+        if let Some(name) = reads.iter().find(|n| self.undeclared(n, vals, scope)) {
             return Err((Code::E101, undefined(name)));
         }
         // a dotted name read in a body (`t.w`, a nested instance's unknown) is made absolute
         // under the instance it is read in; `resolve` judges whether it names anything
         let own = scope.instance_prefix();
         let sub = substitute_with(text, |w| {
-            of_vals(vals, self.units)(w).or_else(|| kept(w)).or_else(|| {
+            of_vals(vals, self.units)(w).or_else(|| self.kept(w, scope)).or_else(|| {
                 let dotted = !own.is_empty() && w.contains('.') && reads.contains(w);
                 dotted.then(|| format!("{own}{w}"))
             })
         });
         fold(&sub, text, self.units).map_err(|e| (Code::E103, e))
+    }
+
+    /// What a trace kept as text for a name (`Sym::texts`, through the scope's prefixes).
+    fn kept(&self, name: &str, scope: &Scope) -> Option<String> {
+        let sym = self.sym.as_ref()?;
+        scope.prefixes.iter().find_map(|p| sym.texts.get(&format!("{p}{name}")).cloned())
+    }
+
+    /// Whether a bare name is one nothing in scope declares — no number or unknown of the scope,
+    /// no built-in, no text a trace kept — which is E101 wherever it is read.  A dotted name is
+    /// `resolve`'s to judge.
+    fn undeclared(&self, name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> bool {
+        crate::syntax::is_name(name)
+            && !vals.contains_key(name)
+            && expr::builtin(name).is_none()
+            && self.kept(name, scope).is_none()
+    }
+
+    /// A dimension's text settled in place, and its failure said where it is written.  A name
+    /// nothing declares refuses the statement (`Walk::refused`), so it never reaches the
+    /// expression graph to become an unknown of its own making.
+    pub(super) fn settle_dim(
+        &mut self,
+        text: &mut String,
+        span: Span,
+        vals: &BTreeMap<String, Aff>,
+        scope: &Scope,
+    ) {
+        self.note_dim_reads(text, span, vals, scope);
+        match self.settle_text(text, vals, scope) {
+            Ok(t) => *text = t,
+            Err((code, e)) => {
+                if code == Code::E101 {
+                    self.refused.push(span);
+                }
+                self.err(code, span, format!("`{text}`: {e}"))
+            }
+        }
     }
 
     /// Set aside each dotted name a dimension's text reads that nothing numeric in scope answers
@@ -383,18 +409,7 @@ impl<'a> Walk<'a> {
         scope: &Scope,
     ) {
         match a {
-            crate::syntax::Arg::Dim { text, span } => {
-                self.note_dim_reads(text, *span, vals, scope);
-                match self.settle_text(text, vals, scope) {
-                    Ok(t) => *text = t,
-                    Err((code, e)) => {
-                        if code == Code::E101 {
-                            self.refused.push(*span);
-                        }
-                        self.err(code, *span, format!("`{text}`: {e}"))
-                    }
-                }
-            }
+            crate::syntax::Arg::Dim { text, span } => self.settle_dim(text, *span, vals, scope),
             crate::syntax::Arg::SeedExpr { text, pinned, span } => {
                 let bare = text.trim();
                 // `t == s` over an unknown — an input nothing binds, a formal left unbound: the
@@ -407,10 +422,9 @@ impl<'a> Walk<'a> {
                         let seed = self.unknowns.get(&name).and_then(|d| d.seed);
                         *a = crate::syntax::Arg::Tie { name, seed, span: *span };
                     }
-                    (Err(_), _) if crate::syntax::is_name(bare)
-                        && !vals.contains_key(bare)
-                        && expr::builtin(bare).is_none()
-                        && out_of_reach(bare, vals, scope).is_none() =>
+                    (Err(_), _)
+                        if out_of_reach(bare, vals, scope).is_none()
+                            && self.undeclared(bare, vals, scope) =>
                     {
                         self.refused.push(*span);
                         self.err(Code::E101, *span, undefined(bare))
@@ -493,8 +507,7 @@ impl<'a> Walk<'a> {
                         }
                     };
                     let group_ref = matches!(field.value, crate::syntax::InstVal::Ref(_));
-                    pending.push(Def { name, name_span: label.span, text, span: field.span,
-                        group_ref, ty: None });
+                    pending.push(Def { name, text, span: field.span, group_ref, ty: None });
                 }
                 continue;
             }
@@ -515,7 +528,6 @@ impl<'a> Walk<'a> {
             }
             pending.push(Def {
                 name: pd.name.text.clone(),
-                name_span: pd.name.span,
                 text: pd.text.clone(),
                 span: pd.span,
                 group_ref: false,
@@ -542,8 +554,8 @@ impl<'a> Walk<'a> {
                             self.err(Code::E103, d.span, "group expansion is too large");
                             return;
                         }
-                        extra.push(Def { name, text: key.clone(), name_span: d.name_span,
-                            span: d.span, group_ref: true, ty: None });
+                        extra.push(Def { name, text: key.clone(), span: d.span, group_ref: true,
+                            ty: None });
                     }
                 }
             }

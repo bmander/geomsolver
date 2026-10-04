@@ -454,16 +454,7 @@ impl<'a> P<'a> {
         } else {
             (String::new(), Span::new(self.prev_hi(), self.prev_hi()))
         };
-        let seed = match self.eat_hint_clause() {
-            Some(_) => {
-                let (_, text, span) = self.value_text()?;
-                if !self.want_p(')') {
-                    return None;
-                }
-                Some((text, span))
-            }
-            None => None,
-        };
+        let seed = self.hint_value()?;
         self.end_of_stmt();
         Some(StmtKind::Param(ParamDecl { name, text, span, input: Some(Input { ty, seed }) }))
     }
@@ -970,11 +961,7 @@ impl<'a> P<'a> {
             return Some(InstArg { label, value: InstVal::Group(fields), span: Span::new(lo, self.prev_hi()) });
         }
         // `beta: hint(15deg)` — an argument that leaves the formal unbound and seeds its unknown
-        if self.eat_hint_clause().is_some() {
-            let (_, text, _) = self.value_text()?;
-            if !self.want_p(')') {
-                return None;
-            }
+        if let Some((text, _)) = self.hint_value()? {
             let span = Span::new(lo, self.prev_hi());
             return Some(InstArg { label, value: InstVal::Hint(text), span });
         }

@@ -1,4 +1,4 @@
-//! Evaluate document expression dependencies and maintain free variables.
+//! Evaluate the document's expressions and maintain the free variables they read.
 
 use super::{eval, literal, parse_in, to_arg_units, to_user_units, Aff, Expr, Free, Parsed};
 use crate::constraints::{Arg, Constraint, SpecKind};
@@ -110,7 +110,6 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             }
         }
     }
-    let env: BTreeMap<String, Aff> = BTreeMap::new();
     // the free names actually bound this time round, and what one unit of each is worth in world
     // length — the largest any of its readers makes it, since that is the motion a step buys
     let mut bound: BTreeMap<String, f64> = BTreeMap::new();
@@ -135,7 +134,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
                     // work it out, check what it came to against its slot, write it: three
                     // steps that fail the same way, so they are one chain and one error arm
                     None => match (|| -> Result<(f64, Aff), ExprError> {
-                        let a = eval(&p.body, &env)?;
+                        let a = eval(&p.body, &BTreeMap::new())?;
                         check_dim(sk, nd, &a, &mut free_dim)?;
                         Ok((write_value(sk, nd, &a, &mut bound)?, a))
                     })() {
@@ -406,7 +405,7 @@ pub fn set_dimension(
             ));
         }
         sk.constraint_mut(id).unwrap().args[i] = Arg::Num(to_arg_units(kind, v));
-        evaluate(sk); // whatever read a name this used to define
+        evaluate(sk); // retire the unknown the text read, if nothing else reads it
         return Ok(None);
     }
     // the document's units, so typing `6"` into the dimbox works with no change in the app —
