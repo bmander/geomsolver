@@ -152,6 +152,60 @@ fn a_racks_tooth_space_is_built() {
     }
 }
 
+/// **The rack's sheet is its profile's planar envelope extruded** (issue #70, part 1): the prism
+/// under a motion keeping its profile's plane meets every station in the same curve, so the sheet
+/// is the planar envelope of the tooth's flanks, tip and tip corners (`generate`, exact) extruded
+/// along the prism, not traced.  It agrees with the traced sheet: every contact the trace found in
+/// the blank lies on it, with its normal; and the traced fit lies within its gross bar of it.
+#[test]
+fn the_racks_sheet_is_its_planar_envelope_extruded() {
+    use gcs_core::brep::sweep::{self, sheet::feet_near, Say};
+    let mut e = build(SPACE);
+    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let gear = e.map.ent_named("gear").unwrap().i();
+    let admission = admit_body(&e.sketch, gear, &Options::default()).unwrap_or_else(|e| panic!("refused: {e}"));
+    let recipe = gcs_core::solid::cad::recipe_static(&e.sketch, gear).unwrap();
+    let lines = std::sync::Mutex::new(Vec::<String>::new());
+    let say = Say { stage: &|l: &str| { eprintln!("{l}"); lines.lock().unwrap().push(l.to_string()) }, mark: &|_| {} };
+    let refused = |r: gcs_core::solid::export::ExportRefusal| -> ! { panic!("refused at {:?}: {}", r.stage, r.message) };
+    let prepared = sweep::prepare(&e.sketch, gear, &recipe, &admission, &say).unwrap_or_else(|r| refused(r));
+    let built = sweep::sheet(&prepared, 0, None, &say).unwrap_or_else(|r| refused(r));
+    assert!(lines.lock().unwrap().iter().any(|l| l.contains("extruded from the envelope")), "the sheet was traced");
+    let traced = sweep::traced(&prepared, 0, None, &say).unwrap_or_else(|r| refused(r));
+    // the blank in the export's millimetres, the page's normal turned to -y: radius 22 about y, from
+    // 0 to 6 along it
+    let inside = |p: &[f64; 3]| p[0].hypot(p[2]) < 22. && p[1] > 0. && p[1] < 6.;
+    let angle = |a: [f64; 3], b: [f64; 3]| {
+        let d = (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]).abs().min(1.);
+        d.acos().to_degrees()
+    };
+    let (points, normals): (Vec<[f64; 3]>, Vec<[f64; 3]>) = traced.sheet.points.iter().zip(&traced.sheet.normals)
+        .chain(traced.sheet.withheld.iter().zip(&traced.sheet.withheld_normals))
+        .filter(|(p, _)| inside(p)).map(|(p, n)| (*p, *n)).unzip();
+    assert!(points.len() > 500, "only {} traced contacts in the blank", points.len());
+    let feet = feet_near(&built.face, &points, &vec![[f64::NAN; 2]; points.len()], 0.);
+    let (mut gap, mut turn) = (0f64, 0f64);
+    for (foot, n) in feet.iter().zip(&normals) {
+        let (m, d) = foot.expect("a foot on the sheet");
+        (gap, turn) = (gap.max(d), turn.max(angle(m, *n)));
+    }
+    eprintln!("{} traced contacts within {gap:.2e} mm of the envelope's sheet, normals within {turn:.2e} degrees", points.len());
+    // within the sheet's own interpolation of its curve, which is all that stands between them
+    assert!(built.error < 1e-4, "the envelope's sheet is {:.2e} mm off its curve", built.error);
+    assert!(gap <= built.error + 1e-7 && turn < 1e-2,
+            "the traced contacts lie {gap:.2e} mm and {turn:.2e} degrees off the envelope's sheet");
+    // the envelope's sheet's nodes in the blank against the traced fit
+    let nodes: Vec<[f64; 3]> = built.sheet.points.iter().copied().filter(|p| inside(p)).collect();
+    let back = feet_near(&traced.face, &nodes, &vec![[f64::NAN; 2]; nodes.len()], 0.);
+    let off = back.iter().map(|f| f.expect("a foot on the traced sheet").1).fold(0., f64::max);
+    eprintln!("the envelope's sheet's {} nodes in the blank within {off:.2e} mm of the traced fit (its error {:.2e})", nodes.len(),
+        traced.error);
+    // held only to the gross bar without a tolerance (0.25 mm): between its withheld contacts the
+    // traced fit wanders further than at them
+    assert!(off < 0.25, "the traced fit leaves the envelope's sheet by {off:.2e} mm");
+}
+
 /// The whole gear: a bore of radius 6 through the blank (a sector's sides meet on the axis, so a
 /// blank reaching it is built whole), and the tooth space indexed round the axis `teeth` times.
 pub fn gear(teeth: usize) -> String {

@@ -165,6 +165,11 @@ impl Cutter {
         Ok(Some(Cutter {origin:profile.origin,axis,kind:Kind::Extruded(Extruded {walks,extent:[from.min(to),from.max(to)]}),
             sections:Default::default()}))
     }
+    /// A prism's profile, its loops walked in its plane (outer counter-clockwise about the axis),
+    /// and the extrusion's extent from that plane; none for a cutter of revolutions.
+    pub fn prism_profile(&self) -> Option<(&[Vec<Seg>],[f64;2])> {
+        match &self.kind { Kind::Extruded(x) => Some((&x.walks,x.extent)),Kind::Revolved {..} => None }
+    }
     /// Whether a station is an angle about the axis (else a distance along a prism).
     pub fn revolved(&self) -> bool { matches!(self.kind,Kind::Revolved {..}) }
     /// How far the band of stations may run before the sheet is said not to leave the blank: a

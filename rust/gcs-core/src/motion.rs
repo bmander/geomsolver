@@ -33,6 +33,16 @@ pub enum PlaneRigid {
     Slide { velocity: [f64;3] },
 }
 
+/// One step of a motion read in a plane it carries within itself (`Family::in_frame`): a turn
+/// about a point at a ratio and phase (radians), a slide along a unit direction by an advance a
+/// turn, and the relative of the two steps before it.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum PlanarStep {
+    Turn { centre: [f64;2], ratio: f64, phase: f64 },
+    Slide { direction: [f64;2], advance: f64 },
+    Relative,
+}
+
 /// A screw read off a motion (`Family::screw`): it turns `ratio` radians a radian about the line
 /// through `origin` along the unit `axis`, and slides `advance` along it a turn of the parameter.
 #[derive(Clone,Copy,Debug,PartialEq)]
@@ -222,6 +232,46 @@ impl Family {
             }
             _ => None,
         }
+    }
+
+    /// This motion as a program in the plane through `origin` spanned by the unit, orthogonal `x`
+    /// and `y`, when every step carries that plane within itself: each turn about an axis square
+    /// to it (and screwing along none), each slide along it, in postfix order (a relative's source,
+    /// its observer, then the relative), coordinates in the plane's and lengths times `scale`
+    /// (`generate::Op`'s steps, as a generated profile reads them). None where any step leaves the
+    /// plane.
+    pub fn in_frame(&self,origin: [f64;3],x: [f64;3],y: [f64;3],scale: f64) -> Option<Vec<PlanarStep>> {
+        use crate::space::{cross,dot,norm,sub};
+        let z = cross(x,y);
+        let local = |p: [f64;3]| { let d = sub(p.map(|v| v*scale),origin); [dot(d,x),dot(d,y)] };
+        fn emit(family: &Family,i: usize,local: &dyn Fn([f64;3]) -> [f64;2],[x,y,z]: [[f64;3];3],out: &mut Vec<PlanarStep>,scale: f64) -> Option<()> {
+            match family.steps[i] {
+                Step::Rotation {origin,axis,ratio,phase,advance} => {
+                    let axis = unit(axis)?;
+                    let along = dot(axis,z);
+                    if advance != 0. || norm(cross(axis,z)) > 1e-9 { return None }
+                    // a turn about the plane's normal reversed is the opposite turn about it
+                    let sign = along.signum();
+                    out.push(PlanarStep::Turn {centre:local(origin),ratio:sign*ratio,phase:sign*phase});
+                }
+                Step::Translation {axis,advance} => {
+                    let axis = unit(axis)?;
+                    if dot(axis,z).abs() > 1e-9 { return None }
+                    let (u,v) = (dot(axis,x),dot(axis,y));
+                    let length = u.dhypot(v);
+                    out.push(PlanarStep::Slide {direction:[u/length,v/length],advance:advance*scale});
+                }
+                Step::Relative {source,observer} => {
+                    emit(family,source,local,[x,y,z],out,scale)?;
+                    emit(family,observer,local,[x,y,z],out,scale)?;
+                    out.push(PlanarStep::Relative);
+                }
+            }
+            Some(())
+        }
+        let mut out = Vec::new();
+        emit(self,self.steps.len()-1,&local,[x,y,z],&mut out,scale)?;
+        Some(out)
     }
 
     pub fn read(sk: &Sketch, index: usize) -> Result<Self,String> {

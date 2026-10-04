@@ -5,6 +5,7 @@
 //! with its kernel's shapes is done here with this kernel's, so the export needs no native kernel,
 //! and runs where the core does — in the browser's worker too.
 pub mod cutter;
+pub mod extruded;
 pub mod helical;
 pub mod sector;
 pub mod sheet;
@@ -71,19 +72,33 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
     Ok(Prepared {scale,field,bounds,distinct,cuts,classes,blank})
 }
 
-/// Sweep `k`'s sheet fitted against the blank: traced, under a relative rotation
-/// (`sheet::swept_sheet`), or its characteristic carried, under a screw (`helical::helical_sheet`).
+/// Sweep `k`'s sheet fitted against the blank: a prism's under a motion keeping its profile's
+/// plane, its profile's planar envelope extruded (`extruded::planar_sheet`); traced, under any other
+/// relative rotation (`sheet::swept_sheet`); or its characteristic carried, under a screw
+/// (`helical::helical_sheet`).
 pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<sheet::Fitted,ExportRefusal> {
     let (field,scale) = (&prepared.field,prepared.scale);
     let inside = |points: &[[f64;3]]| -> Result<Vec<bool>,String> { Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect()) };
     let near = |p: [f64;3]| field.value(p.map(|x| x/scale))*scale;
     match &prepared.classes[k] {
-        crate::solid::admission::Class::Generating => sheet::swept_sheet(&prepared.cuts[k],&inside,&near,tolerance,say),
+        crate::solid::admission::Class::Generating => match extruded::planar_sheet(&prepared.cuts[k],&inside,tolerance,say) {
+            Some(fitted) => fitted,
+            None => traced(prepared,k,tolerance,say),
+        },
         crate::solid::admission::Class::ConstantTwist(found) => {
             let heights = prepared.bounds.map(|(lo,hi)| found.screw.extent(lo,hi,crate::envelope::Motion::identity()).0);
             helical::helical_sheet(&prepared.cuts[k],found,heights,&inside,&near,tolerance,say)
         }
     }
+}
+
+/// Sweep `k`'s sheet traced, as every generating sweep but a prism's under a motion keeping its
+/// profile's plane is built (kept for that one too, so that the two can be compared).
+pub fn traced(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<sheet::Fitted,ExportRefusal> {
+    let (field,scale) = (&prepared.field,prepared.scale);
+    let inside = |points: &[[f64;3]]| -> Result<Vec<bool>,String> { Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect()) };
+    let near = |p: [f64;3]| field.value(p.map(|x| x/scale))*scale;
+    sheet::swept_sheet(&prepared.cuts[k],&inside,&near,tolerance,say)
 }
 
 /// How the body is cut from its blank: as one sector, its premises holding, or whole, and why.

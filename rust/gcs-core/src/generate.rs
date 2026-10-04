@@ -724,6 +724,28 @@ pub fn sweep(flat: &[f64], outer: &[f64], anchor: f64, a: f64, b: f64, n: usize)
     })
 }
 
+/// What a generated profile comes to at one roll, read where no contact asks (a sheet built from
+/// the curve, `brep::sweep::extruded`): its point and its first two derivatives along the roll
+/// (per degree), exact for a point, line, circle or arc, and the tool's parameter cutting there.
+#[derive(Clone, Copy, Debug)]
+pub struct Cut {
+    pub c: [f64; 2],
+    pub dc: [f64; 2],
+    pub ddc: [f64; 2],
+    pub s: f64,
+}
+
+/// The profile at roll `outer[0]`, cold: `None` where no root is found.
+pub fn cut_at(flat: &[f64], outer: &[f64], anchor: f64) -> Option<Cut> {
+    let v = view(flat)?;
+    SCRATCH.with(|ts| {
+        let ts = &mut *ts.borrow_mut();
+        let s = carried(&v, outer, outer[0], anchor, ts, None)?;
+        let o = orders(&v, outer, outer[0], s, 2, ts)?;
+        Some(Cut { c: o.c[0], dc: o.c[1], ddc: o.c[2], s })
+    })
+}
+
 /// Where the curve is at roll `t`, cold.
 pub fn point(flat: &[f64], outer: &[f64], anchor: f64) -> (f64, f64) {
     let Some(v) = view(flat) else { return (f64::NAN, f64::NAN) };
