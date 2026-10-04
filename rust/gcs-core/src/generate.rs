@@ -108,6 +108,18 @@ pub struct Generated {
 }
 
 impl Generated {
+    /// What a contact on generated curve `curve` carries: the roll its root is chosen at, the
+    /// numbers its motion was given, then this encoding — read by `kernel_eval`.
+    pub(crate) fn contact_consts(&self, sk: &crate::model::Sketch, curve: usize) -> Vec<f64> {
+        let values = &sk.curves[curve].values;
+        let mut k = Vec::with_capacity(2 + values.len() + self.flat.len());
+        k.push(sk.curve_home(curve));
+        k.push(values.len() as f64);
+        k.extend_from_slice(values);
+        k.extend_from_slice(&self.flat);
+        k
+    }
+
     pub fn new(n_theta: usize, tool: Tool, side: f64, ops: &[Op], body: ToolBody) -> Generated {
         let mut f = vec![n_theta as f64, tool.code(), side, ops.len() as f64];
         for op in ops {

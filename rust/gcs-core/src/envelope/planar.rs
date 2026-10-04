@@ -23,28 +23,11 @@ fn cross(a: P,b: P) -> f64 { a[0]*b[1]-a[1]*b[0] }
 fn sub(a: P,b: P) -> P { [a[0]-b[0],a[1]-b[1]] }
 fn dist(a: P,b: P) -> f64 { (a[0]-b[0]).dhypot(a[1]-b[1]) }
 
-/// Which condition refused an envelope.
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Row {
-    /// The source is no closed simple loop of a curve that can be read with its derivative.
-    Source,
-    /// P1: the motion leaves the curve's plane, or turns it over.
-    Plane,
-    /// P3: the roll is not a whole period: the motion does not bring the curve back.
-    Period,
-    /// P4: the envelope folds, crosses itself, or does not close into one loop.
-    Regular,
-}
-
-impl Row {
-    pub fn code(self) -> &'static str {
-        match self { Row::Source => "source",Row::Plane => "P1",Row::Period => "P3",Row::Regular => "P4" }
-    }
-}
+pub use crate::solid::admission::Condition;
 
 /// Why no envelope: the row, what was found, and a point of the curve's view where it was.
 #[derive(Clone,Debug)]
-pub struct Refusal { pub row: Row,pub message: String,pub witness: Option<P> }
+pub struct Refusal { pub row: Condition,pub message: String,pub witness: Option<P> }
 
 impl fmt::Display for Refusal {
     fn fmt(&self,f: &mut fmt::Formatter) -> fmt::Result {
@@ -56,7 +39,7 @@ impl fmt::Display for Refusal {
 
 fn debug() -> bool { std::env::var_os("SOLVENT_ENVELOPE_DEBUG").is_some() }
 
-fn refuse(row: Row,message: impl Into<String>,witness: Option<P>) -> Refusal { Refusal {row,message:message.into(),witness} }
+fn refuse(row: Condition,message: impl Into<String>,witness: Option<P>) -> Refusal { Refusal {row,message:message.into(),witness} }
 
 /// A planar motion read in one view's page coordinates, `x ↦ A x + c`, with its rate per radian.
 #[derive(Clone,Copy,Debug)]
@@ -110,14 +93,12 @@ impl Source {
             CurveBody::Exprs {x,y} => Ok(Source::Formula {x:x.clone(),y:y.clone(),vars:sk.curve_vars(curve,0.)}),
             // what a contact on it carries: the roll its root is chosen at, its numbers, its encoding
             CurveBody::Envelope(g) => {
-                let mut consts = vec![sk.curve_home(curve),cv.values.len() as f64];
-                consts.extend_from_slice(&cv.values);
-                consts.extend_from_slice(&g.flat);
+                let consts = g.contact_consts(sk,curve);
                 let theta = sk.entity_params(EntRef::new(EntKind::Curve,curve)).into_iter()
                     .map(|p| sk.params[p as usize].value).collect();
                 Ok(Source::Generated {consts,theta})
             }
-            CurveBody::Trace(_) => Err(refuse(Row::Source,"the inner envelope is read of a curve of a computed point or a \
+            CurveBody::Trace(_) => Err(refuse(Condition::Envelope,"the inner envelope is read of a curve of a computed point or a \
                 generated profile, not yet of a traced curve",None)),
         }
     }
@@ -149,7 +130,7 @@ struct Setting { source: Source,frame: Frame,family: Family,scale: f64 }
 impl Setting {
     /// The motion at `θ` in the view's page coordinates, refused where it leaves the plane.
     fn rigid(&self,theta: f64) -> Result<Rigid,Refusal> {
-        let m = self.family.at(theta).map_err(|e| refuse(Row::Source,e,None))?;
+        let m = self.family.at(theta).map_err(|e| refuse(Condition::Envelope,e,None))?;
         let f = &self.frame;
         let (o,w) = (f.o,[crate::space::add(f.o,f.cols[0]),crate::space::add(f.o,f.cols[1])]);
         let a0 = f.vector(m.vector(f.cols[0]));
@@ -163,7 +144,7 @@ impl Setting {
         let off = crate::space::dot(crate::space::sub(m.point(o),o),n);
         let turn = crate::space::dot(m.vector(n),n);
         if off.abs() > 1e-9*self.scale || crate::space::dot(m.velocity(o),n).abs() > 1e-9*self.scale || turn < 1.-1e-9 {
-            return Err(refuse(Row::Plane,format!("`{}` carries the curve out of its plane, or turns it over: \
+            return Err(refuse(Condition::Plane,format!("`{}` carries the curve out of its plane, or turns it over: \
                 an envelope in the plane is of a motion of the plane",self.family.name),None));
         }
         Ok(Rigid {a:[[a0[0],a1[0]],[a0[1],a1[1]]],c,da:[[d0[0],d1[0]],[d0[1],d1[1]]],dc})
@@ -206,11 +187,11 @@ impl InnerEnvelope {
     /// The inner envelope of closed curve `curve` under motion `motion` over `roll` (radians), a
     /// whole period of it, in the curve's view.
     pub fn read(sk: &Sketch,curve: usize,motion: usize,roll: [f64;2]) -> Result<InnerEnvelope,Refusal> {
-        if !(roll[0] < roll[1]) { return Err(refuse(Row::Period,"the roll increases",None)) }
+        if !(roll[0] < roll[1]) { return Err(refuse(Condition::Period,"the roll increases",None)) }
         let clock = crate::clock::Instant::now();
-        let family = Family::read(sk,motion).map_err(|e| refuse(Row::Source,e,None))?;
+        let family = Family::read(sk,motion).map_err(|e| refuse(Condition::Envelope,e,None))?;
         if !sk.curve_closed(curve) {
-            return Err(refuse(Row::Source,"the curve does not come back to where it started: an envelope \
+            return Err(refuse(Condition::Envelope,"the curve does not come back to where it started: an envelope \
                 is of a closed curve",None));
         }
         let view = sk.curve_view(curve);
@@ -225,7 +206,7 @@ impl InnerEnvelope {
         let edges: Vec<crate::solid::surface::Edge> = ring.windows(2)
             .map(|w| crate::solid::surface::Edge::Line {a:w[0],b:w[1],axis:false}).collect();
         let field = PlanarField::from_loops(&[edges],0.)
-            .map_err(|e| refuse(Row::Source,format!("the curve is no simple loop ({e})"),None))?;
+            .map_err(|e| refuse(Condition::Envelope,format!("the curve is no simple loop ({e})"),None))?;
         // the roll's grid, and the whole period it must be
         let steps = (((roll[1]-roll[0])/std::f64::consts::TAU*ROLL_STEPS_PER_TURN).ceil() as usize).max(64);
         let times: Vec<f64> = (0..=steps).map(|j| roll[0]+(roll[1]-roll[0])*j as f64/steps as f64).collect();
@@ -234,17 +215,17 @@ impl InnerEnvelope {
         let apart = (0..2).flat_map(|i| (0..2).map(move |j| (i,j))).map(|(i,j)| (first.a[i][j]-last.a[i][j]).abs()*scale)
             .chain((0..2).map(|i| (first.c[i]-last.c[i]).abs())).fold(0.,f64::max);
         if apart > 1e-9*(1.+scale) {
-            return Err(refuse(Row::Period,format!("from {:.4} to {:.4} degrees `{}` does not bring the curve back: \
+            return Err(refuse(Condition::Period,format!("from {:.4} to {:.4} degrees `{}` does not bring the curve back: \
                 its inner envelope is read over a whole period",roll[0].to_degrees(),roll[1].to_degrees(),setting.family.name),None))
         }
         let keep = Keep {field:&field,setting:&setting,grid:&grid,times:&times,tol:1e-6*(1.+scale),
-            domain:crate::interval::Interval::new(roll[0],roll[1]).map_err(|_| refuse(Row::Period,"the roll is no interval",None))?};
+            domain:crate::interval::Interval::new(roll[0],roll[1]).map_err(|_| refuse(Condition::Period,"the roll is no interval",None))?};
         // every kept contact at each sample of the source, distinct images only: the source read
         // here, the roots and the keeping on every core
         let ds = (s1-s0)/SOURCE_STEPS as f64;
         let samples: Vec<(f64,P,P)> = (0..SOURCE_STEPS).map(|k| {
             let s = s0+ds*(k as f64+0.5);
-            let (x,t) = setting.source(s).ok_or_else(|| refuse(Row::Source,
+            let (x,t) = setting.source(s).ok_or_else(|| refuse(Condition::Envelope,
                 format!("the curve cannot be read with its tangent at {s}"),None))?;
             Ok((s,x,t))
         }).collect::<Result<_,Refusal>>()?;
@@ -254,29 +235,27 @@ impl InnerEnvelope {
         // symmetry touches twice) is kept or not once, at the sample it is first touched at, and
         // how many samples touch it is what says it is a corner
         let still = 1e-6*(1.+scale);
-        let mut cells: std::collections::BTreeMap<(i64,i64),Vec<usize>> = std::collections::BTreeMap::new();
-        let cell = |p: P| ((p[0]/(4.*still)).floor() as i64,(p[1]/(4.*still)).floor() as i64);
-        let mut images: Vec<(Contact,usize,Vec<usize>)> = Vec::new();
+        let mut grid = crate::space::Grid::new(4.*still);
+        // each image: the contact first read, the sample it was read at, the last sample touching
+        // it and how many do (the samples come in order, so the last says whether one is new)
+        let mut images: Vec<(Contact,usize,usize,usize)> = Vec::new();
         for (k,cs) in roots.iter().enumerate() {
             for c in cs {
-                let (cx,cy) = cell(c.at);
-                let same = (cx-1..=cx+1).flat_map(|i| (cy-1..=cy+1).map(move |j| (i,j)))
-                    .filter_map(|key| cells.get(&key)).flatten().copied().find(|&u| dist(images[u].0.at,c.at) <= still);
+                let at = [c.at[0],c.at[1],0.];
+                let mut same = None;
+                grid.around(at,|u| if same.is_none() && dist(images[u as usize].0.at,c.at) <= still { same = Some(u as usize) });
                 match same {
-                    Some(u) => if !images[u].2.contains(&k) { images[u].2.push(k) },
-                    None => {
-                        cells.entry((cx,cy)).or_default().push(images.len());
-                        images.push((*c,k,vec![k]));
-                    }
+                    Some(u) => if images[u].2 != k { images[u].2 = k; images[u].3 += 1 },
+                    None => { grid.insert(at,images.len() as u32); images.push((*c,k,k,1)); }
                 }
             }
         }
-        let kept = crate::par::map(&images,|(c,_,_)| keep.inside(*c));
+        let kept = crate::par::map(&images,|&(c,..)| keep.inside(c));
         let mut found: Vec<Vec<Contact>> = vec![Vec::new();roots.len()];
         let mut corners: Vec<P> = Vec::new();
-        for ((c,k,touched),kept) in images.iter().zip(kept) {
+        for (&(c,k,_,touched),kept) in images.iter().zip(kept) {
             if !kept { continue }
-            if touched.len() >= 3 { corners.push(c.at) } else { found[*k].push(*c) }
+            if touched >= 3 { corners.push(c.at) } else { found[k].push(c) }
         }
         if debug() { eprintln!("envelope: {} roots, {} images, corners {corners:?}",roots.iter().map(Vec::len).sum::<usize>(),images.len()); }
         if debug() { eprintln!("envelope: {} kept contacts at {} samples ({:?})",found.iter().map(Vec::len).sum::<usize>(),found.len(),clock.elapsed()); }
@@ -295,15 +274,6 @@ impl InnerEnvelope {
 
     /// The unit normal of the envelope's plane, toward the viewer of its view.
     pub fn normal(&self) -> [f64;3] { let n = self.setting.frame.normal(); n.map(|x| x/crate::space::norm(n)) }
-
-    /// The envelope as one closed polyline, from its first corner round to it again.
-    pub fn polyline(&self) -> Vec<P> {
-        let mut out: Vec<P> = Vec::new();
-        for piece in &self.pieces {
-            for c in piece { if out.last().is_none_or(|&l| dist(l,c.at) > 0.) { out.push(c.at) } }
-        }
-        out
-    }
 
     /// The point a fraction `f` along piece `k` by its source parameter, solved onto the envelope
     /// from the nearest contact read: exact where a contact can be solved, the corners themselves at
@@ -509,12 +479,12 @@ fn close(setting: &Setting,chains: Vec<Vec<Contact>>,corners: Vec<P>,ds: f64,sca
         for w in piece.windows(3) {
             let (a,b) = (sub(w[1].at,w[0].at),sub(w[2].at,w[1].at));
             if a[0]*b[0]+a[1]*b[1] < 0. && dist(w[0].at,w[1].at) > 1e-9*scale && dist(w[1].at,w[2].at) > 1e-9*scale {
-                return Err(refuse(Row::Regular,"the envelope folds back on itself: no rotor stays inside the curve \
+                return Err(refuse(Condition::Envelope,"the envelope folds back on itself: no rotor stays inside the curve \
                     along it",Some(w[1].at)))
             }
         }
     }
-    if pieces.is_empty() { return Err(refuse(Row::Regular,"no contact is kept: the curve encloses nothing at every pose",None)) }
+    if pieces.is_empty() { return Err(refuse(Condition::Envelope,"no contact is kept: the curve encloses nothing at every pose",None)) }
     // each piece's ends at corners, and the loop walked through them
     let end_corner = |p: P| corners.iter().position(|&k| dist(k,p) <= join);
     let mut ends: Vec<[usize;2]> = Vec::new();
@@ -522,14 +492,14 @@ fn close(setting: &Setting,chains: Vec<Vec<Contact>>,corners: Vec<P>,ds: f64,sca
         let (a,b) = (piece[0].at,piece.last().unwrap().at);
         match (end_corner(a),end_corner(b)) {
             (Some(x),Some(y)) => ends.push([x,y]),
-            (x,_) => return Err(refuse(Row::Regular,"the envelope does not close: a piece of it ends at no corner \
+            (x,_) => return Err(refuse(Condition::Envelope,"the envelope does not close: a piece of it ends at no corner \
                 of the curve",Some(if x.is_none() { a } else { b }))),
         }
     }
     for k in 0..corners.len() {
         let meets = ends.iter().flatten().filter(|&&c| c == k).count();
         if meets != 2 && meets != 0 {
-            return Err(refuse(Row::Regular,format!("the envelope branches: {meets} pieces meet at one corner"),Some(corners[k])))
+            return Err(refuse(Condition::Envelope,format!("the envelope branches: {meets} pieces meet at one corner"),Some(corners[k])))
         }
     }
     let mut order: Vec<(usize,bool)> = vec![(0,true)];
@@ -539,14 +509,14 @@ fn close(setting: &Setting,chains: Vec<Vec<Contact>>,corners: Vec<P>,ds: f64,sca
     while at != ends[0][0] {
         let Some((k,forward)) = (0..pieces.len()).filter(|&k| !used[k])
             .find_map(|k| if ends[k][0] == at { Some((k,true)) } else if ends[k][1] == at { Some((k,false)) } else { None }) else {
-            return Err(refuse(Row::Regular,"the envelope does not close into one loop",Some(corners[at])))
+            return Err(refuse(Condition::Envelope,"the envelope does not close into one loop",Some(corners[at])))
         };
         used[k] = true;
         order.push((k,forward));
         at = if forward { ends[k][1] } else { ends[k][0] };
     }
     if used.iter().any(|u| !u) {
-        return Err(refuse(Row::Regular,"the envelope is more than one loop",None))
+        return Err(refuse(Condition::Envelope,"the envelope is more than one loop",None))
     }
     let mut out: Vec<Vec<Contact>> = order.into_iter().map(|(k,forward)| {
         let mut p = pieces[k].clone();
@@ -559,20 +529,20 @@ fn close(setting: &Setting,chains: Vec<Vec<Contact>>,corners: Vec<P>,ds: f64,sca
     // crossing: no two chords of the loop meet but at a shared end
     let chords: Vec<(P,P)> = out.iter().flat_map(|p| p.windows(2).map(|w| (w[0].at,w[1].at))).filter(|(a,b)| dist(*a,*b) > 0.).collect();
     let n = chords.len();
+    let boxed = |(a,b): (P,P)| crate::bvh::Bounds {lo:[a[0].min(b[0]),a[1].min(b[1])],hi:[a[0].max(b[0]),a[1].max(b[1])]};
+    let tree = crate::bvh::Bvh::new(chords.iter().map(|&c| boxed(c)));
     for i in 0..n {
-        for j in i+2..n {
-            if i == 0 && j == n-1 { continue }
+        let mut crossed = false;
+        tree.query(|b| b.overlaps(boxed(chords[i])),|j| {
+            if crossed || j < i+2 || (i == 0 && j == n-1) { return }
             let ((a,b),(c,d)) = (chords[i],chords[j]);
-            if a[0].max(b[0]) < c[0].min(d[0]) || c[0].max(d[0]) < a[0].min(b[0])
-                || a[1].max(b[1]) < c[1].min(d[1]) || c[1].max(d[1]) < a[1].min(b[1]) { continue }
             let (d1,d2) = (cross(sub(b,a),sub(c,a)),cross(sub(b,a),sub(d,a)));
             let (d3,d4) = (cross(sub(d,c),sub(a,c)),cross(sub(d,c),sub(b,c)));
             // where two pieces meet, at a corner, their last chords may graze within the march's reach
-            let at_corner = corners.iter().any(|&k| [a,b,c,d].iter().any(|&p| dist(p,k) <= join));
-            if d1*d2 < 0. && d3*d4 < 0. && !at_corner {
-                return Err(refuse(Row::Regular,"the envelope crosses itself",Some(a)))
-            }
-        }
+            let at_corner = || corners.iter().any(|&k| [a,b,c,d].iter().any(|&p| dist(p,k) <= join));
+            crossed = d1*d2 < 0. && d3*d4 < 0. && !at_corner();
+        });
+        if crossed { return Err(refuse(Condition::Envelope,"the envelope crosses itself",Some(chords[i].0))) }
     }
     // counter-clockwise
     let area: f64 = chords.iter().map(|(a,b)| cross(*a,*b)).sum();

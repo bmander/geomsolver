@@ -285,17 +285,10 @@ impl Boxes {
         }))))
     }
 
-    /// How far a box is from the box `lo`–`hi` (zero where they meet).
-    fn gap(b: crate::bvh::Bounds<2>,lo: P,hi: P) -> f64 {
-        let dx = (b.lo[0]-hi[0]).max(lo[0]-b.hi[0]).max(0.);
-        let dy = (b.lo[1]-hi[1]).max(lo[1]-b.hi[1]).max(0.);
-        (dx*dx+dy*dy).sqrt()
-    }
-
     /// The edge nearest `p` and its distance, the earlier edge where two tie.
     fn nearest(&self,edges: &[Edge],p: P) -> (f64,usize) {
         let best = std::cell::Cell::new((f64::INFINITY,usize::MAX));
-        self.0.query_nearest(|b| Self::gap(b,p,p),|| best.get().0,|k| {
+        self.0.query_nearest(|b| b.gap(crate::bvh::Bounds {lo:p,hi:p}),|| best.get().0,|k| {
             let d = edges[k].distance(p);
             let (bd,bk) = best.get();
             if d < bd || (d == bd && k < bk) { best.set((d,k)) }
@@ -316,7 +309,7 @@ impl Boxes {
         let (lo,hi) = ([p[0].bounds()[0],p[1].bounds()[0]],[p[0].bounds()[1],p[1].bounds()[1]]);
         let nearest: std::cell::Cell<Option<I>> = std::cell::Cell::new(None);
         let mut failed = None;
-        self.0.query_nearest(|b| Self::gap(b,lo,hi)*(1.-1e-12),|| nearest.get().map_or(f64::INFINITY,|m| m.bounds()[1]),|k| {
+        self.0.query_nearest(|b| b.gap(crate::bvh::Bounds {lo,hi})*(1.-1e-12),|| nearest.get().map_or(f64::INFINITY,|m| m.bounds()[1]),|k| {
             let Some(wall) = &walls[k] else { return };
             match wall.distance(p) {
                 Ok(d) => nearest.set(Some(nearest.get().map_or(d,|m| min(m,d)))),

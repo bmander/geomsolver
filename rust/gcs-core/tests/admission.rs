@@ -76,7 +76,7 @@ fn a_single_rotation_is_refused_as_stationary() {
     assert!(r.witness.is_some());
 }
 
-/// A prism tool is asked the planar class's rows (#65), and a prism with no pocket is outside it.
+/// A prism with no pocket is not asked the planar class's rows (#65): its cap is refused by T1.
 #[test]
 fn a_prism_whose_cap_passes_through_the_blank_is_refused() {
     let r = refused(admit(&document(tools::BOX,&motions::roll(0.25),"turn",-60.,60.)));

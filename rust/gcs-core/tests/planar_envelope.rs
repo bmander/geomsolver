@@ -2,7 +2,7 @@
 //! planar generating class reads of a pocket): the Wankel rotor's flanks are the inner envelope of
 //! the housing's bore seen from the rotor, against the closed form (Yamamoto).
 use crate::bore::{solved,wankel};
-use gcs_core::envelope::planar::{InnerEnvelope,Row};
+use gcs_core::envelope::planar::{Condition,InnerEnvelope};
 
 /// The rotor's flank in its own frame, about its centre, apex at angle 0: for s ∈ [0, 2π/3],
 /// `e^{is}·(R + 2ie·sin(3s/2)·e^{iα})` with `cos α = −(3e/R)·cos(3s/2)`, `α ∈ (0, π)`; the
@@ -70,7 +70,7 @@ fn the_rotors_flanks_are_the_inner_envelope_of_the_bore() {
 fn below_the_limiting_k_the_envelope_is_refused_and_names_its_row() {
     // K = 2.5: the bore crosses itself and the flanks have gaps; no rotor is read
     let refused = rotor(50.,20.).map(|_| ()).unwrap_err();
-    assert!(matches!(refused.row,Row::Source | Row::Regular),"{refused}");
+    assert!(refused.row == Condition::Envelope,"{refused}");
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn an_envelope_is_read_over_a_whole_period() {
     let el = solved(&wankel(105.,15.,"bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)"));
     let (bore,turn) = (el.map.ent_named("bore").unwrap().i(),el.map.ent_named("housing_turn").unwrap().i());
     let refused = InnerEnvelope::read(&el.sketch,bore,turn,[0.,std::f64::consts::TAU]).unwrap_err();
-    assert_eq!(refused.row,Row::Period,"{refused}");
+    assert_eq!(refused.row,Condition::Period,"{refused}");
 }
 
 /// The rotor's area by Green's theorem over the closed-form flanks: three times one flank's
@@ -106,5 +106,5 @@ fn a_motion_off_the_plane_gives_no_envelope() {
         tilt := motion(about: rightward_line)\nrightward_line := line(origin, rightward)"));
     let (bore,tilt) = (el.map.ent_named("bore").unwrap().i(),el.map.ent_named("tilt").unwrap().i());
     let refused = InnerEnvelope::read(&el.sketch,bore,tilt,[0.,std::f64::consts::TAU]).unwrap_err();
-    assert_eq!(refused.row,Row::Plane,"{refused}");
+    assert_eq!(refused.row,Condition::Plane,"{refused}");
 }

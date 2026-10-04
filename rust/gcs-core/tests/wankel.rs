@@ -4,7 +4,6 @@
 //! whole period — admitted to the planar generating class, which reads the bore's inner envelope,
 //! and built exactly — each held to its closed form.
 use crate::planar_envelope::{off_flank,rotor_area};
-use crate::bore::solve_elaborated as solved;
 use gcs_core::envelope::planar::InnerEnvelope;
 use gcs_core::{brep,solid::admission};
 use std::f64::consts::PI;
@@ -13,7 +12,7 @@ const R: f64 = 105.;
 const E: f64 = 15.;
 const W: f64 = 80.;
 
-fn standard() -> gcs_core::program::Elaborated { solved(fixtures::wankel::standard()) }
+fn standard() -> gcs_core::program::Elaborated { fixtures::wankel::standard() }
 
 fn say() -> brep::sweep::Say<'static> { brep::sweep::Say {stage:&|_: &str| {},mark:&|_| {}} }
 
@@ -71,7 +70,7 @@ fn the_rotor_is_admitted_to_the_planar_class_and_built_as_its_closed_form() {
 fn each_planar_row_names_what_it_refuses() {
     let source = fixtures::wankel::source();
     let refused = |text: &str,numbers: &[(&str,&str)]| -> admission::Refusal {
-        let e = solved(fixtures::wankel::read_text(text,numbers));
+        let e = fixtures::wankel::read_text(text,numbers);
         match admission::admit_body(&e.sketch,fixtures::solid(&e,"rotor"),&admission::Options::default()) {
             Err(admission::Error::Refused(r)) => r,
             other => panic!("admitted or unread: {}",other.map(|_| String::new()).unwrap_or_else(|e| format!("{e:?}"))),
@@ -85,8 +84,7 @@ fn each_planar_row_names_what_it_refuses() {
     let r = refused(&edit("under: housing_turn, from: 0deg, to: 1080deg)\nrotor","under: housing_turn, from: 0deg, to: 720deg)\nrotor"),&[]);
     assert_eq!(r.condition,admission::Condition::Period,"{r}");
     // P5: a case too small, its wall reaching the blank as it turns
-    let r = refused(&edit("radius(configuration.generating_radius + 4 * configuration.eccentricity) rim",
-        "radius(configuration.generating_radius + configuration.eccentricity) rim"),&[]);
+    let r = refused(&edit("radius(R + 4 * e) rim","radius(R + e) rim"),&[]);
     assert_eq!(r.condition,admission::Condition::Wall,"{r}");
     assert!(r.witness.is_some());
     assert!(r.to_string().contains("planar generating class"),"{r}");
@@ -96,7 +94,7 @@ fn each_planar_row_names_what_it_refuses() {
 /// sweep of it is read and no rotor built, and the bore's inner envelope says why.
 #[test]
 fn below_the_limiting_k_no_rotor_is_read() {
-    let e = solved(fixtures::wankel::read(&[("eccentricity","45mm")]));
+    let e = fixtures::wankel::read(&[("eccentricity","45mm")]);
     let rotor = fixtures::solid(&e,"rotor");
     match admission::admit_body(&e.sketch,rotor,&admission::Options::default()) {
         Err(admission::Error::Unreadable(m)) => assert!(m.contains("`chamber`: self-intersecting"),"{m}"),

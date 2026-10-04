@@ -288,18 +288,30 @@ pub fn evaluate_pair(
     a: &solid::EvaluatedSolid,
     b: &solid::EvaluatedSolid,
 ) -> Verdict {
-    Verdict { evidence: measure_pair(requirement, a, b) }
+    Verdict { evidence: measure_pair(requirement, a, b, None) }
+}
+
+/// `measure_pair` with `b` moved rigidly in space by `pose`: what a claim swept over a motion asks
+/// at each roll, the solids evaluated once.
+pub(crate) fn evaluate_moved(
+    requirement: &crate::model::SolidRequirement,
+    a: &solid::EvaluatedSolid,
+    b: &solid::EvaluatedSolid,
+    pose: crate::envelope::Motion,
+) -> Result<GeometricEvidence, String> {
+    measure_pair(requirement, a, b, Some(pose))
 }
 
 fn measure_pair(
     requirement: &crate::model::SolidRequirement,
     a: &solid::EvaluatedSolid,
     b: &solid::EvaluatedSolid,
+    pose: Option<crate::envelope::Motion>,
 ) -> Result<GeometricEvidence, String> {
     use crate::model::SolidRequirement as R;
     let pa = a.boundary();
     let ca = a.classifier();
-    let (cb, pb) = a.relative(b);
+    let (cb, pb) = a.relative(b, pose);
     if pb
         .iter()
         .flat_map(|p| &p.pts)
@@ -375,14 +387,10 @@ fn measure_pair(
 fn boundary_gap(a: &[Piece], b: &[Piece]) -> f64 {
     let bounds = |q: &Piece| { let x = q.bbox_of(); crate::bvh::Bounds { lo: x.lo, hi: x.hi } };
     let tree = crate::bvh::Bvh::new(b.iter().map(bounds));
-    let gap = |x: crate::bvh::Bounds<3>, y: crate::bvh::Bounds<3>| {
-        let d: [f64; 3] = std::array::from_fn(|k| (x.lo[k] - y.hi[k]).max(y.lo[k] - x.hi[k]).max(0.0));
-        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
-    };
     let best = std::cell::Cell::new(f64::INFINITY);
     for p in a {
         let pb = bounds(p);
-        tree.query_nearest(|q| gap(q, pb), || best.get(), |k| {
+        tree.query_nearest(|q| q.gap(pb), || best.get(), |k| {
             if plane_apart(p, &b[k]) <= best.get() { best.set(best.get().min(piece_gap(p, &b[k]))); }
         });
     }

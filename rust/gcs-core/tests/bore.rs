@@ -1,7 +1,7 @@
 //! The Wankel's bore (#65): the envelope of a point is its path, so `envelope(apex, under:
 //! rotor_turn, from: 0deg, to: 1080deg)` is the epitrochoid, a closed curve of the drawing that
 //! stands alone in a face, and the housing is a disc less its prism.
-use gcs_core::{model::EntKind,program,solve,syntax};
+use gcs_core::{model::EntKind,program};
 
 /// The Wankel's planetary motion and its apex, drawn in the top view (the standard datums written
 /// out): the rotor turns about its centre `hub`, `e` from the shaft's `centre`, at −2/3 against an
@@ -25,20 +25,8 @@ pub fn wankel(r: f64, e: f64, extra: &str) -> String {
         {extra}\n",x = r+e)
 }
 
-pub fn elaborate(src: &str) -> program::Elaborated {
-    let (p,errors) = syntax::parse(src);
-    assert!(errors.is_empty(),"{errors:?}");
-    program::elaborate(&p)
-}
-
-pub fn solved(src: &str) -> program::Elaborated { solve_elaborated(elaborate(src)) }
-
-/// An elaboration with no error, solved.
-pub fn solve_elaborated(mut el: program::Elaborated) -> program::Elaborated {
-    assert!(el.ok(),"{:?}",el.diags);
-    assert!(solve::solve(&mut el.sketch,Default::default()).success);
-    el
-}
+/// A document elaborated with no error and solved.
+pub fn solved(src: &str) -> program::Elaborated { fixtures::read(src) }
 
 #[test]
 fn the_apex_under_the_rotors_motion_is_the_epitrochoid() {
@@ -74,7 +62,7 @@ fn a_closed_bore_bounds_a_face_and_the_housing_is_its_closed_form() {
     let (r,e,w) = (105.,15.,80.);
     let el = solved(&wankel(r,e,HOUSING));
     let sk = &el.sketch;
-    let index = |n: &str| (0..sk.solids.len()).find(|&i| sk.solids[i].name == n).unwrap();
+    let index = |n: &str| fixtures::solid(&el,n);
     let (pocket,housing) = (index("pocket"),index("housing"));
     let bore = std::f64::consts::PI*(r*r+3.*e*e);
     let disc = std::f64::consts::PI*170f64.powi(2);
@@ -110,7 +98,7 @@ fn the_bores_field_is_its_distance_through_the_boxes_about_its_chords() {
     let (r,e) = (105.,15.);
     let el = solved(&wankel(r,e,HOUSING));
     let sk = &el.sketch;
-    let housing = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "housing").unwrap();
+    let housing = fixtures::solid(&el,"housing");
     let field = gcs_core::solid::SpatialField::read(sk,housing,1e-9).unwrap();
     let n = 200_000;
     let curve: Vec<[f64;2]> = (0..n).map(|k| {

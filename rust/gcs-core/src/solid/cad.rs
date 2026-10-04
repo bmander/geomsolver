@@ -382,13 +382,10 @@ fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
                         return Err(format!("`{}`: its curve does not come back to where it started",face.name));
                     }
                     let (a,b) = sk.curve_domain(e.i());
-                    let cuts = [a,0.5*(a+b),b];
-                    let ends: Vec<(f64,f64)> = cuts.iter().map(|&t| sk.curve_point(e.i(),t)).collect();
-                    let n = cuts.len()-1;
-                    return (0..n).map(|k| {
-                        let (p,q) = (ends[k],if k+1 == n { ends[0] } else { ends[k+1] });
-                        fit_stretch(sk,e.i(),(cuts[k],cuts[k+1]),Some((p,q)),FIT_MM/scale).ok_or_else(unfitted).map(fitted)
-                    }).collect();
+                    let m = 0.5*(a+b);
+                    let (start,middle) = (sk.curve_point(e.i(),a),sk.curve_point(e.i(),m));
+                    let half = |stretch,ends| fit_stretch(sk,e.i(),stretch,Some(ends),FIT_MM/scale).ok_or_else(unfitted).map(fitted);
+                    return Ok(vec![half((a,m),(start,middle))?,half((m,b),(middle,start))?]);
                 }
                 fitted(fit_curve(sk,e.i(),FIT_MM/scale).ok_or_else(unfitted)?)
             }

@@ -426,22 +426,22 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     // a pocketed prism under a planar motion: rows P1–P5, every placement checked, the blank boxed
     // by its own boundary (a field's support is a construction's box, not the material's)
     let mut planar: Vec<SweepEvidence> = Vec::new();
-    let planar_box = || -> Option<(V,V)> {
+    let planar_box = order.iter().any(|s| asked[s] == Asked::Planar).then(|| -> Option<(V,V)> {
         let mm = cad::millimetres(sk).ok()?;
         let blank = crate::brep::recipe::build(&cad::recipe_static(sk,root).ok()?.recipe).ok()?;
         let (lo,hi) = blank.bounds();
         Some((lo.map(|x| x/mm),hi.map(|x| x/mm)))
-    };
-    let planar_box = if order.iter().any(|s| asked[s] == Asked::Planar) { planar_box() } else { None };
+    }).flatten();
     for &swept in order.iter().filter(|s| asked[s] == Asked::Planar) {
-        let (mut found,mut envelope): (Option<SweepEvidence>,_) = (None,None);
+        let refused = |(c,m,w): super::planar_class::Failure,pose: Motion| refuse(swept,c,m,w.map(|p| pose.point(p)));
+        let class = super::planar_class::Planar::read(sk,swept,options).map_err(|f| refused(f,by_sweep[&swept][0]))?;
+        let mut first = None;
         for &pose in &by_sweep[&swept] {
             let inside = move |p: V| field.value(pose.point(p)) < -options.margin;
-            let evidence = super::planar_class::admit(sk,swept,&mut envelope,pose,&inside,planar_box,options)
-                .map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
-            found.get_or_insert(evidence);
+            let checked = class.check(sk,pose,&inside,planar_box,options).map_err(|f| refused(f,pose))?;
+            first.get_or_insert(checked);
         }
-        let mut found = found.expect("a swept cut has a placement");
+        let mut found = class.evidence(first.expect("a swept cut has a placement"));
         found.sweep = swept; found.name = names[&swept].clone();
         found.placements = by_sweep[&swept].iter().map(|&pose| Placement {pose,equivalent_to:None}).collect();
         planar.push(found);

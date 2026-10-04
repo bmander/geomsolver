@@ -202,10 +202,29 @@ pub struct Meter {
 /// body is the envelope's region times the blank's slab along the envelope's normal, so a point's
 /// signed distance to it is the distance to the envelope in the plane and to the slab's caps across
 /// it, met at right angles — the greater inside, their hypotenuse outside. The distance in the plane
-/// is to the envelope itself: its contacts' polyline finds the nearest stretch, and the foot is
+/// is to the envelope itself: its contacts' chords find the nearest stretch, and the foot is
 /// solved onto the envelope there (`InnerEnvelope::point`), each piece's corners its ends.
 #[derive(Clone,Debug)]
-struct Planar { envelope: crate::envelope::planar::InnerEnvelope,ring: Vec<[f64;2]>,cut: (Motion,Motion),slab: [f64;2],normal: V }
+struct Planar { envelope: crate::envelope::planar::InnerEnvelope,chords: Vec<Chord>,cut: (Motion,Motion),slab: [f64;2],normal: V }
+
+/// A stretch between two of the envelope's contacts round its loop: its ends, the piece it is on,
+/// and the fractions of that piece's contacts its ends are at (a corner's chord to the next piece
+/// is of no length, and counts for nothing in a ray's parity).
+#[derive(Clone,Copy,Debug)]
+struct Chord { ends: [[f64;2];2],piece: usize,at: [f64;2] }
+
+impl Planar {
+    /// Every chord of `envelope`'s loop, in order round it.
+    fn chords(envelope: &crate::envelope::planar::InnerEnvelope) -> Vec<Chord> {
+        let pieces = &envelope.pieces;
+        pieces.iter().enumerate().flat_map(|(k,piece)| {
+            let last = (piece.len()-1).max(1) as f64;
+            let next = pieces[(k+1)%pieces.len()][0].at;
+            (0..piece.len()).map(move |j| Chord {ends:[piece[j].at,piece.get(j+1).map_or(next,|c| c.at)],piece:k,
+                at:[j as f64/last,((j+1) as f64/last).min(1.)]})
+        }).collect()
+    }
+}
 
 impl Planar {
     /// The nearest point of the body and the signed distance to it: positive outside.
@@ -215,42 +234,24 @@ impl Planar {
         let h = dot(q,self.normal);
         let w = sub(q,scale(self.normal,h));
         let a = env.page(w);
-        // the nearest stretch of the polyline, then the foot solved onto its piece
-        let n = self.ring.len();
-        let seg = |i: usize| -> (f64,[f64;2]) {
-            let (x,y) = (self.ring[i],self.ring[(i+1)%n]);
+        // the nearest chord, its piece and the fraction there, then the foot refined on the exact
+        // envelope (Brent's minimiser over the piece's fraction)
+        let seg = |c: &Chord| -> (f64,[f64;2],f64) {
+            let [x,y] = c.ends;
             let d = [y[0]-x[0],y[1]-x[1]];
             let l = d[0]*d[0]+d[1]*d[1];
             let t = if l > 0. { (((a[0]-x[0])*d[0]+(a[1]-x[1])*d[1])/l).clamp(0.,1.) } else { 0. };
-            let f = [x[0]+t*d[0],x[1]+t*d[1]];
-            ((a[0]-f[0]).dhypot(a[1]-f[1]),f)
+            ((a[0]-x[0]-t*d[0]).dhypot(a[1]-x[1]-t*d[1]),[x[0]+t*d[0],x[1]+t*d[1]],c.at[0]+t*(c.at[1]-c.at[0]))
         };
-        let (mut gap,mut foot) = (0..n).map(seg).min_by(|x,y| x.0.total_cmp(&y.0))?;
-                // the piece the foot is on, and its fraction there, golden-section refined on the exact envelope
-        let mut best = (f64::INFINITY,0usize,0.);
-        for (k,piece) in env.pieces.iter().enumerate() {
-            for j in 0..piece.len().saturating_sub(1) {
-                let (x,y) = (piece[j].at,piece[j+1].at);
-                let d = (foot[0]-x[0]).dhypot(foot[1]-x[1]).min((foot[0]-y[0]).dhypot(foot[1]-y[1]));
-                if d < best.0 { best = (d,k,(j as f64+0.5)/(piece.len()-1) as f64) }
-            }
-        }
-        let (_,k,f0) = best;
+        let (i,(mut gap,mut foot,f0)) = self.chords.iter().map(seg).enumerate().min_by(|x,y| x.1.0.total_cmp(&y.1.0))?;
+        let k = self.chords[i].piece;
         let len = env.pieces[k].len().max(2) as f64;
         let dist = |f: f64| env.point(k,f).map_or(f64::INFINITY,|x| (x[0]-a[0]).dhypot(x[1]-a[1]));
-        let (mut lo,mut hi) = ((f0-2./len).max(0.),(f0+2./len).min(1.));
-        let g = 0.618_033_988_749_894_9;
-        let (mut x1,mut x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
-        let (mut f1,mut f2) = (dist(x1),dist(x2));
-        for _ in 0..80 {
-            if f1 <= f2 { hi = x2; x2 = x1; f2 = f1; x1 = hi-g*(hi-lo); f1 = dist(x1); }
-            else { lo = x1; x1 = x2; f1 = f2; x2 = lo+g*(hi-lo); f2 = dist(x2); }
-        }
-        let fm = 0.5*(lo+hi);
+        let (_,fm) = crate::roots::brent(&dist,(f0-2./len).max(0.),(f0+2./len).min(1.),1e-13,100,|_,_| false);
         if let Some(x) = env.point(k,fm) { let d = (x[0]-a[0]).dhypot(x[1]-a[1]); if d <= gap { gap = d; foot = x; } }
-        // inside the envelope by the polyline's ray parity
-        let inside = (0..n).filter(|&i| {
-            let (x,y) = (self.ring[i],self.ring[(i+1)%n]);
+        // inside the envelope by the chords' ray parity
+        let inside = self.chords.iter().filter(|c| {
+            let [x,y] = c.ends;
             (x[1] > a[1]) != (y[1] > a[1]) && a[0] < x[0]+(a[1]-x[1])*(y[0]-x[0])/(y[1]-x[1])
         }).count()%2 == 1;
         let plane = if inside { -gap } else { gap };
@@ -462,21 +463,16 @@ impl Meter {
         let refuse = |why: &str| Err(format!("`{}`: the accuracy meter reads a planar sweep's body {why}",sk.solids[body].name));
         let [cut] = cuts.as_slice() else { return refuse("with one cut") };
         let [stock] = statics.as_slice() else { return refuse("whose blank is one prism") };
-        let SolidDef::Swept {source,motion,from,to} = &sk.solids[cut.swept].def else { return refuse("of a sweep") };
-        let SolidDef::Body {through,..} = &sk.solids[*source as usize].def else { return refuse("of a pocketed tool") };
-        let [pocket] = through.as_slice() else { return refuse("of one pocket") };
-        let SolidDef::Prism {face,..} = &sk.solids[*pocket as usize].def else { return refuse("of a prism pocket") };
-        let Some((edges,_)) = sk.faces[*face as usize].boundaries().next() else { return refuse("of a pocket with a profile") };
-        let [curve] = edges else { return refuse("of a pocket of one curve") };
-        let envelope = crate::envelope::planar::InnerEnvelope::read(sk,curve.i(),*motion as usize,[from.value,to.value])
+        let pocket = super::planar_class::pocket(sk,cut.swept).map_err(|(_,m,_)| m)?;
+        let envelope = crate::envelope::planar::InnerEnvelope::read(sk,pocket.curve,pocket.motion,pocket.roll)
             .map_err(|e| e.to_string())?;
         let normal = envelope.normal();
         let Ok(slab) = super::planar_class::prism(sk,*stock as usize,normal) else {
             return refuse("whose blank is a prism standing square to the envelope's plane")
         };
-        let ring = envelope.polyline();
+        let chords = Planar::chords(&envelope);
         let mid = 0.5*(slab[0]+slab[1]);
-        if ring.iter().any(|&p| blank.value(cut.pose.point(add(envelope.world(p),scale(normal,mid-dot(envelope.world(p),normal))))) >= 0.) {
+        if chords.iter().map(|c| c.ends[0]).any(|p| blank.value(cut.pose.point(add(envelope.world(p),scale(normal,mid-dot(envelope.world(p),normal))))) >= 0.) {
             return refuse("whose blank holds its envelope")
         }
         let tol = cad::AXIS_TOLERANCE;
@@ -484,7 +480,7 @@ impl Meter {
         let mut surfaces: Vec<Surface> = (0..envelope.pieces.len()).map(|k| Surface {name:format!("{} flank {k}",sk.solids[cut.swept].name),
             generated:true}).collect();
         surfaces.extend(["near","far"].map(|n| Surface {name:format!("{}.{n}",sk.solids[*stock as usize].name),generated:false}));
-        let planar = Planar {envelope,ring,cut:(cut.pose,cut.pose.inverse()),slab,normal};
+        let planar = Planar {envelope,chords,cut:(cut.pose,cut.pose.inverse()),slab,normal};
         Ok(Self {exact:None,surfaces,blank,faces:Vec::new(),sweeps:Vec::new(),field,options,operands:Vec::new(),planar:Some(planar)})
     }
 

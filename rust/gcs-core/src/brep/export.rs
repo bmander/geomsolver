@@ -331,7 +331,7 @@ pub fn supply_exact_where(sk: &Sketch,wanted: &dyn Fn(usize) -> bool) {
     if sk.field_meshing.get() != crate::solid::FieldMeshing::Now { return }
     let say = Say {stage:&|_: &str| {},mark:&|_| {}};
     let Ok(mm) = cad::millimetres(sk) else { return };
-    for job in sk.field_jobs().into_iter().filter(|j| wanted(j.solid)) {
+    for job in sk.field_jobs().into_iter().filter(|j| wanted(j.solid) && sk.supplied_exact_solid(j.solid).is_none()) {
         // admitted as a display is, which is looked at and not made
         let admitted = cad::swept_operands(sk,job.solid).is_empty().then(|| admission::admit_body(sk,job.solid,&DISPLAY_ADMISSION).ok()).flatten();
         let Ok(built) = exact(sk,job.solid,admitted.as_ref(),None,&say) else { continue };

@@ -1778,5 +1778,5 @@ first; `gear_trace.sv` is the deepest; `engine.sv` and its `engine/` modules are
 | views and projection | [bracket](../rust/examples/bracket.sv) |
 | layouts in space | [skew axes](../rust/examples/skew_axes.sv), [spatial surfaces](../rust/examples/sphere_cone_cylinder.sv), [hypoid pitch cones](../rust/examples/hypoid_pitch_cones.sv) |
 | motions and generated solids | [indexed pattern](../rust/examples/solid_indexed_pattern.sv), [lantern generation](../rust/examples/lantern_generation.sv) |
-| trajectories, inner envelopes and a claim over a motion | [Wankel](../rust/examples/wankel/wankel.sv) |
+| a point's envelope, an inner envelope and a claim over a motion | [Wankel](../rust/examples/wankel/wankel.sv) |
 | a modular assembly | [engine](../rust/examples/engine.sv) |

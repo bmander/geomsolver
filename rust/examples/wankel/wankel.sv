@@ -11,6 +11,11 @@ unit mm
 use std
 use configuration
 
+R := configuration.generating_radius
+e := configuration.eccentricity
+W := configuration.width
+clearance := configuration.clearance
+
 // -- the motion -------------------------------------------------------------------------------
 // Drawn in the top view, the rotor at the start of its turn: the shaft's centre, the rotor's `e`
 // from it, an apex `R` beyond that on the line of centres.
@@ -19,10 +24,10 @@ in std.top {
   centre distance(0mm, along: u) std.top
   centre distance(0mm, along: v) std.top
   private hub := point
-  hub distance(configuration.eccentricity, along: u) std.top
+  hub distance(e, along: u) std.top
   hub distance(0mm, along: v) std.top
   apex := point
-  apex distance(configuration.eccentricity + configuration.generating_radius, along: u) std.top
+  apex distance(e + R, along: u) std.top
   apex distance(0mm, along: v) std.top
 }
 
@@ -44,10 +49,10 @@ flank := envelope(bore, under: housing_turn, from: 10deg, to: 170deg)
 // The housing: a disc with the bore through it, a hair proud of the rotor at each face.
 in std.top {
   private rim := circle(center: centre) hint(r: 165)
-  radius(configuration.generating_radius + 4 * configuration.eccentricity) rim
+  radius(R + 4 * e) rim
 }
-private case := solid(face(rim), from: -1mm, to: configuration.width + 1mm)
-private chamber := solid(face(bore), from: -2mm, to: configuration.width + 2mm)
+private case := solid(face(rim), from: -1mm, to: W + 1mm)
+private chamber := solid(face(bore), from: -2mm, to: W + 2mm)
 housing := solid(case)
 chamber cut housing
 
@@ -55,9 +60,9 @@ chamber cut housing
 // turns about the rotor over a whole period.
 in std.top {
   private blank_rim := circle(center: hub) hint(r: 120)
-  radius(configuration.generating_radius + configuration.eccentricity) blank_rim
+  radius(R + e) blank_rim
 }
-private blank := solid(face(blank_rim), from: 0mm, to: configuration.width)
+private blank := solid(face(blank_rim), from: 0mm, to: W)
 construction swept := solid(housing, under: housing_turn, from: 0deg, to: 1080deg)
 rotor := solid(blank)
 swept cut rotor
@@ -72,19 +77,19 @@ swept cut rotor
 in std.top {
   cycle 3 as k {
     private tip := point
-    tip distance(configuration.eccentricity + (configuration.generating_radius - configuration.clearance) * cos(k * 120deg), along: u) std.top
-    tip distance((configuration.generating_radius - configuration.clearance) * sin(k * 120deg), along: v) std.top
+    tip distance(e + (R - clearance) * cos(k * 120deg), along: u) std.top
+    tip distance((R - clearance) * sin(k * 120deg), along: v) std.top
     private crown := point
-    crown distance(configuration.eccentricity + (configuration.generating_radius - 2 * configuration.eccentricity - configuration.clearance) * cos(k * 120deg + 60deg), along: u) std.top
-    crown distance((configuration.generating_radius - 2 * configuration.eccentricity - configuration.clearance) * sin(k * 120deg + 60deg), along: v) std.top
+    crown distance(e + (R - 2 * e - clearance) * cos(k * 120deg + 60deg), along: u) std.top
+    crown distance((R - 2 * e - clearance) * sin(k * 120deg + 60deg), along: v) std.top
     // its centre on the far side of the rotor's, about R from it
-    flank := arc(center: hint(x: configuration.eccentricity - configuration.generating_radius * cos(k * 120deg + 60deg),
-      y: -configuration.generating_radius * sin(k * 120deg + 60deg)), start: tip, end: next.tip)
+    flank := arc(center: hint(x: e - R * cos(k * 120deg + 60deg),
+      y: -R * sin(k * 120deg + 60deg)), start: tip, end: next.tip)
     crown on flank
   }
 }
-arc_rotor := solid(face(flank[0], flank[1], flank[2]), from: 0mm, to: configuration.width)
+arc_rotor := solid(face(flank[0], flank[1], flank[2]), from: 0mm, to: W)
 arc_rotor_at := solid(arc_rotor, under: rotor_turn, at: 0deg)
 claim over rotor_turn in (0deg, 1080deg) {
-  arc_rotor_at clear(configuration.clearance / 2) housing
+  arc_rotor_at clear(clearance / 2) housing
 }

@@ -659,12 +659,30 @@ impl EvaluatedSolid {
     pub(crate) fn classifier(&self) -> &Csg {
         &self.csg
     }
-    /// Rebase another validated solid into this solid's frame for pairwise kernel queries.
-    pub(crate) fn relative(&self, other: &Self) -> (Csg, Vec<Piece>) {
-        let delta = std::array::from_fn(|k| other.origin.0[k] - self.origin.0[k]);
+    /// Rebase another validated solid into this solid's frame for pairwise kernel queries, moved
+    /// rigidly in space by `pose` first where one is given (a claim's roll, evaluated once).
+    pub(crate) fn relative(&self, other: &Self, pose: Option<crate::envelope::Motion>) -> (Csg, Vec<Piece>) {
         let mut csg = other.csg.clone();
-        translate_csg(&mut csg, delta);
-        (csg, translate_pieces(other.boundary(), delta))
+        let Some(pose) = pose else {
+            let delta = std::array::from_fn(|k| other.origin.0[k] - self.origin.0[k]);
+            translate_csg(&mut csg, delta);
+            return (csg, translate_pieces(other.boundary(), delta));
+        };
+        let point = |p: [f64; 3]| {
+            let w = pose.point(std::array::from_fn(|k| p[k] + other.origin.0[k]));
+            std::array::from_fn(|k| w[k] - self.origin.0[k])
+        };
+        for p in &mut csg.prims {
+            p.bbox = Box3::empty();
+            for f in &mut p.facets {
+                for x in &mut f.pts { *x = point(*x); p.bbox.add(*x); }
+                f.n = pose.vector(f.n);
+            }
+        }
+        let pieces = other.boundary().iter().map(|q| Piece {
+            pts: q.pts.iter().map(|&x| point(x)).collect(), n: pose.vector(q.n), ..q.clone()
+        }).collect();
+        (csg, pieces)
     }
 
 }

@@ -1,7 +1,7 @@
 //! Flat bounding-volume hierarchies: the renderer's ray and projected-edge queries, a profile
 //! field's walls (`solid::field::profile`) and a clearance's nearest pieces (`clear`). Subtree end
 //! indices let traversal skip whole regions without recursion, a heap stack, or per-query
-//! allocation. A nearest search is a `query` whose box test reads the best found so far.
+//! allocation. A nearest search is `query_nearest`: best first, pruning by the best found so far.
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Bounds<const D: usize> {
@@ -15,8 +15,13 @@ impl<const D: usize> Bounds<D> {
             hi: std::array::from_fn(|k| self.hi[k].max(other.hi[k])),
         }
     }
-    fn overlaps(self, other: Self) -> bool {
+    pub(crate) fn overlaps(self, other: Self) -> bool {
         (0..D).all(|k| self.lo[k] <= other.hi[k] && other.lo[k] <= self.hi[k])
+    }
+    /// How far apart two boxes are (zero where they meet).
+    pub(crate) fn gap(self, other: Self) -> f64 {
+        (0..D).map(|k| (self.lo[k] - other.hi[k]).max(other.lo[k] - self.hi[k]).max(0.0).powi(2))
+            .sum::<f64>().sqrt()
     }
 }
 #[derive(Clone, Debug)]
