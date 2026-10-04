@@ -17,8 +17,8 @@
 // dimensions a printer needs — `class detail`, which this sheet leaves hidden.  The side view is
 // what the assembly adds beyond its parts, with every height projected from the view along the
 // axis.  The drawing has one degree of freedom and it is the crank angle: `crank.theta` is a
-// free variable (§5), so dragging the pin rocks both cylinders and moves both pistons in both
-// views, and the arm's callout reads the angle it is at.  One lever angle in the table (`throttle`)
+// formal the call leaves unbound (§5), so dragging the pin rocks both cylinders and moves both
+// pistons in both views, and the arm's callout reads the angle it is at.  One lever angle in the table (`throttle`)
 // turns the throttle.  The two banks are one component instanced twice, which is why their
 // ports come out rotated rather than mirrored — the engine is one bank turned a quarter turn,
 // and the drawing cannot say otherwise.

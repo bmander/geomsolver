@@ -106,10 +106,10 @@ pub fn parallels() -> Sketch {
     document(PARALLELS, "parallels")
 }
 
-/// The Pythagorean theorem drawn, with `a` and `b` the document's own named dimensions and
+/// The Pythagorean theorem drawn, with `a` and `b` the document's inputs and
 /// `c = hypot(a, b)` a claim the diagnosis judges a theorem — `pythagoras.sv`.
 pub fn pythagoras(a: f64, b: f64) -> Sketch {
-    let src = with_params(PYTHAGORAS, &[("la", a), ("lb", b)]);
+    let src = with_params(PYTHAGORAS, &[("a", a), ("b", b)]);
     document(&src, "pythagoras")
 }
 
@@ -341,45 +341,36 @@ fn document(src: &str, name: &str) -> Sketch {
     e.sketch
 }
 
-/// A document's `param` line, given another number — the one way a case that takes arguments is
-/// still *one* implementation.
+/// A document's inputs, given other numbers — the one way a case that takes arguments is still
+/// *one* implementation.
 ///
-/// A drawing written as a document already names the numbers it is drawn from (`w := 100`),
-/// so a caller asking for another width is asking for that line to read differently.  Rewriting
-/// it is a splice on the source, which is what every other edit in this project is; building a
-/// second copy of the rectangle in Rust to take the argument is what it is not.  A name the
-/// document does not declare is a caller's mistake and says so in debug.
+/// A drawing written as a document already declares the numbers it is drawn from as its inputs
+/// (`param w := 100`), so a caller asking for another width is asking for that line to read
+/// differently.  Rewriting it is a splice on the source, which is what every other edit in this
+/// project is; building a second copy of the rectangle in Rust to take the argument is what it
+/// is not.  Only a `param` is an input: a name the document does not declare as one is a
+/// caller's mistake and says so in debug.
 fn with_params(src: &str, kv: &[(&str, f64)]) -> String {
-    // the two ways a document names a number: `w := 100` standing as a statement, worked out at
-    // elaboration, and `distance(a := 30)`, which names a dimension the drawing states and other
-    // dimensions read
-    let mut out = String::with_capacity(src.len());
-    let mut hit = vec![false; kv.len()];
-    for line in src.lines() {
-        let mut written: Option<String> = None;
-        for (i, &(name, v)) in kv.iter().enumerate() {
-            let value = crate::json::fmt_g(v, 12);
-            let head = format!("{name} := ");
-            let lead = line.len() - line.trim_start().len();
-            if line[lead..].starts_with(&head) {
-                written = Some(format!("{}{value}", &line[..lead + head.len()]));
-                hit[i] = true;
-                continue;
-            }
-            let inner = format!("({name} := ");
-            let Some(at) = line.find(&inner) else { continue };
-            let from = at + inner.len();
-            let to = line[from..].find([')', ',']).map_or(line.len(), |k| from + k);
-            written = Some(format!("{}{value}{}", &line[..from], &line[to..]));
-            hit[i] = true;
-        }
-        out.push_str(written.as_deref().unwrap_or(line));
-        out.push('\n');
+    let (prog, _) = crate::syntax::parse(src);
+    let mut values: Vec<(crate::syntax::Span, String)> = kv
+        .iter()
+        .filter_map(|&(name, v)| {
+            prog.root().body.iter().find_map(|st| match &st.kind {
+                crate::syntax::StmtKind::Param(p)
+                    if p.input.is_some() && p.bound() && p.name.text == name =>
+                {
+                    Some((p.span, crate::json::fmt_g(v, 12)))
+                }
+                _ => None,
+            })
+        })
+        .collect();
+    debug_assert_eq!(values.len(), kv.len(), "a case was given a number that is no input");
+    values.sort_by_key(|(at, _)| std::cmp::Reverse(at.lo));
+    let mut out = src.to_string();
+    for (at, v) in values {
+        out.replace_range(at.lo as usize..at.hi as usize, &v);
     }
-    debug_assert!(
-        hit.iter().all(|&h| h),
-        "a case was given a number its document does not name",
-    );
     out
 }
 

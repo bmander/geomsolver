@@ -137,6 +137,7 @@ fn pi_is_a_number_and_tau_is_an_angle() {
 #[test]
 fn a_free_variable_read_two_ways_is_an_error() {
     let src = "\
+param k: Length
 a := point hint(x: 0, y: 0)
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
@@ -145,7 +146,7 @@ m := line(b, c)
 a distance(k) b
 l angle(k) m
 ";
-    says(src, "one free name, one dimension");
+    says(src, "`k` is declared Length, and `theta` reads it as Angle");
 }
 
 /// The functions have signatures, and `floor`/`ceil`/`round` are plain-number-only deliberately:
@@ -288,6 +289,7 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
                f := plane(origin: o, toward: q)\n\
                a := point hint(x: 0, y: 3)\n\
                b := point hint(x: 6, y: 3)\n\
+               param w: Length\n\
                a distance(w) b\n\
                o distance(w / 2) a\n";
     let inches = read(src).expect("elaborates");
@@ -399,9 +401,9 @@ fn a_unit_is_stated_once_and_only_in_the_root() {
 
 /// What an expression's fault *is* decides what is said of it (issue #43.11).  A number that is
 /// not what its slot takes is the error §3.3 names — `distance(45deg)` — the same E103 a `param`
-/// gets, not a warning that the last number stands; a claim binding a free name is §9.7's E040,
-/// not a warning followed by a refutation of the zero the warning made up; and a free name in
-/// an ordinary dimension is still the W111 it always was.
+/// gets, not a warning that the last number stands; a claim binding an unknown is §9.7's E040,
+/// not a warning followed by a refutation of the zero the warning made up; a declared unknown in
+/// an ordinary dimension is nothing to say, and a name nothing declares is E101.
 #[test]
 fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
     let diag = |src: &str| -> Vec<(String, String)> {
@@ -418,11 +420,13 @@ fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
     assert!(!d[0].1.contains("last number"), "{}", d[0].1);
 
     let d = diag(&format!(
-        "{two}c := point hint(x: 40, y: 30)\na distance(40) b\nb distance(30) c\nclaim a distance(zz) c\nfix(x == 0, y == 0) a\nfix(x == 40, y == 0) b\n"
+        "{two}c := point hint(x: 40, y: 30)\na distance(40) b\nb distance(30) c\nparam zz: Length\nclaim a distance(zz) c\nfix(x == 0, y == 0) a\nfix(x == 40, y == 0) b\n"
     ));
     assert_eq!(d.iter().filter(|x| x.0 == "E040").count(), 1, "{d:?}");
     assert!(d.iter().any(|x| x.1.contains("a claim may not bind an unknown")), "{d:?}");
 
+    let d = diag(&format!("{two}param w: Length\na distance(w) b\n"));
+    assert!(d.is_empty(), "{d:?}");
     let d = diag(&format!("{two}a distance(w) b\n"));
-    assert_eq!(d.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), ["W111"], "{d:?}");
+    assert_eq!(d.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), ["E101"], "{d:?}");
 }

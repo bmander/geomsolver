@@ -191,6 +191,10 @@ fn tint_word(
             if ["private", "construction", "centerline"].contains(&w) {
                 return (Some(Tint::Word), Next::Start);
             }
+            // `param bore: Length := 50mm` — the word, then the name it declares
+            if w == "param" {
+                return (Some(Tint::Word), Next::Def);
+            }
             // `w := 100`, `c := circle(…)` — the name a definition gives its value
             if next == Some(&Tok::Define) {
                 return (Some(Tint::Def), Next::Word);

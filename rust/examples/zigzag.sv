@@ -16,8 +16,8 @@
 // differ when `n` is even, and written this way the arithmetic settles it instead of each step
 // having to ask which kind it is.
 
-n := 32
-copies := 3
+param n := 32
+param copies := 3
 
 repeat copies as c {
   // the staircase's own points: up 5 on every odd step, along 3 on every even one

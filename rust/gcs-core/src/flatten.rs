@@ -83,13 +83,6 @@ struct Scope {
     /// The classes every enclosing instance was given (`t2 := Throw(…) class phantom`), which
     /// every declaration emitted under them carries beneath its own (§13.2).
     in_class: crate::style::Classes,
-    /// The **named dimensions** in scope, by the name written to the absolute name the
-    /// expression graph resolves (`w` → `t1.w`).  A named dimension declares its name in its
-    /// body exactly as a `param` does (§6.3): its *number* is in `vals`, so a `param`, a seed
-    /// or a count may read it, and its *name* is here, so a dimension reading it keeps the
-    /// name — renamed to where the graph will find it — and the tie survives on the drawing.
-    /// Only definitions in the current component and its lexical blocks are visible.
-    graph: BTreeMap<String, String>,
     /// The **sides** in force: a `Side` formal to the word it was given (`s` → `right`).  A side
     /// is a word and not a number (§9.2), so it travels in a table of its own rather than as a
     /// ±1 in `vals` — which is exactly the idiom issue #48's item 4 takes out of the helpers, and
@@ -106,10 +99,9 @@ impl Scope {
         self.prefixes.first().map(String::as_str).unwrap_or("")
     }
 
-    /// The innermost *instance's* prefix — what a name nothing declares is put under.  A block
-    /// copy's prefix (`#3.0.`) is skipped: a `cycle` is a repetition of statements written in
-    /// the body around it, so a name none of them declares is that body's unknown, shared by
-    /// every copy, where an instance's is its own (`t1.w`, `t2.w`).
+    /// The innermost *instance's* prefix — what a dotted name read inside a body is made
+    /// absolute under (`t.w` in `u` is `u.t.w`).  A block copy's prefix (`#3.0.`) is skipped: a
+    /// `cycle` is a repetition of statements written in the body around it.
     fn instance_prefix(&self) -> &str {
         self.prefixes.iter().map(String::as_str).find(|p| !is_copy_prefix(p)).unwrap_or("")
     }
@@ -146,6 +138,10 @@ pub struct Expansion {
     /// Every formal bound to an actual, resolved: absolute name to absolute name.  What a
     /// curve's point is when the name it was asked by is an alias.
     pub aliases: BTreeMap<String, String>,
+    /// Every unknown the document declared, by absolute name: an input nothing binds (`param
+    /// beta: Angle`) and a formal a call left unbound with a seed (`Wing(f, beta: hint(15deg))`)
+    /// — what each is and where its solve begins (`model::Declared`).
+    pub unknowns: BTreeMap<String, crate::model::Declared>,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -237,6 +233,11 @@ struct Walk<'a> {
     /// Statements held aside in the walk's own output while a deferred block is expanded into a
     /// vector of its own, so the statement cap counts them.
     held: usize,
+    /// The unknowns declared so far — see `Expansion::unknowns`.
+    unknowns: BTreeMap<String, crate::model::Declared>,
+    /// Where a statement read a name nothing declares (E101): the statement is not emitted, so
+    /// the name never reaches the expression graph to become an unknown of its own making.
+    refused: Vec<Span>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -327,6 +328,8 @@ impl<'a> Walk<'a> {
             dim_reads: Vec::new(),
             pending: Vec::new(),
             held: 0,
+            unknowns: BTreeMap::new(),
+            refused: Vec::new(),
         }
     }
 
@@ -359,6 +362,13 @@ impl<'a> Walk<'a> {
             flat = datums;
             aliases = resolved;
         }
-        Expansion { private_names: self.private_names, flat, diagnostics: self.diagnostics, instances: self.instances, aliases }
+        Expansion {
+            private_names: self.private_names,
+            flat,
+            diagnostics: self.diagnostics,
+            instances: self.instances,
+            aliases,
+            unknowns: self.unknowns,
+        }
     }
 }

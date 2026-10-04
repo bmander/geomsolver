@@ -8,7 +8,7 @@
 // be reported as having freedom left; only one of them is a *shape* that is still unresolved.
 // Drag this one and the whole frame travels as a single piece.
 
-bays := 8
+param bays := 8
 span := 20
 height := 15
 

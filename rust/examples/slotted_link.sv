@@ -18,9 +18,9 @@
 // length in the unit a person has in hand: `c1 distance(3 1/8") c2` is 79.375 here.
 unit mm
 
-length := 80
-r := 15
-hole_r := 6
+param length := 80
+param r := 15
+param hole_r := 6
 
 c1 := point
 c2 := point hint(x: length, y: 0)

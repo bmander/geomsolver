@@ -22,9 +22,9 @@
 // word standing before its one operand or between its two — `horizontal bottom`,
 // `l1 distance(w) r2` — with whatever is not an operand in the parentheses on the word.
 
-w := 100
-h := 60
-r := 10
+param w := 100
+param h := 60
+param r := 10
 
 // the straight runs, each between the two fillets it joins
 b1 := point hint(x: r, y: 0)

@@ -17,6 +17,7 @@ pub(super) fn plane_bases(
     res: &Resolver,
     skip: &BTreeSet<StmtId>,
     units: crate::units::Units,
+    declared: &BTreeMap<String, crate::model::Declared>,
     diags: &mut Vec<Diag>,
 ) -> BTreeMap<String, crate::plane::Basis> {
     let mut decls: BTreeMap<&str, (&Stmt, &Decl)> = BTreeMap::new();
@@ -29,7 +30,7 @@ pub(super) fn plane_bases(
     let mut done: BTreeMap<String, Option<crate::plane::Basis>> = BTreeMap::new();
     let keys: Vec<&str> = decls.keys().copied().collect();
     for k in keys {
-        basis_of(k, &decls, res, units, &mut done, &mut Vec::new(), diags);
+        basis_of(k, &decls, res, units, declared, &mut done, &mut Vec::new(), diags);
     }
     done.into_iter().filter_map(|(k, b)| b.map(|b| (k, b))).collect()
 }
@@ -43,6 +44,7 @@ fn parent_plane<'a>(
     decls: &BTreeMap<&'a str, (&'a Stmt, &'a Decl)>,
     res: &Resolver,
     units: crate::units::Units,
+    declared: &BTreeMap<String, crate::model::Declared>,
     done: &mut BTreeMap<String, Option<crate::plane::Basis>>,
     stack: &mut Vec<&'a str>,
     diags: &mut Vec<Diag>,
@@ -89,7 +91,8 @@ fn parent_plane<'a>(
             }
             Some(_) => {
                 stack.push(key);
-                let p = basis_of(plane.root.text.as_str(), decls, res, units, done, stack, diags);
+                let parent = plane.root.text.as_str();
+                let p = basis_of(parent, decls, res, units, declared, done, stack, diags);
                 stack.pop();
                 p
             }
@@ -102,6 +105,7 @@ fn basis_of<'a>(
     decls: &BTreeMap<&'a str, (&'a Stmt, &'a Decl)>,
     res: &Resolver,
     units: crate::units::Units,
+    declared: &BTreeMap<String, crate::model::Declared>,
     done: &mut BTreeMap<String, Option<crate::plane::Basis>>,
     stack: &mut Vec<&'a str>,
     diags: &mut Vec<Diag>,
@@ -134,15 +138,14 @@ fn basis_of<'a>(
     };
     let basis = match &d.attitude {
         Attitude::Page => Some(crate::plane::Basis::page()),
-        // **a solved fold starts where its seed says** — `fold: beta` with `hint(fold: 30deg)`
-        // is folded 30° until the solve moves it, and at the constant part of its expression
-        // (`beta` at 0) where no seed is written
+        // **a solved fold starts where its unknown's seed says** — `fold: beta` over `param
+        // beta: Angle hint(30deg)` is folded 30° until the solve moves it, and at the constant
+        // part of its expression (`beta` at 0) where no seed is written
         Attitude::From { plane, fold } => {
-            let parent = parent_plane(plane, key, decls, res, units, done, stack, diags);
+            let parent = parent_plane(plane, key, decls, res, units, declared, done, stack, diags);
             let theta = match fold_aff(fold, units) {
                 Ok(a) if a.free.is_some() => {
-                    let deg = seed("fold", crate::units::Dim::ANGLE).map_or(a.c, |v| v[0]);
-                    Some(expr::to_arg_units(SpecKind::Angle, deg))
+                    Some(expr::to_arg_units(SpecKind::Angle, fold_start(&a, declared)))
                 }
                 Ok(_) => match number(fold, crate::units::Dim::ANGLE, "fold") {
                     Ok(deg) => Some(expr::to_arg_units(SpecKind::Angle, deg)),
@@ -165,7 +168,7 @@ fn basis_of<'a>(
         // in the plane would move the origin `project` measures both images from and put a
         // constant in a residual that has none.
         Attitude::Offset { plane, offset } => {
-            let parent = parent_plane(plane, key, decls, res, units, done, stack, diags);
+            let parent = parent_plane(plane, key, decls, res, units, declared, done, stack, diags);
             let k = match offset {
                 None => Some(0.0),
                 Some(a) => match number(a, crate::units::Dim::LENGTH, "offset") {
@@ -184,7 +187,8 @@ fn basis_of<'a>(
         // folded along a line, it stands where the line is: that is known only once the line is
         // built, so the parent's `fold(0)` stands in until the views pass reads the line
         Attitude::Along { plane, .. } => {
-            parent_plane(plane, key, decls, res, units, done, stack, diags).map(|p| p.fold(0.0))
+            parent_plane(plane, key, decls, res, units, declared, done, stack, diags)
+                .map(|p| p.fold(0.0))
         }
         // a free attitude starts at the basis its seed gives, or the page's
         Attitude::Free { span } => {
@@ -247,8 +251,21 @@ fn basis_of<'a>(
     basis
 }
 
-/// A fold as its expression comes to: a number, or affine in the one name nothing defines —
-/// `fold: beta`, the fold solved for (§6.7).  The views pass asks the same question the
+/// Where a solved fold starts, in degrees: its expression at the seed its unknown was declared
+/// with (`param beta: Angle hint(30deg)`, `Wing(f, beta: hint(15deg))`), else at nothing.
+pub(super) fn fold_start(
+    a: &expr::Aff,
+    declared: &BTreeMap<String, crate::model::Declared>,
+) -> f64 {
+    a.free
+        .as_ref()
+        .and_then(|n| declared.get(n))
+        .and_then(|d| d.seed)
+        .map_or(a.c, |s| a.m * s + a.c)
+}
+
+/// A fold as its expression comes to: a number, or affine in one unknown — `fold: beta`, the
+/// fold solved for (§6.7).  The views pass asks the same question the
 /// basis did, so the two cannot disagree about which folds are unknowns.
 pub(super) fn fold_aff(fold: &Arg, units: crate::units::Units) -> Result<expr::Aff, String> {
     let Arg::Dim { text, .. } = fold else { return Err("`fold` is not a number".into()) };

@@ -140,6 +140,7 @@ fn sweep_bounds_use_the_inferred_variable_dimension_and_user_units() {
             "o distance(reach,along:x) p",
             "datum := line(o,q)\nradial := line(o,p)\ndatum angle(reach) radial",
         )
+        .replace("param reach: Length", "param reach: Angle")
         .replace("(0.1mm,0.9mm)", "(10deg,30deg)");
     let e = read(&src);
     let sweep = e.sketch.solid_claims[0].over().unwrap();

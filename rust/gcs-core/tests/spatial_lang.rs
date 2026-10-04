@@ -29,7 +29,8 @@ fix(x == 0, y == 0) gax.p1
 fix(x == 0, y == 50) gax.p2
 o2 := point
 t2 := point
-side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
+param beta: Angle hint(30deg)
+side := plane(origin: o2, toward: t2, from: front, fold: beta)
 fix(x == 120, y == 0) o2
 fix(x == 160, y == 0) t2
 pax := line(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
@@ -41,9 +42,9 @@ pax.p1 horizontal pax.p2
 #[test]
 fn the_shaft_angle_and_the_offset_solve_the_fold() {
     let e = read(AXES);
-    // the fold is the document's free variable, and says so
-    assert!(e.diags.iter().any(|d| d.code.as_str() == "W111" && d.message.contains("beta")),
-            "{:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
+    // the fold is the document's declared unknown: nothing to say
+    assert!(e.diags.is_empty(), "{:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
+    assert!(e.sketch.free_vars.contains_key("beta"));
     let mut sk = e.sketch.clone();
     let (gax, pax) = (ent(&e, "gax"), ent(&e, "pax"));
     let offset = 17.5;
@@ -130,7 +131,8 @@ t := point hint(x: 40, y: 0)
 front := plane(origin: o, toward: t)
 l := line(hint(x: 0, y: 0), hint(x: 30, y: 10)) in front
 m := point hint(x: 5, y: 7) in front
-a := plane(origin: o, toward: t, from: front, fold: beta) hint(fold: 30deg)
+param beta: Angle hint(30deg)
+a := plane(origin: o, toward: t, from: front, fold: beta)
 b := plane(origin: o, toward: t, from: front, fold: along l)
 c := plane(origin: o, toward: t, from: front, fold: 0deg, through: m)
 d := plane(origin: o, toward: t, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
@@ -146,8 +148,9 @@ f := plane(origin: o, toward: t, from: front, offset: free) hint(offset: 12)
         }).collect::<Vec<_>>().join("\n")
     };
     let once = print(src);
-    for clause in ["fold: beta", "fold: 30deg", "fold: along l", "through: m", "attitude: free",
-                   "offset: free", "u: (0, 1, 0)", "v: (0, 0, 1)", "offset: 5", "offset: 12"] {
+    for clause in ["fold: beta", "param beta: Angle hint(30deg)", "fold: along l", "through: m",
+                   "attitude: free", "offset: free", "u: (0, 1, 0)", "v: (0, 0, 1)", "offset: 5",
+                   "offset: 12"] {
         assert!(once.contains(clause), "`{clause}` is not in\n{once}");
     }
     assert_eq!(print(&once), once);
@@ -291,7 +294,8 @@ fix(x == 0, y == 0) o
 fix(x == 40, y == 0) t
 o2 := point
 t2 := point
-side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 20deg)
+param beta: Angle hint(20deg)
+side := plane(origin: o2, toward: t2, from: front, fold: beta)
 fix(x == 120, y == 0) o2
 fix(x == 160, y == 0) t2
 a := point hint(x: 30, y: 40) in front
@@ -348,8 +352,11 @@ fn a_seed_for_a_stated_quantity_is_refused_at_its_key() {
     refused(&format!("{VIEWS}s := plane(origin: o2, toward: t2, from: front, offset: 4) hint(offset: 3)\n"),
             "E040", "the offset is stated", "offset");
     // a seed of the wrong kind of number, and half a direction
-    refused(&format!("{VIEWS}s := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 5mm)\n"),
+    refused(&format!("{VIEWS}param beta: Angle hint(5mm)\ns := plane(origin: o2, toward: t2, from: front, fold: beta)\n"),
             "E103", "5mm", "5mm");
+    // a fold over an unknown is seeded where the unknown is declared
+    refused(&format!("{VIEWS}param beta: Angle\ns := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 10deg)\n"),
+            "E040", "seeded where it is declared", "fold");
     refused(&format!("{VIEWS}s := plane(origin: o2, toward: t2, attitude: free) hint(u: (1, 0, 0))\n"),
             "E103", "both `u:` and `v:`", "u");
 }
@@ -396,11 +403,12 @@ fn against_places_only_a_plane_written_to_be_placed() {
 
 /// A solve's fold goes back into the source as its seed, where the seed was written.
 #[test]
-fn the_solved_fold_is_written_back_to_its_seed() {
+fn the_solved_fold_is_written_back_to_its_unknowns_seed() {
     let (e, mut sk) = gate();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let ed = edit::commit_seeds(&e, &sk, &e.program);
-    let at = ed.text.rfind(", fold: ").expect("the fold's seed") + ", fold: ".len();
+    let at = ed.text.find("param beta: Angle hint(").expect("the fold's seed")
+        + "param beta: Angle hint(".len();
     let written = &ed.text[at..at + ed.text[at..].find("deg)").expect("in degrees, as written")];
     assert!(written.parse::<f64>().unwrap().abs() < 1e-7, "{}", ed.text);
     // and the text it wrote elaborates to the same drawing
@@ -450,24 +458,28 @@ fn deleting_what_a_view_stands_on_deletes_the_view() {
     read(&out.text);
 }
 
-/// A solved fold inside a component is that instance's own unknown, as any name its body leaves
-/// undefined is: two instances fold independently.
+/// A solved fold inside a component reads a formal its call leaves unbound, so it is that
+/// instance's own unknown: two instances fold independently.
 #[test]
 fn a_solved_fold_in_a_component_is_the_instances_own() {
     let e = read("\
 o := point hint(x: 0, y: 0)
 t := point hint(x: 40, y: 0)
 front := plane(origin: o, toward: t)
-component Wing(f: plane) {
+component Wing(f: plane, beta: Angle) {
   a := point hint(x: 100, y: 0)
   b := point hint(x: 140, y: 0)
-  w := plane(origin: a, toward: b, from: f, fold: beta) hint(fold: 15deg)
+  w := plane(origin: a, toward: b, from: f, fold: beta)
 }
-one := Wing(front)
+one := Wing(front, beta: hint(15deg))
 two := Wing(front)
 ");
     let names: Vec<&String> = e.sketch.free_vars.keys().collect();
-    assert_eq!(names.len(), 2, "{names:?}");
+    assert_eq!(names, ["one.beta", "two.beta"]);
+    // the call's `hint(…)` is where its unknown starts; the other starts at nothing
+    let start = |n: &str| e.sketch.params[e.sketch.free_vars[n] as usize].value;
+    assert!((start("one.beta") - 15.0).abs() < 1e-9, "{}", start("one.beta"));
+    assert!(start("two.beta").abs() < 1e-9, "{}", start("two.beta"));
     assert_eq!(e.sketch.constraints.iter().filter(|c| c.kind == CKind::Hinge).count(), 2);
 }
 

@@ -216,6 +216,7 @@ fn angular_coverage_and_failure_reports_keep_degrees() {
             "o distance(reach,along:x) p",
             "datum := line(o,q)\nradial := line(o,p)\ndatum angle(reach) radial",
         )
+        .replace("param reach: Length", "param reach: Angle")
         .replace("(0.1mm,0.9mm)", "(10deg,30deg)");
     let v = verdict(&src);
     assert_eq!(v.outcome(), SolidOutcome::SampledSuccess);
@@ -229,7 +230,7 @@ fn angular_coverage_and_failure_reports_keep_degrees() {
 #[test]
 fn a_counterexample_refutes_a_sweep_with_uncertain_contact_and_successful_poses() {
     let src = round_claim("clear(-100mm)")
-        .replace("fix(x == 2, y == 0) b\n", "a distance(reach,along:x) b\na distance(0mm,along:y) b\n")
+        .replace("fix(x == 2, y == 0) b\n", "param reach: Length\na distance(reach,along:x) b\na distance(0mm,along:y) b\n")
         .replace(
             "claim result clear(-100mm) other",
             "claim over reach in (1mm,3mm) { result clear(-100mm) other }",

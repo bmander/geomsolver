@@ -4,8 +4,8 @@ use super::plane_of_entity;
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::syntax::{
-    entity_name, num, Arg, Attitude, Decl, DeclName, Kid, Name, PlaneHint, PlaneSolve, Position,
-    Program, Ref, Relation, Span, StmtKind,
+    entity_name, num, Arg, Attitude, Decl, DeclName, Input, Kid, Name, ParamDecl, PlaneHint,
+    PlaneSolve, Position, Program, Ref, Relation, Span, StmtKind, Ty,
 };
 use crate::{curve, decompose, expr};
 
@@ -19,6 +19,10 @@ pub fn to_program(sk: &Sketch) -> Program {
     // what its numbers are in, first: every number after it is read in them (spec §3.3.2)
     if let Some(n) = sk.units.name() {
         p.push(StmtKind::Unit(Name::new(n)));
+    }
+    // the unknowns its dimensions and contacts read, declared, each seeded where it stands
+    for st in unknowns(sk) {
+        p.push(st);
     }
     for e in sk.primitives() {
         p.push(StmtKind::Decl(lift_decl(sk, e)));
@@ -56,6 +60,28 @@ pub fn to_program(sk: &Sketch) -> Program {
     }
     crate::syntax::render_flat(&mut p).expect("a lifted sketch uses the printable flat subset");
     p
+}
+
+/// `param beta: Angle hint(30)` for each unknown a dimension reads (`Sketch::free_vars`) and
+/// each place contacts share (`Sketch::shared`): an unknown is declared, never implied (§6.3).
+fn unknowns(sk: &Sketch) -> Vec<StmtKind> {
+    let free = sk.free_vars.iter().filter(|(_, &p)| !sk.params[p as usize].fixed).map(|(n, &p)| {
+        (n, p, sk.free_dimensions.get(n).map_or(Ty::Scalar, |&d| Ty::of_dim(d)))
+    });
+    let shared = sk.shared.iter().map(|(n, s)| (n, s.param, Ty::Scalar));
+    free.chain(shared)
+        .map(|(name, p, ty)| {
+            StmtKind::Param(ParamDecl {
+                name: Name::new(name),
+                text: String::new(),
+                span: Span::default(),
+                input: Some(Input {
+                    ty: Some(ty),
+                    seed: Some((num(sk.params[p as usize].value), Span::default())),
+                }),
+            })
+        })
+        .collect()
 }
 
 pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
@@ -229,14 +255,11 @@ fn lift_view(sk: &Sketch, e: EntRef) -> Option<(Attitude, PlaneSolve)> {
         Some(CKind::Hinge) => {
             let c = hinge.expect("matched");
             let deg = |rad: f64| format!("{}deg", num(rad.to_degrees()));
-            let fold = match (&c.args[2], &c.free) {
-                (CArg::Expr(x), Some(f)) => {
-                    let now = f.m * sk.params[f.param as usize].value + f.c;
-                    hints.push(hint("fold", vec![dim(deg(now))]));
-                    x.text.clone()
-                }
-                (CArg::Expr(x), None) => x.text.clone(),
-                (a, _) => deg(a.num()),
+            // a solved fold reads an unknown, which is declared and seeded where it stands
+            // (`unknowns`)
+            let fold = match &c.args[2] {
+                CArg::Expr(x) => x.text.clone(),
+                a => deg(a.num()),
             };
             Attitude::From { plane: parent_ref(parent.expect("a hinge names its parent")), fold: dim(fold) }
         }

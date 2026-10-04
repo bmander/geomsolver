@@ -27,7 +27,8 @@ bc := line(b, c)
 ca := line(c, a)
 
 horizontal ab
-a distance(w := 140) b
+param w := 140
+a distance(w) b
 fix(x == 0, y == 0) a
 
 // and this trailing note, too
@@ -231,7 +232,7 @@ fn deleting_a_point_takes_what_named_it() {
     assert!(!d.text.contains("bc := line"), "{}", d.text);
     assert!(!d.text.contains("ca := line"), "{}", d.text);
     assert!(d.text.contains("ab := line(a, b)      // the base"), "{}", d.text);
-    assert!(d.text.contains("a distance(w := 140) b"), "{}", d.text);
+    assert!(d.text.contains("a distance(w) b"), "{}", d.text);
     assert!(d.text.contains("// a triangle"), "the comments stay");
     let back = elaborate(&prog_of(&d.text));
     assert!(back.ok(), "{:?}", back.errors().map(|x| &x.message).collect::<Vec<_>>());
@@ -261,26 +262,33 @@ fix(x == 0, y == 0) q.a
 }
 
 /// Editing a number splices the number.  A plain one is `Numeric` — the topology cannot have
-/// moved, so a compiled plan survives it — and one that names anything is not, because a name
-/// nothing defines is a free variable and that is a column.
+/// moved, so a compiled plan survives it — and one that names anything is not, because the name
+/// may be an unknown, and that is a column.  A number typed over a dimension that reads a `param`
+/// is the param's new value.
 #[test]
 fn editing_a_dimension_splices_the_number() {
+    let distance = |e: &gcs_core::program::Elaborated| {
+        e.sketch.user_constraints().iter()
+            .find(|c| c.kind == gcs_core::constraints::CKind::Distance).unwrap().id
+    };
+    // the dimension reads `param w := 140`: what is typed over it is the param's value
     let prog = prog_of(DOC);
     let e = elaborate(&prog);
-    let cid = e
-        .sketch
-        .user_constraints()
-        .iter()
-        .find(|c| c.kind == gcs_core::constraints::CKind::Distance)
-        .unwrap()
-        .id;
+    let typed = edit::set_dimension(&e, &prog, distance(&e), "d", "150");
+    assert_eq!(typed.kind, Kind::Structural, "a param may feed anything");
+    assert!(typed.text.contains("param w := 150"), "{}", typed.text);
+    assert!(typed.text.contains("a distance(w) b"), "{}", typed.text);
+    assert!(typed.text.contains("// the base"), "everything else is untouched");
 
-    let plain = edit::set_dimension(&e, &prog, cid, "d", "140");
-    assert!(plain.text.contains("a distance(140) b"), "{}", plain.text);
-    assert!(plain.text.contains("// the base"), "everything else is untouched");
+    let prog = prog_of(&DOC.replace("a distance(w) b", "a distance(140) b"));
+    let e = elaborate(&prog);
+    let cid = distance(&e);
+    let plain = edit::set_dimension(&e, &prog, cid, "d", "150");
+    assert_eq!(plain.kind, Kind::Numeric);
+    assert!(plain.text.contains("a distance(150) b"), "{}", plain.text);
 
-    let named = edit::set_dimension(&e, &prog, cid, "d", "w := 140");
-    assert_eq!(named.kind, Kind::Structural, "a name may be a free variable, and that is a column");
+    let named = edit::set_dimension(&e, &prog, cid, "d", "w / 2");
+    assert_eq!(named.kind, Kind::Structural, "a name may be an unknown, and that is a column");
     let back = elaborate(&prog_of(&named.text));
     assert!(back.ok());
 }
@@ -801,7 +809,8 @@ fn dimensioned_radius_is_omitted_when_recording_an_unnamed_center() {
 
 #[test]
 fn free_claimed_and_soft_radius_dimensions_keep_pose_hints() {
-    for (relation, soft) in [("radius(unknown) c", false), ("claim radius(12) c", false), ("radius(12) c", true)] {
+    for (relation, soft) in [("param unknown: Length\nradius(unknown) c", false),
+                             ("claim radius(12) c", false), ("radius(12) c", true)] {
         let e = elaborate(&prog_of(&format!("o := point hint(x: 0,y: 0)\nc := circle(center: o)\n{relation}")));
         assert!(e.ok(), "{:?}", e.diags);
         let mut moved = e.sketch.clone();

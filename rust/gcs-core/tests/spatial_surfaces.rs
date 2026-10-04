@@ -349,17 +349,17 @@ fn a_mate_on_a_solved_offset_follows_it() {
 /// and the stack comes out where the same stack stated at that fold does.
 #[test]
 fn a_mate_in_a_solved_view_turns_with_it() {
-    let doc = |fold: &str, hint: &str| format!(
+    let doc = |fold: &str, unknown: &str| format!(
         "unit mm\no := point\nqq := point hint(x: 40, y: 0)\nfix(x == 0, y == 0) o\n\
          ref := horizontal line(o, qq)\no distance(40) qq\nfront := plane(origin: o, toward: qq)\n\
-         g := plane(origin: o, toward: qq, from: front, fold: {fold}){hint}\n\
+         {unknown}g := plane(origin: o, toward: qq, from: front, fold: {fold})\n\
          back := plane(origin: o, toward: qq, from: g)\n\
          gp := point hint(x: 20, y: 0) in g\nfp := point in front\nfix(x == 16, y == 12) fp\n\
          {}{}back_part.far against g_part.near\n",
         part("g_part", "g", 25.0, "-2mm", "0mm"),
         part("back_part", "back", 20.0, "-10mm", "0mm")
     );
-    let e = read(&format!("{}gp coincident fp\n", doc("beta", " hint(fold: 30deg)")));
+    let e = read(&format!("{}gp coincident fp\n", doc("beta", "param beta: Angle hint(30deg)\n")));
     let sk = solved(&e);
     let (g, back) = (sk.basis(ent(&e, "g").i()), sk.basis(ent(&e, "back").i()));
     assert!(norm(cross(g.normal(), back.normal())) < 1e-12, "the placed plane turns with g");
@@ -381,7 +381,7 @@ fn a_mate_between_views_that_turn_apart_is_refused() {
     let src = format!(
         "unit mm\no := point\nqq := point hint(x: 40, y: 0)\nfix(x == 0, y == 0) o\n\
          ref := horizontal line(o, qq)\no distance(40) qq\nfront := plane(origin: o, toward: qq)\n\
-         g := plane(origin: o, toward: qq, from: front, fold: beta) hint(fold: 0deg)\n\
+         param beta: Angle\ng := plane(origin: o, toward: qq, from: front, fold: beta)\n\
          back := plane(origin: o, toward: qq, from: front)\n{}{}\
          back_part.far against g_part.near\n",
         part("g_part", "g", 25.0, "-2mm", "0mm"),

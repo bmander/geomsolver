@@ -7,7 +7,7 @@ use crate::syntax::words::{over_chain, BLOCKS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
-    Name, OpenJoint, ParamDecl, Ref, SolidRel, Source, Span, Stmt, StmtKind, SynErr, Ty, Use,
+    Input, Name, OpenJoint, ParamDecl, Ref, SolidRel, Source, Span, Stmt, StmtKind, SynErr, Ty, Use,
 };
 
 /// Apply block membership recursively. Faces and solids inherit their geometry's plane;
@@ -409,6 +409,13 @@ impl<'a> P<'a> {
 
     /// `w := m * N / 2` — the number after `:=`, through the line's end.
     fn param(&mut self, name: Name) -> Option<StmtKind> {
+        let (text, span) = self.value_after_define()?;
+        Some(StmtKind::Param(ParamDecl { name, text, span, input: None }))
+    }
+
+    /// The expression after a `:=` just consumed, through the line's end or a trailing
+    /// `hint(…)`, which is left for the caller.
+    fn value_after_define(&mut self) -> Option<(String, Span)> {
         let after = self.t[self.i - 1].1.hi as usize;
         let (text, span, _, end) = self.raw_dimension(after);
         if text.is_empty() {
@@ -418,7 +425,71 @@ impl<'a> P<'a> {
         while self.i < self.t.len() && (self.t[self.i].1.lo as usize) < end {
             self.i += 1;
         }
-        Some(StmtKind::Param(ParamDecl { name, text, span }))
+        Some((text, span))
+    }
+
+    /// **`param NAME[: Type] [:= EXPR] [hint(EXPR)]`** — one of the document's inputs (§6.3):
+    /// with a value, a number a host may give another; without one, an unknown the solve
+    /// answers for, seeded by its `hint`.  At the top of the document only: a component's
+    /// inputs are its formals, and a block's copies share the document's.
+    fn input(&mut self) -> Option<StmtKind> {
+        let word = self.here();
+        self.i += 1; // `param`
+        if self.in_body > u32::from(self.in_preview) {
+            self.errs.push(SynErr {
+                span: word,
+                message: if self.in_comp {
+                    "a component's inputs are its formals: `param` stands at the top of a document"
+                } else {
+                    "a `param` is an input of the document: it stands at the top level"
+                }
+                .into(),
+            });
+        }
+        let name = self.ident()?;
+        let ty = if self.eat_p(':') { Some(self.number_type()?) } else { None };
+        let (text, span) = if self.peek() == Some(&Tok::Define) {
+            self.i += 1;
+            self.value_after_define()?
+        } else {
+            (String::new(), Span::new(self.prev_hi(), self.prev_hi()))
+        };
+        let seed = self.hint_value()?;
+        self.end_of_stmt();
+        Some(StmtKind::Param(ParamDecl { name, text, span, input: Some(Input { ty, seed }) }))
+    }
+
+    /// A formal's type after its `:` — the word, read through `Ty::parse`.
+    fn formal_type(&mut self) -> Option<Ty> {
+        let tname = self.ident()?;
+        let Some(ty) = Ty::parse(&tname.text) else {
+            self.errs.push(SynErr {
+                span: tname.span,
+                message: if tname.text.eq_ignore_ascii_case("frame") {
+                    "`frame` is folded into `plane`: a formal `f: plane` is the datum, \
+                     and offers `f.angle`"
+                        .to_string()
+                } else {
+                    format!("`{}` is not a type", tname.text)
+                },
+            });
+            return None;
+        };
+        Some(ty)
+    }
+
+    /// An input's type: a formal's, and a number — `Length`, `Angle`, `Scalar` or `Int`.
+    fn number_type(&mut self) -> Option<Ty> {
+        let at = self.here();
+        let ty = self.formal_type()?;
+        if matches!(ty, Ty::Side | Ty::Group | Ty::Ent(_)) {
+            self.errs.push(SynErr {
+                span: at,
+                message: "a `param` is a number: `Length`, `Angle`, `Scalar` or `Int`".into(),
+            });
+            return None;
+        }
+        Some(ty)
     }
 
     /// **`name := expression`, the one way a name is defined** (§5): what stands after `:=` is
@@ -538,6 +609,14 @@ impl<'a> P<'a> {
                 return None;
             }
             return self.in_block(next_id, out);
+        }
+        if self.peek_word("param") {
+            let lo = self.here().lo as usize;
+            let kind = self.input()?;
+            let span = Span::new(lo, self.prev_hi());
+            let id = self.mint_stmt(next_id, span)?;
+            out.push(Stmt { id, kind, span, chained: Chained::No });
+            return Some(());
         }
         if let Some(name) = self.defines() {
             return self.definition(name, next_id, out);
@@ -710,20 +789,7 @@ impl<'a> P<'a> {
                 if !self.want_p(':') {
                     return None;
                 }
-                let tname = self.ident()?;
-                let Some(ty) = Ty::parse(&tname.text) else {
-                    self.errs.push(SynErr {
-                        span: tname.span,
-                        message: if tname.text.eq_ignore_ascii_case("frame") {
-                            "`frame` is folded into `plane`: a formal `f: plane` is the datum, \
-                             and offers `f.angle`"
-                                .to_string()
-                        } else {
-                            format!("`{}` is not a type", tname.text)
-                        },
-                    });
-                    return None;
-                };
+                let ty = self.formal_type()?;
                 let span = Span::new(fname.span.lo as usize, self.prev_hi());
                 formals.push(Formal { name: fname, ty, span });
                 if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
@@ -893,6 +959,11 @@ impl<'a> P<'a> {
         if self.peek() == Some(&Tok::P('{')) {
             let fields = self.group_members()?;
             return Some(InstArg { label, value: InstVal::Group(fields), span: Span::new(lo, self.prev_hi()) });
+        }
+        // `beta: hint(15deg)` — an argument that leaves the formal unbound and seeds its unknown
+        if let Some((text, _)) = self.hint_value()? {
+            let span = Span::new(lo, self.prev_hi());
+            return Some(InstArg { label, value: InstVal::Hint(text), span });
         }
         // A whole dotted/indexed path is a reference; a path followed by arithmetic
         // is an expression, e.g. `dims.bore / 2`.

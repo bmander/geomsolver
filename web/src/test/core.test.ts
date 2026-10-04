@@ -1395,47 +1395,33 @@ function threeDims(texts: [string, string, string]): { sk: Sketch; cs: Constrain
   return { sk, cs };
 }
 
-test('dimensions written as expressions are evaluated in dependency order', () => {
-  // the reader comes first in the document, the definition last
-  const { sk, cs } = threeDims(['sin(h * 10)', 'h := w * 2', 'w := 1']);
-  assert.equal(num(cs[2].d), 1);
-  assert.equal(num(cs[1].d), 2);
-  assert.ok(Math.abs(num(cs[0].d) - Math.sin((20 * Math.PI) / 180)) < 1e-12);
-  assert.equal(cs[1].expr('d'), 'h := w * 2');
-  assert.equal(cs[1].describe(), 'P2 distance(h := w * 2 = 2) P3');
+test('dimensions written as expressions are evaluated', () => {
+  const { sk, cs } = threeDims(['sin(30) * 4', '2 * 3', '8 / 2']);
+  assert.ok(Math.abs(num(cs[0].d) - 2) < 1e-12);
+  assert.equal(num(cs[1].d), 6);
+  assert.equal(num(cs[2].d), 4);
+  assert.equal(cs[1].expr('d'), '2 * 3');
+  assert.equal(cs[1].describe(), 'P2 distance(2 * 3 = 6) P3');
   const items = expressions(sk);
-  assert.deepEqual(items.map((it) => it.id), [cs[2].id, cs[1].id, cs[0].id]);
-  assert.deepEqual(items[1].deps, ['w']);
-  assert.equal(items[1].name, 'h');
-  assert.ok(items.every((it) => it.error === null));
+  assert.deepEqual(items.map((it) => it.id), cs.map((c) => c.id));
+  assert.ok(items.every((it) => it.error === null && it.deps.length === 0));
   // the solver sees the numbers
   assert.ok(solve(sk).success);
   const [p, q] = cs[1].entities() as [import('../core/model.js').Point, import('../core/model.js').Point];
-  assert.ok(Math.abs(Math.hypot(p.x.value - q.x.value, p.y.value - q.y.value) - 2) < 1e-9);
+  assert.ok(Math.abs(Math.hypot(p.x.value - q.x.value, p.y.value - q.y.value) - 6) < 1e-9);
 });
 
-test('editing one dimension moves every proxy that reads it', () => {
-  const { sk, cs } = threeDims(['w := 3', 'h := w * 2', 'h + 1']);
-  assert.equal(cs[2].d, 7);
-  assert.equal(cs[0].setDimension('d', 'w := 5'), null);
-  assert.equal(cs[1].d, 10);                  // re-read from the core, nothing told this proxy
-  assert.equal(cs[2].d, 11);
-  // a bare number is a constant again; nothing defines `w` now, so it becomes a free variable
-  // and the two readers keep both their numbers and their relation to each other
-  assert.equal(cs[0].setDimension('d', '4'), null);
-  assert.equal(cs[0].expr('d'), null);
-  assert.equal(cs[1].d, 10);
+test('a dimension read in terms of an unknown is tied to the others reading it', () => {
+  const { sk, cs } = threeDims(['3', 'w * 2', 'w * 2 + 1']);
   assert.equal(expressions(sk).filter((it) => it.error).length, 0);
   assert.deepEqual(expressions(sk).map((it) => it.free), [['w'], ['w']]);
-  // text that does not parse is refused and changes nothing
+  // text that does not parse is refused and changes nothing; an expression defines nothing
   assert.throws(() => cs[0].setDimension('d', '1 +'));
-  assert.equal(cs[0].d, 4);
+  assert.throws(() => cs[0].setDimension('d', 'w := 5'));
+  assert.equal(cs[0].d, 3);
   // a free name used in a way an affine form cannot hold is kept, and says why
   assert.match(cs[0].setDimension('d', 'q * q') ?? '', /`q` is free/);
-  assert.equal(cs[0].d, 4);
-  // a cycle is named
-  cs[0].setDimension('d', 'w := h');
-  assert.match(expressions(sk).find((it) => it.id === cs[0].id)?.error ?? '', /circular/);
+  assert.equal(cs[0].d, 3);
   // angles are written in degrees — as text at construction too, where a bare number is a
   // constant under the same rule (what the Dimension tool sends)
   const sk2 = new Sketch();
@@ -1444,7 +1430,7 @@ test('editing one dimension moves every proxy that reads it', () => {
   sk2.add(ang);
   assert.ok(Math.abs(num(ang.theta) - Math.PI / 6) < 1e-12);
   assert.equal(ang.expr('theta'), null);
-  ang.setDimension('theta', 'a := 30');
+  ang.setDimension('theta', '15 * 2');
   assert.ok(Math.abs(num(ang.theta) - Math.PI / 6) < 1e-12);
   assert.equal(expressions(sk2)[0].value, 30);
   sk.dispose();
@@ -1452,20 +1438,17 @@ test('editing one dimension moves every proxy that reads it', () => {
 });
 
 test('expressions round-trip through the document and survive a rebuild', () => {
-  const { sk, cs } = threeDims(['w := 3', 'h := w * 2', 'h + 1']);
+  const { sk, cs } = threeDims(['1 + 2', '3 * 2', '6 + 1']);
   const sk2 = io.loads(io.dumps(sk));
   assert.equal(io.dumps(sk2), io.dumps(sk));
-  assert.equal(sk2.constraints[1].expr('d'), 'h := w * 2');
+  assert.equal(sk2.constraints[1].expr('d'), '3 * 2');
   assert.equal(sk2.constraints[1].d, 6);
-  // deleting the definition: nothing defines `w` any more, so it is a free variable — the
-  // relation outlives its definition and the readers keep their numbers
   const sk3 = io.without(sk, [], [cs[0]]);
   assert.equal(sk3.constraints[0].d, 6);
   assert.equal(expressions(sk3)[0].error, null);
-  assert.deepEqual(expressions(sk3)[0].free, ['w']);
   // the callout carries the expression itself, not what it came to
   const texts = callouts(sk, 1).items.map((k) => k.text);
-  assert.deepEqual(texts, ['w = 3', 'h = w * 2', 'h + 1']);
+  assert.deepEqual(texts, ['1 + 2', '3 * 2', '6 + 1']);
   sk.dispose();
   sk2.dispose();
   sk3.dispose();
@@ -1499,14 +1482,14 @@ test('a claim reads as one, and a claimed dimension is drawn as a reference dime
 test('pythagoras drawn with expressions holds, and stays true when a leg is edited', () => {
   // four a×b right triangles in a square of side a + b leave a square whose side is *claimed*
   // to be `c = hypot(a, b)`: judged a theorem, and still one after a leg is edited
-  const sk = examples.pythagoras(30, 40);
   const check = (a: number, b: number): void => {
+    const sk = examples.pythagoras(a, b);
     assert.ok(solve(sk).success);
     const c = Math.hypot(a, b);
     for (const ln of sk.lines.slice(-4)) {             // the hypotenuses are the inner square
       assert.ok(Math.abs(Math.hypot(ln.p1.x.value - ln.p2.x.value, ln.p1.y.value - ln.p2.y.value) - c) < 1e-6);
     }
-    const cc = sk.constraints.find((k) => k.expr('d') === 'c := hypot(a, b)')!;
+    const cc = sk.constraints.find((k) => k.claim)!;
     assert.ok(Math.abs(num(cc.d) - c) < 1e-9);
     assert.ok(cc.claim, 'the hypotenuse is stated as a claim');
     const d = diagnose(sk);
@@ -1516,12 +1499,11 @@ test('pythagoras drawn with expressions holds, and stays true when a leg is edit
     assert.equal(d.claimsViolated.length + d.claimsConsuming.length, 0);
     assert.equal(d.violated.length, 0);
     assert.equal(d.conflicts?.length ?? 0, 0);
+    sk.dispose();
   };
+  // the legs are the document's inputs
   check(30, 40);
-  const a = sk.constraints.find((k) => k.expr('d') === 'a := 30')!;
-  assert.equal(a.setDimension('d', 'a := 50'), null);
   check(50, 40);
-  sk.dispose();
 });
 
 /* -- parametric curves --------------------------------------------------------- */
@@ -1695,9 +1677,6 @@ test('a dimension written as a mixed fraction keeps the way it was written', () 
   // and it reaches the drawing, which is the point of keeping it
   assert.ok(callouts(sk, 0.1).items.some((k) => k.text === '3 1/8'));
 
-  assert.equal(d.setDimension('d', 'w := 12 3/8'), null);
-  assert.ok(Math.abs(num(d.d) - 12.375) < 1e-12);
-  assert.equal(d.expr('d'), 'w := 12 3/8');
   assert.throws(() => d.setDimension('d', '3 1/0'));
   sk.dispose();
 });
@@ -2023,7 +2002,8 @@ test('a program written by hand draws', () => {
     'a := point',
     'b := point hint(x: 100, y: 0)',
     'ab := line(a, b)',
-    'a distance(w := 60) b',
+    'param w := 60',
+    'a distance(w) b',
     'horizontal ab',
     'fix(x == 0, y == 0) a',
   ].join('\n'));
@@ -2107,7 +2087,8 @@ bc := line(b, c)
 ca := line(c, a)
 
 horizontal ab
-a distance(w := 140) b
+param w := 140
+a distance(w) b
 fix(x == 0, y == 0) a
 `;
 
@@ -2134,7 +2115,7 @@ test('a solve writes the seeds back and touches nothing else', () => {
   assert.equal(e.kind, 'numeric', 'a seed is not a statement');
   assert.ok(e.text.includes('// a triangle, and this comment must survive every edit'));
   assert.ok(e.text.includes('ab := line(a, b)      // the base'));
-  assert.ok(e.text.includes('a distance(w := 140) b'), 'the dimension is not a seed');
+  assert.ok(e.text.includes('a distance(w) b'), 'the dimension is not a seed');
   const before = TRIANGLE.split('\n');
   const after = e.text.split('\n');
   assert.equal(before.length, after.length);
@@ -2237,21 +2218,22 @@ test('the rect tool writes a component instance, and the component once', () => 
 test('editing a number splices the number, and a name is a column', () => {
   const d = Document.read(TRIANGLE);
   const dim = d.sketch.constraints.find((c) => c.typeName === 'Distance')!;
-  // `w = 140` names its value, so dropping the name drops a column — and the core says so
-  const drop = d.setDimension(dim.id, 'd', '160');
-  assert.equal(drop.kind, 'structural', 'a name that goes away is a column that goes away');
-  assert.ok(drop.text.includes('a distance(160) b'), drop.text);
-  assert.ok(drop.text.includes('// the base'), 'and nothing else moved');
+  // the dimension reads `param w := 140`, so a number typed over it is the param's new value
+  const typed = d.setDimension(dim.id, 'd', '160');
+  assert.equal(typed.kind, 'structural', 'a param may feed anything');
+  assert.ok(typed.text.includes('param w := 160'), typed.text);
+  assert.ok(typed.text.includes('a distance(w) b'), typed.text);
+  assert.ok(typed.text.includes('// the base'), 'and nothing else moved');
 
   // between two bare numbers there is nothing but the number: the plan survives it
-  const plain = Document.read(drop.text);
+  const plain = Document.read(TRIANGLE.replace('a distance(w) b', 'a distance(150) b'));
   const same = plain.sketch.constraints.find((c) => c.typeName === 'Distance')!;
   const again = plain.setDimension(same.id, 'd', '170');
   assert.equal(again.kind, 'numeric', 'a bare number cannot move the topology');
   assert.ok(again.text.includes('a distance(170) b'), again.text);
 
-  const named = plain.setDimension(same.id, 'd', 'w := 170');
-  assert.equal(named.kind, 'structural', 'a name may be a free variable');
+  const named = plain.setDimension(same.id, 'd', 'w / 2');
+  assert.equal(named.kind, 'structural', 'a name may be an unknown');
   plain.dispose();
   d.dispose();
 });

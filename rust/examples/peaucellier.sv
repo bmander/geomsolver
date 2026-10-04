@@ -4,9 +4,9 @@
 // states none of that — the last statement *claims* it, and the diagnosis proves it.
 
 // the three lengths the machine is built from; the pen draws the line x = (arm² − side²) / (2·crank)
-arm := 100       // the long arms, o–c and o–d
-side := 60       // the four sides of the kite, b–c–pen–d
-crank := 40      // the crank q–b, and the orbit its pin rides
+param arm := 100       // the long arms, o–c and o–d
+param side := 60       // the four sides of the kite, b–c–pen–d
+param crank := 40      // the crank q–b, and the orbit its pin rides
 
 // The cell, once: a linkage posed at crank angle u, eight numbers against eight statements.
 // The ccw/cw lines pick the elbows — a seed repeating a predicate is the weaker of two

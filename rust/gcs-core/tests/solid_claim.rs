@@ -94,6 +94,7 @@ unit mm
 o := point
 fix(x == 0, y == 0) o
 p := point hint(x: 10, y: 0)
+param reach: Length
 o distance(reach, along: x) p
 o distance(0, along: y) p
 q := point hint(x: 14, y: 0)

@@ -320,7 +320,7 @@ export async function showDiagnosis(): Promise<void> {
   }
   const exprs = expressions(sk);
   if (exprs.length) {
-    lines.push('Expressions (in evaluation order):');
+    lines.push('Expressions:');
     for (const it of exprs) {
       const c = sk.constraintById(it.id);
       const where = c ? `${c.typeName}.${it.attr}` : `#${it.id}.${it.attr}`;
@@ -329,7 +329,7 @@ export async function showDiagnosis(): Promise<void> {
       const free = it.free.length ? `  (${it.free.join(', ')} free)` : '';
       lines.push(it.error
         ? `   ✗ ${it.text}   [${where}]  ${it.error} — last value ${io.fmt(it.value, 6)} stands`
-        : `   ${it.name ? `${it.name} = ` : ''}${io.fmt(it.value, 6)}   [${where}: ${it.text}]${reads}${free}`);
+        : `   ${io.fmt(it.value, 6)}   [${where}: ${it.text}]${reads}${free}`);
     }
     lines.push('');
   }

@@ -132,10 +132,11 @@ label "Section A–A" at (20mm, 270mm)
 `dimensions in VIEW` selects automatic annotations: overall projected extents and surviving
 round-feature diameters for a solid, or constraint dimensions for a sketch. Solid measurements
 refer to the target solid, including when its view is a section. Annotation layout reuses the
-core callout engine. Individual constraints are hidden until selected; `dimension` selects a
-named dimension such as `a distance(width = 60mm) b`. Named constraint annotations currently
-belong in sketch views, where their original dimension frame is meaningful. Their optional
-`at (t, r)` uses that frame: model units for linear offsets, degrees for angular offsets.
+core callout engine. Individual constraints are hidden until selected; `dimension m.width`
+selects the first of the model's top-level dimensions whose number is written `width` — `a
+distance(width) b` over `param width := 60mm` (or `width := 60mm`). Requested dimensions
+currently belong in sketch views, where their original dimension frame is meaningful. Their
+optional `at (t, r)` uses that frame: model units for linear offsets, degrees for angular offsets.
 
 `measure distance(A, B) in VIEW` reads two named points without adding a constraint, assertion,
 or variable to the model. Entity fields and indexed members work, e.g. `m.bar.p1` and

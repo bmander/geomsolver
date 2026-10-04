@@ -144,7 +144,25 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 out.push_str(&i.class.0.join(" "));
             }
         }
-        StmtKind::Param(p) => out.push_str(&format!("{} := {}", p.name.text, p.text)),
+        StmtKind::Param(p) => {
+            if let Some(input) = &p.input {
+                out.push_str("param ");
+                out.push_str(&p.name.text);
+                if let Some(word) = input.ty.and_then(|t| t.word()) {
+                    out.push_str(": ");
+                    out.push_str(word);
+                }
+            } else {
+                out.push_str(&p.name.text);
+            }
+            if p.bound() {
+                out.push_str(" := ");
+                out.push_str(&p.text);
+            }
+            if let Some((seed, _)) = p.input.as_ref().and_then(|i| i.seed.as_ref()) {
+                out.push_str(&format!(" hint({seed})"));
+            }
+        }
         StmtKind::Group(g) => {
             out.push_str(&format!("{} := ", g.name.text));
             write_members(out, &g.fields);
@@ -186,6 +204,7 @@ fn write_inst_val(out: &mut String, v: &InstVal) {
     match v {
         InstVal::Ref(r) => write_ref(out, r),
         InstVal::Expr(t) => out.push_str(t),
+        InstVal::Hint(t) => out.push_str(&format!("hint({t})")),
         InstVal::Group(fields) => write_members(out, fields),
     }
 }

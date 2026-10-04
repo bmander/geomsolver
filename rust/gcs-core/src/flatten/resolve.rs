@@ -679,7 +679,7 @@ impl<'a> Walk<'a> {
         // traced body reads one as a column of its curve (§6.5); here the expression graph would
         // mint it a free variable of its own, and a drawn instance and its own trace would
         // disagree about what the component says.  Refused, the statement is not emitted
-        let mut refused: Vec<Span> = Vec::new();
+        let mut refused: Vec<Span> = std::mem::take(&mut self.refused);
         for (name, span, sc) in std::mem::take(&mut self.dim_reads) {
             let segs: Vec<&str> = name.split('.').collect();
             let r = Ref {
@@ -687,26 +687,40 @@ impl<'a> Walk<'a> {
                 path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
                 span,
             };
-            let Some((abs, rest)) = lookup_raw(&r, &sc, &self.names, &alias, self.units) else {
-                continue;
-            };
-            if !rest.is_empty() && !self.group_names.contains(&abs) {
-                refused.push(span);
-                self.err(
-                    Code::E103,
-                    span,
-                    format!(
-                        "`{name}` is a number of the geometry, which only a traced body's \
-                         dimension reads (§6.5); here state the relation (`equal`, `radius`) or \
-                         pass a number"
-                    ),
-                );
+            // an unknown an instance left — a formal its call did not bind, `u.t.w` — is the one
+            // dotted name a dimension may read that is no declaration's
+            let known =
+                || sc.prefixes.iter().any(|p| self.unknowns.contains_key(&format!("{p}{name}")));
+            match lookup_raw(&r, &sc, &self.names, &alias, self.units) {
+                Some((abs, rest)) if !rest.is_empty() && !self.group_names.contains(&abs) => {
+                    refused.push(span);
+                    self.err(
+                        Code::E103,
+                        span,
+                        format!(
+                            "`{name}` is a number of the geometry, which only a traced body's \
+                             dimension reads (§6.5); here state the relation (`equal`, `radius`) \
+                             or pass a number"
+                        ),
+                    );
+                }
+                // a dotted name nothing declares is a misspelling, as a bare one is: never an
+                // unknown of its own making
+                found if found.as_ref().is_none_or(|(_, rest)| !rest.is_empty()) && !known() => {
+                    refused.push(span);
+                    self.err(Code::E101, span, super::values::undefined(&name));
+                }
+                _ => {}
             }
         }
         let out = std::mem::take(&mut self.out);
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
-            if refused.iter().any(|r| st.span.lo <= r.lo && r.hi <= st.span.hi) {
+            // a refused relation is not emitted; a declaration is (a plane whose fold misspells
+            // a name), so the error is the one said and not every reference to it after
+            if !matches!(st.kind, StmtKind::Decl(_))
+                && refused.iter().any(|r| st.span.lo <= r.lo && r.hi <= st.span.hi)
+            {
                 continue;
             }
             let mut bad: Vec<(Span, String)> = Vec::new();

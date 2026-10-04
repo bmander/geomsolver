@@ -613,10 +613,9 @@ fn apply_gauge(
                     );
                     continue;
                 };
-                // a `fix` holds a number, and a name nothing defines is an unknown, not one
+                // a `fix` holds a number, and an unknown is not one
                 if let Arg::Tie { span, .. } = a {
-                    let m = format!("`fix` holds a number, and `{field}` is pinned to a name \
-                        nothing defines");
+                    let m = format!("`fix` holds a number, and `{field}` is pinned to an unknown");
                     bad(Code::E040, *span, m);
                     continue;
                 }

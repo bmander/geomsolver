@@ -12,8 +12,8 @@
 // Nothing says how big the ring is, so it is under-determined on purpose: all the links can grow
 // together, and dragging one shows it.
 
-n := 12
-radius := 50
+param n := 12
+param radius := 50
 
 cycle n as i {
   // the link from bearing i to bearing i+1 round the ring, each end its own point
