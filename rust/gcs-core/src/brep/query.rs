@@ -28,7 +28,7 @@ pub enum Meets {
 pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
     use crate::space::{cross,dot,sub};
     let within = |c: &Curve,t: f64,span: [f64;2]| -> Option<f64> {
-        let t = match c.period() { Some(p) => span[0]+(t-span[0]).rem_euclid(p),None => t };
+        let t = match c.period() { Some(p) => super::geom::around(t,span[0],p),None => t };
         let slack = tol/c.speed().max(1e-300);
         // a crossing just before the start of a closed curve's stretch is at its start
         let t = match c.period() { Some(p) if t > span[1]+slack && t-p >= span[0]-slack => t-p,_ => t };
@@ -243,13 +243,15 @@ pub struct Located<'a> {
     boxes: Vec<[Uv;2]>,
     /// Each face's box in space (`face_box`).
     space: Vec<([f64;3],[f64;3])>,
+    /// Each face's seams (`Face::seams`), which bound nothing.
+    seams: Vec<std::collections::BTreeSet<u32>>,
 }
 
 impl<'a> Located<'a> {
     /// A located boundary that keeps its own copy.
     pub fn owned(b: Brep,tol: f64) -> Located<'static> {
-        let (tol,coarse,polys,boxes,space) = { let l = Located::new(&b,tol); (l.tol,l.coarse,l.polys,l.boxes,l.space) };
-        Located {b:std::borrow::Cow::Owned(b),tol,coarse,polys,boxes,space}
+        let (tol,coarse,polys,boxes,space,seams) = { let l = Located::new(&b,tol); (l.tol,l.coarse,l.polys,l.boxes,l.space,l.seams) };
+        Located {b:std::borrow::Cow::Owned(b),tol,coarse,polys,boxes,space,seams}
     }
     pub fn new(b: &'a Brep,tol: f64) -> Located<'a> {
         let coarse = (1e-4*b.size()).max(tol*8.);
@@ -283,7 +285,8 @@ impl<'a> Located<'a> {
             boxes.push(bx);
         }
         let space = (0..b.faces.len()).map(|fi| face_box(b,fi)).collect();
-        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,polys,boxes,space}
+        let seams = b.faces.iter().map(Face::seams).collect();
+        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,polys,boxes,space,seams}
     }
 
     /// The parameters of a point of face `fi`'s surface, on the branch of its periods its loops
@@ -316,12 +319,11 @@ impl<'a> Located<'a> {
     /// one, away from every other edge, is in the face.
     pub fn face_place(&self,fi: usize,p: V) -> Place {
         let f: &Face = &self.b.faces[fi];
-        let seam = |e: u32| f.loops.iter().flatten().filter(|u| u.edge == e).count() > 1;
         let mut closest: Option<(f64,&super::topo::Coedge,f64)> = None;
         let mut boundary = f64::INFINITY;
         for l in &f.loops { for c in l {
             let (t,d) = self.nearest(c.edge,p);
-            if !seam(c.edge) { boundary = boundary.min(d); }
+            if !self.seams[fi].contains(&c.edge) { boundary = boundary.min(d); }
             if closest.is_none_or(|(best,_,_)| d < best) { closest = Some((d,c,t)); }
         } }
         let Some((d,c,t)) = closest else { return Place::Out };

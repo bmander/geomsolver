@@ -75,8 +75,7 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                     v.push(side.face.len() as f64);
                     for f in &side.face { name_read(f, &mut v); }
                 }
-                stack.extend(super::fillet::stands_for(sk, s as usize, a.solid));
-                stack.extend(super::fillet::stands_for(sk, s as usize, b.solid));
+                stack.extend(super::fillet::operands(sk, s as usize));
             }
             SolidDef::Body { stock, on, through, bound } => {
                 v.extend([2.0, *stock as f64, on.len() as f64]);
@@ -210,13 +209,7 @@ pub(crate) fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, Str
     match s.def {
         SolidDef::Through { body, .. } => material_sources(sk, body),
         // a fillet is worked out from the two solids it rounds between
-        SolidDef::Fillet { ref a, ref b, .. } => {
-            let mut v = super::fillet::stands_for(sk, i, a.solid);
-            v.extend(super::fillet::stands_for(sk, i, b.solid));
-            let mut seen = std::collections::BTreeSet::new();
-            v.retain(|x| seen.insert(*x));
-            Ok(v)
-        }
+        SolidDef::Fillet { .. } => Ok(super::fillet::operands(sk, i)),
         _ => Ok(s.operands()),
     }
 }

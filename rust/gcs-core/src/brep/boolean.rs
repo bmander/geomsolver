@@ -5,7 +5,7 @@
 //! assembled, their edges shared by construction.
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::geom::{Uv,V};
+use super::geom::{around,Uv,V};
 use super::query::{curve_curve,face_box,curve_surface_within,Located,Meets,Place};
 use super::ssi::{intersect,Ssi};
 use super::topo::{unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
@@ -56,7 +56,6 @@ fn overlap(a: &([f64;3],[f64;3]),b: &([f64;3],[f64;3]),pad: f64) -> bool {
 }
 
 /// A closed curve's parameter `t` moved by whole periods into `[lo, lo + period)`.
-fn around(t: f64,lo: f64,period: f64) -> f64 { lo+(t-lo).rem_euclid(period) }
 
 /// An edge lying along an extrusion's own curve at one height — the same B-spline moved along
 /// the sweep, as a plane square to it cuts it (`ssi`) — is the iso-line `v = h` of the face, its
@@ -180,12 +179,15 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     // lying in the face's surface, it is split only where it crosses the face's
                     // own edges, which no surface tells: each crossing a vertex on both (a
                     // fillet's contact circle laid on a cylinder across the cylinder's seam)
-                    Meets::Along => for g in f.loops.iter().flatten() {
-                        let ge = &solids[other].edges[g.edge as usize];
+                    Meets::Along => for g in f.loops.iter().flatten().map(|g| g.edge).collect::<std::collections::BTreeSet<_>>() {
+                        let ge = &solids[other].edges[g as usize];
                         let EdgeCurve::Curve(gc) = &ge.curve else { continue };
+                        // (a pair with no closed form — a spline sweep's rail along a side — is left
+                        // unsplit, as every edge along a face was before; its crossing wants a
+                        // general curve–curve root, not yet written)
                         for (t,q) in curve_curve(c,e.t,gc,ge.t,tol).unwrap_or_default() {
-                            if debug { eprintln!("brep: edge {i} of {} ({}) along face {fi} crosses its edge {} at {q:?}",
-                                ["A","B"][s],c.kind(),g.edge); }
+                            if debug { eprintln!("brep: edge {i} of {} ({}) along face {fi} crosses its edge {g} at {q:?}",
+                                ["A","B"][s],c.kind()); }
                             let v = pool.at(q);
                             cuts[we].push((t,v));
                             on_face[other][fi].push(v);

@@ -110,6 +110,12 @@ impl<'a> P<'a> {
     /// A declaration, its kind keyword just read: what it is made of and its trailers.  The name
     /// was read before it (`name := line(…)`, `(name := line(…))`), or there is none.
     pub(super) fn decl(&mut self, kind: EntKind, name: Option<Name>) -> Option<Decl> {
+        self.decl_as(kind, name, false)
+    }
+
+    /// `decl`, the word just read `fillet` where `fillet` says so: a solid whose brackets hold
+    /// two operands and a radius (issue #66).
+    pub(super) fn decl_as(&mut self, kind: EntKind, name: Option<Name>, fillet: bool) -> Option<Decl> {
         // **The name is optional** (issue #33): `line`, `line(p1, p2)` and `circle hint(r: 25)`
         // are all anonymous forms.  An anonymous declaration still needs a key the desugared
         // statements can resolve by — a chain's corner welds by *name* — so it is given one the
@@ -118,8 +124,6 @@ impl<'a> P<'a> {
         // would go, which is where `edit::reconcile` splices one the moment a statement must say
         // it (`Decl::mint_close` says when the name needs parentheses round the declaration).
         let kw = self.t.get(self.i.wrapping_sub(1)).map(|(_, s)| *s).unwrap_or_default();
-        // `fillet(…)` is a solid whose brackets hold two operands and a radius (issue #66)
-        let fillet = kind == EntKind::Solid && self.word_at(self.i.wrapping_sub(1)) == Some("fillet");
         let name = match name {
             // an element keyword names a kind wherever it stands, so a reference to an element
             // called `face` would read as a new face; a param may still bear the word

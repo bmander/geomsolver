@@ -19,7 +19,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::*;
-use crate::brep::geom::{Curve, Rigid, Surface, V};
+use crate::brep::geom::{around, Curve, Rigid, Surface, V};
 use crate::model::FilletSide;
 use crate::brep::query::{Located, Place};
 use crate::brep::topo::{Brep, EdgeCurve};
@@ -61,13 +61,15 @@ impl Wedge {
         (self.touch[0][0] - self.corner[0]).dhypot(self.touch[0][1] - self.corner[1])
     }
 
-    /// The arc from the first touch to the second as a counter-clockwise turn about the centre:
-    /// its start angle and its (positive) sweep, the short way, which is the way past the corner.
-    pub fn arc(&self) -> (f64, f64) {
+    /// The ball's arc between the touches as a counter-clockwise turn about the centre, the short
+    /// way (past the corner): its start angle, its sweep, and its ends in that order — the second
+    /// touch first where the turn runs from it.
+    pub fn arc(&self) -> (f64, f64, [[f64; 2]; 2]) {
         let angle = |p: [f64; 2]| (p[1] - self.centre[1]).datan2(p[0] - self.centre[0]);
-        let (a, b) = (angle(self.touch[0]), angle(self.touch[1]));
-        let ccw = (b - a).rem_euclid(std::f64::consts::TAU);
-        if ccw <= std::f64::consts::PI { (a, ccw) } else { (b, std::f64::consts::TAU - ccw) }
+        let [t0, t1] = self.touch;
+        let ccw = (angle(t1) - angle(t0)).rem_euclid(std::f64::consts::TAU);
+        if ccw <= std::f64::consts::PI { (angle(t0), ccw, [t0, t1]) }
+        else { (angle(t1), std::f64::consts::TAU - ccw, [t1, t0]) }
     }
 }
 
@@ -83,8 +85,30 @@ pub struct Piece {
     pub section: Basis,
     pub wedge: Wedge,
     pub carry: Carry,
-    /// A point of the edge it rounds — what an oracle rounding the same edge selects it by.
-    pub edge_point: V,
+}
+
+impl Piece {
+    /// A point of the edge it rounds — what an oracle rounding the same edge selects it by: the
+    /// corner, halfway along a straight edge.
+    pub fn edge_point(&self) -> V {
+        let corner = self.section.lift(self.wedge.corner[0], self.wedge.corner[1]);
+        match self.carry {
+            Carry::Prism { length } => add(corner, scale(self.section.normal(), length / 2.0)),
+            Carry::Turn => corner,
+        }
+    }
+
+    /// The same piece with every length divided by `per` and its plane stood off by `origin`: a
+    /// piece worked out in a boundary's millimetres, in model units about the world's origin.
+    fn in_units(&self, per: f64, origin: V) -> Piece {
+        let w = &self.wedge;
+        let sc = |p: [f64; 2]| [p[0] / per, p[1] / per];
+        Piece {
+            section: Basis { o: std::array::from_fn(|k| self.section.o[k] / per + origin[k]), ..self.section },
+            wedge: Wedge { corner: sc(w.corner), touch: w.touch.map(sc), centre: sc(w.centre), r: w.r / per },
+            carry: match self.carry { Carry::Prism { length } => Carry::Prism { length: length / per }, c => c },
+        }
+    }
 }
 
 /// The names of a piece's section edges, in its loop's order — corner to first touch, the arc,
@@ -102,6 +126,9 @@ const SMOOTH: f64 = 1e-12;
 /// Faces nearer parallel than this (radians, either way) meet at no edge a ball can round.
 const MIN_TURN: f64 = 1.0 * std::f64::consts::PI / 180.0;
 
+/// One use of an edge by a face: (face, (loop, index in the loop)).
+type Use = (usize, (usize, usize));
+
 /// Solid `si`'s blend, from the exact boundaries of what it rounds between; `Err` says why it
 /// cannot be rounded exactly.
 pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
@@ -110,46 +137,42 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
     if !(r.value > 0.0) || !r.value.is_finite() {
         return Err("a fillet's radius is a positive length".into());
     }
-    let exact = |i: u32| sk.exact_solid(i as usize).map_err(|e| {
+    let exacts = operands(sk, si).into_iter().map(|i| sk.exact_solid(i as usize).map(|x| (i, x)).map_err(|e| {
         format!("`{}` has no exact boundary to round: {e}", sk.solids[i as usize].name)
-    });
-    // every solid either side stands for, in one boundary about the first's origin
-    let (sa, sb) = (stands_for(sk, si, a.solid), stands_for(sk, si, b.solid));
-    let mut all: Vec<u32> = sa.iter().chain(&sb).copied().collect();
-    let mut seen = std::collections::BTreeSet::new();
-    all.retain(|x| seen.insert(*x));
-    let first = exact(all[0])?;
-    let (mm, origin) = (first.mm, first.origin);
-    let mut brep = first.brep.clone();
-    for &x in &all[1..] {
-        let e = exact(x)?;
-        let shift: V = std::array::from_fn(|k| (e.origin[k] - origin[k]) * mm);
-        let moved = e.brep.moved(&Rigid { r: Rigid::identity().r, t: shift });
-        brep = crate::brep::recipe::combined(&brep, &moved, crate::brep::boolean::Op::Union, 0.0)
-            .map_err(|m| format!("`{}` does not combine with what it meets: {m}", sk.solids[x as usize].name))?;
-    }
-    let side = |x: &FilletSide, of: &[u32]| -> Result<std::collections::BTreeSet<String>, String> {
-        let mut named = std::collections::BTreeSet::new();
-        for &o in of { named.extend(faces_of(sk, x, &exact(o)?.brep)); }
+    })).collect::<Result<Vec<_>, _>>()?;
+    // each side's faces by name, asked before anything is combined
+    let side = |x: &FilletSide| -> Result<std::collections::BTreeSet<String>, String> {
+        let of = stands_for(sk, si, x.solid);
+        let named: std::collections::BTreeSet<String> = exacts.iter().filter(|(i, _)| of.contains(i))
+            .flat_map(|(_, e)| faces_of(sk, x, &e.brep)).collect();
         if named.is_empty() {
             return Err(format!("`{}` has no face `{}`", sk.solids[x.solid as usize].name, x.face.join(".")));
         }
         Ok(named)
     };
-    let (fa, fb) = (side(a, &sa)?, side(b, &sb)?);
+    let (fa, fb) = (side(a)?, side(b)?);
+    // every solid either side stands for, in one boundary about the first's origin
+    let (mm, origin) = (exacts[0].1.mm, exacts[0].1.origin);
+    let mut brep = exacts[0].1.brep.clone();
+    for (x, e) in &exacts[1..] {
+        let shift: V = std::array::from_fn(|k| (e.origin[k] - origin[k]) * mm);
+        let moved = e.brep.moved(&Rigid { r: Rigid::identity().r, t: shift });
+        brep = crate::brep::recipe::combined(&brep, &moved, crate::brep::boolean::Op::Union, 0.0)
+            .map_err(|m| format!("`{}` does not combine with what it meets: {m}", sk.solids[*x as usize].name))?;
+    }
     let tol = 1e-9 * brep.size().max(1.0);
     let located = Located::new(&brep, tol);
-    let r_mm = r.value * mm;
+    let table = uses_by_edge(&brep);
     let mut pieces = Vec::new();
     let mut concave: Option<(bool, String)> = None;
-    for (ei, uses) in uses_by_edge(&brep).into_iter().enumerate() {
+    for (ei, uses) in table.iter().enumerate() {
         let [(f0, c0), (f1, c1)] = match uses.as_slice() { [x, y] if x.0 != y.0 => [*x, *y], _ => continue };
         let (n0, n1) = (&brep.faces[f0].name, &brep.faces[f1].name);
         let (first, second) = if fa.contains(n0) && fb.contains(n1) { ((f0, c0), (f1, c1)) }
             else if fa.contains(n1) && fb.contains(n0) { ((f1, c1), (f0, c0)) }
             else { continue };
-        let at = Edge { brep: &brep, located: &located, edge: ei, uses: [first, second], tol };
-        let Some((piece, hollow)) = at.round(r_mm)? else { continue };
+        let at = Edge { brep: &brep, located: &located, table: &table, edge: ei, uses: [first, second], tol };
+        let Some((piece, hollow)) = at.round(r.value * mm)? else { continue };
         let label = format!("`{}` with `{}`", brep.faces[first.0].name, brep.faces[second.0].name);
         match &concave {
             Some((was, other)) if *was != hollow => return Err(format!(
@@ -159,23 +182,21 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
             Some(_) => {}
             None => concave = Some((hollow, label)),
         }
-        // back into model units, about the world's origin
-        let back = |p: V| -> V { std::array::from_fn(|k| p[k] / mm + origin[k]) };
-        let w = piece.wedge;
-        let sc = |p: [f64; 2]| [p[0] / mm, p[1] / mm];
-        pieces.push(Piece {
-            section: Basis { u: piece.section.u, v: piece.section.v, o: back(piece.section.o) },
-            wedge: Wedge { corner: sc(w.corner), touch: [sc(w.touch[0]), sc(w.touch[1])],
-                centre: sc(w.centre), r: w.r / mm },
-            carry: match piece.carry { Carry::Prism { length } => Carry::Prism { length: length / mm }, c => c },
-            edge_point: back(piece.edge_point),
-        });
+        pieces.push(piece.in_units(mm, origin));
     }
     let Some((concave, _)) = concave else {
         return Err(format!("`{}` and `{}` meet at no edge to round",
             side_name(sk, a), side_name(sk, b)));
     };
     Ok(Blend { pieces, concave })
+}
+
+/// Every solid fillet `f` reads, once each: what either side stands for (`stands_for`).
+pub fn operands(sk: &Sketch, f: usize) -> Vec<u32> {
+    let SolidDef::Fillet { a, b, .. } = &sk.solids[f].def else { return Vec::new() };
+    let mut out = stands_for(sk, f, a.solid);
+    for x in stands_for(sk, f, b.solid) { if !out.contains(&x) { out.push(x); } }
+    out
 }
 
 /// The solids side `x` of fillet `f` is read from: the solid itself — or, where it is a body
@@ -217,8 +238,8 @@ fn faces_of(sk: &Sketch, x: &FilletSide, brep: &Brep) -> std::collections::BTree
     })).collect()
 }
 
-/// For every edge, the faces using it and which use: (face, loop, index in the loop).
-fn uses_by_edge(b: &Brep) -> Vec<Vec<(usize, (usize, usize))>> {
+/// For every edge, the faces using it and which use.
+fn uses_by_edge(b: &Brep) -> Vec<Vec<Use>> {
     let mut out = vec![Vec::new(); b.edges.len()];
     for (fi, f) in b.faces.iter().enumerate() {
         for (li, l) in f.loops.iter().enumerate() {
@@ -230,13 +251,73 @@ fn uses_by_edge(b: &Brep) -> Vec<Vec<(usize, (usize, usize))>> {
 
 fn unit(a: V) -> V { scale(a, 1.0 / norm(a)) }
 
-/// One edge being rounded, in the boundary's millimetres: its two uses, the first the first side's.
+/// One edge being rounded, in the boundary's millimetres: its two uses, the first the first side's,
+/// and every edge's uses beside it.
 struct Edge<'a> {
     brep: &'a Brep,
     located: &'a Located<'a>,
+    table: &'a [Vec<Use>],
     edge: usize,
-    uses: [(usize, (usize, usize)); 2],
+    uses: [Use; 2],
     tol: f64,
+}
+
+/// Where the ball rolls on one face, in coordinates its edges are read in.
+enum Band {
+    /// A plane face beside a straight edge: a rectangle, along the edge from `corner` (`along`,
+    /// through `length`) and across it into the face (`d`, through the setback).
+    Strip { corner: V, along: V, d: V, length: f64 },
+    /// A face turned about the axis through `o` along `axis`: the stretch of its meridian line
+    /// from the corner along `dm` (radius, height), whatever turn it is at.
+    Meridian { o: V, axis: V, corner: [f64; 2], dm: [f64; 2] },
+}
+
+impl Band {
+    /// The stretch of the band's across-coordinate an edge reaches, or — a strip — whether it
+    /// enters the band at all; `None` where there is no closed form for it.
+    fn enters(&self, curve: &Curve, t: [f64; 2], setback: f64, tol: f64) -> Option<bool> {
+        match *self {
+            Band::Strip { corner, along, d, length } => {
+                let to2 = |q: V| { let w = sub(q, corner); [dot(w, along), dot(w, d)] };
+                let (lo, hi) = ([tol, tol], [length - tol, setback - tol]);
+                match curve {
+                    Curve::Line { .. } => Some(segment_enters(to2(curve.point(t[0])), to2(curve.point(t[1])), lo, hi)),
+                    Curve::Circle(frame, rc) => {
+                        if dot(frame.z, cross(along, d)).abs() < 1.0 - 1e-9 { return None; }
+                        let c2 = to2(frame.o);
+                        let x2 = [dot(frame.x, along), dot(frame.x, d)];
+                        let y2 = [dot(frame.y, along), dot(frame.y, d)];
+                        Some(arc_enters(c2, x2, y2, *rc, t, lo, hi))
+                    }
+                    _ => None,
+                }
+            }
+            Band::Meridian { o, axis, corner, dm } => {
+                let w = |rho: f64, z: f64| (rho - corner[0]) * dm[0] + (z - corner[1]) * dm[1];
+                let mer = |q: V| { let z = dot(sub(q, o), axis); (norm(sub(sub(q, o), scale(axis, z))), z) };
+                let (a, b) = match curve {
+                    Curve::Circle(frame, rc)
+                        if norm(cross(frame.z, axis)) <= 1e-9 && norm(cross(sub(frame.o, o), axis)) <= tol =>
+                    {
+                        let v = w(*rc, dot(sub(frame.o, o), axis));
+                        (v, v)
+                    }
+                    // in a plane square to the axis, a plane face's band is radial
+                    _ if dm[1].abs() <= 1e-12 => {
+                        let (lo, hi) = radius_range(curve, t, o, axis)?;
+                        (w(lo, corner[1]), w(hi, corner[1]))
+                    }
+                    // a line in a meridian: radius and height both affine along it
+                    Curve::Line { p: q, d: dl } if dot(cross(*dl, axis), sub(*q, o)).abs() <= tol => {
+                        let ((r0, z0), (r1, z1)) = (mer(curve.point(t[0])), mer(curve.point(t[1])));
+                        (w(r0, z0), w(r1, z1))
+                    }
+                    _ => return None,
+                };
+                Some(a.max(b) > tol && a.min(b) < setback - tol)
+            }
+        }
+    }
 }
 
 impl Edge<'_> {
@@ -273,23 +354,18 @@ impl Edge<'_> {
         }
         if dot(d[0], d[1]) <= -1.0 + SMOOTH { return Ok(None); }
         let concave = dot(d[1], n[0]) > 0.0;
-        let kinds = [0, 1].map(|k| self.brep.faces[self.uses[k].0].surface.kind());
+        let surface = |k: usize| &self.brep.faces[self.uses[k].0].surface;
         let (section, corner, carry) = match curve {
             Curve::Line { d: along, .. }
-                if matches!(self.brep.faces[self.uses[0].0].surface, Surface::Plane(_))
-                    && matches!(self.brep.faces[self.uses[1].0].surface, Surface::Plane(_)) =>
+                if matches!(surface(0), Surface::Plane(_)) && matches!(surface(1), Surface::Plane(_)) =>
             {
-                let start = curve.point(e.t[0]);
-                let u = d[0];
-                let v = cross(*along, u);
-                (Basis { u, v, o: start }, [0.0, 0.0], Carry::Prism { length: e.t[1] - e.t[0] })
+                let (u, start) = (d[0], curve.point(e.t[0]));
+                (Basis { u, v: cross(*along, u), o: start }, [0.0, 0.0], Carry::Prism { length: e.t[1] - e.t[0] })
             }
             Curve::Circle(frame, rc) => {
                 let axis = frame.z;
-                for k in 0..2 {
-                    if !coaxial(&self.brep.faces[self.uses[k].0].surface, frame.o, axis, self.tol) {
-                        return Err(self.unsupported(&kinds, "circle"));
-                    }
+                if !(0..2).all(|k| coaxial(surface(k), frame.o, axis, self.tol)) {
+                    return Err(self.unsupported("circle"));
                 }
                 if !e.closed() || (e.t[1] - e.t[0] - std::f64::consts::TAU).abs() > 1e-9 {
                     return Err(format!(
@@ -299,11 +375,10 @@ impl Edge<'_> {
                 let u = unit(sub(p, add(frame.o, scale(axis, dot(sub(p, frame.o), axis)))));
                 (Basis { u, v: axis, o: frame.o }, [*rc, 0.0], Carry::Turn)
             }
-            other => return Err(self.unsupported(&kinds, other.kind())),
+            other => return Err(self.unsupported(other.kind())),
         };
         let flat = |x: V| [dot(x, section.u), dot(x, section.v)];
-        let normal = cross(section.u, section.v);
-        if d.iter().any(|x| dot(*x, normal).abs() > 1e-9) {
+        if d.iter().any(|x| dot(*x, section.normal()).abs() > 1e-9) {
             return Err(format!("`{}` and `{}` do not meet square to their section",
                 self.face_name(0), self.face_name(1)));
         }
@@ -323,96 +398,47 @@ impl Edge<'_> {
                 self.face_name(0), self.face_name(1)));
         }
         let setback = wedge.setback();
-        for k in 0..2 { self.holds(k, &section, corner, d[k], setback, carry)?; }
-        if let Carry::Prism { .. } = carry {
-            for end in 0..2 { self.stops(end, d, setback)?; }
+        for k in 0..2 {
+            let band = match carry {
+                Carry::Prism { length } => Band::Strip {
+                    corner: section.lift(corner[0], corner[1]), along: section.normal(), d: d[k], length },
+                Carry::Turn => Band::Meridian { o: section.o, axis: section.v, corner, dm: flat(d[k]) },
+            };
+            self.holds(k, &band, setback)?;
         }
-        Ok(Some((Piece { section, wedge, carry, edge_point: p }, concave)))
+        if let Carry::Prism { .. } = carry {
+            for end in 0..2 { self.stops(end, d, setback, section.normal())?; }
+        }
+        Ok(Some((Piece { section, wedge, carry }, concave)))
     }
 
-    fn unsupported(&self, kinds: &[&str; 2], curve: &str) -> String {
+    fn unsupported(&self, curve: &str) -> String {
+        let kind = |k: usize| self.brep.faces[self.uses[k].0].surface.kind();
         format!("`{}` ({}) meets `{}` ({}) on a {curve}: only a line between planes, or a circle \
                  between planes, cylinders and cones about its axis, is rounded yet (rung 2)",
-            self.face_name(0), kinds[0], self.face_name(1), kinds[1])
+            self.face_name(0), kind(0), self.face_name(1), kind(1))
     }
 
     /// **A ball no larger than face `k` can hold**: the band of the face within the setback of the
     /// edge, where the ball rolls, crossed by none of the face's other edges. Read in closed form
     /// for lines and circles; anything else is refused, never sampled.
-    fn holds(&self, k: usize, section: &Basis, corner: [f64; 2], d: V, setback: f64, carry: Carry) -> Result<(), String> {
+    fn holds(&self, k: usize, band: &Band, setback: f64) -> Result<(), String> {
         let (fi, (li, ci)) = self.uses[k];
         let f = &self.brep.faces[fi];
-        let seams: std::collections::BTreeSet<u32> = {
-            let mut seen = std::collections::BTreeSet::new();
-            f.loops.iter().flatten().filter(|c| !seen.insert(c.edge)).map(|c| c.edge).collect()
-        };
-        let tol = self.tol;
-        let corner3 = section.lift(corner[0], corner[1]);
-        let refuse = || format!("the ball of `{}` with `{}` is larger than `{}` can hold",
-            self.face_name(0), self.face_name(1), f.name);
+        let seams = f.seams();
         for (lj, l) in f.loops.iter().enumerate() {
             for (cj, c) in l.iter().enumerate() {
                 if (lj, cj) == (li, ci) || seams.contains(&c.edge) { continue; }
                 let e = &self.brep.edges[c.edge as usize];
                 let EdgeCurve::Curve(curve) = &e.curve else { continue };
-                let cannot = || format!("cannot certify that `{}` holds the ball of `{}` with `{}` (an edge on a {})",
-                    f.name, self.face_name(0), self.face_name(1), curve.kind());
-                let enters = match carry {
-                    // the band is a rectangle: along the edge, and across it into the face
-                    Carry::Prism { length } => {
-                        let along = cross(section.u, section.v);
-                        let to2 = |q: V| { let w = sub(q, corner3); [dot(w, along), dot(w, d)] };
-                        let lo = [tol, tol];
-                        let hi = [length - tol, setback - tol];
-                        match curve {
-                            Curve::Line { .. } => segment_enters(to2(curve.point(e.t[0])), to2(curve.point(e.t[1])), lo, hi),
-                            Curve::Circle(frame, rc) => {
-                                if dot(frame.z, cross(along, d)).abs() < 1.0 - 1e-9 { return Err(cannot()); }
-                                let c2 = to2(frame.o);
-                                let x2 = [dot(frame.x, along), dot(frame.x, d)];
-                                let y2 = [dot(frame.y, along), dot(frame.y, d)];
-                                arc_enters(c2, x2, y2, *rc, e.t, lo, hi)
-                            }
-                            _ => return Err(cannot()),
-                        }
-                    }
-                    // the band is the stretch of the meridian line from the corner to the touch:
-                    // its coordinate along that line, over the edge, whatever turn it is at
-                    Carry::Turn => {
-                        let axis = section.v;
-                        let o = section.o;
-                        let dm = [dot(d, section.u), dot(d, axis)];
-                        let w = |rho: f64, z: f64| (rho - corner[0]) * dm[0] + (z - corner[1]) * dm[1];
-                        let mer = |q: V| { let z = dot(sub(q, o), axis); (norm(sub(sub(q, o), scale(axis, z))), z) };
-                        let range = match curve {
-                            Curve::Circle(frame, rc)
-                                if cross(frame.z, axis).iter().all(|x| x.abs() <= 1e-9)
-                                    && norm(cross(sub(frame.o, o), axis)) <= tol => {
-                                let (rho, z) = (*rc, dot(sub(frame.o, o), axis));
-                                let v = w(rho, z);
-                                (v, v)
-                            }
-                            // in a plane square to the axis, a plane face's band is radial
-                            _ if dm[1].abs() <= 1e-12 => {
-                                let (lo, hi) = radius_range(curve, e.t, o, axis).ok_or_else(cannot)?;
-                                let (a, b) = (w(lo, corner[1]), w(hi, corner[1]));
-                                (a.min(b), a.max(b))
-                            }
-                            // a line in a meridian: radius and height both affine along it
-                            Curve::Line { p: q, d: dl }
-                                if dot(cross(*dl, axis), sub(*q, o)).abs() <= tol =>
-                            {
-                                let (r0, z0) = mer(curve.point(e.t[0]));
-                                let (r1, z1) = mer(curve.point(e.t[1]));
-                                let (a, b) = (w(r0, z0), w(r1, z1));
-                                (a.min(b), a.max(b))
-                            }
-                            _ => return Err(cannot()),
-                        };
-                        range.1 > tol && range.0 < setback - tol
-                    }
-                };
-                if enters { return Err(refuse()); }
+                match band.enters(curve, e.t, setback, self.tol) {
+                    Some(false) => {}
+                    Some(true) => return Err(format!("the ball of `{}` with `{}` is larger than `{}` can hold",
+                        self.face_name(0), self.face_name(1), f.name)),
+                    None => return Err(format!(
+                        "cannot certify that `{}` holds the ball of `{}` with `{}` (an edge on a {})",
+                        f.name, self.face_name(0), self.face_name(1), curve.kind())),
+                }
             }
         }
         Ok(())
@@ -420,13 +446,10 @@ impl Edge<'_> {
 
     /// **A straight fillet stops flush at end `end`**: on each face the edge beside it at that end
     /// runs on across the band, a straight edge at least the setback long, into a plane square to
-    /// the edge — so the ball's section stands in one plane there and the fillet ends in it. A
-    /// face running on past the end needs the ball to turn the corner (rung 3).
-    fn stops(&self, end: usize, d: [V; 2], setback: f64) -> Result<(), String> {
-        let e = &self.brep.edges[self.edge];
-        let vertex = e.v[end];
-        let EdgeCurve::Curve(curve) = &e.curve else { unreachable!() };
-        let along = unit(curve.tangent(e.t[0]));
+    /// the edge (along `along`) — so the ball's section stands in one plane there and the fillet
+    /// ends in it. A face running on past the end needs the ball to turn the corner (rung 3).
+    fn stops(&self, end: usize, d: [V; 2], setback: f64, along: V) -> Result<(), String> {
+        let vertex = self.brep.edges[self.edge].v[end];
         let at = self.brep.vertices[vertex as usize].p;
         for k in 0..2 {
             let (fi, (li, ci)) = self.uses[k];
@@ -445,18 +468,12 @@ impl Edge<'_> {
             let dir = unit(sub(self.brep.vertices[other as usize].p, at));
             if dot(dir, d[k]) < 1.0 - 1e-9 || ne.t[1] - ne.t[0] < setback - self.tol { return Err(runs_on()); }
             // the face across that edge is the plane the fillet ends in
-            let across = uses_by_edge_of(self.brep, c.edge).into_iter().find(|&g| g != fi).ok_or_else(runs_on)?;
-            let g = &self.brep.faces[across];
-            let Surface::Plane(frame) = &g.surface else { return Err(runs_on()) };
+            let across = self.table[c.edge as usize].iter().map(|u| u.0).find(|&g| g != fi).ok_or_else(runs_on)?;
+            let Surface::Plane(frame) = &self.brep.faces[across].surface else { return Err(runs_on()) };
             if dot(frame.z, along).abs() < 1.0 - 1e-9 { return Err(runs_on()); }
         }
         Ok(())
     }
-}
-
-/// The faces using edge `e`.
-fn uses_by_edge_of(b: &Brep, e: u32) -> Vec<usize> {
-    b.faces.iter().enumerate().filter(|(_, f)| f.loops.iter().flatten().any(|c| c.edge == e)).map(|(i, _)| i).collect()
 }
 
 /// Whether `s` is a surface of revolution about the line through `o` along the unit `axis` whose
@@ -490,9 +507,7 @@ fn radius_range(c: &Curve, t: [f64; 2], o: V, axis: V) -> Option<(f64, f64)> {
             let to = sub(foot, f.o);
             let base = dot(to, f.y).datan2(dot(to, f.x));
             for s in [base, base + std::f64::consts::PI] {
-                let mut s = s;
-                while s < t[0] { s += std::f64::consts::TAU; }
-                while s > t[0] + std::f64::consts::TAU { s -= std::f64::consts::TAU; }
+                let s = around(s, t[0], std::f64::consts::TAU);
                 if s <= t[1] { let x = rho(c.point(s)); lo = lo.min(x); hi = hi.max(x); }
             }
         }
@@ -526,10 +541,7 @@ fn arc_enters(c: [f64; 2], x: [f64; 2], y: [f64; 2], r: f64, t: [f64; 2], lo: [f
     let at = |s: f64| { let (sn, cs) = s.dsin_cos(); [c[0] + r * (cs * x[0] + sn * y[0]), c[1] + r * (cs * x[1] + sn * y[1])] };
     let inside = |p: [f64; 2]| (0..2).all(|k| p[k] > lo[k] && p[k] < hi[k]);
     if inside(at(t[0])) || inside(at(t[1])) || inside(at(0.5 * (t[0] + t[1]))) { return true; }
-    let within = |s: f64| {
-        let s = t[0] + (s - t[0]).rem_euclid(std::f64::consts::TAU);
-        s <= t[1]
-    };
+    let within = |s: f64| around(s, t[0], std::f64::consts::TAU) <= t[1];
     for k in 0..2 {
         // r (cos s x_k + sin s y_k) = side - c_k
         let (a, b) = (r * x[k], r * y[k]);
@@ -557,12 +569,10 @@ impl Piece {
     /// about the evaluation's `origin`.
     pub(super) fn face_poly(&self, origin: [f64; 3], unit: f64) -> Option<FacePoly> {
         let w = &self.wedge;
-        let (start, sweep) = w.arc();
+        let (start, sweep, ends) = w.arc();
         let mut arc = super::profile::tessellate_arc((w.centre[0], w.centre[1]), w.r, start, sweep, unit);
         // walked from the first touch to the second
-        let first = (w.touch[0][0], w.touch[0][1]);
-        let d = |p: (f64, f64), q: (f64, f64)| (p.0 - q.0).dhypot(p.1 - q.1);
-        if d(arc[0], first) > d(*arc.last()?, first) { arc.reverse(); }
+        if ends[0] != w.touch[0] { arc.reverse(); }
         let mut pts = vec![(w.corner[0], w.corner[1])];
         let mut of = vec![(0, false)];
         for p in &arc[..arc.len() - 1] {
@@ -571,8 +581,7 @@ impl Piece {
         }
         pts.push((w.touch[1][0], w.touch[1][1]));
         of.push((2, false));
-        let basis = Basis { u: self.section.u, v: self.section.v,
-            o: std::array::from_fn(|k| self.section.o[k] - origin[k]) };
+        let basis = Basis { o: std::array::from_fn(|k| self.section.o[k] - origin[k]), ..self.section };
         let poly = FacePoly { pts, of, names: EDGE_NAMES.map(String::from).to_vec(), basis,
             pose: (1.0, 0.0, (0.0, 0.0)), curved: vec![None; EDGE_NAMES.len()] };
         poly.valid().then(|| poly.ccw())

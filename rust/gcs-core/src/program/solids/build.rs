@@ -71,18 +71,7 @@ pub(super) fn build_solid(
         diags.push(Diag { code, span, stmt: Some(st.id), message: m });
     };
     let sweep = d.sweep.as_ref().unwrap_or(&crate::syntax::Sweep::Body);
-    // every number a solid carries is settled here and is never an unknown (`Extent`)
-    let ext =
-        |a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim| -> Result<Extent, String> {
-            let crate::syntax::Arg::Dim { text, .. } = a else {
-                return Err(format!("`{what}` is not a number"));
-            };
-            let v = crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)
-                .map_err(|e| format!("`{text}`: {e}"))?;
-            v.dim.require(dim, what)?;
-            if !v.c.is_finite() { return Err(format!("`{what}` must be finite")); }
-            Ok(Extent { text: text.trim().to_string(), value: v.c })
-        };
+    let ext = |a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim| extent(sk, a, what, dim);
     let def = match sweep {
         crate::syntax::Sweep::Placed { motion, .. } | crate::syntax::Sweep::Swept { motion, .. } => {
             if ops.len() != 1 || ops[0].kind != EntKind::Solid {
@@ -273,6 +262,19 @@ pub(super) fn build_solid(
     Some(i)
 }
 
+/// **Every number a solid carries is settled here and is never an unknown** — the `fold:` rule:
+/// argument `a` (called `what`) worked out over the document's units and held to `dim`.
+fn extent(sk: &Sketch, a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim) -> Result<Extent, String> {
+    let crate::syntax::Arg::Dim { text, .. } = a else {
+        return Err(format!("`{what}` is not a number"));
+    };
+    let v = crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)
+        .map_err(|e| format!("`{text}`: {e}"))?;
+    v.dim.require(dim, what)?;
+    if !v.c.is_finite() { return Err(format!("`{what}` must be finite")); }
+    Ok(Extent { text: text.trim().to_string(), value: v.c })
+}
+
 /// **A fillet is written over two solids or faces of them** (issue #66): `fillet(boss, plate, r:
 /// 3mm)`, `fillet(block.near, block.side_l, r: 1mm)`. Each operand is a solid, then the path of a
 /// face of it — what `against` reads — kept as written, since which faces it names is known only
@@ -300,28 +302,16 @@ fn build_fillet(
             say(Code::E080, st.span, "a fillet's operands are solids or faces of them".into());
             return None;
         };
-        let mut segs: Vec<&str> = rf.root.text.split('.').collect();
+        let mut face = Vec::new();
         for seg in &rf.path {
-            match seg {
-                crate::syntax::Seg::Field(n) => segs.push(&n.text),
-                _ => {
-                    say(Code::E080, rf.span, "a face of a solid is named by its path, not an index".into());
-                    return None;
-                }
-            }
+            let crate::syntax::Seg::Field(n) = seg else {
+                say(Code::E080, rf.span, "a face of a solid is named by its path, not an index".into());
+                return None;
+            };
+            face.push(n.text.clone());
         }
-        let found = res.lookup(rf).filter(|e| e.kind == EntKind::Solid).map(|e| {
-            let path = rf.path.iter().filter_map(|s| match s {
-                crate::syntax::Seg::Field(n) => Some(n.text.clone()),
-                _ => None,
-            }).collect::<Vec<_>>();
-            (e, path)
-        }).or_else(|| res.dotted(&segs).map(|(e, rest)| (e, rest.iter().filter_map(|s| match s {
-            crate::syntax::Seg::Field(n) => Some(n.text.clone()),
-            _ => None,
-        }).collect())));
-        let Some((e, face)) = found else {
-            say(Code::E101, rf.span, format!("no such solid: `{}`", segs.join(".")));
+        let Some(e) = res.lookup(rf) else {
+            say(Code::E101, rf.span, format!("no such solid: `{}`", rf.root.text));
             return None;
         };
         if e.kind != EntKind::Solid {
@@ -331,27 +321,20 @@ fn build_fillet(
         }
         sides.push(crate::model::FilletSide { solid: e.idx, face });
     }
-    let crate::syntax::Arg::Dim { text, .. } = r else {
-        say(Code::E103, st.span, "a fillet's `r` is not a number".into());
-        return None;
-    };
-    let v = match crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)
-        .map_err(|e| format!("`{text}`: {e}"))
-        .and_then(|v| v.dim.require(crate::units::Dim::LENGTH, "r").map(|_| v))
-    {
-        Ok(v) => v,
+    let r = match extent(sk, r, "r", crate::units::Dim::LENGTH) {
+        Ok(r) => r,
         Err(m) => {
             say(Code::E103, st.span, m);
             return None;
         }
     };
-    if !(v.c > 0.0) || !v.c.is_finite() {
-        say(Code::E040, st.span, format!("a fillet's radius is a positive length, and `{}` is not", text.trim()));
+    if !(r.value > 0.0) {
+        say(Code::E040, st.span, format!("a fillet's radius is a positive length, and `{}` is not", r.text));
         return None;
     }
     let b = sides.pop()?;
     let a = sides.pop()?;
-    let def = SolidDef::Fillet { a, b, r: Extent { text: text.trim().to_string(), value: v.c } };
+    let def = SolidDef::Fillet { a, b, r };
     let i = sk.solid(def, &d.name.key().text);
     sk.solids[i].class = d.class.clone();
     Some(i)

@@ -279,7 +279,7 @@ where it crosses that face's edges (`query::curve_curve`, closed form); a seam i
 (`face_place`); a hull corner's fan is walked both ways (`mesh::Tri2::fan`, cusps); a cusp turns a
 profile half a turn (`field/profile.rs::turning`). `tests/fillet.rs`, `gcs-cli/tests/fillet_oracle.rs`
 (OCCT's `BRepFilletAPI_MakeFillet`, `solvent_cad_fillet`, links `TKFillet`),
-`rust/examples/solid_fillet.sv`. Rungs 2–4 (offset/canal surfaces, vertex blends, the con-rod) open.
+`rust/examples/solid_fillet{,_turned}.sv`. Rungs 2–4 (offset/canal surfaces, vertex blends, the con-rod) open.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches

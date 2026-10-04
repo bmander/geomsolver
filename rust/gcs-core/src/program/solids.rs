@@ -323,15 +323,16 @@ pub(super) fn fillet_words(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
         for (f, adds) in taken {
             let s = &sk.solids[f as usize];
             if !matches!(s.def, SolidDef::Fillet { .. }) { continue; }
-            let Ok(blend) = sk.fillet_blend(f as usize) else { continue };
             let (fillet, of) = (&s.name, &body.name);
+            // (a fillet that cannot be rounded says so itself: there is no word to check)
+            let concave = || sk.fillet_blend(f as usize).ok().map(|b| b.concave);
             let message = match adds {
                 None => format!("`{fillet}` is a fillet, which `{of}` takes with `union` or `cut`, \
                                  not as its stock or a bound"),
-                Some(true) if !blend.concave => format!("`{fillet}` rounds convex edges, whose material \
-                                 the ball rolls off: write `{fillet} cut {of}`, not `union`"),
-                Some(false) if blend.concave => format!("`{fillet}` fills concave edges, whose material \
-                                 the ball adds: write `{fillet} union {of}`, not `cut`"),
+                Some(true) if concave() == Some(false) => format!("`{fillet}` rounds convex edges, whose \
+                                 material the ball rolls off: write `{fillet} cut {of}`, not `union`"),
+                Some(false) if concave() == Some(true) => format!("`{fillet}` fills concave edges, whose \
+                                 material the ball adds: write `{fillet} union {of}`, not `cut`"),
                 _ => continue,
             };
             let site = map.site_of(EntRef::solid(f as usize));

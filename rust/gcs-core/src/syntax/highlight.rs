@@ -2,7 +2,7 @@
 
 use super::lexer::{lex, Tok};
 use super::words::{
-    joint_word, link_word, opens_link, over_chain, past_args, trails_decl, BLOCKS, MODIFIERS,
+    fillet_at, joint_word, link_word, opens_link, over_chain, past_args, trails_decl, BLOCKS, MODIFIERS,
 };
 use super::{Span, Ty, MAX_TEXT};
 use crate::constraints::is_operator;
@@ -229,7 +229,7 @@ fn tint_word(
                 return (Some(Tint::Relation), Next::Word);
             }
             // `root := fillet(boss, plate, r: 3mm)` — a solid, spelled by what it rounds (#66)
-            if w == "fillet" && prev == Some(&Tok::Define) && next == Some(&Tok::P('(')) {
+            if prev == Some(&Tok::Define) && fillet_at(toks, i) {
                 return (Some(Tint::Word), Next::Word);
             }
             if next == Some(&Tok::P('(')) && !is_operator(w) {

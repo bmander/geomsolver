@@ -237,10 +237,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     let mut out: Option<Snapshot> = None;
                     for p in &blend.pieces {
                         let w = &p.wedge;
-                        let (start,sweep) = w.arc();
-                        let (s0,c0) = start.dsin_cos();
-                        let (s1,c1) = (start+sweep).dsin_cos();
-                        let ends = [[w.centre[0]+w.r*c0,w.centre[1]+w.r*s0],[w.centre[0]+w.r*c1,w.centre[1]+w.r*s1]];
+                        let (start,sweep,ends) = w.arc();
                         let edges = vec![
                             Edge::Line {a:w.corner,b:w.touch[0],axis:false},
                             Edge::Arc {center:w.centre,radius:w.r,start,sweep,ends},

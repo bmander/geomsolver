@@ -27,6 +27,7 @@ extern "C" {
         angle: f64) -> c_int;
     fn solvent_cad_boolean(cad: *mut c_void,a: c_int,b: c_int,operation: c_int) -> c_int;
     fn solvent_cad_transform(cad: *mut c_void,source: c_int,matrix: *const f64) -> c_int;
+    #[cfg(test)]
     fn solvent_cad_fillet(cad: *mut c_void,id: c_int,radius: f64,points: *const f64,count: c_int) -> c_int;
     fn solvent_cad_bounds(cad: *mut c_void,ids: *const c_int,count: c_int,out: *mut f64) -> c_int;
     fn solvent_cad_validate(cad: *mut c_void,id: c_int) -> c_int;
@@ -276,7 +277,8 @@ impl Session {
     }
 
     /// OCCT's rolling-ball fillet of `radius` (mm) on the edges of `id` nearest `points` (mm): the
-    /// oracle a fillet's pieces are held to (`tests/fillet_oracle.rs`).
+    /// oracle a fillet's pieces are held to (`tests/fillet_oracle.rs`), which alone reads it.
+    #[cfg(test)]
     pub(crate) fn fillet(&self,id: c_int,radius: f64,points: &[[f64;3]]) -> Result<c_int,String> {
         let flat: Vec<f64> = points.iter().flatten().copied().collect();
         self.result(unsafe { solvent_cad_fillet(self.0,id,radius,flat.as_ptr(),points.len() as c_int) })

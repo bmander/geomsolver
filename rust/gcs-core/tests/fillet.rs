@@ -7,17 +7,7 @@ use gcs_core::program::{elaborate, Code, Elaborated};
 use gcs_core::syntax::parse;
 use std::f64::consts::PI;
 
-fn read(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
-    let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}\n{src}",
-        e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect::<Vec<_>>()
-    );
-    e
-}
+use crate::common::read;
 
 fn refused(src: &str, code: Code, needle: &str) {
     let (prog, errs) = parse(src);
@@ -123,39 +113,9 @@ fn a_bore_drilled_after_the_root_passes_through_it() {
 }
 
 /// A disc of radius 40 and thickness 10 and a frustum standing on it (radius 15 at its foot, 5 at
-/// its top, 20 tall), both turned about one vertical axis on the page.
-const TURNED: &str = "\
-unit mm
-a0 := point
-a1 := point hint(x: 0, y: 40)
-fix(x == 0, y == 0) a0
-fix(x == 0, y == 40) a1
-axis := line(a0, a1)
-p0 := point
-p1 := point hint(x: 40, y: 0)
-p2 := point hint(x: 40, y: 10)
-p3 := point hint(x: 0, y: 10)
-fix(x == 0, y == 0) p0
-fix(x == 40, y == 0) p1
-fix(x == 40, y == 10) p2
-fix(x == 0, y == 10) p3
-(pbot := line(p0, p1)) -> (pside := line(p1, p2)) -> (ptop := line(p2, p3)) -> (paxis := line(p3, p0)) -> close
-pf := face(pbot, pside, ptop, paxis)
-q0 := point hint(x: 0, y: 10)
-q1 := point hint(x: 15, y: 10)
-q2 := point hint(x: 5, y: 30)
-q3 := point hint(x: 0, y: 30)
-fix(x == 0, y == 10) q0
-fix(x == 15, y == 10) q1
-fix(x == 5, y == 30) q2
-fix(x == 0, y == 30) q3
-(cbot := line(q0, q1)) -> (slant := line(q1, q2)) -> (ctop := line(q2, q3)) -> (caxis := line(q3, q0)) -> close
-cf := face(cbot, slant, ctop, caxis)
-plate := solid(pf, about: axis)
-frustum := solid(cf, about: axis)
-body := solid(plate)
-frustum union body
-";
+/// its top, 20 tall), both turned about one vertical axis on the page; the frustum's root filleted
+/// with radius 3 and its top rim rounded with radius 1.
+const TURNED: &str = include_str!("../../examples/solid_fillet_turned.sv");
 
 /// The volume a ball of radius `r` in the meridian corner at `corner` between the unit
 /// directions `d` sweeps when turned about the axis (`ρ = 0`): Green's theorem over its section —
@@ -186,10 +146,7 @@ fn turned_wedge(corner: [f64; 2], d: [[f64; 2]; 2], r: f64) -> f64 {
 fn a_frustum_root_and_its_rim_turn_their_sections() {
     let root = turned_wedge([15.0, 10.0], [[1.0, 0.0], [-1.0 / 5f64.sqrt(), 2.0 / 5f64.sqrt()]], 3.0);
     let rim = turned_wedge([5.0, 30.0], [[-1.0, 0.0], [1.0 / 5f64.sqrt(), -2.0 / 5f64.sqrt()]], 1.0);
-    let e = read(&format!(
-        "{TURNED}root := fillet(frustum, plate, r: 3mm)\nroot union body\n\
-         rim := fillet(frustum.ctop, frustum.slant, r: 1mm)\nrim cut body\n"
-    ));
+    let e = read(TURNED);
     assert_volume(volume(&e, "root"), root);
     assert_volume(volume(&e, "rim"), rim);
     let frustum = PI * 20.0 / 3.0 * (15.0 * 15.0 + 15.0 * 5.0 + 5.0 * 5.0);
@@ -380,10 +337,7 @@ fn field_agrees(e: &Elaborated, body: &str) {
 
 #[test]
 fn the_field_reads_a_filleted_body_as_the_kernel_builds_it() {
-    let e = read(&format!(
-        "{TURNED}root := fillet(frustum, plate, r: 3mm)\nroot union body\n\
-         rim := fillet(frustum.ctop, frustum.slant, r: 1mm)\nrim cut body\n"
-    ));
+    let e = read(TURNED);
     field_agrees(&e, "body");
     let e = read(&format!(
         "{RECT}block := solid(sec, depth: 30mm)\nlip := fillet(block.near, block.bc, r: 5mm)\nlip cut block\n"

@@ -339,7 +339,7 @@ fn fillet_piece(p: &super::fillet::Piece,scale: f64) -> Json {
     let w = &p.wedge;
     let lift = |q: [f64;2]| p.section.lift(q[0],q[1]).map(|v| v*scale);
     let normal = p.section.normal();
-    let (start,sweep) = w.arc();
+    let (start,sweep,_) = w.arc();
     let [a,round,b] = super::fillet::EDGE_NAMES;
     let line = |from: [f64;2],to: [f64;2],name: &str| object([("kind","line".into()),
         ("start",vector(lift(from))),("end",vector(lift(to))),("name",name.into())]);
