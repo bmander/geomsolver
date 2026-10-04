@@ -5,7 +5,8 @@ const MODEL: &str = "unit mm
 o := point
 fix(x == 0, y == 0) o
 rim := circle(center: o) hint(r: 10)
-radius(r := 10mm) rim
+param r := 10mm
+radius(r) rim
 stock := solid(face(rim), depth: 4mm)
 body := solid(stock)
 ";
@@ -102,13 +103,13 @@ fn model_sources_refuse_presentation_but_keep_geometry_and_claims() {
 }
 
 #[test]
-fn named_dimensions_survive_statement_reordering() {
+fn requested_dimensions_survive_statement_reordering() {
     let e = solved();
     let doc = drawing::parse("sheet s { sketch v(m) at (50,50) dimension m.r in v at (0,15) }").unwrap();
     let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &e.sketch, names: &e.map })]);
     let a = drawing::render(&doc, &models, None).unwrap();
     assert!(a.contains("<text"));
-    let text = MODEL.replace("radius(r := 10mm) rim\n", "") + "radius(r := 10mm) rim\n";
+    let text = MODEL.replace("radius(r) rim\n", "") + "radius(r) rim\n";
     let (p, errs) = syntax::parse(&text); assert!(errs.is_empty());
     let mut other = program::elaborate(&p);
     assert!(solve::solve(&mut other.sketch, solve::SolveOpts::default()).success);

@@ -97,9 +97,6 @@ impl Measured {
         resolve: impl Fn(&str) -> Result<EntRef, String>,
     ) -> Result<Measured, String> {
         let p = expr::parse_in(text, units)?;
-        if p.name.is_some() {
-            return Err(format!("`{what}` measures the drawing and names nothing"));
-        }
         let mut ents = BTreeMap::new();
         for (m, args) in p.body.measures() {
             let mut kinds = Vec::with_capacity(args.len());

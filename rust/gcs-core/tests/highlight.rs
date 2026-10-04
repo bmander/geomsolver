@@ -257,3 +257,14 @@ fn a_group_is_coloured_as_labelled_members() {
     assert_eq!(tint_of(src, "axis"), Some(Tint::Label));
     assert_eq!(tint_of(src, "16mm"), Some(Tint::Num));
 }
+
+/// `param` is a word, the name after it is the name it declares, and its type is a type — the
+/// colouring of a formal, at the top of a document.
+#[test]
+fn an_input_is_coloured_like_a_formal() {
+    let src = "param beta: Angle hint(30deg)\nparam bore := 50\n";
+    assert_eq!(tint_of(src, "param beta"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "beta:"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "Angle"), Some(Tint::Type));
+    assert_eq!(tint_of(src, "bore"), Some(Tint::Def));
+}

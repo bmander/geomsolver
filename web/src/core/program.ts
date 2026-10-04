@@ -11,8 +11,8 @@
  *
  * `kind` is the core's reading of what an edit costs, and the front end never guesses it: a bare
  * number is `numeric` (the topology cannot have moved, so a compiled plan survives), a number that
- * names anything is `structural`, because a name nothing defines is a free variable and a free
- * variable is a column.
+ * names anything is `structural`, because the name may be an unknown, and an unknown is a
+ * column.
  */
 import { Constraint } from './constraints.js';
 import { Kind, KINDS, Primitive, Sketch } from './model.js';

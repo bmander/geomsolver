@@ -1,4 +1,4 @@
-//! Dimension expressions: the language, the document's evaluation order, its errors, and how
+//! Dimension expressions: the language, its evaluation over the document, its errors, and how
 //! an expression travels through the document's I/O and rebuilds.
 use gcs_core::constraints::{Arg, CKind, Constraint};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
@@ -55,9 +55,9 @@ fn syntax_errors_say_where() {
     assert!(parse("foo(1)").unwrap_err().contains("unknown function"));
     assert!(parse("sin(1, 2)").unwrap_err().contains("takes 1"));
     assert!(parse("min(1)").unwrap_err().contains("at least 2"));
-    assert!(parse("pi := 3").unwrap_err().contains("built in"));
-    assert!(parse("sin := 3").unwrap_err().contains("built in"));
-    assert!(parse("a := b := 1").is_err());
+    // an expression defines nothing: a name is defined in the source, `w := 1`, or declared
+    // an input, `param w: Length`, and a dimension's number only reads it
+    assert!(parse("w := 1").is_err());
     let deep = "(".repeat(200) + "1" + &")".repeat(200);
     assert!(parse(&deep).unwrap_err().contains("deeply"));
     assert!(parse(&"1+".repeat(600)).unwrap_err().contains("longer"));
@@ -65,12 +65,9 @@ fn syntax_errors_say_where() {
 
 #[test]
 fn names_and_dependencies() {
-    let p = parse("h := w * 2 + sin(a) - pi").unwrap();
-    assert_eq!(p.name.as_deref(), Some("h"));
+    let p = parse("w * 2 + sin(a) - pi").unwrap();
     let deps: Vec<String> = p.body.deps().into_iter().collect();
     assert_eq!(deps, vec!["a".to_string(), "w".to_string()]);   // pi is not a dependency
-    assert_eq!(parse(" w:=1 ").unwrap().name.as_deref(), Some("w"));
-    assert_eq!(expr::name_of("sin(h*10)"), None);
     assert_eq!(expr::literal(" -2.5 "), Some(-2.5));
     assert_eq!(expr::literal("1e3"), Some(1000.0));
     assert_eq!(expr::literal("inf"), None);
@@ -102,21 +99,19 @@ fn value(sk: &Sketch, id: u32) -> f64 {
 }
 
 #[test]
-fn evaluated_in_dependency_order_whatever_the_document_order() {
-    // the reader comes first in the document, the definition last
-    let (mut sk, ids) = three(["sin(h * 10)", "h := w * 2", "w := 1"]);
+fn evaluated_in_document_order() {
+    let (mut sk, ids) = three(["sin(30) * 4", "2 * 3", "8 / 2"]);
     let items = expr::evaluate(&mut sk);
     assert!(items.iter().all(|it| it.error.is_none()), "{items:?}");
     let order: Vec<u32> = items.iter().map(|it| it.id).collect();
-    assert_eq!(order, vec![ids[2], ids[1], ids[0]]);
-    assert_eq!(value(&sk, ids[2]), 1.0);
-    assert_eq!(value(&sk, ids[1]), 2.0);
-    assert!(close(value(&sk, ids[0]), 20f64.to_radians().sin()));
-    assert_eq!(items[1].deps, vec!["w".to_string()]);
-    assert_eq!(items[1].name.as_deref(), Some("h"));
+    assert_eq!(order, ids.to_vec());
+    assert!(close(value(&sk, ids[0]), 2.0));
+    assert_eq!(value(&sk, ids[1]), 6.0);
+    assert_eq!(value(&sk, ids[2]), 4.0);
+    assert!(items.iter().all(|it| it.deps.is_empty() && it.free.is_empty()));
     // and the solver sees the numbers
     assert!(solve(&mut sk, SolveOpts::default()).success);
-    assert!(close(sk.line_length_of(ids[1]), 2.0));
+    assert!(close(sk.line_length_of(ids[1]), 6.0));
 }
 
 trait Len {
@@ -134,7 +129,7 @@ impl Len for Sketch {
 #[test]
 fn a_constant_added_as_text_is_evaluated_on_add() {
     // `Sketch::add` evaluates when the new constraint carries an expression
-    let (sk, ids) = three(["w := 4", "w / 2", "1"]);
+    let (sk, ids) = three(["2 * 2", "8 / 4", "1"]);
     assert_eq!(value(&sk, ids[0]), 4.0);
     assert_eq!(value(&sk, ids[1]), 2.0);
     assert_eq!(value(&sk, ids[2]), 1.0);
@@ -150,7 +145,7 @@ fn angles_are_written_in_degrees() {
         vec![
             Arg::Ent(EntRef::line(l1)),
             Arg::Ent(EntRef::line(l2)),
-            Arg::Expr(Expr::new("a := 30", 0.0)),
+            Arg::Expr(Expr::new("15 * 2", 0.0)),
         ],
     ));
     let p = sk.point(0.0, 0.0, false, "p");
@@ -158,75 +153,51 @@ fn angles_are_written_in_degrees() {
     let d = sk.add(Constraint::new(
         CKind::Distance,
         vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::point(q)),
-             Arg::Expr(Expr::new("a * 2", 0.0))],
+             Arg::Expr(Expr::new("cos(60) * 120", 0.0))],
     ));
-    // the argument holds radians; the name is the degrees a person wrote
+    // the argument holds radians; the text is the degrees a person wrote
     assert!(close(value(&sk, ang), 30f64.to_radians()));
-    assert_eq!(value(&sk, d), 60.0);
+    assert!(close(value(&sk, d), 60.0));
     let items = expr::evaluate(&mut sk);
-    assert_eq!(items[0].value, 30.0);
-    assert_eq!(io::dimension_text(sk.constraint(ang).unwrap()).unwrap(), "a = 30°");
-    assert_eq!(io::describe(sk.constraint(d).unwrap()), "P4 distance(a * 2 = 60) P5");
+    assert!(close(items[0].value, 30.0));
+    assert_eq!(io::dimension_text(sk.constraint(ang).unwrap()).unwrap(), "15 * 2°");
+    assert_eq!(io::describe(sk.constraint(d).unwrap()), "P4 distance(cos(60) * 120 = 60) P5");
 }
 
 #[test]
 fn errors_name_the_problem_and_keep_the_last_value() {
     // `q * q` is not a thing a free name can be: it can be scaled and offset and no more
-    let (mut sk, ids) = three(["w := 1", "h := q * q", "h + 1"]);
+    let (mut sk, ids) = three(["1", "q * q", "2 * q + 1"]);
     let items = expr::evaluate(&mut sk);
     let by_id = |id: u32| items.iter().find(|it| it.id == id).unwrap();
     assert!(by_id(ids[0]).error.is_none());
     assert!(by_id(ids[1]).error.as_ref().unwrap().message.contains("`q` is free"));
-    assert_eq!(
-        by_id(ids[2]).error.as_ref().map(|e| e.message.as_str()),
-        Some("`h` could not be evaluated")
-    );
+    assert!(by_id(ids[2]).error.is_none(), "an affine reading of the same name is fine");
     assert_eq!(value(&sk, ids[1]), 0.0);   // what it had
-
-    // define q elsewhere and everything downstream computes
-    assert_eq!(expr::set_dimension(&mut sk, ids[0], "d", "q := 5").unwrap(), None);
-    assert_eq!(value(&sk, ids[1]), 25.0);
-    assert_eq!(value(&sk, ids[2]), 26.0);
-    // change q: the change flows
-    expr::set_dimension(&mut sk, ids[0], "d", "q := 6").unwrap();
-    assert_eq!(value(&sk, ids[2]), 37.0);
-    // a plain number drops the definition, and the readers say so but keep their numbers
-    assert_eq!(expr::set_dimension(&mut sk, ids[0], "d", "7").unwrap(), None);
-    assert_eq!(sk.constraint(ids[0]).unwrap().args[2], Arg::Num(7.0));
-    assert_eq!(value(&sk, ids[1]), 36.0);
-    let items = expr::evaluate(&mut sk);
-    assert!(items.iter().find(|it| it.id == ids[1]).unwrap()
-        .error.as_deref().unwrap().contains("`q` is free"));
+    // written affine, it is tied to the other reader
+    assert_eq!(expr::set_dimension(&mut sk, ids[1], "d", "q / 2").unwrap(), None);
+    // a plain number drops the expression
+    assert_eq!(expr::set_dimension(&mut sk, ids[1], "d", "7").unwrap(), None);
+    assert_eq!(sk.constraint(ids[1]).unwrap().args[2], Arg::Num(7.0));
 }
 
 #[test]
-fn duplicates_cycles_and_non_numbers() {
-    let (mut sk, ids) = three(["w := 1", "w := 2", "w + 1"]);
+fn non_numbers() {
+    let (mut sk, ids) = three(["sqrt(-1)", "1 / 0", "2"]);
     let items = expr::evaluate(&mut sk);
-    for it in &items {
-        assert_eq!(it.error.as_deref(), Some("`w` is defined more than once"), "{it:?}");
-    }
-    assert_eq!(value(&sk, ids[2]), 0.0);
-
-    let (mut sk, ids) = three(["a := b + 1", "b := a + 1", "a"]);
-    let items = expr::evaluate(&mut sk);
-    let by_id = |id: u32| items.iter().find(|it| it.id == id).unwrap().error.clone().unwrap().message;
-    assert_eq!(by_id(ids[0]), "circular: a → b → a");
-    assert_eq!(by_id(ids[1]), "circular: b → a → b");
-    assert_eq!(by_id(ids[2]), "`a` could not be evaluated");
-
-    let (mut sk, ids) = three(["r := sqrt(-1)", "1 / 0", "r"]);
-    let items = expr::evaluate(&mut sk);
-    let by_id = |id: u32| items.iter().find(|it| it.id == id).unwrap().error.clone().unwrap().message;
-    assert_eq!(by_id(ids[0]), "does not evaluate to a number");
-    assert_eq!(by_id(ids[1]), "does not evaluate to a number");
-    assert_eq!(by_id(ids[2]), "`r` could not be evaluated");
+    let by_id = |id: u32| items.iter().find(|it| it.id == id).unwrap().error.clone();
+    assert_eq!(by_id(ids[0]).unwrap().message, "does not evaluate to a number");
+    assert_eq!(by_id(ids[1]).unwrap().message, "does not evaluate to a number");
+    assert_eq!(by_id(ids[2]), None);
+    assert_eq!(value(&sk, ids[0]), 0.0);
 }
 
 #[test]
 fn set_dimension_rejects_what_does_not_parse_and_reports_what_cannot_compute() {
     let (mut sk, ids) = three(["1", "2", "3"]);
     assert!(expr::set_dimension(&mut sk, ids[0], "d", "1 +").is_err());
+    let defines = expr::set_dimension(&mut sk, ids[0], "d", "w := 1");
+    assert!(defines.is_err(), "a number defines nothing");
     assert_eq!(value(&sk, ids[0]), 1.0);
     assert!(expr::set_dimension(&mut sk, ids[0], "p", "1").unwrap_err().contains("not a dimension"));
     assert!(expr::set_dimension(&mut sk, 999, "d", "1").is_err());
@@ -252,22 +223,21 @@ fn set_dimension_rejects_what_does_not_parse_and_reports_what_cannot_compute() {
 
 #[test]
 fn documents_carry_text_and_value_and_accept_bare_strings() {
-    let (sk, ids) = three(["w := 3", "h := w * 2", "5"]);
+    let (sk, ids) = three(["1 + 2", "3 * 2", "5"]);
     let s = io::dumps(&sk, Some(1));
-    assert!(s.contains("\"expr\": \"h := w * 2\""), "{s}");
+    assert!(s.contains("\"expr\": \"3 * 2\""), "{s}");
     let sk2 = io::loads(&s).unwrap();
     assert_eq!(io::dumps(&sk2, Some(1)), s);
-    assert_eq!(sk2.constraint(ids[1]).unwrap().args[2],
-               Arg::Expr(Expr::new("h := w * 2", 6.0)));
+    assert_eq!(sk2.constraint(ids[1]).unwrap().args[2], Arg::Expr(Expr::new("3 * 2", 6.0)));
     // a hand-written document: a string is an expression, evaluated on load
     let hand = r#"{"points": [{"x": 0, "y": 0}, {"x": 5, "y": 0}],
-                   "constraints": [{"type": "Distance", "args": [["point", 0], ["point", 1], "w := 2 + 2"]}]}"#;
+                   "constraints": [{"type": "Distance", "args": [["point", 0], ["point", 1], "2 + 2"]}]}"#;
     let sk3 = io::loads(hand).unwrap();
     assert_eq!(sk3.constraints[0].args[2].num(), 4.0);
     // a broken one loads with the value it carried
     let stale = r#"{"points": [{"x": 0, "y": 0}, {"x": 5, "y": 0}],
                     "constraints": [{"type": "Distance", "args": [["point", 0], ["point", 1],
-                                     {"expr": "gone * 2", "value": 8}]}]}"#;
+                                     {"expr": "gone * gone", "value": 8}]}]}"#;
     let sk4 = io::loads(stale).unwrap();
     assert_eq!(sk4.constraints[0].args[2].num(), 8.0);
     // and text that is not an expression at all is refused
@@ -278,16 +248,16 @@ fn documents_carry_text_and_value_and_accept_bare_strings() {
 
 #[test]
 fn the_binding_record_keeps_numbers_and_adds_the_text() {
-    let (mut sk, ids) = three(["w := 3", "h := w * 2", "5"]);
+    let (mut sk, ids) = three(["1 + 2", "3 * 2", "5"]);
     expr::set_dimension(&mut sk, ids[2], "d", "5").unwrap();   // a bare number: no expression
     let j = report::constraint_json(&sk, sk.constraint(ids[1]).unwrap());
     assert_eq!(j.get("args").unwrap().arr()[2].as_f64(), 6.0);
-    assert_eq!(j.get("exprs").unwrap().get("d").unwrap().as_str(), "h := w * 2");
+    assert_eq!(j.get("exprs").unwrap().get("d").unwrap().as_str(), "3 * 2");
     let j = report::constraint_json(&sk, sk.constraint(ids[2]).unwrap());
     assert!(j.get("exprs").is_none());
     // a binding may also add a constraint with a text dimension
     let v = gcs_core::json::parse(
-        r#"{"type": "Distance", "args": [["point", 0], ["point", 1], "w + 1"]}"#).unwrap();
+        r#"{"type": "Distance", "args": [["point", 0], ["point", 1], "3 + 1"]}"#).unwrap();
     let c = report::constraint_from_json(&sk, &v).unwrap();
     let id = sk.add(c);
     assert_eq!(value(&sk, id), 4.0);
@@ -308,51 +278,41 @@ fn the_binding_record_keeps_numbers_and_adds_the_text() {
     assert_eq!(report::constraint_from_json(&sk2, &ang).unwrap().args[2],
                Arg::Num(30f64.to_radians()));
     let ang = gcs_core::json::parse(
-        r#"{"type": "Angle", "args": [["line", 0], ["line", 1], "a := 30"]}"#).unwrap();
+        r#"{"type": "Angle", "args": [["line", 0], ["line", 1], "15 * 2"]}"#).unwrap();
     let id = sk2.add(report::constraint_from_json(&sk2, &ang).unwrap());
     assert!((value(&sk2, id) - 30f64.to_radians()).abs() < 1e-12);
-    // the report lists them in evaluation order
+    // the report lists them in document order
     let items = report::exprs_json(&mut sk);
     let texts: Vec<&str> = items.arr().iter().map(|it| it.get("text").unwrap().as_str()).collect();
-    assert_eq!(texts, vec!["w := 3", "h := w * 2", "w + 1"]);
+    assert_eq!(texts, vec!["1 + 2", "3 * 2", "3 + 1"]);
 }
 
 #[test]
 fn describe_and_callout_text() {
-    let (sk, ids) = three(["w := 3", "h := w * 2", "sin(h * 5)"]);
+    let (sk, ids) = three(["1 + 2", "3 * 2", "sin(6 * 5)"]);
     let c = |i: usize| sk.constraint(ids[i]).unwrap();
-    assert_eq!(io::describe(c(0)), "P0 distance(w := 3 = 3) P1");
-    assert_eq!(io::describe(c(1)), "P2 distance(h := w * 2 = 6) P3");
-    assert_eq!(io::describe(c(2)), "P4 distance(sin(h * 5) = 0.5) P5");
+    assert_eq!(io::describe(c(0)), "P0 distance(1 + 2 = 3) P1");
+    assert_eq!(io::describe(c(2)), "P4 distance(sin(6 * 5) = 0.5) P5");
     // the drawing carries the expression; what it came to is in the list, above
-    assert_eq!(io::dimension_text(c(0)).unwrap(), "w = 3");
-    assert_eq!(io::dimension_text(c(1)).unwrap(), "h = w * 2");
-    assert_eq!(io::dimension_text(c(2)).unwrap(), "sin(h * 5)");
+    assert_eq!(io::dimension_text(c(0)).unwrap(), "1 + 2");
+    assert_eq!(io::dimension_text(c(2)).unwrap(), "sin(6 * 5)");
 }
 
 #[test]
-fn expressions_survive_rebuilds_and_a_paste_reports_its_duplicates() {
-    let (sk, ids) = three(["w := 3", "h := w * 2", "h + 1"]);
-    // deleting the definition: the readers keep their numbers and say what is missing
-    let sk2 = io::without(&sk, &[], &[ids[0]]);
+fn expressions_survive_rebuilds_and_a_paste() {
+    let (sk, ids) = three(["1 + 2", "3 * 2", "6 + 1"]);
+    // deleting one: the others keep their texts and numbers
+    let mut sk2 = io::without(&sk, &[], &[ids[0]]);
     assert_eq!(sk2.constraints.len(), 2);
     assert_eq!(sk2.constraints[0].args[2].num(), 6.0);
-    let mut sk2 = sk2;
-    let items = expr::evaluate(&mut sk2);
-    // nothing defines `w` any more, so it is a free variable and `h` is still twice it: the
-    // relation survives its definition, and the drawing does not move
-    assert_eq!(items[0].error, None);
-    assert_eq!(items[0].free, vec!["w".to_string()]);
-    assert_eq!(items[0].value, 6.0);
-    // a copy of everything pasted back: every name is now defined twice
+    assert!(expr::evaluate(&mut sk2).iter().all(|it| it.error.is_none()));
+    // a copy of everything pasted back keeps them too
     let clip = io::copy(&sk, &sk.primitives());
     let mut doc = sk.clone();
     io::paste(&mut doc, &clip, 100.0, 0.0);
     assert_eq!(doc.constraints.len(), 6);
-    let items = expr::evaluate(&mut doc);
-    let dups = items.iter().filter(|it| it.error.as_deref() == Some("`w` is defined more than once")).count();
-    assert!(dups >= 2, "{items:?}");
-    assert_eq!(doc.constraints[4].args[2].num(), 6.0);   // the pasted h kept its number
+    assert!(expr::evaluate(&mut doc).iter().all(|it| it.error.is_none()));
+    assert_eq!(doc.constraints[4].args[2].num(), 6.0);
     // the part a drag works on is a rebuild too: its expressions come along as numbers
     let part = io::Part::around(&sk, EntRef::point(2));
     assert_eq!(part.sketch.constraints[0].args[2].num(), 6.0);
@@ -365,38 +325,33 @@ fn expressions_survive_rebuilds_and_a_paste_reports_its_duplicates() {
 /// coincidence.
 #[test]
 fn pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_edited() {
-    let mut sk = examples::pythagoras(30.0, 40.0);
     let hypotenuses = |sk: &Sketch| -> Vec<f64> {
         let n = sk.lines.len();
         (n - 4..n).map(|i| sk.line_length(i)).collect()
     };
-    let by_text = |sk: &Sketch, t: &str| sk.constraints.iter().find(|c| c.expr_text("d") == Some(t)).unwrap().id;
-    let check = |sk: &mut Sketch, a: f64, b: f64| {
-        assert!(solve(sk, SolveOpts::default()).success);
+    let check = |a: f64, b: f64| {
+        let mut sk = examples::pythagoras(a, b);
+        assert!(solve(&mut sk, SolveOpts::default()).success);
         let c = a.hypot(b);
-        for h in hypotenuses(sk) {
+        for h in hypotenuses(&sk) {
             assert!((h - c).abs() < 1e-6, "hypotenuse {h} for legs {a}, {b}");
         }
-        let cc = sk.constraint(by_text(sk, "c := hypot(a, b)")).unwrap();
-        assert!((cc.args[2].num() - c).abs() < 1e-9);   // the expression computed it
-        assert!(cc.error(sk) < 1e-6);                      // and the figure agrees
-        assert_eq!(io::dimension_text(cc).unwrap(), "c = hypot(a, b)");   // drawn as written
-        assert!(cc.claim, "the hypotenuse is stated as a claim");
+        let cc = sk.constraints.iter().find(|c| c.claim).unwrap();
+        assert!((cc.args[2].num() - c).abs() < 1e-9);   // the source computed it
+        assert!(cc.error(&sk) < 1e-6);                     // and the figure agrees
+        assert_eq!(cc.written.as_deref(), Some("c"));     // drawn as written
         let cc_id = cc.id;
-        let d = diagnose(sk, DiagnoseOptions::default());
+        let d = diagnose(&mut sk, DiagnoseOptions::default());
         assert_eq!((d.dof, d.n_redundant), (0, 0), "a claim is no equation");
         assert_eq!(d.claims_theorem, vec![cc_id], "the construction already holds it");
         assert!(d.claims_violated.is_empty() && d.claims_consuming.is_empty());
         assert!(d.violated.is_empty() && d.conflicts.as_deref().unwrap_or(&[]).is_empty());
     };
-    check(&mut sk, 30.0, 40.0);
-    // edit a leg: everything that reads `a` follows, and the theorem still holds
-    let a_id = by_text(&sk, "a := 30");
-    assert_eq!(expr::set_dimension(&mut sk, a_id, "d", "a := 50").unwrap(), None);
-    check(&mut sk, 50.0, 40.0);
-    let b_id = by_text(&sk, "b := 40");
-    assert_eq!(expr::set_dimension(&mut sk, b_id, "d", "b := 12").unwrap(), None);
-    check(&mut sk, 50.0, 12.0);
+    // the legs are the document's inputs: everything that reads `a` follows, and the theorem
+    // still holds
+    check(30.0, 40.0);
+    check(50.0, 40.0);
+    check(50.0, 12.0);
     // and the case library builds it with any legs
     let sk2 = examples::case("pythagoras:5:12").unwrap();
     assert!((hypotenuses(&sk2)[0] - 13.0).abs() < 1e-9);
@@ -470,7 +425,6 @@ fn a_mixed_number_is_kept_as_written_rather_than_collapsed() {
     assert!(expr::notation("1' 6 3/16\""), "feet and inches is one literal");
     assert!(!expr::notation("5"), "digits already; nothing to remember");
     assert!(!expr::notation("-2.5"));
-    assert!(!expr::notation("w := 3 1/2"), "a name is not a notation");
     assert!(!expr::notation("3 1/2 + w"));
     assert!(!expr::notation("1/2"), "a division is a computation");
 }
@@ -489,9 +443,6 @@ fn a_dimension_written_as_a_fraction_is_drawn_as_one() {
     assert_eq!(c.args[2].num(), 3.125, "and the graph still has the number");
     assert!(solve(&mut sk, SolveOpts::default()).success);
 
-    // and a named one keeps both halves of what was typed
-    expr::set_dimension(&mut sk, id, "d", "w := 2 1/4").unwrap();
-    assert_eq!(io::dimension_text(sk.constraint(id).unwrap()).as_deref(), Some("w = 2 1/4"));
 }
 
 #[test]
@@ -735,25 +686,6 @@ fn an_angle_may_be_written_in_terms_of_a_free_variable() {
     };
     assert!(close(ang(l3) - ang(l1), (ang(l2) - ang(l1)) / 2.0),
             "{} {} {}", ang(l1), ang(l2), ang(l3));
-}
-
-/// A document whose expressions are loaded is evaluated once, when all of them are there.  A
-/// reader that arrives before its definer is not a free variable — it is one whose turn has not
-/// come — so a document with no free variables in it comes back with none, and with no unknown
-/// allocated and retired along the way.
-#[test]
-fn a_reader_loaded_before_its_definer_is_not_a_free_variable() {
-    let (sk, _) = three(["h := w * 2", "w := 3", "1"]);
-    // built one at a time, `w` really was free for as long as it took its definition to arrive,
-    // and the slot it took is retired — which the rebuild walk is what reclaims
-    let names = |s: &Sketch| -> Vec<String> {
-        s.params.iter().filter(|p| p.name.starts_with('$')).map(|p| p.name.clone()).collect()
-    };
-    assert_eq!(names(&sk), vec!["$w".to_string()]);
-    for back in [io::loads(&io::dumps(&sk, Some(1))).unwrap(), io::without(&sk, &[], &[])] {
-        assert!(back.free_vars.is_empty(), "{:?}", back.free_vars);
-        assert!(names(&back).is_empty(), "a batch walk allocated an unknown it then retired");
-    }
 }
 
 /// A dot *between* identifier characters is part of the name, so a curve can be written over

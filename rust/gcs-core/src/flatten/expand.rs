@@ -70,10 +70,8 @@ impl<'a> Walk<'a> {
                 vals.entry(k).or_insert(v);
             }
         }
-        // every `param` and named dimension of the body, whatever line it stands on — a body
-        // is a set (P2)
-        let mut graph = scope.graph.clone();
-        self.params(body, vals, &mut graph, scope);
+        // every `param` of the body, whatever line it stands on — a body is a set (P2)
+        self.params(body, vals, scope);
         // Remember ambient numbers so accidental capture gets an explicit diagnostic.
         if depth == 0 {
             self.file_vals = vals.clone();
@@ -88,7 +86,7 @@ impl<'a> Walk<'a> {
             StmtKind::Group(g) => Some(g.name.text.clone()),
             _ => None,
         }));
-        let scope = &Scope { vals: vals.clone(), graph, groups, ..scope.clone() };
+        let scope = &Scope { vals: vals.clone(), groups, ..scope.clone() };
         for st in body {
             if self.emitted() >= MAX_FLAT {
                 self.err(
@@ -228,7 +226,6 @@ impl<'a> Walk<'a> {
                             c.0.extend(inst.class.0.iter().cloned());
                             c
                         },
-                        graph: BTreeMap::new(),
                         // the sides this instance was given, and no others: a component reads a
                         // side by the name of its own formal, as it reads every other argument
                         sides,
@@ -290,8 +287,11 @@ impl<'a> Walk<'a> {
                                     self.note_dim_reads(text, *span, vals, scope);
                                     match self.settle_text(text, vals, scope) {
                                         Ok(t) => *text = t,
-                                        Err(e) => {
-                                            self.err(Code::E103, *span, format!("`{text}`: {e}"))
+                                        Err((code, e)) => {
+                                            if code == Code::E101 {
+                                                self.refused.push(*span);
+                                            }
+                                            self.err(code, *span, format!("`{text}`: {e}"))
                                         }
                                     }
                                 }
@@ -459,7 +459,6 @@ impl<'a> Walk<'a> {
                 vals: sub.clone(),
                 in_plane: scope.in_plane.clone(),
                 in_class: scope.in_class.clone(),
-                graph: scope.graph.clone(),
                 sides: scope.sides.clone(),
                 module: scope.module,
             };

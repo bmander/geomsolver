@@ -2,9 +2,8 @@
 // view folded from it, and the two related in space — a shaft angle and an offset, the two numbers
 // a crossed-axis gear pair (a hypoid, a worm, a crossed helical) is specified by.
 //
-// The side view's fold is not stated.  `fold: beta` names nothing the document defines, so `beta`
-// is a free variable (the CLI says W111) and the solve answers for it; the `hint` is only where it
-// starts.  The pinion's axis is drawn level in its view, from its datum and 60 long, which leaves
+// The side view's fold is not stated.  `fold: beta` reads `param beta: Angle`, an input nothing
+// binds, so the solve answers for it; its `hint` is only where it starts.  The pinion's axis is drawn level in its view, from its datum and 60 long, which leaves
 // it one freedom there: its height.  The two statements across the views settle the two unknowns —
 // `angle` between lines of different views is the unsigned angle between their directions in
 // space, and `distance` their common perpendicular.  29 unknowns, 29 equations, DOF 0.
@@ -30,7 +29,8 @@ fix(x == 0, y == 50) gax.p2
 
 o2 := point hint(x: 120, y: 0)
 t2 := point hint(x: 160, y: 0)
-side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
+param beta: Angle hint(30deg)
+side := plane(origin: o2, toward: t2, from: front, fold: beta)
 pax := line(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
 pax.p1 distance(0, along: u) side
 pax.p2 distance(60, along: u) side

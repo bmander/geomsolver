@@ -233,6 +233,22 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
+                (Ty::Group | Ty::Ent(_), InstVal::Hint(_)) => self.err(Code::E103, a.span,
+                    format!("`{}` is not a number, so there is nothing to seed", f.name.text)),
+                // `beta: hint(15deg)` — the formal stays unbound, an unknown of the drawing like
+                // any unbound numeric formal (below), and its solve begins at the number
+                (ty @ (Ty::Int | Ty::Scalar | Ty::Length | Ty::Angle), InstVal::Hint(t)) => {
+                    let name = format!("{prefix}{}.{}", inst.name.text, f.name.text);
+                    match self.seed_number(t, *ty, vals) {
+                        Ok(v) if *ty != Ty::Int => {
+                            let declared = crate::model::Declared { dim: ty.dim(), seed: Some(v) };
+                            self.unknowns.insert(name, declared);
+                        }
+                        Ok(_) => self.err(Code::E103, a.span,
+                            format!("`{}` is a count, which is never an unknown", f.name.text)),
+                        Err(e) => self.err(Code::E103, a.span, format!("`{t}`: {e}")),
+                    }
+                }
                 (Ty::Group, InstVal::Expr(t)) => self.err(Code::E103, a.span,
                     format!("`{}` wants a group or layout instance, not `{t}`", f.name.text)),
                 (Ty::Ent(_), InstVal::Ref(r)) => {
@@ -255,7 +271,7 @@ impl<'a> Walk<'a> {
                     let w = match v {
                         InstVal::Ref(r) if r.path.is_empty() => r.root.text.clone(),
                         InstVal::Ref(r) => r.root.text.clone(),
-                        InstVal::Expr(t) => t.clone(),
+                        InstVal::Expr(t) | InstVal::Hint(t) => t.clone(),
                         InstVal::Group(_) => unreachable!("refused by the first arm"),
                     };
                     let w = scope.sides.get(&w).cloned().unwrap_or(w);
@@ -280,12 +296,11 @@ impl<'a> Walk<'a> {
                 }
             }
         }
-        // A numeric formal the instance leaves unbound is an **unknown of the drawing**: the
-        // language already makes a name nothing defines a free variable, and this is that
-        // rule applied to a formal — a leg drawn with its crank angle unbound has a crank that
-        // turns.  Named under the instance's own prefix (`leg.theta`), so two instances that
-        // leave the same formal unbound have two unknowns and not one shared one — and inside
-        // a traced component the name is no column of the curve, which is how a nested
+        // A numeric formal the instance leaves unbound is an **unknown of the drawing**, as an
+        // input with no value is at the top of a document — a leg drawn with its crank angle
+        // unbound has a crank that turns.  Named under the instance's own prefix (`leg.theta`), so
+        // two instances that leave the same formal unbound have two unknowns and not one shared one
+        // — and inside a traced component the name is no column of the curve, which is how a nested
         // instance's unbound formal is reported rather than captured by an outer one's.
         for f in &comp.formals {
             if f.ty == Ty::Group && !inst.args.iter().enumerate().any(|(i, a)|
@@ -325,7 +340,7 @@ impl<'a> Walk<'a> {
         for (name, v) in &used {
             vals.insert(name.clone(), v.clone());
         }
-        self.params(&body, &mut vals, &mut BTreeMap::new(), &scope);
+        self.params(&body, &mut vals, &scope);
         // and only its own go out: a file reaches another module's numbers through a `use` of
         // its own, so passing these on would only lengthen their names at every level
         vals.retain(|name, _| !used.contains_key(name));

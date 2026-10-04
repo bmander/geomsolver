@@ -259,13 +259,20 @@ fn a_pinned_curve_parameter_survives() {
 /// `==` is taken verbatim rather than tokenized here.
 #[test]
 fn a_dimension_expression_is_kept_as_written() {
-    let sk = examples::case("pythagoras").unwrap();
+    let src = "param s: Length hint(20)\na := point\nb := point hint(x: 10, y: 0)\n\
+               c := point hint(x: 0, y: 10)\nfix(x == 0, y == 0) a\n\
+               a distance(s / 2) b\na distance(sin(30) * s) c\n";
+    let (p, errs) = gcs_core::syntax::parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let sk = elaborate(&p).sketch;
     let text = to_program(&sk).text().to_string();
-    for want in ["a := 30", "b := 40", "c := hypot(a, b)"] {
+    // the texts as written, and the unknown they read declared, seeded where it stands
+    for want in ["param s: Length hint(", "distance(s / 2)", "distance(sin(30) * s)"] {
         assert!(text.contains(want), "`{want}` is not in\n{text}");
     }
-    let back = elaborate(&to_program(&sk)).sketch;
-    assert_eq!(io::dumps(&back, Some(1)), io::dumps(&sk, Some(1)));
+    let back = elaborate(&to_program(&sk));
+    assert!(back.ok(), "{:?}", back.diags);
+    assert_eq!(io::dumps(&back.sketch, Some(1)), io::dumps(&sk, Some(1)));
 }
 
 /// An angle is radians in the model and degrees in every text, and the conversion happens once,
@@ -527,7 +534,8 @@ horizontal ab
 ab perpendicular bc
 bc perpendicular cd
 cd perpendicular da
-a distance(w := 100) b
+param w := 100
+a distance(w) b
 b distance(w) c
 radius(w / 5) hole
 fix(x == 0, y == 0) a

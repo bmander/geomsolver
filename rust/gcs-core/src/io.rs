@@ -1720,9 +1720,7 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
 /// read in — unless the text names its unit already, since `45deg` followed by `°` says it
 /// twice (#43.14).  Trimming is all the tidying there is — their spacing is theirs.
 fn as_written(kind: SpecKind, text: &str) -> String {
-    // a dimension named where it is stated reads `w = 60` on paper: `:=` is the language's word
-    // for a definition, and a drawing is read by people who never typed one
-    let t = read_literals(text.trim()).replacen(" := ", " = ", 1);
+    let t = read_literals(text.trim());
     if kind == SpecKind::Angle && !expr::names_unit(&t) { format!("{t}°") } else { t }
 }
 
@@ -1796,7 +1794,7 @@ pub fn dimension_text(c: &Constraint) -> Option<String> {
     // a dimension the elaborator worked out from a name is drawn with the name — `w`, not the
     // `100` the flattener settled it to — and verbatim: it names something, so no degree sign
     if let Some(w) = &c.written {
-        return Some(w.trim().replacen(" := ", " = ", 1));
+        return Some(w.trim().to_string());
     }
     Some(match &c.args[i] {
         Arg::Expr(e) => as_written(kind, &e.text),

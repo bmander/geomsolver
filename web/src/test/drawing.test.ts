@@ -36,14 +36,14 @@ test('drawing WASM binding resolves relative files and renders selected sheets',
 });
 
 test('a drawing renders only the dimensions it explicitly requests', () => {
-  const part = `${model}a distance(width := 20mm) b\n`
-    + 'c := circle(center: a) hint(r: 5)\nradius(r := 5mm) c\n';
+  const part = `${model}param width := 20mm\na distance(width) b\n`
+    + 'c := circle(center: a) hint(r: 5)\nparam r := 5mm\nradius(r) c\n';
   const render = (request: string) => drawing.render('model m from "part.sv" '
     + `sheet s { sketch v(m) at (30mm,40mm) ${request} }`,
     'part.svd', {'part.sv': part});
   assert.ok(!render('').includes('<text'));
   const one = render('dimension m.width in v');
   assert.equal(one.match(/<text /g)?.length, 1);
-  assert.ok(one.includes('>width = 20mm</text>'));
+  assert.ok(one.includes('>width</text>'), one);
   assert.equal(render('dimensions in v').match(/<text /g)?.length, 2);
 });

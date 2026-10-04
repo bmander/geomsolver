@@ -302,7 +302,8 @@ fn the_stride_stands_on_the_ground_twice() {
 fn the_stride_bends_at_a_stated_radius() {
     let mut e = on_level_ground(
         "k := point hint(x: -45, y: 50)\nosc := circle(center: k) hint(r: 140)\n\
-         path tangent(t == s) ground hint(t: 318)\npath curvature(t == s) osc\nradius(150) osc\n",
+         param s: Angle hint(318)\npath tangent(t == s) ground\npath curvature(t == s) osc\n\
+         radius(150) osc\n",
     );
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);

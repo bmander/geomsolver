@@ -176,6 +176,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // which is `primitives()` order, which is the order phase 2 builds in.
     let expansion = crate::flatten::expand(p, sk.units);
     map.private_names = expansion.private_names.clone();
+    // the unknowns the source declared — a solved fold and the expression graph read their
+    // seeds and dimensions as they are built
+    sk.declared = expansion.unknowns.clone();
     diags.extend(expansion.diagnostics.iter().cloned());
     let mut res = Resolver::default();
     let mut count: BTreeMap<EntKind, u32> = BTreeMap::new();
@@ -266,7 +269,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // every plane's attitude, before any plane is built: a plane folded from another needs
     // the parent's basis, and the build itself must stay in body order (phase 1 assigned the
     // indices in it), so the arithmetic is done here, memoised, and handed to the build
-    let bases = plane_bases(&body, &res, &skip, sk.units, &mut diags);
+    let bases = plane_bases(&body, &res, &skip, sk.units, &sk.declared, &mut diags);
 
     // -- phase 2: geometry, per kind in `primitives()` order.  The same walk `io::from_json`
     // makes, through the same constructors, so the two produce the same parameter vector.
@@ -421,19 +424,12 @@ pub fn elaborate(p: &Program) -> Elaborated {
     edges::edges(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     spatial_faces::faces(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
 
-    // -- phase 4: every expression against the whole document, once.  Per-statement evaluation
-    // would be quadratic in the expression count and would make a dimension whose definition is
-    // further down the file briefly a free variable — allocating an unknown the next pass retires.
-    // the claims about solids read the free variables `evaluate` allocates, so they come after
-    // it — the one pass of the elaboration that is *below* the expressions
+    // -- phase 4: every expression against the whole document, once (per-statement evaluation would
+    // be quadratic in the expression count).  The claims about solids read the free variables
+    // `evaluate` allocates, so they come after it — the one pass of the elaboration that is *below*
+    // the expressions
     let post_expr = expr::evaluate(&mut sk);
     solid_claims(&mut sk, &res, &mut map, &body, &skip, &mut diags);
-    // W111 is said once per unknown, where it is first read, and only of a name nothing
-    // declares: that is the misspelling which quietly adds a freedom.  A numeric formal left
-    // unbound was declared, and leaving it is how a component asks the solve for a number.
-    let mut said: BTreeSet<String> = expansion.instances.iter()
-        .flat_map(|i| i.values.values().filter_map(|a| a.free.clone()))
-        .collect();
     for item in post_expr {
         let span = map.site_of_constraint(item.id).map(|s| s.span).unwrap_or_default();
         let stmt = map.site_of_constraint(item.id).map(|s| s.stmt);
@@ -451,17 +447,6 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 expr::Fault::Place => (Code::E040, ""),
             };
             diags.push(Diag { code, span, stmt, message: format!("`{}`: {err}{tail}", item.text) });
-        } else {
-            for name in item.free {
-                if said.insert(name.clone()) {
-                    diags.push(Diag {
-                        code: Code::W111,
-                        span,
-                        stmt,
-                        message: format!("`{name}` is a free variable: the solver answers for it"),
-                    });
-                }
-            }
         }
     }
 

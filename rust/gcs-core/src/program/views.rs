@@ -8,8 +8,9 @@
 //!
 //! - `attitude: free` — the quaternion free (three freedoms and a `quat_unit` row), the offset
 //!   held where the seed stood it;
-//! - `fold: E` over a name nothing defines — a hinge to the parent whose fold is that free
-//!   variable (`CKind::Hinge`, the free twin), the parent given held unknowns if it is stated;
+//! - `fold: E` over an unknown (`param beta: Angle`, a formal no call binds) — a hinge to the
+//!   parent whose fold is that unknown (`CKind::Hinge`, the free twin), the parent given held
+//!   unknowns if it is stated;
 //! - `from: P, fold: θ` or `offset: k` where `P` is solved — a hinge whose turn is a constant;
 //! - `fold: along l` — a hinge along `l`'s bearing in the parent, and the offset solved so `l`'s
 //!   first end is in the view (`CKind::HingeAlong` and a `PointOnPlane`);
@@ -94,7 +95,7 @@ fn one(
     let parent = d.attitude.plane_ref().and_then(|r| res.lookup(r)).filter(|e| e.kind == EntKind::Plane)
         .map(|e| e.i());
     let parent_solved = parent.is_some_and(|p| sk.planes[p].att.is_some());
-    // is the fold an unknown: an expression over a name nothing defines
+    // is the fold an unknown: an expression over a declared one (`param beta: Angle`)
     let free_fold = match &d.attitude {
         Attitude::From { fold, .. } => fold_aff(fold, sk.units).ok().filter(|a| a.free.is_some()),
         _ => None,
@@ -106,6 +107,8 @@ fn one(
             "fold" if free_fold.is_none() => {
                 Some("the fold is stated; a seed is for one solved for, `fold: beta`")
             }
+            "fold" => Some("the fold reads an unknown, which is seeded where it is declared: \
+                            `param beta: Angle hint(30deg)`"),
             "u" | "v" if !matches!(d.attitude, Attitude::Free { .. }) => {
                 Some("the attitude is stated; a seed is for one solved for, `attitude: free`")
             }
@@ -282,18 +285,9 @@ fn one(
             sk.hold_attitude(p);
             let (text, deg) = match (&free_fold, fold) {
                 (Some(a), crate::syntax::Arg::Dim { text, .. }) => {
-                    // where the basis was folded to: the seed, or the expression at nothing
-                    let deg = d.plane.hint("fold")
-                        .and_then(|h| h.args.first())
-                        .and_then(|a| match a {
-                            crate::syntax::Arg::Dim { text, .. } => {
-                                crate::flatten::value_aff(text, &BTreeMap::new(), sk.units).ok()
-                            }
-                            _ => None,
-                        })
-                        .and_then(|a| a.number())
-                        .unwrap_or(a.c);
-                    (Some(text.clone()), deg)
+                    // where the basis was folded to: the unknown's seed, or the expression at
+                    // nothing
+                    (Some(text.clone()), super::planes::fold_start(a, &sk.declared))
                 }
                 (_, _) => (None, fold_aff(fold, sk.units).map_or(0.0, |a| a.c)),
             };

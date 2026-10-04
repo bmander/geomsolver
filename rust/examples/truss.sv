@@ -9,9 +9,9 @@
 // *is*.  Writing out the thirty-odd numbers they come to would say only what this particular one
 // happened to measure — and would stop being true the moment the span changed.
 
-bays := 8
-span := 20
-height := 15
+param bays := 8
+param span := 20
+param height := 15
 
 web := hypot(span / 2, height)
 

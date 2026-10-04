@@ -14,7 +14,8 @@ drawing satisfies them, then check that the diagnosis agrees (1.16).
 |---|---|
 | `p := point hint(x: 30, y: 10)` | start the point here; the solver may move it |
 | `a distance(40) b` | require the distance to be 40 |
-| `w := 40` | a param: arithmetic done while elaborating, never an unknown |
+| `w := 40` | a value: arithmetic done while elaborating, never an unknown |
+| `param a: Length` | an unknown the solve answers for, declared (1.6) |
 | `claim vertical rail` | check a consequence without enforcing it (1.10) |
 
 Deleting every seed leaves the set of solutions unchanged, without exception: a held number is
@@ -55,7 +56,7 @@ A newline ends a statement, except inside brackets, after a trailing chain joint
 |---|---|---|
 | `hint(x: 0, y: 0)`, `hint(r: 25)`, `hint(t: 0.4)` | seed | where the solve begins; the solver may move it |
 | `distance(80)`, `angle(30deg)`, `t == 0.4` | constraint | must hold; never rewritten |
-| `w := 100` | param | arithmetic done while elaborating; never an unknown |
+| `w := 100`, `param w := 100` | value | arithmetic done while elaborating; never an unknown |
 
 Use seeds to select a useful starting pose and constraints to express the design.
 
@@ -67,14 +68,17 @@ the radius a guess.
 
 **A name is defined one way: `NAME := VALUE`.** The value may be a number, an element, a chain, an
 instance, a group or a curve. `(NAME := VALUE)` is itself a value, so a name can be introduced
-where the value stands: a chain link `(ab := line(a, b)) -> …`, or a dimension's number
-`a distance(w := 60) b`. `:=` binds loosest, which is why a link is named inside parentheses. A
-`label:` never defines a name; it fills a slot (an argument, a child, a hint key, a group member).
+where the value stands: a chain link `(ab := line(a, b)) -> …`. A dimension's number defines no
+name. `:=` binds loosest, which is why a link is named inside parentheses. A `label:` never
+defines a name; it fills a slot (an argument, a child, a hint key, a group member). `param`
+before a definition marks one of the document's inputs, and `param NAME: TYPE` with no value
+declares an unknown (1.6).
 
 ```
 use NAME[.NAME...]                      import a module                             (1.12)
 unit NAME                               the unit the document's numbers are in       (1.6)
-NAME := EXPR                            a param                                      (1.6)
+NAME := EXPR                            a value                                      (1.6)
+param NAME[: TYPE] [:= EXPR] [hint(E)]  an input; with no value, an unknown          (1.6)
 NAME := {LABEL: VALUE, ...}             values and geometry passed as one argument   (1.8)
 [private] [construction] [NAME :=] KIND[(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)]
      [knots [...]] [in REF]             an entity declaration; every part optional   (1.4)
@@ -83,7 +87,7 @@ NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve 
                                       | , u: (E,E,E), v: (E,E,E)[, o: (E,E,E)]])
                                         a datum (1.11), or a view with an attitude   (1.13)
 NAME := plane(origin: R, toward: R, from: R, fold: NAME | fold: along LINE | ..., through: R
-              | attitude: free[, offset: free]) [hint(fold: E | u: .., v: ..)]
+              | attitude: free[, offset: free]) [hint(u: .., v: .., offset: E)]
                                         a view the solve places                      (1.13)
 NAME := sphere(center: R) | cone(axis: LINE) | cylinder(axis: LINE)  [hint(...)]
                                         a surface in space, on no sheet              (1.13)
@@ -150,7 +154,7 @@ so `lp := point hint(at: inner) in n` starts at `inner`'s image in `n`. A clause
 `x` or `y`. A seed whose constraints fix it without a choice (a midpoint, where two lines cross)
 needs none at all. Seeds settle in statement order, so a seed reading
 one written below reads its provisional start. With a `unit` line, a geometry read is a length:
-write `pin.x - 10mm`, not `pin.x - 10`. A param may **not** read geometry: it feeds constraints,
+write `pin.x - 10mm`, not `pin.x - 10`. A value may **not** read geometry: it feeds constraints,
 and a seed must never change what a document says. Where a numeric formal is unbound (1.8), hints
 read it as a provisional 0; constraints still treat it as unknown.
 
@@ -245,18 +249,18 @@ stands in the parentheses:
   Swapping the lines or reversing one changes the reading.
 - **An angle may equal another angle**, with no number and no unknown: a bisector is
   `ab angle(ad, ac) ad`, a reflection `incoming angle(mirror, outgoing) mirror`. That is one
-  equation; the same tie through a shared free variable is two equations and an unknown (2.15).
+  equation; the same tie through a shared unknown is two equations and an unknown (2.15).
   Two numbers in the parentheses are refused.
 - **`length(L) a`** is only for arcs (a line's length is `distance`; a circle has no ends). The
   sweep is read counter-clockwise in `(0°, 360°]`, so measure the long way round by going round
-  counter-clockwise. It may read a free variable and is drawn with a `⌒` mark.
+  counter-clockwise. It may read an unknown and is drawn with a `⌒` mark.
 
 **Slots a constraint owns** (a contact's curve parameter, always called `t`) are normally omitted.
 Seed one with `p on s hint(t: 0.4)`; pin one with `p on(t == 0.4) s`.
-Pin one to a name nothing defines and it is an unknown that contacts on the same curve share:
-`path tangent(t == s) ground hint(t: 318)` and `path curvature(t == s) osc` state the circle
-osculating the path *where* it touches the ground — one place, one parameter. The first contact
-naming `s` seeds it; a contact on another curve pinned to `s` is refused (E040).
+Pin one to an unknown and contacts on the same curve share it: with `param s: Angle hint(318)`,
+`path tangent(t == s) ground` and `path curvature(t == s) osc` state the circle osculating the
+path *where* it touches the ground — one place, one parameter, seeded where it is declared (a
+`hint(t: …)` beside the pin is E040). A contact on another curve pinned to `s` is refused (E040).
 
 **Tangency trap.** If the contact point is already held on the circle, state the tangency *at*
 it: `line tangent(at: p2) circle`, `arc tangent(at: start) line`. `p on circle` plus a bare
@@ -288,29 +292,32 @@ mean the same in every view.
 **Expressions.** `+ - * / ^`, parentheses, `pi`, and `sqrt abs sin cos tan asin acos atan atan2
 exp ln log floor ceil round min max hypot`. **Trigonometry is in degrees.**
 
-**Params.** `w := 60` as a statement is worked out while elaborating; never an unknown or a seed.
-A param may read others written anywhere in its body or an enclosing one; one defined in terms of
-itself is E041.
+**Values.** `w := 60` as a statement is worked out while elaborating; never an unknown or a seed.
+A value may read others written anywhere in its body or an enclosing one; one defined in terms of
+itself is E041. A dimension's number reads names and defines none: write `w := 60`, then
+`a distance(w) b`. Its callout reads `w`, and typing a number over it changes the line `w` is
+defined on.
 
-**Named dimensions.** Put the definition where the dimension's number goes:
+**Inputs.** `param` before a definition marks a number the document takes from outside — the
+one kind a host may give another value (the case library's arguments, `examples::with_params`):
 
 ```
-a distance(w := 60) b            // states 60 and names it w
-c distance(w / 2) d              // reads it
+param bore: Length := 50mm        // an input with a value; the type is optional
+param beta: Angle hint(30deg)     // an input nothing binds: an unknown, seeded
+stroke := bore * 1.2              // a value
 ```
 
-A named dimension declares `w` in its body exactly as `w := 60` would: params, seeds and counts
-may read it, and a second `w` of either kind is E001. The two differ only in where the number is
-edited — a param in the source, a named dimension on the drawing. Only the outermost form may
-define (`distance(2 * (w := 30))` does not parse). A callout reads `w = 60`.
-
-**Free variables.** A name nothing defines is one unknown of the sketch, tying together every
-dimension that reads it (W111, said once, where it is first read; a numeric formal left unbound
-is the same unknown, declared, and not warned). The tie must be affine in one free name (`a`,
-`a / 2`, `2 * a + 5`); `a * a`, `sin(a)` and two free names in one dimension are errors. Inside a
-component the unknown belongs to the instance (`t1.w`, `t2.w`), so a component cannot reach a
-name the enclosing document happens to define. To equate two angles, prefer
-`l1 angle(l3, l4) l2` (1.5).
+**Unknowns are declared.** An input with no value is one unknown of the drawing, tying together
+everything that reads it: a dimension (`a distance(beta) b`), a fold (`fold: beta`, 1.13), a
+contact's place (`t == s`, 1.5), a value over it (`q := 2 * beta`). It names its type — `Length`,
+`Angle` or `Scalar` — since nothing else says what it is, and its seed is its `hint(…)`, which a
+solve writes back. Inside a component the unknowns are the formals a call leaves unbound (1.8).
+**A name nothing declares is E101**, wherever it is read: a misspelling is never a degree of
+freedom. The tie must be affine in one unknown (`a`, `a / 2`, `2 * a + 5`); `a * a`, `sin(a)` and
+two unknowns in one dimension are errors, as is reading a declared `Length` where an angle goes.
+`param` stands at the top of a document (or its `preview`): a component's inputs are its formals,
+a block's copies share the document's, and a module's numbers have values. To equate two angles,
+prefer `l1 angle(l3, l4) l2` (1.5).
 
 **Dimensions are checked.** Two base dimensions, length and angle. `*` and `/` derive, `+` and `-`
 demand agreement, and the result is checked against its slot: `a distance(45deg) b` is an error,
@@ -337,16 +344,15 @@ l angle(45deg) m
 - `pi` is dimensionless; `tau` and `turn` are one full turn. `floor`/`ceil`/`round` take plain
   numbers.
 - **There is no string literal**: `"` is the inch mark, and a word argument is bare (`at: start`).
-- **Built-in names cannot be redeclared.** A param, formal or block index named `tau`, `pi`,
-  `min`, … does not shadow the built-in, and ends up with two values (`tau := 35deg` passed to a
-  `tau: Angle` formal arrives as a full turn). It is W112 at the declaration (refused outright for
-  a named dimension); rename it.
+- **Built-in names cannot be redeclared.** A value, input, formal or block index named `tau`,
+  `pi`, `min`, … does not shadow the built-in, and ends up with two values (`tau := 35deg` passed
+  to a `tau: Angle` formal arrives as a full turn). It is W112 at the declaration; rename it.
 
 **Measurements of the solved drawing.** `length(l)` (line or arc, in space), `radius(c)` (circle,
 arc, sphere, cylinder), `distance(a, b)` (two points, or a point and a line produced) and
 `angle(l1, l2)` (0–180°) take geometry names and read as `Length`/`Angle` under a `unit` line, so
 `length(a) / length(b)` is a plain ratio. They are allowed **only** in a motion's `ratio:`,
-`phase:` and `advance:` (1.15), which are read after the solve. Anywhere else — a param, a seed, a
+`phase:` and `advance:` (1.15), which are read after the solve. Anywhere else — a value, a seed, a
 constraint's number, a solid's extent or placement angle — they are **E107**, because the number
 is needed before there is a solve.
 
@@ -455,9 +461,11 @@ t0 := Rung(l0, r0, len: 50)
   and nothing positional after a label. Either mistake is **E004** at the argument — an argument
   one place off would otherwise bind silently to the wrong formal.
 - **An unbound numeric formal is an unknown** named under the instance (`c.theta`): that is how a
-  mechanism is drawn with its crank free (2.9.1).
+  mechanism is drawn with its crank free (2.9.1). A call seeds one by leaving it unbound with a
+  `hint(…)` in its place, `Crank(o, datum, theta: hint(30deg))`; the body reads it as the instance's
+  own, and the sheet as `c.theta`.
 - **Scope is closed.** A body sees only its formals and its own declarations; root and module
-  params, geometry and standard datums must be passed in. Component definitions (the file's own
+  values, geometry and standard datums must be passed in. Component definitions (the file's own
   bare, a used module's by path) and built-in functions remain callable. Repetition blocks share
   the enclosing component's scope.
 - **Everything an instance makes is public by dotted name** (`t0.e`, `five.s[0].p1`, a named
@@ -524,7 +532,7 @@ part := Bar(design.bar)          // a nested group is handed on like any group
 
 Numeric members keep their units; geometry members alias and add no solver state. A
 component instance can be passed as a group, exposing its geometry (`layout.pivot`,
-`layout.bank[0].axis`) but not its local params — bundle those in an explicit group. A group
+`layout.bank[0].axis`) but not its local values — bundle those in an explicit group. A group
 formal must be supplied, and a missing member is an error. A traced component (1.9) needs fixed
 scalar or entity formals, so pass members individually there.
 
@@ -552,7 +560,7 @@ NAME := Component(ARGS).POINT over FORMAL in (A, B)    an instance written in pl
 
 A component's point is placed one of two ways:
 
-- **Computed**: `p := point(x: XEXPR, y: YEXPR)` over the formals and params. Such a component can
+- **Computed**: `p := point(x: XEXPR, y: YEXPR)` over the formals and values. Such a component can
   only be traced, never drawn (2.8).
 - **By constraints**: any point the body declares, held where the body's statements put it. This
   is how a person states a curve — "the end of a taut string as it unwinds" (2.9). The body must
@@ -581,7 +589,7 @@ solve, count or conflict set; the drawing is identical with it deleted. The diag
 - **consuming** — holds only where the solve happened to land; enforcing it would cost a freedom.
 
 Use claims for what a figure was drawn to show (the altitudes concur; the traced path is
-straight). A claim may not own an unknown, so claiming a curve contact or binding a free variable
+straight). A claim may not own an unknown, so claiming a curve contact or reading an unknown
 is an error.
 
 Three claim words apply only to solids (1.14): `claim bore inside stock`,
@@ -627,9 +635,9 @@ use std                  // std.front, std.up, std.origin; std.ThreeViews (2.10)
 use hardware             // fasteners and fittings: hardware.hexbolt14_af, …
 ```
 
-A module is a Solvent document read for its components and its top-level params and groups; its
+A module is a Solvent document read for its components and its top-level values and groups; its
 own drawing is not drawn. **Nothing is imported bare**: a module's names are always written with
-its full path — `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.vtwin_dims` (params
+its full path — `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.vtwin_dims` (values
 and groups in the root body, components anywhere). A module names its own definitions bare. Only
 modules the file itself `use`s may be named; a transitive import needs its own `use` (the error
 says so), and that includes `std` for `std.front`. Two modules may define one name; two
@@ -643,8 +651,8 @@ origin `std.origin`, created only if referenced. Passing one as an argument does
 unassigned geometry stays on the page unless you write `in std.front`.
 
 **Previews.** A component file may end with one file-level `preview { … }` holding sample datums,
-params and an instance. Opening the file (directly or via a `.svd`) solves those statements;
-`use` omits the whole block, units and params included. Imports resolve beside the opened file and
+values and an instance. Opening the file (directly or via a `.svd`) solves those statements;
+`use` omits the whole block, units and values included. Imports resolve beside the opened file and
 then its ancestors, so a component file opens with the same `use` paths it has in the assembly.
 
 ```sv
@@ -689,17 +697,19 @@ already: E061).
 other datum points they are sheet layout (`o distance(120) o2`); beside points of their own view
 they are that view's datum (`o2 distance(15) b` is an ordinate); otherwise their membership decides.
 
-**A view may be solved for.** A plane is fixed unless its brackets name an unknown; `hint(…)` seeds
-only those (2.11, 2.13):
+**A view may be solved for.** A plane is fixed unless its brackets name an unknown; a plane's
+`hint(…)` seeds only the attitude and offset it leaves free (2.11, 2.13):
 
 ```
-side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
+param beta: Angle hint(30deg)
+side := plane(origin: o2, toward: t2, from: front, fold: beta)
 aux := plane(origin: o3, toward: t3, from: front, fold: along l)
 sec4 := plane(origin: o4, toward: t4, from: front, fold: 0deg, through: m)
 q := plane(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1))
 ```
 
-- `fold: beta` over an undefined name is a free variable (W111) the solve answers.
+- `fold: beta` over a declared unknown (`param beta: Angle`, or a formal no call binds) is a fold
+  the solve answers, seeded by the unknown's own `hint(…)`; `hint(fold: …)` on the plane is E040.
 - `fold: along l` folds square to the parent about line `l` drawn in it, and follows the line.
 - `attitude: free` is three freedoms; `offset: free` is one; `through: m` stands the plane where
   a point of another view is.
@@ -1257,22 +1267,25 @@ p1 distance(h) p2
 fix(x == 0, y == 0) p0
 ```
 
-`w` and `h` are params: 60 and 40 wherever they appear, never unknowns. The chain states nothing
+`w` and `h` are values: 60 and 40 wherever they appear, never unknowns. The chain states nothing
 four separate `horizontal`/`vertical` lines would not; it reads as the outline.
 
-### 2.3 Naming a dimension: DOF 0, well
+### 2.3 An input: DOF 0, well
 
 ```
 // replaces 2.2's two dimensions and its `w :=` and `h :=` lines
-p0 distance(w := 60) p1          // states it and names it
-p1 distance(w / 2) p2            // reads it: the height follows the width
+param w := 60
+p0 distance(w) p1                // states it
+p1 distance(w / 2) p2            // the height follows the width
 ```
 
-Edit the 60 and the height follows. `h := w / 2` and `hint(x: w)` may read `w` too.
+Edit the 60 — in the source, or by typing over the `w` callout — and the height follows.
+`hint(x: w)` may read `w` too, and a host may give the input another value.
 
-### 2.4 A free variable: DOF 1, under, on purpose
+### 2.4 An unknown: DOF 1, under, on purpose
 
 ```
+param s: Length         // an input nothing binds...
 a := point
 b := point hint(x: 10, y: 0)
 c := point hint(x: 0, y: 9)
@@ -1281,13 +1294,13 @@ ab := line(a, b)
 ac := line(a, c)
 horizontal ab
 vertical ac
-a distance(s) b         // s is defined nowhere...
-a distance(s) c         // ...so the two lengths are tied, and their value is the solver's
+a distance(s) b         // ...so the two lengths are tied,
+a distance(s) c         // and their value is the solver's
 fix(x == 0, y == 0) a
 ```
 
 The lengths must agree, but nothing says what they are, so one freedom remains. Give `s` a value
-or add a constraint and it closes. Inside a component, `s` would be per instance (`t1.s`).
+(`param s := 10`) or add a constraint and it closes. Without the `param` line, `s` is E101.
 
 ### 2.5 An arc, tangent to what it joins: DOF 0, well
 
@@ -1431,7 +1444,7 @@ it.
 
 A traced body's dimension may read the numbers of the geometry it is written over (`c.r`): they
 are columns of the curve. Nowhere else may a dimension: `distance(k.r) l` on the sheet, or in a
-component that is drawn, is **E103** (a free variable would be minted for `k.r`, and a drawn
+component that is drawn, is **E103** (an unknown would be minted for `k.r`, and a drawn
 instance would disagree with its own trace). State the relation instead (`l equal m`).
 
 ### 2.9.1 A curve of a drawn instance: DOF 1, under
@@ -1454,7 +1467,7 @@ c := Crank(o, datum)                                  // theta unbound: the cran
 rim := c.p over theta in (0, 360)
 ```
 
-`c.theta` is the one freedom (a declared formal left unbound, so no W111), and `rim` is where
+`c.theta` is the one freedom (a declared formal left unbound), and `rim` is where
 `p` goes over a full turn, anchored at the pose on the sheet: drag `c.p` and the anchor follows.
 `jansen.sv` is this at full size.
 
@@ -1548,7 +1561,8 @@ fix(x == 0, y == 50) gax.p2
 
 o2 := point hint(x: 120, y: 0)
 t2 := point hint(x: 160, y: 0)
-side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)
+param beta: Angle hint(30deg)
+side := plane(origin: o2, toward: t2, from: front, fold: beta)
 pax := line(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
 pax.p1 distance(0, along: u) side
 pax.p2 distance(60, along: u) side
@@ -1558,14 +1572,13 @@ gax angle(90deg) pax      // the shaft angle, in space
 gax distance(17.5) pax    // the offset: the common perpendicular, in space
 ```
 
-`solventc` reports ``warning[W111]: `beta` is a free variable: the solver answers for it``, then
-`27 params, 27 equations, structural rank 27; DOF 0`, and `--where pax` gives `pax.p1.y = 17.5`,
-`pax.p2.y = 17.5`. The axes are in different views, so `angle` and `distance` are spatial: the
-unsigned angle between directions and the common-perpendicular distance. They settle the fold
-`beta` (0°: the side view is the top view, the pinion axis 17.5 behind the gear's, crossing it
-square) and the pinion axis's height. No datum point is grounded; the views' sheet placement is
-held silently (1.13). Without the offset: `27 params, 26 equations, structural rank 26; DOF 1`
-(the pinion axis slides along the common perpendicular). At a 60° shaft angle the fold is 30°.
+`solventc` reports `27 params, 27 equations, structural rank 27; DOF 0`, and `--where pax` gives
+`pax.p1.y = 17.5`, `pax.p2.y = 17.5`. The axes are in different views, so `angle` and `distance` are
+spatial: the unsigned angle between directions and the common-perpendicular distance. They settle
+the fold `beta` (0°: the side view is the top view, the pinion axis 17.5 behind the gear's, crossing
+it square) and the pinion axis's height. No datum point is grounded; the views' sheet placement is
+held silently (1.13). Without the offset: `27 params, 26 equations, structural rank 26; DOF 1` (the
+pinion axis slides along the common perpendicular). At a 60° shaft angle the fold is 30°.
 `skew_axes.sv` adds a shaft about each axis.
 
 ### 2.12 A hypoid's pitch cones through the mean point: DOF 0, well
@@ -1718,8 +1731,8 @@ fix(x == 0, y == 0) a
 ```
 
 `6 params, 6 equations, structural rank 6; DOF 0`, with `d.x = 17.3205`, `d.y = 10`: `ad` at 30°.
-With a shared free variable instead (`ab angle(beta) ad`, `ad angle(beta) ac`) it is
-`7 params, 7 equations` plus a W111 warning — an extra unknown only to be equated away.
+With a shared unknown instead (`param beta: Angle`, `ab angle(beta) ad`, `ad angle(beta) ac`) it
+is `7 params, 7 equations` — an extra unknown only to be equated away.
 `ab angle(ab, ac, sense: cw) ad` puts `ad` at −60°, `ac`'s mirror in `ab`. `reflection.sv` states
 the law of reflection as `incoming angle(m, outgoing) m`, with the classical proof as a `claim`
 judged a theorem.
@@ -1737,7 +1750,8 @@ judged a theorem.
 6. On `conflict`, read the minimal set. On `over`, find the dimension the others imply. On
    `under`, ask what can still move.
 7. Prefer a word to an unknown: equal angles are `l1 angle(l3, l4) l2`, an arc's extent is
-   `length(L) a`, a motion's ratio may measure the drawing.
+   `length(L) a`, a motion's ratio may measure the drawing. An unknown you do need is declared,
+   `param a: Length hint(…)`.
 8. In space, draw each thing in the view that shows it true, relate across views with ordinary
    words, let the solve place a view rather than computing its attitude, and check with
    `--where VIEW`.

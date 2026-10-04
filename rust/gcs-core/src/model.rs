@@ -44,6 +44,14 @@ pub use measure::{
     distance_between, orientation, orientation_xy, increments,
 };
 
+/// An unknown the source declared (`Sketch::declared`): the dimension it was declared with
+/// and, where one was written, the number its solve begins at, in user units (degrees).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Declared {
+    pub dim: crate::units::Dim,
+    pub seed: Option<f64>,
+}
+
 /// A place along one curve that several contacts own (`t == s`): the unknown, and the curve it
 /// runs along, which every owner must stand on (`constraints::validate`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -119,10 +127,10 @@ pub struct Sketch {
     /// only exists for a dimension somebody has moved, and dropping one puts that callout back
     /// where the layout would have placed it.
     pub placements: BTreeMap<u32, (f64, f64)>,
-    /// The free variables the document's dimension expressions read, by name, each an index
-    /// into `params` — see `expr::Free`.  Derived state, owned by `expr::evaluate`: it allocates
-    /// one the first time a name nothing defines is read and retires it when the last reader
-    /// stops reading it, so nothing else in the document has to know they exist.
+    /// The unknowns the document's dimension expressions read, by name, each an index into
+    /// `params` — see `expr::Free`.  Derived state, owned by `expr::evaluate`: it allocates one
+    /// the first time a dimension reads the name (in a Solvent document, a declared unknown) and
+    /// retires it when the last reader stops reading it.
     pub free_vars: BTreeMap<String, u32>,
     /// The contact parameters several contacts own together, by the name they are pinned to
     /// (`path tangent(t == s) ground`) — allocated by `Sketch::add` for the first contact naming
@@ -131,6 +139,11 @@ pub struct Sketch {
     pub shared: BTreeMap<String, SharedPlace>,
     /// Physical dimensions inferred by expression evaluation, in user units (angles in degrees).
     pub free_dimensions: BTreeMap<String, crate::units::Dim>,
+    /// The unknowns the source declared, by name — an input nothing binds (`param beta:
+    /// Angle hint(30deg)`), a formal left unbound with a seed — and what each is: read by
+    /// `expr::evaluate` when it allocates the unknown (its seed, its dimension) and by a
+    /// solved fold.  Set by elaboration and never written to a document.
+    pub declared: BTreeMap<String, Declared>,
     /// Each curve's polyline, remembered against everything it was computed from
     /// (`curve_polyline`).  A pick walks every drawn curve on every pointer move, and a traced
     /// curve's polyline is a march of `CURVE_STEPS` block solves — nine milliseconds a move on

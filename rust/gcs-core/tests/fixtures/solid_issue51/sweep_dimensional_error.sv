@@ -1,4 +1,5 @@
 unit mm
+param reach: Length
 o := point
 fix(x == 0, y == 0) o
 c := circle(center:o) hint(r:1)

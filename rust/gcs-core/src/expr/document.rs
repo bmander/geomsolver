@@ -4,7 +4,7 @@ use super::{eval, literal, parse_in, to_arg_units, to_user_units, Aff, Expr, Fre
 use crate::constraints::{Arg, Constraint, SpecKind};
 use crate::model::Sketch;
 use crate::units::Dim;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// Why an expression could not be used — sorted by what it means for the document, since the
 /// three are not one kind of thing and were reported as one (#43.11).
@@ -18,7 +18,7 @@ pub enum Fault {
     /// unknown would sit in no equation; warned and zeroed, the claim came back *refuted* by
     /// the number the warning had made up.
     ClaimFree,
-    /// It would not compute — a cycle, a name defined twice, a non-number — and the last
+    /// It would not compute — a non-number, two unknowns in one dimension — and the last
     /// number stands, so the solver always has a constant.
     Uncomputable,
     /// It measures the solved drawing (`length(l)`), and a constraint's number is needed
@@ -70,16 +70,14 @@ pub struct ExprItem {
     pub id: u32,
     pub attr: &'static str,
     pub text: String,
-    /// The name it defines, if any.
-    pub name: Option<String>,
     /// Its value in the units a person reads (degrees for an angle) — the number it last
     /// evaluated to, when `error` is set.
     pub value: f64,
     /// The names it reads.
     pub deps: Vec<String>,
-    /// The free names among them — the ones nothing defines, which are unknowns the solver
-    /// moves rather than numbers.  At most one, since a dimension can only follow one; a list
-    /// because that is what a reader wants to be handed, and because the deps beside it are one.
+    /// The free names among them — the unknowns the solver moves rather than numbers.  At most one,
+    /// since a dimension can only follow one; a list because that is what a reader wants to be
+    /// handed, and because the deps beside it are one.
     pub free: Vec<String>,
     pub error: Option<ExprError>,
 }
@@ -91,8 +89,11 @@ struct Node {
     parsed: Result<Parsed, String>,
 }
 
-/// Evaluate dependencies in topological order, breaking ties by document order.
-/// Uncomputable expressions keep their previous values and return diagnostics.
+/// Evaluate every expression in the document, in document order.  A name an expression reads
+/// is an **unknown** (a free variable): nothing in an expression defines a name (the source
+/// defines numbers, and writes them in before a text reaches here), so what a name is worth is
+/// the solver's business.  Uncomputable expressions keep their previous values and return
+/// diagnostics.
 pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     let units = sk.units;
     let mut nodes: Vec<Node> = Vec::new();
@@ -109,72 +110,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             }
         }
     }
-    let n = nodes.len();
-    let mut errors: Vec<Option<ExprError>> = vec![None; n];
-    for (i, nd) in nodes.iter().enumerate() {
-        match &nd.parsed {
-            Err(e) => errors[i] = Some(e.clone().into()),
-            Ok(p) => {
-                if let Some((m, args)) = p.body.measures().first() {
-                    errors[i] =
-                        Some(ExprError::new(Fault::Measure, super::measure_refusal(&m.text(args))));
-                }
-            }
-        }
-    }
-    // who defines what; a name defined twice is nobody's, and every definer is told
-    let mut definers: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-    for (i, nd) in nodes.iter().enumerate() {
-        if let Ok(Parsed { name: Some(name), .. }) = &nd.parsed {
-            definers.entry(name.clone()).or_default().push(i);
-        }
-    }
-    let mut def: BTreeMap<String, usize> = BTreeMap::new();
-    for (name, who) in &definers {
-        if who.len() == 1 {
-            def.insert(name.clone(), who[0]);
-        } else {
-            for &i in who {
-                errors[i] = Some(format!("`{name}` is defined more than once").into());
-            }
-        }
-    }
-    // edges: reader ← definer.  A name nothing defines at all is neither an edge nor an error:
-    // it is a free variable, and what it is worth is the solver's business.  A name several
-    // definitions claim is still an error — it is not undefined, it is ambiguous.
-    let deps: Vec<Vec<String>> = nodes
-        .iter()
-        .map(|nd| match &nd.parsed {
-            Ok(p) => p.body.deps().into_iter().collect(),
-            Err(_) => Vec::new(),
-        })
-        .collect();
-    let mut readers: Vec<Vec<usize>> = vec![Vec::new(); n];
-    let mut indeg = vec![0usize; n];
-    for i in 0..n {
-        for name in &deps[i] {
-            match def.get(name) {
-                Some(&d) => {
-                    readers[d].push(i);
-                    indeg[i] += 1;
-                }
-                None => {
-                    if errors[i].is_none() && definers.contains_key(name) {
-                        errors[i] = Some(format!("`{name}` is defined more than once").into());
-                    }
-                }
-            }
-        }
-    }
-    // the walk
-    let mut ready: BTreeSet<usize> = (0..n).filter(|&i| indeg[i] == 0).collect();
-    let mut order: Vec<usize> = Vec::with_capacity(n);
-    let mut env: BTreeMap<String, Aff> = BTreeMap::new();
-    let mut values: Vec<f64> = nodes
-        .iter()
-        .map(|nd| to_user_units(nd.kind, sk.constraints[nd.ci].args[nd.ai].num()))
-        .collect();
-    let mut free_of: Vec<Vec<String>> = vec![Vec::new(); n];
+    let env: BTreeMap<String, Aff> = BTreeMap::new();
     // the free names actually bound this time round, and what one unit of each is worth in world
     // length — the largest any of its readers makes it, since that is the motion a step buys
     let mut bound: BTreeMap<String, f64> = BTreeMap::new();
@@ -182,48 +118,50 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // a `Length` dimension and an `Angle` one is an error naming both — the one genuinely new
     // piece of analysis units bring, and the only place a dimension is deduced rather than read.
     let mut free_dim: BTreeMap<String, (Dim, &'static str)> = BTreeMap::new();
-    while let Some(&i) = ready.iter().next() {
-        ready.remove(&i);
-        order.push(i);
-        let nd = &nodes[i];
-        if errors[i].is_none() {
-            let parsed = nd.parsed.as_ref().unwrap();
-            let unready =
-                deps[i].iter().filter(|d| def.contains_key(*d)).find(|d| !env.contains_key(*d));
-            if let Some(name) = unready {
-                errors[i] = Some(format!("`{name}` could not be evaluated").into());
-            } else {
-                // work it out, check what it came to against its slot, write it: three steps
-                // that fail the same way, so they are one chain and one error arm
-                let done = (|| -> Result<(f64, Aff), ExprError> {
-                    let a = eval(&parsed.body, &env)?;
-                    check_dim(sk, nd, &a, &mut free_dim)?;
-                    Ok((write_value(sk, nd, &a, &mut bound)?, a))
-                })();
-                match done {
-                    Ok((v, a)) => {
-                        values[i] = v;
-                        free_of[i] = a.free.iter().cloned().collect();
-                        if let Some(name) = &parsed.name {
-                            // **A name is worth a number, and where that number is *used*
-                            // decides what it is.**  `w = 80` in a `Length` slot does not make
-                            // `w` a length: the same 80 may be a run, a rise or an angle, and a
-                            // document with no `unit` line is in drawing units until something
-                            // says otherwise.  `w = 80mm` is how a person says otherwise, and
-                            // *that* travels.
-                            env.insert(name.clone(), a);
+    let mut items = Vec::with_capacity(nodes.len());
+    for nd in &nodes {
+        let mut value = to_user_units(nd.kind, sk.constraints[nd.ci].args[nd.ai].num());
+        let mut free = Vec::new();
+        let mut deps = Vec::new();
+        let error = match &nd.parsed {
+            Err(e) => Some(ExprError::from(e.clone())),
+            Ok(p) => {
+                deps = p.body.deps().into_iter().collect();
+                match p.body.measures().first() {
+                    Some((m, args)) => Some(ExprError::new(
+                        Fault::Measure,
+                        super::measure_refusal(&m.text(args)),
+                    )),
+                    // work it out, check what it came to against its slot, write it: three
+                    // steps that fail the same way, so they are one chain and one error arm
+                    None => match (|| -> Result<(f64, Aff), ExprError> {
+                        let a = eval(&p.body, &env)?;
+                        check_dim(sk, nd, &a, &mut free_dim)?;
+                        Ok((write_value(sk, nd, &a, &mut bound)?, a))
+                    })() {
+                        Ok((v, a)) => {
+                            value = v;
+                            free = a.free.iter().cloned().collect();
+                            None
                         }
-                    }
-                    Err(e) => errors[i] = Some(e),
+                        Err(e) => Some(e),
+                    },
                 }
             }
-        }
-        for &r in &readers[i] {
-            indeg[r] -= 1;
-            if indeg[r] == 0 {
-                ready.insert(r);
-            }
-        }
+        };
+        let c = &sk.constraints[nd.ci];
+        items.push(ExprItem {
+            id: c.id,
+            attr: c.spec()[nd.ai].0,
+            text: match &c.args[nd.ai] {
+                Arg::Expr(e) => e.text.clone(),
+                _ => String::new(),
+            },
+            value,
+            deps,
+            free,
+            error,
+        });
     }
     retire_free(sk, &bound);
     sk.free_dimensions = free_dim
@@ -231,34 +169,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
         .filter(|(name, _)| bound.contains_key(name))
         .map(|(name, (dim, _))| (name, dim))
         .collect();
-    // whatever never became ready is on a cycle, or downstream of one
-    let stuck: Vec<usize> = (0..n).filter(|&i| indeg[i] > 0).collect();
-    for &i in &stuck {
-        if errors[i].is_none() {
-            errors[i] = Some(cycle_text(i, &nodes, &deps, &def, &indeg).into());
-        }
-        order.push(i);
-    }
-    order
-        .into_iter()
-        .map(|i| {
-            let nd = &nodes[i];
-            let c = &sk.constraints[nd.ci];
-            ExprItem {
-                id: c.id,
-                attr: c.spec()[nd.ai].0,
-                text: match &c.args[nd.ai] {
-                    Arg::Expr(e) => e.text.clone(),
-                    _ => String::new(),
-                },
-                name: nd.parsed.as_ref().ok().and_then(|p| p.name.clone()),
-                value: values[i],
-                deps: deps[i].clone(),
-                free: free_of[i].clone(),
-                error: errors[i].clone(),
-            }
-        })
-        .collect()
+    items
 }
 
 /// Check expression dimensions against the argument slot and infer a consistent
@@ -279,6 +190,14 @@ fn check_dim(
     if d != Dim::SCALAR && d != Dim::LENGTH && d != Dim::ANGLE {
         return Err(dim(format!(
             "`{name}` would have to be {} here, which is not a length, an angle or a plain number",
+            d.name()
+        )));
+    }
+    // an unknown the source declared is what it was declared, wherever it is read
+    if let Some(decl) = sk.declared.get(&name).filter(|decl| decl.dim != d) {
+        return Err(dim(format!(
+            "`{name}` is declared {}, and `{attr}` reads it as {}",
+            decl.dim.name(),
             d.name()
         )));
     }
@@ -347,7 +266,10 @@ fn write_value(
         return Err(format!("`{name}` does not affect this dimension").into());
     }
     let stated = sk.constraints[ci].args[ai].num();
-    let seed = (to_user_units(kind, stated) - a.c) / a.m;
+    // an unknown declared with a seed starts there (`param beta: Angle hint(30deg)`), and the
+    // walk below, which guesses one from the pose, is for an unknown nobody seeded
+    let declared = sk.declared.get(&name).and_then(|decl| decl.seed);
+    let seed = declared.unwrap_or((to_user_units(kind, stated) - a.c) / a.m);
     let (param, fresh) = free_param(sk, &name, seed);
     let (m, c) = (to_arg_units(kind, a.m), to_arg_units(kind, a.c));
     // one unit of the variable is worth this much world length through this dimension: an angle
@@ -356,7 +278,7 @@ fn write_value(
     let was = bound.entry(name).or_insert(0.0);
     *was = was.max(reach);
     let free = Free { param, m, c };
-    if fresh && stated == 0.0 {
+    if fresh && stated == 0.0 && declared.is_none() {
         // the bound copy is what `settle` measures through: the columns and the constants it
         // asks for are the ones this constraint selects once the binding is in
         let mut bound_copy = sk.constraints[ci].clone();
@@ -453,56 +375,11 @@ pub fn sync_free(sk: &mut Sketch) {
     }
 }
 
-/// `circular: w → h → w`, found by walking definitions from `i` through the stuck nodes; or,
-/// for a node that only reads from a cycle without being on one, which name it waits for.
-fn cycle_text(
-    i: usize,
-    nodes: &[Node],
-    deps: &[Vec<String>],
-    def: &BTreeMap<String, usize>,
-    indeg: &[usize],
-) -> String {
-    // depth-first along unresolved definitions, looking for a way back to `i`
-    let mut path: Vec<usize> = vec![i];
-    let mut stack: Vec<(usize, usize)> = vec![(i, 0)]; // (node, next dep index)
-    let mut seen: BTreeSet<usize> = BTreeSet::new();
-    while let Some(&(u, k)) = stack.last() {
-        if k >= deps[u].len() {
-            stack.pop();
-            path.pop();
-            continue;
-        }
-        stack.last_mut().unwrap().1 += 1;
-        let name = &deps[u][k];
-        let Some(&d) = def.get(name) else { continue };
-        if indeg[d] == 0 {
-            continue; // resolved: not part of the tangle
-        }
-        if d == i {
-            let names: Vec<String> = path
-                .iter()
-                .map(|&p| nodes[p].parsed.as_ref().ok().and_then(|q| q.name.clone()))
-                .map(|n| n.unwrap_or_else(|| "?".to_string()))
-                .collect();
-            return format!("circular: {} → {}", names.join(" → "), names[0]);
-        }
-        if seen.insert(d) {
-            path.push(d);
-            stack.push((d, 0));
-        }
-    }
-    let waiting = deps[i]
-        .iter()
-        .find(|n| def.get(*n).is_some_and(|&d| indeg[d] > 0))
-        .cloned()
-        .unwrap_or_default();
-    format!("`{waiting}` could not be evaluated")
-}
-
 /// Write a dimension from text: a bare number becomes a constant (in the argument's units), and
 /// anything else an expression, evaluated along with the rest of the document.  `Err` when the
 /// text does not parse or names no dimension, and nothing is changed; `Ok(Some(why))` when it
-/// was stored but could not be computed (a name nothing defines yet), so a caller can say so.
+/// was stored but could not be computed (an unknown read in a way it cannot be), so a caller can
+/// say so.
 pub fn set_dimension(
     sk: &mut Sketch,
     id: u32,

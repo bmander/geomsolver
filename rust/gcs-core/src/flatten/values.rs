@@ -2,37 +2,22 @@
 
 use super::*;
 
-/// The drawing's unknown a formal stands for when nothing binds it — the rule that a name
-/// nothing defines is a free variable, applied to a formal under its declared dimension.
+/// The drawing's unknown a declared number stands for when nothing binds it — a formal no call
+/// binds, or an input with no value (`param beta: Angle`) — under its declared dimension.
 pub(super) fn free(name: String, ty: Ty) -> Aff {
     Aff { free: Some(name), m: 1.0, c: 0.0, dim: ty.dim() }
 }
 
-/// One definition of a body: a `param`, or a named dimension (`w = 60` inside an operator's
-/// parentheses), which declare a name the same way and are worked out together.
+/// One definition of a body — a `param` or a group's member — worked out with the rest.
 struct Def {
     name: String,
     name_span: Span,
-    /// The text after the `=`.
+    /// The text after the `:=`.
     text: String,
     span: Span,
-    dim: bool,
     group_ref: bool,
-}
-
-/// The number a relation states, as written — the one unlabelled argument in its operator's
-/// parentheses (§9.1), wherever the statement happens to carry it.
-fn dim_text(rel: &crate::syntax::Relation) -> Option<(&str, Span)> {
-    if let Some(w) = rel.form.written() {
-        return w.args.iter().find_map(|a| match a {
-            crate::syntax::OpArg::Dim(t, sp) => Some((t.as_str(), *sp)),
-            _ => None,
-        });
-    }
-    rel.form.canonical_args().iter().flatten().find_map(|a| match a {
-        crate::syntax::Arg::Dim { text, span } => Some((text.as_str(), *span)),
-        _ => None,
-    })
+    /// The type a `param` declared, which its value is worked out under.
+    ty: Option<Ty>,
 }
 
 /// Why a name a text reads is out of this component's reach — a document name it must be
@@ -42,7 +27,7 @@ fn out_of_reach(name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Opti
     if vals.contains_key(name) {
         return None;
     }
-    if scope.forbidden.contains(name) && !scope.graph.contains_key(name) {
+    if scope.forbidden.contains(name) {
         return Some(format!("`{name}` is outside this component; pass it as an argument"));
     }
     if name.split_once('.').is_some_and(|(head, _)| scope.groups.contains(head)) {
@@ -143,12 +128,7 @@ fn fold(sub: &str, text: &str, units: Units) -> Result<String, String> {
     if let Ok(a) = evaluated {
         if let Some(v) = a.number() {
             if v.is_finite() {
-                // a definition keeps its name: it is the document's, not the component's
-                let value = a.dim.number_text(v, units);
-                return Ok(match &p.name {
-                    Some(n) => format!("{n} := {value}"),
-                    None => value,
-                });
+                return Ok(a.dim.number_text(v, units));
             }
         }
     }
@@ -307,45 +287,52 @@ impl<'a> Walk<'a> {
         })
     }
 
-    /// A dimension's text, settled: the component's numbers written in, the names that came to
-    /// text as well, and **every other name made absolute** — in one pass, since a second
-    /// would find the numbers' names inside the names it had just written.
+    /// A dimension's text, settled: the component's numbers written in, and the names that came
+    /// to text as well — in one pass, since a second would find the numbers' names inside the
+    /// names it had just written.
     ///
-    /// The text after the `=` is `expr.rs`'s language and is evaluated against the *document's*
-    /// named dimensions, by absolute name, so this is where a name written in a body is
-    /// resolved (§5): a named dimension in scope reads as the name the graph will find it
-    /// under (`w` → `t1.w`, the file's own `w` as `w`); a formal or a `param` reads as its
-    /// number; and a name nothing in scope declares is **an unknown of the instance** —
-    /// `t1.w`, as an unbound formal already is — so two instances of one component have two
-    /// unknowns, and a component cannot reach into the document it is drawn in by writing a
-    /// name that happens to be defined there.  On the sheet the prefix is empty and a bare
-    /// name is the document's own free variable, as it always was.
+    /// The text after the `=` is `expr.rs`'s language, so this is where a name written in a body
+    /// is resolved (§5): a formal or a `param` reads as its number, or as the unknown it is
+    /// (`beta`, `leg.theta`) where nothing bound it.  **A name nothing in scope declares is
+    /// E101**: an unknown is declared (`param beta: Angle`, a formal), never made by a name
+    /// nobody wrote down, which would turn a misspelling into a degree of freedom.  A dotted
+    /// name is left for `resolve` (`note_dim_reads`), which tells a circle's radius from an
+    /// instance's unknown once every name is known.
     pub(super) fn settle_text(
         &self,
         text: &str,
         vals: &BTreeMap<String, Aff>,
         scope: &Scope,
-    ) -> Result<String, String> {
+    ) -> Result<String, (Code, String)> {
         let reads: BTreeSet<String> =
             expr::parse_in(text, self.units).map(|p| p.body.deps()).unwrap_or_default();
         if let Some(e) = reads.iter().find_map(|name| out_of_reach(name, vals, scope)) {
-            return Err(e);
+            return Err((Code::E103, e));
         }
         let sym = self.sym.as_ref();
+        let kept = |w: &str| {
+            sym.and_then(|sym| {
+                scope.prefixes.iter().find_map(|p| sym.texts.get(&format!("{p}{w}")).cloned())
+            })
+        };
+        if let Some(name) = reads.iter().find(|n| {
+            !n.contains('.')
+                && !vals.contains_key(*n)
+                && expr::builtin(n).is_none()
+                && kept(n).is_none()
+        }) {
+            return Err((Code::E101, undefined(name)));
+        }
+        // a dotted name read in a body (`t.w`, a nested instance's unknown) is made absolute
+        // under the instance it is read in; `resolve` judges whether it names anything
         let own = scope.instance_prefix();
         let sub = substitute_with(text, |w| {
-            scope
-                .graph
-                .get(w)
-                .cloned()
-                .or_else(|| of_vals(vals, self.units)(w))
-                .or_else(|| {
-                    let sym = sym?;
-                    scope.prefixes.iter().find_map(|p| sym.texts.get(&format!("{p}{w}")).cloned())
-                })
-                .or_else(|| (!own.is_empty() && reads.contains(w)).then(|| format!("{own}{w}")))
+            of_vals(vals, self.units)(w).or_else(|| kept(w)).or_else(|| {
+                let dotted = !own.is_empty() && w.contains('.') && reads.contains(w);
+                dotted.then(|| format!("{own}{w}"))
+            })
         });
-        fold(&sub, text, self.units)
+        fold(&sub, text, self.units).map_err(|e| (Code::E103, e))
     }
 
     /// Set aside each dotted name a dimension's text reads that nothing numeric in scope answers
@@ -357,7 +344,7 @@ impl<'a> Walk<'a> {
         }
         let Ok(p) = expr::parse_in(text, self.units) else { return };
         for name in p.body.deps() {
-            if name.contains('.') && !vals.contains_key(&name) && !scope.graph.contains_key(&name) {
+            if name.contains('.') && !vals.contains_key(&name) {
                 self.dim_reads.push((name, span, scope.clone()));
             }
         }
@@ -382,17 +369,6 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Whether a pin's text is a bare name nothing here gives a number — neither the scope's
-    /// numbers, a named dimension nor a built-in — and so names a shared contact parameter.  Not
-    /// in a trace's symbolic expansion, whose names are the curve's columns.
-    fn unbound(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> bool {
-        self.sym.is_none()
-            && crate::syntax::is_name(text)
-            && expr::builtin(text).is_none()
-            && !vals.contains_key(text)
-            && !scope.graph.contains_key(text)
-    }
-
     /// One argument, read over the parameters in scope: a dimension's text settled to text, a
     /// seed or a pin settled to its number.
     ///
@@ -411,24 +387,35 @@ impl<'a> Walk<'a> {
                 self.note_dim_reads(text, *span, vals, scope);
                 match self.settle_text(text, vals, scope) {
                     Ok(t) => *text = t,
-                    Err(e) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
+                    Err((code, e)) => {
+                        if code == Code::E101 {
+                            self.refused.push(*span);
+                        }
+                        self.err(code, *span, format!("`{text}`: {e}"))
+                    }
                 }
             }
             crate::syntax::Arg::SeedExpr { text, pinned, span } => {
-                match value_of(text, vals, self.units) {
-                    Ok(v) => *a = crate::syntax::Arg::Seed { value: v, pinned: *pinned },
-                    // `t == s` over a name nothing defines: the contact's parameter *is* that
-                    // unknown, the instance's own as a free name in a dimension is (`leg.s`)
-                    Err(_) if *pinned && self.unbound(text.trim(), vals, scope) => {
-                        match out_of_reach(text.trim(), vals, scope) {
-                            Some(e) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
-                            None => {
-                                let name = format!("{}{}", scope.instance_prefix(), text.trim());
-                                *a = crate::syntax::Arg::Tie { name, seed: None, span: *span };
-                            }
-                        }
+                let bare = text.trim();
+                // `t == s` over an unknown — an input nothing binds, a formal left unbound: the
+                // contact's parameter *is* that unknown, and every contact pinned to it shares it
+                let unknown =
+                    vals.get(bare).filter(|a| a.m == 1.0 && a.c == 0.0).and_then(|a| a.free.clone());
+                match (value_of(text, vals, self.units), unknown) {
+                    (Ok(v), _) => *a = crate::syntax::Arg::Seed { value: v, pinned: *pinned },
+                    (Err(_), Some(name)) if *pinned => {
+                        let seed = self.unknowns.get(&name).and_then(|d| d.seed);
+                        *a = crate::syntax::Arg::Tie { name, seed, span: *span };
                     }
-                    Err(e) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
+                    (Err(_), _) if crate::syntax::is_name(bare)
+                        && !vals.contains_key(bare)
+                        && expr::builtin(bare).is_none()
+                        && out_of_reach(bare, vals, scope).is_none() =>
+                    {
+                        self.refused.push(*span);
+                        self.err(Code::E101, *span, undefined(bare))
+                    }
+                    (Err(e), _) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
                 }
             }
             // a selector written with the name of a `Side` formal reads as the word the instance
@@ -444,31 +431,26 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Work out every `param` a body declares, before any statement of the body is walked —
-    /// and every **named dimension**, which declares its name in the body the same way
-    /// (§6.3, issue #47 item 7): `a distance(w := 60) b` says what `w` is as much as
-    /// `w := 60` does, and both are read by everything in the body.
+    /// Work out every definition a body declares — `w := 60`, `param bore := 50mm`, a group's
+    /// members — before any statement of the body is walked (§6.3).
     ///
-    /// A body is a set (spec P2): `h := w / 2` may stand above `w := 60`, so the
-    /// definitions are taken in *dependency* order and not in line order — a definition is
-    /// ready when none of the names it reads is another of this body still waiting, and the
-    /// ready ones are worked out until none is left.  What remains then reads itself, through
-    /// however many others, which is the cyclic definitional dependency spec §11 names E041.
-    /// A second `w` in one body — a param or a dimension, either way — is the E001 a second
-    /// `w := point` is, and the first stands (#43.13); a definition that fails is reported once,
-    /// where it is written, and the params that read it are left unsaid rather than each
+    /// A body is a set (spec P2): `h := w / 2` may stand above `w := 60`, so the definitions are
+    /// taken in *dependency* order and not in line order — a definition is ready when none of the
+    /// names it reads is another of this body still waiting, and the ready ones are worked out
+    /// until none is left.  What remains then reads itself, through however many others, which is
+    /// the cyclic definitional dependency spec §11 names E041.  A second `w` in one body is the E001
+    /// a second `w := point` is, and the first stands (#43.13); a definition that fails is reported
+    /// once, where it is written, and the values that read it are left unsaid rather than each
     /// repeating the cause (#45.1).
     ///
-    /// A named dimension's number goes into `vals`, where a `param`, a seed or a count reads
-    /// it; its name goes into `graph`, where a dimension's text reads it — kept as a *name*,
-    /// so the expression graph ties the two dimensions and the tie survives on the drawing.  A
-    /// dimension whose number cannot be worked out here (`w := s`, over a free variable) is
-    /// still a name, and the graph will say what is wrong with its number.
+    /// **An input nothing binds is an unknown** (`param beta: Angle hint(30deg)`): it goes into
+    /// `vals` as the free value an unbound formal is, so everything reading it is written in
+    /// terms of it, and into `unknowns` with its seed.  Only the document's own: a module's
+    /// numbers are read by files that do not draw it.
     pub(super) fn params(
         &mut self,
         body: &[Stmt],
         vals: &mut BTreeMap<String, Aff>,
-        graph: &mut BTreeMap<String, String>,
         scope: &Scope,
     ) {
         let prefix = scope.prefix().to_string();
@@ -497,6 +479,12 @@ impl<'a> Walk<'a> {
                             written(r)
                         }
                         crate::syntax::InstVal::Expr(t) => t.clone(),
+                        crate::syntax::InstVal::Hint(_) => {
+                            let m = "a `hint(…)` leaves a call's formal unbound and seeds it; \
+                                     a group's member is a value";
+                            self.err(Code::E103, field.span, m);
+                            continue;
+                        }
                         crate::syntax::InstVal::Group(_) => {
                             let abs = format!("{prefix}{name}");
                             self.group_names.insert(abs.clone());
@@ -504,44 +492,35 @@ impl<'a> Walk<'a> {
                             continue;
                         }
                     };
+                    let group_ref = matches!(field.value, crate::syntax::InstVal::Ref(_));
                     pending.push(Def { name, name_span: label.span, text, span: field.span,
-                        dim: false, group_ref: matches!(field.value, crate::syntax::InstVal::Ref(_)) });
+                        group_ref, ty: None });
                 }
                 continue;
             }
-            let d = match &st.kind {
-                StmtKind::Param(pd) => Def {
-                    name: pd.name.text.clone(),
-                    name_span: pd.name.span,
-                    text: pd.text.clone(),
-                    span: pd.span,
-                    dim: false,
-                    group_ref: false,
-                },
-                StmtKind::Relation(rel) => {
-                    let Some((text, span)) = dim_text(rel) else { continue };
-                    let Some(name) = expr::parse_in(text, self.units).ok().and_then(|p| p.name)
-                    else {
-                        continue;
-                    };
-                    let rhs = text.split_once(":=").map(|(_, r)| r.trim()).unwrap_or("");
-                    Def { name, name_span: span, text: rhs.to_string(), span, dim: true, group_ref: false }
-                }
-                _ => continue,
-            };
-            // a body's own definition shadows the file's: the name is this body's now.  A
-            // dimension's goes in even when it is the second `w` — the error is the one
-            // reported, and folding the first's number over the second's own name would
-            // report a stray `=` beside it
-            graph.remove(&d.name);
-            if d.dim {
-                graph.insert(d.name.clone(), format!("{prefix}{}", d.name));
-            }
-            if !here.insert(d.name.clone()) {
-                self.err(Code::E001, d.name_span, format!("`{}` is declared twice", d.name));
+            let StmtKind::Param(pd) = &st.kind else { continue };
+            if !here.insert(pd.name.text.clone()) {
+                self.err(Code::E001, pd.name.span, format!("`{}` is declared twice", pd.name.text));
                 continue;
             }
-            pending.push(d);
+            let ty = pd.input.as_ref().and_then(|i| i.ty);
+            if let Some(input) = pd.input.as_ref().filter(|_| !pd.bound()) {
+                self.unknown(pd, input, vals, scope);
+                continue;
+            }
+            if let Some((_, span)) = pd.input.as_ref().and_then(|i| i.seed.as_ref()) {
+                let m = format!("`{}` is stated; a seed is for an unknown, `param {}: Angle`",
+                    pd.name.text, pd.name.text);
+                self.err(Code::E040, *span, m);
+            }
+            pending.push(Def {
+                name: pd.name.text.clone(),
+                name_span: pd.name.span,
+                text: pd.text.clone(),
+                span: pd.span,
+                group_ref: false,
+                ty,
+            });
         }
         // A nested group exposes the selected group's numeric members, including forward
         // references. Keep ordinary dependency ordering for those members too.
@@ -564,7 +543,7 @@ impl<'a> Walk<'a> {
                             return;
                         }
                         extra.push(Def { name, text: key.clone(), name_span: d.name_span,
-                            span: d.span, dim: false, group_ref: true });
+                            span: d.span, group_ref: true, ty: None });
                     }
                 }
             }
@@ -609,14 +588,18 @@ impl<'a> Walk<'a> {
                     failed.insert(d.name.clone());
                     continue; // the cause is already reported, at the definition it reads
                 }
-                match value_aff(&d.text, vals, self.units) {
+                // a declared type is what the value is, as a formal's is: `param w: Length := 60`
+                // is a length however the 60 was written, and `param w: Length := 60deg` is wrong
+                let typed = value_aff(&d.text, vals, self.units).and_then(|a| match d.ty {
+                    Some(ty) => a.dim.require(ty.dim(), &d.name).map(|()| a.as_dim(ty.dim())),
+                    None => Ok(a),
+                });
+                match typed {
                     Ok(a) => {
                         vals.insert(d.name.clone(), a);
                     }
                     // References to geometry and groups bind as aliases, not numeric values.
                     Err(_) if d.group_ref => {}
-                    // a dimension's number is the graph's to judge: it stays a name here
-                    Err(_) if d.dim => {}
                     // a text a curve's variables leave no value to — kept, in the symbolic
                     // mode; a mistake, on the sheet
                     Err(e) => {
@@ -638,4 +621,72 @@ impl<'a> Walk<'a> {
             self.aliases.push((abs, reference, Scope { vals: vals.clone(), ..scope.clone() }));
         }
     }
+
+    /// `param beta: Angle hint(30deg)` — an input nothing binds: a free value in `vals`, named
+    /// as written (the document's root has no prefix), and an entry in `unknowns`.
+    fn unknown(
+        &mut self,
+        pd: &crate::syntax::ParamDecl,
+        input: &crate::syntax::Input,
+        vals: &mut BTreeMap<String, Aff>,
+        scope: &Scope,
+    ) {
+        let name = &pd.name.text;
+        if scope.module.is_some() || !scope.prefix().is_empty() {
+            let m =
+                format!("`{name}` has no value: an unknown belongs to the document that draws it");
+            self.err(Code::E040, pd.name.span, m);
+            return;
+        }
+        let ty = match input.ty {
+            Some(ty @ (Ty::Length | Ty::Angle | Ty::Scalar)) => ty,
+            Some(_) => {
+                let m = format!("`{name}` is an unknown, so a `Length`, an `Angle` or a `Scalar`");
+                self.err(Code::E040, pd.name.span, m);
+                return;
+            }
+            None => {
+                let m = format!(
+                    "`{name}` has no value, so it is an unknown: say what it is, \
+                     `param {name}: Length` or `param {name}: Angle`"
+                );
+                self.err(Code::E040, pd.name.span, m);
+                return;
+            }
+        };
+        let seed = input.seed.as_ref().and_then(|(text, span)| {
+            match self.seed_number(text, ty, vals) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    self.err(Code::E103, *span, format!("`{text}`: {e}"));
+                    None
+                }
+            }
+        });
+        vals.insert(name.clone(), free(name.clone(), ty));
+        self.unknowns.insert(name.clone(), crate::model::Declared { dim: ty.dim(), seed });
+    }
+
+    /// A seed for an unknown of type `ty`: a number, of that dimension, in the document's units.
+    pub(super) fn seed_number(
+        &self,
+        text: &str,
+        ty: Ty,
+        vals: &BTreeMap<String, Aff>,
+    ) -> Result<f64, String> {
+        let a = value_aff(text, vals, self.units)?;
+        a.dim.require(ty.dim(), "a seed")?;
+        a.number().ok_or_else(|| "a seed is a number".to_string())
+    }
+}
+
+/// E101's words for a name nothing declares.
+pub(super) fn undefined(name: &str) -> String {
+    if name.contains('.') {
+        return format!("`{name}` is not defined: nothing by that name was drawn or declared");
+    }
+    format!(
+        "`{name}` is not defined: a number is `{name} := …`, and an unknown the solve answers for \
+         is declared, `param {name}: Length`"
+    )
 }

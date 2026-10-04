@@ -26,8 +26,8 @@ What the words are:
   along a line, `d` a turn; `motion(m, relative_to: n)` is `m` seen from `n`.
 - `envelope(tool, under: m, from: a, to: b)` is what a point, line, circle, arc, formula curve or
   another envelope cuts. `side: near | far` picks a circle's side.
-- `c tangent(t == s) l` pins a contact's place to a name nothing defines: every contact on the
-  same curve pinned to `s` shares that one unknown place.
+- `c tangent(t == s) l` pins a contact's place to an unknown, `param s: Angle hint(318)`: every
+  contact on the same curve pinned to `s` shares that one place, seeded where `s` is declared.
 - `p over theta in (a, b)` traces a point of a drawn component as one of its numbers runs. A
   number the drawing leaves unbound (`leg.h`, `bar.ap`) is an unknown the solve answers for.
 - `envelope(surface(prism, edge: e), under: m, …)` is the surface a prism's side cuts. When `m`

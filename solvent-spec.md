@@ -1,6 +1,16 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.39 — October 2026**
+**Specification, Draft 0.40 — October 2026**
+
+**[0.40] An unknown is declared.** `param` marks one of the document's inputs (§6.3): `param bore:
+Length := 50mm` is a value a host may give another, and `param beta: Angle hint(30deg)`, with no
+value, is an unknown of the solve — its type stated, its seed its own `hint(…)` — as a component's
+unbound formal is. A name nothing declares is **E101** wherever it is read (a dimension, a fold, a
+pin), where it was a free variable warned W111: a misspelling is no longer a degree of freedom. A
+dimension's number defines nothing (named dimensions, `distance(w := 60)`, are gone: `w := 60`,
+then `distance(w)`), and no expression defines a name. A fold over an unknown is seeded by the
+unknown (`hint(fold: …)` is refused), a shared place (`t == s`) by `s`'s declaration, and a call
+seeds a formal it leaves unbound with `hint(…)` in its place: `Wing(f, beta: hint(15deg))`.
 
 **[0.39] Two contacts may share their place.** A pin to a name nothing defines — `path tangent(t ==
 s) ground`, `path curvature(t == s) osc` — makes the contact's parameter that unknown, and every
@@ -64,19 +74,20 @@ the module's full path — `engine.parts.Crank(…)`, `hardware.nut14_af`,
 `components.dims.vtwin_dims` — and only through a `use` the file wrote itself (§14.4). Two
 modules may define one name.
 
-**[0.29] One way to define a name.** `NAME := VALUE` is the only form that puts a name in scope,
-and `(NAME := VALUE)` is the value itself, so a name may stand where its value does (§5). `w := 100`
-is a param (§6.3); `c := circle(center: o)` a declaration (§6); `t := Tooth(…)` an instance (§8);
-`dims := {…}` a group (§8.1) **[0.35]**; `profile := (ab := line(a, b)) -> line -> close` a chain whose
+**[0.29] One way to define a name.** `NAME := VALUE` is the only form that puts a name in scope, and
+`(NAME := VALUE)` is the value itself, so a name may stand where its value does (§5). `w := 100` is
+a param (§6.3); `c := circle(center: o)` a declaration (§6); `t := Tooth(…)` an instance (§8); `dims
+:= {…}` a group (§8.1) **[0.35]**; `profile := (ab := line(a, b)) -> line -> close` a chain whose
 first link is named in place (§6.6), since `:=` binds looser than `->`; `k := leg.toe over u in (a,
-b)` a curve (§6.5); `p := point(x: e, y: e)` a computed point (§6.5); `a distance(w := 60) b` a
-named dimension (§9.1), where `:=` may only be the outermost form of the number. `param`, `group`
-before a name, `NAME: Component(…)`, `NAME = CHAIN`, `curve NAME = …`, `point NAME = (…)` and a
-name after an element keyword are gone, and a lone `=` is no token. A `label:` never defines a
-name: it fills a slot of what is being called or declared — an argument, a child, a `hint(…)` key,
-a group's member, a formal. Modifiers stand before the name (`private construction l :=
-line(…)`); a prefix word's value is its operand, so `l := horizontal line(a, b)` names the line.
-`component Name(…) { … }` and the binders `as i`, `e in CHAIN`, `over u in (…)` are unchanged.
+b)` a curve (§6.5); `p := point(x: e, y: e)` a computed point (§6.5). **[0.40]** A dimension's
+number no longer defines a name (`a distance(w := 60) b` is gone), and `param` returns as a modifier
+marking an input (§6.3). `param w = 100`, `group` before a name, `NAME: Component(…)`, `NAME =
+CHAIN`, `curve NAME = …`, `point NAME = (…)` and a name after an element keyword are gone, and a
+lone `=` is no token. A `label:` never defines a name: it fills a slot of what is being called or
+declared — an argument, a child, a `hint(…)` key, a group's member, a formal. Modifiers stand before
+the name (`private construction l := line(…)`); a prefix word's value is its operand, so `l :=
+horizontal line(a, b)` names the line. `component Name(…) { … }` and the binders `as i`, `e in
+CHAIN`, `over u in (…)` are unchanged.
 
 **[0.28] A face runs along a stretch of a curve, and a loft pairs curved edges by their own
 parameter.** `tooth := face(root, flank from p to q, tip)` bounds a face by the stretch of the curve
@@ -303,7 +314,7 @@ Implementations **MUST** check dimensions in expressions and constraints, and MU
 
 A **name** is worth a number, and where that number is *used* decides what it is: `w = 80` in a `Length` slot does not make `w` a length, since the same 80 may be a run, a rise or an angle. A unit on the literal (`w = 80mm`) says otherwise, and so does a component formal's declared type (§8) — which is what catches `x := w + phi`.
 
-**[0.16] One namespace for a number's names.** A number is named three ways — `w := 60`, a named dimension `distance(w = 60)`, and a bare `w` nothing defines, which is a free variable — and they resolve by one rule (§5): a definition, either kind, declares its name in the body it is written in; a name nothing in scope declares is an unknown of the *instance* the body is elaborated as. A `param` and a named dimension differ in where the number is edited (the source, or the drawing) and in nothing else: a `param` MAY read a named dimension, a second definition of a name in one body is **E001** whichever kinds the two are, and a `param` reading a free variable is an error, since nothing in scope gives the name a number.
+**[0.16] One namespace for a number's names; [0.40] an unknown is declared.** A number is named one way, `w := 60` — `param w := 60` when it is one of the document's inputs — and a dimension's number reads names and defines none. A name resolves by one rule (§5): a definition declares its name in the body it is written in, and a second definition of a name in one body is **E001**. An **unknown** — a number the solve answers for — is declared too: an input with no value (`param beta: Angle`, §6.3) or a formal no call binds (§8). A name nothing in scope declares is **E101**, wherever it is read; it is never made an unknown of its own accord, which turned a misspelling into a degree of freedom (0.16–0.39 called it a free variable and warned, W111). A value reading an unknown is that unknown scaled (`q := 2 * beta`), carried as the affine form it is.
 
 | function | |
 |---|---|
@@ -448,14 +459,14 @@ no one pose to record.
 ## 5. Names, scope, and resolution
 
 - The scope of a name is the entire component body in which it is declared (P2). Forward reference is legal and idiomatic.
-- **[0.29] A name is defined by `NAME := VALUE` and in no other way** (formals and block binders aside). The value decides what the name is: a number (a param, §6.3), an element (§6), a chain joined by `->` (§6.6), an instance (§8), a group (§8.1), a curve (§6.5). `(NAME := VALUE)` is the value, so it may stand where the value may: a chain link, `(ab := line(a, b)) -> …`, and the outermost form of a constraint's number, `distance(w := 60)`. `:=` binds loosest. A `label:` fills a slot and defines nothing in the caller's scope.
-- Redeclaration of a name within one body is an error (**E001**). A param and a named dimension (§9.1) declare a name alike, so `w := 3` beside `distance(w := 60)` is E001.
-- Instance members are accessed by dotted paths: `t.lead`, `g.hub.origin` — a dimension named inside an instance included: `t.w`.
-- **Components have closed model scope.** A body reads its formals and its own declarations. It may call visible component definitions and use built-in functions and constants, but cannot capture geometry, parameters, groups, or named dimensions from the root, an importing module, or an enclosing component. Pass those dependencies as arguments. This includes `std.front` and the other standard datums.
-- An undeclared numeric name is a **local free variable** of the instance (`t1.w`, `t2.w`). A reference to a known ambient value without an argument is an error, rather than an implicit capture. An explicitly declared numeric formal left unbound is also local. Inside a repetition, a name declared by the block belongs to each copy; other names resolve in the enclosing component. `next` and `prev` belong to the lexical cycle, and can be passed to a nested component as arguments.
+- **[0.29] A name is defined by `NAME := VALUE` and in no other way** (formals and block binders aside). The value decides what the name is: a number (a value, or under `param` an input, §6.3), an element (§6), a chain joined by `->` (§6.6), an instance (§8), a group (§8.1), a curve (§6.5). `(NAME := VALUE)` is the value, so it may stand where the value may: a chain link, `(ab := line(a, b)) -> …`. **[0.40]** A constraint's number defines no name. `:=` binds loosest. An input with no value, `param beta: Angle`, declares an unknown (§3.4). A `label:` fills a slot and defines nothing in the caller's scope.
+- Redeclaration of a name within one body is an error (**E001**), whether the two are values, inputs or one of each.
+- Instance members are accessed by dotted paths: `t.lead`, `g.hub.origin` — an unknown an instance left unbound included: `t.w` (**[0.40]** a dotted name nothing made is **E101**, as a bare one is).
+- **Components have closed model scope.** A body reads its formals and its own declarations. It may call visible component definitions and use built-in functions and constants, but cannot capture geometry, parameters or groups from the root, an importing module, or an enclosing component. Pass those dependencies as arguments. This includes `std.front` and the other standard datums.
+- **[0.40]** An undeclared numeric name is **E101**. A component's unknowns are its numeric formals a call leaves unbound, each the instance's own (`t1.w`, `t2.w`); a call may seed one by leaving it unbound with `hint(…)` in its place (`T(a, b, w: hint(60))`). A reference to a known ambient value without an argument is an error, rather than an implicit capture. Inside a repetition, a name declared by the block belongs to each copy; other names resolve in the enclosing component. `next` and `prev` belong to the lexical cycle, and can be passed to a nested component as arguments.
 - Inside `repeat`/`cycle`/`ring` blocks, the index binder (`as i`) and the pseudo-instances `next` / `prev` are in scope (§12).
 - There is no shadowing: a block binder that collides with an outer name is an error (**E002**).
-- **[0.17] A name that shadows a built-in is said.** The constants and functions of §3.3 (`pi`, `tau`, `turn`, `sin`, `min`, …) are known to every expression before the document is, so a `param`, a formal or a block binder of one of those names does *not* shadow it: a text carrying the name is substituted and reads the declaration, a number worked out reads the built-in, and the two answers differ silently — `tau := 35deg` passed to a `tau: Angle` formal arrived as a full turn. A named dimension of a built-in name is an error where it is parsed; the other three declarations are a warning at the declaration (**W112**), because the drawing is not wrong, the name is. An implementation MUST say it once per declaration, whether or not the component is ever instantiated.
+- **[0.17] A name that shadows a built-in is said.** The constants and functions of §3.3 (`pi`, `tau`, `turn`, `sin`, `min`, …) are known to every expression before the document is, so a `param`, a formal or a block binder of one of those names does *not* shadow it: a text carrying the name is substituted and reads the declaration, a number worked out reads the built-in, and the two answers differ silently — `tau := 35deg` passed to a `tau: Angle` formal arrived as a full turn. Each declaration — a value, an input, a formal, a block binder — is a warning at the declaration (**W112**), because the drawing is not wrong, the name is. An implementation MUST say it once per declaration, whether or not the component is ever instantiated.
 
 ---
 
@@ -509,15 +520,19 @@ radius(c) == 25                   // 25 is what it is
 fix(c.r)                          // 25 is what it is, without a dimension on the drawing
 ```
 
-### 6.3 Params: `NAME := EXPR` **[0.29]**
+### 6.3 Values and inputs: `NAME := EXPR`, `param NAME` **[0.29]** **[0.40]**
 
 ```
-R := m * N / 2
+R := m * N / 2                      // a value
+param bore: Length := 50mm          // an input: a value a host may give another
+param beta: Angle hint(30deg)       // an input nothing binds: an unknown of the solve
 ```
 
-A definition whose value is a number introduces a named definitional value, a **param**. Param values are evaluated at elaboration time when all inputs are `Int`/literal, otherwise they are definitional scalars.
+A definition whose value is a number introduces a named definitional value. Values are evaluated at elaboration time when all inputs are `Int`/literal, otherwise they are definitional scalars — affine in an unknown when they read one (`q := 2 * beta`).
 
-A `param` is visible throughout the body that declares it and its repetition blocks. A file may read a used module's top-level parameters and groups (§14.4) in its root body, by the module's path (`engine.dims.bore`); a component receives external values through arguments (§8). A `param` MUST NOT read geometry (`a.x`): a `param` feeds constraints, and a number read off a seed would make the solution set depend on where a solve began (P3); a *seed* may (§6.4).
+**[0.40]** `param` before a definition marks one of the document's **inputs**: the numbers it is drawn from, and the one kind a host may give another value. Its type (`Length`, `Angle`, `Scalar`, `Int`) is optional where it has a value, which is then checked against it and carries it (`param w: Length := 60` is a length); a mismatch is **E103**. An input with no value is an **unknown** of the drawing, as a component's unbound formal is: it MUST state its type, which is `Length`, `Angle` or `Scalar` (a count is never an unknown) — **E040** otherwise — and its seed is its own `hint(E)`, the one keyless hint clause, which a solve writes back as it writes a point's. A seed on an input with a value is **E040**. `param` stands at the top of a document or its `preview` (a component's inputs are its formals; a block's copies share the document's — both refused where written), and a module's input MUST have a value (**E040**): a module's numbers are read by documents that do not draw it. A value reads an input as it reads any value.
+
+A value or an input is visible throughout the body that declares it and its repetition blocks. A file may read a used module's top-level parameters and groups (§14.4) in its root body, by the module's path (`engine.dims.bore`); a component receives external values through arguments (§8). A value MUST NOT read geometry (`a.x`): a value feeds constraints, and a number read off a seed would make the solution set depend on where a solve began (P3); a *seed* may (§6.4).
 
 ### 6.4 Seeds written inline **[0.2]**
 
@@ -578,7 +593,7 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
 e := Unwind(base, datum, phase: a0).p over u in (u0, u1)
 ```
 
-**Over a drawn instance.** `path := leg.toe over theta in (0, 360)` names a point of an instance the drawing holds. The trace is **anchored at the drawing**: the pose the instance stands in on the sheet is where evaluation begins, and the value the instance gave the swept formal is the anchor's parameter. An instance that leaves a numeric formal **unbound** makes it an unknown of the drawing — the rule that a name nothing defines is a free variable (§3.4), applied to a formal, named under the instance (`leg.theta`) so two instances leaving the same formal unbound have two unknowns — and the anchor then follows that unknown wherever the solve puts it. This is the form a mechanism is written in: drawn once with its crank free, and traced from the same statements. **[0.37]** Every other numeric formal a drawn instance leaves unbound is an unknown of the drawing in the same way (`leg.h`), and the curve is written over it as over the entities' coordinates: it is a **column** of the curve, so a contact against the curve may solve for it — a rod's length chosen so the stride touches the ground. Only the unknown itself: a formal given an expression in an unknown (`h: 2 * k`, inside an instance that left `k` unbound) is **E103**, and so is an unknown nothing on the sheet reads, which no solve could allocate.
+**Over a drawn instance.** `path := leg.toe over theta in (0, 360)` names a point of an instance the drawing holds. The trace is **anchored at the drawing**: the pose the instance stands in on the sheet is where evaluation begins, and the value the instance gave the swept formal is the anchor's parameter. An instance that leaves a numeric formal **unbound** makes it an unknown of the drawing (§3.4), named under the instance (`leg.theta`) so two instances leaving the same formal unbound have two unknowns — and the anchor then follows that unknown wherever the solve puts it. This is the form a mechanism is written in: drawn once with its crank free, and traced from the same statements. **[0.37]** Every other numeric formal a drawn instance leaves unbound is an unknown of the drawing in the same way (`leg.h`), and the curve is written over it as over the entities' coordinates: it is a **column** of the curve, so a contact against the curve may solve for it — a rod's length chosen so the stride touches the ground. Only the unknown itself: a formal given an expression in an unknown (`h: 2 * k`, inside an instance that left `k` unbound) is **E103**, and so is an unknown nothing on the sheet reads, which no solve could allocate.
 
 **Closed curves [0.37].** A curve run over a whole turn of an `Angle` formal (`over theta in (0, 360)`) that comes back where it started — a crank's coupler curve, a cam's profile — is **closed**. A contact on it has no end to stop at: a parameter carried past the seam wraps round onto the interval and stays free, since the seam is only where the interval was written to begin. A curve that does not come back (an involute unwound a whole turn) is open, and a contact on it is held to its ends.
 
@@ -712,13 +727,14 @@ p := plane(origin: o4, toward: q4, u: (0.6, 0.8, 0), v: (0, 0, 1))     // given 
 **[0.23] A view is a workplane, and it may be solved for.** A point drawn in view V *is* the point `o_V + a·u_V + b·v_V` in space, `(a, b)` its view coordinates; a point with no membership is on the page. **A plane is fixed unless its brackets name an unknown**, and `hint(…)` seeds only unknowns (§4.3):
 
 ```
-side := plane(origin: o2, toward: t2, from: front, fold: beta) hint(fold: 30deg)  // the fold solved
+param beta: Angle hint(30deg)
+side := plane(origin: o2, toward: t2, from: front, fold: beta)                  // the fold solved
 aux := plane(origin: o3, toward: t3, from: front, fold: along l)    // square to front, about l
 cut := plane(origin: o4, toward: t4, from: front, fold: 0deg, through: m)   // stood through m
 q := plane(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1), offset: 5)
 ```
 
-- `fold: E` where `E` is affine in a name nothing defines makes that name the fold's unknown — a free variable (W111), tied to every other dimension that reads it — seeded by `hint(fold: …)`. A fold over a stated number from a solved parent follows the parent; a chain of stated folds from stated planes is constant, exactly as before.
+- `fold: E` where `E` is affine in an unknown (§3.4: `param beta: Angle`, or a formal no call binds) solves the fold for it, tied to every other dimension that reads it, and seeded by the unknown's own seed; **[0.40]** `hint(fold: …)` on the plane is **E040**, since a seed has one place. A name nothing declares is **E101**. A fold over a stated number from a solved parent follows the parent; a chain of stated folds from stated planes is constant, exactly as before.
 - `fold: along l`, with `l` a line drawn in the parent (**E064** otherwise), folds the view square to the parent about `l`: it contains `l` and follows it as the solve moves it, and has no unknown of its own.
 - `attitude: free` makes the attitude three unknowns, seeded by `hint(u: (…), v: (…))` (the page's where none is written); it takes no `from:`, `fold:`, `u:` or `v:`.
 - `offset: free` makes the offset along the normal one unknown, seeded by `hint(offset: …)` from where the attitude alone stands the plane; `through: M` solves it so the point `M`, drawn in another view, is in the plane. A position is stated once: either beside a written `offset:`, beside `fold: along`, or `through:` a point of the plane itself is **E064**, as is a view derived from one whose own offset is solved.
@@ -808,7 +824,7 @@ boss union body                                //   ... plus the boss
 block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
 ```
 
-**Every numeric extent is an expression, and MUST NOT be an unknown.** This is the `fold:` bargain of §6.7 exactly: a number in a solid's brackets is settled by the flattener over the parameters in scope — a `param`, a formal, a named dimension (§5) — and is then document data no solve moves, checked against its slot's dimension (`Length` for a prism's ordinates, `Angle` for a sweep; **E103** otherwise). A solid allocates no parameter, so P3's other half holds without a rule of its own: there is nothing here for a solve to rewrite.
+**Every numeric extent is an expression, and MUST NOT be an unknown.** This is the `fold:` bargain of §6.7 exactly: a number in a solid's brackets is settled by the flattener over the numbers in scope — a value, an input, a formal (§5) — and is then document data no solve moves, checked against its slot's dimension (`Length` for a prism's ordinates, `Angle` for a sweep; **E103** otherwise). A solid allocates no parameter, so P3's other half holds without a rule of its own: there is nothing here for a solve to rewrite.
 
 - **A prism** runs `from:` one signed ordinate `to:` another **along the face's own plane normal**. Those signs are arithmetic and not a convention (§9.2 **[0.17]**) — they are ordinates on an axis, and a document writes both. `depth: d` is the draughtsman's spelling of `from: -d, to: 0`, the material *behind* the face the view shows, and is therefore a **magnitude**. A prism swept nowhere (`from` equal to `to`) is **E080**.
 - **A through prism** is written `tool := solid(section, through: target)`. Its target MUST be a solid (**E080**); it spans the target in both directions along the section's own plane normal. The extent is evaluated after the sketch is solved: recursively collect the target's stock and additions, ignoring all cuts, project a conservative bound of that material along the normal, and pad both ends outside the material at the kernel's tolerance. The target may be a swept solid or a body. Changes to its material geometry or placement change the extent; subtractive tools do not enlarge it. `through:` cannot be mixed with any other sweep label, and does not itself subtract anything. Apply the tool separately with `tool cut body`.
@@ -1453,7 +1469,7 @@ What goes in the parentheses is a short list:
 - **the number**, which may be named or an expression exactly as elsewhere: `distance(80)`, `distance(x = 7)`, `distance(h = w / 2)`, `distance(1' 3")`;
 - **a selector** — `side: left`, `at: start`, `external: true`, `along: x`. **[0.17]** A selector's *key* must be one the word has (a slot of the settled kind, or `along`, which chooses the kind and fills no slot), and its *value* must be one of the words that slot takes — both **E040**, at the key. Neither was checked through 0.16, and both failures were silent: a mistyped key was dropped and the statement settled without it, and a word outside the set fell through to whichever reading the implementation tested for last, so `at: banana` meant `end`. An implementation MUST publish each slot's vocabulary in its registry, so that a front end offers what the core accepts rather than keeping a second list;
 - **the third entity**, for `symmetry`;
-- **a pin**, `t == 0.4`, for a slot the constraint owns. Its *seed* is the trailing `hint(t: 0.4)` where every seed in the language is (§4.3). **[0.39]** A pin to a name nothing in scope defines — `t == s` — does not hold the slot at a number: it makes the slot's unknown **that name's**, as a dimension reading a name nothing defines is written in a free variable (§3.4), and every contact pinned to the same name owns the one unknown. Inside a component the name is the instance's own (`leg.s`), as a free variable's is. Only a bare name is shared (an expression over one would need an equation the slot does not have), only a curve contact's parameter (`t`) can be, and only by contacts on the **same** curve — two curves have two intervals, seams and speeds — so a contact on another curve pinned to the name is **E040**, and so is a `fix` pinned to one, since `fix` holds a number. The shared unknown is seeded by the `hint(t: …)` of the first contact naming it.
+- **a pin**, `t == 0.4`, for a slot the constraint owns. Its *seed* is the trailing `hint(t: 0.4)` where every seed in the language is (§4.3). **[0.39]** A pin to an unknown — `t == s` over `param s: Angle` (§3.4, §6.3) — does not hold the slot at a number: it makes the slot's unknown **that one**, as a dimension reading it is written in it, and every contact pinned to the same unknown owns it. Inside a component the unknown is a formal the call left unbound (`leg.s`). **[0.40]** A pin to a name nothing declares is **E101**. Only a bare name is shared (an expression over one would need an equation the slot does not have), only a curve contact's parameter (`t`) can be, and only by contacts on the **same** curve — two curves have two intervals, seams and speeds — so a contact on another curve pinned to the name is **E040**, and so is a `fix` pinned to one, since `fix` holds a number. **[0.40]** The shared unknown is seeded where it is declared; a `hint(t: …)` beside a pin to it is a second seed, **E040**.
 
 | word | fixity | operands → constraint |
 |---|---|---|
@@ -1622,8 +1638,8 @@ claim over crank.theta in (0deg, 360deg) {
 
 `claim over NAME in (A, B) { … }` judges every claim in its body as the drawing runs along `NAME`, and reports the **worst** pose reached.  It is Structure-class: it says how the claims inside it are judged and asserts nothing itself.
 
-- `NAME` MUST be a **free variable** of the drawing (§5) — an unknown the solver answers for.  A `param` is a number the document already fixed and sweeping a constant is not a question; naming one, or naming geometry, is **E040**.
-- `A` and `B` are read in the units the free variable's readers are written in: an interval of an angle is an angle, and one of a length is a length.
+- `NAME` MUST be an **unknown** of the drawing (§3.4) — an input with no value, or a formal an instance left unbound.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming geometry, is **E040**.
+- `A` and `B` are read in the units the unknown's readers are written in: an interval of an angle is an angle, and one of a length is a length.
 - An implementation MUST state that its answer is by **sampling**, and how many poses it took. A pose that did not solve or produced invalid solid geometry cannot certify the claim; the report identifies those failed parameter values, and a sweep with unresolved poses cannot be reported as holding.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
 
 *Non-normative:* the two together are what make a drawing's claims a test suite for the *object* rather than for one picture of it at one moment.  The loop an author works in — write, run, read the verdicts — needs the verdicts to be about the thing being made.
@@ -1923,7 +1939,7 @@ preview {
 When the file is opened as a model, including through a drawing's `model … from`, the preview's
 statements join the file's ordinary root body and solve together. A preview adds no namespace,
 implicit coordinate system, execution order, or separate solve. When the file is imported with
-`use`, the whole preview is omitted: its geometry, parameters, named dimensions and unit
+`use`, the whole preview is omitted: its geometry, values, inputs and unit
 statement are not exported. Component definitions and imports remain at file scope; a preview
 cannot be nested. Presentation still belongs in `.svd` files. Source editing in a preview MUST
 preserve the block and place newly drawn geometry inside it.

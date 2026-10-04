@@ -1,6 +1,6 @@
 //! Tokenize and parse dimension expressions and unit notation.
 
-use super::{is_builtin, Ast, Op, Parsed, FUNCTIONS, MAX_DEPTH, MAX_TEXT, MEASURES};
+use super::{Ast, Op, Parsed, FUNCTIONS, MAX_DEPTH, MAX_TEXT, MEASURES};
 use crate::units::{unit, Dim, Units};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -12,7 +12,6 @@ enum Tok {
     LParen,
     RParen,
     Comma,
-    Assign,
     End,
 }
 
@@ -225,11 +224,6 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
             '(' => Tok::LParen,
             ')' => Tok::RParen,
             ',' => Tok::Comma,
-            // `w := 60` — a dimension named where it is stated (§5)
-            ':' if chars.get(i) == Some(&'=') => {
-                i += 1;
-                Tok::Assign
-            }
             _ => return Err(format!("unexpected `{c}` at {}", at + 1)),
         };
         out.push((t, at));
@@ -403,9 +397,8 @@ impl Parser {
     }
 }
 
-/// Parse `name := body` or `body`.  A syntax error, an unknown function, a wrong arity, or a
-/// definition of a built-in name is an `Err`; a name nothing defines is not — that is the
-/// document's business, not the text's.
+/// Parse an expression.  A syntax error, an unknown function or a wrong arity is an `Err`; a
+/// name is not — what it stands for is the document's business, not the text's.
 /// Parse in **drawing units**: a document that names none, where a unit suffix is an error.
 /// Every caller that has a document uses `parse_in`.
 pub fn parse(text: &str) -> Result<Parsed, String> {
@@ -418,20 +411,11 @@ pub fn parse_in(text: &str, units: Units) -> Result<Parsed, String> {
     }
     let toks = tokenize(text, units)?;
     let mut p = Parser { toks, pos: 0, depth: 0 };
-    let mut name = None;
-    if let (Tok::Ident(n), Some((Tok::Assign, _))) = (p.peek().clone(), p.toks.get(1)) {
-        if is_builtin(&n) {
-            return Err(format!("`{n}` is built in and cannot be defined"));
-        }
-        name = Some(n);
-        p.next();
-        p.next();
-    }
     let body = p.expr()?;
     if *p.peek() != Tok::End {
         return Err(format!("unexpected `{}` at {}", tok_text(p.peek()), p.here()));
     }
-    Ok(Parsed { name, body })
+    Ok(Parsed { body })
 }
 
 fn tok_text(t: &Tok) -> String {
@@ -443,14 +427,8 @@ fn tok_text(t: &Tok) -> String {
         Tok::LParen => "(".to_string(),
         Tok::RParen => ")".to_string(),
         Tok::Comma => ",".to_string(),
-        Tok::Assign => ":=".to_string(),
         Tok::End => "end".to_string(),
     }
-}
-
-/// The name an expression defines, if it parses and has one.
-pub fn name_of(text: &str) -> Option<String> {
-    parse(text).ok().and_then(|p| p.name)
 }
 
 /// A bare number in digits — `5`, `-2.5`, `1e3` — is a constant, not an expression.  `None` for

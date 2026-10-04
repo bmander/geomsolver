@@ -34,8 +34,8 @@ export function editValue(c: Constraint): void {
 }
 
 /** Write `text` on every constraint being edited; false if the core would not have it, which
- *  leaves them all as they were.  A text that reads a name nothing defines *is* taken — the
- *  row says so until the name appears — since that is a document half-written, not a mistake. */
+ *  leaves them all as they were.  A text the core takes but cannot yet compute *is* taken —
+ *  the row says so until it can — since that is a document half-written, not a mistake. */
 function setDimension(cs: Constraint[], text: string): boolean {
   try {
     let why: string | null = null;
@@ -65,7 +65,7 @@ function openDimBox(): HTMLInputElement {
   box.type = 'text';
   box.className = 'dim';
   box.spellcheck = false;
-  box.title = 'a number, or an expression — `w = 80` names one, `w / 2` reads it, and a name\nnothing defines ties the dimensions that read it and leaves what they are worth open.\nEnter to accept, Esc to take it back';
+  box.title = 'a number, or an expression over the document\'s numbers — `w / 2` reads `w := 80`,\nand a declared unknown (`param a: Length`) ties the dimensions that read it.\nEnter to accept, Esc to take it back';
   dimTyped = false;
   box.addEventListener('input', () => { dimTyped = true; sizeDimBox(box); });
   box.addEventListener('keydown', (e) => {

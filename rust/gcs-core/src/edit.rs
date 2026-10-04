@@ -331,6 +331,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             }
         }
     }
+    edits.extend(unknown_seeds(sk, prog));
     if edits.is_empty() {
         return Edit::none(prog, None);
     }
@@ -342,8 +343,50 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
     }
 }
 
-/// A solved view's seeds as the solve left them: the fold its free variable came to, the
-/// attitude's axes, the offset from where the attitude alone would stand it.  Each written as a
+/// Each unknown the document declares (`param beta: Angle hint(30deg)`), read by a dimension or
+/// shared by contacts, its seed written as the solve left it: spliced over a literal seed, or a
+/// clause written where none was — and only where the solve moved it, so an unread unknown and an
+/// unmoved one change nothing.  A seed written as an expression is the author's arithmetic, and is
+/// left alone.
+fn unknown_seeds(sk: &Sketch, prog: &Program) -> Vec<Splice> {
+    let mut out = Vec::new();
+    for st in &prog.root().body {
+        let StmtKind::Param(p) = &st.kind else { continue };
+        let Some(input) = p.input.as_ref().filter(|_| !p.bound()) else { continue };
+        // read by a dimension, or a place contacts share along a curve (`t == s`)
+        let name = &p.name.text;
+        let Some(param) = sk.free_vars.get(name).copied().or(sk.shared.get(name).map(|s| s.param))
+        else {
+            continue;
+        };
+        let v = sk.params[param as usize].value;
+        match &input.seed {
+            Some((text, span)) => {
+                // a bare number, or an angle in degrees: a length in another unit (`2in` in an
+                // `mm` document) is left as written
+                let deg = text.trim().ends_with("deg");
+                let writable = (crate::expr::literal(text).is_some() || crate::expr::notation(text))
+                    && (deg || !crate::expr::names_unit(text));
+                let was = crate::expr::parse_in(text, sk.units).ok()
+                    .and_then(|q| crate::expr::eval(&q.body, &Default::default()).ok())
+                    .and_then(|a| a.number());
+                let moved = was.is_none_or(|was| (was - v).abs() > 1e-12 * (1.0 + v.abs()));
+                if writable && moved && !span.is_empty() {
+                    let with = if deg { format!("{}deg", num(v)) } else { num(v) };
+                    out.push(Splice { at: *span, with });
+                }
+            }
+            None if v != 0.0 => {
+                out.push(Splice { at: p.span, with: format!(" hint({})", num(v)) });
+            }
+            None => {}
+        }
+    }
+    out
+}
+
+/// A solved view's seeds as the solve left them: the attitude's axes, the offset from where the
+/// attitude alone would stand it.  Each written as a
 /// literal is spliced in place; one written as an expression is the author's arithmetic and is
 /// left alone; one not written at all is `missing` when the solve moved it off where an
 /// unwritten seed starts.  The third value is the clause's keys at the solved numbers, for a
@@ -351,17 +394,9 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
 fn plane_seeds(sk: &Sketch, prog: &Program, d: &Decl, pi: usize)
     -> (Vec<Splice>, bool, Vec<syntax::PlaneHint>)
 {
-    use crate::constraints::CKind;
     let b = sk.basis(pi);
+    // (a solved fold reads an unknown, whose seed is its declaration's: `unknown_seeds`)
     let mut now: Vec<(&str, Vec<f64>, bool)> = Vec::new();
-    // the fold, where it is the document's free variable: m·a + c, in degrees
-    if let Some(f) = sk.constraints.iter()
-        .find(|c| c.kind == CKind::Hinge && c.args[0].ent().i() == pi)
-        .and_then(|c| c.free)
-    {
-        let theta = f.m * sk.params[f.param as usize].value + f.c;
-        now.push(("fold", vec![theta.to_degrees()], true));
-    }
     if matches!(d.attitude, syntax::Attitude::Free { .. }) {
         now.push(("u", b.u.to_vec(), false));
         now.push(("v", b.v.to_vec(), false));
@@ -944,7 +979,7 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                 match &field.value {
                     syntax::InstVal::Ref(r) => look(r),
                     syntax::InstVal::Group(inner) => fields.extend(inner),
-                    syntax::InstVal::Expr(_) => {}
+                    syntax::InstVal::Expr(_) | syntax::InstVal::Hint(_) => {}
                 }
             }
         }
@@ -1178,8 +1213,9 @@ fn with_line(text: &str, s: Span) -> Span {
 /// Write a dimension's text — a number, or an expression somebody typed.
 ///
 /// `Kind::Numeric` when the text is a plain number and was one before: the topology cannot have
-/// moved, so a compiled plan survives.  A text that names anything is `Structural`, because a
-/// name nothing defines is a free variable and that *is* a column.
+/// moved, so a compiled plan survives.  A text that names anything is `Structural`, because the
+/// name may be an unknown, and that *is* a column.  A number typed over a dimension that reads a
+/// `param` (`distance(w)`) is written into the param's own line.
 pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text: &str) -> Edit {
     let Some(site) = e.map.of_constraint.get(&cid) else {
         return Edit::none(prog, Some("no such constraint".into()));
@@ -1210,6 +1246,23 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
         return Edit::none(prog, Some("that argument is not a dimension".into()));
     };
     let was = was.as_str();
+    // a dimension that reads a `param` (`distance(w)`) is edited where the number is: a plain
+    // number typed over it is the param's new value, and every dimension reading it follows
+    if crate::expr::literal(text).is_some() || crate::expr::notation(text) {
+        let param = prog.root().body.iter().find_map(|st| match &st.kind {
+            StmtKind::Param(p) if p.name.text == was.trim() && p.bound() => Some(p),
+            _ => None,
+        });
+        if let Some(p) = param {
+            let value = Splice { at: p.span, with: text.trim().to_string() };
+            return Edit {
+                text: splice(prog.text(), vec![value]),
+                kind: Kind::Structural,
+                names: Vec::new(),
+                refused: None,
+            };
+        }
+    }
     let plain = crate::expr::literal(text).is_some() && crate::expr::literal(was).is_some();
     Edit {
         text: splice(prog.text(), vec![Splice { at: span, with: text.trim().to_string() }]),

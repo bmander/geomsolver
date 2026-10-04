@@ -1,12 +1,10 @@
-//! One namespace for the three ways a number gets a name (issue #47, item 7).
+//! One namespace for a number's names, and **an unknown is declared** (issue #77).
 //!
-//! `w := 60`, `a distance(w := 60) b` and a bare `w` nothing defines used to be resolved by
-//! two machineries with different rules: a `param` was the flattener's, lexically scoped, and
-//! a named dimension the expression graph's, one global table — so a `param` could not read a
-//! named dimension, a name defined both ways collided as a stray `=`, and a bare name inside a
-//! component reached whatever the document happened to call that.  Now a named dimension
-//! declares its name in its body exactly as a `param` does, and a bare name a body never
-//! declares is an unknown of the instance, as an unbound formal already was.
+//! A number is named one way, `w := 60` — or, as one of the document's inputs, `param w := 60` —
+//! and a dimension's number only reads names.  An unknown the solve answers for is declared too:
+//! an input nothing binds (`param w: Length`) or a component's formal no call binds.  A name
+//! nothing declares is E101 wherever it is read — in a dimension, a fold or a pin — and never an
+//! unknown of its own making, which turned a misspelling into a degree of freedom.
 
 use std::collections::BTreeMap;
 
@@ -43,64 +41,64 @@ fn dist(sk: &gcs_core::model::Sketch, i: usize, j: usize) -> f64 {
     ((px - qx).powi(2) + (py - qy).powi(2)).sqrt()
 }
 
-/// A `param` reads a named dimension: the two are one kind of definition.
+/// An input is read like any other number: by dimensions, and by the values defined over it.
 #[test]
-fn a_param_reads_a_named_dimension() {
-    let (e, d) = read(&format!("{BASE}a distance(w := 60) b\nh := w / 2\nb distance(h) c\n"));
+fn an_input_is_read_like_any_number() {
+    let src = format!("{BASE}param w := 60\na distance(w) b\nh := w / 2\nb distance(h) c\n");
+    let (e, d) = read(&src);
     assert!(d.is_empty(), "{d:?}");
     let sk = solved(e);
     assert!((dist(&sk, 1, 2) - 30.0).abs() < 1e-9);
 }
 
-/// A name defined as a `param` and as a dimension is declared twice, and that is the one
-/// thing said — not the stray `=` that folding the param's number over the dimension's own
-/// name used to leave behind.
+/// A name defined as a value and as an input is declared twice, and that is the one thing said.
 #[test]
 fn a_name_defined_both_ways_is_declared_twice() {
-    let (_, d) = read(&format!("w := 60\n{BASE}a distance(w := 60) b\n"));
+    let (_, d) = read(&format!("w := 60\n{BASE}param w := 60\na distance(w) b\n"));
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].starts_with("E001") && d[0].contains("`w` is declared twice"), "{d:?}");
 }
 
-/// A bare name inside a component is an unknown of the instance — `t1.w`, `t2.w` — exactly
-/// as a formal left unbound is, so two instances have two unknowns and not one shared one.
+/// A bare name a component never declares is E101: a component's unknowns are its formals, and a
+/// formal no call binds is the instance's own — `t1.w`, `t2.w` — so two instances have two.
 #[test]
-fn a_bare_name_in_a_component_is_the_instances_own_unknown() {
+fn a_name_a_component_never_declares_is_refused() {
     let doc = format!(
         "component T(p: point, q: point) {{ p distance(w) q }}\n{BASE}d := point hint(x: 0, y: 40)\n\
          t1 := T(a, b)\nt2 := T(b, c)\nt3 := T(c, d)\n"
     );
     let (e, d) = read(&doc);
-    let free: Vec<&String> = d.iter().filter(|m| m.starts_with("W111")).collect();
-    assert_eq!(free.len(), 3, "{d:?}");
-    for n in ["t1.w", "t2.w", "t3.w"] {
-        assert!(free.iter().any(|m| m.contains(&format!("`{n}`"))), "{d:?}");
-        assert!(e.sketch.free_vars.contains_key(n), "{:?}", e.sketch.free_vars);
-    }
-    // the same drawing with `w` a formal left unbound has the same unknowns, and says nothing:
-    // a declared formal is no misspelling
+    assert!(d.iter().any(|m| m.starts_with("E101") && m.contains("`w` is not defined")), "{d:?}");
+    assert!(e.sketch.free_vars.is_empty(), "{:?}", e.sketch.free_vars);
+    // the same drawing with `w` a formal left unbound has one unknown per instance, and says
+    // nothing: a declared formal is no misspelling
     let formal = doc.replace("q: point)", "q: point, w: Length)");
     let (e2, d2) = read(&formal);
-    assert!(d2.iter().all(|m| !m.starts_with("W111")), "{d2:?}");
-    let names = |e: &Elaborated| e.sketch.free_vars.keys().cloned().collect::<Vec<_>>();
-    assert_eq!(names(&e2), names(&e));
+    assert!(d2.is_empty(), "{d2:?}");
+    let names: Vec<String> = e2.sketch.free_vars.keys().cloned().collect();
+    assert_eq!(names, ["t1.w", "t2.w", "t3.w"]);
 }
 
-/// An unknown is said once, however many dimensions read it.
+/// An input nothing binds is one unknown, however many dimensions read it, and is no warning.
 #[test]
-fn a_free_variable_is_said_once() {
-    let (_, d) = read(&format!("{BASE}a distance(w) b\nb distance(w) c\na distance(2 * w) c\n"));
-    let free: Vec<&String> = d.iter().filter(|m| m.starts_with("W111")).collect();
-    assert_eq!(free.len(), 1, "{d:?}");
-    assert!(free[0].contains("`w`"), "{d:?}");
+fn an_unbound_input_is_one_unknown() {
+    let (e, d) = read(&format!(
+        "{BASE}param w: Length\na distance(w) b\nb distance(w) c\na distance(2 * w) c\n"
+    ));
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!(e.sketch.free_vars.keys().collect::<Vec<_>>(), vec!["w"]);
+    // undeclared, the same three dimensions are three refusals and no unknown
+    let (e, d) = read(&format!("{BASE}a distance(w) b\nb distance(w) c\na distance(2 * w) c\n"));
+    assert_eq!(d.iter().filter(|m| m.starts_with("E101")).count(), 3, "{d:?}");
+    assert!(e.sketch.free_vars.is_empty());
 }
 
-/// Named dimensions reach a component through an explicit numeric argument.
+/// The document's numbers reach a component through an explicit numeric argument.
 #[test]
-fn a_component_receives_a_named_dimension_as_an_argument() {
+fn a_component_receives_an_input_as_an_argument() {
     let doc = format!(
         "component T(p: point, q: point, w: Length) {{ p distance(w / 2) q }}\n\
-         {BASE}a distance(w := 60) b\nt := T(b, c, w: w)\n"
+         {BASE}param w := 60\na distance(w) b\nt := T(b, c, w: w)\n"
     );
     let (e, d) = read(&doc);
     assert!(d.is_empty(), "{d:?}");
@@ -114,27 +112,27 @@ fn a_component_receives_a_named_dimension_as_an_argument() {
 fn a_modules_component_does_not_read_the_callers_names() {
     let mut shelf: BTreeMap<&str, &str> = BTreeMap::new();
     shelf.insert("lib.t", "component T(p: point, q: point, w: Length) { p distance(w) q }\n");
-    let src = format!("use lib.t\n{BASE}a distance(w := 60) b\nt := lib.t.T(b, c)\n");
+    let src = format!("use lib.t\n{BASE}param w := 60\na distance(w) b\nt := lib.t.T(b, c)\n");
     let (mut prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let linked = link(&mut prog, &mut |name| shelf.get(name).map(|t| t.to_string()));
     assert!(linked.is_empty(), "{linked:?}");
     let e = elaborate(&prog);
-    let free: Vec<String> =
-        e.diags.iter().filter(|d| d.code.as_str() == "W111").map(|d| d.message.clone()).collect();
     // a formal left unbound is declared, so nothing is said of it
-    assert!(free.is_empty(), "{free:?}");
+    assert!(e.diags.is_empty(), "{:?}", e.diags);
     assert!(e.sketch.free_vars.contains_key("t.w"), "{:?}", e.sketch.free_vars);
 }
 
-/// A named dimension inside a component is the instance's — `u.t.w` — and is read by dotted
-/// path from the body around it and from the sheet, like anything else an instance makes.
+/// An instance's unknown — a formal its call left unbound, `u.t.w` — is read by dotted path from
+/// the body around it and from the sheet, like anything else an instance makes; a dotted name
+/// nothing made is E101, as a bare one is.
 #[test]
-fn a_named_dimension_in_an_instance_is_read_by_its_dotted_path() {
+fn an_instances_unknown_is_read_by_its_dotted_path() {
     let doc = format!(
-        "component T(p: point, q: point) {{ p distance(w := 60) q }}\n\
+        "component T(p: point, q: point, w: Length) {{ p distance(w) q }}\n\
          component U(p: point, q: point, r: point) {{ t := T(p, q)\n  q distance(t.w / 2) r }}\n\
-         {BASE}d := point hint(x: 0, y: 40)\nu := U(a, b, c)\nc distance(u.t.w) d\n"
+         {BASE}d := point hint(x: 0, y: 40)\nu := U(a, b, c)\nc distance(u.t.w) d\n\
+         a distance(60) b\n"
     );
     let (e, d) = read(&doc);
     assert!(d.is_empty(), "{d:?}");
@@ -142,26 +140,23 @@ fn a_named_dimension_in_an_instance_is_read_by_its_dotted_path() {
     assert!((dist(&sk, 0, 1) - 60.0).abs() < 1e-9);
     assert!((dist(&sk, 1, 2) - 30.0).abs() < 1e-9);
     assert!((dist(&sk, 2, 3) - 60.0).abs() < 1e-9);
-    // and the drawing says so in the constraint list
-    let said: Vec<String> =
-        sk.user_constraints().iter().map(|c| gcs_core::io::describe(c)).collect();
-    assert!(said.iter().any(|s| s.contains("u.t.w = 60")), "{said:?}");
-    assert!(said.iter().any(|s| s.contains("u.t.w / 2")), "{said:?}");
+    let (e, d) = read(&doc.replace("c distance(u.t.w) d", "c distance(u.t.ww) d"));
+    assert!(d.iter().any(|m| m.starts_with("E101") && m.contains("`u.t.ww`")), "{d:?}");
+    assert!(!e.sketch.free_vars.contains_key("u.t.ww"));
 }
 
-/// A name declared inside a `cycle` is each copy's own — `#N.k.w` — so a dimension named in a
-/// block is defined once per copy rather than N times over, and a bare name in the block is
-/// the enclosing instance's, shared by every copy.
+/// A name declared inside a `cycle` is each copy's own — `#N.k.w` — so a value defined in a
+/// block is defined once per copy rather than N times over, and the document's unknown read in
+/// the block is one, shared by every copy.
 #[test]
-fn a_block_copy_declares_its_own_names_and_shares_the_bodys_unknowns() {
+fn a_block_copy_declares_its_own_names_and_shares_the_documents_unknowns() {
     let (e, d) = read(
-        "o := point\nfix(x == 0, y == 0) o\n\
+        "o := point\nfix(x == 0, y == 0) o\nparam s: Length\n\
          cycle 2 { z := point hint(x: 5, y: 5)\n  y := point hint(x: 9, y: 2)\n\
-         x := point hint(x: 3, y: 8)\n\
-         o distance(w := 60) z\n  o distance(w / 2) y\n  o distance(s) x }\n",
+         x := point hint(x: 3, y: 8)\n  w := 60\n\
+         o distance(w) z\n  o distance(w / 2) y\n  o distance(s) x }\n",
     );
-    let free: Vec<&String> = d.iter().filter(|m| m.starts_with("W111")).collect();
-    assert_eq!(d.len(), free.len(), "{d:?}");
+    assert!(d.is_empty(), "{d:?}");
     // one shared unknown `s`, and no complaint about `w`
     assert_eq!(e.sketch.free_vars.keys().collect::<Vec<_>>(), vec!["s"]);
     let sk = solved(e);
@@ -180,25 +175,28 @@ fn an_unbound_formal_inside_a_block_is_a_name_the_graph_reads() {
         "component T(p: point, q: point, w: Length) { p distance(w) q }\n\
          o := point\nfix(x == 0, y == 0) o\ncycle 3 { a := point hint(x: 10, y: 0)\n  t := T(o, a) }\n",
     );
-    assert!(d.iter().all(|m| m.starts_with("W111")), "{d:?}");
+    assert!(d.is_empty(), "{d:?}");
     assert_eq!(e.sketch.free_vars.len(), 3, "{:?}", e.sketch.free_vars);
     assert!(e.sketch.free_vars.keys().all(|k| k.starts_with('#') && k.ends_with(".t.w")));
 }
 
-/// A `param` reading a free variable is refused with the cause: nothing in scope gives the
-/// name a number.
+/// A value may read an unknown, and is then that unknown scaled (`q := s * 2`), read by
+/// dimensions as the unknown is; a value reading a name nothing declares is refused.
 #[test]
-fn a_param_may_not_read_a_free_variable() {
-    let (_, d) = read(&format!("{BASE}a distance(s) b\nq := s * 2\n"));
-    let said = d.iter().any(|m| m.starts_with("E103") && m.contains("`s` is not a number here"));
-    assert!(said, "{d:?}");
+fn a_value_over_an_unknown_is_the_unknown_scaled() {
+    let src = format!("{BASE}param s: Length\nq := s * 2\na distance(q) b\nb distance(s) c\n");
+    let (e, d) = read(&src);
+    assert!(d.is_empty(), "{d:?}");
+    let sk = solved(e);
+    assert!((dist(&sk, 0, 1) - 2.0 * dist(&sk, 1, 2)).abs() < 1e-9);
+    let (_, d) = read(&format!("{BASE}q := s * 2\na distance(q) b\n"));
+    assert!(!d.is_empty(), "{d:?}");
 }
 
 /// **A name declared over a built-in is said** (issue #48, item 2).  `tau := 35deg` read
 /// 35° where the flattener substituted the text and a full turn where `expr::eval` worked a
 /// number out, so one name had two values and the lever it turned stood at 360° with nothing
-/// said.  W112 at every declaration of a number's name: a `param`, a formal, a block's index —
-/// a *named dimension* of a built-in name is refused where it is parsed, and stays refused.
+/// said.  W112 at every declaration of a number's name: a `param`, a formal, a block's index.
 #[test]
 fn a_name_that_shadows_a_built_in_is_said() {
     let w112 = |src: &str| -> Vec<String> {
@@ -218,12 +216,11 @@ fn a_name_that_shadows_a_built_in_is_said() {
     // a function's name is built in as much as a constant's
     let d = w112(&format!("min := 3\n{BASE}"));
     assert!(d[0].contains("a built-in function"), "{d:?}");
+    // an input is a declaration like any other
+    let d = w112(&format!("param tau := 35deg\n{BASE}"));
+    assert_eq!(d.len(), 1, "{d:?}");
     // and every other name is a name: said once, at the declaration, and about nothing else
     assert!(w112(&format!("taut := 35deg\npit := 2\n{BASE}")).is_empty());
-    // a named dimension is refused where it is parsed, and is not warned about twice
-    let (_, d) = read(&format!("{BASE}a distance(tau := 40) b\n"));
-    assert!(d.iter().any(|m| m.contains("`tau` is built in and cannot be defined")), "{d:?}");
-    assert!(d.iter().all(|m| !m.starts_with("W112")), "{d:?}");
 }
 
 /// **A dimension reads no geometry outside a trace** (§6.5).  `distance(c.r)` names the circle's
@@ -242,7 +239,7 @@ fn a_dimension_reading_geometry_is_refused_outside_a_trace() {
     );
     let (_, d) = read(&drawn);
     assert!(d.iter().any(|m| m.starts_with("E103") && m.contains("`k.r` is a number of the geometry")), "{d:?}");
-    assert!(!d.iter().any(|m| m.starts_with("W111")), "no unknown minted: {d:?}");
+
     let traced = format!(
         "component L(k: circle, u: Length) {{ p := point hint(x: 1, y: 1)\n  \
          horizontal line(k.center, p)\n  k.center distance(k.r + u) p }}\n\
@@ -250,4 +247,62 @@ fn a_dimension_reading_geometry_is_refused_outside_a_trace() {
     );
     let (_, d) = read(&traced);
     assert!(d.is_empty(), "{d:?}");
+}
+
+/// **An input stands at the top of a document and says what it is** (§6.3, issue #77).  One with
+/// no value is an unknown, so it names its type — a length, an angle or a plain number, never a
+/// count — and a seed is for an unknown alone.  A component's inputs are its formals, a block's
+/// copies share the document's, and a module's numbers are read by documents that do not draw
+/// it, so an unknown there has no drawing to belong to.  A preview is the top of its document.
+#[test]
+fn an_input_stands_at_the_top_and_says_what_it_is() {
+    let said = |src: &str, code: &str, what: &str| {
+        let (_, d) = read(src);
+        assert!(d.iter().any(|m| m.starts_with(code) && m.contains(what)), "{code} {what}: {d:?}");
+    };
+    said(&format!("{BASE}param w\na distance(w) b\n"), "E040", "say what it is");
+    said(&format!("{BASE}param n: Int\n"), "E040", "is an unknown, so a `Length`");
+    said(&format!("{BASE}param w := 60 hint(50)\n"), "E040", "a seed is for an unknown");
+    said(&format!("{BASE}param w: Length hint(30deg)\na distance(w) b\n"), "E103", "30deg");
+    said(&format!("{BASE}param w: Length := 30deg\na distance(w) b\n"), "E103", "Length");
+    let comp = "component T(p: point) { param w := 3 }\n";
+    said(comp, "syntax", "a component's inputs are its formals");
+    said(&format!("{BASE}cycle 2 {{ param w := 3 }}\n"), "syntax", "it stands at the top level");
+    said(&format!("{BASE}param w: point\n"), "syntax", "a `param` is a number");
+    // a preview's statements are its document's top level
+    let (_, d) = read(&format!("{BASE}preview {{\n  param w := 60\n  a distance(w) b\n}}\n"));
+    assert!(d.is_empty(), "{d:?}");
+    // and a module's number has a value, or no drawing to belong to
+    let mut shelf: BTreeMap<&str, &str> = BTreeMap::new();
+    shelf.insert("lib.u", "param k: Length\nparam j := 4\n");
+    let (mut prog, errs) = parse(&format!("use lib.u\n{BASE}a distance(lib.u.j) b\n"));
+    assert!(errs.is_empty(), "{errs:?}");
+    assert!(link(&mut prog, &mut |name| shelf.get(name).map(|t| t.to_string())).is_empty());
+    let e = elaborate(&prog);
+    let d: Vec<String> =
+        e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect();
+    let refused = d.iter().any(|m| m.starts_with("E040") && m.contains("belongs to the document"));
+    assert!(refused, "{d:?}");
+}
+
+/// **A solve writes an unknown's seed back where it is declared**, as it writes a point's: the
+/// literal inside `param w: Length hint(…)` becomes the number the solve came to, in the unit it
+/// was written in, and nothing else in the text moves.
+#[test]
+fn a_solve_writes_an_unknowns_seed_back_to_its_declaration() {
+    let src = format!("{BASE}param w: Length hint(10)\na distance(w) b\nb distance(w / 2) c\n\
+                       fix(x == 80, y == 0) b\n");
+    let (e, d) = read(&src);
+    assert!(d.is_empty(), "{d:?}");
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let ed = gcs_core::edit::commit_seeds(&e, &sk, &e.program);
+    assert!(ed.text.contains("param w: Length hint(80)"), "{}", ed.text);
+    assert!(ed.text.contains("a distance(w) b\nb distance(w / 2) c"), "{}", ed.text);
+    // an unknown with no seed written gets one, where the clause would go
+    let (e, _) = read(&src.replace(" hint(10)", ""));
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let ed = gcs_core::edit::commit_seeds(&e, &sk, &e.program);
+    assert!(ed.text.contains("param w: Length hint(80)\n"), "{}", ed.text);
 }

@@ -2,8 +2,9 @@
 //!
 //! The value says what the name is — a number, an element, a chain joined by `->`, an instance, a
 //! group, a curve — and `(NAME := VALUE)` is the value, so a chain link is named where it stands.
-//! The old spellings (`param`, `NAME := Comp(…)`, `NAME := CHAIN`, a name after the keyword) do not
-//! parse, and a lone `=` is no token.
+//! The old spellings (`param w = 100`, `NAME := Comp(…)`, `NAME := CHAIN`, a name after the
+//! keyword) do not parse, and a lone `=` is no token.  `param` before a definition marks one of the
+//! document's inputs (§6.3), and a dimension's number defines nothing.
 
 use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::edit;
@@ -79,14 +80,16 @@ fn a_chain_names_its_traversal_and_a_link_is_named_in_parentheses() {
 }
 
 /// The parentheses of a named link are told from an operator's own by the element keyword after
-/// `:=`: a named dimension is a number, never a kind.
+/// `:=`; anything else there is a dimension's number, which defines nothing.
 #[test]
-fn a_named_dimension_is_not_a_named_link() {
-    let e = read(&format!("{PTS}a distance(w := 10) b\nb distance(w) c\n"));
+fn a_dimension_defines_no_name() {
+    let e = read(&format!("{PTS}w := 10\na distance(w) b\nb distance(w) c\n"));
     assert_eq!(e.sketch.user_constraints().len(), 2);
-    let e = read(&format!("{PTS}distance(w := 10) (ab := line(a, b))\n"));
+    let e = read(&format!("{PTS}distance(10) (ab := line(a, b))\n"));
     assert!(e.map.ent_named("ab").is_some());
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Distance));
+    let (prog, errs) = parse(&format!("{PTS}a distance(w := 10) b\n"));
+    assert!(!errs.is_empty() || !elaborate(&prog).ok(), "a dimension's number defined a name");
 }
 
 /// What is not a definition any more does not parse, and the errors say where.

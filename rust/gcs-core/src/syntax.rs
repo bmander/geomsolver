@@ -104,6 +104,19 @@ impl Ty {
         })
     }
 
+    /// The word `parse` reads a number type from (`None` for one written as an entity kind).
+    pub fn word(self) -> Option<&'static str> {
+        Some(match self {
+            Ty::Int => "Int",
+            Ty::Scalar => "Scalar",
+            Ty::Length => "Length",
+            Ty::Angle => "Angle",
+            Ty::Side => "Side",
+            Ty::Group => "group",
+            Ty::Ent(_) => return None,
+        })
+    }
+
     /// What a formal declared this way *is* (`units.rs`) — the same table one question further
     /// on, and here for `parse`'s reason: a second copy of the list would be a second answer the
     /// moment a type is added.  `Length` and `Angle` name the two base dimensions; `Int` and
@@ -339,13 +352,40 @@ pub enum InstVal {
     /// are the outer group's under the member's name (`dims.cyl.bore`), and the member is a
     /// group a call may be given (`Part(dims.cyl)`).  Only a group's member may be one.
     Group(Vec<InstArg>),
+    /// `beta: hint(15deg)` — the formal left unbound, so an unknown of the drawing as any
+    /// unbound numeric formal is, and its solve begun at this number.  Only a call's argument.
+    Hint(String),
 }
 
+/// A number defined by name: `w := 60`, a value worked out while elaborating, or — under the
+/// word `param` — one of the document's **inputs** (§6.3): `param bore: Length := 50mm`, which a
+/// host may give another value, or `param beta: Angle hint(30deg)`, which nothing binds and is
+/// therefore an unknown of the solve, as a component's unbound formal is.
 #[derive(Clone, Debug)]
 pub struct ParamDecl {
     pub name: Name,
+    /// The value after `:=`; empty for an input nothing binds.
     pub text: String,
+    /// Where the value is; for an unbound input, the empty span after the declaration's type.
     pub span: Span,
+    /// `Some` under the word `param`.
+    pub input: Option<Input>,
+}
+
+/// What `param` adds to a definition: its declared type and, for one nothing binds, its seed.
+#[derive(Clone, Debug)]
+pub struct Input {
+    pub ty: Option<Ty>,
+    /// `hint(30deg)`: the seed's text and span, only on an input nothing binds.
+    pub seed: Option<(String, Span)>,
+}
+
+impl ParamDecl {
+    /// Whether the definition gives the name a value — every plain definition does; an input
+    /// may not, and is then an unknown.
+    pub fn bound(&self) -> bool {
+        !self.text.is_empty()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1194,18 +1234,23 @@ impl Written {
                     OpArg::Slot { key, arg } if key.text == *name => Some(arg),
                     _ => None,
                 });
-                // a shared parameter is pinned to its name and seeded by the clause: the two
-                // halves of `path tangent(t == s) ground hint(t: 330)` are one argument
-                let seed = slot().find_map(|a| match a {
-                    Arg::Seed { value, pinned: false } => Some(*value),
-                    _ => None,
-                });
-                let tie = slot().find_map(|a| match a {
-                    Arg::Tie { name, span, .. } => {
-                        Some(Arg::Tie { name: name.clone(), seed, span: *span })
+                // a shared parameter is pinned to an unknown and seeded where the unknown is
+                // declared (`param s: Angle hint(330)`): a `hint(t: …)` beside the pin would be a
+                // second seed for one unknown, and the contacts sharing it would disagree
+                let tie = slot().find(|a| matches!(a, Arg::Tie { .. })).cloned();
+                if tie.is_some() {
+                    if let Some(key) = self.args.iter().find_map(|a| match a {
+                        OpArg::Slot { key, arg: Arg::Seed { pinned: false, .. } }
+                            if key.text == *name => Some(key),
+                        _ => None,
+                    }) {
+                        let m = format!(
+                            "`{}` is pinned to an unknown, which is seeded where it is declared",
+                            key.text
+                        );
+                        return Err((key.span, m));
                     }
-                    _ => None,
-                });
+                }
                 tie.or_else(|| slot().next().cloned())
             } else if sk.is_dimension() {
                 // the number, wherever the dimension slot stands: a kind has at most one, so it

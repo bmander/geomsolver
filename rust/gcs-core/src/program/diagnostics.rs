@@ -80,8 +80,6 @@ pub enum Code {
     E107,
     /// an expression that would not compute — the last number stands
     W110,
-    /// a free variable: which dimensions it ties together
-    W111,
     /// a declaration over a built-in name (§3.3, §5): the built-in is what an expression reads
     W112,
 }
@@ -115,14 +113,13 @@ impl Code {
             Code::E106 => "E106",
             Code::E107 => "E107",
             Code::W110 => "W110",
-            Code::W111 => "W111",
             Code::W112 => "W112",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::W110 | Code::W111 | Code::W112 => Severity::Warning,
+            Code::W110 | Code::W112 => Severity::Warning,
             _ => Severity::Error,
         }
     }

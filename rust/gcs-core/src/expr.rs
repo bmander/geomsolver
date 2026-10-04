@@ -6,7 +6,7 @@ mod parser;
 
 pub use document::{evaluate, has_expr, set_dimension, sync_free, ExprError, ExprItem, Fault};
 pub use eval::{eval, eval_measured, to_arg_units, to_user_units, Aff, Measurer};
-pub use parser::{literal, name_of, names_unit, notation, parse, parse_in};
+pub use parser::{literal, names_unit, notation, parse, parse_in};
 
 use crate::units::Dim;
 use std::collections::BTreeSet;
@@ -154,10 +154,6 @@ pub fn builtin(name: &str) -> Option<&'static str> {
     }
 }
 
-fn is_builtin(name: &str) -> bool {
-    builtin(name).is_some()
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Ast {
     /// A literal, and what it *is*.  A bare number is `Dim::SCALAR` and takes the dimension of
@@ -181,10 +177,9 @@ pub enum Op {
     Pow,
 }
 
-/// `name := body`, or just `body`.
+/// A parsed expression.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parsed {
-    pub name: Option<String>,
     pub body: Ast,
 }
 

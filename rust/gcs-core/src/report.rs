@@ -479,7 +479,7 @@ pub fn constraint_json(sk: &Sketch, c: &Constraint) -> Json {
     v
 }
 
-/// The document's expressions, in evaluation order — see `expr::evaluate`.
+/// The document's expressions, in document order — see `expr::evaluate`.
 pub fn exprs_json(sk: &mut Sketch) -> Json {
     Json::Arr(
         crate::expr::evaluate(sk)
@@ -489,7 +489,6 @@ pub fn exprs_json(sk: &mut Sketch) -> Json {
                     ("id", (it.id as i64).into()),
                     ("attr", it.attr.into()),
                     ("text", it.text.as_str().into()),
-                    ("name", it.name.map(Json::Str).unwrap_or(Json::Null)),
                     ("value", it.value.into()),
                     ("deps", Json::Arr(it.deps.iter().map(|d| Json::Str(d.clone())).collect())),
                     ("free", Json::Arr(it.free.iter().map(|d| Json::Str(d.clone())).collect())),

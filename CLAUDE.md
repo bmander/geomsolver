@@ -504,18 +504,17 @@ from a CDN) so the app opens from a file.
 
 Conventions:
 - **A name is defined one way, `NAME := VALUE`** ([plan](docs/definitions-plan.md), Solvent §5,
-  [0.29]).  `w := 100` is a param, `c := circle(…)` a declaration, `t := Tooth(…)` an instance,
-  `dims := {…}` a group (a brace after `:=` is a list, lexed across lines), `profile := (ab :=
-  line(a, b)) -> line -> close` a chain whose link is named in place, `k := leg.toe over u in (a,
-  b)` a curve, `p := point(x: e, y: e)` a computed point, `a distance(w := 60) b` a named
-  dimension (only as the number's outermost form).  `:=` is `Tok::Define`; a lone `=` is no
-  token.  `:=` binds loosest, so a link is named in parentheses; with no `->` in the statement the
-  name goes to the one declaration (`l := horizontal line(a, b)`: a prefix word's value is its
-  operand).  `P::definition` lowers to the existing `StmtKind`s
-  (`Param`, `Group`, `Instance`, `Decl`, `Chain`), so nothing below the parser knows;
-  `syntax::words::named_link_at` tells `(l := line)` from `distance(w := 60)`.  `label:` never
-  defines: it fills a slot.  A drawn callout prints a definition as `w = 60` (`io::as_written`).  A
-  name in a child slot (`line(a, q := hint(…))`) is not implemented yet.
+  [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=
+  Tooth(…)` an instance, `dims := {…}` a group (a brace after `:=` is a list, lexed across lines),
+  `profile := (ab := line(a, b)) -> line -> close` a chain whose link is named in place, `k :=
+  leg.toe over u in (a, b)` a curve, `p := point(x: e, y: e)` a computed point.  A dimension's
+  number defines no name (named dimensions are gone, [0.40]).  `:=` is `Tok::Define`; a lone `=` is
+  no token.  `:=` binds loosest, so a link is named in parentheses; with no `->` in the statement
+  the name goes to the one declaration (`l := horizontal line(a, b)`: a prefix word's value is its
+  operand).  `P::definition` lowers to the existing `StmtKind`s (`Param`, `Group`, `Instance`,
+  `Decl`, `Chain`), so nothing below the parser knows; `syntax::words::named_link_at` tells `(l :=
+  line)` from an operator's own parentheses.  `label:` never defines: it fills a slot.  A name in a
+  child slot (`line(a, q := hint(…))`) is not implemented yet.
 - **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4): `p :=
   point hint(x: 0, y: 0)`, `c := circle(center: o) hint(r: 25)`, `point_on_spline(p, s) hint(t:
   0.4)`.  Keys in any order, an omitted coordinate is 0 — an omitted *radius* is computed from the
@@ -587,9 +586,8 @@ Conventions:
   migrate on load.  `tests/decompose.rs` and `tests/order.rs` are the gates.
 - **A name declared over a built-in is said** (Solvent §3.3, §5; `program::shadowing`, W112).
   `expr::eval` knows `expr::CONSTANTS` and `FUNCTIONS` before the document and
-  `flatten::substitute_with` only the document, so a `param`, formal or block index called `tau`
-  reads differently in the two.  A *named dimension* of a built-in name is refused where parsed
-  (`expr::parse_in`); the other three are the **warning**. Asked of the text (every component,
+  `flatten::substitute_with` only the document, so a value, input, formal or block index called
+  `tau` reads differently in the two: the **warning**. Asked of the text (every component,
   instantiated or not, and every module body).  `expr::builtin` is the one table; `tests/names.rs`
   is the gate.
 - **A call is the entities by position and the numbers by label** (Solvent §4.1,
@@ -703,8 +701,9 @@ Conventions:
   `Sketch::params` once added.  It is not a stated value: `describe` leaves it out, both bindings
   publish it read-only, `same_constraint` ignores it.  `Sketch::remove` retires an orphaned one to
   `fixed` (a parameter no equation mentions is no DOF); the rebuild walk reclaims the slot.
-  **A contact's place may be shared** (#70 part 2): `t == s` over a name nothing defines is
-  `syntax::Arg::Tie` (flattener, the instance's prefix; `assemble` adds the `hint(t:)`), then
+  **A contact's place may be shared** (#70 part 2): `t == s` over a declared unknown (`param s:
+  Angle hint(318)`, or an unbound formal) is `syntax::Arg::Tie` seeded by the declaration
+  (flattener; a `hint(t:)` beside it is refused in `assemble`), then
   `Arg::Shared`, which `Sketch::add` turns into one `Param` per name (`Sketch::shared`, a
   `SharedPlace`: the unknown and its curve) for every contact on that curve (E040 otherwise, and
   for a name a dimension also reads: `Fault::Place`). `remove` retires it with its last owner;
@@ -1349,39 +1348,48 @@ Conventions:
   **turn**, so `tau == 2 * pi * 1rad`; radians are written `* 1rad`, not `* 180 / pi`.  Storing
   the unit costs the solve nothing, and `io::paste` converts between documents' units
   (`Sketch::rescale`, written out by kind: a `Param` cannot say it is a length).
-- **A number's three names are one namespace** (issue #47, item 7; Solvent §5, §6.3).  A named
-  dimension (`a distance(w := 60) b`) declares `w` exactly as `w := 60` does: `flatten::params`
-  collects both as `Def`s in one dependency order, so a `param` may read a named dimension and a
-  second `w` of either kind is "declared twice" (`pythagoras.sv`'s `distance(a := la)`).  It is
-  two things in scope — its **number** in `vals` (for a `param`, a seed or a count) and its
-  **name** in `Scope::graph` (written → absolute name) for a dimension's text, which must keep the
-  name or the tie is folded away.  `settle_text` is the one pass over that text: a `graph` name
-  reads as its absolute name (`w` → `t1.w`), a formal or `param` as its number, and **a name
-  nothing in scope declares as the instance's own unknown** (`Scope::instance_prefix`; a block
-  copy's prefix skipped, so a `cycle` shares its unknowns) — a component never reads its host
-  document.  One pass, since a second would find a formal's name inside an absolute name (and
-  `substitute_with` reads a dotted path as one word).  A block copy's name is `#3.0.w`, so the
-  expression lexer reads a `#`-led key as an identifier.  The file's named dimensions reach its
-  components through `Walk::file_graph` beside `file_vals`, formals shadowing both; a module's
-  are numbers only (`module_params`).  `tests/names.rs` is the gate.
-- A name **nothing defines is a free variable** (`expr::Free`): an unknown of the sketch tying
-  the dimensions that read it.  `expr::evaluate` allocates one Param per free name into
+- **A number is named one way, and an unknown is declared** (issue #77; Solvent §3.4, §5, §6.3,
+  [0.40]).  `w := 60` is a value; `param w := 60` (`ParamDecl::input`, a modifier the parser reads
+  in `statements.rs::input`) marks one of the document's **inputs**, the only lines
+  `examples::with_params` rewrites; `param beta: Angle hint(30deg)` with no value is an
+  **unknown**: `flatten::values::params` puts `free(name, ty)` in `vals` (as `bind` does for an
+  unbound formal) and records a `model::Declared` (dimension, seed) in `Expansion::unknowns` →
+  `Sketch::declared`, which `expr::evaluate` reads (the seed, skipping `settle`; the declared
+  dimension, checked in `check_dim`) and a solved fold reads (`planes::fold_start`).  An unbound
+  `param` states its type (`Length`/`Angle`/`Scalar`), takes the one keyless `hint(E)`; a seed on
+  a bound one, an `Int` unknown and a module's unbound `param` are E040; `param` is refused by the
+  parser inside a component (formals are its inputs) or block.  A call seeds a formal it leaves
+  unbound with `InstVal::Hint` (`Wing(f, beta: hint(15deg))`).  **A name nothing declares is
+  E101** — in a dimension (`settle_text`), a fold, a pin (`settle_arg`), a dotted read nothing made
+  (`resolve`, unless it is an instance's unbound formal) — and the relation is not emitted
+  (`Walk::refused`), so it never reaches the expression graph as an unknown; W111 is gone.  A
+  dotted name read in a body is made absolute under `Scope::instance_prefix`.  `t == s` over an
+  unknown is `Arg::Tie` seeded by the declaration (a `hint(t:)` beside it is E040 in `assemble`).
+  `commit_seeds` writes each declared unknown's solved value into its `hint(…)`
+  (`edit::unknown_seeds`); `to_program` declares a sketch's unknowns (`lift::unknowns`);
+  `edit::set_dimension` over a dimension reading a bound root `param` writes the param's line; a
+  drawing's `dimension m.w` is the first top-level dimension written `w` (`render::written_as`).
+  `tests/names.rs` is the gate.
+- At the **sketch level** (JSON documents, the bindings) an expression reads names and defines none:
+  every name it reads is a **free variable** (`expr::Free`) — the form a declared unknown takes once
+  flattened.  It is an unknown of the sketch tying the dimensions that read it.  `expr::evaluate`
+  (document order; no definitions, so no dependency graph) allocates one Param per free name into
   `Sketch::free_vars`, retires it to `fixed` when unread — keeping the *slot*, so the parameter
-  count `topology_key` ends with does not move — and rewrites every binding (`Constraint::free`,
-  at most one) from scratch each run.  It runs on `Sketch::add`, `remove`, `set_constraint_num`,
-  `set_dimension`, `from_json`, `report::exprs_json`; a whole document uses `Sketch::add_quiet`
-  and evaluates once (`io::graft`, `io::from_json`), since per-add evaluation is quadratic.
-  The tie is **affine in one free name** — `a`, `a / 2`, `2 * a + 5`, `value = m*a + c`, all a
-  fixed-width block carries; `expr::eval` works in `Aff`, so `a * a`, `sin(a)` and two free names
-  are errors by arithmetic, and an erroring dimension keeps its last number.
-  Every `Length`/`Angle` type needs a *free twin* kernel (one more column, (m, c) as constants) in
-  `CKind::free_kernel`, exhaustive; `every_dimension_can_be_written_free` checks it.  `params_on`
-  appends the free column (always last), `consts_on` returns `[m, c]` turned by `side:`, `along:`
-  or `sense:` (a skew distance's by its seed's side), `kernel_id` picks the twin.  A fresh one
-  seeds from the stated number, else by Newton on its row (`expr::settle`).  A free dimension is
-  `unsupported` in `cgraph`, never jittered by the witness, part of `topology_key`, and joins
-  `io::Part`'s walk.  `expr::sync_free` updates the numbers shown from every seam writing
-  parameters directly — `Sketch::set_x`, `io::Part::write_back`, the wave's writes.
+  count `topology_key` ends with does not move — and rewrites every binding (`Constraint::free`, at
+  most one) from scratch each run.  It runs on `Sketch::add`, `remove`, `set_constraint_num`,
+  `set_dimension`, `from_json`, `report::exprs_json`; a whole document uses `Sketch::add_quiet` and
+  evaluates once (`io::graft`, `io::from_json`), since per-add evaluation is quadratic. The tie is
+  **affine in one free name** — `a`, `a / 2`, `2 * a + 5`, `value = m*a + c`, all a fixed-width
+  block carries; `expr::eval` works in `Aff`, so `a * a`, `sin(a)` and two free names are errors by
+  arithmetic, and an erroring dimension keeps its last number. Every `Length`/`Angle` type needs a
+  *free twin* kernel (one more column, (m, c) as constants) in `CKind::free_kernel`, exhaustive;
+  `every_dimension_can_be_written_free` checks it.  `params_on` appends the free column (always
+  last), `consts_on` returns `[m, c]` turned by `side:`, `along:` or `sense:` (a skew distance's by
+  its seed's side), `kernel_id` picks the twin.  A fresh one seeds from the stated number, else by
+  Newton on its row (`expr::settle`).  A free dimension is `unsupported` in `cgraph`, never jittered
+  by the witness, part of `topology_key`, and joins `io::Part`'s walk.  `expr::sync_free` updates
+  the numbers shown from every seam writing parameters directly — `Sketch::set_x`,
+  `io::Part::write_back`, the wave's writes.
 - The page is the drawing *and the source it is written as*: the program panel is a permanent
   second child of `<main>`; there is no other sidebar.  A component selected names itself in the
   status line (`describeEntity`) and brings up one floating window listing the constraints that

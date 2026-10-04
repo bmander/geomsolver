@@ -19,10 +19,11 @@
  *             Every dimension is called out on the drawing: click one to select it, drag it
  *             where you want it, double-click it to change its number.  Edit ▸ Re-place
  *             dimensions undoes the arranging; Options turns the lot off.  A number may be an
- *             expression — `w = 80` names it, `h = w / 2` and `sin(h * 10)` use it — and the
- *             core evaluates them in dependency order (Solution ▸ Diagnose lists them).  A name
- *             *nothing* defines is a free variable: `a` on two dimensions ties them to each
- *             other and leaves what they are worth to the solver
+ *             expression over the document's numbers — `w / 2`, `sin(h * 10)` — and the core
+ *             evaluates them (Solution ▸ Diagnose lists them).  Typing a number over one that
+ *             reads a `param` changes the param.  An unknown is declared, `param a: Length`:
+ *             `a` on two dimensions ties them to each other and leaves what they are worth to
+ *             the solver
  *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · ⇧Ctrl+Z redo ·
  *             Ctrl+X/C/V cut, copy, paste the selection
  *   workspace one scene in space: every sketch stands on its own plane and solids are drawn

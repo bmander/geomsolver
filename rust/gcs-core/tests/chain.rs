@@ -1025,7 +1025,7 @@ fn removing_an_unthreaded_relation_from_a_closed_chain_is_refused() {
 #[test]
 fn an_implicit_rectangle_does_not_collapse() {
     let e = read(
-        "distance(w:=1) (l1 := line) -> perpendicular distance(h:=2) (l2 := line) -> perpendicular \
+        "distance(1) (l1 := line) -> perpendicular distance(2) (l2 := line) -> perpendicular \
          (l3 := line) -> perpendicular (l4 := line) -> close\n",
     );
     let mut sk = e.sketch.clone();

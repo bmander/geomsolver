@@ -88,7 +88,7 @@ fix(x == 0, y == 0) o
     assert!((e.sketch.radius_value(e.map.ent_named("a").unwrap()) - 10.0).abs() < 1e-9);
 }
 
-/// Written in terms of a free variable, two arcs' lengths are tied: the first is fixed by its
+/// Written in terms of one unknown, two arcs' lengths are tied: the first is fixed by its
 /// grounded end, and the second — twice the radius — sweeps half as far.
 #[test]
 fn two_arc_lengths_tied_by_a_free_variable() {
@@ -107,12 +107,13 @@ a2 := arc(o2, s2, e2)
 radius(20) a2
 o2 horizontal s2
 fix(x == 50, y == 0) o2
+param s: Length
 length(s) a1
 length(s) a2
 ";
     let (mut e, d) = read(src);
     assert!(e.ok(), "{d:?}");
-    assert!(d.iter().any(|m| m.starts_with("W111")), "{d:?}");
+    assert!(d.is_empty(), "{d:?}");
     assert_eq!(gcs_core::diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
     assert!(solve(&mut e.sketch, SolveOpts::default()).success);
     let h = 20.0 * (PI / 4.0).cos();
@@ -179,13 +180,14 @@ fn equal_angles_are_directed_and_sense_cw_is_the_mirror_image() {
     assert!(near(at(&e, "d"), (20.0 * r.cos(), 20.0 * r.sin())), "{:?}", at(&e, "d"));
 }
 
-/// It replaces the shared free variable the same statement used to need, and says what that
-/// did: the two drawings land in one place.
+/// It replaces the shared unknown the same statement used to need, and says what that did: the
+/// two drawings land in one place.
 #[test]
 fn equal_angles_say_what_a_shared_free_variable_said() {
     let word = solved(&format!("{FAN}ab angle(ad, ac) ad\n"));
-    let (mut free, d) = read(&format!("{FAN}ab angle(beta) ad\nad angle(beta) ac\n"));
-    assert!(d.iter().any(|m| m.starts_with("W111")), "{d:?}");
+    let (mut free, d) =
+        read(&format!("{FAN}param beta: Angle\nab angle(beta) ad\nad angle(beta) ac\n"));
+    assert!(d.is_empty(), "{d:?}");
     assert!(solve(&mut free.sketch, SolveOpts::default()).success);
     assert!(near(at(&word, "d"), at(&free, "d")));
 }

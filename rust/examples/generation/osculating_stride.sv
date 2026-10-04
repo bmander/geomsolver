@@ -8,7 +8,7 @@
 // stands: 66.869.
 //
 // "At that same place" is one unknown two contacts share.  Both the tangency and the curvature are
-// pinned to the name `s`, which nothing defines (`t == s`), so the contact's place along the
+// pinned to `s`, an input nothing binds (`param s: Angle`), so the contact's place along the
 // stride is that unknown, and both own it (issue #70).  Written as two contacts, each with its own
 // place, tied only by the circle touching the ground, the condition holds to third order in the
 // distance between the two places: a degenerate root, which solved 3.5e-4 of the rod off.
@@ -92,5 +92,6 @@ fix(x == -60) g0
 k := point hint(x: -45, y: 50)
 osc := circle(center: k) hint(r: 140)
 radius(150) osc
-path tangent(t == s) ground hint(t: 318)
+param s: Angle hint(318)
+path tangent(t == s) ground
 path curvature(t == s) osc

@@ -435,11 +435,12 @@ fn a_free_dimension_keeps_its_word() {
                         fix(x == 0, y == 0) a\n\
                         fix(x == 40, y == 0) b\n\
                         fix(x == 0, y == 30) q\n\
+                        param k: Length\n\
                         a distance(k, along: up) q\n";
     let at = |src: &str, i: usize| {
         let (e, d) = read(src);
-        // the one thing said is that `k` is free
-        assert!(d.iter().all(|m| m.starts_with("W111")), "{d:?}");
+        // `k` is a declared unknown: nothing to say
+        assert!(d.is_empty(), "{d:?}");
         let mut sk = e.sketch;
         assert!(solve(&mut sk, SolveOpts::default()).success);
         sk.point_xy(i)
@@ -472,7 +473,7 @@ fn a_free_dimension_keeps_its_word() {
     let lines = "unit mm\no := point\np := point\n\
                  q := point hint(x: 7, y: 7)\nr := point\n\
                  l1 := line(o, p)\nl2 := line(o, q)\nl3 := line(o, r)\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) p\nfix(x == 8.660254037844387, y == 5) r\n\
-                 l1 angle(t) l3\n";
+                 param t: Angle\nl1 angle(t) l3\n";
     let (x, y) = at(&format!("{lines}l1 angle(t, sense: cw) l2\n"), 2);
     assert!(y < 0.0 && (y.atan2(x).to_degrees() + 30.0).abs() < 1e-6, "({x}, {y})");
 }
