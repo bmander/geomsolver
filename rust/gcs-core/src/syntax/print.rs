@@ -586,11 +586,11 @@ fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
             // the slot's own name, as it was written — never guessed from the kind.  The
             // same `slot_text` `operator_text` reads it off the spec with, so the two printers
             // cannot come to spell one slot differently.
-            OpArg::Slot { key, arg } => match slot_text(&key.text, arg) {
-                Some((true, t)) => parts.push(t),
-                Some((false, t)) => hints.push(t),
-                None => {}
-            },
+            OpArg::Slot { key, arg } => {
+                let (pin, hint) = slot_text(&key.text, arg);
+                parts.extend(pin);
+                hints.extend(hint);
+            }
         }
     }
     (parts, hints)
@@ -675,11 +675,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         if sk.takes_ref() {
             ents.push(write_arg(name, *sk, a));
         } else if sk.is_param() {
-            match slot_text(name, a) {
-                Some((true, t)) => parens.push(t),
-                Some((false, t)) => hints.push(t),
-                None => {}
-            }
+            let (pin, hint) = slot_text(name, a);
+            parens.extend(pin);
+            hints.extend(hint);
         } else if sk.is_dimension() {
             // the number is written bare and first, wherever its slot stands: a kind has at most
             // one dimension, so there is nothing for a reader to confuse it with, and a selector
@@ -719,19 +717,22 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     out
 }
 
-/// Format a slot and whether it belongs in the argument list (a pin or selector)
-/// rather than the trailing hint clause.
-fn slot_text(name: &str, a: &Arg) -> Option<(bool, String)> {
+/// Format a slot: what goes in the argument list (a pin) and what in the trailing hint clause
+/// (a seed).  A shared place is both — `t == s`, and where it starts.
+fn slot_text(name: &str, a: &Arg) -> (Option<String>, Option<String>) {
     let (pinned, v) = match a {
         Arg::Seed { value, pinned } => (*pinned, num(*value)),
         Arg::SeedExpr { text, pinned, .. } => (*pinned, text.clone()),
-        Arg::Tie { name, .. } => (true, name.clone()),
-        _ => return None,
+        Arg::Tie { name: shared, seed, .. } => {
+            let hint = seed.map(|v| format!("{name}: {}", num(v)));
+            return (Some(format!("{name} == {shared}")), hint);
+        }
+        _ => return (None, None),
     };
-    Some(match pinned {
-        true => (true, format!("{name} == {v}")),
-        false => (false, format!("{name}: {v}")),
-    })
+    match pinned {
+        true => (Some(format!("{name} == {v}")), None),
+        false => (None, Some(format!("{name}: {v}"))),
+    }
 }
 
 /// A selector's value, as a `style` block writes one.

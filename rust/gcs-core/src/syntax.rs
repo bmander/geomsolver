@@ -8,7 +8,7 @@ mod names;
 mod parser;
 mod print;
 mod source;
-pub(crate) mod words;
+mod words;
 
 pub use highlight::{highlight, Tint};
 pub use names::{camel, entity_name, hidden, kind_initial, num, one_of, snake};
@@ -1190,23 +1190,23 @@ impl Written {
             out[i] = if sk.takes_ref() {
                 next.next().map(Arg::Ref)
             } else if sk.is_param() {
-                let slot: Vec<&Arg> = self.args.iter().filter_map(|a| match a {
+                let slot = || self.args.iter().filter_map(|a| match a {
                     OpArg::Slot { key, arg } if key.text == *name => Some(arg),
                     _ => None,
-                }).collect();
+                });
                 // a shared parameter is pinned to its name and seeded by the clause: the two
                 // halves of `path tangent(t == s) ground hint(t: 330)` are one argument
-                let seed = slot.iter().find_map(|a| match a {
+                let seed = slot().find_map(|a| match a {
                     Arg::Seed { value, pinned: false } => Some(*value),
                     _ => None,
                 });
-                let tie = slot.iter().find_map(|a| match a {
+                let tie = slot().find_map(|a| match a {
                     Arg::Tie { name, span, .. } => {
                         Some(Arg::Tie { name: name.clone(), seed, span: *span })
                     }
                     _ => None,
                 });
-                tie.or_else(|| slot.first().map(|a| (*a).clone()))
+                tie.or_else(|| slot().next().cloned())
             } else if sk.is_dimension() {
                 // the number, wherever the dimension slot stands: a kind has at most one, so it
                 // is *the* number in the parentheses, and a selector may follow it in spec order

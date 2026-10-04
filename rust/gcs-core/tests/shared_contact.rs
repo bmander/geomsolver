@@ -28,8 +28,8 @@ fix(x == 0, y == 0) o
 
 /// How many constraints own the shared unknown `name`.
 fn owners(e: &Elaborated, name: &str) -> usize {
-    let p = e.sketch.shared[name];
-    e.sketch.constraints.iter().filter(|c| c.aux_params().contains(&p)).count()
+    let p = e.sketch.shared[name].param;
+    e.sketch.constraints.iter().filter(|c| c.owns(p)).count()
 }
 
 fn errors(src: &str) -> Vec<String> {
@@ -62,7 +62,7 @@ fn two_contacts_pinned_to_one_name_own_one_unknown() {
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     let off = ((p.0 - a.0) * dy - (p.1 - a.1) * dx).abs() / dx.hypot(dy);
     assert!(off < 1e-6, "the point is {off} off the tangent");
-    let u = shared.sketch.params[shared.sketch.shared["s"] as usize].value;
+    let u = shared.sketch.params[shared.sketch.shared["s"].param as usize].value;
     let c = involute_at(0.0, 0.0, 20.0, u);
     assert!((c.0 - p.0).abs() < 1e-6 && (c.1 - p.1).abs() < 1e-6, "{p:?} against {c:?} at {u}");
 }
@@ -84,7 +84,7 @@ fn a_tangency_and_a_curvature_at_one_place() {
     let mut e = build(&src);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
-    let u = e.sketch.params[e.sketch.shared["s"] as usize].value;
+    let u = e.sketch.params[e.sketch.shared["s"].param as usize].value;
     assert!((u - 45.0).abs() < 1e-6, "touches at {u}");
     let at = |n: &str| e.sketch.point_xy(e.map.ent_named(n).unwrap().i());
     let k = at("k");
@@ -126,6 +126,18 @@ fn a_pin_to_a_number_still_pins() {
     assert!((c.0 - p.0).abs() < 1e-9 && (c.1 - p.1).abs() < 1e-9, "{p:?} against {c:?}");
 }
 
+/// One name is one unknown: a place shared along a curve is no number a dimension can be written
+/// in, so `s` read both ways is refused rather than made two unknowns told apart nowhere.
+#[test]
+fn a_place_is_not_a_free_variable() {
+    let src = format!(
+        "{INVOLUTE}p := point hint(x: 20, y: 20)\np on(t == s) inv hint(t: 50)\n\
+         q := point hint(x: 5, y: 5)\nq distance(s) o\n"
+    );
+    let said = errors(&src);
+    assert!(said.iter().any(|m| m.contains("is a place along a curve")), "{said:?}");
+}
+
 /// A copy and a document both keep the sharing: the rebuild walk (`io::graft`) and the JSON
 /// carry the name, so the contacts that owned one unknown own one again.
 #[test]
@@ -137,8 +149,8 @@ fn a_copy_and_a_document_keep_the_place_shared() {
                p on(t == s) spl hint(t: 0.4)\nspl tangent(t == s) l\n";
     let e = build(src);
     let check = |sk: &gcs_core::model::Sketch, how: &str| {
-        let p = *sk.shared.get("s").unwrap_or_else(|| panic!("{how}: no shared `s`"));
-        let n = sk.constraints.iter().filter(|c| c.aux_params().contains(&p)).count();
+        let p = sk.shared.get("s").unwrap_or_else(|| panic!("{how}: no shared `s`")).param;
+        let n = sk.constraints.iter().filter(|c| c.owns(p)).count();
         assert_eq!(n, 2, "{how}: {n} contacts own `s`");
         assert!((sk.params[p as usize].value - 0.4).abs() < 1e-12, "{how}: the seed came along");
     };
@@ -151,7 +163,7 @@ fn a_copy_and_a_document_keep_the_place_shared() {
     let mut sk = e.sketch.clone();
     let ids: Vec<u32> = sk.constraints.iter().filter(|c| !c.aux_params().is_empty())
         .map(|c| c.id).collect();
-    let p = sk.shared["s"] as usize;
+    let p = sk.shared["s"].param as usize;
     sk.remove(ids[0]);
     assert!(!sk.params[p].fixed, "still owned by the tangency");
     sk.remove(ids[1]);

@@ -309,8 +309,8 @@ fn the_stride_bends_at_a_stated_radius() {
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
     assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still the one freedom");
     // one unknown, owned by both contacts
-    let s = e.sketch.shared["s"];
-    let owners = e.sketch.constraints.iter().filter(|c| c.aux_params().contains(&s)).count();
+    let s = e.sketch.shared["s"].param;
+    let owners = e.sketch.constraints.iter().filter(|c| c.owns(s)).count();
     assert_eq!(owners, 2);
     // the reference: the rod at which the stride's bottom bends at 150, by bisection — the
     // bottom found afresh for every rod, by Brent's method on the leg's own toe
@@ -329,4 +329,3 @@ fn the_stride_bends_at_a_stated_radius() {
     assert!(((k.0 - toe.0).hypot(k.1 - toe.1) - 150.0).abs() < 1e-6);
     assert!((k.0 - toe.0).abs() < 1e-6, "the centre stands straight above the bottom");
 }
-

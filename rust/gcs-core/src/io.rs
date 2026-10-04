@@ -54,16 +54,15 @@ fn arg_json(sk: &Sketch, a: &Arg) -> Json {
         Arg::Param(i) if sk.params[*i as usize].fixed => {
             object([("value", Json::Num(a.value(sk))), ("pinned", Json::Bool(true))])
         }
-        // a shared one saves the name its contacts are pinned to, which is what makes it one
         Arg::Param(i) => match sk.shared_name(*i) {
-            Some(name) => object([
-                ("value", Json::Num(a.value(sk))),
-                ("shared", Json::Str(name.to_string())),
-            ]),
+            Some(name) => {
+                arg_json(sk, &Arg::Shared { name: name.to_string(), seed: Some(a.value(sk)) })
+            }
             None => Json::Num(a.value(sk)),
         },
-        Arg::Shared { name, seed } => object([
-            ("value", Json::Num(seed.unwrap_or(0.0))),
+        // a shared one saves the name its contacts are pinned to, which is what makes it one
+        Arg::Shared { name, .. } => object([
+            ("value", Json::Num(a.value(sk))),
             ("shared", Json::Str(name.clone())),
         ]),
         // a seed only exists before `Sketch::add`, so a document never sees one; writing the
@@ -1325,12 +1324,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 // the destination allocates its own: a Param index is this sketch's name for
                 // it, and the pin rides along in the seed — or the name, where the unknown is
                 // shared, so the contacts that owned one own one again
-                Arg::Param(p) => args.push(match src.shared_name(*p) {
-                    Some(name) => Arg::Shared { name: name.to_string(), seed: Some(a.value(src)) },
-                    None => {
-                        Arg::Seed { value: a.value(src), pinned: src.params[*p as usize].fixed }
-                    }
-                }),
+                Arg::Param(p) => args.push(src.owned_arg(*p)),
                 other => args.push(other.clone()),
             }
         }

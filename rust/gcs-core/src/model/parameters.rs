@@ -7,7 +7,18 @@ use crate::rng::Rng;
 impl Sketch {
     /// The name a shared contact parameter is pinned to (`t == s`), where `p` is one.
     pub fn shared_name(&self, p: u32) -> Option<&str> {
-        self.shared.iter().find(|(_, &q)| q == p).map(|(n, _)| n.as_str())
+        self.shared.iter().find(|(_, s)| s.param == p).map(|(n, _)| n.as_str())
+    }
+
+    /// What an owned unknown travels as into another sketch, before `Sketch::add`: its number,
+    /// pinned where it was, or the name it is shared under — the one rule `io::graft` and the
+    /// printer's `lift` both read, so a copy and a printed statement own what the original did.
+    pub fn owned_arg(&self, p: u32) -> Arg {
+        let q = &self.params[p as usize];
+        match self.shared_name(p) {
+            Some(name) => Arg::Shared { name: name.to_string(), seed: Some(q.value) },
+            None => Arg::Seed { value: q.value, pinned: q.fixed },
+        }
     }
 
     /// Every length in the sketch, times `k` — what a paste between two documents in different

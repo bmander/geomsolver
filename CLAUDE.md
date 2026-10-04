@@ -705,9 +705,10 @@ Conventions:
   `fixed` (a parameter no equation mentions is no DOF); the rebuild walk reclaims the slot.
   **A contact's place may be shared** (#70 part 2): `t == s` over a name nothing defines is
   `syntax::Arg::Tie` (flattener, the instance's prefix; `assemble` adds the `hint(t:)`), then
-  `Arg::Shared`, which `Sketch::add` turns into one `Param` per name (`Sketch::shared`) for every
-  contact on the same curve (`constraints::shared_on_one_curve`, E040). `remove` retires it with
-  its last owner; `graft` and the JSON (`"shared"`) carry the name. `tests/shared_contact.rs`.
+  `Arg::Shared`, which `Sketch::add` turns into one `Param` per name (`Sketch::shared`, a
+  `SharedPlace`: the unknown and its curve) for every contact on that curve (E040 otherwise, and
+  for a name a dimension also reads: `Fault::Place`). `remove` retires it with its last owner;
+  `graft` and `lift` read `Sketch::owned_arg`, the JSON `"shared"`. `tests/shared_contact.rs`.
 - **The core owns every algorithm.**  A change to the model, a constraint type, diagnosis,
   decomposition or the solvers lands in `rust/gcs-core/` with a Rust test in
   `rust/gcs-core/tests/` — **a new file there is listed in `tests/main.rs`** (one binary,

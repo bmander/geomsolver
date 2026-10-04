@@ -72,8 +72,8 @@ fn the_stride_bends_at_a_stated_radius_where_it_stands() {
     assert_eq!(dof(&mut e), (1, State::Under), "the crank is the one freedom");
     let h = unknown(&e, "leg.h");
     assert!((h - 66.869).abs() < 1e-3, "the rod solved to {h}");
-    let s = e.sketch.shared["s"];
-    assert_eq!(e.sketch.constraints.iter().filter(|c| c.aux_params().contains(&s)).count(), 2);
+    let s = e.sketch.shared["s"].param;
+    assert_eq!(e.sketch.constraints.iter().filter(|c| c.owns(s)).count(), 2);
     // the circle's centre stands straight above where the stride touches, 150 off
     let (k, g0) = (at(&e, "k"), at(&e, "g0"));
     assert!((k.1 - g0.1 - 150.0).abs() < 1e-6, "the centre is {} above the ground", k.1 - g0.1);
