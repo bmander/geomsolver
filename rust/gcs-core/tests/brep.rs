@@ -1048,3 +1048,21 @@ fn a_cone_turned_from_an_apex_on_its_axis_has_radius_zero_there() {
         }
     }
 }
+
+/// A face thinner than its edges' chords sag — a circle's arc, cut by a coarse bar and turn into
+/// two chords whose middles sag 0.35 inside it, and a corner of the other side 0.2 inside it there —
+/// has sampled loops that cross: the mesher splits the stretches that cross until its loops close a
+/// triangulation, as a display mesh of the drill's end face needed.
+#[test]
+fn a_face_thinner_than_its_chords_sag_still_meshes() {
+    let r: f64 = 5.;
+    let at = |a: f64,d: f64| [d*a.cos(),d*a.sin(),0.];
+    let (p1,p2,corner) = (at(-0.3,r),at(1.2,r),at(0.075,4.8));
+    let p = Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![vec![
+        arc([0.;3],r,XY,[1.,0.,0.],Some([-0.3,1.2])),line(p2,corner),line(corner,p1),
+    ]]};
+    let b = prism(&p,0.,1.).unwrap();
+    b.check(1e-9).unwrap();
+    let m = gcs_core::brep::mesh::mesh(&b,0.5,0.8).unwrap();
+    assert!(m.tris.len() > 4);
+}

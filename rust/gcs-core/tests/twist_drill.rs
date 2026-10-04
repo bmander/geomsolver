@@ -365,3 +365,16 @@ fn the_drawing_compiles_from_the_exact_drill() {
     // the overall length, 30 mm of shank and 6 of flutes, and the diameter
     assert!(svg.contains(">36<") && svg.contains(">10<"),"the generated dimensions read the exact solid");
 }
+
+/// The page's exact surface of the whole drill, built by stages at the display's coarse bars: its
+/// end faces are thin crescents between the diameter and the body clearance, which a display mesh
+/// cut coarser than they are thick until the mesher split crossing chords (issue #64).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: the whole drill built for the page")]
+fn the_page_builds_the_whole_drills_exact_surface() {
+    let e = fixtures::drill::standard();
+    let mut builder = export::Builder::new(&e.sketch,fixtures::solid(&e,"drill")).unwrap();
+    while !builder.step().unwrap_or_else(|r| panic!("{r}")) {}
+    let volume = builder.display().unwrap().volume;
+    assert!((volume-3606.54).abs() < 0.5,"{volume}");
+}
