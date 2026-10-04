@@ -226,6 +226,19 @@ The pair carries **backlash** (`repeat design.lashed`), **tip relief** (`crown/r
 all to zero, `fixtures::gear::fabricated` sets them. Files:
 `build/exports/hypoid-{pinion,gear}.{step,stl}`; `gcs-cli/tests/pair_check.rs` (ignored) checks
 the pair from the STLs.
+**Screws, the constant-twist class (#64):** a sweep under `motion(about:, advance:)` is admitted by
+rows S1–S4 (`solid::constant_twist`, docs/generating-sweeps.md): the tool's characteristic (each
+ring's `A cos + B sin + C` roots under the screw's twist, fixed on the tool) walked through the blank,
+a coarse pass then `rows` across the reach; S3 is signed. Its sheet is exact, S(s, t) = M(t)·σ(s), rows
+along its section square to the axis (`Characteristic::on_section`: the characteristic has corners
+where the profile's curvature jumps, the section does not), fitted by the shared `sheet::settle`
+(`brep::sweep::helical`). A body built from swept material (`drill := solid(fluted)`, `shank union
+drill`) is built by the body rule over exact operands (`brep::export::compose`; the page's `Builder`
+too) and measured by it over operand meters (`accuracy::Meter`). A drawing reads a swept object's
+exact B-rep (`brep::export::supply_exact`, `Sketch::supply_exact_solid`). Kernel rules it found: every
+vertex cuts the edges it lies inside (`boolean`, after the faces' meetings), a traced fit is laid and
+graded by length and never crowds a vertex it must pass, a cone at its apex writes radius 0.
+`rust/examples/twist_drill/`, `fixtures::drill`, `tests/twist_drill.rs`.
 **Export tolerance ([plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets
 pass within half of it of withheld contacts (`contact_trace::Withheld::Sides`), normals within

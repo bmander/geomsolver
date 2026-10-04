@@ -10,6 +10,7 @@
 use crate::fmath::Det;
 use super::pattern::Built as Patterned;
 use super::sweep::Say;
+use super::boolean::Op;
 use super::topo::Brep;
 use crate::model::Sketch;
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
@@ -29,6 +30,7 @@ pub struct Exact { pub solid: Brep,pub pattern: Option<Patterned>,pub indexed: O
 /// Solid `body` of the sketch built by this kernel. A body with swept cuts is admitted to the
 /// generating-sweep class first (`admission` where the host made it, else here).
 pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
+    if !cad::swept_operands(sk,body).is_empty() { return compose(sk,body,tolerance,say) }
     let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
     if !recipe.sweeps.is_empty() {
         let made;
@@ -61,6 +63,44 @@ pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tol
     Ok(Exact {solid,pattern:None,indexed:None,swept:false})
 }
 
+/// A body built from swept material (`cad::swept_operands`): each operand built exactly — a body with
+/// swept cuts by its own construction, the rest by its recipe — and combined by the body rule
+/// (`combine`).
+fn compose(sk: &Sketch,body: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
+    let started = crate::clock::Instant::now();
+    let built = combine(sk,body,&mut |o| if cad::contains_sweep(sk,o) { Ok(exact(sk,o,None,tolerance,say)?.solid) } else { built_static(sk,o) })?;
+    (say.stage)(&format!("`{}` built from its swept material by this kernel: {:.6} mm³, {} faces ({:?})",sk.solids[body].name,
+        super::props::volume(&built),built.faces.len(),started.elapsed()));
+    (say.mark)(Stage::Fuse);
+    Ok(Exact {solid:built,pattern:None,indexed:None,swept:true})
+}
+
+/// A static solid built from its recipe by this kernel.
+fn built_static(sk: &Sketch,o: usize) -> Result<Brep,ExportRefusal> {
+    super::recipe::build(&cad::recipe_static(sk,o).at(Stage::Blank)?.recipe).at(Stage::Blank)
+}
+
+/// The body rule over operands `part` builds (millimetres): the stock, plus what is put on it, minus
+/// what cuts it, within what bounds it, by this kernel's Booleans. A sweep cut from it directly is
+/// refused: the swept material is named apart, as `fluted` is from `drill`.
+fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,ExportRefusal>) -> Result<Brep,ExportRefusal> {
+    let solid = &sk.solids[body];
+    let crate::model::SolidDef::Body {stock,on,through,bound} = &solid.def else { unreachable!("a composed solid is a body") };
+    if let Some(&c) = through.iter().find(|&&c| cad::contains_sweep(sk,c as usize)) {
+        return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts the sweep `{}` from swept material: name the body the sweep is \
+            cut from, and build `{}` from it",solid.name,sk.solids[c as usize].name,solid.name)))
+    }
+    let mut built = part(*stock as usize)?;
+    for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"bound")] {
+        for &o in operands {
+            let operand = part(o as usize)?;
+            built = super::recipe::combined(&built,&operand,op,0.)
+                .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{}`: {e}",solid.name,sk.solids[o as usize].name)))?;
+        }
+    }
+    Ok(built)
+}
+
 /// The STEP file of a built solid, parsed back and held to it (every reference, the topology's
 /// counts, units, and each face's surface and its numbers), with what the check counted.
 pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
@@ -80,7 +120,16 @@ pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> 
 pub fn stl(sk: &Sketch,body: usize,exact: &Exact,tolerance: Option<Tolerance>,say: &Say) -> Result<Vec<u8>,ExportRefusal> {
     let started = crate::clock::Instant::now();
     let bar = tolerance.map_or(GROSS,|t| t.deflection());
-    let m = match &exact.pattern { Some(p) => p.mesh(bar,ANGULAR),None => super::mesh::mesh(&exact.solid,bar,ANGULAR) }.at(Stage::Mesh)?;
+    // meshed within what float32 coordinates leave of the bar (never finer than an eighth of it),
+    // so the written file is within it; refused at once where the encoding alone passes it
+    let (lo,hi) = exact.solid.bounds();
+    let rounding = crate::mesh::f32_rounding_within(lo,hi);
+    if rounding >= bar {
+        return Err(ExportRefusal::at(Stage::Stl,format!("float32 STL coordinates may move the surface {:.3} µm at this position, \
+            which passes {:.3} µm; move the solid nearer the origin or ask a coarser tolerance",rounding*1e3,bar*1e3)))
+    }
+    let sag = (bar-rounding).max(bar/8.);
+    let m = match &exact.pattern { Some(p) => p.mesh(sag,ANGULAR),None => super::mesh::mesh(&exact.solid,sag,ANGULAR) }.at(Stage::Mesh)?;
     if m.turned > 0 { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh has {} triangles facing against their surfaces",m.turned))) }
     if m.sag > bar { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh sags {:.3} µm against {:.3} µm",m.sag*1e3,bar*1e3))) }
     let bytes = crate::mesh::stl_of(&m.triangles(),&sk.solids[body].name);
@@ -161,6 +210,7 @@ enum State {
     Plan(super::sweep::Prepared,Vec<super::sweep::sheet::Fitted>),
     Cut(super::sweep::Prepared,Vec<super::sweep::sheet::Fitted>,super::sweep::Plan),
     Finish(super::sweep::Cut),
+    Compose(super::sweep::Built),
     Mesh(super::sweep::Built),
     Done(Display),
     Failed,
@@ -171,18 +221,30 @@ enum State {
 /// a call while it runs (a page's worker: the core's module has no imports) can say between stages
 /// what it is doing, and stop between them for a newer drawing. The stages are `export::exact`'s,
 /// without a file written or the field's agreement asked: what it builds is for looking at.
-pub struct Builder { sk: Sketch,body: usize,recipe: cad::StaticRecipe,state: State,lines: std::sync::Mutex<Vec<String>>,done: usize }
+pub struct Builder { sk: Sketch,body: usize,recipe: cad::StaticRecipe,state: State,lines: std::sync::Mutex<Vec<String>>,done: usize,
+    /// The body built from the swept body, when `body` is that (`holds_sweep`): the stages build
+    /// the swept body, and a last one combines it with the rest by the body rule.
+    outer: Option<usize> }
 
 impl Builder {
     /// The build of swept solid `body` of `sk` (a copy of the sketch is kept), or why it has none:
     /// a solid with no swept cut is the static path's.
     pub fn new(sk: &Sketch,body: usize) -> Result<Builder,ExportRefusal> {
         if body >= sk.solids.len() { return Err(ExportRefusal::at(Stage::Blank,"no such solid in this drawing")) }
+        // a body built from swept material: its one operand holding sweeps built by the stages
+        let swept = cad::swept_operands(sk,body);
+        let (body,outer) = if !swept.is_empty() {
+            let [inner] = swept[..] else {
+                return Err(ExportRefusal::at(Stage::Blank,format!("`{}` is built from {} swept bodies; its display is built from one",
+                    sk.solids[body].name,swept.len())))
+            };
+            (inner,Some(body))
+        } else { (body,None) };
         let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
         if recipe.sweeps.is_empty() {
             return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solids[body].name)))
         }
-        Ok(Builder {sk:sk.clone(),body,recipe,state:State::Admit,lines:Default::default(),done:0})
+        Ok(Builder {sk:sk.clone(),body,recipe,state:State::Admit,lines:Default::default(),done:0,outer})
     }
     /// Run the next stage: `Ok(true)` once the surface is built, or the refusal that stopped it.
     pub fn step(&mut self) -> Result<bool,ExportRefusal> {
@@ -199,7 +261,18 @@ impl Builder {
             }
             State::Plan(prepared,sheets) => { let plan = super::sweep::plan(sk,body,recipe,&prepared,&sheets,&say); State::Cut(prepared,sheets,plan) }
             State::Cut(prepared,sheets,plan) => State::Finish(super::sweep::cut(sk,body,recipe,&prepared,&sheets,plan,&say)?),
-            State::Finish(cut) => State::Mesh(super::sweep::finish(cut,&say)?),
+            State::Finish(cut) => {
+                let built = super::sweep::finish(cut,&say)?;
+                if self.outer.is_some() { State::Compose(built) } else { State::Mesh(built) }
+            }
+            State::Compose(built) => {
+                let outer = self.outer.expect("a composed build has its body");
+                let mut inner = Some(built.into_solid());
+                let solid = combine(sk,outer,&mut |o| if o == body {
+                    inner.take().ok_or_else(|| ExportRefusal::at(Stage::Fuse,"the swept body is used twice")) } else { built_static(sk,o) })?;
+                (say.stage)(&format!("`{}` combined from its swept material",sk.solids[outer].name));
+                State::Mesh(super::sweep::Built::Whole(solid))
+            }
             State::Mesh(built) => State::Done(display(sk,&built)?),
             done @ State::Done(_) => done,
             State::Failed => return Err(ExportRefusal::at(Stage::Blank,"the build has failed already")),
@@ -220,6 +293,7 @@ impl Builder {
             State::Cut(_,_,super::sweep::Plan::Sector(_)) => "cutting the sector by its sheets".into(),
             State::Cut(_,_,super::sweep::Plan::Whole(_)) => "cutting the blank by its sheets".into(),
             State::Finish(_) => "turning the sector round".into(),
+            State::Compose(_) => "adding the rest of the body".into(),
             State::Mesh(_) => "meshing the exact surface".into(),
             State::Done(_) => "built".into(),
             State::Failed => "failed".into(),
@@ -230,12 +304,29 @@ impl Builder {
     pub fn stages(&self) -> (usize,usize) {
         let mut sweeps: Vec<usize> = self.recipe.sweeps.iter().map(|s| s.swept).collect();
         sweeps.sort(); sweeps.dedup();
-        (self.done,6+sweeps.len())
+        (self.done,6+sweeps.len()+usize::from(self.outer.is_some()))
     }
     /// The last thing a stage said (its own words: what it built, and in what time).
     pub fn said(&self) -> Option<String> { self.lines.lock().unwrap_or_else(|e| e.into_inner()).last().cloned() }
     /// The surface, once built.
     pub fn display(&self) -> Option<&Display> { match &self.state { State::Done(d) => Some(d),_ => None } }
+}
+
+/// Every swept object of `sk` given its exact B-rep where this kernel builds one (`exact`, at the
+/// gross bars), so that what reads the object's surface — a drawing's views and sections, its
+/// silhouettes traced on the surfaces — reads the B-rep, as it reads a static solid's; a field is
+/// meshed only for an object whose build is refused.
+pub fn supply_exact(sk: &Sketch) {
+    // a sketch that leaves meshing to its host has its surfaces supplied by it
+    if sk.field_meshing.get() != crate::solid::FieldMeshing::Now { return }
+    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
+    let Ok(mm) = cad::millimetres(sk) else { return };
+    for job in sk.field_jobs() {
+        // admitted as a display is, which is looked at and not made
+        let admitted = cad::swept_operands(sk,job.solid).is_empty().then(|| admission::admit_body(sk,job.solid,&DISPLAY_ADMISSION).ok()).flatten();
+        let Ok(built) = exact(sk,job.solid,admitted.as_ref(),None,&say) else { continue };
+        sk.supply_exact_solid(job.solid,crate::solid::Exact {brep:built.solid,mm,origin:[0.;3],leading:Default::default()});
+    }
 }
 
 /// The admission a display asks: a quarter of the export's samples each way, on both its grids. A

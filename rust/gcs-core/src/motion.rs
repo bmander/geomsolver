@@ -33,6 +33,49 @@ pub enum PlaneRigid {
     Slide { velocity: [f64;3] },
 }
 
+/// A screw read off a motion (`Family::screw`): it turns `ratio` radians a radian about the line
+/// through `origin` along the unit `axis`, and slides `advance` along it a turn of the parameter.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Screw { pub origin: [f64;3], pub axis: [f64;3], pub ratio: f64, pub advance: f64 }
+
+impl Screw {
+    /// The velocity per radian of the point at `p` of what the screw carries, in the carried frame
+    /// as in the world's: the same at every time, since a screw carries its own axis into itself.
+    pub fn velocity(&self,p: [f64;3]) -> [f64;3] {
+        let turn = crate::space::cross(self.axis,crate::space::sub(p,self.origin));
+        std::array::from_fn(|k| self.ratio*turn[k]+self.advance/std::f64::consts::TAU*self.axis[k])
+    }
+    /// How far along the axis `p` stands from the origin.
+    pub fn height(&self,p: [f64;3]) -> f64 { crate::space::dot(crate::space::sub(p,self.origin),self.axis) }
+    /// The time at which the screw carries `p` to `height` along its axis.
+    pub fn time_to(&self,p: [f64;3],height: f64) -> f64 { (height-self.height(p))*std::f64::consts::TAU/self.advance }
+    /// How far along the axis the box from `lo` to `hi` reaches (read in the screw's frame through
+    /// `back`), and how far from the axis.
+    pub fn extent(&self,lo: [f64;3],hi: [f64;3],back: crate::envelope::Motion) -> ([f64;2],f64) {
+        (0..8).map(|k| back.point(std::array::from_fn(|i| if k>>i & 1 == 0 { lo[i] } else { hi[i] })))
+            .fold(([f64::INFINITY,f64::NEG_INFINITY],0_f64),|([a,b],r),p| {
+                let h = self.height(p);
+                let off = crate::space::sub(crate::space::sub(p,self.origin),crate::space::scale(self.axis,h));
+                ([a.min(h),b.max(h)],r.max(crate::space::norm(off)))
+            })
+    }
+    /// `p` carried along its own path for a time `t`: turned `ratio·t` about the axis and slid
+    /// along it, as the screw's pose at `s + t` is its pose at `s` followed by this one, whatever
+    /// the motion's phase (turns and slides about one axis commute).
+    pub fn carry(&self,p: [f64;3],t: f64) -> [f64;3] {
+        let q = self.turn(crate::space::sub(p,self.origin),t);
+        std::array::from_fn(|k| self.origin[k]+q[k]+self.advance*t/std::f64::consts::TAU*self.axis[k])
+    }
+    /// A direction turned as `carry` turns what it carries.
+    pub fn turn(&self,v: [f64;3],t: f64) -> [f64;3] {
+        let (s,c) = (self.ratio*t).dsin_cos();
+        let a = self.axis;
+        let along = crate::space::dot(a,v);
+        let across = crate::space::cross(a,v);
+        std::array::from_fn(|k| v[k]*c+across[k]*s+a[k]*along*(1.-c))
+    }
+}
+
 /// A snapshot of a named rigid-motion graph and its solved world axes. Re-read after
 /// changing the sketch. Sampling a snapshot never reads drawing coordinates or solves it.
 #[derive(Clone,Debug)]
@@ -140,6 +183,18 @@ impl Family {
         }
         let root = self.steps.len()-1;
         Ok(speed(self,&own,&image,root,point,false)?.bounds()[1])
+    }
+
+    /// The screw this motion is, when it is one: a single rotation that slides along its axis as
+    /// it turns. Every point's velocity in the moving frame is then the same at every time — the
+    /// twist is constant — which is what `solid::constant_twist` builds a swept boundary from.
+    /// A rotation without advance, a translation and a relative motion are none.
+    pub fn screw(&self) -> Option<Screw> {
+        match *self.steps.as_slice() {
+            [Step::Rotation {origin,axis,ratio,advance,..}] if advance != 0. && ratio != 0. =>
+                Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
+            _ => None,
+        }
     }
 
     /// How this motion carries the plane through `point` with unit `normal`, when it carries it
@@ -289,6 +344,10 @@ impl Pose {
     }
     pub fn point(&self,x: [f64;3]) -> [f64;3] {
         std::array::from_fn(|i| self.r[i][0]*x[0]+self.r[i][1]*x[1]+self.r[i][2]*x[2]+self.p[i])
+    }
+    /// A direction turned by the pose.
+    pub fn vector(&self,v: [f64;3]) -> [f64;3] {
+        std::array::from_fn(|i| self.r[i][0]*v[0]+self.r[i][1]*v[1]+self.r[i][2]*v[2])
     }
     /// Apply this pose, then `next`.
     fn then(self,next: Pose) -> Pose {

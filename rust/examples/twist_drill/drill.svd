@@ -1,0 +1,18 @@
+// The drill on one sheet: its side and end views, an isometric, and a section square to the axis
+// halfway along the flutes, where the flute's profile is the grinding wheel's characteristic
+// carried along the helix (drill.sv), not the wheel's own profile.
+model m from "drill.sv"
+
+sheet drill {
+  size (297mm, 210mm)
+  label "TWIST DRILL  10 mm, two flutes, 30° helix, 118° point" at (14mm, 16mm)
+  view elevation(m.drill) from front at (70mm, 120mm) scale 1.4
+  view profile(m.drill) from right at (130mm, 120mm) scale 1.4
+  view tip(m.drill) from top at (205mm, 60mm) scale 5
+  section across(m.drill) from top cut m.section_plane at (205mm, 150mm) scale 5
+  view pictorial(m.drill) from isometric at (265mm, 120mm) scale 1
+  dimensions in elevation
+  label "Section halfway along the flutes" at (180mm, 186mm)
+  label "End view: the point" at (185mm, 96mm)
+  style .hidden { display: none }
+}

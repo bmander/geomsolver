@@ -20,13 +20,14 @@ type V = [f64;3];
 
 /// The rows of the class, in the order they are asked.
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
-pub enum Condition { Tool, Corner, Motion, Stationary, Reach, Clearance, Single, Fold, Crossing }
+pub enum Condition { Tool, Corner, Motion, Stationary, Reach, Clearance, Single, Fold, Crossing, Regular, Once, Edgewise, Lead }
 
 impl Condition {
     pub fn code(self) -> &'static str {
         match self { Condition::Tool => "T1", Condition::Corner => "T2", Condition::Motion => "M1",
             Condition::Stationary => "M2", Condition::Reach => "E0", Condition::Clearance => "E1", Condition::Single => "E2",
-            Condition::Fold => "E3", Condition::Crossing => "E4" }
+            Condition::Fold => "E3", Condition::Crossing => "E4", Condition::Regular => "S1", Condition::Once => "S2",
+            Condition::Edgewise => "S3", Condition::Lead => "S4" }
     }
     /// What the row asks, in the words the scope document uses.
     pub fn rule(self) -> &'static str {
@@ -34,13 +35,17 @@ impl Condition {
             Condition::Tool => "the tool is a full revolution, or a prism with its caps clear of the blank, of lines and arcs, \
                 or an intersection of such",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
-            Condition::Motion => "the motion is rotations about fixed axes at constant ratios",
+            Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw",
             Condition::Stationary => "the contact condition depends on the motion",
             Condition::Reach => "the sweep's contacts reach the blank",
             Condition::Clearance => "the tool is clear of the blank at both ends of the roll",
             Condition::Single => "each tool point touches the blank at most once in the roll",
             Condition::Fold => "the generated surface does not fold",
             Condition::Crossing => "the generated surface does not cross itself",
+            Condition::Regular => "the screw's characteristic is a regular curve through the blank",
+            Condition::Once => "the characteristic reaches the blank in one stretch, one point a ring",
+            Condition::Edgewise => "the characteristic never runs along the screw's path",
+            Condition::Lead => "the screw's sweep does not cross itself within a lead",
         }
     }
 }
@@ -53,12 +58,19 @@ pub struct Refusal {
     pub message: String,
     /// A point in the body's coordinates where the condition fails, when there is one.
     pub witness: Option<V>,
+    /// Whether the sweep is under a screw, so was asked the constant-twist class's rows.
+    pub screw: bool,
+}
+
+impl Refusal {
+    /// The class the sweep was asked to join, by its motion.
+    pub fn class(&self) -> &'static str { if self.screw { "constant-twist class" } else { "generating-sweep class" } }
 }
 
 impl fmt::Display for Refusal {
     fn fmt(&self,f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,"`{}` is outside the generating-sweep class ({}: {}): {}",
-            self.sweep,self.condition.code(),self.condition.rule(),self.message)?;
+        write!(f,"`{}` is outside the {} ({}: {}): {}",
+            self.sweep,self.class(),self.condition.code(),self.condition.rule(),self.message)?;
         if let Some(p) = self.witness { write!(f," at ({:.4}, {:.4}, {:.4})",p[0],p[1],p[2])?; }
         Ok(())
     }
@@ -149,7 +161,15 @@ pub struct SweepEvidence {
     pub basis: Basis,
     /// How the later placements' checks were stood for by the first's.
     pub equivalence: Equivalence,
+    /// Which class admitted it, and what that class found.
+    pub class: Class,
 }
+
+/// The class a sweep is admitted to: a relative rotation's (the generating class, rows M2–E4), or
+/// a screw's (constant twist, rows S1–S4), with the stretch of its characteristic that reaches the
+/// blank at the first placement.
+#[derive(Clone,Debug)]
+pub enum Class { Generating,ConstantTwist(Box<super::constant_twist::Characteristic>) }
 
 /// A body admitted to the class, and the only way to have one: `admit_body` makes it, so a
 /// construction that takes one cannot be reached without the gate.
@@ -378,24 +398,37 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         by_sweep.entry(cut.swept).or_default().push(cut.pose);
     }
     let names: BTreeMap<usize,String> = order.iter().map(|&s| (s,sk.solids[s].name.clone())).collect();
+    let screws: BTreeMap<usize,bool> = order.iter().map(|&s| (s,match &sk.solids[s].def {
+        SolidDef::Swept {motion,..} => crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.screw().is_some()),
+        _ => false,
+    })).collect();
     let refuse = |swept: usize,condition,message: String,witness|
-        Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message,witness});
+        Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message,witness,screw:screws[&swept]});
     let field = &field;
+    let bounds = field.support_bounds().ok().flatten();
+    // a placement's check by the class its motion is in
+    let check = |contacts: &SweepContacts,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)| match contacts.motion().screw() {
+        Some(screw) => check_screw(contacts,inside,bounds.map(|b| screw.extent(b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1]),pose.inverse())),
+            options),
+        None => check(contacts,inside,options),
+    };
     let inside_at = |pose: Motion| move |p: V| field.value(pose.point(p)) < -options.margin;
     // Each sweep's tool read, then its first placement checked.
     let tools: Vec<Result<SweepContacts,Error>> = order.iter().map(|&swept| {
         let SolidDef::Swept {source,..} = &sk.solids[swept].def else { unreachable!("a swept cut is a sweep") };
         tool(sk,*source as usize).map_err(|m| refuse(swept,Condition::Tool,m,None))?;
         let contacts = SweepContacts::read(sk,swept,options.axis_tolerance).map_err(|m| refuse(swept,Condition::Tool,m,None))?;
-        let probe = SurfacePoint {position:[1.,2.,3.],du:[1.,0.,0.],dv:[0.,1.,0.]};
-        contacts.motion().normal_velocity(probe).map_err(|m| refuse(swept,Condition::Motion,m,None))?;
+        if contacts.motion().screw().is_none() {
+            let probe = SurfacePoint {position:[1.,2.,3.],du:[1.,0.,0.],dv:[0.,1.,0.]};
+            contacts.motion().normal_velocity(probe).map_err(|m| refuse(swept,Condition::Motion,m,None))?;
+        }
         Ok(contacts)
     }).collect();
     let clock = crate::clock::Instant::now();
     let checks = crate::par::indices(order.len(),|k| -> Option<Result<(SweepEvidence,Reads),Error>> {
         let contacts = tools[k].as_ref().ok()?;
         let (swept,pose) = (order[k],by_sweep[&order[k]][0]);
-        Some(check(contacts,&inside_at(pose),options).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p)))))
+        Some(check(contacts,pose,&inside_at(pose)).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p)))))
     });
     let first: Vec<Result<(SweepContacts,SweepEvidence,Reads),Error>> = tools.into_iter().zip(checks).map(|(tool,check)| {
         let contacts = tool?;
@@ -407,7 +440,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     // The blank a solid of revolution about the line every placement turns about: the later
     // placements read it as the first does, proved by the solid graph. Otherwise, whether each
     // later placement reads the blank as the first did, every point of it.
-    let size = field.support_bounds().ok().flatten().map_or(1.,|b| crate::space::box_centre_diagonal(&b).1);
+    let size = bounds.map_or(1.,|b| crate::space::box_centre_diagonal(&b).1);
     let revolved = structurally_alike(sk,root,&by_sweep,size);
     let later: Vec<(usize,usize)> = if revolved.is_some() { Vec::new() } else {
         first.iter().enumerate().filter(|(_,r)| r.is_ok())
@@ -441,7 +474,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
             let inside = inside_at(*pose);
             let same = checked.iter().skip(1).find(|(_,reads)| reads.points.iter().zip(&reads.inside).all(|(p,&i)| inside(*p) == i));
             if let Some((j,_)) = same { placements.push(Placement {pose:*pose,equivalent_to:Some(*j)}); continue; }
-            let (_,reads) = check(&contacts,&inside,options).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
+            let (_,reads) = check(&contacts,*pose,&inside).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
             checked.push((k,reads));
             placements.push(Placement {pose:*pose,equivalent_to:None});
         }
@@ -455,20 +488,16 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
 #[derive(Clone,Copy)]
 struct Hit { source: V,position: V,normal: V }
 
-type Failure = (Condition,String,Option<V>);
+use super::constant_twist::Failure;
 
-/// M2, E1–E4 and T2 for one placement, `inside` being the blank read in the sweep's frame. The
-/// tool's faces are sampled side by side, each on its own core, and their findings taken in the
-/// faces' order: the first failure in that order is the one reported, as one pass over them would.
-fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) -> Result<(SweepEvidence,Reads),Failure> {
+/// T2 and E1 for one placement, asked of every class before anything that might be reported in
+/// their place: the blank's reads, and the poses the roll is sampled at.
+fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) -> Result<(Reads,Vec<Motion>),Failure> {
     let tool = c.source_material();
     let on_tool = |p: V| tool.value(p).abs() < 1e-6;
     let domain = c.domain();
-    let middle = 0.5*(domain[0]+domain[1]);
     let pose = |t: f64| c.motion().at(t).map_err(|m| (Condition::Motion,m,None));
     let limits = [pose(domain[0])?,pose(domain[1])?];
-    let times = [pose(domain[0])?,pose(middle)?,pose(domain[1])?];
-    let roots = |patch: usize,u: f64,v: f64| c.at_source_over(patch,u,v,domain,options.root_tolerance);
     let mut reads = Reads::new();
     // T2: a concave corner carried through the blank trims two envelopes against each other.
     // Asked first, since the crossing it makes would otherwise be reported in its place.
@@ -520,6 +549,21 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
             }
         } }
     }
+    Ok((reads,poses))
+}
+
+/// M2, E1–E4 and T2 for one placement, `inside` being the blank read in the sweep's frame. The
+/// tool's faces are sampled side by side, each on its own core, and their findings taken in the
+/// faces' order: the first failure in that order is the one reported, as one pass over them would.
+fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) -> Result<(SweepEvidence,Reads),Failure> {
+    let tool = c.source_material();
+    let on_tool = |p: V| tool.value(p).abs() < 1e-6;
+    let domain = c.domain();
+    let middle = 0.5*(domain[0]+domain[1]);
+    let pose = |t: f64| c.motion().at(t).map_err(|m| (Condition::Motion,m,None));
+    let times = [pose(domain[0])?,pose(middle)?,pose(domain[1])?];
+    let roots = |patch: usize,u: f64,v: f64| c.at_source_over(patch,u,v,domain,options.root_tolerance);
+    let (mut reads,poses) = ends(c,inside,options)?;
     // M2 at the poles: where a face's profile meets the tool's axis the surface has no normal of
     // its own, so the sampled checks below cannot evaluate it. Its normal is the axis, the limit
     // along the profile; a pole whose contact condition is zero at every time and whose path
@@ -766,5 +810,29 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
     }
     Ok((SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples,contacts:hits.len(),spacing,
         least_area_factor:least,near_double_roots,near_tangent_pairs,
-        basis:Basis::Sampled {rows:options.rows,columns:options.columns},equivalence:Equivalence::Sampled},reads))
+        basis:Basis::Sampled {rows:options.rows,columns:options.columns},equivalence:Equivalence::Sampled,class:Class::Generating},reads))
 }
+
+/// T2 and E1, then S1–S4 (`constant_twist`), for one placement of a sweep under a screw, `inside`
+/// being the blank read in the sweep's frame, `heights` how far along the screw's axis it reaches
+/// there. A screw's twist is constant, so M2 does not apply: a tool point is on the boundary at
+/// every time or at none, and the boundary is the characteristic carried along.
+fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),extent: Option<([f64;2],f64)>,options: &Options)
+    -> Result<(SweepEvidence,Reads),Failure> {
+    let (reads,_) = ends(c,inside,options)?;
+    let reads = std::sync::Mutex::new(reads);
+    // the blank read outside the lock, the faces' rings side by side
+    let read = |p: V| { let i = inside(p); reads.lock().unwrap_or_else(|e| e.into_inner()).push(p,i); i };
+    let ask = super::constant_twist::Ask {rows:options.rows,root_tolerance:options.root_tolerance,least_factor:options.least_factor,
+        roll:c.domain(),heights:extent.map(|e| e.0),radius:extent.map(|e| e.1),inside:&read};
+    let found = super::constant_twist::Characteristic::walk(c,&ask)?;
+    let [first,last] = found.reach;
+    let mut gaps: Vec<f64> = (first..last).map(|w| crate::space::distance(found.nodes[w].position,found.nodes[w+1].position)).collect();
+    gaps.sort_by(f64::total_cmp);
+    let evidence = SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples:found.samples,contacts:last-first+1,
+        spacing:gaps.get(gaps.len()/2).copied().unwrap_or(0.),least_area_factor:found.least_factor,near_double_roots:0,
+        near_tangent_pairs:0,basis:Basis::Sampled {rows:options.rows,columns:360},equivalence:Equivalence::Sampled,
+        class:Class::ConstantTwist(Box::new(found))};
+    Ok((evidence,reads.into_inner().unwrap_or_else(|e| e.into_inner())))
+}
+

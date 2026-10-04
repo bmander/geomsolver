@@ -17,6 +17,14 @@ const projects: Example[] = [{
     + 'the background as you watch.',
   target: { kind: 'directory', path: 'spiral_bevel', entry: 'gears.sv' },
 }, {
+  label: 'Twist drill · flutes ground under a screw', key: 'twist_drill',
+  description: 'A 10 mm two-flute drill: each flute is what a grinding wheel carried along a screw '
+    + 'about the drill sweeps through the stock, so its section is the wheel\'s characteristic '
+    + 'carried along the helix, not the wheel\'s own profile. A wider wheel grinds the body '
+    + 'clearance behind each margin, two cones grind the 118° point and the shank is added after. '
+    + 'Edit the helix, the wheels or the point in configuration.sv; drill.svd is the drawing.',
+  target: { kind: 'directory', path: 'twist_drill', entry: 'drill.sv' },
+}, {
   label: 'Pin wheel, generated · swept solid', key: 'lantern_generation',
   description: 'A pinion rolls against a wheel blank and its one pin cuts a tooth space. The roll\'s '
     + 'ratio is measured off the drawing after the solve (the wheel\'s pitch radius over the '

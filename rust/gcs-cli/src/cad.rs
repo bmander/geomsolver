@@ -66,7 +66,7 @@ pub fn verify_step_fully() {
     native::step_check::ask_full();
 }
 
-/// The body `index` admitted to the generating-sweep class, or its refusal; what was checked said.
+/// The body `index` admitted to its sweeps' classes, or its refusal; what was checked said.
 fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
     let a = admission::admit_body(sk,index,&admission::Options::default())?;
     mark(Stage::Admission);
@@ -80,7 +80,11 @@ fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
             };
             format!(" ({checked} of {} placements checked, the rest {why})",s.placements.len())
         } else { String::new() };
-        eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name);
+        match &s.class {
+            admission::Class::Generating => eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name),
+            admission::Class::ConstantTwist(_) => eprintln!("solventc: `{}` is in the constant-twist class, its characteristic sampled at \
+                {} rings, {} across its reach, each path through the blank a degree of turn apart{alike}",s.name,s.samples,s.contacts),
+        }
         if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() {
             eprintln!("admission: `{}`: {} samples, {} contacts, spacing {:e}, least area factor {:e}, {} near double roots, {} near tangent pairs",
                 s.name,s.samples,s.contacts,s.spacing,s.least_area_factor,s.near_double_roots,s.near_tangent_pairs);

@@ -416,6 +416,57 @@ fn off(f: &Face,uv: Uv,a: V,b: V,c: V) -> f64 {
 
 /// The mesh of the whole boundary within `bar` (a length) and `angular` (radians an edge's chords
 /// may turn), and the greatest sag measured.
+/// Where face `fi`'s loops, as their edges are sampled (`samples`: each edge's parameters first),
+/// cross themselves in the face's parameters: for each pair of chords that cross and are not
+/// neighbours along a loop, each one's edge and the parameter at its middle.
+fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)]) -> Vec<(usize,f64)> {
+    let f = &b.faces[fi];
+    // every chord: its ends in the face's parameters, its edge and parameters, its loop and place
+    let mut chords: Vec<([Uv;2],usize,[f64;2],usize,usize)> = Vec::new();
+    let mut sizes = Vec::new();
+    for (li,l) in f.loops.iter().enumerate() {
+        let first = chords.len();
+        for c in l {
+            let e = c.edge as usize;
+            if matches!(b.edges[e].curve,EdgeCurve::Degenerate) { continue }
+            let ts = &samples[e].0;
+            let at = |t: f64| c.pcurve.at(t,&b.edges[e],&f.surface,&b.vertices);
+            let mut pairs: Vec<[f64;2]> = ts.windows(2).map(|w| [w[0],w[1]]).collect();
+            if c.reversed { pairs.reverse(); }
+            for [x,y] in pairs {
+                let place = chords.len()-first;
+                chords.push(([at(x),at(y)],e,[x,y],li,place));
+            }
+        }
+        sizes.push(chords.len()-first);
+    }
+    // by their least u, each against those whose u reach overlaps it
+    let lo = |c: &([Uv;2],usize,[f64;2],usize,usize)| c.0[0][0].min(c.0[1][0]);
+    let hi = |c: &([Uv;2],usize,[f64;2],usize,usize)| c.0[0][0].max(c.0[1][0]);
+    let mut order: Vec<usize> = (0..chords.len()).collect();
+    order.sort_by(|&i,&j| lo(&chords[i]).total_cmp(&lo(&chords[j])));
+    let neighbours = |i: usize,j: usize| {
+        let (a,c) = (&chords[i],&chords[j]);
+        if a.3 != c.3 { return false }
+        let n = sizes[a.3];
+        let d = a.4.abs_diff(c.4);
+        d <= 1 || d == n-1
+    };
+    let mut out = Vec::new();
+    for (k,&i) in order.iter().enumerate() {
+        for &j in &order[k+1..] {
+            if lo(&chords[j]) > hi(&chords[i]) { break }
+            if neighbours(i,j) { continue }
+            let ([p,q],[r,t]) = (chords[i].0,chords[j].0);
+            if (p[1].max(q[1]) < r[1].min(t[1])) || (r[1].max(t[1]) < p[1].min(q[1])) { continue }
+            if orient(p,q,r)*orient(p,q,t) < 0 && orient(r,t,p)*orient(r,t,q) < 0 {
+                for c in [&chords[i],&chords[j]] { out.push((c.1,0.5*(c.2[0]+c.2[1]))); }
+            }
+        }
+    }
+    out
+}
+
 pub fn mesh(b: &Brep,bar: f64,angular: f64) -> Result<Mesh,String> { Ok(mesh_with(b,bar,angular,&|_| true,None)?.0) }
 
 /// A sector's far side sampled as its near side turned (`brep::pattern`): the turn from one copy to
@@ -467,6 +518,24 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
             }
             if ts.windows(2).any(|w| !(w[1] > w[0])) { return Err("a far side's edge, sampled as its near partner turned, does not run along it".into()) }
             samples[e] = (ts,ids);
+        }
+    }
+    // a face's loops, sampled, must not cross themselves: a face thinner than its edges' chords sag
+    // (a crescent between two arcs) would close no triangulation. The stretches that cross are split,
+    // each edge's samples shared by its faces, until none do (a far side's are its partner's, and a
+    // patterned sector's faces are left as they are)
+    if turned.is_none() {
+        for _ in 0..16 {
+            let found: Vec<(usize,f64)> = crate::par::indices(b.faces.len(),|fi| if kept(fi) { crossings(b,fi,&samples) } else { Vec::new() })
+                .into_iter().flatten().collect();
+            if found.is_empty() { break }
+            for (e,t) in found {
+                let (ts,ids) = &mut samples[e];
+                let k = ts.partition_point(|&x| x < t);
+                if k == 0 || k >= ts.len() || ts[k] == t { continue }
+                m.pts.push(b.edges[e].point(t,&b.vertices)); alias.push(None);
+                ts.insert(k,t); ids.insert(k,(m.pts.len()-1) as u32);
+            }
         }
     }
     // the least a parameter's scale is taken to be, where a surface's derivative vanishes

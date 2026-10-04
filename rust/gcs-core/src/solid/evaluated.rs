@@ -134,6 +134,10 @@ impl EvaluatedSolid {
         };
         let operands = validate_at(sk, si, unit)?;
         if sweeps_among(sk, &operands) {
+            // a swept solid's exact B-rep where a host supplied one, else its field's surface
+            if let Some(exact) = sk.supplied_exact_solid(si) {
+                return Self::from_brep(sk, si, policy, unit, operands, &exact);
+            }
             return Self::of_field(sk, si, policy, unit);
         }
         // the exact B-rep where this kernel builds and meshes one, the facet term where it does
