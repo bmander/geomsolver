@@ -243,6 +243,23 @@ fn a_fillet_takes_the_words_its_edges_call_for() {
         Code::E085,
         "not as its stock or a bound",
     );
+    refused(
+        &format!(
+            "{RECT}block := solid(sec, depth: 30mm)\nlip := fillet(block.near, block.bc, r: 5mm)\n\
+             nick := solid(sec, depth: 1mm)\nnick cut lip\n"
+        ),
+        Code::E085,
+        "`lip` is a fillet, which takes no `cut`",
+    );
+    // a fillet reads what it rounds, so two reading each other are made of themselves
+    refused(
+        &format!(
+            "{RECT}block := solid(sec, depth: 30mm)\none := fillet(two, block, r: 1mm)\n\
+             two := fillet(one, block, r: 1mm)\n"
+        ),
+        Code::E041,
+        "made of itself",
+    );
 }
 
 #[test]
@@ -285,6 +302,37 @@ fn what_rung_one_cannot_round_is_refused_with_its_reason() {
         Code::E085,
         "has no face `top`",
     );
+}
+
+#[test]
+fn a_fillet_of_concave_and_convex_edges_is_two_fillets() {
+    // a stepped turn: a disc of radius 40 with a hub of radius 15 on it, one section; its deck meets
+    // the hub's wall in a concave ring and the disc's rim in a convex one
+    let src = "\
+unit mm
+a0 := point
+a1 := point hint(x: 0, y: 40)
+fix(x == 0, y == 0) a0
+fix(x == 0, y == 40) a1
+axis := line(a0, a1)
+s0 := point
+s1 := point hint(x: 40, y: 0)
+s2 := point hint(x: 40, y: 10)
+s3 := point hint(x: 15, y: 10)
+s4 := point hint(x: 15, y: 30)
+s5 := point hint(x: 0, y: 30)
+fix(x == 0, y == 0) s0
+fix(x == 40, y == 0) s1
+fix(x == 40, y == 10) s2
+fix(x == 15, y == 10) s3
+fix(x == 15, y == 30) s4
+fix(x == 0, y == 30) s5
+(base := line(s0, s1)) -> (rim := line(s1, s2)) -> (deck := line(s2, s3)) -> (hub := line(s3, s4)) -> (top := line(s4, s5)) -> (spine := line(s5, s0)) -> close
+stepped := solid(face(base, rim, deck, hub, top, spine), about: axis)
+both := fillet(stepped.deck, stepped, r: 2mm)
+both union stepped
+";
+    refused(src, Code::E085, "so write two fillets");
 }
 
 #[test]

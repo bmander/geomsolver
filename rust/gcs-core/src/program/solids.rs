@@ -153,6 +153,13 @@ pub(super) fn solids(
             say(at, format!("`{}` is {} itself", into.root.text, word.as_str()));
             continue;
         }
+        // a fillet is the ball's material, read off what it rounds: nothing stands on it or cuts it
+        if sk.solids.get(b.i()).is_some_and(|s| matches!(s.def, SolidDef::Fillet { .. })) {
+            diags.push(Diag { code: Code::E085, span: at, stmt: Some(st.id), message: format!(
+                "`{}` is a fillet, which takes no `{}`: a body takes it",
+                into.root.text, word.as_str()) });
+            continue;
+        }
         // **a swept solid that takes a feature is the body over its own sweep**: the name keeps
         // its index, so everything already reading it (a `through:` extent, a body's operand, a
         // view) reads the whole object, and the sweep moves to a stock of the same name, so a
