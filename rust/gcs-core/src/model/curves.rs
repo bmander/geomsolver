@@ -114,6 +114,11 @@ pub struct CurveE {
     /// curve `of` over the parameters where `from` and `to` are held on it by their contacts, so
     /// the interval follows the solve.  `None` for a curve the document wrote.
     pub trim: Option<Trim>,
+    /// The curve stands for a surface: what its tool sweeps extruded square to its view — a
+    /// prism's side generating under a motion that keeps the view (`flank :=
+    /// envelope(surface(prism, edge: e), under: m, …)`, §6.15, issue #70).  A point in space is
+    /// `on` it by its place in the view (`CKind::PointOnExtrusion`).
+    pub extrusion: bool,
 }
 
 /// Where a trimmed curve runs: along curve `of`, from point `from` to point `to`, each held on
@@ -228,6 +233,35 @@ impl Sketch {
         let (p, q) = (self.curve_point(i, a), self.curve_point(i, b));
         let size = 1.0 + p.0.abs().max(p.1.abs()).max(q.0.abs()).max(q.1.abs());
         size.is_finite() && (p.0 - q.0).dhypot(p.1 - q.1) <= 1e-9 * size
+    }
+
+    /// The view a curve is drawn in: its tool's (a generated profile's, and every point it is
+    /// written over shares it), `None` on the page.
+    pub fn curve_view(&self, i: usize) -> Option<usize> {
+        let e = *self.curves[i].args.first()?;
+        let p = match e.kind {
+            EntKind::Point => e.i(),
+            EntKind::Line => self.lines[e.i()].p1 as usize,
+            EntKind::Circle | EntKind::Arc => self.round_center(e),
+            _ => return None,
+        };
+        self.plane_of(p)
+    }
+
+    /// What a point in space on an extrusion reads of the curve's view (`kernels::EXTRUSION_FRAME`):
+    /// its datum on the sheet — origin and rotor, the page's own where it is drawn on the page —
+    /// and its basis in space.
+    pub fn extrusion_frame(&self, i: usize) -> [f64; crate::kernels::EXTRUSION_FRAME] {
+        let ((ox, oy), c, s, b) = match self.curve_view(i) {
+            Some(v) => { let (o, c, s) = crate::overview::placement(self, v); (o, c, s, self.basis(v)) }
+            None => ((0.0, 0.0), 1.0, 0.0, crate::plane::Basis::page()),
+        };
+        let mut k = [0.0; crate::kernels::EXTRUSION_FRAME];
+        k[..4].copy_from_slice(&[ox, oy, c, s]);
+        k[4..7].copy_from_slice(&b.u);
+        k[7..10].copy_from_slice(&b.v);
+        k[10..].copy_from_slice(&b.o);
+        k
     }
 
     /// The parameter a curve's trace is anchored at — the drawing's unknown where the swept

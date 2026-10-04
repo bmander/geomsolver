@@ -691,5 +691,6 @@ fn curve_entity(
         pose,
         class: d.class.clone(),
         trim: None,
+        extrusion: false,
     }))
 }

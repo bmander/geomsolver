@@ -1,6 +1,12 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.37 — October 2026**
+**Specification, Draft 0.38 — October 2026**
+
+**[0.38] A prism's side generating in its view is a surface of the drawing.** `envelope(side,
+under: m, …)` over `side := surface(prism, edge: e)` — a prism's side, which `surface` now names
+beside a revolution's — under a motion keeping the prism's view is the planar envelope of `e`
+extruded square to the view; it is built with the drawing, and a point drawn in any view is `on` it
+by its place in the prism's view (§6.15.2).
 
 **[0.37] Generation by motion in the plane.** `envelope(tool, under: m, from: a, to: b)` over a
 tool of the sheet and a planar motion (`motion(about: point, …)` is a turn in a view) is a curve of
@@ -1087,6 +1093,34 @@ instant centre, and the choice is carried to every other roll by continuity. A g
 over a whole turn that comes back is closed (§6.5).
 
 ---
+
+
+#### 6.15.2 A prism's side generating in its view **[0.38]**
+
+```
+side := surface(rack_tooth, edge: rack_flank)
+flank := envelope(side, under: cutting, from: -30deg, to: 30deg)
+p := point in cut
+p on flank
+```
+
+`surface(S, edge: e)` names a side of a prism `S` (a face swept by `depth:` or `from:`/`to:`) as it
+names a revolution's: `e` a line or arc of the face, the side what `e` sweeps along the view's
+normal. A prism's side carries no angular bounds (**E080**). Under a motion that keeps the prism's
+view — its turns about points of that view, its slides along lines of it — every section of the
+side moves alike, so what it generates is the planar envelope of `e` (§6.15.1) extruded square to
+the view: a surface that depends only on geometry the drawing solves. The envelope of such a side
+is therefore **built with the drawing**, before any relation: it is the curve `envelope(e, under:
+m, …)` would be, standing for the surface. Every point the curve is written over — the edge's and
+the motion's — is drawn in one view, and that view stands where it is drawn (a view the solve
+places, or the page, which has no place in space, is **E080**).
+
+`p on flank` holds a point drawn in **any** view to the surface: its lift, read into the prism's
+view and put on that view's sheet, lies on the curve at the contact's roll — two rows against the
+roll it owns (`hint(t: …)`, degrees), the one equation a point on a surface is worth. The rows are
+the planar contact's, with the point's place for its coordinates, so the tool's and the motion's
+geometry are columns as in §6.15.1. A side under any other motion is the spatial envelope of §6.15,
+read after the solve.
 
 ### 6.16 Trimmed spatial patches
 

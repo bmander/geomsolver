@@ -68,6 +68,11 @@ pub enum CKind {
     /// is worth — but the curve is an expression rather than a basis, so the kernel that
     /// evaluates it is chosen per *definition*, not per type.
     PointOnCurve,
+    /// A point anywhere in space on the surface a curve of a view stands for (`CurveE::extrusion`:
+    /// a prism's side generating under a motion that keeps the view, §6.15, issue #70): the
+    /// point's place in the view lies on the curve, `PointOnCurve`'s two rows over the point's
+    /// lift — so it is the surface's one equation, and its kernel is the definition's.
+    PointOnExtrusion,
     /// A line tangent to a curve written in the language — `SplineTangentLine`'s shape over
     /// the curve's own frame: two residuals against one owned parameter, the net one equation a
     /// tangency is worth.  Its kernel is the definition's, beside the contact's.
@@ -239,7 +244,7 @@ pub enum CKind {
     Cw,
 }
 
-/// Which of a curve definition's kernels a kind runs through: the table holds these three per
+/// Which of a curve definition's kernels a kind runs through: the table holds these four per
 /// definition, in this order (`System::kernel_table`), and `Constraint::kernel_id_in` counts
 /// them so — the one statement of what "a kind whose kernel is per definition" means.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -247,23 +252,25 @@ pub enum FamilyKernel {
     Contact,
     Tangent,
     Curvature,
+    /// A point in space on the surface the curve stands for (`CKind::PointOnExtrusion`).
+    Extrusion,
 }
 
 impl FamilyKernel {
-    pub const ALL: [FamilyKernel; 3] =
-        [FamilyKernel::Contact, FamilyKernel::Tangent, FamilyKernel::Curvature];
+    pub const ALL: [FamilyKernel; 4] =
+        [FamilyKernel::Contact, FamilyKernel::Tangent, FamilyKernel::Curvature, FamilyKernel::Extrusion];
 
     /// Rows per constraint — a fact about the kind, not asked of a kernel it may not have yet.
     pub fn n_res(self) -> usize {
         match self {
-            FamilyKernel::Contact | FamilyKernel::Tangent => 2,
+            FamilyKernel::Contact | FamilyKernel::Tangent | FamilyKernel::Extrusion => 2,
             FamilyKernel::Curvature => 3,
         }
     }
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 78] = [
+pub const ALL_KINDS: [CKind; 79] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -294,6 +301,7 @@ pub const ALL_KINDS: [CKind; 78] = [
     CKind::HorizontalDistance,
     CKind::VerticalDistance,
     CKind::PointOnCurve,
+    CKind::PointOnExtrusion,
     CKind::CurveTangentLine,
     CKind::CurveCurvature,
     CKind::FrameUnit,
@@ -768,6 +776,7 @@ impl CKind {
             CKind::HorizontalDistance => "HorizontalDistance",
             CKind::VerticalDistance => "VerticalDistance",
             CKind::PointOnCurve => "PointOnCurve",
+            CKind::PointOnExtrusion => "PointOnExtrusion",
             CKind::CurveTangentLine => "CurveTangentLine",
             CKind::CurveCurvature => "CurveCurvature",
             CKind::FrameUnit => "FrameUnit",
@@ -906,7 +915,7 @@ impl CKind {
             }
             CKind::Symmetric => &[("p", S::Point), ("q", S::Point), ("line", S::Line)],
             CKind::PointOnSpline => &[("p", S::Point), ("spline", S::Spline), ("t", S::Param)],
-            CKind::PointOnCurve => &[("p", S::Point), ("curve", S::Curve), ("t", S::Param)],
+            CKind::PointOnCurve | CKind::PointOnExtrusion => &[("p", S::Point), ("curve", S::Curve), ("t", S::Param)],
             CKind::CurveTangentLine => &[("curve", S::Curve), ("line", S::Line), ("t", S::Param)],
             CKind::CurveCurvature => {
                 &[("curve", S::Curve), ("circle", S::CircleOrArc), ("t", S::Param)]
@@ -1019,6 +1028,7 @@ impl CKind {
             // a place along a curve: a parameter, not a length
             CKind::PointOnSpline
             | CKind::PointOnCurve
+            | CKind::PointOnExtrusion
             | CKind::CurveTangentLine
             | CKind::CurveCurvature
             | CKind::SplineTangentLine
@@ -1055,7 +1065,8 @@ impl CKind {
             CKind::PointOnLine
             | CKind::PointOnCircle
             | CKind::PointOnSpline
-            | CKind::PointOnCurve => ("on", Infix),
+            | CKind::PointOnCurve
+            | CKind::PointOnExtrusion => ("on", Infix),
             CKind::CurveTangentLine => ("tangent", Infix),
             CKind::CurveCurvature => ("curvature", Infix),
             // a measured separation: six kinds, told apart by the pair and by `along:`
@@ -1297,10 +1308,11 @@ impl CKind {
         self.contact_on(SpecKind::Spline)
     }
 
-    /// The per-definition kernel this kind runs through, for the three kinds that have one.
+    /// The per-definition kernel this kind runs through, for the four kinds that have one.
     pub fn family_kernel(self) -> Option<FamilyKernel> {
         Some(match self {
             CKind::PointOnCurve => FamilyKernel::Contact,
+            CKind::PointOnExtrusion => FamilyKernel::Extrusion,
             CKind::CurveTangentLine => FamilyKernel::Tangent,
             CKind::CurveCurvature => FamilyKernel::Curvature,
             _ => return None,
@@ -1355,6 +1367,7 @@ impl CKind {
             // a point on a curve is a contact, not a tangency: it has no double root for the
             // second-order screen to look for
             | CKind::PointOnCurve
+            | CKind::PointOnExtrusion
             | CKind::HorizontalPoints
             | CKind::VerticalPoints
             | CKind::HorizontalDistance
@@ -1454,7 +1467,7 @@ impl CKind {
     /// mistake the type system cannot catch, so it says so.
     pub fn kernel(self) -> K {
         match self {
-            CKind::PointOnCurve | CKind::CurveTangentLine | CKind::CurveCurvature => {
+            CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveCurvature => {
                 panic!("a curve contact's kernel belongs to its definition, not its type")
             }
             CKind::Coincident => K::Coincident,
@@ -1619,6 +1632,7 @@ impl CKind {
             | CKind::Symmetric
             | CKind::PointOnSpline
             | CKind::PointOnCurve
+            | CKind::PointOnExtrusion
             | CKind::CurveTangentLine
             | CKind::CurveCurvature
             | CKind::SplineTangentLine
@@ -1704,6 +1718,7 @@ impl CKind {
                 | CKind::CylinderOn
                 | CKind::CylinderTangentLine
                 | CKind::ConeTangentCone
+                | CKind::PointOnExtrusion
         )
     }
 
@@ -2284,7 +2299,7 @@ impl Constraint {
         if let Some(curve) = self.curve_of() {
             let cv = &sk.curves[curve.i()];
             let d = &sk.curve_defs[cv.def as usize];
-            return match &d.body {
+            let mut k = match &d.body {
                 crate::model::CurveBody::Exprs { x, y } => {
                     let mut k =
                         Vec::with_capacity(3 + x.flat.len() + y.flat.len() + cv.values.len());
@@ -2332,6 +2347,11 @@ impl Constraint {
                     k
                 }
             };
+            // a point in space reads the curve's view first: its datum on the sheet and its basis
+            if self.kind == CKind::PointOnExtrusion {
+                k.splice(0..0, sk.extrusion_frame(curve.i()));
+            }
+            return k;
         }
         match self.kind {
             CKind::Distance | CKind::CoordinateU | CKind::CoordinateV => vec![self.args[2].num()],
@@ -2582,6 +2602,10 @@ impl Constraint {
             CKind::PointOnCurve => {
                 [pt(0), vec![self.args[2].param()], sk.entity_params(e(1))].concat()
             }
+            // the point's lift, then the parameter and the curve's coordinates as the contact's
+            CKind::PointOnExtrusion => {
+                [self.lifted_columns(sk), vec![self.args[2].param()], sk.entity_params(e(1))].concat()
+            }
             // the parameter, the curve's coordinates, then what it touches — the frame's
             // column order, so the gradients that come back are the row
             CKind::CurveTangentLine => {
@@ -2753,6 +2777,7 @@ impl Constraint {
             }
             // a cone's or a cylinder's axis, apex first
             CKind::ConeOn | CKind::CylinderOn => [vec![e(0).i()], axis(1).to_vec()].concat(),
+            CKind::PointOnExtrusion => vec![e(0).i()],
             CKind::CylinderTangentLine => [axis(0), ends(1)].concat(),
             CKind::ConeTangentCone => [vec![e(2).i()], axis(0).to_vec(), axis(1).to_vec()].concat(),
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
@@ -2868,6 +2893,12 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             sk.curve_nearest_by(args[0].ent().i(), |px, py| {
                 ((px - ax) * dy - (py - ay) * dx).abs() / len
             })
+        }
+        // a point in space starts where the curve comes nearest its place in the curve's view
+        (CKind::PointOnExtrusion, 2) => {
+            let ci = args[1].ent().i();
+            let (x, y) = sk.on_view_sheet(sk.world_point(args[0].ent().i()), sk.curve_view(ci));
+            sk.curve_nearest_by(ci, |px, py| (px - x).dhypot(py - y))
         }
         (CKind::CurveCurvature, 2) => {
             let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));

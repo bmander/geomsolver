@@ -724,13 +724,54 @@ pub fn sweep(flat: &[f64], outer: &[f64], anchor: f64, a: f64, b: f64, n: usize)
     })
 }
 
-/// Where the curve is at roll `t`, cold.
-pub fn point(flat: &[f64], outer: &[f64], anchor: f64) -> (f64, f64) {
-    let Some(v) = view(flat) else { return (f64::NAN, f64::NAN) };
+/// What a generated profile comes to at one roll, read where no contact asks (a sheet built from
+/// the curve, `brep::sweep::extruded`): its point and its derivative along the roll (per degree),
+/// exact for a point, line, circle or arc, and the tool's parameter cutting there.
+#[derive(Clone, Copy, Debug)]
+pub struct Cut {
+    pub c: [f64; 2],
+    pub dc: [f64; 2],
+    pub s: f64,
+}
+
+/// The profile at roll `outer[0]`, cold: `None` where no root is found.
+pub fn cut_at(flat: &[f64], outer: &[f64], anchor: f64) -> Option<Cut> {
+    let v = view(flat)?;
     SCRATCH.with(|ts| {
         let ts = &mut *ts.borrow_mut();
-        carried(&v, outer, outer[0], anchor, ts, None)
-            .and_then(|s| orders(&v, outer, outer[0], s, 1, ts))
-            .map_or((f64::NAN, f64::NAN), |o| (o.c[0][0], o.c[0][1]))
+        let s = carried(&v, outer, outer[0], anchor, ts, None)?;
+        let o = orders(&v, outer, outer[0], s, 1, ts)?;
+        Some(Cut { c: o.c[0], dc: o.c[1], s })
     })
+}
+
+/// Where the curve is at roll `t`, cold.
+pub fn point(flat: &[f64], outer: &[f64], anchor: f64) -> (f64, f64) {
+    cut_at(flat, outer, anchor).map_or((f64::NAN, f64::NAN), |o| (o.c[0], o.c[1]))
+}
+
+/// A profile cut by a point, line, circle or arc whose numbers are its own rather than a
+/// sketch's (`brep::sweep::extruded`): the encoding and the outer vector `[t, columns…, motion
+/// numbers…]` it is read with, the roll left at 0.  A slide's line is its direction from the
+/// origin.
+pub fn planar(tool: Tool, columns: &[f64], side: f64, program: &[crate::motion::PlanarStep]) -> (Generated, Vec<f64>) {
+    use crate::motion::PlanarStep;
+    let mut outer = vec![0.0];
+    outer.extend_from_slice(columns);
+    let mut ops = Vec::with_capacity(program.len());
+    for step in program {
+        let at = outer.len();
+        match *step {
+            PlanarStep::Turn { centre, ratio, phase } => {
+                outer.extend([centre[0], centre[1], ratio, phase]);
+                ops.push(Op::Turn { centre: at, ratio: at + 2, phase: at + 3 });
+            }
+            PlanarStep::Slide { direction, advance } => {
+                outer.extend([0.0, 0.0, direction[0], direction[1], advance]);
+                ops.push(Op::Slide { line: at, advance: at + 4 });
+            }
+            PlanarStep::Relative => ops.push(Op::Relative),
+        }
+    }
+    (Generated::new(columns.len(), tool, side, &ops, ToolBody::None), outer)
 }

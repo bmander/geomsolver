@@ -396,6 +396,7 @@ fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
                 (FamilyKernel::Curvature, _) => {
                     kernels::curve_curvature_kernel(n_theta, n_const, body, formed)
                 }
+                (FamilyKernel::Extrusion, _) => kernels::extrusion_kernel(n_theta, n_const, body),
             });
         }
     }

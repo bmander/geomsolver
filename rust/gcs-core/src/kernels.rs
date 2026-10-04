@@ -202,6 +202,33 @@ pub fn envelope_kernel(n_theta: usize, n_const: usize) -> Kernel {
     }
 }
 
+/// The view's numbers a point on an extrusion reads before its contact's (`extrusion_kernel`):
+/// the datum on the sheet `(ox, oy, c, s)` and the basis `(u, v, o)`.
+pub const EXTRUSION_FRAME: usize = 13;
+
+/// A point in space on the surface a curve of a view stands for (`CKind::PointOnExtrusion`,
+/// issue #70): `(x, y, z, t, θ…)`, the point's lift, the curve's parameter and its columns, over
+/// the constants `EXTRUSION_FRAME` and then the contact's.  The point read into the view and put
+/// on the sheet, less `C(t)`: `point_on_envelope`'s rows with the point's place in the view for
+/// its coordinates.  Only a generated profile stands for a surface, so any other body is
+/// `refused`.  One per definition.
+pub fn extrusion_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel {
+    let (res, jac): (KernelFn, KernelFn) = match body {
+        ENVELOPE => (point_on_extrusion_res, point_on_extrusion_jac),
+        _ => (refused_res, refused_jac),
+    };
+    Kernel {
+        name: "point_on_extrusion",
+        n_res: 2,
+        n_par: 4 + n_theta,
+        n_const: EXTRUSION_FRAME + n_const,
+        degree: 1,
+        res,
+        jac,
+        const_jac: None,
+    }
+}
+
 /// A line tangent to a curve written in the language: `(u, θ…, ax, ay, bx, by)` — the same two
 /// rows as `spline_tangent_line`, with `C` and `C'` from the definition's tapes (a formula) or
 /// its block (a trace).  One kernel per definition, as the contact's is.
@@ -1737,6 +1764,54 @@ fn point_on_body_jac<const BODY: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f6
         for t in 0..n_par - 2 {
             j[jo + 2 + t] = -c.dx[t];
             j[row1 + 2 + t] = -c.dy[t];
+        }
+    }
+}
+
+/// A point's lift read into a view and put on the sheet, and the gradient of that place along the
+/// lift: `k` is `EXTRUSION_FRAME`'s numbers.
+fn extrusion_place(p: &[f64], k: &[f64]) -> ([f64; 2], [[f64; 3]; 2]) {
+    let (c, s) = (k[2], k[3]);
+    let (u, w, o) = (&k[4..7], &k[7..10], &k[10..13]);
+    let d = [p[0] - o[0], p[1] - o[1], p[2] - o[2]];
+    let (a, b) = (d[0] * u[0] + d[1] * u[1] + d[2] * u[2], d[0] * w[0] + d[1] * w[1] + d[2] * w[2]);
+    let (x, y) = crate::plane::on_page(c, s, (k[0], k[1]), (a, b));
+    let grad = [std::array::from_fn(|i| c * u[i] - s * w[i]), std::array::from_fn(|i| s * u[i] + c * w[i])];
+    ([x, y], grad)
+}
+
+fn point_on_extrusion_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 4 || n_const < EXTRUSION_FRAME + 2 {
+        return;
+    }
+    for i in 0..n {
+        let (o, ko) = (n_par * i, n_const * i);
+        let (place, _) = extrusion_place(&v[o..o + 3], &k[ko..ko + EXTRUSION_FRAME]);
+        let c = body_val::<ENVELOPE>(&k[ko + EXTRUSION_FRAME..ko + n_const], v[o + 3], &v[o + 4..o + n_par], 1, false);
+        r[2 * i] = place[0] - c.x;
+        r[2 * i + 1] = place[1] - c.y;
+    }
+}
+
+fn point_on_extrusion_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 4 || n_const < EXTRUSION_FRAME + 2 {
+        return;
+    }
+    for i in 0..n {
+        let (o, ko) = (n_par * i, n_const * i);
+        let (jo, row1) = (2 * n_par * i, 2 * n_par * i + n_par);
+        let (_, grad) = extrusion_place(&v[o..o + 3], &k[ko..ko + EXTRUSION_FRAME]);
+        let c = body_val::<ENVELOPE>(&k[ko + EXTRUSION_FRAME..ko + n_const], v[o + 3], &v[o + 4..o + n_par], 1, true);
+        for t in 0..3 {
+            j[jo + t] = grad[0][t];
+            j[row1 + t] = grad[1][t];
+        }
+        // the parameter, then every coordinate the curve reads, as the contact's
+        for t in 0..n_par - 3 {
+            j[jo + 3 + t] = -c.dx[t];
+            j[row1 + 3 + t] = -c.dy[t];
         }
     }
 }

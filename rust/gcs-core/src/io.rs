@@ -946,6 +946,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             pose: crate::model::whole(pose, cv.pose.len()),
             class: cv.class.clone(),
             trim,
+            extrusion: cv.extrusion,
         });
         curve_map[i] = Some(dst.curves.len() - 1);
         made.push(EntRef::new(EntKind::Curve, dst.curves.len() - 1));

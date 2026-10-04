@@ -93,6 +93,8 @@ impl Loop {
         Place::Piece {index:self.pieces.len()-1,s:self.pieces.last().unwrap().length()}
     }
     pub fn index_of(&self,face: u32) -> Option<usize> { self.pieces.iter().position(|p| p.face == face) }
+    /// Whether the corner after each piece is convex: where the walk turns left, carrying a fan.
+    pub fn convex(&self) -> Vec<bool> { self.corners.iter().map(|c| c.angle > 0.).collect() }
     fn resolve(&self,anchor: Anchor) -> Result<f64,String> {
         let index = self.index_of(anchor.face).ok_or("a profile face is missing at this station")?;
         Ok(self.start_of(index)+anchor.fraction.clamp(0.,1.)*self.pieces[index].length())
@@ -164,6 +166,11 @@ impl Cutter {
         }
         Ok(Some(Cutter {origin:profile.origin,axis,kind:Kind::Extruded(Extruded {walks,extent:[from.min(to),from.max(to)]}),
             sections:Default::default()}))
+    }
+    /// A prism's profile, its loops walked in its plane (outer counter-clockwise about the axis),
+    /// and the extrusion's extent from that plane; none for a cutter of revolutions.
+    pub fn prism_profile(&self) -> Option<(&[Vec<Seg>],[f64;2])> {
+        match &self.kind { Kind::Extruded(x) => Some((&x.walks,x.extent)),Kind::Revolved {..} => None }
     }
     /// Whether a station is an angle about the axis (else a distance along a prism).
     pub fn revolved(&self) -> bool { matches!(self.kind,Kind::Revolved {..}) }

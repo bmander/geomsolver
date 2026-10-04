@@ -80,10 +80,11 @@ fn cross_view_audit() {
 /// corpus predates: each of them states relations across views on purpose.  The flange draws its
 /// bolt circle in a view folded `along` a line on the plate's top face, which holds that line on
 /// the view in space; the twist drill's grinding wheel stands in a view folded `along` a line in
-/// the side view, the same way.
+/// the side view, the same way.  The gauged gear holds a gauge drawn in its own view to the flank
+/// a rack's side generates (issue #70).
 const IN_SPACE: &[&str] =
     &["skew_axes.sv", "hypoid_pitch_cones.sv", "sphere_cone_cylinder.sv", "solid_flange.sv",
-      "twist_drill/drill.sv", "twist_drill/wheel.sv"];
+      "twist_drill/drill.sv", "twist_drill/wheel.sv", "generation/gauged_gear.sv"];
 
 /// The spiral bevel's step-by-step layout (`spiral_bevel/layout.sv` and its modules), written
 /// after the audit in views folded from the pitch plane: its relations across views are read

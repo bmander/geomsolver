@@ -198,7 +198,11 @@ fn a_surface_refuses_wrong_solids_edges_and_planar_constraints() {
     for (tail,want) in [
         ("bad := surface(meridian,meridian)","first argument is a solid"),
         ("bad := surface(ring,axis)","not a boundary"),
-        ("prism := solid(face(meridian),depth: 2mm)\nbad := surface(prism,meridian)","unmodified revolution"),
+        // a prism's side is a surface (issue #70); a body over one is not
+        ("prism := solid(face(meridian),depth: 2mm)\nheld := solid(prism)\nbad := surface(held,meridian)",
+            "unmodified revolution or prism"),
+        ("prism := solid(face(meridian),depth: 2mm)\nbad := surface(prism,meridian,from: 0deg,to: 90deg)",
+            "no angular bounds"),
         ("bad := surface(missing,meridian)","no such entity"),
         ("fix(x == 0, y == 0) wall","a surface has no number of its own to fix"),
     ] {

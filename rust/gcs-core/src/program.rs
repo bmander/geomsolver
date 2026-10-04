@@ -38,7 +38,9 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
     diags.extend(crate::solid::bearing_errors(sk).into_iter().map(|(b, message)| Diag {
         code: Code::E082, span: b.span, stmt: Some(crate::syntax::StmtId(b.stmt)), message,
     }));
-    for i in 0..sk.surfaces.len() {
+    // a prism's side is read in the drawing, where its envelope stands for it (`extruded_envelopes`)
+    let prism = |i: usize| matches!(sk.solids[sk.surfaces[i].solid as usize].def, crate::model::SolidDef::Prism { .. });
+    for i in (0..sk.surfaces.len()).filter(|&i| !prism(i)) {
         if let Err(message) = crate::solid::RevolvedSurface::named(sk,i) {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Surface,i));
             diags.push(Diag {code:Code::E080,span:site.map(|s| s.span).unwrap_or_default(),
@@ -379,6 +381,10 @@ pub fn elaborate(p: &Program) -> Elaborated {
         refresh_frames(&mut sk);
     }
 
+    // a prism's side generating under a motion that keeps its view stands for a surface the
+    // solve can hold a point to: built with the drawing, once the memberships say the view
+    let extruded = generated::extruded_envelopes(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+
     // -- phase 3: constraints, in statement order
     let mut arrays = BTreeSet::new();
     for st in &body {
@@ -407,7 +413,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // (Motions were built with the primitives: solids retain their indices.)
     solids(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     surfaces::surfaces(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
-    let spatial: BTreeSet<StmtId> = skip.union(&planar).copied().collect();
+    let spatial: BTreeSet<StmtId> = skip.iter().chain(&planar).chain(&extruded).copied().collect();
     envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &spatial, &mut diags);
     patches::patches(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     seams::seams(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
