@@ -1,0 +1,20 @@
+// The engine on one sheet: the housing seen from above, its bore the apex's epitrochoid; the
+// rotor beside it, its flanks the bore's inner envelope; the rotor to make, three arcs a clearance
+// inside them; and the rotor from the front and in isometric.
+model m from "wankel.sv"
+
+sheet engine {
+  size (420mm, 297mm)
+  label "WANKEL ROTOR AND HOUSING  R 105 mm, e 15 mm, W 80 mm (K = 7)" at (14mm, 16mm)
+  view housing(m.housing) from top at (105mm, 170mm) scale 0.5
+  view rotor(m.rotor) from top at (235mm, 170mm) scale 0.5
+  view arc_rotor(m.arc_rotor) from top at (345mm, 170mm) scale 0.5
+  view rotor_side(m.rotor) from front at (235mm, 75mm) scale 0.5
+  view pictorial(m.rotor) from isometric at (345mm, 75mm) scale 0.4
+  dimensions in housing
+  dimensions in rotor_side
+  label "Housing: the bore is where an apex goes" at (40mm, 255mm)
+  label "Rotor: what the housing never reaches" at (190mm, 255mm)
+  label "Rotor to make: three arcs" at (305mm, 255mm)
+  style .hidden { display: none }
+}

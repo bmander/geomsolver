@@ -20,6 +20,7 @@ pub mod delaunay;
 pub mod diagnose;
 pub mod drawing;
 pub mod edit;
+pub(crate) mod bvh;
 pub mod envelope;
 mod intersection;
 pub mod patch;

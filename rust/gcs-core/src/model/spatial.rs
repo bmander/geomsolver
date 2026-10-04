@@ -158,15 +158,23 @@ pub struct SolidBearing {
     pub span: crate::syntax::Span,
 }
 
-/// The interval a claim is swept over: a free variable of the drawing, and where it runs.
+/// The interval a claim is swept over: a free variable of the drawing, or a named motion's roll
+/// (in degrees), and where it runs.
 #[derive(Clone, Debug)]
 pub struct Sweep {
     pub(crate) name: String,
     pub(crate) from: f64,
     pub(crate) to: f64,
     pub(crate) dimension: crate::units::Dim,
+    /// The motion whose roll is swept, where it is one: every solid placed under it is read at
+    /// its `at:` advanced by the roll, and nothing is solved again.
+    pub(crate) motion: Option<u32>,
 }
 impl Sweep {
+    /// The motion whose roll the claim runs along, if it runs along one.
+    pub fn motion(&self) -> Option<u32> {
+        self.motion
+    }
     pub fn name(&self) -> &str {
         &self.name
     }

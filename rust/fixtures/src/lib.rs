@@ -7,6 +7,7 @@ pub mod tools;
 pub mod motions;
 pub mod gear;
 pub mod drill;
+pub mod wankel;
 
 pub use read::{accurate,elaborate,unsolved,read,module,beside,read_beside,solid,examples};
 

@@ -220,6 +220,13 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
 ///
 /// Sorted and deduplicated by name, so a report is stable and a reader can find a name in it.
 pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f64)> {
+    positions_where(sk, map, &|_| true)
+}
+
+/// `positions`, a solid read only where `asked` takes one of its names: a solid is evaluated to
+/// report its volume, and one nobody asks about (a construction sweep, meshed from its field) need
+/// not be.
+pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn Fn(&str) -> bool) -> Vec<(String, f64)> {
     let mut out: std::collections::BTreeMap<String, f64> = Default::default();
     for (&e, names) in &map.names {
         let params = sk.entity_params(e);
@@ -266,7 +273,7 @@ pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f
     // At `REPORT_UNIT`, never at the screen's: a volume is a property of the document, and one
     // that changed with the zoom would be a number nobody could quote.
     for (&e, names) in &map.names {
-        if e.kind != crate::model::EntKind::Solid {
+        if e.kind != crate::model::EntKind::Solid || !names.iter().any(|n| asked(n)) {
             continue;
         }
         let Ok(solid) = sk.evaluated_solid(e.i(), crate::solid::ApproximationPolicy::Report) else { continue };

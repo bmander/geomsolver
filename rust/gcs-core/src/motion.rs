@@ -357,8 +357,13 @@ impl Family {
     /// observer^-1 * source, including the derivative of the moving inverse.
     pub fn at(&self, angle: f64) -> Result<Motion,String> {
         if !angle.is_finite() { return Err("a motion angle must be finite".into()); }
-        let mut values: Vec<Motion> = Vec::with_capacity(self.steps.len());
-        for step in &self.steps {
+        // the steps' values on the stack for a family of up to eight steps, as `pose_at` keeps
+        // them: an envelope's root search reads a pose and its rate many thousand times
+        let mut fixed = [Motion::identity();8];
+        let mut spilled;
+        let values: &mut [Motion] = if self.steps.len() <= fixed.len() { &mut fixed[..self.steps.len()] }
+            else { spilled = vec![Motion::identity();self.steps.len()]; &mut spilled };
+        for (n,step) in self.steps.iter().enumerate() {
             let value = match *step {
                 Step::Rotation {origin,axis,ratio,phase,advance} => {
                     let rotation = Motion::rotation(axis,phase+ratio*angle,ratio)
@@ -381,9 +386,9 @@ impl Family {
                 Step::Relative {source,observer} => values[source].then(values[observer].inverse()),
             };
             if !value.is_finite() { return Err("a motion pose or derivative overflowed".into()); }
-            values.push(value);
+            values[n] = value;
         }
-        Ok(*values.last().expect("a motion family has a root"))
+        values.last().copied().ok_or_else(|| "a motion family has a root".into())
     }
 }
 

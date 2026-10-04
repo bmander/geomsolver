@@ -198,6 +198,6 @@ fn what_is_written_wrong_is_refused() {
     refused(
         format!("{two}claim over nope in (0deg, 90deg) {{ sA_ clear(2mm) sB_ }}\n"),
         Code::E040,
-        "not a free variable of this drawing",
+        "not a free variable or a motion of this drawing",
     );
 }

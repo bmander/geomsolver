@@ -254,7 +254,13 @@ impl Builder {
         let state = std::mem::replace(&mut self.state,State::Failed);
         let next = (|| -> Result<State,ExportRefusal> { Ok(match state {
             State::Admit => State::Prepare(admission::admit_body(sk,body,&DISPLAY_ADMISSION)?),
-            State::Prepare(admitted) => State::Sheets(super::sweep::prepare(sk,body,recipe,&admitted,&say)?,Vec::new()),
+            State::Prepare(admitted) => {
+                let prepared = super::sweep::prepare(sk,body,recipe,&admitted,&say)?;
+                // a planar sweep's body is its blank within its envelope: no sheet, no sector
+                if super::sweep::planar::all(&prepared) {
+                    State::Finish(super::sweep::Cut::Whole(super::sweep::planar::cut(sk,body,recipe,&prepared,None,&say)?))
+                } else { State::Sheets(prepared,Vec::new()) }
+            }
             State::Sheets(prepared,mut sheets) => {
                 sheets.push(super::sweep::sheet(&prepared,sheets.len(),None,&say)?);
                 if sheets.len() == prepared.sweeps() { State::Plan(prepared,sheets) } else { State::Sheets(prepared,sheets) }
@@ -316,12 +322,16 @@ impl Builder {
 /// gross bars), so that what reads the object's surface — a drawing's views and sections, its
 /// silhouettes traced on the surfaces — reads the B-rep, as it reads a static solid's; a field is
 /// meshed only for an object whose build is refused.
-pub fn supply_exact(sk: &Sketch) {
+pub fn supply_exact(sk: &Sketch) { supply_exact_where(sk,&|_| true) }
+
+/// `supply_exact` for the swept objects `wanted` takes (by solid index): a report asked of one
+/// solid builds no other.
+pub fn supply_exact_where(sk: &Sketch,wanted: &dyn Fn(usize) -> bool) {
     // a sketch that leaves meshing to its host has its surfaces supplied by it
     if sk.field_meshing.get() != crate::solid::FieldMeshing::Now { return }
     let say = Say {stage:&|_: &str| {},mark:&|_| {}};
     let Ok(mm) = cad::millimetres(sk) else { return };
-    for job in sk.field_jobs() {
+    for job in sk.field_jobs().into_iter().filter(|j| wanted(j.solid) && sk.supplied_exact_solid(j.solid).is_none()) {
         // admitted as a display is, which is looked at and not made
         let admitted = cad::swept_operands(sk,job.solid).is_empty().then(|| admission::admit_body(sk,job.solid,&DISPLAY_ADMISSION).ok()).flatten();
         let Ok(built) = exact(sk,job.solid,admitted.as_ref(),None,&say) else { continue };

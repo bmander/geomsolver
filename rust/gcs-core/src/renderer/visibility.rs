@@ -2,7 +2,8 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::{plane, solid::LocalPoint};
-use super::{Renderer, spatial::{Bounds, Bvh}};
+use super::Renderer;
+use crate::bvh::{Bounds, Bvh};
 
 impl Renderer<'_> {
     /// Orthographic occlusion uses retained boundary crossings and the same material classifier.

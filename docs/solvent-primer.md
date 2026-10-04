@@ -592,6 +592,10 @@ Use claims for what a figure was drawn to show (the altitudes concur; the traced
 straight). A claim may not own an unknown, so claiming a curve contact or reading an unknown
 is an error.
 
+A claim may also run over a named motion's roll: `claim over rotor_turn in (0deg, 1080deg) {
+arc_rotor_at clear(0.25mm) housing }` reads the solids placed under the motion (`solid(arc_rotor,
+under: rotor_turn, at: 0deg)`) at each sampled pose, solving nothing again, and reports the worst.
+
 Three claim words apply only to solids (1.14): `claim bore inside stock`,
 `claim disc clear(2mm) cyl`, `claim head fits(0.15mm) trap`. The report gives the measurement; a
 claim decided within the faceting of a round face is **undecided**:
@@ -1135,6 +1139,22 @@ cuts an involute; `profile := envelope(roller, under: rel, from: 0deg, to: 360de
 cam (`side: near|far` of the instant centre, where a circle cuts twice). `on`, `tangent` and
 `curvature` hold against it, and the tool's and the motion's geometry are its columns, so they
 solve to suit — a conjugate is synthesised, not stated. See 2.9.2.
+
+A point's envelope is its path: `bore := envelope(apex, under: rotor_turn, from: 0deg, to:
+1080deg)` is where the motion carries the apex, the epitrochoid typed nowhere. One that rolls whole
+turns of the motion back to where it started is closed and stands alone in a face, as a circle
+does: `chamber := solid(face(bore), …)`. A stationary root (the point a turn is about) is never a
+contact. `wankel/` is the case.
+
+**The rotor is a cut.** The largest rotor that turns in a bore is an *intersection* over the
+motion, of the bore at every pose. By De Morgan that is the blank less everything the housing's
+wall passes through, which the language already says: `swept := solid(housing, under: housing_turn,
+from: 0deg, to: 1080deg)` and `swept cut rotor`. (`bound` by a sweep keeps what lies within the
+*union* over the motion — an outer envelope, a different set.) Such a sweep — a pocketed prism under
+a planar motion over a whole period — is the **planar generating class**, rows P1–P5
+([generating-sweeps](generating-sweeps.md)), and is exported exactly: the blank within the pocket's
+inner envelope (corners where the pieces meet: the apexes), carried through the prisms. A fold, a
+crossing, a gap and a roll short of a period are refused by name.
 
 **A prism's side generating in its view is a surface the solve sees** (§6.15.2). `side :=
 surface(rack_tooth, edge: rack_flank)` names a prism's side (as it names a revolution's), and under
@@ -1772,4 +1792,5 @@ first; `gear_trace.sv` is the deepest; `engine.sv` and its `engine/` modules are
 | views and projection | [bracket](../rust/examples/bracket.sv) |
 | layouts in space | [skew axes](../rust/examples/skew_axes.sv), [spatial surfaces](../rust/examples/sphere_cone_cylinder.sv), [hypoid pitch cones](../rust/examples/hypoid_pitch_cones.sv) |
 | motions and generated solids | [indexed pattern](../rust/examples/solid_indexed_pattern.sv), [lantern generation](../rust/examples/lantern_generation.sv) |
+| a point's envelope, an inner envelope and a claim over a motion | [Wankel](../rust/examples/wankel/wankel.sv) |
 | a modular assembly | [engine](../rust/examples/engine.sv) |

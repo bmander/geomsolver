@@ -272,40 +272,54 @@ impl<'a> Walk<'a> {
                 // a constraint: its dimension is written in the component's own parameters, which
                 // do not exist in the flat document, so they are worked out here
                 StmtKind::Relation(rel) => {
-                    let mut r2 = rel.clone();
-                    // Substitute component parameters in either relation representation.
-                    if let Some(w) = r2.form.written_mut() {
-                        for a in w.args.iter_mut() {
-                            match a {
-                                crate::syntax::OpArg::Slot { arg, .. } => {
-                                    self.settle_arg(arg, vals, scope)
-                                }
-                                crate::syntax::OpArg::Named(_, arg) => {
-                                    self.settle_arg(arg, vals, scope)
-                                }
-                                crate::syntax::OpArg::Dim(text, span) => {
-                                    self.settle_dim(text, *span, vals, scope)
-                                }
-                                crate::syntax::OpArg::Ent(_) => {}
-                            }
-                        }
-                    }
-                    for a in r2.form.canonical_args_mut().iter_mut().flatten() {
-                        self.settle_arg(a, vals, scope);
-                    }
-                    // the enclosing instances' classes, over the statement's own: a ghosted
-                    // part's dimensions are the ghost's (`display: geometry`) as its lines are
-                    for c in &scope.in_class.0 {
-                        if !r2.class.has(c) {
-                            r2.class.0.push(c.clone());
-                        }
-                    }
+                    let r2 = self.settle_relation(rel, vals, scope);
                     self.emit(StmtKind::Relation(r2), st, scope, path);
+                }
+                // a claim over an interval: its numbers and its relations' worked out as above
+                StmtKind::ClaimOver(c) => {
+                    let mut c2 = c.clone();
+                    for a in [&mut c2.from, &mut c2.to] { self.settle_arg(a, vals, scope); }
+                    for inner in &mut c2.body {
+                        if let StmtKind::Relation(rel) = &inner.kind {
+                            inner.kind = StmtKind::Relation(self.settle_relation(rel, vals, scope));
+                        }
+                    }
+                    self.emit(StmtKind::ClaimOver(c2), st, scope, path);
                 }
                 // a gauge or an orientation: kept as written, resolved later
                 other => self.emit(other.clone(), st, scope, path),
             }
         }
+    }
+
+    /// A relation's numbers worked out against the parameters in scope, in either of its
+    /// representations, and the enclosing instances' classes stamped over its own.
+    fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &BTreeMap<String, Aff>, scope: &Scope)
+        -> crate::syntax::Relation {
+        let mut r2 = rel.clone();
+        if let Some(w) = r2.form.written_mut() {
+            for a in w.args.iter_mut() {
+                match a {
+                    crate::syntax::OpArg::Slot { arg, .. } => self.settle_arg(arg, vals, scope),
+                    crate::syntax::OpArg::Named(_, arg) => self.settle_arg(arg, vals, scope),
+                    crate::syntax::OpArg::Dim(text, span) => {
+                        self.settle_dim(text, *span, vals, scope)
+                    }
+                    crate::syntax::OpArg::Ent(_) => {}
+                }
+            }
+        }
+        for a in r2.form.canonical_args_mut().iter_mut().flatten() {
+            self.settle_arg(a, vals, scope);
+        }
+        // the enclosing instances' classes, over the statement's own: a ghosted part's
+        // dimensions are the ghost's (`display: geometry`) as its lines are
+        for c in &scope.in_class.0 {
+            if !r2.class.has(c) {
+                r2.class.0.push(c.clone());
+            }
+        }
+        r2
     }
 
     /// A seed written as an expression is worked out here, against the parameters in scope,

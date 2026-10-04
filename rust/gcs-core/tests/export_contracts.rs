@@ -19,7 +19,7 @@ fn a_refusal_says_its_message_and_keeps_its_stage() {
     let r = r.unwrap_err();
     assert_eq!((r.stage,r.to_string().as_str()),(Stage::Classify,"the split removed 1 cells for 2 placements"));
     let refused = admission::Error::Refused(admission::Refusal {condition:admission::Condition::Clearance,
-        sweep:"removal".into(),message:"the tool lies in the blank".into(),witness:Some([1.,2.,3.]),screw:false});
+        sweep:"removal".into(),message:"the tool lies in the blank".into(),witness:Some([1.,2.,3.]),asked:gcs_core::solid::admission::Asked::Generating});
     let text = refused.to_string();
     let r = ExportRefusal::from(refused);
     assert_eq!((r.stage,r.condition,r.witness),(Stage::Admission,Some(admission::Condition::Clearance),Some([1.,2.,3.])));

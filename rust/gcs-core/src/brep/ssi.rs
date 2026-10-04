@@ -263,6 +263,22 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             if rho <= tol { return Ssi::Curves(vec![]) }
             Ssi::Curves(vec![Curve::Circle(Frame::new(sub(c.o,scale(pl.z,dist)),pl.z,pl.x),rho)])
         }
+        (Surface::Plane(_),Surface::Extrusion(..)) | (Surface::Extrusion(..),Surface::Plane(_))
+            if norm(cross(f.z,g.z)) <= 1e-12 => {
+            // a plane square to the sweep: the swept curve itself, moved along the sweep onto it
+            let (pl,ex) = if matches!(a,Surface::Plane(_)) { (f,b) } else { (g,a) };
+            let Surface::Extrusion(e,c) = ex else { unreachable!() };
+            let lift = |p: V| add(p,scale(e.z,dot(pl.z,sub(pl.o,p))/dot(pl.z,e.z)));
+            match &**c {
+                Curve::BSpline(sp) => match super::nurbs::BSpline::new(sp.degree,sp.knots.clone(),sp.poles.iter().map(|&p| lift(p)).collect()) {
+                    Ok(moved) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(moved))]),
+                    Err(_) => Ssi::Traced,
+                },
+                Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:*d}]),
+                Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
+                _ => Ssi::Traced,
+            }
+        }
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if norm(cross(f.z,g.z)) <= 1e-12 => {
             // parallel axes: the sections' circles meet in the lines' feet
             let w = sub(g.o,f.o);

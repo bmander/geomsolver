@@ -901,17 +901,34 @@ impl Curve {
                 v
             }
             Curve::BSpline(ref b) => {
-                // the nearest of samples across every knot span, then Newton on (C − p)·C'
+                // the nearest of samples across every knot span, then Newton on (C − p)·C'. A span
+                // lies in its poles' hull, so the distance to their box bounds its samples' from
+                // below: spans are read nearest box first, and none past the nearest sample found,
+                // which finds the sample the whole walk would (the earlier of two as near)
                 let [a,z] = b.domain();
                 let mut cuts = vec![a];
                 cuts.extend(b.breaks([a,z]));
                 cuts.push(z);
+                let reach = |w: &[f64]| -> f64 {
+                    let poles = b.poles_over([w[0],w[1]]);
+                    let gap: [f64;3] = std::array::from_fn(|i| {
+                        let (lo,hi) = poles.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),q| (l.min(q[i]),h.max(q[i])));
+                        (lo-p[i]).max(p[i]-hi).max(0.)
+                    });
+                    norm(gap)*(1.-1e-12)
+                };
+                let mut spans: Vec<(f64,usize)> = cuts.windows(2).enumerate().map(|(i,w)| (reach(w),i)).collect();
+                spans.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
                 let mut best = (f64::INFINITY,a);
-                for w in cuts.windows(2) { for j in 0..=16 {
-                    let t = w[0]+(w[1]-w[0])*j as f64/16.;
-                    let d = crate::space::distance(b.point(t),p);
-                    if d < best.0 { best = (d,t); }
-                } }
+                for (bound,i) in spans {
+                    if bound > best.0 { break }
+                    let w = [cuts[i],cuts[i+1]];
+                    for j in 0..=16 {
+                        let t = w[0]+(w[1]-w[0])*j as f64/16.;
+                        let d = crate::space::distance(b.point(t),p);
+                        if d < best.0 || (d == best.0 && t < best.1) { best = (d,t); }
+                    }
+                }
                 let mut t = best.1;
                 for _ in 0..20 {
                     let (x,d,dd) = b.d2(t);

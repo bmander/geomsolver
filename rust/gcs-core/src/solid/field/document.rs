@@ -108,8 +108,14 @@ fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> 
             return Ok(chords(within(&|t| crate::curve::point_at(sk,e.i(),t),a,b,slack),[sp.ctrl[0],*sp.ctrl.last().unwrap()]))
         }
         EntKind::Curve => {
-            let t = sk.curves[e.i()].trim.ok_or("material fields read a curve only where a face trims it")?;
-            let pts = sk.curve_polyline_within(e.i(),slack).into_iter().map(|(_,q)| q).collect();
+            let pts: Vec<(f64,f64)> = sk.curve_polyline_within(e.i(),slack).into_iter().map(|(_,q)| q).collect();
+            let Some(t) = sk.curves[e.i()].trim else {
+                // a closed curve is a whole loop: its chords end where they began
+                if !sk.curve_closed(e.i()) { return Err("material fields read a curve only where a face trims it, or whole where it closes".into()) }
+                let mut pts: Vec<[f64;2]> = pts.into_iter().map(at).collect();
+                if let Some(&first) = pts.first() { *pts.last_mut().unwrap() = first; }
+                return Ok(pts.windows(2).map(|w| Edge::Line {a:w[0],b:w[1],axis:false}).collect())
+            };
             return Ok(chords(pts,[t.from,t.to]))
         }
         EntKind::Line => {
