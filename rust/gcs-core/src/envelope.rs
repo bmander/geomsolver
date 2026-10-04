@@ -11,6 +11,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 mod named;
+pub mod planar;
 pub use named::GeneratedEnvelope;
 
 use crate::plane::{cross, dot, scaled};

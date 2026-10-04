@@ -3,7 +3,8 @@
 use crate::fmath::Det;
 use crate::plane::{self, Basis};
 use crate::solid::{LocalPoint, PageFrame};
-use super::{Drawing, Renderer, Stroke, View, spatial::{Bounds, Bvh}};
+use super::{Drawing, Renderer, Stroke, View};
+use crate::bvh::{Bounds, Bvh};
 
 /// How near two points must be, relative to the drawing, to be one point.
 const SAME: f64 = 1e-7;

@@ -108,6 +108,18 @@ pub struct Generated {
 }
 
 impl Generated {
+    /// What a contact on generated curve `curve` carries: the roll its root is chosen at, the
+    /// numbers its motion was given, then this encoding — read by `kernel_eval`.
+    pub(crate) fn contact_consts(&self, sk: &crate::model::Sketch, curve: usize) -> Vec<f64> {
+        let values = &sk.curves[curve].values;
+        let mut k = Vec::with_capacity(2 + values.len() + self.flat.len());
+        k.push(sk.curve_home(curve));
+        k.push(values.len() as f64);
+        k.extend_from_slice(values);
+        k.extend_from_slice(&self.flat);
+        k
+    }
+
     pub fn new(n_theta: usize, tool: Tool, side: f64, ops: &[Op], body: ToolBody) -> Generated {
         let mut f = vec![n_theta as f64, tool.code(), side, ops.len() as f64];
         for op in ops {
@@ -401,7 +413,7 @@ fn root(v: &View, outer: &[f64], pose: &Pose, mut s: f64, ts: &mut tape::Scratch
 /// Where to start the root at roll `t`, chosen by `side`: a line's anywhere, a circle's on the
 /// line from its centre through the instant centre (exact), a curve tool's from a scan of its
 /// interval.
-fn chosen(v: &View, outer: &[f64], pose: &Pose, ts: &mut tape::Scratch) -> Option<f64> {
+fn chosen(v: &View, outer: &[f64], t: f64, pose: &Pose, ts: &mut tape::Scratch) -> Option<f64> {
     match v.tool {
         Tool::Point | Tool::Line => return Some(0.0),
         Tool::Circle | Tool::Arc => {
@@ -441,6 +453,14 @@ fn chosen(v: &View, outer: &[f64], pose: &Pose, ts: &mut tape::Scratch) -> Optio
     let mut best: Option<(f64, f64)> = None;
     for r in roots {
         let Some((x, _)) = at(v, outer, pose, false, Jet::constant(r), ts) else { continue };
+        // a root whose cut stands still as the roll runs is a corner of the profile, not the
+        // profile: a Wankel apex, where the bore it runs along touches every flank in turn
+        if let Some(o) = orders(v, outer, t, r, 1, ts) {
+            let (p, d) = (o.c[0], o.c[1]);
+            if d[0].dhypot(d[1]) <= 1e-9 * (1.0 + p[0].dhypot(p[1])) {
+                continue;
+            }
+        }
         let key = v.side * match centre {
             Some((ix, iy)) => (x[0].0[0] - ix).dhypot(x[1].0[0] - iy),
             None => r,
@@ -463,7 +483,7 @@ fn carried(v: &View, outer: &[f64], t: f64, anchor: f64, ts: &mut tape::Scratch,
     }
     let here = pose(v, outer, t)?;
     if v.tool.analytic() {
-        let s = chosen(v, outer, &here, ts)?;
+        let s = chosen(v, outer, t, &here, ts)?;
         return root(v, outer, &here, s, ts);
     }
     if let Some((tp, sp)) = from {
@@ -476,7 +496,7 @@ fn carried(v: &View, outer: &[f64], t: f64, anchor: f64, ts: &mut tape::Scratch,
             }
         }
     }
-    let mut s = chosen(v, outer, &pose(v, outer, anchor)?, ts)?;
+    let mut s = chosen(v, outer, anchor, &pose(v, outer, anchor)?, ts)?;
     if t != anchor {
         for k in 1..=MARCH {
             let tk = anchor + (t - anchor) * k as f64 / MARCH as f64;

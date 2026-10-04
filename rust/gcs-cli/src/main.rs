@@ -591,15 +591,16 @@ fn wanted(
     map: &gcs_core::program::SourceMap,
     names: &[String],
 ) -> Vec<(String, f64)> {
-    let all = report::positions(sk, map);
+    // a solid is read only where a name asked reaches it, or it reaches a name asked — a swept
+    // one from its exact surface where one builds, as a drawing reads it
+    let reaches = |a: &str, b: &str| a == b || a.strip_prefix(b).is_some_and(|r| r.starts_with('.'));
+    let asked = |n: &str| names.is_empty() || names.iter().any(|q| reaches(n, q) || reaches(q, n));
+    gcs_core::brep::export::supply_exact_where(sk, &|i| asked(&sk.solids[i].name));
+    let all = report::positions_where(sk, map, &asked);
     if names.is_empty() {
         return all;
     }
-    all.into_iter()
-        .filter(|(n, _)| {
-            names.iter().any(|q| n == q || n.strip_prefix(q.as_str()).is_some_and(|r| r.starts_with('.')))
-        })
-        .collect()
+    all.into_iter().filter(|(n, _)| names.iter().any(|q| reaches(n, q))).collect()
 }
 
 /// `file:line:col: error[Exxx]: message`.

@@ -270,17 +270,33 @@ pub const FIT_MM: f64 = 1e-4;
 /// trimmed stretch's first and last poles are its end points themselves, which its neighbours
 /// share. The poles, the knots and the error measured; `None` past 4096 samples.
 pub fn fit_curve(sk: &Sketch,i: usize,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
-    use crate::brep::nurbs::BSpline;
     let (a,b) = sk.curve_domain(i);
+    let ends = sk.curves[i].trim.map(|t| (sk.point_xy(t.from as usize),sk.point_xy(t.to as usize)));
+    fit_stretch(sk,i,(a,b),ends,tol)
+}
+
+/// The curve over `(a, b)` (decreasing where the stretch runs against the curve) as a cubic
+/// B-spline within `tol`, its two ends put exactly at `ends` where given.
+fn fit_stretch(sk: &Sketch,i: usize,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,tol: f64)
+    -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
+    fit_sampled(&|lo,hi,n| sk.curve_sweep(i,lo,hi,n),(a,b),ends,tol)
+}
+
+/// A planar stretch read by `sweep` (`n` chords over `[lo, hi]`, `lo < hi`) over `(a, b)`
+/// (decreasing where the stretch runs against the parameter) as a cubic B-spline within `tol`,
+/// its ends put exactly at `ends` where given: its poles, knots and the error measured.
+pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,tol: f64)
+    -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
+    use crate::brep::nurbs::BSpline;
     let (lo,hi) = (a.min(b),a.max(b));
     let mut n = 8;
     loop {
-        let mut fine = sk.curve_sweep(i,lo,hi,2*n);
+        let mut fine = sweep(lo,hi,2*n);
         if a > b { fine.reverse(); }
         let mut through: Vec<(f64,f64)> = fine.iter().step_by(2).copied().collect();
-        if let Some(t) = sk.curves[i].trim {
-            let last = through.len()-1;
-            (through[0],through[last]) = (sk.point_xy(t.from as usize),sk.point_xy(t.to as usize));
+        let last = through.len()-1;
+        if let Some(ends) = ends {
+            (through[0],through[last]) = ends;
         }
         let fractions = (0..=n).map(|k| k as f64/n as f64).collect();
         let (ctrl,knots,t) = crate::curve::interpolating_ctrl_at(&through,fractions)?;
@@ -304,6 +320,15 @@ pub fn fit_curve(sk: &Sketch,i: usize,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f6
     }
 }
 
+/// A profile's cubic B-spline edge as a recipe writes it: its knots, its poles lifted into space
+/// (millimetres) and the fit it was measured within (mm).
+pub(crate) fn bspline_edge(poles: &[(f64,f64)],knots: &[f64],fit_mm: f64,lift: &dyn Fn((f64,f64)) -> [f64;3]) -> Json {
+    object([("kind","bspline".into()),("degree",crate::curve::DEGREE.into()),
+        ("knots",Json::Arr(knots.iter().map(|&k| k.into()).collect())),
+        ("poles",Json::Arr(poles.iter().map(|&c| vector(lift(c))).collect())),
+        ("fit",fit_mm.into())])
+}
+
 fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
     let face = &sk.faces[index];
     let p = super::face_poly(sk,index,super::REPORT_UNIT).ok_or("invalid CAD profile")?;
@@ -312,8 +337,9 @@ fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
         p.basis.lift(q.0,q.1).map(|v| v*scale)
     };
     let x_dir = std::array::from_fn(|k| p.pose.0*p.basis.u[k]-p.pose.1*p.basis.v[k]);
-    let edge = |e: EntRef| -> Result<Json,String> {
-        Ok(match e.kind {
+    // an edge's pieces in a profile: one, or a closed curve's smooth stretches
+    let edge = |e: EntRef| -> Result<Vec<Json>,String> {
+        Ok(vec![match e.kind {
             EntKind::Line => {
                 let l = &sk.lines[e.i()];
                 object([("kind","line".into()),
@@ -347,23 +373,33 @@ fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
             EntKind::Curve => {
                 // a stretch of a traced or formula curve: the cubic B-spline through it, fitted
                 // until it is within `FIT_MM` of the curve, and what the fit measured
-                let (poles,knots,err) = fit_curve(sk,e.i(),FIT_MM/scale)
-                    .ok_or_else(|| format!("`{}`: a curve in its profile could not be fitted within {FIT_MM} mm",face.name))?;
-                object([("kind","bspline".into()),("degree",crate::curve::DEGREE.into()),
-                    ("knots",Json::Arr(knots.iter().map(|&k| k.into()).collect())),
-                    ("poles",Json::Arr(poles.iter().map(|&c| vector(lift(c))).collect())),
-                    ("fit",(err*scale).into())])
+                let fitted = |(poles,knots,err): (Vec<(f64,f64)>,Vec<f64>,f64)| bspline_edge(&poles,&knots,err*scale,&lift);
+                let unfitted = || format!("`{}`: a curve in its profile could not be fitted within {FIT_MM} mm",face.name);
+                if sk.curves[e.i()].trim.is_none() {
+                    // a closed curve standing alone: two halves meeting at two vertices, so no side
+                    // of the prism is a closed surface with a seam for a Boolean to arrange
+                    if !sk.curve_closed(e.i()) {
+                        return Err(format!("`{}`: its curve does not come back to where it started",face.name));
+                    }
+                    let (a,b) = sk.curve_domain(e.i());
+                    let m = 0.5*(a+b);
+                    let (start,middle) = (sk.curve_point(e.i(),a),sk.curve_point(e.i(),m));
+                    let half = |stretch,ends| fit_stretch(sk,e.i(),stretch,Some(ends),FIT_MM/scale).ok_or_else(unfitted).map(fitted);
+                    return Ok(vec![half((a,m),(start,middle))?,half((m,b),(middle,start))?]);
+                }
+                fitted(fit_curve(sk,e.i(),FIT_MM/scale).ok_or_else(unfitted)?)
             }
             _ => return Err(format!("`{}`: CAD profiles currently require lines, arcs, circles, splines or stretches of curves",face.name)),
-        })
+        }])
     };
     // each edge with its name, where the document gives it one: the name of the face a sweep makes
     // of it, which a kernel building the solid gives that face (`brep::build`)
+    // (a closed curve's stretches each named as the curve is)
     let loops = face.boundaries().map(|(edges,names)|
-        edges.iter().enumerate().map(|(k,&e)| edge(e).map(|mut j| {
+        edges.iter().enumerate().map(|(k,&e)| edge(e).map(|pieces| pieces.into_iter().map(|mut j| {
             if let Some(n) = names.get(k).filter(|n| !n.is_empty()) { j.set("name",n.clone().into()); }
             j
-        })).collect::<Result<Vec<_>,_>>().map(Json::Arr))
+        }).collect::<Vec<_>>())).collect::<Result<Vec<_>,_>>().map(|l| Json::Arr(l.concat())))
         .collect::<Result<Vec<_>,_>>()?;
     Ok(object([("loops",Json::Arr(loops)),("origin",vector(p.basis.o.map(|v| v*scale))),
         ("normal",vector(p.basis.normal()))]))

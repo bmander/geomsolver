@@ -194,6 +194,98 @@ pub struct Meter {
     /// A body built from swept material (its stock, or a solid put on it or bounding it, holds a
     /// sweep): each operand read by a meter of its own, with its part in the body rule.
     operands: Vec<Operand>,
+    /// A blank cut by a sweep of the planar class: its pocket's envelope carried through its slab.
+    planar: Option<Planar>,
+}
+
+/// A prism blank holding a planar sweep's inner envelope (`planar_class`), at one placement: the
+/// body is the envelope's region times the blank's slab along the envelope's normal, so a point's
+/// signed distance to it is the distance to the envelope in the plane and to the slab's caps across
+/// it, met at right angles — the greater inside, their hypotenuse outside. The distance in the plane
+/// is to the envelope itself: its contacts' chords find the nearest stretch, and the foot is
+/// solved onto the envelope there (`InnerEnvelope::point`), each piece's corners its ends.
+#[derive(Clone,Debug)]
+struct Planar { envelope: crate::envelope::planar::InnerEnvelope,chords: Vec<Chord>,cut: (Motion,Motion),slab: [f64;2],normal: V }
+
+/// A stretch between two of the envelope's contacts round its loop: its ends, the piece it is on,
+/// and the fractions of that piece's contacts its ends are at (a corner's chord to the next piece
+/// is of no length, and counts for nothing in a ray's parity).
+#[derive(Clone,Copy,Debug)]
+struct Chord { ends: [[f64;2];2],piece: usize,at: [f64;2] }
+
+impl Planar {
+    /// Every chord of `envelope`'s loop, in order round it.
+    fn chords(envelope: &crate::envelope::planar::InnerEnvelope) -> Vec<Chord> {
+        let pieces = &envelope.pieces;
+        pieces.iter().enumerate().flat_map(|(k,piece)| {
+            let last = (piece.len()-1).max(1) as f64;
+            let next = pieces[(k+1)%pieces.len()][0].at;
+            (0..piece.len()).map(move |j| Chord {ends:[piece[j].at,piece.get(j+1).map_or(next,|c| c.at)],piece:k,
+                at:[j as f64/last,((j+1) as f64/last).min(1.)]})
+        }).collect()
+    }
+}
+
+impl Planar {
+    /// The nearest point of the body and the signed distance to it: positive outside.
+    fn nearest(&self,p: V) -> Option<Nearest> {
+        let env = &self.envelope;
+        let q = self.cut.1.point(p);
+        let h = dot(q,self.normal);
+        let w = sub(q,scale(self.normal,h));
+        let a = env.page(w);
+        // the nearest chord, its piece and the fraction there, then the foot refined on the exact
+        // envelope (Brent's minimiser over the piece's fraction)
+        let seg = |c: &Chord| -> (f64,[f64;2],f64) {
+            let [x,y] = c.ends;
+            let d = [y[0]-x[0],y[1]-x[1]];
+            let l = d[0]*d[0]+d[1]*d[1];
+            let t = if l > 0. { (((a[0]-x[0])*d[0]+(a[1]-x[1])*d[1])/l).clamp(0.,1.) } else { 0. };
+            ((a[0]-x[0]-t*d[0]).dhypot(a[1]-x[1]-t*d[1]),[x[0]+t*d[0],x[1]+t*d[1]],c.at[0]+t*(c.at[1]-c.at[0]))
+        };
+        let (i,(mut gap,mut foot,f0)) = self.chords.iter().map(seg).enumerate().min_by(|x,y| x.1.0.total_cmp(&y.1.0))?;
+        let k = self.chords[i].piece;
+        let len = env.pieces[k].len().max(2) as f64;
+        let dist = |f: f64| env.point(k,f).map_or(f64::INFINITY,|x| (x[0]-a[0]).dhypot(x[1]-a[1]));
+        let (_,fm) = crate::roots::brent(&dist,(f0-2./len).max(0.),(f0+2./len).min(1.),1e-13,100,|_,_| false);
+        if let Some(x) = env.point(k,fm) { let d = (x[0]-a[0]).dhypot(x[1]-a[1]); if d <= gap { gap = d; foot = x; } }
+        // inside the envelope by the chords' ray parity
+        let inside = self.chords.iter().filter(|c| {
+            let [x,y] = c.ends;
+            (x[1] > a[1]) != (y[1] > a[1]) && a[0] < x[0]+(a[1]-x[1])*(y[0]-x[0])/(y[1]-x[1])
+        }).count()%2 == 1;
+        let plane = if inside { -gap } else { gap };
+        let across = (self.slab[0]-h).max(h-self.slab[1]);
+        let fw = env.world(foot);
+        let in_plane = sub(fw,scale(self.normal,dot(fw,self.normal)));
+        let (distance,foot,surface) = if plane <= 0. && across <= 0. {
+            if plane >= across { (plane,add(in_plane,scale(self.normal,h)),k) }
+            else { (across,add(w,scale(self.normal,if h-self.slab[0] < self.slab[1]-h { self.slab[0] } else { self.slab[1] })),
+                env.pieces.len()+usize::from(h-self.slab[0] >= self.slab[1]-h)) }
+        } else {
+            let hc = h.clamp(self.slab[0],self.slab[1]);
+            let base = if plane > 0. { in_plane } else { w };
+            let surface = if plane > 0. { k } else { env.pieces.len()+usize::from(h > self.slab[1]) };
+            (plane.max(0.).dhypot(across.max(0.)),add(base,scale(self.normal,hc)),surface)
+        };
+        // the face's own outward normal: a cap's along the normal, a flank's across its tangent
+        // (the loop runs counter-clockwise about the normal, so outward is its tangent turned back)
+        let normal = if surface >= env.pieces.len() {
+            if surface == env.pieces.len() { scale(self.normal,-1.) } else { self.normal }
+        } else {
+            let h = 1e-6;
+            let (x,y) = (env.point(k,(fm-h).max(0.)),env.point(k,(fm+h).min(1.)));
+            match (x,y) {
+                (Some(x),Some(y)) => {
+                    let t = sub(env.world(y),env.world(x));
+                    normalised(crate::space::cross(t,self.normal)).unwrap_or(self.normal)
+                }
+                _ => self.normal,
+            }
+        };
+        let (foot,normal) = (self.cut.0.point(foot),self.cut.0.vector(normal));
+        Some(Nearest {distance,surface,foot,normal,placement:Some(0),roll:None})
+    }
 }
 
 /// One operand of a body built from swept material: its meter (whose field is its material), its
@@ -285,7 +377,7 @@ impl Meter {
                 }
                 let field = MaterialField::read(sk,body,tol)?;
                 let blank = operands[0].meter.blank.clone();
-                return Ok(Self {exact:None,surfaces,blank,faces:Vec::new(),sweeps:Vec::new(),field,options,operands})
+                return Ok(Self {exact:None,surfaces,blank,faces:Vec::new(),sweeps:Vec::new(),field,options,operands,planar:None})
             }
         }
         let read = |id: u32| -> Result<SpatialField,String> {
@@ -318,8 +410,12 @@ impl Meter {
             if let Ok(exact) = Exact::read(sk,body) {
                 let field = MaterialField::read(sk,body,tol)?;
                 return Ok(Self {surfaces:exact.names(),exact:Some(exact),blank,faces:Vec::new(),sweeps:Vec::new(),field,options,
-                    operands:Vec::new()})
+                    operands:Vec::new(),planar:None})
             }
+        }
+        // a blank cut by a sweep of the planar class: the envelope through the slab
+        if !cuts.is_empty() && cuts.iter().all(|c| super::planar_class::asks(sk,c.swept)) {
+            return Self::planar(sk,body,blank,statics,cuts,options);
         }
         let mut surfaces = Vec::new();
         let mut faces = Vec::new();
@@ -357,7 +453,35 @@ impl Meter {
         let sphere = blank.support_bounds().map_err(field_error)?.map(|b| crate::space::box_centre_diagonal(&b));
         for s in &mut sweeps { s.tabulate(sphere,&options)?; }
         let field = MaterialField::read(sk,body,tol)?;
-        Ok(Self {exact:None,surfaces,blank,faces,sweeps,field,options,operands:Vec::new()})
+        Ok(Self {exact:None,surfaces,blank,faces,sweeps,field,options,operands:Vec::new(),planar:None})
+    }
+
+    /// `read` for a blank cut by one placement of one planar sweep: the blank a prism standing
+    /// square to the envelope's plane and holding the whole envelope (else refused, by name).
+    fn planar(sk: &Sketch,body: usize,blank: SpatialField,statics: Vec<u32>,cuts: Vec<cad::SweptCut>,options: Options)
+        -> Result<Self,String> {
+        let refuse = |why: &str| Err(format!("`{}`: the accuracy meter reads a planar sweep's body {why}",sk.solids[body].name));
+        let [cut] = cuts.as_slice() else { return refuse("with one cut") };
+        let [stock] = statics.as_slice() else { return refuse("whose blank is one prism") };
+        let pocket = super::planar_class::pocket(sk,cut.swept).map_err(|(_,m,_)| m)?;
+        let envelope = crate::envelope::planar::InnerEnvelope::read(sk,pocket.curve,pocket.motion,pocket.roll)
+            .map_err(|e| e.to_string())?;
+        let normal = envelope.normal();
+        let Ok(slab) = super::planar_class::prism(sk,*stock as usize,normal) else {
+            return refuse("whose blank is a prism standing square to the envelope's plane")
+        };
+        let chords = Planar::chords(&envelope);
+        let mid = 0.5*(slab[0]+slab[1]);
+        if chords.iter().map(|c| c.ends[0]).any(|p| blank.value(cut.pose.point(add(envelope.world(p),scale(normal,mid-dot(envelope.world(p),normal))))) >= 0.) {
+            return refuse("whose blank holds its envelope")
+        }
+        let tol = cad::AXIS_TOLERANCE;
+        let field = MaterialField::read(sk,body,tol)?;
+        let mut surfaces: Vec<Surface> = (0..envelope.pieces.len()).map(|k| Surface {name:format!("{} flank {k}",sk.solids[cut.swept].name),
+            generated:true}).collect();
+        surfaces.extend(["near","far"].map(|n| Surface {name:format!("{}.{n}",sk.solids[*stock as usize].name),generated:false}));
+        let planar = Planar {envelope,chords,cut:(cut.pose,cut.pose.inverse()),slab,normal};
+        Ok(Self {exact:None,surfaces,blank,faces:Vec::new(),sweeps:Vec::new(),field,options,operands:Vec::new(),planar:Some(planar)})
     }
 
     pub fn surfaces(&self) -> &[Surface] { &self.surfaces }
@@ -377,6 +501,7 @@ impl Meter {
     /// face lies beyond the other — the nearest point of the edge the two faces share.
     pub fn nearest(&self,p: V) -> Option<Nearest> {
         if let Some(exact) = &self.exact { return exact.nearest(p).filter(|n| n.distance.abs() <= self.options.reach) }
+        if let Some(planar) = &self.planar { return planar.nearest(p).filter(|n| n.distance.abs() <= self.options.reach) }
         if !self.operands.is_empty() { return self.composed(p) }
         let mut candidates = Vec::new();
         for (i,face) in self.faces.iter().enumerate() {

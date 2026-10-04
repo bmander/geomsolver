@@ -313,3 +313,48 @@ fn a_turn_about_a_point_is_a_rotation_square_to_its_view() {
     let ang = 2.0*0.7 + 30f64.to_radians();
     near(got,page.lift(2.+ang.cos(),ang.sin()),1e-12);
 }
+
+/// The Wankel's planetary motion, read in the top view (x right, y away): the rotor's centre rides
+/// the eccentric at `e` about the shaft, and the rotor turns at a third of the shaft's angle. Two
+/// turns about parallel axes say it — the rotor about where its centre starts, at −2/3, seen by an
+/// observer turning the other way about the shaft — so the apex, drawn at `R` from the rotor's
+/// centre, traces the epitrochoid e(cos 3t, sin 3t) + R(cos t, sin t) with t = θ/3, and the housing
+/// seen from the rotor is the inverse motion.
+#[test]
+fn two_turns_about_parallel_axes_are_the_wankel_rotors_planetary_motion() {
+    let (r,e) = (105.,15.);
+    let src = format!("unit mm\nuse std\n\
+        shaft := line(std.origin, std.up.toward)\n\
+        c0 := point\nc1 := point\n\
+        c0 distance({e}mm, along: u) std.front\nc0 distance(0mm, along: v) std.front\n\
+        c1 distance({e}mm, along: u) std.front\nc1 distance(1mm, along: v) std.front\n\
+        rotor_axis := line(c0, c1)\n\
+        counter := motion(about: shaft, ratio: -1)\n\
+        spin := motion(about: rotor_axis, ratio: -2/3)\n\
+        rotor_turn := motion(spin, relative_to: counter)\n\
+        housing_turn := motion(counter, relative_to: spin)\n");
+    let (mut p,errors) = syntax::parse(&src);
+    assert!(errors.is_empty(),"{errors:?}");
+    assert!(gcs_core::modules::link(&mut p,&mut gcs_core::library::resolve).is_empty());
+    let mut el = program::elaborate(&p);
+    assert!(el.ok(),"{:?}",el.diags);
+    assert!(solve::solve(&mut el.sketch,Default::default()).success);
+    let family = |n| motion::Family::read(&el.sketch,el.map.ent_named(n).unwrap().i()).unwrap();
+    let (rotor,housing) = (family("rotor_turn"),family("housing_turn"));
+    let apex = [r+e,0.,0.];
+    for k in 0..=36 {
+        let theta = (k as f64*30.).to_radians();
+        let t = theta/3.;
+        let pose = rotor.at(theta).unwrap();
+        // the rotor's centre on its orbit, and the apex on the epitrochoid
+        near(pose.point([e,0.,0.]),[e*theta.cos(),e*theta.sin(),0.],1e-9);
+        near(pose.point(apex),[e*(3.*t).cos()+r*t.cos(),e*(3.*t).sin()+r*t.sin(),0.],1e-9);
+        // turned through t: a point a unit along x from the centre lies along (cos t, sin t)
+        let (c,q) = (pose.point([e,0.,0.]),pose.point([e+1.,0.,0.]));
+        near([q[0]-c[0],q[1]-c[1],q[2]-c[2]],[t.cos(),t.sin(),0.],1e-9);
+        // the housing seen from the rotor undoes it
+        near(housing.at(theta).unwrap().point(pose.point([3.,-7.,2.])),[3.,-7.,2.],1e-9);
+    }
+    // one whole period: three turns of the shaft bring the rotor back
+    near(rotor.at(3.*std::f64::consts::TAU).unwrap().point([40.,25.,0.]),[40.,25.,0.],1e-9);
+}

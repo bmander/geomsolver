@@ -62,7 +62,7 @@ fn sphere_centres(recipe: &Json,frame: Frame,size: f64) -> Vec<V> {
 /// A solid's diagonal (mm).
 
 /// A placement's rigid motion in millimetres.
-fn placed(pose: Motion,scale: f64) -> Rigid { Rigid::from_rows(&cad::placement_matrix(pose,scale)) }
+pub(super) fn placed(pose: Motion,scale: f64) -> Rigid { Rigid::from_rows(&cad::placement_matrix(pose,scale)) }
 
 /// The blank of `recipe` as its meridian region turned once from the half-plane along `seam`, or
 /// by its Booleans turned about the axis till its seams lie there.

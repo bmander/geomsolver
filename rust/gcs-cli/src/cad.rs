@@ -84,6 +84,9 @@ fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
             admission::Class::Generating => eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name),
             admission::Class::ConstantTwist(_) => eprintln!("solventc: `{}` is in the constant-twist class, its characteristic sampled at \
                 {} rings, {} across its reach, each path through the blank a degree of turn apart{alike}",s.name,s.samples,s.contacts),
+            admission::Class::Planar(found) => eprintln!("solventc: `{}` is in the planar generating class, its pocket's inner \
+                envelope {} pieces of {} contacts, the stock's wall read clear of the blank at {} points over {columns} poses{alike}",
+                s.name,found.envelope.pieces.len(),s.contacts,s.samples),
         }
         if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() {
             eprintln!("admission: `{}`: {} samples, {} contacts, spacing {:e}, least area factor {:e}, {} near double roots, {} near tangent pairs",

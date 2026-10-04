@@ -196,6 +196,9 @@ fn build_loop(
                 items.push(Item { entity: e, name });
             }
             EntKind::Curve if trim.is_some() => items.push(Item { entity: e, name }),
+            // a curve standing alone that comes back to where it started is a whole loop, as a
+            // circle is (every reader of the loop asks again of the solved curve)
+            EntKind::Curve if refs.len() == 1 && !closed && sk.curve_closed(e.i()) => items.push(Item { entity: e, name }),
             EntKind::Curve => {
                 report(Code::E080, r.span, format!("a curve runs on past where a face needs it: name the stretch, \
                     `{} from p to q`, between two points held on it", r.root.text));
@@ -215,8 +218,9 @@ fn build_loop(
             }
         }
     }
-    // **a circle is a loop by itself, and may not stand in one**
-    let lone_circle = items.len() == 1 && items[0].entity.kind == EntKind::Circle;
+    // **a circle is a loop by itself, and may not stand in one** — and so is a closed curve
+    let lone_circle = items.len() == 1 && (items[0].entity.kind == EntKind::Circle
+        || (items[0].entity.kind == EntKind::Curve && sk.curves[items[0].entity.i()].trim.is_none()));
     if !lone_circle && items.iter().any(|i| i.entity.kind == EntKind::Circle) {
         report(Code::E080, span, "a circle is a whole loop: it stands in a face by itself".into());
         return None;

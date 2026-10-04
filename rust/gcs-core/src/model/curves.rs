@@ -216,8 +216,9 @@ impl Sketch {
         })
     }
 
-    /// Whether a curve is **closed**: run over a whole turn of an angle (`over theta in (0,
-    /// 360)`) and back where it started — a crank's coupler curve, a cam's profile.  A contact
+    /// Whether a curve is **closed**: run over whole turns of an angle (`over theta in (0,
+    /// 360)`, a Wankel bore's three) and back where it started — a crank's coupler curve, a cam's
+    /// profile.  A contact
     /// on one wraps round rather than stopping at the seam (`curve::clamp_contacts`), since the
     /// seam is where the interval was written to start, not an end of anything.  Read off the
     /// curve at both ends of the turn — two evaluations, asked only of a contact past an end: a
@@ -225,8 +226,9 @@ impl Sketch {
     pub fn curve_closed(&self, i: usize) -> bool {
         let cv = &self.curves[i];
         let (a, b) = cv.domain;
+        let turns = (b - a).abs() / 360.0;
         if cv.trim.is_some() || !self.curve_defs[cv.def as usize].turns
-            || ((b - a).abs() - 360.0).abs() > 1e-9
+            || turns < 1.0 - 1e-12 || (turns - turns.round()).abs() > 1e-12
         {
             return false;
         }

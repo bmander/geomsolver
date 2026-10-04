@@ -2352,14 +2352,7 @@ impl Constraint {
                 }
                 // a generated profile carries the roll its root is chosen at, then the
                 // numbers its motion was given, then its tool and motion
-                crate::model::CurveBody::Envelope(g) => {
-                    let mut k = Vec::with_capacity(2 + cv.values.len() + g.flat.len());
-                    k.push(sk.curve_home(curve.i()));
-                    k.push(cv.values.len() as f64);
-                    k.extend_from_slice(&cv.values);
-                    k.extend_from_slice(&g.flat);
-                    k
-                }
+                crate::model::CurveBody::Envelope(g) => g.contact_consts(sk, curve.i()),
             };
             // a point in space reads the curve's view first: its datum on the sheet and its basis
             if self.kind == CKind::PointOnExtrusion {

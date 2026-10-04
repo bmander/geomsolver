@@ -73,8 +73,14 @@ impl Edge {
 fn ordered(edges: &[Edge],join: f64) -> Result<Vec<Edge>,String> {
     let scale = edges.iter().map(Edge::reach).fold(0_f64,f64::max);
     let tolerance = (scale*f64::EPSILON*128.).max(join);
+    if edges.is_empty() { return Err("empty material profile".into()); }
+    // a loop read off in order (a curve's chords, a face walked) needs no search, which is
+    // quadratic: each edge ends where the next begins, and the last where the first does
+    let n = edges.len();
+    if (0..n).all(|i| distance(edges[i].endpoints()[1],edges[(i+1)%n].endpoints()[0]) <= tolerance) {
+        return Ok(edges.to_vec());
+    }
     let mut remaining = edges.to_vec();
-    if remaining.is_empty() { return Err("empty material profile".into()); }
     let mut out = vec![remaining.remove(0)];
     while !remaining.is_empty() {
         let end = out.last().unwrap().endpoints()[1];
@@ -257,9 +263,68 @@ impl Wall {
     }
 }
 
+/// A box about every edge, in a hierarchy (`crate::bvh`): what lets a loop of thousands of chords
+/// (a curve's) answer a point in the logarithm of its edges. Each box is its edge's own, grown by a
+/// hair of the loop's reach, so a box passed by for being farther than the nearest edge found, or
+/// clear of a point's ray, holds no edge that would have changed the answer: a point reads exactly
+/// what a walk over every edge reads, ties to the earlier edge included. Over a box the enclosure
+/// skips walls whose box lies past the least upper bound found, so it may be tighter than the
+/// walk's, and is as sound: none of them can be nearer than that bound anywhere in the box.
+#[derive(Clone,Debug)]
+struct Boxes(std::sync::Arc<crate::bvh::Bvh<2>>);
+
+impl Boxes {
+    fn new(edges: &[Edge],reach: f64) -> Boxes {
+        let grow = 1e-9*(1.+reach);
+        Boxes(std::sync::Arc::new(crate::bvh::Bvh::new(edges.iter().map(|e| {
+            let (lo,hi) = match *e {
+                Edge::Line {a,b,..} => ([a[0].min(b[0]),a[1].min(b[1])],[a[0].max(b[0]),a[1].max(b[1])]),
+                Edge::Arc {center,radius,..} => ([center[0]-radius,center[1]-radius],[center[0]+radius,center[1]+radius]),
+            };
+            crate::bvh::Bounds {lo:[lo[0]-grow,lo[1]-grow],hi:[hi[0]+grow,hi[1]+grow]}
+        }))))
+    }
+
+    /// The edge nearest `p` and its distance, the earlier edge where two tie.
+    fn nearest(&self,edges: &[Edge],p: P) -> (f64,usize) {
+        let best = std::cell::Cell::new((f64::INFINITY,usize::MAX));
+        self.0.query_nearest(|b| b.gap(crate::bvh::Bounds {lo:p,hi:p}),|| best.get().0,|k| {
+            let d = edges[k].distance(p);
+            let (bd,bk) = best.get();
+            if d < bd || (d == bd && k < bk) { best.set((d,k)) }
+        });
+        best.get()
+    }
+
+    /// How many of the edges `p`'s ray toward +x crosses.
+    fn crossings(&self,edges: &[Edge],p: P) -> usize {
+        let mut count = 0;
+        self.0.query(|b| p[1] >= b.lo[1] && p[1] <= b.hi[1] && p[0] <= b.hi[0],|k| count += edges[k].crossings(p));
+        count
+    }
+
+    /// Every wall's distance over box `p` folded by `min`, passing by a box farther than the least
+    /// upper bound found: none of its walls could lower either end of the minimum.
+    fn bounds(&self,walls: &[Option<Wall>],p: [I;2]) -> Result<Option<I>,Error> {
+        let (lo,hi) = ([p[0].bounds()[0],p[1].bounds()[0]],[p[0].bounds()[1],p[1].bounds()[1]]);
+        let nearest: std::cell::Cell<Option<I>> = std::cell::Cell::new(None);
+        let mut failed = None;
+        self.0.query_nearest(|b| b.gap(crate::bvh::Bounds {lo,hi})*(1.-1e-12),|| nearest.get().map_or(f64::INFINITY,|m| m.bounds()[1]),|k| {
+            let Some(wall) = &walls[k] else { return };
+            match wall.distance(p) {
+                Ok(d) => nearest.set(Some(nearest.get().map_or(d,|m| min(m,d)))),
+                Err(e) => failed = Some(e),
+            }
+        });
+        match failed { Some(e) => Err(e),None => Ok(nearest.get()) }
+    }
+}
+
 /// A simple closed loop as its signed boundary distance, interval-evaluable.
 #[derive(Clone,Debug)]
-pub(super) struct Profile { edges:Vec<Edge>,walls:Vec<Wall>,reach:f64,
+pub(super) struct Profile { edges:Vec<Edge>,
+    /// Per edge its wall, `None` for an axis line, which is no wall.
+    walls:Vec<Option<Wall>>,reach:f64,boxes:Boxes,
     /// Per edge, whether the material lies on its left (a line) or inside its circle (an arc):
     /// read once off the loop a hair inside the edge's middle, for `carrier`.
     material:Vec<bool> }
@@ -267,10 +332,10 @@ pub(super) struct Profile { edges:Vec<Edge>,walls:Vec<Wall>,reach:f64,
 impl Profile {
     fn new(edges: Vec<Edge>) -> Result<Self,String> {
         let walls = edges.iter().map(Wall::of).collect::<Result<Vec<_>,_>>().map_err(failure)?;
-        let walls: Vec<Wall> = walls.into_iter().flatten().collect();
-        if walls.is_empty() { return Err("material profile has no wall".into()); }
+        if walls.iter().all(Option::is_none) { return Err("material profile has no wall".into()); }
         let reach = edges.iter().map(Edge::reach).fold(0_f64,f64::max);
-        let mut profile = Self {edges,walls,reach,material:Vec::new()};
+        let boxes = Boxes::new(&edges,reach);
+        let mut profile = Self {edges,walls,reach,boxes,material:Vec::new()};
         let eps = 1e-6*(1.+reach);
         profile.material = profile.edges.iter().map(|e| {
             let m = e.at(0.5);
@@ -295,10 +360,9 @@ impl Profile {
 
     /// `value`, and the edge nearest the point, which decides it.
     pub(super) fn value_edge(&self,p: P) -> (f64,usize) {
-        let (edge,nearest) = self.edges.iter().map(|e| e.distance(p)).enumerate()
-            .fold((0,f64::INFINITY),|a,(k,d)| if d < a.1 { (k,d) } else { a });
-        let inside = self.edges.iter().map(|e| e.crossings(p)).sum::<usize>()%2 == 1;
-        (if inside { -nearest } else { nearest },edge)
+        let (nearest,edge) = self.boxes.nearest(&self.edges,p);
+        let inside = self.boxes.crossings(&self.edges,p)%2 == 1;
+        (if inside { -nearest } else { nearest },if edge == usize::MAX { 0 } else { edge })
     }
 
     /// Edge `j`'s carrier, its whole line or circle, negative on the loop's material side of it
@@ -320,24 +384,15 @@ impl Profile {
     }
 
     /// The signed boundary distance at a point, in plain floating point.
-    pub(super) fn value(&self,p: P) -> f64 {
-        let nearest = self.edges.iter().map(|e| e.distance(p)).fold(f64::INFINITY,f64::min);
-        let inside = self.edges.iter().map(|e| e.crossings(p)).sum::<usize>()%2 == 1;
-        if inside { -nearest } else { nearest }
-    }
+    pub(super) fn value(&self,p: P) -> f64 { self.value_edge(p).0 }
 
     pub(super) fn bounds(&self,p: [I;2]) -> Result<I,Error> {
-        let mut nearest: Option<I> = None;
-        for wall in &self.walls {
-            let d = wall.distance(p)?;
-            nearest = Some(nearest.map_or(d,|n| min(n,d)));
-        }
-        let nearest = nearest.expect("a profile keeps at least one wall");
+        let nearest = self.boxes.bounds(&self.walls,p)?.expect("a profile keeps at least one wall");
         let [lo,hi] = nearest.bounds();
         // Clear of every wall, a connected box lies on one side of the loop.
         if lo > 0. {
             let centre = p.map(|v| { let [a,b] = v.bounds(); a*0.5+b*0.5 });
-            let inside = self.edges.iter().map(|e| e.crossings(centre)).sum::<usize>()%2 == 1;
+            let inside = self.boxes.crossings(&self.edges,centre)%2 == 1;
             return Ok(if inside { nearest.neg() } else { nearest });
         }
         I::new(-hi,hi)

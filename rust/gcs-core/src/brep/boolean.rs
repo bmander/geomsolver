@@ -58,6 +58,21 @@ fn overlap(a: &([f64;3],[f64;3]),b: &([f64;3],[f64;3]),pad: f64) -> bool {
 /// A closed curve's parameter `t` moved by whole periods into `[lo, lo + period)`.
 fn around(t: f64,lo: f64,period: f64) -> f64 { lo+(t-lo).rem_euclid(period) }
 
+/// An edge lying along an extrusion's own curve at one height — the same B-spline moved along
+/// the sweep, as a plane square to it cuts it (`ssi`) — is the iso-line `v = h` of the face, its
+/// parameter the face's `u`: its curve in the face's parameters is that straight line, exactly,
+/// where inverting each point onto the surface is a Newton search per reading.
+fn iso_pcurve(surface: &super::geom::Surface,curve: &super::geom::Curve,t: [f64;2]) -> Option<(Uv,Uv)> {
+    use super::geom::{Curve,Surface};
+    let (Surface::Extrusion(f,c),Curve::BSpline(e)) = (surface,curve) else { return None };
+    let Curve::BSpline(c) = &**c else { return None };
+    if c.degree != e.degree || c.knots != e.knots || c.poles.len() != e.poles.len() { return None }
+    let lift = crate::space::dot(crate::space::sub(e.poles[0],c.poles[0]),f.z);
+    let scale = 1.+c.poles.iter().map(|&p| norm(p)).fold(0.,f64::max);
+    c.poles.iter().zip(&e.poles).all(|(&p,&q)| norm(crate::space::sub(q,crate::space::add(p,crate::space::scale(f.z,lift)))) <= 1e-12*scale)
+        .then(|| ([t[0],lift],[t[1],lift]))
+}
+
 /// `a` combined with `b` by `op`, to `tol` (a length).
 /// Two B-reps' faces split by everything the other lays on them, nothing yet kept or dropped: the
 /// working edges and their pooled vertices, and each face's pieces (which solid, which face, its loops).
@@ -396,12 +411,17 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     let (r,flip) = rep[piece as usize];
                     let at = |t: f64| c.pcurve.at(t,orig,&f.surface,&solids[s].vertices);
                     let (ua,ub) = (at(ta),at(tb));
+                    let iso = match (&out[r as usize].curve,r == piece) {
+                        (EdgeCurve::Curve(cr),false) => { let w = &out[r as usize]; iso_pcurve(&f.surface,cr,w.t) }
+                        _ => None,
+                    };
                     let pcurve = if r == piece { match c.pcurve {
                         Pcurve::Line {..} => Pcurve::Line {a:ua,b:ub},
                         Pcurve::Inverse {..} => Pcurve::Inverse {a:ua,b:ub},
                         // keyed to the curve's own parameter, which a piece of the edge keeps
                         Pcurve::Curve(ref c) => Pcurve::Curve(c.clone()),
-                    } } else if flip { Pcurve::Inverse {a:ub,b:ua} } else { Pcurve::Inverse {a:ua,b:ub} };
+                    } } else if let Some((a,b)) = iso { Pcurve::Line {a,b} }
+                    else if flip { Pcurve::Inverse {a:ub,b:ua} } else { Pcurve::Inverse {a:ua,b:ub} };
                     let along = !c.reversed != flip;
                     let (from,to) = if c.reversed { (ub,ua) } else { (ua,ub) };
                     halves.push(Half {edge:r,along,pcurve,from,to});
@@ -426,8 +446,10 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     }
                     uv
                 };
-                let (ua,ub) = (walk(w.t[0]),walk(w.t[1]));
-                let pcurve = Pcurve::Inverse {a:ua,b:ub};
+                let (pcurve,(ua,ub)) = match iso_pcurve(&f.surface,c,w.t) {
+                    Some((a,b)) => (Pcurve::Line {a,b},(a,b)),
+                    None => { let (a,b) = (walk(w.t[0]),walk(w.t[1])); (Pcurve::Inverse {a,b},(a,b)) }
+                };
                 halves.push(Half {edge:r,along:true,pcurve:pcurve.clone(),from:ua,to:ub});
                 halves.push(Half {edge:r,along:false,pcurve,from:ub,to:ua});
             };

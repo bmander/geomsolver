@@ -1,8 +1,10 @@
-//! Flat bounding-volume hierarchies for ray and projected-edge queries. Subtree end indices
-//! let traversal skip whole regions without recursion, a heap stack, or per-query allocation.
+//! Flat bounding-volume hierarchies: the renderer's ray and projected-edge queries, a profile
+//! field's walls (`solid::field::profile`) and a clearance's nearest pieces (`clear`). Subtree end
+//! indices let traversal skip whole regions without recursion, a heap stack, or per-query
+//! allocation. A nearest search is `query_nearest`: best first, pruning by the best found so far.
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Bounds<const D: usize> {
+pub(crate) struct Bounds<const D: usize> {
     pub lo: [f64; D],
     pub hi: [f64; D],
 }
@@ -13,22 +15,29 @@ impl<const D: usize> Bounds<D> {
             hi: std::array::from_fn(|k| self.hi[k].max(other.hi[k])),
         }
     }
-    fn overlaps(self, other: Self) -> bool {
+    pub(crate) fn overlaps(self, other: Self) -> bool {
         (0..D).all(|k| self.lo[k] <= other.hi[k] && other.lo[k] <= self.hi[k])
     }
+    /// How far apart two boxes are (zero where they meet).
+    pub(crate) fn gap(self, other: Self) -> f64 {
+        (0..D).map(|k| (self.lo[k] - other.hi[k]).max(other.lo[k] - self.hi[k]).max(0.0).powi(2))
+            .sum::<f64>().sqrt()
+    }
 }
+#[derive(Clone, Debug)]
 struct Node<const D: usize> {
     bounds: Bounds<D>,
     end: usize,
     first: usize,
     count: usize,
 }
-pub(super) struct Bvh<const D: usize> {
+#[derive(Clone, Debug)]
+pub(crate) struct Bvh<const D: usize> {
     nodes: Vec<Node<D>>,
     items: Vec<(usize, Bounds<D>)>,
 }
 impl<const D: usize> Bvh<D> {
-    pub fn new(bounds: impl Iterator<Item = Bounds<D>>) -> Self {
+    pub(crate) fn new(bounds: impl Iterator<Item = Bounds<D>>) -> Self {
         let items: Vec<_> = bounds.enumerate().collect();
         let mut tree = Self { nodes: Vec::with_capacity(items.len()), items };
         if !tree.items.is_empty() { tree.build(0, tree.items.len()); }
@@ -54,7 +63,8 @@ impl<const D: usize> Bvh<D> {
             self.nodes[slot].end = self.nodes.len();
         }
     }
-    fn query(&self, intersects: impl Fn(Bounds<D>) -> bool, mut visit: impl FnMut(usize)) {
+    /// Visit every item whose box `intersects` accepts, skipping each subtree whose box it refuses.
+    pub(crate) fn query(&self, intersects: impl Fn(Bounds<D>) -> bool, mut visit: impl FnMut(usize)) {
         let mut i = 0;
         while i < self.nodes.len() {
             let node = &self.nodes[i];
@@ -68,10 +78,37 @@ impl<const D: usize> Bvh<D> {
             i += 1;
         }
     }
-    pub fn query_box(&self, bounds: Bounds<D>, visit: impl FnMut(usize)) {
+    /// Visit items nearer subtree first by `lower`, a lower bound on how far anything in a box
+    /// is, passing by each subtree and item whose bound exceeds `best()` (the nearest found so
+    /// far, which `visit` may shrink): a nearest search that prunes from its first leaf on. The
+    /// stack is fixed (a subtree a level, and the tree is balanced), so a query allocates nothing.
+    pub(crate) fn query_nearest(&self, lower: impl Fn(Bounds<D>) -> f64, best: impl Fn() -> f64,
+        mut visit: impl FnMut(usize)) {
+        if self.nodes.is_empty() { return; }
+        let (mut stack, mut len) = ([0usize; 64], 1);
+        while len > 0 {
+            len -= 1;
+            let i = stack[len];
+            let node = &self.nodes[i];
+            if lower(node.bounds) > best() { continue; }
+            if node.count > 0 {
+                for &(id, b) in &self.items[node.first..node.first + node.count] {
+                    if lower(b) <= best() { visit(id); }
+                }
+                continue;
+            }
+            // an inner node's children: the next node, and the one past the first's subtree
+            let (a, b) = (i + 1, self.nodes[i + 1].end);
+            let (near, far) = if lower(self.nodes[a].bounds) <= lower(self.nodes[b].bounds) { (a, b) } else { (b, a) };
+            stack[len] = far;
+            stack[len + 1] = near;
+            len += 2;
+        }
+    }
+    pub(crate) fn query_box(&self, bounds: Bounds<D>, visit: impl FnMut(usize)) {
         self.query(|b| b.overlaps(bounds), visit);
     }
-    pub fn query_ray(&self, p: [f64; D], d: [f64; D], near: f64, far: f64, visit: impl FnMut(usize)) {
+    pub(crate) fn query_ray(&self, p: [f64; D], d: [f64; D], near: f64, far: f64, visit: impl FnMut(usize)) {
         let inv: [f64; D] = std::array::from_fn(|k| 1.0 / d[k]);
         self.query(|b| {
             let (mut lo, mut hi) = (near, far);

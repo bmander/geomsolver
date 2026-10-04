@@ -555,28 +555,30 @@ fn sweep_of_claim(
         });
     };
     let name = crate::syntax::ref_text(&c.formal);
+    // **a named motion's roll**: the claim read at every pose of the solids placed under it
+    let motion = res.lookup(&c.formal).filter(|e| e.kind == crate::model::EntKind::Motion && e.i() < sk.motions.len());
     // **a free variable, and nothing else**: a `param` is a number the document already fixed,
     // and sweeping it would be sweeping a constant
-    if !sk.free_vars.contains_key(&name) {
+    if motion.is_none() && !sk.free_vars.contains_key(&name) {
         if res.lookup(&c.formal).is_some() {
             say(
                 Code::E040,
                 c.formal.span,
-                format!("`{name}` is geometry, not a free variable"),
+                format!("`{name}` is geometry, not a free variable or a motion"),
             );
         } else {
             say(
                 Code::E040,
                 c.formal.span,
                 format!(
-                    "`{name}` is not a free variable of this drawing: a swept claim runs \
-                         along an unknown the solver answers for"
+                    "`{name}` is not a free variable or a motion of this drawing: a swept claim \
+                         runs along an unknown the solver answers for, or a motion's roll"
                 ),
             );
         }
         return None;
     }
-    let dimension = *sk.free_dimensions.get(&name)?;
+    let dimension = if motion.is_some() { crate::units::Dim::ANGLE } else { *sk.free_dimensions.get(&name)? };
     // Free parameters are stored in user units. In particular, an angular unknown is in
     // degrees; its readers' affine coefficients own the radians conversion into kernels.
     // Check the inferred variable dimension before assigning either endpoint.
@@ -617,5 +619,6 @@ fn sweep_of_claim(
         from,
         to,
         dimension,
+        motion: motion.map(|e| e.idx),
     })
 }
