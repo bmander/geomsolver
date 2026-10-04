@@ -63,6 +63,22 @@ fn the_stride_stands_on_level_ground() {
     assert!(((hx - tx).hypot(hy - ty) - h).abs() < 1e-6);
 }
 
+/// **`osculating_stride.sv`**: the stride touches the ground at its bottom, a circle of 150
+/// osculates it at the same place (one parameter both contacts own), and the rod solves to the
+/// bisection reference of `jansen.rs`'s `the_stride_bends_at_a_stated_radius`.
+#[test]
+fn the_stride_bends_at_a_stated_radius_where_it_stands() {
+    let mut e = solved(include_str!("../../examples/generation/osculating_stride.sv"));
+    assert_eq!(dof(&mut e), (1, State::Under), "the crank is the one freedom");
+    let h = unknown(&e, "leg.h");
+    assert!((h - 66.869).abs() < 1e-3, "the rod solved to {h}");
+    let s = e.sketch.shared["s"].param;
+    assert_eq!(e.sketch.constraints.iter().filter(|c| c.owns(s)).count(), 2);
+    // the circle's centre stands straight above where the stride touches, 150 off
+    let (k, g0) = (at(&e, "k"), at(&e, "g0"));
+    assert!((k.1 - g0.1 - 150.0).abs() < 1e-6, "the centre is {} above the ground", k.1 - g0.1);
+}
+
 /// The four-bar of `dwell.sv`, assembled from circle intersections: the coupler point at crank
 /// angle `deg` with the point `ap` along the coupler.
 fn coupler_point(deg: f64, ap: f64) -> (f64, f64) {

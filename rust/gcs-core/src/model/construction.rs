@@ -411,6 +411,36 @@ impl Sketch {
             if matches!(c.args[i], Arg::Param(_)) {
                 continue;   // already allocated (a constraint moved between sketches)
             }
+            if let Arg::Shared { name, seed } = &c.args[i] {
+                // a shared unknown is allocated once, by the first contact naming it; a later one
+                // owns the same index, and one added after the last owner was removed revives it
+                // from its own seed, as a retired free variable is (`expr::free_param`)
+                let p = match self.shared.get(name) {
+                    Some(place) => {
+                        let p = &mut self.params[place.param as usize];
+                        if let (true, Some(v)) = (p.fixed, seed) {
+                            p.value = *v;
+                        }
+                        p.fixed = false;
+                        place.param
+                    }
+                    None => {
+                        let v = seed.unwrap_or_else(|| {
+                            crate::constraints::seed_param(self, c.kind, &c.args, i)
+                        });
+                        let scale = crate::constraints::param_scale(self, c.kind, &c.args, i);
+                        let p = self.param_scaled(v, false, &format!("~{name}"), scale) as u32;
+                        // `validate` has already refused a contact that names no curve
+                        if let Some(along) = crate::constraints::contact_carrier(c.kind, &c.args) {
+                            let place = super::SharedPlace { param: p, along };
+                            self.shared.insert(name.clone(), place);
+                        }
+                        p
+                    }
+                };
+                c.args[i] = Arg::Param(p);
+                continue;
+            }
             let (v, pinned) = match c.args[i] {
                 Arg::Seed { value, pinned } => (value, pinned),
                 ref a => (a.num(), false),
@@ -428,14 +458,16 @@ impl Sketch {
     /// mentions is a degree of freedom the sketch does not actually have, and diagnosis would
     /// report it.  The rebuild walk (`io::without`) is the path that reclaims the slots.
     pub fn remove(&mut self, id: u32) {
-        let mut expr = false;
-        if let Some(c) = self.constraint(id) {
-            expr = crate::expr::has_expr(&c.args);
-            for p in c.aux_params() {
+        let (expr, own) = self.constraint(id)
+            .map_or((false, Vec::new()), |c| (crate::expr::has_expr(&c.args), c.aux_params()));
+        self.constraints.retain(|c| c.id != id);
+        // a shared unknown stays free while another contact still owns it
+        for p in own {
+            let shared = self.shared.values().any(|s| s.param == p);
+            if !shared || !self.constraints.iter().any(|c| c.owns(p)) {
                 self.params[p as usize].fixed = true;
             }
         }
-        self.constraints.retain(|c| c.id != id);
         self.placements.remove(&id);
         if expr {
             // it may have defined a name others read, or been the last reader of a free one

@@ -286,32 +286,46 @@ fn the_stride_stands_on_the_ground_twice() {
     assert!((g0.1 - dip(L, want, 35.0).1).abs() < 1e-6, "the ground is where both dips are");
 }
 
-/// **How flat, as a statement.**  A circle of radius 150 osculates the stride with the crank at
-/// 314.5° — near where the stride bottoms out — so the stride bends exactly that tightly there,
-/// and the toe rod solves for it.  The curvature is the traced stride's own `C''`
-/// (`locus::higher_orders`): nothing in the document or the core states the coupler curve, and
-/// the reference finds the rod by bisection on the leg built from circle intersections.
+/// **How flat, as a statement.**  A circle of radius 150 osculates the stride where the stride
+/// touches the ground — the ground's height unstated, the crank angle unstated — so the stride
+/// bends exactly that tightly at its bottom, and the toe rod solves for it.  The curvature is the
+/// traced stride's own `C''` (`locus::higher_orders`): nothing in the document or the core states
+/// the coupler curve, and the reference finds the rod by bisection on the leg built from circle
+/// intersections.
 ///
-/// The angle is pinned rather than left to the bottom of the stride: a curvature contact and a
-/// tangency are two contacts with two parameters, and near the bottom "the osculating circle
-/// touches the ground" holds to third order in the distance between them, so tying them through
-/// the ground is a degenerate root (it solved 1e-4 of the rod off).
+/// The tangency and the curvature are one contact: both are pinned to the same parameter
+/// (`t == s`), so "where the stride touches the ground" is one unknown the two relations share.
+/// Written as two contacts with two parameters, tied only through the circle touching the
+/// ground, it is a degenerate root — near the bottom the tie holds to third order in the
+/// distance between them, and it solved 3.5e-4 of the rod off.
 #[test]
 fn the_stride_bends_at_a_stated_radius() {
     let mut e = on_level_ground(
         "k := point hint(x: -45, y: 50)\nosc := circle(center: k) hint(r: 140)\n\
-         path curvature(t == 314.5) osc\nradius(150) osc\nfix(y == -92) g0\n",
+         path tangent(t == s) ground hint(t: 318)\npath curvature(t == s) osc\nradius(150) osc\n",
     );
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
     assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still the one freedom");
-    // the reference, at the crank's page bearing: `u` is measured from the pivot-to-axle line
-    let at = 314.5 + L.atan2(A).to_degrees();
-    let want = crossing(66.0, 68.0, |m| radius_at(L, m, at) > 150.0);
+    // one unknown, owned by both contacts
+    let s = e.sketch.shared["s"].param;
+    let owners = e.sketch.constraints.iter().filter(|c| c.owns(s)).count();
+    assert_eq!(owners, 2);
+    // the reference: the rod at which the stride's bottom bends at 150, by bisection — the
+    // bottom found afresh for every rod, by Brent's method on the leg's own toe
+    let datum = L.atan2(A).to_degrees();
+    let bottom = |m: f64| dip(L, m, 318.0 + datum).0;
+    let want = crossing(66.0, 68.0, |m| radius_at(L, m, bottom(m)) > 150.0);
     assert!((rod(&e) - want).abs() < 1e-5, "the rod solved to {}, the reference {want}", rod(&e));
-    // and the circle's centre is the stride's centre of curvature there
+    // the contact is the bottom, the ground is where the bottom is, and the circle's centre is
+    // the stride's centre of curvature there
+    let at = e.sketch.params[s as usize].value + datum;
+    assert!((at - bottom(want)).abs() < 1e-4, "touches at {at}, the bottom at {}", bottom(want));
     let toe = toe_with(at, L, rod(&e));
+    let g0 = e.sketch.point_xy(e.map.ent_named("g0").unwrap().i());
+    assert!((g0.1 - toe.1).abs() < 1e-6, "the ground at {}, the toe at {}", g0.1, toe.1);
     let k = e.sketch.point_xy(e.map.ent_named("k").unwrap().i());
     assert!(((k.0 - toe.0).hypot(k.1 - toe.1) - 150.0).abs() < 1e-6);
+    assert!((k.0 - toe.0).abs() < 1e-6, "the centre stands straight above the bottom");
 }

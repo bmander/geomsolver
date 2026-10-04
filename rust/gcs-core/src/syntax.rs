@@ -1190,10 +1190,23 @@ impl Written {
             out[i] = if sk.takes_ref() {
                 next.next().map(Arg::Ref)
             } else if sk.is_param() {
-                self.args.iter().find_map(|a| match a {
-                    OpArg::Slot { key, arg } if key.text == *name => Some(arg.clone()),
+                let slot = || self.args.iter().filter_map(|a| match a {
+                    OpArg::Slot { key, arg } if key.text == *name => Some(arg),
                     _ => None,
-                })
+                });
+                // a shared parameter is pinned to its name and seeded by the clause: the two
+                // halves of `path tangent(t == s) ground hint(t: 330)` are one argument
+                let seed = slot().find_map(|a| match a {
+                    Arg::Seed { value, pinned: false } => Some(*value),
+                    _ => None,
+                });
+                let tie = slot().find_map(|a| match a {
+                    Arg::Tie { name, span, .. } => {
+                        Some(Arg::Tie { name: name.clone(), seed, span: *span })
+                    }
+                    _ => None,
+                });
+                tie.or_else(|| slot().next().cloned())
             } else if sk.is_dimension() {
                 // the number, wherever the dimension slot stands: a kind has at most one, so it
                 // is *the* number in the parentheses, and a selector may follow it in spec order
@@ -1300,6 +1313,16 @@ pub enum Arg {
     SeedExpr {
         text: String,
         pinned: bool,
+        span: Span,
+    },
+    /// A pin to a name nothing in scope defines — `t == s` — which makes the slot's unknown a
+    /// **shared contact parameter**: every contact pinned to the same name owns the one unknown,
+    /// as every dimension reading a free variable shares it (issue #70, part 2).  Made by the
+    /// flattener from a `SeedExpr`, `name` absolute (`leg.s` inside an instance); `seed` is the
+    /// statement's own `hint(t: …)`, put beside it by `Written::assemble`.
+    Tie {
+        name: String,
+        seed: Option<f64>,
         span: Span,
     },
 }

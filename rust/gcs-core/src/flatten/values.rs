@@ -35,6 +35,22 @@ fn dim_text(rel: &crate::syntax::Relation) -> Option<(&str, Span)> {
     })
 }
 
+/// Why a name a text reads is out of this component's reach — a document name it must be
+/// handed as an argument, or a group member the argument does not have — or `None`.  Asked of a
+/// dimension's text (`settle_text`) and of a pin to a name (`t == s`) alike.
+fn out_of_reach(name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Option<String> {
+    if vals.contains_key(name) {
+        return None;
+    }
+    if scope.forbidden.contains(name) && !scope.graph.contains_key(name) {
+        return Some(format!("`{name}` is outside this component; pass it as an argument"));
+    }
+    if name.split_once('.').is_some_and(|(head, _)| scope.groups.contains(head)) {
+        return Some(format!("no numeric member `{name}` in the group argument"));
+    }
+    None
+}
+
 /// A number worked out while elaborating.
 ///
 /// The language's angle is the degree — `sin(90)` is 1, and every dimension a person reads is in
@@ -312,13 +328,8 @@ impl<'a> Walk<'a> {
     ) -> Result<String, String> {
         let reads: BTreeSet<String> =
             expr::parse_in(text, self.units).map(|p| p.body.deps()).unwrap_or_default();
-        for name in &reads {
-            if scope.forbidden.contains(name) && !vals.contains_key(name) && !scope.graph.contains_key(name) {
-                return Err(format!("`{name}` is outside this component; pass it as an argument"));
-            }
-            if name.split_once('.').is_some_and(|(head, _)| scope.groups.contains(head)) && !vals.contains_key(name) {
-                return Err(format!("no numeric member `{name}` in the group argument"));
-            }
+        if let Some(e) = reads.iter().find_map(|name| out_of_reach(name, vals, scope)) {
+            return Err(e);
         }
         let sym = self.sym.as_ref();
         let own = scope.instance_prefix();
@@ -371,6 +382,17 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// Whether a pin's text is a bare name nothing here gives a number — neither the scope's
+    /// numbers, a named dimension nor a built-in — and so names a shared contact parameter.  Not
+    /// in a trace's symbolic expansion, whose names are the curve's columns.
+    fn unbound(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> bool {
+        self.sym.is_none()
+            && crate::syntax::is_name(text)
+            && expr::builtin(text).is_none()
+            && !vals.contains_key(text)
+            && !scope.graph.contains_key(text)
+    }
+
     /// One argument, read over the parameters in scope: a dimension's text settled to text, a
     /// seed or a pin settled to its number.
     ///
@@ -395,6 +417,17 @@ impl<'a> Walk<'a> {
             crate::syntax::Arg::SeedExpr { text, pinned, span } => {
                 match value_of(text, vals, self.units) {
                     Ok(v) => *a = crate::syntax::Arg::Seed { value: v, pinned: *pinned },
+                    // `t == s` over a name nothing defines: the contact's parameter *is* that
+                    // unknown, the instance's own as a free name in a dimension is (`leg.s`)
+                    Err(_) if *pinned && self.unbound(text.trim(), vals, scope) => {
+                        match out_of_reach(text.trim(), vals, scope) {
+                            Some(e) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
+                            None => {
+                                let name = format!("{}{}", scope.instance_prefix(), text.trim());
+                                *a = crate::syntax::Arg::Tie { name, seed: None, span: *span };
+                            }
+                        }
+                    }
                     Err(e) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
                 }
             }

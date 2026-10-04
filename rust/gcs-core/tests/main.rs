@@ -91,6 +91,7 @@ mod roots;
 mod ring;
 mod row_scale;
 mod seeds;
+mod shared_contact;
 mod sheet;
 mod smoke;
 mod solid;

@@ -248,6 +248,15 @@ pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f
             }
         }
     }
+    // **and the unknowns the source names that no entity owns**: a free variable (`w` in
+    // `distance(w)`, a formal a drawn instance left unbound, `leg.h`) and a place two contacts
+    // share (`t == s`) are answers the solve gives by name, in the units the source writes them
+    let shared = sk.shared.iter().map(|(n, s)| (n, &s.param));
+    for (name, &p) in sk.free_vars.iter().chain(shared) {
+        if !sk.params[p as usize].fixed {
+            out.insert(name.clone(), sk.params[p as usize].value);
+        }
+    }
     // **and what a solid came to.**  The report is the reader's only picture of an object no
     // view of the sheet shows whole, so it carries what a person would measure off it: how much
     // material there is, the box it stands in, and where each of its faces is and how much of
@@ -417,6 +426,7 @@ fn arg_json_value(a: &Arg) -> Json {
         Arg::Str(s) => Json::Str(s.clone()),
         Arg::Expr(e) => Json::Num(e.value),
         Arg::Seed { value, .. } => Json::Num(*value),
+        Arg::Shared { seed, .. } => seed.map_or(Json::Null, Json::Num),
         // only a sketch can say what an owned unknown currently holds; `constraint_json` does
         Arg::Param(_) => Json::Null,
     }

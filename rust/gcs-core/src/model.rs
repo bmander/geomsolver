@@ -44,6 +44,14 @@ pub use measure::{
     distance_between, orientation, orientation_xy, increments,
 };
 
+/// A place along one curve that several contacts own (`t == s`): the unknown, and the curve it
+/// runs along, which every owner must stand on (`constraints::validate`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SharedPlace {
+    pub param: u32,
+    pub along: EntRef,
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct Sketch {
     pub roles: BTreeMap<EntRef, crate::semantics::GeometryRoles>,
@@ -116,6 +124,11 @@ pub struct Sketch {
     /// one the first time a name nothing defines is read and retires it when the last reader
     /// stops reading it, so nothing else in the document has to know they exist.
     pub free_vars: BTreeMap<String, u32>,
+    /// The contact parameters several contacts own together, by the name they are pinned to
+    /// (`path tangent(t == s) ground`) — allocated by `Sketch::add` for the first contact naming
+    /// it and handed to the rest.  The constraints hold the index (`Arg::Param`), so this table
+    /// is what a rebuild (`io::graft`) and the document writer read the name back from.
+    pub shared: BTreeMap<String, SharedPlace>,
     /// Physical dimensions inferred by expression evaluation, in user units (angles in degrees).
     pub free_dimensions: BTreeMap<String, crate::units::Dim>,
     /// Each curve's polyline, remembered against everything it was computed from

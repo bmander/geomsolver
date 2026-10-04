@@ -1771,6 +1771,12 @@ pub enum Arg {
     /// carries the value cannot drop the pin, so a document, a paste, a rebuild and a
     /// constructor are all correct without knowing pins exist.
     Seed { value: f64, pinned: bool },
+    /// What a `Param` slot holds on the way in when the unknown is **shared**: the name every
+    /// contact owning it is written against (`t == s`, issue #70, part 2), and where it starts
+    /// if this is the first of them.  `Sketch::add` allocates the unknown for the first and hands
+    /// the same index to the rest (`Sketch::shared`), so the slot is an `Arg::Param` after it,
+    /// as every owned unknown is.
+    Shared { name: String, seed: Option<f64> },
 }
 
 impl Arg {
@@ -1800,6 +1806,7 @@ impl Arg {
         match self {
             Arg::Num(v) => *v,
             Arg::Seed { value, .. } => *value,
+            Arg::Shared { seed, .. } => seed.unwrap_or(0.0),
             Arg::Int(v) => *v as f64,
             Arg::Bool(b) => {
                 if *b {
@@ -2172,6 +2179,13 @@ impl Constraint {
             .filter(|((_, k), _)| k.is_entity())
             .map(|(_, a)| a.ent())
             .collect()
+    }
+
+    /// Whether this constraint owns the Param `p` — `aux_params` asked of one index, building
+    /// nothing.
+    pub fn owns(&self, p: u32) -> bool {
+        let spec = self.kind.spec();
+        spec.iter().zip(&self.args).any(|((_, k), a)| k.is_param() && *a == Arg::Param(p))
     }
 
     /// The Params this constraint owns — empty until `Sketch::add` has allocated them.
@@ -2939,10 +2953,47 @@ pub fn infer_entity(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Result<
     }
 }
 
+/// The curve a contact's parameter runs along — a spline or a language curve, whichever the
+/// contact names — and `None` for a kind whose own unknown runs along nothing.
+pub(crate) fn contact_carrier(kind: CKind, args: &[Arg]) -> Option<EntRef> {
+    let (e, _) = kind.contact_on(SpecKind::Spline).or_else(|| kind.contact_on(SpecKind::Curve))?;
+    Some(args[e].ent())
+}
+
+/// A shared parameter (`t == s`) is **one place along one curve**: every contact owning it
+/// stands on the same curve, so the unknown has one interval, one seam and one speed.  Two
+/// curves could not agree on any of the three, and a contact's own unknown that runs along no
+/// curve has nothing to share.
+fn shared_on_one_curve(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
+    let Some(name) = args.iter().find_map(|a| match a {
+        Arg::Shared { name, .. } => Some(name),
+        _ => None,
+    }) else {
+        return Ok(());
+    };
+    let Some(here) = contact_carrier(kind, args) else {
+        return Err(format!("`{name}` names a contact's place along a curve, and this \
+            relation's unknown runs along none"));
+    };
+    if sk.free_vars.get(name).is_some_and(|&p| !sk.params[p as usize].fixed) {
+        return Err(format!("`{name}` is a free variable a dimension reads, and a place along a \
+            curve is another unknown"));
+    }
+    match sk.shared.get(name) {
+        Some(place) if place.along != here => Err(format!(
+            "`{name}` is a place along {}, and a contact on {} cannot share it",
+            crate::io::entity_name(place.along),
+            crate::io::entity_name(here)
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// What a kind refuses once its arguments are all in — the checks that need the sketch, which
 /// the type check on the spec cannot make.  One rule for the elaborator, the document readers,
 /// the FFI and the Rust constructors alike.
 pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
+    shared_on_one_curve(sk, kind, args)?;
     match kind {
         // a curvature reads the curve's second derivative, which a trace gives exactly only
         // where every row of its block has a Taylor form (`taylor.rs`): a residual by difference

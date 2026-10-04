@@ -253,6 +253,10 @@ stands in the parentheses:
 
 **Slots a constraint owns** (a contact's curve parameter, always called `t`) are normally omitted.
 Seed one with `p on s hint(t: 0.4)`; pin one with `p on(t == 0.4) s`.
+Pin one to a name nothing defines and it is an unknown that contacts on the same curve share:
+`path tangent(t == s) ground hint(t: 318)` and `path curvature(t == s) osc` state the circle
+osculating the path *where* it touches the ground — one place, one parameter. The first contact
+naming `s` seeds it; a contact on another curve pinned to `s` is refused (E040).
 
 **Tangency trap.** If the contact point is already held on the circle, state the tangency *at*
 it: `line tangent(at: p2) circle`, `arc tangent(at: start) line`. `p on circle` plus a bare

@@ -24,6 +24,9 @@ pub enum Fault {
     /// It measures the solved drawing (`length(l)`), and a constraint's number is needed
     /// before the solve it would read: E107, the stratum refusal every such context shares.
     Measure,
+    /// It reads a name that is a place contacts share along a curve (`t == s`, §9.2): one name is
+    /// one unknown, and a dimension cannot be written in a place.
+    Place,
 }
 
 /// An expression's fault and the words for it.
@@ -328,6 +331,14 @@ fn write_value(
         return Err(ExprError::new(
             Fault::ClaimFree,
             format!("`{name}` is free, and a claim may not bind an unknown"),
+        ));
+    }
+    // one name is one unknown: a place contacts share along a curve (`t == s`) is not a number a
+    // dimension can be written in, and two unknowns under one name would be told apart nowhere
+    if sk.shared.contains_key(&name) {
+        return Err(ExprError::new(
+            Fault::Place,
+            format!("`{name}` is a place along a curve (`t == {name}`), not a number of the drawing"),
         ));
     }
     // a form that does not actually move with the variable states nothing about it, and there

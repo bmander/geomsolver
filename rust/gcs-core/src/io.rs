@@ -54,7 +54,17 @@ fn arg_json(sk: &Sketch, a: &Arg) -> Json {
         Arg::Param(i) if sk.params[*i as usize].fixed => {
             object([("value", Json::Num(a.value(sk))), ("pinned", Json::Bool(true))])
         }
-        Arg::Param(_) => Json::Num(a.value(sk)),
+        Arg::Param(i) => match sk.shared_name(*i) {
+            Some(name) => {
+                arg_json(sk, &Arg::Shared { name: name.to_string(), seed: Some(a.value(sk)) })
+            }
+            None => Json::Num(a.value(sk)),
+        },
+        // a shared one saves the name its contacts are pinned to, which is what makes it one
+        Arg::Shared { name, .. } => object([
+            ("value", Json::Num(a.value(sk))),
+            ("shared", Json::Str(name.clone())),
+        ]),
         // a seed only exists before `Sketch::add`, so a document never sees one; writing the
         // number keeps `describe`/`arg_text` honest for a constraint someone built by hand
         Arg::Seed { value, .. } => Json::Num(*value),
@@ -116,9 +126,15 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
         },
         // a hidden unknown arrives as its number, or `{"value", "pinned"}` when the document
         // said it was worked out rather than solved for; `Sketch::add` consumes both halves
-        SpecKind::Param => Arg::Seed {
-            value: v.get("value").map(|x| x.as_f64()).unwrap_or_else(|| v.as_f64()),
-            pinned: v.get("pinned").map(|x| x.as_bool()).unwrap_or(false),
+        SpecKind::Param => match v.get("shared") {
+            Some(name) => Arg::Shared {
+                name: name.as_str().to_string(),
+                seed: v.get("value").map(|x| x.as_f64()),
+            },
+            None => Arg::Seed {
+                value: v.get("value").map(|x| x.as_f64()).unwrap_or_else(|| v.as_f64()),
+                pinned: v.get("pinned").map(|x| x.as_bool()).unwrap_or(false),
+            },
         },
         _ => Arg::Num(v.as_f64()),
     })
@@ -1306,11 +1322,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     }
                 },
                 // the destination allocates its own: a Param index is this sketch's name for
-                // it, and the pin rides along in the seed
-                Arg::Param(p) => args.push(Arg::Seed {
-                    value: a.value(src),
-                    pinned: src.params[*p as usize].fixed,
-                }),
+                // it, and the pin rides along in the seed — or the name, where the unknown is
+                // shared, so the contacts that owned one own one again
+                Arg::Param(p) => args.push(src.owned_arg(*p)),
                 other => args.push(other.clone()),
             }
         }
@@ -1851,6 +1865,9 @@ fn lift_arg(
         }
         Arg::Param(_) => return None,
         Arg::Seed { value, pinned } => S::Seed { value: *value, pinned: *pinned },
+        Arg::Shared { name, seed } => {
+            S::Tie { name: name.clone(), seed: *seed, span: crate::syntax::Span::default() }
+        }
         Arg::Num(v) => S::Dim { text: reading(kind, *v), span: crate::syntax::Span::default() },
         Arg::Int(v) => S::Int(*v),
         Arg::Bool(b) => S::Bool(*b),

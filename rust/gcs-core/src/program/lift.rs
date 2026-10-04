@@ -370,11 +370,12 @@ fn lift_arg(sk: &Sketch, kind: SpecKind, a: &CArg) -> Option<Arg> {
         CArg::Ent(e) => Arg::Ref(Ref::new(entity_name(*e))),
         // a hidden unknown travels as the number it holds, and as `==` when it was pinned: a fit
         // chose it, and a document that came back with it free would have degrees of freedom
-        // nobody drew
-        CArg::Param(i) => {
-            Arg::Seed { value: sk.params[*i as usize].value, pinned: sk.params[*i as usize].fixed }
-        }
+        // nobody drew — or as the name it is shared under (`t == s`): `Sketch::owned_arg`
+        CArg::Param(i) => return lift_arg(sk, kind, &sk.owned_arg(*i)),
         CArg::Seed { value, pinned } => Arg::Seed { value: *value, pinned: *pinned },
+        CArg::Shared { name, seed } => {
+            Arg::Tie { name: name.clone(), seed: *seed, span: Span::default() }
+        }
         // a dimension is written as it was written: `h = w / 2` and `3 1/8` each tell a reader
         // what 40 and 3.125 do not
         CArg::Expr(e) => Arg::Dim { text: e.text.clone(), span: Span::default() },

@@ -448,6 +448,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 expr::Fault::ClaimFree => (Code::E040, ""),
                 expr::Fault::Uncomputable => (Code::W110, " — the last number stands"),
                 expr::Fault::Measure => (Code::E107, ""),
+                expr::Fault::Place => (Code::E040, ""),
             };
             diags.push(Diag { code, span, stmt, message: format!("`{}`: {err}{tail}", item.text) });
         } else {
