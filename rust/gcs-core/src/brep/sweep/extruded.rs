@@ -246,6 +246,10 @@ fn build(cut: &SweptCut,walks: &[Vec<Seg>],extent: [f64;2],frame: Frame,program:
     if first % 2 == 1 { first = (first+n-1)%n; }
     if last % 2 == 1 { last = (last+1)%n; }
     let order: Vec<usize> = (0..n).map(|k| (first+k)%n).take_while(|&i| i != (last+1)%n).collect();
+    if order.len() == n {
+        return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: the profile's cut leaves the blank only along one edge, so its \
+            sheet would close")))
+    }
     let mut stretches: Vec<(usize,[f64;2])> = Vec::with_capacity(order.len());
     for &i in &order {
         match pieces[i].kind {
@@ -314,6 +318,9 @@ fn build(cut: &SweptCut,walks: &[Vec<Seg>],extent: [f64;2],frame: Frame,program:
         }
         spans += nodes.len()-1;
         curve.push((i,nodes));
+    }
+    if curve.is_empty() {
+        return Err(ExportRefusal::at(Stage::Sheet,format!("`{name}`: the envelope's curve runs over no roll")))
     }
     // its ends leave the blank, or the sheet would end inside it
     let ends: Vec<P> = [curve.first(),curve.last()].iter().flatten().zip([0,1])

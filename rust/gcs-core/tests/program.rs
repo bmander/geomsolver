@@ -107,10 +107,11 @@ fn every_constraint_type_is_printable() {
             // row is its `against` statement's, which a lifted program does not carry
             continue;
         }
-        if matches!(kind, CKind::PointOnCurve | CKind::CurveTangentLine | CKind::CurveCurvature) {
+        if matches!(kind, CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveCurvature) {
             // a curve's contacts print, but the curve they name lifts as an instance of a
             // component the sketch does not hold the text of, so there is nothing for them to
-            // round-trip against here; `tests/curve_contact.rs` prints them from a document
+            // round-trip against here; `tests/curve_contact.rs` prints them from a document (and
+            // `tests/extruded_envelope.rs` the point on an extrusion)
             continue;
         }
         let (sk, c) = fixture(kind);

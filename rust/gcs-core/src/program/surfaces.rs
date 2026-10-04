@@ -1,4 +1,5 @@
-//! Bind analytic surfaces to existing solid boundaries. No new coordinates or solver rows.
+//! Bind analytic surfaces to existing solid boundaries — a revolution's, or a prism's side. No new
+//! coordinates or solver rows.
 use super::{resolve::{follow_building,Resolver},Code,Diag,Made,SourceMap};
 use crate::{ir::{Kid,Operation,Statement},model::{EntKind,EntRef,Sketch,SolidDef,SurfaceE},
     syntax::{Arg,StmtId}};
@@ -26,8 +27,12 @@ pub(super) fn surfaces(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
             if solid.kind != EntKind::Solid {
                 return Err("a surface's first argument is a solid".into());
             }
-            let SolidDef::Revolve {face,ref sweep,..} = sk.solids[solid.i()].def else {
-                return Err("analytic surface references currently require an unmodified revolution".into());
+            // a revolution's surface of revolution, or a prism's side: the edge extruded, which a
+            // motion keeping the prism's view generates from in the drawing (`extruded_envelopes`)
+            let (face,sweep) = match sk.solids[solid.i()].def {
+                SolidDef::Revolve {face,ref sweep,..} => (face,Some(sweep.value)),
+                SolidDef::Prism {face,..} => (face,None),
+                _ => return Err("analytic surface references require an unmodified revolution or prism".into()),
             };
             if !sk.faces[face as usize].boundaries().any(|(edges,_)| edges.contains(&edge)) {
                 return Err("the edge is not a boundary of this solid's profile".into());
@@ -36,10 +41,11 @@ pub(super) fn surfaces(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
                 return Err("an exact revolved surface requires a line, arc or circle".into());
             }
             let span = d.angular_span.as_ref().map(|s| -> Result<[f64;2],String> {
+                let sweep = sweep.ok_or("a prism's side has no angular bounds")?;
                 let angle = |a: &Arg| super::bound_angle(sk,a,"surface bound").map(f64::to_radians);
                 let bounds = [angle(&s.from)?,angle(&s.to)?];
                 if !bounds.iter().all(|x| x.is_finite()) || bounds[0] < 0. || bounds[0] >= bounds[1]
-                    || bounds[1] > sweep.value.min(std::f64::consts::TAU) {
+                    || bounds[1] > sweep.min(std::f64::consts::TAU) {
                     return Err("a surface needs increasing angular bounds within its source sweep".into());
                 }
                 Ok(bounds)

@@ -252,6 +252,12 @@ pub(super) fn constrain(
     // **across views, a word means the relation in space**: the operands' views, read by
     // the role rule (`reading`), decide it, and the statement is the kind in space from here on —
     // or refused, where the word has no meaning there or a selector says nothing there
+    // a curve standing for a surface (a prism's side generating, `CurveE::extrusion`) is met in
+    // space, by the point's place in the curve's view, whatever view the point is drawn in
+    let ckind = match (ckind, args.get(1)) {
+        (CKind::PointOnCurve, Some(CArg::Ent(e))) if sk.curves[e.i()].extrusion => CKind::PointOnExtrusion,
+        _ => ckind,
+    };
     let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args) {
         Ok(None) => (ckind, spec, args, left_out),
         Ok(Some((k, a, l))) => (k, k.spec(), a, l),

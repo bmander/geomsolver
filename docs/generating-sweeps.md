@@ -88,6 +88,15 @@ A prism's stations are planes square to its extrusion, a station a distance alon
 section is the profile itself (`brep::sweep::cutter`, `Kind::Extruded`): each edge a face, the
 walk's left turns its convex fans. The reach samples stations along the prism; the band runs
 from the first hit to the last, and may not grow past the prism's own length (`Band::limit`).
+Under a motion keeping the profile's plane (a rack's: a slide seen from a turn about the plane's
+normal) every station meets the same curve, so the sheet is not traced (issue #70):
+`brep::sweep::extruded` builds it from the profile's planar envelope (`generate.rs`, the curve the
+drawing's `envelope` is) — each edge cut as a line or arc over the rolls its cut lies on it, each
+convex corner as a point between the rolls its sides reach it, read exactly by
+`generate::cut_at`, interpolated by Hermite spans halved to 0.1 µm (or the fit's bar) at their
+quarter points, and extruded linearly over the prism's length. The rack's tooth space is 28 spans
+in 40 ms, and every contact the trace finds lies within 5e-6 mm of it
+(`rack_cut::the_racks_sheet_is_its_planar_envelope_extruded`). Any other motion is traced.
 A sector's flat caps join across its sides (`brep::pattern`, `Kept::Flat`): a plane square to
 the axis is kept by the turn, its pcurves turned about the axis's foot, and a ring of it is an
 annulus with no seam. A blank reaching its axis is built whole (neighbouring sectors' sides

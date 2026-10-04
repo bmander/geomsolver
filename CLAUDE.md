@@ -101,6 +101,15 @@ once; the motion's numbers ride past `tape::MAX_VARS` in `OUTER_MAX`).  Analytic
 series); the encoding is `Generated::new` and `view` only.  Kernels are generic over
 `kernels::{FORMULA,TRACE,ENVELOPE}` and ask a body for the orders they `need`.
 `tests/generation.rs` is the gate.
+**One engine for a prism's side (#70):** `side := surface(prism, edge: e)` names a prism's side
+too; its `envelope` under a motion keeping the prism's view is built with the drawing
+(`generated::extruded_envelopes`, after memberships, before relations) as `e`'s planar envelope
+marked `CurveE::extrusion`, the face in a view that stands where drawn (not the page). `p on
+flank` from any view is `CKind::PointOnExtrusion` (`FamilyKernel::Extrusion`, consts
+`kernels::EXTRUSION_FRAME` then the contact's; `Sketch::extrusion_frame`). The export builds a
+prism cutter's sheet the same way: `brep::sweep::extruded` (edges as lines/arcs, convex corners as
+points over their fans, `generate::cut_at`, Hermite spans, extruded; `Family::in_frame`), else
+traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cut.rs`.
 **Named envelopes:** `flank := envelope(source, under: generating, from: -35deg, to: 35deg)`: a
 zero-normal-velocity locus over a finite increasing roll interval (ABI kind 11).
 `GeneratedEnvelope` intersects it with two section equations via the shared DogLeg loop. A nonzero

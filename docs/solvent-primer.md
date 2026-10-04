@@ -1122,6 +1122,14 @@ cam (`side: near|far` of the instant centre, where a circle cuts twice). `on`, `
 `curvature` hold against it, and the tool's and the motion's geometry are its columns, so they
 solve to suit — a conjugate is synthesised, not stated. See 2.9.2.
 
+**A prism's side generating in its view is a surface the solve sees** (§6.15.2). `side :=
+surface(rack_tooth, edge: rack_flank)` names a prism's side (as it names a revolution's), and under
+a motion keeping the prism's view `flank := envelope(side, under: cutting, from: -30deg, to: 30deg)`
+is `rack_flank`'s planar envelope extruded square to the view, built with the drawing. A point drawn
+in any view is `on` it by its place in that view (`p on flank`: one equation, the roll its own).
+Draw the prism's face `in` a view (not the page, which has no place in space); the face must name
+the edge (`face(t0, t1, rack_flank, t3, -> close)`). `tests/extruded_envelope.rs`.
+
 **Patches** state which material keeps a surface or envelope; every condition must hold, and each
 includes its solid's boundary:
 

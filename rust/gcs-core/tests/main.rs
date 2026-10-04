@@ -56,6 +56,7 @@ mod sector;
 mod motions;
 mod generated_envelopes;
 mod generation;
+mod extruded_envelope;
 mod generation_examples;
 mod examples_sv;
 mod expr;
