@@ -105,6 +105,37 @@ would meet in it), so `rust/examples/generation/rack_cut_gear.sv` has a bore.
 roll, unioned over the roll) to 1e-4, the whole 20-tooth gear patterned from one sector, field
 agreement, and the toleranced build. The OCCT oracle (`--kernel occt`) sections revolutions only.
 
+### Pocketed prisms under a planar motion: the planar generating class
+
+A Wankel rotor is the other half of envelope theory (#65): not the union of a tool over a motion
+but the largest body inside a moving pocket at every pose, an intersection over the motion. By De
+Morgan it is its blank less the pocket's *wall* swept over the motion, which is a cut, so the body
+rule says it already (`swept cut rotor`, `rust/examples/wankel/`). Over a whole period the cut
+leaves the blank within the pocket's **inner envelope** (`envelope::planar`), carried along the
+prisms. A sweep whose tool is a prism cut by a pocket (a housing; a prism alone is a rack, asked
+the rows above) is asked these rows (`solid::planar_class`) in place of T1–E4:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| P1 | The motion turns the pocket's plane in itself about axes square to it, the same face up. | Then every pose is a rigid motion of the plane and the sweep is planar. | The motion. |
+| P2 | The tool is a stock cut by one pocket, both prisms standing on the pocket's plane and spanning the blank's height along its normal (the blank boxed by its own B-rep); the pocket's profile is one closed curve. | The section is the same at every height through the blank, so the body is a prism of it. | The solid that is not. |
+| P3 | The roll is a whole period: the last pose is the first. | A closed envelope with no limit poses to cap. | The roll. |
+| P4 | The pocket's inner envelope is one regular loop: every kept contact found and linked, its pieces meeting at corners, with no fold or crossing. | The rotor's flanks are its pieces, its apexes their corners. | The point where it fails. |
+| P5 | The stock's outer wall never reaches the blank: every point of the blank's mid-height section, on a grid, lies within the stock at every pose of a grid of the roll. | Then the pocket alone decides what is kept. | The point the wall reaches. |
+
+The envelope is read by sampling the pocket's profile — a curve of the drawing, the Wankel's bore
+the apex's own planar envelope (`envelope(apex, under: rotor_turn, …)`, read through
+`generate::kernel_eval`): at each sample every root in the roll of the
+contact condition `∂X/∂s × ∂X/∂θ = 0` (brackets on a grid of the roll, then regula falsi), each
+image kept where it lies inside the curve at every pose (the curve's signed distance read on a grid
+and bounded between by the image's speed, to a thousandth of a radian), images touched at three
+samples or more corners, the rest linked by continuity and marched onto their corners. The body
+(`brep::sweep::planar`) is the blank kept in common with the envelope's prism, a cubic B-spline a
+piece fitted within `FIT_MM` through contacts solved exactly; nothing is traced, split or judged
+cell by cell. The accuracy meter reads it as the envelope's region times the blank's slab
+(`accuracy::Planar`). Below the limiting K = R/e = 3 the bore crosses itself and the pocket is no
+face, refused before any row is read.
+
 ### Undercut is excluded deliberately
 
 A pinion with few teeth often has some undercut. There, the envelope of the blade tip's
@@ -123,7 +154,8 @@ the checks read are checked once: the gear's 24 indexed cuts are one check.
 Everything outside the class is refused at elaboration or export, never meshed on a
 best-effort basis. The refusal names the condition row and the witness. The tumbling, slid
 and tilted cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its
-caps clear are outside the class. Their fixtures stay in the tree as **negative controls**: each must
+caps clear and a pocketed prism's under a planar motion are outside the classes. Their fixtures stay
+in the tree as **negative controls**: each must
 produce its refusal.
 
 ## Acceptance

@@ -25,6 +25,15 @@ const projects: Example[] = [{
     + 'Edit the helix, the wheels or the point in configuration.sv; drill.svd is the drawing.',
   target: { kind: 'directory', path: 'twist_drill', entry: 'drill.sv' },
 }, {
+  label: 'Wankel rotor and housing · one planetary motion', key: 'wankel',
+  description: 'A rotary engine from one motion and three numbers: the rotor\'s centre rides the '
+    + 'eccentric while it turns a third as fast. The housing\'s bore is an apex\'s envelope, its '
+    + 'path (the epitrochoid); the rotor is its blank less the housing turned about it over a '
+    + 'whole period, a flank the bore\'s envelope under that turn (drawn as `flank`). A rotor of '
+    + 'three arcs is claimed clear of the housing at every pose. Edit R, e and W in configuration.sv; '
+    + 'wankel.svd is the drawing.',
+  target: { kind: 'directory', path: 'wankel', entry: 'wankel.sv' },
+}, {
   label: 'Pin wheel, generated · swept solid', key: 'lantern_generation',
   description: 'A pinion rolls against a wheel blank and its one pin cuts a tooth space. The roll\'s '
     + 'ratio is measured off the drawing after the solve (the wheel\'s pitch radius over the '

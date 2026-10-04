@@ -108,6 +108,17 @@ pub struct Family {
 }
 
 impl Family {
+    /// Every number the snapshot holds, in step order: what a cache of something the motion
+    /// carries is a function of.
+    pub fn reads(&self) -> Vec<f64> {
+        self.steps.iter().flat_map(|s| match *s {
+            Step::Rotation {origin,axis,ratio,phase,advance} =>
+                [origin.as_slice(),axis.as_slice(),&[ratio,phase,advance]].concat(),
+            Step::Translation {axis,advance} => [axis.as_slice(),&[advance]].concat(),
+            Step::Relative {source,observer} => vec![source as f64,observer as f64],
+        }).collect()
+    }
+
     /// Upper bound on the speed of inverse(M(t))*point per radian, for every t in
     /// `domain`. This bounds the mathematical rigid family represented by the
     /// solved axes; it does not bound roundoff in `at` or error in the solved
@@ -357,8 +368,13 @@ impl Family {
     /// observer^-1 * source, including the derivative of the moving inverse.
     pub fn at(&self, angle: f64) -> Result<Motion,String> {
         if !angle.is_finite() { return Err("a motion angle must be finite".into()); }
-        let mut values: Vec<Motion> = Vec::with_capacity(self.steps.len());
-        for step in &self.steps {
+        // the steps' values on the stack for a family of up to eight steps, as `pose_at` keeps
+        // them: an envelope's root search reads a pose and its rate many thousand times
+        let mut fixed = [Motion::identity();8];
+        let mut spilled: Vec<Motion> = Vec::new();
+        let many = self.steps.len() > fixed.len();
+        for (n,step) in self.steps.iter().enumerate() {
+            let values: &[Motion] = if many { &spilled } else { &fixed[..n] };
             let value = match *step {
                 Step::Rotation {origin,axis,ratio,phase,advance} => {
                     let rotation = Motion::rotation(axis,phase+ratio*angle,ratio)
@@ -381,9 +397,10 @@ impl Family {
                 Step::Relative {source,observer} => values[source].then(values[observer].inverse()),
             };
             if !value.is_finite() { return Err("a motion pose or derivative overflowed".into()); }
-            values.push(value);
+            if many { spilled.push(value) } else { fixed[n] = value }
         }
-        Ok(*values.last().expect("a motion family has a root"))
+        let last = self.steps.len().checked_sub(1).ok_or("a motion family has a root")?;
+        Ok(if many { spilled[last] } else { fixed[last] })
     }
 }
 

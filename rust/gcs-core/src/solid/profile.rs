@@ -153,6 +153,24 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
         return poly.valid().then(|| poly.ccw());
     }
 
+    // a closed curve standing alone is the whole loop, walked within the sheet's sagitta
+    if edges.len() == 1 && edges[0].kind == EntKind::Curve && sk.curves[edges[0].i()].trim.is_none() {
+        let i = edges[0].i();
+        if !sk.curve_closed(i) {
+            return None;
+        }
+        let ring = sk.curve_polyline_within(i, unit);
+        for &(_, p) in ring.iter().take(ring.len().saturating_sub(1)) {
+            pts.push(p);
+            of.push((0, true));
+        }
+        let pts = pts.into_iter().map(view).collect();
+        let (a, b) = sk.curve_domain(i);
+        let curved = vec![Some((edges[0], [a, b]))];
+        let poly = tidy_poly(FacePoly { pts, of, names, basis, pose, curved });
+        return poly.valid().then(|| poly.ccw());
+    }
+
     // otherwise: every edge in traversal order, each starting where the last one ended
     let mut at: Option<u32> = None;
     let mut curved = vec![None; names.len()];

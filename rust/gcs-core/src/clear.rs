@@ -15,7 +15,7 @@
 use crate::csg::Piece;
 use crate::model::Sketch;
 use crate::plane;
-use crate::solid::{self, Box3};
+use crate::solid;
 
 mod evidence;
 pub use evidence::{
@@ -129,14 +129,6 @@ fn overlap(
 /// Is every point of `a` a point of `b`? Evaluate A − B so an enclosed void is tested too.
 pub fn contained(a: &[Piece], b: &solid::Csg, eps: f64) -> bool {
     crate::csg::contains_boundary(b, a, eps)
-}
-
-fn grow(b: &Box3, k: f64) -> Box3 {
-    if k.is_finite() {
-        b.grown(k)
-    } else {
-        Box3 { lo: [f64::NEG_INFINITY; 3], hi: [f64::INFINITY; 3] }
-    }
 }
 
 /// The least distance between two convex planar pieces: every vertex against the other's plane
@@ -334,8 +326,12 @@ fn measure_pair(
     }
     let (status, interval) = match requirement {
         R::Clear { .. } => {
+            // boundaries apart, and neither solid holding a point of the other: disjoint, and the
+            // gap is the answer without classifying either boundary against the other
+            let gap = boundary_gap(pa, &pb);
+            let apart = gap > eps && !cb.inside(pa[0].pts[0]) && !ca.inside(pb[0].pts[0]);
             let (value, error) =
-                overlap(ca, &cb, eps).unwrap_or_else(|| (boundary_gap(pa, &pb), 0.0));
+                if apart { (gap, 0.0) } else { overlap(ca, &cb, eps).unwrap_or((gap, 0.0)) };
             let interval = Interval::around(value, facet_tol + error)?;
             let status = if interval.lower() > 0.0 {
                 Predicate::Satisfied
@@ -371,16 +367,40 @@ fn measure_pair(
 
 /// The least the two boundaries come to each other, ignoring which side of which they are on —
 /// what `fits` measures once containment has answered the sign.
+///
+/// `b`'s pieces are boxed in a hierarchy, and a box farther from a piece of `a` than the least gap
+/// found is passed by: a piece's gap is never less than its box's distance, so the answer is the
+/// one every pair would give, read in the logarithm of `b` (a rotor's thousand pieces against a
+/// housing's twelve thousand at every pose of a claim's sweep).
 fn boundary_gap(a: &[Piece], b: &[Piece]) -> f64 {
-    let mut best = f64::INFINITY;
+    let bounds = |q: &Piece| { let x = q.bbox_of(); crate::bvh::Bounds { lo: x.lo, hi: x.hi } };
+    let tree = crate::bvh::Bvh::new(b.iter().map(bounds));
+    let gap = |x: crate::bvh::Bounds<3>, y: crate::bvh::Bounds<3>| {
+        let d: [f64; 3] = std::array::from_fn(|k| (x.lo[k] - y.hi[k]).max(y.lo[k] - x.hi[k]).max(0.0));
+        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+    };
+    let best = std::cell::Cell::new(f64::INFINITY);
     for p in a {
-        let pb = grow(&p.bbox_of(), best);
-        for q in b {
-            if !q.bbox_of().overlaps(&pb) {
-                continue;
-            }
-            best = best.min(piece_gap(p, q));
-        }
+        let pb = bounds(p);
+        tree.query_nearest(|q| gap(q, pb), || best.get(), |k| {
+            if plane_apart(p, &b[k]) <= best.get() { best.set(best.get().min(piece_gap(p, &b[k]))); }
+        });
     }
-    best
+    best.get()
+}
+
+/// A lower bound on two pieces' gap from their planes: where every corner of one lies on one side
+/// of the other's plane, the nearest of them is no nearer than that.
+fn plane_apart(p: &Piece, q: &Piece) -> f64 {
+    let side = |a: &Piece, b: &Piece| {
+        let length = plane::norm(a.n);
+        if !(length > 0.0) { return 0.0; }
+        let (lo, hi) = b.pts.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+            let h = plane::dot(a.n, std::array::from_fn(|k| v[k] - a.pts[0][k])) / length;
+            (lo.min(h), hi.max(h))
+        });
+        // a hair under, for the rounding of the reading
+        (if lo > 0.0 { lo } else if hi < 0.0 { -hi } else { 0.0 }) * (1.0 - 1e-12)
+    };
+    side(p, q).max(side(q, p))
 }

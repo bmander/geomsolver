@@ -143,6 +143,24 @@ fn geometry(sk: &Sketch, c: &SolidClaim) -> Result<clear::GeometricEvidence, Str
         .into_evidence()
 }
 
+/// A claim along motion `m`'s roll, at each sample: one copy of the drawing, every solid placed
+/// under the motion set to its `at:` advanced by the roll, nothing solved again. The copy keeps its
+/// evaluated solids against what they read, so what the roll does not move is evaluated once.
+fn rolled_poses(sk: &Sketch, c: &SolidClaim, sw: &Sweep, m: u32) -> Vec<SolidPose> {
+    let mut scratch = sk.clone();
+    let placed: Vec<(usize, f64)> = scratch.solids.iter().enumerate().filter_map(|(i, s)| match &s.def {
+        crate::model::SolidDef::Placed { motion, at, .. } if *motion == m => Some((i, at.value)),
+        _ => None,
+    }).collect();
+    (0..=SWEEP_STEPS).map(|k| {
+        let t = sw.sample(k, SWEEP_STEPS).expect("inclusive nonzero sweep intervals");
+        for &(i, at) in &placed {
+            if let crate::model::SolidDef::Placed { at: a, .. } = &mut scratch.solids[i].def { a.value = at + t.to_radians(); }
+        }
+        SolidPose { parameter: Some(t), evaluation: geometry(&scratch, c) }
+    }).collect()
+}
+
 fn sampled_pose(sk: &Sketch, c: &SolidClaim, sw: &Sweep, t: f64) -> SolidPose {
     let evaluate = || -> Result<clear::GeometricEvidence, String> {
         let mut scratch = sk.clone();
@@ -186,13 +204,16 @@ pub fn judge_solids(sk: &Sketch) -> Vec<SolidVerdict> {
                     parameter: None,
                     evaluation: current_pose.clone().and_then(|()| geometry(sk, c)),
                 }],
-                Some(sw) => (0..=SWEEP_STEPS)
-                    .map(|k| {
-                        let t =
-                            sw.sample(k, SWEEP_STEPS).expect("inclusive nonzero sweep intervals");
-                        sampled_pose(sk, c, sw, t)
-                    })
-                    .collect(),
+                Some(sw) => match sw.motion() {
+                    Some(m) => rolled_poses(sk, c, sw, m),
+                    None => (0..=SWEEP_STEPS)
+                        .map(|k| {
+                            let t =
+                                sw.sample(k, SWEEP_STEPS).expect("inclusive nonzero sweep intervals");
+                            sampled_pose(sk, c, sw, t)
+                        })
+                        .collect(),
+                },
             };
             SolidVerdict {
                 stmt: c.stmt,

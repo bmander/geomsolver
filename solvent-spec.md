@@ -1,6 +1,13 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.39 — October 2026**
+**Specification, Draft 0.40 — October 2026**
+
+**[0.40] What a pocket encloses at every pose, and a claim over a motion.** A curve that comes back
+to where it started after whole turns (a Wankel bore, the apex's envelope over three) is closed,
+and stands alone in a face as a circle does (§6.8). A body cut by a pocketed prism swept over a
+whole period of a planar motion keeps what the pocket encloses at every pose — its inner envelope
+carried through the prism: a rotor is its blank less its housing turned about it. `claim over
+MOTION in (A, B) { … }` judges its claims at the poses of a motion's roll (§9.8).
 
 **[0.39] Two contacts may share their place.** A pin to a name nothing defines — `path tangent(t ==
 s) ground`, `path curvature(t == s) osc` — makes the contact's parameter that unknown, and every
@@ -1094,8 +1101,9 @@ along the columns, by difference: they enter only a Jacobian, never a residual.
 the instant centre: `side: near` (the default) takes the point nearer the instant centre, `side:
 far` the farther; any other word is **E080**. A curve tool may cut in several places: the roots at
 `from:` are found over the tool's interval, `side` picks among them by their distance from the
-instant centre, and the choice is carried to every other roll by continuity. A generated profile
-over a whole turn that comes back is closed (§6.5).
+instant centre, and the choice is carried to every other roll by continuity. A root where the
+tool stands still (the point a turn is about) is no cut **[0.40]**. A generated profile
+over whole turns that comes back is closed (§6.5) **[0.40]**, and stands alone in a face (§6.8).
 
 ---
 
@@ -1622,7 +1630,7 @@ claim over crank.theta in (0deg, 360deg) {
 
 `claim over NAME in (A, B) { … }` judges every claim in its body as the drawing runs along `NAME`, and reports the **worst** pose reached.  It is Structure-class: it says how the claims inside it are judged and asserts nothing itself.
 
-- `NAME` MUST be a **free variable** of the drawing (§5) — an unknown the solver answers for.  A `param` is a number the document already fixed and sweeping a constant is not a question; naming one, or naming geometry, is **E040**.
+- `NAME` MUST be a **free variable** of the drawing (§5) — an unknown the solver answers for — or **[0.40]** a named motion (§6.14), whose roll the claims run along: every solid placed under it (`solid(S, under: NAME, at: A)`) is read at its angle advanced by the roll, and nothing is solved again.  A `param` is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
 - `A` and `B` are read in the units the free variable's readers are written in: an interval of an angle is an angle, and one of a length is a length.
 - An implementation MUST state that its answer is by **sampling**, and how many poses it took. A pose that did not solve or produced invalid solid geometry cannot certify the claim; the report identifies those failed parameter values, and a sweep with unresolved poses cannot be reported as holding.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
 

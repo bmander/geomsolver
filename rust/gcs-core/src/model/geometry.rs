@@ -70,13 +70,28 @@ impl Sketch {
 
     /// A solved point in world space, with its drawing-plane pose removed.
     pub fn world_point(&self, i: usize) -> [f64;3] {
-        let p = self.point_xy(i);
-        if let Some(i) = self.plane_of(i) {
-            let f = &self.planes[i].frame;
-            let q = crate::plane::in_view(self.params[f.c as usize].value,
-                self.params[f.s as usize].value,self.point_xy(f.origin as usize),p);
-            self.basis(i).lift(q.0,q.1)
-        } else { crate::plane::Basis::page().lift(p.0,p.1) }
+        self.world_in(self.plane_of(i), self.point_xy(i))
+    }
+
+    /// Where a point of `view`'s page stands in space (`None`: the page): `world_point` for page
+    /// coordinates rather than a point, and the inverse of `on_view_sheet` on the view's plane.
+    pub fn world_in(&self, view: Option<usize>, p: (f64, f64)) -> [f64;3] {
+        match view {
+            None => crate::plane::Basis::page().lift(p.0, p.1),
+            Some(v) => {
+                let f = &self.planes[v].frame;
+                let q = crate::plane::in_view(self.params[f.c as usize].value,
+                    self.params[f.s as usize].value, self.point_xy(f.origin as usize), p);
+                self.basis(v).lift(q.0, q.1)
+            }
+        }
+    }
+
+    /// A direction in space as `view`'s page coordinates read it: the linear part of
+    /// `on_view_sheet`.
+    pub fn page_vector_in(&self, view: Option<usize>, d: [f64;3]) -> (f64, f64) {
+        let (a, b) = (self.on_view_sheet(d, view), self.on_view_sheet([0.;3], view));
+        (a.0 - b.0, a.1 - b.1)
     }
     /// Where a point in space lands on the sheet in `view` (the page where `None`): its place in
     /// the view, put on the sheet by the view's datum — `world_point`'s inverse.

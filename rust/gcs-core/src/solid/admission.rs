@@ -20,14 +20,16 @@ type V = [f64;3];
 
 /// The rows of the class, in the order they are asked.
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
-pub enum Condition { Tool, Corner, Motion, Stationary, Reach, Clearance, Single, Fold, Crossing, Regular, Once, Edgewise, Lead }
+pub enum Condition { Tool, Corner, Motion, Stationary, Reach, Clearance, Single, Fold, Crossing, Regular, Once, Edgewise, Lead,
+    Plane, Prisms, Period, Envelope, Wall }
 
 impl Condition {
     pub fn code(self) -> &'static str {
         match self { Condition::Tool => "T1", Condition::Corner => "T2", Condition::Motion => "M1",
             Condition::Stationary => "M2", Condition::Reach => "E0", Condition::Clearance => "E1", Condition::Single => "E2",
             Condition::Fold => "E3", Condition::Crossing => "E4", Condition::Regular => "S1", Condition::Once => "S2",
-            Condition::Edgewise => "S3", Condition::Lead => "S4" }
+            Condition::Edgewise => "S3", Condition::Lead => "S4", Condition::Plane => "P1", Condition::Prisms => "P2",
+            Condition::Period => "P3", Condition::Envelope => "P4", Condition::Wall => "P5" }
     }
     /// What the row asks, in the words the scope document uses.
     pub fn rule(self) -> &'static str {
@@ -46,6 +48,12 @@ impl Condition {
             Condition::Once => "the characteristic reaches the blank in one stretch, one point a ring",
             Condition::Edgewise => "the characteristic never runs along the screw's path",
             Condition::Lead => "the screw's sweep does not cross itself within a lead",
+            Condition::Plane => "the motion turns a plane in itself about axes square to it",
+            Condition::Prisms => "the tool is a stock cut by one pocket, prisms square to that plane through the blank, the \
+                pocket's profile one closed curve",
+            Condition::Period => "the roll is a whole period of the motion",
+            Condition::Envelope => "the pocket's inner envelope is one regular loop that neither folds nor crosses itself",
+            Condition::Wall => "the stock's outer wall never reaches the blank",
         }
     }
 }
@@ -58,13 +66,20 @@ pub struct Refusal {
     pub message: String,
     /// A point in the body's coordinates where the condition fails, when there is one.
     pub witness: Option<V>,
-    /// Whether the sweep is under a screw, so was asked the constant-twist class's rows.
-    pub screw: bool,
+    /// Which class's rows the sweep was asked: by its motion (a screw's) or its tool (prisms').
+    pub asked: Asked,
 }
 
+/// The class a sweep's rows are read from.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Asked { Generating,ConstantTwist,Planar }
+
 impl Refusal {
-    /// The class the sweep was asked to join, by its motion.
-    pub fn class(&self) -> &'static str { if self.screw { "constant-twist class" } else { "generating-sweep class" } }
+    /// The class the sweep was asked to join, by its motion and its tool.
+    pub fn class(&self) -> &'static str {
+        match self.asked { Asked::Generating => "generating-sweep class",Asked::ConstantTwist => "constant-twist class",
+            Asked::Planar => "planar generating class" }
+    }
 }
 
 impl fmt::Display for Refusal {
@@ -165,11 +180,12 @@ pub struct SweepEvidence {
     pub class: Class,
 }
 
-/// The class a sweep is admitted to: a relative rotation's (the generating class, rows M2–E4), or
-/// a screw's (constant twist, rows S1–S4), with the stretch of its characteristic that reaches the
-/// blank at the first placement.
+/// The class a sweep is admitted to: a relative rotation's (the generating class, rows M2–E4), a
+/// screw's (constant twist, rows S1–S4), with the stretch of its characteristic that reaches the
+/// blank at the first placement, or a planar motion's of a pocketed prism (rows P1–P5), with the
+/// pocket's inner envelope.
 #[derive(Clone,Debug)]
-pub enum Class { Generating,ConstantTwist(Box<super::constant_twist::Characteristic>) }
+pub enum Class { Generating,ConstantTwist(Box<super::constant_twist::Characteristic>),Planar(Box<super::planar_class::Found>) }
 
 /// A body admitted to the class, and the only way to have one: `admit_body` makes it, so a
 /// construction that takes one cannot be reached without the gate.
@@ -398,14 +414,39 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         by_sweep.entry(cut.swept).or_default().push(cut.pose);
     }
     let names: BTreeMap<usize,String> = order.iter().map(|&s| (s,sk.solids[s].name.clone())).collect();
-    let screws: BTreeMap<usize,bool> = order.iter().map(|&s| (s,match &sk.solids[s].def {
-        SolidDef::Swept {motion,..} => crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.screw().is_some()),
-        _ => false,
-    })).collect();
+    let asked: BTreeMap<usize,Asked> = order.iter().map(|&s| (s,if super::planar_class::asks(sk,s) { Asked::Planar }
+        else { match &sk.solids[s].def {
+            SolidDef::Swept {motion,..} if crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.screw().is_some()) => Asked::ConstantTwist,
+            _ => Asked::Generating,
+        } })).collect();
     let refuse = |swept: usize,condition,message: String,witness|
-        Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message,witness,screw:screws[&swept]});
+        Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message,witness,asked:asked[&swept]});
     let field = &field;
     let bounds = field.support_bounds().ok().flatten();
+    // a pocketed prism under a planar motion: rows P1–P5, every placement checked, the blank boxed
+    // by its own boundary (a field's support is a construction's box, not the material's)
+    let mut planar: Vec<SweepEvidence> = Vec::new();
+    let planar_box = || -> Option<(V,V)> {
+        let mm = cad::millimetres(sk).ok()?;
+        let blank = crate::brep::recipe::build(&cad::recipe_static(sk,root).ok()?.recipe).ok()?;
+        let (lo,hi) = blank.bounds();
+        Some((lo.map(|x| x/mm),hi.map(|x| x/mm)))
+    };
+    let planar_box = if order.iter().any(|s| asked[s] == Asked::Planar) { planar_box() } else { None };
+    for &swept in order.iter().filter(|s| asked[s] == Asked::Planar) {
+        let (mut found,mut envelope): (Option<SweepEvidence>,_) = (None,None);
+        for &pose in &by_sweep[&swept] {
+            let inside = move |p: V| field.value(pose.point(p)) < -options.margin;
+            let evidence = super::planar_class::admit(sk,swept,&mut envelope,pose,&inside,planar_box,options)
+                .map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
+            found.get_or_insert(evidence);
+        }
+        let mut found = found.expect("a swept cut has a placement");
+        found.sweep = swept; found.name = names[&swept].clone();
+        found.placements = by_sweep[&swept].iter().map(|&pose| Placement {pose,equivalent_to:None}).collect();
+        planar.push(found);
+    }
+    order.retain(|s| asked[s] != Asked::Planar);
     // a placement's check by the class its motion is in
     let check = |contacts: &SweepContacts,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)| match contacts.motion().screw() {
         Some(screw) => check_screw(contacts,inside,bounds.map(|b| screw.extent(b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1]),pose.inverse())),
@@ -452,7 +493,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         reads.points.iter().zip(&reads.inside).all(|(q,&i)| inside(*q) == i)
     });
     if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: compared in {:?}",clock.elapsed()); }
-    let mut admission = Admission {body:root,sweeps:Vec::new()};
+    let mut admission = Admission {body:root,sweeps:planar};
     let mut alike = alike.into_iter();
     for (result,&swept) in first.into_iter().zip(&order) {
         let (contacts,found,reads) = result?;

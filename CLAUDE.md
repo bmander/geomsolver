@@ -248,6 +248,18 @@ exact B-rep (`brep::export::supply_exact`, `Sketch::supply_exact_solid`). Kernel
 vertex cuts the edges it lies inside (`boolean`, after the faces' meetings), a traced fit is laid and
 graded by length and never crowds a vertex it must pass, a cone at its apex writes radius 0.
 `rust/examples/twist_drill/`, `fixtures::drill`, `tests/twist_drill.rs`.
+**The Wankel, the planar class (#65):** a point's planar envelope is its path (`bore :=
+envelope(apex, under: rotor_turn, …)`); `generate::chosen` skips a stationary root. A generated
+curve over whole turns of its motion is closed (`Sketch::curve_closed`), a face's lone loop, split
+at its middle for the recipe. The rotor is a cut: its blank less the housing's wall swept over the
+period (`bound` by a sweep keeps the union's, another set). A pocketed prism under a planar motion
+is admitted by rows P1–P5 (`solid::planar_class`): the pocket's inner envelope over a whole period
+(`envelope::planar::InnerEnvelope`, over a formula or generated source: contact roots per sample,
+kept where inside every pose, corners where an image recurs), built as the blank in common with
+its prism (`brep::sweep::planar`), metered as envelope × slab (`accuracy::Planar`). `claim over
+MOTION` advances the placements under it (`Sweep::motion`). A profile field's walls are boxed
+(`Boxes`); `ssi` cuts an extrusion square in closed form and `boolean` gives its iso edges straight
+pcurves. `rust/examples/wankel/`, `fixtures::wankel`, `tests/{bore,planar_envelope,wankel}.rs`.
 **Export tolerance ([plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets
 pass within half of it of withheld contacts (`contact_trace::Withheld::Sides`), normals within

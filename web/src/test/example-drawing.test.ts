@@ -69,6 +69,12 @@ test('menu examples open files or directories with one V-twin choice', async (t)
     assert.ok(drill.files[`twist_drill/${name}`], name);
   }
   assert.ok(drawings.info(drill.files['twist_drill/drill.svd']).sheets.length);
+  const wankel = await remote.drawing('wankel');
+  assert.equal(wankel.source, 'wankel/wankel.sv');
+  for (const name of ['wankel.sv', 'wankel.svd', 'configuration.sv']) {
+    assert.ok(wankel.files[`wankel/${name}`], name);
+  }
+  assert.ok(drawings.info(wankel.files['wankel/wankel.svd']).sheets.length);
 });
 
 test('a component preview uses edited project dependencies when opened directly', async (t) => {
