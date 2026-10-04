@@ -17,6 +17,19 @@ enum Step {
     Relative {source:usize,observer:usize},
 }
 
+impl Step {
+    /// Whether this step carries the plane with unit `normal` within itself: a turn about an axis
+    /// square to it that does not screw along it, or a slide along it. A relative is its steps'.
+    fn keeps(&self,normal: [f64;3]) -> bool {
+        use crate::space::{cross,dot,norm};
+        match *self {
+            Step::Rotation {axis,advance,..} => advance == 0. && unit(axis).is_some_and(|a| norm(cross(a,normal)) <= 1e-9),
+            Step::Translation {axis,..} => unit(axis).is_some_and(|a| dot(a,normal).abs() <= 1e-9),
+            Step::Relative {..} => true,
+        }
+    }
+}
+
 fn unit(axis: [f64;3]) -> Option<[f64;3]> {
     // sqrt of the sum and not `hypot`: evaluated at every pose, and axes are of drawing size
     let n = crate::space::norm(axis);
@@ -213,20 +226,19 @@ impl Family {
     /// several steps) leaves the plane, and is none: a plane a motion does not preserve has no
     /// such reading.
     pub fn in_plane(&self,normal: [f64;3],point: [f64;3]) -> Option<PlaneRigid> {
-        use crate::space::{dot,cross};
+        use crate::space::dot;
         let normal = unit(normal)?;
         match *self.steps.as_slice() {
-            [Step::Rotation {origin,axis,ratio,phase:_,advance}] => {
+            [ref step @ Step::Rotation {origin,axis,ratio,..}] => {
                 let axis = unit(axis)?;
-                let skew = cross(axis,normal);
-                if advance != 0. || skew[0].dhypot(skew[1]).dhypot(skew[2]) > 1e-9 || ratio == 0. { return None; }
+                if !step.keeps(normal) || ratio == 0. { return None; }
                 // the plane turns about where its axis meets it
                 let along = dot([point[0]-origin[0],point[1]-origin[1],point[2]-origin[2]],axis);
                 Some(PlaneRigid::Turn {centre:std::array::from_fn(|k| origin[k]+along*axis[k]),axis,rate:ratio})
             }
-            [Step::Translation {axis,advance}] => {
+            [ref step @ Step::Translation {axis,advance}] => {
                 let axis = unit(axis)?;
-                if dot(axis,normal).abs() > 1e-9 || advance == 0. { return None; }
+                if !step.keeps(normal) || advance == 0. { return None; }
                 let rate = advance/std::f64::consts::TAU;
                 Some(PlaneRigid::Slide {velocity:axis.map(|x| x*rate)})
             }
@@ -234,43 +246,36 @@ impl Family {
         }
     }
 
-    /// This motion as a program in the plane through `origin` spanned by the unit, orthogonal `x`
-    /// and `y`, when every step carries that plane within itself: each turn about an axis square
-    /// to it (and screwing along none), each slide along it, in postfix order (a relative's source,
-    /// its observer, then the relative), coordinates in the plane's and lengths times `scale`
-    /// (`generate::Op`'s steps, as a generated profile reads them). None where any step leaves the
-    /// plane.
-    pub fn in_frame(&self,origin: [f64;3],x: [f64;3],y: [f64;3],scale: f64) -> Option<Vec<PlanarStep>> {
-        use crate::space::{cross,dot,norm,sub};
-        let z = cross(x,y);
-        let local = |p: [f64;3]| { let d = sub(p.map(|v| v*scale),origin); [dot(d,x),dot(d,y)] };
-        fn emit(family: &Family,i: usize,local: &dyn Fn([f64;3]) -> [f64;2],[x,y,z]: [[f64;3];3],out: &mut Vec<PlanarStep>,scale: f64) -> Option<()> {
-            match family.steps[i] {
-                Step::Rotation {origin,axis,ratio,phase,advance} => {
-                    let axis = unit(axis)?;
-                    let along = dot(axis,z);
-                    if advance != 0. || norm(cross(axis,z)) > 1e-9 { return None }
+    /// This motion as a program in the plane of `frame`, when every step carries that plane within
+    /// itself (`Step::keeps`): each turn about a point of it, each slide along it, in postfix order
+    /// (a relative's source, its observer, then the relative), coordinates in the frame's and
+    /// lengths times `scale` (`generate::planar`'s steps). None where any step leaves the plane.
+    pub fn in_frame(&self,frame: &crate::brep::geom::Frame,scale: f64) -> Option<Vec<PlanarStep>> {
+        fn emit(family: &Family,i: usize,frame: &crate::brep::geom::Frame,scale: f64,out: &mut Vec<PlanarStep>) -> Option<()> {
+            let step = &family.steps[i];
+            if !matches!(step,Step::Relative {..}) && !step.keeps(frame.z) { return None }
+            match *step {
+                Step::Rotation {origin,axis,ratio,phase,..} => {
                     // a turn about the plane's normal reversed is the opposite turn about it
-                    let sign = along.signum();
-                    out.push(PlanarStep::Turn {centre:local(origin),ratio:sign*ratio,phase:sign*phase});
+                    let sign = crate::space::dot(axis,frame.z).signum();
+                    let l = frame.local(origin.map(|v| v*scale));
+                    out.push(PlanarStep::Turn {centre:[l[0],l[1]],ratio:sign*ratio,phase:sign*phase});
                 }
                 Step::Translation {axis,advance} => {
-                    let axis = unit(axis)?;
-                    if dot(axis,z).abs() > 1e-9 { return None }
-                    let (u,v) = (dot(axis,x),dot(axis,y));
-                    let length = u.dhypot(v);
-                    out.push(PlanarStep::Slide {direction:[u/length,v/length],advance:advance*scale});
+                    let d = frame.dir_local(axis);
+                    let length = d[0].dhypot(d[1]);
+                    out.push(PlanarStep::Slide {direction:[d[0]/length,d[1]/length],advance:advance*scale});
                 }
                 Step::Relative {source,observer} => {
-                    emit(family,source,local,[x,y,z],out,scale)?;
-                    emit(family,observer,local,[x,y,z],out,scale)?;
+                    emit(family,source,frame,scale,out)?;
+                    emit(family,observer,frame,scale,out)?;
                     out.push(PlanarStep::Relative);
                 }
             }
             Some(())
         }
         let mut out = Vec::new();
-        emit(self,self.steps.len()-1,&local,[x,y,z],&mut out,scale)?;
+        emit(self,self.steps.len()-1,frame,scale,&mut out)?;
         Some(out)
     }
 

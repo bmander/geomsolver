@@ -660,15 +660,7 @@ fn seed_in(sk: &Sketch, p: usize, view: Option<usize>) -> (f64, f64) {
     if sk.plane_of(p) == view {
         return sk.point_xy(p);
     }
-    let w = sk.world_point(p);
-    match view {
-        None => crate::plane::Basis::page().view_coords(w),
-        Some(v) => {
-            let f = &sk.planes[v].frame;
-            let (c, s) = (sk.params[f.c as usize].value, sk.params[f.s as usize].value);
-            crate::plane::on_page(c, s, sk.point_xy(f.origin as usize), sk.basis(v).view_coords(w))
-        }
-    }
+    sk.on_view_sheet(sk.world_point(p), view)
 }
 
 /// Whether a place reads a point of another view than the point it seeds: then the seeds are

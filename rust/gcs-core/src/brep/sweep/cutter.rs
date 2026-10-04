@@ -93,6 +93,8 @@ impl Loop {
         Place::Piece {index:self.pieces.len()-1,s:self.pieces.last().unwrap().length()}
     }
     pub fn index_of(&self,face: u32) -> Option<usize> { self.pieces.iter().position(|p| p.face == face) }
+    /// Whether the corner after each piece is convex: where the walk turns left, carrying a fan.
+    pub fn convex(&self) -> Vec<bool> { self.corners.iter().map(|c| c.angle > 0.).collect() }
     fn resolve(&self,anchor: Anchor) -> Result<f64,String> {
         let index = self.index_of(anchor.face).ok_or("a profile face is missing at this station")?;
         Ok(self.start_of(index)+anchor.fraction.clamp(0.,1.)*self.pieces[index].length())

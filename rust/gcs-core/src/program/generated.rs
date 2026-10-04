@@ -249,10 +249,11 @@ fn bind(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap, st: &Statement
 pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
     body: &[&Statement], skip: &BTreeSet<StmtId>, diags: &mut Vec<Diag>) -> BTreeSet<StmtId>
 {
-    let decl = |name: &str| body.iter().find_map(|st| match &st.kind {
-        Operation::Decl(d) if d.name.key().text == name => Some(d),
+    let decls: std::collections::BTreeMap<&str, &Decl> = body.iter().filter_map(|st| match &st.kind {
+        Operation::Decl(d) => Some((d.name.key().text.as_str(), &**d)),
         _ => None,
-    });
+    }).collect();
+    let decl = |name: &str| decls.get(name).copied();
     let mut made = BTreeSet::new();
     for st in body {
         let Operation::Decl(d) = &st.kind else { continue };
@@ -286,17 +287,8 @@ pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut 
             let mut cv = profile(sk, d, tool, motion.i())?;
             // the view the prism's face is in is the one the motion keeps: every point the curve
             // is written over stands in it, and it stands where it is drawn
-            let views = |e: EntRef| -> Vec<Option<usize>> {
-                let points = match e.kind {
-                    EntKind::Point => vec![e.i()],
-                    EntKind::Line => vec![sk.lines[e.i()].p1 as usize, sk.lines[e.i()].p2 as usize],
-                    EntKind::Arc => { let a = &sk.arcs[e.i()]; vec![a.center as usize, a.start as usize, a.end as usize] }
-                    _ => Vec::new(),
-                };
-                points.into_iter().map(|p| sk.plane_of(p)).collect()
-            };
-            let view = views(tool)[0];
-            if cv.args.iter().any(|&a| views(a).iter().any(|&v| v != view)) {
+            let view = super::planes::plane_of_entity(sk, tool);
+            if cv.args.iter().any(|&a| super::planes::plane_of_entity(sk, a) != view) {
                 return Err(format!("`{}` generates a surface where its motion keeps the prism's view: the motion's \
                     centres and lines are drawn in that view", d.name.key().text));
             }

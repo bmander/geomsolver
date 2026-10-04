@@ -253,10 +253,7 @@ impl Sketch {
     /// and its basis in space.
     pub fn extrusion_frame(&self, i: usize) -> [f64; crate::kernels::EXTRUSION_FRAME] {
         let ((ox, oy), c, s, b) = match self.curve_view(i) {
-            Some(v) => {
-                let f = &self.planes[v].frame;
-                (self.point_xy(f.origin as usize), self.params[f.c as usize].value, self.params[f.s as usize].value, self.basis(v))
-            }
+            Some(v) => { let (o, c, s) = crate::overview::placement(self, v); (o, c, s, self.basis(v)) }
             None => ((0.0, 0.0), 1.0, 0.0, crate::plane::Basis::page()),
         };
         let mut k = [0.0; crate::kernels::EXTRUSION_FRAME];

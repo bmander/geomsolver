@@ -78,6 +78,18 @@ impl Sketch {
             self.basis(i).lift(q.0,q.1)
         } else { crate::plane::Basis::page().lift(p.0,p.1) }
     }
+    /// Where a point in space lands on the sheet in `view` (the page where `None`): its place in
+    /// the view, put on the sheet by the view's datum — `world_point`'s inverse.
+    pub fn on_view_sheet(&self, w: [f64;3], view: Option<usize>) -> (f64, f64) {
+        match view {
+            None => crate::plane::Basis::page().view_coords(w),
+            Some(v) => {
+                let f = &self.planes[v].frame;
+                let (c, s) = (self.params[f.c as usize].value, self.params[f.s as usize].value);
+                crate::plane::on_page(c, s, self.point_xy(f.origin as usize), self.basis(v).view_coords(w))
+            }
+        }
+    }
 
     // -- geometry -----------------------------------------------------------
 

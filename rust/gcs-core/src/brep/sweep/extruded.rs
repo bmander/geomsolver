@@ -16,7 +16,7 @@ use super::Say;
 use crate::brep::build::Seg;
 use crate::brep::geom::{Curve,Frame};
 use crate::brep::nurbs::Net;
-use crate::generate::{self,Generated,Op,Tool,ToolBody};
+use crate::generate::{self,Generated,Tool};
 use crate::motion::PlanarStep;
 use crate::solid::contact_trace::{Inside,Sheet};
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
@@ -40,13 +40,10 @@ const MOST_SPANS: usize = 8192;
 /// contacts stand at the same stations.
 const SAMPLES: usize = 64;
 const STATIONS: usize = 9;
-/// How near a corner's sides' cuts must reach it, in rolls (degrees), to be read as reaching it.
-const BISECTIONS: usize = 100;
 
-/// One piece of the profile's loop as it cuts: an edge, a line or an arc, or the corner after it,
-/// a point. `fraction` reads where along an edge its cut stands from the tool's parameter (0 at
-/// the walk's start, 1 at its end).
-struct Piece { generated: Generated,outer: Vec<f64>,kind: Kind }
+/// One piece of the profile's loop as it cuts: an edge, a line or an arc, with the rolls its cut
+/// lies on it (`run`), or the corner after it, a point.
+struct Piece { generated: Generated,outer: Vec<f64>,kind: Kind,run: Option<Run> }
 
 #[derive(Clone,Copy)]
 enum Kind {
@@ -59,25 +56,14 @@ enum Kind {
 
 impl Piece {
     fn new(tool: Tool,columns: &[f64],side: f64,program: &[PlanarStep],kind: Kind) -> Piece {
-        let n_theta = columns.len();
-        let mut outer = vec![0.];
-        outer.extend_from_slice(columns);
-        let mut ops = Vec::with_capacity(program.len());
-        for step in program {
-            let at = outer.len();
-            match *step {
-                PlanarStep::Turn {centre,ratio,phase} => {
-                    outer.extend([centre[0],centre[1],ratio,phase]);
-                    ops.push(Op::Turn {centre:at,ratio:at+2,phase:at+3});
-                }
-                PlanarStep::Slide {direction,advance} => {
-                    outer.extend([0.,0.,direction[0],direction[1],advance]);
-                    ops.push(Op::Slide {line:at,advance:at+4});
-                }
-                PlanarStep::Relative => ops.push(Op::Relative),
-            }
-        }
-        Piece {generated:Generated::new(n_theta,tool,side,&ops,ToolBody::None),outer,kind}
+        let (generated,outer) = generate::planar(tool,columns,side,program);
+        Piece {generated,outer,kind,run:None}
+    }
+    /// An edge, with the rolls within `roll` its cut lies on it.
+    fn edge(tool: Tool,columns: &[f64],side: f64,program: &[PlanarStep],kind: Kind,roll: [f64;2]) -> Result<Piece,String> {
+        let mut piece = Piece::new(tool,columns,side,program,kind);
+        piece.run = run(&piece,roll)?;
+        Ok(piece)
     }
     /// The cut at roll `t` (degrees).
     fn cut(&self,t: f64) -> Option<generate::Cut> {
@@ -113,18 +99,11 @@ fn run(piece: &Piece,[a,b]: [f64;2]) -> Result<Option<Run>,String> {
         return Err("an edge's cut lies on it over two stretches of the roll".into())
     };
     let last = (first..marks.len()).take_while(|&k| marks[k]).last().expect("a mark");
-    // the boundary between a roll off the edge and one on it, from the side on it
-    let edge = |off: f64,mut inner: f64| -> f64 {
-        let mut outer = off;
-        for _ in 0..BISECTIONS {
-            let mid = 0.5*(outer+inner);
-            if mid == outer || mid == inner { break }
-            if on(mid) { inner = mid } else { outer = mid }
-        }
-        inner
-    };
-    let lo = if first == 0 { (a,false) } else { (edge(rolls[first-1],rolls[first]),true) };
-    let hi = if last == SCAN { (b,false) } else { (edge(rolls[last+1],rolls[last]),true) };
+    // the boundary between a roll on the edge and one off it, from the side on it, to the last bit
+    let edge = |inner: f64,off: f64| crate::roots::bisect(inner,off,|x,y| 0.5*(x+y),
+        |x,y| { let m = 0.5*(x+y); m != x && m != y },|t| on(t)).0;
+    let lo = if first == 0 { (a,false) } else { (edge(rolls[first],rolls[first-1]),true) };
+    let hi = if last == SCAN { (b,false) } else { (edge(rolls[last],rolls[last+1]),true) };
     // which end of the edge each boundary is: the fraction nearer 0 is the walk's start
     let f = |t: f64| piece.fraction(t).unwrap_or(0.5);
     Ok(Some(if f(lo.0) <= f(hi.0) { Run {start:lo,end:hi} } else { Run {start:hi,end:lo} }))
@@ -157,14 +136,20 @@ pub fn planar_sheet(cut: &SweptCut,inside: Inside,tolerance: Option<Tolerance>,s
     let cutter = Cutter::read(&cut.recipe).ok()?;
     let (walks,extent) = cutter.prism_profile()?;
     let frame = Frame::about(cutter.origin,cutter.axis);
-    let program = cut.family.in_frame(frame.o,frame.x,frame.y,cut.scale)?;
-    Some(build(cut,walks,extent,frame,&program,inside,tolerance,say))
+    let program = cut.family.in_frame(&frame,cut.scale)?;
+    // which corners are convex is the cutter's own reading, as admission's
+    let convex: Vec<Vec<bool>> = match cutter.profile(0.) {
+        Ok(loops) => loops.iter().map(|l| l.convex()).collect(),
+        Err(e) => return Some(Err(ExportRefusal::at(Stage::Reach,e))),
+    };
+    Some(build(cut,walks,&convex,extent,frame,&program,inside,tolerance,say))
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build(cut: &SweptCut,walks: &[Vec<Seg>],extent: [f64;2],frame: Frame,program: &[PlanarStep],inside: Inside,
+fn build(cut: &SweptCut,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],frame: Frame,program: &[PlanarStep],inside: Inside,
     tolerance: Option<Tolerance>,say: &Say) -> Result<Fitted,ExportRefusal> {
     let name = &cut.name;
+    let refused = |stage: Stage,why: String| ExportRefusal::at(stage,format!("`{name}`: {why}"));
     let started = crate::clock::Instant::now();
     let local = |p: V| { let l = frame.local(p); [l[0],l[1]] };
     let lift = |p: P,h: f64| frame.at([p[0],p[1],h]);
@@ -174,14 +159,38 @@ fn build(cut: &SweptCut,walks: &[Vec<Seg>],extent: [f64;2],frame: Frame,program:
         let lifted: Vec<V> = points.iter().flat_map(|&p| stations.iter().map(move |&h| lift(p,h))).collect();
         Ok(inside(&lifted)?.into_iter().any(|b| b))
     };
-    // each loop's pieces, edge k then the corner after it, and where each edge cuts
-    let mut chosen: Option<(Vec<Piece>,Vec<Option<Run>>,Vec<bool>)> = None;
-    for walk in walks {
+    // each piece's stretch of the roll in walk order — an edge's where its cut lies on it, a
+    // corner's from where the edge before reaches it to where the edge after leaves it — or why
+    // it has none
+    let stretch = |pieces: &[Piece],i: usize| -> Result<[f64;2],String> {
+        let n = pieces.len();
+        match pieces[i].kind {
+            Kind::Corner {at,convex} => {
+                let (Some(before),Some(after)) = (pieces[i-1].run,pieces[(i+1)%n].run) else {
+                    return Err(format!("a side of the corner at {at:?} does not cut within the declared roll"))
+                };
+                if !(before.end.1 && after.start.1) {
+                    return Err(format!("the cut of a side of the corner at {at:?} leaves the declared roll before it reaches the corner"))
+                }
+                if !convex {
+                    return Err(format!("the profile's corner at {at:?} is concave: its sides' cuts cross there, which one sheet does \
+                        not follow"))
+                }
+                Ok([before.end.0,after.start.0])
+            }
+            _ => pieces[i].run.map(|r| [r.start.0,r.end.0])
+                .ok_or_else(|| format!("edge {} of the profile does not cut within the declared roll",i/2)),
+        }
+    };
+    // each loop's pieces, edge k then the corner after it
+    let mut chosen: Option<(Vec<Piece>,Vec<bool>)> = None;
+    for (walk,convex) in walks.iter().zip(convex) {
         let mut pieces = Vec::with_capacity(2*walk.len());
         for (k,seg) in walk.iter().enumerate() {
             let (start,end) = (local(seg.start()),local(seg.end()));
             match &seg.curve {
-                Curve::Line {..} => pieces.push(Piece::new(Tool::Line,&[start[0],start[1],end[0],end[1]],1.,program,Kind::Line)),
+                Curve::Line {..} => pieces.push(Piece::edge(Tool::Line,&[start[0],start[1],end[0],end[1]],1.,program,Kind::Line,roll)
+                    .at(Stage::Reach)?),
                 Curve::Circle(circle,r) => {
                     let c = local(circle.o);
                     let mid = local(seg.curve.point(0.5*(seg.t[0]+seg.t[1])));
@@ -190,52 +199,37 @@ fn build(cut: &SweptCut,walks: &[Vec<Seg>],extent: [f64;2],frame: Frame,program:
                     let kind = Kind::Arc {middle:angle(mid),sense,sweep:(seg.t[1]-seg.t[0]).abs()};
                     // a circle cuts on the side of its instant centre and the other: the arc's is the
                     // one whose cut lies on it
-                    let sides: Vec<Piece> = [1.,-1.].into_iter()
-                        .map(|side| Piece::new(Tool::Arc,&[c[0],c[1],0.,0.,0.,0.,*r],side,program,kind)).collect();
-                    let cutting: Vec<bool> = sides.iter().map(|p| run(p,roll).map(|r| r.is_some())).collect::<Result<_,_>>().at(Stage::Reach)?;
-                    let side = match cutting[..] {
-                        [true,true] => return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: an arc of the profile cuts on \
-                            both sides of the instant centre, which one sheet does not follow"))),
-                        [false,true] => 1,
-                        _ => 0,
-                    };
-                    pieces.push(sides.into_iter().nth(side).expect("a side"));
+                    let mut sides: Vec<Piece> = [1.,-1.].into_iter()
+                        .map(|side| Piece::edge(Tool::Arc,&[c[0],c[1],0.,0.,0.,0.,*r],side,program,kind,roll))
+                        .collect::<Result<_,_>>().at(Stage::Reach)?;
+                    if sides.iter().all(|p| p.run.is_some()) {
+                        return Err(refused(Stage::Reach,"an arc of the profile cuts on both sides of the instant centre, which one \
+                            sheet does not follow".into()))
+                    }
+                    let side = if sides[0].run.is_none() && sides[1].run.is_some() { 1 } else { 0 };
+                    pieces.push(sides.swap_remove(side));
                 }
-                _ => return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: the profile has an edge neither a line nor an arc"))),
+                _ => return Err(refused(Stage::Reach,"the profile has an edge neither a line nor an arc".into())),
             }
-            // the corner after the edge: convex where the outward normals turn left across it
-            let next = &walk[(k+1)%walk.len()];
-            let normal = |s: &Seg,w: f64| { let d = local(s.curve.d2(w).1); let d = if s.forward() { d } else { [-d[0],-d[1]] }; [d[1],-d[0]] };
-            let (a,b) = (normal(seg,seg.t[1]),normal(next,next.t[0]));
-            let convex = a[0]*b[1]-a[1]*b[0] > 1e-9*a[0].dhypot(a[1])*b[0].dhypot(b[1]);
-            pieces.push(Piece::new(Tool::Point,&end,1.,program,Kind::Corner {at:end,convex}));
+            pieces.push(Piece::new(Tool::Point,&end,1.,program,Kind::Corner {at:end,convex:convex[k]}));
         }
-        let runs: Vec<Option<Run>> = (0..pieces.len()).map(|i| if i % 2 == 0 { run(&pieces[i],roll) } else { Ok(None) })
-            .collect::<Result<_,_>>().at(Stage::Reach)?;
-        let n = pieces.len();
-        // each piece's stretch of the roll in walk order, where it has one
-        let span = |i: usize| -> Option<[f64;2]> {
-            if i % 2 == 0 { return runs[i].map(|r| [r.start.0,r.end.0]) }
-            let (before,after) = (runs[i-1]?,runs[(i+1)%n]?);
-            (before.end.1 && after.start.1).then_some([before.end.0,after.start.0])
-        };
-        let mut reaching = vec![false;n];
-        for i in 0..n {
-            let Some([a,b]) = span(i) else { continue };
+        let mut reaching = vec![false;pieces.len()];
+        for i in 0..pieces.len() {
+            let Ok([a,b]) = stretch(&pieces,i) else { continue };
             let points: Vec<P> = (0..=SAMPLES).filter_map(|j| pieces[i].cut(a+(b-a)*j as f64/SAMPLES as f64).map(|c| c.c)).collect();
             reaching[i] = in_blank(&points).at(Stage::Reach)?;
         }
         if reaching.iter().any(|r| *r) {
-            if chosen.is_some() { return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: two loops of the profile cut the blank"))) }
-            chosen = Some((pieces,runs,reaching));
+            if chosen.is_some() { return Err(refused(Stage::Reach,"two loops of the profile cut the blank".into())) }
+            chosen = Some((pieces,reaching));
         }
     }
-    let Some((pieces,runs,reaching)) = chosen else {
-        return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: no cut of the profile reaches the blank within the declared roll")))
+    let Some((pieces,reaching)) = chosen else {
+        return Err(refused(Stage::Reach,"no cut of the profile reaches the blank within the declared roll".into()))
     };
     let n = pieces.len();
     if reaching.iter().all(|r| *r) {
-        return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: every piece of the profile cuts the blank, so its sheet would close")))
+        return Err(refused(Stage::Reach,"every piece of the profile cuts the blank, so its sheet would close".into()))
     }
     // the run of pieces cutting the blank: after the longest stretch of the loop that does not, from
     // an edge to an edge
@@ -247,140 +241,113 @@ fn build(cut: &SweptCut,walks: &[Vec<Seg>],extent: [f64;2],frame: Frame,program:
     if last % 2 == 1 { last = (last+1)%n; }
     let order: Vec<usize> = (0..n).map(|k| (first+k)%n).take_while(|&i| i != (last+1)%n).collect();
     if order.len() == n {
-        return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: the profile's cut leaves the blank only along one edge, so its \
-            sheet would close")))
+        return Err(refused(Stage::Reach,"the profile's cut leaves the blank only along one edge, so its sheet would close".into()))
     }
-    let mut stretches: Vec<(usize,[f64;2])> = Vec::with_capacity(order.len());
-    for &i in &order {
-        match pieces[i].kind {
-            Kind::Corner {at,convex} => {
-                let (before,after) = (runs[i-1].expect("an edge in the run cuts"),runs[(i+1)%n]);
-                let Some(after) = after else {
-                    return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: the edge after the corner at {at:?} does not cut \
-                        within the declared roll")))
-                };
-                if !convex {
-                    return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: the profile's corner at {at:?} is concave: its sides' \
-                        cuts cross there, which one sheet does not follow")))
-                }
-                if !(before.end.1 && after.start.1) {
-                    return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: the cut of a side of the corner at {at:?} leaves the \
-                        declared roll before it reaches the corner")))
-                }
-                stretches.push((i,[before.end.0,after.start.0]));
-            }
-            _ => {
-                let Some(r) = runs[i] else {
-                    return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: edge {} of the profile, between two that cut the \
-                        blank, does not cut within the declared roll",i/2)))
-                };
-                stretches.push((i,[r.start.0,r.end.0]));
-            }
-        }
-    }
+    let stretches: Vec<(usize,[f64;2])> = order.iter().map(|&i| stretch(&pieces,i).map(|s| (i,s)))
+        .collect::<Result<_,_>>().map_err(|why| refused(Stage::Reach,why))?;
     (say.stage)(&format!("`{name}`: the profile cuts the blank over {} pieces of its loop in the plane its motion keeps ({:?})",
         order.len(),started.elapsed()));
     (say.mark)(Stage::Reach);
-    // the curve: each stretch's spans halved until each keeps to the envelope at its quarter points
+    // the curve: each stretch's spans halved until each keeps to the envelope at its quarter points;
+    // a span kept carries its exact middle, which the sheet withholds
     let bar = tolerance.map_or(FIT,|t| t.fit().min(FIT));
     let read = |i: usize,t: f64| -> Result<Node,ExportRefusal> {
-        let c = pieces[i].cut(t).ok_or_else(|| ExportRefusal::at(Stage::Sheet,format!("`{name}`: the envelope has no cut at roll \
-            {t:.6} degrees")))?;
+        let c = pieces[i].cut(t).ok_or_else(|| refused(Stage::Sheet,format!("the envelope has no cut at roll {t:.6} degrees")))?;
         Ok(Node {t,c:c.c,dc:c.dc})
     };
-    let mut curve: Vec<(usize,Vec<Node>)> = Vec::new();
+    struct Span { a: Node,b: Node,middle: Option<Node> }
+    let mut curve: Vec<(usize,Vec<Span>)> = Vec::new();
     let (mut error,mut turned,mut spans) = (0_f64,0_f64,0);
     for &(i,[a,b]) in &stretches {
         if !((b-a).abs() > 1e-12*(1.+a.abs())) { continue }
-        let mut nodes: Vec<Node> = (0..=FIRST_SPANS).map(|j| read(i,a+(b-a)*j as f64/FIRST_SPANS as f64)).collect::<Result<_,_>>()?;
-        loop {
-            let mut next = vec![nodes[0]];
-            let mut split = false;
-            for w in nodes.windows(2) {
-                let mut worst = (0_f64,0_f64);
-                for q in [0.25,0.5,0.75] {
-                    let exact = read(i,w[0].t+(w[1].t-w[0].t)*q)?;
-                    let (p,d) = hermite(&w[0],&w[1],q);
-                    worst = (worst.0.max((p[0]-exact.c[0]).dhypot(p[1]-exact.c[1])),worst.1.max(turn_between(d,exact.dc)));
-                }
-                if worst.0 > bar || worst.1 > TURN {
-                    next.push(read(i,0.5*(w[0].t+w[1].t))?);
-                    split = true;
-                } else { (error,turned) = (error.max(worst.0),turned.max(worst.1)); }
-                next.push(w[1]);
+        let nodes: Vec<Node> = (0..=FIRST_SPANS).map(|j| read(i,a+(b-a)*j as f64/FIRST_SPANS as f64)).collect::<Result<_,_>>()?;
+        let mut open: Vec<Span> = nodes.windows(2).rev().map(|w| Span {a:w[0],b:w[1],middle:None}).collect();
+        let mut kept: Vec<Span> = Vec::new();
+        // in walk order: the next span off the top, kept or halved back onto it
+        while let Some(span) = open.pop() {
+            let at = |q: f64| read(i,span.a.t+(span.b.t-span.a.t)*q);
+            let quarters = [at(0.25)?,at(0.5)?,at(0.75)?];
+            let (mut far,mut turn) = (0_f64,0_f64);
+            for (q,exact) in [0.25,0.5,0.75].into_iter().zip(&quarters) {
+                let (p,d) = hermite(&span.a,&span.b,q);
+                (far,turn) = (far.max((p[0]-exact.c[0]).dhypot(p[1]-exact.c[1])),turn.max(turn_between(d,exact.dc)));
             }
-            nodes = next;
-            if spans+nodes.len() > MOST_SPANS {
-                return Err(ExportRefusal::at(Stage::Withheld,format!("`{name}`: the envelope's curve needs more than {MOST_SPANS} \
-                    spans to keep within {:.2e} mm and {TURN} degrees of it",bar)))
+            if far > bar || turn > TURN {
+                open.push(Span {a:quarters[1],b:span.b,middle:None});
+                open.push(Span {a:span.a,b:quarters[1],middle:None});
+            } else {
+                (error,turned) = (error.max(far),turned.max(turn));
+                kept.push(Span {middle:Some(quarters[1]),..span});
             }
-            if !split { break }
+            if spans+kept.len()+open.len() > MOST_SPANS {
+                return Err(refused(Stage::Withheld,format!("the envelope's curve needs more than {MOST_SPANS} spans to keep within \
+                    {bar:.2e} mm and {TURN} degrees of it")))
+            }
         }
-        spans += nodes.len()-1;
-        curve.push((i,nodes));
+        spans += kept.len();
+        curve.push((i,kept));
     }
     if curve.is_empty() {
-        return Err(ExportRefusal::at(Stage::Sheet,format!("`{name}`: the envelope's curve runs over no roll")))
+        return Err(refused(Stage::Sheet,"the envelope's curve runs over no roll".into()))
     }
     // its ends leave the blank, or the sheet would end inside it
-    let ends: Vec<P> = [curve.first(),curve.last()].iter().flatten().zip([0,1])
-        .map(|((_,nodes),e)| if e == 0 { nodes[0].c } else { nodes[nodes.len()-1].c }).collect();
+    let ends = [curve[0].1[0].a.c,curve[curve.len()-1].1.last().expect("a span").b.c];
     if in_blank(&ends).at(Stage::Sheet)? {
-        return Err(ExportRefusal::at(Stage::Sheet,format!("`{name}`: the envelope's curve ends inside the blank (at {:?} or {:?})",
-            ends[0],ends[1])))
+        return Err(refused(Stage::Sheet,format!("the envelope's curve ends inside the blank (at {:?} or {:?})",ends[0],ends[1])))
     }
-    (say.stage)(&format!("`{name}`: the envelope's curve in {spans} spans, within {:.2e} mm and {:.3} degrees of it at their quarter \
-        points ({:?})",error,turned,started.elapsed()));
+    (say.stage)(&format!("`{name}`: the envelope's curve in {spans} spans, within {error:.2e} mm and {turned:.3} degrees of it at their \
+        quarter points ({:?})",started.elapsed()));
     (say.mark)(Stage::Sheet);
     // the Hermite spans as one cubic B-spline, a piece's parameter running with its roll, extruded
     // linearly over the prism: knots of multiplicity three, the poles each span's Bézier's
     let mut knots = vec![0.;4];
-    let mut poles: Vec<P> = vec![curve[0].1[0].c];
+    let mut poles: Vec<P> = vec![ends[0]];
     let mut u = 0.;
-    for (_,nodes) in &curve {
-        let chord: f64 = nodes.windows(2).map(|w| (w[1].c[0]-w[0].c[0]).dhypot(w[1].c[1]-w[0].c[1])).sum();
-        let rate = chord.max(1e-12)/(nodes[nodes.len()-1].t-nodes[0].t).abs();
-        for w in nodes.windows(2) {
-            let dt = w[1].t-w[0].t;
-            poles.push(std::array::from_fn(|k| w[0].c[k]+w[0].dc[k]*dt/3.));
-            poles.push(std::array::from_fn(|k| w[1].c[k]-w[1].dc[k]*dt/3.));
-            poles.push(w[1].c);
+    for (_,kept) in &curve {
+        let chord: f64 = kept.iter().map(|s| (s.b.c[0]-s.a.c[0]).dhypot(s.b.c[1]-s.a.c[1])).sum();
+        let rate = chord.max(1e-12)/(kept[kept.len()-1].b.t-kept[0].a.t).abs();
+        for Span {a,b,..} in kept {
+            let dt = b.t-a.t;
+            poles.push(std::array::from_fn(|k| a.c[k]+a.dc[k]*dt/3.));
+            poles.push(std::array::from_fn(|k| b.c[k]-b.dc[k]*dt/3.));
+            poles.push(b.c);
             u += dt.abs()*rate;
             knots.extend([u;3]);
         }
     }
-    knots.extend([u;1]);
+    knots.push(u);
     let net = Net {du:3,dv:1,uknots:knots,vknots:vec![extent[0],extent[0],extent[1],extent[1]],
         poles:poles.iter().map(|&p| vec![lift(p,extent[0]),lift(p,extent[1])]).collect()};
     let face = crate::brep::build::sheet(net).at(Stage::Fit)?;
     (say.mark)(Stage::Fit);
     // the contacts the sheet carries, for what reads it: its nodes at each station, and the
-    // envelope at each span's middle withheld
+    // envelope at each span's middle withheld; a stretch's first node is the one before's last
     let normal = |d: P,forward: bool| { let l = d[0].dhypot(d[1]).max(1e-300)*if forward { 1. } else { -1. }; frame.dir([d[1]/l,-d[0]/l,0.]) };
-    let mut rows: Vec<(Node,bool)> = Vec::new();
-    let mut middles: Vec<(Node,bool,usize)> = Vec::new();
-    for (i,nodes) in &curve {
-        let forward = nodes[nodes.len()-1].t > nodes[0].t;
-        for (k,w) in nodes.windows(2).enumerate() {
-            if k == 0 && !rows.is_empty() { rows.pop(); }
-            if k == 0 { rows.push((w[0],forward)); }
-            middles.push((read(*i,0.5*(w[0].t+w[1].t))?,forward,rows.len()-1));
-            rows.push((w[1],forward));
+    let mut rows: Vec<(Node,V)> = Vec::new();
+    let mut middles: Vec<(Node,V,usize)> = Vec::new();
+    for (_,kept) in &curve {
+        let forward = kept[kept.len()-1].b.t > kept[0].a.t;
+        rows.pop();
+        rows.push((kept[0].a,normal(kept[0].a.dc,forward)));
+        for s in kept {
+            let middle = s.middle.expect("a kept span's middle");
+            middles.push((middle,normal(middle.dc,forward),rows.len()-1));
+            rows.push((s.b,normal(s.b.dc,forward)));
         }
     }
     let mut sheet = Sheet {points:Vec::new(),normals:Vec::new(),times:Vec::new(),rows:rows.len(),columns:STATIONS,withheld:Vec::new(),
         withheld_normals:Vec::new(),sites:Vec::new()};
-    for (node,forward) in &rows {
+    for (node,n) in &rows {
         for &h in &stations {
             sheet.points.push(lift(node.c,h));
-            sheet.normals.push(normal(node.dc,*forward));
+            sheet.normals.push(*n);
             sheet.times.push(node.t.to_radians());
         }
     }
-    for (node,forward,r) in &middles {
+    for (node,n,r) in &middles {
         for (c,&h) in stations.iter().enumerate() {
             sheet.withheld.push(lift(node.c,h));
-            sheet.withheld_normals.push(normal(node.dc,*forward));
+            sheet.withheld_normals.push(*n);
             sheet.sites.push([2*r+1,2*c]);
         }
     }

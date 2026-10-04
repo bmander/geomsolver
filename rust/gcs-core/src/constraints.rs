@@ -2299,12 +2299,7 @@ impl Constraint {
         if let Some(curve) = self.curve_of() {
             let cv = &sk.curves[curve.i()];
             let d = &sk.curve_defs[cv.def as usize];
-            // a point in space reads the curve's view first: its datum on the sheet and its basis
-            let view = match self.kind {
-                CKind::PointOnExtrusion => sk.extrusion_frame(curve.i()).to_vec(),
-                _ => Vec::new(),
-            };
-            return [view, match &d.body {
+            let mut k = match &d.body {
                 crate::model::CurveBody::Exprs { x, y } => {
                     let mut k =
                         Vec::with_capacity(3 + x.flat.len() + y.flat.len() + cv.values.len());
@@ -2351,7 +2346,12 @@ impl Constraint {
                     k.extend_from_slice(&g.flat);
                     k
                 }
-            }].concat();
+            };
+            // a point in space reads the curve's view first: its datum on the sheet and its basis
+            if self.kind == CKind::PointOnExtrusion {
+                k.splice(0..0, sk.extrusion_frame(curve.i()));
+            }
+            return k;
         }
         match self.kind {
             CKind::Distance | CKind::CoordinateU | CKind::CoordinateV => vec![self.args[2].num()],
@@ -2897,10 +2897,7 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
         // a point in space starts where the curve comes nearest its place in the curve's view
         (CKind::PointOnExtrusion, 2) => {
             let ci = args[1].ent().i();
-            let k = sk.extrusion_frame(ci);
-            let d = crate::space::sub(sk.world_point(args[0].ent().i()), [k[10], k[11], k[12]]);
-            let (a, b) = (crate::space::dot(d, [k[4], k[5], k[6]]), crate::space::dot(d, [k[7], k[8], k[9]]));
-            let (x, y) = crate::plane::on_page(k[2], k[3], (k[0], k[1]), (a, b));
+            let (x, y) = sk.on_view_sheet(sk.world_point(args[0].ent().i()), sk.curve_view(ci));
             sk.curve_nearest_by(ci, |px, py| (px - x).dhypot(py - y))
         }
         (CKind::CurveCurvature, 2) => {
