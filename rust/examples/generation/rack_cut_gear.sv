@@ -7,6 +7,9 @@
 // from the blank.  The flanks it leaves are involutes of the base circle, and the root fillets
 // trochoids of the rack's tip corners.
 //
+// Beside the solid, the sketch carries the same generation in the plane: `involute` and `fillet`
+// are curves of the drawing, the envelopes of the rack's flank and tip corner under `cutting`.
+//
 // `solventc --step` and `--stl` build this exactly (the generating-sweep class,
 // docs/generating-sweeps.md): one tooth space's boundary traced as a sheet, one sector of the
 // gear cut by it, and that sector turned into the whole.  The rack's tip stops at the working
@@ -60,6 +63,15 @@ turn := motion(about: o, ratio: 1)
 rack := motion(along: slide, advance: 2 * pi * rp)
 cutting := motion(rack, relative_to: turn)
 construction space := solid(rack_tooth, under: cutting, from: -60deg, to: 60deg)
+
+// The same motion draws on the sketch what it cuts in the solid: the envelope of the rack's flank
+// is the tooth's involute, and the envelope of its tip corner the root fillet, curves of the
+// drawing lying on the gear's face.  The flank's involute is of the base circle.
+rack_flank := line(t1, t2)
+involute := envelope(rack_flank, under: cutting, from: -30deg, to: 30deg)
+fillet := envelope(t1, under: cutting, from: -30deg, to: 30deg)
+base_c := circle(center: o) hint(r: 18.8)
+radius(rp * cos(alpha)) base_c
 
 gear := solid(blank)
 bore cut gear

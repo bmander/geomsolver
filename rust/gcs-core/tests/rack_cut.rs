@@ -218,12 +218,13 @@ fn a_rack_cut_gear_is_held_to_a_tolerance() {
         .unwrap_or_else(|r| panic!("the STL refused at {:?}: {}", r.stage, r.message));
 }
 
-/// **`rack_cut_spur.sv`**: the same gear written from its teeth, module and pressure angle, the
+/// **`generation/rack_cut_gear.sv`**: the same gear written from its teeth, module and pressure angle, the
 /// rack's tooth placed by dimensions from the blank's centre: it solves to the fixture's numbers
-/// (written there to six places) and is admitted, one sweep placed twenty times.
+/// (written there to six places) and is admitted, one sweep placed twenty times; the involute it
+/// draws in the plane from the same motion is the base circle's.
 #[test]
-fn the_rack_cut_spur_example_is_admitted() {
-    let src = include_str!("../../examples/rack_cut_spur.sv");
+fn the_rack_cut_gear_example_is_admitted() {
+    let src = include_str!("../../examples/generation/rack_cut_gear.sv");
     let mut e = build(src);
     let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
     assert!(r.success, "{}", r.message);
@@ -239,4 +240,15 @@ fn the_rack_cut_spur_example_is_admitted() {
     let gear = e.map.ent_named("gear").unwrap().i();
     let admission = admit_body(&e.sketch, gear, &Options::default()).unwrap_or_else(|e| panic!("refused: {e}"));
     assert_eq!(admission.sweeps().len(), 1);
+    // the planar envelope of the rack's flank, drawn beside the solid, is the base circle's
+    // involute: its normal at every roll is tangent to that circle
+    let (involute, rb) = (e.map.ent_named("involute").unwrap().i(), 20. * 20f64.to_radians().cos());
+    for k in 0..=8 {
+        let t = -20. + 5. * k as f64;
+        let (p, (a, b)) = (e.sketch.curve_point(involute, t),
+                           (e.sketch.curve_point(involute, t - 1e-4), e.sketch.curve_point(involute, t + 1e-4)));
+        let (tx, ty) = (b.0 - a.0, b.1 - a.1);
+        let off = (p.0 * tx + p.1 * ty).abs() / tx.hypot(ty);
+        assert!((off - rb).abs() < 1e-6, "at roll {t} the involute's normal is {off} from the centre, not {rb}");
+    }
 }

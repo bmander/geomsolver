@@ -602,12 +602,12 @@ fn a_circle_osculates_the_mate() {
     assert!((rho - radius_of(&e, mate, t)).abs() < 1e-4);
 }
 
-/// **`generated_spur.sv`**: the rack cuts the tooth, the tooth cuts its mate, the flank's foot is
+/// **`generation/spur_mesh.sv`**: the rack cuts the tooth, the tooth cuts its mate, the flank's foot is
 /// the one freedom — and the claim that the mate's centre of curvature at the mesh lies on the
 /// gear's base circle is judged a theorem.  Moved to another tooth thickness it still is.
 #[test]
 fn the_generated_spur_example_proves_its_claim() {
-    let src = include_str!("../../examples/generated_spur.sv");
+    let src = include_str!("../../examples/generation/spur_mesh.sv");
     for tail in ["", "fix(y == 1.5) f0\n"] {
         let mut e = build(&format!("{src}{tail}"));
         let r = solve(&mut e.sketch, SolveOpts::default());

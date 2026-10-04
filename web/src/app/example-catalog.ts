@@ -23,20 +23,13 @@ const projects: Example[] = [{
     + 'pinion\'s), so edit either radius and the cut is re-timed and refines as you watch.',
   target: { kind: 'file', path: 'lantern_generation.sv' },
 }, {
-  label: 'Spur mesh, generated · envelopes in the plane', key: 'generated_spur',
-  description: 'A rack cuts a pinion\'s tooth, and the tooth cuts its mate: both profiles are '
-    + 'envelopes of a tool carried by a planar motion, curves of the drawing that nothing writes a '
-    + 'formula for. Drag `f0` along the pitch line and the tooth and its mate follow; a circle '
-    + 'osculates the mate where they mesh, and the claim that its centre lies on the gear\'s base '
-    + 'circle is judged a theorem. Edit `alpha` or the pitch radii.',
-  target: { kind: 'file', path: 'generated_spur.sv' },
-}, {
-  label: 'Spur gear, rack cut · swept solid', key: 'rack_cut_spur',
-  description: 'A rack\'s tooth, a trapezoid extruded through the blank, slides along its pitch line '
-    + 'while the blank turns, and what it sweeps through is cut at every tooth: the flanks are '
-    + 'involutes nobody wrote down. Exported exactly (File ▸ Export) as one sector turned into the '
-    + 'whole gear. Edit the module `m` or the pressure angle `alpha`.',
-  target: { kind: 'file', path: 'rack_cut_spur.sv' },
+  label: 'Generation by motion · seven examples', key: 'generation',
+  description: 'Curves and solids nobody draws: what a tool leaves behind as it moves, or the path a '
+    + 'mechanism traces, each a curve the solve can constrain. A Jansen leg whose toe rod solves to '
+    + 'stand on level ground, a dwell linkage fitted by curvature, a heart cam, conjugate cams, '
+    + 'clock gearing, a spur mesh cut twice over, and a rack-cut spur gear exported exactly. The '
+    + 'README says what each shows.',
+  target: { kind: 'directory', path: 'generation', entry: 'stride.sv' },
 }, {
   label: 'Skew axes · views solved in space', key: 'skew_axes',
   description: 'Two shafts that do not meet, one drawn in the front view and one in a side view whose '

@@ -63,7 +63,7 @@ from the first hit to the last, and may not grow past the prism's own length (`B
 A sector's flat caps join across its sides (`brep::pattern`, `Kept::Flat`): a plane square to
 the axis is kept by the turn, its pcurves turned about the axis's foot, and a ring of it is an
 annulus with no seam. A blank reaching its axis is built whole (neighbouring sectors' sides
-would meet in it), so `rust/examples/rack_cut_spur.sv` has a bore. `tests/rack_cut.rs` is the
+would meet in it), so `rust/examples/generation/rack_cut_gear.sv` has a bore. `tests/rack_cut.rs` is the
 gate: one space's volume against arithmetic (an arc of each circle per roll, unioned over the
 roll) to 1e-4, the whole 20-tooth gear patterned from one sector, field agreement, and the
 toleranced build. The OCCT oracle (`--kernel occt`) sections revolutions only.
