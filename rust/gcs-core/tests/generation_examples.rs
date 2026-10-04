@@ -205,3 +205,51 @@ fn dragging_the_stride_crank_keeps_its_rod() {
         assert!((p.0 - at.0).hypot(p.1 - at.1) < 1e-9, "frame {k}: the stride moved");
     }
 }
+
+/// **`gauged_gear.sv`: a contact in space solves the rack's pressure angle** (issue #70).  The
+/// gauge is drawn in a view square to the page and held to the flank the rack's side generates;
+/// the flank's root corner is free, so its lean is what the solve answers.  Checked against the
+/// law of gearing worked out here: at roll `t` the rack's flank (through the held tip corner at
+/// angle `α`, slid `rp·t` along the pitch line) cuts where the normal from the pitch point meets
+/// it, and that point turned back by `t` into the gear is the gauge's place — two equations in
+/// `(α, t)`, solved by Newton.  The gauge lies on the swept solid's boundary too: its material
+/// field changes sign across it.
+#[test]
+fn the_gauge_solves_the_racks_pressure_angle() {
+    let (p, errors, linked) = gcs_core::library::parse_linked(include_str!("../../examples/generation/gauged_gear.sv"));
+    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
+    let mut e = gcs_core::program::elaborate(&p);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    assert_eq!(dof(&mut e), (0, State::Well));
+    let (t1, t2) = (at(&e, "t1"), at(&e, "t2"));
+    let solved = (t2.1 - t1.1).atan2(t2.0 - t1.0);
+    // the gauge's place on the page: 20.58 across, the view standing 1.9 above the centre
+    let (gx, gy, rp) = (20.58, 1.9, 20.0);
+    let place = |a: f64, t: f64| {
+        let (d, s) = ((a.cos(), a.sin()), (t1.0, t1.1 + rp * t));
+        let k = (rp - s.0) * d.0 + (0.0 - s.1) * d.1;
+        let f = (s.0 + k * d.0, s.1 + k * d.1);
+        (t.cos() * f.0 + t.sin() * f.1 - gx, -t.sin() * f.0 + t.cos() * f.1 - gy)
+    };
+    let (mut a, mut t) = (20f64.to_radians(), 0.0);
+    for _ in 0..50 {
+        let (f, h) = (place(a, t), 1e-7);
+        let (fa, ft) = (place(a + h, t), place(a, t + h));
+        let j = [[(fa.0 - f.0) / h, (ft.0 - f.0) / h], [(fa.1 - f.1) / h, (ft.1 - f.1) / h]];
+        let det = j[0][0] * j[1][1] - j[0][1] * j[1][0];
+        a -= (j[1][1] * f.0 - j[0][1] * f.1) / det;
+        t -= (-j[1][0] * f.0 + j[0][0] * f.1) / det;
+    }
+    assert!(place(a, t).0.hypot(place(a, t).1) < 1e-12, "the law of gearing found no flank through the gauge");
+    assert!((solved - a).abs() < 1e-8, "the rack leans {}°, the law of gearing {}°", solved.to_degrees(), a.to_degrees());
+    assert!((solved.to_degrees() - 20.).abs() < 0.01, "the pressure angle is {}°", solved.to_degrees());
+    // and the gauge, in space, is on what the rack sweeps
+    let g = e.sketch.lifted(e.map.ent_named("gauge").unwrap().i());
+    assert!((g[0] - gx).abs() < 1e-9 && (g[1] - 3.).abs() < 1e-9 && (g[2] - gy).abs() < 1e-9, "the gauge stands at {g:?}");
+    let space = e.map.ent_named("space").unwrap().i();
+    let field = gcs_core::solid::MaterialField::read(&e.sketch, space, 1e-10).unwrap();
+    let (inner, outer) = (field.side([g[0] - 1e-6, g[1], g[2]]), field.side([g[0] + 1e-6, g[1], g[2]]));
+    assert!(inner * outer < 0., "the sweep's field reads {inner} and {outer} either side of the gauge");
+}

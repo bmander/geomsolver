@@ -17,6 +17,7 @@ Read them in this order:
 | `pin_wheel.sv` | **Clock gearing.** A lantern pinion's pin generates the wheel's tooth flank: the epicycloid its centre runs, set in by its radius. |
 | `spur_mesh.sv` | **Generation twice over.** A rack cuts a tooth, and the tooth cuts its mate (an involute). The claim that the mate's centre of curvature lies on its base circle is judged a theorem. |
 | `rack_cut_gear.sv` | **The same motion in 2D and 3D.** A rack cuts a 20-tooth spur gear out of a solid blank. `solventc --step --stl` exports it exactly, one sector patterned into the whole. The same motion draws the involute and root fillet as curves on its face. |
+| `gauged_gear.sv` | **A contact in space on a generated surface.** The same gear with its rack's pressure angle left free. A gauge drawn in a view square to the page is held to the flank surface the rack's side cuts, and the solve answers the angle (20°). The flank is the tooth's involute extruded through the gear, and the export builds it that way too (issue #70). |
 
 What the words are:
 
@@ -26,6 +27,9 @@ What the words are:
   another envelope cuts. `side: near | far` picks a circle's side.
 - `p over theta in (a, b)` traces a point of a drawn component as one of its numbers runs. A
   number the drawing leaves unbound (`leg.h`, `bar.ap`) is an unknown the solve answers for.
+- `envelope(surface(prism, edge: e), under: m, …)` is the surface a prism's side cuts. When `m`
+  keeps the prism's view, that surface is `e`'s envelope extruded, and `p on` it holds a point drawn
+  in any view.
 - `solid(tool, under: m, from: a, to: b)` is the solid a tool sweeps through, and `cut` takes
   it out of a body.
 
