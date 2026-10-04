@@ -5,6 +5,11 @@ use crate::constraints::Arg;
 use crate::rng::Rng;
 
 impl Sketch {
+    /// The name a shared contact parameter is pinned to (`t == s`), where `p` is one.
+    pub fn shared_name(&self, p: u32) -> Option<&str> {
+        self.shared.iter().find(|(_, &q)| q == p).map(|(n, _)| n.as_str())
+    }
+
     /// Every length in the sketch, times `k` — what a paste between two documents in different
     /// units does to the figure it carries.
     ///
@@ -79,6 +84,7 @@ impl Sketch {
                     // a Param slot holds a seed on the way in and an index once added; the
                     // index's value was scaled above, the seed is scaled here
                     Some(Arg::Seed { value, .. }) => *value *= k,
+                    Some(Arg::Shared { seed: Some(value), .. }) => *value *= k,
                     // the text stays as written; what it came to converts
                     Some(Arg::Expr(e)) => e.value *= k,
                     _ => {}

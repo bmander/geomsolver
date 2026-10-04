@@ -725,6 +725,7 @@ fn slot_text(name: &str, a: &Arg) -> Option<(bool, String)> {
     let (pinned, v) = match a {
         Arg::Seed { value, pinned } => (*pinned, num(*value)),
         Arg::SeedExpr { text, pinned, .. } => (*pinned, text.clone()),
+        Arg::Tie { name, .. } => (true, name.clone()),
         _ => return None,
     };
     Some(match pinned {
@@ -765,6 +766,7 @@ fn write_arg(name: &str, sk: SpecKind, a: &Arg) -> String {
         Arg::Word(w) => format!("{name}: {w}"),
         Arg::Dim { text, .. } => format!("{name}: {text}"),
         Arg::SeedExpr { text, .. } => format!("{name} == {text}"),
+        Arg::Tie { name: shared, .. } => format!("{name} == {shared}"),
     }
 }
 

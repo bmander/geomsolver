@@ -411,11 +411,31 @@ impl Sketch {
             if matches!(c.args[i], Arg::Param(_)) {
                 continue;   // already allocated (a constraint moved between sketches)
             }
+            let scale = crate::constraints::param_scale(self, c.kind, &c.args, i);
+            if let Arg::Shared { name, seed } = &c.args[i] {
+                // a shared unknown is allocated once, by the first contact naming it; a later one
+                // owns the same index, and a contact added after the last was removed revives it
+                let p = match self.shared.get(name) {
+                    Some(&p) => {
+                        self.params[p as usize].fixed = false;
+                        p
+                    }
+                    None => {
+                        let v = seed.unwrap_or_else(|| {
+                            crate::constraints::seed_param(self, c.kind, &c.args, i)
+                        });
+                        let p = self.param_scaled(v, false, &format!("~{name}"), scale) as u32;
+                        self.shared.insert(name.clone(), p);
+                        p
+                    }
+                };
+                c.args[i] = Arg::Param(p);
+                continue;
+            }
             let (v, pinned) = match c.args[i] {
                 Arg::Seed { value, pinned } => (value, pinned),
                 ref a => (a.num(), false),
             };
-            let scale = crate::constraints::param_scale(self, c.kind, &c.args, i);
             let p = self.param_scaled(v, pinned, &format!("c{id}.{name}"), scale);
             c.args[i] = Arg::Param(p as u32);
         }
@@ -429,13 +449,18 @@ impl Sketch {
     /// report it.  The rebuild walk (`io::without`) is the path that reclaims the slots.
     pub fn remove(&mut self, id: u32) {
         let mut expr = false;
+        let mut own = Vec::new();
         if let Some(c) = self.constraint(id) {
             expr = crate::expr::has_expr(&c.args);
-            for p in c.aux_params() {
+            own = c.aux_params();
+        }
+        self.constraints.retain(|c| c.id != id);
+        // a shared unknown stays free while another contact still owns it
+        for p in own {
+            if !self.constraints.iter().any(|c| c.aux_params().contains(&p)) {
                 self.params[p as usize].fixed = true;
             }
         }
-        self.constraints.retain(|c| c.id != id);
         self.placements.remove(&id);
         if expr {
             // it may have defined a name others read, or been the last reader of a free one

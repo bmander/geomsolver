@@ -371,6 +371,19 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// Whether a pin's text is a bare name nothing here gives a number — neither the scope's
+    /// numbers, a named dimension, a built-in nor a name the component may not reach — and so
+    /// names a shared contact parameter.  Not in a trace's symbolic expansion, whose names are
+    /// the curve's columns.
+    fn unbound(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> bool {
+        self.sym.is_none()
+            && crate::syntax::words::is_name(text)
+            && expr::builtin(text).is_none()
+            && !vals.contains_key(text)
+            && !scope.graph.contains_key(text)
+            && !scope.forbidden.contains(text)
+    }
+
     /// One argument, read over the parameters in scope: a dimension's text settled to text, a
     /// seed or a pin settled to its number.
     ///
@@ -395,6 +408,12 @@ impl<'a> Walk<'a> {
             crate::syntax::Arg::SeedExpr { text, pinned, span } => {
                 match value_of(text, vals, self.units) {
                     Ok(v) => *a = crate::syntax::Arg::Seed { value: v, pinned: *pinned },
+                    // `t == s` over a name nothing defines: the contact's parameter *is* that
+                    // unknown, the instance's own as a free name in a dimension is (`leg.s`)
+                    Err(_) if *pinned && self.unbound(text.trim(), vals, scope) => {
+                        let name = format!("{}{}", scope.instance_prefix(), text.trim());
+                        *a = crate::syntax::Arg::Tie { name, seed: None, span: *span };
+                    }
                     Err(e) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
                 }
             }

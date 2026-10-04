@@ -417,6 +417,7 @@ fn arg_json_value(a: &Arg) -> Json {
         Arg::Str(s) => Json::Str(s.clone()),
         Arg::Expr(e) => Json::Num(e.value),
         Arg::Seed { value, .. } => Json::Num(*value),
+        Arg::Shared { seed, .. } => seed.map_or(Json::Null, Json::Num),
         // only a sketch can say what an owned unknown currently holds; `constraint_json` does
         Arg::Param(_) => Json::Null,
     }

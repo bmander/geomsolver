@@ -541,6 +541,9 @@ fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, 
             })?,
             pinned: *pinned,
         },
+        (SpecKind::Param, Arg::Tie { name, seed, .. }) => {
+            CArg::Shared { name: name.clone(), seed: *seed }
+        }
         (k, other) => {
             return Err((Code::E040, format!("a {} is wanted here, not {other:?}", k.as_str())))
         }
@@ -610,6 +613,13 @@ fn apply_gauge(
                     );
                     continue;
                 };
+                // a `fix` holds a number, and a name nothing defines is an unknown, not one
+                if let Arg::Tie { span, .. } = a {
+                    let m = format!("`fix` holds a number, and `{field}` is pinned to a name \
+                        nothing defines");
+                    bad(Code::E040, *span, m);
+                    continue;
+                }
                 // what the flattener settled the pin to; an expression it could not work out was
                 // reported there
                 let Arg::Seed { value, .. } = a else { continue };
