@@ -77,7 +77,7 @@ fn a_sheet_of_contact_curves_is_one_chart() {
     // The band the stations reach, coarsely: those whose curve anchors in the post.
     let hits: Vec<f64> = (0..96).map(|k| TAU*(k as f64+0.5)/96.)
         .filter(|&a| tracer.trace(&station(a),0.5,Extent::Blank).is_ok()).collect();
-    let band = Band {stations:[hits[0],*hits.last().unwrap()],radius:1.};
+    let band = Band {stations:[hits[0],*hits.last().unwrap()],radius:1.,limit:std::f64::consts::TAU};
     for placement in [Rows::Walk,Rows::Length] {
         let sheet = tracer.sheet(&|a| Ok(station(a)),band,0.5,(band.stations[1]-band.stations[0])*0.15,placement).unwrap();
         eprintln!("{placement:?} rows: sheet {}x{}, {} withheld",sheet.rows,sheet.columns,sheet.withheld.len());
@@ -186,7 +186,7 @@ fn a_refined_sheet_reads_its_new_nodes_where_the_coarse_one_withheld_them() {
     let tracer = Tracer {sweep:&sweep,scale:1.,inside:&inside,debug:false};
     let hits: Vec<f64> = (0..96).map(|k| TAU*(k as f64+0.5)/96.)
         .filter(|&a| tracer.trace(&station(a),0.5,Extent::Blank).is_ok()).collect();
-    let band = Band {stations:[hits[0],*hits.last().unwrap()],radius:1.};
+    let band = Band {stations:[hits[0],*hits.last().unwrap()],radius:1.,limit:std::f64::consts::TAU};
     let at = |a: f64| Ok(station(a));
     let layout = tracer.layout(&at,band,0.5,(band.stations[1]-band.stations[0])*0.15,Rows::Walk).unwrap();
     let centres = layout.sheet(&layout.grid,Withheld::Centres).unwrap();

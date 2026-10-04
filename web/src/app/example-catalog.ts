@@ -31,6 +31,14 @@ const projects: Example[] = [{
     + 'pinion\'s), so edit either radius and the cut is re-timed and refines as you watch.',
   target: { kind: 'file', path: 'lantern_generation.sv' },
 }, {
+  label: 'Generation by motion · seven examples', key: 'generation',
+  description: 'Curves and solids nobody draws: what a tool leaves behind as it moves, or the path a '
+    + 'mechanism traces, each a curve the solve can constrain. A Jansen leg whose toe rod solves to '
+    + 'stand on level ground, a dwell linkage fitted by curvature, a heart cam, conjugate cams, '
+    + 'clock gearing, a spur mesh cut twice over, and a rack-cut spur gear exported exactly. The '
+    + 'README says what each shows.',
+  target: { kind: 'directory', path: 'generation', entry: 'stride.sv' },
+}, {
   label: 'Skew axes · views solved in space', key: 'skew_axes',
   description: 'Two shafts that do not meet, one drawn in the front view and one in a side view whose '
     + 'fold nobody states: the shaft angle and the offset between them are relations in space, and '

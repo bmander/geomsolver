@@ -84,7 +84,8 @@ pub struct Ask<'a> {
 
 /// What every pass of the walk reads: the sweep, the ask, the screw and the twist the rings are
 /// solved under, the tool's material, its size and the roots' tolerance.
-struct Walker<'a> { contacts: &'a SweepContacts,ask: &'a Ask<'a>,screw: Screw,motion: Motion,tool: &'a super::SpatialField,scale: f64,tolerance: f64 }
+struct Walker<'a> { contacts: &'a SweepContacts,patches: Vec<RevolvedSurface>,ask: &'a Ask<'a>,screw: Screw,motion: Motion,
+    tool: &'a super::SpatialField,scale: f64,tolerance: f64 }
 
 /// One pass of the walk: the stations each face was sampled at, its rings there, and the stretch
 /// walked through the blank (face, ring, root), in order along the characteristic.
@@ -101,7 +102,7 @@ impl Walker<'_> {
     /// stretch, and the walk's own end (a double point, a jump at a corner) refused as S1.
     fn pass(&self,stations: Vec<Vec<f64>>) -> Result<Pass,Failure> {
         let (contacts,ask,screw,family) = (self.contacts,self.ask,&self.screw,self.contacts.motion());
-        let patches = contacts.patches();
+        let patches = &self.patches;
         let on_tool = |p: V| self.tool.value(p).abs() < 1e-6;
         let outward = |p: V,n: V| outward(self.tool,p,n);
         // where each ring's roots are, and whether each one's path enters the blank: on every core
@@ -170,10 +171,12 @@ impl Characteristic {
         let screw = family.screw().ok_or((Condition::Motion,"the motion is not a screw".to_string(),None))?;
         let motion = family.at(ask.roll[0]).map_err(|m| (Condition::Motion,m,None))?;
         let tool = contacts.source_material();
-        let patches = contacts.patches();
+        // a screw's characteristic is read ring by ring of a revolved face; a prism's side has none
+        let patches: Vec<RevolvedSurface> = contacts.patches().iter().map(|s| s.revolved().cloned().ok_or_else(|| (Condition::Tool,
+            format!("a screw's tool is a full revolution: `{}` is a prism's side",s.name()),None))).collect::<Result<_,_>>()?;
         let scale = patches.iter().filter_map(|s| s.at(0.,0.).ok()).map(|s| norm(s.position)).fold(1_f64,f64::max);
         let tolerance = ask.root_tolerance*scale;
-        let walker = Walker {contacts,ask,screw,motion,tool,scale,tolerance};
+        let walker = Walker {contacts,patches:patches.clone(),ask,screw,motion,tool,scale,tolerance};
         let n = ask.rows;
         let coarse = walker.pass((0..patches.len()).map(|_| (0..=n).map(|i| i as f64/n as f64).collect()).collect())?;
         let mut samples = coarse.samples();

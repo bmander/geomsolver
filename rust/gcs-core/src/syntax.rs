@@ -896,6 +896,9 @@ impl Attitude {
 pub struct AngularSpan {
     pub from: Arg,
     pub to: Arg,
+    /// Which cut a planar envelope takes where its tool cuts twice (`side: near | far` of the
+    /// instant centre, §6.15.1); a word, checked where the envelope is built.
+    pub side: Option<Name>,
 }
 
 /// A rigid rotation (a screw with `advance:`), a translation, or a relative

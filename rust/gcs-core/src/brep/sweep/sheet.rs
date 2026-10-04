@@ -251,8 +251,10 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
     let tracer = Tracer {sweep,scale,inside,debug:false};
     let started = crate::clock::Instant::now();
     let reach = cutter.reach(&tracer).at(Stage::Reach)?;
-    (say.stage)(&format!("`{name}`: contacts reach the blank over {:.1} degrees of stations and {} profile faces ({:?}: \
-        sections {:.1} s, contacts {:.1} s, {} blank queries {:.1} s)",(reach.stations[1]-reach.stations[0]).to_degrees(),reach.faces,
+    let width = reach.stations[1]-reach.stations[0];
+    let band = if cutter.revolved() { format!("{:.1} degrees",width.to_degrees()) } else { format!("{width:.2} mm") };
+    (say.stage)(&format!("`{name}`: contacts reach the blank over {band} of stations and {} profile faces ({:?}: \
+        sections {:.1} s, contacts {:.1} s, {} blank queries {:.1} s)",reach.faces,
         started.elapsed(),reach.spent[0],reach.spent[1],reach.queried,reach.spent[2]));
     (say.mark)(Stage::Reach);
     // a station: the section loop carrying the reach's walk, and the window between its anchors
@@ -264,7 +266,7 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
         let cutter = &cutter;
         Ok(Station {length:profile.augmented_length(),window,sample:Box::new(move |s| cutter.sample(&profile,s))})
     };
-    let band = Band {stations:reach.stations,radius:reach.radius};
+    let band = Band {stations:reach.stations,radius:reach.radius,limit:cutter.station_limit()};
     let columns: std::cell::RefCell<Option<((f64,f64),Columns)>> = std::cell::RefCell::new(None);
     let widened = |placement: Rows| -> Result<(Layout,Sheet),String> {
         let (mut margin,mut station_margin) = (1.,(reach.stations[1]-reach.stations[0])*0.15);

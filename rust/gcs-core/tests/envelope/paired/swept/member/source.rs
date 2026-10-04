@@ -92,7 +92,7 @@ fn source_contact_curves_reproduce_independent_crown_characteristics() {
                     let mut distance = f64::INFINITY;
                     let mut temporal_match = false;
                     for i in 0..sweep.patches().len() {
-                        match sweep.patches()[i].contacts(u,sweep.motion().at(roll).unwrap(),module*1e-10) {
+                        match sweep.patches()[i].revolved().unwrap().contacts(u,sweep.motion().at(roll).unwrap(),module*1e-10) {
                             Ok(roots) => for root in roots {
                                 let p = root.contact.position;
                                 let gap = (p[0]-world[0]).hypot(p[1]-world[1]).hypot(p[2]-world[2]);

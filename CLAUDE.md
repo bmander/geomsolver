@@ -90,6 +90,17 @@ be meshed; `mesh::stl_shells` checks every component, cavities included, unwelde
 old outputs; renames are atomic per file, not across files. Native-path tests must not hide legacy
 mesh defects.
 
+**Planar generation (§6.15.1, #61):** `envelope(tool, under: m, from:, to:, side:)` over a tool of
+the sheet (point/line/circle/arc/formula curve) and a planar motion (`motion(about: point)` is
+`MotionDef::Turn`, a rotation square to its view in space) is a **curve** (`CurveBody::Envelope`,
+`program/generated.rs`, built with motions after the primitives, before constraints):
+`F = X_s × X_t = 0` in the tool parameter, `C`..`C''` exact by `taylor::Jet`s, `C'''` and θ
+gradients by difference (`generate.rs`); tool and motion geometry are its columns (shared ones
+once; the motion's numbers ride past `tape::MAX_VARS` in `OUTER_MAX`).  Analytic tools are exact to
+`C'''`, so a profile they cut may cut in turn (`generate::Tool::Envelope`, read as its Taylor
+series); the encoding is `Generated::new` and `view` only.  Kernels are generic over
+`kernels::{FORMULA,TRACE,ENVELOPE}` and ask a body for the orders they `need`.
+`tests/generation.rs` is the gate.
 **Named envelopes:** `flank := envelope(source, under: generating, from: -35deg, to: 35deg)`: a
 zero-normal-velocity locus over a finite increasing roll interval (ABI kind 11).
 `GeneratedEnvelope` intersects it with two section equations via the shared DogLeg loop. A nonzero
@@ -187,7 +198,12 @@ body's cuts are one union (`document.rs`, `Spread` lower bounds); `MaterialField
 `solid::admission::admit_body` checks rows T1–E4 (revolved line/arc tools, rotation with changing
 contact, clear at both limits, one contact per point, no fold, no self-crossing), sampled, refusing
 with row and witness; it checks a placement once when the blank reads alike at every point
-checked. A fold is the sign of the area factor times the contact condition's rate. Built in
+checked. A rack is in the class (#61): a prism tool with its caps clear of the blank
+(`ToolSurface::Extruded`, sides only), a translation seen from a rotation (contact affine in the
+roll, `NormalVelocity::Affine`), sectioned along its extrusion (`brep::sweep::cutter`, a station a
+distance), flat caps joined across sector sides (`brep::pattern`, `Kept::Flat`); a blank reaching
+its axis is built whole. `tests/rack_cut.rs`, `examples/generation/rack_cut_gear.sv`. A fold is
+the sign of the area factor times the contact condition's rate. Built in
 `gcs-cli/src/cad/native/sweep_boundary.rs`: cutters sectioned (`backend/sections.cpp`), contact
 times from `SweepContacts::at_point_normal_over` (`PointContactError`), sheets traced and
 resampled by the core (`solid::contact_trace`, fed section samples and nothing else; rows stop
@@ -1447,8 +1463,12 @@ Conventions:
   the innermost drawn instance owning the prefix *whose component has the swept formal*, handed
   on as `CurveSpec::of`.
   The variable table is the swept formal, then the entity formals' scalars **in `entity_params`
-  order** (`EntKind::scalar_names`), then the other numeric formals — `params_on`'s column order,
-  so a tape's gradient *is* a Jacobian row.  `EntKind::Curve` is the one kind whose children
+  order** (`EntKind::scalar_names`), then the numeric formals a drawn instance left unbound
+  (`CurveDef::columns`, keyed; `CurveE::unknowns` names them in `free_vars`), then the other
+  numeric formals (constants) — `params_on`'s column order, so a tape's gradient *is* a Jacobian
+  row.  A whole turn of an `Angle` formal that comes back is closed (`Sketch::curve_closed`): a
+  contact wraps across the seam (`clamp_contacts`).  A dimension reads geometry (`c.r`) only in a
+  trace body; elsewhere E103 (`Walk::dim_reads`).  `EntKind::Curve` is the one kind whose children
   need not be points, built and grafted **last**.
   A curve's kernel belongs to its **definition**, not its type (definitions differ in width).
   `CKind::kernel()` panics for the three curve kinds, `kernel_id_in(sk)` returns
@@ -1458,13 +1478,18 @@ Conventions:
   tests key on.  The tapes ride in `consts`, so `KERNELS` stays `'static`.  Tangency and
   curvature need the **frame** (`kernels::CurveFrame`): `C` to `C'''` and the gradient of the
   first three orders in `[u, θ…]`.  A formula gives it exactly (`tape::eval_series_flat`,
-  `tape::Series`, checked in `tests/tape.rs`).  A trace gives `C`, `C'` exactly and `C'`'s
-  gradient by **forward difference** from the memoised centre (`locus::kernel_frame`: one warm
-  block solve per column from the remembered pose, so the branch cannot change).  **A residual
-  never builds the frame**: `curve_value` gives derivatives alone, only a Jacobian pays for the
-  gradient (the `EllFrame` bargain).  A trace gives no `C''`, so `constraints::validate` refuses
-  curvature against a traced curve and its slot is the `refused` kernel (rows NaN, not
-  converged).  `CKind::family_kernel` (`FamilyKernel`: discriminant = slot, knows its row count)
+  `tape::Series`, checked in `tests/tape.rs`).  A trace gives `C`, `C'` exactly and, asked
+  (`need`, `Val::orders`), `C''`, `C'''` exactly: **Taylor orders of the implicit function**, one solve each
+  with `finish`'s factorisation (`locus::higher_orders`; Wagner–Walther–Schaefer), the rows read
+  over `taylor::Jet`s — each kernel's **Taylor form** (`taylor::form`; affine kernels by their
+  `J`), held to its kernel by `tests/taylor.rs`.  Gradients along θ are a **forward difference**
+  from the memoised centre (`locus::kernel_frame`: one warm block solve per column from the
+  remembered pose, so the branch cannot change); along `u` the exact orders.  **A residual never
+  builds the frame**: `curve_value` gives derivatives alone, only a Jacobian pays for the
+  gradient (the `EllFrame` bargain).  A trace with a row lacking a form
+  (`Locus::without_form`) gives no `C''`: `constraints::validate` refuses curvature naming the
+  kernel and its slot is the `refused` kernel (rows NaN, not converged).  In the plane a
+  generated profile is such a trace (normal through the instant centre; `tests/generation.rs`).  `CKind::family_kernel` (`FamilyKernel`: discriminant = slot, knows its row count)
   is read by `kernel_id_in`, `n_residuals`, the registry and `kernel_table`, so a fourth kind is
   one arm.  `Sketch::curve_polyline` is memoised against everything it reads (picks walk every
   curve per pointer move).  `tests/curve_contact.rs` holds the contacts against the

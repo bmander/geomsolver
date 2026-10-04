@@ -1,20 +1,19 @@
-//! Temporal contact charts for a rotation viewed from another rotating frame.
+//! Temporal contact charts for a rotation viewed from another rotating frame, and for a
+//! translation viewed from a rotating one (a rack against the blank it cuts).
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::{Family,Step};
 use crate::{envelope::{self,Error,Motion,SurfacePoint},plane::{cross,dot}};
 use std::f64::consts::TAU;
 
-/// Normal velocity at one fixed source point under a supported motion family.
-/// f(t) = constant + cosine*cos(phase+rate*t) + sine*sin(phase+rate*t).
+/// Normal velocity at one fixed source point under a supported motion family: under a rotation
+/// relative to a rotation, f(t) = constant + cosine*cos(phase+rate*t) + sine*sin(phase+rate*t);
+/// under a translation relative to a rotation, f(t) = constant + slope*t, one root at most.
 /// Coefficients describe the solved floating-point geometry, not interval bounds.
 #[derive(Clone,Copy,Debug)]
-pub struct NormalVelocity {
-    constant: f64,
-    cosine: f64,
-    sine: f64,
-    rate: f64,
-    phase: f64,
+pub enum NormalVelocity {
+    Sinusoid { constant: f64,cosine: f64,sine: f64,rate: f64,phase: f64 },
+    Affine { constant: f64,slope: f64 },
 }
 
 /// One isolated temporal root. Branch and turn identify the algebraic root and
@@ -42,6 +41,10 @@ impl Family {
             Step::Relative {source,observer} => (&self.steps[source],Some(&self.steps[observer])),
             Step::Translation {..} => return Err("temporal contacts require a rotation or two relative rotations".into()),
         };
+        // a rack: a translation seen from a rotating blank
+        if let (&Step::Translation {axis,advance},Some(observer)) = (source,observer) {
+            return rack(surface,axis,advance,observer);
+        }
         // A screw's translation adds a term linear in the angle, not a harmonic.
         let Step::Rotation {origin,axis,ratio,phase,advance:0.} = *source else {
             return Err("temporal contacts require a rotation or two relative rotations without advance".into());
@@ -67,18 +70,52 @@ impl Family {
         if !coefficients.iter().all(|v| v.is_finite()) {
             return Err("normal-velocity coefficients overflowed".into());
         }
-        Ok(NormalVelocity {constant:coefficients[0],cosine:coefficients[1],sine:coefficients[2],
+        Ok(NormalVelocity::Sinusoid {constant:coefficients[0],cosine:coefficients[1],sine:coefficients[2],
             rate:ratio,phase})
     }
 }
 
+/// For M = B⁻¹ A with A a translation along unit `d` at `s` a radian and B a rotation of rate
+/// vector ω about a line through `o`: the normal is carried unturned, the source moves at `s d`,
+/// and the observer's frame turns under it, so
+/// f(t) = s n·d − n·(ω × (p − o)) − s t n·(ω × d) — affine in the roll.
+fn rack(surface: SurfacePoint,axis: [f64;3],advance: f64,observer: &Step) -> Result<NormalVelocity,String> {
+    let Step::Rotation {origin,axis:w,ratio,advance:0.,..} = *observer else {
+        return Err("a translation's temporal contacts require it be seen from a rotation without advance".into());
+    };
+    let length = |v: [f64;3]| v[0].dhypot(v[1]).dhypot(v[2]);
+    let (d,w) = (axis.map(|v| v/length(axis)),w.map(|v| v/length(w)));
+    let (s,omega) = (advance/TAU,w.map(|v| v*ratio));
+    let n = envelope::contact(surface,Motion::identity()).map_err(|e| format!("{e:?}"))?.normal;
+    let x = std::array::from_fn(|k| surface.position[k]-origin[k]);
+    let (constant,slope) = (s*dot(n,d)-dot(n,cross(omega,x)),-s*dot(n,cross(omega,d)));
+    if !constant.is_finite() || !slope.is_finite() {
+        return Err("normal-velocity coefficients overflowed".into());
+    }
+    Ok(NormalVelocity::Affine {constant,slope})
+}
+
 impl NormalVelocity {
-    /// The equation's constant, cosine and sine coefficients, rate and phase.
-    pub fn coefficients(&self) -> [f64;5] { [self.constant,self.cosine,self.sine,self.rate,self.phase] }
+    /// `[c, a, b]`: the point is in contact at every time exactly where `c` and the vector `(a, b)`
+    /// all vanish, and has roots only where `|c| ≤ |(a, b)|` — a sinusoid's constant and its cosine
+    /// and sine coefficients; an affine form's `0` and its constant and slope, both of which a
+    /// point in contact at every time has zero (admission's M2 looks for that zero between samples
+    /// by the winding of `(a, b)`).
+    pub fn variation(&self) -> [f64;3] {
+        match *self {
+            NormalVelocity::Sinusoid {constant,cosine,sine,..} => [constant,cosine,sine],
+            NormalVelocity::Affine {constant,slope} => [0.,constant,slope],
+        }
+    }
 
     pub fn at(&self,time: f64) -> Result<f64,Error> {
-        let angle = self.phase+self.rate*time;
-        let value = self.constant+self.cosine*angle.dcos()+self.sine*angle.dsin();
+        let value = match *self {
+            NormalVelocity::Sinusoid {constant,cosine,sine,rate,phase} => {
+                let angle = phase+rate*time;
+                constant+cosine*angle.dcos()+sine*angle.dsin()
+            }
+            NormalVelocity::Affine {constant,slope} => constant+slope*time,
+        };
         if time.is_finite() && value.is_finite() { Ok(value) } else { Err(Error::NonFinite) }
     }
 
@@ -93,22 +130,37 @@ impl NormalVelocity {
             return Err(Error::InvalidOptions);
         }
         if !domain.iter().all(|v| v.is_finite()) { return Err(Error::NonFinite); }
-        let amplitude = self.cosine.dhypot(self.sine);
+        let (constant,cosine,sine,rate,phase) = match *self {
+            NormalVelocity::Sinusoid {constant,cosine,sine,rate,phase} => (constant,cosine,sine,rate,phase),
+            // one root where the line crosses zero: degenerate where it is flat on zero
+            NormalVelocity::Affine {constant,slope} => {
+                let span = domain[1].abs().max(domain[0].abs()).max(1.);
+                if slope.abs()*span <= tolerance {
+                    return if constant.abs() <= tolerance { Err(Error::Degenerate) } else { Ok(Vec::new()) };
+                }
+                let time = -constant/slope;
+                if !time.is_finite() { return Err(Error::NonFinite); }
+                let clamped = time.clamp(domain[0],domain[1]);
+                if (time-clamped).abs() > 16.*f64::EPSILON*(time.abs()+1.) { return Ok(Vec::new()); }
+                return Ok(vec![ContactTime {time:clamped,branch:0,turn:0}]);
+            }
+        };
+        let amplitude = cosine.dhypot(sine);
         if !amplitude.is_finite() { return Err(Error::NonFinite); }
-        if self.rate == 0. || amplitude <= tolerance {
+        if rate == 0. || amplitude <= tolerance {
             return if self.at(domain[0])?.abs() <= tolerance { Err(Error::Degenerate) }
-                else if self.rate == 0. || self.constant.abs() > amplitude+tolerance { Ok(Vec::new()) }
+                else if rate == 0. || constant.abs() > amplitude+tolerance { Ok(Vec::new()) }
                 else { Err(Error::Degenerate) };
         }
-        if self.constant.abs() > amplitude+tolerance { return Ok(Vec::new()); }
-        if (self.constant.abs()-amplitude).abs() <= tolerance { return Err(Error::Degenerate); }
-        let phase = self.sine.datan2(self.cosine);
-        let spread = (-self.constant/amplitude).dacos();
-        let angles = domain.map(|t| self.phase+self.rate*t);
+        if constant.abs() > amplitude+tolerance { return Ok(Vec::new()); }
+        if (constant.abs()-amplitude).abs() <= tolerance { return Err(Error::Degenerate); }
+        let offset = sine.datan2(cosine);
+        let spread = (-constant/amplitude).dacos();
+        let angles = domain.map(|t| phase+rate*t);
         let lo = angles[0].min(angles[1]); let hi = angles[0].max(angles[1]);
         if !lo.is_finite() || !hi.is_finite() { return Err(Error::NonFinite); }
         let mut result = Vec::new();
-        for (branch,base) in [phase-spread,phase+spread].into_iter().enumerate() {
+        for (branch,base) in [offset-spread,offset+spread].into_iter().enumerate() {
             // Include neighboring windings so endpoint arithmetic cannot exclude
             // a root by one ulp. Only roundoff-sized endpoint overruns are clamped.
             let first = ((lo-base)/TAU).floor()-1.;
@@ -119,7 +171,7 @@ impl NormalVelocity {
                 let angle = base+TAU*turn as f64;
                 let angular_roundoff = 16.*f64::EPSILON*(angle.abs()+lo.abs()+hi.abs()+1.);
                 if angle < lo-angular_roundoff || angle > hi+angular_roundoff { continue; }
-                let time = (angle-self.phase)/self.rate;
+                let time = (angle-phase)/rate;
                 if !time.is_finite() { return Err(Error::NonFinite); }
                 let clamped = time.clamp(domain[0],domain[1]);
                 let roundoff = 16.*f64::EPSILON*(time.abs()+clamped.abs()+1.);

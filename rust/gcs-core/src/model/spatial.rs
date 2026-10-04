@@ -345,6 +345,10 @@ pub struct SurfaceE {
 #[derive(Clone, Debug)]
 pub enum MotionDef {
     Rotation { axis: u32, ratio: f64, phase: f64, advance: f64 },
+    /// A turn in a view about a point of it (`motion(about: c, …)`): a rotation about the line
+    /// through `centre` square to its view, which is what it reads as in space; in the plane its
+    /// centre is a column of whatever is generated under it (`generate.rs`).
+    Turn { centre: u32, ratio: f64, phase: f64 },
     Translation { axis: u32, advance: f64 },
     Relative { source: u32, observer: u32 },
 }
@@ -365,8 +369,10 @@ impl MotionE {
     /// stands: `def`'s numbers, with each one written as a measurement worked out afresh.  The
     /// one reader of a rotation's numbers, so a snapshot and a cache key cannot disagree.
     pub fn rotation(&self, sk: &crate::model::Sketch) -> Result<(f64, f64, f64), String> {
-        let MotionDef::Rotation { ratio, phase, advance, .. } = self.def else {
-            return Err(format!("`{}` is not a rotation", self.name));
+        let (ratio, phase, advance) = match self.def {
+            MotionDef::Rotation { ratio, phase, advance, .. } => (ratio, phase, advance),
+            MotionDef::Turn { ratio, phase, .. } => (ratio, phase, 0.0),
+            _ => return Err(format!("`{}` is not a rotation", self.name)),
         };
         let mut out = (ratio, phase, advance);
         for m in &self.measured {

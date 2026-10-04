@@ -337,6 +337,21 @@ impl<'a> Walk<'a> {
         fold(&sub, text, self.units)
     }
 
+    /// Set aside each dotted name a dimension's text reads that nothing numeric in scope answers
+    /// to, as written, for `resolve` to judge (`Walk::dim_reads`).  Not in a trace, whose
+    /// dimensions read the geometry's numbers as columns of the curve (§6.5).
+    pub(super) fn note_dim_reads(&mut self, text: &str, span: Span, vals: &BTreeMap<String, Aff>, scope: &Scope) {
+        if self.sym.is_some() {
+            return;
+        }
+        let Ok(p) = expr::parse_in(text, self.units) else { return };
+        for name in p.body.deps() {
+            if name.contains('.') && !vals.contains_key(&name) && !scope.graph.contains_key(&name) {
+                self.dim_reads.push((name, span, scope.clone()));
+            }
+        }
+    }
+
     /// Keep a name as text — a value nothing here can work out, written in where it is read.
     /// The symbolic mode's one policy; `false` outside it, where the caller reports instead.
     pub(super) fn keep_text(
@@ -370,10 +385,13 @@ impl<'a> Walk<'a> {
         scope: &Scope,
     ) {
         match a {
-            crate::syntax::Arg::Dim { text, span } => match self.settle_text(text, vals, scope) {
-                Ok(t) => *text = t,
-                Err(e) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
-            },
+            crate::syntax::Arg::Dim { text, span } => {
+                self.note_dim_reads(text, *span, vals, scope);
+                match self.settle_text(text, vals, scope) {
+                    Ok(t) => *text = t,
+                    Err(e) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
+                }
+            }
             crate::syntax::Arg::SeedExpr { text, pinned, span } => {
                 match value_of(text, vals, self.units) {
                     Ok(v) => *a = crate::syntax::Arg::Seed { value: v, pinned: *pinned },

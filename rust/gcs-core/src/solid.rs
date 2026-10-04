@@ -69,7 +69,7 @@ pub mod sector;
 pub mod export;
 pub mod contact_trace;
 pub mod blank_features;
-pub use sweep_contacts::{SweepContacts,TimedContact,PatchEdge,PointContactError};
+pub use sweep_contacts::{ExtrudedSurface,SweepContacts,TimedContact,PatchEdge,PointContactError,ToolSurface};
 pub use surface::{RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
     SurfaceProjection,SurfaceProjector,RevolvedContact};
 pub(crate) use raycast::RayIndex;

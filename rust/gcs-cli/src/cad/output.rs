@@ -108,20 +108,11 @@ pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8],toler
     let scale = cad::millimetres(sk).map_err(mesh)?;
     let started = std::time::Instant::now();
     let (vertices,triangles) = agreement::stl_triangles(stl,scale).map_err(mesh)?;
-    let verdict = match tolerance {
-        None => {
-            let tiny = contracts::tiny_triangles(&vertices,&triangles,scale);
-            stage(&format!("mesh: {} of {} triangles under {} mm²",tiny.count,tiny.total,contracts::TINY_AREA));
-            tiny.verdict()
-        }
-        Some(t) => {
-            let tiny = contracts::tiny_triangles_under(&vertices,&triangles,scale,(t.deflection()/10.).powi(2));
-            stage(&format!("mesh: {} of {} triangles under {:.1e} mm², at most {} in a millimetre cube",tiny.count,tiny.total,
-                tiny.under,tiny.densest));
-            tiny.clustered()
-        }
-    };
-    if let Err(e) = verdict { keep_rejected(stl); return Err(mesh(e)); }
+    let under = tolerance.map_or(contracts::TINY_AREA,|t| (t.deflection()/10.).powi(2));
+    let tiny = contracts::tiny_triangles_under(&vertices,&triangles,scale,under);
+    stage(&format!("mesh: {} of {} triangles under {:.1e} mm², at most {} in a millimetre cube",tiny.count,tiny.total,
+        tiny.under,tiny.densest));
+    if let Err(e) = tiny.clustered() { keep_rejected(stl); return Err(mesh(e)); }
     mark(Stage::Mesh);
     let field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE).map_err(refused)?;
     let [offset,confirm,value_tolerance] = tolerance.map_or([0.1,0.025,0.02],|t| t.probe());

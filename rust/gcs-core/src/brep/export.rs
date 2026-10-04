@@ -165,20 +165,11 @@ pub fn field_agreement(sk: &Sketch,body: usize,stl: &[u8],tolerance: Option<Tole
     let scale = cad::millimetres(sk).map_err(mesh)?;
     let started = crate::clock::Instant::now();
     let (vertices,triangles) = agreement::stl_triangles(stl,scale).map_err(mesh)?;
-    let verdict = match tolerance {
-        None => {
-            let tiny = contracts::tiny_triangles(&vertices,&triangles,scale);
-            (say.stage)(&format!("mesh: {} of {} triangles under {} mm²",tiny.count,tiny.total,contracts::TINY_AREA));
-            tiny.verdict()
-        }
-        Some(t) => {
-            let tiny = contracts::tiny_triangles_under(&vertices,&triangles,scale,(t.deflection()/10.).dpowi(2));
-            (say.stage)(&format!("mesh: {} of {} triangles under {:.1e} mm², at most {} in a millimetre cube",tiny.count,tiny.total,
-                tiny.under,tiny.densest));
-            tiny.clustered()
-        }
-    };
-    verdict.map_err(mesh)?;
+    let under = tolerance.map_or(contracts::TINY_AREA,|t| (t.deflection()/10.).dpowi(2));
+    let tiny = contracts::tiny_triangles_under(&vertices,&triangles,scale,under);
+    (say.stage)(&format!("mesh: {} of {} triangles under {:.1e} mm², at most {} in a millimetre cube",tiny.count,tiny.total,
+        tiny.under,tiny.densest));
+    tiny.clustered().map_err(mesh)?;
     (say.mark)(Stage::Mesh);
     let field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE).map_err(refused)?;
     let [offset,confirm,value_tolerance] = tolerance.map_or([0.1,0.025,0.02],|t| t.probe());

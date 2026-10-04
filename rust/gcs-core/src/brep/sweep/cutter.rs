@@ -1,11 +1,15 @@
-//! A swept cut's cutter, sectioned by the half-planes of its axis (its stations) exactly: a solid
-//! of revolutions about lines parallel to that axis (`brep::section`), each section a loop of
-//! pieces, every piece a stretch of one revolution's meridian (its face) walked in augmented arc
-//! length — length along the pieces, and at a convex corner the turning of the normal across its
-//! fan — and where the cutter's contacts within the declared roll enter the blank fixes the band
-//! of stations and the stretch of the walk the sheet spans (`Cutter::reach`).
+//! A swept cut's cutter, sectioned exactly at its stations: a solid of revolutions about lines
+//! parallel to one axis (`brep::section`) by the half-planes of that axis, a station an angle; or
+//! a prism by planes square to its extrusion, a station a distance along it, every section the
+//! profile itself (a rack's tooth). Each section is a loop of pieces, every piece a stretch of one
+//! face (a revolution's meridian, a prism side's edge) walked in augmented arc length — length
+//! along the pieces, and at a convex corner the turning of the normal across its fan — and where
+//! the cutter's contacts within the declared roll enter the blank fixes the band of stations and
+//! the stretch of the walk the sheet spans (`Cutter::reach`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
+use crate::brep::build::{walks,Profile,Seg};
+use crate::brep::geom::Frame;
 use crate::brep::planar::Step;
 use crate::brep::section::Sectioned;
 use crate::json::Json;
@@ -31,10 +35,20 @@ fn unit(a: V) -> Result<V,String> {
     Ok(a.map(|x| x/n))
 }
 
-/// One piece of a section loop: a step of the section, its face (the step's tag), and its points
-/// along the walk with their cumulative chord length.
+/// What a piece is a stretch of: a step of a revolved section, or edge `k` of a prism profile's
+/// loop `l`.
 #[derive(Clone)]
-struct Piece { face: u32,reversed: bool,step: Step,points: Vec<V>,lengths: Vec<f64> }
+enum Source { Meridian(Step),Edge(usize,usize) }
+
+/// Where a loop's station cuts the cutter: the half-plane of the axis towards a side, or the plane
+/// square to a prism's extrusion at a distance along it.
+#[derive(Clone,Copy)]
+enum Cut { Side(V),Offset(f64) }
+
+/// One piece of a section loop: what it is a stretch of, its face (a tag the same at every
+/// station), and its points along the walk with their cumulative chord length.
+#[derive(Clone)]
+struct Piece { face: u32,reversed: bool,source: Source,points: Vec<V>,lengths: Vec<f64> }
 impl Piece {
     fn length(&self) -> f64 { *self.lengths.last().unwrap() }
     /// The step's own parameter at arc length `s` along the walk.
@@ -55,9 +69,9 @@ impl Piece {
 struct Corner { position: V,normals: [V;2],angle: f64 }
 
 /// One section loop at a station: pieces in walk order, corner `k` after piece `k` (cyclically),
-/// cut at the half-plane towards `side`.
+/// cut where `cut` says.
 #[derive(Clone)]
-pub struct Loop { pieces: Vec<Piece>,corners: Vec<Corner>,side: V }
+pub struct Loop { pieces: Vec<Piece>,corners: Vec<Corner>,cut: Cut }
 
 /// Where a place on a loop is: on a piece at arc length, or in a corner's fan.
 enum Place { Piece {index: usize,s: f64},Fan {index: usize,fraction: f64} }
@@ -91,38 +105,122 @@ impl Loop {
 pub struct Anchor { pub face: u32,fraction: f64 }
 
 /// The band and walk chosen from where the declared roll's contacts enter the blank: station
-/// angles, the walk's anchors in loop order, and the profile's mean distance from the axis (for
-/// the columns' spacing), with where the search's time went (sections, contacts, blank queries)
-/// and how many points it asked the blank about.
+/// angles (or distances), the walk's anchors in loop order, and the millimetres of space one unit
+/// of station is worth across the band (the profile's mean distance from the axis; 1 along a
+/// prism), for the columns' spacing, with where the search's time went (sections, contacts, blank
+/// queries) and how many points it asked the blank about.
 pub struct Reach { pub stations: [f64;2],pub start: Anchor,pub end: Anchor,pub faces: usize,pub radius: f64,
     pub spent: [f64;3],pub queried: usize }
 
-/// A cutter as its stations section it.
-pub struct Cutter { pub origin: V,pub axis: V,side: V,sec: Sectioned,sections: std::sync::Mutex<BTreeMap<u64,Vec<Loop>>> }
+/// A prism as its stations section it: its profile's loops walked in its plane (outer
+/// counter-clockwise about the extrusion), and the extrusion's extent from that plane.
+struct Extruded { walks: Vec<Vec<Seg>>,extent: [f64;2] }
+
+impl Extruded {
+    /// Edge `k` of loop `l` at fraction `t`, lifted `h` along the extrusion `n`: its point, and the
+    /// side face's outward normal (the walk's direction across `n`, since the material lies left).
+    fn at(&self,n: V,l: usize,k: usize,h: f64,t: f64) -> (V,V) {
+        let seg = &self.walks[l][k];
+        let w = seg.t[0]+(seg.t[1]-seg.t[0])*t;
+        let (p,d,_) = seg.curve.d2(w);
+        let d = scale(d,(seg.t[1]-seg.t[0]).signum());
+        let normal = cross(d,n);
+        (std::array::from_fn(|i| p[i]+n[i]*h),scale(normal,1./norm(normal).max(1e-300)))
+    }
+}
+
+/// What the stations section.
+enum Kind { Revolved { side: V,sec: Sectioned },Extruded(Extruded) }
+
+/// A cutter as its stations section it: about `axis` through `origin` (a prism's extrusion from a
+/// point of its profile's plane).
+pub struct Cutter { pub origin: V,pub axis: V,kind: Kind,sections: std::sync::Mutex<BTreeMap<u64,Vec<Loop>>> }
 
 impl Cutter {
     /// The cutter of `recipe` (millimetres), or why the core does not section it.
     pub fn read(recipe: &Json) -> Result<Cutter,String> {
-        let sec = Sectioned::read(recipe)?.map_err(|e| format!("the core sections a cutter of revolutions about parallel lines only: {e}"))?;
+        if let Some(cutter) = Cutter::prism(recipe)? { return Ok(cutter) }
+        let sec = Sectioned::read(recipe)?.map_err(|e| format!("the core sections a cutter of revolutions about parallel lines, \
+            or a prism, only: {e}"))?;
         let (origin,axis) = (sec.origin,unit(sec.axis)?);
         let seed = if axis[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
         let side = unit(cross(cross(axis,seed),axis))?;
-        Ok(Cutter {origin,axis,side,sec,sections:Default::default()})
+        Ok(Cutter {origin,axis,kind:Kind::Revolved {side,sec},sections:Default::default()})
     }
-    fn side_at(&self,angle: f64) -> V {
-        let other = cross(self.axis,self.side);
-        std::array::from_fn(|k| self.side[k]*angle.dcos()+other[k]*angle.dsin())
+    /// A recipe whose root is one prism, as its sections: none for any other recipe.
+    fn prism(recipe: &Json) -> Result<Option<Cutter>,String> {
+        let field = |j: &Json,k: &str| j.get(k).cloned().ok_or(format!("recipe: no `{k}`"));
+        let root = field(recipe,"root")?.as_i64();
+        let nodes = field(recipe,"nodes")?;
+        let Some(node) = nodes.arr().iter().find(|n| n.get("id").is_some_and(|i| i.as_i64() == root)) else { return Ok(None) };
+        if !node.get("kind").is_some_and(|k| k.as_str() == "prism") { return Ok(None) }
+        let profile = Profile::from_json(&field(node,"profile")?)?;
+        let (from,to) = (field(node,"from")?.as_f64(),field(node,"to")?.as_f64());
+        let axis = unit(profile.normal)?;
+        let plane = Frame::about(profile.origin,axis);
+        let walks = walks(&profile,&|q| { let l = plane.local(q); [l[0],l[1]] })?;
+        if walks.iter().flatten().any(|s| matches!(s.curve,crate::brep::geom::Curve::BSpline(_))) {
+            return Err("the core sections a prism of lines and arcs only".into())
+        }
+        Ok(Some(Cutter {origin:profile.origin,axis,kind:Kind::Extruded(Extruded {walks,extent:[from.min(to),from.max(to)]}),
+            sections:Default::default()}))
+    }
+    /// Whether a station is an angle about the axis (else a distance along a prism).
+    pub fn revolved(&self) -> bool { matches!(self.kind,Kind::Revolved {..}) }
+    /// How far the band of stations may run before the sheet is said not to leave the blank: a
+    /// whole turn about the axis, or a prism's own length (past it a cap would be in the blank).
+    pub fn station_limit(&self) -> f64 {
+        match &self.kind { Kind::Revolved {..} => TAU,Kind::Extruded(x) => x.extent[1]-x.extent[0] }
+    }
+    /// A piece's point at fraction `t` of its source, and the cutter's outward normal there.
+    fn at(&self,cut: Cut,source: &Source,t: f64) -> (V,V) {
+        match (&self.kind,cut,source) {
+            (Kind::Revolved {sec,..},Cut::Side(side),Source::Meridian(step)) => sec.at(side,step,t),
+            (Kind::Extruded(x),Cut::Offset(h),&Source::Edge(l,k)) => x.at(self.axis,l,k,h,t),
+            _ => unreachable!("a piece is cut as its cutter is"),
+        }
+    }
+    fn side_at(side: V,axis: V,angle: f64) -> V {
+        let other = cross(axis,side);
+        std::array::from_fn(|k| side[k]*angle.dcos()+other[k]*angle.dsin())
     }
     /// The section loops at the station `angle`, each with its pieces oriented as the walk goes and
     /// its corners' fans (kept: the stations a sheet is traced at are asked for repeatedly).
     pub fn profile(&self,angle: f64) -> Result<Vec<Loop>,String> {
         if let Some(loops) = self.sections.lock().unwrap_or_else(|e| e.into_inner()).get(&angle.to_bits()) { return Ok(loops.clone()) }
-        let loops = self.loops(self.side_at(angle))?;
+        let loops = match &self.kind {
+            Kind::Revolved {side,sec} => self.loops(sec,Cutter::side_at(*side,self.axis,angle))?,
+            Kind::Extruded(x) => self.extruded_loops(x,angle),
+        };
         self.sections.lock().unwrap_or_else(|e| e.into_inner()).insert(angle.to_bits(),loops.clone());
         Ok(loops)
     }
-    fn loops(&self,side: V) -> Result<Vec<Loop>,String> {
-        let region = self.sec.section(side)?;
+    /// A prism's section at `h` along its extrusion: its profile, each edge a face.
+    fn extruded_loops(&self,x: &Extruded,h: f64) -> Vec<Loop> {
+        x.walks.iter().enumerate().map(|(l,walk)| {
+            let cut = Cut::Offset(h);
+            let pieces: Vec<Piece> = (0..walk.len()).map(|k| {
+                let source = Source::Edge(l,k);
+                let points: Vec<V> = (0..=SAMPLES_PER_PIECE).map(|j| self.at(cut,&source,j as f64/SAMPLES_PER_PIECE as f64).0).collect();
+                let mut lengths = vec![0.];
+                for w in points.windows(2) { lengths.push(lengths.last().unwrap()+distance(w[0],w[1])); }
+                Piece {face:((l as u32+1) << 16) | k as u32,reversed:false,source,points,lengths}
+            }).collect();
+            // convex where the walk turns left about the extrusion: the material is on its left
+            let corners = (0..pieces.len()).map(|k| {
+                let next = &pieces[(k+1)%pieces.len()];
+                let position = *pieces[k].points.last().unwrap();
+                let (a,b) = (self.at(cut,&pieces[k].source,1.).1,self.at(cut,&next.source,0.).1);
+                let angle = dot(a,b).clamp(-1.,1.).dacos();
+                let convex = angle > 1e-6 && dot(cross(a,b),self.axis) > 0.;
+                Corner {position,normals:[a,b],angle:if convex { angle } else { 0. }}
+            }).collect();
+            Loop {pieces,corners,cut}
+        }).collect()
+    }
+    fn loops(&self,sec: &Sectioned,side: V) -> Result<Vec<Loop>,String> {
+        let region = sec.section(side)?;
+        let cut = Cut::Side(side);
         let plane_normal = unit(cross(self.axis,side))?;
         let in_plane = |p: V| { let d = sub(p,self.origin); [dot(d,side),dot(d,self.axis)] };
         let on_axis = |p: [f64;2]| p[0].abs() <= ON_AXIS;
@@ -141,14 +239,14 @@ impl Cutter {
                 let mut points = Vec::with_capacity(SAMPLES_PER_PIECE+1);
                 let mut lengths = vec![0.];
                 for j in 0..=SAMPLES_PER_PIECE {
-                    let p = self.sec.at(side,step,j as f64/SAMPLES_PER_PIECE as f64).0;
+                    let p = sec.at(side,step,j as f64/SAMPLES_PER_PIECE as f64).0;
                     if let Some(&last) = points.last() {
                         lengths.push(lengths.last().unwrap()+distance(p,last));
                         area += dot(plane_normal,cross(sub(last,self.origin),sub(p,self.origin)));
                     }
                     points.push(p);
                 }
-                pieces.push(Piece {face:step.tag,reversed:false,step:*step,points,lengths});
+                pieces.push(Piece {face:step.tag,reversed:false,source:Source::Meridian(*step),points,lengths});
             }
             if area < 0. { reverse(&mut pieces); }
             // a face the section meets twice (a revolution about another line, which the half-plane
@@ -173,7 +271,7 @@ impl Cutter {
             for k in 0..pieces.len() {
                 let next = (k+1)%pieces.len();
                 let position = *pieces[k].points.last().unwrap();
-                let normal = |p: &Piece,at_end: bool| { let t = if p.reversed != at_end { 1. } else { 0. }; self.sec.at(side,&p.step,t).1 };
+                let normal = |p: &Piece,at_end: bool| { let t = if p.reversed != at_end { 1. } else { 0. }; self.at(cut,&p.source,t).1 };
                 let a = normal(&pieces[k],true);
                 if axis_closed && next == 0 { corners.push(Corner {position,normals:[a,a],angle:0.}); continue }
                 let b = normal(&pieces[next],false);
@@ -186,7 +284,7 @@ impl Cutter {
                 };
                 corners.push(Corner {position,normals:[a,b],angle:if convex { angle } else { 0. }});
             }
-            loops.push(Loop {pieces,corners,side});
+            loops.push(Loop {pieces,corners,cut});
         }
         Ok(loops)
     }
@@ -196,7 +294,7 @@ impl Cutter {
         match profile.locate(s) {
             Place::Piece {index,s} => {
                 let piece = &profile.pieces[index];
-                let (position,normal) = self.sec.at(profile.side,&piece.step,piece.parameter(s));
+                let (position,normal) = self.at(profile.cut,&piece.source,piece.parameter(s));
                 Ok(Sample {position,normal})
             }
             Place::Fan {index,fraction} => {
@@ -212,6 +310,12 @@ impl Cutter {
         let (sweep,mm,inside) = (tracer.sweep,tracer.scale,tracer.inside);
         let declared = sweep.domain();
         let stations = 96;
+        // half a step in from either end, round the axis or along the prism
+        let (cyclic,station) = match &self.kind {
+            Kind::Revolved {..} => (true,[0.,TAU]),
+            Kind::Extruded(x) => (false,x.extent),
+        };
+        let station = |c: f64| station[0]+(station[1]-station[0])*(c+0.5)/stations as f64;
         let mut inside_stations = Vec::new();
         let mut face_hits: BTreeMap<u32,(f64,f64)> = BTreeMap::new();
         let mut order: Option<Vec<u32>> = None;
@@ -219,7 +323,7 @@ impl Cutter {
         let (mut spent,mut queried) = ([0.;3],0);
         // half a step off the side, every station's section first, on every core
         let clock = crate::clock::Instant::now();
-        let mut sections = crate::par::indices(stations,|c| self.profile(TAU*(c as f64+0.5)/stations as f64)).into_iter();
+        let mut sections = crate::par::indices(stations,|c| self.profile(station(c as f64))).into_iter();
         spent[0] += clock.elapsed().as_secs_f64();
         for c in 0..stations {
             let mut hit_here = false;
@@ -272,17 +376,23 @@ impl Cutter {
             if hit_here { inside_stations.push(c); }
         }
         let order = order.ok_or("no contact of the cutter within its declared roll lies inside the blank")?;
-        // the station band: the complement of the largest gap between hits
-        let mut gap = (0,0);
-        for (i,&c) in inside_stations.iter().enumerate() {
-            let next = inside_stations[(i+1)%inside_stations.len()];
-            let width = (next as i64-c as i64).rem_euclid(stations as i64);
-            if width > gap.0 { gap = (width,i); }
-        }
-        let first = inside_stations[(gap.1+1)%inside_stations.len()];
-        let last = inside_stations[gap.1];
-        let span = (last as i64-first as i64).rem_euclid(stations as i64) as f64;
-        let lo = TAU*(first as f64+0.5)/stations as f64;
+        // the station band: round the axis, the complement of the largest gap between hits; along a
+        // prism, from the first hit to the last
+        let (first,span) = if cyclic {
+            let mut gap = (0,0);
+            for (i,&c) in inside_stations.iter().enumerate() {
+                let next = inside_stations[(i+1)%inside_stations.len()];
+                let width = (next as i64-c as i64).rem_euclid(stations as i64);
+                if width > gap.0 { gap = (width,i); }
+            }
+            let (first,last) = (inside_stations[(gap.1+1)%inside_stations.len()],inside_stations[gap.1]);
+            (first,(last as i64-first as i64).rem_euclid(stations as i64) as f64)
+        } else {
+            (inside_stations[0],(inside_stations[inside_stations.len()-1]-inside_stations[0]) as f64)
+        };
+        let (lo,hi) = (station(first as f64),station(first as f64+span));
+        // a unit of station along a prism is a millimetre
+        let radius = if cyclic { radius_sum/radius_count.max(1) as f64 } else { 1. };
         // the walk: the contiguous run of hit faces in loop order, likewise
         let hit: Vec<usize> = order.iter().enumerate().filter(|(_,f)| face_hits.contains_key(f)).map(|(i,_)| i).collect();
         let n = order.len();
@@ -293,9 +403,8 @@ impl Cutter {
             if width > biggest.0 { biggest = (width,i); }
         }
         let (start_face,end_face) = (order[hit[(biggest.1+1)%hit.len()]],order[hit[biggest.1]]);
-        Ok(Reach {stations:[lo,lo+TAU*span/stations as f64],start:Anchor {face:start_face,fraction:face_hits[&start_face].0},
-            end:Anchor {face:end_face,fraction:face_hits[&end_face].1},faces:hit.len(),radius:radius_sum/radius_count.max(1) as f64,
-            spent,queried})
+        Ok(Reach {stations:[lo,hi],start:Anchor {face:start_face,fraction:face_hits[&start_face].0},
+            end:Anchor {face:end_face,fraction:face_hits[&end_face].1},faces:hit.len(),radius,spent,queried})
     }
     /// The augmented range between the anchors on a station's loop, widened by `margin` each side.
     pub fn range(profile: &Loop,reach: &Reach,margin: f64) -> Result<[f64;2],String> {

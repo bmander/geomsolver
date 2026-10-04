@@ -343,6 +343,9 @@ impl Meter {
             let contacts = SweepContacts::read(sk,cut.swept,tol)?;
             let mut faces = Vec::new();
             for patch in contacts.patches() {
+                let super::ToolSurface::Revolved(patch) = patch else {
+                    return Err(format!("`{}`: the meter reads the cuts of revolved tools only, not a prism's sides",patch.name()));
+                };
                 let index = surfaces.iter().position(|s: &Surface| s.generated && s.name == patch.name)
                     .unwrap_or_else(|| { surfaces.push(Surface {name:patch.name.clone(),generated:true}); surfaces.len()-1 });
                 faces.push(surface_face(patch,index)?);
@@ -666,6 +669,9 @@ impl Sweep {
             // carried along its path (`Screw::carry`) a cell's width a step, over the stretch of
             // the roll that brings it near the blank's sphere
             if let Some(screw) = self.contacts.motion().screw() {
+                let Some(patch) = patch.revolved() else {
+                    return Err(format!("`{}`: the meter reads the cuts of revolved tools only, not a prism's sides",patch.name()))
+                };
                 let Ok(twist) = self.contacts.motion().at(roll[0]) else { continue };
                 let Ok(start) = self.contacts.motion().pose_at(roll[0]) else { continue };
                 let mut previous: Option<Vec<V>> = None;

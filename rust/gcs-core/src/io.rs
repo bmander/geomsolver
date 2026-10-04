@@ -939,6 +939,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.curves.push(crate::model::CurveE {
             def: at as u32,
             args,
+            unknowns: cv.unknowns.clone(),
             values: cv.values.clone(),
             domain: cv.domain,
             home: cv.home.clone(),
@@ -1019,6 +1020,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         keep(EntRef::new(EntKind::Motion,i)) && measured_of(m).is_some() && match m.def {
             crate::model::MotionDef::Rotation {axis,..} | crate::model::MotionDef::Translation {axis,..} =>
                 line_map[axis as usize].is_some(),
+            crate::model::MotionDef::Turn {centre,..} => pt_index(centre as usize).is_some(),
             crate::model::MotionDef::Relative {..} => true,
         }
     }).collect();
@@ -1047,6 +1049,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::MotionDef::Translation {axis,advance} =>
                 crate::model::MotionDef::Translation {
                     axis:line_map[axis as usize].unwrap() as u32,advance,
+                },
+            crate::model::MotionDef::Turn {centre,ratio,phase} =>
+                crate::model::MotionDef::Turn {
+                    centre:pt_index(centre as usize).unwrap() as u32,ratio,phase,
                 },
             crate::model::MotionDef::Relative {source,observer} =>
                 crate::model::MotionDef::Relative {
@@ -1453,6 +1459,16 @@ impl Part {
         // a tied group reaches all of it.
         let mut named: BTreeMap<EntRef, Vec<usize>> = BTreeMap::new();
         let mut by_free: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        // A curve written over a number its drawn instance left unknown (a rod's length) has that
+        // unknown as a column, so it is tied to the dimensions reading it just as they are to
+        // each other, and a contact on the curve may move it.
+        let free_param = |name: &String| sk.free_vars.get(name).copied();
+        let mut curves_by_free: BTreeMap<u32, Vec<EntRef>> = BTreeMap::new();
+        for (i, cv) in sk.curves.iter().enumerate() {
+            for f in cv.unknowns.iter().filter_map(free_param) {
+                curves_by_free.entry(f).or_default().push(EntRef::new(EntKind::Curve, i));
+            }
+        }
         for (ci, c) in sk.constraints.iter().enumerate() {
             // a claim constrains nothing, so it welds nothing: two figures a claim spans stay
             // two parts, and a drag of one costs the other nothing
@@ -1471,6 +1487,16 @@ impl Part {
         let mut followed: BTreeSet<u32> = BTreeSet::new();
         let mut queue = vec![seed];
         keep.insert(seed);
+        // a tied group — the dimensions and curves reading one free variable — only has to be
+        // opened once, however many of its members the walk arrives at
+        let mut open = |f: u32, next: &mut Vec<EntRef>| {
+            if followed.insert(f) {
+                for &cj in by_free.get(&f).map(|v| v.as_slice()).unwrap_or(&[]) {
+                    next.extend(sk.constraints[cj].entities());
+                }
+                next.extend(curves_by_free.get(&f).map(|v| v.as_slice()).unwrap_or(&[]));
+            }
+        };
         while let Some(e) = queue.pop() {
             if wall(e) {
                 continue;
@@ -1479,14 +1505,15 @@ impl Part {
             if e.kind == EntKind::Point {
                 next.extend(parents[e.i()].iter().copied());
             }
+            if e.kind == EntKind::Curve {
+                for f in sk.curves[e.i()].unknowns.iter().filter_map(free_param) {
+                    open(f, &mut next);
+                }
+            }
             for &ci in named.get(&e).map(|v| v.as_slice()).unwrap_or(&[]) {
                 next.extend(sk.constraints[ci].entities());
-                // a tied group only has to be opened once, however many of its dimensions the
-                // walk arrives at
-                if let Some(f) = sk.constraints[ci].free.filter(|f| followed.insert(f.param)) {
-                    for &cj in by_free.get(&f.param).map(|v| v.as_slice()).unwrap_or(&[]) {
-                        next.extend(sk.constraints[cj].entities());
-                    }
+                if let Some(f) = sk.constraints[ci].free {
+                    open(f.param, &mut next);
                 }
             }
             for n in next {
@@ -1496,10 +1523,12 @@ impl Part {
             }
         }
         let mut sketch = Sketch::new();
-        let made = graft(&mut sketch, sk, &|e| keep.contains(&e), &[], (0.0, 0.0));
-        // `graft` makes entities kind by kind in document order, which is `primitives` order
+        let mut made = graft(&mut sketch, sk, &|e| keep.contains(&e), &[], (0.0, 0.0));
+        // `graft` makes entities kind by kind in document order, which is `primitives` order,
+        // then the curves a contact named, which own no parameter of their own
         let srcs: Vec<EntRef> = prims.into_iter().filter(|e| keep.contains(e)).collect();
-        debug_assert_eq!(srcs.len(), made.len());
+        made.truncate(srcs.len());
+        debug_assert!(srcs.iter().zip(&made).all(|(s, m)| s.kind == m.kind));
         let mut to_doc = Vec::new();
         let mut to_part = vec![None; sk.points.len()];
         let mut params = Vec::new();

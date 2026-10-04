@@ -1,8 +1,8 @@
 //! Bind analytic surfaces to existing solid boundaries. No new coordinates or solver rows.
 use super::{resolve::{follow_building,Resolver},Code,Diag,Made,SourceMap};
 use crate::{ir::{Kid,Operation,Statement},model::{EntKind,EntRef,Sketch,SolidDef,SurfaceE},
-    syntax::{Arg,StmtId},units::Dim};
-use std::collections::{BTreeMap,BTreeSet};
+    syntax::{Arg,StmtId}};
+use std::collections::BTreeSet;
 
 pub(super) fn surfaces(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
     body: &[&Statement], skip: &BTreeSet<StmtId>, diags: &mut Vec<Diag>) {
@@ -36,12 +36,7 @@ pub(super) fn surfaces(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
                 return Err("an exact revolved surface requires a line, arc or circle".into());
             }
             let span = d.angular_span.as_ref().map(|s| -> Result<[f64;2],String> {
-                let angle = |a: &Arg| -> Result<f64,String> {
-                    let Arg::Dim {text,..} = a else { return Err("a surface bound needs an angle".into()); };
-                    let value = crate::flatten::value_aff(text,&BTreeMap::new(),sk.units)?;
-                    value.dim.require(Dim::ANGLE,"surface bound")?;
-                    value.number().map(f64::to_radians).ok_or("a surface bound must be bound".into())
-                };
+                let angle = |a: &Arg| super::bound_angle(sk,a,"surface bound").map(f64::to_radians);
                 let bounds = [angle(&s.from)?,angle(&s.to)?];
                 if !bounds.iter().all(|x| x.is_finite()) || bounds[0] < 0. || bounds[0] >= bounds[1]
                     || bounds[1] > sweep.value.min(std::f64::consts::TAU) {

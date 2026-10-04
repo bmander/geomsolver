@@ -167,7 +167,7 @@ fn measure(e: &program::Elaborated,member: &str) -> Report {
             }
             prev_row = row;
         }
-        eprintln!("  patch {patch} ({}): {} in-blank contacts so far",surface.name,r.hits);
+        eprintln!("  patch {patch} ({}): {} in-blank contacts so far",surface.name(),r.hits);
     }
     // The sample spacing: most neighbouring samples are this close. The largest
     // gap is reported apart, since a jump across a seam is not the spacing.
