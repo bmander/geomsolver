@@ -11,7 +11,7 @@ use crate::brep::nurbs::{interpolate_net,Parametrization};
 use crate::brep::topo::Brep;
 use crate::model::{Sketch,SolidDef};
 use crate::motion::Family;
-use crate::solid::contact_trace::{Band,Columns,Inside,Layout,Rows,Sheet,Station,TraceError,Tracer,Withheld,marked};
+use crate::solid::contact_trace::{Band,Columns,Grid,Inside,Layout,Rows,Sheet,Station,TraceError,Tracer,Withheld,marked};
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use crate::solid::{cad,SweepContacts};
 use crate::space::{cross,distance,dot,norm};
@@ -316,41 +316,54 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
         if let Some(refusal) = &refused { (say.stage)(&format!("{}; placing the sheet's rows by {by} instead",refusal.message)); }
         let (layout,first) = widened(placement).at(Stage::Sheet)?;
         (say.mark)(Stage::Sheet);
-        if tolerance.is_none() {
-            match judged(name,&first,scale,near,None,say) {
-                Ok(Judged::Fits(face,error)) => return Ok(Fitted {face,sheet:first,error}),
-                Ok(Judged::Misses {refusal,..}) => refused = Some(refusal),
-                Err(refusal) if refusal.stage == Stage::Withheld => refused = Some(refusal),
-                Err(refusal) => return Err(refusal),
-            }
-            continue
-        }
-        let mut grid = layout.grid.clone();
-        for round in 0.. {
-            let sheet = layout.sheet(&grid,Withheld::Sides).map_err(String::from).at(Stage::Sheet)?;
-            (say.stage)(&format!("`{name}`: sheet {}x{} and {} withheld contacts read",sheet.rows,sheet.columns,sheet.withheld.len()));
-            if let Some(fault) = sheet.chart_fault(inside).at(Stage::Sheet)? {
-                return Err(ExportRefusal::at(Stage::Sheet,format!("`{name}`: the refined sheet is not one regular chart: {fault}")))
-            }
-            let (over,mut refusal) = match judged(name,&sheet,scale,near,tolerance,say) {
-                Ok(Judged::Fits(face,error)) => return Ok(Fitted {face,sheet,error}),
-                Ok(Judged::Misses {over,refusal}) => (over,refusal),
-                Err(refusal) if refusal.stage == Stage::Withheld => { refused = Some(refusal); break }
-                Err(refusal) => return Err(refusal),
-            };
-            let (rows,columns) = marked(&sheet.sites,&over,sheet.rows,sheet.columns);
-            let next = grid.refined(&rows,&columns);
-            if round >= MOST_REFINEMENTS || next.rows.len() > MOST_ROWS || next.columns.len() > MOST_COLUMNS {
-                refusal.message = format!("{} with rows by {by}, after {round} refinements to {}x{} nodes (at most {MOST_REFINEMENTS} \
-                    refinements and {MOST_ROWS}x{MOST_COLUMNS} nodes)",refusal.message,sheet.rows,sheet.columns);
-                refused = Some(refusal);
-                break
-            }
-            (say.stage)(&format!("`{name}`: refining the sheet where it misses: {} of {} row intervals and {} of {} column intervals \
-                split, {}x{} nodes",rows.iter().filter(|m| **m).count(),rows.len(),columns.iter().filter(|m| **m).count(),
-                columns.len(),next.rows.len(),next.columns.len()));
-            grid = next;
+        let lay = |grid: &Grid| layout.sheet(grid,Withheld::Sides).map_err(String::from);
+        match settle(name,scale,first,&layout.grid,&lay,inside,near,tolerance,&format!("rows by {by}"),say)? {
+            Ok(fitted) => return Ok(fitted),
+            Err(refusal) => refused = Some(refusal),
         }
     }
     Err(refused.unwrap_or_else(|| ExportRefusal::at(Stage::Sheet,format!("`{name}`: no row placement was offered"))))
+}
+
+/// A sheet laid out on a grid fitted and judged: `first` (centres withheld) as it is without a
+/// tolerance, else `lay` on `grid` (sides withheld) refined where it misses until it fits or the
+/// refinements run out. A fit that misses its contacts or folds is the inner refusal (another
+/// layout may fit), anything else the outer. `how` says how the grid was laid, for the refusal.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn settle(name: &str,scale: f64,first: Sheet,grid: &Grid,lay: &(dyn Fn(&Grid) -> Result<Sheet,String>+Sync),inside: Inside,
+    near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,how: &str,say: &Say) -> Result<Result<Fitted,ExportRefusal>,ExportRefusal> {
+    if tolerance.is_none() {
+        return match judged(name,&first,scale,near,None,say) {
+            Ok(Judged::Fits(face,error)) => Ok(Ok(Fitted {face,sheet:first,error})),
+            Ok(Judged::Misses {refusal,..}) => Ok(Err(refusal)),
+            Err(refusal) if refusal.stage == Stage::Withheld => Ok(Err(refusal)),
+            Err(refusal) => Err(refusal),
+        }
+    }
+    let mut grid = grid.clone();
+    for round in 0.. {
+        let sheet = lay(&grid).at(Stage::Sheet)?;
+        (say.stage)(&format!("`{name}`: sheet {}x{} and {} withheld contacts read",sheet.rows,sheet.columns,sheet.withheld.len()));
+        if let Some(fault) = sheet.chart_fault(inside).at(Stage::Sheet)? {
+            return Err(ExportRefusal::at(Stage::Sheet,format!("`{name}`: the refined sheet is not one regular chart: {fault}")))
+        }
+        let (over,mut refusal) = match judged(name,&sheet,scale,near,tolerance,say) {
+            Ok(Judged::Fits(face,error)) => return Ok(Ok(Fitted {face,sheet,error})),
+            Ok(Judged::Misses {over,refusal}) => (over,refusal),
+            Err(refusal) if refusal.stage == Stage::Withheld => return Ok(Err(refusal)),
+            Err(refusal) => return Err(refusal),
+        };
+        let (rows,columns) = marked(&sheet.sites,&over,sheet.rows,sheet.columns);
+        let next = grid.refined(&rows,&columns);
+        if round >= MOST_REFINEMENTS || next.rows.len() > MOST_ROWS || next.columns.len() > MOST_COLUMNS {
+            refusal.message = format!("{} with {how}, after {round} refinements to {}x{} nodes (at most {MOST_REFINEMENTS} \
+                refinements and {MOST_ROWS}x{MOST_COLUMNS} nodes)",refusal.message,sheet.rows,sheet.columns);
+            return Ok(Err(refusal))
+        }
+        (say.stage)(&format!("`{name}`: refining the sheet where it misses: {} of {} row intervals and {} of {} column intervals \
+            split, {}x{} nodes",rows.iter().filter(|m| **m).count(),rows.len(),columns.iter().filter(|m| **m).count(),
+            columns.len(),next.rows.len(),next.columns.len()));
+        grid = next;
+    }
+    unreachable!("the refinements end")
 }

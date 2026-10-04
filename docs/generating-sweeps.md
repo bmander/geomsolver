@@ -44,11 +44,39 @@ failure is reported with its witness.
 | E3 | The generated area factor J stays away from zero over the region reaching the blank. | A zero is a fold of the envelope: the cusp of undercut. J alone passes through infinity where a point's two contact times merge, which is a fold of the time chart and not of the surface. So the sign is read from J times the rate of the contact condition, which changes sign only at a true fold. | The contact point and the factor. |
 | E4 | A placement's sheet does not cross itself inside the blank. | Sheets of different placements may cross, since the kernel split handles that. A self-crossing sheet is the defect the hypoid investigation found (`split_at_crossings`). | The pair of sheet points. |
 
-Translations, screws and single rotations have constant tool-frame twist. Their contact set is
-fixed on the tool, so they are easier than relative rotations, but by a different construction
-(`solid::constant_twist`, the tracer's characteristics). They are left out only because the
-gear does not need them. Admitting them later is a separate, small extension, not a new
-project.
+### Screws: the constant-twist class
+
+A screw (`motion(about: axis, advance: lead)`) has constant tool-frame twist: every tool point
+moves the same way relative to the tool at every time, so M2 fails everywhere and a contact time
+cannot parameterize the surface. Instead the contact set is fixed on the tool. Its **characteristic**
+is, on each ring of a revolved face, the roots of the same `A cos θ + B sin θ + C = 0`, read once
+under the screw's twist, and the boundary is that curve carried along the screw:
+S(s, t) = M(t)·c(s), its normal the tool's. `admit_body` dispatches on `Family::screw()`. A screw's
+sweep is asked T1, T2, M1, E0 and E1 as above, then (`solid::constant_twist`):
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| S1 | The characteristic is regular through the reach and a margin past it: no ring is about to lose its two roots (a double point, where the curve turns back on the ring), none is stationary, and the walk never jumps at a profile corner. | The sheet is one regular curve carried along. A convex corner's fan is not built for a screw yet. | The face and the ring. |
+| S2 | At most one characteristic point of a ring reaches the blank, and every point that does lies on one stretch. | One sheet per placement, one point per station. | The second point. |
+| S3 | The characteristic never runs along the screw's velocity: `(c′ × v)·n` keeps one sign and stays above `least_factor`. | A zero is a fold of the sheet. Signed, so a fold passed between two samples is seen by the sign it turned. | The face and the factor. |
+| S4 | The section square to the axis (each characteristic point carried along its path to one height) does not cross itself. | The sheet is the same at every height, turned and raised, so it meets itself exactly where its section does. | The two points. |
+
+The walk samples `rows` rings along every face, then samples the stretch it found `rows` times
+across its reach, so a reach that is a sliver of a large round is asked as finely as one that is a
+whole face. Each point's path through the blank is read a degree of turn apart. These rows are
+sampled too.
+
+The sheet (`brep::sweep::helical`) is exact at every node and every withheld point: rows run along
+the sheet's section square to the axis, `Characteristic::on_section`. The characteristic itself has
+a corner wherever the tool's profile changes curvature, by a step along the screw's path that the
+sheet does not show, while its section is as smooth as the sheet. Columns run along the roll over
+the stretch that carries the section past the blank. It is fitted, judged and refined by the loop
+the traced sheet shares (`sheet::settle`). The split, cells, agreement and files are the generating
+class's. `rust/examples/twist_drill/` is the worked case (`tests/twist_drill.rs`).
+
+Translations and single rotations also have constant twist. They are still refused (M1/M2): their
+section is not a screw's (a translation's is square to its direction, a rotation's a half-plane),
+which is the one piece the construction would need.
 
 ### Undercut is excluded deliberately
 
@@ -59,7 +87,7 @@ version refuses undercut and requires the design to avoid it. Supporting it mean
 `EnvelopeSeam` already perform that operation. Supporting it is a later, separately gated
 extension. An undeclared crossing stays refused.
 
-The class is implemented as `solid::admission::admit_body`. `solventc --step/--stl` runs it
+The classes are implemented as `solid::admission::admit_body`. `solventc --step/--stl` runs it
 before building a body with swept cuts. Placements whose blank reads the same at every point
 the checks read are checked once: the gear's 24 indexed cuts are one check.
 

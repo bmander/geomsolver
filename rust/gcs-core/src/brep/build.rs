@@ -244,7 +244,11 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
         let v0: Vec<u32> = pts.iter().map(|&q| b.vertex(q)).collect();
         let v1: Vec<u32> = (0..m).map(|k| if full || on_axis[k] { v0[k] } else { b.vertex(turn.point(pts[k])) }).collect();
         let kinds: Vec<Swept> = walk.iter().enumerate().map(|(k,s)| {
+            // an end on the axis to the tolerance is on it: a cone placed at its apex has radius
+            // zero there, never the rounding either side of it (a negative one no reader takes)
+            let on = |r: f64| if r.abs() <= tol { 0. } else { r };
             let ([r0,z0],[r1,z1]) = (rz(s.start()),rz(s.end()));
+            let (r0,r1) = (on(r0),on(r1));
             match &s.curve {
                 Curve::Line {..} if on_axis[k] && on_axis[(k+1)%m] => Swept::Axis,
                 Curve::Line {..} if (z0-z1).abs() <= tol => Swept::Disk,
@@ -276,7 +280,11 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
         for k in 0..m {
             let s = walk[k].clone();
             let k1 = (k+1)%m;
+            // an end on the axis to the tolerance is on it: a cone placed at its apex has radius
+            // zero there, never the rounding either side of it (a negative one no reader takes)
+            let on = |r: f64| if r.abs() <= tol { 0. } else { r };
             let ([r0,z0],[r1,z1]) = (rz(s.start()),rz(s.end()));
+            let (r0,r1) = (on(r0),on(r1));
             // the material's outward normal at the step's middle, in (ρ, z): right of the walk
             let mid = (s.t[0]+s.t[1])/2.;
             let (q,dq) = (s.curve.point(mid),s.curve.tangent(mid));

@@ -66,6 +66,14 @@ pub(crate) fn contains_sweep(sk: &Sketch,i: usize) -> bool {
         || sk.solids[i].operands().into_iter().any(|o| contains_sweep(sk,o as usize))
 }
 
+/// The operands of body `i` that hold swept material where a sweep is not cut: its stock, what is
+/// put on it and what bounds it. A body with any is built from swept material (`drill :=
+/// solid(fluted)`), not one a sweep is cut from.
+pub(crate) fn swept_operands(sk: &Sketch,i: usize) -> Vec<usize> {
+    let SolidDef::Body {stock,on,bound,..} = &sk.solids[i].def else { return Vec::new() };
+    std::iter::once(stock).chain(on).chain(bound).map(|&o| o as usize).filter(|&o| contains_sweep(sk,o)).collect()
+}
+
 /// A cut operand that is a sweep or a chain of placements ending in one.
 pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String> {
     let solid = &sk.solids[i];
