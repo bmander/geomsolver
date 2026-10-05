@@ -70,14 +70,14 @@ pub(crate) fn coplanar(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     use std::collections::BTreeSet;
     // the planes each relation reads drawn points of — a plane's own origin is where the plane
     // stands, not drawing in it
-    let origins: BTreeSet<usize> = sk.planes.iter().map(|p| p.origin as usize).collect();
     let mut pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
     for c in sk.constraints.iter().filter(|c| c.acts() && !c.intrinsic) {
         let mut planes: BTreeSet<usize> = BTreeSet::new();
         for e in c.entities() {
             let mut pts = Vec::new();
             points(sk, e, &mut pts, 0);
-            planes.extend(pts.iter().filter(|p| !origins.contains(p)).filter_map(|&p| sk.plane_of(p)));
+            planes.extend(pts.iter().filter(|&&p| sk.plane_of_origin(p).is_none())
+                .filter_map(|&p| sk.plane_of(p)));
         }
         for &i in &planes {
             for &j in planes.range(i + 1..) {
@@ -87,13 +87,9 @@ pub(crate) fn coplanar(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     }
     let mut out = Vec::new();
     let mut said: BTreeSet<usize> = BTreeSet::new();
+    let tol = ON_PLANE * sk.extent().max(1.0);
     for &(i, j) in &pairs {
-        let (bi, bj) = (sk.basis(i), sk.basis(j));
-        let (ni, nj) = (bi.normal(), bj.normal());
-        let tol = ON_PLANE * sk.extent().max(1.0);
-        let on = crate::space::norm(crate::space::cross(ni, nj)) <= crate::plane::PARALLEL_TOL
-            && crate::space::dot(ni, crate::space::sub(bj.o, bi.o)).abs() <= tol;
-        if !on || !said.insert(j) {
+        if !sk.basis(i).coplanar(&sk.basis(j), tol) || !said.insert(j) {
             continue;
         }
         let Some(site) = map.site_of(EntRef::plane(j)) else { continue };

@@ -94,6 +94,27 @@ fn a_point_coincident_a_ray_places_it() {
     assert_eq!(dof(&mut sk), 0);
 }
 
+/// Removing the last relation that reads where a ray is takes its place away again: held, its
+/// foot row gone, two freedoms and not five.  One still reading it keeps it placed.
+#[test]
+fn a_ray_no_relation_places_is_held_again() {
+    let e = read("use std\nt := ray hint(x: 0, y: 0, z: 1)\np := point hint(x: 1, y: 2, z: 3)\n\
+                  q := point hint(x: 1, y: 2, z: 5)\nfix(x == 1, y == 2, z == 3) p\n\
+                  fix(x == 1, y == 2, z == 5) q\np coincident t\nq coincident t\n");
+    let mut sk = e.sketch.clone();
+    let t = ent(&e, "t").i();
+    let on: Vec<u32> = sk.user_constraints().iter()
+        .filter(|c| c.kind == CKind::PointOnRay).map(|c| c.id).collect();
+    assert_eq!(on.len(), 2);
+    sk.remove(on[0]);
+    assert!(sk.rays[t].placed, "q still reads where it is");
+    sk.remove(on[1]);
+    assert!(!sk.rays[t].placed);
+    assert!(sk.rays[t].a.iter().all(|&q| sk.params[q as usize].fixed));
+    assert!(!sk.constraints.iter().any(|c| c.kind == CKind::RayFoot));
+    assert_eq!(dof(&mut sk), 2, "a direction, and no place");
+}
+
 /// An angle in space at 0 or half a turn is parallel said by a cosine that does not move there,
 /// and is refused with the spelling that holds; any other angle is the relation it was.
 #[test]

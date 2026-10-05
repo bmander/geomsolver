@@ -80,6 +80,16 @@ impl Basis {
         ]
     }
 
+    /// The same plane in space, however it is turned within itself: parallel, and through the
+    /// same points, `tol` a length.  What makes two views one place for a reader (`std.up` is
+    /// `std.front` turned), and what W113 says of two planes a relation reads.
+    pub fn coplanar(&self, other: &Basis, tol: f64) -> bool {
+        let (n, m) = (self.normal(), other.normal());
+        let (nn, nm) = (crate::space::norm(n), crate::space::norm(m));
+        crate::space::norm(cross(n, m)) <= PARALLEL_TOL * nn * nm
+            && dot(n, crate::space::sub(other.o, self.o)).abs() <= tol * nn
+    }
+
     /// The inverse of `lift` for a point *on* this plane: what the draughtsman would measure of
     /// `x` in it.  A point off the plane is read by its shadow along the normal.
     pub fn view_coords(&self, x: [f64; 3]) -> (f64, f64) {

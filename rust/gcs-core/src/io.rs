@@ -489,28 +489,18 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             let v = r.get(key).map(|v| v.arr()).unwrap_or_default();
             [0, 1, 2].map(|k| v.get(k).map(|x| x.as_f64()).unwrap_or(0.0))
         };
-        let ri = sk.ray(three("d"), "");
-        let a = three("a");
         let fixed = r.get("fixed").map(|v| v.arr()).unwrap_or_default();
-        for k in 0..3 {
-            let (dp, ap) = (sk.rays[ri].d[k] as usize, sk.rays[ri].a[k] as usize);
-            sk.params[dp].fixed = fixed.get(k).map(|v| v.as_bool()).unwrap_or(false);
-            sk.params[ap].value = a[k];
-        }
-        sk.rays[ri].class = read_class(r);
+        let held = [0, 1, 2].map(|k| fixed.get(k).map(|v| v.as_bool()).unwrap_or(false));
+        sk.ray_restored(three("d"), held, three("a"), read_class(r));
     }
     // the planes over their rays, each with its origin a point already read
     let nr = sk.rays.len();
     for p in d.get("planes").unwrap_or(&empty).arr() {
         let g = |key: &str, n: usize| index(p.get(key).map(|v| v.as_i64()).unwrap_or(0), n, key);
         let o = ["x", "y", "z"].map(|k| p.get(k).map(|v| v.as_f64()).unwrap_or(0.0));
-        let pi = sk.plane_over(g("u", nr)?, g("v", nr)?, o, g("origin", np)?, "");
         let fixed = p.get("fixed").map(|v| v.arr()).unwrap_or_default();
-        for k in 0..3 {
-            let q = sk.planes[pi].o[k] as usize;
-            sk.params[q].fixed = fixed.get(k).map(|v| v.as_bool()).unwrap_or(false);
-        }
-        sk.planes[pi].class = read_class(p);
+        let held = [0, 1, 2].map(|k| fixed.get(k).map(|v| v.as_bool()).unwrap_or(false));
+        sk.plane_restored(g("u", nr)?, g("v", nr)?, o, held, g("origin", np)?, read_class(p));
     }
     // the spheres after the planes, `primitives()`'s order, so a sphere's radius is where an
     // elaboration puts it
@@ -806,13 +796,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             continue;
         }
         let r = &src.rays[i];
-        let ni = dst.ray(r.d.map(|p| src.params[p as usize].value), "");
-        for k in 0..3 {
-            let (dp, ap) = (dst.rays[ni].d[k] as usize, dst.rays[ni].a[k] as usize);
-            dst.params[dp].fixed = src.params[r.d[k] as usize].fixed;
-            dst.params[ap].value = src.params[r.a[k] as usize].value;
-        }
-        dst.rays[ni].class = r.class.clone();
+        let value = |q: u32| src.params[q as usize].value;
+        let ni = dst.ray_restored(r.d.map(value), r.d.map(|q| src.params[q as usize].fixed),
+                                  r.a.map(value), r.class.clone());
         ray_map[i] = Some(ni);
         made.push(EntRef::new(EntKind::Ray, ni));
     }
@@ -831,12 +817,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         else {
             continue;
         };
-        let ni = dst.plane_over(u, v, p.o.map(|k| src.params[k as usize].value), origin, "");
-        for k in 0..3 {
-            let q = dst.planes[ni].o[k] as usize;
-            dst.params[q].fixed = src.params[p.o[k] as usize].fixed;
-        }
-        dst.planes[ni].class = p.class.clone();
+        let ni = dst.plane_restored(u, v, p.o.map(|k| src.params[k as usize].value),
+                                    p.o.map(|k| src.params[k as usize].fixed), origin,
+                                    p.class.clone());
         plane_map[i] = Some(ni);
         made.push(EntRef::plane(ni));
     }
@@ -1372,7 +1355,7 @@ pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch 
         }
         // a plane's origin is the plane's, and goes with it
         if e.kind == EntKind::Point {
-            if let Some(pl) = sk.planes.iter().position(|p| p.origin as usize == e.i()) {
+            if let Some(pl) = sk.plane_of_origin(e.i()) {
                 if dead.contains(&EntRef::plane(pl)) {
                     return false;
                 }
@@ -1493,7 +1476,11 @@ impl Part {
                 by_free.entry(f.param).or_default().push(ci);
             }
         }
-        let wall = |e: EntRef| sk.entity_params(e).iter().all(|&p| sk.params[p as usize].fixed);
+        // a plane is a wall when it cannot move: its rays held as well as where it stands
+        let wall = |e: EntRef| match e.kind {
+            EntKind::Plane => sk.plane_fixed(e.i()),
+            _ => sk.entity_params(e).iter().all(|&p| sk.params[p as usize].fixed),
+        };
         let mut keep: BTreeSet<EntRef> = BTreeSet::new();
         let mut followed: BTreeSet<u32> = BTreeSet::new();
         let mut queue = vec![seed];
@@ -1509,6 +1496,13 @@ impl Part {
             }
         };
         while let Some(e) = queue.pop() {
+            // a point comes with the plane it is drawn in, which places it in space — a held
+            // point too, which is drawn there all the same
+            if let Some(pl) = (e.kind == EntKind::Point).then(|| sk.plane_of(e.i())).flatten() {
+                if keep.insert(EntRef::plane(pl)) {
+                    queue.push(EntRef::plane(pl));
+                }
+            }
             if wall(e) {
                 continue;
             }
@@ -1533,13 +1527,6 @@ impl Part {
                 }
             }
         }
-        // a point comes with the plane it is drawn in, whose place in space is its own — a wall
-        // like any held entity, brought along and never walked through
-        let drawn_in: Vec<usize> = keep.iter()
-            .filter(|e| e.kind == EntKind::Point)
-            .filter_map(|e| sk.plane_of(e.i()))
-            .collect();
-        keep.extend(drawn_in.into_iter().map(EntRef::plane));
         // a plane is rebuilt over its rays and its origin, wherever the walk stopped at it
         for i in 0..sk.planes.len() {
             if keep.contains(&EntRef::plane(i)) {

@@ -13,7 +13,7 @@ use crate::{curve, decompose, expr};
 /// plane's — `v0.origin` — since the plane mints it.
 fn name(sk: &Sketch, e: EntRef) -> String {
     if e.kind == EntKind::Point {
-        if let Some(i) = sk.planes.iter().position(|p| p.origin as usize == e.i()) {
+        if let Some(i) = sk.plane_of_origin(e.i()) {
             return format!("{}.origin", crate::syntax::entity_name(EntRef::plane(i)));
         }
     }
@@ -57,7 +57,7 @@ pub fn to_program(sk: &Sketch) -> Program {
     for e in sk.primitives() {
         match e.kind {
             EntKind::Plane => continue,
-            EntKind::Point => match sk.planes.iter().position(|q| q.origin as usize == e.i()) {
+            EntKind::Point => match sk.plane_of_origin(e.i()) {
                 Some(pl) => p.push(StmtKind::Decl(lift_decl(sk, EntRef::plane(pl)))),
                 None => p.push(StmtKind::Decl(lift_decl(sk, e))),
             },
@@ -240,7 +240,7 @@ pub(crate) fn lift_plane(sk: &Sketch, e: EntRef) -> crate::syntax::Membership {
 /// writes them (`Sketch::seed_value`: a cone's half-angle in degrees).  None for a plane's
 /// origin, which the plane holds at its own `(0, 0)` and no `fix` says.
 pub(crate) fn holds(sk: &Sketch, e: EntRef) -> Vec<(&'static str, f64)> {
-    if e.kind == EntKind::Point && sk.planes.iter().any(|p| p.origin as usize == e.i()) {
+    if e.kind == EntKind::Point && sk.plane_of_origin(e.i()).is_some() {
         return Vec::new();
     }
     let scalars = e.kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n);

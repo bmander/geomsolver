@@ -480,13 +480,12 @@ impl System {
                 let span = spans.get(&c.id).copied();
                 let ps = c.params_on(sk, span);
                 debug_assert_eq!(ps.len(), kn.n_par, "{:?} params", c.kind);
-                // a ray whose direction is fixed outright (`std.x`) has a unit row over held
-                // unknowns only: a fact about the numbers a `fix` wrote, true by construction and
-                // no equation the drawing answers for.  Counted, it would stand in the ledger as
-                // an equation over the rank.  Not hard, so no count or rank sees it.
-                let held = c.intrinsic
-                    && c.kind == crate::constraints::CKind::RayUnit
-                    && ps.iter().all(|&p| col_of[p as usize] < 0);
+                // an intrinsic row over held unknowns only — the unit row of a ray whose
+                // direction a `fix` holds outright (`std.x`) — is a fact about the numbers held,
+                // true by construction and no equation the drawing answers for.  Counted, it
+                // would stand in the ledger as an equation over the rank.  Not hard, so no count
+                // or rank sees it.  A statement over held numbers stays one: it may be wrong.
+                let held = c.intrinsic && ps.iter().all(|&p| col_of[p as usize] < 0);
                 for p in ps {
                     gidx.push(p as i32);
                 }

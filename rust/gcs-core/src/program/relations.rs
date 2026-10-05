@@ -299,12 +299,7 @@ pub(super) fn constrain(
     // written.
     if ckind.magnitude() {
         if let Some(i) = spec.iter().position(|(_, k)| *k == SpecKind::Length) {
-            let v = match &args[i] {
-                CArg::Expr(e) => expr::parse_in(&e.text, sk.units).ok()
-                    .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
-                    .and_then(|a| a.number()).unwrap_or(args[i].num()),
-                a => a.num(),
-            };
+            let v = written_number(&args[i], sk).unwrap_or(args[i].num());
             if v < 0.0 {
                 // where the type has a side to name, the minus was *saying* which side, and the
                 // word is where that belongs now (issue #48, item 4) — so the message names it
@@ -347,9 +342,7 @@ pub(super) fn constrain(
         if let Some(i) = spec.iter().position(|(_, k)| *k == SpecKind::Angle) {
             let cos = match &args[i] {
                 // the text as written, in the document's degrees
-                CArg::Expr(e) => expr::parse_in(&e.text, sk.units).ok()
-                    .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
-                    .and_then(|a| a.number()).map(|deg| deg.to_radians().dcos()),
+                CArg::Expr(_) => written_number(&args[i], sk).map(|deg| deg.to_radians().dcos()),
                 // a number already in the kernels' radians
                 a => Some(a.num().dcos()),
             };
@@ -708,4 +701,13 @@ impl Relation {
             class: &self.class,
         })
     }
+}
+
+/// What a dimension's text comes to as written, in the document's units (degrees for an angle):
+/// `None` for a number with no text, or a text that reads an unknown.
+fn written_number(a: &CArg, sk: &Sketch) -> Option<f64> {
+    let CArg::Expr(e) = a else { return None };
+    expr::parse_in(&e.text, sk.units).ok()
+        .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
+        .and_then(|a| a.number())
 }

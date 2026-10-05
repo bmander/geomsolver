@@ -344,21 +344,15 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
         // a ray is in space and in no view: its line across the drawing's reach, and a head at
         // the end it points to
         if e.kind == EntKind::Ray {
-            use crate::space::{add, cross, norm, scale};
+            use crate::space::{across, add, normalised, scale};
             let r = &sk.rays[e.i()];
-            let (p, d) = (r.a.map(|q| sk.params[q as usize].value), r.d.map(|q| sk.params[q as usize].value));
-            let len = norm(d);
-            if len <= 0.0 {
-                continue;
-            }
-            let d = scale(d, 1.0 / len);
+            let p = r.a.map(|q| sk.params[q as usize].value);
+            let Some(d) = normalised(r.d.map(|q| sk.params[q as usize].value)) else { continue };
             let reach = sk.extent().max(1.0);
             let tip = add(p, scale(d, reach));
             items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn,
                 pts: vec![add(p, scale(d, -reach)), tip] });
-            let pick = if d[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
-            let u = cross(d, pick);
-            let u = scale(u, 1.0 / norm(u));
+            let u = across(d).0;
             let head = reach * 0.04;
             for sgn in [1.0, -1.0] {
                 let back = add(tip, add(scale(d, -head), scale(u, sgn * head * 0.5)));

@@ -14,6 +14,7 @@ use crate::fmath::Det;
 use crate::expr::Free;
 use crate::kernels::{self, K};
 use crate::model::{EntKind, EntRef, Sketch};
+use crate::space::across;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CKind {
@@ -1186,6 +1187,16 @@ impl CKind {
         })
     }
 
+    /// The slot naming a ray whose place in space this reads, not only its direction: a ray has
+    /// a place only while something reads it (`Sketch::place_ray`).
+    pub fn place_slot(self) -> Option<usize> {
+        match self {
+            CKind::PointOnRay => Some(1),
+            CKind::RayOnPlane => Some(0),
+            _ => None,
+        }
+    }
+
     /// **The word that says which way, and the sign it stands for** (§9.2, issue #48 item 4).
     ///
     /// One table for the two questions a reader and a kernel ask of the same word: which words a
@@ -2347,10 +2358,8 @@ impl Constraint {
                 let (e1, e2) = across(self.axis_dir(sk, 0));
                 [e1, e2].concat()
             }
-            CKind::PointOnLine3 => {
-                let l = &sk.lines[self.args[1].ent().i()];
-                let a = crate::space::sub(sk.lifted(l.p2 as usize), sk.lifted(l.p1 as usize));
-                let (e1, e2) = across(a);
+            CKind::PointOnLine3 | CKind::PointOnRay => {
+                let (e1, e2) = across(self.axis_dir(sk, 1));
                 [e1, e2].concat()
             }
             CKind::PointPlaneDistance | CKind::Ordinate3U | CKind::Ordinate3V | CKind::PlaneDistance => {
@@ -2367,13 +2376,6 @@ impl Constraint {
             // `point_line3_free` at (m, c) = (1, 0): the stated number is the radius column
             CKind::SphereTangentLine | CKind::CylinderOn => vec![1.0, 0.0],
             CKind::ConeAngle | CKind::CylinderRadius => vec![self.args[1].num()],
-            // two directions across the ray's, as `point_on_line3` takes them across its line
-            CKind::PointOnRay => {
-                let r = &sk.rays[self.args[1].ent().i()];
-                let d = r.d.map(|p| sk.params[p as usize].value);
-                let (e1, e2) = across(d);
-                [e1, e2].concat()
-            }
             // `line_line3_free` at (m, c) = (±1, 0): the radius, turned to the seed's side
             CKind::CylinderTangentLine => vec![self.skew_sign(), 0.0],
             // outside, or inside with the larger radius positive as the radii stand now
@@ -2724,6 +2726,20 @@ impl Constraint {
     }
 
     /// Operand `i`'s direction as it stands now, as a direction relation reads it.
+    /// The ray whose place this reads (`CKind::place_slot`), which `Sketch::add` frees and
+    /// `Sketch::remove` holds again once nothing reads it.
+    pub fn ray_placed_by(&self) -> Option<usize> {
+        match self.kind.place_slot().and_then(|i| self.args.get(i))? {
+            Arg::Ent(r) if r.kind == EntKind::Ray => Some(r.i()),
+            _ => None,
+        }
+    }
+
+    /// Whether every number this reads is held: then it moves nothing.
+    pub fn reads_only_held(&self, sk: &Sketch) -> bool {
+        self.params(sk).iter().all(|&p| sk.params[p as usize].fixed)
+    }
+
     fn axis_dir(&self, sk: &Sketch, i: usize) -> [f64; 3] {
         let e = self.args[i].ent();
         if e.kind == EntKind::Ray {
@@ -3069,19 +3085,6 @@ pub fn infer_value(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Option<A
 fn plane_columns(sk: &Sketch, p: usize) -> Vec<u32> {
     let pl = &sk.planes[p];
     [pl.o, sk.rays[pl.u as usize].d, sk.rays[pl.v as usize].d].concat()
-}
-
-/// Two unit vectors across a direction: perpendicular to it and to each other, with the second
-/// `â × e₁`.  The first is taken against whichever page axis `a` is least along, so the cross
-/// product is never small; a direction of no length gets the page's own pair.
-fn across(a: [f64; 3]) -> ([f64; 3], [f64; 3]) {
-    use crate::space::{cross, normalised};
-    let Some(ah) = normalised(a) else { return ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]) };
-    let k = (0..3).min_by(|&x, &y| ah[x].abs().total_cmp(&ah[y].abs())).unwrap_or(0);
-    let mut axis = [0.0; 3];
-    axis[k] = 1.0;
-    let e1 = normalised(cross(ah, axis)).unwrap_or([1.0, 0.0, 0.0]);
-    (e1, cross(ah, e1))
 }
 
 /// The world length one unit of a hidden unknown is worth — see `Param::scale`.  Read off the

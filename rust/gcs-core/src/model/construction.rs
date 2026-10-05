@@ -87,10 +87,7 @@ impl Sketch {
             return;
         }
         let fixed = self.params[self.points[p].x as usize].fixed;
-        let name = {
-            let x = &self.params[self.points[p].x as usize].name;
-            x.strip_suffix(".x").unwrap_or(x).to_string()
-        };
+        let name = self.point_label(p).to_string();
         let pz = self.param(z, fixed, &format!("{name}.z"));
         self.points[p].z = Some(pz as u32);
     }
@@ -191,6 +188,21 @@ impl Sketch {
         self.add_quiet(c);
     }
 
+    /// `place_ray` undone: the place held where it stands, and the foot row gone with it.
+    fn unplace_ray(&mut self, i: usize) {
+        if !self.rays[i].placed {
+            return;
+        }
+        self.rays[i].placed = false;
+        for p in self.rays[i].a {
+            self.params[p as usize].fixed = true;
+        }
+        let ray = EntRef::new(EntKind::Ray, i);
+        self.constraints.retain(|c| {
+            !(c.intrinsic && c.kind == crate::constraints::CKind::RayFoot && c.args[0].ent() == ray)
+        });
+    }
+
     /// A fixed Param holding 0, shared by every ray: the kernels that read a line's direction as
     /// `B − A` read a ray's as the segment `(0, d)`, so a ray needs no kernels of its own for
     /// `parallel`, `perpendicular` and `angle`.
@@ -246,29 +258,58 @@ impl Sketch {
     /// Params of its own, and its origin, a point drawn in it and held at `(0, 0)`, minted here.
     /// No intrinsic row: what the plane is, `Sketch::basis` reads off the rays and `o`.
     pub fn plane(&mut self, u: usize, v: usize, o: [f64; 3], name: &str) -> usize {
-        let op = [0, 1, 2].map(|k| {
-            self.param(o[k], false, &format!("{name}.{}", ["x", "y", "z"][k])) as u32
-        });
-        let pi = self.planes.len();
+        let op = self.plane_place(o, name);
         let origin = self.point(0.0, 0.0, true, &format!("{name}.origin"));
-        self.points[origin].plane = Some(pi as u32);
-        self.planes.push(PlaneE { u: u as u32, v: v as u32, o: op, origin: origin as u32, class: Classes::default() });
-        pi
+        self.push_plane(u, v, op, origin)
     }
 
     /// A plane whose origin is a point already made — what a document reader and the rebuild
     /// walk build, the point having come with the others.  It is put in the plane and held at
     /// `(0, 0)`.
     pub fn plane_over(&mut self, u: usize, v: usize, o: [f64; 3], origin: usize, name: &str) -> usize {
-        let op = [0, 1, 2].map(|k| {
-            self.param(o[k], false, &format!("{name}.{}", ["x", "y", "z"][k])) as u32
-        });
-        let pi = self.planes.len();
-        self.points[origin].plane = Some(pi as u32);
+        let op = self.plane_place(o, name);
         for p in self.point_params(origin) {
             self.params[p as usize].value = 0.0;
             self.params[p as usize].fixed = true;
         }
+        self.push_plane(u, v, op, origin)
+    }
+
+    /// A ray as a document or another sketch carries it: its direction, which of the three are
+    /// held, and where it stands (`a`, fixed until a relation reads it).
+    pub fn ray_restored(&mut self, d: [f64; 3], held: [bool; 3], a: [f64; 3], class: Classes) -> usize {
+        let ri = self.ray(d, "");
+        for k in 0..3 {
+            let (dp, ap) = (self.rays[ri].d[k] as usize, self.rays[ri].a[k] as usize);
+            self.params[dp].fixed = held[k];
+            self.params[ap].value = a[k];
+        }
+        self.rays[ri].class = class;
+        ri
+    }
+
+    /// A plane as a document or another sketch carries it: over rays `u`, `v`, standing at `o`
+    /// with which of its three numbers are held, its origin a point already made.
+    pub fn plane_restored(&mut self, u: usize, v: usize, o: [f64; 3], held: [bool; 3], origin: usize,
+                          class: Classes) -> usize {
+        let pi = self.plane_over(u, v, o, origin, "");
+        for k in 0..3 {
+            let q = self.planes[pi].o[k] as usize;
+            self.params[q].fixed = held[k];
+        }
+        self.planes[pi].class = class;
+        pi
+    }
+
+    /// The three Params of where a plane stands, `name.x` … `name.z`.
+    fn plane_place(&mut self, o: [f64; 3], name: &str) -> [u32; 3] {
+        [0, 1, 2].map(|k| self.param(o[k], false, &format!("{name}.{}", ["x", "y", "z"][k])) as u32)
+    }
+
+    /// A plane over rays `u`, `v`, standing at `op`, its origin drawn in it.
+    fn push_plane(&mut self, u: usize, v: usize, op: [u32; 3], origin: usize) -> usize {
+        let pi = self.planes.len();
+        self.points[origin].plane = Some(pi as u32);
         self.planes.push(PlaneE { u: u as u32, v: v as u32, o: op, origin: origin as u32, class: Classes::default() });
         pi
     }
@@ -449,16 +490,9 @@ impl Sketch {
             self.lift_point(p);
         }
         // a relation that reads where a ray is gives the ray its place
-        let reads_place = match c.kind {
-            crate::constraints::CKind::PointOnRay => c.args.get(1),
-            crate::constraints::CKind::RayOnPlane => c.args.first(),
-            _ => None,
-        };
-        {
-            if let Some(Arg::Ent(r)) = reads_place {
-                if r.kind == EntKind::Ray && r.i() < self.rays.len() {
-                    self.place_ray(r.i());
-                }
+        if let Some(Arg::Ent(r)) = c.kind.place_slot().and_then(|i| c.args.get(i)) {
+            if r.kind == EntKind::Ray && r.i() < self.rays.len() {
+                self.place_ray(r.i());
             }
         }
         for (i, name) in c.kind.param_slots() {
@@ -514,7 +548,14 @@ impl Sketch {
     pub fn remove(&mut self, id: u32) {
         let (expr, own) = self.constraint(id)
             .map_or((false, Vec::new()), |c| (crate::expr::has_expr(&c.args), c.aux_params()));
+        let placed = self.constraint(id).and_then(|c| c.ray_placed_by());
         self.constraints.retain(|c| c.id != id);
+        // a ray whose place nothing reads now is held again: its place is no freedom
+        if let Some(r) = placed {
+            if !self.constraints.iter().any(|c| c.ray_placed_by() == Some(r)) {
+                self.unplace_ray(r);
+            }
+        }
         // a shared unknown stays free while another contact still owns it
         for p in own {
             let shared = self.shared.values().any(|s| s.param == p);

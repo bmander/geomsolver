@@ -1203,7 +1203,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     // called `P.origin` after its plane
     let origin_of = |r: EntRef| {
         (r.kind == EntKind::Point)
-            .then(|| sk.planes.iter().position(|p| p.origin as usize == r.i()))
+            .then(|| sk.plane_of_origin(r.i()))
             .flatten()
     };
     for r in sk.primitives() {

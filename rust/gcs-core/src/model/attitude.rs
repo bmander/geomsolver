@@ -38,6 +38,12 @@ impl Sketch {
             && p.o.iter().all(|&q| held(q))
     }
 
+    /// The name point `p`'s numbers are filed under: `a` for `a.x`, `a.y`.
+    pub fn point_label(&self, p: usize) -> &str {
+        let x = &self.params[self.points[p].x as usize].name;
+        x.strip_suffix(".x").unwrap_or(x)
+    }
+
     /// Whether every number of point `p` is held: two in its plane, three in space.
     pub fn point_held(&self, p: usize) -> bool {
         let pt = &self.points[p];
@@ -79,10 +85,7 @@ impl Sketch {
         }
         let v = self.plane_of(p)?;
         let at = self.world_point(p);
-        let name = {
-            let x = &self.params[self.points[p].x as usize].name;
-            x.strip_suffix(".x").unwrap_or(x).to_string()
-        };
+        let name = self.point_label(p).to_string();
         let x = [0, 1, 2].map(|k| {
             self.param(at[k], false, &format!("{name}.lift.{}", ["x", "y", "z"][k])) as u32
         });
