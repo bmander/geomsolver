@@ -85,7 +85,12 @@ export function bindEvents(v: SketchView): void {
     const hit = v.pick(...sp);
     if (hit instanceof Spline) {
       insertControl(v, hit, ...v.s2wIn(v.viewOf(hit.ctrl[0]), ...sp));
+      return;
     }
+    // and on a pane, with nothing drawn under the pointer, it is that plane chosen: the next thing
+    // is drawn there.  The eye stays where it is — the pane was double-clicked where it was seen
+    const pane = hit ? null : v.paneAt(...sp);
+    if (pane) v.choosePlane(pane, false);
   });
   cv.addEventListener('contextmenu', (e) => e.preventDefault());
   cv.addEventListener('wheel', (e) => {

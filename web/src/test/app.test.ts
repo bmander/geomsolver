@@ -1385,6 +1385,27 @@ test('a standard plane the document does not have comes in with `use std` on the
   assert.equal(view.source, 'w := 100\n');
 });
 
+test('double-clicking a pane draws on its plane', () => {
+  const view = docView('use std\nt := point in std.top hint(x: 40, y: 40)\n');
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const top = planeNamed(view, 'std.top');
+  view.orbit = { az: -Math.PI / 3, el: 1.2 };       // from above, the front and side all but edge on
+  const at = view.inView(top.index, () => view.w2s(30, 30))!;
+  // with a tool down a double-click is two of its clicks, and chooses nothing
+  view.setTool('line');
+  cv.fire('dblclick', { clientX: at[0], clientY: at[1] });
+  assert.equal(view.planeName, 'std.front');
+  view.setTool('select');
+  cv.fire('dblclick', { clientX: at[0], clientY: at[1] });
+  assert.equal(view.plane, top);
+  assert.ok(closeTo([view.orbit.az, view.orbit.el], [-Math.PI / 3, 1.2]), 'the eye stays put');
+  // and off every pane, nothing changes
+  view.choosePlane('std.front', false);
+  const far = view.inView(top.index, () => view.w2s(400, -400))!;
+  cv.fire('dblclick', { clientX: far[0], clientY: far[1] });
+  assert.equal(view.doc.nameOf(view.plane!), 'std.front');
+});
+
 test('a point on a plane seen at an angle drags along that plane', () => {
   const view = docView(`${VIEWS}a := point in top hint(x: 10, y: 120)\n`);
   view.orbit = { az: -Math.PI / 3, el: Math.PI / 6 };

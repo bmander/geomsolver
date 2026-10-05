@@ -2275,6 +2275,22 @@ pub unsafe extern "C" fn gcs_workspace_pick(h: *mut Sketch, unit: f64, az: f64, 
     })
 }
 
+/// The planes whose panes (x, y) on the eye's picture plane falls inside, nearest the eye first:
+/// writes up to `cap` plane indices and returns how many there are.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_panes_at(h: *mut Sketch, az: f64, el: f64, x: f64, y: f64,
+                                                out: *mut f64, cap: usize) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        let hits = gcs_core::overview::workspace::panes_at(s, &proj, (x, y));
+        for (k, &i) in hits.iter().take(cap).enumerate() {
+            write(out.add(k), &[i as f64]);
+        }
+        hits.len() as i32
+    })
+}
+
 /// The point nearest (x, y) on the eye's picture plane and how far it is (-1 when there is none).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_nearest_point(h: *mut Sketch, az: f64, el: f64,

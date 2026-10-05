@@ -216,6 +216,8 @@ export interface Abi {
   gcs_workspace_bounds(h: number, unit: number, az: number, el: number, out: number): number;
   gcs_workspace_pick(h: number, unit: number, az: number, el: number, x: number, y: number,
                      tol: number, out: number): number;
+  gcs_workspace_panes_at(h: number, az: number, el: number, x: number, y: number,
+                         out: number, cap: number): number;
   gcs_workspace_nearest_point(h: number, az: number, el: number, x: number, y: number,
                               outDist: number): number;
   gcs_workspace_inside_json(h: number, unit: number, az: number, el: number,

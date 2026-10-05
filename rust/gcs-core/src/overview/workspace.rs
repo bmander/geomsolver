@@ -297,6 +297,40 @@ pub fn pick(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64)
     crate::model::pick_by(sk, nearest_point(sk, proj, at), tol, |e| proj.reach(sk, e, at, tol, unit))
 }
 
+/// How foreshortened a pane may be and still be landed on: `ViewCam::readable`'s default, a pane
+/// seen as good as exactly edge on and no more.
+const EDGE_ON: f64 = 1e6;
+
+/// The planes whose panes `at` on the eye's picture plane falls inside, the one nearest the eye
+/// first (ties in plane order) — what a double-click on a pane asks.  The pane is `pane`'s, the
+/// same rule the box draws it by, and its whole face answers, not only its frame.
+pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
+    let views = super::views(sk);
+    let least = sk.extent() * super::LEAST_SIDE;
+    // toward the viewer: `right × up`
+    let (r, u) = (proj.right, proj.up);
+    let toward = [r[1] * u[2] - r[2] * u[1], r[2] * u[0] - r[0] * u[2], r[0] * u[1] - r[1] * u[0]];
+    let mut hits: Vec<(f64, usize)> = Vec::new();
+    for i in 0..sk.planes.len() {
+        let m = proj.map(Some(i));
+        let det = m[0] * m[4] - m[1] * m[3];
+        let k = m[0].dhypot(m[3]).max(m[1].dhypot(m[4]));
+        if !(det.abs() > 0.0 && k * k / det.abs() < EDGE_ON) {
+            continue;
+        }
+        // where the eye's ray through `at` meets the plane, in its own coordinates
+        let (x, y) = (at.0 - m[2], at.1 - m[5]);
+        let (px, py) = ((m[4] * x - m[1] * y) / det, (-m[3] * x + m[0] * y) / det);
+        let (x0, y0, x1, y1) = super::pane(sk, i, &views, least);
+        if px < x0 || px > x1 || py < y0 || py > y1 {
+            continue;
+        }
+        hits.push((dot(toward, sk.basis(i).lift(px, py)), i));
+    }
+    hits.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+    hits.into_iter().map(|(_, i)| i).collect()
+}
+
 /// Every entity whose whole figure lies inside the box `lo`–`hi` on the eye's picture plane — a
 /// rubber band's "window" selection, asked where the figures are seen.
 pub fn inside(sk: &Sketch, proj: &Projection, lo: (f64, f64), hi: (f64, f64), unit: f64) -> Vec<EntRef> {

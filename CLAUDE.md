@@ -1251,11 +1251,14 @@ Conventions:
   `std.side`, `std.top`, then the document's planes; `choosePlane` sets `v.plane` and swings the
   eye square on (`workspace::look_at`).  A standard plane the document lacks is `pendingPlane`
   until a tool's first press adds `use std` (`edit::add_use`, `ensurePlane`) — choosing writes
-  nothing.  Callouts are drawn for the current plane's place only (`showsCallouts`), and the one
-  being written or focused.  Right-drag orbits, middle or ⇧right-drag pans, the wheel zooms.  A
-  flat document opens square on to the front, one with a solid or off-front geometry from three
-  quarters (`homeOrbit`); `workspace::bounds` frames figures and solids.  The orbit is view state
-  (never saved, exported, solved or undone).  `tests/workspace.rs` and `app.test.ts` are the gates.
+  nothing.  A double-click on a pane (select tool, nothing drawn under the pointer) chooses its
+  plane without turning the eye (`choosePlane(name, false)`): `workspace::panes_at` lists them
+  nearest the eye first, `paneAt` takes the first the chooser offers.  Callouts are drawn for the
+  current plane's place only (`showsCallouts`), and the one being written or focused.  Right-drag
+  orbits, middle or ⇧right-drag pans, the wheel zooms.  A flat document opens square on to the
+  front, one with a solid or off-front geometry from three quarters (`homeOrbit`);
+  `workspace::bounds` frames figures and solids.  The orbit is view state (never saved, exported,
+  solved or undone).  `tests/workspace.rs` and `app.test.ts` are the gates.
 - The **glass box scene** (`overview.rs`) folds a multiview drawing into space: each view on its
   own plane, the object reconstructed between them.  **Nothing is solved for and nothing is
   stored** — a point in view P has view coordinates `(a, b)` (what `project`'s residual reads),
