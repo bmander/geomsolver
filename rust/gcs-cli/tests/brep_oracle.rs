@@ -77,12 +77,11 @@ fn every_node_the_kernel_builds_is_occts() {
                 // 0.33% off this kernel's piece of a pipe tee's crotch and 0.8% off a bore's rim, whose
                 // volumes a reference made without either kernel confirms to 1e-6
                 // (`gcs-core/tests/fillet.rs`)
-                let rolled = n.get("rolled").is_some_and(|r| !r.arr().is_empty());
+                let rolls = |n: &Json| n.get("rolled").is_some_and(|r| !r.arr().is_empty());
                 // (and a body taking one, by that piece's share of it)
                 let takes_rolled = |n: &Json| ["on","cut","bound"].iter().any(|k| n.get(k).is_some_and(|ids| ids.arr().iter()
-                    .any(|id| nodes.iter().any(|m| m.get("id").unwrap().as_i64() == id.as_i64()
-                        && m.get("rolled").is_some_and(|r| !r.arr().is_empty())))));
-                let bar = if rolled { 1e-2 } else if takes_rolled(n) { 1e-4 } else if through_splines { 1e-3 }
+                    .any(|id| nodes.iter().any(|m| m.get("id").unwrap().as_i64() == id.as_i64() && rolls(m)))));
+                let bar = if rolls(n) { 1e-2 } else if takes_rolled(n) { 1e-4 } else if through_splines { 1e-3 }
                     else if swept(&b) { 1e-5 } else { 1e-7 };
                 if rel >= bar { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
                 // faces by the kind of their surface (OCCT's `GeomAbs_SurfaceType` order): OCCT may split

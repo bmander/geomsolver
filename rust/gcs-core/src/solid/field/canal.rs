@@ -13,25 +13,11 @@
 use crate::fmath::Det;
 use super::{Error,I,V};
 use crate::brep::nurbs::BSpline;
+use crate::bvh::{Bounds,Bvh};
+use crate::space::{dot,norm,scale,sub};
+use std::ops::Range;
 
 type P = [f64;3];
-
-fn sub(a: P,b: P) -> P { [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
-fn dot(a: P,b: P) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
-fn norm(a: P) -> f64 { dot(a,a).sqrt() }
-fn scale(a: P,k: f64) -> P { [a[0]*k,a[1]*k,a[2]*k] }
-
-/// The distance between two axis-aligned boxes (zero where they meet).
-fn box_gap(a: &(P,P),b: &(P,P)) -> f64 {
-    let gap = |k: usize| (a.0[k]-b.1[k]).max(b.0[k]-a.1[k]).max(0.);
-    (gap(0).powi(2)+gap(1).powi(2)+gap(2).powi(2)).sqrt()
-}
-
-fn hull(pts: &[P]) -> (P,P) {
-    let mut lo = [f64::INFINITY;3]; let mut hi = [f64::NEG_INFINITY;3];
-    for p in pts { for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); } }
-    (lo,hi)
-}
 
 /// The hodograph of a cubic's span: the poles of its derivative over the span ending at knot
 /// index `j` (`knots[j] < knots[j + 1]`), and those of its second derivative.
@@ -45,10 +31,20 @@ fn hodographs(c: &BSpline,j: usize) -> (Vec<P>,Vec<P>) {
     (d1,d2)
 }
 
-/// The spans of a curve: each the knot index ending it and its poles' box.
+/// The spans of a curve: the knot index ending each.
 fn spans(c: &BSpline) -> Vec<usize> {
     (c.degree..c.poles.len()).filter(|&j| c.knots[j+1] > c.knots[j]).collect()
 }
+
+/// The box of a set of points.
+fn hull(pts: &[P]) -> Bounds<3> {
+    let mut b = Bounds {lo:[f64::INFINITY;3],hi:[f64::NEG_INFINITY;3]};
+    for p in pts { for k in 0..3 { b.lo[k] = b.lo[k].min(p[k]); b.hi[k] = b.hi[k].max(p[k]); } }
+    b
+}
+
+/// The largest of the points' lengths.
+fn longest(pts: &[P]) -> f64 { pts.iter().map(|&q| norm(q)).fold(0.,f64::max) }
 
 /// The canal leaf. Lengths in model units.
 #[derive(Clone,Debug)]
@@ -57,15 +53,19 @@ pub struct CanalField {
     contacts: [BSpline;2],
     r: f64,
     reach: f64,
-    /// The spine's spans' pole boxes, for a lower bound on the distance to it.
-    boxes: Vec<(P,P)>,
-    /// Points of the spine to start a foot from.
+    /// The spine's spans' pole boxes, for a lower bound on the distance to it and to prune the
+    /// samples a foot starts from.
+    boxes: Bvh<3>,
+    span_boxes: Vec<Bounds<3>>,
+    /// Points of the spine to start a foot from, in order along it, and those within each span.
     samples: Vec<(f64,P)>,
+    in_span: Vec<Range<usize>>,
     /// Bounds: the spine's curvature, and how fast the cone's sides turn per unit length of it.
     kappa: f64,
     turn: f64,
     /// Within this distance of the spine a point's nearest point on it is unique.
     near: f64,
+    support: [f64;6],
 }
 
 impl CanalField {
@@ -75,77 +75,93 @@ impl CanalField {
     pub fn new(spine: BSpline,contacts: [BSpline;2],r: f64,reach: f64) -> Result<Self,String> {
         if spine.degree < 2 { return Err("a canal's spine is at least quadratic".into()) }
         let ks = spans(&spine);
-        let boxes: Vec<(P,P)> = ks.iter().map(|&j| hull(&spine.poles[j-spine.degree..=j])).collect();
-        // speed from below and acceleration from above, span by span, by the hodographs' hulls
-        let origin = ([0.;3],[0.;3]);
-        let (mut slow,mut kappa) = (f64::INFINITY,0_f64);
+        let span_boxes: Vec<Bounds<3>> = ks.iter().map(|&j| hull(&spine.poles[j-spine.degree..=j])).collect();
+        // speed from below and above and acceleration from above, span by span, by the
+        // hodographs' hulls
+        let origin = Bounds {lo:[0.;3],hi:[0.;3]};
+        let (mut slow,mut fast,mut kappa) = (f64::INFINITY,0_f64,0_f64);
         for &j in &ks {
             let (d1,d2) = hodographs(&spine,j);
-            let speed = box_gap(&hull(&d1),&origin);
+            let speed = hull(&d1).gap(origin);
             if !(speed > 0.) { return Err("a canal's spine turns too fast for its spans to bound".into()) }
             slow = slow.min(speed);
-            let accel = d2.iter().map(|&q| norm(q)).fold(0.,f64::max);
-            kappa = kappa.max(accel/(speed*speed));
+            fast = fast.max(longest(&d1));
+            kappa = kappa.max(longest(&d2)/(speed*speed));
         }
         // the contacts' rates, and the least angle between the directions to them
-        let rate = |c: &BSpline| spans(c).iter().flat_map(|&j| hodographs(c,j).0).map(norm).fold(0.,f64::max);
-        let spine_rate = spans(&spine).iter().flat_map(|&j| hodographs(&spine,j).0).map(norm).fold(0.,f64::max);
-        let e_rate = (rate(&contacts[0]).max(rate(&contacts[1]))+spine_rate)/r;
+        let rate = |c: &BSpline| spans(c).iter().map(|&j| longest(&hodographs(c,j).0)).fold(0.,f64::max);
+        let e_rate = (rate(&contacts[0]).max(rate(&contacts[1]))+fast)/r;
         let [u0,u1] = spine.domain();
+        let period = u1-u0;
         let n = 1024;
         let mut least = f64::INFINITY;
         let mut samples = Vec::with_capacity(n);
         for k in 0..n {
-            let u = u0+(u1-u0)*k as f64/n as f64;
+            let u = u0+period*k as f64/n as f64;
             let c = spine.point(u);
             samples.push((u,c));
             let e = [0,1].map(|i| scale(sub(contacts[i].point(u),c),1./r));
             least = least.min(dot(e[0],e[1]).clamp(-1.,1.).dacos());
         }
         // the angle between them changes no faster than both turn
-        let least = least-2.*e_rate*(u1-u0)/n as f64;
+        let least = least-2.*e_rate*period/n as f64;
         if !(least > 0.) { return Err("a canal's contacts come together".into()) }
         let s = least.dsin();
         let turn = (4.*e_rate/s+2.*e_rate/(s*s))/slow;
+        let reach_in = |i: usize| [spine.knots[ks[i]],spine.knots[ks[i]+1]];
+        // the samples within each span (both in order along the spine)
+        let in_span: Vec<Range<usize>> = (0..ks.len()).map(|i| {
+            let [a,z] = reach_in(i);
+            let from = samples.partition_point(|&(u,_)| u < a);
+            from..from.max(samples.partition_point(|&(u,_)| u < z))
+        }).collect();
         // where the foot is unique: within the radius of curvature, and half the distance between
         // stretches of the spine more than half a turn apart along it — nearer than that, its
         // curvature alone keeps it from coming back to itself (a chord over arc `s` is at least
-        // `2 sin(κ s / 2) / κ`); farther, their spans' hulls are measured
-        let m = boxes.len();
-        let reach_in = |i: usize| [spine.knots[ks[i]],spine.knots[ks[i]+1]];
-        let [u0,u1] = spine.domain();
-        let period = u1-u0;
+        // `2 sin(κ s / 2) / κ`); farther, their spans' hulls are measured. Two spans are nearer
+        // than half a turn when their far ends are, the long way round or the short
         let half_turn = std::f64::consts::PI/kappa;
         let mut gap = f64::INFINITY;
-        for i in 0..m { for j in i+1..m {
+        for i in 0..ks.len() { for j in i+1..ks.len() {
             let ([a0,a1],[b0,b1]) = (reach_in(i),reach_in(j));
-            let along = (b0-a1).max(0.).min((a0+period-b1).max(0.));
-            if slow*along < half_turn { continue }
-            gap = gap.min(box_gap(&boxes[i],&boxes[j]));
+            if fast*(b1-a0).min(a1+period-b0) < half_turn { continue }
+            gap = gap.min(span_boxes[i].gap(span_boxes[j]));
         } }
         let near = (1./kappa).min(0.5*gap);
         if !(reach < 0.9*near) {
             return Err(format!("the ball reaches {reach:.4} from its centre's path, past the {near:.4} where that path's \
                 nearest point is unique: too large for the meeting it rolls along"));
         }
-        Ok(CanalField {spine,contacts,r,reach,boxes,samples,kappa,turn,near})
+        let all = span_boxes.iter().fold(span_boxes[0],|m,&b| Bounds {lo:std::array::from_fn(|k| m.lo[k].min(b.lo[k])),
+            hi:std::array::from_fn(|k| m.hi[k].max(b.hi[k]))});
+        let support = [all.lo[0]-reach,all.hi[0]+reach,all.lo[1]-reach,all.hi[1]+reach,all.lo[2]-reach,all.hi[2]+reach];
+        let boxes = Bvh::new(span_boxes.iter().copied());
+        Ok(CanalField {spine,contacts,r,reach,boxes,span_boxes,samples,in_span,kappa,turn,near,support})
     }
 
-    /// The parameter and point of the spine nearest `x`: from the nearest sample, Newton on the
-    /// foot condition, the parameter kept round the loop.
+    /// The parameter and point of the spine nearest `x`: from the nearest sample (among those of
+    /// spans whose boxes could hold a nearer one), Newton on the foot condition, the parameter kept
+    /// round the loop.
     fn foot(&self,x: P) -> (f64,P) {
-        let (mut u,_) = self.samples.iter().map(|&(u,c)| (u,dot(sub(c,x),sub(c,x))))
-            .min_by(|a,b| a.1.total_cmp(&b.1)).unwrap();
+        let best = std::cell::Cell::new((f64::INFINITY,0.));
+        let at = Bounds {lo:x,hi:x};
+        self.boxes.query_nearest(|b| b.gap(at),|| best.get().0.sqrt(),|i| {
+            for &(u,c) in &self.samples[self.in_span[i].clone()] {
+                let d = dot(sub(c,x),sub(c,x));
+                if d < best.get().0 { best.set((d,u)) }
+            }
+        });
+        let mut u = best.get().1;
         let [u0,u1] = self.spine.domain();
         let period = u1-u0;
         for _ in 0..12 {
             let (c,d1,d2) = self.spine.d2(u);
             let w = sub(c,x);
             let (g,h) = (dot(w,d1),dot(d1,d1)+dot(w,d2));
-            if h <= 0. { break }
+            if h <= 0. { return (u,c) }
             let step = g/h;
+            if step.abs() < 1e-15*period { return (u,c) }
             u = u0+(u-step-u0).rem_euclid(period);
-            if step.abs() < 1e-15*period { break }
         }
         (u,self.spine.point(u))
     }
@@ -169,15 +185,16 @@ impl CanalField {
 
     /// An enclosure of the field over the box `p`.
     pub fn bounds(&self,p: V) -> Result<I,Error> {
-        let b = p.map(|i| i.bounds());
-        let centre: P = std::array::from_fn(|k| 0.5*(b[k][0]+b[k][1]));
-        let half = (0..3).map(|k| (0.5*(b[k][1]-b[k][0])).powi(2)).sum::<f64>().sqrt();
-        let pbox = ([b[0][0],b[1][0],b[2][0]],[b[0][1],b[1][1],b[2][1]]);
+        let (centre,diagonal) = crate::space::box_centre_diagonal(&p);
+        let half = 0.5*diagonal;
+        let pbox = Bounds {lo:p.map(|i| i.bounds()[0]),hi:p.map(|i| i.bounds()[1])};
         // the distance to the spine: below by its spans' hulls, above by its foot from the centre
-        let hulls = self.boxes.iter().map(|h| box_gap(&pbox,h)).fold(f64::INFINITY,f64::min);
         let (u,c) = self.foot(centre);
         let rho_c = norm(sub(centre,c));
         let rho_hi = rho_c+half;
+        let least = std::cell::Cell::new(f64::INFINITY);
+        self.boxes.query_nearest(|b| b.gap(pbox),|| least.get(),|i| least.set(least.get().min(self.span_boxes[i].gap(pbox))));
+        let hulls = least.get();
         // within the neighbourhood where the foot is unique, the foot is the nearest point and the
         // distance one-Lipschitz about the centre's
         let rho_lo = if rho_hi < self.near { hulls.max(rho_c-half) } else { hulls };
@@ -199,9 +216,7 @@ impl CanalField {
 
     /// A box enclosing its material: the spine's hull grown by the reach.
     pub fn support_bounds(&self) -> Result<Option<V>,Error> {
-        let mut lo = [f64::INFINITY;3]; let mut hi = [f64::NEG_INFINITY;3];
-        for (a,b) in &self.boxes { for k in 0..3 { lo[k] = lo[k].min(a[k]); hi[k] = hi[k].max(b[k]); } }
-        let at = |k: usize| I::new(lo[k]-self.reach,hi[k]+self.reach);
-        Ok(Some([at(0)?,at(1)?,at(2)?]))
+        let s = self.support;
+        Ok(Some([I::new(s[0],s[1])?,I::new(s[2],s[3])?,I::new(s[4],s[5])?]))
     }
 }

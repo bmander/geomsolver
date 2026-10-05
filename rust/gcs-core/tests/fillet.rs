@@ -6,6 +6,9 @@
 use gcs_core::program::{elaborate, Code, Elaborated};
 use std::f64::consts::PI;
 
+use crate::common::unit;
+use gcs_core::space::{dot, scale, sub};
+
 /// A drawing written on the page, drawn in `std.front` (the page's own coordinates: x right, z
 /// up, its depth toward −y); one already drawn in a plane of `std` as it is.
 fn front(src: &str) -> String {
@@ -523,10 +526,6 @@ fn a_canal_reaching_past_its_spines_bend_is_refused_by_the_field() {
 // -- rung 2: balls rolled along traced loops ---------------------------------------------------
 
 type V3 = [f64; 3];
-fn sub(a: V3, b: V3) -> V3 { [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
-fn dot(a: V3, b: V3) -> f64 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
-fn scale(a: V3, k: f64) -> V3 { [a[0] * k, a[1] * k, a[2] * k] }
-fn unit(a: V3) -> V3 { scale(a, 1.0 / dot(a, a).sqrt()) }
 
 /// The least positive root of `a t² + b t + c` (infinite where there is none).
 fn first_root(a: f64, b: f64, c: f64) -> f64 {
@@ -553,7 +552,8 @@ fn ray_sphere(o: V3, w: V3, radius: f64) -> f64 { first_root(1.0, 2.0 * dot(o, w
 /// `q` along its principal normal).
 fn rolled(c: &dyn Fn(f64) -> V3, toward: [&dyn Fn(V3) -> V3; 2], hit: [&dyn Fn(V3, V3) -> f64; 2], r: f64) -> f64 {
     let (n_phi, n_psi) = (720, 96);
-    // Gauss–Legendre on [−1, 1], by Newton on the Legendre polynomial
+    // Gauss–Legendre on [−1, 1], by Newton on the Legendre polynomial (the kernel's own rule is not
+    // borrowed: the reference reads nothing of it)
     let gauss: Vec<(f64, f64)> = (0..n_psi).map(|i| {
         let mut x = (PI * (i as f64 + 0.75) / (n_psi as f64 + 0.5)).cos();
         let mut dp = 0.0;

@@ -244,7 +244,9 @@ pub struct Roll { pub rolled: std::rc::Rc<crate::brep::fillet::Rolled>, pub mm: 
 impl Roll {
     /// The point of the loop it rounds, in model units — what a kernel rolling it again selects
     /// the loop by.
-    pub fn edge_point(&self) -> V { std::array::from_fn(|k| self.at[k] / self.mm + self.origin[k]) }
+    pub fn edge_point(&self) -> V { self.model(self.at) }
+    /// A point of the kernel's boundary in model units.
+    pub fn model(&self, p: V) -> V { std::array::from_fn(|k| p[k] / self.mm + self.origin[k]) }
 }
 
 /// A fillet's every piece — swept or turned sections, and balls rolled along traced loops — and
@@ -313,26 +315,21 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
             EdgeCurve::Curve(_) => true,
             EdgeCurve::Degenerate => continue,
         };
-        if traced {
+        let hollow = if traced {
             if rolled_edges.contains(&ei) { continue; }
             let e = &brep.edges[ei];
             let at = e.point(0.5 * (e.t[0] + e.t[1]), &brep.vertices);
-            let rolled = crate::brep::fillet::roll(&brep, at, r.value * mm, tol, tol)?;
+            let rolled = crate::brep::fillet::roll(&brep, at, r.value * mm, tol)?;
             rolled_edges.extend(rolled.chain.iter().copied());
             let hollow = rolled.concave;
-            match &concave {
-                Some((was, other)) if *was != hollow => return Err(format!(
-                    "rounds the concave edge of {} and the convex edge of {}: a `union` adds the one and a \
-                     `cut` takes the other away, so write two fillets",
-                    if hollow { &label } else { other }, if hollow { other } else { &label })),
-                Some(_) => {}
-                None => concave = Some((hollow, label)),
-            }
             rolls.push(Roll { rolled: std::rc::Rc::new(rolled), mm, origin, at });
-            continue;
-        }
-        let at = Edge { brep: &brep, located: &located, table: &table, edge: ei, uses: [first, second], tol };
-        let Some((piece, hollow)) = at.round(r.value * mm)? else { continue };
+            hollow
+        } else {
+            let at = Edge { brep: &brep, located: &located, table: &table, edge: ei, uses: [first, second], tol };
+            let Some((piece, hollow)) = at.round(r.value * mm)? else { continue };
+            pieces.push(piece.in_units(mm, origin));
+            hollow
+        };
         match &concave {
             Some((was, other)) if *was != hollow => return Err(format!(
                 "rounds the concave edge of {} and the convex edge of {}: a `union` adds the one and a \
@@ -341,7 +338,6 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
             Some(_) => {}
             None => concave = Some((hollow, label)),
         }
-        pieces.push(piece.in_units(mm, origin));
     }
     let Some((concave, _)) = concave else {
         return Err(format!("`{}` and `{}` meet at no edge to round",
@@ -875,7 +871,7 @@ pub(super) fn rolled_prim(roll: &Roll, origin: [f64; 3], unit: f64, of: &str) ->
     let bar = crate::curve::flatness(unit) * roll.mm;
     let m = crate::brep::mesh::mesh(b, bar.max(1e-6 * b.size()), TAU / 64.0).ok()?;
     let faces: Vec<String> = b.faces.iter().map(|f| f.name.clone()).collect();
-    let at = |p: V| -> V { std::array::from_fn(|k| p[k] / roll.mm + roll.origin[k] - origin[k]) };
+    let at = |p: V| -> V { crate::space::sub(roll.model(p), origin) };
     let facets = m.tris.iter().zip(&m.of).filter_map(|(t, &fi)| {
         let pts: Vec<V> = t.iter().map(|&i| at(m.pts[i as usize])).collect();
         let n = super::primitive::facet_normal(&pts)?;

@@ -183,20 +183,24 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     // lying in the face's surface, it is split only where it crosses the face's
                     // own edges, which no surface tells: each crossing a vertex on both (a
                     // fillet's contact circle laid on a cylinder across the cylinder's seam)
-                    Meets::Along => for g in { along_face[other][fi].push(we); f.loops.iter().flatten().map(|g| g.edge).collect::<std::collections::BTreeSet<_>>() } {
-                        let ge = &solids[other].edges[g as usize];
-                        let EdgeCurve::Curve(gc) = &ge.curve else { continue };
-                        // (where neither is a line or a circle — a spline sweep's rail along a side —
-                        // it is left unsplit, as every edge along a face was before; that crossing
-                        // wants a general curve–curve root, not yet written)
-                        for (t,q) in crossings_in(&f.surface,c,e.t,gc,ge.t,tol).unwrap_or_default() {
-                            if debug { eprintln!("brep: edge {i} of {} ({}) along face {fi} crosses its edge {g} at {q:?}",
-                                ["A","B"][s],c.kind()); }
-                            let v = pool.at(q);
-                            cuts[we].push((t,v));
-                            on_face[other][fi].push(v);
+                    Meets::Along => {
+                        along_face[other][fi].push(we);
+                        let edges: std::collections::BTreeSet<u32> = f.loops.iter().flatten().map(|g| g.edge).collect();
+                        for g in edges {
+                            let ge = &solids[other].edges[g as usize];
+                            let EdgeCurve::Curve(gc) = &ge.curve else { continue };
+                            // (where neither is a line or a circle — a spline sweep's rail along a
+                            // side — it is left unsplit, as every edge along a face was before; that
+                            // crossing wants a general curve–curve root, not yet written)
+                            for (t,q) in crossings_in(&f.surface,c,e.t,gc,ge.t,tol).unwrap_or_default() {
+                                if debug { eprintln!("brep: edge {i} of {} ({}) along face {fi} crosses its edge {g} at {q:?}",
+                                    ["A","B"][s],c.kind()); }
+                                let v = pool.at(q);
+                                cuts[we].push((t,v));
+                                on_face[other][fi].push(v);
+                            }
                         }
-                    },
+                    }
                     Meets::At(roots) => for (t,touch) in roots {
                         let q = c.point(t);
                         if debug { eprintln!("brep: edge {i} of {} ({}) meets face {fi} ({}) at {q:?}{}: {:?}",["A","B"][s],c.kind(),

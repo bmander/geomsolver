@@ -33,12 +33,6 @@ pub struct Rolled {
     pub concave: bool,
     pub r: f64,
     pub reach: f64,
-    /// The two faces' surfaces, and which way along each one's own normal the ball stands (±1):
-    /// a contact is `c − side · r · ∇S(c)` for spine point `c`.
-    pub surfaces: [Surface;2],
-    pub sides: [f64;2],
-    /// The bars the canal net and the spine were fitted within.
-    pub fit: [f64;2],
 }
 
 fn unit(a: V) -> V { scale(a,1./norm(a)) }
@@ -52,9 +46,9 @@ fn slerp(a: V,b: V,v: f64) -> V {
 }
 
 /// The ball of radius `r` rolled along the edge of `b` nearest `at`, the faces either side of it
-/// meeting on a closed loop; `tol` the boundary's tolerance, `fit` the bar the canal is fitted
-/// within. `Err` says why it cannot be rolled exactly.
-pub fn roll(b: &Brep,at: V,r: f64,tol: f64,fit: f64) -> Result<Rolled,String> {
+/// meeting on a closed loop; `tol` the boundary's tolerance, and the bar the canal and the spine
+/// are fitted within. `Err` says why it cannot be rolled exactly.
+pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
     let located = Located::new(b,tol);
     // the uses of every edge
     let mut uses: Vec<Vec<(usize,usize,usize)>> = vec![Vec::new();b.edges.len()];
@@ -115,20 +109,21 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64,fit: f64) -> Result<Rolled,String> {
     let side = |f: &Face| { let out = if f.reversed { -1. } else { 1. }; if concave { out } else { -out } };
     let sides = [side(face_a),side(face_b)];
     let surfaces = [face_a.surface.clone(),face_b.surface.clone()];
-    let offsets = [0,1].map(|k| surfaces[k].offset(sides[k]*r));
-    let (Some(oa),Some(ob)) = (offsets[0].clone(),offsets[1].clone()) else {
+    let [Some(oa),Some(ob)] = [0,1].map(|k| surfaces[k].offset(sides[k]*r)) else {
         return Err(format!("the ball between {} is larger than one of them can hold",names()));
     };
     // the spine: the offsets' meeting through the ball's centre in the corner at `p`
+    let onto = super::geom::Traced {a:oa,b:ob,pts:Vec::new(),closed:false};
+    let (oa,ob) = (&onto.a,&onto.b);
     let guess = add(p,scale(unit(add(da,db)),r/(0.5*theta).dsin()));
-    let seed = super::geom::Traced {a:oa.clone(),b:ob.clone(),pts:Vec::new(),closed:false}.project(guess);
-    let spine = match super::ssi::intersect(&oa,&ob,tol) {
+    let seed = onto.project(guess);
+    let spine = match super::ssi::intersect(oa,ob,tol) {
         super::ssi::Ssi::Curves(cs) => cs,
         super::ssi::Ssi::Same => return Err(format!("{} lie on one surface",names())),
         super::ssi::Ssi::Traced => {
             let (lo,hi) = b.bounds();
             let grow = 4.*r+norm(sub(hi,lo));
-            super::ssi::trace(&oa,&ob,&[seed],lo.map(|x| x-grow),hi.map(|x| x+grow),tol)?
+            super::ssi::trace(oa,ob,&[seed],lo.map(|x| x-grow),hi.map(|x| x+grow),tol)?
         }
     }.into_iter().min_by(|x,y| {
         let off = |c: &Curve| distance(c.point(c.inverse(seed)),seed);
@@ -171,14 +166,24 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64,fit: f64) -> Result<Rolled,String> {
         let ts: Vec<f64> = ts.into_iter().map(|t| t/total).collect();
         super::nurbs::interpolate(&pts,&ts,3).ok_or("the spine could not be read smoothly")?
     };
-    let onto = super::geom::Traced {a:oa.clone(),b:ob.clone(),pts:Vec::new(),closed:false};
-    let c_at = |u: f64| onto.project(guide.point(u.clamp(0.,1.)));
-    let canal = |u: f64,v: f64| { let c = c_at(u); add(c,scale(slerp(toward(0,c),toward(1,c),v),r)) };
+    // the ball's centre at `u` and the directions to its contacts, each projected once however
+    // many points of the canal's arc there are read (the fit asks each `u` for its whole row)
+    let frames = std::cell::RefCell::new(std::collections::BTreeMap::<u64,(V,[V;2])>::new());
+    let frame_at = |u: f64| -> (V,[V;2]) {
+        let u = u.clamp(0.,1.);
+        if let Some(&f) = frames.borrow().get(&u.to_bits()) { return f }
+        let c = onto.project(guide.point(u));
+        let f = (c,[toward(0,c),toward(1,c)]);
+        frames.borrow_mut().insert(u.to_bits(),f);
+        f
+    };
+    let c_at = |u: f64| frame_at(u).0;
+    let canal = |u: f64,v: f64| { let (c,e) = frame_at(u); add(c,scale(slerp(e[0],e[1],v),r)) };
     // the corner's angle all the way round: no fold, no ball wedged flat
     let mut reach: f64 = 0.;
     for k in 0..=256 {
-        let c = c_at(k as f64/256.);
-        let w = dot(toward(0,c),toward(1,c)).clamp(-1.,1.).dacos();
+        let (_,e) = frame_at(k as f64/256.);
+        let w = dot(e[0],e[1]).clamp(-1.,1.).dacos();
         if !(w > MIN_TURN && w < std::f64::consts::PI-MIN_TURN) {
             return Err(format!("the ball between {} wedges flat somewhere along their meeting",names()));
         }
@@ -190,7 +195,7 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64,fit: f64) -> Result<Rolled,String> {
     // edges. Read against the other surface offset to the band's height (`curve_surface`)
     for k in 0..2 {
         let o = 1-k;
-        let contact = |u: f64| { let c = c_at(u); add(c,scale(toward(k,c),r)) };
+        let contact = |u: f64| { let (c,e) = frame_at(u); add(c,scale(e[k],r)) };
         let height = (0..=256).map(|i| sides[o]*surfaces[o].implicit(contact(i as f64/256.))).fold(0_f64,f64::max)*1.01+tol;
         let level = surfaces[o].offset(sides[o]*height).ok_or_else(|| format!("the band of {} cannot be read",names()))?;
         let fi = [fa,fb][k];
@@ -212,23 +217,23 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64,fit: f64) -> Result<Rolled,String> {
     }
     // fitted to the bar asked, or as near it as the densest net comes, no worse than a ten-millionth
     // of the boundary: its contacts are read at what was measured (`Edge::tol`)
-    let bar = fit.max(1e-7*b.size());
-    let (net,net_err) = fit_net(&canal,3,3,64,4,fit).ok_or("the canal could not be fitted")?;
+    let bar = tol.max(1e-7*b.size());
+    let (net,net_err) = fit_net(&canal,3,3,64,4,tol).ok_or("the canal could not be fitted")?;
     if net_err > bar { return Err(format!("the canal between {} misses its fit by {net_err:e}",names())); }
-    let (spine_fit,spine_err) = fit_curve(&c_at,3,64,fit).ok_or("the spine could not be fitted")?;
+    let (spine_fit,spine_err) = fit_curve(&c_at,3,64,tol).ok_or("the spine could not be fitted")?;
     if spine_err > bar { return Err(format!("the spine between {} misses its fit by {spine_err:e}",names())); }
-    let piece = build(b,&chain,&net,&strips,&sides,concave,tol,net_err)?;
-    let iso = |j: usize| BSpline {degree:net.du,knots:net.uknots.clone(),poles:net.poles.iter().map(|row| row[j]).collect()};
-    let contacts = [iso(0),iso(net.poles[0].len()-1)];
-    Ok(Rolled {piece,chain,spine:spine_fit,contacts,concave,r,reach,surfaces,sides,fit:[net_err,spine_err]})
+    let piece = build(b,&chain,&net,&strips,[face_a.reversed,face_b.reversed],concave,tol,net_err)?;
+    let contacts = [net.column(0),net.column(net.poles[0].len()-1)];
+    Ok(Rolled {piece,chain,spine:spine_fit,contacts,concave,r,reach})
 }
 
 /// The piece: the canal face over `net` (seamed along its first column), and on each surface the
 /// strip between the loop `chain` (edges of `b`) and the canal's contact with it.
-fn build(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],sides: &[f64;2],concave: bool,tol: f64,fit: f64) -> Result<Brep,String> {
+fn build(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_reversed: [bool;2],concave: bool,tol: f64,fit: f64)
+    -> Result<Brep,String> {
     let [[u0,u1],[v0,v1]] = net.domain();
     let mut out = Brep::default();
-    let column = |j: usize| Curve::BSpline(Arc::new(BSpline {degree:net.du,knots:net.uknots.clone(),poles:net.poles.iter().map(|row| row[j]).collect()}));
+    let column = |j: usize| Curve::BSpline(Arc::new(net.column(j)));
     let row = |i: usize| Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),poles:net.poles[i].clone()}));
     let last_v = net.poles[0].len()-1;
     let (va,vb) = (out.vertex(net.point(u0,v0)),out.vertex(net.point(u0,v1)));
@@ -266,10 +271,9 @@ fn build(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],sides: &[f64;
     for k in 0..2 {
         let name = ["a","b"][k];
         // the strip's surface: the face's own, its material away from the piece at a concave edge
-        let out_sign = if concave { sides[k] } else { -sides[k] };
-        let reversed = (out_sign > 0.) == concave;
+        let reversed = face_reversed[k] != concave;
         let s = &surfaces[k];
-        let mut loops = vec![closed_loop(&out,&[contact[k] as usize],s,tol)?,closed_loop(&out,&edge_of.iter().map(|&e| e as usize).collect::<Vec<_>>(),s,tol)?];
+        let mut loops = vec![closed_loop(&out,&[contact[k] as usize],s)?,closed_loop(&out,&edge_of.iter().map(|&e| e as usize).collect::<Vec<_>>(),s)?];
         let periods = s.periods();
         let winds = |l: &Loop| periods[0].is_some_and(|p| (l.turn[0]/p).round().abs() >= 1.);
         let face_loops = if loops.iter().all(|l| !winds(l)) {
@@ -304,8 +308,7 @@ struct Loop { coedges: Vec<Coedge>,turn: Uv,area: f64 }
 
 /// The edges `es` (of `b`) walked as one closed loop on `s`, each use's pcurve the edge inverted
 /// onto `s` continuously from the last.
-fn closed_loop(b: &Brep,es: &[usize],s: &Surface,tol: f64) -> Result<Loop,String> {
-    let _ = tol;
+fn closed_loop(b: &Brep,es: &[usize],s: &Surface) -> Result<Loop,String> {
     // order the edges end to start
     let mut left: Vec<usize> = es.to_vec();
     let first = left.remove(0);
@@ -384,7 +387,7 @@ fn seamed(out: &mut Brep,loops: Vec<Loop>,s: &Surface,reversed: bool) -> Result<
         Pcurve::Inverse {a,b} => Coedge {pcurve:Pcurve::Inverse {a:[a[0]+du,a[1]],b:[b[0]+du,b[1]]},..c},
         _ => c,
     };
-    let (u_end,u_high) = (low[0]+w*period,high[0]);
+    let u_end = low[0]+w*period;
     let contact: Vec<Coedge> = {
         // its first use starts where the seam arrives, `u_end`
         let first = &contact[0];
@@ -392,7 +395,6 @@ fn seamed(out: &mut Brep,loops: Vec<Loop>,s: &Surface,reversed: bool) -> Result<
         let t = if first.reversed { e.t[1] } else { e.t[0] };
         let at = first.pcurve.at(t,e,s,&out.vertices)[0];
         let du = u_end-at;
-        let _ = u_high;
         contact.into_iter().map(|c| shift(c,du)).collect()
     };
     let mut l = edges.coedges;
@@ -466,13 +468,7 @@ fn crossing(u: &dyn Fn(f64) -> f64,target: f64,period: f64,from: f64,span: f64) 
         let (fa,fb) = (level(last,last),level(next,last));
         if fa == 0. { return Some(at(k)) }
         if (fa < 0.) != (fb < 0.) {
-            let (mut lo,mut hi,mut flo) = (at(k),at(k+1),fa);
-            for _ in 0..60 {
-                let m = 0.5*(lo+hi);
-                let fm = level(u(m),last);
-                if (fm < 0.) == (flo < 0.) { lo = m; flo = fm; } else { hi = m; }
-            }
-            return Some(0.5*(lo+hi))
+            return Some(crate::roots::bracketed_root(|m| Some(level(u(m),last)),at(k),fa,at(k+1),fb,1e-15*span.abs().max(1.)))
         }
         last = next;
     }

@@ -90,16 +90,22 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                 let b = node_named(piece,built,built_names,floor).map_err(|e| format!("fillet: {e}"))?;
                 solid = Some(match solid { None => b,Some(s) => combined(&s,&b,Op::Union,floor)? });
             }
-            // a ball rolled along a traced loop of the operands' union, picked by a point of it
+            // a ball rolled along a traced loop of the operands' union, picked by a point of it (the
+            // loops of one fillet share their operands: their union is made once)
+            let mut unions: Vec<(Vec<i64>,Brep)> = Vec::new();
             for rolled in n.get("rolled").map(Json::arr).unwrap_or_default() {
-                let mut union: Option<Brep> = None;
-                for id in field(rolled,"operands")?.arr() {
-                    let b = built.get(&id.as_i64()).ok_or("recipe: a fillet's operand not built before it")?;
-                    union = Some(match union { None => b.clone(),Some(s) => combined(&s,b,Op::Union,floor)? });
+                let ids: Vec<i64> = field(rolled,"operands")?.arr().iter().map(|id| id.as_i64()).collect();
+                if !unions.iter().any(|(k,_)| *k == ids) {
+                    let mut union: Option<Brep> = None;
+                    for id in &ids {
+                        let b = built.get(id).ok_or("recipe: a fillet's operand not built before it")?;
+                        union = Some(match union { None => b.clone(),Some(s) => combined(&s,b,Op::Union,floor)? });
+                    }
+                    unions.push((ids.clone(),union.ok_or("recipe: a rolled fillet with no operands")?));
                 }
-                let union = union.ok_or("recipe: a rolled fillet with no operands")?;
+                let union = &unions.iter().find(|(k,_)| *k == ids).unwrap().1;
                 let tol = (1e-9*union.size().max(1.)).max(floor);
-                let b = super::fillet::roll(&union,vec3(field(rolled,"point")?),field(rolled,"radius")?.as_f64(),tol,tol)
+                let b = super::fillet::roll(union,vec3(field(rolled,"point")?),field(rolled,"radius")?.as_f64(),tol)
                     .map_err(|e| format!("fillet: {e}"))?.piece;
                 solid = Some(match solid { None => b,Some(s) => combined(&s,&b,Op::Union,floor)? });
             }

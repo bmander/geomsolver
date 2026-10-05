@@ -234,7 +234,6 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                 // each piece's section exactly, swept or turned as the kernels build it
                 SolidDef::Fillet {..} => {
                     let blend = sk.fillet_blend(i)?;
-
                     let mut out: Option<Snapshot> = None;
                     for p in &blend.pieces {
                         use crate::solid::fillet::Stroke;
@@ -264,7 +263,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                         let union = union.ok_or("a fillet with no operands")?;
                         for roll in &blend.rolls {
                             let model = |c: &crate::brep::nurbs::BSpline| crate::brep::nurbs::BSpline {
-                                poles:c.poles.iter().map(|p| std::array::from_fn(|k| p[k]/roll.mm+roll.origin[k])).collect(),..c.clone() };
+                                poles:c.poles.iter().map(|&p| roll.model(p)).collect(),..c.clone() };
                             let rolled = &roll.rolled;
                             let leaf = super::CanalField::new(model(&rolled.spine),[model(&rolled.contacts[0]),model(&rolled.contacts[1])],
                                 rolled.r/roll.mm,rolled.reach/roll.mm)?;

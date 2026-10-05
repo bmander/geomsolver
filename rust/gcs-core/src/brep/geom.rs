@@ -599,13 +599,6 @@ impl Surface {
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => unreachable!(),
         }
     }
-    /// A signed distance whose zero set is the surface (for a cone, the one sheet `ρ ≥ 0` its
-    /// parameters reach), positive on the side its normal points to: exact for the plane,
-    /// cylinder, sphere and torus. A cone's is the distance to its generating line in the meridian
-    /// half-plane; a swept curve's the distance to the tangent line at its foot, which runs on past
-    /// the curve's ends; a loft face's the distance along the normal at its nearest point, clamped
-    /// to the patch. Off a finite patch those extensions have zeros of their own, which is why
-    /// `query::curve_surface` keeps a swept surface's root only where the surface is.
     /// The surface standing `d` off this one along its own normal (`S_u × S_v`), where its signed
     /// distance (`implicit`) is `d`: in closed form for the analytic kinds — a plane moved, a radius
     /// grown or shrunk — and `None` for the swept and fitted kinds, or an offset through an axis.
@@ -621,6 +614,13 @@ impl Surface {
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => return None,
         })
     }
+    /// A signed distance whose zero set is the surface (for a cone, the one sheet `ρ ≥ 0` its
+    /// parameters reach), positive on the side its normal points to: exact for the plane,
+    /// cylinder, sphere and torus. A cone's is the distance to its generating line in the meridian
+    /// half-plane; a swept curve's the distance to the tangent line at its foot, which runs on past
+    /// the curve's ends; a loft face's the distance along the normal at its nearest point, clamped
+    /// to the patch. Off a finite patch those extensions have zeros of their own, which is why
+    /// `query::curve_surface` keeps a swept surface's root only where the surface is.
     pub fn implicit(&self,p: V) -> f64 {
         if let Some((d,_)) = self.swept_side(p) { return d }
         let [x,y,z] = self.frame().local(p);

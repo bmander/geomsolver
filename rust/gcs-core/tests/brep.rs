@@ -1218,7 +1218,7 @@ fn a_canal_touching_its_operands_along_an_edge_is_unioned_with_them() {
     let main = prism(&Profile {names:vec![],origin:[0.;3],normal:[1.,0.,0.],
         loops:vec![vec![arc([0.,0.,0.],10.,[1.,0.,0.],[0.,0.,1.],None)]]},-30.,30.).unwrap();
     let tee = boolean(&main,&rod([0.,0.,0.],6.,[0.,25.]),Op::Union,1e-9).unwrap();
-    let rolled = gcs_core::brep::fillet::roll(&tee,[6.,0.,10.],2.,1e-9,1e-9).unwrap();
+    let rolled = gcs_core::brep::fillet::roll(&tee,[6.,0.,10.],2.,1e-9).unwrap();
     assert!(rolled.concave);
     rolled.piece.check(1e-6).unwrap();
     let whole = boolean(&tee,&rolled.piece,Op::Union,1e-9).unwrap();
