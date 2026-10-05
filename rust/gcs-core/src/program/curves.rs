@@ -159,12 +159,8 @@ fn compile_trace(
                 let c = sk.point(0.0, 0.0, false, name);
                 EntRef::circle(sk.circle(c, 1.0, name))
             }
-            // a datum: its attitude is no column of the curve, so the page's will do
-            EntKind::Plane => {
-                let o = sk.point(0.0, 0.0, false, name);
-                let t = sk.point(1.0, 0.0, false, name);
-                EntRef::plane(sk.plane(o, t, crate::plane::Basis::page(), name))
-            }
+            // a plane: its attitude is no column of the curve, so the front plane's will do
+            EntKind::Plane => EntRef::plane(sk.fixed_plane(crate::plane::Basis::page(), name)),
             other => {
                 return Err((
                     span,
@@ -371,6 +367,17 @@ fn compile_trace(
         if r.kind == CKind::DragTarget || spec.iter().any(|(_, k)| k.is_param()) {
             return Err((st.span, format!("{} cannot appear in a trace block", r.kind.name())));
         }
+        // the block is lowered through a scratch sketch of one plane, which has no place in
+        // space for a relation in space to read
+        if r.kind.spatial() {
+            return Err((
+                st.span,
+                format!(
+                    "`{}` relates its operands in space, and a traced component places its points                      in one plane",
+                    r.kind.operator().map_or("a relation", |(w, _)| w)
+                ),
+            ));
+        }
         let mut cargs: Vec<CArg> = Vec::with_capacity(spec.len());
         let mut dim: Option<(SpecKind, Tape)> = None;
         for (i, (name, kind)) in spec.iter().enumerate() {
@@ -454,7 +461,8 @@ fn compile_trace(
 }
 
 /// A seed named geometrically, compiled to the tapes a written pair would be: the place a point
-/// already names, or **the point at the edge of a circle** at a bearing from the page's x-axis —
+/// already names, or **the point at the edge of a circle** at a bearing from the x-axis of the
+/// coordinates the circle is drawn in —
 /// `hint(at: c, bearing: u + phase)`, which is what that place is called in this language rather
 /// than the trigonometry it comes to.
 fn at_seed(

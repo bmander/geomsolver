@@ -28,11 +28,11 @@ component Kink(flank: line, base: line, design: group, normal_module: Length) {
   along := point hint(at: mark, along: base)
   kink := point hint(at: mark)
   level := line(mark, along)
-  mark on flank
+  mark coincident flank
   mark distance((design.base - design.addendum) * normal_module, side: left) base
   base angle(0deg) level
   mark distance(design.tip_relief) along
-  kink on flank
+  kink coincident flank
   kink distance(design.tip_relief, side: left) level
 }
 
@@ -59,8 +59,8 @@ component LeavingChamfer(flank: line, base: line, design: group, normal_module: 
   (slope := line(foot, slope_end)) -> tangent
     (round := arc(center: rc) hint(r: design.rounding * normal_module)) -> tangent
     (top := line(top_start, top_end))
-  foot on base
-  at.kink on slope
+  foot coincident base
+  at.kink coincident slope
   flank angle(design.relief_angle) slope
   radius(design.rounding * normal_module) round
   base angle(180deg) top
@@ -80,8 +80,8 @@ component ArrivingChamfer(flank: line, base: line, design: group, normal_module:
   (top := line(top_start, top_end)) -> tangent
     (round := arc(center: rc) hint(r: design.rounding * normal_module)) -> tangent
     (slope := line(slope_start, foot))
-  foot on base
-  at.kink on slope
+  foot coincident base
+  at.kink coincident slope
   flank angle(design.relief_angle, sense: cw) slope
   radius(design.rounding * normal_module) round
   base angle(180deg) top
@@ -130,11 +130,11 @@ preview {
   unit mm
   pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
   gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
   trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
   thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal,
     design.hypoid_design)
-  n := views.FoldedView(pitch.view, trace.normal, span: design.hypoid_design.cutter_radius)
+  n := views.FoldedView(pitch.view, trace.normal, pitch.down, span: design.hypoid_design.cutter_radius)
   tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch,
     thickness.outer_pitch, design.hypoid_design) in n.view
   mate := crown.mate.CrownMate(tooth, design.hypoid_design) in n.view
@@ -148,8 +148,10 @@ preview {
   space_relief := SpaceRelief(mate.axis, mate.outer, mate.inner, crown_neighbor, reach.cap,
     design.hypoid_design) in n.view
   // Alone, each component's normal module is its own unknown: the trace constructs it.
-  trace.K distance(tooth.normal_module) trace.normal
-  trace.K distance(mate.normal_module) trace.normal
-  trace.K distance(tooth_relief.normal_module) trace.normal
-  trace.K distance(space_relief.normal_module) trace.normal
+  in std.front {
+    trace.K distance(tooth.normal_module) trace.normal
+    trace.K distance(mate.normal_module) trace.normal
+    trace.K distance(tooth_relief.normal_module) trace.normal
+    trace.K distance(space_relief.normal_module) trace.normal
+  }
 }

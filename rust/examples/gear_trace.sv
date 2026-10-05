@@ -26,12 +26,14 @@
 // The datum line is where the angle is measured from, and it keeps the name `datum` in every
 // component that hands it down.
 
+use std
+
 component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
   t := point
   p := point
   rad := line(c.center, t)
   s := line(t, p)
-  t on c                                       // the string leaves the circle...
+  t coincident c                                       // the string leaves the circle...
   datum angle(u + phase) rad                   // ...at bearing u from the datum,
   rad perpendicular s                          // perpendicular to the radius there,
   p distance(-(c.r * u / 1rad)) rad            // and taut: let out == arc unwound
@@ -54,10 +56,10 @@ component Flank(base: circle, datum: line, root: circle, tip: circle,
   lo := point hint(x: 0, y: 0)
   hi := point hint(x: 0, y: 0)
 
-  lo on e hint(t: u0)
-  hi on e hint(t: u1)
-  lo on root
-  hi on tip
+  lo coincident e hint(t: u0)
+  hi coincident e hint(t: u1)
+  lo coincident root
+  hi coincident tip
 }
 
 component Tooth(base: circle, datum: line, root: circle, tip: circle,
@@ -102,7 +104,9 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   }
 }
 
-g := Gear(N: 12, m: 3, phi: 25, ded: 1)
+in std.front {
+  g := Gear(N: 12, m: 3, phi: 25, ded: 1)
+}
 
 // Diagnosed: fully constrained.  The two rolls per flank are still the solver's answers — and so
 // now is every point of every flank in between.

@@ -1,9 +1,7 @@
 unit mm
-o := point
-fix(x == 0, y == 0) o
-q := point
-fix(x == 40, y == 0) q
-front := plane(origin:o,toward:q)
+use std
+front := plane(u: std.x, v: std.z) hint(x: 0, y: 0, z: 0)
+fix(x == 0, y == 0, z == 0) front
 resultfp0 := point in front
 fix(x == 0, y == 0) resultfp0
 resultfp1 := point in front

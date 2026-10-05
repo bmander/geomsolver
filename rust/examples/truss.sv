@@ -9,6 +9,8 @@
 // *is*.  Writing out the thirty-odd numbers they come to would say only what this particular one
 // happened to measure — and would stop being true the moment the span changed.
 
+use std
+
 param bays := 8
 param span := 20
 param height := 15
@@ -16,24 +18,26 @@ param height := 15
 web := hypot(span / 2, height)
 
 // bays + 1 nodes along the bottom, and one above the middle of each bay
-repeat bays + 1 as i {
-  b := point hint(x: i * span, y: 0)
-}
-repeat bays as i {
-  t := point hint(x: (i + 0.5) * span, y: height)
-}
+in std.front {
+  repeat bays + 1 as i {
+    b := point hint(x: i * span, y: 0)
+  }
+  repeat bays as i {
+    t := point hint(x: (i + 0.5) * span, y: height)
+  }
 
-// the bottom chord, and the two web members that hang the top node off this bay
-repeat bays as i {
-  chord := distance(span) line(b[i], b[i + 1])
-  rise := distance(web) line(b[i], t[i])
-  fall := distance(web) line(t[i], b[i + 1])
-}
+  // the bottom chord, and the two web members that hang the top node off this bay
+  repeat bays as i {
+    chord := distance(span) line(b[i], b[i + 1])
+    rise := distance(web) line(b[i], t[i])
+    fall := distance(web) line(t[i], b[i + 1])
+  }
 
-// the top chord runs between neighbouring top nodes, so there is one fewer of it
-repeat bays - 1 as i {
-  upper := distance(span) line(t[i], t[i + 1])
-}
+  // the top chord runs between neighbouring top nodes, so there is one fewer of it
+  repeat bays - 1 as i {
+    upper := distance(span) line(t[i], t[i + 1])
+  }
 
-horizontal chord[0]
-fix(x == 0, y == 0) b[0]
+  horizontal chord[0]
+  fix(x == 0, y == 0) b[0]
+}

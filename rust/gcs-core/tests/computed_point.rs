@@ -4,7 +4,8 @@
 //! declaration it is, `p := point(x: xexpr, y: yexpr)`, beside `p := point hint(x: …)`.
 
 use gcs_core::program::elaborate;
-use gcs_core::syntax::{parse, write_stmt_to};
+use gcs_core::syntax::{write_stmt_to};
+use crate::common::parse;
 
 fn errors(src: &str) -> Vec<String> {
     let (prog, errs) = parse(src);
@@ -34,6 +35,7 @@ fn port_is_retired_and_says_what_to_write() {
 #[test]
 fn an_instances_entities_are_reached_by_dotted_name() {
     let src = "\
+use std
 component Rung(a: point, len: Length) {
   b := point hint(x: a.x + len, y: a.y)
   e := line(a, b)
@@ -42,18 +44,21 @@ component Rung(a: point, len: Length) {
     q := point hint(x: a.x, y: a.y + 10 * (i + 1))
   }
 }
+in std.front {
 o := point
 r := Rung(o, len: 30)
 fix(x == 0, y == 0) r.a
 horizontal r.e
 r.b distance(5) r.q[1]
+}
 ";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     // the formal is the actual — one entity under two names — so `fix(…) r.a` pinned `o`
-    assert_eq!(e.sketch.points.len(), 4, "o, b and the two copies of q, and no fifth for `r.a`");
+    assert_eq!(e.sketch.points.len(), 4 + crate::common::STD_POINTS,
+        "o, b and the two copies of q, and no fifth for `r.a`");
     let o = e.map.ent_named("o").expect("o");
     assert!(e.sketch.own_params(o).iter().all(|&p| e.sketch.params[p as usize].fixed));
     assert!(e.map.ent_named("r.b").is_some(), "a point of the body");
@@ -81,7 +86,7 @@ fn a_computed_point_is_a_declaration() {
     write_stmt_to(&mut out, &comp.body[0].kind).unwrap();
     assert_eq!(out.split_whitespace().collect::<Vec<_>>().join(" "), "p := point(x: c.x + cos(u), y: c.y + sin(u))");
     // nothing on the sheet holds a point to a formula — neither written there nor drawn there
-    refuses("o := point hint(x: 0, y: 0)\np := point(x: o.x + 1, y: o.y)\n", "computed point");
+    refuses("use std\nin std.front {\no := point hint(x: 0, y: 0)\np := point(x: o.x + 1, y: o.y)\n}\n", "computed point");
     refuses(&format!("{ray}o := point hint(x: 0, y: 0)\nr := Ray(o)\n"), "drawn only as a curve");
     // and the form is a point's alone
     refuses("p := point(x: 1)\n", "both `x:` and `y:`");

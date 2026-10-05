@@ -1,17 +1,15 @@
 unit mm
-o := point
-fix(x == 100000000, y == 100000000) o
-q := point
-fix(x == 100000040, y == 100000000) q
-front := plane(origin:o,toward:q)
+use std
+front := plane(u: std.x, v: std.z) hint(x: 100000000, y: 0, z: 100000000)
+fix(x == 100000000, y == 0, z == 100000000) front
 resultfp0 := point in front
-fix(x == 100000000, y == 100000000) resultfp0
+fix(x == 0, y == 0) resultfp0
 resultfp1 := point in front
-fix(x == 100000010, y == 100000000) resultfp1
+fix(x == 10, y == 0) resultfp1
 resultfp2 := point in front
-fix(x == 100000010, y == 100000010) resultfp2
+fix(x == 10, y == 10) resultfp2
 resultfp3 := point in front
-fix(x == 100000000, y == 100000010) resultfp3
+fix(x == 0, y == 10) resultfp3
 resultf := face(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
 result := solid(resultf, from: -1mm, to: 0mm)
 view(result) in front

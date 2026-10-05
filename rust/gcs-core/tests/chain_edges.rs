@@ -13,7 +13,8 @@ use gcs_core::edit::{self, Kind};
 use gcs_core::model::{EntKind, EntRef};
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{self, SolveOpts};
-use gcs_core::syntax::{highlight, parse, render_flat, Tint};
+use gcs_core::syntax::{highlight, render_flat, Tint};
+use crate::common::parse;
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);
@@ -54,6 +55,8 @@ fn refused(src: &str, code: &str, needle: &str) {
 /// the corners, so the figure is rigid once `a` is grounded and turned.
 const SQUARE: &str = "\
 unit mm
+use std
+in std.front {
 a := point
 b := point hint(x: 40, y: 0)
 c := point hint(x: 40, y: 30)
@@ -66,6 +69,7 @@ horizontal cd
 vertical da
 distance(40) ab
 distance(30) bc
+}
 ";
 
 /// The case the construct is for: a point at every edge's midpoint.  Four copies, each point
@@ -73,9 +77,9 @@ distance(30) bc
 /// take exactly as many equations — the DOF is the rectangle's, and it is zero.
 #[test]
 fn a_point_at_every_edges_midpoint() {
-    let src = format!("{SQUARE}repeat e in square as i {{\n  m := point\n  m midpoint e\n}}\n");
+    let src = format!("{SQUARE}in std.front {{\nrepeat e in square as i {{\n  m := point\n  m midpoint e\n}}\n}}\n");
     let mut e = read(&src);
-    assert_eq!(e.sketch.points.len(), 8, "four corners and four midpoints");
+    assert_eq!(e.sketch.points.len(), 8 + crate::common::STD_POINTS, "four corners and four midpoints");
     assert_eq!(
         e.sketch.user_constraints().iter().filter(|c| c.kind == CKind::Midpoint).count(),
         4
@@ -113,6 +117,7 @@ component Tick(l: line) {{
   t distance(0mm) l
   l.p1 distance(5mm) t
 }}
+in std.front {{
 repeat e in square as i {{
   m := point
   m midpoint e
@@ -120,7 +125,7 @@ repeat e in square as i {{
   e.p2 distance(i * 1mm + 10mm) m
 }}
 m[0] distance(1mm) m[1]
-"
+\n}}\n"
     );
     let e = read(&src);
     // the instance given `e` aliases the link: its formal's line is the chain's k-th edge
@@ -148,11 +153,14 @@ m[0] distance(1mm) m[1]
 fn a_surface_per_edge_of_a_revolved_profile() {
     let src = "\
 unit mm
+use std
+in std.front {
 o := point
 q := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 10) q
 axis := line(o, q)
+}
 component Rect(w: Length, h: Length) {
   a := point hint(x: 2, y: 0)
   b := point hint(x: 2mm + w, y: 0)
@@ -166,6 +174,7 @@ component Rect(w: Length, h: Length) {
   distance(w) bottom
   distance(h) right
 }
+in std.front {
 r := Rect(w: 4mm, h: 3mm)
 r.a distance(2mm, along: x) o
 r.a distance(0mm, along: y) o
@@ -173,15 +182,18 @@ ring := solid(r.profile, about: axis)
 repeat e in r.profile as i {
   s := surface(ring, edge: e)
 }
+}
 component Walls(body: solid, rect: group) {
   repeat e in rect.profile {
     wall := surface(body, e)
   }
 }
+in std.front {
 w := Walls(ring, r)
 g := {profile: r.profile}
 repeat f in g.profile {
   t := surface(ring, f)
+}
 }
 ";
     let mut e = read(src);
@@ -208,7 +220,7 @@ repeat f in g.profile {
 #[test]
 fn a_cycle_over_a_closed_chain_reads_next() {
     let src = format!(
-        "{SQUARE}cycle e in square {{\n  m := point\n  m midpoint e\n  line(m, next.m)\n}}\n"
+        "{SQUARE}in std.front {{\ncycle e in square {{\n  m := point\n  m midpoint e\n  line(m, next.m)\n}}\n}}\n"
     );
     let mut e = read(&src);
     assert_eq!(e.sketch.lines.len(), 8, "four sides and a diamond");
@@ -230,6 +242,8 @@ fn a_cycle_over_a_closed_chain_reads_next() {
 fn an_open_chain_and_a_forward_reference() {
     let src = "\
 unit mm
+use std
+in std.front {
 repeat e in trail {
   m := point
   m midpoint e
@@ -240,10 +254,13 @@ repeat e in late.p {
 }
 trail := (t1 := line(hint(x: 0, y: 0), hint(x: 10, y: 0))) ->
   (t2 := line(hint(x: 10, y: 0), hint(x: 10, y: 10))) -> (t3 := line)
+}
 component Late() {
   p := line(hint(x: 0, y: 20), hint(x: 5, y: 20)) -> line
 }
+in std.front {
 late := Late()
+}
 ";
     let e = read(src);
     assert_eq!(e.sketch.lines.len(), 5);
@@ -256,11 +273,11 @@ late := Late()
 #[test]
 fn chain_blocks_nest() {
     let src = format!(
-        "{SQUARE}\
+        "{SQUARE}in std.front {{\n\
 repeat e in square as i {{
   repeat 2 as j {{
     m := point
-    m on e
+    m coincident e
   }}
 }}
 repeat 2 as k {{
@@ -270,7 +287,7 @@ repeat 2 as k {{
     n midpoint e
   }}
 }}
-"
+\n}}\n"
     );
     let e = read(&src);
     let on = e.sketch.user_constraints().iter().filter(|c| c.kind == CKind::PointOnLine).count();
@@ -285,24 +302,32 @@ repeat 2 as k {{
 /// called what the copies call their edge.
 #[test]
 fn what_is_not_a_named_chain_is_refused() {
-    refused(&format!("{SQUARE}repeat e in a {{ }}\n"), "E103", "`a` is not a named chain");
-    refused(&format!("{SQUARE}repeat e in ab {{ }}\n"), "E103", "`ab` is not a named chain");
-    refused(&format!("{SQUARE}repeat e in nothing {{ }}\n"), "E101", "no such entity: `nothing`");
+    refused(&format!("{SQUARE}in std.front {{\nrepeat e in a {{ }}\n}}\n"), "E103", "`a` is not a named chain");
+    refused(&format!("{SQUARE}in std.front {{\nrepeat e in ab {{ }}\n}}\n"), "E103", "`ab` is not a named chain");
+    refused(&format!("{SQUARE}in std.front {{\nrepeat e in nothing {{ }}\n}}\n"), "E101", "no such entity: `nothing`");
     refused(
-        "open := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\ncycle e in open { }\n",
+        "use std\nin std.front {\nopen := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\ncycle e in open { }\n}\n",
         "E103",
         "is an open chain",
     );
-    let twice = format!("{SQUARE}repeat e in square {{ e := point }}\n");
+    let twice = format!("{SQUARE}in std.front {{\nrepeat e in square {{ e := point }}\n}}\n");
     refused(&twice, "E001", "`e` is declared twice");
     refused(
-        "component Hid() {\n  private p := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\n}\n\
-         h := Hid()\nrepeat e in h.p { }\n",
+        "\
+use std
+component Hid() {
+  private p := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line
+}
+in std.front {
+h := Hid()
+repeat e in h.p { }
+}
+",
         "E101",
         "private member",
     );
     // and the reference is where it is said
-    let src = format!("{SQUARE}repeat e in a {{ }}\n");
+    let src = format!("{SQUARE}in std.front {{\nrepeat e in a {{ }}\n}}\n");
     let (prog, _) = parse(&src);
     let el = elaborate(&prog);
     let d = el.errors().next().unwrap();
@@ -315,11 +340,19 @@ fn what_is_not_a_named_chain_is_refused() {
 #[test]
 fn the_block_is_kept_as_written() {
     let src = format!(
-        "{SQUARE}repeat e in square as i {{\n  m := point hint(x: 1, y: 1)\n  m midpoint e\n}}\n"
+        "{SQUARE}in std.front {{\nrepeat e in square as i {{\n  m := point hint(x: 1, y: 1)\n  m midpoint e\n}}\n}}\n"
     );
     // the block standing before the chain it runs over, so the printer meets it first
-    let early = "repeat e in sq {\n  m := point\n  m midpoint e\n}\n\
-                 sq := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\n";
+    let early = "\
+use std
+in std.front {
+repeat e in sq {
+  m := point
+  m midpoint e
+}
+sq := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line
+}
+";
     let (mut prog, _) = parse(early);
     assert_eq!(render_flat(&mut prog).unwrap_err().construct, "repeat and cycle blocks");
     assert_eq!(prog.text(), early, "and the source is kept");
@@ -341,7 +374,7 @@ fn the_block_is_kept_as_written() {
 /// one pose to write, and a gesture on one copy is refused with the cause.
 #[test]
 fn edits_inside_the_body_behave_as_in_a_repeat() {
-    let src = format!("{SQUARE}repeat e in square {{\n  m := point hint(x: 1, y: 1)\n  m on e\n}}\n");
+    let src = format!("{SQUARE}in std.front {{\nrepeat e in square {{\n  m := point hint(x: 1, y: 1)\n  m coincident e\n}}\n}}\n");
     let (prog, _) = parse(&src);
     let mut e = elaborate(&prog);
     assert!(solve::solve(&mut e.sketch, SolveOpts::default()).success);
@@ -373,6 +406,8 @@ fn the_edge_is_coloured_as_a_declaration() {
 #[test]
 fn the_copies_stand_where_the_block_is_written() {
     let src = "\
+use std
+in std.front {
 a := point hint(x: 0, y: 0)
 b := point hint(x: 10, y: 0)
 c := point hint(x: 0, y: 10)
@@ -383,6 +418,7 @@ repeat e in tri {
 }
 after := point hint(x: 5, y: 5)
 tri := line(a, b) -> line(b, c) -> line(c, a) -> close
+}
 ";
     let e = read(src);
     let at = |n: &str| e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`")).i();

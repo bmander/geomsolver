@@ -142,7 +142,10 @@ fn generic_sheet_reproduces_the_gear_tooth_space() { single_space("gear",117.137
 /// this construction: every cutter point's contact condition is constant, so no
 /// station family parameterizes the envelope. It is refused, not mis-built; the
 /// closed-form torus check of the arrangement itself lives in `cells.rs`.
-const BEAD: &str = "
+const BEAD: &str = "\
+use std
+
+in std.front {
 private bc := point
 bc distance(3.8mm, along: u) std.front
 bc distance(0mm, along: v) std.front
@@ -154,6 +157,7 @@ bd parallel spindle
 distance(2mm) bd
 private bm := arc(center: bc, start: bb, end: bt)
 radius(1mm) bm
+}
 construction bead := solid(face(bm, bd), about: bd)
 part := solid(bead)
 removal.body cut part

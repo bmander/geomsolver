@@ -6,8 +6,7 @@ use crate::style::{Classes, Style};
 use crate::syntax::lexer::Tok;
 use crate::syntax::words::trails_decl;
 use crate::syntax::{
-    decl_head, Arg, AtRef, Attitude, Decl, DeclName, Kid, KidSeed, Membership, Name, PlaneHint,
-    PlaneSolve, Position, Ref, Sense, Span, StmtKind, StyleRule, Sweep,
+    decl_head, Arg, AtRef, Decl, DeclName, Kid, KidSeed, Membership, Name, Ref, Sense, Span, StmtKind, StyleRule, Sweep,
 };
 
 /// A solid's sweep arguments while the bracket list is being read.
@@ -92,144 +91,6 @@ fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
     }
 }
 
-/// A plane's attitude arguments while the bracket list is being read: each may arrive once,
-/// in any order, and `attitude_of` says which combinations make a plane.
-#[derive(Default)]
-struct AttParts {
-    from: Option<Ref>,
-    fold: Option<Arg>,
-    offset: Option<Arg>,
-    u: Option<[Arg; 3]>,
-    v: Option<[Arg; 3]>,
-    /// `o: (x, y, z)` beside `u:` and `v:`
-    o: Option<[Arg; 3]>,
-    /// `fold: along l`
-    along: Option<Ref>,
-    /// `attitude: free`, at the clause
-    free: Option<Span>,
-    /// `offset: free`, at the clause
-    offset_free: Option<Span>,
-    /// `through: M`
-    through: Option<Ref>,
-}
-
-/// The labels a plane's brackets may carry beside its children.
-fn attitude_label(l: &str) -> bool {
-    matches!(l, "from" | "fold" | "u" | "v" | "o" | "offset" | "attitude" | "through")
-}
-
-/// The keys a plane's `hint(…)` clause may carry beside its datum's scalars: a seed for each
-/// quantity the brackets can make an unknown.
-fn plane_hint_key(k: &str) -> bool {
-    matches!(k, "fold" | "offset" | "u" | "v")
-}
-
-/// `(E, E, E)` read back out of a hint value's text, each part with its own span — a hint's
-/// value is read as one run of text, and a direction is three numbers in it.
-fn split_triple(text: &str, span: Span) -> Option<Vec<Arg>> {
-    let inner = text.strip_prefix('(')?.strip_suffix(')')?;
-    let base = span.lo as usize + 1;
-    let mut out = Vec::new();
-    let (mut depth, mut from) = (0i32, 0usize);
-    let push = |a: usize, b: usize, out: &mut Vec<Arg>| {
-        let raw = &inner[a..b];
-        let lead = raw.len() - raw.trim_start().len();
-        let t = raw.trim();
-        (!t.is_empty()).then(|| {
-            let lo = base + a + lead;
-            out.push(Arg::Dim { text: t.to_string(), span: Span::new(lo, lo + t.len()) });
-        })
-    };
-    for (i, ch) in inner.char_indices() {
-        match ch {
-            '(' | '[' => depth += 1,
-            ')' | ']' => depth -= 1,
-            ',' if depth == 0 => {
-                push(from, i, &mut out)?;
-                from = i + 1;
-            }
-            _ => {}
-        }
-    }
-    push(from, inner.len(), &mut out)?;
-    (out.len() == 3).then_some(out)
-}
-
-/// What the attitude arguments a bracket list carried come to: the page when it carried none,
-/// a fold when it named a plane, a basis when it gave both vectors — and a complaint for the
-/// halves and the mixtures.
-fn attitude_of(p: AttParts) -> Result<(Attitude, Position), String> {
-    // **where it stands along its normal, when that is solved**: `offset: free` or
-    // `through: M`.  Either beside a stated `offset:` or a fold `along` a line — both of which
-    // already say where it stands — is a position stated twice, and the elaborator says so
-    // (E064) with both in hand
-    let position = match (p.offset_free, p.through) {
-        (Some(_), Some(_)) => {
-            return Err("a plane's offset is `offset: free` or `through:`, not both".into())
-        }
-        (Some(sp), None) => Position::Free(sp),
-        (None, Some(r)) => Position::Through(r),
-        (None, None) => Position::Stated,
-    };
-    if let Some(span) = p.free {
-        if p.from.is_some() || p.fold.is_some() || p.along.is_some() || p.u.is_some()
-            || p.v.is_some()
-        {
-            return Err("`attitude: free` is the whole attitude: it takes no `from:`, `fold:`, \
-                        `u:` or `v:` (seed it with `hint(u: (…), v: (…))`)"
-                .into());
-        }
-        if p.offset.is_some() {
-            return Err("a free attitude stands through the shared origin, or where \
-                        `offset: free` or `through:` puts it"
-                .into());
-        }
-        return Ok((Attitude::Free { span }, position));
-    }
-    if let Some(line) = p.along {
-        let Some(plane) = p.from else {
-            return Err("`fold: along` folds from a plane: say `from:` too".into());
-        };
-        if p.u.is_some() || p.v.is_some() {
-            return Err("a plane is folded along a line or given a basis, not both".into());
-        }
-        if p.offset.is_some() {
-            return Err("a plane folded along a line stands where the line is: it takes no \
-                        `offset:`"
-                .into());
-        }
-        return Ok((Attitude::Along { plane, line }, position));
-    }
-    if p.o.is_some() && (p.u.is_none() || p.v.is_none()) {
-        return Err("`o:` says where a basis given outright stands: say `u:` and `v:` too".into());
-    }
-    let o = p.o;
-    let a: Result<Attitude, String> = match (p.from, p.fold, p.offset, p.u, p.v) {
-        (None, None, None, None, None) => Ok(Attitude::Page),
-        // **`from:` says which plane it is derived from; `fold:` and `offset:` say how.**  0.10
-        // read a bare `from:` as `fold: 0deg`, a default no document in the corpus ever used;
-        // a plane naming another and folding nothing most plainly says *the same plane, moved*,
-        // which is what a stack is written in (§6.10) and what one `against` states.
-        (Some(plane), Some(fold), None, None, None) => Ok(Attitude::From { plane, fold }),
-        (Some(plane), None, offset, None, None) => Ok(Attitude::Offset { plane, offset }),
-        (None, None, None, Some(u), Some(v)) => Ok(Attitude::Basis { u, v, o }),
-        (None, Some(_), _, None, None) => Err("`fold` folds from a plane: say `from:` too".into()),
-        (None, _, Some(_), None, None) => {
-            Err("`offset` stands a plane off another: say `from:` too".into())
-        }
-        (Some(_), Some(_), Some(_), _, _) => {
-            Err("a plane is folded from another (`fold:`) or stood off it (`offset:`), not both"
-                .into())
-        }
-        (None, None, None, Some(_), None) | (None, None, None, None, Some(_)) => {
-            Err("a basis is both `u:` and `v:`".into())
-        }
-        _ => Err("a plane is folded from another (`from:`, `fold:`), stood off it (`offset:`) \
-                  or given a basis (`u:`, `v:`), not two of the three"
-            .into()),
-    };
-    Ok((a?, position))
-}
 impl<'a> P<'a> {
     /// A declaration, its kind keyword just read: what it is made of and its trailers.  The name
     /// was read before it (`name := line(…)`, `(name := line(…))`), or there is none.
@@ -328,8 +189,7 @@ impl<'a> P<'a> {
                 class_span: Span::new(end, end),
                 seed_at: None,
                 seed_names: Vec::new(),
-                attitude: Attitude::Page,
-                sweep: None, motion: None, angular_span: None, plane: Default::default(),
+                sweep: None, motion: None, angular_span: None,
                 membership,
                 list_span: Span::new(end, end),
                 close: None,
@@ -350,7 +210,6 @@ impl<'a> P<'a> {
         seed.resize(scalars.len(), 0.0);
         let mut seed_text: Vec<Option<String>> = vec![None; scalars.len()];
         let mut seed_spans: Vec<Span> = vec![Span::default(); scalars.len()];
-        let mut att = AttParts::default();
         let mut swp = SweepParts::default();
         let mut surface_from = None;
         let mut surface_to = None;
@@ -424,23 +283,9 @@ impl<'a> P<'a> {
                         *slot = Some(Arg::Dim {text,span});
                     }
                     // **a solid's sweep is what it is made of**, so it stands in the brackets
-                    // with the face — and it is read before the attitude's labels, since `from`
-                    // is a word both constructs use and only one of them is a plane
+                    // with the face
                     Some(l) if kind == EntKind::Solid && sweep_label(&l) => {
                         self.sweep_arg(&l, &mut swp)?;
-                    }
-                    // a plane's attitude is what it is made of, so it stands in the brackets
-                    // with the children — and no other kind has one to give
-                    Some(l) if attitude_label(&l)
-                        && !fields.iter().any(|(name,field)| *name == l && *field == Field::Child) => {
-                        if kind != EntKind::Plane {
-                            self.fail(&format!(
-                                "`{l}` folds a plane, and a {} has no attitude to give",
-                                kind.as_str()
-                            ));
-                            return None;
-                        }
-                        self.attitude_arg(&l, &mut att)?;
                     }
                     // the brackets after the name are *what the thing is made of*; where the
                     // solve begins is the `hint(…)` after them (spec §6.4)
@@ -526,14 +371,6 @@ impl<'a> P<'a> {
             (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to,side:None}),
             _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
         };
-        let (attitude, position) = match attitude_of(att) {
-            Ok(a) => a,
-            Err(m) => {
-                let head = head();
-                self.fail(&format!("`{head}`: {m}"));
-                return None;
-            }
-        };
         let sweep = if kind == EntKind::Solid {
             match sweep_of(swp) {
                 Ok(sw) => Some(sw),
@@ -554,7 +391,6 @@ impl<'a> P<'a> {
         let mut class_span = Span::default();
         let mut seed_at: Option<AtRef> = None;
         let mut membership = Membership::default();
-        let mut plane_hints: Vec<PlaneHint> = Vec::new();
         let insert = self.prev_hi();
         let mut hint_span = Span::new(insert, insert);
         loop {
@@ -572,6 +408,9 @@ impl<'a> P<'a> {
                 let mut along: Option<Ref> = None;
                 let mut texts: [Option<(String, Span, Span)>; 3] = [None, None, None];
                 let mut coord: Option<Span> = None;
+                // `x:` and `y:` as written, which beside `at:` a plane are a place in it
+                let mut xy: [Option<(String, Span)>; 2] = [None, None];
+                let mut other_coord: Option<Span> = None;
                 for h in self.hint_body("x: 0, y: 0")? {
                     if let Some(what) = h.place {
                         let slot = match h.key.as_str() {
@@ -594,33 +433,6 @@ impl<'a> P<'a> {
                         texts[k] = Some((h.text, h.span, h.at));
                         continue;
                     }
-                    // a plane's solved quantities are seeded here too: whether the brackets
-                    // made each one an unknown is the elaborator's question (E040 if not)
-                    if kind == EntKind::Plane && plane_hint_key(&h.key) {
-                        if plane_hints.iter().any(|x: &PlaneHint| x.key.text == h.key) {
-                            self.fail_at(h.at, &format!("`{}` is seeded twice", h.key));
-                            continue;
-                        }
-                        let args = if h.key == "u" || h.key == "v" {
-                            match split_triple(&h.text, h.span) {
-                                Some(a) => a,
-                                None => {
-                                    let m = format!("`{}` seeds a direction: `{}: (x, y, z)`",
-                                                    h.key, h.key);
-                                    self.fail_at(h.at, &m);
-                                    continue;
-                                }
-                            }
-                        } else {
-                            vec![Arg::Dim { text: h.text.clone(), span: h.span }]
-                        };
-                        plane_hints.push(PlaneHint {
-                            key: Name { text: h.key.clone(), span: h.at },
-                            args,
-                            span: h.span,
-                        });
-                        continue;
-                    }
                     let Some(i) = scalars.iter().position(|&s| s == h.key) else {
                         // the key is the mistake, not the declaration: reported, and the rest
                         // of the clause read on, so the entity is still declared and no
@@ -630,6 +442,13 @@ impl<'a> P<'a> {
                         continue;
                     };
                     coord.get_or_insert(h.at);
+                    match h.key.as_str() {
+                        "x" => xy[0] = Some((h.text.clone(), h.span)),
+                        "y" => xy[1] = Some((h.text.clone(), h.span)),
+                        _ => {
+                            other_coord.get_or_insert(h.at);
+                        }
+                    }
                     seed[i] = h.value.unwrap_or(0.0);
                     seed_text[i] = (h.value.is_none()).then_some(h.text);
                     seed_spans[i] = h.span;
@@ -639,11 +458,21 @@ impl<'a> P<'a> {
                 let text = |t: Option<(String, Span, Span)>| t.map(|(text, span, _)| (text, span));
                 match at {
                     Some(what) => {
-                        if let Some(sp) = coord {
-                            let m = "`at:` names the place; a clause with it carries no scalar";
+                        // a place in a plane, `hint(at: P, x: 3, y: 4)`: the plane's own
+                        // coordinates, read where the point is seen; any other scalar beside a
+                        // place is refused
+                        let in_plane = kind == EntKind::Point && coord.is_some() && other_coord.is_none();
+                        if let (Some(sp), false) = (coord, in_plane) {
+                            let m = "`at:` names the place; a clause with it carries no scalar \
+                                     but a place's `x:` and `y:` in a plane";
                             self.fail_at(sp, m);
                         }
                         let step = toward.as_ref().or(along.as_ref()).map(|r| r.span);
+                        if let (true, Some(sp)) = (in_plane, step.or(key_at(&bearing))) {
+                            let m = "`x:` and `y:` are a place in the plane `at:` names, and a \
+                                     step or a bearing is from a point: one or the other";
+                            self.fail_at(sp, m);
+                        }
                         if let (Some(_), Some(sp)) = (&toward, along.as_ref().map(|r| r.span)) {
                             let m = "a step is `toward:` a point or `along:` a line: one or the \
                                      other";
@@ -671,7 +500,16 @@ impl<'a> P<'a> {
                             along,
                             by: text(by),
                             turn: text(turn),
+                            x: if in_plane { xy[0].take() } else { None },
+                            y: if in_plane { xy[1].take() } else { None },
                         });
+                        if in_plane {
+                            // the place carries the numbers; the scalars stay unseeded
+                            for i in 0..seed.len() {
+                                seed[i] = 0.0;
+                                seed_text[i] = None;
+                            }
+                        }
                     }
                     None => {
                         let lone = [
@@ -772,8 +610,6 @@ impl<'a> P<'a> {
             class_span: if class_span.is_empty() { Span::new(insert, insert) } else { class_span },
             seed_at,
             seed_names: Vec::new(),
-            attitude,
-            plane: PlaneSolve { position, hints: plane_hints },
             sweep,
             motion: None, angular_span,
             membership,
@@ -842,97 +678,6 @@ impl<'a> P<'a> {
         Some(())
     }
 
-    /// One of a plane's attitude arguments, the label already eaten: `from: REF`,
-    /// `fold: EXPR`, `u: (E, E, E)`, `v: (E, E, E)`.
-    fn attitude_arg(&mut self, label: &str, parts: &mut AttParts) -> Option<()> {
-        let twice = |s: &mut Self| {
-            s.fail(&format!("`{label}` is given twice"));
-            None
-        };
-        match label {
-            "from" => {
-                if parts.from.is_some() {
-                    return twice(self);
-                }
-                parts.from = Some(self.refr()?);
-            }
-            "fold" => {
-                if parts.fold.is_some() || parts.along.is_some() {
-                    return twice(self);
-                }
-                // `fold: along l` — the word and then a name, which no expression is
-                if self.peek_word("along")
-                    && matches!(self.t.get(self.i + 1).map(|t| &t.0), Some(Tok::Ident(_)))
-                {
-                    self.i += 1;
-                    parts.along = Some(self.refr()?);
-                } else {
-                    let (text, span) = self.expr_until(',')?;
-                    parts.fold = Some(Arg::Dim { text, span });
-                }
-            }
-            "offset" => {
-                if parts.offset.is_some() || parts.offset_free.is_some() {
-                    return twice(self);
-                }
-                let (text, span) = self.expr_until(',')?;
-                if text == "free" {
-                    parts.offset_free = Some(span);
-                } else {
-                    parts.offset = Some(Arg::Dim { text, span });
-                }
-            }
-            "attitude" => {
-                if parts.free.is_some() {
-                    return twice(self);
-                }
-                let w = self.ident()?;
-                if w.text != "free" {
-                    self.fail_at(w.span, "`attitude:` is `free`; a stated one is `from:` and \
-                                          `fold:`, or `u:` and `v:`");
-                    return None;
-                }
-                parts.free = Some(w.span);
-            }
-            "through" => {
-                if parts.through.is_some() {
-                    return twice(self);
-                }
-                parts.through = Some(self.refr()?);
-            }
-            _ => {
-                let slot = match label {
-                    "u" => &mut parts.u,
-                    "v" => &mut parts.v,
-                    _ => &mut parts.o,
-                };
-                if slot.is_some() {
-                    return twice(self);
-                }
-                *slot = Some(self.triple()?);
-            }
-        }
-        Some(())
-    }
-
-    /// `(E, E, E)` — three expressions, as written.
-    fn triple(&mut self) -> Option<[Arg; 3]> {
-        if !self.want_p('(') {
-            return None;
-        }
-        let mut out: Vec<Arg> = Vec::with_capacity(3);
-        for k in 0..3 {
-            let (text, span) = self.expr_until(if k < 2 { ',' } else { ')' })?;
-            out.push(Arg::Dim { text, span });
-            if k < 2 && !self.want_p(',') {
-                return None;
-            }
-        }
-        if !self.want_p(')') {
-            return None;
-        }
-        Some([out.remove(0), out.remove(0), out.remove(0)])
-    }
 }
 impl<'a> P<'a> {
     fn envelope_decl(&mut self, name: DeclName) -> Option<Decl> {
@@ -976,8 +721,7 @@ impl<'a> P<'a> {
             annotations:Default::default(),kind:EntKind::Envelope,name,
             children:vec![vec![surface],vec![motion]],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,curve:None,
-            computed:None,class,class_span,seed_at:None,seed_names:vec![],attitude:Attitude::Page,
-            sweep:None,motion:None,angular_span:Some(crate::syntax::AngularSpan {from,to,side}),plane:Default::default(),
+            computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,angular_span:Some(crate::syntax::AngularSpan {from,to,side}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
         })
     }
@@ -1030,8 +774,7 @@ impl<'a> P<'a> {
         Some(Decl {
             annotations:Default::default(),kind:EntKind::Motion,name,children:vec![vec![]],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,curve:None,
-            computed:None,class,class_span,seed_at:None,seed_names:vec![],attitude:Attitude::Page,
-            sweep:None,motion:Some(spec),angular_span:None,plane:Default::default(),membership:Membership::default(),
+            computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:Some(spec),angular_span:None,membership:Membership::default(),
             list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
         })
     }

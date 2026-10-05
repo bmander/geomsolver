@@ -10,7 +10,7 @@ use gcs_core::examples;
 use gcs_core::io;
 use gcs_core::model::Sketch;
 use gcs_core::program::elaborate;
-use gcs_core::syntax::parse_legacy as parse;
+use crate::common::parse_legacy as parse;
 use gcs_core::units::{Dim, Units};
 
 fn read(src: &str) -> Result<Sketch, Vec<String>> {
@@ -38,7 +38,7 @@ fn says(src: &str, what: &str) {
     assert!(ds.iter().any(|m| m.contains(what)), "expected {what:?} in {ds:?}");
 }
 
-const PAIR: &str = "a := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\nl := line(a, b)\n";
+const PAIR: &str = "use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\nl := line(a, b)\n}\n";
 
 /* -- the literal ------------------------------------------------------------------------- */
 
@@ -93,12 +93,15 @@ fn an_angle_in_a_length_slot_is_an_error() {
 #[test]
 fn a_length_plus_an_angle_is_an_error() {
     let src = "\
+use std
 component Bad(w: Length, phi: Angle) {
   x := w + phi
   p := point
   fix(x == x, y == 0) p
 }
+in std.front {
 g := Bad(w: 10, phi: 20)
+}
 ";
     says(src, "cannot be added");
 }
@@ -125,8 +128,17 @@ fn pi_is_a_number_and_tau_is_an_angle() {
     says(&format!("{PAIR}a distance(tau) b\n"), "is Length, and this is Angle");
     read(&format!("{PAIR}a distance(pi * 20) b\n")).expect("pi is a plain number");
     // `tau == 2 * pi * 1rad` holds dimensionally, which it did not
-    let sk = read("a := point hint(x: 0, y: 0)\nb := point hint(x: 1, y: 0)\nc := point hint(x: 1, y: 1)\n\
-                   l := line(a, b)\nm := line(a, c)\nl angle(tau / 8) m\n")
+    let sk = read("\
+use std
+in std.front {
+a := point hint(x: 0, y: 0)
+b := point hint(x: 1, y: 0)
+c := point hint(x: 1, y: 1)
+l := line(a, b)
+m := line(a, c)
+l angle(tau / 8) m
+}
+")
         .expect("an angle slot takes an angle");
     let want = (360.0f64 / 8.0).to_radians();
     assert!((sk.user_constraints()[0].args[2].num() - want).abs() < 1e-9);
@@ -137,7 +149,9 @@ fn pi_is_a_number_and_tau_is_an_angle() {
 #[test]
 fn a_free_variable_read_two_ways_is_an_error() {
     let src = "\
+use std
 param k: Length
+in std.front {
 a := point hint(x: 0, y: 0)
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
@@ -145,6 +159,7 @@ l := line(a, b)
 m := line(b, c)
 a distance(k) b
 l angle(k) m
+}
 ";
     says(src, "`k` is declared Length, and `theta` reads it as Angle");
 }
@@ -206,7 +221,7 @@ fn a_paste_between_units_converts() {
     let clip = io::copy(&inches, &inches.primitives());
     assert_eq!(clip.units.name(), Some("in"), "a clipboard says what its numbers are in");
 
-    let mut mm = read("unit mm\nz := point hint(x: 0, y: 0)\n").expect("elaborates");
+    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint(x: 0, y: 0)\n}\n").expect("elaborates");
     io::paste(&mut mm, &clip, 0.0, 0.0);
     let far = mm.points.iter().skip(1).map(|p| mm.params[p.x as usize].value).fold(0.0, f64::max);
     assert!((far - 60.0 * 25.4).abs() < 1e-6, "60 in is 1524 mm, got {far}");
@@ -215,7 +230,7 @@ fn a_paste_between_units_converts() {
     assert!((d.expect("the length came too").args[2].num() - 50.8).abs() < 1e-9);
 
     // and into a document in the same units, nothing is scaled
-    let mut same = read("unit in\nz := point hint(x: 0, y: 0)\n").expect("elaborates");
+    let mut same = read("unit in\nuse std\nin std.front {\nz := point hint(x: 0, y: 0)\n}\n").expect("elaborates");
     io::paste(&mut same, &clip, 0.0, 0.0);
     let far = same.points.iter().skip(1).map(|p| same.params[p.x as usize].value).fold(0.0, f64::max);
     assert!((far - 60.0).abs() < 1e-9, "got {far}");
@@ -224,8 +239,8 @@ fn a_paste_between_units_converts() {
 /// The unit itself: a name the language does not know, and one that is an angle.
 #[test]
 fn a_unit_line_says_what_it_will_not_take() {
-    says("unit furlong\na := point\n", "is not a unit");
-    says("unit deg\na := point\n", "a document's unit is its length");
+    says("unit furlong\nuse std\nin std.front {\na := point\n}\n", "is not a unit");
+    says("unit deg\nuse std\nin std.front {\na := point\n}\n", "a document's unit is its length");
     assert!(Units::with_length("mm").is_ok());
 }
 
@@ -251,22 +266,38 @@ fn a_printed_model_keeps_units_and_omits_the_sheet() {
 #[test]
 fn there_is_no_string_literal() {
     // `at: start` is a word, and always was
-    read("o := point hint(x: 0, y: 0)\ns := point hint(x: 10, y: 0)\ne := point hint(x: 0, y: 10)\n\
-          a := arc(center: o, start: s, end: e) hint(r: 10)\nq := point hint(x: 20, y: 0)\n\
-          l := line(s, q)\na tangent(at: start) l\n")
+    read("\
+use std
+in std.front {
+o := point hint(x: 0, y: 0)
+s := point hint(x: 10, y: 0)
+e := point hint(x: 0, y: 10)
+a := arc(center: o, start: s, end: e) hint(r: 10)
+q := point hint(x: 20, y: 0)
+l := line(s, q)
+a tangent(at: start) l
+}
+")
         .expect("a Str argument is a bare word");
     // a raw branch, bare, and printed back the same way.  A key the reader does not recognise
     // is exactly what `branch` exists for — a recorded root choice from a document this
     // implementation did not write.
-    let sk = read("a := point hint(x: 0, y: 0)\nbranch(other:0|1|2, 1)\n")
+    let sk = read("use std\nin std.front {\na := point hint(x: 0, y: 0)\nbranch(other:0|1|2, 1)\n}\n")
         .expect("a raw branch key is bare");
     assert_eq!(sk.branches.get("other:0|1|2").copied(), Some(1));
     let mut p = gcs_core::program::to_program(&sk);
     let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(text.contains("branch(other:0|1|2, 1)"), "{text}");
     // and a quote in a document is a unit mark, wherever it lands
-    let (_, errs) = parse("unit mm\na := point hint(x: 0, y: 0)\nb := point hint(x: 1, y: 0)\n\
-                           a distance(6\") b\n");
+    let (_, errs) = parse("\
+unit mm
+use std
+in std.front {
+a := point hint(x: 0, y: 0)
+b := point hint(x: 1, y: 0)
+a distance(6\") b
+}
+");
     assert!(errs.is_empty(), "{errs:?}");
 }
 
@@ -274,52 +305,52 @@ fn there_is_no_string_literal() {
 
 /// A paste across units converts **every** length, and only the lengths.
 ///
-/// `a_paste_between_units_converts` carries points and one `Distance`; these are the three that
-/// live somewhere else and were each missed once: a frame's chord, which is a constraint's own
-/// unknown; a free variable a length reads, which is a Param and no argument at all; and a
-/// callout's placement, which is two world lengths on the statement.  A rotor is the control:
-/// it is a direction, and converting it would only take the frame apart.
+/// `a_paste_between_units_converts` carries points and one `Distance`; these are the ones that
+/// live somewhere else and were each missed once: where a plane stands, which is no point; and a
+/// free variable a length reads, which is a Param and no argument at all.  A ray is the control:
+/// it is a direction, and converting it would only take it off the unit sphere.
 #[test]
 fn a_paste_converts_the_lengths_that_are_not_arguments() {
-    use gcs_core::constraints::CKind;
-
     let src = "unit in\n\
-               o := point hint(x: 0, y: 0)\n\
-               q := point hint(x: 4, y: 0)\n\
-               f := plane(origin: o, toward: q)\n\
-               a := point hint(x: 0, y: 3)\n\
-               b := point hint(x: 6, y: 3)\n\
+               use std\n\
+               r := ray hint(x: 0.6, y: 0.8, z: 0)\n\
+               f := plane(u: r, v: std.z) hint(x: 4, y: 0, z: 0)\n\
+               a := point hint(x: 0, y: 3) in f\n\
+               b := point hint(x: 6, y: 3) in f\n\
                param w: Length\n\
                a distance(w) b\n\
-               o distance(w / 2) a\n";
+               f.origin distance(w / 2) a\n";
     let inches = read(src).expect("elaborates");
     let clip = io::copy(&inches, &inches.primitives());
 
-    // the frame's chord, `frame_align`'s own unknown, and the rotor beside it
-    let chord = |sk: &Sketch| -> f64 {
-        let c = sk.constraints.iter().find(|c| c.kind == CKind::FrameAlign).expect("a frame");
-        c.args[1].value(sk)
+    // `f`, the one plane over a ray nothing holds — not a standard plane — where it stands and
+    // its first ray
+    let f = |sk: &Sketch| -> usize {
+        (0..sk.planes.len())
+            .rfind(|&i| sk.rays[sk.planes[i].u as usize].d.iter().all(|&k| !sk.params[k as usize].fixed))
+            .expect("f")
     };
-    let rotor = |sk: &Sketch| -> (f64, f64) {
-        let f = &sk.planes[0].frame;
-        (sk.params[f.c as usize].value, sk.params[f.s as usize].value)
+    let place = |sk: &Sketch| -> f64 { sk.basis(f(sk)).o[0] };
+    let ray = |sk: &Sketch| -> [f64; 3] {
+        let r = sk.planes[f(sk)].u as usize;
+        sk.rays[r].d.map(|k| sk.params[k as usize].value)
     };
     // the free variable `w`, which no argument holds
     let free = |sk: &Sketch| -> f64 {
         let c = sk.constraints.iter().find(|c| c.free.is_some()).expect("a free reader");
         sk.params[c.free.as_ref().unwrap().param as usize].value
     };
-    assert!((chord(&clip) - 4.0).abs() < 1e-9, "the chord is 4 in, got {}", chord(&clip));
+    assert!((place(&clip) - 4.0).abs() < 1e-9, "the plane stands 4 in out, got {}", place(&clip));
     assert!((free(&clip) - 6.0).abs() < 1e-9, "`w` is 6 in, got {}", free(&clip));
 
-    let mut mm = read("unit mm\nz := point hint(x: 0, y: 0)\n").expect("elaborates");
+    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint(x: 0, y: 0)\n}\n").expect("elaborates");
     let made = io::paste(&mut mm, &clip, 0.0, 0.0);
     assert!(!made.is_empty());
 
-    assert!((chord(&mm) - 4.0 * 25.4).abs() < 1e-6, "the chord converts: {}", chord(&mm));
+    assert!((place(&mm) - 4.0 * 25.4).abs() < 1e-6, "the place converts: {}", place(&mm));
     assert!((free(&mm) - 6.0 * 25.4).abs() < 1e-6, "`w` converts: {}", free(&mm));
-    let (c, s) = rotor(&mm);
-    assert!((c * c + s * s - 1.0).abs() < 1e-9, "the rotor stays on the unit circle: {c}, {s}");
+    let d = ray(&mm);
+    assert!((d[0] - 0.6).abs() < 1e-12 && (d[1] - 0.8).abs() < 1e-12, "the ray stays a direction: {d:?}");
 }
 
 /// A placement is two world lengths, so it converts with the figure it annotates.
@@ -330,7 +361,7 @@ fn a_paste_converts_a_placement() {
     let clip = io::copy(&inches, &inches.primitives());
     assert_eq!(clip.placements.len(), 1, "the placement came along");
 
-    let mut mm = read("unit mm\nz := point hint(x: 0, y: 0)\n").expect("elaborates");
+    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint(x: 0, y: 0)\n}\n").expect("elaborates");
     io::paste(&mut mm, &clip, 0.0, 0.0);
     let &(t, r) = mm.placements.values().next().expect("a placement");
     assert!((t - 3.0 * 25.4).abs() < 1e-6 && (r - 1.0 * 25.4).abs() < 1e-6, "got {t}, {r}");
@@ -359,11 +390,18 @@ fn every_param_slot_states_its_dimension() {
 #[test]
 fn a_curve_body_is_read_in_the_documents_units() {
     let sk = read(
-        "unit mm\n\
-         component ray(c: circle, u: Angle) {\n  p := point(x: c.center.x + 1in * u, y: c.center.y)\n}\n\
-         o := point hint(x: 0, y: 0)\n\
-         c1 := circle(center: o) hint(r: 25)\n\
-         w := ray(c1).p over u in (0, 1)\n",
+        "\
+unit mm
+use std
+component ray(c: circle, u: Angle) {
+  p := point(x: c.center.x + 1in * u, y: c.center.y)
+}
+in std.front {
+o := point hint(x: 0, y: 0)
+c1 := circle(center: o) hint(r: 25)
+}
+w := ray(c1).p over u in (0, 1)
+",
     )
     .expect("a suffix in a curve body is read in the document's own unit");
     assert_eq!(sk.curve_defs.len(), 1);
@@ -392,9 +430,9 @@ fn a_saved_document_has_its_unit_before_its_expressions() {
 /// expanded into the flat list and read by nobody, which is the silent failure §13.1 forbids.
 #[test]
 fn a_unit_is_stated_once_and_only_in_the_root() {
-    says("unit mm\nunit in\na := point\n", "already stated above");
+    says("unit mm\nuse std\nunit in\nin std.front {\na := point\n}\n", "already stated above");
     says(
-        "unit mm\ncomponent Part { unit in\n  a := point hint(x: 0, y: 0)\n}\np := Part()\n",
+        "unit mm\nuse std\ncomponent Part { unit in\n  a := point hint(x: 0, y: 0)\n}\nin std.front {\np := Part()\n}\n",
         "stated once, at the top",
     );
 }
@@ -407,12 +445,12 @@ fn a_unit_is_stated_once_and_only_in_the_root() {
 #[test]
 fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
     let diag = |src: &str| -> Vec<(String, String)> {
-        let (prog, errs) = gcs_core::syntax::parse_legacy(src);
+        let (prog, errs) = crate::common::parse_legacy(src);
         assert!(errs.is_empty(), "{errs:?}");
         let e = gcs_core::program::elaborate(&prog);
         e.diags.iter().map(|d| (d.code.as_str().to_string(), d.message.clone())).collect()
     };
-    let two = "a := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\n";
+    let two = "use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\n}\n";
     let d = diag(&format!("{two}a distance(45deg) b\n"));
     assert_eq!(d.len(), 1, "{d:?}");
     assert_eq!(d[0].0, "E103");

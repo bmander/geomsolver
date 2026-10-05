@@ -85,7 +85,7 @@ in std.top {
     // its centre on the far side of the rotor's, about R from it
     flank := arc(center: hint(x: e - R * cos(k * 120deg + 60deg),
       y: -R * sin(k * 120deg + 60deg)), start: tip, end: next.tip)
-    crown on flank
+    crown coincident flank
   }
 }
 arc_rotor := solid(face(flank[0], flank[1], flank[2]), from: 0mm, to: W)

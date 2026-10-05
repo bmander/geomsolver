@@ -5,7 +5,7 @@ use gcs_core::{envelope::IntersectionOptions,seam::BoundarySeamTolerance,
 mod edges;
 mod faces;
 
-const CORNERS: &str = "
+const CORNERS: &str = "\
 component Sphere(origin: point,size: Length) {
   private south := point hint(x: origin.x,y: origin.y-size)
   private north := point hint(x: origin.x,y: origin.y+size)
@@ -17,11 +17,13 @@ component Sphere(origin: point,size: Length) {
   private carrier := solid(face(rim,diameter),about: diameter)
   wall := surface(carrier,rim)
 }
+in std.front {
 shifted := point
 fix(x == 0, y == 1) shifted
 globe := Sphere(o,size: sqrt(9.25)*1mm)
 offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
 join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
+}
 radial := seam(first_envelope,globe.wall)
 offset_edge := seam(first_envelope,offset.wall)
 join_edge := seam(second_envelope,join_cut.wall)
@@ -113,10 +115,10 @@ fn vertex_identity_formals_privacy_and_dependency_copy_survive() {
 
 #[test]
 fn vertex_spelling_roundtrips_in_a_flat_program() {
-    let source = format!("{MODEL}\nsouth := point\n\
+    let source = format!("{MODEL}\nin std.front {{\nsouth := point\n\
         north := point\nfix(x == 0, y == -sqrt(10)) south\nfix(x == 0, y == sqrt(10)) north\n\
         rim := arc(center: o,start: south,end: north)\nradius(sqrt(10)*1mm) rim\n\
-        diameter := line(north,south)\nball := solid(face(rim,diameter),about: diameter)\n\
+        diameter := line(north,south)\n}}\nball := solid(face(rim,diameter),about: diameter)\n\
         wall := surface(ball,rim)\nboundary := seam(first_envelope,wall)\n\
         construction corner := vertex(shared,boundary)\nother := vertex(shared,boundary)\n\
         extent := edge(shared,from: corner,to: other,along: axis)\n");
@@ -144,7 +146,7 @@ fn vertices_reject_unrelated_faces_duplicate_boundaries_and_wrong_operands() {
         "bad := vertex(radial,offset_edge,join_edge)",
         "fix(x == 0, y == 0) corner",
     ] {
-        let (p,errors) = syntax::parse(&format!("{MODEL}{CORNERS}{tail}\n"));
+        let (p,errors) = crate::common::parse(&format!("{MODEL}{CORNERS}{tail}\n"));
         assert!(!errors.is_empty() || !program::elaborate(&p).ok(),"accepted {tail}");
     }
     let src = format!("{MODEL}{CORNERS}\nlookalike := envelope(first_surface,under: roll,from: -20deg,to: 20deg)\n\
@@ -177,7 +179,7 @@ fn corner_snapshots_enforce_finite_boundaries_material_and_numerical_controls() 
         }
     }
     for radius in [3.01,3.5] {
-        let src = format!("{MODEL}{}\nclip := Sphere(o,size: {radius}mm)\n\
+        let src = format!("{MODEL}{}\nclip := Sphere(o,size: {radius}mm) in std.front\n\
             clipped := patch(first_envelope,inside: clip.wall.solid)\n",
             CORNERS.replace("radial := seam(first_envelope,","radial := seam(clipped,")
                 .replace("offset_edge := seam(first_envelope,","offset_edge := seam(clipped,"));

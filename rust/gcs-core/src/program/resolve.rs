@@ -18,6 +18,10 @@ pub(super) struct Resolver {
     /// Source-level traversals. Closed chains also resolve to faces; open chains can
     /// contribute their edges to an explicitly closed face without inventing geometry here.
     pub(super) chains: BTreeMap<String, crate::syntax::NamedChain>,
+    /// Each plane's origin, by the plane's key: a point minted with the points, in statement
+    /// order, so `P.origin` resolves wherever it is read — before the plane is built, as a circle
+    /// about it is.
+    pub(super) origins: BTreeMap<String, usize>,
 }
 
 impl Resolver {
@@ -87,6 +91,11 @@ pub(super) fn follow_building(
         let Seg::Field(f) = &path[0] else {
             return Err("an index names a copy, not a part".to_string());
         };
+        if e.kind == EntKind::Plane && f.text == "origin" {
+            if let Some(&o) = res.origins.get(&name) {
+                return follow(sk, EntRef::point(o), &path[1..]);
+            }
+        }
         let Some(kid) = res.kid(&name, e.kind, &f.text)? else {
             return Err(format!(
                 "`{name}` does not name its {}, and `{name}` is not built yet: name the point \

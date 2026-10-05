@@ -22,11 +22,14 @@ component Sphere(center: point, r: Length) {
   body := solid(face(meridian, diameter), about: diameter)
 }
 
-construction centerline spindle := line(std.origin, std.up.toward)
-private start := point hint(x: coil_r, y: 0)
-std.origin horizontal start
-std.origin distance(coil_r, along: right) start
-private ball := Sphere(start, r: wire_r)
+in std.front {
+  construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
+  fix(x == 0, y == 1) spindle.p2
+  private start := point hint(x: coil_r, y: 0)
+  std.origin horizontal start
+  std.origin distance(coil_r, along: right) start
+  private ball := Sphere(start, r: wire_r)
+}
 
 climb := motion(about: spindle, advance: pitch)
 spring := solid(ball.body, under: climb, from: 0deg, to: turns * 360deg)

@@ -17,7 +17,6 @@ import { callouts } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
-import { threeViews } from '../app/tools.js';
 import { contains, corners, toImage, toWorld } from '../app/underlay.js';
 import type { Bitmap } from '../app/underlay.js';
 import { initCore } from '../core/wasm.js';
@@ -50,8 +49,8 @@ function viewOn(sk: Sketch): SketchView {
   return view;
 }
 
-const PROJECTED_CIRCLE = 'o := point\nq := point hint(x: 10)\nfront := plane(origin: o, toward: q)\n'
-  + 'rim := circle(center: o) hint(r: 10)\nbody := solid(face(rim), depth: 8)\n';
+const PROJECTED_CIRCLE = 'use std\nin std.front {\no := point\nrim := circle(center: o) hint(r: 10)\n}\n'
+  + 'body := solid(face(rim), depth: 8)\n';
 
 test('project file navigation isolates undo and clears pending model interactions', (t) => {
   const v = new SketchView(fakeCanvas(), Document.read('a := point hint(x: 10)\n'));
@@ -170,7 +169,7 @@ test('the drawing calls out every dimension it has', () => {
   const sk = dimensioned();
   const view = viewOn(sk);
   view.draw();                     // paint them too, so the painter is exercised as well
-  const cs = callouts(sk, view.unit);
+  const cs = callouts(view.sketch, view.unit);
   assert.equal(cs.items.length, 1);
   assert.equal(cs.items[0].text, '60');
   assert.equal(cs.items[0].id, view.sketch.userConstraints()[0].id);
@@ -363,7 +362,7 @@ test('copying a line takes its points and its dimension', () => {
   assert.equal(view.copySelected(), 3, 'the line and its two ends');
 
   assert.equal(view.pasteClipboard(), 3);
-  assert.equal(view.sketch.points.length, 4);
+  assert.equal(view.sketch.points.length, 4 + 1, 'and the origin of the plane they are drawn in');
   assert.equal(view.sketch.lines.length, 2);
   assert.equal(view.sketch.userConstraints().length, 2, 'the copy brought its own Distance');
 });
@@ -375,9 +374,11 @@ test('a paste is selected, and lands clear of what it came from', () => {
   view.copySelected();
   view.pasteClipboard();
 
-  assert.deepEqual(view.selected, [view.sketch.points[2], view.sketch.points[3], view.sketch.lines[1]]);
+  // the pasted two, after the original's two and the origin of the plane they are drawn in
+  const [p3, p4] = view.sketch.points.slice(-2);
+  assert.deepEqual(view.selected, [p3, p4, view.sketch.lines[1]]);
   const [x0, y0] = view.sketch.points[0].xy;
-  const [x1, y1] = view.sketch.points[2].xy;
+  const [x1, y1] = p3.xy;
   assert.ok(x1 > x0 && y1 < y0, `the copy should be nudged clear: ${x1},${y1} vs ${x0},${y0}`);
 });
 
@@ -387,9 +388,9 @@ test('successive pastes cascade instead of piling up', () => {
   view.selected = [view.sketch.lines[0]];
   view.copySelected();
   view.pasteClipboard();
-  const first = view.sketch.points[2].xy;
+  const first = view.sketch.points[3].xy;
   view.pasteClipboard();
-  const second = view.sketch.points[4].xy;
+  const second = view.sketch.points[5].xy;
   assert.notDeepEqual(second, first, 'the second paste landed on the first');
   assert.ok(second[0] > first[0]);
 });
@@ -403,7 +404,7 @@ test('a pasted copy is independent of the original', () => {
 
   // the pasted Distance names the pasted points and nothing else
   const pasted = view.sketch.userConstraints()[1];
-  assert.deepEqual(pasted.entities(), [view.sketch.points[2], view.sketch.points[3]]);
+  assert.deepEqual(pasted.entities(), view.sketch.points.slice(-2));
 });
 
 test('copying nothing leaves the clipboard as it was', () => {
@@ -429,7 +430,7 @@ test('pasting with an empty clipboard changes nothing', () => {
 test('a paste undoes in one step', () => {
   const sk = oneLine();
   const view = viewOn(sk);
-  const before = io.dumps(sk);
+  const before = io.dumps(view.sketch);
   view.selected = [view.sketch.lines[0]];
   view.copySelected();
   view.pasteClipboard();
@@ -472,23 +473,28 @@ function fitThrough(view: SketchView, at: [number, number][]): void {
   view.finishSplineFit();
 }
 
+/** The points a drawing has of its own: not the standard datums' `use std` brings. */
+function ownPoints(view: SketchView): Point[] {
+  return view.sketch.points.filter((p) => !view.doc.nameOf(p)?.startsWith('std.'));
+}
+
 test('a curve fitted through free clicks leaves no points behind and no constraints', () => {
-  const view = viewOn(new Sketch());
+  const view = docView('use std\n');
   fitThrough(view, [[100, 100], [200, 60], [300, 160], [400, 80], [500, 140]]);
-  const sk = view.sketch;
   assert.equal(view.sketch.splines.length, 1);
-  assert.equal(view.sketch.points.length, 5, 'the control polygon, and nothing else');
-  assert.deepEqual(view.sketch.points.map((p) => p.index), view.sketch.splines[0].ctrl.map((p) => p.index));
+  assert.equal(ownPoints(view).length, 5, 'the control polygon, and nothing else');
+  assert.deepEqual(ownPoints(view).map((p) => p.index), view.sketch.splines[0].ctrl.map((p) => p.index));
   assert.equal(view.sketch.userConstraints().length, 0, 'a free click is a place, not a promise');
 });
 
 test('a fit click that lands on a point holds the curve to it', () => {
-  const sk = new Sketch();
-  const view = viewOn(sk);
-  // two points already in the sketch, at screen positions the tool will snap to
+  const view = docView('use std\n');
+  // two points already in the sketch, drawn on the front at screen positions the tool will snap to
   const [ax, ay] = view.s2w(200, 60);
   const [bx, by] = view.s2w(400, 80);
   const a = view.sketch.point(ax, ay), b = view.sketch.point(bx, by);
+  a.plane = view.plane;
+  b.plane = view.plane;
   fitThrough(view, [[100, 100], [200, 60], [300, 160], [400, 80], [500, 140]]);
 
   assert.equal(view.sketch.splines.length, 1);
@@ -502,14 +508,13 @@ test('a fit click that lands on a point holds the curve to it', () => {
   assert.ok(!curve.ctrl.some((p) => p === a || p === b));
   // and the curve already passes through them, so the constraints hold with nothing to solve
   for (const p of [a, b]) assert.ok(curve.closest(p.x.value, p.y.value).distance < 1e-9);
-  assert.ok(solve(sk).success);
+  assert.ok(solve(view.sketch).success);
   for (const p of [a, b]) assert.ok(curve.closest(p.x.value, p.y.value).distance < 1e-9);
 });
 
 test('an abandoned fit leaves the sketch untouched', () => {
-  const sk = new Sketch();
-  const view = viewOn(sk);
-  const before = io.dumps(sk);
+  const view = docView('use std\n');
+  const before = io.dumps(view.sketch);
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;
   view.setTool('splinefit');
   for (const [x, y] of [[100, 100], [200, 60], [300, 160]] as [number, number][]) {
@@ -784,11 +789,14 @@ test('picking measures what is drawn, and does it in the core', () => {
 
 const ANNOTATED = `\
 // a base, and this comment must survive every gesture
+use std
+in std.front {
 a := point
 b := point hint(x: 100, y: 0)
 ab := line(a, b)      // the base
 horizontal ab
 fix(x == 0, y == 0) a
+}
 `;
 
 function docView(text: string): SketchView {
@@ -813,9 +821,18 @@ test('a gesture is a source edit, and leaves everything else written', () => {
     assert.ok(view.source.includes(line), `the gesture rewrote: ${line}\n${view.source}`);
   }
   assert.ok(/\nl0 := line\(p0, p1\)/.test(view.source), view.source);
-  // and the source is a document: reading it back gives the same drawing
+  // and the source is a document: reading it back gives the same drawing — the same points where
+  // they were, drawn where they were (renumbered: what was written comes before what `use std`
+  // brings, where the gesture's points came after it)
   const again = Document.read(view.source);
-  assert.equal(io.dumps(again.sketch, 1), io.dumps(view.sketch, 1));
+  assert.ok(again.ok, JSON.stringify(again.diagnostics));
+  for (const n of ['a', 'b', 'p0', 'p1']) {
+    const [p, q] = [pointNamed(view, n), again.entity(n) as Point];
+    assert.deepEqual(q.xy, p.xy, n);
+    assert.equal(again.nameOf(q.plane!), view.doc.nameOf(p.plane!), n);
+  }
+  assert.equal(again.sketch.lines.length, view.sketch.lines.length);
+  assert.equal(again.sketch.userConstraints().length, view.sketch.userConstraints().length);
   again.dispose();
 });
 
@@ -850,7 +867,7 @@ test('deleting takes the statements that named it, and leaves the comments', () 
   assert.ok(!view.source.includes('horizontal ab'), 'and the constraint on that line');
   assert.ok(view.source.includes('// a base, and this comment must survive every gesture'));
   assert.ok(view.source.includes('fix(x == 0, y == 0) a'));
-  assert.equal(view.sketch.points.length, 1);
+  assert.equal(view.sketch.points.length, 1 + 5, 'a, and the five the standard datums bring');
 });
 
 test('undo is the source, so it comes back word for word', () => {
@@ -859,7 +876,7 @@ test('undo is the source, so it comes back word for word', () => {
   view.deleteSelected();
   view.undo();
   assert.equal(view.source, ANNOTATED, 'undo restored a print-out instead of the document');
-  assert.equal(view.sketch.points.length, 2);
+  assert.equal(view.sketch.points.length, 2 + 5);
 });
 
 test('a gesture beside a component leaves the component written', () => {
@@ -888,17 +905,16 @@ test('a gesture beside a component leaves the component written', () => {
  * gesture goes through, the current plane crosses a re-elaboration the way the selection
  * does, and a projection the core refuses leaves nothing behind. */
 
+/** Two planes of the document's own, the front's and the top's, and a point drawn in
+ *  `std.front` away from either plane's origin. */
 const VIEWS = `\
-o := point
-q := point
-o2 := point
-q2 := point
-front := plane(origin: o, toward: q)
-top := plane(origin: o2, toward: q2, from: front, fold: 0deg)
-fix(x == 0, y == 0) o
-fix(x == 40, y == 0) q
-fix(x == 0, y == 80) o2
-fix(x == 40, y == 80) q2
+use std
+front := plane(u: std.x, v: std.z)
+fix(x == 0, y == 0, z == 0) front
+top := plane(u: std.x, v: std.y)
+fix(x == 0, y == 0, z == 0) top
+o := point in std.front
+fix(x == 30, y == 30) o
 `;
 
 function planeNamed(view: SketchView, name: string): Plane {
@@ -933,15 +949,16 @@ test('the current plane flows into a fresh point, and a snapped point stays wher
   click(view, 20, 10);
   assert.ok(/p0 := point hint\(x: 20, y: 10\) in front/.test(view.source), view.source);
   assert.equal(pointNamed(view, 'p0').plane, front);
-  // a click on the page's own datum snaps to it and does not pull it into the view
-  click(view, 0, 0);
-  assert.equal(view.sketch.points.length, 5, 'the click snapped rather than minting');
-  assert.ok(view.source.includes('o := point\n'), view.source);
-  assert.equal(pointNamed(view, 'o').plane, null);
-  // and back on the page, the next point carries no clause
+  // a click on a point of another plane standing there snaps to it, and does not pull it in
+  const n = view.sketch.points.length;
+  click(view, 30, 30);
+  assert.equal(view.sketch.points.length, n, 'the click snapped rather than minting');
+  assert.ok(view.source.includes('o := point in std.front\n'), view.source);
+  assert.equal(view.doc.nameOf(pointNamed(view, 'o').plane!), 'std.front');
+  // and back on the front, the next point is drawn there
   view.choosePlane('std.front');
   click(view, 25, 15);
-  assert.ok(/p1 := point hint\(x: 25, y: 15\)\n/.test(view.source), view.source);
+  assert.ok(/p1 := point hint\(x: 25, y: 15\) in std\.front\n/.test(view.source), view.source);
 });
 
 test('a projection is one constraint, and the source says `project`', () => {
@@ -987,89 +1004,47 @@ test('the current plane survives an edit, goes with its deletion, and is dropped
   assert.ok(view.plane instanceof Plane, 'the plane was lost to the re-elaboration');
   assert.equal(view.plane.sketch, view.sketch, 'and is the new drawing\'s');
   assert.equal(view.doc.nameOf(view.plane), 'top');
-  // deleting it takes the clauses and the statement; there is no view left to draw in
+  // deleting it takes the clauses and the statement; what is drawn next goes on the front
   view.selected = [view.plane];
   view.deleteSelected();
-  assert.equal(view.plane, null);
+  assert.equal(view.doc.nameOf(view.plane!), 'std.front');
   assert.ok(!view.source.includes('top := plane'), view.source);
-  assert.ok(view.source.includes('fix(x == 0, y == 80) o2'), 'its points stay');
+  assert.ok(view.source.includes('front := plane'), 'the other plane stays');
   assert.ok(!view.source.includes('project'), `the projection went with it: ${view.source}`);
   assert.ok(view.source.includes('b := point hint(x: 5, y: 85)\n'), `the clause came out: ${view.source}`);
   assert.equal(view.sketch.userConstraints().length, 0);
-  // and a load is another drawing's, whatever it happens to call things
+  // and a load is another drawing's, whatever it happens to call things: it is drawn on the front
   view.plane = planeNamed(view, 'front');
   view.setProgram(VIEWS);
-  assert.equal(view.plane, null);
+  assert.equal(view.doc.nameOf(view.plane!), 'std.front');
 });
 
-test('the plane tool writes the statement, seeds its points, and makes it current', () => {
-  const view = docView(VIEWS);
-  view.insertPlane({ name: 'aux', attitude: { from: 'front', fold: '30deg' } });
+test('the plane tool picks two lines, writes the plane over them, and makes it current', () => {
+  const view = docView(`${VIEWS}in std.front {\nab := line(hint(x: 0, y: 0), hint(x: 40, y: 0))\n`
+                       + 'ac := line(hint(x: 0, y: 0), hint(x: 0, y: 30))\n}\n');
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.choosePlane('std.front');
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  view.insertPlane({ name: 'aux' });
   assert.equal(view.tool, 'plane');
-  click(view, 60, 0);
-  assert.equal(view.sketch.planes.length, 2, 'the first click is a place, not a plane');
-  click(view, 100, 0);
-  assert.equal(view.sketch.planes.length, 3);
+  // a click on nothing is no line
+  click(view, 20, 20);
+  assert.ok(said.some((m) => /click a line/.test(m)), said.join('\n'));
+  const planes = view.sketch.planes.length;
+  click(view, 20, 0);
+  assert.equal(view.sketch.planes.length, planes, 'the first line is half a plane');
+  click(view, 0, 15);
+  assert.equal(view.sketch.planes.length, planes + 1);
   const aux = planeNamed(view, 'aux');
-  assert.equal(view.plane, aux, 'the new view is the one being drawn in');
+  assert.equal(view.plane, aux, 'the new plane is the one being drawn in');
   assert.deepEqual(view.selected, [aux]);
   assert.equal(view.tool, 'select', 'armed for one plane, and put down after it');
-  assert.deepEqual(aux.origin.xy, [60, 0]);
-  assert.deepEqual(aux.toward.xy, [100, 0]);
-  // one statement, its attitude kept and its two points seeded in the one list — seeded *in
-  // the statement*, so the frame was read off the chord that was clicked
-  const line = view.source.split('\n').find((l) => /^aux := plane\(/.test(l));
-  assert.ok(line, view.source);
-  assert.ok(line.includes('origin: hint(x: 60, y: 0)'), line);
-  assert.ok(line.includes('toward: hint(x: 100, y: 0)'), line);
-  assert.ok(line.includes('from: front, fold: 30deg'), line);
-  assert.equal(line.split('(').length - 1, line.split(')').length - 1, 'balanced');
-  assert.ok(Math.abs(aux.rotor[0].value - 1) < 1e-12, 'the rotor is the chord\'s');
-  // Enter after the first click points the view to the right.  A plane's two points are layout,
-  // read off the page whatever plane is current, so the click is aimed at the page
-  view.insertPlane({ attitude: null });
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
-  const at = view.inView(-1, () => view.w2s(0, -60))!;
-  cv.fire('pointerdown', pointer(...at));
-  cv.fire('pointerup', pointer(...at));
-  view.finishCurve();
-  const v = planeNamed(view, 'v0');
-  assert.deepEqual(v.toward.xy, [40, -60]);
-  assert.equal(view.plane, v);
-});
-
-test('three views land where the table puts them, and stay there through the solve', () => {
-  // auto-solve on: what this guards is the *solve* after the edit.  A plane is a frame whose
-  // rotor and chord length are read off the chord at elaboration, so a pose written into the
-  // points afterwards left both stale and the solve collapsed `toward` onto `origin`
-  const view = new SketchView(fakeCanvas(), Document.read('o := point\nfix(x == 0, y == 0) o\n'));
-  assert.ok(threeViews(view));
-  const at = (name: string, x: number, y: number): void => {
-    const p = pointNamed(view, name);
-    assert.ok(Math.hypot(p.xy[0] - x, p.xy[1] - y) < 1e-6, `${name} at ${p.xy}, not (${x}, ${y})`);
-  };
-  at('front.origin', 0, 0);
-  at('front.toward', 40, 0);
-  at('top.origin', 0, 80);
-  at('top.toward', 40, 80);
-  at('right.origin', 120, 0);
-  at('right.toward', 120, -40);
-  // the right view is turned a quarter clockwise: its rotor says so
-  const [c, s] = planeNamed(view, 'right').rotor;
-  assert.ok(Math.abs(c.value) < 1e-9 && Math.abs(s.value + 1) < 1e-9,
-            `rotor ${c.value}, ${s.value}`);
-  assert.ok(view.lastResult?.success, 'the layout solved');
-  assert.equal(view.plane, planeNamed(view, 'front'), 'drawing in the front');
-  // one edit: the three statements, their seeds, and the five relations, all written
-  assert.ok(view.source.includes('right := plane(origin: hint(x: 120, y: 0), toward: hint(x: 120, '
-                                 + 'y: -40), from: front, fold: -90deg)'), view.source);
-  assert.ok(view.source.includes('front.origin vertical top.origin'), view.source);
-  const kinds = view.sketch.userConstraints().map((c) => c.typeName).sort();
-  assert.deepEqual(kinds, ['HorizontalPoints', 'HorizontalPoints', 'HorizontalPoints',
-                           'VerticalPoints', 'VerticalPoints']);
-  view.undo();
-  assert.equal(view.sketch.planes.length, 0, 'and one step back');
-  assert.equal(view.plane, null);
+  assert.ok(view.source.includes('aux := plane(u: ab, v: ac)'), view.source);
+  // right along `ab`, up along `ac`: the front's own attitude
+  const { u, v } = aux.basis;
+  assert.ok(Math.hypot(u[0] - 1, u[1], u[2]) < 1e-9 && Math.hypot(v[0], v[1], v[2] - 1) < 1e-9,
+            `${u} ${v}`);
 });
 
 /* -- the traced picture ------------------------------------------------------------
@@ -1330,20 +1305,21 @@ test('an arc drawn in a view puts its core-minted centre in the view too', () =>
   assert.equal(view.source, before);
 });
 
-test('drawing on the page stays on the page across a re-elaboration', () => {
+test('drawing on the front stays on the front across a re-elaboration', () => {
   const view = docView(VIEWS);
   const top = planeNamed(view, 'top');
   view.selected = [top];
   assert.equal(view.plane, top);
   view.choosePlane('std.front');
-  assert.equal(view.plane, null);
+  assert.equal(view.doc.nameOf(view.plane!), 'std.front');
   assert.ok(!view.selected.includes(top), 'the view stops being the subject');
   // a structural edit re-elaborates and rebinds the selection: the plane must not come back
   assert.ok(view.apply(view.doc.addPoint(3, 4)));
-  assert.equal(view.plane, null, 'the rebind re-armed the current plane');
+  assert.equal(view.doc.nameOf(view.plane!), 'std.front', 'the rebind re-armed the old plane');
   view.setTool('point');
   click(view, 12, 12);
-  assert.equal(view.sketch.points.at(-1)?.plane, null, 'and the next point is on the page');
+  assert.equal(view.doc.nameOf(view.sketch.points.at(-1)!.plane!), 'std.front',
+               'and the next point is on the front');
 });
 
 /* -- the workspace: every sketch on its own plane, seen by one eye ---------------------------
@@ -1371,7 +1347,7 @@ test('a flat drawing opens square on to the front, and one with a solid from thr
 test('the chooser offers the standard planes and the document\'s own, and turns the eye to one', () => {
   const view = docView(VIEWS);
   assert.deepEqual(view.planeChoices(), ['std.front', 'std.side', 'std.top', 'front', 'top']);
-  assert.equal(view.planeName, 'std.front', 'the page is the front');
+  assert.equal(view.planeName, 'std.front', 'a document is drawn on the front until told');
   view.choosePlane('top');
   assert.equal(view.plane, planeNamed(view, 'top'));
   assert.equal(view.planeName, 'top');
@@ -1379,12 +1355,12 @@ test('the chooser offers the standard planes and the document\'s own, and turns 
   // the next point is drawn where the pointer is, on the top plane
   view.setTool('point');
   click(view, 20, 110);
-  assert.ok(/p0 := point hint\(x: 20, y: 110\) in top/.test(view.source), view.source);
+  assert.ok(/p0 := point hint\(x: 20(\.\d+)?, y: 110(\.\d+)?\) in top/.test(view.source), view.source);
   view.choosePlane('std.front');
-  assert.equal(view.plane, null, 'the front is the page, where a document has no std.front');
+  assert.equal(view.doc.nameOf(view.plane!), 'std.front');
   assert.ok(closeTo([view.orbit.el], [0]), 'and square on to it again');
   view.choosePlane('nowhere');
-  assert.equal(view.plane, null, 'a name that is no plane changes nothing');
+  assert.equal(view.doc.nameOf(view.plane!), 'std.front', 'a name that is no plane changes nothing');
 });
 
 test('a standard plane the document does not have comes in with `use std` on the first press', () => {
@@ -1511,7 +1487,7 @@ test('a new document is one undo step, and takes nothing in flight with it', () 
   assert.ok(view.sketch.planes.length, 'the bracket');
   view.undo();
   assert.notEqual(view.source, before);
-  assert.equal(view.sketch.planes.length, 0, 'back to the sheet it replaced');
+  assert.equal(view.source, 'use std\n', 'back to the sheet it replaced');
 });
 
 /** The spatial demos the menu offers as files: each opens and solves, and the one freedom the
@@ -1525,12 +1501,12 @@ test('the spatial demos open, and the point on the ball drags', async () => {
     assert.ok(view.doc.ok, `${name}: ${JSON.stringify(view.doc.diagnostics)}`);
     assert.ok(solve(view.sketch).success, `${name} solves`);
     if (name !== 'sphere_cone_cylinder') continue;
-    // the side view is the plane x = 0, drawn with its datum at (150, 0) and up as up; the ball
+    // the side view is `std.side`, the plane x = 0, its x the world's y and up as up; the ball
     // is 12 about (-8, 0, 38).  Looked at from three quarters, the point is dragged on the side
     // view's plane, wherever it is seen
     view.orbit = { az: -Math.PI / 4, el: Math.PI / 6 };
     const pb = pointNamed(view, 'pb');
-    const onBall = ([x, y]: [number, number]) => Math.hypot(8, x - 150, y - 38);
+    const onBall = ([x, y]: [number, number]) => Math.hypot(8, x, y - 38);
     const before = pb.xy;
     assert.ok(Math.abs(onBall(before) - 12) < 1e-6, `pb on the ball: ${onBall(before)}`);
     const at = view.seen(pb);
@@ -1568,4 +1544,21 @@ test('a dimension over a param opens as written, and an edit of it goes into the
   assert.ok(v.liveDim, 'still being edited');
   assert.match(v.source, /l1 distance\(w\) r2/);
   v.endDimension(false);
+});
+
+test('a point in space is drawn and picked where it stands, whichever way the eye looks', () => {
+  const view = docView('use std\np := point hint(x: 10, y: 20, z: 30)\n'
+    + 'in std.front {\n  f := point\n  fix(x == 10, y == 30) f\n}\n'
+    + 'in std.top {\n  t := point\n  fix(x == 10, y == 20) t\n}\n');
+  const named = (n: string) => view.doc.entity(n) as Point;
+  const [p, f, t] = [named('p'), named('f'), named('t')];
+  // square on to the front, p is seen where its x and z are; from above, where its x and y are
+  view.choosePlane('std.front');
+  assert.ok(closeTo(view.seen(p), view.seen(f)), `${view.seen(p)} vs ${view.seen(f)}`);
+  view.choosePlane('std.top');
+  assert.ok(closeTo(view.seen(p), view.seen(t)), `${view.seen(p)} vs ${view.seen(t)}`);
+  // from the side the three stand apart, and a click on p picks p
+  view.choosePlane('std.side');
+  assert.equal(view.pick(...view.seen(p)), p, 'a click on it picks it');
+  view.doc.dispose();
 });

@@ -124,18 +124,11 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
             }
         }
     }
-    if let Some(p) = plane {
-        if let Some(pl) = sk.planes.get(p as usize) {
-            let basis = sk.basis(p as usize);
-            v.extend(basis.u);
-            v.extend(basis.v);
-            v.extend(basis.o);
-            v.push(sk.params[pl.frame.c as usize].value);
-            v.push(sk.params[pl.frame.s as usize].value);
-            let o = sk.point_xy(pl.frame.origin as usize);
-            v.push(o.0);
-            v.push(o.1);
-        }
+    if let Some(p) = plane.filter(|&p| (p as usize) < sk.planes.len()) {
+        let basis = sk.basis(p as usize);
+        v.extend(basis.u);
+        v.extend(basis.v);
+        v.extend(basis.o);
     }
 }
 
@@ -211,7 +204,8 @@ pub(crate) fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, Str
 }
 
 /// **Resolve a solid into primitives and a term.**  The term walk: a body is its stock, plus
-/// everything `on` it, minus everything that `cut`s it, each operand resolved the same way.
+/// everything in `union` with it, minus everything that `cut`s it, each operand resolved the
+/// same way.
 ///
 /// The document's order is irrelevant and the *statement* order inside a body is too: both
 /// groups are sets. An explicit work stack accepts deep acyclic bodies and detects cycles in
@@ -436,9 +430,7 @@ fn build(
             }
             SolidDef::Revolve { axis, sweep, sense, .. } => {
                 let Some(l) = sk.lines.get(*axis as usize) else { return Term::Empty };
-                let (c, s, o) = p.pose;
-                let a = plane::in_view(c, s, o, sk.point_xy(l.p1 as usize));
-                let b = plane::in_view(c, s, o, sk.point_xy(l.p2 as usize));
+                let (a, b) = (sk.point_xy(l.p1 as usize), sk.point_xy(l.p2 as usize));
                 revolve(&p, (a, b), sweep.value, *sense, unit, &name)
             }
             SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. } => unreachable!(),

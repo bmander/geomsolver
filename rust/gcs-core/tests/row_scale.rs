@@ -11,7 +11,7 @@
 use gcs_core::solve::{solve, SolveOpts};
 
 fn solved(src: &str) -> (bool, i32, f64) {
-    let (prog, errs) = gcs_core::syntax::parse(src);
+    let (prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "does not parse: {errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "does not elaborate");
@@ -23,7 +23,10 @@ fn solved(src: &str) -> (bool, i32, f64) {
 #[test]
 fn a_four_bar_with_its_crank_angle_stated_solves() {
     let (ok, it, res) = solved(
-        "a := point
+        "\
+use std
+in std.front {
+a := point
          d := point
          b := point hint(x: 8, y: 24)
          c := point hint(x: 52, y: 30)
@@ -36,7 +39,9 @@ fn a_four_bar_with_its_crank_angle_stated_solves() {
          d distance(30) c
          fix(x == 0, y == 0) a
          fix(x == 60, y == 0) d
-         crank angle(70) ground_link",
+         crank angle(70) ground_link
+}
+",
     );
     assert!(ok, "did not solve: residual {res:.3e} after {it} iterations");
     assert!(it < 40, "{it} iterations for four unknowns");
@@ -48,7 +53,10 @@ fn a_four_bar_with_its_crank_angle_stated_solves() {
 fn an_angle_beside_lengths_solves_at_every_size() {
     for side in [1.0, 10.0, 40.0, 400.0, 4000.0] {
         let (ok, it, res) = solved(&format!(
-            "o := point
+            "\
+use std
+in std.front {{
+o := point
              a := point hint(x: {side}, y: 0)
              b := point hint(x: 0, y: {side})
              oa := line(o, a)
@@ -57,7 +65,9 @@ fn an_angle_beside_lengths_solves_at_every_size() {
              o distance({side}) a
              o distance({side}) b
              fix(x == 0, y == 0) o
-             oa angle(60) ob"
+             oa angle(60) ob
+}}
+"
         ));
         assert!(ok, "side {side}: did not solve, residual {res:.3e} after {it} iterations");
         assert!(it < 30, "side {side}: {it} iterations");
@@ -68,15 +78,20 @@ fn an_angle_beside_lengths_solves_at_every_size() {
 /// are each off by the same fraction of their own units read the same size.
 #[test]
 fn residuals_are_in_row_units() {
-    let (prog, _) = gcs_core::syntax::parse(
-        "o := point
+    let (prog, _) = crate::common::parse(
+        "\
+use std
+in std.front {
+o := point
          a := point hint(x: 1000, y: 0)
          b := point hint(x: 0, y: 1000)
          oa := line(o, a)
          ob := line(o, b)
          o distance(1000) a
          oa angle(90) ob
-         fix(x == 0, y == 0) o",
+         fix(x == 0, y == 0) o
+}
+",
     );
     let mut sk = gcs_core::program::elaborate(&prog).sketch;
     let mut sys = gcs_core::system::System::new(&sk);

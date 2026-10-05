@@ -6,8 +6,8 @@ use components.dims
 
 // f is the moving datum: origin at the pivot, u toward the head, v to the left.
 // The caller supplies plane membership with `in`; fw is the plate-side wall thickness.
-component Cylinder(f: plane, fw: Length, dims: group) {
-  axis := line(f.origin, f.toward)
+component Cylinder(f: group, fw: Length, dims: group) {
+  axis := line(f.u.p1, f.u.p2)
   // The skirt reaches the bore mouth at bottom dead centre.
   mouth_u := dims.L - dims.R - dims.ph - dims.H
   hw := dims.D / 2 + dims.wall
@@ -22,59 +22,43 @@ component Cylinder(f: plane, fw: Length, dims: group) {
   back := dims.D / 2 + dims.wall
 
   // Body outline, from the open mouth to the head.
-  k_bl := point hint(x: f.origin.x + (mouth_u) * f.c - (hw) * f.s,
-                    y: f.origin.y + (mouth_u) * f.s + (hw) * f.c)
-  k_br := point hint(x: f.origin.x + (mouth_u) * f.c - (-hw) * f.s,
-                    y: f.origin.y + (mouth_u) * f.s + (-hw) * f.c)
-  k_tr := point hint(x: f.origin.x + (top_u) * f.c - (-hw) * f.s,
-                    y: f.origin.y + (top_u) * f.s + (-hw) * f.c)
-  k_tl := point hint(x: f.origin.x + (top_u) * f.c - (hw) * f.s,
-                    y: f.origin.y + (top_u) * f.s + (hw) * f.c)
+  k_bl := point hint(at: f.axes, x: mouth_u, y: hw)
+  k_br := point hint(at: f.axes, x: mouth_u, y: -hw)
+  k_tr := point hint(at: f.axes, x: top_u, y: -hw)
+  k_tl := point hint(at: f.axes, x: top_u, y: hw)
   (mouth := line(k_bl, k_br)) -> (side_r := line(k_br, k_tr)) -> (lid := line(k_tr, k_tl)) ->
     (side_l := line(k_tl, k_bl)) -> close
 
   // Both bore walls appear in section; only one half is revolved into the cut.
-  b_bl := point hint(x: f.origin.x + (mouth_u) * f.c - (dims.D / 2) * f.s,
-                    y: f.origin.y + (mouth_u) * f.s + (dims.D / 2) * f.c)
-  b_br := point hint(x: f.origin.x + (mouth_u) * f.c - (-dims.D / 2) * f.s,
-                    y: f.origin.y + (mouth_u) * f.s + (-dims.D / 2) * f.c)
-  b_tr := point hint(x: f.origin.x + (head_u) * f.c - (-dims.D / 2) * f.s,
-                    y: f.origin.y + (head_u) * f.s + (-dims.D / 2) * f.c)
-  b_tl := point hint(x: f.origin.x + (head_u) * f.c - (dims.D / 2) * f.s,
-                    y: f.origin.y + (head_u) * f.s + (dims.D / 2) * f.c)
+  b_bl := point hint(at: f.axes, x: mouth_u, y: dims.D / 2)
+  b_br := point hint(at: f.axes, x: mouth_u, y: -dims.D / 2)
+  b_tr := point hint(at: f.axes, x: head_u, y: -dims.D / 2)
+  b_tl := point hint(at: f.axes, x: head_u, y: dims.D / 2)
   bore_l := line(b_bl, b_tl)
   bore_r := line(b_br, b_tr)
   hd := line(b_tl, b_tr)
-  m0 := point hint(x: f.origin.x + (mouth_u) * f.c - (0mm) * f.s,
-                    y: f.origin.y + (mouth_u) * f.s + (0mm) * f.c)
-  hx := point hint(x: f.origin.x + (head_u) * f.c - (0mm) * f.s,
-                    y: f.origin.y + (head_u) * f.s + (0mm) * f.c)
+  m0 := point hint(at: f.axes, x: mouth_u, y: 0mm)
+  hx := point hint(at: f.axes, x: head_u, y: 0mm)
 
   // The air port and pivot shank enter through the plate-side face.
-  pt := point hint(x: f.origin.x + (dims.a) * f.c - (0mm) * f.s,
-                    y: f.origin.y + (dims.a) * f.s + (0mm) * f.c)
+  pt := point hint(at: f.axes, x: dims.a, y: 0mm)
   port := circle(center: pt) hint(r: dims.dport / 2)
   radius(dims.dport / 2) port
-  shank := circle(center: f.origin) hint(r: dims.trapfit / 2)
+  shank := circle(center: f.u.p1) hint(r: dims.trapfit / 2)
   radius(dims.trapfit / 2) shank
 
   // The bolt head slides in from the left; the slot holds it against the face wall.
-  pkt := std.Hex(f.origin, axis, af: dims.boltaf, phase: 90deg)
-  t0 := point hint(x: f.origin.x + (trapw / 2) * f.c - (hw) * f.s,
-                    y: f.origin.y + (trapw / 2) * f.s + (hw) * f.c)
-  t1 := point hint(x: f.origin.x + (trapw / 2) * f.c - (-trapd) * f.s,
-                    y: f.origin.y + (trapw / 2) * f.s + (-trapd) * f.c)
-  t2 := point hint(x: f.origin.x + (-trapw / 2) * f.c - (-trapd) * f.s,
-                    y: f.origin.y + (-trapw / 2) * f.s + (-trapd) * f.c)
-  t3 := point hint(x: f.origin.x + (-trapw / 2) * f.c - (hw) * f.s,
-                    y: f.origin.y + (-trapw / 2) * f.s + (hw) * f.c)
+  pkt := std.Hex(f.u.p1, axis, af: dims.boltaf, phase: 90deg)
+  t0 := point hint(at: f.axes, x: trapw / 2, y: hw)
+  t1 := point hint(at: f.axes, x: trapw / 2, y: -trapd)
+  t2 := point hint(at: f.axes, x: -trapw / 2, y: -trapd)
+  t3 := point hint(at: f.axes, x: -trapw / 2, y: hw)
   trap0 := line(t0, t1)
   trap1 := line(t1, t2)
   trap2 := line(t2, t3)
 
   // Witness point for the head and side wall thicknesses.
-  h0 := point hint(x: f.origin.x + (top_u) * f.c - (dims.D / 2) * f.s,
-                    y: f.origin.y + (top_u) * f.s + (dims.D / 2) * f.c)
+  h0 := point hint(at: f.axes, x: top_u, y: dims.D / 2)
 
   // The outside is a rectangle centered on the bore axis. One axial dimension locates its mouth.
   mouth perpendicular axis
@@ -84,11 +68,11 @@ component Cylinder(f: plane, fw: Length, dims: group) {
   distance(2 * hw) mouth
   distance(top_u - mouth_u) side_l
   m0 midpoint mouth
-  m0 on axis
-  m0 distance(mouth_u, along: u) f
+  m0 coincident axis
+  m0 distance(mouth_u, along: u) f.axes
   // The bore opens at that mouth and leaves the specified side and head walls.
-  b_bl on mouth
-  b_br on mouth
+  b_bl coincident mouth
+  b_br coincident mouth
   bore_l parallel axis
   bore_r parallel axis
   hd perpendicular axis
@@ -96,26 +80,26 @@ component Cylinder(f: plane, fw: Length, dims: group) {
   k_br distance(dims.wall) b_br
   b_tl distance(dims.wall) lid
   hx midpoint hd
-  pt on axis
-  f.origin distance(dims.a) pt
+  pt coincident axis
+  f.u.p1 distance(dims.a) pt
   // The head slot is rectangular and opens on the left body wall.
   trap0 perpendicular axis
   trap1 parallel axis
   trap2 perpendicular axis
-  t0 on side_l
-  t3 on side_l
+  t0 coincident side_l
+  t3 coincident side_l
   distance(trapw) trap1
   t1 distance(trapd, side: right) axis
-  t0 distance(trapw / 2, along: u) f
-  h0 on lid
-  h0 on bore_l
+  t0 distance(trapw / 2, along: u) f.axes
+  h0 coincident lid
+  h0 coincident bore_l
 
   claim k_bl distance(top_u - mouth_u) k_tl
   claim b_br distance(head_u - mouth_u) b_tr
   claim b_tl distance(dims.D) b_tr
   claim k_tl distance(2 * hw) k_tr
-  claim f.origin distance(dims.a) pt
-  claim m0 distance(-mouth_u) f.origin
+  claim f.u.p1 distance(dims.a) pt
+  claim m0 distance(-mouth_u) f.u.p1
   claim b_tl distance(dims.wall) h0
   claim k_tl distance(hw - dims.D / 2) h0
   claim radius(dims.dport / 2) port
@@ -140,5 +124,10 @@ component Cylinder(f: plane, fw: Length, dims: group) {
 // ../cylinder.svd arranges the three projections of this same preview.
 preview {
   unit mm
-  cyl := Cylinder(std.up, fw: components.dims.fwA, dims: components.dims.vtwin_dims)
+  in std.front {
+    up := point
+    fix(x == 0, y == 40) up
+    axes := std.Turned(std.origin, up)
+    cyl := Cylinder(axes, fw: components.dims.fwA, dims: components.dims.vtwin_dims)
+  }
 }

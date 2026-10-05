@@ -403,7 +403,7 @@ fn a_sketch_with_a_curve_in_it_still_diagnoses_and_reports() {
     let _ = gcs_core::report::callouts_json(&sk, 0.1);
     // the operator, as a document writes it: `on` is one word for five constraints, and which
     // it is comes from the right operand's kind
-    assert_eq!(gcs_core::io::describe(sk.constraints.last().unwrap()), "P5 on S0");
+    assert_eq!(gcs_core::io::describe(sk.constraints.last().unwrap()), "P5 coincident S0");
 }
 
 #[test]

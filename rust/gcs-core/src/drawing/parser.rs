@@ -126,7 +126,6 @@ impl P {
                     if kind == "section" { self.want("cut")?; v.cut = Some(self.word()?); }
                     self.want("at")?; v.at = self.pair(true)?;
                     if self.eat("scale") { v.scale = Some(self.positive(false)?); }
-                    if v.sketch && v.direction != "front" { return self.fail("a sketch shows its own 2D coordinates; use a solid view for projection") }
                     s.views.push(v);
                 }
                 "dimensions" => {

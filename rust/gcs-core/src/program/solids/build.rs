@@ -68,7 +68,7 @@ pub(super) fn build_solid(
         diags.push(Diag { code, span, stmt: Some(st.id), message: m });
     };
     let sweep = d.sweep.as_ref().unwrap_or(&crate::syntax::Sweep::Body);
-    // every number a solid carries is settled here and is never an unknown — the `fold:` rule
+    // every number a solid carries is settled here and is never an unknown (`Extent`)
     let ext =
         |a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim| -> Result<Extent, String> {
             let crate::syntax::Arg::Dim { text, .. } = a else {

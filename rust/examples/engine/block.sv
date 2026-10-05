@@ -102,8 +102,8 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     q_d := point hint(x: o_s.x + dims.back - 40mm, y: o_s.y + dims.sump)
     q_e := point hint(x: o_s.x + dims.back - 10mm, y: o_s.y + dims.rail)
     (s1 := line(q_a, q_b)) -> (s2 := line(q_b, q_c)) -> (s3 := line(q_c, q_d)) -> (s4 := line(q_d, q_e))
-    q_a on rl
-    q_e on rl
+    q_a coincident rl
+    q_e coincident rl
     o_s distance(dims.front + 15mm, along: x) q_a
     o_s distance(dims.back - 10mm, along: x) q_e
     o_s distance(dims.front + 45mm, along: x) q_b
@@ -120,8 +120,8 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
       wr1 := point hint(x: ax.p.x + dims.D / 2, y: ax.p.y + dims.deck - dims.wall)
       wall_l := line(wl0, wl1)
       wall_r := line(wr0, wr1)
-      wl0 on dl
-      wr0 on dl
+      wl0 coincident dl
+      wr0 coincident dl
       ax.p distance(-dims.D / 2, along: x) wl0
       ax.p distance(dims.D / 2, along: x) wr0
       ax.p distance(-dims.D / 2, along: x) wl1

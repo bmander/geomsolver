@@ -29,8 +29,8 @@ component GearCone(p: plane, g: plane, design: group) {
     crown_axis := line(apex, top)
     opposite := line(apex, mirror)
   }
-  apex on p
-  mean on p
+  apex coincident p
+  mean coincident p
   O project apex
   M project mean
   to_foot perpendicular axis
@@ -47,5 +47,5 @@ preview {
   unit mm
   pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
   gear := GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
 }

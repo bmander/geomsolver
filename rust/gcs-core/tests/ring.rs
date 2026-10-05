@@ -5,7 +5,7 @@
 //! naming the spelling that does what the unrolling did — and this file is the gate for the
 //! construct itself, to be rewritten when a ring solves a fundamental domain (§12.4).
 
-use gcs_core::syntax::parse;
+use crate::common::parse;
 
 const SPOKES: &str = "
 hub := point
@@ -14,7 +14,7 @@ fix(x == 0, y == 0) hub
 ring 4 about hub as i {
   tip := point hint(x: 40 * cos(90 * i), y: 40 * sin(90 * i))
   hub distance(40) tip
-  tip on rim
+  tip coincident rim
 }
 after := point hint(x: 1, y: 2)
 ";
@@ -37,7 +37,7 @@ fn a_ring_is_refused_once_and_told_the_cycle_it_would_have_been() {
 
 #[test]
 fn the_same_drawing_as_a_cycle_is_a_drawing() {
-    let (prog, errs) = parse(&SPOKES.replace("ring 4 about hub", "cycle 4"));
+    let (prog, errs) = parse(&crate::common::front(&SPOKES.replace("ring 4 about hub", "cycle 4")));
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());

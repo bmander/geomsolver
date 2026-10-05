@@ -327,11 +327,12 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     let mut sk = e.sketch.clone();
     let r = solve(&mut sk, SolveOpts::default());
     let invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
-    if !invalid.is_empty() {
-        if !opts.json {
-            for d in &invalid { say(s, d.span.lo, "error", d.code.as_str(), &d.message); }
-        }
-        e.diags.extend(invalid);
+    if !opts.json {
+        for d in &invalid { say(s, d.span.lo, severity(d.severity()), d.code.as_str(), &d.message); }
+    }
+    let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
+    e.diags.extend(invalid);
+    if failed {
         return (1, opts.json.then(|| doc_json(s, Some(&r), None, &e, Json::Null)));
     }
     let d = (!opts.no_diagnose).then(|| diagnose(&mut sk, DiagnoseOptions::default()));
@@ -343,7 +344,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         }
         if let Some(d) = &d {
             println!("  {}", gcs_core::diagnose::summary(d));
-            // a solved view's freedoms by the ledger's names; a line only where one is left
+            // a plane's freedoms by the ledger's names; a line only where one is left
             let views = gcs_core::diagnose::view_freedoms(&sk, d);
             if !views.is_empty() {
                 println!("  free views: {}", views.join(", "));
@@ -583,8 +584,8 @@ fn report_set(sk: &Sketch, map: &gcs_core::program::SourceMap, what: &str, ids: 
 }
 
 /// The rows of `report::positions` a reader asked for: a name matches its own numbers
-/// (`o` gives `o.x`, `o.y`) and everything written under it (`views` gives the whole view,
-/// `views.right_origin.x` gives the one number).  Three questions, one rule, since a scalar, an
+/// (`o` gives `o.x`, `o.y`) and everything written under it (`cyl` gives the whole instance,
+/// `cyl.pivot.x` gives the one number).  Three questions, one rule, since a scalar, an
 /// entity and an instance are all just names with dots in them.  Empty asks for everything.
 fn wanted(
     sk: &Sketch,

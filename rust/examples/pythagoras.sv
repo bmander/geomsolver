@@ -16,44 +16,48 @@
 // nothing the construction does not already say.  Change `a` or `b` and it stays so, which is
 // the part worth watching.
 
+use std
+
 // the legs: the drawing's inputs, and the names every leg reads
 param a := 30
 param b := 40
 c := hypot(a, b)
 s := a + b
 
-O := point
-E := point hint(x: s, y: 0)
-F := point hint(x: s, y: s)
-G := point hint(x: 0, y: s)
+in std.front {
+  O := point
+  E := point hint(x: s, y: 0)
+  F := point hint(x: s, y: s)
+  G := point hint(x: 0, y: s)
 
-horizontal (bottom := line(O, E)) -> perpendicular
-(right := line(E, F)) -> perpendicular
-(top := line(F, G)) -> perpendicular
-(left := line(G, O)) -> close
-bottom equal left
+  horizontal (bottom := line(O, E)) -> perpendicular
+  (right := line(E, F)) -> perpendicular
+  (top := line(F, G)) -> perpendicular
+  (left := line(G, O)) -> close
+  bottom equal left
 
-// one point on each side, `a` along from the corner it follows going round
-P1 := point hint(x: a, y: 0)
-P2 := point hint(x: s, y: a)
-P3 := point hint(x: b, y: s)
-P4 := point hint(x: 0, y: b)
+  // one point on each side, `a` along from the corner it follows going round
+  P1 := point hint(x: a, y: 0)
+  P2 := point hint(x: s, y: a)
+  P3 := point hint(x: b, y: s)
+  P4 := point hint(x: 0, y: b)
 
-P1 on bottom
-P2 on right
-P3 on top
-P4 on left
+  P1 coincident bottom
+  P2 coincident right
+  P3 coincident top
+  P4 coincident left
 
-// the legs, each stated by the name it is drawn under
-O distance(a) P1
-P1 distance(b) E
-E distance(a) P2
-F distance(a) P3
-G distance(a) P4
+  // the legs, each stated by the name it is drawn under
+  O distance(a) P1
+  P1 distance(b) E
+  E distance(a) P2
+  F distance(a) P3
+  G distance(a) P4
 
-// the hypotenuses, which are the inner square
-(h1 := line(P1, P2)) -> (h2 := line(P2, P3)) -> (h3 := line(P3, P4)) -> (h4 := line(P4, P1)) -> close
+  // the hypotenuses, which are the inner square
+  (h1 := line(P1, P2)) -> (h2 := line(P2, P3)) -> (h3 := line(P3, P4)) -> (h4 := line(P4, P1)) -> close
 
-// the theorem, stated as a claim: judged against the figure, never imposed on it
-claim P1 distance(c) P2
-fix(x == 0, y == 0) O
+  // the theorem, stated as a claim: judged against the figure, never imposed on it
+  claim P1 distance(c) P2
+  fix(x == 0, y == 0) O
+}

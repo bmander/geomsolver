@@ -10,23 +10,23 @@ fn near(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-8
 }
 
-/// The three-view fixture `tests/plane.rs` reconstructs its point from: front, top and right in
-/// the standard third-angle layout, and the images of X = (30, 20, 40) placed exactly.
+fn top() -> Basis {
+    Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0; 3] }
+}
+
+/// The three-view fixture `tests/plane.rs` reconstructs its point from: front, top and side
+/// planes through the origin, and the images of X = (30, 20, 40) placed exactly, each in its
+/// own plane's coordinates.
 fn three_views() -> (Sketch, [usize; 3]) {
     let mut sk = Sketch::new();
-    let datum = |sk: &mut Sketch, o: (f64, f64), t: (f64, f64), b: Basis, n: &str| {
-        let oi = sk.point(o.0, o.1, true, &format!("{n}.o"));
-        let ti = sk.point(t.0, t.1, true, &format!("{n}.t"));
-        sk.plane(oi, ti, b, n)
-    };
-    let front = datum(&mut sk, (0.0, 0.0), (1.0, 0.0), Basis::page(), "front");
-    let top = datum(&mut sk, (0.0, 100.0), (1.0, 100.0), Basis::page().fold(0.0), "top");
+    let front = sk.fixed_plane(Basis::page(), "front");
+    let top = sk.fixed_plane(top(), "top");
     let right =
-        datum(&mut sk, (150.0, 0.0), (150.0, -1.0), Basis::page().fold(-FRAC_PI_2), "right");
+        sk.fixed_plane(Basis { u: [0.0, 1.0, 0.0], v: [0.0, 0.0, 1.0], o: [0.0; 3] }, "right");
     // the images of X = (30, 20, 40), each where its own view sees it
     let pf = sk.point(30.0, 40.0, true, "pf");
-    let pt = sk.point(30.0, 120.0, true, "pt");
-    let pr = sk.point(170.0, 40.0, true, "pr");
+    let pt = sk.point(30.0, 20.0, true, "pt");
+    let pr = sk.point(20.0, 40.0, true, "pr");
     sk.set_plane(pf, Some(front));
     sk.set_plane(pt, Some(top));
     sk.set_plane(pr, Some(right));
@@ -43,7 +43,7 @@ fn three_views() -> (Sketch, [usize; 3]) {
 fn three_views_reconstruct_the_corner_they_are_of() {
     let (sk, [pf, pt, pr]) = three_views();
     let cs = corners(&sk);
-    // three projections over the corner, and the three plane origins pairwise
+    // three projections over the corner
     let of = |a: usize, b: usize| {
         cs.iter().find(|c| c.images == [a, b] || c.images == [b, a]).map(|c| c.at)
     };
@@ -57,26 +57,44 @@ fn three_views_reconstruct_the_corner_they_are_of() {
     assert!((0..3).all(|i| near(a[i], b[i])), "{a:?} vs {b:?}");
 }
 
+/// Planes stood off the world origin, in their own planes as well as along their normals: an image
+/// drawn at (x, y) stands at o + x·u + y·v, so the corner is where the two images' lines meet,
+/// not where they would meet if every plane stood at the origin.
+#[test]
+fn planes_off_the_origin_reconstruct_the_corner_too() {
+    let mut sk = Sketch::new();
+    let fo = [10.0, -50.0, 5.0];
+    let to = [-4.0, 6.0, -20.0];
+    let front = sk.fixed_plane(Basis { o: fo, ..Basis::page() }, "front");
+    let top = sk.fixed_plane(Basis { o: to, ..top() }, "top");
+    // X = (30, 20, 40), read in each plane's own coordinates
+    let pf = sk.point(30.0 - fo[0], 40.0 - fo[2], true, "pf");
+    let pt = sk.point(30.0 - to[0], 20.0 - to[1], true, "pt");
+    sk.set_plane(pf, Some(front));
+    sk.set_plane(pt, Some(top));
+    let c = Constraint::project(&sk, EntRef::point(pf), EntRef::point(pt)).unwrap();
+    sk.add(c);
+    let cs = corners(&sk);
+    assert_eq!(cs.len(), 1);
+    let x = cs[0].at;
+    assert!(near(x[0], 30.0) && near(x[1], 20.0) && near(x[2], 40.0), "{x:?}");
+}
+
 /// A point seen in one view is a *ray*, not a place — rank 2, and left standing on its plane.
 #[test]
 fn one_view_places_nothing() {
     let mut sk = Sketch::new();
-    let o = sk.point(0.0, 0.0, true, "o");
-    let t = sk.point(1.0, 0.0, true, "t");
-    let front = sk.plane(o, t, Basis::page(), "front");
+    let front = sk.fixed_plane(Basis::page(), "front");
     let p = sk.point(5.0, 7.0, false, "p");
     sk.set_plane(p, Some(front));
     assert!(corners(&sk).is_empty(), "one view cannot say where a point is");
 
     // two images on *parallel* planes are two rays in one direction, and still say nothing:
     // `Project` refuses the pair, so nothing ties them and no class forms
-    let o2 = sk.point(50.0, 0.0, true, "o2");
-    let t2 = sk.point(51.0, 0.0, true, "t2");
-    let front2 = sk.plane(o2, t2, Basis::page(), "front2");
-    let q = sk.point(55.0, 7.0, false, "q");
+    let front2 = sk.fixed_plane(Basis { o: [0.0, -50.0, 0.0], ..Basis::page() }, "front2");
+    let q = sk.point(5.0, 7.0, false, "q");
     sk.set_plane(q, Some(front2));
     assert!(Constraint::project(&sk, EntRef::point(p), EntRef::point(q)).is_err());
-    // the two planes' origins are still a pair, and being parallel they place nothing
     assert!(corners(&sk).is_empty());
 }
 
@@ -88,7 +106,6 @@ fn a_claimed_projection_ties_no_images() {
     let mut c = Constraint::project(&sk, EntRef::point(pf), EntRef::point(pt)).unwrap();
     c.claim = true;
     sk.add(c);
-    // the origins still pair; what must not appear is a corner made by the claim
     assert!(
         !corners(&sk).iter().any(|c| c.images.contains(&pf) && c.images.contains(&pt)),
         "a claim welds no two images into one corner",
@@ -134,7 +151,7 @@ fn the_scene_holds_the_box_and_the_solid() {
     let (mut sk, [pf, pt, _]) = three_views();
     // a second corner, and a line between the two in each of the front and top views
     let qf = sk.point(60.0, 40.0, true, "qf");
-    let qt = sk.point(60.0, 120.0, true, "qt");
+    let qt = sk.point(60.0, 20.0, true, "qt");
     sk.set_plane(qf, Some(0));
     sk.set_plane(qt, Some(1));
     sk.add(Constraint::project(&sk, EntRef::point(qf), EntRef::point(qt)).unwrap());
@@ -182,7 +199,7 @@ fn drawable_tessellates_the_round_kinds() {
 /// inclined face comes out flat in space.
 #[test]
 fn the_bracket_folds_up() {
-    let (prog, errs) = gcs_core::syntax::parse(gcs_core::examples::BRACKET);
+    let (prog, errs, _) = gcs_core::library::parse_linked(gcs_core::examples::BRACKET);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok());
@@ -195,7 +212,8 @@ fn the_bracket_folds_up() {
     };
 
     // the front view's corners, reconstructed from the views that see them
-    let a = of("Af").expect("A is in three views");
+    // A is every view's origin, so it stands in space without a projection to place it
+    let a = sk.world_point(e.map.ent_named("Af").unwrap().i());
     let b = of("Bf").expect("B is in three views");
     assert!(near((b[0] - a[0]).hypot(b[1] - a[1]), 60.0), "the 60 width, in space");
     // the inclined face: F, E and their far twins are coplanar, and the face is 15 × 30
@@ -204,7 +222,8 @@ fn the_bracket_folds_up() {
     assert!(near(rise, 15f64.hypot(10.0)), "the incline's true length: {rise}");
     let s = scene(&sk, 0.5, 0.6, 0.3);
     assert!(s.items.iter().any(|i| i.what == Part::Solid), "the object is drawn");
-    assert!(s.items.iter().filter(|i| i.what == Part::Face).count() == 4, "four panes");
+    // the four standard planes and the auxiliary view's
+    assert!(s.items.iter().filter(|i| i.what == Part::Face).count() == 5, "five panes");
     assert!(s.bounds.2 > s.bounds.0 && s.bounds.3 > s.bounds.1);
 }
 
@@ -215,9 +234,8 @@ fn the_bracket_folds_up() {
 fn every_plane_is_a_pane_with_its_own_axes() {
     let (mut sk, _) = three_views();
     // a fourth view with nothing whatever drawn in it
-    let o = sk.point(-80.0, 60.0, true, "aux.o");
-    let t = sk.point(-79.0, 61.0, true, "aux.t");
-    let aux = sk.plane(o, t, Basis::page().fold(0.7), "aux");
+    let tilted = Basis::explicit([1.0, 0.0, 0.0], [0.0, 0.7f64.cos(), 0.7f64.sin()]).unwrap();
+    let aux = sk.fixed_plane(Basis { o: [-80.0, 10.0, 60.0], ..tilted }, "aux");
 
     let unit = 0.5;
     let s = scene(&sk, unit, -FRAC_PI_2, 0.0);
@@ -255,30 +273,13 @@ fn every_plane_is_a_pane_with_its_own_axes() {
     let _ = aux;
 }
 
-/// The plane origins are corners with no projection stated — and a datum's own points are
-/// members of no view, so they must be read in the view they place, or `Insert ▸ Three views`
-/// (which stamps nothing) would fold up into three panes with no shared corner.
-#[test]
-fn the_origins_pair_without_being_stamped() {
-    let (sk, _) = three_views();   // `datum` stamps neither origin nor toward
-    let cs = corners(&sk);
-    let origins: Vec<usize> = (0..3).map(|i| sk.planes[i].frame.origin as usize).collect();
-    for i in 0..3 {
-        for j in i + 1..3 {
-            let c = cs.iter().find(|c| c.images == [origins[i], origins[j]]);
-            let at = c.unwrap_or_else(|| panic!("origins {i} and {j} pair")).at;
-            assert!(at.iter().all(|&x| near(x, 0.0)), "at the one shared origin: {at:?}");
-        }
-    }
-}
-
 /// An edge is found whichever way round its two `project` statements were written: a corner's
 /// images are ordered by plane, never by the statement.
 #[test]
 fn an_edge_is_found_whatever_order_its_projections_were_written() {
     let (mut sk, [pf, pt, _]) = three_views();
     let qf = sk.point(60.0, 40.0, true, "qf");
-    let qt = sk.point(60.0, 120.0, true, "qt");
+    let qt = sk.point(60.0, 20.0, true, "qt");
     sk.set_plane(qf, Some(0));
     sk.set_plane(qt, Some(1));
     // the other corner was stated `pf project pt`; this one names the top view first
@@ -297,8 +298,8 @@ fn an_edge_three_views_agree_on_is_drawn_once() {
     let (mut sk, [pf, pt, pr]) = three_views();
     // Q = (60, 20, 40): its three images, the front one nudged by less than a solve resolves
     let qf = sk.point(60.0 + 1e-7, 40.0, true, "qf");
-    let qt = sk.point(60.0, 120.0, true, "qt");
-    let qr = sk.point(170.0, 40.0, true, "qr");
+    let qt = sk.point(60.0, 20.0, true, "qt");
+    let qr = sk.point(20.0, 40.0, true, "qr");
     sk.set_plane(qf, Some(0));
     sk.set_plane(qt, Some(1));
     sk.set_plane(qr, Some(2));
@@ -318,7 +319,7 @@ fn an_edge_three_views_agree_on_is_drawn_once() {
 fn a_line_between_two_views_stands_with_each_end_where_it_is() {
     let (mut sk, [pf, pt, _]) = three_views();
     let qf = sk.point(60.0, 90.0, true, "qf");
-    let qt = sk.point(60.0, 120.0, true, "qt");
+    let qt = sk.point(60.0, 20.0, true, "qt");
     sk.set_plane(qf, Some(0));
     sk.set_plane(qt, Some(1));
     let lf = sk.line(pf, qf);
@@ -338,10 +339,7 @@ fn a_line_between_two_views_stands_with_each_end_where_it_is() {
 #[test]
 fn a_view_with_only_its_origin_is_still_a_pane() {
     let mut sk = Sketch::new();
-    let o = sk.point(0.0, 0.0, true, "o");
-    let t = sk.point(40.0, 0.0, true, "t");
-    let front = sk.plane(o, t, Basis::page(), "front");
-    sk.set_plane(o, Some(front));
+    let front = sk.fixed_plane(Basis::page(), "front");
     // and something elsewhere, so the sketch has an extent to size the pane off
     sk.point(200.0, 100.0, true, "far");
     let s = scene(&sk, 1.0, -FRAC_PI_2, 0.0);
@@ -362,15 +360,11 @@ fn a_view_with_only_its_origin_is_still_a_pane() {
 #[test]
 fn nearly_parallel_views_place_nothing() {
     let mut sk = Sketch::new();
-    let o = sk.point(0.0, 0.0, true, "o");
-    let t = sk.point(1.0, 0.0, true, "t");
-    let front = sk.plane(o, t, Basis::page(), "front");
-    let o2 = sk.point(100.0, 0.0, true, "o2");
-    let t2 = sk.point(101.0, 0.0, true, "t2");
+    let front = sk.fixed_plane(Basis::page(), "front");
     let tilted = Basis::explicit([1.0, 0.0, 0.0], [0.0, 0.00001, 1.0]).unwrap();
-    let near_front = sk.plane(o2, t2, tilted, "near_front");
+    let near_front = sk.fixed_plane(tilted, "near_front");
     let p = sk.point(30.0, 40.0, true, "p");
-    let q = sk.point(130.0, 40.01, true, "q");   // an image off by a hundredth
+    let q = sk.point(30.0, 40.01, true, "q");   // an image off by a hundredth
     sk.set_plane(p, Some(front));
     sk.set_plane(q, Some(near_front));
     let c = Constraint::project(&sk, EntRef::point(p), EntRef::point(q)).unwrap();
@@ -391,30 +385,32 @@ fn nearly_parallel_views_place_nothing() {
 fn the_box_shows_the_object_and_not_its_features() {
     let src = "\
 unit mm
-a := point
-b := point hint(x: 60, y: 0)
-c := point hint(x: 60, y: 40)
-d := point hint(x: 0, y: 40)
-(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
-horizontal ab
-vertical bc
-a distance(60) b
-a distance(40) d
-fix(x == 0, y == 0) a
+use std
+in std.front {
+  a := point
+  b := point hint(x: 60, y: 0)
+  c := point hint(x: 60, y: 40)
+  d := point hint(x: 0, y: 40)
+  (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
+  horizontal ab
+  vertical bc
+  a distance(60) b
+  a distance(40) d
+  fix(x == 0, y == 0) a
+  o := point hint(x: 30, y: 20)
+  a distance(30, along: x) o
+  a distance(20, along: y) o
+  hole := circle(center: o) hint(r: 8)
+  radius(8) hole
+}
 sec := face(ab, bc, cd, da)
-front := plane(origin: a, toward: b)
-o := point hint(x: 30, y: 20)
-a distance(30, along: x) o
-a distance(20, along: y) o
-hole := circle(center: o) hint(r: 8)
-radius(8) hole
 hole_f := face(hole)
 stock := solid(sec, depth: 30mm)
 bore := solid(hole_f, depth: 30mm)
 body := solid(stock)
 bore cut body
 ";
-    let (prog, errs) = gcs_core::syntax::parse(src);
+    let (prog, errs, _) = gcs_core::library::parse_linked(src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());

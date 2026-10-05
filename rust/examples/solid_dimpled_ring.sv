@@ -12,22 +12,26 @@ ball_r := 2mm      // the ball's radius
 sunk := 1mm        // how far the ball's lowest point is pressed below the ring's top
 around := 45deg    // where round the ring, from the page
 
-// The ring: the tube's section in the page, turned about the upright spindle.
-construction centerline spindle := line(std.origin, std.up.toward)
-tube := point hint(x: ring_r, y: 0mm)
-std.origin horizontal tube
-std.origin distance(ring_r, along: right) tube
-section := circle(center: tube) hint(r: tube_r)
-radius(tube_r) section
+// The ring: the tube's section in the front plane, turned about the upright spindle.
+in std.front {
+  construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
+  fix(x == 0, y == 1) spindle.p2
+  tube := point hint(x: ring_r, y: 0mm)
+  std.origin horizontal tube
+  std.origin distance(ring_r, along: right) tube
+  section := circle(center: tube) hint(r: tube_r)
+  radius(tube_r) section
+}
 ring := solid(face(section), about: spindle)
 
-// The ball, drawn in a view standing off the page as far as it stands round the ring. It is half a
+// The ball, drawn in a plane standing off the front as far as it stands round the ring. It is half a
 // disc turned about a level diameter: the upper half, so the ball's seam stays above the ring.
-beside := plane(origin: std.origin, toward: std.front.toward, from: std.front, offset: ring_r * sin(around))
+beside := plane(u: std.x, v: std.z) hint(x: 0mm, y: -ring_r * sin(around), z: 0mm)
+fix(x == 0mm, y == -ring_r * sin(around), z == 0mm) beside
 in beside {
   c := point hint(x: ring_r * cos(around), y: tube_r + ball_r - sunk)
-  std.origin distance(ring_r * cos(around), along: right) c
-  std.origin distance(tube_r + ball_r - sunk, along: up) c
+  beside.origin distance(ring_r * cos(around), along: right) c
+  beside.origin distance(tube_r + ball_r - sunk, along: up) c
   near := point hint(x: ring_r * cos(around) - ball_r, y: tube_r + ball_r - sunk)
   far := point hint(x: ring_r * cos(around) + ball_r, y: tube_r + ball_r - sunk)
   diameter := line(near, far)

@@ -8,39 +8,48 @@
 
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::syntax::parse;
+use crate::common::parse;
 
 const INVOLUTE: &str = "\
+use std
 component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
 }
+in std.front {
 o := point
 base := circle(center: o) hint(r: 20)
+}
 inv := Involute(base, phase: 0).p over u in (10, 90)
+in std.front {
 radius(20) base
 fix(x == 0, y == 0) o
+}
 ";
 
 const UNWIND: &str = "\
+use std
 component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
   t := point hint(x: c.center.x + c.r * cos(u + phase), y: c.center.y + c.r * sin(u + phase))
-  p := point hint(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), \
-               y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
+  p := point hint(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
   rad := line(c.center, t)
   s := line(t, p)
-  t on c
+  t coincident c
   rad perpendicular s
   datum angle(u + phase) rad
   t distance(c.r * u * pi / 180) p
 }
+in std.front {
 o := point
 ax := point
 datum := line(o, ax)
 base := circle(center: o) hint(r: 20)
+}
 inv := Unwind(base, datum, phase: 0).p over u in (10, 90)
+in std.front {
 radius(20) base
 fix(x == 0, y == 0) o
 fix(x == 1, y == 0) ax
+}
 ";
 
 use crate::common::{build, fd_jacobian, involute_at};
@@ -57,8 +66,8 @@ fn param_of(e: &Elaborated) -> f64 {
 #[test]
 fn a_line_solves_tangent_to_a_curve() {
     let src = format!(
-        "{INVOLUTE}a := point\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
-         fix(x == 30, y == -5) a\na distance(30) b\ninv tangent l hint(t: 45)\n"
+        "{INVOLUTE}in std.front {{\na := point\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
+         fix(x == 30, y == -5) a\na distance(30) b\ninv tangent l hint(t: 45)\n}}\n"
     );
     let mut e = build(&src);
     fd_jacobian(&e.sketch, 1e-5);
@@ -82,8 +91,8 @@ fn a_line_solves_tangent_to_a_curve() {
 #[test]
 fn a_circle_solves_osculating_a_curve() {
     let src = format!(
-        "{INVOLUTE}k := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\n\
-         inv curvature osc hint(t: 60)\no distance(12, along: x) k\n"
+        "{INVOLUTE}in std.front {{\nk := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\n\
+         inv curvature osc hint(t: 60)\no distance(12, along: x) k\n}}\n"
     );
     let mut e = build(&src);
     fd_jacobian(&e.sketch, 1e-5);
@@ -108,8 +117,8 @@ fn a_circle_solves_osculating_a_curve() {
 #[test]
 fn a_line_solves_tangent_to_a_traced_curve() {
     let src = format!(
-        "{UNWIND}a := point\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
-         fix(x == 30, y == -5) a\na distance(30) b\ninv tangent l hint(t: 45)\n"
+        "{UNWIND}in std.front {{\na := point\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
+         fix(x == 30, y == -5) a\na distance(30) b\ninv tangent l hint(t: 45)\n}}\n"
     );
     let mut e = build(&src);
     // the solve first: the frame's difference reads the pose the contact last reached
@@ -134,8 +143,8 @@ fn a_line_solves_tangent_to_a_traced_curve() {
 #[test]
 fn a_circle_solves_osculating_a_traced_curve() {
     let src = format!(
-        "{UNWIND}k := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\n\
-         inv curvature osc hint(t: 60)\no distance(12, along: x) k\n"
+        "{UNWIND}in std.front {{\nk := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\n\
+         inv curvature osc hint(t: 60)\no distance(12, along: x) k\n}}\n"
     );
     let mut e = build(&src);
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -177,30 +186,35 @@ fn a_traced_curve_gives_its_higher_orders_exactly() {
     }
 }
 
-/// A trace whose block reads a kernel with no Taylor form has no exact `C''`, and a curvature
-/// against it is refused naming the kernel.
+/// A trace is lowered in one plane, so a block reading a relation in space is refused, naming
+/// the word, rather than traced through rows that have no place to stand.
 #[test]
-fn a_curvature_against_a_trace_with_no_form_is_refused() {
-    let src = "component Slide(f: plane, u: Length) {\n  p := point hint(x: 1, y: 1)\n  \
-               p distance(u, along: u) f\n  p distance(2, along: v) f\n}\n\
-               o := point\nx := point hint(x: 1, y: 0)\nfr := plane(origin: o, toward: x)\n\
-               fix(x == 0, y == 0) o\nfix(x == 1, y == 0) x\n\
-               s := Slide(fr).p over u in (0, 10)\n\
-               k := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\ns curvature osc\n";
+fn a_trace_through_a_relation_in_space_is_refused() {
+    let src = "\
+use std
+component Slide(f: plane, g: plane, u: Length) {
+  in f {
+    p := point hint(x: 1, y: 1)
+    p distance(2, along: u) f
+  }
+  p distance(u, along: n) g
+}
+s := Slide(std.front, std.top).p over u in (0, 10)
+";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);
     let said: Vec<&String> = e.errors().map(|d| &d.message).collect();
-    assert!(said.iter().any(|m| m.contains("is traced through a `coordinate_")), "{said:?}");
+    assert!(said.iter().any(|m| m.contains("`distance` relates its operands in space")), "{said:?}");
 }
 
 /// The statements print back as they were written, and describe themselves the same way.
 #[test]
 fn the_contacts_are_operators() {
     let src = format!(
-        "{INVOLUTE}a := point hint(x: 30, y: -5)\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
+        "{INVOLUTE}in std.front {{\na := point hint(x: 30, y: -5)\nb := point hint(x: 45, y: 25)\nl := line(a, b)\n\
          k := point hint(x: 5, y: 20)\nosc := circle(center: k) hint(r: 15)\n\
-         inv tangent l\ninv curvature osc\n"
+         inv tangent l\ninv curvature osc\n}}\n"
     );
     let e = build(&src);
     let said: Vec<String> = e

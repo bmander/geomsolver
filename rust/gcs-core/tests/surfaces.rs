@@ -1,6 +1,9 @@
 use gcs_core::{diagnose,io,model::{EntKind,EntRef},program,solid::RevolvedSurface,solve,syntax};
 
-const MODEL: &str = "unit mm
+const MODEL: &str = "\
+unit mm
+use std
+in std.front {
 o := point
 q := point
 c := point
@@ -10,12 +13,13 @@ fix(x == 3, y == 0) c
 axis := line(o,q)
 meridian := circle(center: c)
 radius(1mm) meridian
+}
 ring := solid(face(meridian), about: axis)
 wall := surface(ring, meridian)
 ";
 
 fn build(src: &str) -> program::Elaborated {
-    let (p,errors) = syntax::parse(src);
+    let (p,errors) = crate::common::parse(src);
     assert!(errors.is_empty(),"{errors:?}");
     program::elaborate(&p)
 }
@@ -113,15 +117,16 @@ fn surface_references_survive_flat_printing_copy_paste_and_dependency_deletion()
 
 #[test]
 fn surfaces_pass_through_components_and_keep_private_names_private() {
-    let inner = MODEL.replace("unit mm\n","").replace("wall := surface", "private wall := surface");
-    let src = format!("unit mm\ncomponent Part() {{\n{inner}}}\np := Part()\n");
+    let inner = MODEL.replace("unit mm\nuse std\n","").replace("in std.front", "in f")
+        .replace("wall := surface", "private wall := surface");
+    let src = format!("unit mm\nuse std\ncomponent Part(f: plane) {{\n{inner}}}\np := Part(std.front)\n");
     let e = solved(&src);
     assert!(e.map.entity_path(&e.sketch,"p.wall").is_none());
     let e = build(&format!("{src}forbidden := surface(p.wall.solid,p.wall.edge)\n"));
     assert!(e.errors().any(|d| d.message.contains("private member")),"{:?}",e.diags);
     // A surface formal aliases the source, including declared child paths before it is built.
-    let forwarded = format!("component Copy(s: surface) {{ out := surface(s.solid,s.edge) }}\n\
-        copy := Copy(wall)\n{MODEL}");
+    let forwarded = format!("{MODEL}component Copy(s: surface) {{ out := surface(s.solid,s.edge) }}\n\
+        copy := Copy(wall)\n");
     let e = solved(&forwarded);
     assert_eq!(e.sketch.surfaces.len(),2);
     let a = e.map.ent_named("copy.out").unwrap();
@@ -180,7 +185,7 @@ fn surface_spans_follow_sweep_sense_and_component_angles() {
 #[test]
 fn surface_spans_refuse_missing_reversed_and_out_of_sweep_angles() {
     for bounds in ["from: 30deg", "from: 30deg, from: 40deg, to: 60deg"] {
-        let (_,errors) = syntax::parse(&MODEL.replace("wall := surface(ring, meridian)",
+        let (_,errors) = crate::common::parse(&MODEL.replace("wall := surface(ring, meridian)",
             &format!("wall := surface(ring, meridian, {bounds})")));
         assert!(!errors.is_empty());
     }
@@ -242,7 +247,10 @@ fn analytic_projection_preserves_orientation_and_distinguishes_finite_patches() 
 
 #[test]
 fn straight_meridian_sphere_sections_return_all_finite_roots() {
-    let e = solved("unit mm
+    let e = solved("\
+unit mm
+use std
+in std.front {
 a := point
 b := point
 c := point
@@ -255,6 +263,7 @@ side := line(a,b)
 top := line(b,c)
 axis := line(d,c)
 bottom := line(d,a)
+}
 profile := face(side,top,axis,bottom)
 drum := solid(profile,about: axis)
 wall := surface(drum,side)

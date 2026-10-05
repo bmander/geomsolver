@@ -22,9 +22,9 @@ component SphericalBoundary(apex: point, generator: line, rim: point) {
   private top := point hint(at: apex, toward: rim, turn: 90deg)
   private meridian := arc(center: apex, start: bottom, end: top)
   private diameter := line(top, bottom)
-  apex on diameter
+  apex coincident diameter
   generator angle(90deg, sense: cw) diameter
-  rim on meridian
+  rim coincident meridian
   private profile := face(meridian, diameter)
   private construction carrier := solid(profile, about: diameter)
   wall := surface(carrier, meridian)
@@ -32,11 +32,13 @@ component SphericalBoundary(apex: point, generator: line, rim: point) {
 
 preview {
   unit mm
-  mean := point hint(x: 50, y: 0)
-  std.origin distance(50mm, along: right) mean
-  std.origin distance(0mm, along: up) mean
-  generator := line(std.origin, mean)
-  span := FaceSpan(generator, width: 10mm)
-  toe := SphericalBoundary(std.origin, generator, span.toe)
-  heel := SphericalBoundary(std.origin, generator, span.heel)
+  in std.front {
+    mean := point hint(x: 50, y: 0)
+    std.origin distance(50mm, along: right) mean
+    std.origin distance(0mm, along: up) mean
+    generator := line(std.origin, mean)
+    span := FaceSpan(generator, width: 10mm)
+    toe := SphericalBoundary(std.origin, generator, span.toe)
+    heel := SphericalBoundary(std.origin, generator, span.heel)
+  }
 }

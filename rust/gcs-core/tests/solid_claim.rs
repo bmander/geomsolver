@@ -7,7 +7,7 @@
 //! never act.**
 
 use gcs_core::program::{elaborate, Code, Elaborated};
-use gcs_core::syntax::parse;
+use crate::common::parse;
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);
@@ -27,16 +27,16 @@ fn verdicts(e: &Elaborated) -> Vec<gcs_core::diagnose::SolidVerdict> {
     gcs_core::diagnose::judge_solids(&sk)
 }
 
-/// A square `w` on a side with its lower-left corner at `(x, y)`, grounded, standing between
-/// `lo` and `hi` along the page's own normal — face `f{tag}` and solid `s{tag}_`.
+/// A square `w` on a side with its lower-left corner at `(x, y)` in the front, grounded, standing
+/// between `lo` and `hi` along the front's own normal — face `f{tag}` and solid `s{tag}_`.
 fn block(tag: &str, x: f64, y: f64, w: f64, lo: f64, hi: f64) -> String {
     format!(
-        "a{tag} := point\nb{tag} := point hint(x: {}, y: {y})\n\
+        "in std.front {{\na{tag} := point\nb{tag} := point hint(x: {}, y: {y})\n\
          c{tag} := point hint(x: {}, y: {})\nd{tag} := point hint(x: {x}, y: {})\n\
          (p{tag} := line(a{tag}, b{tag})) -> (q{tag} := line(b{tag}, c{tag})) -> \
          (r{tag} := line(c{tag}, d{tag})) -> (s{tag} := line(d{tag}, a{tag})) -> close\n\
          horizontal p{tag}\nvertical q{tag}\nhorizontal r{tag}\nvertical s{tag}\n\
-         a{tag} distance({w}) b{tag}\na{tag} distance({w}) d{tag}\nfix(x == {x}, y == {y}) a{tag}\n\
+         a{tag} distance({w}) b{tag}\na{tag} distance({w}) d{tag}\nfix(x == {x}, y == {y}) a{tag}\n}}\n\
          f{tag} := face(p{tag}, q{tag}, r{tag}, s{tag})\n\
          s{tag}_ := solid(f{tag}, from: {lo}mm, to: {hi}mm)\n",
         x + w,
@@ -48,7 +48,7 @@ fn block(tag: &str, x: f64, y: f64, w: f64, lo: f64, hi: f64) -> String {
 
 #[test]
 fn a_clearance_is_measured_and_reported() {
-    let src = format!("unit mm\n{}{}claim sA_ clear(2mm) sB_\nclaim sA_ clear(4mm) sB_\n",
+    let src = format!("unit mm\nuse std\n{}{}claim sA_ clear(2mm) sB_\nclaim sA_ clear(4mm) sB_\n",
                       block("A", 0.0, 0.0, 10.0, -5.0, 0.0),
                       block("B", 13.0, 0.0, 10.0, -5.0, 0.0));
     let v = verdicts(&read(&src));
@@ -68,7 +68,7 @@ fn containment_is_a_question_about_the_object() {
     // B stands *strictly* inside A — three clear on every side, depth included.  Sharing a face
     // would make `inside` true and `fits` false, which is right and is not what this is about
     let src = format!(
-        "unit mm\n{}{}claim sB_ inside sA_\nclaim sA_ inside sB_\nclaim sB_ fits(1mm) sA_\n\
+        "unit mm\nuse std\n{}{}claim sB_ inside sA_\nclaim sA_ inside sB_\nclaim sB_ fits(1mm) sA_\n\
          claim sB_ fits(4mm) sA_\n",
         block("A", 0.0, 0.0, 20.0, -10.0, 0.0),
         block("B", 5.0, 5.0, 10.0, -7.0, -3.0)
@@ -91,10 +91,14 @@ fn a_swept_claim_finds_the_worst_pose() {
     // V-twin's port timing and disc clearance were checked by.
     let src = "\
 unit mm
+use std
+in std.front {
 o := point
 fix(x == 0, y == 0) o
 p := point hint(x: 10, y: 0)
+}
 param reach: Length
+in std.front {
 o distance(reach, along: x) p
 o distance(0, along: y) p
 q := point hint(x: 14, y: 0)
@@ -125,6 +129,7 @@ wall_f := face(g0, g1, g2, g3)
 wall := solid(wall_f, depth: 3mm)
 claim over reach in (10mm, 40mm) { arm clear(1mm) wall }
 claim arm clear(1mm) wall
+}
 ";
     let e = read(src);
     let v = verdicts(&e);
@@ -150,7 +155,7 @@ fn a_claim_about_a_solid_can_never_act() {
     // §9.7's property, one stratum out: adding one changes no equation, no rank, no DOF and no
     // parameter.  It is the whole reason a claim is safe to write.
     let plain = format!(
-        "unit mm\n{}{}",
+        "unit mm\nuse std\n{}{}",
         block("A", 0.0, 0.0, 10.0, -5.0, 0.0),
         block("B", 13.0, 0.0, 10.0, -5.0, 0.0)
     );
@@ -169,7 +174,7 @@ fn a_claim_about_a_solid_can_never_act() {
 #[test]
 fn what_is_written_wrong_is_refused() {
     let two = format!(
-        "unit mm\n{}{}",
+        "unit mm\nuse std\n{}{}",
         block("A", 0.0, 0.0, 10.0, -5.0, 0.0),
         block("B", 13.0, 0.0, 10.0, -5.0, 0.0)
     );

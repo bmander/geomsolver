@@ -233,14 +233,13 @@ fn pair(
         // then wherever that section's polygon now stands
         let curved = |p: &FacePoly, group: &[usize]| p.curved.get(p.of[group[0]].0).copied().flatten();
         let (ca, cb) = (curved(&a, aa), curved(&b, bb));
-        let at = |p: &FacePoly, (e, [t0, t1]): (EntRef, [f64; 2]), t: f64| {
-            let q = super::profile::curved_point(sk, e, t0 + (t1 - t0) * t);
-            plane::in_view(p.pose.0, p.pose.1, p.pose.2, q)
+        let at = |(e, [t0, t1]): (EntRef, [f64; 2]), t: f64| {
+            super::profile::curved_point(sk, e, t0 + (t1 - t0) * t)
         };
         for i in 0..count {
             let t = i as f64 / count as f64;
-            ap.push(ca.map_or_else(|| sa(t), |c| at(&a, c, t)));
-            bp.push(cb.map_or_else(|| sb(t), |c| b_to(at(&b, c, t))));
+            ap.push(ca.map_or_else(|| sa(t), |c| at(c, t)));
+            bp.push(cb.map_or_else(|| sb(t), |c| b_to(at(c, t))));
             provenance.push(a.of[aa[0]]);
         }
     }

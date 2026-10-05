@@ -15,20 +15,24 @@
 // is why the chain goes round counter-clockwise: the big wrap runs from the bottom run to the
 // top one round the far side.
 
+use std
+
 r := 10        // the small pulley
 R := 25        // the big one
 wrap := 90     // belt in contact with the big pulley
 
-c1 := point
-c2 := point hint(x: 66, y: 0)
+in std.front {
+  c1 := point
+  c2 := point hint(x: 66, y: 0)
 
-// each run's ends are seeded for the side it passes on; the chain threads them into the arcs
-(bottom := line(hint(x: -2, y: -10), hint(x: 60, y: -24))) -> tangent
-radius(R) (big := arc(center: c2) hint(r: R)) -> tangent
-(top := line(hint(x: 60, y: 24), hint(x: -2, y: 10))) -> tangent
-radius(r) (small := arc(center: c1) hint(r: r)) -> tangent close
+  // each run's ends are seeded for the side it passes on; the chain threads them into the arcs
+  (bottom := line(hint(x: -2, y: -10), hint(x: 60, y: -24))) -> tangent
+  radius(R) (big := arc(center: c2) hint(r: R)) -> tangent
+  (top := line(hint(x: 60, y: 24), hint(x: -2, y: 10))) -> tangent
+  radius(r) (small := arc(center: c1) hint(r: r)) -> tangent close
 
-length(wrap) big
+  length(wrap) big
 
-c1 horizontal c2
-fix(x == 0, y == 0) c1
+  c1 horizontal c2
+  fix(x == 0, y == 0) c1
+}

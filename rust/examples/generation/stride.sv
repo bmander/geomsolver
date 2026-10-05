@@ -19,6 +19,8 @@
 // Try instead: delete the second tangency and state `fix(y == -95) g0`, and the rod solves so the
 // stride's lowest point just reaches that ground.
 
+use std
+
 a := 38      // the axle stands this far to the right of the pivot...
 l := 7.8     // ...and this far above it
 
@@ -39,7 +41,7 @@ component Leg(axle: point, pivot: point, theta: Angle, h: Length) {
   datum := line(pivot, axle)
   pin := point hint(x: 15, y: 0)
   crank := line(axle, pin)
-  pin on orbit
+  pin coincident orbit
   datum angle(theta) crank
 
   top := point  hint(x: -24, y: 31)
@@ -74,21 +76,25 @@ component Leg(axle: point, pivot: point, theta: Angle, h: Length) {
   ccw(knee, heel, toe)
 }
 
-axle := point
-pivot := point hint(x: -38, y: -7.8)
-fix(x == 0, y == 0) axle
-pivot distance(a, along: x) axle
-pivot distance(l, along: y) axle
+in std.front {
+  axle := point
+  pivot := point hint(x: -38, y: -7.8)
+  fix(x == 0, y == 0) axle
+  pivot distance(a, along: x) axle
+  pivot distance(l, along: y) axle
 
-// the leg, with its crank angle and its toe rod both left unbound
-leg := Leg(axle, pivot)
+  // the leg, with its crank angle and its toe rod both left unbound
+  leg := Leg(axle, pivot)
+}
 path := leg.toe over theta in (0, 360)
 
 // level ground of unstated height, standing on the stride at both dips
-g0 := point hint(x: -60, y: -92)
-g1 := point hint(x: 0, y: -92)
-ground := horizontal line(g0, g1)
-g0 distance(60, along: x) g1
-fix(x == -60) g0
-path tangent ground hint(t: 25)
-path tangent ground hint(t: 315)
+in std.front {
+  g0 := point hint(x: -60, y: -92)
+  g1 := point hint(x: 0, y: -92)
+  ground := horizontal line(g0, g1)
+  g0 distance(60, along: x) g1
+  fix(x == -60) g0
+  path tangent ground hint(t: 25)
+  path tangent ground hint(t: 315)
+}

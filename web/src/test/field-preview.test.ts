@@ -211,8 +211,8 @@ test('a picture of swept solids alone is the same at every zoom; one of a static
   // the torus example's preview projects its swept part, which is one surface whatever the zoom
   assert.ok(derived(swept.sketch, 0.1).length > 0);
   assert.equal(derivedDetailFree(swept.sketch), true);
-  const plain = Document.read('unit mm\no := point\nfix(x == 0, y == 0) o\nc := circle(center: o) hint(r: 5)\n'
-    + 'radius(5mm) c\nbody := solid(face(c), depth: 3mm)\n');
+  const plain = Document.read('unit mm\nuse std\nin std.front {\no := point\nfix(x == 0, y == 0) o\n'
+    + 'c := circle(center: o) hint(r: 5)\nradius(5mm) c\n}\nbody := solid(face(c), depth: 3mm)\n');
   showSolids(plain.sketch);
   assert.ok(derived(plain.sketch, 0.1).length > 0);
   assert.equal(derivedDetailFree(plain.sketch), false, 'a static solid is cut finer as the zoom asks');

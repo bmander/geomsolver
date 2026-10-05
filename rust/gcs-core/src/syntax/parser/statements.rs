@@ -106,19 +106,18 @@ impl<'a> P<'a> {
                 // a datum, traced as a curve, whose contacts are the curve's
                 self.fail(
                     "`ellipse` is a library component now: `use std`, then \
-                     `e := Ellipse(f, a: …, b: …).p over u in (0, 360)` over a datum \
-                     `f := plane(origin: c, toward: m)` — `p on e`, `e tangent l` and \
-                     `e curvature k` are the curve's contacts",
+                     `e := Ellipse(c, a: …, b: …, tilt: 0deg).p over u in (0deg, 360deg)` about \
+                     a centre `c` — `p coincident e`, `e tangent l` and `e curvature k` are the \
+                     curve's contacts",
                 );
                 None
             }
             "frame" => {
-                // folded into `plane` (bmander/geomsolver#47, item 6): a plane with no attitude
-                // written is the datum a frame was, on the page
+                // folded into `plane` (bmander/geomsolver#47, item 6; #81)
                 self.fail(
-                    "`frame` is folded into `plane`: write `f := plane(origin: o, toward: q)` — a \
-                     datum with no attitude written is a view of the page, and a formal \
-                     `f: plane` offers `f.angle` as `frame` did",
+                    "`frame` is folded into `plane`: write `f := plane(u: r1, v: r2)` over two \
+                     rays or lines, whose origin is `f.origin`, or turn a frame within a plane \
+                     with `std.Turned(o, t)`",
                 );
                 None
             }
@@ -207,24 +206,23 @@ impl<'a> P<'a> {
             // whose shape is two names with a word between them that is not a constraint.  Read
             // by a lookahead rather than by `relation()`, since `cut` relates no geometry and
             // has no residual to be settled into
-            // **past the dotted path, not past one token**: a mate names a *face* of a solid
-            // (`cyl.block.far against plate.body.near`), so the word after the left operand is
-            // three tokens away and not one — the lookahead `past_ref` exists for
+            // **past the dotted path, not past one token**: an operand may be a dotted path, so
+            // the word after it is further away than one token — the lookahead `past_ref`
             _ if self.past_ref(self.i).and_then(|j| self.t.get(j)).is_some_and(
-                |(t, _)| matches!(t, Tok::Ident(w) if w == "cut" || w == "union" || w == "bound" || w == "through" || w == "against"),
+                |(t, _)| matches!(t, Tok::Ident(w) if w == "cut" || w == "union" || w == "bound" || w == "through"),
             ) =>
             {
                 let lo = self.here().lo as usize;
                 let what = self.refr()?;
                 let Some(Tok::Ident(w)) = self.peek().cloned() else {
-                    self.fail("a body statement is `X union B`, `X cut B`, `X bound B` or `F against G`");
+                    self.fail("a body statement is `X union B`, `X cut B` or `X bound B`");
                     return None;
                 };
                 if w == "through" {
                     self.fail("Boolean `through` is now `cut`: write `X cut B`; `through:` specifies a cutter's extent");
                     return None;
                 }
-                let word = match w.as_str() { "cut" => BodyWord::Cut, "union" => BodyWord::Union, "bound" => BodyWord::Bound, _ => BodyWord::Against };
+                let word = match w.as_str() { "cut" => BodyWord::Cut, "union" => BodyWord::Union, _ => BodyWord::Bound };
                 self.i += 1;
                 let body = self.refr()?;
                 self.end_of_stmt();

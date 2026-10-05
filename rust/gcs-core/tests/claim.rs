@@ -17,7 +17,7 @@ use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::model::Sketch;
 
 fn drawn(src: &str) -> Sketch {
-    let (prog, errs) = gcs_core::syntax::parse(src);
+    let (prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "does not parse: {errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(
@@ -32,7 +32,10 @@ fn drawn(src: &str) -> Sketch {
 }
 
 /// §2.2's rectangle, with room after it for one claim.
-const RECT: &str = "
+const RECT: &str = "\
+use std
+
+in std.front {
 p0 := point
 p1 := point hint(x: 60, y: 0)
 p2 := point hint(x: 60, y: 40)
@@ -44,6 +47,7 @@ vertical   (left := line(p3, p0)) -> close
 p0 distance(60) p1
 p1 distance(40) p2
 fix(x == 0, y == 0) p0
+}
 ";
 
 #[test]
@@ -78,12 +82,16 @@ fn a_claim_the_pose_happens_to_satisfy_is_consuming() {
     // solution, but enforcing it would have taken one of the two freedoms `c` keeps, so it is
     // not a theorem and the diagnosis says which kind of not
     let mut sk = drawn(
-        "
+        "\
+use std
+
+in std.front {
 a := point
 c := point hint(x: 0, y: 9)
 ac := line(a, c)
 fix(x == 0, y == 0) a
 claim vertical ac
+}
 ",
     );
     let d = diagnose(&mut sk, DiagnoseOptions::default());
@@ -95,16 +103,20 @@ claim vertical ac
 
 #[test]
 fn a_claim_may_not_own_an_unknown() {
-    let src = "
+    let src = "\
+use std
+
+in std.front {
 o := point hint(x: 0, y: 0)
 k := circle(center: o) hint(r: 20)
 p := point hint(x: 20, y: 0)
-claim p on k
+claim p coincident k
 q := point hint(x: 25, y: 8)
 s := spline(o, p, q, o, p, q, o)
-claim q on s
+claim q coincident s
+}
 ";
-    let (prog, errs) = gcs_core::syntax::parse(src);
+    let (prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     // `point_on_circle` owns nothing and is a fine claim; a spline contact carries its own
@@ -139,7 +151,10 @@ fn a_claim_does_not_weld_drag_parts() {
     // two separate dimensioned lines, and a claim spanning them: the claim must not make them
     // one part, or dragging either would cost both
     let sk = drawn(
-        "
+        "\
+use std
+
+in std.front {
 a := point
 b := point hint(x: 30, y: 0)
 ab := line(a, b)
@@ -153,10 +168,14 @@ horizontal cd
 c distance(30) d
 fix(x == 0, y == 20) c
 claim ab equal cd
+}
 ",
     );
     let part = gcs_core::io::Part::around(&sk, gcs_core::model::EntRef::point(1));
-    assert_eq!(part.sketch.points.len(), 2, "the claim welded two figures into one part");
+    // the part brings the plane its points are drawn in, and the plane its origin, as a wall
+    let origins: Vec<u32> = part.sketch.planes.iter().map(|q| q.origin).collect();
+    let drawn = (0..part.sketch.points.len() as u32).filter(|i| !origins.contains(i)).count();
+    assert_eq!(drawn, 2, "the claim welded two figures into one part");
 }
 
 #[test]
@@ -188,10 +207,14 @@ fn a_claim_is_not_a_number_the_decomposition_reads() {
     // `cgraph::known_radii` takes its working set from `Sketch::hard_constraints`, which is where
     // "everything that must be satisfied" is written down once.  A claimed radius states no
     // radius, so the decomposition must not be able to tell it from an absent one.
-    const CIRCLE: &str = "
+    const CIRCLE: &str = "\
+use std
+
+in std.front {
 o := point
 k := circle(center: o) hint(r: 20)
 fix(x == 0, y == 0) o
+}
 ";
     let plain = drawn(CIRCLE);
     let claimed = drawn(&format!("{CIRCLE}claim radius(20) k\n"));
@@ -205,13 +228,17 @@ fn a_document_may_not_smuggle_a_claim_onto_an_unknown() {
     // elaboration refuses it with a span (above); a document is untrusted input and arrives by
     // another road entirely, so the flag is dropped there rather than honoured
     let sk = drawn(
-        "
+        "\
+use std
+
+in std.front {
 o := point
 p := point hint(x: 20, y: 0)
 q := point hint(x: 25, y: 8)
 s := spline(o, p, q, o, p, q, o)
-q on s
+q coincident s
 fix(x == 0, y == 0) o
+}
 ",
     );
     let json = gcs_core::io::dumps(&sk, None)
@@ -229,13 +256,20 @@ fn a_claims_rows_are_the_rows_the_compiler_would_have_built() {
     for (src, tail) in [
         (RECT, "bottom parallel top\n"),      // a theorem: adds nothing
         (RECT, "horizontal top\n"),          // a duplicate: adds nothing either
-        ("
+        ("\
+use std
+
+in std.front {
 a := point
 c := point hint(x: 0, y: 9)
 ac := line(a, c)
 fix(x == 0, y == 0) a
+}
 ", "vertical ac\n"),                         // consuming: the pose alone satisfies it
-        ("
+        ("\
+use std
+
+in std.front {
 a := point
 b := point hint(x: 30, y: 0)
 c := point hint(x: 30, y: 40)
@@ -243,6 +277,7 @@ ab := line(a, b)
 bc := line(b, c)
 horizontal ab
 fix(x == 0, y == 0) a
+}
 ", "vertical bc\n"),                         // consuming as well, with a bigger base
     ] {
         let mut claimed = drawn(&format!("{src}claim {tail}"));
@@ -279,13 +314,17 @@ fn a_claimed_dimension_is_drawn_as_a_reference_dimension() {
     // parentheses are the drafting convention for a dimension that is measured rather than
     // controlling, which is a claim exactly — and they go round the whole label, so a claimed
     // radius reads `(R20)` and never `R(20)`
-    let src = "
+    let src = "\
+use std
+
+in std.front {
 o := point
 p := point hint(x: 60, y: 0)
 k := circle(center: o) hint(r: 20)
 fix(x == 0, y == 0) o
 l := horizontal line(o, p)
 o distance(60) p
+}
 ";
     let label = |sk: &Sketch, kind: CKind| -> String {
         let id = sk.constraints.iter().find(|c| c.kind == kind).unwrap().id;
@@ -374,7 +413,7 @@ fn the_rail_proves_the_line_without_tracing_it() {
 fn the_rail_is_refuted_when_it_is_not_where_the_pen_goes() {
     let src = gcs_core::examples::source("peaucellier_rail").unwrap()
         .replace("fix(x == 80, y == 0) anchor", "fix(x == 70, y == 0) anchor");
-    let (prog, errs) = gcs_core::syntax::parse(&src);
+    let (prog, errs) = crate::common::parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = gcs_core::program::elaborate(&prog);
     assert!(e.ok());

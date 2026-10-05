@@ -82,16 +82,12 @@ component FrameBlank(o: point, dims: group) {
 
 // A radial feed from the inset plenum to an intake port. The datum points from
 // the crank axis to the port; the feed overlaps both cavities at its ends.
-component IntakePassage(f: plane, dims: group) {
-  axis := line(f.origin, f.toward)
-  a := point hint(x: f.origin.x + (dims.rman) * f.c - (-dims.wch / 2) * f.s,
-                    y: f.origin.y + (dims.rman) * f.s + (-dims.wch / 2) * f.c)
-  b := point hint(x: f.origin.x + (dims.rpl) * f.c - (-dims.wch / 2) * f.s,
-                    y: f.origin.y + (dims.rpl) * f.s + (-dims.wch / 2) * f.c)
-  c := point hint(x: f.origin.x + (dims.rpl) * f.c - (dims.wch / 2) * f.s,
-                    y: f.origin.y + (dims.rpl) * f.s + (dims.wch / 2) * f.c)
-  d := point hint(x: f.origin.x + (dims.rman) * f.c - (dims.wch / 2) * f.s,
-                    y: f.origin.y + (dims.rman) * f.s + (dims.wch / 2) * f.c)
+component IntakePassage(f: group, dims: group) {
+  axis := line(f.u.p1, f.u.p2)
+  a := point hint(at: f.axes, x: dims.rman, y: -dims.wch / 2)
+  b := point hint(at: f.axes, x: dims.rpl, y: -dims.wch / 2)
+  c := point hint(at: f.axes, x: dims.rpl, y: dims.wch / 2)
+  d := point hint(at: f.axes, x: dims.rman, y: dims.wch / 2)
   body := solid(face(a, b, c, d, -> close), from: -dims.wch / 2, to: dims.wch / 2)
   ab := line(a, b)
   bc := line(b, c)
@@ -104,15 +100,15 @@ component IntakePassage(f: plane, dims: group) {
   distance(dims.rpl - dims.rman) ab
   distance(dims.wch) bc
   a distance(dims.wch / 2, side: right) axis
-  a distance(dims.rman, along: u) f
+  a distance(dims.rman, along: u) f.axes
 }
 
 // Inset plenum and radial intake feeds; rman leaves a wall beside the exhaust ports.
 component IntakeManifold(o: point, right: line, left: line, dims: group) {
   kin := (dims.rman - dims.wch / 2) / dims.rpl
   kout := (dims.rman + dims.wch / 2) / dims.rpl
-  intake_r := plane(origin: o, toward: right.p2)
-  intake_l := plane(origin: o, toward: left.p2)
+  intake_r := std.Turned(o, right.p2)
+  intake_l := std.Turned(o, left.p2)
   feedR := IntakePassage(intake_r, dims: dims)
   feedL := IntakePassage(intake_l, dims: dims)
   ci0 := point hint(x: o.x + (left.p2.x - o.x) * kin, y: o.y + (left.p2.y - o.y) * kin)
@@ -123,10 +119,10 @@ component IntakeManifold(o: point, right: line, left: line, dims: group) {
   ch_out := arc(center: o, start: co1, end: co0) hint(r: dims.rman + dims.wch / 2)
   radius(dims.rman - dims.wch / 2) ch_in
   radius(dims.rman + dims.wch / 2) ch_out
-  ci0 on left
-  ci1 on right
-  co0 on left
-  co1 on right
+  ci0 coincident left
+  ci1 coincident right
+  co0 coincident left
+  co1 coincident right
   claim radius(dims.rman + dims.wch / 2) ch_out
   plenum := solid(face(ch_in, co1, ch_out, ci0), from: -dims.wch / 2, to: dims.wch / 2)
 }
@@ -134,7 +130,7 @@ component IntakeManifold(o: point, right: line, left: line, dims: group) {
 // A square exhaust passage from a port to its nearest plate edge.
 component ExhaustPassage(opening: point, boundary: line, dims: group) {
   outlet := point hint(x: (boundary.p1.x + boundary.p2.x) / 2, y: opening.y)
-  outlet on boundary
+  outlet coincident boundary
   opening distance(0mm, along: y) outlet
   center := line(opening, outlet)
   a := components.parts.At(opening, dx: 0mm, dy: dims.wch / 2)
@@ -231,7 +227,10 @@ component Frame(layout: group, dims: group) {
 // ../plate.svd arranges three projections of this preview.
 preview {
   unit mm
-  ref := line(std.origin, std.up.toward) in std.front
+  in std.front {
+    ref := line(std.origin, hint(x: 0, y: 1))
+    fix(x == 0, y == 1) ref.p2
+  }
   layout := {front: std.front, origin: std.origin, axis: ref}
   plate := Frame(layout, dims: components.dims.vtwin_dims)
 }

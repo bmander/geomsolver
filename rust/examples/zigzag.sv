@@ -16,19 +16,23 @@
 // differ when `n` is even, and written this way the arithmetic settles it instead of each step
 // having to ask which kind it is.
 
+use std
+
 param n := 32
 param copies := 3
 
-repeat copies as c {
-  // the staircase's own points: up 5 on every odd step, along 3 on every even one
-  repeat n as i {
-    p := point hint(x: 4 * n * c + 3 * floor(i / 2), y: 5 * floor((i + 1) / 2))
-  }
+in std.front {
+  repeat copies as c {
+    // the staircase's own points: up 5 on every odd step, along 3 on every even one
+    repeat n as i {
+      p := point hint(x: 4 * n * c + 3 * floor(i / 2), y: 5 * floor((i + 1) / 2))
+    }
 
-  repeat floor(n / 2) as k {
-    v := vertical line(p[2 * k], p[2 * k + 1])
-  }
-  repeat floor((n - 1) / 2) as k {
-    h := horizontal line(p[2 * k + 1], p[2 * k + 2])
+    repeat floor(n / 2) as k {
+      v := vertical line(p[2 * k], p[2 * k + 1])
+    }
+    repeat floor((n - 1) / 2) as k {
+      h := horizontal line(p[2 * k + 1], p[2 * k + 2])
+    }
   }
 }

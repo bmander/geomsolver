@@ -9,15 +9,17 @@ component IndexedCuts(tool: solid, target: solid, indexing: motion, count: Int) 
   }
 }
 
-construction centerline shaft := line(std.origin, std.up.toward)
+in std.front {
+  construction centerline shaft := line(std.origin, hint(x: 0, y: 1))
+  fix(x == 0, y == 1) shaft.p2
+}
 turn := motion(about: shaft)
-top := plane(origin: std.origin, toward: std.front.toward, u: (1,0,0), v: (0,1,0))
-in top {
-  rim := radius(20mm) circle(center: std.origin)
+in std.top {
+  rim := radius(20mm) circle(center: std.top.origin)
   stock := solid(face(rim), depth: 5mm)
   private hole_center := point
-  hole_center distance(12mm, along: u) top
-  hole_center distance(0mm, along: v) top
+  hole_center distance(12mm, along: u) std.top
+  hole_center distance(0mm, along: v) std.top
   hole := radius(2mm) circle(center: hole_center)
   construction tool := solid(face(hole), through: body)
 }

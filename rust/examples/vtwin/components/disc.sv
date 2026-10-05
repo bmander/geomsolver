@@ -17,24 +17,23 @@ use std
 use components.dims
 use components.parts
 
-component Disc(f: plane, dims: group) {
+component Disc(f: group, dims: group) {
   pinpocketd := dims.pinhead + 0.5mm   // diametral clearance around the clevis head
-  rim := circle(center: f.origin) hint(r: dims.rdisc)
+  rim := circle(center: f.u.p1) hint(r: dims.rdisc)
   radius(dims.rdisc) rim
-  bore := circle(center: f.origin) hint(r: dims.dhub / 2)
+  bore := circle(center: f.u.p1) hint(r: dims.dhub / 2)
   radius(dims.dhub / 2) bore
-  ph := circle(center: f.toward) hint(r: dims.pinclr / 2)
+  ph := circle(center: f.u.p2) hint(r: dims.pinclr / 2)
   radius(dims.pinclr / 2) ph
-  pkt := circle(center: f.toward) hint(r: pinpocketd / 2)
+  pkt := circle(center: f.u.p2) hint(r: pinpocketd / 2)
   radius(pinpocketd / 2) pkt
   // the set screw, square to the arm so its pocket stays clear of the pin's
-  se := point hint(x: f.origin.x + (0mm) * f.c - (-dims.rdisc) * f.s,
-                    y: f.origin.y + (0mm) * f.s + (-dims.rdisc) * f.c)
-  ssa := line(f.origin, se)
-  reference := line(f.origin, f.toward)
-  se on rim
+  se := point hint(at: f.axes, x: 0mm, y: -dims.rdisc)
+  ssa := line(f.u.p1, se)
+  reference := line(f.u.p1, f.u.p2)
+  se coincident rim
   ssa perpendicular reference
-  screw_axes := plane(origin: f.origin, toward: se)
+  screw_axes := std.Turned(f.u.p1, se)
   gs := components.parts.Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rdisc, dims: dims)
   claim radius(dims.dhub / 2) bore
   claim radius(dims.pinclr / 2) ph
@@ -63,10 +62,11 @@ component Disc(f: plane, dims: group) {
 // ../disc.svd arranges three projections of this preview.
 preview {
   unit mm
-  pin := point hint(x: std.up.origin.x + (components.dims.R) * std.up.c - (0mm) * std.up.s,
-                    y: std.up.origin.y + (components.dims.R) * std.up.s + (0mm) * std.up.c)
-  std.origin vertical pin
-  std.origin distance(components.dims.R) pin
-  disc_axes := plane(origin: std.origin, toward: pin)
-  disc := Disc(disc_axes, dims: components.dims.vtwin_dims)
+  in std.front {
+    pin := point hint(at: std.up, x: components.dims.R, y: 0mm)
+    std.origin vertical pin
+    std.origin distance(components.dims.R) pin
+    disc_axes := std.Turned(std.origin, pin)
+    disc := Disc(disc_axes, dims: components.dims.vtwin_dims)
+  }
 }

@@ -2,20 +2,16 @@
  * A tool that makes geometry as it goes takes its undo snapshot on the first click of a run;
  * the fit tool makes nothing until it finishes and takes its own there. */
 import * as C from '../core/constraints.js';
-import { Plane, Point, distanceBetween, onRadius } from '../core/model.js';
-import { Attitude, Document, Edit } from '../core/program.js';
+import { Line, Plane, Point, distanceBetween, onRadius } from '../core/model.js';
 import { PICK_PX } from './view.js';
 import type { Place, SketchView, Tool } from './view.js';
-
-/** How far to the right of its origin a plane points when Enter stands in for the second
- *  click, in world units — the length of the chord, which is what the view is turned by. */
-const PLANE_CHORD = 40;
 
 export function setTool(v: SketchView, tool: Tool): void {
   v.tool = tool;
   v.pending = [];
   v.pendingFit = [];
   if (tool !== 'plane') v.planeSpec = null;      // armed for one plane, and it was not drawn
+  v.planeAxis = null;
   v.canvas.classList.toggle('select', tool === 'select');
   v.canvas.style.cursor = '';                // drop any hover affordance
   v.onTool(tool);
@@ -33,7 +29,6 @@ export function setTool(v: SketchView, tool: Tool): void {
 export function finishCurve(v: SketchView): void {
   if (v.tool === 'spline') finishSpline(v);
   else if (v.tool === 'splinefit') finishSplineFit(v);
-  else if (v.tool === 'plane') finishPlane(v);
 }
 
 /** Every point minted since there were `n0` is drawn in the current plane.  Called at the two
@@ -161,14 +156,12 @@ export function seedNamed(v: SketchView, name: string, x: number, y: number): vo
   }
 }
 
-/** Write a fresh plane with its two points where the gesture put them, then make it the view
- *  being drawn in.  The places go **into the statement** rather than into the points after
- *  the fact: a plane is a datum, and its rotor and the chord length its intrinsics read are
- *  seeded from the chord when the statement is elaborated — moved afterwards, both would be
- *  stale and the solve would land the frame with `toward` on top of `origin`. */
-function placePlane(v: SketchView, a: [number, number], b: [number, number]): void {
+/** Write a fresh plane over the two lines picked — `plane(u: a, v: b)`, right along the first and
+ *  up along what is left of the second — then make it the plane being drawn in.  Where it
+ *  stands is its origin's, which floats until something places it. */
+function placePlane(v: SketchView, u: string, w: string): void {
   const spec = v.planeSpec;
-  const e = v.doc.addEntity('plane', [], [], spec?.attitude ?? null, spec?.name, [a, b]);
+  const e = v.doc.addEntity('plane', [u, w], [], spec?.name);
   if (!v.apply(e, `plane ${e.names[0]}`)) return;
   const made = v.doc.entity(e.names[0]);
   if (made instanceof Plane) v.selected = [made];     // and so current: the setter says so
@@ -178,99 +171,44 @@ function placePlane(v: SketchView, a: [number, number], b: [number, number]): vo
   v.draw();
 }
 
-/** The draughtsman's layout, third angle: the front view on the page, the top view above it
- *  folded about the horizontal, the right view beside it folded about the vertical and drawn
- *  turned a quarter clockwise — `toward` straight *below* its origin — so z is up the page and
- *  depth grows to the right.  The folds are the core's convention (`plane::Basis::fold`, which
- *  its tests assert) and are copied here, not derived. */
-const THREE_VIEWS: [string, [number, number], [number, number], Attitude | null][] = [
-  ['front', [0, 0], [40, 0], null],
-  ['top', [0, 80], [40, 80], { from: 'front', fold: '0deg' }],
-  ['right', [120, 0], [120, -40], { from: 'front', fold: '-90deg' }],
-];
-/** What keeps the layout a layout: the top view plumb above the front and the right view level
- *  beside it, and each chord level or plumb as it was drawn. */
-const THREE_VIEWS_ALIGNED: [string, string, string][] = [
-  ['VerticalPoints', 'front.origin', 'top.origin'],
-  ['HorizontalPoints', 'front.origin', 'right.origin'],
-  ['HorizontalPoints', 'front.origin', 'front.toward'],
-  ['HorizontalPoints', 'top.origin', 'top.toward'],
-  ['VerticalPoints', 'right.origin', 'right.toward'],
-];
-
-/** Several edits as one.  Each is written onto the text the one before produced, through a
- *  throwaway elaboration, so what the caller applies is a single `Edit` — one undo entry and
- *  one re-elaboration of the document.  The first refusal comes back as the edit, and says why. */
-function chain(doc: Document, steps: ((d: Document) => Edit)[]): Edit {
-  let d = doc;
-  let last: Edit = { text: d.text, kind: 'none', names: [], refused: null };
-  try {
-    for (const step of steps) {
-      const e = step(d);
-      if (e.refused) return e;
-      last = e;
-      if (d !== doc) d.dispose();
-      d = Document.read(e.text);
-    }
-  } finally {
-    if (d !== doc) d.dispose();
-  }
-  return last;
-}
-
-/** Write the three views, each seeded where the table puts it, and the relations that hold
- *  them in their layout — one edit — and start drawing in the front.  False if refused. */
-export function threeViews(v: SketchView): boolean {
-  const e = chain(v.doc, [
-    ...THREE_VIEWS.map(([name, o, t, att]) =>
-      (d: Document) => d.addEntity('plane', [], [], att, name, [o, t])),
-    ...THREE_VIEWS_ALIGNED.map(([type, a, b]) => (d: Document) => d.addRelation(type, [a, b])),
-  ]);
-  if (!v.apply(e, 'three views: front, top and right')) return false;
-  const front = v.doc.entity('front');
-  v.plane = front instanceof Plane ? front : null;
-  v.onChanged();                   // the status line says where the next point goes
-  // on a fresh sheet the three datums land outside the default camera, and a layout nobody
-  // can see is not one they can draw in
-  v.fit();
-  return true;
-}
-
-/** Enter after the plane tool's first click: the view points `PLANE_CHORD` to the right. */
-export function finishPlane(v: SketchView): void {
-  if (v.tool !== 'plane' || !v.pendingFit.length) return;
-  const [x0, y0] = v.pendingFit[0].at;
-  v.pendingFit = [];
-  placePlane(v, [x0, y0], [x0 + PLANE_CHORD, y0]);
-}
-
-/** The plane tool's two clicks, as *places* like the rectangle's: the origin, then where the view
- *  points.  The statement has no coordinates in it until the solve writes the seeds back. */
+/** The plane tool's two clicks pick lines already drawn and named: the one the plane runs
+ *  along, then the one that says which way is up in it. */
 function planeClick(v: SketchView, sp: [number, number]): void {
-  if (!v.pendingFit.length) {
-    v.pendingFit = [pickPlace(v, sp)];
-    v.onStatus('click where the view points, or Enter to point it to the right');
+  const picked = v.pick(sp[0], sp[1]);
+  if (!(picked instanceof Line)) {
+    v.onStatus('a plane is picked over two lines: click a line');
+    return;
+  }
+  const name = v.doc.nameOf(picked);
+  if (!name) {
+    v.onStatus('that line has no name in the source to write the plane over: name it first');
+    return;
+  }
+  if (!v.planeAxis) {
+    v.planeAxis = name;
+    v.onStatus(`the plane runs along ${name}: now click the line that says which way is up`);
     v.draw();
+  } else if (v.planeAxis === name) {
+    v.onStatus('a plane needs two lines: click another');
   } else {
-    const [x0, y0] = v.pendingFit[0].at;
-    const { at } = pickPlace(v, sp);
-    v.pendingFit = [];
-    placePlane(v, [x0, y0], at);
+    const u = v.planeAxis;
+    v.planeAxis = null;
+    placePlane(v, u, name);
   }
 }
 
 export function toolClick(v: SketchView, sp: [number, number]): void {
   // a standard plane chosen before the document had it is brought in by the first press: the
   // document gains `use std`, and what the press makes is drawn on the plane it now has
-  if (v.tool !== 'plane' && !v.ensurePlane()) return;
-  // a plane seen edge on has no place on it under the pointer (`toolView` is the one read)
-  if (!v.viewCam().readable()) {
-    v.onStatus(`${v.tool === 'plane' ? 'the page' : v.planeName} is seen edge on — turn the view, `
-               + 'or choose the plane again to face it');
-    return;
-  }
+  // the plane tool picks lines where they are seen, and draws nothing on a plane
   if (v.tool === 'plane') {
     planeClick(v, sp);
+    return;
+  }
+  if (!v.ensurePlane()) return;
+  // a plane seen edge on has no place on it under the pointer (`toolView` is the one read)
+  if (!v.viewCam().readable()) {
+    v.onStatus(`${v.planeName} is seen edge on — turn the view, or choose the plane again to face it`);
     return;
   }
   const sk = v.sketch;

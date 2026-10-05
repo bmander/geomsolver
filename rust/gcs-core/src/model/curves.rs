@@ -117,7 +117,7 @@ pub struct CurveE {
     /// The curve stands for a surface: what its tool sweeps extruded square to its view — a
     /// prism's side generating under a motion that keeps the view (`flank :=
     /// envelope(surface(prism, edge: e), under: m, …)`, §6.15, issue #70).  A point in space is
-    /// `on` it by its place in the view (`CKind::PointOnExtrusion`).
+    /// `coincident` with it by its place in the view (`CKind::PointOnExtrusion`).
     pub extrusion: bool,
 }
 
@@ -250,19 +250,17 @@ impl Sketch {
         self.plane_of(p)
     }
 
-    /// What a point in space on an extrusion reads of the curve's view (`kernels::EXTRUSION_FRAME`):
-    /// its datum on the sheet — origin and rotor, the page's own where it is drawn on the page —
-    /// and its basis in space.
+    /// What a point in space on an extrusion reads of the curve's plane
+    /// (`kernels::EXTRUSION_FRAME`): its basis in space, `u`, `v` and `o`.
     pub fn extrusion_frame(&self, i: usize) -> [f64; crate::kernels::EXTRUSION_FRAME] {
-        let ((ox, oy), c, s, b) = match self.curve_view(i) {
-            Some(v) => { let (o, c, s) = crate::overview::placement(self, v); (o, c, s, self.basis(v)) }
-            None => ((0.0, 0.0), 1.0, 0.0, crate::plane::Basis::page()),
+        let b = match self.curve_view(i) {
+            Some(v) => self.basis(v),
+            None => crate::plane::Basis::page(),
         };
         let mut k = [0.0; crate::kernels::EXTRUSION_FRAME];
-        k[..4].copy_from_slice(&[ox, oy, c, s]);
-        k[4..7].copy_from_slice(&b.u);
-        k[7..10].copy_from_slice(&b.v);
-        k[10..].copy_from_slice(&b.o);
+        k[..3].copy_from_slice(&b.u);
+        k[3..6].copy_from_slice(&b.v);
+        k[6..].copy_from_slice(&b.o);
         k
     }
 

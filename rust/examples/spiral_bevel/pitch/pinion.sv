@@ -27,8 +27,8 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
     V := point hint(x: -0.75 * d, y: 1.25 * d)
     hinge := line(gear.M, A)
   }
-  V on hinge
-  V on foot
+  V coincident hinge
+  V coincident foot
   in q {
     apex := point hint(x: d, y: 0)
     mean := point hint(x: -r, y: 0)
@@ -42,9 +42,9 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
     virtual_axis := line(virtual, virtual_tip)
     pitch_radius := circle(center: mean) hint(r: r * design.pinion_teeth / design.crown_teeth)
   }
-  apex on p
-  mean on p
-  virtual on p
+  apex coincident p
+  mean coincident p
+  virtual coincident p
   A project apex
   gear.M project mean
   V project virtual
@@ -65,8 +65,8 @@ preview {
   unit mm
   pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
   gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
   trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
   pinion := PinionCone(pitch.view, q.view, gear, trace.foot, design.hypoid_design)
-  q := views.FoldedView(pitch.view, pinion.hinge, span: design.hypoid_design.cutter_radius)
+  q := views.FoldedView(pitch.view, pinion.hinge, pitch.down, span: design.hypoid_design.cutter_radius)
 }

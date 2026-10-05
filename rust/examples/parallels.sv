@@ -12,22 +12,26 @@
 // One degree of freedom is left over: nothing says where along the base the chain sits, so it
 // slides.
 
-o := point
-e := point
-base := line(o, e)
+use std
 
-a := point hint(x: 0, y: 15)
-b := point hint(x: 40, y: 15)
-d := point hint(x: 10, y: 35)
-l2 := line(a, b)
-base parallel l2
-a distance(15, side: left) base
-a distance(40) b
+in std.front {
+  o := point
+  e := point
+  base := line(o, e)
 
-// l3 rises from l2's start, and l4 leaves l3's top square to it
-vertical (l3 := line(a, d)) -> perpendicular (l4 := line(d, hint(x: 30, y: 30)))
-distance(20) l3
-distance(20) l4
+  a := point hint(x: 0, y: 15)
+  b := point hint(x: 40, y: 15)
+  d := point hint(x: 10, y: 35)
+  l2 := line(a, b)
+  base parallel l2
+  a distance(15, side: left) base
+  a distance(40) b
 
-fix(x == 0, y == 0) o
-fix(x == 40, y == 0) e
+  // l3 rises from l2's start, and l4 leaves l3's top square to it
+  vertical (l3 := line(a, d)) -> perpendicular (l4 := line(d, hint(x: 30, y: 30)))
+  distance(20) l3
+  distance(20) l4
+
+  fix(x == 0, y == 0) o
+  fix(x == 40, y == 0) e
+}

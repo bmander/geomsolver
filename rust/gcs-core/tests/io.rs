@@ -436,7 +436,9 @@ fn copy_takes_the_points_that_define_what_was_picked() {
     // one line, nothing else: its two endpoints have to come with it or it is not a line
     let clip = io::copy(&sk, &[EntRef::line(0)]);
     assert_eq!(clip.lines.len(), 1);
-    assert_eq!(clip.points.len(), 2);
+    // and the plane they are drawn in comes too, with its origin
+    assert_eq!(clip.points.len(), 3);
+    assert_eq!(clip.planes.len(), 1);
     assert!(clip.circles.is_empty() && clip.arcs.is_empty());
 }
 
@@ -467,11 +469,11 @@ fn copy_is_the_other_half_of_deleting_the_rest() {
     // would have kept — checked on a sketch with arcs, tangencies and dimensions on it
     let sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
     let picked = [EntRef::line(0), EntRef::arc(0)];
-    let rest: Vec<EntRef> = sk
-        .primitives()
-        .into_iter()
-        .filter(|e| !model::expand(&sk, &picked).contains(e))
-        .collect();
+    // what is picked, and the plane it is drawn in, which a copy brings along
+    let front = sk.points[sk.lines[0].p1 as usize].plane.unwrap() as usize;
+    let mut kept = model::expand(&sk, &picked);
+    kept.extend(model::expand(&sk, &[EntRef::plane(front)]));
+    let rest: Vec<EntRef> = sk.primitives().into_iter().filter(|e| !kept.contains(e)).collect();
     assert_eq!(io::dumps(&io::copy(&sk, &picked), Some(1)),
                io::dumps(&io::without(&sk, &rest, &[]), Some(1)));
 }
@@ -497,15 +499,21 @@ fn copy_carries_the_flags_and_the_dimension_placements() {
 fn paste_lands_beside_what_was_copied_and_brings_its_constraints() {
     let mut sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
     let before = (sk.points.len(), sk.lines.len(), sk.arcs.len(), sk.user_constraints().len());
-    let clip = io::copy(&sk, &sk.primitives());
+    // the drawing: its lines and arcs, which bring their points and the front they are drawn in
+    let drawing: Vec<EntRef> = sk.primitives().into_iter()
+        .filter(|e| matches!(e.kind, EntKind::Line | EntKind::Arc)).collect();
+    let clip = io::copy(&sk, &drawing);
+    let own = clip.points.len() - 1;   // beside the front's origin
     let made = io::paste(&mut sk, &clip, 5.0, -3.0);
 
-    assert_eq!(sk.points.len(), 2 * before.0);
+    // the front is the document's: what was drawn in it is drawn in it again
+    assert_eq!(sk.points.len(), before.0 + own);
     assert_eq!(sk.lines.len(), 2 * before.1);
     assert_eq!(sk.arcs.len(), 2 * before.2);
     assert_eq!(sk.user_constraints().len(), 2 * before.3);
-    // the new entities come back in clipboard order, so the caller can select what it pasted
-    assert_eq!(made.len(), clip.primitives().len());
+    // the new entities come back in clipboard order, so the caller can select what it pasted —
+    // all but the front, its origin and its two rays
+    assert_eq!(made.len(), clip.primitives().len() - 4);
     assert!(made.iter().all(|e| match e.kind {
         EntKind::Point => e.i() >= before.0,
         EntKind::Line => e.i() >= before.1,
@@ -711,4 +719,29 @@ fn a_levelled_pair_decomposes_like_a_levelled_line() {
     assert!(r.success && !r.fell_back, "{r:?}");
     assert!((sk.point_xy(b).1).abs() < 1e-9);
     assert!((sk.point_xy(b).0 - 10.0).abs() < 1e-9);
+}
+
+/// A paste onto the plane it was copied from draws in that plane: the clipboard carries the
+/// plane its points are drawn in, and one the document already holds where the clipboard's is
+/// held, facing the same way, is that plane — no second plane stands on the first.  Into a
+/// document without one, the plane comes along.
+#[test]
+fn a_paste_draws_in_the_plane_the_document_already_has() {
+    let e = crate::common::build("use std\nin std.front {\na := point hint(x: 0, y: 0)\n\
+        b := point hint(x: 60, y: 0)\nab := line(a, b)\na distance(60) b\n}\n");
+    let mut sk = e.sketch;
+    let front = e.map.ent_named("std.front").unwrap().i();
+    let clip = io::copy(&sk, &[EntRef::line(0)]);
+    assert_eq!(clip.planes.len(), 1, "the clipboard carries the plane its points are drawn in");
+    let (planes, rays) = (sk.planes.len(), sk.rays.len());
+    let made = io::paste(&mut sk, &clip, 10.0, 10.0);
+    assert_eq!((sk.planes.len(), sk.rays.len()), (planes, rays), "no second plane, nor its rays");
+    let pasted: Vec<usize> = made.iter().filter(|r| r.kind == EntKind::Point).map(|r| r.i()).collect();
+    assert_eq!(pasted.len(), 2, "the line's two ends, and not a second origin");
+    assert!(pasted.iter().all(|&p| sk.plane_of(p) == Some(front)), "drawn in the front");
+    assert_eq!(sk.user_constraints().len(), 2, "the copy brought its own dimension");
+    // into a document of nothing, the plane comes along
+    let mut empty = Sketch::new();
+    io::paste(&mut empty, &clip, 0.0, 0.0);
+    assert_eq!(empty.planes.len(), 1);
 }

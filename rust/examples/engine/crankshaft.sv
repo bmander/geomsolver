@@ -46,10 +46,10 @@ component Throw(o: point, axis: line, theta: Angle, dims: group, shape: group) {
   // the crown of the eye and the heel of the rim, on the arm's own line
   crown := point hint(x: pin.x + shape.eye * sin(theta), y: pin.y + shape.eye * cos(theta))
   heel := point hint(x: o.x - shape.rim * sin(theta), y: o.y - shape.rim * cos(theta))
-  crown on eye
-  crown on arm
-  heel on rim
-  heel on arm
+  crown coincident eye
+  crown coincident arm
+  heel coincident rim
+  heel coincident arm
   // the oil passage, drilled up the arm from the journal's surface to the pin's
   oa := point hint(x: o.x + dims.rj * sin(theta) - shape.oil_radius * cos(theta), y: o.y + dims.rj * cos(theta) + shape.oil_radius * sin(theta))
   ob := point hint(x: pin.x - dims.rp * sin(theta) - shape.oil_radius * cos(theta), y: pin.y - dims.rp * cos(theta) + shape.oil_radius * sin(theta))
@@ -61,8 +61,8 @@ component Throw(o: point, axis: line, theta: Angle, dims: group, shape: group) {
   ob distance(shape.oil_radius, side: left) arm
   oc distance(shape.oil_radius, side: right) arm
   od distance(shape.oil_radius, side: right) arm
-  ob on kp
-  od on kp
+  ob coincident kp
+  od coincident kp
   oa distance(dims.rj) o
   oc distance(dims.rj) o
 }

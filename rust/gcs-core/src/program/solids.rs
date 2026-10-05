@@ -12,7 +12,6 @@ mod claims;
 mod faces;
 mod build;
 pub(super) use claims::solid_claims;
-use claims::place;
 use faces::{chain_face,validate_chain,build_face};
 use build::build_solid;
 
@@ -115,11 +114,7 @@ pub(super) fn solids(
             continue;
         }
         let (word, what, at, into) = match &st.kind {
-            // `against` is not the body rule: it says where a part *stands*, and is read by the
-            // placement walk after every solid is built
-            StmtKind::SolidRel(r) if r.word != crate::syntax::BodyWord::Against => {
-                (r.word, &r.what, r.span, &r.body)
-            }
+            StmtKind::SolidRel(r) => (r.word, &r.what, r.span, &r.body),
             _ => continue,
         };
         let mut say = |span: Span, m: String| {
@@ -176,16 +171,8 @@ pub(super) fn solids(
             crate::syntax::BodyWord::Union => on.push(a.idx),
             crate::syntax::BodyWord::Cut => through.push(a.idx),
             crate::syntax::BodyWord::Bound => bound.push(a.idx),
-            crate::syntax::BodyWord::Against => unreachable!("filtered above"),
         }
     }
-    // -- where the parts stand (§6.10) ----------------------------------------
-    // **After the solids and before anything evaluates them**: a face's ordinate along its
-    // plane's normal is the sweep's own number and does not depend on where the plane stands, so
-    // the walk can be done on the statements alone — and every reader below (a view, a mesh, a
-    // claim) resolves its term lazily and therefore sees the planes placed.
-    place(sk, res, map, body, skip, diags);
-
     // -- the pictures the document asks for (§6.11) ---------------------------
     for st in body {
         let StmtKind::Derived(d) = &st.kind else { continue };

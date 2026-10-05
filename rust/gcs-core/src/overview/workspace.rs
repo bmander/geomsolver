@@ -1,15 +1,14 @@
 //! **The workspace**: the drawing as one scene in space, which an editor draws in.
 //!
 //! The glass box (`scene`, `scene3d`) shows a multiview document folded up; this is what makes the
-//! same picture *editable*.  Every view's geometry is stored as page coordinates, and a view reads
-//! them through its own placement on the page (`plane::in_view`) and stands them on its own plane
-//! (`Basis::lift`).  That chain is affine — a view's page stands in space by one 3×3 placement —
-//! and, seen by an orthographic eye, so is the whole of it: each view's page maps onto the eye's
-//! picture plane by one 2×3 matrix.  So a front end needs no 3D arithmetic to draw a sketch on a
-//! tilted plane, or to turn a click back into a place on one — it composes the view's map with
-//! its own 2D camera and inverts a 2×2 — and every question about what is under the pointer is
-//! asked here, of the figures as the eye sees them, because views that sit on top of one another
-//! on the page are nowhere near one another in space.
+//! same picture *editable*.  Every view's geometry is stored in the plane's own coordinates, which
+//! it stands in space on (`Basis::lift`).  That is affine — a view's page stands in space by one
+//! 3×3 placement — and, seen by an orthographic eye, so is the whole of it: each view's page maps
+//! onto the eye's picture plane by one 2×3 matrix.  So a front end needs no 3D arithmetic to draw
+//! a sketch on a tilted plane, or to turn a click back into a place on one — it composes the
+//! view's map with its own 2D camera and inverts a 2×2 — and every question about what is under
+//! the pointer is asked here, of the figures as the eye sees them, because views whose own
+//! coordinates overlap are nowhere near one another in space.
 //!
 //! The page itself is a view: geometry in no plane stands on the front plane (`Basis::page`),
 //! measured from the world origin.
@@ -17,7 +16,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::model::{grow, polyline_distance, Box2, EntKind, EntRef, Sketch};
-use crate::plane::{cross, dot, norm, Basis};
+use crate::plane::{dot, Basis};
 
 use super::{drawable, eye, views};
 
@@ -33,62 +32,34 @@ pub fn apply(m: &Map, p: (f64, f64)) -> (f64, f64) {
     (m[0] * p.0 + m[1] * p.1 + m[2], m[3] * p.0 + m[4] * p.1 + m[5])
 }
 
-/// Where a view's page stands in space: `(x, y) ↦ o + x·a + y·b`.  The same for every eye.
-///
-/// `in_view` reads `(p, q) = (c·dx + s·dy, −s·dx + c·dy)` with `(dx, dy)` the page point less the
-/// view's origin, and `lift` stands that at `o₃ + p·u + q·v`; multiplied out, space is linear in
-/// the page point.
-#[derive(Clone, Copy, Debug)]
-struct Placement {
-    a: [f64; 3],
-    b: [f64; 3],
-    o: [f64; 3],
+/// A view's page seen by the eye whose picture plane is spanned by `right` and `up`: a point drawn
+/// in a plane is in the plane's own coordinates, so its page stands in space as `Basis::lift`.
+fn seen_map(b: &Basis, right: [f64; 3], up: [f64; 3]) -> Map {
+    let row = |e: [f64; 3]| (dot(e, b.u), dot(e, b.v), dot(e, b.o));
+    let (a, bb, t) = row(right);
+    let (d, e, f) = row(up);
+    [a, bb, t, d, e, f]
 }
 
-impl Placement {
-    fn of(basis: &Basis, origin: (f64, f64), c: f64, s: f64) -> Placement {
-        let (u, v) = (basis.u, basis.v);
-        let a = [c * u[0] - s * v[0], c * u[1] - s * v[1], c * u[2] - s * v[2]];
-        let b = [s * u[0] + c * v[0], s * u[1] + c * v[1], s * u[2] + c * v[2]];
-        let o = std::array::from_fn(|k| basis.o[k] - origin.0 * a[k] - origin.1 * b[k]);
-        Placement { a, b, o }
-    }
-
-    /// Seen by the eye whose picture plane is spanned by `right` and `up`.
-    fn seen(&self, right: [f64; 3], up: [f64; 3]) -> Map {
-        let row = |e: [f64; 3]| (dot(e, self.a), dot(e, self.b), dot(e, self.o));
-        let (a, b, t) = row(right);
-        let (d, e, f) = row(up);
-        [a, b, t, d, e, f]
-    }
-
-    /// The same page standing in the same place: a figure with a point in each is one figure.
-    fn same(&self, other: &Placement, tol: f64) -> bool {
-        (0..3).all(|k| {
-            (self.a[k] - other.a[k]).abs() <= 1e-12
-                && (self.b[k] - other.b[k]).abs() <= 1e-12
-                && (self.o[k] - other.o[k]).abs() <= tol
-        })
-    }
-
-    /// The same plane in space, however its page is laid out on it: parallel, and through the same
-    /// points.  What makes two views one place for a reader — `std.up` is `std.front` turned.
-    fn coplanar(&self, other: &Placement, tol: f64) -> bool {
-        let (n, m) = (cross(self.a, self.b), cross(other.a, other.b));
-        norm(cross(n, m)) <= 1e-9 * norm(n) * norm(m)
-            && dot(n, [other.o[0] - self.o[0], other.o[1] - self.o[1], other.o[2] - self.o[2]]).abs()
-                <= tol * norm(n)
-    }
+/// The same page standing in the same place: a figure with a point in each is one figure.
+fn same_page(x: &Basis, y: &Basis, tol: f64) -> bool {
+    (0..3).all(|k| {
+        (x.u[k] - y.u[k]).abs() <= 1e-12
+            && (x.v[k] - y.v[k]).abs() <= 1e-12
+            && (x.o[k] - y.o[k]).abs() <= tol
+    })
 }
 
 /// What does not depend on the eye: where each view's page stands in space, the view each point
 /// stands in, which views are one place, and the eye square on to each.  Indexed with the page
 /// first and then every plane in order (`slot`).
 pub struct Views {
-    placements: Vec<Placement>,
-    /// `overview::view_of` for each point: its membership, or the plane it is a datum point of.
+    placements: Vec<Basis>,
+    /// `overview::view_of` for each point: its membership.
     points: Vec<Option<usize>>,
-    /// The first view standing on the same plane in space as each view (`Placement::coplanar`).
+    /// Which points stand in space: in no view, seen where they are (`Projection::point`).
+    space: Vec<bool>,
+    /// The first view standing on the same plane in space as each view (`Basis::coplanar`).
     places: Vec<Option<usize>>,
     /// A length below which two places in space are one, scaled to the drawing.
     tol: f64,
@@ -105,12 +76,9 @@ fn view_at(k: usize) -> Option<usize> {
 }
 
 /// Where every view's page stands in space, the page first.
-fn placements(sk: &Sketch) -> Vec<Placement> {
-    let mut all = vec![Placement::of(&Basis::page(), (0.0, 0.0), 1.0, 0.0)];
-    all.extend((0..sk.planes.len()).map(|i| {
-        let (o, c, s) = super::placement(sk, i);
-        Placement::of(&sk.basis(i), o, c, s)
-    }));
+fn placements(sk: &Sketch) -> Vec<Basis> {
+    let mut all = vec![Basis::page()];
+    all.extend((0..sk.planes.len()).map(|i| sk.basis(i)));
     all
 }
 
@@ -118,7 +86,20 @@ fn placements(sk: &Sketch) -> Vec<Placement> {
 /// what a front end asks per frame, so it reads the planes and nothing else.
 pub fn maps(sk: &Sketch, az: f64, el: f64) -> Vec<Map> {
     let (right, up) = eye(az, el);
-    placements(sk).iter().map(|p| p.seen(right, up)).collect()
+    placements(sk).iter().map(|p| seen_map(p, right, up)).collect()
+}
+
+/// Where the eye at `az`, `el` (radians) sees each point in space, by point index — `None` for a
+/// point drawn in a plane, which its view's map places.  Per frame, beside `maps`, so a front end
+/// draws a point in space without any arithmetic in three dimensions.
+pub fn space_points(sk: &Sketch, az: f64, el: f64) -> Vec<Option<(f64, f64)>> {
+    let (right, up) = eye(az, el);
+    (0..sk.points.len())
+        .map(|p| sk.points[p].z.is_some().then(|| {
+            let x = sk.world_point(p);
+            (dot(right, x), dot(up, x))
+        }))
+        .collect()
 }
 
 impl Views {
@@ -131,7 +112,8 @@ impl Views {
                 view_at(first)
             })
             .collect();
-        Views { placements, points: views(sk), places, tol }
+        let space = sk.points.iter().map(|p| p.z.is_some()).collect();
+        Views { placements, points: views(sk), space, tol, places }
     }
 
     /// The view point `p` stands in.
@@ -146,21 +128,26 @@ impl Views {
 
     /// Whether two views' pages stand in the same place, so a figure may be drawn in either.
     fn same(&self, v: Option<usize>, w: Option<usize>) -> bool {
-        v == w || self.placements[slot(v)].same(&self.placements[slot(w)], self.tol)
+        v == w || same_page(&self.placements[slot(v)], &self.placements[slot(w)], self.tol)
     }
 
     /// The one view an entity is drawn in, `Err` where its points stand in views apart in space.
     /// Views standing in the same place — the page and `std.front` — are one, so a figure with a
     /// point in each is still drawn in one.
     pub fn entity_view(&self, sk: &Sketch, e: EntRef) -> Result<Option<usize>, ()> {
+        // a point in space stands in no view: it is seen where it is, and nothing is laid out
+        // on a page for it
         if e.kind == EntKind::Point {
-            return Ok(self.points[e.i()]);
+            return if self.space[e.i()] { Err(()) } else { Ok(self.points[e.i()]) };
         }
         if !e.kind.bears_points() {
             return Ok(None);
         }
         let mut first: Option<Option<usize>> = None;
         for k in sk.children(e).into_iter().filter(|k| k.kind == EntKind::Point) {
+            if self.space[k.i()] {
+                return Err(());
+            }
             let v = self.points[k.i()];
             match first {
                 None => first = Some(v),
@@ -210,7 +197,7 @@ impl Projection {
     pub fn new(sk: &Sketch, az: f64, el: f64) -> Projection {
         let (right, up) = eye(az, el);
         let views = Views::new(sk);
-        let maps = views.placements.iter().map(|p| p.seen(right, up)).collect();
+        let maps = views.placements.iter().map(|p| seen_map(p, right, up)).collect();
         Projection { views, right, up, maps }
     }
 
@@ -229,8 +216,11 @@ impl Projection {
         self.views.of_point(p)
     }
 
-    /// Where point `p` is seen.
+    /// Where point `p` is seen: through its view's map, or where it stands for a point in space.
     pub fn point(&self, sk: &Sketch, p: usize) -> (f64, f64) {
+        if self.views.space[p] {
+            return self.seen(sk.world_point(p));
+        }
         apply(self.map(self.view_of(p)), sk.point_xy(p))
     }
 
@@ -265,7 +255,7 @@ impl Projection {
     /// How near an entity's figure comes to `at`, or infinity — the box round it on its page,
     /// seen, is asked first, so a figure out of reach is never tessellated.
     fn reach(&self, sk: &Sketch, e: EntRef, at: (f64, f64), tol: f64, unit: f64) -> f64 {
-        if e.kind != EntKind::Line {
+        if !matches!(e.kind, EntKind::Line | EntKind::Point) {
             let Ok(view) = self.views.entity_view(sk, e) else { return f64::INFINITY };
             let (x0, y0, x1, y1) = sk.bounds(e);
             if !(x0 <= x1 && y0 <= y1) {

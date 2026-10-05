@@ -21,6 +21,10 @@ drawing satisfies them, then check that the diagnosis agrees (1.16).
 Deleting every seed leaves the set of solutions unchanged, without exception: a held number is
 stated by `fix`, pinned with `==` like any pin (`fix(x == 0, y == 0) a`), never by a seed.
 
+**A point stands in space unless it is drawn `in` a plane.** A 2D drawing says `use std` and draws
+in the front plane: `in std.front { … }` around its geometry (1.13). Values, styles and solids may
+stand outside the block.
+
 Scope:
 
 - Models are `.sv` files. Presentation — `class`, `style`, view and section requests, callout
@@ -83,12 +87,8 @@ NAME := {LABEL: VALUE, ...}             values and geometry passed as one argume
 [private] [construction] [NAME :=] KIND[(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)]
      [knots [...]] [in REF]             an entity declaration; every part optional   (1.4)
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve       (1.9)
-[NAME :=] plane(origin: R, toward: R[, from: R, fold: E | , from: R, offset: E
-                                      | , u: (E,E,E), v: (E,E,E)[, o: (E,E,E)]])
-                                        a datum (1.11), or a view with an attitude   (1.13)
-NAME := plane(origin: R, toward: R, from: R, fold: NAME | fold: along LINE | ..., through: R
-              | attitude: free[, offset: free]) [hint(u: .., v: .., offset: E)]
-                                        a view the solve places                      (1.13)
+[NAME :=] ray [hint(x: E, y: E, z: E)]  a directed line in space, with no start      (1.13)
+[NAME :=] plane(u: RAY, v: RAY)         a plane: right along u, out of it u × v      (1.13)
 NAME := sphere(center: R) | cone(axis: LINE) | cylinder(axis: LINE)  [hint(...)]
                                         a surface in space, on no sheet              (1.13)
 in REF { statement* }                   every declaration inside is drawn in that plane
@@ -98,7 +98,6 @@ NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:,
 NAME := solid(SOLID)                    a body over a stock
 NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E)   placed by, or swept through, a motion
 REF union REF | REF cut REF | REF bound REF   material added to, removed from, kept within a body
-REF.FACE against REF.FACE               a mate between two parts' caps
 NAME := surface | motion | envelope | patch | seam | vertex | edge(...)
                                         spatial geometry read after the solve        (1.15)
 WORD[(ARGS)] REF  |  REF WORD[(ARGS)] REF  [hint(SLOT: E, ...)]
@@ -126,12 +125,13 @@ read any number or binder in scope). Indices and fields chain: `l.e[2].p1` is `p
 
 | kind | children | own scalars | ends (for chains) |
 |---|---|---|---|
-| `point` | — | `x`, `y` | |
+| `point` | — | `x`, `y` in its plane; `x`, `y`, `z` in space | |
 | `line` | `p1`, `p2` | | `p1 -> p2` |
 | `circle` | `center` | `r` | |
 | `arc` | `center`, `start`, `end` | `r` | `start -> end`, counter-clockwise |
 | `spline` | control points, all named | | |
-| `plane` | `origin`, `toward` | rotor `c`, `s` (never seeded by hand), plus a constant basis in space | |
+| `ray` | — | a place and a unit direction (seeded by `hint(x:, y:, z:)`, the direction) | |
+| `plane` | `u`, `v` (rays or lines); member `origin` | where it stands: `fix(x == …, y == …, z == …)` | |
 | `curve` | its arguments | | |
 | `sphere` | `center` | `r` | |
 | `cone` | `axis` (a line; its start is the apex) | `half`, the half-angle | |
@@ -150,8 +150,10 @@ circle `k`'s rim at that bearing; and `hint(at: a, toward: b, by: 0.5, turn: 90d
 `a` the fraction `by` (1 if unsaid) of the way to `b`, turned `turn` about `a` — `by: 0.5` a
 midpoint, `by: -1` a reflection. `along: l` in place of `toward:` steps by `by` times line `l`'s
 run. A place drawn in another view is read in space and projected into the seeded point's view,
-so `lp := point hint(at: inner) in n` starts at `inner`'s image in `n`. A clause with `at` has no
-`x` or `y`. A seed whose constraints fix it without a choice (a midpoint, where two lines cross)
+so `lp := point hint(at: inner) in n` starts at `inner`'s image in `n`. A clause with a point or a
+circle at `at` has no `x` or `y`; one with a **plane** at `at` takes them in that plane's own
+coordinates, `hint(at: axes.axes, x: 3, y: 4)`, which is how a point is seeded in a frame turned
+within its plane (1.11). A point in space is seeded `hint(x:, y:, z:)`. A seed whose constraints fix it without a choice (a midpoint, where two lines cross)
 needs none at all. Seeds settle in statement order, so a seed reading
 one written below reads its provisional start. With a `unit` line, a geometry read is a length:
 write `pin.x - 10mm`, not `pin.x - 10`. A value may **not** read geometry: it feeds constraints,
@@ -200,7 +202,7 @@ stands in the parentheses:
 
 | word | fixity | operands and options |
 |---|---|---|
-| `on` | infix | a point to a line, circle, arc, spline or curve. In space (1.13): a point or line to a **plane**; a point or circle to a **sphere**; a point to a **cone** or **cylinder**. Not between two **solids**: material is added with `union` (1.14) |
+| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve. In space (1.13): a point or line to a **plane**; a point or circle to a **sphere**; a point to a **cone** or **cylinder**. Not between two **solids**: material is added with `union` (1.14) |
 | `distance` | infix | two points (length; `along: x`/`y` or `right`/`left`/`up`/`down` for a signed run or rise); a point and a line, or two lines (a magnitude; `side:` picks the side); two concentric circles or arcs (radial gap); a point and a datum (`along: u`/`v` signed ordinates, `along: n` signed distance along the normal, in space) |
 | `distance` | prefix | a line: its length |
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; in space, sphere–line, sphere–sphere, cylinder–line (round thing first); two cones at a point, `k1 tangent(M) k2` |
@@ -211,7 +213,7 @@ stands in the parentheses:
 | `angle` | prefix | a cone: its half-angle |
 | `radius` | prefix | a circle, arc, sphere or cylinder |
 | `length` | prefix | an arc: radius × sweep, counter-clockwise from `start` to `end` (a magnitude) |
-| `coincident`, `symmetry(line)` | infix | two points |
+| `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines |
 | `project` | infix | two points, each `in` a plane: two images of one point in space (1.13) |
@@ -256,36 +258,36 @@ stands in the parentheses:
   counter-clockwise. It may read an unknown and is drawn with a `⌒` mark.
 
 **Slots a constraint owns** (a contact's curve parameter, always called `t`) are normally omitted.
-Seed one with `p on s hint(t: 0.4)`; pin one with `p on(t == 0.4) s`.
+Seed one with `p coincident s hint(t: 0.4)`; pin one with `p coincident(t == 0.4) s`.
 Pin one to an unknown and contacts on the same curve share it: with `param s: Angle hint(318)`,
 `path tangent(t == s) ground` and `path curvature(t == s) osc` state the circle osculating the
 path *where* it touches the ground — one place, one parameter, seeded where it is declared (a
 `hint(t: …)` beside the pin is E040). A contact on another curve pinned to `s` is refused (E040).
 
 **Tangency trap.** If the contact point is already held on the circle, state the tangency *at*
-it: `line tangent(at: p2) circle`, `arc tangent(at: start) line`. `p on circle` plus a bare
+it: `line tangent(at: p2) circle`, `arc tangent(at: start) line`. `p coincident circle` plus a bare
 `line tangent circle` is rank-deficient at every solution; the diagnosis reports a motion "blocked
 at second order" rather than a DOF, but the at-form is the one to write.
 
 #### Across views, a word means space
 
-When a relation's operands are drawn in different views (1.13), it relates their places in space;
-no selector is needed:
+When a relation's operands are drawn in different views (1.13), or any of them stands in space, it
+relates their places in space; no selector is needed:
 
 | written across views | means |
 |---|---|
 | `a coincident b` | the same point in space |
 | `a distance(30) b` | the true length |
 | `a distance(5) l`, `l1 distance(17.5) l2` | to the infinite line; along the common perpendicular (magnitudes) |
-| `a on l`, `a on c` | on the line's extension; on the circle in its own view |
-| `l1 angle(90deg) l2` | the **unsigned** angle between directions, 0–180° |
+| `a coincident l`, `a coincident c` | on the line's extension; on the circle in its own view |
+| `l1 angle(90deg) l2` | the **unsigned** angle between directions, strictly between 0° and 180° (say `parallel` for 0°) |
 | `parallel`, `perpendicular`, `equal` | directions, and true lengths |
 | `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line |
 
 A word with no meaning in space (`horizontal`, `along: x`, `tangent` between drawn figures, the
-angle-equals-angle form) is **E062** across views, as is a datum point read beside another view's
-points; `sense:` and `side:` there are **E040**. Radii, and `along: u`/`v` ordinates on a datum,
-mean the same in every view.
+angle-equals-angle form) is **E062** across views; `sense:` and `side:` there are **E040**. Radii
+mean the same in every view, and `p distance(d, along: u) P` is measured in space, from `P.origin`
+along `P.u`, wherever `p` is drawn (within `P` it is `p`'s own x).
 
 ### 1.6 Numbers, names and units
 
@@ -308,8 +310,8 @@ stroke := bore * 1.2              // a value
 ```
 
 **Unknowns are declared.** An input with no value is one unknown of the drawing, tying together
-everything that reads it: a dimension (`a distance(beta) b`), a fold (`fold: beta`, 1.13), a
-contact's place (`t == s`, 1.5), a value over it (`q := 2 * beta`). It names its type — `Length`,
+everything that reads it: a dimension (`a distance(beta) b`), an angle a ray is turned by
+(`t angle(beta) std.x`, 1.13), a contact's place (`t == s`, 1.5), a value over it (`q := 2 * beta`). It names its type — `Length`,
 `Angle` or `Scalar` — since nothing else says what it is, and its seed is its `hint(…)`, which a
 solve writes back. Inside a component the unknowns are the formals a call leaves unbound (1.8).
 **A name nothing declares is E101**, wherever it is read: a misspelling is never a degree of
@@ -567,16 +569,16 @@ A component's point is placed one of two ways:
   be square: as many equations as its own coordinates.
 
 The swept formal is an `Angle` or a `Length`; the traced point must be one the component places,
-not one it was given. A `plane` formal is the cheapest frame to pass (origin, second point and
-bearing in one), and its `f.angle` (degrees) lets seeds such as `hint(at: c, bearing: u + f.angle)`
-follow a tilted datum.
+not one it was given. A traced body is drawn in one plane: a relation in space there is refused.
+To follow a tilted datum, pass the body a reference line and measure its bearings from that
+(`datum angle(u + phase) rad`, 2.9).
 
 A locus usually has several solutions. A body selects one by, strongest first: a **signed**
 constraint (a point-to-line distance's sign chooses a winding); an **orientation predicate**
 `ccw`/`cw` (no equation; read at the anchor and carried by continuity); a **seed**.
 
-**The ellipse** is `std.Ellipse(f: plane, a: Length, b: Length, u: Angle)`:
-`e := std.Ellipse(f, a: 40, b: 25).p over u in (0, 360)` is the rim, and `p on e`,
+**The ellipse** is `std.Ellipse(c: point, a: Length, b: Length, tilt: Angle, u: Angle)`:
+`e := std.Ellipse(c, a: 40, b: 25, tilt: 0deg).p over u in (0deg, 360deg)` is the rim, and `p coincident e`,
 `e tangent l` and `e curvature k` are exact. There is no `ellipse` element.
 
 ### 1.10 Claims
@@ -608,21 +610,26 @@ claim decided within the faceting of a round face is **undecided**:
 
 ### 1.11 Datums
 
-A `plane` with no attitude written is a **datum** on the page: an origin, a point it faces toward,
-and a unit rotor slaved to the chord between them. It adds no freedom. Hints may read `f.angle`
-(degrees), or `f.c` and `f.s` (cosine and sine of its starting direction). (`frame` is refused.)
-
-A datum gives **signed local coordinates**: u points from `origin` to `toward`, v to its left.
+**A plane is the datum.** A point drawn `in P` has `P`'s own coordinates, so a dimension within `P`
+is already measured from `P.origin` along `P.u` and `P.v`. A part standing at an angle within its
+plane is measured against axes turned in that plane: `std.Turned(o, t)` is the plane through `o`
+whose u runs toward `t`, drawn where `o` and `t` are. Ordinates against it are signed:
 
 ```sv
-p := point                          // f is a datum
-p distance(20mm, along: u) f
-p distance(-3mm, along: v) f
+in std.front {
+  o := point hint(x: 10, y: 5)
+  t := point hint(x: 40, y: 20)
+  tilted := std.Turned(o, t)                       // tilted.axes is the plane, tilted.u the line o → t
+  tilted.u angle(30deg) std.x                      // unsigned, across: the seed picks the side
+  p := point hint(at: tilted.axes, x: 20, y: -3)   // seeded in the turned axes
+  p distance(20mm, along: u) tilted.axes
+  p distance(-3mm, along: v) tilted.axes
+}
 ```
 
-Each ordinate is an ordinary constraint: zero, negative, or an unknown, and the datum may itself
-move under constraints on `p`. Membership is separate: `p := point in front` puts `p` in a view,
-while a relation to `f` measures against the datum. No component has an implicit frame.
+Each ordinate is an ordinary constraint: zero, negative, or an unknown. Membership is separate:
+`p` is drawn in `std.front`, and the relation to `tilted.axes` measures against the turned
+axes. No component has an implicit frame. (`frame` is refused, and a plane has no `.angle`.)
 
 **Model relationships, not coordinate tables.** A rectangle states perpendicular sides, a width, a
 height and a position relative to a datum; a bolt pattern states a pitch circle and spacing. Use an
@@ -634,8 +641,9 @@ positions, but the constraints must express the geometry on their own.
 
 ```
 use engine.dims          // engine/dims.sv beside the document or an ancestor, else the library
-use std                  // std.front, std.up, std.origin; std.ThreeViews (2.10),
-                         // std.CenteredRectangle (1.8), std.Ellipse (1.9), std.Polygon, std.Hex
+use std                  // std.front, std.top, std.side, std.up, std.x/y/z, std.origin,
+                         // std.Turned (1.11), std.CenteredRectangle (1.8), std.Ellipse (1.9),
+                         // std.Polygon, std.Hex
 use hardware             // fasteners and fittings: hardware.hexbolt14_af, …
 ```
 
@@ -650,9 +658,12 @@ the `use` that brought it in. A callout shows a param's bare name (`D`, not `eng
 `engine.sv` is the worked case: a four-cylinder engine as a dimension module, a parts module and
 one module per part.
 
-**Standard datums.** `std.front` (u right, v up) and `std.up` (u up, v left) are fixed at the page
-origin `std.origin`, created only if referenced. Passing one as an argument does not imply `in`:
-unassigned geometry stays on the page unless you write `in std.front`.
+**Standard datums.** `use std` gives every document the rays `std.x` (right), `std.y` (away from
+the front's viewer) and `std.z` (up), and four planes fixed at the world origin: `std.front` (u
+along x, v along z: what a 2D drawing is drawn in), `std.top` (x, y: seen from above), `std.side`
+(y, z: seen from +x) and `std.up` (the front turned a quarter: u up, v left). `std.origin` is a
+point in `std.front` fixed at its origin. Passing a plane as an argument does not imply `in`: a
+point no `in` reaches stands in space (1.13).
 
 **Previews.** A component file may end with one file-level `preview { … }` holding sample datums,
 values and an instance. Opening the file (directly or via a `.svd`) solves those statements;
@@ -670,79 +681,88 @@ The cylinder's bore follows the datum's u axis, so `std.up` stands it upright. T
 unnamed, but keep `cyl :=` when a drawing or another statement references its members.
 `vtwin/components/cylinder.sv` is the complete example; `vtwin/cylinder.svd` draws its views.
 
-### 1.13 Planes and views
+### 1.13 Space, rays and planes
 
-A `plane` is also a **view**: it carries a constant attitude in space (the page's when none is
-written). A point says which view it is drawn `in`, and `a project b` says two points are two
-images of one corner — their coordinates along the shared fold line agree (one equation).
+**Space is where a point stands unless it is drawn in a plane.** A point no `in` reaches has three
+coordinates, seeded `hint(x:, y:, z:)` and held `fix(x == …, y == …, z == …) p`; a line between two
+such points is a line in space. A circle, arc or spline over a point in space is E060, and a face
+over one E080: those are drawn in a plane. Points in space are shown and
+selectable in the workspace, but not dragged.
 
-- **`fold:`** is the fold line's bearing in the parent view. From the page, `0deg` folds up a top
-  view and `-90deg` a right view; the new view's second axis points away from the parent's viewer,
-  so distance from the fold line is depth (third-angle projection). Any attitude is two folds
-  away, or give it outright as `u: (…), v: (…)`.
-- **`from: P, offset: 12mm`** with no `fold:` is a plane *moved*, 12 along its parent's normal.
-  Parallel views share no fold line, so this is a stack, not a projection — and where a section is
-  cut (1.14).
-- **`o:`** beside `u:`/`v:` says where in space that basis stands (written for a stand-off plane).
+**A ray** is a directed line in space with no start, drawn in no plane: a direction, and a place
+once something reads it.
+
+```sv
+t := ray hint(x: 0.8, y: 0, z: 0.5)   // the seed is a direction, normalised
+t perpendicular std.y
+t angle(30deg) std.x                  // unsigned, in space; 0° or 180° is E040: say `parallel`
+p coincident t                        // a point on it gives it its place
+fix(x == 0, y == 0, z == 1) z_axis    // a direction held outright
+```
+
+A ray read only as a direction counts two freedoms; `p coincident t` adds the two of its place.
+`parallel`, `perpendicular` and `angle` take a ray beside a ray or a drawn line, and wherever a ray
+is expected a drawn line is read as one, from `p1` toward `p2`.
+
+**A plane is two rays**: `P := plane(u: r, v: s)`. Right is `u`, out of the plane is `u × v`, and up
+is out × u, so `v` need not be square to `u`: it says which plane, and which side is up. The rays
+give only the attitude; where the plane stands is its own (three unknowns), so two planes may
+share their rays. Every plane has members `P.u` and `P.v` (its axes) and `P.origin` (a point
+drawn in `P`, held at `(0, 0)`). The origin floats until something places it:
+
+- `P.origin coincident p`: the plane's origin is the point `p`;
+- `P coincident p`: the plane passes through `p`; `l coincident P` lays a line in it;
+- `p distance(d, along: n) P`: a point's signed distance along the plane's normal;
+- `P distance(d) Q`: `Q` stands `d` along `P`'s normal (one row); the two are parallel when they
+  share their rays, as a stack does — there is no `parallel` or `angle` between two planes yet:
+  relate their rays;
+- `fix(x == 0, y == 0, z == 0) P` holds where it stands.
+
+A parallel stack, which is what an offset is:
+
+```sv
+a := plane(u: std.x, v: std.z)
+b := plane(u: std.x, v: std.z)
+a distance(12) b
+n := ray hint(x: 0, y: -1, z: 0)     // square to both, through both origins: stops b sliding
+n perpendicular a
+n coincident a.origin
+n coincident b.origin
+a.origin coincident std.origin       // DOF 0
+```
+
+Two planes lying on one another are permitted and warned (W113). A free plane reports what is
+still free: `free views: P.attitude, P.origin`. `solventc --where P` lists `P.x`, `P.y`, `P.z`
+(where it stands) and `P.u`, `P.v`, `P.n` (its axes).
+
+**A plane is also a view.** A point drawn `in P` has `P`'s own coordinates, and `a project b` says
+two points drawn in two planes are two images of one corner: their coordinates along the line the
+planes share agree (one equation). Views carry no place on paper; the `.svd` places each one
+(`sketch top(m) from m.std.top at (80mm, 90mm)`, [solvent-drawing.md](solvent-drawing.md)).
+
 - **`in top { … }`** writes membership once for every declaration inside, `cycle` copies
   included. An instance joins a view whole: `t := Tooth(…) in top`. Inside a component, `in view
   { … }` over plane formals lets a part carry its own views (`engine/conrod.sv`), and `repeat flag
   { … }` over a 0/1 `Int` formal omits a view for an instance that does not show in it.
-- The standard library lays out three views at once (2.10).
-
-**The workplane rule.** A point drawn `in` a view is that view's lift into space; a point with no
-membership is on the page and has no place in space. Within one view a relation is the 2D one;
-across views it is the relation in space (1.5), and naming a page point there is E062. `project`
-ties two drawn images of an undrawn point. `p on P`, `l on P` and `p distance(d, along: n) P` put a
-point or line on a plane in space whatever view it is drawn in (a view's own points are on it
-already: E061).
-
-**The role rule.** A plane's own `origin` and `toward` place the view on the sheet. Beside only
-other datum points they are sheet layout (`o distance(120) o2`); beside points of their own view
-they are that view's datum (`o2 distance(15) b` is an ordinate); otherwise their membership decides.
-
-**A view may be solved for.** A plane is fixed unless its brackets name an unknown; a plane's
-`hint(…)` seeds only the attitude and offset it leaves free (2.11, 2.13):
-
-```
-param beta: Angle hint(30deg)
-side := plane(origin: o2, toward: t2, from: front, fold: beta)
-aux := plane(origin: o3, toward: t3, from: front, fold: along l)
-sec4 := plane(origin: o4, toward: t4, from: front, fold: 0deg, through: m)
-q := plane(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 0), v: (0, 0, 1))
-```
-
-- `fold: beta` over a declared unknown (`param beta: Angle`, or a formal no call binds) is a fold
-  the solve answers, seeded by the unknown's own `hint(…)`; `hint(fold: …)` on the plane is E040.
-- `fold: along l` folds square to the parent about line `l` drawn in it, and follows the line.
-- `attitude: free` is three freedoms; `offset: free` is one; `through: m` stands the plane where
-  a point of another view is.
-- A view folded from a solved view follows it; `project` over a solved view is the projector rule
-  in space.
-- A solved view's *place on the sheet* (its origin and toward) is presentation, held silently and
-  not counted unless a statement names it. A free view with nothing else in it reports DOF 4 with
-  no `fix` written.
-- Errors: a seed for a stated quantity is E040; a position stated twice, or a fold along another
-  view's line, E064; views that come out parallel under a `project`, E065.
-- `against` (1.14) works with solved views when the two planes turn together (one derived `from:`
-  the other, or both from one, with no fold); a solved datum offset then makes the gap a row of the
-  solve. Views that turn apart are E066.
-- `solventc --where side` reports `side.u.x` … `side.o.z`, and a report lists what is still free:
-  `free views: side.attitude, side.offset`.
+- Within one view a relation is the 2D one; across views, or with a point in space, it is the
+  relation in space (1.5). `project` ties two drawn images of an undrawn point (E061 for points
+  in one plane or in space, or parallel planes; E065 if two planes it relates come out parallel).
+- A view's attitude may be an unknown: build it on rays the solve turns (2.11, 2.13). Planes and
+  rays are settled before the main solve, round by round, and still move with it.
 
 **Spheres, cones and cylinders** live in space, on no sheet (the glass box draws them).
 
 - `s := sphere(center: p) hint(r: 12)` (or `sphere(p)`): the centre is drawn in some view.
-  `radius(12) s`, `a on s`, `s tangent l` and `s tangent s2` are spatial. `k on s` puts a whole
-  circle `k` on the sphere (a gear blank's toe circle on its end sphere); `s tangent k` is refused,
-  since a circle and sphere may touch at a point or all round.
+  `radius(12) s`, `a coincident s`, `s tangent l` and `s tangent s2` are spatial. `k coincident s`
+  puts a whole circle `k` on the sphere (a gear blank's toe circle on its end sphere); `s tangent k`
+  is refused, since a circle and sphere may touch at a point or all round.
 - `gc := cone(axis: gax) hint(half: 60deg)`: the apex is the axis's start, opening toward its end;
-  the half-angle is written in degrees. `angle(60deg) gc` states it; `p on gc` puts a point on the
-  nappe the axis points into.
-- `bore := cylinder(axis: ax) hint(r: 8)`: `radius(8) bore`, `p on bore`, and `bore tangent l`
-  (the side read from the seed).
-- `gc tangent(M) pc`: two cones share one tangent plane at M. State `M on gc` and `M on pc` beside
-  it, as an on-circle stands beside a tangency at a named end.
+  the half-angle is written in degrees. `angle(60deg) gc` states it; `p coincident gc` puts a point
+  on the nappe the axis points into.
+- `bore := cylinder(axis: ax) hint(r: 8)`: `radius(8) bore`, `p coincident bore`, and
+  `bore tangent l` (the side read from the seed).
+- `gc tangent(M) pc`: two cones share one tangent plane at M. State `M coincident gc` and
+  `M coincident pc` beside it, as an on-circle stands beside a tangency at a named end.
 - A line lying on a cone or cylinder is not yet a relation; state it of the line's points.
 
 `sphere_cone_cylinder.sv` shows one of each; `hypoid_pitch_cones.sv` is 2.13.
@@ -762,27 +782,31 @@ is the drawing, solved in 2D as usual.
 #### Faces
 
 A face is a planar region bounded by edges the drawing already has, on the plane its edges are
-drawn `in` (the page by default). Edges are listed in traversal order, each sharing a point with
+drawn `in` (a face over a point in space is E080). Edges are listed in traversal order, each sharing a point with
 the next. A **circle is a whole loop by itself** (`face(hole)`), and cannot stand among lines.
 
 ```
 unit mm
-a := point
-b := point hint(x: 60, y: 0)
-c := point hint(x: 60, y: 40)
-d := point hint(x: 0, y: 40)
+use std
 
-horizontal (ab := line(a, b)) ->
-vertical   (bc := line(b, c)) ->
-horizontal (cd := line(c, d)) ->
-vertical   (da := line(d, a)) -> close
+in std.front {
+  a := point
+  b := point hint(x: 60, y: 0)
+  c := point hint(x: 60, y: 40)
+  d := point hint(x: 0, y: 40)
 
-a distance(60) b
-b distance(40) c
-fix(x == 0, y == 0) a
+  horizontal (ab := line(a, b)) ->
+  vertical   (bc := line(b, c)) ->
+  horizontal (cd := line(c, d)) ->
+  vertical   (da := line(d, a)) -> close
 
-sec := face(ab, bc, cd, da)
-block := solid(sec, depth: 30mm)
+  a distance(60) b
+  b distance(40) c
+  fix(x == 0, y == 0) a
+
+  sec := face(ab, bc, cd, da)
+  block := solid(sec, depth: 30mm)
+}
 ```
 
 ```
@@ -825,16 +849,16 @@ fix(x == 0mm, y == 0mm) o
 k := Par(o).p over u in (-2mm, 2mm)
 a := point hint(y: 1mm)
 b := point hint(y: 1mm)
-a on k hint(t: -1)
-b on k hint(t: 1)
+a coincident k hint(t: -1)
+b coincident k hint(t: 1)
 fix(x == -1mm) a
 fix(x == 1mm) b
 cap := solid(face(k from a to b, -> close), depth: 3mm)
 ```
 
 `4 params, 4 equations; DOF 0`, and `cap` is the parabolic cap, 4/3 mm² × 3 mm = 4 mm³. A curve
-without `from … to …`, a point not held `on` the curve, and a stretch from a point to itself are
-refused. `examples/solid_tooth.sv` is an involute tooth written this way.
+without `from … to …`, a point not held `coincident` the curve, and a stretch from a point to itself
+are refused. `examples/solid_tooth.sv` is an involute tooth written this way.
 
 - **A face may be written inline** where one sweep uses it:
   `block := solid(face(ab, bc, cd, da), depth: 30mm)` or
@@ -858,28 +882,32 @@ refused. `examples/solid_tooth.sv` is an involute tooth written this way.
 
 ```
 unit mm
-p0 := point hint(x: 10, y: 0)
-p1 := point hint(x: 14, y: 0)
-p2 := point hint(x: 14, y: 6)
-p3 := point hint(x: 10, y: 6)
+use std
 
-horizontal (e0 := line(p0, p1)) ->
-vertical   (e1 := line(p1, p2)) ->
-horizontal (e2 := line(p2, p3)) ->
-vertical   (e3 := line(p3, p0)) -> close
+in std.front {
+  p0 := point hint(x: 10, y: 0)
+  p1 := point hint(x: 14, y: 0)
+  p2 := point hint(x: 14, y: 6)
+  p3 := point hint(x: 10, y: 6)
 
-q0 := point
-q1 := point hint(x: 0, y: 10)
-ax := vertical line(q0, q1)
-fix(x == 0, y == 0) q0
-q0 distance(10) q1
-q0 distance(10, along: x) p0
-q0 distance(0, along: y) p0
-p0 distance(4) p1
-p1 distance(6) p2
+  horizontal (e0 := line(p0, p1)) ->
+  vertical   (e1 := line(p1, p2)) ->
+  horizontal (e2 := line(p2, p3)) ->
+  vertical   (e3 := line(p3, p0)) -> close
 
-sec := face(e0, e1, e2, e3)
-ring := solid(sec, about: ax)
+  q0 := point
+  q1 := point hint(x: 0, y: 10)
+  ax := vertical line(q0, q1)
+  fix(x == 0, y == 0) q0
+  q0 distance(10) q1
+  q0 distance(10, along: x) p0
+  q0 distance(0, along: y) p0
+  p0 distance(4) p1
+  p1 distance(6) p2
+
+  sec := face(e0, e1, e2, e3)
+  ring := solid(sec, about: ax)
+}
 ```
 
 ```
@@ -895,7 +923,7 @@ facets'. With `sweep: 90deg` the report says `452.389`, and `ring.start.area` an
 
 #### Bodies
 
-Add to the 60 × 40 plate:
+Add to the 60 × 40 plate, inside its `in std.front` block:
 
 ```
 o := point hint(x: 30, y: 20)
@@ -964,11 +992,9 @@ before `body := solid(stock)` gives the same number: both sides of the body rule
   `shell.volume` is 64931.4 (`72000 − π · 15² · 10`) and `body.volume` 65402.7, that plus
   `π · 5² · 6`. Flat on one body it comes out 64931.4, boss gone. `shell` is what a
   history calls "the body as of step 2", named.
-- **Mates.** `k.far against m.near` says two caps touch. Part `k` is drawn in a *placed* plane —
-  `from:` another with neither `fold:` nor `offset:` (`back := plane(origin: o, toward: q, from:
-  front)`) — and the mate computes its offset, so a stack keeps its numbers in step. Only caps a
-  sweep makes can mate (a side face is E082); a placed plane needs exactly one mate (E083, "`back`
-  is a plane nothing places: write `offset:` or state one `against`"). Solved views: 1.13.
+- **Stacks.** Parts standing on one another are drawn in parallel planes, stacked by
+  `P distance(d) Q` with a ray through both origins (1.13); a part's thickness is the distance
+  stated, so the stack keeps its numbers in step. There is no mate word.
 
 #### Writing a part
 
@@ -1070,23 +1096,27 @@ radians and returns exact pose and velocity per radian. A motion never moves the
 
 ```sv
 unit mm
-o := point
-z := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) z
-axis := line(o, z)
-c := point
-d := point hint(x: 25, y: -2)
-fix(x == 0, y == -2) c
-wheel_radius := horizontal line(c, d)
-c distance(30mm) d
-e := point
-f := point hint(x: 12, y: -4)
-fix(x == 0, y == -4) e
-pinion_radius := horizontal line(e, f)
-e distance(10mm) f
-wheel := motion(about: axis)
-pinion := motion(about: axis, ratio: -length(wheel_radius) / length(pinion_radius))
+use std
+
+in std.front {
+  o := point
+  z := point
+  fix(x == 0, y == 0) o
+  fix(x == 0, y == 1) z
+  axis := line(o, z)
+  c := point
+  d := point hint(x: 25, y: -2)
+  fix(x == 0, y == -2) c
+  wheel_radius := horizontal line(c, d)
+  c distance(30mm) d
+  e := point
+  f := point hint(x: 12, y: -4)
+  fix(x == 0, y == -4) e
+  pinion_radius := horizontal line(e, f)
+  e distance(10mm) f
+  wheel := motion(about: axis)
+  pinion := motion(about: axis, ratio: -length(wheel_radius) / length(pinion_radius))
+}
 ```
 
 ```
@@ -1103,9 +1133,9 @@ refused:
 
 ```
 $ solventc wrong.sv            # bad := motion(about: axis, ratio: length(wheel_radius))
-wrong.sv:19:1: error[E080]: `ratio` is Scalar, and this is Length
+wrong.sv:22:3: error[E080]: `ratio` is Scalar, and this is Length
 $ solventc refused.sv          # k := length(wheel_radius)
-refused.sv:19:11: error[E107]: `k`: `length(wheel_radius)` measures the solved drawing, and only a motion's `ratio:`, `phase:` and `advance:` are read after the solve; a param, a seed, a constraint's number and a solid's extent are needed before it
+refused.sv:22:8: error[E107]: `k`: `length(wheel_radius)` measures the solved drawing, and only a motion's `ratio:`, `phase:` and `advance:` are read after the solve; a param, a seed, a constraint's number and a solid's extent are needed before it
 ```
 
 `twist_drill/` grinds flutes with a wheel carried along a screw (`motion(about: axis, advance:
@@ -1136,7 +1166,7 @@ arc or formula curve — and a planar motion (`motion(about: o, …)` is a *turn
 same word is a curve the solve sees: the profile the tool cuts in the moving frame.
 `flank := envelope(rack_flank, under: motion(rack, relative_to: blank), from: -25deg, to: 25deg)`
 cuts an involute; `profile := envelope(roller, under: rel, from: 0deg, to: 360deg, side: near)` a
-cam (`side: near|far` of the instant centre, where a circle cuts twice). `on`, `tangent` and
+cam (`side: near|far` of the instant centre, where a circle cuts twice). `coincident`, `tangent` and
 `curvature` hold against it, and the tool's and the motion's geometry are its columns, so they
 solve to suit — a conjugate is synthesised, not stated. See 2.9.2.
 
@@ -1160,8 +1190,9 @@ crossing, a gap and a roll short of a period are refused by name.
 surface(rack_tooth, edge: rack_flank)` names a prism's side (as it names a revolution's), and under
 a motion keeping the prism's view `flank := envelope(side, under: cutting, from: -30deg, to: 30deg)`
 is `rack_flank`'s planar envelope extruded square to the view, built with the drawing. A point drawn
-in any view is `on` it by its place in that view (`p on flank`: one equation, the roll its own).
-Draw the prism's face `in` a view (not the page, which has no place in space); the face must name
+in any view is `coincident` it by its place in that view (`p coincident flank`: one equation, the
+roll its own).
+Draw the prism's face `in` a view; the face must name
 the edge (`face(t0, t1, rack_flank, t3, -> close)`). `tests/extruded_envelope.rs`.
 
 **Patches** state which material keeps a surface or envelope; every condition must hold, and each
@@ -1252,14 +1283,18 @@ Each was run through `solventc`; the DOF and state quoted are what it reported.
 ### 2.1 One dimensioned line: DOF 0, well
 
 ```
-a := point
-b := point hint(x: 30, y: 10)
+use std
 
-ab := line(a, b)
-horizontal ab
-a distance(40) b
+in std.front {
+  a := point
+  b := point hint(x: 30, y: 10)
 
-fix(x == 0, y == 0) a
+  ab := line(a, b)
+  horizontal ab
+  a distance(40) b
+
+  fix(x == 0, y == 0) a
+}
 ```
 
 `2 params, 2 equations, structural rank 2; DOF 0`: the `fix` takes `a`'s two coordinates out of
@@ -1269,22 +1304,26 @@ answer and needn't be: it only says which side of `a` to put `b`.
 ### 2.2 A rectangle, as a chain: DOF 0, well
 
 ```
+use std
+
 w := 60
 h := 40
 
-p0 := point
-p1 := point hint(x: w, y: 0)
-p2 := point hint(x: w, y: h)
-p3 := point hint(x: 0, y: h)
+in std.front {
+  p0 := point
+  p1 := point hint(x: w, y: 0)
+  p2 := point hint(x: w, y: h)
+  p3 := point hint(x: 0, y: h)
 
-horizontal (bottom := line(p0, p1)) ->
-vertical   (right := line(p1, p2)) ->
-horizontal (top := line(p2, p3)) ->
-vertical   (left := line(p3, p0)) -> close
+  horizontal (bottom := line(p0, p1)) ->
+  vertical   (right := line(p1, p2)) ->
+  horizontal (top := line(p2, p3)) ->
+  vertical   (left := line(p3, p0)) -> close
 
-p0 distance(w) p1
-p1 distance(h) p2
-fix(x == 0, y == 0) p0
+  p0 distance(w) p1
+  p1 distance(h) p2
+  fix(x == 0, y == 0) p0
+}
 ```
 
 `w` and `h` are values: 60 and 40 wherever they appear, never unknowns. The chain states nothing
@@ -1293,7 +1332,8 @@ four separate `horizontal`/`vertical` lines would not; it reads as the outline.
 ### 2.3 An input: DOF 0, well
 
 ```
-// replaces 2.2's two dimensions and its `w :=` and `h :=` lines
+// replaces 2.2's two dimensions and its `w :=` and `h :=` lines; the input stands outside
+// the `in` block, the dimensions inside it
 param w := 60
 p0 distance(w) p1                // states it
 p1 distance(w / 2) p2            // the height follows the width
@@ -1305,18 +1345,23 @@ Edit the 60 — in the source, or by typing over the `w` callout — and the hei
 ### 2.4 An unknown: DOF 1, under, on purpose
 
 ```
-param s: Length         // an input nothing binds...
-a := point
-b := point hint(x: 10, y: 0)
-c := point hint(x: 0, y: 9)
+use std
 
-ab := line(a, b)
-ac := line(a, c)
-horizontal ab
-vertical ac
-a distance(s) b         // ...so the two lengths are tied,
-a distance(s) c         // and their value is the solver's
-fix(x == 0, y == 0) a
+param s: Length         // an input nothing binds...
+
+in std.front {
+  a := point
+  b := point hint(x: 10, y: 0)
+  c := point hint(x: 0, y: 9)
+
+  ab := line(a, b)
+  ac := line(a, c)
+  horizontal ab
+  vertical ac
+  a distance(s) b         // ...so the two lengths are tied,
+  a distance(s) c         // and their value is the solver's
+  fix(x == 0, y == 0) a
+}
 ```
 
 The lengths must agree, but nothing says what they are, so one freedom remains. Give `s` a value
@@ -1325,20 +1370,24 @@ The lengths must agree, but nothing says what they are, so one freedom remains. 
 ### 2.5 An arc, tangent to what it joins: DOF 0, well
 
 ```
-a := point
-b := point hint(x: 30, y: 0)
-c := point hint(x: 40, y: 10)
-d := point hint(x: 40, y: 40)
-o := point hint(x: 30, y: 10)
+use std
 
-horizontal (run := line(a, b)) -> tangent
-(fillet := arc(center: o) hint(r: 10)) -> tangent
-vertical (rise := line(c, d))
+in std.front {
+  a := point
+  b := point hint(x: 30, y: 0)
+  c := point hint(x: 40, y: 10)
+  d := point hint(x: 40, y: 40)
+  o := point hint(x: 30, y: 10)
 
-radius(10) fillet
-a distance(30) b
-c distance(30) d
-fix(x == 0, y == 0) a
+  horizontal (run := line(a, b)) -> tangent
+  (fillet := arc(center: o) hint(r: 10)) -> tangent
+  vertical (rise := line(c, d))
+
+  radius(10) fillet
+  a distance(30) b
+  c distance(30) d
+  fix(x == 0, y == 0) a
+}
 ```
 
 `fillet` names only its centre; the chain threads `b` in as its start and `c` as its end, and each
@@ -1348,24 +1397,28 @@ fix(x == 0, y == 0) a
 ### 2.6 A component, instanced: DOF 0, well
 
 ```
+use std
+
 component Rung(a: point, b: point, len: Length) {
   e := line(a, b)
   horizontal e
   a distance(len) b
 }
 
-l0 := point
-r0 := point hint(x: 50, y: 0)
-l1 := point hint(x: 0, y: 20)
-r1 := point hint(x: 50, y: 20)
+in std.front {
+  l0 := point
+  r0 := point hint(x: 50, y: 0)
+  l1 := point hint(x: 0, y: 20)
+  r1 := point hint(x: 50, y: 20)
 
-t0 := Rung(l0, r0, len: 50)
-t1 := Rung(l1, r1, len: 50)
+  t0 := Rung(l0, r0, len: 50)
+  t1 := Rung(l1, r1, len: 50)
 
-stile := line(l0, l1)
-vertical stile
-l0 distance(20) l1
-fix(x == 0, y == 0) l0
+  stile := line(l0, l1)
+  vertical stile
+  l0 distance(20) l1
+  fix(x == 0, y == 0) l0
+}
 ```
 
 The formals alias the actuals; nothing is added at the boundary.
@@ -1373,15 +1426,19 @@ The formals alias the actuals; nothing is added at the boundary.
 ### 2.7 Repetition: DOF 5, under
 
 ```
+use std
+
 n := 6
 r := 40
 
-cycle n as i {
-  p := point hint(x: r, y: i * 60)
-  e := line(p, next.p)
-  e equal next.e
+in std.front {
+  cycle n as i {
+    p := point hint(x: r, y: i * 60)
+    e := line(p, next.p)
+    e equal next.e
+  }
+  fix(x == r, y == 0) p[0]
 }
-fix(x == r, y == 0) p[0]
 ```
 
 Six equal links: round a loop one `equal` is implied (listed `implied:`), and nothing sizes the
@@ -1390,11 +1447,15 @@ ring, so five freedoms remain. Under-constrained repetition is normal.
 A body ending mid-joint (1.7) writes a closed contour with no corner names. DOF 1, under:
 
 ```
-cycle 4 {
-  (s := line) -> perpendicular equal
+use std
+
+in std.front {
+  cycle 4 {
+    (s := line) -> perpendicular equal
+  }
+  distance(50) s[0]
+  fix(x == 0, y == 0) s[0].p1
 }
-distance(50) s[0]
-fix(x == 0, y == 0) s[0].p1
 ```
 
 Each side welds to the next at a square, equal corner; the wrap closes the loop. One dimension sizes
@@ -1407,52 +1468,62 @@ angle's size but not its sign, and only a seed can choose the winding.
 ### 2.8 A curve from a computed point: DOF 1, under
 
 ```
+use std
+
 component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)))
 }
 
-o := point
-base := circle(center: o) hint(r: 20)
-f := Involute(base, phase: 0).p over u in (0, 90)
+in std.front {
+  o := point
+  base := circle(center: o) hint(r: 20)
 
-t := point hint(x: 25, y: 8)
-t on f
-fix(x == 0, y == 0) o
-fix(r == 20) base
+  t := point hint(x: 25, y: 8)
+  t coincident f
+  fix(x == 0, y == 0) o
+  fix(r == 20) base
+}
+
+f := Involute(base, phase: 0).p over u in (0, 90)
 ```
 
 The remaining freedom is how far along `f` the point `t` sits — which is why a contact slides
-rather than breaks when the geometry beneath it moves. Seed it with `t on f hint(t: 30)`, or pin it
-with `t on(t == 30) f` (DOF 0).
+rather than breaks when the geometry beneath it moves. Seed it with `t coincident f hint(t: 30)`, or
+pin it with `t coincident(t == 30) f` (DOF 0).
 
 ### 2.9 A curve stated as a locus: DOF 1, under
 
 ```
+use std
+
 component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
   t := point
   p := point
   rad := line(c.center, t)
   s := line(t, p)
-  t on c                                                 // the string leaves the circle...
+  t coincident c                                                 // the string leaves the circle...
   datum angle(u + phase) rad                             // ...at bearing u from the datum,
   rad perpendicular s                                    // square to the radius there,
   p distance(-(c.r * u / 1rad)) rad                      // and taut: as long as the arc
 }
 
-o := point
-x := point hint(x: 20, y: 0)
-base := circle(center: o) hint(r: 20)
-datum := line(o, x)
+in std.front {
+  o := point
+  x := point hint(x: 20, y: 0)
+  base := circle(center: o) hint(r: 20)
+  datum := line(o, x)
+
+
+  g := point hint(x: 25, y: 8)
+  g coincident f
+
+  fix(x == 0, y == 0) o
+  fix(r == 20) base
+  horizontal datum
+  o distance(20) x
+}
 
 f := Unwind(base, datum, phase: 0).p over u in (0, 90)
-
-g := point hint(x: 25, y: 8)
-g on f
-
-fix(x == 0, y == 0) o
-fix(r == 20) base
-horizontal datum
-o distance(20) x
 ```
 
 The same curve as 2.8 with no formula: the body is the textbook definition, and the solver derives
@@ -1470,6 +1541,8 @@ instance would disagree with its own trace). State the relation instead (`l equa
 ### 2.9.1 A curve of a drawn instance: DOF 1, under
 
 ```
+use std
+
 component Crank(o: point, datum: line, theta: Angle) {
   p := point hint(x: 20, y: 10)
   arm := line(o, p)
@@ -1477,13 +1550,16 @@ component Crank(o: point, datum: line, theta: Angle) {
   datum angle(theta) arm
 }
 
-o := point
-x := point
-datum := line(o, x)
-fix(x == 0, y == 0) o
-fix(x == 10, y == 0) x
+in std.front {
+  o := point
+  x := point
+  datum := line(o, x)
+  fix(x == 0, y == 0) o
+  fix(x == 10, y == 0) x
 
-c := Crank(o, datum)                                  // theta unbound: the crank turns
+  c := Crank(o, datum)                                  // theta unbound: the crank turns
+}
+
 rim := c.p over theta in (0, 360)
 ```
 
@@ -1500,30 +1576,34 @@ unknown `c.len` and a **column** of the curve: `ground tangent rim` can then sol
 ### 2.9.2 A profile generated by a motion: DOF 0, well
 
 ```
-o := point
-fix(x == 0, y == 0) o
-rk0 := point
-rk1 := point hint(x: 30, y: 10)
-fix(x == 30, y == 0) rk0
-fix(x == 30, y == 10) rk1
-slide := line(rk0, rk1)
-blank := motion(about: o, ratio: 1)                     // the gear blank turns...
-rack := motion(along: slide, advance: 2 * pi * 30)      // ...as the rack rolls on its pitch circle
-cutting := motion(rack, relative_to: blank)
-f0 := point hint(x: 30, y: 5)
-f1 := point hint(x: 39.4, y: 8.4)
-flank := line(f0, f1)                                   // the rack's flank, at roll 0
-fix(x == 30, y == 5) f0
-f0 distance(10) f1
-cut := envelope(flank, under: cutting, from: -25deg, to: 25deg)
-g := point
-fix(x == 31.5, y == -3) g
-g on cut hint(t: 5)                                     // the cut must pass through g
+use std
+
+in std.front {
+  o := point
+  fix(x == 0, y == 0) o
+  rk0 := point
+  rk1 := point hint(x: 30, y: 10)
+  fix(x == 30, y == 0) rk0
+  fix(x == 30, y == 10) rk1
+  slide := line(rk0, rk1)
+  blank := motion(about: o, ratio: 1)                     // the gear blank turns...
+  rack := motion(along: slide, advance: 2 * pi * 30)      // ...as the rack rolls on its pitch circle
+  cutting := motion(rack, relative_to: blank)
+  f0 := point hint(x: 30, y: 5)
+  f1 := point hint(x: 39.4, y: 8.4)
+  flank := line(f0, f1)                                   // the rack's flank, at roll 0
+  fix(x == 30, y == 5) f0
+  f0 distance(10) f1
+  cut := envelope(flank, under: cutting, from: -25deg, to: 25deg)
+  g := point
+  fix(x == 31.5, y == -3) g
+  g coincident cut hint(t: 5)                                     // the cut must pass through g
+}
 ```
 
-The flank's slope is left free, and `g on cut` decides it: the solve turns the rack's flank until
-the involute it cuts passes through `g`. Nothing states an involute; the cut point at each roll
-is where the flank's normal passes through the instant centre (the pitch point), and that is
+The flank's slope is left free, and `g coincident cut` decides it: the solve turns the rack's flank
+until the involute it cuts passes through `g`. Nothing states an involute; the cut point at each
+roll is where the flank's normal passes through the instant centre (the pitch point), and that is
 enough. `cut curvature k` and `cut tangent l` work the same way, exactly (`C''` from the roll's
 Taylor orders). A roller (`circle`) cuts a cam, a formula curve cuts its conjugate tooth.
 
@@ -1531,112 +1611,111 @@ Taylor orders). A roller (`circle`) cuts a cam, a formula curve cuts its conjuga
 
 ```
 // a 60-wide, 40-tall, 30-deep block, three views, one corner tied across them
-Af := point in front
-qf := point
-front := plane(origin: Af, toward: qf)                             // the page itself
-At := point in top
-qt := point
-top := plane(origin: At, toward: qt, from: front, fold: 0deg)      // folded up from the x-axis
-Ar := point in right
-qr := point
-right := plane(origin: Ar, toward: qr, from: front, fold: -90deg)  // folded from z, turned so z is up
-fix(x == 0, y == 0) Af
-fix(x == 40, y == 0) qf
-fix(x == 0, y == 90) At
-fix(x == 40, y == 90) qt
-fix(x == 150, y == 0) Ar
-fix(x == 150, y == -40) qr
+use std
 
-Bf := point hint(x: 60, y: 40) in front
-Af distance(60, along: x) Bf
-Af distance(40, along: y) Bf
-Bt := point in top
-Br := point in right
+in std.front {
+  Af := point
+  fix(x == 0, y == 0) Af
+  Bf := point hint(x: 60, y: 40)
+  Af distance(60, along: x) Bf
+  Af distance(40, along: y) Bf
+}
+in std.top {
+  At := point
+  fix(x == 0, y == 0) At
+  Bt := point
+  At distance(30, along: y) Bt
+}
+in std.side {
+  Ar := point
+  fix(x == 0, y == 0) Ar
+  Br := point
+}
+
 Bf project Bt          // width agrees front <-> top
-Bf project Br          // height agrees front <-> right
-Bt project Br          // depth agrees top <-> right
-At distance(30, along: y) Bt
+Bf project Br          // height agrees front <-> side
+Bt project Br          // depth agrees top <-> side
 ```
 
-Each view's origin is corner `A` as that view sees it, so origins need no projections. `B` in the
-top and right views is placed by projection plus the one depth dimension.
-
-`use std` and `views := std.ThreeViews(O, right: 150, up: 90)` write this layout once: `views.front`
-is the page, `views.right` and `views.top` fold from it, and `views.right_origin`/`views.top_origin`
-are the corner in those views. Ground `O` and draw `in views.top`. `bracket.sv` is the full case,
-with an auxiliary view folded at an inclined face's bearing.
+Each view's origin is corner `A` as that view sees it: the standard planes all stand at the world
+origin, so the three `A`s are images of one point and need no projection. `B` in the top and side
+views is placed by projection plus the one depth dimension (`--where Br`: `(30, 40)`, depth
+across and height up). No view says where it goes on paper: the `.svd` places each one.
+`bracket.sv` is the full case, with an auxiliary plane standing on the incline's own direction.
 
 ### 2.11 Two skew axes at a stated shaft angle and offset: DOF 0, well
 
 ```
-// two shafts at a stated angle and offset: the gear's axis drawn in the front view, the
-// pinion's in a view folded from it by a fold the drawing solves for
 unit mm
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
-front := plane(origin: o, toward: t)
-gax := line in front
-fix(x == 0, y == 0) gax.p1
-fix(x == 0, y == 50) gax.p2
+use std
+shaft_angle := 90deg
+offset := 17.5mm
 
-o2 := point hint(x: 120, y: 0)
-t2 := point hint(x: 160, y: 0)
-param beta: Angle hint(30deg)
-side := plane(origin: o2, toward: t2, from: front, fold: beta)
-pax := line(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
-pax.p1 distance(0, along: u) side
-pax.p2 distance(60, along: u) side
-pax.p1 horizontal pax.p2
+in std.front {
+  gax := line
+  fix(x == 0, y == 0) gax.p1
+  fix(x == 0, y == 50) gax.p2
+}
 
-gax angle(90deg) pax      // the shaft angle, in space
-gax distance(17.5) pax    // the offset: the common perpendicular, in space
+t := ray hint(x: 0.87, y: 0, z: 0.5)
+t perpendicular std.y
+side := plane(u: t, v: std.y)
+std.origin coincident side.origin
+in side {
+  pax := line(hint(x: 0, y: 10), hint(x: 60, y: 12))
+  pax.p1 distance(0, along: u) side
+  pax.p2 distance(60, along: u) side
+  pax.p1 horizontal pax.p2
+}
+
+gax angle(shaft_angle) pax      // the shaft angle, in space
+gax distance(offset) pax        // the offset: their common perpendicular, in space
 ```
 
-`solventc` reports `27 params, 27 equations, structural rank 27; DOF 0`, and `--where pax` gives
-`pax.p1.y = 17.5`, `pax.p2.y = 17.5`. The axes are in different views, so `angle` and `distance` are
-spatial: the unsigned angle between directions and the common-perpendicular distance. They settle
-the fold `beta` (0°: the side view is the top view, the pinion axis 17.5 behind the gear's, crossing
-it square) and the pinion axis's height. No datum point is grounded; the views' sheet placement is
-held silently (1.13). Without the offset: `27 params, 26 equations, structural rank 26; DOF 1` (the
-pinion axis slides along the common perpendicular). At a 60° shaft angle the fold is 30°.
-`skew_axes.sv` adds a shaft about each axis.
+`solventc` reports `28 params, 28 equations, structural rank 28; DOF 0`, and `--where pax` gives
+`pax.p1.y = 17.5`, `pax.p2.y = 17.5`. The axes are in different planes, so `angle` and `distance`
+are spatial: the unsigned angle between directions and the common-perpendicular distance. The side
+plane stands on `std.y` and a ray `t` held square to it, so it can only turn about y; the two
+statements settle where `t` points (at 90°, along x: the side plane is the top plane, the pinion
+axis 17.5 behind the gear's, crossing it square) and the pinion axis's height. Without the offset:
+`28 params, 27 equations, structural rank 27; DOF 1` (the pinion axis slides along the common
+perpendicular). At a 60° shaft angle the plane tilts 30°. `skew_axes.sv` adds a shaft about each
+axis.
 
 ### 2.12 A hypoid's pitch cones through the mean point: DOF 0, well
 
 ```
 unit mm
+use std
 module := 4mm
 Rg := 48 * module / 2
 Rp := 24 * module / 2
 E := 20mm
 
 // the pitch plane, and M on it
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
-P := plane(origin: o, toward: t)
-M := point in P
-fix(x == 0, y == 0) M
-O := point hint(x: 110, y: 0) in P
-A := point hint(x: 95, y: 18) in P
-gen_g := line(O, M) in P
-gen_p := line(A, M) in P
-horizontal gen_g
+in std.front {
+  M := point
+  fix(x == 0, y == 0) M
+  O := point hint(x: 110, y: 0)
+  A := point hint(x: 95, y: 18)
+  gen_g := line(O, M)
+  gen_p := line(A, M)
+  horizontal gen_g
+}
 
-// the axial views, folded square to P along the generators
-og := point hint(x: 0, y: 200)
-tg := point hint(x: 40, y: 200)
-G := plane(origin: og, toward: tg, from: P, fold: along gen_g)
-oq := point hint(x: 0, y: -200)
-tq := point hint(x: 40, y: -200)
-Q := plane(origin: oq, toward: tq, from: P, fold: along gen_p)
+// the axial planes, square to P over the generators and through M
+G := plane(u: gen_g, v: std.y)
+G.origin coincident M
+Q := plane(u: gen_p, v: std.y)
+Q.origin coincident M
 
-// each axis in its axial view, from its apex: the apex's image is on the fold line (on P) and
-// projects to the apex drawn in P; how long an axis is drawn says nothing about the cone
-gax := line(hint(x: -110, y: 200), hint(x: -50, y: 304)) in G
-pax := line(hint(x: -97, y: -200), hint(x: -28, y: -239)) in Q
-gax.p1 on P
+// each axis in its axial plane, from its apex: the apex's image is on P and projects to the apex
+// drawn in P; how long an axis is drawn says nothing about the cone
+gax := line(hint(x: -110, y: 0), hint(x: -50, y: 104)) in G
+pax := line(hint(x: -97, y: 0), hint(x: -28, y: -39)) in Q
+gax.p1 coincident std.front
 O project gax.p1
-pax.p1 on P
+pax.p1 coincident std.front
 A project pax.p1
 gax.p1 distance(120) gax.p2
 pax.p1 distance(80) pax.p2
@@ -1649,8 +1728,8 @@ gax angle(90deg) pax
 gax distance(E) pax
 ```
 
-`56 params, 56 equations, structural rank 56; DOF 0`, with `--where A` at `(95.5837, 18.0989)`.
-Each axial view is folded `along` its pitch generator, so it is square to P and holds the
+`51 params, 51 equations, structural rank 51; DOF 0`, with `--where A` at `(95.5837, 18.0989)`.
+Each axial plane stands on its pitch generator and `std.y`, so it is square to P and holds the
 generator; drawing each axis from its apex's image makes P each cone's tangent plane along its
 generator. Pitch radii, shaft angle and offset are four conditions; the gear's 60° pitch angle is
 the fifth, and the pinion's apex and pitch angle follow (ε = 10.72°, γ = 29.56°).
@@ -1659,68 +1738,75 @@ the fifth, and the pinion's apex and pitch angle follow (ε = 10.72°, γ = 29.5
 
 ```
 unit mm
+use std
+Ng := 48          // gear teeth
+Np := 24          // pinion teeth
 module := 4mm
-Rg := 48 * module / 2
-Rp := 24 * module / 2
+Rg := Ng * module / 2
+Rp := Np * module / 2
 E := 20mm
 
-o := point
-t := point
-P := plane(origin: o, toward: t)
-fix(x == 0, y == 0) o
-fix(x == 40, y == 0) t
-M := point in P
+// the pitch plane P is the front plane, and M is on it
+M := point in std.front
 fix(x == 0, y == 0) M
 
 // the gear's axial plane, square to P about its vertical axis; the pinion's, solved, through M
-og := point
-tg := point
-G := plane(origin: og, toward: tg, from: P, fold: 90deg)
-fix(x == 0, y == 200) og
-fix(x == 40, y == 200) tg
-oq := point hint(x: 0, y: -200)
-tq := point hint(x: 40, y: -200)
-Q := plane(origin: oq, toward: tq, attitude: free, through: M) hint(u: (0.1618, -0.4935, -0.8546), v: (0.0918, 0.8698, -0.4847))
+G := plane(u: std.z, v: std.y)
+fix(x == 0, y == 0, z == 0) G
+qu := ray hint(x: 0.1618, y: -0.4935, z: -0.8546)
+qv := ray hint(x: 0.0918, y: 0.8698, z: -0.4847)
+qu perpendicular qv
+Q := plane(u: qu, v: qv)
+M coincident Q.origin
 
-gax := line(hint(x: 110.85, y: 200), hint(x: 50.85, y: 303.9)) in G
-pax := line(hint(x: -84.62, y: -248), hint(x: -4.62, y: -248)) in Q
-gax.p1 on P
+// each axis from its apex, drawn at a length that says nothing about the cone; the pinion's
+// drawn level in its plane, which is where the plane's own turn is held
+gax := line(hint(x: 110.85, y: 0), hint(x: 50.85, y: 103.9)) in G
+pax := line(hint(x: -84.62, y: -48), hint(x: -4.62, y: -48)) in Q
+gax.p1 coincident std.front
 gax.p1 distance(120) gax.p2
 pax.p1 distance(80) pax.p2
 horizontal pax
 
+// the pitch cones: the gear's pitch angle, M on both, and the two touching there
 gc := cone(axis: gax) hint(half: 60deg)
 pc := cone(axis: pax) hint(half: 30deg)
 angle(60deg) gc
-M on gc
-M on pc
+M coincident gc
+M coincident pc
 gc tangent(M) pc
 
+// the two pitch radii at M, and the shafts: square, and E apart
 M distance(Rg) gax
 M distance(Rp) pax
 gax angle(90deg) pax
 gax distance(E) pax
 ```
 
-`39 params, 39 equations, structural rank 39; DOF 0`. Here the contact is stated rather than
+`37 params, 37 equations, structural rank 37; DOF 0`. Here the contact is stated rather than
 constructed: the gear's apex on P makes P the gear cone's tangent plane at M, and
-`gc tangent(M) pc` makes it the pinion's, so the pinion's apex lands on P unasked.
-`horizontal pax` fixes the free view's remaining turn. 2.12 and 2.13 give the same hypoid
+`gc tangent(M) pc` makes it the pinion's, so the pinion's apex lands on P unasked. The pinion's
+plane stands on two rays the solve turns, held square to each other, with its origin at M;
+`horizontal pax` fixes its remaining turn. 2.12 and 2.13 give the same hypoid
 (Γ = 60°, γ = 29.564957707°, ε = 10.722102067°, |MA| = 97.282181449, within 2e-11;
 `tests/spatial_surfaces.rs`). `hypoid_pitch_cones.sv` shows the cones touching on P in the app.
 
 ### 2.14 An arc placed by its length: DOF 0, well
 
 ```
-o := point
-s := point hint(x: 10, y: 0)
-e := point hint(x: 3, y: 9)
+use std
 
-a := arc(o, s, e)
-radius(10) a
-length(5 * pi) a        // a quarter of the circumference: the sweep is 90°
-o horizontal s
-fix(x == 0, y == 0) o
+in std.front {
+  o := point
+  s := point hint(x: 10, y: 0)
+  e := point hint(x: 3, y: 9)
+
+  a := arc(o, s, e)
+  radius(10) a
+  length(5 * pi) a        // a quarter of the circumference: the sweep is 90°
+  o horizontal s
+  fix(x == 0, y == 0) o
+}
 ```
 
 `5 params, 5 equations, structural rank 5; DOF 0`, with `e.x ≈ 2e-15`, `e.y = 10`: straight
@@ -1732,22 +1818,26 @@ DOF 0`; `c2.x = 66.0205` for a wrap of 90 on radius 25, since π + 2·asin(15 / 
 ### 2.15 A bisector, stated as two equal angles: DOF 0, well
 
 ```
-a := point
-b := point hint(x: 40, y: 0)
-c := point hint(x: 10, y: 30)
-d := point hint(x: 25, y: 10)
+use std
 
-ab := line(a, b)
-ac := line(a, c)
-ad := line(a, d)
-horizontal ab
-ab angle(60deg) ac
-a distance(40) b
-a distance(30) c
-a distance(20) d
+in std.front {
+  a := point
+  b := point hint(x: 40, y: 0)
+  c := point hint(x: 10, y: 30)
+  d := point hint(x: 25, y: 10)
 
-ab angle(ad, ac) ad     // the angle from ab to ad is the angle from ad to ac
-fix(x == 0, y == 0) a
+  ab := line(a, b)
+  ac := line(a, c)
+  ad := line(a, d)
+  horizontal ab
+  ab angle(60deg) ac
+  a distance(40) b
+  a distance(30) c
+  a distance(20) d
+
+  ab angle(ad, ac) ad     // the angle from ab to ad is the angle from ad to ac
+  fix(x == 0, y == 0) a
+}
 ```
 
 `6 params, 6 equations, structural rank 6; DOF 0`, with `d.x = 17.3205`, `d.y = 10`: `ad` at 30°.
@@ -1772,9 +1862,9 @@ judged a theorem.
 7. Prefer a word to an unknown: equal angles are `l1 angle(l3, l4) l2`, an arc's extent is
    `length(L) a`, a motion's ratio may measure the drawing. An unknown you do need is declared,
    `param a: Length hint(…)`.
-8. In space, draw each thing in the view that shows it true, relate across views with ordinary
-   words, let the solve place a view rather than computing its attitude, and check with
-   `--where VIEW`.
+8. In space, draw each thing in the plane that shows it true, relate across planes with ordinary
+   words, build a plane the solve turns on rays rather than computing its attitude, and check
+   with `--where PLANE`.
 9. Add `claim`s for the consequences the figure was drawn to show.
 10. Build solids from the solved profiles, then write their presentation in a `.svd`.
 

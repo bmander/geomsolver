@@ -6,24 +6,27 @@
 // drawn four times, and a fifth edge in the outline would get a fifth tab with nothing else
 // edited.  The copies are an ordinary `repeat`'s: `tip[2]` is the third tab's apex.
 unit mm
+use std
 width := 60mm
 height := 40mm
 rise := 12mm
 
-a := point
-b := point hint(x: 60, y: 0)
-c := point hint(x: 60, y: 40)
-d := point hint(x: 0, y: 40)
-fix(x == 0, y == 0) a
-outline := distance(height) vertical (ad := line(a, d)) -> horizontal (dc := line(d, c)) ->
-  vertical (cb := line(c, b)) -> distance(width) horizontal (ba := line(b, a)) -> close
+in std.front {
+  a := point
+  b := point hint(x: 60, y: 0)
+  c := point hint(x: 60, y: 40)
+  d := point hint(x: 0, y: 40)
+  fix(x == 0, y == 0) a
+  outline := distance(height) vertical (ad := line(a, d)) -> horizontal (dc := line(d, c)) ->
+    vertical (cb := line(c, b)) -> distance(width) horizontal (ba := line(b, a)) -> close
 
-// The outline runs clockwise, so outside is on each edge's left.  The apex stands `rise`
-// off its edge, and the tab's two sides are equal — which puts the apex over the edge's middle.
-repeat e in outline {
-  tip := point
-  tip distance(rise, side: left) e
-  up := line(e.p1, tip)
-  down := line(tip, e.p2)
-  up equal down
+  // The outline runs clockwise, so outside is on each edge's left.  The apex stands `rise`
+  // off its edge, and the tab's two sides are equal — which puts the apex over the edge's middle.
+  repeat e in outline {
+    tip := point
+    tip distance(rise, side: left) e
+    up := line(e.p1, tip)
+    down := line(tip, e.p2)
+    up equal down
+  }
 }

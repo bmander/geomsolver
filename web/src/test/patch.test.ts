@@ -9,6 +9,8 @@ await initCore();
 
 test('patch sampling requires both the declared material side and source incidence', () => {
   const doc = Document.read(`unit mm
+use std
+in std.front {
 o := point
 q := point
 x := point
@@ -25,11 +27,12 @@ axis := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)
 radius(1mm) meridian
-ring := solid(face(meridian),about: axis)
-wall := surface(ring,meridian)
 rim := arc(center: o,start: b,end: t)
 radius(3.5mm) rim
 diameter := line(t,b)
+}
+ring := solid(face(meridian),about: axis)
+wall := surface(ring,meridian)
 limit := solid(face(rim,diameter),about: diameter)
 roll := motion(about: spin_axis)
 generated := envelope(wall,under: roll,from: -20deg,to: 20deg)

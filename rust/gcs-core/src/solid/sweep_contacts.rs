@@ -54,10 +54,9 @@ impl ExtrudedSurface {
             .find_map(|(e,n)| (*e == edge).then_some(n))
             .ok_or("the requested edge is not a boundary of this prism's profile")?;
         let p = super::face_poly(sk,*face as usize,super::REPORT_UNIT).ok_or("invalid prism profile")?;
-        let lift = |q: (f64,f64)| { let q = crate::plane::in_view(p.pose.0,p.pose.1,p.pose.2,q); p.basis.lift(q.0,q.1) };
+        let lift = |q: (f64,f64)| p.basis.lift(q.0,q.1);
         let vector = |q: (f64,f64)| {
-            let r = (p.pose.0*q.0+p.pose.1*q.1,-p.pose.1*q.0+p.pose.0*q.1);
-            add(scale(p.basis.u,r.0),scale(p.basis.v,r.1))
+            add(scale(p.basis.u,q.0),scale(p.basis.v,q.1))
         };
         let normal = p.basis.normal();
         let base = scale(normal,from.value);

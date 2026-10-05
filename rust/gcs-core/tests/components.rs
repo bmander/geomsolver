@@ -8,8 +8,9 @@
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::model::Sketch;
 
+/// `src` elaborated and solved, drawn in the front plane (`common::front`).
 fn drawn(src: &str) -> Sketch {
-    let (prog, errs) = gcs_core::syntax::parse(src);
+    let (prog, errs) = crate::common::parse(&crate::common::front(src));
     assert!(errs.is_empty(), "does not parse: {errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(
@@ -26,18 +27,23 @@ fn drawn(src: &str) -> Sketch {
 #[test]
 fn a_formal_is_visible_inside_a_repeat_in_the_body() {
     let sk = drawn(
-        "component Fan(hub: point) {
+        "\
+use std
+component Fan(hub: point) {
            repeat 3 as i {
              tip := point hint(x: 20 + i, y: i * 5)
              hub distance(10) tip
            }
          }
+         in std.front {
          h := point
          f := Fan(h)
-         fix(x == 0, y == 0) h",
+         fix(x == 0, y == 0) h
+         }
+",
     );
     let d = diagnose(&mut sk.clone(), DiagnoseOptions::default());
-    assert_eq!(sk.points.len(), 4);
+    assert_eq!(sk.points.len(), 4 + crate::common::STD_POINTS);
     assert_eq!(d.structural_rank, 3, "three spokes, three independent lengths");
     assert!(d.over.is_empty(), "over: {:?}", d.over);
     let (hx, hy) = sk.point_xy(0);
@@ -50,18 +56,23 @@ fn a_formal_is_visible_inside_a_repeat_in_the_body() {
 #[test]
 fn a_formal_is_forwarded_into_a_nested_instance() {
     let sk = drawn(
-        "component Inner(p: point) {
+        "\
+use std
+component Inner(p: point) {
            z := point hint(x: 10, y: 0)
            p distance(20) z
          }
          component Outer(q: point) {
            i := Inner(q)
          }
+         in std.front {
          a := point
          o := Outer(a)
-         fix(x == 0, y == 0) a",
+         fix(x == 0, y == 0) a
+         }
+",
     );
-    assert_eq!(sk.points.len(), 2);
+    assert_eq!(sk.points.len(), 2 + crate::common::STD_POINTS);
     let (zx, zy) = sk.point_xy(1);
     let d = zx.hypot(zy);
     assert!((d - 20.0).abs() < 1e-6, "z is 20 from a, not from nothing: {d}");
@@ -70,15 +81,20 @@ fn a_formal_is_forwarded_into_a_nested_instance() {
 #[test]
 fn each_copy_of_an_instance_in_a_block_binds_its_own_actual() {
     let sk = drawn(
-        "component Peg(a: point, b: point) {
+        "\
+use std
+component Peg(a: point, b: point) {
            a distance(10) b
          }
+         in std.front {
          hub := point
          fix(x == 0, y == 0) hub
          repeat 3 as i {
            tip := point hint(x: 20 + i, y: i * 5)
            s := Peg(hub, tip)
-         }",
+         }
+         }
+",
     );
     let d = diagnose(&mut sk.clone(), DiagnoseOptions::default());
     assert_eq!(d.structural_rank, 3, "three pegs on three tips: {}", gcs_core::diagnose::summary(&d));
@@ -93,15 +109,20 @@ fn each_copy_of_an_instance_in_a_block_binds_its_own_actual() {
 #[test]
 fn a_cycle_of_instances_binds_per_copy() {
     let sk = drawn(
-        "component Spoke(c: point, t: point) {
+        "\
+use std
+component Spoke(c: point, t: point) {
            c distance(40) t
          }
+         in std.front {
          hub := point
          fix(x == 0, y == 0) hub
          cycle 6 as i {
            tip := point hint(x: 40 * cos(60 * i), y: 40 * sin(60 * i))
            s := Spoke(hub, tip)
-         }",
+         }
+         }
+",
     );
     let d = diagnose(&mut sk.clone(), DiagnoseOptions::default());
     assert_eq!(d.structural_rank, 6, "{}", gcs_core::diagnose::summary(&d));
@@ -147,11 +168,11 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
     assert!(xs.iter().any(|&x| (x - 7.0).abs() < 1e-6), "{xs:?}");
     // past the copies, and a copy of a copy, are nothing
     let refused = |src: &str| {
-        let (prog, _) = gcs_core::syntax::parse(src);
+        let (prog, _) = crate::common::parse(src);
         let e = gcs_core::program::elaborate(&prog);
         assert!(!e.ok(), "{src}");
     };
-    let l = "component L(n: Int) { repeat n { p := point } }\nl := L(n: 2)\n";
+    let l = "use std\ncomponent L(n: Int) { repeat n { p := point } }\nin std.front {\nl := L(n: 2)\n}\n";
     refused(&format!("{l}fix(x == 0, y == 0) l.p[2]\n"));
     refused(&format!("{l}fix(x == 0, y == 0) l.p[0][0]\n"));
 }
@@ -164,7 +185,7 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
 // every number by name.
 
 fn diags(src: &str) -> Vec<String> {
-    let (prog, errs) = gcs_core::syntax::parse(src);
+    let (prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "does not parse: {errs:?}");
     gcs_core::program::elaborate(&prog)
         .diags
@@ -173,13 +194,18 @@ fn diags(src: &str) -> Vec<String> {
         .collect()
 }
 
-const ARM: &str = "unit mm\n\
-                   component Arm(hub: point, tip: point, len: Length) {\n\
-                     hub distance(len) tip\n\
-                   }\n\
-                   o := point\n\
-                   t := point hint(x: 10, y: 0)\n\
-                   fix(x == 0, y == 0) o\n";
+const ARM: &str = "\
+unit mm
+use std
+component Arm(hub: point, tip: point, len: Length) {
+hub distance(len) tip
+}
+in std.front {
+o := point
+t := point hint(x: 10, y: 0)
+fix(x == 0, y == 0) o
+}
+";
 
 #[test]
 fn a_number_is_given_by_label() {
@@ -207,13 +233,18 @@ fn a_positional_argument_after_a_labelled_one_is_refused() {
 #[test]
 fn one_call_is_read_once_however_many_copies_it_makes() {
     let d = diags(
-        "component Spoke(hub: point, phase: Angle) {\n\
-           tip := point hint(x: 20 * cos(phase), y: 20 * sin(phase))\n\
-           hub distance(20) tip\n\
-         }\n\
-         o := point\n\
-         fix(x == 0, y == 0) o\n\
-         cycle 4 as i { s := Spoke(o, i * 90deg) }\n",
+        "\
+use std
+component Spoke(hub: point, phase: Angle) {
+tip := point hint(x: 20 * cos(phase), y: 20 * sin(phase))
+hub distance(20) tip
+}
+in std.front {
+o := point
+fix(x == 0, y == 0) o
+cycle 4 as i { s := Spoke(o, i * 90deg) }
+}
+",
     );
     let said: Vec<&String> = d.iter().filter(|m| m.starts_with("E004")).collect();
     assert_eq!(said.len(), 1, "one line, one mistake: {d:?}");

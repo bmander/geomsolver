@@ -5,7 +5,10 @@ mod boundary;
 mod surfaces;
 mod vertices;
 
-const MODEL: &str = "unit mm
+const MODEL: &str = "\
+unit mm
+use std
+in std.front {
 o := point
 q := point
 x := point
@@ -29,6 +32,7 @@ low := line(b,m)
 high := line(m,c)
 top := line(c,d)
 inner := line(d,a)
+}
 profile := face(bottom,low,high,top,inner)
 body := solid(profile,about: axis)
 first_surface := surface(body,low,from: 0deg,to: 90deg)
@@ -41,7 +45,7 @@ shared := seam(first_envelope,second_envelope)
 
 fn tolerance() -> SeamTolerance { SeamTolerance {position:1e-9,normal:1e-9,axis:1e-10} }
 fn build(src: &str) -> program::Elaborated {
-    let (p,errors) = syntax::parse(src);
+    let (p,errors) = crate::common::parse(src);
     assert!(errors.is_empty(),"{errors:?}");
     program::elaborate(&p)
 }
@@ -162,8 +166,8 @@ component Sphere(o: point,size: Length) {{
   private diameter := line(top,bottom)
   ball := solid(face(rim,diameter),about: diameter)
 }}
-large := Sphere(o,size: 4mm)
-small := Sphere(o,size: 3.1mm)
+large := Sphere(o,size: 4mm) in std.front
+small := Sphere(o,size: 3.1mm) in std.front
 first_patch := patch(first_envelope,inside: large.ball)
 second_patch := patch(second_envelope,inside: small.ball)
 clipped := seam(first_patch,second_patch)

@@ -65,6 +65,21 @@ export function maps(sk: Sketch, az: number, el: number): Map[] {
   });
 }
 
+/** Where the eye at bearing `az` and elevation `el` sees each point in space, by point index, on
+ *  its picture plane; `null` for a point drawn in a plane, which its view's map places.  Asked per
+ *  frame beside `maps`. */
+export function spacePoints(sk: Sketch, az: number, el: number): ([number, number] | null)[] {
+  const cap = sk.points.length;
+  if (cap === 0) return [];
+  return withBuf(2 * cap, 8, (b) => {
+    const n = Math.min(core().gcs_workspace_space_points(sk.handle, az, el, b.ptr, cap), cap);
+    return Array.from({ length: Math.max(n, 0) }, (_, k) => {
+      const [x, y] = [b.f64[2 * k], b.f64[2 * k + 1]];
+      return Number.isNaN(x) ? null : [x, y] as [number, number];
+    });
+  });
+}
+
 /** A view's entry in a table over views — `maps`, or anything built from it. */
 export function ofView<T>(all: readonly T[], view: View): T | null {
   return view === NOWHERE ? null : all[slot(view)] ?? null;

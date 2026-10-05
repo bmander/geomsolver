@@ -10,7 +10,8 @@
 
 use gcs_core::constraints::{gauge_op, is_operator, CKind, Fixity, ALL_KINDS};
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::{highlight, parse_legacy as parse, StmtKind, Tint};
+use gcs_core::syntax::{highlight, StmtKind, Tint};
+use crate::common::parse_legacy as parse;
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);
@@ -27,11 +28,15 @@ fn xy(e: &Elaborated, name: &str) -> (f64, f64) {
     e.sketch.point_xy(p.i())
 }
 
-const TRI: &str = "
+const TRI: &str = "\
+use std
+
+in std.front {
 a := point
 b := point hint(x: 10, y: 0)
 c := point hint(x: 0, y: 10)
 k := circle(center: a) hint(r: 5)
+}
 ";
 
 /// The three are operator words, written as relations, and none of them is a constraint the
@@ -74,14 +79,26 @@ fn applied_at_the_numbers_stated_and_not_added() {
 /// states, whatever a hint on the declaration says: a hint is only where a solve begins.
 #[test]
 fn a_fix_holds_what_it_names_and_beats_a_hint() {
-    let e = read("unit mm\nhalf := 10mm\na := point hint(x: 3, y: 7)\nfix(x == -half) a\n");
+    let e = read("unit mm\nuse std\nhalf := 10mm\nin std.front {\na := point hint(x: 3, y: 7)\nfix(x == -half) a\n}\n");
     assert!(e.ok(), "{:?}", messages(&e));
     let p = &e.sketch.points[0];
     assert!(e.sketch.params[p.x as usize].fixed && !e.sketch.params[p.y as usize].fixed);
     assert_eq!(xy(&e, "a"), (-10., 7.), "x held at the expression, y left at its seed");
     // a cone's half-angle is written in degrees, as its hint is
-    let e = read("unit mm\no := point\nfix(x == 0, y == 0) o\nt := point hint(x: 0, y: 10)\n\
-                  l := line(o, t)\nk := cone(axis: l)\nfix(half == 30deg) k\n");
+    let e = read("\
+unit mm
+use std
+in std.front {
+o := point
+fix(x == 0, y == 0) o
+t := point hint(x: 0, y: 10)
+l := line(o, t)
+}
+k := cone(axis: l)
+in std.front {
+fix(half == 30deg) k
+}
+");
     assert!(e.ok(), "{:?}", messages(&e));
     let h = &e.sketch.params[e.sketch.cones[0].param as usize];
     assert!(h.fixed && (h.value - 30f64.to_radians()).abs() < 1e-12, "{}", h.value);
@@ -91,8 +108,16 @@ fn a_fix_holds_what_it_names_and_beats_a_hint() {
 /// where it is held, and a seed that reads geometry never moves a held number.
 #[test]
 fn a_seed_reads_a_held_point_and_never_moves_one() {
-    let e = read("a := point\nfix(x == 4, y == 5) a\nq := point hint(at: a)\n\
-                  b := point hint(at: q)\nfix(y == -1) b\n");
+    let e = read("\
+use std
+in std.front {
+a := point
+fix(x == 4, y == 5) a
+q := point hint(at: a)
+b := point hint(at: q)
+fix(y == -1) b
+}
+");
     assert!(e.ok(), "{:?}", messages(&e));
     assert_eq!(xy(&e, "q"), (4., 5.), "q seeded from a's held place");
     assert_eq!(xy(&e, "b"), (4., -1.), "b takes q's x, and its own held y");
@@ -119,7 +144,8 @@ fn a_fix_that_does_not_state_its_numbers_is_refused() {
         ("fix a", "`fix` states the numbers it holds"),
         ("fix(x: 0) a", "`fix` pins a number with `==`"),
         ("fix(5) k", "`fix(r == 5) k`"),
-        ("fix(z == 1) a", "`fix` holds `x`, `y`, `r` or `half`, not `z`"),
+        ("fix(w == 1) a", "`fix` holds `x`, `y`, `z`, `r` or `half`, not `w`"),
+        ("fix(z == 1) a", "a point has x and y, not `z`"),
         ("fix(x == 1) k", "a circle has r, not `x`"),
         ("fix(r == 1) a", "a point has x and y, not `r`"),
     ] {
@@ -170,8 +196,19 @@ fn lifted_with_their_numbers_and_coloured_as_relations() {
 /// stays empty.
 #[test]
 fn a_solve_writes_no_seed_for_a_held_number() {
-    let src = "b := point\nfix(x == 30, y == 0) b\nc := point\nfix(x == 3) c\nc distance(30) b\n\
-               l := line\nfix(x == 0, y == 0) l.p1\nl.p1 distance(10) l.p2\n";
+    let src = "\
+use std
+in std.front {
+b := point
+fix(x == 30, y == 0) b
+c := point
+fix(x == 3) c
+c distance(30) b
+l := line
+fix(x == 0, y == 0) l.p1
+l.p1 distance(10) l.p2
+}
+";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = elaborate(&prog);
@@ -191,7 +228,7 @@ fn a_solve_writes_no_seed_for_a_held_number() {
 /// partial one — and taken away again when let go.
 #[test]
 fn a_hold_made_in_the_app_is_written_with_its_numbers() {
-    let src = "a := point hint(x: 2, y: 3)\nb := point hint(x: 7, y: 1)\nfix(x == 7, y == 1) b\n";
+    let src = "use std\nin std.front {\na := point hint(x: 2, y: 3)\nb := point hint(x: 7, y: 1)\nfix(x == 7, y == 1) b\n}\n";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = elaborate(&prog);

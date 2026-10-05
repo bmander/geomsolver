@@ -23,6 +23,17 @@ pub fn distance(a: V3,b: V3) -> f64 { norm(sub(a,b)) }
 pub fn distance_squared(a: V3,b: V3) -> f64 { let d = sub(a,b); dot(d,d) }
 /// The unit vector along `a`, or none for a zero vector.
 pub fn normalised(a: V3) -> Option<V3> { let l = norm(a); (l > 0.).then(|| a.map(|x| x/l)) }
+/// Two unit vectors across a direction: perpendicular to it and to each other, with the second
+/// `â × e₁`.  The first is taken against whichever axis `a` is least along, so the cross product
+/// is never small; a direction of no length gets the x and y axes.
+pub fn across(a: V3) -> (V3, V3) {
+    let Some(ah) = normalised(a) else { return ([1.,0.,0.],[0.,1.,0.]) };
+    let k = (0..3).min_by(|&x,&y| ah[x].abs().total_cmp(&ah[y].abs())).unwrap_or(0);
+    let mut axis = [0.;3];
+    axis[k] = 1.;
+    let e1 = normalised(cross(ah,axis)).unwrap_or([1.,0.,0.]);
+    (e1,cross(ah,e1))
+}
 /// The point a fraction `t` of the way from `a` to `b`, as `a + t (b − a)`.
 pub fn lerp(a: V3,b: V3,t: f64) -> V3 { [a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1]),a[2]+t*(b[2]-a[2])] }
 

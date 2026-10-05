@@ -3,7 +3,7 @@
 use gcs_core::{delaunay::refine,solid::{crease,MaterialField},*};
 
 fn field(source: &str,name: &str) -> MaterialField {
-    let (mut p,errors) = syntax::parse(source);
+    let (mut p,errors) = crate::common::parse(source);
     assert!(errors.is_empty(),"{errors:?}");
     assert!(modules::link(&mut p,&mut library::resolve).is_empty());
     let mut e = program::elaborate(&p);
@@ -48,12 +48,17 @@ fn a_pierced_spheres_two_rims_are_found_and_followed() {
     }
 }
 
-const BLOCK: &str = "unit mm\nuse std\n\
-private mid := point hint(x: 0, y: -6)\n\
-std.origin vertical mid\n\
-std.origin distance(6mm, along: down) mid\n\
-private outline := std.CenteredRectangle(mid, w: 40mm, h: 12mm)\n\
-block := solid(outline.loop, from: -20mm, to: 20mm)\n";
+const BLOCK: &str = "\
+unit mm
+use std
+in std.front {
+private mid := point hint(x: 0, y: -6)
+std.origin vertical mid
+std.origin distance(6mm, along: down) mid
+private outline := std.CenteredRectangle(mid, w: 40mm, h: 12mm)
+}
+block := solid(outline.loop, from: -20mm, to: 20mm)
+";
 
 #[test]
 fn a_blocks_twelve_edges_are_found_and_end_at_its_corners() {
@@ -107,7 +112,7 @@ fn a_swept_groove_meshes_closed_with_its_rim_kept() {
     // The groove through the whole mesher: a first pass finds the creases, the second keeps them.
     // Its volume is the block's less the half of the swept ball below the top face: by Pappus a
     // torus segment through 150° and a ball, the two half balls at the ends.
-    let (mut p,_) = syntax::parse(include_str!("../../examples/swept_groove.sv"));
+    let (mut p,_) = crate::common::parse(include_str!("../../examples/swept_groove.sv"));
     assert!(modules::link(&mut p,&mut library::resolve).is_empty());
     let mut e = program::elaborate(&p);
     assert!(solve::solve(&mut e.sketch,Default::default()).success);

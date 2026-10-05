@@ -27,14 +27,6 @@ impl Sketch {
         self.points[point].plane = plane.map(|p| p as u32);
     }
 
-    /// The datum half of a plane — the origin, the toward point and the rotor.
-    pub fn frame_of(&self, e: EntRef) -> &FrameE {
-        match e.kind {
-            EntKind::Plane => &self.planes[e.i()].frame,
-            other => panic!("a {} has no rotor", other.as_str()),
-        }
-    }
-
     // -- accessors ----------------------------------------------------------
 
     pub fn point_xy(&self, i: usize) -> (f64, f64) {
@@ -68,41 +60,37 @@ impl Sketch {
         self.params[self.round_radius(e)].value
     }
 
-    /// A solved point in world space, with its drawing-plane pose removed.
+    /// Where point `i` stands in space: a point in space's own three coordinates, and a point
+    /// drawn in a plane lifted off it.
     pub fn world_point(&self, i: usize) -> [f64;3] {
+        if let Some(z) = self.points[i].z {
+            let (x, y) = self.point_xy(i);
+            return [x, y, self.params[z as usize].value];
+        }
         self.world_in(self.plane_of(i), self.point_xy(i))
     }
 
-    /// Where a point of `view`'s page stands in space (`None`: the page): `world_point` for page
-    /// coordinates rather than a point, and the inverse of `on_view_sheet` on the view's plane.
+    /// Where a point of plane `view`'s coordinates stands in space — `None` a 2D sketch's,
+    /// read on the front plane — and the inverse of `on_view_sheet`.
     pub fn world_in(&self, view: Option<usize>, p: (f64, f64)) -> [f64;3] {
         match view {
             None => crate::plane::Basis::page().lift(p.0, p.1),
-            Some(v) => {
-                let f = &self.planes[v].frame;
-                let q = crate::plane::in_view(self.params[f.c as usize].value,
-                    self.params[f.s as usize].value, self.point_xy(f.origin as usize), p);
-                self.basis(v).lift(q.0, q.1)
-            }
+            Some(v) => self.basis(v).lift(p.0, p.1),
         }
     }
 
-    /// A direction in space as `view`'s page coordinates read it: the linear part of
-    /// `on_view_sheet`.
+    /// A direction in space as `view`'s coordinates read it: the linear part of `on_view_sheet`.
     pub fn page_vector_in(&self, view: Option<usize>, d: [f64;3]) -> (f64, f64) {
         let (a, b) = (self.on_view_sheet(d, view), self.on_view_sheet([0.;3], view));
         (a.0 - b.0, a.1 - b.1)
     }
-    /// Where a point in space lands on the sheet in `view` (the page where `None`): its place in
-    /// the view, put on the sheet by the view's datum — `world_point`'s inverse.
+
+    /// Where a point in space lands in plane `view`'s coordinates (a 2D sketch's where `None`),
+    /// read by its shadow along the normal — `world_in`'s inverse.
     pub fn on_view_sheet(&self, w: [f64;3], view: Option<usize>) -> (f64, f64) {
         match view {
             None => crate::plane::Basis::page().view_coords(w),
-            Some(v) => {
-                let f = &self.planes[v].frame;
-                let (c, s) = (self.params[f.c as usize].value, self.params[f.s as usize].value);
-                crate::plane::on_page(c, s, self.point_xy(f.origin as usize), self.basis(v).view_coords(w))
-            }
+            Some(v) => self.basis(v).view_coords(w),
         }
     }
 
@@ -158,7 +146,9 @@ impl Sketch {
                 }
                 b
             }
-            EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => {
+            // a ray is in space, on no sheet, with nothing drawn of it
+            EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
+            | EntKind::Ray => {
                 (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY)
             }
             EntKind::Curve => {
@@ -193,12 +183,8 @@ impl Sketch {
                 let r = self.params[c.radius as usize].value.abs();
                 (cx - r, cy - r, cx + r, cy + r)
             }
-            EntKind::Plane => {
-                let f = self.frame_of(e);
-                let (ax, ay) = self.point_xy(f.origin as usize);
-                let (bx, by) = self.point_xy(f.toward as usize);
-                (ax.min(bx), ay.min(by), ax.max(bx), ay.max(by))
-            }
+            // a plane is drawn in its own coordinates, at its origin
+            EntKind::Plane => (0.0, 0.0, 0.0, 0.0),
             EntKind::Arc | EntKind::Spline => {
                 let pts = if e.kind == EntKind::Arc {
                     self.arc_extremes(e.i())

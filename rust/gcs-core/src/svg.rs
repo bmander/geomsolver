@@ -197,7 +197,7 @@ pub(crate) fn entity(
     at: &dyn Fn((f64, f64)) -> (f64, f64),
     polys: &[Vec<(f64, f64)>],
 ) {
-    // resolved inside the arms that read it: a point is drawn in `INK` and a frame not at all,
+    // resolved inside the arms that read it: a point is drawn in `INK` and a plane not at all,
     // and points are the majority of a sketch's entities — every line, circle and arc mints two
     // or three.  Resolving a style for each of them is a sheet cascade and a format for nothing.
     let ink = || stroke(&sk.style_of(e));
@@ -207,7 +207,7 @@ pub(crate) fn entity(
         // and `derived` lays that out beside the entities
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => {}
         // a sphere has no picture on a sheet: its centre is a point, drawn as one
-        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => {}
+        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => {}
         // a point is a place, not a stroke: a small filled dot, in the ink the sheet has no
         // rule for
         EntKind::Point => {
@@ -252,22 +252,9 @@ pub(crate) fn entity(
         EntKind::Spline => poly(out, &crate::curve::tessellate(sk, i, unit), at, &ink()),
         // the polyline `render` already swept to size the page
         EntKind::Curve => poly(out, &polys[i], at, &ink()),
-        // a plane is a datum with a glyph: its chord, and a tick along the frame's own y-axis
-        // saying which side the view's second coordinate grows to.  No name — a `Sketch` holds
-        // no source names, so the label is the app's to draw.
-        EntKind::Plane => {
-            let s = ink();
-            for (from, to) in crate::plane::glyph(sk, i, unit) {
-                let (a, b) = (at(from), at(to));
-                out.push_str(&format!(
-                    "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"{s}/>\n",
-                    n(a.0),
-                    n(a.1),
-                    n(b.0),
-                    n(b.1)
-                ));
-            }
-        }
+        // a plane is a place in space, two rays and an origin, with nothing to draw on paper:
+        // the workspace shows it as a pane
+        EntKind::Plane => {}
     }
 }
 

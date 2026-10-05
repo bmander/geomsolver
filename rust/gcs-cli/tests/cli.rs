@@ -236,8 +236,17 @@ fn explicit_native_stl_never_falls_back_when_occt_is_unavailable() {
     std::fs::create_dir_all(&dir).unwrap();
     let model = dir.join("model.sv");
     let output = dir.join("model.stl");
-    std::fs::write(&model,"unit mm\no := point\nfix(x == 0, y == 0) o\n\
-        c := circle(center: o)\nradius(2) c\nbody := solid(face(c), depth: 3)\n").unwrap();
+    std::fs::write(&model,"\
+unit mm
+use std
+in std.front {
+o := point
+fix(x == 0, y == 0) o
+c := circle(center: o)
+radius(2) c
+}
+body := solid(face(c), depth: 3)
+").unwrap();
     std::fs::write(&output,"old STL").unwrap();
     let result = run(&[model.to_str().unwrap(),"--stl",output.to_str().unwrap(),
         "--stl-backend","occt","--no-diagnose"]);
@@ -282,8 +291,17 @@ fn component_previews_resolve_project_imports_for_models_and_drawings() {
 fn drawings_load_relative_files_select_sheets_and_refuse_broken_references() {
     let dir = std::env::temp_dir().join(format!("solventc-drawing-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("sheets")).unwrap();
-    std::fs::write(dir.join("part.sv"), "unit mm\na := point\nfix(x == 0, y == 0) a\n\
-        b := point\nfix(x == 20, y == 0) b\nbar := line(a,b)\n").unwrap();
+    std::fs::write(dir.join("part.sv"), "\
+unit mm
+use std
+in std.front {
+a := point
+fix(x == 0, y == 0) a
+b := point
+fix(x == 20, y == 0) b
+bar := line(a,b)
+}
+").unwrap();
     std::fs::write(dir.join("ink.svd"), "style m.bar { color: #123456 }").unwrap();
     let path = dir.join("sheets/part.svd");
     let source = "model m from \"../part.sv\" use \"../ink.svd\"\n\
@@ -384,14 +402,14 @@ fn a_broken_document_says_where() {
     let dir = std::env::temp_dir().join("solventc-test");
     std::fs::create_dir_all(&dir).expect("a place to write");
     let path = dir.join("uni.sv");
-    std::fs::write(&path, "é := point hint(x: 0, y: 0)   // — an em dash\nl := line(é, zzz)\n")
+    std::fs::write(&path, "use std\nin std.front {\né := point hint(x: 0, y: 0)   // — an em dash\nl := line(é, zzz)\n}\n")
         .expect("write");
     let out = run(&[&path.to_string_lossy()]);
     let err = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1));
-    assert!(err.contains("uni.sv:2:14: error[E101]:"), "{err}");
+    assert!(err.contains("uni.sv:4:14: error[E101]:"), "{err}");
     // `é` is two bytes: a byte column would say 15
-    assert!(!err.contains(":2:15:"), "the column counts characters, not bytes: {err}");
+    assert!(!err.contains(":4:15:"), "the column counts characters, not bytes: {err}");
     // and one finding is said once
     assert_eq!(err.matches("no such entity").count(), 1, "{err}");
 }
@@ -521,10 +539,28 @@ fn the_rust_kernel_exports_a_static_solid() {
     std::fs::create_dir_all(&dir).unwrap();
     let model = dir.join("model.sv");
     let (stl,step) = (dir.join("model.stl"),dir.join("model.step"));
-    std::fs::write(&model,"unit mm\no := point\nb := point\na := point\n\
-        d := point\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) b\nfix(x == 10, y == 6) a\nfix(x == 0, y == 6) d\nm := point\nfix(x == 5, y == 3) m\n\
-        c := circle(center: m) hint(r: 1)\nradius(1) c\n\
-        block := solid(face(o, b, a, d, -> close), depth: 3)\nbore := solid(face(c), from: -5, to: 5)\nbody := solid(block)\nbore cut body\n").unwrap();
+    std::fs::write(&model,"\
+unit mm
+use std
+in std.front {
+o := point
+b := point
+a := point
+d := point
+fix(x == 0, y == 0) o
+fix(x == 10, y == 0) b
+fix(x == 10, y == 6) a
+fix(x == 0, y == 6) d
+m := point
+fix(x == 5, y == 3) m
+c := circle(center: m) hint(r: 1)
+radius(1) c
+}
+block := solid(face(o, b, a, d, -> close), depth: 3)
+bore := solid(face(c), from: -5, to: 5)
+body := solid(block)
+bore cut body
+").unwrap();
     let result = run(&[model.to_str().unwrap(),"--solid","body","--kernel","rust","--stl",stl.to_str().unwrap(),
         "--step",step.to_str().unwrap(),"--no-diagnose"]);
     let stderr = String::from_utf8_lossy(&result.stderr);

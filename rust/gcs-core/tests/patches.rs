@@ -1,7 +1,10 @@
 use gcs_core::{diagnose,envelope::{Error,IntersectionOptions},io,model::{EntKind,EntRef},
     patch::TrimmedPatch,program,solve,syntax};
 
-const SOURCE: &str = "unit mm
+const SOURCE: &str = "\
+unit mm
+use std
+in std.front {
 o := point
 q := point
 x := point
@@ -14,6 +17,7 @@ axis := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)
 radius(1mm) meridian
+}
 ring := solid(face(meridian),about: axis)
 wall := surface(ring,meridian)
 roll := motion(about: spin_axis)
@@ -28,14 +32,16 @@ component Sphere(o: point, size: Length) {
   private axis := line(top,bottom)
   body := solid(face(rim,axis),about: axis)
 }
+in std.front {
 inner := Sphere(o, size: 2.5mm)
 outer := Sphere(o, size: 3.5mm)
+}
 bounded := patch(wall,inside: outer.body,outside: inner.body)
 tooth := patch(generated,inside: outer.body,outside: inner.body)
 ";
 
 fn build(src: &str) -> program::Elaborated {
-    let (p,errors) = syntax::parse(src);
+    let (p,errors) = crate::common::parse(src);
     assert!(errors.is_empty(),"{errors:?}");
     program::elaborate(&p)
 }
@@ -151,7 +157,7 @@ fn patch_diagnostics_refuse_missing_or_wrong_operands_and_ambiguous_labels() {
         assert!(e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);
     }
     for tail in ["bad := patch(wall,ring)","bad := patch(wall,insdie: ring)"] {
-        let (_,errors) = syntax::parse(&format!("{SOURCE}{tail}\n"));
+        let (_,errors) = crate::common::parse(&format!("{SOURCE}{tail}\n"));
         assert!(!errors.is_empty());
     }
 }

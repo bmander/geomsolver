@@ -240,11 +240,11 @@ fn bind(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap, st: &Statement
 /// Each envelope of a prism's side under a motion keeping the prism's view, built as the curve it
 /// stands for (issue #70): `flank := envelope(side, under: m, …)` with `side :=
 /// surface(prism, edge: e)` is the surface `e` sweeps extruded square to the view, so it is the
-/// planar envelope of `e` (`profile`) marked an extrusion, which a point in space is `on` by its
-/// place in the view.  Built with the drawing — before any relation, so a contact may name it —
-/// where the surface and the prism are not built yet: the prism is read off its declaration (a
-/// face swept by `depth:` or `from:`/`to:`), and the surface checks the edge is a side of it
-/// when it is built.  Run once memberships are in, since the view is read off them.  Returns the
+/// planar envelope of `e` (`profile`) marked an extrusion, which a point in space is
+/// `coincident` with by its place in the view.  Built with the drawing — before any relation,
+/// so a contact may name it — where the surface and the prism are not built yet: the prism is
+/// read off its declaration (a face swept by `depth:` or `from:`/`to:`), and the surface checks
+/// the edge is a side of it when it is built.  Run once memberships are in, since the view is read off them.  Returns the
 /// statements built, which the spatial pass skips.
 pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
     body: &[&Statement], skip: &BTreeSet<StmtId>, diags: &mut Vec<Diag>) -> BTreeSet<StmtId>
@@ -293,10 +293,10 @@ pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut 
                     centres and lines are drawn in that view", d.name.key().text));
             }
             let Some(view) = view else {
-                return Err("the prism's face is on the page, which has no place in space: draw it `in` a view".into());
+                return Err("the prism's face is drawn in no plane: draw it `in` one".into());
             };
-            if sk.planes[view].att.is_some() {
-                return Err("a prism's side generates in a view drawn where it stands, not one solved for".into());
+            if !sk.plane_fixed(view) {
+                return Err("a prism's side generates in a plane that is fixed, not one solved for".into());
             }
             cv.extrusion = true;
             Ok(cv)

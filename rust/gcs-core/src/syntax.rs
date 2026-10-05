@@ -222,7 +222,7 @@ pub enum StmtKind {
     Block(Block),
     /// Parse a style block, retaining property spans for diagnostics.
     Style(StyleRule),
-    /// A body operation (§6.9): `cut` subtracts, `on` unites, `with` intersects.
+    /// A body operation (§6.9): `cut` subtracts, `union` unites, `bound` intersects.
     /// Relations are folded into the stock body after declarations are built.
     SolidRel(SolidRel),
     /// `claim over crank.theta in (0deg, 360deg) { … }` — the claims in the body, judged as the
@@ -296,10 +296,6 @@ pub enum BodyWord {
     /// `tip bound cyl` — the body rule's intersection: the body keeps what lies within
     /// every solid that bounds it.
     Bound,
-    /// `cylB.block.far against plate.body.near` — **a stack** (§6.10): two faces in contact, so
-    /// where the left one's part stands is a *consequence* rather than a number somebody kept in
-    /// step by hand.  What `zA = fwA + D / 2` was.
-    Against,
 }
 
 impl BodyWord {
@@ -308,7 +304,6 @@ impl BodyWord {
             BodyWord::Union => "union",
             BodyWord::Cut => "cut",
             BodyWord::Bound => "bound",
-            BodyWord::Against => "against",
         }
     }
 }
@@ -668,10 +663,6 @@ pub struct Decl {
     /// name of the entity it resolved to — filled by the flattener, read by the build, since an
     /// absolute name (`side.#282.0.small`) is not one the expression language can spell.
     pub seed_names: Vec<(String, String)>,
-    /// A plane's attitude in space, as written (§6.7).  `Page` for every other kind.
-    pub attitude: Attitude,
-    /// What of a plane is solved beyond its attitude, and the seeds of it.
-    pub plane: PlaneSolve,
     /// How a solid is swept (§6.9): a prism along the plane's normal, a revolution about a line
     /// in it, or a body over other solids.  `None` for every other kind.
     pub sweep: Option<Sweep>,
@@ -683,9 +674,8 @@ pub struct Decl {
     /// the end of the trailers, so an appended clause lands after `hint`/`class` and never
     /// races `class_span`'s offset.
     pub membership: Membership,
-    /// The `( … )` after the name — what the thing is made of, and a plane's attitude — or an
-    /// empty span at the name's end when none was written.  `commit_seeds` replaces it rather
-    /// than inserting a second list beside one that stated an attitude and no children.
+    /// The `( … )` after the name — what the thing is made of — or an empty span at the name's
+    /// end when none was written.
     pub list_span: Span,
     /// An explicit closing edge (`-> close`). Its span includes the marker and word.
     pub close: Option<Span>,
@@ -714,11 +704,9 @@ impl Decl {
             computed: None,
             seed_at: None,
             seed_names: Vec::new(),
-            attitude: Attitude::Page,
             sweep: None,
             motion: None,
             angular_span: None,
-            plane: Default::default(),
             membership: Membership::default(),
             list_span: Span::default(),
             close: None,
@@ -830,113 +818,6 @@ pub struct InBlock {
     pub close: Span,
 }
 
-/// What a plane's constant basis is made of, as written (§6.7): nothing (the page), another
-/// plane and a fold, or the basis itself.  Never a seed — a solve moves none of it — which is
-/// why it stands in the brackets with the children and not in `hint(…)` (§4.3).
-#[derive(Clone, Debug, Default)]
-pub enum Attitude {
-    /// The page: the front view, `u = x`, `v = z`.
-    #[default]
-    Page,
-    /// `from: front, fold: 30deg` — the plane perpendicular to `front` containing the direction
-    /// at that bearing in it.  `fold` is an `Arg::Dim` (an Angle, as written); `None` is 0.
-    From { plane: Ref, fold: Arg },
-    /// A plane parallel to `plane`, displaced along its normal. An absent offset
-    /// leaves placement to stack relations (§6.10).
-    Offset { plane: Ref, offset: Option<Arg> },
-    /// `u: (0.6, 0.8, 0), v: (0, 0, 1)` — six dimensionless `Arg::Dim`s — and, optionally,
-    /// `o: (0, 0, 12)`, where in space the basis stands (three lengths): what a stated plane
-    /// that stands off the shared origin is lifted as, since `u:` and `v:` say only how it turns.
-    Basis { u: [Arg; 3], v: [Arg; 3], o: Option<[Arg; 3]> },
-    /// `from: front, fold: along l` — folded square to `front` about a line drawn in
-    /// it: the view contains `l`, and follows it as the solve moves it.
-    Along { plane: Ref, line: Ref },
-    /// `attitude: free` — the attitude is three unknowns of the solve, seeded by
-    /// `hint(u: (…), v: (…))`; the span is the clause's, for a diagnostic to point at.
-    Free { span: Span },
-}
-
-/// Where a plane stands along its own normal when that is **solved for** rather than stated
-/// (§6.7): `Stated` is whatever the attitude says (the parent's origin for a fold, the
-/// written `offset:` for a stood-off plane), `Free` is `offset: free` — one unknown, seeded by
-/// `hint(offset: …)` — and `Through` is `through: M`, the offset that puts the point `M` in it.
-#[derive(Clone, Debug, Default)]
-pub enum Position {
-    #[default]
-    Stated,
-    Free(Span),
-    Through(Ref),
-}
-
-/// One key of a plane's `hint(…)` clause beyond its datum's scalars: `fold: 30deg`,
-/// `offset: 12`, `u: (1, 0, 0)` — a seed for a quantity the brackets made an unknown, as
-/// written (one `Arg::Dim`, or three for a direction).  Whether the quantity *is* an unknown is
-/// the elaborator's question, and a seed for a stated one is refused there (E040), at `key`.
-#[derive(Clone, Debug)]
-pub struct PlaneHint {
-    pub key: Name,
-    pub args: Vec<Arg>,
-    /// The value as written, so a writeback splices it in place.
-    pub span: Span,
-}
-
-/// What of a plane is solved beyond its attitude, and the seeds of all of it — see `Position`
-/// and `PlaneHint`.  Empty for every other kind, and for every plane a document states.
-#[derive(Clone, Debug, Default)]
-pub struct PlaneSolve {
-    pub position: Position,
-    pub hints: Vec<PlaneHint>,
-}
-
-impl PlaneSolve {
-    /// Every number the seeds are written over, for the flattener to settle a component's
-    /// parameters into — `Attitude::args_mut`'s walk.
-    pub fn args_mut(&mut self) -> Vec<&mut Arg> {
-        self.hints.iter_mut().flat_map(|h| h.args.iter_mut()).collect()
-    }
-
-    /// The seed written for `key`, if one was.
-    pub fn hint(&self, key: &str) -> Option<&PlaneHint> {
-        self.hints.iter().find(|h| h.key.text == key)
-    }
-}
-
-impl Attitude {
-    /// The reference it names, if any — for the walks that fix every reference a statement
-    /// makes (`flatten::rewrite`, `edit::mentions`).
-    pub fn plane_ref(&self) -> Option<&Ref> {
-        match self {
-            Attitude::From { plane, .. }
-            | Attitude::Offset { plane, .. }
-            | Attitude::Along { plane, .. } => Some(plane),
-            Attitude::Page | Attitude::Basis { .. } | Attitude::Free { .. } => None,
-        }
-    }
-
-    /// Every reference it makes — the parent, and the line a fold is taken along — for the walks
-    /// that rewrite each one under a scope.
-    pub fn refs_mut(&mut self) -> Vec<&mut Ref> {
-        match self {
-            Attitude::From { plane, .. } | Attitude::Offset { plane, .. } => vec![plane],
-            Attitude::Along { plane, line } => vec![plane, line],
-            Attitude::Page | Attitude::Basis { .. } | Attitude::Free { .. } => Vec::new(),
-        }
-    }
-
-    /// Every number it was written over, for the flattener to settle a component's parameters
-    /// into.
-    pub fn args_mut(&mut self) -> Vec<&mut Arg> {
-        match self {
-            Attitude::Page | Attitude::Along { .. } | Attitude::Free { .. } => Vec::new(),
-            Attitude::From { fold, .. } => vec![fold],
-            Attitude::Offset { offset, .. } => offset.iter_mut().collect(),
-            Attitude::Basis { u, v, o } => {
-                u.iter_mut().chain(v.iter_mut()).chain(o.iter_mut().flatten()).collect()
-            }
-        }
-    }
-}
-
 /// A declared angular domain; it is data, not a solver unknown or hint.
 #[derive(Clone, Debug)]
 pub struct AngularSpan {
@@ -994,14 +875,14 @@ pub enum Sweep {
     /// `sense: cw` the other way round.
     Revolve { axis: Ref, sweep: Option<Arg>, sense: Sense },
     /// `body := solid(block)` — a stock, or a term: what it is made of is in the list, and the
-    /// `on`/`cut` statements say the rest.
+    /// `union`/`cut`/`bound` statements say the rest.
     Body,
 }
 
 impl Sweep {
     /// Every number it was written over, for the flattener to settle a component's parameters
-    /// into — the same walk `Attitude::args_mut` joins, and for the same reason: an extent is
-    /// written in the little language a dimension is, and a `param` is in scope for it.
+    /// into: an extent is written in the little language a dimension is, and a `param` is in
+    /// scope for it.
     pub fn args_mut(&mut self) -> Vec<&mut Arg> {
         match self {
             Sweep::Placed { at, .. } => vec![at],
@@ -1057,7 +938,7 @@ pub enum Kid<D = Decl> {
     /// `block := solid(face(a, b, c, -> close), depth: t)` — a private section.
     Face { decl: Box<D>, span: Span },
     /// `tooth := face(root, flank from p to q, tip)` — the stretch of a curve between two points
-    /// held on it (`p on flank`), a face's edge (§6.8).  Only a face's loop holds one.
+    /// held on it (`p coincident flank`), a face's edge (§6.8).  Only a face's loop holds one.
     Trim { curve: Ref, from: Ref, to: Ref, span: Span },
 }
 
@@ -1117,17 +998,23 @@ pub struct AtRef {
     pub along: Option<Ref>,
     pub by: Option<(String, Span)>,
     pub turn: Option<(String, Span)>,
+    /// `hint(at: P, x: 3, y: 4)`: the place `(3, 4)` in plane `P`'s own coordinates, read in
+    /// space and seen in the seeded point's plane.
+    pub x: Option<(String, Span)>,
+    pub y: Option<(String, Span)>,
 }
 
 impl AtRef {
-    /// The texts the place reads numbers from — a bearing, a fraction, a turn — for the walks
-    /// that resolve and substitute them.
+    /// The texts the place reads numbers from — a bearing, a fraction, a turn, a plane's
+    /// coordinates — for the walks that resolve and substitute them.
     pub fn texts_mut(&mut self) -> impl Iterator<Item = &mut (String, Span)> {
-        [&mut self.bearing, &mut self.by, &mut self.turn].into_iter().flatten()
+        [&mut self.bearing, &mut self.by, &mut self.turn, &mut self.x, &mut self.y]
+            .into_iter()
+            .flatten()
     }
 
     pub fn texts(&self) -> impl Iterator<Item = &(String, Span)> {
-        [&self.bearing, &self.by, &self.turn].into_iter().flatten()
+        [&self.bearing, &self.by, &self.turn, &self.x, &self.y].into_iter().flatten()
     }
 }
 

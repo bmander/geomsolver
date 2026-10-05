@@ -10,7 +10,7 @@
 use gcs_core::edit;
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::syntax::parse;
+use crate::common::parse;
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);
@@ -30,7 +30,7 @@ fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
 
 #[test]
 fn two_unseeded_points_do_not_start_on_top_of_each_other() {
-    let e = read("a := point\nb := point\na distance(30) b\nfix(x == 0, y == 0) a\n");
+    let e = read("use std\nin std.front {\na := point\nb := point\na distance(30) b\nfix(x == 0, y == 0) a\n}\n");
     let (a, b) = (e.sketch.point_xy(0), e.sketch.point_xy(1));
     assert!(dist(a, b) > 0.5, "b starts apart from a: {a:?} {b:?}");
     let mut sk = e.sketch.clone();
@@ -42,13 +42,18 @@ fn two_unseeded_points_do_not_start_on_top_of_each_other() {
 #[test]
 fn a_port_with_no_seed_starts_off_the_origin_and_solves() {
     let e = read(
-        "component Hook(len: Length) {
+        "\
+use std
+component Hook(len: Length) {
            tip := point
            base := point
            base distance(len) tip
          }
+         in std.front {
          h := Hook(len: 30)
-         fix(x == 0, y == 0) h.base",
+         fix(x == 0, y == 0) h.base
+         }
+",
     );
     let mut sk = e.sketch.clone();
     let r = solve(&mut sk, SolveOpts::default());
@@ -59,31 +64,41 @@ fn a_port_with_no_seed_starts_off_the_origin_and_solves() {
 #[test]
 fn a_port_takes_a_hint_clause() {
     let e = read(
-        "component Hook(len: Length) {
+        "\
+use std
+component Hook(len: Length) {
            tip := point hint(x: 3, y: 4)
            base := point hint(x: 0, y: 0)
            base distance(len) tip
          }
-         h := Hook(len: 30)",
+         in std.front {
+         h := Hook(len: 30)
+         }
+",
     );
     let tip = e.map.ent_named("h.tip").expect("the port is named");
     assert_eq!(e.sketch.point_xy(tip.i()), (3.0, 4.0), "seeded where the clause says");
 
     // an expression over the component's parameters, as any seed may be
     let e = read(
-        "component Hook(len: Length) {
+        "\
+use std
+component Hook(len: Length) {
            tip := point hint(x: len, y: 0)
            base := point hint(x: 0, y: 0)
            base distance(len) tip
          }
-         h := Hook(len: 30)",
+         in std.front {
+         h := Hook(len: 30)
+         }
+",
     );
     let tip = e.map.ent_named("h.tip").unwrap();
     assert_eq!(e.sketch.point_xy(tip.i()), (30.0, 0.0));
 
     // and a key the kind has no scalar for is refused as it is on a declaration
-    let (_, errs) = parse("component H() { tip := point hint(z: 1) }\n");
-    assert!(errs.iter().any(|x| x.message.contains("no scalar `z`")), "{errs:?}");
+    let (_, errs) = parse("component H() { tip := point hint(r: 1) }\n");
+    assert!(errs.iter().any(|x| x.message.contains("no scalar `r`")), "{errs:?}");
 }
 
 /// A solve moves the scattered point, and the source it came from has no clause to record the
@@ -91,11 +106,11 @@ fn a_port_takes_a_hint_clause() {
 /// written document reads back to the same drawing.
 #[test]
 fn an_unseeded_point_gets_its_pose_written_back() {
-    let e = read("a := point\nb := point\na distance(30) b\nfix(x == 0, y == 0) a\n");
+    let e = read("use std\nin std.front {\na := point\nb := point\na distance(30) b\nfix(x == 0, y == 0) a\n}\n");
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let edit = edit::commit_seeds(&e, &sk, &e.program);
-    assert!(edit.text.starts_with("a := point\n"), "a held point grows no hint: {}", edit.text);
+    assert!(edit.text.starts_with("use std\nin std.front {\na := point\n"), "a held point grows no hint: {}", edit.text);
     assert!(edit.text.contains("b := point hint(x: "), "{}", edit.text);
     let back = read(&edit.text);
     assert_eq!(back.sketch.point_xy(1), sk.point_xy(1));
@@ -107,9 +122,10 @@ fn an_unseeded_point_gets_its_pose_written_back() {
 /// the same way on every run — and a minted child still starts apart from its siblings.
 #[test]
 fn a_minted_line_still_has_length() {
-    let a = read("l := line\n");
-    let b = read("l := line\n");
-    assert_eq!(a.sketch.point_xy(0), b.sketch.point_xy(0));
-    assert_eq!(a.sketch.point_xy(1), b.sketch.point_xy(1));
-    assert!(dist(a.sketch.point_xy(0), a.sketch.point_xy(1)) > 0.5);
+    let a = read("use std\nin std.front {\nl := line\n}\n");
+    let b = read("use std\nin std.front {\nl := line\n}\n");
+    let at = |e: &gcs_core::program::Elaborated, n: &str| e.sketch.point_xy(e.map.ent_named(n).unwrap().i());
+    assert_eq!(at(&a, "l.p1"), at(&b, "l.p1"));
+    assert_eq!(at(&a, "l.p2"), at(&b, "l.p2"));
+    assert!(dist(at(&a, "l.p1"), at(&a, "l.p2")) > 0.5);
 }

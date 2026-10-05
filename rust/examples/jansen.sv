@@ -12,6 +12,8 @@
 // `toe` as `theta` runs, the same component is the stride, and the drawing's own pose is
 // where the trace is anchored.
 
+use std
+
 // the frame the leg hangs from: the crank's axle, and the pivot both triangles swing on
 a := 38      // the axle stands this far to the right of the pivot...
 l := 7.8     // ...and this far above it
@@ -36,7 +38,7 @@ component Leg(axle: point, pivot: point, theta: Angle) {
   datum := line(pivot, axle)
   pin := point hint(x: 15, y: 0)
   crank := line(axle, pin)
-  pin on orbit
+  pin coincident orbit
   datum angle(theta) crank
 
   // the two rods the pin drives
@@ -76,14 +78,16 @@ component Leg(axle: point, pivot: point, theta: Angle) {
   ccw(knee, heel, toe)      // the toe below the knee-to-heel side
 }
 
-axle := point 
-pivot := point hint(x: -38, y: -7.8)
-fix(x == 0, y == 0) axle
-pivot distance(a, along: x) axle
-pivot distance(l, along: y) axle
+in std.front {
+  axle := point 
+  pivot := point hint(x: -38, y: -7.8)
+  fix(x == 0, y == 0) axle
+  pivot distance(a, along: x) axle
+  pivot distance(l, along: y) axle
 
-// the leg, with its crank angle left unbound — the drawing's one freedom
-leg := Leg(axle, pivot)
+  // the leg, with its crank angle left unbound — the drawing's one freedom
+  leg := Leg(axle, pivot)
+}
 
 // where the toe goes over a whole turn of the crank
 path := leg.toe over theta in (0, 360)

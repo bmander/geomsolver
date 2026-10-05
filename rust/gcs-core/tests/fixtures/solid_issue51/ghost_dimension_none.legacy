@@ -1,9 +1,6 @@
 unit mm
-o := point
-fix(x == 0, y == 0) o
-q := point
-fix(x == 40, y == 0) q
-front := plane(origin:o,toward:q)
+use std
+in std.front {
 stockfp0 := point
 fix(x == 0, y == 0) stockfp0
 stockfp1 := point
@@ -12,13 +9,16 @@ stockfp2 := point
 fix(x == 10, y == 10) stockfp2
 stockfp3 := point
 fix(x == 0, y == 10) stockfp3
+}
 stockf := face(stockfp0, stockfp1, stockfp2, stockfp3, -> close)
 stock := solid(stockf, from: -1mm, to: 0mm)
+in std.front {
 fp := point
 fix(x == 20, y == 20) fp
 fc := circle(center: fp) hint(r: 2)
 radius(2mm) fc
+}
 f := face(fc)
 tool := solid(f,depth:1mm)
 result := solid(stock)
-dimensions(result) in front
+dimensions(result) in std.front

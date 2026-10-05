@@ -64,7 +64,7 @@ fn all_dimensions() -> Sketch {
     );
     let arc = sk.arc(ac, a_s, a_e, "");
     sk.add(Constraint::new(CKind::ArcLength, vec![Arg::Ent(EntRef::arc(arc)), Arg::Num(10.0 * PI)]));
-    let f = sk.plane(a, c, gcs_core::plane::Basis::page(), "datum");
+    let f = sk.fixed_plane(gcs_core::plane::Basis::page(), "datum");
     for kind in [CKind::CoordinateU, CKind::CoordinateV] {
         sk.add(Constraint::new(kind, vec![Arg::Ent(EntRef::point(e)), Arg::Ent(EntRef::plane(f)), Arg::Num(12.0)]));
     }
@@ -117,11 +117,10 @@ fn every_dimension_is_drawn() {
     // stops the build there; this is the other half — that the arm someone wrote actually draws.
     let mut drawn: Vec<CKind> = sk_kinds(&all_dimensions());
     drawn.sort();
-    // a relation in space states a number of no one view, and has no figure on one; a hinge's
-    // fold is its plane's brackets, and is drawn as the view it folds; and a sphere is on no
+    // a relation in space states a number of no one view, and has no figure on one; and a sphere is on no
     // sheet, so its radius is drawn on none
     let mut want: Vec<CKind> = ALL_KINDS.iter().copied()
-        .filter(|k| k.has_dimension() && !k.spatial() && !k.hinge())
+        .filter(|k| k.has_dimension() && !k.spatial())
         // nor are a cone's or a cylinder's
         .filter(|k| !matches!(k, CKind::SphereRadius | CKind::ConeAngle | CKind::CylinderRadius))
         .collect();
@@ -788,12 +787,17 @@ fn an_array_is_dimensioned_once() {
 
     // copies stating different numbers are a dimension each
     let sk = elaborate(
-        "o := point
+        "\
+use std
+in std.front {
+o := point
          fix(x == 0, y == 0) o
          repeat 3 as i {
            p := point hint(x: 10 + 10 * i, y: 0)
            o distance(10 + 10 * i) p
-         }",
+         }
+}
+",
     );
     assert_eq!(texts(&layout(&sk, 0.1)), ["10", "20", "30"]);
 }

@@ -32,19 +32,19 @@ component CrownThickness(p: plane, generator: line, normal: line, design: group)
   }
   length(pi * design.module / 4) ahead
   length(pi * design.module / 4) behind
-  ahead_end on inner
-  behind_end on outer
+  ahead_end coincident inner
+  behind_end coincident outer
   normal angle(180deg) to_inner
   normal angle(180deg) to_outer
-  inner_pitch on inner
-  outer_pitch on outer
+  inner_pitch coincident inner
+  outer_pitch coincident outer
 }
 
 preview {
   unit mm
   pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
   gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
   trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
   thickness := CrownThickness(pitch.view, gear.generator, trace.normal, design.hypoid_design)
 }

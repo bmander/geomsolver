@@ -32,6 +32,8 @@ component Hole(body: solid, center: point, r: Length, offset: Length) {
   drill cut body
 }
 
-ball := Sphere(std.origin, r: sphere_r)
-part := solid(ball.body)
-bore := Hole(part, std.origin, r: hole_r, offset: offset)
+in std.front {
+  ball := Sphere(std.origin, r: sphere_r)
+  part := solid(ball.body)
+  bore := Hole(part, std.origin, r: hole_r, offset: offset)
+}

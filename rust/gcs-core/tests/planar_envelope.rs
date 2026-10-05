@@ -102,8 +102,14 @@ pub fn rotor_area(r: f64,e: f64) -> f64 {
 /// envelope in the plane.
 #[test]
 fn a_motion_off_the_plane_gives_no_envelope() {
-    let el = solved(&wankel(105.,15.,"bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)\n\
-        tilt := motion(about: rightward_line)\nrightward_line := line(origin, rightward)"));
+    let el = solved(&wankel(105.,15.,"\
+bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)
+tilt := motion(about: rightward_line)
+in std.front {
+rightward_line := horizontal line(std.origin, hint(x: 1, y: 0))
+distance(1mm) rightward_line
+}
+"));
     let (bore,tilt) = (el.map.ent_named("bore").unwrap().i(),el.map.ent_named("tilt").unwrap().i());
     let refused = InnerEnvelope::read(&el.sketch,bore,tilt,[0.,std::f64::consts::TAU]).unwrap_err();
     assert_eq!(refused.row,Condition::Plane,"{refused}");

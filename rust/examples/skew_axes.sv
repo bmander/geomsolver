@@ -1,40 +1,42 @@
-// Two shafts that do not meet: the gear's axis drawn in the front view, the pinion's in a second
-// view folded from it, and the two related in space — a shaft angle and an offset, the two numbers
-// a crossed-axis gear pair (a hypoid, a worm, a crossed helical) is specified by.
+// Two shafts that do not meet: the gear's axis drawn in the front plane, the pinion's in a second
+// plane standing on a ray the solve turns, and the two related in space — a shaft angle and an
+// offset, the two numbers a crossed-axis gear pair (a hypoid, a worm, a crossed helical) is
+// specified by.
 //
-// The side view's fold is not stated.  `fold: beta` reads `param beta: Angle`, an input nothing
-// binds, so the solve answers for it; its `hint` is only where it starts.  The pinion's axis is drawn level in its view, from its datum and 60 long, which leaves
-// it one freedom there: its height.  The two statements across the views settle the two unknowns —
-// `angle` between lines of different views is the unsigned angle between their directions in
-// space, and `distance` their common perpendicular.  29 unknowns, 29 equations, DOF 0.
+// The side plane is the page's y and a ray `t` held square to it, so it can turn only about y;
+// where `t` points is not stated, so the solve answers for it, and its `hint` is only where it
+// starts.  The pinion's axis is drawn level in its plane, from its origin and 60 long, which leaves
+// it one freedom there: its height.  The two statements across the planes settle the two unknowns
+// — `angle` between lines of different planes is the unsigned angle between their directions in
+// space, and `distance` their common perpendicular.  DOF 0.
 //
-// Open the glass box (⌘B): the front view stands upright with the gear's shaft in it, the side view
-// has folded flat under it — at a shaft angle of 90° the fold comes out at 0°, the top view — and
-// the pinion's shaft lies in it, `offset` behind the gear's.  Set `shaft_angle` to 60deg and the
-// side view tilts to 30°; change `offset` and the pinion's shaft moves along the common
-// perpendicular.  Delete the `distance` line and the report says DOF 1: the pinion may slide.
-// The datums' places on the sheet are held without a `ground`, since where a solved view's picture
-// sits is presentation, not geometry.
+// Open the glass box (⌘B): the front plane stands upright with the gear's shaft in it, and at a
+// shaft angle of 90° the side plane comes out level — the top plane — with the pinion's shaft
+// lying in it, `offset` behind the gear's.  Set `shaft_angle` to 60deg and the side plane tilts to
+// 30°; change `offset` and the pinion's shaft moves along the common perpendicular.  Delete the
+// `distance` line and the report says DOF 1: the pinion may slide.
 
 unit mm
+use std
 shaft_angle := 90deg
 offset := 17.5mm
 
-o := point hint(x: 0, y: 0)
-t := point hint(x: 40, y: 0)
-front := plane(origin: o, toward: t)
-gax := line in front
-fix(x == 0, y == 0) gax.p1
-fix(x == 0, y == 50) gax.p2
+in std.front {
+  gax := line
+  fix(x == 0, y == 0) gax.p1
+  fix(x == 0, y == 50) gax.p2
+}
 
-o2 := point hint(x: 120, y: 0)
-t2 := point hint(x: 160, y: 0)
-param beta: Angle hint(30deg)
-side := plane(origin: o2, toward: t2, from: front, fold: beta)
-pax := line(hint(x: 120, y: 10), hint(x: 180, y: 12)) in side
-pax.p1 distance(0, along: u) side
-pax.p2 distance(60, along: u) side
-pax.p1 horizontal pax.p2
+t := ray hint(x: 0.87, y: 0, z: 0.5)
+t perpendicular std.y
+side := plane(u: t, v: std.y)
+std.origin coincident side.origin
+in side {
+  pax := line(hint(x: 0, y: 10), hint(x: 60, y: 12))
+  pax.p1 distance(0, along: u) side
+  pax.p2 distance(60, along: u) side
+  pax.p1 horizontal pax.p2
+}
 
 gax angle(shaft_angle) pax      // the shaft angle, in space
 gax distance(offset) pax        // the offset: their common perpendicular, in space

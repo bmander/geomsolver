@@ -8,8 +8,8 @@ use components.dims
 use components.parts
 
 component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
-  lever_axes := plane(origin: c, toward: tip)
-  hole_axes := plane(origin: c, toward: cx)
+  lever_axes := std.Turned(c, tip) in front
+  hole_axes := std.Turned(c, cx) in front
   dhole := dims.wch   // the cross-hole matches the manifold passage
   torgb := 2 * dims.rbar - 2 * (1 - dims.seal.squeeze) * dims.tor
   torw := dims.seal.width_factor * dims.tor
@@ -32,10 +32,10 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
     e1 := point hint(x: c.x - dhole / 2 * cos(phi) - hd * sin(phi), y: c.y + dhole / 2 * sin(phi) - hd * cos(phi))
     e2 := point hint(x: c.x + dhole / 2 * cos(phi) + hd * sin(phi), y: c.y - dhole / 2 * sin(phi) + hd * cos(phi))
     e3 := point hint(x: c.x + dhole / 2 * cos(phi) - hd * sin(phi), y: c.y - dhole / 2 * sin(phi) - hd * cos(phi))
-    e0 on barrel
-    e1 on barrel
-    e2 on barrel
-    e3 on barrel
+    e0 coincident barrel
+    e1 coincident barrel
+    e2 coincident barrel
+    e3 coincident barrel
     e0 distance(dhole / 2, side: left) lever
     e1 distance(dhole / 2, side: left) lever
     e2 distance(dhole / 2, side: right) lever
@@ -58,14 +58,10 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
     c distance(dims.rbar) cx
     // the lever, `levw` wide — the same number as its thickness — so `lever` stays the
     // centreline the angle is measured on and these two flanks are what the material is
-    lv0 := point hint(x: lever_axes.origin.x + (0mm) * lever_axes.c - (dims.levw / 2) * lever_axes.s,
-                      y: lever_axes.origin.y + (0mm) * lever_axes.s + (dims.levw / 2) * lever_axes.c)
-    lv1 := point hint(x: lever_axes.origin.x + (dims.lev) * lever_axes.c - (dims.levw / 2) * lever_axes.s,
-                      y: lever_axes.origin.y + (dims.lev) * lever_axes.s + (dims.levw / 2) * lever_axes.c)
-    lv2 := point hint(x: lever_axes.origin.x + (dims.lev) * lever_axes.c - (-dims.levw / 2) * lever_axes.s,
-                      y: lever_axes.origin.y + (dims.lev) * lever_axes.s + (-dims.levw / 2) * lever_axes.c)
-    lv3 := point hint(x: lever_axes.origin.x + (0mm) * lever_axes.c - (-dims.levw / 2) * lever_axes.s,
-                      y: lever_axes.origin.y + (0mm) * lever_axes.s + (-dims.levw / 2) * lever_axes.c)
+    lv0 := point hint(at: lever_axes.axes, x: 0mm, y: dims.levw / 2)
+    lv1 := point hint(at: lever_axes.axes, x: dims.lev, y: dims.levw / 2)
+    lv2 := point hint(at: lever_axes.axes, x: dims.lev, y: -dims.levw / 2)
+    lv3 := point hint(at: lever_axes.axes, x: 0mm, y: -dims.levw / 2)
     lv_a := line(lv0, lv1)
     lv_c := line(lv2, lv3)
     lever_start := line(lv0, lv3)
@@ -77,14 +73,10 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
     lever_start perpendicular lever
     distance(dims.levw) lever_start
     // the hole: half of its section, on one side of the axis it is turned about
-    x0 := point hint(x: hole_axes.origin.x + (-dims.rbar) * hole_axes.c - (0mm) * hole_axes.s,
-                      y: hole_axes.origin.y + (-dims.rbar) * hole_axes.s + (0mm) * hole_axes.c)
-    x1 := point hint(x: hole_axes.origin.x + (-dims.rbar) * hole_axes.c - (dhole / 2) * hole_axes.s,
-                      y: hole_axes.origin.y + (-dims.rbar) * hole_axes.s + (dhole / 2) * hole_axes.c)
-    x2 := point hint(x: hole_axes.origin.x + (dims.rbar) * hole_axes.c - (dhole / 2) * hole_axes.s,
-                      y: hole_axes.origin.y + (dims.rbar) * hole_axes.s + (dhole / 2) * hole_axes.c)
-    x3 := point hint(x: hole_axes.origin.x + (dims.rbar) * hole_axes.c - (0mm) * hole_axes.s,
-                      y: hole_axes.origin.y + (dims.rbar) * hole_axes.s + (0mm) * hole_axes.c)
+    x0 := point hint(at: hole_axes.axes, x: -dims.rbar, y: 0mm)
+    x1 := point hint(at: hole_axes.axes, x: -dims.rbar, y: dhole / 2)
+    x2 := point hint(at: hole_axes.axes, x: dims.rbar, y: dhole / 2)
+    x3 := point hint(at: hole_axes.axes, x: dims.rbar, y: 0mm)
   }
 
   // The half-section's ends are square to its axis, spanning the barrel diameter.
@@ -102,21 +94,24 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
   // Both placements put c on the front view's vertical datum. The longitudinal
   // plane contains that datum and the barrel axis; projection carries c's height.
   in front {
-    datum_up := point hint(x: front.origin.x, y: front.origin.y + 1mm)
-    datum := line(front.origin, datum_up)
-    front_u := line(front.origin, front.toward)
-    datum perpendicular front_u
+    datum_up := point hint(x: 0mm, y: 1mm)
+    datum := vertical line(front.origin, datum_up)
     front.origin distance(1mm) datum_up
-    claim c on datum
+    claim c coincident datum
   }
-  // Share the front view's upright page frame: radius runs right, axial z down.
-  longitudinal := plane(origin: front.origin, toward: front.toward, from: front, fold: -90deg)
-  fold := line(front.origin, front.toward)
+  // Square to the front along its vertical datum, through its origin: radius runs right, down
+  // the front's up, and axial out of the front, into its depth.
+  private down := ray hint(x: 0, y: 0, z: -1)
+  down parallel front.v
+  private out := ray hint(x: 0, y: 1, z: 0)
+  out perpendicular front
+  longitudinal := plane(u: down, v: out)
+  front.origin coincident longitudinal.origin
   zback := -(dims.bossz / 2 + dims.tback)
   zkeep := -(dims.bossz / 2 + dims.tretain)
   in longitudinal {
-    section_center := point hint(x: front.origin.x - (c.y - front.origin.y), y: front.origin.y)
-    section_center on fold
+    section_center := point hint(x: -c.y, y: 0mm)
+    section_center distance(0mm, along: v) longitudinal
     section_center project c
     back_axis := components.parts.At(section_center, dx: 0mm, dy: -zback)
     back := components.parts.At(section_center, dx: dims.rbar, dy: -zback)
@@ -156,6 +151,9 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
 // ../throttle.svd arranges three projections of this preview.
 preview {
   unit mm
-  ref := line(std.origin, std.up.toward) in std.front
+  in std.front {
+    ref := line(std.origin, hint(x: 0, y: 1))
+    fix(x == 0, y == 1) ref.p2
+  }
   thr := Throttle(std.front, std.origin, ref, phi: 0deg, dims: components.dims.vtwin_dims)
 }

@@ -30,6 +30,17 @@ fn scatter(i: usize) -> (f64, f64) {
     (r * th.dcos(), r * th.dsin())
 }
 
+/// Where an unseeded ray points: the `i`th of a spiral over the sphere, so two rays a document
+/// left unseeded neither coincide nor start opposed — either is a stationary point of an angle
+/// between them.  The same irrational steps as `scatter`, one in bearing and one in height.
+fn scatter_direction(i: usize) -> [f64; 3] {
+    const STEP: f64 = 2.399963;
+    let z = ((i as f64 * 0.618034 + 0.31) % 1.0) * 1.6 - 0.8;
+    let th = i as f64 * STEP + 0.4;
+    let r = (1.0 - z * z).sqrt();
+    [r * th.dcos(), r * th.dsin(), z]
+}
+
 /// Child display names under `base`, such as `l.p1` and `a.center`.
 /// Anonymous declarations use their generated display name as the base.
 pub(crate) fn child_names(kind: EntKind, base: &str) -> Vec<String> {
@@ -54,7 +65,6 @@ pub(super) fn build(
     res: &Resolver,
     d: &Decl,
     st: &Stmt,
-    bases: &BTreeMap<String, crate::plane::Basis>,
     diags: &mut Vec<Diag>,
     anon: &mut Vec<(String, EntRef)>,
     deferred: &mut Vec<Deferred>,
@@ -69,6 +79,10 @@ pub(super) fn build(
     // and a cone's and a cylinder's is a line, which no walk over points can mint
     if matches!(d.kind, EntKind::Cone | EntKind::Cylinder) {
         return build_axial(sk, res, d, st, diags);
+    }
+    // and a plane's are two rays, and its origin is its own
+    if d.kind == EntKind::Plane {
+        return build_plane(sk, res, d, st, diags, anon, deferred);
     }
     // a seed named by a place (`hint(at: k, bearing: b)`) is a point's; every other kind has
     // a scalar of its own the clause seeds by name
@@ -248,7 +262,14 @@ pub(super) fn build(
             let (x, y) = scatter(sk.points.len());
             sk.point(x, y, false, &show)
         }
-        EntKind::Point => sk.point(seed(0), seed(1), false, &show),
+        EntKind::Point => {
+            let p = sk.point(seed(0), seed(1), false, &show);
+            if wrote(2) {
+                let span = d.seed_spans.get(2).copied().unwrap_or(st.span);
+                deferred.push(Deferred::Height { point: p, z: seed(2), span, stmt: st.id });
+            }
+            p
+        }
         EntKind::Line => sk.line(kids[0], kids[1]),
         EntKind::Circle => {
             let r = if wrote(0) { seed(0) } else { UNSEEDED_RADIUS };
@@ -301,37 +322,25 @@ pub(super) fn build(
                 }
             }
         }
-        EntKind::Plane => {
-            // `plane` adds the two intrinsics here and nowhere else, and computes a rotor from
-            // the chord that a declared seed then replaces — except (0, 0), which is no rotor
-            // at all and is what an unwritten seed reads as — over a basis the attitude pass
-            // resolved before this walk; a plane whose basis was refused has no entry and is
-            // not built
-            let basis = *bases.get(&d.name.key().text)?;
-            let pi = sk.plane(kids[0], kids[1], basis, &show);
-            // **a plane written `from: P` with neither clause is one a mate places** (§6.10):
-            // it says which plane it is parallel to and leaves where it stands to one `against`.
-            // Recorded here, where the attitude as *written* is still in hand — after this the
-            // basis is a number and says nothing about how it was arrived at.
-            if matches!(&d.attitude, crate::syntax::Attitude::Offset { offset: None, .. })
-                && matches!(d.plane.position, crate::syntax::Position::Stated)
-            {
-                sk.placed_planes.insert(pi as u32);
+        // a direction, seeded where the source wrote one, and a place no relation reads yet
+        EntKind::Ray => {
+            let dir = if (0..3).any(wrote) {
+                [seed(0), seed(1), seed(2)]
+            } else {
+                scatter_direction(sk.rays.len())
+            };
+            let ri = sk.ray(dir, &show);
+            for k in 0..3 {
+                if wrote(3 + k) {
+                    let p = sk.rays[ri].a[k] as usize;
+                    sk.params[p].value = seed(3 + k);
+                }
             }
-            if let Some(n) = d.name.shown() {
-                sk.plane_names.insert(pi as u32, n.text.clone());
-            }
-            let (c, s) = (seed(0), seed(1));
-            if c != 0.0 || s != 0.0 {
-                let f = &sk.planes[pi].frame;
-                let (cp, sp) = (f.c as usize, f.s as usize);
-                sk.params[cp].value = c;
-                sk.params[sp].value = s;
-            }
-            pi
+            ri
         }
         EntKind::Curve => unreachable!("a curve is built before this walk"),
         EntKind::Cone | EntKind::Cylinder => unreachable!("built by `build_axial`"),
+        EntKind::Plane => unreachable!("built by `build_plane`"),
     };
     let e = EntRef::new(d.kind, idx);
     set_class(sk, e, d.class.clone());
@@ -371,6 +380,154 @@ pub(super) fn build(
 /// axis is never minted: a line nothing names is a line in no view, and a surface about it would
 /// be nowhere in space.  A half-angle is written in degrees and held in radians, the way every
 /// angle the kernels read is.
+/// A plane: two rays — or drawn lines, each given a hidden ray parallel to it — and an origin of
+/// its own, a point drawn in it at `(0, 0)` reached as `P.origin`; where it stands is its `x`,
+/// `y`, `z`, seeded by `hint(x:, y:, z:)`.
+fn build_plane(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    st: &Stmt,
+    diags: &mut Vec<Diag>,
+    anon: &mut Vec<(String, EntRef)>,
+    deferred: &mut Vec<Deferred>,
+) -> Option<EntRef> {
+    let fail = |diags: &mut Vec<Diag>, span: Span, message: String| {
+        diags.push(Diag { code: Code::E103, span, stmt: Some(st.id), message });
+    };
+    let show = shown(sk, d);
+    // the slots in field order: `u`, `v`, then `origin`, which is never written
+    if d.children.get(2).is_some_and(|g| !g.is_empty()) {
+        fail(diags, st.span, "a plane's origin is its own, a point drawn in it at (0, 0): reach it \
+            as `P.origin`, and place it with `P.origin coincident p`".to_string());
+        return None;
+    }
+    let mut rays = [0usize; 2];
+    for (k, key) in ["u", "v"].iter().enumerate() {
+        let Some([Kid::Ref(r)]) = d.children.get(k).map(|g| g.as_slice()) else {
+            fail(diags, st.span, format!(
+                "a plane is two rays, right along `u` and out along `u × v`: \
+                 `plane(u: r1, v: r2)`, and `{key}:` is missing"
+            ));
+            return None;
+        };
+        let Some(e) = res.lookup(r) else {
+            diags.push(Diag {
+                code: Code::E101,
+                span: r.span,
+                stmt: Some(st.id),
+                message: format!("no such entity: `{}`", r.root.text),
+            });
+            return None;
+        };
+        let e = match follow_building(sk, res, e, r) {
+            Ok(e) => e,
+            Err(msg) => {
+                diags.push(Diag { code: Code::E040, span: r.span, stmt: Some(st.id), message: msg });
+                return None;
+            }
+        };
+        rays[k] = match e.kind {
+            EntKind::Ray => e.i(),
+            // a drawn line is a ray from its start toward its end: a hidden one, held parallel
+            // to it once its points stand somewhere
+            EntKind::Line => {
+                let ray = sk.ray([1.0, 0.0, 0.0], &format!("{show}.{key}"));
+                deferred.push(Deferred::Along { ray, line: e.i() });
+                ray
+            }
+            other => {
+                fail(diags, r.span, format!(
+                    "`{}` is a {}, and a plane's `{key}` is a ray or a line",
+                    r.root.text,
+                    other.as_str()
+                ));
+                return None;
+            }
+        };
+    }
+    let wrote = |i: usize| d.seed_explicit.get(i).copied().unwrap_or(false);
+    let o = [0, 1, 2].map(|i| if wrote(i) { d.seed.get(i).copied().unwrap_or(0.0) } else { 0.0 });
+    // the origin was minted with the points (`Resolver::origins`)
+    let Some(&origin) = res.origins.get(&d.name.key().text) else { return None };
+    let pi = sk.plane_over(rays[0], rays[1], o, origin, &show);
+    if let Some(n) = d.name.shown() {
+        sk.plane_names.insert(pi as u32, n.text.clone());
+    }
+    anon.push((format!("{}.origin", d.name.key().text), EntRef::point(origin)));
+    let e = EntRef::plane(pi);
+    set_class(sk, e, d.class.clone());
+    Some(e)
+}
+
+/// **Points in space** (`docs/planes-plan.md`): every point no `in` reached — no membership once
+/// every membership is in — stands in space, and is given its third coordinate here, at its
+/// `hint(z: …)` or at 0.  A `z` seed on a point drawn in a plane is refused: there it has two
+/// coordinates, its plane's.
+pub(super) fn places(sk: &mut Sketch, deferred: &[Deferred], diags: &mut Vec<Diag>) {
+    let mut height: BTreeMap<usize, f64> = BTreeMap::new();
+    for d in deferred {
+        let &Deferred::Height { point, z, span, stmt } = d else { continue };
+        if sk.plane_of(point).is_some() {
+            diags.push(Diag {
+                code: Code::E040,
+                span,
+                stmt: Some(stmt),
+                message: "a point drawn in a plane has that plane's two coordinates, and no `z`"
+                    .to_string(),
+            });
+        } else {
+            height.insert(point, z);
+        }
+    }
+    for p in 0..sk.points.len() {
+        if sk.points[p].plane.is_none() && sk.points[p].z.is_none() {
+            sk.give_place(p, height.get(&p).copied().unwrap_or(0.0));
+        }
+    }
+}
+
+/// A circle, an arc and a spline are drawn in a plane: one over a point standing in space has
+/// none to be drawn in, and is refused at its declaration (E060).  Asked once every membership
+/// is in, so a point an `in` reaches later is in its plane by then.
+pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut Vec<Diag>) {
+    let curves = (0..sk.circles.len()).map(EntRef::circle)
+        .chain((0..sk.arcs.len()).map(EntRef::arc))
+        .chain((0..sk.splines.len()).map(EntRef::spline));
+    for e in curves {
+        let Some(&p) = sk.children(e).iter().find(|k| sk.plane_of(k.i()).is_none()) else { continue };
+        let Some(site) = map.site_of(e) else { continue };
+        let who = |r: EntRef| map.name_of(r).cloned().unwrap_or_else(|| io::entity_name(r));
+        diags.push(Diag {
+            code: Code::E060,
+            span: site.span,
+            stmt: Some(site.stmt),
+            message: format!(
+                "{} is drawn in a plane, and `{}` stands in space: draw it `in` one",
+                match e.kind { EntKind::Arc => "an arc", EntKind::Circle => "a circle", _ => "a spline" },
+                who(p)
+            ),
+        });
+    }
+}
+
+/// The hidden rays planes were written over drawn lines with, each now seeded along its line as
+/// the line stands — its points have their places — and held parallel to it, intrinsically: the
+/// plane's own statement, never a relation of the document's.
+pub(super) fn rays_along(sk: &mut Sketch, deferred: &[Deferred]) {
+    for d in deferred {
+        let &Deferred::Along { ray, line } = d else { continue };
+        sk.turn_ray_along(ray, line);
+        let mut c = crate::constraints::Constraint::two_line(
+            crate::constraints::CKind::Parallel3,
+            EntRef::new(EntKind::Ray, ray),
+            EntRef::line(line),
+        );
+        c.intrinsic = true;
+        sk.add(c);
+    }
+}
+
 fn build_axial(
     sk: &mut Sketch,
     res: &Resolver,
@@ -450,6 +607,12 @@ fn build_axial(
 /// These initialize parameters without adding constraints.
 pub(super) enum Deferred {
     Text { param: u32, text: String, names: Vec<(String, String)>, span: Span, stmt: StmtId },
+    /// A plane written over a drawn line: the hidden ray its `u` or `v` is, held parallel to the
+    /// line once the line's points have their places (`rays_along`).
+    Along { ray: usize, line: usize },
+    /// A point's `hint(z: …)`: its height in space, once memberships say it is in space
+    /// (`places`), and refused where they say it is drawn in a plane.
+    Height { point: usize, z: f64, span: Span, stmt: StmtId },
     At { point: usize, at: AtRef, names: Vec<(String, String)>, span: Span, stmt: StmtId },
     /// An arc's radius the source left unwritten: its centre to its start, as `Sketch::arc`
     /// first computed it.
@@ -466,17 +629,6 @@ fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<(f64, crate::u
     let (e, fields) =
         res.dotted(&segs).ok_or_else(|| format!("no such entity: `{}`", segs[0]))?;
     let e = follow(sk, e, &fields)?;
-    // A datum's seed follows its defining points, including deferred hints already
-    // settled on them. Its stored rotor is refreshed after the deferred pass.
-    if e.kind == EntKind::Plane && matches!(scalar, "c" | "s" | "angle") {
-        let f = sk.frame_of(e);
-        let ((c, s), _) = sk.frame_chord(f.origin as usize, f.toward as usize);
-        return Ok(match scalar {
-            "c" => (c, crate::units::Dim::SCALAR),
-            "s" => (s, crate::units::Dim::SCALAR),
-            _ => (s.datan2(c).to_degrees(), crate::units::Dim::ANGLE),
-        });
-    }
     let names = e
         .kind
         .scalar_names(path)
@@ -541,8 +693,8 @@ pub(super) fn settle_deferred(
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
             Deferred::At { point, at, names, span, stmt } => {
-                let r = place_of(sk, res, *point, at, names).map(|(x, y)| {
-                    for (p, v) in sk.point_params(*point).into_iter().zip([x, y]) {
+                let r = place_of(sk, res, *point, at, names).map(|place| {
+                    for (p, v) in sk.point_all_params(*point).into_iter().zip(place) {
                         let p = &mut sk.params[p as usize];
                         if !p.fixed {
                             p.value = v;
@@ -551,6 +703,7 @@ pub(super) fn settle_deferred(
                 });
                 (*span, *stmt, r)
             }
+            Deferred::Along { .. } | Deferred::Height { .. } => continue,
             Deferred::Radius { arc } => {
                 let a = &sk.arcs[*arc];
                 let ((cx, cy), (sx, sy)) =
@@ -572,15 +725,60 @@ pub(super) fn settle_deferred(
 /// Where `hint(at: …)` puts `point` on the sheet: the seed of the point it names, the edge of
 /// the circle it names at the bearing given, or a step from the point it names — `by:` (1 if
 /// unsaid) of the way toward another or of a line's run — turned `turn:` about it.  Each place
-/// is read in `point`'s view (`seed_in`); `at_seed` is the traced counterpart.
+/// is read in `point`'s view (`seed_in`); `at_seed` is the traced counterpart.  The numbers
+/// are `point`'s own: two in its plane, three for a point in space.
 fn place_of(
     sk: &Sketch,
     res: &Resolver,
     point: usize,
     a: &AtRef,
     names: &[(String, String)],
+) -> Result<Vec<f64>, String> {
+    if sk.points[point].z.is_none() {
+        return place_in(sk, res, sk.plane_of(point), a, names).map(|(x, y)| vec![x, y]);
+    }
+    // a point in space: the place is read in the plane it is drawn in and lifted from there,
+    // or, where it stands in space itself, read where it stands
+    let e = place(sk, res, &a.what)?;
+    let home = match e.kind {
+        EntKind::Plane => Some(e.i()),
+        EntKind::Circle => sk.plane_of(sk.circles[e.i()].center as usize),
+        _ => sk.plane_of(e.i()),
+    };
+    if home.is_some() || e.kind != EntKind::Point {
+        return place_in(sk, res, home, a, names).map(|q| sk.world_in(home, q).to_vec());
+    }
+    if a.turn.is_some() || a.bearing.is_some() || a.x.is_some() || a.y.is_some() {
+        return Err("a turn or a bearing is taken in a plane, and this place stands in space"
+            .to_string());
+    }
+    let at = sk.world_point(e.i());
+    let Some(t) = &a.toward else {
+        if a.along.is_some() {
+            return Err("a step along a line is taken in a plane; step `toward:` a point".into());
+        }
+        return Ok(at.to_vec());
+    };
+    let b = place(sk, res, t)?;
+    if b.kind != EntKind::Point {
+        return Err(format!("a step is taken toward a point, not a {}", b.kind.as_str()));
+    }
+    let f = match &a.by {
+        Some((text, _)) => seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}"))?,
+        None => 1.0,
+    };
+    let to = sk.world_point(b.i());
+    Ok((0..3).map(|k| at[k] + f * (to[k] - at[k])).collect())
+}
+
+/// `place_of` read in `view`'s coordinates.
+fn place_in(
+    sk: &Sketch,
+    res: &Resolver,
+    view: Option<usize>,
+    a: &AtRef,
+    names: &[(String, String)],
 ) -> Result<(f64, f64), String> {
-    let view = sk.plane_of(point);
     let e = place(sk, res, &a.what)?;
     // a place's number: what the text comes to, or what an unwritten key means
     let number = |t: &Option<(String, Span)>, unsaid: f64| match t {
@@ -605,6 +803,18 @@ fn place_of(
         }
         (None, None) => None,
     };
+    // a place in a plane's own coordinates, read in space and seen where the point is
+    if a.x.is_some() || a.y.is_some() {
+        if e.kind != EntKind::Plane {
+            return Err(format!(
+                "`x:` and `y:` are a place in a plane, and `at:` here names a {}",
+                e.kind.as_str()
+            ));
+        }
+        let (u, v) = (number(&a.x, 0.0)?, number(&a.y, 0.0)?);
+        let at = sk.basis(e.i()).lift(u, v);
+        return Ok(sk.on_view_sheet(at, view));
+    }
     match (e.kind, &a.bearing, step) {
         (EntKind::Point, None, None) => Ok(seed_in(sk, e.i(), view)),
         (EntKind::Point, None, Some((from, to))) => {
@@ -653,7 +863,7 @@ fn place(sk: &Sketch, res: &Resolver, r: &crate::syntax::Ref) -> Result<EntRef, 
 
 /// Where point `p`'s seed stands in `view`'s page coordinates (`None`: the page): its own seed
 /// where it is drawn in that view, and otherwise where it stands in space projected into the
-/// view — a pitch-plane point read in a view folded from it is its image there, which is what
+/// view — a point drawn in one plane, read in another, is its image there, which is what
 /// `project` says of the pair.  Before memberships are read every point is on the page, so the
 /// first settle reads every seed as written.
 fn seed_in(sk: &Sketch, p: usize, view: Option<usize>) -> (f64, f64) {
@@ -680,7 +890,10 @@ pub(super) fn crosses_views(sk: &Sketch, res: &Resolver, deferred: &[Deferred]) 
             }
             _ => vec![],
         };
-        std::iter::once(&at.what).chain(at.toward.iter())
+        // a place in another plane's coordinates is read through that plane's pose
+        let in_plane = matches!(place(sk, res, &at.what), Ok(e) if e.kind == EntKind::Plane
+            && Some(e.i()) != view);
+        in_plane || std::iter::once(&at.what).chain(at.toward.iter())
             .filter_map(|r| place(sk, res, r).ok().and_then(point_of))
             .chain(at.along.iter().flat_map(line_ends))
             .any(|p| sk.plane_of(p) != view)
@@ -696,9 +909,10 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Sphere => sk.spheres[e.i()].class = c,
         EntKind::Cone => sk.cones[e.i()].class = c,
         EntKind::Cylinder => sk.cylinders[e.i()].class = c,
+        EntKind::Ray => sk.rays[e.i()].class = c,
         EntKind::Arc => sk.arcs[e.i()].class = c,
         EntKind::Spline => sk.splines[e.i()].class = c,
-        EntKind::Plane => sk.planes[e.i()].frame.class = c,
+        EntKind::Plane => sk.planes[e.i()].class = c,
         EntKind::Face => sk.faces[e.i()].class = c,
         EntKind::Solid => sk.solids[e.i()].class = c,
         EntKind::Surface => sk.surfaces[e.i()].class = c,

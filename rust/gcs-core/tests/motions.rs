@@ -3,7 +3,10 @@ use gcs_core::{io,model::{EntKind,MotionDef},motion,program,solve,syntax};
 mod bounds;
 mod contact;
 
-const AXES: &str = "unit mm
+const AXES: &str = "\
+unit mm
+use std
+in std.front {
 a := point
 b := point
 o := point
@@ -14,10 +17,11 @@ fix(x == 0, y == 0) o
 fix(x == 1, y == 0) x
 axis := line(a,b)
 other := line(o,x)
+}
 ";
 
 fn build(src: &str) -> program::Elaborated {
-    let (p,errors) = syntax::parse(src);
+    let (p,errors) = crate::common::parse(src);
     assert!(errors.is_empty(),"{errors:?}");
     program::elaborate(&p)
 }
@@ -136,7 +140,7 @@ fn motions_reject_wrong_units_missing_references_and_cycles() {
     }
     for args in ["", "about: axis,relative_to: a", "about: axis,about: axis",
         "a,relative_to: a,ratio: 1", "bogus: axis"] {
-        let (_,errors) = syntax::parse(&format!("bad := motion({args})\n"));
+        let (_,errors) = crate::common::parse(&format!("bad := motion({args})\n"));
         assert!(!errors.is_empty(),"accepted {args}");
     }
 }
@@ -144,18 +148,14 @@ fn motions_reject_wrong_units_missing_references_and_cycles() {
 #[test]
 fn motion_axes_use_world_geometry_and_follow_solved_point_edits() {
     let mut e = solved("unit mm
-o := point
-q := point
-fix(x == 7, y == -3) o
-fix(x == 7, y == -2) q
-side := plane(origin: o,toward: q,u: (1,0,0),v: (0,0,1))
-in side {
+use std
+in std.front {
   a := point
   b := point
-  a distance(2mm,along: u) side
-  a distance(0mm,along: v) side
-  b distance(2mm,along: u) side
-  b distance(1mm,along: v) side
+  a distance(2mm,along: u) std.front
+  a distance(0mm,along: v) std.front
+  b distance(2mm,along: u) std.front
+  b distance(1mm,along: v) std.front
   axis := line(a,b)
 }
 turn := motion(about: axis,phase: 90deg)
@@ -164,11 +164,12 @@ turn := motion(about: axis,phase: 90deg)
     let m = motion::evaluate(&e.sketch,0,0.).unwrap();
     near(m.point([3.,0.,0.]),[2.,1.,0.],1e-10);
     near(m.point([2.,0.,5.]),[2.,0.,5.],1e-10);
-    // Editing the solved page points changes the next evaluation, without retaining a pose.
+    // Editing the solved points changes the next evaluation, without retaining a pose: one
+    // along the front's x is one along the world's.
     for name in ["a","b"] {
         let i = e.map.ent_named(name).unwrap().i();
         let params = e.sketch.point_params(i);
-        e.sketch.params[params[1] as usize].value += 1.;
+        e.sketch.params[params[0] as usize].value += 1.;
     }
     near(snapshot.at(0.).unwrap().point([3.,0.,0.]),[2.,1.,0.],1e-10);
     let after = motion::evaluate(&e.sketch,0,0.).unwrap();
@@ -323,17 +324,26 @@ fn a_turn_about_a_point_is_a_rotation_square_to_its_view() {
 #[test]
 fn two_turns_about_parallel_axes_are_the_wankel_rotors_planetary_motion() {
     let (r,e) = (105.,15.);
-    let src = format!("unit mm\nuse std\n\
-        shaft := line(std.origin, std.up.toward)\n\
-        c0 := point\nc1 := point\n\
-        c0 distance({e}mm, along: u) std.front\nc0 distance(0mm, along: v) std.front\n\
-        c1 distance({e}mm, along: u) std.front\nc1 distance(1mm, along: v) std.front\n\
-        rotor_axis := line(c0, c1)\n\
-        counter := motion(about: shaft, ratio: -1)\n\
-        spin := motion(about: rotor_axis, ratio: -2/3)\n\
-        rotor_turn := motion(spin, relative_to: counter)\n\
-        housing_turn := motion(counter, relative_to: spin)\n");
-    let (mut p,errors) = syntax::parse(&src);
+    let src = format!("\
+unit mm
+use std
+in std.front {{
+shaft := line(std.origin, hint(x: 0, y: 1))
+fix(x == 0, y == 1) shaft.p2
+        c0 := point
+c1 := point
+c0 distance({e}mm, along: u) std.front
+c0 distance(0mm, along: v) std.front
+c1 distance({e}mm, along: u) std.front
+c1 distance(1mm, along: v) std.front
+rotor_axis := line(c0, c1)
+}}
+counter := motion(about: shaft, ratio: -1)
+spin := motion(about: rotor_axis, ratio: -2/3)
+rotor_turn := motion(spin, relative_to: counter)
+housing_turn := motion(counter, relative_to: spin)
+");
+    let (mut p,errors) = crate::common::parse(&src);
     assert!(errors.is_empty(),"{errors:?}");
     assert!(gcs_core::modules::link(&mut p,&mut gcs_core::library::resolve).is_empty());
     let mut el = program::elaborate(&p);

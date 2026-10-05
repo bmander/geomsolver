@@ -3,7 +3,7 @@
 //! read under it, greedily, as every other reference is.
 
 use gcs_core::program::elaborate;
-use gcs_core::syntax::parse;
+use crate::common::parse;
 
 #[test]
 fn an_instance_inside_a_copy_is_indexed_like_a_declaration() {
@@ -22,7 +22,7 @@ fix(x == 0, y == 0) p[0]
 p[1] distance(5) r[2].b
 r[0].b distance(20, along: y) r[1].b
 ";
-    let (prog, errs) = parse(src);
+    let (prog, errs) = parse(&crate::common::front(src));
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());

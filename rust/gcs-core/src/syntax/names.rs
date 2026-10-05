@@ -33,6 +33,8 @@ pub fn kind_initial(k: EntKind) -> char {
         // `c` is the circle's and `k` the curve's: a coNe, and a cYlinder
         EntKind::Cone => 'n',
         EntKind::Cylinder => 'y',
+        // `r` is free: a ray's own letter
+        EntKind::Ray => 'r',
         EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline => {
             k.as_str().chars().next().expect("every kind name has a letter")
         }

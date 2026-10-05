@@ -7,6 +7,7 @@ use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::syntax::{Arg, Ref, RelationForm, Span, StmtId};
 use std::collections::BTreeSet;
+use crate::fmath::Det;
 use crate::{decompose, expr, io};
 
 /// Resolve an operator to its constraint kind and registry-ordered arguments.
@@ -54,6 +55,17 @@ pub(crate) fn settle(
             let (Some(a), Some(b)) = (a, b) else {
                 return Err((w.word.span, format!("`{word}` needs to know what its operands are")));
             };
+            // **a symmetric word reads either way round**: `P coincident p` is `p coincident P`,
+            // and `t perpendicular P` and `P perpendicular t` are one statement — the operands are
+            // put in the order the kind names them
+            let symmetric = matches!(word, "coincident" | "parallel" | "perpendicular");
+            if symmetric && crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).is_none() {
+                if let Some(k) = crate::constraints::infix_op(word, b, a, &|n| w.sel(n)) {
+                    let mut swapped = w.clone();
+                    swapped.ops.swap(0, 1);
+                    return Ok((k, swapped.assemble(k)?));
+                }
+            }
             crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).ok_or_else(|| {
                 let mut m = format!(
                     "`{word}` does not relate a {} to a {}",
@@ -69,22 +81,22 @@ pub(crate) fn settle(
                     {
                         m.push_str(". A circle and a sphere may touch at a point or all the \
                                     way round, so the word does not say which: a circle lying \
-                                    on the sphere is `c on s`");
+                                    on the sphere is `c coincident s`");
                     }
                 }
                 // a cone or a cylinder takes the words it has kernels for, and says so
                 let axial = |k: EntKind| matches!(k, EntKind::Cone | EntKind::Cylinder);
                 if axial(a) || axial(b) {
                     m.push_str(match word {
-                        "on" if a == EntKind::Line => ": a line on a cone or a cylinder (a \
+                        "coincident" if a == EntKind::Line => ": a line on a cone or a cylinder (a \
                             generator) is not a relation yet; say it of the line's points — its \
-                            start at the apex and its end `on` the cone, or both ends `on` the \
-                            cylinder and the line `parallel` to the axis",
-                        "on" => ": a point is `on` a cone or a cylinder",
+                            start at the apex and its end `coincident` the cone, or both ends \
+                            `coincident` the cylinder and the line `parallel` to the axis",
+                        "coincident" => ": a point is `coincident` a cone or a cylinder",
                         "tangent" => ": a line touches a cylinder (`c tangent l`, the cylinder \
                             first), and two cones touch at a point (`k1 tangent(M) k2`)",
-                        _ => ": a cone takes `on`, `angle` and `tangent`, and a cylinder `on`, \
-                            `radius` and `tangent`",
+                        _ => ": a cone takes `coincident`, `angle` and `tangent`, and a cylinder \
+                            `coincident`, `radius` and `tangent`",
                     });
                 }
                 (w.word.span, m)
@@ -109,7 +121,7 @@ pub(crate) fn settle(
         && !w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Ent(_)))
     {
         return Err((w.word.span, "two cones touch at a point, and the statement names it: \
-                                  `k1 tangent(M) k2`, with `M on k1` and `M on k2` beside it"
+                                  `k1 tangent(M) k2`, with `M coincident k1` and `M coincident k2` beside it"
             .to_string()));
     }
     Ok((kind, w.assemble(kind)?))
@@ -249,9 +261,9 @@ pub(super) fn constrain(
             }
         }
     }
-    // **across views, a word means the relation in space**: the operands' views, read by
-    // the role rule (`reading`), decide it, and the statement is the kind in space from here on —
-    // or refused, where the word has no meaning there or a selector says nothing there
+    // **across views, a word means the relation in space**: the planes its operands' points are
+    // drawn in (`reading`) decide it, and the statement is the kind in space from here on — or
+    // refused, where the word has no meaning there or a selector says nothing there
     // a curve standing for a surface (a prism's side generating, `CurveE::extrusion`) is met in
     // space, by the point's place in the curve's view, whatever view the point is drawn in
     let ckind = match (ckind, args.get(1)) {
@@ -287,12 +299,7 @@ pub(super) fn constrain(
     // written.
     if ckind.magnitude() {
         if let Some(i) = spec.iter().position(|(_, k)| *k == SpecKind::Length) {
-            let v = match &args[i] {
-                CArg::Expr(e) => expr::parse_in(&e.text, sk.units).ok()
-                    .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
-                    .and_then(|a| a.number()).unwrap_or(args[i].num()),
-                a => a.num(),
-            };
+            let v = written_number(&args[i], sk).unwrap_or(args[i].num());
             if v < 0.0 {
                 // where the type has a side to name, the minus was *saying* which side, and the
                 // word is where that belongs now (issue #48, item 4) — so the message names it
@@ -322,6 +329,32 @@ pub(super) fn constrain(
                         "a {} is a magnitude and cannot be negative{fix}",
                         crate::syntax::snake(ckind.name())
                     ),
+                });
+                return None;
+            }
+        }
+    }
+    // **an angle in space at 0 or half a turn** is parallel said by a cosine, which does not move
+    // there: the row is a double root, and the regular statement is `parallel`, its sense the
+    // seed's.  Refused by value as a negative magnitude is — a stated number; one an unknown
+    // moves is read where it is, never here
+    if ckind == CKind::Angle3 {
+        if let Some(i) = spec.iter().position(|(_, k)| *k == SpecKind::Angle) {
+            let cos = match &args[i] {
+                // the text as written, in the document's degrees
+                CArg::Expr(_) => written_number(&args[i], sk).map(|deg| deg.to_radians().dcos()),
+                // a number already in the kernels' radians
+                a => Some(a.num().dcos()),
+            };
+            if cos.is_some_and(|c| c.abs() > 1.0 - 1e-12) {
+                diags.push(Diag {
+                    code: Code::E040,
+                    span: r.args.get(i).and_then(|a| a.as_ref()).and_then(arg_span).unwrap_or(st.span),
+                    stmt: Some(st.id),
+                    message: "an angle in space of 0 or 180 degrees says the two are parallel, and \
+                              is read by a cosine that does not move there: write `parallel`, \
+                              and the seed says which way"
+                        .to_string(),
                 });
                 return None;
             }
@@ -583,16 +616,13 @@ fn apply_gauge(
                 bad(Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text));
                 return;
             };
-            // a plane's attitude is the datum's intrinsics, held by its points
-            let scalars: Vec<&str> = match e.kind {
-                EntKind::Plane => Vec::new(),
-                k => k
-                    .fields()
-                    .iter()
-                    .filter(|(_, f)| *f == Field::Scalar)
-                    .map(|(n, _)| *n)
-                    .collect(),
-            };
+            // a plane holds where it stands; a ray its direction
+            let scalars: Vec<&str> = e.kind
+                .fields()
+                .iter()
+                .filter(|(_, f)| *f == Field::Scalar)
+                .map(|(n, _)| *n)
+                .collect();
             let own = sk.own_params(e);
             let spec = r.kind.spec();
             for (i, a) in r.args.iter().enumerate().skip(1) {
@@ -608,7 +638,8 @@ fn apply_gauge(
                         if scalars.is_empty() {
                             format!("{article} {kind} has no number of its own to fix")
                         } else {
-                            format!("{article} {kind} has {}, not `{field}`", scalars.join(" and "))
+                            format!("{article} {kind} has {}, not `{field}`",
+                                scalars[..own.len().min(scalars.len())].join(" and "))
                         },
                     );
                     continue;
@@ -670,4 +701,13 @@ impl Relation {
             class: &self.class,
         })
     }
+}
+
+/// What a dimension's text comes to as written, in the document's units (degrees for an angle):
+/// `None` for a number with no text, or a text that reads an unknown.
+fn written_number(a: &CArg, sk: &Sketch) -> Option<f64> {
+    let CArg::Expr(e) = a else { return None };
+    expr::parse_in(&e.text, sk.units).ok()
+        .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
+        .and_then(|a| a.number())
 }

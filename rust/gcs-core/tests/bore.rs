@@ -3,25 +3,21 @@
 //! stands alone in a face, and the housing is a disc less its prism.
 use gcs_core::{model::EntKind,program};
 
-/// The Wankel's planetary motion and its apex, drawn in the top view (the standard datums written
-/// out): the rotor turns about its centre `hub`, `e` from the shaft's `centre`, at −2/3 against an
+/// The Wankel's planetary motion and its apex, drawn in the top plane: the rotor turns about its
+/// centre `hub`, `e` from the shaft's `centre`, at −2/3 against an
 /// observer turning the other way about the shaft, and the apex is `R` beyond the rotor's centre.
 pub fn wankel(r: f64, e: f64, extra: &str) -> String {
-    format!("unit mm\n\
-        origin := point\nfix(x == 0, y == 0) origin\n\
-        rightward := point\nfix(x == 1, y == 0) rightward\n\
-        front := plane(origin: origin, toward: rightward)\n\
-        top := plane(origin: origin, toward: rightward, from: front, fold: 0deg)\n\
-        centre := point in top\n\
-        centre distance(0mm, along: u) top\ncentre distance(0mm, along: v) top\n\
-        hub := point in top\n\
-        hub distance({e}mm, along: u) top\nhub distance(0mm, along: v) top\n\
+    format!("unit mm\nuse std\n\
+        centre := point in std.top\n\
+        centre distance(0mm, along: u) std.top\ncentre distance(0mm, along: v) std.top\n\
+        hub := point in std.top\n\
+        hub distance({e}mm, along: u) std.top\nhub distance(0mm, along: v) std.top\n\
         counter := motion(about: centre, ratio: -1)\n\
         spin := motion(about: hub, ratio: -2/3)\n\
         rotor_turn := motion(spin, relative_to: counter)\n\
         housing_turn := motion(counter, relative_to: spin)\n\
-        apex := point in top\n\
-        apex distance({x}mm, along: u) top\napex distance(0mm, along: v) top\n\
+        apex := point in std.top\n\
+        apex distance({x}mm, along: u) std.top\napex distance(0mm, along: v) std.top\n\
         {extra}\n",x = r+e)
 }
 
@@ -50,7 +46,7 @@ fn the_apex_under_the_rotors_motion_is_the_epitrochoid() {
 /// theorem: the cross terms of e·e^{3it} + R·e^{it} integrate away), and the exact kernel reads it
 /// as the B-spline fitted within `FIT_MM`.
 pub const HOUSING: &str = "bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)
-    rim := circle(center: centre) in top hint(r: 170)
+    rim := circle(center: centre) in std.top hint(r: 170)
     radius(170mm) rim
     block := solid(face(rim), from: 0mm, to: 80mm)
     pocket := solid(face(bore), from: -1mm, to: 81mm)

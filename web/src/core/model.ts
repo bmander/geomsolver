@@ -355,34 +355,17 @@ export class Curve extends Styled {
   }
 }
 
-/** The datum half of a plane: an origin, a point it is pointed at, and a unit rotor slaved to
- *  the chord between them by two intrinsic constraints — a datum other statements measure
- *  from, adding no freedom beyond its two points.  The split mirrors the core's own
- *  (`Sketch::frame_of`, `Sketch::datum`), and is where the rotor's column layout is written. */
-export abstract class Datum extends Styled {
+/** A plane: two rays and a place it stands, its basis read off the rays — `u` along the first,
+ *  `v` what is left of the second, the viewer along `u × v` (`docs/planes-plan.md`).  Points
+ *  drawn *in* it (`Point.plane`) have its two coordinates, which is what a `project` between two
+ *  of them relates.  Its one point is its origin, drawn in it and held at `(0, 0)`. */
+export class Plane extends Styled {
+  readonly kind = 'plane' as const;
+
+  /** The point the plane stands at, held at its `(0, 0)`. */
   get origin(): Point {
     return this.children[0];
   }
-
-  get toward(): Point {
-    return this.children[1];
-  }
-
-  /** The rotor `(c, s)`, held to the unit circle by its intrinsic constraint. */
-  get rotor(): [Param, Param] {
-    const p = this.params;
-    return [p[4], p[5]];
-  }
-}
-
-/** The one datum kind: a view, carrying a constant attitude in space — an orthonormal basis
- *  `(u, v)`, with the viewer along `u × v` — over the datum half above.  The datum is where the
- *  view sits on the page and may be turned like any other, and a trace block reads its bearing
- *  as `f.angle`; the basis says which way the page is looking, and no solve moves it.  Points
- *  drawn *in* it (`Point.plane`) are images of space in that view, which is what a `project`
- *  between two of them relates.  A datum with no attitude written is a view of the page. */
-export class Plane extends Datum {
-  readonly kind = 'plane' as const;
 
   /** The attitude, as the core orthonormalised it on the way in. */
   get basis(): { u: [number, number, number]; v: [number, number, number] } {
@@ -543,15 +526,14 @@ export class Sketch {
     return this.circles[i];
   }
 
-  /** A plane at `origin` pointed at `toward`, looking along `u × v`.  The core orthonormalises
-   *  the basis and refuses one that spans no plane. */
-  plane(origin: Point, toward: Point, u: readonly [number, number, number],
-        v: readonly [number, number, number], name = ''): Plane {
+  /** A plane held at the world's origin, looking along `u × v`, over two rays a `fix` would
+   *  hold, and its origin.  The core orthonormalises the basis and refuses one that spans no
+   *  plane. */
+  plane(u: readonly [number, number, number], v: readonly [number, number, number], name = ''): Plane {
     const i = withStr(name, (p, n) =>
-      core().gcs_sketch_plane(this.handle, origin.index, toward.index,
-                              u[0], u[1], u[2], v[0], v[1], v[2], p, n));
+      core().gcs_sketch_plane(this.handle, u[0], u[1], u[2], v[0], v[1], v[2], p, n));
     if (i < 0) throw new Error(lastError() || 'u and v do not span a plane');
-    this.touch();     // the rotor's two intrinsic constraints came with it
+    this.touch();     // its rays' intrinsic constraints came with it
     return this.planes[i];
   }
 

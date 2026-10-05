@@ -11,8 +11,7 @@ pub(super) fn chain_face(c: &crate::syntax::NamedChain) -> Decl {
         seed: Vec::new(), seed_text: Vec::new(), seed_spans: Vec::new(),
         unseeded: false, seed_explicit: Vec::new(), closed: false, knots: None,
         curve: None, computed: None, class: Classes::default(), seed_at: None,
-        seed_names: Vec::new(), attitude: crate::syntax::Attitude::Page,
-        sweep: None, motion: None, angular_span: None, plane: Default::default(), membership: crate::syntax::Membership::default(),
+        seed_names: Vec::new(), sweep: None, motion: None, angular_span: None, membership: crate::syntax::Membership::default(),
     }
 }
 
@@ -161,7 +160,7 @@ fn build_loop(
                 }
                 if sk.contact_param(x.idx, e.idx).is_none() {
                     report(Code::E080, xr.span, format!("`{}` is not held on `{}`: a face runs along a curve \
-                        between points on it, so write `{} on {}`", xr.root.text, r.root.text,
+                        between points on it, so write `{} coincident {}`", xr.root.text, r.root.text,
                         xr.root.text, r.root.text));
                     return None;
                 }
@@ -394,13 +393,21 @@ fn build_loop(
                 continue;
             }
             let p = sk.plane_of(c.i()).map(|x| x as u32);
+            // a point in no plane stands in space, where a loop bounds nothing: named as the
+            // point, since an edge the face minted is no name the source wrote
+            if p.is_none() {
+                let point = sk.point_label(c.i());
+                report(Code::E080, span,
+                    format!("a face lies in one plane, and `{point}` stands in space: draw it `in` one"));
+                return None;
+            }
             match plane {
                 None => plane = Some(p),
                 Some(q) if q == p => {}
                 Some(q) => {
                     let say = |x: Option<u32>| match x {
-                        Some(i) => format!("view {i}"),
-                        None => "the page".to_string(),
+                        Some(i) => format!("`{}`", sk.plane_name(i as usize)),
+                        None => "no plane".to_string(),
                     };
                     report(Code::E080,
                         span,

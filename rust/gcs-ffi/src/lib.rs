@@ -416,14 +416,12 @@ pub unsafe extern "C" fn gcs_sketch_arc(
     })
 }
 
-/// A plane: a frame with a basis `(u, v)` in space, orthonormalised on the way in.  -1 and an
-/// error when the two do not span a plane.
+/// A plane fixed where a basis `(u, v)` stands, at the origin, orthonormalised on the way in —
+/// its two rays and its origin held.  -1 and an error when the two do not span a plane.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn gcs_sketch_plane(
     h: *mut Sketch,
-    origin: i32,
-    toward: i32,
     ux: f64,
     uy: f64,
     uz: f64,
@@ -438,7 +436,7 @@ pub unsafe extern "C" fn gcs_sketch_plane(
             set_error("u and v do not span a plane");
             return -1;
         };
-        sk(h).plane(origin as usize, toward as usize, basis, as_str(name, name_len)) as i32
+        sk(h).fixed_plane(basis, as_str(name, name_len)) as i32
     })
 }
 
@@ -454,9 +452,9 @@ pub unsafe extern "C" fn gcs_plane_basis(h: *mut Sketch, idx: i32, out: *mut f64
     })
 }
 
-/// A plane's whole frame in space: nine doubles, `u`, `v` and then its origin `o` — the solved
-/// one, for a view whose attitude or offset the drawing solves for, where six were not
-/// enough to say where the view stands.  Returns how many were written.
+/// A plane's whole frame in space: nine doubles, `u`, `v` and then its origin `o`, as the solve
+/// left them (`Sketch::basis`) — six say how it turns, not where it stands.  Returns how many
+/// were written.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plane_frame3(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {
     guard(-1, move || {
@@ -468,9 +466,10 @@ pub unsafe extern "C" fn gcs_plane_frame3(h: *mut Sketch, idx: i32, out: *mut f6
     })
 }
 
-/// The datum glyph a plane is drawn as, in world coordinates: eight doubles, two segments as
-/// `x1 y1 x2 y2` each — the chord, then the tick.  Laid out by the core for a callout's reason,
-/// so the canvas and the SVG export stroke one figure and not two.
+/// The datum glyph a plane is drawn as, in the plane's own coordinates: eight doubles, two
+/// segments as `x1 y1 x2 y2` each — the arm along `u`, then the tick along `v` (`plane::glyph`).
+/// Laid out by the core for a callout's reason, so the canvas and the SVG export stroke one
+/// figure and not two.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plane_glyph(
     h: *mut Sketch,
@@ -479,7 +478,8 @@ pub unsafe extern "C" fn gcs_plane_glyph(
     out: *mut f64,
 ) -> i32 {
     guard(-1, move || {
-        let g = gcs_core::plane::glyph(sk(h), idx as usize, unit);
+        let _ = (sk(h), idx);
+        let g = gcs_core::plane::glyph(unit);
         for (k, (from, to)) in g.iter().enumerate() {
             *out.add(4 * k) = from.0;
             *out.add(4 * k + 1) = from.1;
@@ -490,7 +490,7 @@ pub unsafe extern "C" fn gcs_plane_glyph(
     })
 }
 
-/// Which plane a point is on: its index, or -1 for the page.
+/// Which plane a point is drawn in: its index, or -1 for a point in space (or of a 2D sketch).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_point_plane(h: *mut Sketch, idx: i32) -> i32 {
     guard(-1, move || sk(h).plane_of(idx as usize).map_or(-1, |p| p as i32))
@@ -1097,6 +1097,7 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Sphere => 16,
         EntKind::Cone => 17,
         EntKind::Cylinder => 18,
+        EntKind::Ray => 19,
     }
 }
 
@@ -1120,6 +1121,7 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         16 => EntKind::Sphere,
         17 => EntKind::Cone,
         18 => EntKind::Cylinder,
+        19 => EntKind::Ray,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)
@@ -1161,10 +1163,8 @@ pub unsafe extern "C" fn gcs_entity_points(
                 vec![a.center as usize, a.start as usize, a.end as usize]
             }
             4 => s.splines[idx as usize].ctrl.iter().map(|&c| c as usize).collect(),
-            6 => {
-                let f = s.frame_of(ent(kind, idx));
-                vec![f.origin as usize, f.toward as usize]
-            }
+            // a plane's one point is its origin
+            6 => vec![s.planes[idx as usize].origin as usize],
             _ => vec![idx as usize],
         };
         for (i, p) in v.iter().enumerate() {
@@ -2238,6 +2238,22 @@ pub unsafe extern "C" fn gcs_workspace_maps(h: *mut Sketch, az: f64, el: f64, ou
             write(out.add(6 * k), m);
         }
         maps.len() as i32
+    })
+}
+
+/// Where the eye at `az`, `el` sees each point in space: [x, y] per point, by index, NaN for a
+/// point drawn in a plane (its view's map places it).  Returns the point count; writes at most
+/// `cap` points.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_space_points(h: *mut Sketch, az: f64, el: f64, out: *mut f64,
+                                                    cap: usize) -> i32 {
+    guard(-1, move || {
+        let seen = gcs_core::overview::workspace::space_points(sk(h), az, el);
+        for (k, s) in seen.iter().take(cap).enumerate() {
+            let (x, y) = s.unwrap_or((f64::NAN, f64::NAN));
+            write(out.add(2 * k), &[x, y]);
+        }
+        seen.len() as i32
     })
 }
 
@@ -3968,60 +3984,10 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
             .unwrap_or_default();
         let seed: Vec<f64> =
             v.get("seed").map(|a| a.arr().iter().map(|x| x.as_f64()).collect()).unwrap_or_default();
+        // a plane over two rays or lines, `args` their names, and the name asked for
         if kind == EntKind::Plane {
-            // `{"from": NAME, "fold": TEXT}` or `{"u": [TEXT; 3], "v": [TEXT; 3]}`, or nothing
-            // for the page; the texts are spelled into the statement as given and read by the
-            // elaboration like any other number
-            use gcs_core::syntax::{Arg, Attitude, Ref};
-            let dim = |x: &Json| Arg::Dim { text: x.as_str().to_string(), span: Default::default() };
-            let triple = |x: Option<&Json>| -> Option<[Arg; 3]> {
-                let a = x?.arr();
-                (a.len() == 3).then(|| [dim(&a[0]), dim(&a[1]), dim(&a[2])])
-            };
-            let att = v.get("attitude");
-            let attitude = match att {
-                Some(a) if !matches!(a, Json::Null) => {
-                    if let Some(from) = a.get("from") {
-                        // `from:` says which plane it is derived from; `fold:` turns it and
-                        // `offset:` stands it off along the normal (§6.7)
-                        let plane = Ref::new(from.as_str().to_string());
-                        match a.get("fold").map(dim) {
-                            Some(fold) => Attitude::From { plane, fold },
-                            None => Attitude::Offset { plane, offset: a.get("offset").map(dim) },
-                        }
-                    } else {
-                        match (triple(a.get("u")), triple(a.get("v"))) {
-                            (Some(u), Some(v)) => Attitude::Basis { u, v, o: None },
-                            _ => {
-                                set_error("a plane's attitude is `from`/`fold` or `u`/`v`");
-                                return std::ptr::null_mut();
-                            }
-                        }
-                    }
-                }
-                _ => Attitude::Page,
-            };
             let name = v.get("name").map(|n| n.as_str().to_string());
-            // `"places": [[x, y], [x, y]]` seeds the origin and the toward point in the statement
-            let places: Vec<(f64, f64)> = v
-                .get("places")
-                .map(|a| {
-                    a.arr()
-                        .iter()
-                        .filter_map(|p| {
-                            let p = p.arr();
-                            (p.len() == 2).then(|| (p[0].as_f64(), p[1].as_f64()))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            return out_edit(gcs_core::edit::add_plane(
-                &(*h).program,
-                &args,
-                attitude,
-                name.as_deref(),
-                &places,
-            ));
+            return out_edit(gcs_core::edit::add_plane(&(*h).program, &args, name.as_deref()));
         }
         out_edit(gcs_core::edit::add_entity(&(*h).program, kind, &args, &seed))
     })

@@ -163,8 +163,8 @@ impl System {
         // solved, and left free.  The pin below is for a solve that walked off — free again, it
         // walks straight back — but a seed is only where the search begins, and one written a
         // knot span too far says nothing about where the answer is: pinned to the end for the
-        // retry, `p on s hint(t: 2)` nailed `p` to the curve's last point and a document with a
-        // unique solution came back UNSOLVED (#45.7, spec P3).  From the end and free, the
+        // retry, `p coincident s hint(t: 2)` nailed `p` to the curve's last point and a document
+        // with a unique solution came back UNSOLVED (#45.7, spec P3).  From the end and free, the
         // solve walks in to the answer, or back off to be clamped and pinned as before.
         if rehome && !curve::clamp_contacts(sk).is_empty()
             && curve::contact_spans(sk) != *self.spans()

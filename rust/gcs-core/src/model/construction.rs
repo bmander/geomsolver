@@ -69,8 +69,27 @@ impl Sketch {
     pub fn point(&mut self, x: f64, y: f64, fixed: bool, name: &str) -> usize {
         let px = self.param(x, fixed, &format!("{name}.x"));
         let py = self.param(y, fixed, &format!("{name}.y"));
-        self.points.push(PointE { x: px as u32, y: py as u32, plane: None });
+        self.points.push(PointE { x: px as u32, y: py as u32, z: None, plane: None });
         self.points.len() - 1
+    }
+
+    /// A **point in space**: three coordinates, in no plane.
+    pub fn point3(&mut self, at: [f64; 3], fixed: bool, name: &str) -> usize {
+        let p = self.point(at[0], at[1], fixed, name);
+        self.give_place(p, at[2]);
+        p
+    }
+
+    /// Put point `p`, in no plane, in space at height `z`: its third coordinate — what the
+    /// elaborator does to a point no `in` reached once every membership is in.
+    pub fn give_place(&mut self, p: usize, z: f64) {
+        if self.points[p].z.is_some() || self.points[p].plane.is_some() {
+            return;
+        }
+        let fixed = self.params[self.points[p].x as usize].fixed;
+        let name = self.point_label(p).to_string();
+        let pz = self.param(z, fixed, &format!("{name}.z"));
+        self.points[p].z = Some(pz as u32);
     }
 
     pub fn line(&mut self, p1: usize, p2: usize) -> usize {
@@ -121,6 +140,81 @@ impl Sketch {
         self.cylinders.len() - 1
     }
 
+    /// A ray: its direction `d` (normalised here, so a seed need not be a unit vector) and the
+    /// point on it nearest the origin, `a`, which stays fixed — no freedom of the drawing's —
+    /// until a relation reads where the ray is (`place_ray`).  The intrinsic `ray_unit` row is
+    /// minted here and nowhere else, since intrinsics are never serialized.
+    pub fn ray(&mut self, d: [f64; 3], name: &str) -> usize {
+        self.origin_param();
+        // normalised only when it is not unit already, so a direction read back is the bits
+        // that were written
+        let n = crate::space::norm(d);
+        let d = if n <= 0.0 {
+            [0.0, 0.0, 1.0]
+        } else if (n - 1.0).abs() > 1e-12 {
+            d.map(|x| x / n)
+        } else {
+            d
+        };
+        // a direction is worth the drawing's size: its error moves a far point that much
+        let scale = self.extent().max(1.0);
+        let dp = ["x", "y", "z"].map(|k| self.param_scaled(0.0, false, &format!("{name}.{k}"), scale) as u32);
+        for k in 0..3 {
+            self.params[dp[k] as usize].value = d[k];
+        }
+        let ap = ["px", "py", "pz"].map(|k| self.param(0.0, true, &format!("{name}.{k}")) as u32);
+        self.rays.push(RayE { d: dp, a: ap, placed: false, class: Classes::default() });
+        let ri = self.rays.len() - 1;
+        let mut c = Constraint::new(crate::constraints::CKind::RayUnit, vec![crate::constraints::Arg::Ent(EntRef::new(EntKind::Ray, ri))]);
+        c.intrinsic = true;
+        self.add_quiet(c);
+        ri
+    }
+
+    /// Free ray `i`'s place and hold it to the foot of the perpendicular from the origin (the
+    /// intrinsic `ray_foot` row) — once a relation reads where the ray is, and not before: a ray
+    /// read only as a direction has a place no equation mentions, which would be counted as two
+    /// freedoms of a drawing that has none.
+    pub fn place_ray(&mut self, i: usize) {
+        if self.rays[i].placed {
+            return;
+        }
+        self.rays[i].placed = true;
+        for p in self.rays[i].a {
+            self.params[p as usize].fixed = false;
+        }
+        let mut c = Constraint::new(crate::constraints::CKind::RayFoot, vec![crate::constraints::Arg::Ent(EntRef::new(EntKind::Ray, i))]);
+        c.intrinsic = true;
+        self.add_quiet(c);
+    }
+
+    /// `place_ray` undone: the place held where it stands, and the foot row gone with it.
+    fn unplace_ray(&mut self, i: usize) {
+        if !self.rays[i].placed {
+            return;
+        }
+        self.rays[i].placed = false;
+        for p in self.rays[i].a {
+            self.params[p as usize].fixed = true;
+        }
+        let ray = EntRef::new(EntKind::Ray, i);
+        self.constraints.retain(|c| {
+            !(c.intrinsic && c.kind == crate::constraints::CKind::RayFoot && c.args[0].ent() == ray)
+        });
+    }
+
+    /// A fixed Param holding 0, shared by every ray: the kernels that read a line's direction as
+    /// `B − A` read a ray's as the segment `(0, d)`, so a ray needs no kernels of its own for
+    /// `parallel`, `perpendicular` and `angle`.
+    pub fn origin_param(&mut self) -> u32 {
+        if let Some(z) = self.zero {
+            return z;
+        }
+        let z = self.param(0.0, true, "zero") as u32;
+        self.zero = Some(z);
+        z
+    }
+
     /// An arc plus its two intrinsic `PointOnCircle` constraints.
     pub fn arc(&mut self, center: usize, start: usize, end: usize, name: &str) -> usize {
         let (cx, cy) = self.point_xy(center);
@@ -160,97 +254,90 @@ impl Sketch {
         Some(self.arc(centre, a, b, name))
     }
 
-    /// A plane: a frame with a stated attitude in space (`plane::Basis`), and the same two
-    /// intrinsics.  The basis arrives resolved — the model stores what a plane *is*, and refusing
-    /// a degenerate one is the job of whoever read it (`Basis::explicit`).
-    pub fn plane(
-        &mut self,
-        origin: usize,
-        toward: usize,
-        basis: crate::plane::Basis,
-        name: &str,
-    ) -> usize {
-        let frame = self.datum(origin, toward, name);
-        self.planes.push(PlaneE { frame, basis, att: None });
-        let pi = self.planes.len() - 1;
-        self.slave(EntRef::plane(pi));
+    /// A plane over two rays — right along `u`'s, out along `u × v` — standing at `o`, three
+    /// Params of its own, and its origin, a point drawn in it and held at `(0, 0)`, minted here.
+    /// No intrinsic row: what the plane is, `Sketch::basis` reads off the rays and `o`.
+    pub fn plane(&mut self, u: usize, v: usize, o: [f64; 3], name: &str) -> usize {
+        let op = self.plane_place(o, name);
+        let origin = self.point(0.0, 0.0, true, &format!("{name}.origin"));
+        self.push_plane(u, v, op, origin)
+    }
+
+    /// A plane whose origin is a point already made — what a document reader and the rebuild
+    /// walk build, the point having come with the others.  It is put in the plane and held at
+    /// `(0, 0)`.
+    pub fn plane_over(&mut self, u: usize, v: usize, o: [f64; 3], origin: usize, name: &str) -> usize {
+        let op = self.plane_place(o, name);
+        for p in self.point_params(origin) {
+            self.params[p as usize].value = 0.0;
+            self.params[p as usize].fixed = true;
+        }
+        self.push_plane(u, v, op, origin)
+    }
+
+    /// A ray as a document or another sketch carries it: its direction, which of the three are
+    /// held, and where it stands (`a`, fixed until a relation reads it).
+    pub fn ray_restored(&mut self, d: [f64; 3], held: [bool; 3], a: [f64; 3], class: Classes) -> usize {
+        let ri = self.ray(d, "");
+        for k in 0..3 {
+            let (dp, ap) = (self.rays[ri].d[k] as usize, self.rays[ri].a[k] as usize);
+            self.params[dp].fixed = held[k];
+            self.params[ap].value = a[k];
+        }
+        self.rays[ri].class = class;
+        ri
+    }
+
+    /// A plane as a document or another sketch carries it: over rays `u`, `v`, standing at `o`
+    /// with which of its three numbers are held, its origin a point already made.
+    pub fn plane_restored(&mut self, u: usize, v: usize, o: [f64; 3], held: [bool; 3], origin: usize,
+                          class: Classes) -> usize {
+        let pi = self.plane_over(u, v, o, origin, "");
+        for k in 0..3 {
+            let q = self.planes[pi].o[k] as usize;
+            self.params[q].fixed = held[k];
+        }
+        self.planes[pi].class = class;
         pi
     }
 
-    /// Plane `i`'s attitude in space.  The one reader: every consumer outside the model asks
-    /// here and never reads the field, so an attitude that comes to be solved for rather than
-    /// stated changes this function and no caller (`docs/spatial-constraints-plan.md`).
-    ///
-    /// A **solved** view (`att`) is read off its unknowns: `u = R(q)·e₁`, `v = R(q)·e₂` and
-    /// `o = R(q)·(a, b, d)`, with `R` the rotation of `q / |q|` — so a `q` a solve has not yet
-    /// brought back to the unit sphere still reads as an orthonormal basis.  While the unknowns
-    /// hold exactly the numbers they were minted at (`Att::seat`) the stored basis is the answer,
-    /// which is what makes freeing a view move nothing.
-    pub fn basis(&self, i: usize) -> crate::plane::Basis {
-        let p = &self.planes[i];
-        let Some(a) = &p.att else { return p.basis };
-        let now = self.att_values(a);
-        if now.iter().zip(&a.seat).all(|(x, y)| x.to_bits() == y.to_bits()) {
-            return p.basis;
-        }
-        let q = [now[0], now[1], now[2], now[3]];
-        match crate::plane::quat_rotate(q, [a.ab[0], a.ab[1], now[4]]) {
-            Some(o) => crate::plane::from_quat(q, o).unwrap_or(p.basis),
-            // a quaternion of no length names no attitude: the last one stated stands
-            None => p.basis,
-        }
+    /// The three Params of where a plane stands, `name.x` … `name.z`.
+    fn plane_place(&mut self, o: [f64; 3], name: &str) -> [u32; 3] {
+        [0, 1, 2].map(|k| self.param(o[k], false, &format!("{name}.{}", ["x", "y", "z"][k])) as u32)
     }
 
-    /// Stand plane `i`'s origin at `o`, its directions untouched — the one writer after
-    /// elaboration built the plane, which is what `against` and a derived offset do.  A solved
-    /// view is re-seated on the new basis, so its unknowns say the same thing.
+    /// A plane over rays `u`, `v`, standing at `op`, its origin drawn in it.
+    fn push_plane(&mut self, u: usize, v: usize, op: [u32; 3], origin: usize) -> usize {
+        let pi = self.planes.len();
+        self.points[origin].plane = Some(pi as u32);
+        self.planes.push(PlaneE { u: u as u32, v: v as u32, o: op, origin: origin as u32, class: Classes::default() });
+        pi
+    }
+
+    /// A plane fixed where `b` stands — its rays and its origin held — for a caller that has a
+    /// basis in hand rather than a document: a test, a drawing's measuring plane.
+    pub fn fixed_plane(&mut self, b: crate::plane::Basis, name: &str) -> usize {
+        let rays = [(b.u, "u"), (b.v, "v")].map(|(d, k)| {
+            let r = self.ray(d, &format!("{name}.{k}"));
+            for &p in &self.rays[r].d {
+                self.params[p as usize].fixed = true;
+            }
+            r
+        });
+        let pi = self.plane(rays[0], rays[1], b.o, name);
+        for &p in &self.planes[pi].o {
+            self.params[p as usize].fixed = true;
+        }
+        pi
+    }
+
+    /// Stand plane `i` at `o`, its rays untouched — for a caller that holds a sketch and moves a
+    /// part rigidly, never for a solve.
     pub fn set_plane_origin(&mut self, i: usize, o: [f64; 3]) {
-        self.planes[i].basis.o = o;
-        self.seat_attitude(i);
-    }
-
-    /// Replace plane `i`'s whole stated attitude — for a caller that holds a sketch and turns
-    /// its views in space (the tests that move a part rigidly), never for a solve.
-    pub fn set_basis(&mut self, i: usize, b: crate::plane::Basis) {
-        self.planes[i].basis = b;
-        self.seat_attitude(i);
-    }
-
-    /// The rotor's two params, seeded from the chord — the half of `frame` a plane shares.
-    fn datum(&mut self, origin: usize, toward: usize, name: &str) -> FrameE {
-        let ((c, s), scale) = self.frame_chord(origin, toward);
-        let cp = self.param_scaled(c, false, &format!("{name}.c"), scale);
-        let sp = self.param_scaled(s, false, &format!("{name}.s"), scale);
-        FrameE {
-            origin: origin as u32,
-            toward: toward as u32,
-            c: cp as u32,
-            s: sp as u32,
-            class: Classes::default(),
+        for k in 0..3 {
+            let p = self.planes[i].o[k] as usize;
+            self.params[p].value = o[k];
         }
-    }
-
-    /// The two intrinsics that hold a datum's rotor to its chord — minted here and nowhere
-    /// else, since intrinsics are never serialized.
-    fn slave(&mut self, e: EntRef) {
-        let c1 = Constraint::frame_unit(e);
-        let c2 = Constraint::frame_align(self, e);
-        self.add(c1);
-        self.add(c2);
-    }
-
-    /// The rotor of the chord `origin → toward`, and the world length one unit of it is worth.
-    /// A coincident pair names no direction, so it reads as the identity rotor at unit scale —
-    /// the raw delta would normalise to (0, 0) and start life violating `frame_unit`.
-    ///
-    /// The one answer, so the rotor's `Param::scale` and the seed of the alignment's own unknown
-    /// cannot come from two different rules — the same reason `constraints::contact_speed` is
-    /// one function.
-    pub(crate) fn frame_chord(&self, origin: usize, toward: usize) -> ((f64, f64), f64) {
-        let (ox, oy) = self.point_xy(origin);
-        let (tx, ty) = self.point_xy(toward);
-        let d = (tx - ox).dhypot(ty - oy);
-        if d > 0.0 { (((tx - ox) / d, (ty - oy) / d), d) } else { ((1.0, 0.0), 1.0) }
     }
 
     /// A cubic B-spline over `ctrl`, with the clamped uniform knot vector.  `None` if there are
@@ -381,17 +468,12 @@ impl Sketch {
     /// an unknown the next pass immediately retires.
     pub(crate) fn add_quiet(&mut self, mut c: Constraint) -> u32 {
         // the twin its planes can feed, decided before anything is minted for it: a projection
-        // over a solved view reads both views' quaternions, so a stated one is given held
-        // unknowns first (`Sketch::solve_projection`'s rule, for a statement not yet added)
+        // where either plane moves in the solve reads both images' lifts and both planes' rays,
+        // and over two fixed planes only the two drawn points (`CKind::attitude_twin`)
         let reads = c.attitudes_read(self);
         if !reads.is_empty() {
-            let solved = reads.iter().any(|&v| self.planes[v].att.is_some());
+            let solved = reads.iter().any(|&v| !self.plane_fixed(v));
             c.kind = c.kind.attitude_twin(solved);
-            if c.kind == crate::constraints::CKind::ProjectSolved {
-                for v in reads {
-                    self.hold_attitude(v);
-                }
-            }
         }
         if c.id == 0 {
             self.next_cid += 1;
@@ -406,6 +488,12 @@ impl Sketch {
         // `constraints::validate` is where that is refused
         for p in c.lifted_points(self) {
             self.lift_point(p);
+        }
+        // a relation that reads where a ray is gives the ray its place
+        if let Some(Arg::Ent(r)) = c.kind.place_slot().and_then(|i| c.args.get(i)) {
+            if r.kind == EntKind::Ray && r.i() < self.rays.len() {
+                self.place_ray(r.i());
+            }
         }
         for (i, name) in c.kind.param_slots() {
             if matches!(c.args[i], Arg::Param(_)) {
@@ -460,7 +548,14 @@ impl Sketch {
     pub fn remove(&mut self, id: u32) {
         let (expr, own) = self.constraint(id)
             .map_or((false, Vec::new()), |c| (crate::expr::has_expr(&c.args), c.aux_params()));
+        let placed = self.constraint(id).and_then(|c| c.ray_placed_by());
         self.constraints.retain(|c| c.id != id);
+        // a ray whose place nothing reads now is held again: its place is no freedom
+        if let Some(r) = placed {
+            if !self.constraints.iter().any(|c| c.ray_placed_by() == Some(r)) {
+                self.unplace_ray(r);
+            }
+        }
         // a shared unknown stays free while another contact still owns it
         for p in own {
             let shared = self.shared.values().any(|s| s.param == p);

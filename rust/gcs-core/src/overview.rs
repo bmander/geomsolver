@@ -1,16 +1,15 @@
 //! The drawing as the box it was unfolded from.
 //!
-//! A multiview document (§6.7) is several 2D pictures on one sheet, each on a stated plane in
-//! space.  This folds them back up: every view stands on its own plane, and the object the views
-//! are *of* is reconstructed in the middle.
+//! A multiview document (§6.7) is several 2D pictures, each drawn in a plane in space.  This
+//! folds them back up: every view stands on its own plane, and the object the views are *of* is
+//! reconstructed in the middle.
 //!
 //! **Nothing here is solved for, and nothing is stored.**  The whole scene is arithmetic over
 //! what the document already says:
 //!
-//! * a point drawn in view P has view coordinates `(a, b) = plane::in_view(…)` — the same
+//! * a point drawn in view P has view coordinates `(a, b)`, its own coordinates in P — the
 //!   reading `project`'s residual takes;
-//! * every plane's origin is the image of one shared origin in space, so the point sits at
-//!   `a·u_P + b·v_P` (`Basis::lift`);
+//! * the point sits at `o_P + a·u_P + b·v_P` (`Basis::lift`);
 //! * a corner tied by `project` into two non-parallel views is **over-determined and exact**:
 //!   each image contributes `u_P·X = a` and `v_P·X = b`, so two views give four rows in three
 //!   unknowns, consistent precisely *because* the projection holds.  The rank tells a corner
@@ -146,10 +145,9 @@ pub struct Corner {
 /// sufficient one.  Kept at **rank 3**, which is "two views that are not parallel"; `validate`
 /// refuses the parallel pair at the add, so a rank-2 answer here means the drawing moved since.
 ///
-/// The **plane origins are corners too**, with no projection stated between them: every plane's
-/// origin is the image of one shared origin in space, which is the convention the whole scheme
-/// is written against (`Basis::lift`), so they are paired here rather than left to a document to
-/// say twice.
+/// The rows read an image's coordinates as measured from the world origin: a plane's own `o` is
+/// not added in, so the corner is where `Basis::lift` puts it only for planes whose origins
+/// stand there.
 pub fn corners(sk: &Sketch) -> Vec<Corner> {
     corners_in(sk, &views(sk))
 }
@@ -160,15 +158,6 @@ fn corners_in(sk: &Sketch, views: &[Option<usize>]) -> Vec<Corner> {
         // a claim is judged, never solved for: it relates nothing, here as in the solver
         if c.kind == crate::constraints::CKind::Project && !c.claim {
             pairs.push((c.args[0].ent().i(), c.args[1].ent().i()));
-        }
-    }
-    // the origins, pairwise: they are images of one point by construction
-    let origins: Vec<usize> = (0..sk.planes.len())
-        .map(|i| sk.planes[i].frame.origin as usize)
-        .collect();
-    for i in 0..origins.len() {
-        for j in i + 1..origins.len() {
-            pairs.push((origins[i], origins[j]));
         }
     }
     let mut out = Vec::new();
@@ -183,12 +172,13 @@ fn corners_in(sk: &Sketch, views: &[Option<usize>]) -> Vec<Corner> {
         let mut rows: Vec<f64> = Vec::with_capacity(12);
         let mut rhs: Vec<f64> = Vec::with_capacity(4);
         for (i, p) in [(a, pa), (b, pb)] {
+            // drawn at (x, y), the image stands at o + x·u + y·v: u·X = x + u·o, v·X = y + v·o
             let basis = sk.basis(p);
-            let (x, y) = view_xy(sk, p, sk.point_xy(i));
+            let (x, y) = sk.point_xy(i);
             rows.extend_from_slice(&basis.u);
-            rhs.push(x);
+            rhs.push(x + crate::space::dot(basis.u, basis.o));
             rows.extend_from_slice(&basis.v);
-            rhs.push(y);
+            rhs.push(y + crate::space::dot(basis.v, basis.o));
         }
         let m = Mat::from_vec(4, 3, rows);
         let (x, rank) = min_norm_solve(&m, &rhs, RCOND);
@@ -199,18 +189,10 @@ fn corners_in(sk: &Sketch, views: &[Option<usize>]) -> Vec<Corner> {
     out
 }
 
-/// The view a point **stands in** when the box is folded up: the plane it is a member of, or —
-/// for a point that is a plane's own origin or `toward` point and a member of none — that
-/// plane.  Membership is what `project` reads and what `in` writes, and a datum's points are
-/// deliberately outside it (they place the view; they are not drawn in it), but in space they
-/// are nowhere else: every plane's origin is the one shared origin, which is the convention the
-/// whole reconstruction is written against.  `None` is page geometry, a picture of nothing.
+/// The plane a point **stands in**: its membership.  `None` is a point in space, or a point of
+/// a 2D sketch.
 fn view_of(sk: &Sketch, p: usize) -> Option<usize> {
-    sk.plane_of(p).or_else(|| {
-        sk.planes
-            .iter()
-            .position(|pl| pl.frame.origin as usize == p || pl.frame.toward as usize == p)
-    })
+    sk.plane_of(p)
 }
 
 /// `view_of` for every point at once — asked per point per plane by the panes, per image by
@@ -219,32 +201,10 @@ fn views(sk: &Sketch) -> Vec<Option<usize>> {
     (0..sk.points.len()).map(|p| view_of(sk, p)).collect()
 }
 
-/// Where a plane's view sits on the page: its origin there and its rotor `(c, s)`.
-pub fn placement(sk: &Sketch, plane: usize) -> ((f64, f64), f64, f64) {
-    let f = &sk.planes[plane].frame;
-    (sk.point_xy(f.origin as usize), sk.params[f.c as usize].value, sk.params[f.s as usize].value)
-}
-
-/// A point of the page, read in the view it is drawn in.
-pub fn view_xy(sk: &Sketch, plane: usize, p: (f64, f64)) -> (f64, f64) {
-    let (o, c, s) = placement(sk, plane);
-    crate::plane::in_view(c, s, o, p)
-}
-
-/// Where a page point drawn in `plane` — or on the page itself, when it is in none — sits in
-/// space.  Geometry with no membership lies on the page plane, measured from the world origin,
-/// which is what "a point with none is simply on the page" already means.
-fn in_space(sk: &Sketch, plane: Option<usize>, p: (f64, f64)) -> [f64; 3] {
-    let (basis, (a, b)) = match plane {
-        Some(i) => (sk.basis(i), view_xy(sk, i, p)),
-        None => (Basis::page(), p),
-    };
-    basis.lift(a, b)
-}
 
 /// The view an entity stands in: the one every point it is made of stands in, or `None` where
-/// they disagree or it has none — `program::plane_of_entity`'s walk with `view_of`'s reading of
-/// a point in place of bare membership, for the reason given there.
+/// they disagree or it has none — `program::plane_of_entity`'s walk over the `views` table, read
+/// once for every point.
 fn entity_view(sk: &Sketch, e: EntRef, views: &[Option<usize>]) -> Option<usize> {
     crate::program::plane_of_entity_by(sk, e, |p| views[p])
 }
@@ -263,7 +223,7 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         // of a solid is a derived view, which is its own geometry
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
         // nothing on its view's page either: a sphere is in space (`scene3d` draws it there)
-        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => Vec::new(),
+        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => Vec::new(),
         EntKind::Point => vec![vec![sk.point_xy(i)]],
         EntKind::Line => {
             let l = &sk.lines[i];
@@ -284,8 +244,8 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         }
         EntKind::Spline => vec![crate::curve::tessellate(sk, i, unit)],
         EntKind::Curve => vec![sk.curve_polyline(i)],
-        // a datum's glyph is already two segments of world geometry
-        EntKind::Plane => crate::plane::glyph(sk, i, unit).iter().map(|(a, b)| vec![*a, *b]).collect(),
+        // a plane's glyph is already two segments, in its own coordinates
+        EntKind::Plane => crate::plane::glyph(unit).iter().map(|(a, b)| vec![*a, *b]).collect(),
     }
 }
 
@@ -366,7 +326,7 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
         // square to the world's axes — a wire sphere, the least that says where and how big
         if e.kind == EntKind::Sphere {
             let c = sk.round_center(e);
-            let o = in_space(sk, views[c], sk.point_xy(c));
+            let o = sk.world_point(c);
             let r = sk.radius_value(e).abs();
             let n = ((std::f64::consts::TAU * r / unit).sqrt().ceil() as usize).clamp(24, 256);
             for (a, b) in [(0, 1), (1, 2), (2, 0)] {
@@ -381,6 +341,25 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
             }
             continue;
         }
+        // a ray is in space and in no view: its line across the drawing's reach, and a head at
+        // the end it points to
+        if e.kind == EntKind::Ray {
+            use crate::space::{across, add, normalised, scale};
+            let r = &sk.rays[e.i()];
+            let p = r.a.map(|q| sk.params[q as usize].value);
+            let Some(d) = normalised(r.d.map(|q| sk.params[q as usize].value)) else { continue };
+            let reach = sk.extent().max(1.0);
+            let tip = add(p, scale(d, reach));
+            items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn,
+                pts: vec![add(p, scale(d, -reach)), tip] });
+            let u = across(d).0;
+            let head = reach * 0.04;
+            for sgn in [1.0, -1.0] {
+                let back = add(tip, add(scale(d, -head), scale(u, sgn * head * 0.5)));
+                items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts: vec![tip, back] });
+            }
+            continue;
+        }
         // a cone or a cylinder is in space too: two circles square to its axis and four rulings
         // between them — at the axis's two ends for a cylinder, and for a cone from the apex to
         // the circle at the axis's far end (a cone opening past a right angle draws the circle
@@ -388,7 +367,7 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
         if matches!(e.kind, EntKind::Cone | EntKind::Cylinder) {
             use crate::space::{add, cross, norm, scale, sub};
             let l = &sk.lines[sk.axial(e).axis as usize];
-            let end = |q: u32| in_space(sk, views[q as usize], sk.point_xy(q as usize));
+            let end = |q: u32| sk.world_point(q as usize);
             let (a, b) = (end(l.p1), end(l.p2));
             let d = sub(b, a);
             let len = norm(d);
@@ -428,7 +407,7 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
         // and the reason a projector between two views belongs to neither
         if e.kind == EntKind::Line {
             let l = &sk.lines[e.i()];
-            let end = |q: u32| in_space(sk, views[q as usize], sk.point_xy(q as usize));
+            let end = |q: u32| sk.world_point(q as usize);
             items.push(Item3 {
                 of: Some(e),
                 in_plane,
@@ -445,7 +424,7 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
                 of: Some(e),
                 in_plane,
                 what: Part::Drawn,
-                pts: poly.into_iter().map(|p| in_space(sk, plane, p)).collect(),
+                pts: poly.into_iter().map(|p| sk.world_in(plane, p)).collect(),
             });
         }
     }
@@ -511,12 +490,12 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
             continue;
         }
         let plane = entity_view(sk, e, &views);
-        // a line stands with each end where that end is: a projector between two views, or a
-        // line from a datum's own origin into its view, is neither a stray stroke on the page
-        // nor anyone's — it belongs to a view only when both its ends do
+        // a line stands with each end where that end is: a projector between two views is
+        // neither a stray stroke on the page nor anyone's — it belongs to a view only when both
+        // its ends do
         if e.kind == EntKind::Line {
             let l = &sk.lines[e.i()];
-            let end = |q: u32| flat(in_space(sk, views[q as usize], sk.point_xy(q as usize)));
+            let end = |q: u32| flat(sk.world_point(q as usize));
             items.push(Item {
                 of: Some(e),
                 in_plane: plane.map(EntRef::plane),
@@ -534,7 +513,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
                 of: Some(e),
                 in_plane: plane.map(EntRef::plane),
                 what: Part::Drawn,
-                pts: poly.into_iter().map(|p| flat(in_space(sk, plane, p))).collect(),
+                pts: poly.into_iter().map(|p| flat(sk.world_in(plane, p))).collect(),
                 shade: None,
             });
         }
@@ -677,7 +656,7 @@ fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], least: f64) -> Box2 
     let mut b = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
     for (i, v) in views.iter().enumerate() {
         if *v == Some(plane) {
-            grow(&mut b, view_xy(sk, plane, sk.point_xy(i)));
+            grow(&mut b, sk.point_xy(i));
         }
     }
     let widen = |lo: f64, hi: f64| {

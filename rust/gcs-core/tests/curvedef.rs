@@ -230,20 +230,25 @@ fn two_curve_families_get_their_own_kernels() {
 #[test]
 fn a_curve_written_in_the_language_draws() {
     let src = "\
+use std
 component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
 }
 
+in std.front {
 o := point
 base := circle(center: o) hint(r: 20)
+}
 flank := Involute(base, phase: 0).p over u in (0, 60)
 
+in std.front {
 p := point hint(x: 40, y: 40)
-p on flank
+p coincident flank
 radius(20) base
 fix(x == 0, y == 0) o
+}
 ";
-    let (prog, errs) = gcs_core::syntax::parse(src);
+    let (prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
     let mut e = gcs_core::program::elaborate(&prog);
     assert!(
@@ -259,9 +264,10 @@ fix(x == 0, y == 0) o
     assert!(r.success, "{}", r.message);
 
     // the point is on the involute of a circle of radius 20 about the origin
-    let u = e.sketch.params[e.sketch.constraints[0].aux_params()[0] as usize].value;
+    let c = e.sketch.constraints.iter().find(|c| !c.aux_params().is_empty()).expect("the contact");
+    let u = e.sketch.params[c.aux_params()[0] as usize].value;
     let want = involute_at(0.0, 0.0, 20.0, u);
-    let got = e.sketch.point_xy(1);
+    let got = e.sketch.point_xy(e.map.ent_named("p").unwrap().i());
     assert!(
         (got.0 - want.0).abs() < 1e-8 && (got.1 - want.1).abs() < 1e-8,
         "at u = {u}: curve {want:?}, point {got:?}",
@@ -287,7 +293,7 @@ fn the_names_match_the_parameters() {
     let l = sk.line(a, b);
     let ci = sk.circle(a, 2.0, "ci");
     let ar = sk.arc(a, b, c, "ar");
-    let pl = sk.plane(a, b, gcs_core::plane::Basis::page(), "pl");
+    let pl = sk.fixed_plane(gcs_core::plane::Basis::page(), "pl");
     for e in [
         EntRef::point(a),
         EntRef::line(l),
@@ -309,10 +315,21 @@ fn the_names_match_the_parameters() {
 /// A family written over something with no fixed number of coordinates is refused, and says why.
 #[test]
 fn a_curve_over_a_spline_is_refused() {
-    let (prog, _) = gcs_core::syntax::parse(
-        "component bad(s: spline, u: Angle) {\n  p := point(x: u, y: u)\n}\n\
-         a := point hint(x: 0, y: 0)\nb := point hint(x: 1, y: 1)\nc := point hint(x: 2, y: 1)\n\
-         d := point hint(x: 3, y: 0)\ns := spline(a, b, c, d)\nw := bad(s).p over u in (0, 1)\n",
+    let (prog, _) = crate::common::parse(
+        "\
+use std
+component bad(s: spline, u: Angle) {
+  p := point(x: u, y: u)
+}
+in std.front {
+a := point hint(x: 0, y: 0)
+b := point hint(x: 1, y: 1)
+c := point hint(x: 2, y: 1)
+d := point hint(x: 3, y: 0)
+s := spline(a, b, c, d)
+}
+w := bad(s).p over u in (0, 1)
+",
     );
     let e = gcs_core::program::elaborate(&prog);
     assert!(!e.ok());

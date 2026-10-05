@@ -11,6 +11,19 @@ await initCore();
 
 test('spatial seams, vertices and finite edges retain their defining geometry through the ABI', () => {
   const doc = Document.read(`unit mm
+use std
+component Sphere(origin: point,size: Length) {
+  private south := point hint(x: origin.x,y: origin.y-size)
+  private north := point hint(x: origin.x,y: origin.y+size)
+  south vertical origin
+  north vertical origin
+  private rim := arc(center: origin,start: south,end: north)
+  radius(size) rim
+  private diameter := line(north,south)
+  private carrier := solid(face(rim,diameter),about: diameter)
+  wall := surface(carrier,rim)
+}
+in std.front {
 o := point
 q := point
 x := point
@@ -31,13 +44,6 @@ axis := line(o,q)
 spin_axis := line(o,x)
 profile := (bottom := line(a,b)) -> (low := line(b,m)) -> (high := line(m,c)) ->
           (top := line(c,d)) -> (inner := line(d,a)) -> close
-body := solid(profile,about: axis)
-first_surface := surface(body,low,from: 0deg,to: 90deg)
-second_surface := surface(body,high,from: 0deg,to: 90deg)
-roll := motion(about: spin_axis)
-first_envelope := envelope(first_surface,under: roll,from: -20deg,to: 20deg)
-second_envelope := envelope(second_surface,under: roll,from: -20deg,to: 20deg)
-shared := seam(first_envelope,second_envelope)
 south := point
 north := point
 fix(x == 0, y == -sqrt(9.25)) south
@@ -45,30 +51,27 @@ fix(x == 0, y == sqrt(9.25)) north
 rim := arc(center: o,start: south,end: north)
 radius(sqrt(9.25) * 1mm) rim
 diameter := line(north,south)
-ball := solid(face(rim,diameter),about: diameter)
-boundary := surface(ball,rim)
-sphere_edge := seam(first_envelope,boundary)
-component Sphere(origin: point,size: Length) {
-  private south := point hint(x: origin.x,y: origin.y-size)
-  private north := point hint(x: origin.x,y: origin.y+size)
-  south vertical origin
-  north vertical origin
-  private rim := arc(center: origin,start: south,end: north)
-  radius(size) rim
-  private diameter := line(north,south)
-  private carrier := solid(face(rim,diameter),about: diameter)
-  wall := surface(carrier,rim)
-}
 shifted := point
 fix(x == 0, y == 1) shifted
 offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
 join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
+end_offset := Sphere(shifted,size: sqrt(10.25-cos(0.2rad))*1mm)
+end_join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.2rad))*1mm)
+}
+body := solid(profile,about: axis)
+first_surface := surface(body,low,from: 0deg,to: 90deg)
+second_surface := surface(body,high,from: 0deg,to: 90deg)
+roll := motion(about: spin_axis)
+first_envelope := envelope(first_surface,under: roll,from: -20deg,to: 20deg)
+second_envelope := envelope(second_surface,under: roll,from: -20deg,to: 20deg)
+shared := seam(first_envelope,second_envelope)
+ball := solid(face(rim,diameter),about: diameter)
+boundary := surface(ball,rim)
+sphere_edge := seam(first_envelope,boundary)
 offset_edge := seam(first_envelope,offset.wall)
 join_edge := seam(second_envelope,join_cut.wall)
 corner := vertex(sphere_edge,offset_edge)
 junction := vertex(shared,join_edge)
-end_offset := Sphere(shifted,size: sqrt(10.25-cos(0.2rad))*1mm)
-end_join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.2rad))*1mm)
 end_edge := seam(first_envelope,end_offset.wall)
 end_join_edge := seam(second_envelope,end_join_cut.wall)
 finish := vertex(sphere_edge,end_edge)

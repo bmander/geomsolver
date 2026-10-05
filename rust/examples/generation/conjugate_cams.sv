@@ -13,6 +13,8 @@
 // Edit the lobe's semi-axes `a` and `b`, or how far its centre `off` sits from the shaft, and
 // the partner is cut again.
 
+use std
+
 a := 14
 b := 9
 off := 3
@@ -21,13 +23,15 @@ component Lobe(c: point, a: Length, b: Length, u: Angle) {
   p := point(x: c.x + a * cos(u), y: c.y + b * sin(u))
 }
 
-o1 := point
-o2 := point hint(x: 40, y: 0)
-fix(x == 0, y == 0) o1
-fix(x == 40, y == 0) o2
-lc := point hint(x: 3, y: 0)
-o1 distance(off, along: x) lc
-o1 distance(0, along: y) lc
+in std.front {
+  o1 := point
+  o2 := point hint(x: 40, y: 0)
+  fix(x == 0, y == 0) o1
+  fix(x == 40, y == 0) o2
+  lc := point hint(x: 3, y: 0)
+  o1 distance(off, along: x) lc
+  o1 distance(0, along: y) lc
+}
 
 lobe := Lobe(lc, a: a, b: b).p over u in (0, 360)
 shaft_a := motion(about: o1, ratio: 1)

@@ -8,16 +8,17 @@ outlet_half := 6mm
 wall := 2mm
 bend_angle := 90deg
 
-center := point hint(x: bend_radius, y: 0mm)
-std.origin horizontal center
-std.origin distance(bend_radius) center
-outer := std.CenteredRectangle(center, w: 2 * inlet_half, h: 2 * inlet_half)
-inner := std.CenteredRectangle(center, w: 2 * (inlet_half - wall), h: 2 * (inlet_half - wall))
-inlet := face(outer.loop, holes: inner.loop)
+in std.front {
+  center := point hint(x: bend_radius, y: 0mm)
+  std.origin horizontal center
+  std.origin distance(bend_radius) center
+  outer := std.CenteredRectangle(center, w: 2 * inlet_half, h: 2 * inlet_half)
+  inner := std.CenteredRectangle(center, w: 2 * (inlet_half - wall), h: 2 * (inlet_half - wall))
+  inlet := face(outer.loop, holes: inner.loop)
+}
 
-// The guide is drawn in plan; each section stands perpendicular to its tangent at its end.
-plan := plane(origin: std.origin, toward: std.front.toward, from: std.front, fold: 0deg)
-in plan {
+// The guide is drawn in plan, the top plane; each section stands perpendicular to its tangent at its end.
+in std.top {
   turn_center := point
   fix(x == 0mm, y == 0mm) turn_center
   entry := point hint(x: bend_radius, y: 0mm)
@@ -30,9 +31,8 @@ in plan {
   radius(bend_radius) guide
 }
 
-// The outlet's plane holds the bend's axis and the radius to the exit.
-outlet_view := plane(origin: std.origin, toward: std.front.toward, u: (0, 1, 0), v: (0, 0, 1))
-in outlet_view {
+// The outlet's plane, the side plane, holds the bend's axis and the radius to the exit.
+in std.side {
   out_center := point
   fix(x == bend_radius, y == 0mm) out_center
   out_outer := std.CenteredRectangle(out_center, w: 2 * outlet_half, h: 2 * outlet_half)

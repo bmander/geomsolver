@@ -4,10 +4,21 @@ use super::plane_of_entity;
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::syntax::{
-    entity_name, num, Arg, Attitude, Decl, DeclName, Input, Kid, Name, ParamDecl, PlaneHint,
-    PlaneSolve, Position, Program, Ref, Relation, Span, StmtKind, Ty,
+    num, Arg, Decl, DeclName, Input, Kid, Name, ParamDecl, Program, Ref, Relation, Span, StmtKind,
+    Ty,
 };
 use crate::{curve, decompose, expr};
+
+/// What a lifted program calls an entity: its own name, except a plane's origin, which is the
+/// plane's — `v0.origin` — since the plane mints it.
+fn name(sk: &Sketch, e: EntRef) -> String {
+    if e.kind == EntKind::Point {
+        if let Some(i) = sk.plane_of_origin(e.i()) {
+            return format!("{}.origin", crate::syntax::entity_name(EntRef::plane(i)));
+        }
+    }
+    crate::syntax::entity_name(e)
+}
 
 /// The canonical program for a sketch.
 ///
@@ -15,6 +26,23 @@ use crate::{curve, decompose, expr};
 /// migration — and, while the parser is still being written, the whole of the bootstrap: a panel
 /// can show a program before anything can read one back.
 pub fn to_program(sk: &Sketch) -> Program {
+    // a point of a 2D sketch — a plane-less sketch built in code or read from an older document
+    // — has no place a document can write but a plane: it is drawn in a front plane of its own
+    let flat: Vec<usize> = (0..sk.points.len())
+        .filter(|&i| sk.points[i].plane.is_none() && sk.points[i].z.is_none())
+        .collect();
+    let owned;
+    let sk = if flat.is_empty() {
+        sk
+    } else {
+        let mut s = sk.clone();
+        let front = s.fixed_plane(crate::plane::Basis::page(), "front");
+        for p in flat {
+            s.set_plane(p, Some(front));
+        }
+        owned = s;
+        &owned
+    };
     let mut p = Program::new();
     // what its numbers are in, first: every number after it is read in them (spec §3.3.2)
     if let Some(n) = sk.units.name() {
@@ -24,25 +52,31 @@ pub fn to_program(sk: &Sketch) -> Program {
     for st in unknowns(sk) {
         p.push(st);
     }
+    // a plane's origin is the plane's own, minted with it and never declared apart — minted with
+    // the points, in statement order, so the plane is written where its origin stands among them
     for e in sk.primitives() {
-        p.push(StmtKind::Decl(lift_decl(sk, e)));
+        match e.kind {
+            EntKind::Plane => continue,
+            EntKind::Point => match sk.plane_of_origin(e.i()) {
+                Some(pl) => p.push(StmtKind::Decl(lift_decl(sk, EntRef::plane(pl)))),
+                None => p.push(StmtKind::Decl(lift_decl(sk, e))),
+            },
+            _ => p.push(StmtKind::Decl(lift_decl(sk, e))),
+        };
     }
-    // a hinge is a solved view's own statement, and so is the row a fold `along` a line puts
-    // its first end in the view by: both are spelled by the plane's clauses (`lift_view`)
-    let along = along_rows(sk);
-    // and a mate's row is its `against` statement's, and solids are not lifted
-    let lifted = |c: &&Constraint| {
-        !c.kind.hinge() && c.kind != CKind::Mate && !along.contains(&c.id)
-    };
-    for c in sk.user_constraints().into_iter().filter(lifted) {
+    // and a plane written over a drawn line says so with the ray it gave it: `r parallel l`
+    let along = sk.constraints.iter().filter(|c| {
+        c.intrinsic && c.kind == CKind::Parallel3 && c.args[0].ent().kind == EntKind::Ray
+    });
+    for c in sk.user_constraints().into_iter().chain(along) {
         p.push(StmtKind::Relation(lift_relation(sk, c)));
     }
-    // every held number is said, with what it is held at; a datum point the page-placement
-    // gauge holds is not: the lifted views are solved again (`lift_view`), and it is held again
+    // every held number is said, with what it is held at; a plane's origin is not, since the
+    // plane holds it at its own `(0, 0)` and no `fix` says so (`holds`)
     for e in sk.primitives() {
         let held = holds(sk, e);
         if !held.is_empty() {
-            p.push(StmtKind::Relation(lift_gauge(&entity_name(e), &held)));
+            p.push(StmtKind::Relation(lift_gauge(&name(sk, e), &held)));
         }
     }
     for (key, &v) in &sk.branches {
@@ -50,7 +84,7 @@ pub fn to_program(sk: &Sketch) -> Program {
             Some(t) => StmtKind::Relation(built(
                 if v >= 0 { CKind::Ccw } else { CKind::Cw },
                 t.iter()
-                    .map(|&i| Some(Arg::Ref(Ref::new(entity_name(EntRef::point(i))))))
+                    .map(|&i| Some(Arg::Ref(Ref::new(name(sk, EntRef::point(i))))))
                     .collect(),
             )),
             // a key that is not a triple of points has no name to travel under; it is kept
@@ -85,7 +119,11 @@ fn unknowns(sk: &Sketch) -> Vec<StmtKind> {
 }
 
 pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
-    let kids = sk.children(e);
+    let mut kids = sk.children(e);
+    // a plane's origin is its own, never written: `plane(u: r0, v: r1)`
+    if e.kind == EntKind::Plane {
+        kids.truncate(2);
+    }
     let mut children: Vec<Vec<Kid>> = Vec::new();
     let mut taken = 0usize;
     for (_, field) in e.kind.fields() {
@@ -93,14 +131,14 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
             Field::Child => {
                 children.push(
                     kids.get(taken)
-                        .map(|&k| vec![Kid::Ref(Ref::new(entity_name(k)))])
+                        .map(|&k| vec![Kid::Ref(Ref::new(name(sk, k)))])
                         .unwrap_or_default(),
                 );
                 taken += 1;
             }
             Field::List => {
                 children.push(
-                    kids[taken..].iter().map(|&k| Kid::Ref(Ref::new(entity_name(k)))).collect(),
+                    kids[taken..].iter().map(|&k| Kid::Ref(Ref::new(name(sk, k)))).collect(),
                 );
                 taken = kids.len();
             }
@@ -118,11 +156,10 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         }
         _ => None,
     };
-    let (attitude, plane) = lift_view(sk, e).unwrap_or_else(|| (lift_attitude(sk, e), Default::default()));
     Decl {
         annotations: crate::semantics::Annotations { roles: sk.roles_of(e), private: false },
         kind: e.kind,
-        name: DeclName::Written(Name::new(entity_name(e))),
+        name: DeclName::Written(Name::new(name(sk, e))),
         children,
         seed_text: vec![None; seed.len()],
         seed_spans: vec![Span::default(); seed.len()],
@@ -135,8 +172,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         class_span: Span::default(),
         seed_at: None,
         seed_names: Vec::new(),
-        attitude,
-        sweep: None, motion: None, angular_span: None, plane,
+        sweep: None, motion: None, angular_span: None,
         membership: lift_plane(sk, e),
         list_span: Span::default(),
         close: None,
@@ -160,7 +196,7 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
         .formals
         .iter()
         .zip(&cv.args)
-        .map(|((n, _), a)| arg(n, InstVal::Ref(Ref::new(entity_name(*a)))))
+        .map(|((n, _), a)| arg(n, InstVal::Ref(Ref::new(name(sk, *a)))))
         .collect();
     args.extend(
         def.values
@@ -190,156 +226,30 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
     }
 }
 
-/// A plane's attitude as a statement spells it: nothing for the page's own basis, the basis
-/// itself otherwise.  A lifted plane never says `from` — the sketch holds the resolved basis
-/// and not the construction it came from.
-fn lift_attitude(sk: &Sketch, e: EntRef) -> Attitude {
-    if e.kind != EntKind::Plane {
-        return Attitude::Page;
-    }
-    lift_attitude_at(sk, e, sk.basis(e.i()).o)
-}
-
-/// The same, standing at `o` rather than where the plane does — for a view whose offset is
-/// solved, which carries its place along the normal in `hint(offset: …)` and only the rest here.
-fn lift_attitude_at(sk: &Sketch, e: EntRef, o: [f64; 3]) -> Attitude {
-    let b = crate::plane::Basis { o, ..sk.basis(e.i()) };
-    let page = crate::plane::Basis::page();
-    let same = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
-    // **where it stands, as well as how it turns**: a plane stood off the shared origin — by
-    // an `offset:`, a mate, a fold from one that was — keeps its origin through the lift, as
-    // `o:`; one at the origin writes nothing new, so a lifted page view is `Page` as before
-    let at_origin = b.o.iter().all(|x| *x == 0.0);
-    if same(b.u, page.u) && same(b.v, page.v) && at_origin {
-        return Attitude::Page;
-    }
-    let dim = |x: f64| Arg::Dim { text: num(x), span: Span::default() };
-    Attitude::Basis {
-        u: [dim(b.u[0]), dim(b.u[1]), dim(b.u[2])],
-        v: [dim(b.v[0]), dim(b.v[1]), dim(b.v[2])],
-        o: (!at_origin).then(|| [dim(b.o[0]), dim(b.o[1]), dim(b.o[2])]),
-    }
-}
-
-/// **A solved view as the clauses that solve it**: the hinge it is held by spelled as the
-/// fold it came from — `from: P, fold: beta` with the fold where the solve left it as its seed,
-/// `from: P, fold: along l`, `from: P, offset: k` — a free attitude as `attitude: free` seeded
-/// with its solved `u` and `v`, and a solved offset as `offset: free` seeded where it stands (a
-/// `through: M` comes back as that, beside the `M on Q` the views pass minted for it, which says
-/// the same thing).  `None` for a plane with no attitude of its own, or one that is only held —
-/// a stated view a solved one reads — which `lift_attitude` states as before.
-fn lift_view(sk: &Sketch, e: EntRef) -> Option<(Attitude, PlaneSolve)> {
-    if e.kind != EntKind::Plane {
-        return None;
-    }
-    let pi = e.i();
-    let a = sk.planes[pi].att.as_ref()?;
-    let q_free = a.q.iter().any(|&k| !sk.params[k as usize].fixed);
-    let d_free = !sk.params[a.d as usize].fixed;
-    let hinge = sk.constraints.iter()
-        .find(|c| c.kind.hinge() && matches!(c.args[0], CArg::Ent(p) if p == e));
-    if hinge.is_none() && !q_free && !d_free {
-        return None;
-    }
-    let b = sk.basis(pi);
-    let dim = |t: String| Arg::Dim { text: t, span: Span::default() };
-    let hint = |key: &str, args: Vec<Arg>| PlaneHint { key: Name::new(key), args, span: Span::default() };
-    let mut hints = Vec::new();
-    let parent = hinge.map(|c| c.args[1].ent().i());
-    let parent_ref = |p: usize| Ref::new(entity_name(EntRef::plane(p)));
-    // where it stands along its own normal from the origin its attitude's clause leaves it at:
-    // the parent's, for a fold or a stand-off, and the shared origin otherwise
-    let from_o = parent.map_or([0.0; 3], |p| sk.basis(p).o);
-    let offset = crate::plane::dot(b.normal(), crate::space::sub(b.o, from_o));
-    let attitude = match hinge.map(|c| c.kind) {
-        Some(CKind::Hinge) => {
-            let c = hinge.expect("matched");
-            let deg = |rad: f64| format!("{}deg", num(rad.to_degrees()));
-            // a solved fold reads an unknown, which is declared and seeded where it stands
-            // (`unknowns`)
-            let fold = match &c.args[2] {
-                CArg::Expr(x) => x.text.clone(),
-                a => deg(a.num()),
-            };
-            Attitude::From { plane: parent_ref(parent.expect("a hinge names its parent")), fold: dim(fold) }
-        }
-        Some(CKind::HingeAlong) => Attitude::Along {
-            plane: parent_ref(parent.expect("a hinge names its parent")),
-            line: Ref::new(entity_name(hinge.expect("matched").args[2].ent())),
-        },
-        Some(_) => Attitude::Offset {
-            plane: parent_ref(parent.expect("a hinge names its parent")),
-            offset: (!d_free).then(|| dim(num(offset))),
-        },
-        None if q_free => {
-            let triple = |w: [f64; 3]| w.iter().map(|&x| dim(num(x))).collect::<Vec<_>>();
-            hints.push(hint("u", triple(b.u)));
-            hints.push(hint("v", triple(b.v)));
-            Attitude::Free { span: Span::default() }
-        }
-        // where it stands along the normal is the offset's hint below, so only the origin's part
-        // in its own plane is the basis's
-        None if d_free => {
-            let n = b.normal();
-            let k = crate::plane::dot(n, b.o);
-            let rest = [0, 1, 2].map(|t| b.o[t] - k * n[t]);
-            // what is left of an origin on the normal is roundoff, and says nothing
-            let tiny = crate::space::norm(rest) <= 1e-12 * (1.0 + k.abs());
-            lift_attitude_at(sk, e, if tiny { [0.0; 3] } else { rest })
-        }
-        None => lift_attitude(sk, e),
-    };
-    // a fold `along` a line stands the view where the line is, which is its position already
-    let position = if d_free && !matches!(attitude, Attitude::Along { .. }) {
-        hints.push(hint("offset", vec![dim(num(offset))]));
-        Position::Free(Span::default())
-    } else {
-        Position::Stated
-    };
-    Some((attitude, PlaneSolve { position, hints }))
-}
-
-/// The rows a fold `along` a line put its first end in the view by — the `PointOnPlane` beside
-/// each `HingeAlong` — which the plane's `fold: along l` mints again, so lifting them as
-/// relations would state them twice.
-fn along_rows(sk: &Sketch) -> Vec<u32> {
-    let mut out = Vec::new();
-    for h in sk.constraints.iter().filter(|c| c.kind == CKind::HingeAlong) {
-        let (child, l) = (h.args[0].ent(), h.args[2].ent());
-        let p1 = EntRef::point(sk.lines[l.i()].p1 as usize);
-        if let Some(c) = sk.constraints.iter().find(|c| {
-            c.kind.attitude_twin(true) == CKind::PointOnPlane
-                && c.args[0].ent() == p1
-                && c.args[1].ent() == child
-                && !out.contains(&c.id)
-        }) {
-            out.push(c.id);
-        }
-    }
-    out
-}
-
 /// The plane an entity's points are all on, when they are all on one — the clause its
 /// statement writes.  A point with none, or a line whose ends are on two planes (which no one
 /// statement can say), lifts without one.
 pub(crate) fn lift_plane(sk: &Sketch, e: EntRef) -> crate::syntax::Membership {
     match plane_of_entity(sk, e) {
-        Some(p) => crate::syntax::Membership::lifted(Ref::new(entity_name(EntRef::plane(p)))),
+        Some(p) => crate::syntax::Membership::lifted(Ref::new(name(sk, EntRef::plane(p)))),
         None => Default::default(),
     }
 }
 
 /// The numbers of an entity's own a `fix` holds, by field and at what — written as a hint
-/// writes them (`Sketch::seed_value`: a cone's half-angle in degrees).  None for a plane, whose
-/// attitude its points hold, or for a datum point the page-placement gauge holds.
+/// writes them (`Sketch::seed_value`: a cone's half-angle in degrees).  None for a plane's
+/// origin, which the plane holds at its own `(0, 0)` and no `fix` says.
 pub(crate) fn holds(sk: &Sketch, e: EntRef) -> Vec<(&'static str, f64)> {
-    let page_held = e.kind == EntKind::Point && sk.page_held.contains(&(e.i() as u32));
-    if e.kind == EntKind::Plane || page_held {
+    if e.kind == EntKind::Point && sk.plane_of_origin(e.i()).is_some() {
         return Vec::new();
     }
     let scalars = e.kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n);
+    // a ray's place is held while nothing reads it (`Sketch::place_ray`), which is no gauge of
+    // the document's: only its direction is ever stated held
+    let own = sk.own_params(e);
+    let own = if e.kind == EntKind::Ray { &own[..3] } else { &own[..] };
     scalars
-        .zip(sk.own_params(e))
+        .zip(own.iter().copied())
         .filter(|&(_, p)| sk.params[p as usize].fixed)
         .map(|(n, p)| (n, sk.seed_value(e, p)))
         .collect()
@@ -390,7 +300,7 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
 
 fn lift_arg(sk: &Sketch, kind: SpecKind, a: &CArg) -> Option<Arg> {
     Some(match a {
-        CArg::Ent(e) => Arg::Ref(Ref::new(entity_name(*e))),
+        CArg::Ent(e) => Arg::Ref(Ref::new(name(sk, *e))),
         // a hidden unknown travels as the number it holds, and as `==` when it was pinned: a fit
         // chose it, and a document that came back with it free would have degrees of freedom
         // nobody drew — or as the name it is shared under (`t == s`): `Sketch::owned_arg`

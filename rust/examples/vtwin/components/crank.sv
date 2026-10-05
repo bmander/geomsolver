@@ -21,13 +21,16 @@ component Crank(o: point, ref: line, dims: group, theta: Angle) {
   // the clevis pin's end, seen on
   kp := circle(center: pin) hint(r: dims.rpin)
   radius(dims.rpin) kp
-  disc_axes := plane(origin: o, toward: pin)
+  disc_axes := std.Turned(o, pin)
   disc := components.disc.Disc(disc_axes, dims: dims)
 }
 
 // Open this file to preview the crank; drag its pin to turn it.
 preview {
   unit mm
-  ref := line(std.origin, std.up.toward)
-  crank := Crank(std.origin, ref, dims: components.dims.vtwin_dims)
+  in std.front {
+    ref := line(std.origin, hint(x: 0, y: 1))
+    fix(x == 0, y == 1) ref.p2
+    crank := Crank(std.origin, ref, dims: components.dims.vtwin_dims)
+  }
 }

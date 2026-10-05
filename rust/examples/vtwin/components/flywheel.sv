@@ -13,18 +13,17 @@ use std
 use components.dims
 use components.parts
 
-component Flywheel(f: plane, dims: group) {
-  rim := circle(center: f.origin) hint(r: dims.rfw)
+component Flywheel(f: group, dims: group) {
+  rim := circle(center: f.u.p1) hint(r: dims.rfw)
   radius(dims.rfw) rim
-  bore := circle(center: f.origin) hint(r: dims.dhub / 2)
+  bore := circle(center: f.u.p1) hint(r: dims.dhub / 2)
   radius(dims.dhub / 2) bore
-  se := point hint(x: f.origin.x + (0mm) * f.c - (-dims.rfw) * f.s,
-                    y: f.origin.y + (0mm) * f.s + (-dims.rfw) * f.c)
-  ssa := line(f.origin, se)
-  reference := line(f.origin, f.toward)
-  se on rim
+  se := point hint(at: f.axes, x: 0mm, y: -dims.rfw)
+  ssa := line(f.u.p1, se)
+  reference := line(f.u.p1, f.u.p2)
+  se coincident rim
   ssa perpendicular reference
-  screw_axes := plane(origin: f.origin, toward: se)
+  screw_axes := std.Turned(f.u.p1, se)
   gs := components.parts.Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rfw, dims: dims)
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
@@ -38,5 +37,10 @@ component Flywheel(f: plane, dims: group) {
 // Open this file to preview the flywheel; ../flywheel.svd arranges its three projections.
 preview {
   unit mm
-  fw := Flywheel(std.up, dims: components.dims.vtwin_dims)
+  in std.front {
+    up := point
+    fix(x == 0, y == 40) up
+    axes := std.Turned(std.origin, up)
+    fw := Flywheel(axes, dims: components.dims.vtwin_dims)
+  }
 }

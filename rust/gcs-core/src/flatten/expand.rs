@@ -18,7 +18,7 @@ impl<'a> Walk<'a> {
         }
         let Some(p) = &scope.in_plane else { return };
         if !d.kind.bears_points() {
-            return; // a datum's points are the datum's, and a curve is its expressions
+            return; // a plane's origin is the plane's, and a curve is its expressions
         }
         if !d.membership.join(&p.plane, crate::syntax::Source::Instance) {
             self.err(Code::E103, d.membership.span(), d.membership.cause().to_string());
@@ -163,14 +163,6 @@ impl<'a> Walk<'a> {
                         }
                     }
                     self.settle_seeds(&mut d2, vals, scope, st.span);
-                    // a plane's fold and basis are written over the parameters in scope like
-                    // any other number, through the one walk that settles an argument
-                    for a in d2.attitude.args_mut() {
-                        self.settle_arg(a, vals, scope);
-                    }
-                    for a in d2.plane.args_mut() {
-                        self.settle_arg(a, vals, scope);
-                    }
                     // and a solid's sweep, which is written in the same little language
                     if let Some(sw) = d2.sweep.as_mut() {
                         for a in sw.args_mut() {

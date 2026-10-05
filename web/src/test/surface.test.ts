@@ -9,6 +9,8 @@ await initCore();
 
 test('a named analytic surface evaluates the solved model through the ABI', () => {
   const doc = Document.read(`unit mm
+use std
+in std.front {
 o := point
 q := point
 c := point
@@ -18,6 +20,7 @@ fix(x == 3, y == 0) c
 axis := line(o,q)
 meridian := circle(center: c)
 radius(1mm) meridian
+}
 ring := solid(face(meridian),about: axis)
 wall := surface(ring,meridian)
 `);

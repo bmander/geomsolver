@@ -23,8 +23,8 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   // `rim_in`.
   corner := point hint(at: tip.p, toward: tip.q, by: 0.5)
   along_tip := point hint(at: corner)
-  corner on tip_line
-  along_tip on tip_line
+  corner coincident tip_line
+  along_tip coincident tip_line
   private to_corner := line(apex, corner)
   private to_along := line(apex, along_tip)
   to_corner equal to_rim
@@ -34,7 +34,7 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   private foot := point hint(at: cone_line.p2)
   private mark := point hint(at: corner, toward: foot, by: 0.5)
   private level := point hint(at: tip.q)
-  foot on cone_line
+  foot coincident cone_line
   private drop := line(corner, foot)
   drop perpendicular cone_line
   private down := line(corner, mark)
@@ -44,7 +44,7 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   below parallel tip_line
   distance(size) below
   down_end := point hint(at: mark)
-  down_end on below
+  down_end coincident below
   private to_down := line(apex, down_end)
   to_down equal to_rim
   // The ring's section: the chamfer extended its own length past each end, and the point as far
@@ -75,20 +75,22 @@ component EndCut(body: solid, toe: solid, heel: solid) {
 // The two chamfers in a member's axial view; blank/member.sv's preview cuts them from a blank.
 preview {
   unit mm
-  mean := point hint(x: 50, y: 0)
-  foot := point hint(x: 40, y: 20)
-  std.origin distance(50mm, along: right) mean
-  std.origin distance(0mm, along: up) mean
-  generator := line(std.origin, mean)
-  axis := line(std.origin, foot)
-  to_foot := line(mean, foot)
-  to_foot perpendicular axis
-  generator angle(30deg) axis
-  span := blank.sphere.FaceSpan(generator, width: 10mm)
-  inner := blank.sphere.FaceSpan(generator, width: 9mm)
-  toe := blank.sphere.SphericalBoundary(std.origin, generator, span.toe)
-  heel := blank.sphere.SphericalBoundary(std.origin, generator, span.heel)
-  tip := blank.cone.ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
-  toe_end := EndChamfer(std.origin, span.toe, inner.toe, generator, tip, axis, size: 0.5mm)
-  heel_end := EndChamfer(std.origin, span.heel, inner.heel, generator, tip, axis, size: 0.5mm)
+  in std.front {
+    mean := point hint(x: 50, y: 0)
+    foot := point hint(x: 40, y: 20)
+    std.origin distance(50mm, along: right) mean
+    std.origin distance(0mm, along: up) mean
+    generator := line(std.origin, mean)
+    axis := line(std.origin, foot)
+    to_foot := line(mean, foot)
+    to_foot perpendicular axis
+    generator angle(30deg) axis
+    span := blank.sphere.FaceSpan(generator, width: 10mm)
+    inner := blank.sphere.FaceSpan(generator, width: 9mm)
+    toe := blank.sphere.SphericalBoundary(std.origin, generator, span.toe)
+    heel := blank.sphere.SphericalBoundary(std.origin, generator, span.heel)
+    tip := blank.cone.ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
+    toe_end := EndChamfer(std.origin, span.toe, inner.toe, generator, tip, axis, size: 0.5mm)
+    heel_end := EndChamfer(std.origin, span.heel, inner.heel, generator, tip, axis, size: 0.5mm)
+  }
 }

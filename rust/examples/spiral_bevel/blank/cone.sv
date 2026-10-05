@@ -18,8 +18,8 @@ component ConeSpan(generator: line, axis: line) {
   far_rib := line(far, far_cross)
   near_rib perpendicular generator
   far_rib perpendicular generator
-  near_cross on axis
-  far_cross on axis
+  near_cross coincident axis
+  far_cross coincident axis
 }
 
 // The meridian stands `offset` off `generator` along each rib, turned `lean` from the direction
@@ -39,8 +39,8 @@ component ConeBoundary(generator: line, axis: line, offset: Length, lean: Angle)
   span.far_rib angle(lean) far_lift
   distance(offset) near_lift
   distance(offset) far_lift
-  a on axis
-  b on axis
+  a coincident axis
+  b coincident axis
   private profile := (near_cap := line(a, p)) -> (meridian := line(p, q)) ->
                      (far_cap := line(q, b)) -> (spine := line(b, a)) -> close
   near_cap perpendicular axis
@@ -51,15 +51,17 @@ component ConeBoundary(generator: line, axis: line, offset: Length, lean: Angle)
 
 preview {
   unit mm
-  mean := point hint(x: 50, y: 0)
-  foot := point hint(x: 40, y: 20)
-  std.origin distance(50mm, along: right) mean
-  std.origin distance(0mm, along: up) mean
-  generator := line(std.origin, mean)
-  axis := line(std.origin, foot)
-  to_foot := line(mean, foot)
-  to_foot perpendicular axis
-  generator angle(30deg) axis
-  tip := ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
-  root := ConeBoundary(generator, axis, offset: 2.5mm, lean: 0deg)
+  in std.front {
+    mean := point hint(x: 50, y: 0)
+    foot := point hint(x: 40, y: 20)
+    std.origin distance(50mm, along: right) mean
+    std.origin distance(0mm, along: up) mean
+    generator := line(std.origin, mean)
+    axis := line(std.origin, foot)
+    to_foot := line(mean, foot)
+    to_foot perpendicular axis
+    generator angle(30deg) axis
+    tip := ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
+    root := ConeBoundary(generator, axis, offset: 2.5mm, lean: 0deg)
+  }
 }

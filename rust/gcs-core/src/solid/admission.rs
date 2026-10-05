@@ -239,10 +239,7 @@ fn revolution_turns(sk: &Sketch,id: usize,tolerance: f64) -> Option<Vec<Turns>> 
             if (sweep.value.abs()-TAU).abs() > 1e-9 { return None; }
             // the axis's two points lifted through the profile's frame, as the recipe lifts them
             let p = super::face_poly(sk,*face as usize,super::REPORT_UNIT)?;
-            let lift = |i: usize| {
-                let q = crate::plane::in_view(p.pose.0,p.pose.1,p.pose.2,sk.point_xy(i));
-                p.basis.lift(q.0,q.1)
-            };
+            let lift = |i: usize| { let q = sk.point_xy(i); p.basis.lift(q.0,q.1) };
             let line = &sk.lines[*axis as usize];
             let (a,b) = (lift(line.p1 as usize),lift(line.p2 as usize));
             let d = sub(b,a);

@@ -2,10 +2,12 @@
 //! copies and through cuts, checked by sign against closed forms and the faceted
 //! kernel, and for the one-Lipschitz bound every field promises.
 use gcs_core::{interval::Interval as I,program,solid::{MaterialField,SpatialField,REPORT_UNIT},
-    solve,syntax};
+    solve};
 
-const BLOCK: &str = "unit mm
+const BLOCK: &str = "\
+unit mm
 use std
+in std.front {
 a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
@@ -14,31 +16,42 @@ horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) -> horizontal (cd :
 a distance(60) b
 b distance(40) c
 fix(x == 0, y == 0) a
+}
 sec := face(ab, bc, cd, da)
 block := solid(sec, depth: 30mm)
 ";
 
-const TURN: &str = "o := point
+const TURN: &str = "\
+use std
+in std.front {
+o := point
 z := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 10) z
 axis := line(o, z)
+}
 turn := motion(about: axis)
 moved := solid(block, under: turn, at: 40deg)
 ";
 
-const BORE: &str = "h := point
+const BORE: &str = "\
+use std
+in std.front {
+h := point
 fix(x == 30, y == 20) h
 hole := circle(center: h) hint(r: 8)
 radius(8) hole
+}
 hole_f := face(hole)
 body := solid(block)
 bore := solid(hole_f, through: body)
 bore cut body
 ";
 
-const ELL: &str = "unit mm
+const ELL: &str = "\
+unit mm
 use std
+in std.front {
 a := point
 b := point hint(x: 50, y: 0)
 c := point hint(x: 50, y: 20)
@@ -51,14 +64,17 @@ b distance(20) c
 c distance(30) d
 d distance(30) e
 fix(x == 0, y == 0) a
+}
 sec := face(ab, bc, cd, de, ef, fa)
 ell := solid(sec, depth: 12mm)
 ";
 
 // A block with a semicircular notch bitten out of its top edge: the arc turns
 // against the loop, and the face enters it by its end.
-const NOTCH: &str = "unit mm
+const NOTCH: &str = "\
+unit mm
 use std
+in std.front {
 a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 30)
@@ -83,12 +99,13 @@ horizontal cd
 horizontal ef
 vertical fa
 radius(10) notch
+}
 sec := face(ab, bc, cd, notch, ef, fa)
 notched := solid(sec, depth: 8mm)
 ";
 
 fn read(source: &str) -> program::Elaborated {
-    let (mut p,errors) = syntax::parse(source);
+    let (mut p,errors) = crate::common::parse(source);
     assert!(errors.is_empty(),"{errors:?}");
     assert!(gcs_core::modules::link(&mut p,&mut gcs_core::library::resolve).is_empty());
     let mut e = program::elaborate(&p);

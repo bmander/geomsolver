@@ -12,6 +12,8 @@
 // cannot state it — by the seeds, each corner seeded one step further round the circle, which
 // is the statement "convex, once around".
 
+use std
+
 component Ngon(n: Int, side: Length) {
   // seeds track both parameters: the radius the side demands, not a number frozen at one size —
   // seeded at 30, the solve must inflate the figure by side/(2 sin(pi/n))/30 and runs out of
@@ -20,7 +22,7 @@ component Ngon(n: Int, side: Length) {
   c := circle hint(r: r0)
   cycle n as i {
     p := point hint(at: c, bearing: tau * i / n)
-    p on c
+    p coincident c
     (s := line(p)) -> equal
   }
   // one side sized, and the radius follows — a dimensioned radius would let the sides collapse
@@ -28,5 +30,7 @@ component Ngon(n: Int, side: Length) {
 }
 
 // the hub and the sides are reached by their names: `five.c`, `five.s[0]`
-five := Ngon(n: 5, side: 40)
-fix(x == 0, y == 0) five.c.center
+in std.front {
+  five := Ngon(n: 5, side: 40)
+  fix(x == 0, y == 0) five.c.center
+}

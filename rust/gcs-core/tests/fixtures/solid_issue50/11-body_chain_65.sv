@@ -1,12 +1,15 @@
 unit mm
-s0fp0 := point
-fix(x == 0, y == 0) s0fp0
-s0fp1 := point
-fix(x == 10, y == 0) s0fp1
-s0fp2 := point
-fix(x == 10, y == 10) s0fp2
-s0fp3 := point
-fix(x == 0, y == 10) s0fp3
+use std
+in std.front {
+  s0fp0 := point
+  fix(x == 0, y == 0) s0fp0
+  s0fp1 := point
+  fix(x == 10, y == 0) s0fp1
+  s0fp2 := point
+  fix(x == 10, y == 10) s0fp2
+  s0fp3 := point
+  fix(x == 0, y == 10) s0fp3
+}
 s0f := face(s0fp0, s0fp1, s0fp2, s0fp3, -> close)
 s0 := solid(s0f, from: -10mm, to: 0mm)
 s1 := solid(s0)

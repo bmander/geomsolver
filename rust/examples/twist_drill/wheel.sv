@@ -15,7 +15,8 @@ component GrindingWheel(side: plane, setting: Angle, wheel: group) {
   tangent_up := wheel.nearest + wheel.round - wheel.round * sin(wheel.flank)
   flank_across := tangent_across + (wheel.nearest + wheel.depth - tangent_up) * tan(wheel.flank)
 
-  // the wheel's axial plane: square to the side datum along a line `setting` from its vertical
+  // the wheel's axial plane: square to the side datum on a line `setting` from its vertical, its v
+  // out of the side datum the way its normal does not point
   in side {
     private o := point
     private h := point
@@ -25,9 +26,10 @@ component GrindingWheel(side: plane, setting: Angle, wheel: group) {
     h distance(10mm * cos(setting), along: v) side
     private construction hinge := line(o, h)
   }
-  private wo := point hint(x: 0, y: 0)
-  private wt := point hint(x: 10, y: 0)
-  section := plane(origin: wo, toward: wt, from: side, fold: along hinge)
+  private out := ray hint(x: -1, y: 0, z: 0)
+  out perpendicular side
+  section := plane(u: hinge, v: out)
+  side.origin coincident section.origin
 
   in section {
     private a0 := point
@@ -69,6 +71,11 @@ component GrindingWheel(side: plane, setting: Angle, wheel: group) {
 
 preview {
   unit mm
+  // the drill's side datum: u down the drill's axis, v along y, so x is its normal
+  down := ray hint(x: 0, y: 0, z: -1)
+  fix(x == 0, y == 0, z == -1) down
+  side := plane(u: down, v: std.y)
+  fix(x == 0, y == 0, z == 0) side
   sizes := {rim: 25mm, nearest: 0.75mm, round: 2.5mm, flank: 35deg, depth: 7mm}
-  wheel := GrindingWheel(std.side, setting: 30deg, wheel: sizes)
+  wheel := GrindingWheel(side, setting: 30deg, wheel: sizes)
 }

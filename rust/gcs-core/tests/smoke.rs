@@ -86,7 +86,11 @@ fn sparse_and_dense_paths_agree() {
 fn rank_is_reported_on_the_dense_path() {
     let mut sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
     sk.perturb(1.0, 0);
-    let n_res = sk.n_residuals();
+    // the rows that move something: not `use std`'s axes, which a `fix` holds outright
+    let n_res: usize = sk.hard_constraints().iter()
+        .filter(|c| c.params(&sk).iter().any(|&p| !sk.params[p as usize].fixed))
+        .map(|c| c.n_residuals())
+        .sum();
     let r = solve(&mut sk, SolveOpts::default());
     assert_eq!(r.rank, Some(n_res as i32));
     let mut sys = System::new(&sk);

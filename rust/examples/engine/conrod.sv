@@ -43,7 +43,7 @@ component ConRod(end: plane, side: plane, secv: plane,
     in end {
       // the small end rides the bore axis one rod length from the pin
       sm := point hint(x: pin.x, y: pin.y + dims.L)
-      sm on axis
+      sm coincident axis
       pin distance(dims.L) sm
       cl := line(pin, sm)
       bigbore := circle(center: pin) hint(r: rB)
@@ -75,10 +75,10 @@ component ConRod(end: plane, side: plane, secv: plane,
       sbr := point hint(x: pin.x + 15mm, y: pin.y + 26mm)
       ssl := point hint(x: sm.x - 10.9mm, y: sm.y - 11.7mm)
       ssr := point hint(x: sm.x + 10.9mm, y: sm.y - 11.7mm)
-      sbl on rayBL
-      sbr on rayBR
-      ssl on raySL
-      ssr on raySR
+      sbl coincident rayBL
+      sbr coincident rayBR
+      ssl coincident raySL
+      ssr coincident raySR
       ebl := point hint(x: pin.x - hB, y: pin.y + 31mm)
       ebr := point hint(x: pin.x + hB, y: pin.y + 31mm)
       esl := point hint(x: sm.x - hS, y: sm.y - 16mm)
@@ -108,7 +108,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       parting := line(pl0, pl1)
       pin midpoint parting
       parting perpendicular cl
-      pl0 on eyeB
+      pl0 coincident eyeB
       bl0 := point hint(x: pin.x - bolt, y: pin.y - capd)
       bl1 := point hint(x: pin.x - bolt, y: pin.y + rodd)
       br0 := point hint(x: pin.x + bolt, y: pin.y - capd)
@@ -132,10 +132,10 @@ component ConRod(end: plane, side: plane, secv: plane,
       or1 := point hint(x: sm.x + oil, y: sm.y - rS)
       oil_l := line(ol0, ol1)
       oil_r := line(or0, or1)
-      ol0 on bigbore
-      or0 on bigbore
-      ol1 on smallbore
-      or1 on smallbore
+      ol0 coincident bigbore
+      or0 coincident bigbore
+      ol1 coincident smallbore
+      or1 coincident smallbore
       ol0 distance(oil, side: left) cl
       ol1 distance(oil, side: left) cl
       or0 distance(oil, side: right) cl

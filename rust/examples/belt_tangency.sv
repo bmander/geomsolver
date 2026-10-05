@@ -19,20 +19,24 @@
 // `side: right` says which way round the belt runs.  It is written out because a document that
 // leaves it out gets a fixed default rather than a look at the drawing.
 
-c1 := point
-c2 := point
+use std
 
-k1 := radius(10) circle(center: c1) hint(r: 10)
-k2 := radius(10) circle(center: c2) hint(r: 10)
+in std.front {
+  c1 := point
+  c2 := point
 
-p := point hint(x: 0, y: 10)
-q := point hint(x: 50, y: 10)
-belt := line(p, q)
+  k1 := radius(10) circle(center: c1) hint(r: 10)
+  k2 := radius(10) circle(center: c2) hint(r: 10)
 
-p on k1
-q on k2
-belt tangent(side: right) k1
-belt tangent(side: right) k2
+  p := point hint(x: 0, y: 10)
+  q := point hint(x: 50, y: 10)
+  belt := line(p, q)
 
-fix(x == 0, y == 0) c1
-fix(x == 50, y == 0) c2
+  p coincident k1
+  q coincident k2
+  belt tangent(side: right) k1
+  belt tangent(side: right) k2
+
+  fix(x == 0, y == 0) c1
+  fix(x == 50, y == 0) c2
+}

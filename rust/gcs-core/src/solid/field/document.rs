@@ -3,7 +3,7 @@
 use crate::fmath::Det;
 use super::{SpatialField,MaterialField,SweptField,ExtrudedField,PlanarField,I,V};
 use crate::model::{EntKind,Sketch,SolidDef};
-use crate::{motion::Family,plane::{self,Basis},syntax::BodyWord};
+use crate::{motion::Family,plane::Basis,syntax::BodyWord};
 use crate::solid::{surface::Edge,RevolvedRegion};
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
@@ -80,15 +80,14 @@ fn within(at: &dyn Fn(f64) -> (f64,f64),a: f64,b: f64,tol: f64) -> Vec<(f64,f64)
 /// solved curve is not certified, as a solved line's is not).
 fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> {
     let f = sk.faces.get(face).ok_or("no such face")?;
-    let (basis,pose) = match f.plane()? {
+    let basis = match f.plane()? {
         Some(p) => {
-            let pl = sk.planes.get(p as usize).ok_or("no such plane")?;
-            (sk.basis(p as usize),(sk.params[pl.frame.c as usize].value,sk.params[pl.frame.s as usize].value,
-                sk.point_xy(pl.frame.origin as usize)))
+            sk.planes.get(p as usize).ok_or("no such plane")?;
+            sk.basis(p as usize)
         }
-        None => (Basis::page(),(1.,0.,(0.,0.))),
+        None => Basis::page(),
     };
-    let at = |q: (f64,f64)| { let (a,b) = plane::in_view(pose.0,pose.1,pose.2,q); [a,b] };
+    let at = |q: (f64,f64)| [q.0,q.1];
     let view = |i: u32| at(sk.point_xy(i as usize));
     // how near its curve a chord must pass: a share of the whole face's reach
     let reach = f.boundaries().flat_map(|(edges,_)| edges.iter().flat_map(|&e| sk.children(e)))

@@ -64,7 +64,7 @@ function describeEntity(e: Primitive, ix: io.Index): string {
     : e instanceof Circle ? `circle  @${ix.name(e.center)}`
     // a curve reads as its control polygon: that is what it is made of and what edits it
     : e instanceof Spline ? `spline  ${e.ctrl.map((p) => ix.name(p)).join('–')}`
-    : e instanceof Plane ? `plane   @${ix.name(e.origin)} →${ix.name(e.toward)}`
+    : e instanceof Plane ? `plane   @${ix.name(e.origin)}`
     // a curve written in the language is its statement; the program panel says the rest
     : e instanceof Curve ? 'curve'
     : 'point';

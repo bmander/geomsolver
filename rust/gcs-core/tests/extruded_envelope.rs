@@ -10,7 +10,7 @@
 //! space — and 3 off the page along the extrusion.  What it lands on is checked against the
 //! swept solid's material field, not the curve it was solved against.
 
-use crate::common::{ent, fd_jacobian, refused};
+use crate::common::{ent, fd_jacobian};
 use gcs_core::{library, program};
 use gcs_core::solve::{solve, SolveOpts};
 
@@ -60,27 +60,21 @@ side := surface(rack_tooth, edge: rack_flank)
 flank := envelope(side, under: cutting, from: -30deg, to: 30deg)
 ";
 
-/// The tooth space drawn in `std.front`, or on the page.
-fn rack(in_view: bool) -> String {
-    match in_view {
-        true => format!("unit mm\nuse std\nin std.front {{\n{DRAWN}}}\n{MADE}"),
-        false => format!("unit mm\n{DRAWN}{MADE}"),
-    }
+/// The tooth space drawn in `std.front`.
+fn rack() -> String {
+    format!("unit mm\nuse std\nin std.front {{\n{DRAWN}}}\n{MADE}")
 }
 
-/// A view square to the page, through the page's horizontal 1.9 above `o` (its `u` the page's
-/// `x`, its `v` the page's normal), and a point drawn in it at `along` along the extrusion.
+/// A plane square to the front, through its horizontal 1.9 above `o` (its `u` the front's `x`,
+/// its `v` the front's normal reversed), and a point drawn in it at `along` along the extrusion.
 fn across(along: f64) -> String {
     format!("{}\
-b0 := point
-b1 := point
-fix(x == 0, y == -40) b0
-fix(x == 10, y == -40) b1
-cut := plane(origin: b0, toward: b1, u: (1, 0, 0), v: (0, 1, 0), o: (0, 0, 1.9))
-p := point in cut hint(x: 20, y: {})
-fix(y == {}) p
-p on flank
-", rack(true), -40. + along, -40. + along)
+cut := plane(u: std.x, v: std.y)
+fix(x == 0, y == 0, z == 1.9) cut
+p := point in cut hint(x: 20, y: {along})
+fix(y == {along}) p
+p coincident flank
+", rack())
 }
 
 /// **A point drawn in another view lands on the generated surface.**  Its lift stands 1.9 above
@@ -121,13 +115,4 @@ fn the_extrusion_contact_has_its_own_jacobian() {
     let c = e.sketch.constraints.iter().find(|c| c.kind == gcs_core::constraints::CKind::PointOnExtrusion);
     assert!(c.is_some(), "`p on flank` is not a point on the extrusion");
     fd_jacobian(&e.sketch, 1e-5);
-}
-
-/// The surface is the drawing's only where the motion keeps the prism's view: a prism drawn on
-/// the page has no place in space, and is refused at the envelope.
-#[test]
-fn a_prism_on_the_page_generates_no_surface_in_space() {
-    let src = rack(false);
-    refused(&src, "E080", "on the page, which has no place in space",
-            "flank := envelope(side, under: cutting, from: -30deg, to: 30deg)");
 }

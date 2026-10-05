@@ -1,7 +1,6 @@
 //! Issue #51: frozen inputs plus geometric and output-contract checks independent of the bash runner.
 use gcs_core::{
     clear, constraints::SolidWord, diagnose, gltf, hidden, json::Json, mesh, program, solid, solve,
-    syntax,
 };
 
 fn source(name: &str) -> String {
@@ -13,7 +12,7 @@ fn source(name: &str) -> String {
     .unwrap()
 }
 fn read(src: &str) -> program::Elaborated {
-    let (p, errors) = syntax::parse_legacy(src);
+    let (p, errors) = crate::common::parse_legacy(src);
     assert!(errors.is_empty(), "{errors:?}");
     let mut e = program::elaborate(&p);
     assert!(e.ok(), "{:?}", e.diags);
@@ -51,7 +50,7 @@ fn crossing_bars_are_material_interference_even_without_contained_vertices() {
     );
     close(reversed.measured().unwrap(), v.measured().unwrap());
     let unrelated = read(
-        &(source("cross_clear") + "remote := point\nfix(x == 1000000000, y == 1000000000) remote\n"),
+        &(source("cross_clear") + "use std\nin std.front {\nremote := point\nfix(x == 1000000000, y == 1000000000) remote\n}\n"),
     );
     close(claim(&unrelated, SolidWord::Clear, 0.1).measured().unwrap(), -1.0);
     close(claim(&case("cross_clear_control"), SolidWord::Clear, 0.1).measured().unwrap(), 2.0);
@@ -103,7 +102,7 @@ fn solid_claim_arguments_are_checked_instead_of_discarded() {
         source("arguments_clear(1mm,2mm)"),
         source("arguments_clear(1mm,2mm)").replace("clear(1mm,2mm)", "fits(1mm,2mm)"),
     ] {
-        let (p, errors) = syntax::parse_legacy(&src);
+        let (p, errors) = crate::common::parse_legacy(&src);
         assert!(errors.is_empty());
         let e = program::elaborate(&p);
         assert!(e.errors().any(|d| d.code == program::Code::E040));
@@ -132,7 +131,7 @@ fn failed_sweep_poses_are_disclosed_and_cannot_certify_clearance() {
 
 #[test]
 fn sweep_bounds_use_the_inferred_variable_dimension_and_user_units() {
-    let (p, _) = syntax::parse_legacy(&source("sweep_dimensional_error"));
+    let (p, _) = crate::common::parse_legacy(&source("sweep_dimensional_error"));
     assert!(program::elaborate(&p).errors().any(|d| d.code == program::Code::E103));
     let src = source("sweep_possible")
         .replace("c := circle(center:o)", "q := point\nfix(x == 1, y == 0) q\nc := circle(center:o)")
@@ -175,7 +174,7 @@ fn input_edge_names_cannot_steal_sweep_cap_names() {
     let e = case("cap_collision_control");
     assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
     let src=source("cap_collision_control").replace("bottom","start")
-        .replace("result := solid(f,depth: 2mm)","ax0 := point\nfix(x == -1, y == 0) ax0\nax1 := point\nfix(x == -1, y == 5) ax1\naxis := line(ax0,ax1)\nresult := solid(f,about:axis,sweep:90deg)");
+        .replace("result := solid(f,depth: 2mm)","in std.front {\nax0 := point\nfix(x == -1, y == 0) ax0\nax1 := point\nfix(x == -1, y == 5) ax1\naxis := line(ax0,ax1)\n}\nresult := solid(f,about:axis,sweep:90deg)");
     let e = read(&src);
     assert!(!program::solid_diagnostics(&e.sketch, &e.map).is_empty());
 }
@@ -222,9 +221,10 @@ fn derived_strokes_are_invariant_under_sheet_translation() {
     for (a, b) in a.iter().zip(&b) {
         assert_eq!(a.hidden, b.hidden);
         assert_eq!(a.pts.len(), b.pts.len());
+        // in the view's own coordinates: the plane stood off by 1e8 draws the same picture
         for (a, b) in a.pts.iter().zip(&b.pts) {
-            assert!((b.0 - a.0 - 1e8).abs() < 1e-6);
-            assert!((b.1 - a.1 - 1e8).abs() < 1e-6);
+            assert!((b.0 - a.0).abs() < 1e-6);
+            assert!((b.1 - a.1).abs() < 1e-6);
         }
     }
 }
@@ -291,10 +291,12 @@ fn glb_preserves_local_triangles_and_world_placement_at_large_coordinates() {
 }
 
 fn box_source(name: &str, x: f64, y: f64, w: f64, h: f64, lo: f64, hi: f64) -> String {
-    let mut src = String::new();
+    // its corners drawn in the front, which a document using it says `use std` for
+    let mut src = "in std.front {\n".to_string();
     for (i, (x, y)) in [(x, y), (x + w, y), (x + w, y + h), (x, y + h)].into_iter().enumerate() {
         src += &format!("{name}p{i} := point\nfix(x == {x}, y == {y}) {name}p{i}\n");
     }
+    src += "}\n";
     src += &format!(
         "{name} := solid(face({name}p0,{name}p1,{name}p2,{name}p3,-> close),from:{lo}mm,to:{hi}mm)\n"
     );
@@ -308,7 +310,7 @@ fn interference_checks_respect_voids_and_disconnected_material() {
     let v = claim(&e, SolidWord::Clear, 0.1);
     assert_eq!(v.holds(), Some(true));
     close(v.measured().unwrap(), 0.5);
-    let src = "unit mm\n".to_string()
+    let src = "unit mm\nuse std\n".to_string()
         + &box_source("left", 0.0, 0.0, 1.0, 1.0, -1.0, 0.0)
         + &box_source("right", 8.0, 0.0, 1.0, 1.0, -1.0, 0.0)
         + "result := solid(left)\nright union result\nother := solid(result)\n";
@@ -324,7 +326,8 @@ fn a_section_clips_crossing_edges_and_removes_occlusion_by_discarded_material() 
     // A cut through the plate still has a square section. The boss ahead of it must not
     // occlude any retained edge, and a cut behind the whole part is empty.
     for (cut, count) in [(-0.5, 4), (-2.0, 0)] {
-        let e = read(&source("section_0.5").replace("offset:0.5mm", &format!("offset:{cut}mm")));
+        // the cut stands `cut` along the front's normal, which is -y
+        let e = read(&source("section_0.5").replace("-0.5mm", &format!("{}mm", -cut)));
         let strokes = hidden::layout(&e.sketch, solid::REPORT_UNIT);
         assert_eq!(strokes.len(), count, "cut {cut}: {strokes:?}");
         assert!(strokes.iter().all(|s| !s.hidden));
@@ -334,10 +337,24 @@ fn a_section_clips_crossing_edges_and_removes_occlusion_by_discarded_material() 
 #[test]
 fn negative_clearance_cannot_certify_uncertain_round_surface_contact() {
     let e = read(
-        "unit mm\n\
-        a := point\nfix(x == 0, y == 0) a\nac := circle(center:a)\nradius(1mm) ac\n\
-        b := point\nfix(x == 2, y == 0) b\nbc := circle(center:b)\nradius(1mm) bc\n\
-        af := face(ac)\nbf := face(bc)\nresult := solid(af,depth:1mm)\nother := solid(bf,depth:1mm)\n",
+        "\
+unit mm
+use std
+in std.front {
+a := point
+fix(x == 0, y == 0) a
+ac := circle(center:a)
+radius(1mm) ac
+b := point
+fix(x == 2, y == 0) b
+bc := circle(center:b)
+radius(1mm) bc
+}
+af := face(ac)
+bf := face(bc)
+result := solid(af,depth:1mm)
+other := solid(bf,depth:1mm)
+",
     );
     let v = claim(&e, SolidWord::Clear, -1.0);
     assert!(v.measured().unwrap().abs() <= v.tolerance().unwrap(), "{v:?}");
@@ -354,7 +371,7 @@ fn negative_clearance_cannot_certify_uncertain_round_surface_contact() {
 fn named_profiles_preserve_sweep_cap_collision_diagnostics() {
     let src = source("cap_collision")
         .replace("near := line(a,b)\nright := line(b,c)\ntop := line(c,d)\nleft := line(d,a)\nf := face(near,right,top,left)",
-            "f := (near := line(a,b)) -> (right := line(b,c)) -> (top := line(c,d)) -> (left := line(d,a)) -> close");
+            "use std\nin std.front {\nf := (near := line(a,b)) -> (right := line(b,c)) -> (top := line(c,d)) -> (left := line(d,a)) -> close\n}\n");
     let e = read(&src);
     assert!(program::solid_diagnostics(&e.sketch, &e.map)
         .iter()

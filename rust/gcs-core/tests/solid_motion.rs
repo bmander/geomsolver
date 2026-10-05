@@ -1,7 +1,10 @@
 //! Rigid instances share a source definition, but own their placed geometry.
 use gcs_core::{io,model::MotionDef,program,solid::{ApproximationPolicy::Report,WorldPoint},solve,syntax};
 
-const SOURCE: &str = "unit mm
+const SOURCE: &str = "\
+unit mm
+use std
+in std.front {
 a := point
 b := point
 c := point
@@ -19,13 +22,14 @@ ab := line(a,b)
 bc := line(b,c)
 cd := line(c,d)
 da := line(d,a)
+}
 profile := face(ab,bc,cd,da)
 stock := solid(profile, from: 0mm, to: 2mm)
 turn := motion(about: axis)
 ";
 
 fn read(src: &str) -> program::Elaborated {
-    let (mut p,errors) = syntax::parse(src);
+    let (mut p,errors) = crate::common::parse(src);
     assert!(errors.is_empty(),"{errors:?}");
     assert!(gcs_core::modules::link(&mut p,&mut gcs_core::library::resolve).is_empty());
     let mut e = program::elaborate(&p);
@@ -115,7 +119,7 @@ fn malformed_placements_and_cycles_are_refused() {
         "bad := solid(stock, under: turn, at: 90deg, depth: 2mm)",
         "bad := solid(stock, under: axis, at: 90deg)","bad := solid(stock, under: turn, at: 2mm)",
         "bad := solid(profile, under: turn, at: 90deg)","bad := solid(bad, under: turn, at: 90deg)"] {
-        let (p,errors) = syntax::parse(&format!("{SOURCE}{bad}\n"));
+        let (p,errors) = crate::common::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);
         assert!(!errors.is_empty() || !e.ok() ||
             e.sketch.solids.iter().enumerate().any(|(i,_)| gcs_core::solid::validate(&e.sketch,i).is_err()),"{bad}");

@@ -45,8 +45,8 @@ component RackSection(lp: point, rp: point, design: group, normal_module: Length
     rp distance(design.backlash / 4, side: left) outer
   }
   repeat 1 - design.lashed {
-    lp on inner
-    rp on outer
+    lp coincident inner
+    rp coincident outer
   }
   rounding := crown.rounding.TipRounding(pitch, base, tip, outer_round, inner_round, design,
     normal_module: normal_module)
@@ -59,14 +59,17 @@ preview {
   pitch_radius := 0.8 * 2mm * hypot(24, 48) / 2
   proportions := {pressure: 20deg, shift: 0deg,
                        base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0}
-  lp := point hint(x: pitch_radius - 1.3mm, y: 0)
-  rp := point hint(x: pitch_radius + 1.3mm, y: 0)
-  std.origin distance(pitch_radius - 1.3mm, along: right) lp
-  std.origin distance(0mm, along: up) lp
-  std.origin distance(pitch_radius + 1.3mm, along: right) rp
-  std.origin distance(0mm, along: up) rp
-  rack := RackSection(lp, rp, proportions, normal_module: 2mm)
-  construction centerline axis := line(std.origin, std.up.toward)
+  in std.front {
+    lp := point hint(x: pitch_radius - 1.3mm, y: 0)
+    rp := point hint(x: pitch_radius + 1.3mm, y: 0)
+    std.origin distance(pitch_radius - 1.3mm, along: right) lp
+    std.origin distance(0mm, along: up) lp
+    std.origin distance(pitch_radius + 1.3mm, along: right) rp
+    std.origin distance(0mm, along: up) rp
+    rack := RackSection(lp, rp, proportions, normal_module: 2mm)
+    construction centerline axis := line(std.origin, hint(x: 0, y: 1))
+    fix(x == 0, y == 1) axis.p2
+  }
   crown := solid(rack.profile, about: axis)
   outer := surface(crown, rack.outer)
   outer_round := surface(crown, rack.outer_round)

@@ -26,10 +26,10 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
   }
   generator.p2 distance(design.cutter_radius) C
   generator angle(90deg - design.spiral, sense: cw) normal
-  generator.p2 on trace
+  generator.p2 coincident trace
   heading perpendicular normal
   foot perpendicular heading
-  K on generator
+  K coincident generator
   generator.p2 distance(design.module) K
   K distance(normal_module) normal
 }
@@ -38,6 +38,6 @@ preview {
   unit mm
   pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
   gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
   trace := ToothTrace(pitch.view, gear.generator, design.hypoid_design)
 }

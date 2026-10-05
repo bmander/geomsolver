@@ -5,7 +5,7 @@ use crate::constraints::CKind;
 use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::{
-    self, Arg, AtRef, Attitude, CurveSpec, DeclName, Membership, Name, Ref, RelationForm,
+    self, Arg, AtRef, CurveSpec, DeclName, Membership, Name, Ref, RelationForm,
     Span, StmtId, Sweep, Written,
 };
 
@@ -55,8 +55,6 @@ pub struct Decl {
     pub class: Classes,
     pub seed_at: Option<AtRef>,
     pub seed_names: Vec<(String, String)>,
-    pub attitude: Attitude,
-    pub plane: syntax::PlaneSolve,
     pub sweep: Option<Sweep>,
     pub motion: Option<syntax::MotionSpec>,
     pub angular_span: Option<syntax::AngularSpan>,
@@ -97,8 +95,6 @@ impl From<syntax::Decl> for Decl {
             class: d.class,
             seed_at: d.seed_at,
             seed_names: d.seed_names,
-            attitude: d.attitude,
-            plane: d.plane,
             sweep: d.sweep,
             motion: d.motion,
             angular_span: d.angular_span,

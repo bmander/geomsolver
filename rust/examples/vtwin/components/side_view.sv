@@ -86,5 +86,7 @@ component SideView(o: point, dims: group) {
 // projections remain free here, starting at the component's hints.
 preview {
   unit mm
-  SideView(std.origin, dims: components.dims.vtwin_dims)
+  in std.front {
+    SideView(std.origin, dims: components.dims.vtwin_dims)
+  }
 }

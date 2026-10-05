@@ -285,7 +285,7 @@ test('the culprit member is found on a large truss', () => {
 
 test('the constraint graph maps the examples', () => {
   let g = buildGraph(examples.rectFillets());
-  assert.equal(g.nPoints, 12);
+  assert.equal(g.nPoints, 12 + 5, 'its twelve, and the five the standard datums bring');
   assert.equal(g.lines.length, 4);
   assert.equal(g.unsupported.length, 0);
   assert.equal(g.virtuals.length, 8);         // one radius line per arc-endpoint tangency
@@ -767,7 +767,7 @@ test('redundancy the matching cannot see is counted and named as implied', () =>
     // `P3` is the concurrency point: `altitudes.sv` writes the three feet *in* the lines they
     // slide along (`line alt_a(A, hint(x: 15, y: 5))`), so those points are minted with the
     // lines and come after it
-    'P3 on L3', 'P3 on L4', 'P3 on L5',
+    'P3 coincident L3', 'P3 coincident L4', 'P3 coincident L5',
   ]);
   assert.ok([...d.entityState.values()].every((s) => s !== 'over'));
 });
@@ -1262,15 +1262,15 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   // with it.  Both are in the buffers; this checks the *binding* reaches them, which is this
   // layer's business and not the geometry, whose test is `gcs-core/tests/mesh.rs`.
   const src = [
-    'unit mm',
+    'unit mm', 'use std', 'in std.front {',
     'a := point', 'b := point hint(x: 60, y: 0)',
     'c := point hint(x: 60, y: 40)', 'd := point hint(x: 0, y: 40)',
     '(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close',
     'horizontal ab', 'vertical bc', 'a distance(60) b', 'a distance(40) d', 'fix(x == 0, y == 0) a',
-    'sec := face(ab, bc, cd, da)',
     'o := point hint(x: 30, y: 20)',
     'a distance(30, along: x) o', 'a distance(20, along: y) o',
-    'hole := circle(center: o) hint(r: 8)', 'radius(8) hole', 'hole_f := face(hole)',
+    'hole := circle(center: o) hint(r: 8)', 'radius(8) hole', '}',
+    'sec := face(ab, bc, cd, da)', 'hole_f := face(hole)',
     'stock := solid(sec, depth: 30mm)', 'bore := solid(hole_f, through: body)',
     'body := solid(stock)', 'bore cut body', '',
   ].join('\n');
@@ -1306,8 +1306,8 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
 
 test('a named component chain reaches the browser as the same swept mesh', () => {
   const src = [
-    'unit mm', 'use components.parts', 'O := point', 'fix(x == 0, y == 0) O',
-    'boss := components.parts.Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)',
+    'unit mm', 'use std', 'use components.parts', 'in std.front {', 'O := point', 'fix(x == 0, y == 0) O',
+    'boss := components.parts.Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)', '}',
     'block := solid(boss.profile, depth: 8mm)', '',
   ].join('\n');
   const doc = Document.read(src);
@@ -1318,7 +1318,7 @@ test('a named component chain reaches the browser as the same swept mesh', () =>
   }
   assert.deepEqual(mesh(doc.sketch, doc.solids()[0].index, 2e-3),
     mesh(old.sketch, old.solids()[0].index, 2e-3));
-  const bad = Document.read('trail := line -> line\nbad := solid(trail, depth: 8)\n');
+  const bad = Document.read('use std\nin std.front {\ntrail := line -> line\n}\nbad := solid(trail, depth: 8)\n');
   assert.equal(bad.ok, false);
   assert.ok(bad.diagnostics.some((d) => d.message.includes('open chain')));
 });
@@ -1763,16 +1763,15 @@ test('a name nothing defines is a free variable that ties the dimensions reading
 
 test('an ellipse is a curve of the library, and a point solves onto its rim', () => {
   const d = Document.read(
-    'use std\no := point\nq := point\n'
-    + 'f := plane(origin: o, toward: q)\ne := std.Ellipse(f, a: 8, b: 3).p over u in (0, 360)\n'
-    + 'fix(x == 10, y == 5) o\nfix(x == 18, y == 5) q\np := point hint(x: 11, y: 9)\np on e hint(t: 80)\n');
+    'use std\nin std.front {\no := point\nfix(x == 10, y == 5) o\np := point hint(x: 11, y: 9)\n}\n'
+    + 'e := std.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360)\np coincident e hint(t: 80)\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   const sk = d.sketch;
   assert.equal(sk.curves.length, 1);
   assert.equal(sk.constraints.filter((k) => k.typeName === 'PointOnCurve').length, 1);
   assert.ok(solve(sk).success);
-  // in the datum's frame the rim satisfies (x/a)² + (y/b)² = 1
-  const p = sk.points[sk.points.length - 1];
+  // about its centre the rim satisfies (x/a)² + (y/b)² = 1
+  const p = d.entity('p') as Point;
   const [x, y] = [p.x.value - 10, p.y.value - 5];
   assert.ok(Math.abs((x / 8) ** 2 + (y / 3) ** 2 - 1) < 1e-6, `${x}, ${y}`);
   // the rim is what a click picks, and the inside is empty space
@@ -1781,30 +1780,7 @@ test('an ellipse is a curve of the library, and a point solves onto its rim', ()
   d.dispose();
 });
 
-test('a datum is an origin, a toward point and a rotor slaved to the chord', () => {
-  const sk = new Sketch();
-  const o = sk.point(10, 5);
-  const t = sk.point(14, 8);           // chord (4, 3): the 3-4-5 rotor
-  const f = sk.plane(o, t, [1, 0, 0], [0, 1, 0]);      // the page's attitude: a plain datum
-  assert.equal(f.origin, o);
-  assert.equal(f.toward, t);
-  const [c, s] = f.rotor;
-  assert.ok(Math.abs(c.value - 0.8) < 1e-12 && Math.abs(s.value - 0.6) < 1e-12);
-  // the two intrinsics came with it, and neither reads as something the user said
-  assert.equal(sk.constraints.length, 2);
-  assert.equal(sk.userConstraints().length, 0);
-  // its points outrank it under a pick, and its chord is where it is taken hold of
-  assert.equal(sk.pick(10, 5, 0.5), o);
-  assert.equal(sk.pick(12, 6.5, 0.5), f);
-  const back = io.loads(io.dumps(sk));
-  assert.equal(back.planes.length, 1);
-  assert.ok(Math.abs(back.planes[0].rotor[0].value - 0.8) < 1e-12);
-  assert.equal(back.constraints.length, 2, 'the load re-mints the intrinsics');
-  sk.dispose();
-  back.dispose();
-});
-
-/* -- planes: a datum with an attitude, membership, and projection between views ---------- */
+/* -- planes: two rays and a place, membership, and projection between them ---------------- */
 
 const near3 = (got: readonly number[], want: readonly number[], what: string): void => {
   for (let i = 0; i < 3; i++) {
@@ -1812,13 +1788,14 @@ const near3 = (got: readonly number[], want: readonly number[], what: string): v
   }
 };
 
-test('signed datum coordinates cross the ABI and round-trip as ordinary constraints', () => {
+test('coordinates in a plane cross the ABI and round-trip as ordinary constraints', () => {
   const sk = new Sketch();
-  const f = sk.plane(sk.point(10, 20, true), sk.point(14, 23, true), [1, 0, 0], [0, 0, 1]);
+  const f = sk.plane([1, 0, 0], [0, 0, 1]);
   const p = sk.point(100, -200);
+  p.plane = f;
   sk.add(new C.CoordinateU(p, f, -5), new C.CoordinateV(p, f, 2));
   assert.ok(solve(sk).success);
-  assert.ok(Math.hypot(p.x.value - 4.8, p.y.value - 18.6) < 1e-6);
+  assert.ok(Math.hypot(p.x.value + 5, p.y.value - 2) < 1e-6, `${p.x.value}, ${p.y.value}`);
   const back = io.loads(io.dumps(sk));
   assert.ok(back.constraints.some(c => c.typeName === 'CoordinateU'));
   assert.ok(back.constraints.some(c => c.typeName === 'CoordinateV'));
@@ -1827,38 +1804,27 @@ test('signed datum coordinates cross the ABI and round-trip as ordinary constrai
   back.dispose();
 });
 
-test('a plane is a datum with an attitude, and a point may be drawn in it', () => {
+test('a plane faces the way two directions say, and a point may be drawn in it', () => {
   const sk = new Sketch();
-  const o = sk.point(10, 5);
-  const t = sk.point(14, 8);           // chord (4, 3): the 3-4-5 rotor
-  const pl = sk.plane(o, t, [2, 0, 0], [1, 1, 0]);    // orthonormalised on the way in
-  assert.equal(pl.origin, o);
-  assert.equal(pl.toward, t);
+  const pl = sk.plane([2, 0, 0], [1, 1, 0]);    // orthonormalised on the way in
   near3(pl.basis.u, [1, 0, 0], 'u');
   near3(pl.basis.v, [0, 1, 0], 'v');
-  const [c, s] = pl.rotor;
-  assert.ok(Math.abs(c.value - 0.8) < 1e-12 && Math.abs(s.value - 0.6) < 1e-12);
-  assert.equal(sk.constraints.length, 2, 'the rotor\'s two intrinsics came with it');
-  assert.equal(sk.userConstraints().length, 0);
-  assert.equal(pl.name, 'V0', 'a plane is a view');
-  assert.throws(() => sk.plane(o, t, [1, 0, 0], [2, 0, 0]), /span/);
+  // its one point is its origin, drawn in it
+  assert.ok(pl.origin instanceof Point);
+  assert.equal(pl.origin.plane, pl);
+  assert.equal(sk.userConstraints().length, 0, 'its rays\' intrinsics are nothing the user said');
+  assert.throws(() => sk.plane([1, 0, 0], [2, 0, 0]), /span/);
   assert.equal(sk.planes.length, 1, 'and a refused one is not there');
   // membership is the core's: set, read back, and cleared
   const p = sk.point(12, 9);
   assert.equal(p.plane, null);
   p.plane = pl;
   assert.equal(p.plane, pl);
-  // the chord is what a click picks, and a point within reach outranks it
-  assert.equal(sk.pick(12, 6.5, 0.5), pl);
-  assert.equal(sk.pick(10, 5, 0.5), o);
-  assert.ok(pl.style.dash.length, 'the base sheet draws a plane dashed without being asked');
-  // the document carries the basis, the membership and the rotor, and re-mints the intrinsics
+  // the document carries the basis and the membership
   const back = io.loads(io.dumps(sk));
   assert.equal(back.planes.length, 1);
   near3(back.planes[0].basis.v, [0, 1, 0], 'v after the round trip');
-  assert.equal(back.points[2].plane, back.planes[0]);
-  assert.ok(Math.abs(back.planes[0].rotor[1].value - 0.6) < 1e-12);
-  assert.equal(back.constraints.length, 2);
+  assert.equal(back.points[p.index].plane, back.planes[0]);
   p.plane = null;
   assert.equal(p.plane, null);
   sk.dispose();
@@ -1867,12 +1833,12 @@ test('a plane is a datum with an attitude, and a point may be drawn in it', () =
 
 test('a projection binds over two points, and the core fills in their views', () => {
   const sk = new Sketch();
-  // the front view on the page and the top view above it — the layout the core's tests assert
-  const front = sk.plane(sk.point(0, 0, true), sk.point(1, 0, true), [1, 0, 0], [0, 0, 1]);
-  const top = sk.plane(sk.point(0, 100, true), sk.point(1, 100, true), [1, 0, 0], [0, 1, 0]);
+  // the front plane and the top, both through the origin
+  const front = sk.plane([1, 0, 0], [0, 0, 1]);
+  const top = sk.plane([1, 0, 0], [0, 1, 0]);
   const a = sk.point(30, 40);
   a.plane = front;
-  const b = sk.point(30, 120);
+  const b = sk.point(30, 20);
   b.plane = top;
   const c = new C.Project(a, b);
   assert.deepEqual(c.entities(), [a, b], 'unbound, the plane slots are nothing yet');
@@ -1903,13 +1869,12 @@ test('a projection binds over two points, and the core fills in their views', ()
 
 test('the overview folds the views into the box, and is flat looked at square on', () => {
   const sk = new Sketch();
-  // front on the page and top above it, the layout the projection test uses
-  const front = sk.plane(sk.point(0, 0, true), sk.point(1, 0, true), [1, 0, 0], [0, 0, 1]);
-  const top = sk.plane(sk.point(0, 100, true), sk.point(1, 100, true), [1, 0, 0], [0, 1, 0]);
+  const front = sk.plane([1, 0, 0], [0, 0, 1]);
+  const top = sk.plane([1, 0, 0], [0, 1, 0]);
   // one edge of the object: two corners, each drawn in both views and tied by `project`, with
   // the edge itself drawn in each — which is what makes it an edge of the solid and not a ray
   const af = sk.point(30, 40), bf = sk.point(60, 90);
-  const atop = sk.point(30, 120), btop = sk.point(60, 120);
+  const atop = sk.point(30, 20), btop = sk.point(60, 20);
   for (const p of [af, bf]) p.plane = front;
   for (const p of [atop, btop]) p.plane = top;
   const lf = sk.line(af, bf);
@@ -1917,7 +1882,7 @@ test('the overview folds the views into the box, and is flat looked at square on
   sk.add(new C.Project(af, atop), new C.Project(bf, btop));
 
   // the front plane's viewer stands at −y: bearing −90° at no elevation, where the screen axes
-  // are the page's own, so the front view comes out at the coordinates it was drawn in
+  // are the front's own, so the front view comes out at the coordinates it was drawn in
   const s = overview(sk, 1, -Math.PI / 2, 0);
   const parts = (p: string): typeof s.items => s.items.filter((it) => it.part === p);
   assert.equal(parts('face').length, 2, 'one pane per view');
@@ -1937,47 +1902,32 @@ test('the overview folds the views into the box, and is flat looked at square on
   sk.dispose();
 });
 
-test('a plane is written through the edit API, and its minted points answer by name', () => {
-  const d = Document.read('o := point hint(x: 0, y: 0)\nq := point hint(x: 1, y: 0)\n'
-                          + 'front := plane(origin: o, toward: q)\n');
+test('a plane is written through the edit API over two lines, and its origin answers by name', () => {
+  const d = Document.read('use std\nin std.front {\na := point hint(x: 0, y: 0)\n'
+                          + 'b := point hint(x: 40, y: 0)\nc := point hint(x: 0, y: 30)\n'
+                          + 'ab := line(a, b)\nac := line(a, c)\n}\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
-  // the places go into the statement: the chord the frame is read off is the one asked for
-  const e = d.addEntity('plane', [], [], { from: 'front', fold: '-90deg' }, 'right',
-                        [[150, 0], [150, -1]]);
+  const e = d.addEntity('plane', ['ab', 'ac'], [], 'tilted');
   assert.equal(e.kind, 'structural');
-  assert.deepEqual(e.names, ['right']);
-  assert.ok(e.text.includes('right := plane(origin: hint(x: 150, y: 0), toward: hint(x: 150, '
-                            + 'y: -1), from: front, fold: -90deg)'), e.text);
+  assert.deepEqual(e.names, ['tilted']);
+  assert.ok(e.text.includes('tilted := plane(u: ab, v: ac)'), e.text);
   const next = Document.read(e.text);
   assert.ok(next.ok, JSON.stringify(next.diagnostics));
-  const right = next.entity('right');
-  assert.ok(right instanceof Plane);
-  assert.equal(right, next.sketch.planes[1]);
-  const ro = next.entity('right.origin');
-  assert.ok(ro instanceof Point, 'the implicit child is named by its path');
-  assert.deepEqual(ro.xy, [150, 0]);
-  assert.deepEqual(right.toward.xy, [150, -1]);
-  // and the rotor was read off that chord — straight down — not off a scattered one
-  const [c, s] = right.rotor;
-  assert.ok(Math.abs(c.value) < 1e-12 && Math.abs(s.value + 1) < 1e-12,
-            `rotor ${c.value}, ${s.value}`);
-  // the fold came to the right view's basis: u = -z, v = y, the viewer at +x
-  near3(right.basis.u, [0, 0, -1], 'u');
-  near3(right.basis.v, [0, 1, 0], 'v');
-  // without places the two points are scattered, and the statement carries no seed
-  const bare = d.addEntity('plane', [], [], null, 'aux');
-  assert.ok(/aux := plane\b/.test(bare.text) && !bare.text.includes('aux := plane(origin: hint'), bare.text);
+  const pl = next.entity('tilted');
+  assert.ok(pl instanceof Plane);
+  assert.ok(next.entity('tilted.origin') instanceof Point, 'its origin is named by its path');
+  // right along `ab`, the front's x; up along `ac`, the front's y, which is the world's z
+  near3(pl.basis.u, [1, 0, 0], 'u');
+  near3(pl.basis.v, [0, 0, 1], 'v');
   // a taken name is refused with the cause; an unnamed plane is minted one, as a view
-  assert.ok(d.addEntity('plane', [], [], null, 'front').refused, 'the name is taken');
-  assert.deepEqual(d.addEntity('plane', [], []).names, ['v0']);
-  const ex = d.addEntity('plane', [], [], { u: ['0.6', '0.8', '0'], v: ['0', '0', '1'] });
-  assert.ok(ex.text.includes('u: (0.6, 0.8, 0), v: (0, 0, 1)'), ex.text);
+  assert.ok(d.addEntity('plane', ['ab', 'ac'], [], 'ab').refused, 'the name is taken');
+  assert.deepEqual(d.addEntity('plane', ['ab', 'ac']).names, ['v0']);
   // a membership set on the sketch before the source catches up is written as the clause
   const p = next.sketch.point(3, 4);
-  p.plane = next.sketch.planes[0];
+  p.plane = pl;
   const r = next.reconcile();
   assert.ok(!r.refused, r.refused ?? '');
-  assert.ok(/p0 := point hint\(x: 3, y: 4\) in front/.test(r.text), r.text);
+  assert.ok(/p0 := point hint\(x: 3, y: 4\) in tilted/.test(r.text), r.text);
   next.dispose();
   d.dispose();
 });
@@ -1999,16 +1949,19 @@ test('a sketch prints as a program and reads back the same', () => {
 
 test('a program written by hand draws', () => {
   const d = Document.read([
+    'use std',
+    'param w := 60',
+    'in std.front {',
     'a := point',
     'b := point hint(x: 100, y: 0)',
     'ab := line(a, b)',
-    'param w := 60',
     'a distance(w) b',
     'horizontal ab',
     'fix(x == 0, y == 0) a',
+    '}',
   ].join('\n'));
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
-  assert.equal(d.sketch.points.length, 2);
+  assert.equal(d.sketch.points.length, 2 + 5, 'two, and the five the standard datums bring');
   assert.equal(d.sketch.lines.length, 1);
   d.dispose();
 });
@@ -2039,7 +1992,7 @@ test('the gear is a program, and its flanks are involutes the language defines',
   const n = 30;
   assert.equal(sk.circles.length, 3, 'the base, root and tip circles');
   assert.equal(sk.curves.length, 2 * n, 'two involute flanks per tooth');
-  assert.equal(sk.points.length, 1 + 4 * n, 'a centre, and two ends per flank');
+  assert.equal(sk.points.length, 1 + 4 * n + 5, 'a centre, two ends per flank, and std\'s five');
   const r = solve(sk);
   assert.ok(r.success, r.message);
 
@@ -2047,9 +2000,10 @@ test('the gear is a program, and its flanks are involutes the language defines',
   const [rr, rt] = [42, 48];
   let onRoot = 0;
   let onTip = 0;
-  for (let i = 1; i < sk.points.length; i++) {
+  for (let i = 0; i < sk.points.length; i++) {
     const p = sk.points[i];
     const rad = Math.hypot(p.x.value, p.y.value);
+    if (rad < 1e-9) continue;    // the centre, and the standard planes' origins
     if (Math.abs(rad - rr) < 1e-6) onRoot++;
     else if (Math.abs(rad - rt) < 1e-6) onTip++;
     else assert.fail(`a flank end at radius ${rad}`);
@@ -2078,6 +2032,9 @@ test('the gear is a program, and its flanks are involutes the language defines',
 
 const TRIANGLE = `\
 // a triangle, and this comment must survive every edit
+use std
+param w := 140
+in std.front {
 a := point
 b := point hint(x: 100, y: 0)
 c := point hint(x: 40, y: 70)
@@ -2087,9 +2044,9 @@ bc := line(b, c)
 ca := line(c, a)
 
 horizontal ab
-param w := 140
 a distance(w) b
 fix(x == 0, y == 0) a
+}
 `;
 
 test('an edit is a new text, and the document is unchanged until it is applied', () => {
@@ -2100,9 +2057,9 @@ test('an edit is a new text, and the document is unchanged until it is applied',
   assert.deepEqual(e.names, ['p0']);
   assert.ok(e.text.includes('p0 := point hint(x: 12.5, y: -3)'), e.text);
   assert.equal(d.text, TRIANGLE, 'the document has not moved');
-  assert.equal(d.sketch.points.length, 3);
+  assert.equal(d.sketch.points.length, 3 + 5, 'its three, and the five the standard datums bring');
   const next = Document.read(e.text);
-  assert.equal(next.sketch.points.length, 4);
+  assert.equal(next.sketch.points.length, 4 + 5);
   next.dispose();
   d.dispose();
 });
@@ -2155,14 +2112,15 @@ test('drawing a triangle by gestures writes six statements', () => {
     d.dispose();
     d = Document.read(e.text);
   }
-  const e = d.addRelation('horizontal', ['l0']);
+  // the points stand in space, where two lines are square to each other as they are in a plane
+  const e = d.addRelation('perpendicular', ['l0', 'l1']);
   assert.ok(!e.refused, e.refused ?? '');
   d.dispose();
   d = Document.read(e.text);
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   assert.equal(d.sketch.points.length, 3);
   assert.equal(d.sketch.lines.length, 3);
-  assert.ok(d.text.includes('horizontal l0'), d.text);
+  assert.ok(d.text.includes('l0 perpendicular l1'), d.text);
   d.dispose();
 });
 
@@ -2170,10 +2128,10 @@ test('an anonymous element is named the moment the source must say it', () => {
   // the name in a declaration is optional (issue #33): `line` alone draws, and stays unnamed
   // until a statement has to reference it — here a constraint applied the way the app applies
   // one, into the sketch and reconciled — at which point the core splices a real name in
-  const d = Document.read('line\n');
+  const d = Document.read('use std\nin std.front {\nline\n}\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   assert.equal(d.sketch.lines.length, 1);
-  assert.equal(d.sketch.points.length, 2);
+  assert.equal(d.sketch.points.length, 2 + 5);
   // no name is published for it — the hidden key is offset-derived, so a selection keyed on it
   // could land on a different entity after an edit — but its span still says where it was written
   assert.ok(!d.nameOf(d.sketch.lines[0]), 'an anonymous element has no published name');
@@ -2185,7 +2143,7 @@ test('an anonymous element is named the moment the source must say it', () => {
   assert.ok(e.text.includes('horizontal l0'), e.text);
   const next = Document.read(e.text);
   assert.ok(next.ok, JSON.stringify(next.diagnostics));
-  assert.equal(next.sketch.constraints.length, 1);
+  assert.equal(next.sketch.userConstraints().length, 1);
   next.dispose();
   d.dispose();
 });
@@ -2245,7 +2203,7 @@ test('deleting a point takes the statements that named it', () => {
   assert.ok(!e.text.includes('bc := line'), e.text);
   assert.ok(e.text.includes('ab := line(a, b)      // the base'));
   const next = Document.read(e.text);
-  assert.equal(next.sketch.points.length, 2);
+  assert.equal(next.sketch.points.length, 2 + 5);
   assert.equal(next.sketch.lines.length, 1);
   next.dispose();
   d.dispose();
@@ -2325,16 +2283,15 @@ test('dragging the gear does not rewrite the gear', () => {
 });
 
 test('a rectangle joins the view it is drawn in, whole', () => {
-  const d = Document.read(
-    'o := point hint(x: 0, y: 0)\nq := point hint(x: 40, y: 0)\nfront := plane(origin: o, toward: q)\n',
-  );
-  const e = d.addRectangle(30, 20, 'front');
-  assert.ok(e.text.includes(' := Rectangle(w: 30, h: 20) in front'), e.text);
+  const d = Document.read('use std\n');
+  const e = d.addRectangle(30, 20, 'std.front');
+  assert.ok(e.text.includes(' := Rectangle(w: 30, h: 20) in std.front'), e.text);
   const d2 = Document.read(e.text);
   assert.ok(d2.ok, d2.diagnostics.map((x) => x.message).join());
-  const front = d2.sketch.planes[0];
+  const front = d2.entity('std.front');
   // the four corners the component makes — membership per point could never reach them
-  assert.equal(d2.sketch.points.filter((p) => p.plane === front).length, 4);
+  const corners = d2.sketch.points.filter((p) => p.plane === front && !d2.nameOf(p)?.startsWith('std.'));
+  assert.equal(corners.length, 4);
   d.dispose();
   d2.dispose();
 });
@@ -2379,13 +2336,13 @@ test('related files include transitive libraries and host overrides without dupl
     assert.ok(modules.provided('demo.a') && !modules.provided('demo.b'));
     assert.equal(files[0].text, a);
     assert.equal(files[1].text, b);
-    assert.ok(files[2].text.includes('component ThreeViews'));
+    assert.ok(files[2].text.includes('component StandardDatums'));
     assert.equal(modules.source('missing'), null);
   } finally {
     modules.forget();
   }
   assert.equal(modules.source('demo.a'), null);
-  assert.ok(modules.source('std')?.includes('component ThreeViews'));
+  assert.ok(modules.source('std')?.includes('component StandardDatums'));
 });
 
 test('a swept solid is refined in steps, and a deferring sketch draws only what it is given', async () => {

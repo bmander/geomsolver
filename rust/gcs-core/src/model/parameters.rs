@@ -25,8 +25,8 @@ impl Sketch {
     /// units does to the figure it carries.
     ///
     /// **Written out by kind, and exhaustively**, because "is this parameter a length?" is not a
-    /// question a `Param` can answer: a frame's rotor is a direction and a curve's parameter is
-    /// a place along it, and scaling either would take the drawing apart.  So each table that
+    /// question a `Param` can answer: a ray's direction is a unit vector and a curve's parameter
+    /// is a place along it, and scaling either would take the drawing apart.  So each table that
     /// knows says — `own_length_params` per entity kind, `CKind::param_dim` per constraint that
     /// owns an unknown — and a new kind stops the build in the first rather than being silently
     /// left unconverted.
@@ -56,15 +56,7 @@ impl Sketch {
                 lengths.push(f.param);
             }
         }
-        // a solved view's offset and a hidden point's coordinates are lengths no entity owns; the
-        // view's in-plane constants convert with them, and a moved offset leaves the seat, so
-        // the view is read off its (converted) unknowns from here on
-        for p in self.planes.iter_mut() {
-            if let Some(a) = p.att.as_mut() {
-                lengths.push(a.d);
-                a.ab = a.ab.map(|x| x * k);
-            }
-        }
+        // a hidden point's coordinates are lengths no entity owns
         for l in &self.lifts {
             lengths.extend(l.x);
         }
@@ -118,18 +110,17 @@ impl Sketch {
     fn own_length_params(&self, e: EntRef) -> Vec<u32> {
         match e.kind {
             EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
-            EntKind::Point => self.point_params(e.i()).to_vec(),
+            EntKind::Point => self.point_all_params(e.i()),
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Sphere => vec![self.spheres[e.i()].radius],
             EntKind::Cylinder => vec![self.cylinders[e.i()].param],
             // a half-angle is an angle, and a unit's conversion leaves it alone
             EntKind::Cone => Vec::new(),
+            // the direction is a unit vector and the place a length
+            EntKind::Ray => self.rays[e.i()].a.to_vec(),
             EntKind::Arc => vec![self.arcs[e.i()].radius],
-            // the rotor `(c, s)` is a unit vector — a direction, and scaling it would only
-            // break `frame_unit`.  A frame's one length is `frame_align`'s chord, which is a
-            // constraint's Param and is converted with the constraints.
-            // (and a plane's basis is a direction in space, dimensionless twice over)
-            EntKind::Plane => Vec::new(),
+            // where a plane stands is three lengths; which way it faces is its rays'
+            EntKind::Plane => self.planes[e.i()].o.to_vec(),
             // a line and a spline are their points, and a curve is its expressions: no number
             // of their own to convert
             EntKind::Line | EntKind::Spline | EntKind::Curve => Vec::new(),
@@ -172,6 +163,14 @@ impl Sketch {
         v
     }
 
+    /// A point's Params: `x`, `y`, and a point in space's `z`.
+    pub fn point_all_params(&self, i: usize) -> Vec<u32> {
+        let p = &self.points[i];
+        let mut v = vec![p.x, p.y];
+        v.extend(p.z);
+        v
+    }
+
     /// Radius Param index of a circle or arc — and an ellipse's minor radius, which is what its
     /// one scalar drag resizes.
     pub fn round_radius(&self, e: EntRef) -> usize {
@@ -188,7 +187,13 @@ impl Sketch {
     /// as every angle a document states.  What a writeback and a lifted program both spell.
     pub fn seed_value(&self, e: EntRef, p: u32) -> f64 {
         let v = self.params[p as usize].value;
-        if e.kind == EntKind::Cone { v.to_degrees() } else { v }
+        match e.kind {
+            EntKind::Cone => v.to_degrees(),
+            // a direction's dust below a double's resolution of a unit vector is 0: `z: 6e-17`
+            // written into a source file is a number nobody said
+            EntKind::Ray | EntKind::Plane if v.abs() < 1e-12 => 0.0,
+            _ => v,
+        }
     }
 
     /// A cone's or a cylinder's axis and the number it owns.
@@ -206,7 +211,7 @@ impl Sketch {
             // the stratification, as a table entry: a face and a solid own no parameter, so
             // nothing about either is ever a column of the Jacobian
             EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
-            EntKind::Point => self.point_params(e.i()).to_vec(),
+            EntKind::Point => self.point_all_params(e.i()),
             EntKind::Line => self.line_params(e.i()).to_vec(),
             EntKind::Circle => {
                 let c = &self.circles[e.i()];
@@ -217,6 +222,11 @@ impl Sketch {
                 let c = &self.spheres[e.i()];
                 let p = &self.points[c.center as usize];
                 vec![p.x, p.y, c.radius]
+            }
+            // its direction, then where it is
+            EntKind::Ray => {
+                let r = &self.rays[e.i()];
+                [r.d, r.a].concat()
             }
             // the axis's ends, then the number the kind owns
             EntKind::Cone | EntKind::Cylinder => {
@@ -244,18 +254,8 @@ impl Sketch {
                 }
                 v
             }
-            EntKind::Plane => {
-                let f = self.frame_of(e);
-                let mut v = Vec::with_capacity(6);
-                for pi in [f.origin, f.toward] {
-                    let p = &self.points[pi as usize];
-                    v.push(p.x);
-                    v.push(p.y);
-                }
-                v.push(f.c);
-                v.push(f.s);
-                v
-            }
+            // where it stands; its rays and its origin point are children of their own
+            EntKind::Plane => self.planes[e.i()].o.to_vec(),
             // whatever its arguments contribute, in argument order — which is the order its
             // tapes were compiled against and so the order of the Jacobian's columns
             EntKind::Curve => {
@@ -280,15 +280,16 @@ impl Sketch {
     /// must stop the build here, or its number would be a value nothing ever writes down.
     pub fn own_params(&self, e: EntRef) -> Vec<u32> {
         match e.kind {
-            EntKind::Point => self.point_params(e.i()).to_vec(),
+            EntKind::Point => self.point_all_params(e.i()),
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Sphere => vec![self.spheres[e.i()].radius],
             EntKind::Cone | EntKind::Cylinder => vec![self.axial(e).param],
-            EntKind::Arc => vec![self.arcs[e.i()].radius],
-            EntKind::Plane => {
-                let f = self.frame_of(e);
-                vec![f.c, f.s]
+            EntKind::Ray => {
+                let r = &self.rays[e.i()];
+                [r.d, r.a].concat()
             }
+            EntKind::Arc => vec![self.arcs[e.i()].radius],
+            EntKind::Plane => self.planes[e.i()].o.to_vec(),
             // a curve holds no number of its own: it is its expressions, and they read
             // the geometry rather than owning any; a face and a solid own none for the same
             // reason, one further out — every number of theirs is an extent, an expression the

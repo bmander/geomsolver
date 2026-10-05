@@ -29,7 +29,7 @@ component Lobe(c: point, ref: line, phi: Angle, dn: Length, dims: group) {
 component Valve(seat: point, axis: line, lift: Length, head: Length, dims: group) {
   // the follower face: on the axis and square to it, `rb + lift` short of the cam's centre
   fc := point hint(x: axis.p2.x - (dims.rb + lift) * (axis.p2.x - axis.p1.x) / dims.stem, y: axis.p2.y - (dims.rb + lift) * (axis.p2.y - axis.p1.y) / dims.stem)
-  fc on axis
+  fc coincident axis
   axis.p2 distance(dims.rb + lift) fc
   f1 := point hint(x: axis.p2.x - 15mm, y: axis.p2.y - dims.rb)
   f2 := point hint(x: axis.p2.x + 15mm, y: axis.p2.y - dims.rb)
@@ -49,7 +49,7 @@ component Valve(seat: point, axis: line, lift: Length, head: Length, dims: group
   f2 distance(20) b2
   // the stem, `stem` down the axis to the head, which the lobe lifts off its seat or does not
   hc := point hint(at: seat)
-  hc on axis
+  hc coincident axis
   hc distance(dims.stem) fc
   st := line(hc, fc)
   h1 := point hint(x: seat.x - head / 2, y: seat.y)

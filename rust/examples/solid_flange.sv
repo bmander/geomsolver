@@ -29,7 +29,7 @@ in std.front {
 }
 a horizontal std.origin
 top horizontal f
-deck on spindle
+deck coincident spindle
 deck horizontal c
 a distance(bore_radius, side: right) spindle
 b distance(outer_radius, side: right) spindle
@@ -38,9 +38,17 @@ distance(plate_depth) bc
 distance(hub_height) de
 flange := solid(profile, about: spindle)
 
-// The bolt circle is drawn on the top of the plate: a plane folded square to the section about
-// a reference running out along that face from the axis, so it looks down on the face.
-construction centerline reference := line(deck, c)
-plate_top := plane(origin: deck, toward: c, from: std.front, fold: along reference)
-pattern := hardware.BoltPattern(flange, deck, reference, n: bolts, pitch_r: bolt_circle,
+// The bolt circle is drawn on the top of the plate: a plane square to the section over a
+// reference running out along that face from the axis, standing at the axis, so it looks down
+// on the face.  The pattern is measured in it, from its origin along its own `x`.
+in std.front {
+  construction centerline reference := line(deck, c)
+}
+plate_top := plane(u: reference, v: std.y)
+deck coincident plate_top.origin
+in plate_top {
+  construction centerline across := horizontal line(plate_top.origin, hint(x: 10mm, y: 0mm))
+  distance(10mm) across
+}
+pattern := hardware.BoltPattern(flange, plate_top.origin, across, n: bolts, pitch_r: bolt_circle,
                                 hole_r: bolt_radius, phase: 0deg) in plate_top

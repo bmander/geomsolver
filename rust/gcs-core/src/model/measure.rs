@@ -28,7 +28,7 @@ fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
         // a sphere is on no sheet: its centre is what is picked of it (a cone or a cylinder: its
         // axis)
-        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => f64::MAX,
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => f64::MAX,
         // a curve has no idealised form a dimension could mean beyond the curve itself, so this
         // measurement and `point_to_drawn`'s are the same one
         EntKind::Curve => polyline_distance(&sk.curve_polyline(e.i()), px, py),
@@ -43,10 +43,7 @@ fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         }
         EntKind::Spline => crate::curve::distance_to(sk, e.i(), px, py),
         // a datum is not a figure: the place it stands at is its origin
-        EntKind::Plane => {
-            let (x, y) = sk.point_xy(sk.frame_of(e).origin as usize);
-            (px - x).dhypot(py - y)
-        }
+        EntKind::Plane => px.dhypot(py),
     }
 }
 
@@ -68,7 +65,7 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
         // a sphere is on no sheet: its centre is what is picked of it (a cone or a cylinder: its
         // axis)
-        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => f64::MAX,
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => f64::MAX,
         EntKind::Curve => polyline_distance(&sk.curve_polyline(e.i()), px, py),
         EntKind::Line => {
             let l = &sk.lines[e.i()];
@@ -98,13 +95,8 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         EntKind::Point | EntKind::Circle | EntKind::Spline => {
             point_to(sk, px, py, e)
         }
-        // a plane draws its chord as a datum glyph, and that is where it is taken hold of; its
-        // points still win a pick within tolerance, as every point does
-        EntKind::Plane => {
-            let f = sk.frame_of(e);
-            let (a, b) = (sk.point_xy(f.origin as usize), sk.point_xy(f.toward as usize));
-            seg_distance((px, py), a, b)
-        }
+        // a plane is drawn as its glyph at its own origin, which is where it is taken hold of
+        EntKind::Plane => px.dhypot(py),
     }
 }
 
@@ -167,7 +159,7 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Curve => 4,
         // never measured against anything: a face and a solid are not on the sheet
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
-        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => 5,
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => 5,
         // last, so any pair with a datum in it puts the datum second and one arm catches it
         EntKind::Plane => 6,
     }
@@ -212,7 +204,7 @@ fn swept(sk: &Sketch, e: EntRef) -> Vec<(f64, f64)> {
     match e.kind {
         EntKind::Spline => crate::curve::sample(sk, e.i(), 64),
         // a datum is not a figure: the one place it stands at
-        EntKind::Plane => vec![sk.point_xy(sk.frame_of(e).origin as usize)],
+        EntKind::Plane => vec![(0.0, 0.0)],
         _ => Vec::new(),
     }
 }

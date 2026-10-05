@@ -340,7 +340,8 @@ fn a_drag_costs_the_figure_not_the_document() {
     let before = three.get_x();
     let mut d1 = PlanDrag::new(&one, p1, x0, y0, None, 0.05);
     let mut d3 = PlanDrag::new(&three, p3, x0 + dx, y0, None, 0.05);
-    assert_eq!(d3.part().unwrap().sketch.points.len(), n);
+    // the chain's points, and the origin of the plane they are drawn in, which comes with them
+    assert_eq!(d3.part().unwrap().sketch.points.len(), n + 1);
     assert_eq!(d3.own_plan().unwrap().system.n_free, d1.own_plan().unwrap().system.n_free);
     assert_eq!(d3.own_plan().unwrap().plan.steps.len(), d1.own_plan().unwrap().plan.steps.len());
     for i in 1..=12 {
@@ -364,7 +365,7 @@ fn a_drag_costs_the_figure_not_the_document() {
             assert_eq!(a, b, "param {i} outside the dragged figure was written");
         }
     }
-    assert!(three.constraints.len() == 3 * (n - 1), "the document itself was restructured");
+    assert!(three.user_constraints().len() == 3 * (n - 1), "the document itself was restructured");
 }
 
 /// A body nothing holds rides along with the cursor: it slides, it does not spin about its own
@@ -380,7 +381,8 @@ fn a_free_body_slides_rather_than_spins() {
     d.move_to(&mut sk, None, x + 10.0, y + 4.0);
     d.end();
     let after = sk.get_x();
-    for k in 0..sk.points.len() {
+    // every point of the body: not the standard planes' origins, which are held
+    for k in (0..sk.points.len()).filter(|&k| !sk.point_fixed(k)) {
         let [ix, iy] = sk.point_params(k);
         let (dx, dy) = (after[ix as usize] - before[ix as usize], after[iy as usize] - before[iy as usize]);
         assert!((dx - 10.0).abs() < 0.2 && (dy - 4.0).abs() < 0.2, "point {k} moved by {:?}", (dx, dy));
@@ -510,7 +512,13 @@ fn pull_polish_frames_are_the_bits_they_were() {
             let r = d.move_to(sk, tx, ty);
             mix(&mut h, r.status as u64);
             mix(&mut h, r.success as u64);
-            for v in sk.get_x() { mix(&mut h, v.to_bits()); }
+            // the document's own: not the standard datums every `use std` brings, which a
+            // `fix` holds and the hash was recorded without
+            for (v, q) in sk.get_x().into_iter().zip(&sk.params) {
+                if !q.name.starts_with("std.") && q.name != "zero" {
+                    mix(&mut h, v.to_bits());
+                }
+            }
         }
         d.end(sk);
     }
