@@ -415,6 +415,13 @@ fn build(
             let next = Term::Prim(prims.len() - 1);
             term = if matches!(term, Term::Empty) { next } else { Term::Union(Box::new(term), Box::new(next)) };
         }
+        // a ball rolled along a traced loop: its piece's boundary meshed to the sheet's flatness
+        for roll in &blend.rolls {
+            let Some(built) = super::fillet::rolled_prim(roll, origin, unit, &name) else { return Term::Empty };
+            prims.push(built);
+            let next = Term::Prim(prims.len() - 1);
+            term = if matches!(term, Term::Empty) { next } else { Term::Union(Box::new(term), Box::new(next)) };
+        }
         return term;
     }
     let Some(face) = sol.face() else { return Term::Empty };

@@ -3,6 +3,8 @@
 //! These are explicit field constructions, not implicit conversions of mesh CSG.
 use crate::interval::{Error,Interval as I};
 mod profile;
+mod canal;
+pub use canal::CanalField;
 mod spatial;
 mod document;
 pub use document::CHORD_SLACK;

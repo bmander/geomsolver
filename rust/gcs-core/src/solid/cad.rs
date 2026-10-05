@@ -156,8 +156,15 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
             // as it builds any other, unioned
             SolidDef::Fillet {..} => {
                 let blend = sk.fillet_blend(i).map_err(|e| format!("`{}`: {e}",solid.name))?;
+                // a ball rolled along a traced loop is rolled again by the kernel building it, from
+                // the operands it rounds, the loop picked by a point of it
+                let operands = ids(&super::fillet::operands(sk,i));
+                let rolled = blend.rolls.iter().map(|roll| object([("operands",operands.clone()),
+                    ("radius",(roll.rolled.r/roll.mm*scale).into()),
+                    ("point",vector(roll.edge_point().map(|v| v*scale))),("concave",roll.rolled.concave.into())])).collect();
                 object([("kind","fillet".into()),
-                    ("pieces",Json::Arr(blend.pieces.iter().map(|p| fillet_piece(p,scale)).collect()))])
+                    ("pieces",Json::Arr(blend.pieces.iter().map(|p| fillet_piece(p,scale)).collect())),
+                    ("rolled",Json::Arr(rolled))])
             }
             SolidDef::Prism {face,from,to} => object([
                 ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),
@@ -260,10 +267,14 @@ pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
         };
         let nodes = nodes.iter().map(|n| {
             let mut n = node(n);
-            // a fillet's pieces are nodes of their own
+            // a fillet's pieces are nodes of their own, and a rolled loop is picked by a point
             if let Some(Json::Arr(pieces)) = n.get("pieces") {
                 let pieces = Json::Arr(pieces.iter().map(&node).collect());
                 n.set("pieces",pieces);
+            }
+            if let Some(Json::Arr(rolled)) = n.get("rolled") {
+                let rolled = Json::Arr(rolled.iter().map(|r| points(r,&["point"])).collect());
+                n.set("rolled",rolled);
             }
             n
         }).collect();

@@ -325,6 +325,11 @@ fn solve3(m: [V;3],rhs: V) -> V {
     [col(0)/det,col(1)/det,col(2)/det]
 }
 
+/// The sine of the angle two surfaces meet at, below which a trace is ill-conditioned (a point
+/// within `tol` of both may be `tol / sin θ` off their meeting, and where they touch their meeting
+/// has a singular point): refused, not traced (one degree).
+pub(crate) const SHALLOW: f64 = 0.0175;
+
 /// The curves two surfaces meet in, traced through `seeds` (points on both) within the box
 /// `[lo, hi]`: from each seed not already on a traced curve, a march along `∇a × ∇b` both ways
 /// — each step predicted along the tangent and pulled onto both surfaces, shortened while the
@@ -332,10 +337,6 @@ fn solve3(m: [V;3],rhs: V) -> V {
 /// began. A seed where the two are tangent (their normals parallel) is refused.
 pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result<Vec<Curve>,String> {
     use super::geom::Traced;
-    // the sine of the angle the two meet at, below which a trace is ill-conditioned (a point
-    // within `tol` of both surfaces may be `tol / sin θ` off their meeting, and where they touch
-    // their meeting has a singular point): refused, not traced
-    const SHALLOW: f64 = 0.0175; // one degree
     let tangent = |p: V| -> Option<V> {
         let t = cross(a.gradient(p),b.gradient(p));
         let n = norm(t);

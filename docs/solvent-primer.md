@@ -1192,7 +1192,26 @@ What is rounded is what has a closed form: a straight edge between planes and cy
 (a rod half sunk in a plate, two round bars side by side: `solid_fillet_rail.sv`), and a whole
 circle between planes, cylinders, cones, spheres and tori about one axis (a rod's neck in a ball:
 `solid_fillet_knob.sv`). A section's sides may be arcs; the fillet's face is a cylinder or a torus
-still. A meeting no line or circle carries (a pipe tee) is refused with its reason (E085).
+still. A **closed loop** no line or circle carries is rolled round too, between any two of those
+faces: a pipe tee's crotch (`solid_fillet_tee.sv`), a pin through a ball off its centre, a bore's
+rim in a pipe's wall (`solid_fillet_bore.sv`, a convex edge, so `rim cut pipe`). The ball's centre
+is traced where the two faces offset by `r` meet, and its face is that canal, fitted (a B-spline).
+Name what the fillet reads: the bore's rim is an edge of `drilled`, the pipe with its bore, since a
+fillet reads its operands' union and a cut is not in it.
+
+```
+drilled := solid(main)
+bore cut drilled
+pipe := solid(drilled)
+rim := fillet(drilled.main, drilled.bore, r: 1mm)
+rim cut pipe
+```
+
+Refused with their reasons (E085): a traced meeting that runs on into another face (a branch at
+the pipe's end: rung 3), a face swept from a spline (no offset in closed form, not yet), a ball
+larger than a face holds (a branch shorter than the ball's reach). The material field also refuses
+a ball reaching across its own centre's bend (a branch thinner than the ball): the canal's nearest
+point is no longer unique there.
 
 #### Writing a part
 
@@ -1264,7 +1283,8 @@ sheet's to state.
 | `lip := fillet(block.near, block.bc, r: 5mm)` with `lip union block` | E085 — "`lip` rounds convex edges, whose material the ball rolls off: write `lip cut block`, not `union`" |
 | `root := fillet(boss, plate, r: 13mm)` on a plate 12 beyond the boss | E085 — "the ball of `boss.k` with `plate.near` is larger than `plate.near` can hold" |
 | a fillet round a rib that ends on the plate | E085 — "… runs on past its end into `plate.near`: a fillet turning a corner is rung 3" |
-| `fillet(pin, ball, r: 0.5mm)`, a pin off the ball's centre | E085 — "… no ball rolls along in closed form: … a traced meeting is not yet (rung 2)" |
+| `fillet(plate.lobe, plate.near, r: 1mm)`, a face swept from a spline | E085 — "`lobe` (extrusion) has no offset in closed form, so no ball rolls on it yet: …" |
+| a tee whose branch stands at the main pipe's end | E085 — "the edge of … runs on into other faces: a fillet along it ends, rung 3" |
 | `root := fillet(boss, plate)` | E100 — "a fillet needs `r:`, the ball's radius" |
 
 ### 1.15 Spatial geometry read after the solve

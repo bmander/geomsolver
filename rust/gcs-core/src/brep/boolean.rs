@@ -6,7 +6,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{around,Uv,V};
-use super::query::{curve_curve,face_box,curve_surface_within,Located,Meets,Place};
+use super::query::{crossings_in,face_box,curve_surface_within,Located,Meets,Place};
 use super::ssi::{intersect,Ssi};
 use super::topo::{unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::space::{distance,norm};
@@ -155,6 +155,8 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
     // 1. every edge against every face of the other solid: where it crosses, a vertex on both
     let mut cuts: Vec<Vec<(f64,u32)>> = vec![Vec::new();edges.len()];
     let mut on_face: [Vec<Vec<u32>>;2] = [vec![Vec::new();a.faces.len()],vec![Vec::new();b.faces.len()]];
+    // each face's edges of the other solid lying in its surface (`Meets::Along`), working indices
+    let mut along_face: [Vec<Vec<usize>>;2] = [vec![Vec::new();a.faces.len()],vec![Vec::new();b.faces.len()]];
     for s in 0..2 {
         let other = 1-s;
         for (i,e) in solids[s].edges.iter().enumerate() {
@@ -170,7 +172,9 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
             for (fi,f) in solids[other].faces.iter().enumerate() {
                 if !overlap(&ebox,&boxes[other][fi],pad+sag) { continue }
                 let started = crate::clock::Instant::now();
-                let meets = curve_surface_within(&c,e.t,&f.surface,tol,boxes[other][fi],pad);
+                // an edge measured off its surfaces by more than the tolerance (a fitted contact's
+                // `tol`, `json::measure`) is read at its own: it lies in a face it is that near
+                let meets = curve_surface_within(&c,e.t,&f.surface,tol.max(e.tol),boxes[other][fi],pad);
                 if started.elapsed().as_secs_f64() > 0.1 && std::env::var_os("SOLVENT_BREP_TIME").is_some() {
                     eprintln!("time: edge {i} of {} ({}, {:.3} long) against face {fi} ({}, feature {:.3e}): {:.2} s",["A","B"][s],c.kind(),
                         c.speed()*(e.t[1]-e.t[0]),f.surface.kind(),f.surface.feature(),started.elapsed().as_secs_f64());
@@ -179,13 +183,13 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     // lying in the face's surface, it is split only where it crosses the face's
                     // own edges, which no surface tells: each crossing a vertex on both (a
                     // fillet's contact circle laid on a cylinder across the cylinder's seam)
-                    Meets::Along => for g in f.loops.iter().flatten().map(|g| g.edge).collect::<std::collections::BTreeSet<_>>() {
+                    Meets::Along => for g in { along_face[other][fi].push(we); f.loops.iter().flatten().map(|g| g.edge).collect::<std::collections::BTreeSet<_>>() } {
                         let ge = &solids[other].edges[g as usize];
                         let EdgeCurve::Curve(gc) = &ge.curve else { continue };
-                        // (a pair with no closed form — a spline sweep's rail along a side — is left
-                        // unsplit, as every edge along a face was before; its crossing wants a
-                        // general curve–curve root, not yet written)
-                        for (t,q) in curve_curve(c,e.t,gc,ge.t,tol).unwrap_or_default() {
+                        // (where neither is a line or a circle — a spline sweep's rail along a side —
+                        // it is left unsplit, as every edge along a face was before; that crossing
+                        // wants a general curve–curve root, not yet written)
+                        for (t,q) in crossings_in(&f.surface,c,e.t,gc,ge.t,tol).unwrap_or_default() {
                             if debug { eprintln!("brep: edge {i} of {} ({}) along face {fi} crosses its edge {g} at {q:?}",
                                 ["A","B"][s],c.kind()); }
                             let v = pool.at(q);
@@ -224,6 +228,23 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     // inside both faces, or ending on a sheet's boundary beyond them, crosses no edge
                     let mut seeds: Vec<V> = on_face[1][fb].iter().chain(&on_face[0][fa]).map(|&v| pool.pts[v as usize])
                         .filter(|&p| sa.implicit(p).abs() <= 8.*tol && sb.implicit(p).abs() <= 8.*tol).collect();
+                    // **where the two touch along an edge one of them lies in** (a fillet's face against
+                    // the face it rolls on), that edge is their meeting there, which no trace can
+                    // follow (they are tangent): its points seed nothing, and any other meeting is
+                    // traced from the rest
+                    // (a point within `tol` of two surfaces touching may stand the square root of
+                    // `tol` times their size off the curve they touch along)
+                    let contact: Vec<usize> = along_face[1][fb].iter().chain(&along_face[0][fa]).copied().collect();
+                    let spread = 8.*(tol*distance(boxes[0][fa].0,boxes[0][fa].1).max(distance(boxes[1][fb].0,boxes[1][fb].1))).sqrt();
+                    let touching = |p: V| norm(crate::space::cross(sa.gradient(p),sb.gradient(p))) < super::ssi::SHALLOW
+                        && contact.iter().any(|&we| {
+                            let EdgeCurve::Curve(c) = &edges[we].curve else { return false };
+                            let mut t = c.inverse(p);
+                            if let Some(period) = c.period() { t = around(t,edges[we].t[0],period); }
+                            let t = t.clamp(edges[we].t[0],edges[we].t[1]);
+                            distance(c.point(t),p) <= spread.max(8.*tol)
+                        });
+                    seeds.retain(|&p| !touching(p));
                     let (lo,hi): (V,V) = (std::array::from_fn(|k| boxes[0][fa].0[k].max(boxes[1][fb].0[k])),
                         std::array::from_fn(|k| boxes[0][fa].1[k].min(boxes[1][fb].1[k])));
                     let started = crate::clock::Instant::now();
@@ -231,7 +252,8 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                         else if matches!(sa,super::geom::Surface::BSpline(..)) { grid_seeds(a,fa,sb,tol) } else { Vec::new() };
                     t_grid += started.elapsed().as_secs_f64();
                     // (only where both faces may be: a seed beyond their shared box traces nothing on them)
-                    seeds.extend(grid.into_iter().filter(|p| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad)));
+                    seeds.extend(grid.into_iter().filter(|p| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad))
+                        .filter(|&p| !touching(p)));
                     if debug { eprintln!("brep: A{fa} {} × B{fb} {}: tracing from {} seed(s) {seeds:?}",sa.kind(),sb.kind(),seeds.len()); }
                     let started = crate::clock::Instant::now();
                     let mut traced = super::ssi::trace(sa,sb,&seeds,lo,hi,tol)?;

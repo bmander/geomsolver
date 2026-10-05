@@ -18,14 +18,15 @@ fn read(src: &str) -> Elaborated { crate::common::read(&front(src)) }
 
 fn refused(src: &str, code: Code, needle: &str) {
     let src = &front(src);
-    let (prog, errs, _) = gcs_core::library::parse_linked(src);
+    let (prog, errs, linked) = gcs_core::library::parse_linked(src);
     let mut saw: Vec<String> = errs.iter().map(|e| format!("E100: {}", e.message)).collect();
     let mut hit = code == Code::E100 && errs.iter().any(|d| d.message.contains(needle));
     if !hit && errs.is_empty() {
         // what a fillet cannot round is known once the drawing is solved: the documents here
         // are seeded where they solve, so the diagnosis after the solve reads them as they are
         let e = elaborate(&prog);
-        let mut diags = e.diags.clone();
+        let mut diags = linked;
+        diags.extend(e.diags.iter().cloned());
         diags.extend(gcs_core::program::solid_diagnostics(&e.sketch, &e.map));
         saw.extend(diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)));
         hit = diags.iter().any(|d| d.code == code && d.message.contains(needle));
@@ -483,13 +484,6 @@ waist union bars
 
 #[test]
 fn what_rung_two_cannot_round_yet_is_refused_with_its_reason() {
-    // a pin off the ball's centre meets it on a traced curve: no ball rolls along it in closed form
-    refused(
-        &format!("{KNOB}in std.front {{\npc := point hint(x: 3, y: 44)\nfix(x == 3, y == 44) pc\npin_k := circle(center: pc) hint(r: 2)\n\
-                  radius(2) pin_k\n}}\npin := solid(face(pin_k), from: -20mm, to: 20mm)\nnub := fillet(pin, ball, r: 0.5mm)\n"),
-        Code::E085,
-        "rung 2",
-    );
     // a ball so large it would touch the rod below the disc it stands on
     refused(
         &KNOB.replace("neck := fillet(rod, ball, r: 1.5mm)", "neck := fillet(rod, ball, r: 200mm)"),
@@ -502,4 +496,225 @@ fn what_rung_two_cannot_round_yet_is_refused_with_its_reason() {
         Code::E085,
         "rung 3",
     );
+    // a branch so short the ball would roll up past its end
+    refused(&TEE.replace("from: 0mm, to: 25mm", "from: 0mm, to: 11mm"), Code::E085, "can hold");
+    // a branch at the main pipe's end meets it on an open curve, which the ball would roll off
+    refused(&TEE.replace("fix(x == 0, y == 0) c2", "fix(x == 27, y == 0) c2").replace("c2 := point\n", "c2 := point hint(x: 27)\n"),
+        Code::E085, "rung 3");
+    // a face swept from a spline has no offset in closed form
+    refused(
+        &format!("{}round := fillet(plate.lobe, plate.near, r: 1mm)\n", include_str!("../../examples/solid_spline.sv")),
+        Code::E085,
+        "no offset in closed form",
+    );
+}
+
+/// The field reads a ball's material by the nearest point of its centre's path, so it refuses a
+/// corner reaching past where that point is unique: a branch so thin the crotch's ball reaches
+/// across the bend of its own path.
+#[test]
+fn a_canal_reaching_past_its_spines_bend_is_refused_by_the_field() {
+    let e = read_linked(&TEE.replace("radius(6) stem_k", "radius(1) stem_k").replace("hint(r: 6)", "hint(r: 1)"));
+    let i = e.map.ent_named("tee").unwrap().i();
+    let err = gcs_core::solid::MaterialField::read(&e.sketch, i, 1e-10).err().expect("the field reads it");
+    assert!(format!("{err:?}").contains("nearest point is unique"), "{err:?}");
+}
+
+// -- rung 2: balls rolled along traced loops ---------------------------------------------------
+
+type V3 = [f64; 3];
+fn sub(a: V3, b: V3) -> V3 { [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
+fn dot(a: V3, b: V3) -> f64 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
+fn scale(a: V3, k: f64) -> V3 { [a[0] * k, a[1] * k, a[2] * k] }
+fn unit(a: V3) -> V3 { scale(a, 1.0 / dot(a, a).sqrt()) }
+
+/// The least positive root of `a t² + b t + c` (infinite where there is none).
+fn first_root(a: f64, b: f64, c: f64) -> f64 {
+    let disc = b * b - 4.0 * a * c;
+    if disc < 0.0 { return f64::INFINITY; }
+    [(-b - disc.sqrt()) / (2.0 * a), (-b + disc.sqrt()) / (2.0 * a)].into_iter().filter(|&t| t > 1e-12).fold(f64::INFINITY, f64::min)
+}
+
+/// Where a ray from `o` along `w` first meets the cylinder of `radius` about the line through `at`
+/// along the axis `axis` (0, 1 or 2).
+fn ray_cylinder(o: V3, w: V3, at: V3, axis: usize, radius: f64) -> f64 {
+    let o = sub(o, at);
+    let (i, j) = ((axis + 1) % 3, (axis + 2) % 3);
+    first_root(w[i] * w[i] + w[j] * w[j], 2.0 * (o[i] * w[i] + o[j] * w[j]), o[i] * o[i] + o[j] * o[j] - radius * radius)
+}
+
+/// Where a ray from `o` along the unit `w` first meets the sphere of `radius` about the origin.
+fn ray_sphere(o: V3, w: V3, radius: f64) -> f64 { first_root(1.0, 2.0 * dot(o, w), dot(o, o) - radius * radius) }
+
+/// A ball of radius `r` rolled round a closed spine `c(φ)`, φ over a turn, independently of the
+/// kernel: in each plane square to the spine the fillet's section is the cone between the
+/// directions `toward` its two contacts, out from the ball to whichever face a ray meets first
+/// (`hit`, the distance along a ray), swept with the spine's curvature (`dV = (1 − κ q) dA ds`,
+/// `q` along its principal normal).
+fn rolled(c: &dyn Fn(f64) -> V3, toward: [&dyn Fn(V3) -> V3; 2], hit: [&dyn Fn(V3, V3) -> f64; 2], r: f64) -> f64 {
+    let (n_phi, n_psi) = (720, 96);
+    // Gauss–Legendre on [−1, 1], by Newton on the Legendre polynomial
+    let gauss: Vec<(f64, f64)> = (0..n_psi).map(|i| {
+        let mut x = (PI * (i as f64 + 0.75) / (n_psi as f64 + 0.5)).cos();
+        let mut dp = 0.0;
+        for _ in 0..100 {
+            let (mut p0, mut p1) = (1.0, x);
+            for k in 2..=n_psi { let p2 = ((2 * k - 1) as f64 * x * p1 - (k - 1) as f64 * p0) / k as f64; p0 = p1; p1 = p2; }
+            dp = n_psi as f64 * (x * p1 - p0) / (x * x - 1.0);
+            let dx = p1 / dp;
+            x -= dx;
+            if dx.abs() < 1e-16 { break; }
+        }
+        (x, 2.0 / ((1.0 - x * x) * dp * dp))
+    }).collect();
+    let h = 1e-4;
+    let mut total = 0.0;
+    for k in 0..n_phi {
+        let phi = 2.0 * PI * k as f64 / n_phi as f64;
+        let p = c(phi);
+        let (pa, pb) = (c(phi - h), c(phi + h));
+        let d1 = scale(sub(pb, pa), 1.0 / (2.0 * h));
+        let d2 = scale([pb[0] - 2.0 * p[0] + pa[0], pb[1] - 2.0 * p[1] + pa[1], pb[2] - 2.0 * p[2] + pa[2]], 1.0 / (h * h));
+        let speed = dot(d1, d1).sqrt();
+        let t = scale(d1, 1.0 / speed);
+        // κ N, the turn of the tangent per unit length
+        let kn = scale(sub(d2, scale(t, dot(d2, t))), 1.0 / (speed * speed));
+        let (ea, eb) = (toward[0](p), toward[1](p));
+        let span = dot(ea, eb).clamp(-1.0, 1.0).acos();
+        let side = unit(sub(eb, scale(ea, dot(ea, eb))));
+        let dir = |psi: f64| [0, 1, 2].map(|i| ea[i] * psi.cos() + side[i] * psi.sin());
+        // the ray leaves through the first face from the first contact's side, the second from the
+        // second's: the angle where the two meet splits the integral (a kink no rule integrates)
+        let switch = {
+            let gap = |psi: f64| hit[0](p, dir(psi)) - hit[1](p, dir(psi));
+            let (mut lo, mut hi) = (0.0, span);
+            for _ in 0..80 { let m = 0.5 * (lo + hi); if (gap(m) < 0.0) == (gap(lo) < 0.0) { lo = m } else { hi = m } }
+            0.5 * (lo + hi)
+        };
+        let mut area = 0.0;
+        for (a, b) in [(0.0, switch), (switch, span)] {
+            for &(x, w) in &gauss {
+                let psi = a + 0.5 * (b - a) * (x + 1.0);
+                let d = dir(psi);
+                let reach = hit[0](p, d).min(hit[1](p, d));
+                let q = dot(d, kn);
+                area += w * 0.5 * (b - a) * ((reach * reach - r * r) / 2.0 - q * (reach.powi(3) - r.powi(3)) / 3.0);
+            }
+        }
+        total += area * speed * 2.0 * PI / n_phi as f64;
+    }
+    total
+}
+
+/// The tee's crotch fillet: its spine is where the cylinders offset by the ball's radius meet
+/// (radii `big + r` about x, `small + r` about z), in closed form round the branch.
+fn tee_crotch(big: f64, small: f64, r: f64) -> f64 {
+    let (rb, rs) = (big + r, small + r);
+    rolled(
+        &|phi: f64| { let (s, co) = phi.sin_cos(); [rs * co, rs * s, (rb * rb - rs * rs * s * s).sqrt()] },
+        [&|p: V3| unit([0.0, -p[1], -p[2]]), &|p: V3| unit([-p[0], -p[1], 0.0])],
+        [&|o, w| ray_cylinder(o, w, [0.0; 3], 0, big), &|o, w| ray_cylinder(o, w, [0.0; 3], 2, small)],
+        r,
+    )
+}
+
+const TEE: &str = include_str!("../../examples/solid_fillet_tee.sv");
+
+/// A document with `use std`, linked as the CLI links it.
+fn read_linked(src: &str) -> Elaborated {
+    let (prog, errs, _) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty(), "does not parse: {errs:?}");
+    let e = elaborate(&prog);
+    assert!(e.ok(), "does not elaborate: {:?}", e.diags.iter().map(|d| d.message.clone()).collect::<Vec<_>>());
+    e
+}
+
+#[test]
+fn a_pipe_tees_crotch_is_rolled_round_its_traced_loop() {
+    let e = read_linked(TEE);
+    let want = tee_crotch(10.0, 6.0, 2.0);
+    let got = volume(&e, "crotch");
+    // the canal is fitted, within a ten-millionth of the part
+    assert!((got - want).abs() <= 1e-6 * want, "{got} != {want} (off by {:e})", got - want);
+    // the body is the pipes' union and the fillet, exactly
+    assert_volume(volume(&e, "tee"), volume(&e, "main") + volume(&e, "stem")
+        - PI * 36.0 * 10.0 + volume(&e, "crotch") - stem_inside_main(10.0, 6.0));
+    field_agrees(&e, "tee");
+}
+
+/// How much less than a cylinder of the main pipe's radius the branch's foot inside the main pipe
+/// is: `∫∫ (√(big² − y²) − big)` over the branch's disc, by `y = small sin θ` (smooth and periodic
+/// in θ, so the trapezoid rule converges at once).
+fn stem_inside_main(big: f64, small: f64) -> f64 {
+    let n = 2000;
+    (0..n).map(|i| {
+        let th = -PI / 2.0 + PI * i as f64 / n as f64;
+        let (s, c) = th.sin_cos();
+        let y = small * s;
+        2.0 * small * c * ((big * big - y * y).sqrt() - big) * small * c
+    }).sum::<f64>() * PI / n as f64
+}
+
+/// A pin of radius 2 through the knob's ball (radius 8) 3 off its centre, square to the knob's axis.
+const PIN: &str = "\
+pc := point hint(x: 3, y: 44)
+fix(x == 3, y == 44) pc
+pin_k := circle(center: pc) hint(r: 2)
+radius(2) pin_k
+pin := solid(face(pin_k), from: -20mm, to: 20mm)
+";
+
+/// One of the two fillets where the pin leaves the ball, independently: about the ball's centre,
+/// the pin's axis along z at `off` in x, the spine is where the sphere of `big + r` meets the
+/// cylinder of `small + r`.
+fn pin_collar(big: f64, small: f64, off: f64, r: f64) -> f64 {
+    let (rb, rs) = (big + r, small + r);
+    rolled(
+        &|phi: f64| {
+            let (s, co) = phi.sin_cos();
+            let (x, y) = (off + rs * co, rs * s);
+            [x, y, (rb * rb - x * x - y * y).sqrt()]
+        },
+        [&|p: V3| unit(scale(p, -1.0)), &|p: V3| unit([off - p[0], -p[1], 0.0])],
+        [&|o, w| ray_sphere(o, w, big), &|o, w| ray_cylinder(o, w, [off, 0.0, 0.0], 2, small)],
+        r,
+    )
+}
+
+#[test]
+fn a_pin_through_a_ball_off_its_centre_is_rolled_round_both_loops() {
+    let e = read(&format!(
+        "{KNOB}{PIN}pinned := solid(knob)\npin union pinned\nnub := fillet(pin, ball, r: 0.5mm)\n\
+         nubbed := solid(pinned)\nnub union nubbed\n"
+    ));
+    // one fillet of both loops, each a collar where the pin leaves the ball
+    let want = 2.0 * pin_collar(8.0, 2.0, 3.0, 0.5);
+    let got = volume(&e, "nub");
+    assert!((got - want).abs() <= 1e-6 * want, "{got} != {want} (off by {:e})", got - want);
+    assert_volume(volume(&e, "nubbed"), volume(&e, "pinned") + got);
+    field_agrees(&e, "nubbed");
+}
+
+const BORE: &str = include_str!("../../examples/solid_fillet_bore.sv");
+
+#[test]
+fn a_bores_rim_is_rolled_off_round_its_saddle() {
+    let e = read_linked(BORE);
+    // the rim's material is the crotch's mirror: the ball rolls inside the main pipe's wall and
+    // outside the bore, its centre on the cylinders of radii 10 − 1 and 6 + 1
+    let (big, small, r) = (10.0, 6.0, 1.0);
+    let want = rolled(
+        &|phi: f64| {
+            let (s, co) = phi.sin_cos();
+            let (rb, rs) = (big - r, small + r);
+            [rs * co, rs * s, (rb * rb - rs * rs * s * s).sqrt()]
+        },
+        [&|p: V3| unit([0.0, p[1], p[2]]), &|p: V3| unit([-p[0], -p[1], 0.0])],
+        [&|o, w| ray_cylinder(o, w, [0.0; 3], 0, big), &|o, w| ray_cylinder(o, w, [0.0; 3], 2, small)],
+        r,
+    );
+    let got = volume(&e, "rim");
+    assert!((got - want).abs() <= 1e-6 * want, "{got} != {want} (off by {:e})", got - want);
+    assert_volume(volume(&e, "pipe"), volume(&e, "drilled") - got);
+    field_agrees(&e, "pipe");
 }

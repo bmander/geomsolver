@@ -41,7 +41,8 @@ fn held(session: &native::Session,name: &str,e: &gcs_core::program::Elaborated) 
             let other = session.construct(&cad::recipe(&sk,o as usize).unwrap()).unwrap();
             theirs = session.boolean(theirs,other,"on").unwrap();
         }
-        let points: Vec<[f64;3]> = blend.pieces.iter().map(|p| p.edge_point().map(|x| x*mm)).collect();
+        let points: Vec<[f64;3]> = blend.pieces.iter().map(|p| p.edge_point())
+            .chain(blend.rolls.iter().map(|r| r.edge_point())).map(|p| p.map(|x| x*mm)).collect();
         let theirs = session.fillet(theirs,r.value*mm,&points).unwrap_or_else(|e| panic!("{name}: `{}`: OCCT: {e}",s.name));
         let (v,w) = (volume(&ours),session.volume(theirs).unwrap());
         let rel = (v-w).abs()/w.abs();
@@ -51,7 +52,13 @@ fn held(session: &native::Session,name: &str,e: &gcs_core::program::Elaborated) 
             k
         };
         eprintln!("{name}: `{}`: {v:.9} mm³ against OCCT's {w:.9} ({rel:e}); faces {:?} against {their_kinds:?}",s.name,kinds(&ours));
-        assert!(rel < 1e-7,"{name}: `{}`: volume {v} against OCCT's {w}",s.name);
+        // a ball rolled along a traced loop: OCCT's own fillet stands off this kernel's in the piece
+        // — 0.33% of the tee's crotch, 0.8% of the bore's rim (1e-5 of the bodies) — whatever bars
+        // its approximations are held to, where a reference made without either kernel, the normal
+        // sections swept along the spine (`gcs-core/tests/fillet.rs`), agrees with this kernel's to
+        // 1e-6: OCCT is held to the body's volume at 1e-4 there, and to its faces by kind
+        let bar = if blend.rolls.is_empty() { 1e-7 } else { 1e-4 };
+        assert!(rel < bar,"{name}: `{}`: volume {v} against OCCT's {w}",s.name);
         // OCCT may leave a plane split where this kernel's Boolean joined it, or the reverse: the
         // curved faces must agree. Each fillet's own face is a cylinder or a torus here; OCCT builds
         // it so where its blend has a closed form and approximates it by a B-spline (kind 6) where
@@ -64,6 +71,11 @@ fn held(session: &native::Session,name: &str,e: &gcs_core::program::Elaborated) 
             let take = |ks: &mut Vec<i32>,k: i32| ks.iter().position(|&x| x == k).map(|i| ks.remove(i)).is_some();
             assert!(take(&mut mine,own),"{name}: `{}`: no face of its own",s.name);
             assert!(take(&mut its,own) || take(&mut its,6),"{name}: `{}`: OCCT made no fillet face",s.name);
+        }
+        for _ in &blend.rolls {
+            let take = |ks: &mut Vec<i32>,k: i32| ks.iter().position(|&x| x == k).map(|i| ks.remove(i)).is_some();
+            assert!(take(&mut mine,6),"{name}: `{}`: no canal face of its own",s.name);
+            assert!(take(&mut its,6),"{name}: `{}`: OCCT made no fillet face",s.name);
         }
         assert_eq!(mine,its,"{name}: `{}`: curved faces by kind",s.name);
         compared += 1;

@@ -606,6 +606,21 @@ impl Surface {
     /// the curve's ends; a loft face's the distance along the normal at its nearest point, clamped
     /// to the patch. Off a finite patch those extensions have zeros of their own, which is why
     /// `query::curve_surface` keeps a swept surface's root only where the surface is.
+    /// The surface standing `d` off this one along its own normal (`S_u × S_v`), where its signed
+    /// distance (`implicit`) is `d`: in closed form for the analytic kinds — a plane moved, a radius
+    /// grown or shrunk — and `None` for the swept and fitted kinds, or an offset through an axis.
+    pub fn offset(&self,d: f64) -> Option<Surface> {
+        let positive = |r: f64| (r > 0.).then_some(r);
+        Some(match *self {
+            Surface::Plane(f) => Surface::Plane(Frame {o:add(f.o,scale(f.z,d)),..f}),
+            Surface::Cylinder(f,r) => Surface::Cylinder(f,positive(r+d)?),
+            // implicit (ρ − r) cos α − z sin α = d is the cone of radius r + d / cos α at `o`
+            Surface::Cone(f,r,a) => Surface::Cone(f,positive(r+d/a.dcos())?,a),
+            Surface::Sphere(f,r) => Surface::Sphere(f,positive(r+d)?),
+            Surface::Torus(f,big,r) => Surface::Torus(f,big,positive(r+d)?),
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => return None,
+        })
+    }
     pub fn implicit(&self,p: V) -> f64 {
         if let Some((d,_)) = self.swept_side(p) { return d }
         let [x,y,z] = self.frame().local(p);

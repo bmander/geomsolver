@@ -90,6 +90,19 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                 let b = node_named(piece,built,built_names,floor).map_err(|e| format!("fillet: {e}"))?;
                 solid = Some(match solid { None => b,Some(s) => combined(&s,&b,Op::Union,floor)? });
             }
+            // a ball rolled along a traced loop of the operands' union, picked by a point of it
+            for rolled in n.get("rolled").map(Json::arr).unwrap_or_default() {
+                let mut union: Option<Brep> = None;
+                for id in field(rolled,"operands")?.arr() {
+                    let b = built.get(&id.as_i64()).ok_or("recipe: a fillet's operand not built before it")?;
+                    union = Some(match union { None => b.clone(),Some(s) => combined(&s,b,Op::Union,floor)? });
+                }
+                let union = union.ok_or("recipe: a rolled fillet with no operands")?;
+                let tol = (1e-9*union.size().max(1.)).max(floor);
+                let b = super::fillet::roll(&union,vec3(field(rolled,"point")?),field(rolled,"radius")?.as_f64(),tol,tol)
+                    .map_err(|e| format!("fillet: {e}"))?.piece;
+                solid = Some(match solid { None => b,Some(s) => combined(&s,&b,Op::Union,floor)? });
+            }
             solid.ok_or_else(|| "recipe: a fillet with no pieces".to_string())
         }
         k => Err(format!("recipe: a node of kind `{k}`")),

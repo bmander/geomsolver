@@ -101,6 +101,49 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
     }).collect())
 }
 
+/// Where two curves lying in `surface` cross, to `tol`: `curve_curve`'s closed forms where they
+/// have one, else — one of them a line or a circle — the other's roots on a plane carrying it (a
+/// circle's own plane; a line's plane through it square to the surface there), kept where they lie
+/// on it within its stretch. Each crossing's parameter on `a` and its point; `None` where neither
+/// is a line or a circle, or the other runs along the carrier.
+pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
+    use crate::space::cross;
+    if let Some(found) = curve_curve(a,ta,b,tb,tol) { return Some(found) }
+    // the roots of `other` on the plane carrying `line` (a line or a circle), on it
+    let carried = |carrier: &Curve,span: [f64;2],other: &Curve,over: [f64;2]| -> Option<Vec<(f64,V)>> {
+        let plane = match *carrier {
+            Curve::Line {p,d} => {
+                let mid = add(p,scale(d,0.5*(span[0]+span[1])));
+                let n = crate::space::normalised(cross(d,surface.gradient(mid)))?;
+                super::geom::Frame::about(p,n)
+            }
+            Curve::Circle(f,_) => super::geom::Frame::about(f.o,f.z),
+            _ => return None,
+        };
+        let Meets::At(roots) = curve_surface(other,over,&Surface::Plane(plane),tol) else { return None };
+        let on = |q: V| -> Option<f64> {
+            let mut t = carrier.inverse(q);
+            if let Some(period) = carrier.period() { t = super::geom::around(t,span[0],period); }
+            let slack = tol/carrier.speed().max(1e-300);
+            (t >= span[0]-slack && t <= span[1]+slack && distance(carrier.point(t),q) <= 8.*tol).then_some(t)
+        };
+        Some(roots.into_iter().filter_map(|(t,_)| { let q = other.point(t); on(q).map(|_| (t,q)) }).collect())
+    };
+    match (a,b) {
+        (_,Curve::Line {..} | Curve::Circle(..)) => carried(b,tb,a,ta),
+        (Curve::Line {..} | Curve::Circle(..),_) => {
+            // the roots are `b`'s: read back onto `a`
+            let found = carried(a,ta,b,tb)?;
+            Some(found.into_iter().map(|(_,q)| {
+                let mut t = a.inverse(q);
+                if let Some(period) = a.period() { t = super::geom::around(t,ta[0],period); }
+                (t,q)
+            }).collect())
+        }
+        _ => None,
+    }
+}
+
 /// Where `curve` over `[t0, t1]` meets `surface`, to `tol`: every sign change of the surface's
 /// signed distance along it refined to a root, every sampled minimum of its size that comes within
 /// `tol` refined to a touching point, and an end on the surface a root there.

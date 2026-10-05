@@ -235,9 +235,22 @@ impl Piece {
 /// second touch to corner — and so of the faces its sweep makes: the arc's is the fillet's face.
 pub const EDGE_NAMES: [&str; 3] = ["a", "round", "b"];
 
-/// A fillet's every piece, and whether its edges are concave (the ball's material is added).
-#[derive(Clone, Debug, PartialEq)]
-pub struct Blend { pub pieces: Vec<Piece>, pub concave: bool }
+/// A ball rolled along a closed traced loop (`brep::fillet::roll`): the kernel's piece, spine and
+/// faces, in the boundary's millimetres about `origin` (model units, `mm` a model unit), and the
+/// point of the loop it was rolled from there.
+#[derive(Clone, Debug)]
+pub struct Roll { pub rolled: std::rc::Rc<crate::brep::fillet::Rolled>, pub mm: f64, pub origin: V, pub at: V }
+
+impl Roll {
+    /// The point of the loop it rounds, in model units — what a kernel rolling it again selects
+    /// the loop by.
+    pub fn edge_point(&self) -> V { std::array::from_fn(|k| self.at[k] / self.mm + self.origin[k]) }
+}
+
+/// A fillet's every piece — swept or turned sections, and balls rolled along traced loops — and
+/// whether its edges are concave (the ball's material is added).
+#[derive(Clone, Debug)]
+pub struct Blend { pub pieces: Vec<Piece>, pub rolls: Vec<Roll>, pub concave: bool }
 
 /// Two faces running on into one another, to this (one less the cosine of the angle they turn
 /// through, the angle's square over two): no edge, nothing to round.
@@ -284,6 +297,8 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
     let located = Located::new(&brep, tol);
     let table = uses_by_edge(&brep);
     let mut pieces = Vec::new();
+    let mut rolls = Vec::new();
+    let mut rolled_edges = std::collections::BTreeSet::new();
     let mut concave: Option<(bool, String)> = None;
     for (ei, uses) in table.iter().enumerate() {
         let [(f0, c0), (f1, c1)] = match uses.as_slice() { [x, y] if x.0 != y.0 => [*x, *y], _ => continue };
@@ -291,9 +306,33 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
         let (first, second) = if fa.contains(n0) && fb.contains(n1) { ((f0, c0), (f1, c1)) }
             else if fa.contains(n1) && fb.contains(n0) { ((f1, c1), (f0, c0)) }
             else { continue };
+        let label = format!("`{}` with `{}`", brep.faces[first.0].name, brep.faces[second.0].name);
+        // a meeting no line or circle carries: the ball rolled along its whole loop at once
+        let traced = match &brep.edges[ei].curve {
+            EdgeCurve::Curve(Curve::Line { .. } | Curve::Circle(..)) => false,
+            EdgeCurve::Curve(_) => true,
+            EdgeCurve::Degenerate => continue,
+        };
+        if traced {
+            if rolled_edges.contains(&ei) { continue; }
+            let e = &brep.edges[ei];
+            let at = e.point(0.5 * (e.t[0] + e.t[1]), &brep.vertices);
+            let rolled = crate::brep::fillet::roll(&brep, at, r.value * mm, tol, tol)?;
+            rolled_edges.extend(rolled.chain.iter().copied());
+            let hollow = rolled.concave;
+            match &concave {
+                Some((was, other)) if *was != hollow => return Err(format!(
+                    "rounds the concave edge of {} and the convex edge of {}: a `union` adds the one and a \
+                     `cut` takes the other away, so write two fillets",
+                    if hollow { &label } else { other }, if hollow { other } else { &label })),
+                Some(_) => {}
+                None => concave = Some((hollow, label)),
+            }
+            rolls.push(Roll { rolled: std::rc::Rc::new(rolled), mm, origin, at });
+            continue;
+        }
         let at = Edge { brep: &brep, located: &located, table: &table, edge: ei, uses: [first, second], tol };
         let Some((piece, hollow)) = at.round(r.value * mm)? else { continue };
-        let label = format!("`{}` with `{}`", brep.faces[first.0].name, brep.faces[second.0].name);
         match &concave {
             Some((was, other)) if *was != hollow => return Err(format!(
                 "rounds the concave edge of {} and the convex edge of {}: a `union` adds the one and a \
@@ -308,7 +347,7 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
         return Err(format!("`{}` and `{}` meet at no edge to round",
             side_name(sk, a), side_name(sk, b)));
     };
-    Ok(Blend { pieces, concave })
+    Ok(Blend { pieces, rolls, concave })
 }
 
 /// Every solid fillet `f` reads, once each: what either side stands for (`stands_for`).
@@ -610,7 +649,7 @@ impl Edge<'_> {
         let kind = |k: usize| self.brep.faces[self.uses[k].0].surface.kind();
         format!("`{}` ({}) meets `{}` ({}) on a {curve} no ball rolls along in closed form: a straight \
                  edge between planes and cylinders along it, or a circle between surfaces turned about \
-                 its axis, is rounded; a traced meeting is not yet (rung 2)",
+                 its axis, is rounded in closed form, and a closed loop traced (rung 2)",
             self.face_name(0), kind(0), self.face_name(1), kind(1))
     }
 
@@ -826,4 +865,22 @@ impl Piece {
             curved: vec![None; EDGE_NAMES.len()] };
         poly.valid().then(|| poly.ccw())
     }
+}
+
+/// A rolled piece as one polyhedral primitive of the faceted kernel: its exact boundary meshed
+/// within the sheet's flatness at `unit`, about the evaluation's `origin`, each facet on the face
+/// it meshes (`round`, `a`, `b`).
+pub(super) fn rolled_prim(roll: &Roll, origin: [f64; 3], unit: f64, of: &str) -> Option<Prim> {
+    let b = &roll.rolled.piece;
+    let bar = crate::curve::flatness(unit) * roll.mm;
+    let m = crate::brep::mesh::mesh(b, bar.max(1e-6 * b.size()), TAU / 64.0).ok()?;
+    let faces: Vec<String> = b.faces.iter().map(|f| f.name.clone()).collect();
+    let at = |p: V| -> V { std::array::from_fn(|k| p[k] / roll.mm + roll.origin[k] - origin[k]) };
+    let facets = m.tris.iter().zip(&m.of).filter_map(|(t, &fi)| {
+        let pts: Vec<V> = t.iter().map(|&i| at(m.pts[i as usize])).collect();
+        let n = super::primitive::facet_normal(&pts)?;
+        let smooth = !matches!(b.faces[fi as usize].surface, Surface::Plane(_));
+        Some(Facet { pts, n, face: fi as usize, smooth })
+    }).collect();
+    Some(super::primitive::finish(facets, faces, of))
 }
