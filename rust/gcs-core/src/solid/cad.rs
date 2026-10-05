@@ -333,21 +333,25 @@ pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f
     }
 }
 
-/// A fillet's piece as a recipe node (millimetres): its section's loop — a line from the corner,
-/// the ball's arc, a line back — swept along the edge, or turned once about the axis.
+/// A fillet's piece as a recipe node (millimetres): its section's loop — along the first face from
+/// the corner, the ball's arc, back along the second — swept along the edge, or turned once about
+/// the axis.
 fn fillet_piece(p: &super::fillet::Piece,scale: f64) -> Json {
-    let w = &p.wedge;
+    use super::fillet::Stroke;
     let lift = |q: [f64;2]| p.section.lift(q[0],q[1]).map(|v| v*scale);
     let normal = p.section.normal();
-    let (start,sweep,_) = w.arc();
-    let [a,round,b] = super::fillet::EDGE_NAMES;
-    let line = |from: [f64;2],to: [f64;2],name: &str| object([("kind","line".into()),
-        ("start",vector(lift(from))),("end",vector(lift(to))),("name",name.into())]);
-    let arc = object([("kind","circle".into()),("center",vector(lift(w.centre))),
-        ("normal",vector(normal)),("x_dir",vector(p.section.u)),("radius",(w.r*scale).into()),
-        ("angles",Json::Arr(vec![start.into(),(start+sweep).into()])),("name",round.into())]);
-    let profile = object([("loops",Json::Arr(vec![Json::Arr(vec![
-            line(w.corner,w.touch[0],a),arc,line(w.touch[1],w.corner,b)])])),
+    let edge = |stroke: Stroke,name: &str| match stroke {
+        Stroke::Line {from,to} => object([("kind","line".into()),
+            ("start",vector(lift(from))),("end",vector(lift(to))),("name",name.into())]),
+        // a recipe's arc turns counter-clockwise about its normal; a loop's edges go either way round
+        Stroke::Arc {centre,radius,start,sweep,..} => object([("kind","circle".into()),
+            ("center",vector(lift(centre))),("normal",vector(normal)),("x_dir",vector(p.section.u)),
+            ("radius",(radius*scale).into()),
+            ("angles",Json::Arr(vec![start.min(start+sweep).into(),start.max(start+sweep).into()])),
+            ("name",name.into())]),
+    };
+    let edges = p.wedge.strokes().into_iter().zip(super::fillet::EDGE_NAMES).map(|(s,n)| edge(s,n)).collect();
+    let profile = object([("loops",Json::Arr(vec![Json::Arr(edges)])),
         ("origin",vector(p.section.o.map(|v| v*scale))),("normal",vector(normal))]);
     match p.carry {
         super::fillet::Carry::Prism {length} => object([("kind","prism".into()),("profile",profile),

@@ -301,19 +301,6 @@ both union stepped
 }
 
 #[test]
-fn a_ball_on_a_plate_is_rung_two() {
-    // a sphere sunk into the plate meets it on a circle no plane, cylinder or cone carries
-    let src = format!(
-        "{TURNED}in std.front {{\nc0 := point hint(x: 0, y: 10)\ns0 := point hint(x: 0, y: 4)\ns1 := point hint(x: 0, y: 16)\n\
-         fix(x == 0, y == 10) c0\nfix(x == 0, y == 4) s0\nfix(x == 0, y == 16) s1\n\
-         rim_arc := arc(center: c0, start: s0, end: s1) hint(r: 6)\nshut := line(s1, s0)\n}}\n\
-         ball := solid(face(rim_arc, shut), about: spindle)\nball union body\n\
-         neck := fillet(ball, plate, r: 1mm)\nneck union body\n"
-    );
-    refused(&src, Code::E085, "rung 2");
-}
-
-#[test]
 fn a_fillet_is_written_as_it_was_read() {
     let src = "root := fillet(boss, plate.near, r: 3mm)\n";
     let (mut prog, errs) = gcs_core::syntax::parse(src);
@@ -353,4 +340,166 @@ fn the_field_reads_a_filleted_body_as_the_kernel_builds_it() {
     field_agrees(&e, "block");
     let e = read(&format!("{}root := fillet(rib, plate, r: 2mm)\nroot union body\n", rib(0.0)));
     field_agrees(&e, "body");
+}
+
+// -- rung 2: sections with a curved side ------------------------------------------------------
+
+/// One stroke of a section's loop: a segment, or the short arc about `centre` through `r`.
+#[derive(Clone, Copy)]
+enum Stroke { Line([f64; 2], [f64; 2]), Arc { centre: [f64; 2], r: f64, from: [f64; 2], to: [f64; 2] } }
+
+impl Stroke {
+    /// The arc's start angle and signed sweep, the short way round.
+    fn turn(c: [f64; 2], from: [f64; 2], to: [f64; 2]) -> (f64, f64) {
+        let a = (from[1] - c[1]).atan2(from[0] - c[0]);
+        let mut sweep = (to[1] - c[1]).atan2(to[0] - c[0]) - a;
+        while sweep > PI { sweep -= 2.0 * PI; }
+        while sweep < -PI { sweep += 2.0 * PI; }
+        (a, sweep)
+    }
+    /// `½ ∮ (x dy − y dx)` along it.
+    fn area(&self) -> f64 {
+        match *self {
+            Stroke::Line(p, q) => 0.5 * (p[0] * q[1] - q[0] * p[1]),
+            Stroke::Arc { centre: c, r, from, to } => {
+                let (a, s) = Stroke::turn(c, from, to);
+                0.5 * (r * r * s + c[0] * r * ((a + s).sin() - a.sin()) - c[1] * r * ((a + s).cos() - a.cos()))
+            }
+        }
+    }
+    /// `∮ ρ²/2 dz` along it, `(ρ, z)` its coordinates: the volume it bounds turned, over 2π.
+    fn flux(&self) -> f64 {
+        match *self {
+            Stroke::Line(p, q) => (q[1] - p[1]) / 2.0 * (p[0] * p[0] + p[0] * q[0] + q[0] * q[0]) / 3.0,
+            Stroke::Arc { centre: c, r, from, to } => {
+                let (a, s) = Stroke::turn(c, from, to);
+                let prim = |phi: f64| {
+                    let (sn, cs) = phi.sin_cos();
+                    (c[0] * c[0] * r * sn + c[0] * r * r * (phi + sn * cs) + r * r * r * (sn - sn.powi(3) / 3.0)) / 2.0
+                };
+                prim(a + s) - prim(a)
+            }
+        }
+    }
+}
+
+/// A section's area, and the volume it sweeps turned once about `ρ = 0`.
+fn section_area(loop_: &[Stroke]) -> f64 { loop_.iter().map(Stroke::area).sum::<f64>().abs() }
+fn turned(loop_: &[Stroke]) -> f64 { 2.0 * PI * loop_.iter().map(Stroke::flux).sum::<f64>().abs() }
+
+fn toward(c: [f64; 2], p: [f64; 2], r: f64) -> [f64; 2] {
+    let (dx, dy) = (p[0] - c[0], p[1] - c[1]);
+    let l = dx.hypot(dy);
+    [c[0] + r * dx / l, c[1] + r * dy / l]
+}
+
+const KNOB: &str = include_str!("../../examples/solid_fillet_knob.sv");
+const RAIL: &str = include_str!("../../examples/solid_fillet_rail.sv");
+
+#[test]
+fn a_rods_neck_in_a_ball_turns_a_section_with_a_curved_side() {
+    // the rod's wall (ρ = 4) meets the ball (centre z 44, radius 8) at the corner; the ball of
+    // radius 1.5 is 5.5 from the axis and 9.5 from the ball's centre
+    let (s, big, rod, r): ([f64; 2], f64, f64, f64) = ([0.0, 44.0], 8.0, 4.0, 1.5);
+    let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
+    let centre = [rod + r, s[1] - ((big + r).powi(2) - (rod + r).powi(2)).sqrt()];
+    let (on_rod, on_ball) = ([rod, centre[1]], toward(s, centre, big));
+    let neck = turned(&[
+        Stroke::Line(corner, on_rod),
+        Stroke::Arc { centre, r, from: on_rod, to: on_ball },
+        Stroke::Arc { centre: s, r: big, from: on_ball, to: corner },
+    ]);
+    let root = turned(&[
+        Stroke::Line([4.0, 8.0], [6.0, 8.0]),
+        Stroke::Arc { centre: [6.0, 10.0], r: 2.0, from: [6.0, 8.0], to: [4.0, 10.0] },
+        Stroke::Line([4.0, 10.0], [4.0, 8.0]),
+    ]);
+    let e = read(KNOB);
+    assert_volume(volume(&e, "neck"), neck);
+    assert_volume(volume(&e, "root"), root);
+    // the disc, the rod up to where it enters the ball, the ball less its cap below there (inside
+    // the rod), and the two rings
+    let cap = { let h = corner[1] - (s[1] - big); PI * h * h * (3.0 * big - h) / 3.0 };
+    let want = PI * 30.0 * 30.0 * 8.0 + PI * rod * rod * (corner[1] - 8.0) + 4.0 / 3.0 * PI * big.powi(3) - cap
+        + root + neck;
+    assert_volume(volume(&e, "knob"), want);
+    field_agrees(&e, "knob");
+}
+
+#[test]
+fn a_rod_sunk_in_a_plate_is_filleted_along_both_sides() {
+    // the plate's top (y = 10) meets the rod (centre (30, 10), radius 6) at x = 36 and 24; the
+    // ball of radius 2 stands on the plate and 8 from the rod's centre
+    let (c, rod, r): ([f64; 2], f64, f64) = ([30.0, 10.0], 6.0, 2.0);
+    let corner = [36.0, 10.0];
+    let centre = [c[0] + ((rod + r).powi(2) - r * r).sqrt(), 10.0 + r];
+    let (on_plate, on_rod) = ([centre[0], 10.0], toward(c, centre, rod));
+    let side = section_area(&[
+        Stroke::Line(corner, on_plate),
+        Stroke::Arc { centre, r, from: on_plate, to: on_rod },
+        Stroke::Arc { centre: c, r: rod, from: on_rod, to: corner },
+    ]);
+    let e = read(RAIL);
+    assert_volume(volume(&e, "sides"), 2.0 * side * 40.0);
+    assert_volume(volume(&e, "rail"), 60.0 * 10.0 * 40.0 + PI * rod * rod / 2.0 * 40.0 + 2.0 * side * 40.0);
+    field_agrees(&e, "rail");
+}
+
+#[test]
+fn two_round_bars_side_by_side_are_filleted_at_their_waist() {
+    let bars = "\
+unit mm
+o1 := point
+o2 := point hint(x: 8, y: 0)
+fix(x == 0, y == 0) o1
+fix(x == 8, y == 0) o2
+k1 := circle(center: o1) hint(r: 6)
+k2 := circle(center: o2) hint(r: 6)
+radius(6) k1
+radius(6) k2
+bar1 := solid(face(k1), from: 0mm, to: 30mm)
+bar2 := solid(face(k2), from: 0mm, to: 30mm)
+bars := solid(bar1)
+bar2 union bars
+waist := fillet(bar1, bar2, r: 1.5mm)
+waist union bars
+";
+    // the circles meet at (4, ±√20); the ball's centre is 7.5 from both
+    let (c1, c2, big, r): ([f64; 2], [f64; 2], f64, f64) = ([0.0, 0.0], [8.0, 0.0], 6.0, 1.5);
+    let corner = [4.0, 20f64.sqrt()];
+    let centre = [4.0, ((big + r).powi(2) - 16.0).sqrt()];
+    let (t1, t2) = (toward(c1, centre, big), toward(c2, centre, big));
+    let side = section_area(&[
+        Stroke::Arc { centre: c1, r: big, from: corner, to: t1 },
+        Stroke::Arc { centre, r, from: t1, to: t2 },
+        Stroke::Arc { centre: c2, r: big, from: t2, to: corner },
+    ]);
+    let lens = 2.0 * big * big * (8.0 / (2.0 * big)).acos() - 4.0 * (4.0 * big * big - 64.0).sqrt();
+    let e = read(bars);
+    assert_volume(volume(&e, "waist"), 2.0 * side * 30.0);
+    assert_volume(volume(&e, "bars"), (2.0 * PI * big * big - lens + 2.0 * side) * 30.0);
+    field_agrees(&e, "bars");
+}
+
+#[test]
+fn what_rung_two_cannot_round_yet_is_refused_with_its_reason() {
+    // a pin off the ball's centre meets it on a traced curve: no ball rolls along it in closed form
+    refused(
+        &format!("{KNOB}pc := point hint(x: 3, y: 44)\nfix(x == 3, y == 44) pc\npin_k := circle(center: pc) hint(r: 2)\n\
+                  radius(2) pin_k\npin := solid(face(pin_k), from: -20mm, to: 20mm)\nnub := fillet(pin, ball, r: 0.5mm)\n"),
+        Code::E085,
+        "rung 2",
+    );
+    // a ball so large it would touch the rod below the disc it stands on
+    refused(
+        &KNOB.replace("neck := fillet(rod, ball, r: 1.5mm)", "neck := fillet(rod, ball, r: 200mm)"),
+        Code::E085,
+        "can hold",
+    );
+    // a rod stopping short of the plate's ends: the fillet would have to turn its corners
+    refused(
+        &RAIL.replace("rod := solid(face(k), from: 0mm, to: 40mm)", "rod := solid(face(k), from: 5mm, to: 35mm)"),
+        Code::E085,
+        "rung 3",
+    );
 }

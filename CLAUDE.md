@@ -269,17 +269,22 @@ of the operands' union where a face of `a` meets one of `b` (a side is a solid o
 The body takes it with `union` at concave edges, `cut` at convex (`program/solids.rs::fillet_words`,
 E085); an operand that is the body taking it reads its union stratum (`fillet::stands_for`).
 `solid::fillet::derive` (memoised, `Sketch::fillet_blend`) reads the operands' exact B-reps: per
-edge a `Wedge` (corner, touches, arc) in the section square to a plane/plane line or the meridian of
-a coaxial plane/cylinder/cone circle, a `Piece` swept (`Carry::Prism`) or turned (`Carry::Turn`);
+edge a `Wedge` in the section square to a line between planes and cylinders along it, or in the
+meridian of a circle between coaxial planes/cylinders/cones/spheres/tori: each `Side` a line or a
+circle, the ball from their offsets in closed form, its loop `Wedge::strokes` (lines and arcs, read
+by every consumer), a `Piece` swept (`Carry::Prism`) or turned (`Carry::Turn`); bands per side
+kind (`Band::{Strip,Sleeve,Meridian,Arc}`);
 refusals (E085) are closed-form (`holds`: the band crossed by no other edge; `stops`: flush ends),
 never sampled; coplanar seams are skipped. Every consumer reads the pieces as primitives: facets
 (`Piece::face_poly`), the recipe's `fillet` node (`brep::recipe`, native `construct`), the field
 (extruded/revolved leaves). Kernel rules it found: an edge lying along the other solid's face is cut
 where it crosses that face's edges (`query::curve_curve`, closed form); a seam is no boundary
 (`face_place`); a hull corner's fan is walked both ways (`mesh::Tri2::fan`, cusps); a cusp turns a
-profile half a turn (`field/profile.rs::turning`). `tests/fillet.rs`, `gcs-cli/tests/fillet_oracle.rs`
-(OCCT's `BRepFilletAPI_MakeFillet`, `solvent_cad_fillet`, links `TKFillet`),
-`rust/examples/solid_fillet{,_turned}.sv`. Rungs 2–4 (offset/canal surfaces, vertex blends, the con-rod) open.
+profile half a turn (`field/profile.rs::turning`); a tangency is one crossing (`curve_curve`).
+`tests/fillet.rs`, `gcs-cli/tests/fillet_oracle.rs` (OCCT's `BRepFilletAPI_MakeFillet` on its
+unified union, `solvent_cad_fillet`, links `TKFillet`; its own face set aside, OCCT approximating a
+sphere's), `rust/examples/solid_fillet{,_turned,_knob,_rail}.sv`. Open: traced centre curves (the
+pipe tee: canal face, local B-rep operation, tube field leaf), B-spline faces, rungs 3–4.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches

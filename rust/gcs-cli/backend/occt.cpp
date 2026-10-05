@@ -13,6 +13,7 @@
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepCheck_Result.hxx>
 #include <BRepCheck_ListOfStatus.hxx>
@@ -597,7 +598,11 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
 int solvent_cad_fillet(Cad* cad,int id,double radius,const double* points,int count) noexcept {
     SOLVENT_PROBE("solvent_cad_fillet");
     return guarded(cad,[&] {
-        const TopoDS_Shape& shape = cad->at(id);
+        // a fuse leaves two operands' coplanar faces apart (a rod's end beside a plate's), where a
+        // fillet ending there needs one face to run out on: unified first, on a copy
+        ShapeUpgrade_UnifySameDomain unify(cad->at(id),true,true,false);
+        unify.Build();
+        const TopoDS_Shape shape = unify.Shape();
         TopTools_IndexedMapOfShape edges;
         TopExp::MapShapes(shape,TopAbs_EDGE,edges);
         BRepFilletAPI_MakeFillet fillet(shape);

@@ -236,13 +236,12 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     let blend = sk.fillet_blend(i)?;
                     let mut out: Option<Snapshot> = None;
                     for p in &blend.pieces {
-                        let w = &p.wedge;
-                        let (start,sweep,ends) = w.arc();
-                        let edges = vec![
-                            Edge::Line {a:w.corner,b:w.touch[0],axis:false},
-                            Edge::Arc {center:w.centre,radius:w.r,start,sweep,ends},
-                            Edge::Line {a:w.touch[1],b:w.corner,axis:false},
-                        ];
+                        use crate::solid::fillet::Stroke;
+                        let edges: Vec<Edge> = p.wedge.strokes().into_iter().map(|s| match s {
+                            Stroke::Line {from,to} => Edge::Line {a:from,b:to,axis:false},
+                            Stroke::Arc {centre,radius,start,sweep,from,to} =>
+                                Edge::Arc {center:centre,radius,start,sweep,ends:[from,to]},
+                        }).collect();
                         let profile = PlanarField::from_loop(&edges,0.)?;
                         let leaf: SpatialField = match p.carry {
                             crate::solid::fillet::Carry::Prism {length} => ExtrudedField::new(profile,
