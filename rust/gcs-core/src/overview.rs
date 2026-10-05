@@ -172,12 +172,13 @@ fn corners_in(sk: &Sketch, views: &[Option<usize>]) -> Vec<Corner> {
         let mut rows: Vec<f64> = Vec::with_capacity(12);
         let mut rhs: Vec<f64> = Vec::with_capacity(4);
         for (i, p) in [(a, pa), (b, pb)] {
+            // drawn at (x, y), the image stands at o + x·u + y·v: u·X = x + u·o, v·X = y + v·o
             let basis = sk.basis(p);
             let (x, y) = sk.point_xy(i);
             rows.extend_from_slice(&basis.u);
-            rhs.push(x);
+            rhs.push(x + crate::space::dot(basis.u, basis.o));
             rows.extend_from_slice(&basis.v);
-            rhs.push(y);
+            rhs.push(y + crate::space::dot(basis.v, basis.o));
         }
         let m = Mat::from_vec(4, 3, rows);
         let (x, rank) = min_norm_solve(&m, &rhs, RCOND);

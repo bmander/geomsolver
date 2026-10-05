@@ -57,6 +57,29 @@ fn three_views_reconstruct_the_corner_they_are_of() {
     assert!((0..3).all(|i| near(a[i], b[i])), "{a:?} vs {b:?}");
 }
 
+/// Planes stood off the world origin, in their own planes as well as along their normals: an image
+/// drawn at (x, y) stands at o + x·u + y·v, so the corner is where the two images' lines meet,
+/// not where they would meet if every plane stood at the origin.
+#[test]
+fn planes_off_the_origin_reconstruct_the_corner_too() {
+    let mut sk = Sketch::new();
+    let fo = [10.0, -50.0, 5.0];
+    let to = [-4.0, 6.0, -20.0];
+    let front = sk.fixed_plane(Basis { o: fo, ..Basis::page() }, "front");
+    let top = sk.fixed_plane(Basis { o: to, ..top() }, "top");
+    // X = (30, 20, 40), read in each plane's own coordinates
+    let pf = sk.point(30.0 - fo[0], 40.0 - fo[2], true, "pf");
+    let pt = sk.point(30.0 - to[0], 20.0 - to[1], true, "pt");
+    sk.set_plane(pf, Some(front));
+    sk.set_plane(pt, Some(top));
+    let c = Constraint::project(&sk, EntRef::point(pf), EntRef::point(pt)).unwrap();
+    sk.add(c);
+    let cs = corners(&sk);
+    assert_eq!(cs.len(), 1);
+    let x = cs[0].at;
+    assert!(near(x[0], 30.0) && near(x[1], 20.0) && near(x[2], 40.0), "{x:?}");
+}
+
 /// A point seen in one view is a *ray*, not a place — rank 2, and left standing on its plane.
 #[test]
 fn one_view_places_nothing() {
