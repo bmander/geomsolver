@@ -344,7 +344,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         }
         if let Some(d) = &d {
             println!("  {}", gcs_core::diagnose::summary(d));
-            // a solved view's freedoms by the ledger's names; a line only where one is left
+            // a plane's freedoms by the ledger's names; a line only where one is left
             let views = gcs_core::diagnose::view_freedoms(&sk, d);
             if !views.is_empty() {
                 println!("  free views: {}", views.join(", "));
@@ -584,8 +584,8 @@ fn report_set(sk: &Sketch, map: &gcs_core::program::SourceMap, what: &str, ids: 
 }
 
 /// The rows of `report::positions` a reader asked for: a name matches its own numbers
-/// (`o` gives `o.x`, `o.y`) and everything written under it (`views` gives the whole view,
-/// `views.right_origin.x` gives the one number).  Three questions, one rule, since a scalar, an
+/// (`o` gives `o.x`, `o.y`) and everything written under it (`cyl` gives the whole instance,
+/// `cyl.pivot.x` gives the one number).  Three questions, one rule, since a scalar, an
 /// entity and an instance are all just names with dots in them.  Empty asks for everything.
 fn wanted(
     sk: &Sketch,

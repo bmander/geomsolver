@@ -126,8 +126,7 @@ macro_rules! undrawn {
             | CKind::RayParallelPlane
             | CKind::RayPerpendicularPlane
             | CKind::PlaneDistance
-            // a view's hinge is its declaration's, and a projection in space draws what
-            // `project` draws: nothing
+            // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved
             | CKind::Fix
             | CKind::Ccw
@@ -488,8 +487,8 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
             let d = unit(sub(b, a))?;
             Some(Frame::Linear { o: mid(a, b), d, n: perp(d) })
         }
-        // An ordinate uses its stated axis: the page's for a run or rise, the
-        // datum's solved rotor for a local coordinate.
+        // An ordinate uses its stated axis: the page's for a run or rise, the plane's own
+        // `u` or `v` for a coordinate in it, since its point is drawn in that plane's terms.
         CKind::HorizontalDistance | CKind::VerticalDistance | CKind::CoordinateU | CKind::CoordinateV => {
             let (a, b) = ends(sk, c)?;
             let d = dimension_axis(sk, c);

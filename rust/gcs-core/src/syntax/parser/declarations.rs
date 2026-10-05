@@ -283,8 +283,7 @@ impl<'a> P<'a> {
                         *slot = Some(Arg::Dim {text,span});
                     }
                     // **a solid's sweep is what it is made of**, so it stands in the brackets
-                    // with the face — and it is read before the attitude's labels, since `from`
-                    // is a word both constructs use and only one of them is a plane
+                    // with the face
                     Some(l) if kind == EntKind::Solid && sweep_label(&l) => {
                         self.sweep_arg(&l, &mut swp)?;
                     }

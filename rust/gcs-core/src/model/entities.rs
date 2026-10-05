@@ -23,20 +23,13 @@ pub enum EntKind {
     Circle,
     Arc,
     Spline,
-    /// **The one datum kind** (issue #47, item 6: `frame` is folded into it).  An origin and an
-    /// attitude other statements measure from: the attitude is a unit rotor — two scalars
-    /// `(c, s)` held to `c² + s² = 1` by an intrinsic constraint, the 2D form of the quaternion
-    /// a 3D workplane will want — kept pointed from `origin` at `toward` by a second intrinsic,
-    /// so the rotor is a first-class unknown that adds no freedom beyond the two points it is
-    /// slaved to.  A trace block reads `f.angle` (`atan2(s, c)`, degrees — derived in
-    /// `Tape::compile`, never stored) to state a bearing relative to the datum instead of the
-    /// page.  And it is a *view*: it carries a constant 3D attitude (`plane::Basis`) saying
-    /// which plane in space the picture drawn in it is of — the page's, where none is written,
-    /// which is what a plain datum is.
-    /// A point that says it is `in` the plane is an image of something on that plane, and
-    /// `Project` between two such points is the one equation two images of one point share.
-    /// A stated attitude is document data, like a spline's knots; only a view asked to be
-    /// solved (`Sketch::free_attitude`, which mints `PlaneE::att`) has unknowns in space.
+    /// **The one datum kind** (issue #47, item 6: `frame` is folded into it): a plane in space
+    /// over two rays, `plane(u: r1, v: r2)`, standing at a place of its own (`PlaneE`).  Its
+    /// attitude is its rays' directions and where it stands three Params — unknowns of the solve
+    /// unless a `fix` holds them, when the plane is **fixed** (`Sketch::plane_fixed`).
+    /// A point that says it is `in` the plane is drawn in the plane's own 2D coordinates and
+    /// stands in space at its lift (`Sketch::world_point`); `Project` between two such points is
+    /// the one equation two images of one point share.
     Plane,
     /// A curve written in the language: `C(u)` as an expression over the geometry it is drawn
     /// from.  Unlike every other kind it holds no coordinates of its own — it *is* the two
@@ -74,12 +67,13 @@ pub enum EntKind {
     Edge,
     /// **A sphere** (`docs/spatial-constraints-plan.md`): a centre drawn in some view and a
     /// radius it owns, like a circle's — but no picture on any sheet, since a sphere seen in a
-    /// view is a circle only square on.  Its relations (`p on s`, `radius`, `tangent`) are in
-    /// space and read its centre's lift.  Last in the enum so every kind's id stays what it was.
+    /// view is a circle only square on.  Its relations (`p coincident s`, `radius`, `tangent`) are
+    /// in space and read its centre's lift.  Last in the enum so every kind's id stays what it was.
     Sphere,
     /// **A cone**: an axis line drawn in some view — the apex its start, the axis running
     /// toward its end — and a half-angle it owns, like a sphere's radius.  No picture on any
-    /// sheet; its relations (`p on k`, `angle`, `tangent`) are in space and read the axis's lifts.
+    /// sheet; its relations (`p coincident k`, `angle`, `tangent`) are in space and read the
+    /// axis's lifts.
     Cone,
     /// **A cylinder**: an axis line drawn in some view and a radius it owns.
     Cylinder,
@@ -242,8 +236,8 @@ impl EntKind {
     }
 
     /// Whether an entity of this kind has points of its own to put on a plane — what the `in`
-    /// clause and the `in … { }` block ask before stamping one (§6.7).  A datum's two points
-    /// are the datum's, and a curve is its expressions; everything else is drawn from points a
+    /// clause and the `in … { }` block ask before stamping one (§6.7).  A plane's origin is the
+    /// plane's, and a curve is its expressions; everything else is drawn from points a
     /// membership is about.
     ///
     /// Exhaustive, and asked rather than spelled: written out as a `matches!` at each of the

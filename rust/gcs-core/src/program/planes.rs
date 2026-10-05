@@ -74,8 +74,8 @@ pub(crate) fn plane_of_entity(sk: &Sketch, e: EntRef) -> Option<usize> {
 }
 
 /// The same walk over any reading of where a point is — membership here, and the overview's
-/// `view_of` (which also reads a datum's own points in the plane they place) — so the rule
-/// "every point it is made of agrees" is written once.
+/// table of it read once for every point (`overview::views`) — so the rule "every point it is
+/// made of agrees" is written once.
 pub(crate) fn plane_of_entity_by(
     sk: &Sketch,
     e: EntRef,

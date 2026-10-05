@@ -71,8 +71,8 @@ pub fn to_program(sk: &Sketch) -> Program {
     for c in sk.user_constraints().into_iter().chain(along) {
         p.push(StmtKind::Relation(lift_relation(sk, c)));
     }
-    // every held number is said, with what it is held at; a datum point the page-placement
-    // gauge holds is not: the lifted views are solved again (`lift_view`), and it is held again
+    // every held number is said, with what it is held at; a plane's origin is not, since the
+    // plane holds it at its own `(0, 0)` and no `fix` says so (`holds`)
     for e in sk.primitives() {
         let held = holds(sk, e);
         if !held.is_empty() {

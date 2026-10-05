@@ -1,15 +1,14 @@
 //! **The workspace**: the drawing as one scene in space, which an editor draws in.
 //!
 //! The glass box (`scene`, `scene3d`) shows a multiview document folded up; this is what makes the
-//! same picture *editable*.  Every view's geometry is stored as page coordinates, and a view reads
-//! them through its own placement on the page (`plane::in_view`) and stands them on its own plane
-//! (`Basis::lift`).  That chain is affine — a view's page stands in space by one 3×3 placement —
-//! and, seen by an orthographic eye, so is the whole of it: each view's page maps onto the eye's
-//! picture plane by one 2×3 matrix.  So a front end needs no 3D arithmetic to draw a sketch on a
-//! tilted plane, or to turn a click back into a place on one — it composes the view's map with
-//! its own 2D camera and inverts a 2×2 — and every question about what is under the pointer is
-//! asked here, of the figures as the eye sees them, because views that sit on top of one another
-//! on the page are nowhere near one another in space.
+//! same picture *editable*.  Every view's geometry is stored in the plane's own coordinates, which
+//! it stands in space on (`Basis::lift`).  That is affine — a view's page stands in space by one
+//! 3×3 placement — and, seen by an orthographic eye, so is the whole of it: each view's page maps
+//! onto the eye's picture plane by one 2×3 matrix.  So a front end needs no 3D arithmetic to draw
+//! a sketch on a tilted plane, or to turn a click back into a place on one — it composes the
+//! view's map with its own 2D camera and inverts a 2×2 — and every question about what is under
+//! the pointer is asked here, of the figures as the eye sees them, because views whose own
+//! coordinates overlap are nowhere near one another in space.
 //!
 //! The page itself is a view: geometry in no plane stands on the front plane (`Basis::page`),
 //! measured from the world origin.
@@ -34,10 +33,8 @@ pub fn apply(m: &Map, p: (f64, f64)) -> (f64, f64) {
 }
 
 /// Where a view's page stands in space: `(x, y) ↦ o + x·a + y·b`.  The same for every eye.
-///
-/// `in_view` reads `(p, q) = (c·dx + s·dy, −s·dx + c·dy)` with `(dx, dy)` the page point less the
-/// view's origin, and `lift` stands that at `o₃ + p·u + q·v`; multiplied out, space is linear in
-/// the page point.
+/// A point drawn in a plane is in the plane's own coordinates, so this is `Basis::lift`: `a` and
+/// `b` the plane's `u` and `v`, `o` where it stands.
 #[derive(Clone, Copy, Debug)]
 struct Placement {
     a: [f64; 3],
@@ -46,12 +43,8 @@ struct Placement {
 }
 
 impl Placement {
-    fn of(basis: &Basis, origin: (f64, f64), c: f64, s: f64) -> Placement {
-        let (u, v) = (basis.u, basis.v);
-        let a = [c * u[0] - s * v[0], c * u[1] - s * v[1], c * u[2] - s * v[2]];
-        let b = [s * u[0] + c * v[0], s * u[1] + c * v[1], s * u[2] + c * v[2]];
-        let o = std::array::from_fn(|k| basis.o[k] - origin.0 * a[k] - origin.1 * b[k]);
-        Placement { a, b, o }
+    fn of(basis: &Basis) -> Placement {
+        Placement { a: basis.u, b: basis.v, o: basis.o }
     }
 
     /// Seen by the eye whose picture plane is spanned by `right` and `up`.
@@ -86,7 +79,7 @@ impl Placement {
 /// first and then every plane in order (`slot`).
 pub struct Views {
     placements: Vec<Placement>,
-    /// `overview::view_of` for each point: its membership, or the plane it is a datum point of.
+    /// `overview::view_of` for each point: its membership.
     points: Vec<Option<usize>>,
     /// The first view standing on the same plane in space as each view (`Placement::coplanar`).
     places: Vec<Option<usize>>,
@@ -106,10 +99,8 @@ fn view_at(k: usize) -> Option<usize> {
 
 /// Where every view's page stands in space, the page first.
 fn placements(sk: &Sketch) -> Vec<Placement> {
-    let mut all = vec![Placement::of(&Basis::page(), (0.0, 0.0), 1.0, 0.0)];
-    all.extend((0..sk.planes.len()).map(|i| {
-        Placement::of(&sk.basis(i), (0.0, 0.0), 1.0, 0.0)
-    }));
+    let mut all = vec![Placement::of(&Basis::page())];
+    all.extend((0..sk.planes.len()).map(|i| Placement::of(&sk.basis(i))));
     all
 }
 

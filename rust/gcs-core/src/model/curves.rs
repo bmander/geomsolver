@@ -117,7 +117,7 @@ pub struct CurveE {
     /// The curve stands for a surface: what its tool sweeps extruded square to its view — a
     /// prism's side generating under a motion that keeps the view (`flank :=
     /// envelope(surface(prism, edge: e), under: m, …)`, §6.15, issue #70).  A point in space is
-    /// `on` it by its place in the view (`CKind::PointOnExtrusion`).
+    /// `coincident` with it by its place in the view (`CKind::PointOnExtrusion`).
     pub extrusion: bool,
 }
 

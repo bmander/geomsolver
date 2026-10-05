@@ -204,7 +204,8 @@ pub(crate) fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, Str
 }
 
 /// **Resolve a solid into primitives and a term.**  The term walk: a body is its stock, plus
-/// everything `on` it, minus everything that `cut`s it, each operand resolved the same way.
+/// everything in `union` with it, minus everything that `cut`s it, each operand resolved the
+/// same way.
 ///
 /// The document's order is irrelevant and the *statement* order inside a body is too: both
 /// groups are sets. An explicit work stack accepts deep acyclic bodies and detects cycles in

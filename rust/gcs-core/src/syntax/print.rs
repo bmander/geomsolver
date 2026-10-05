@@ -620,7 +620,7 @@ fn write_written(out: &mut String, w: &Written) {
 /// the constraint list and the program panel cannot come to spell one constraint three ways.
 pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     let Some((word, fixity)) = kind.operator() else {
-        // nobody writes this one: a drag target, a frame's intrinsics
+        // nobody writes this one: a drag target, a lift, a ray's intrinsics
         return format!("{}(…)", snake(kind.name()));
     };
     let spec = kind.spec();

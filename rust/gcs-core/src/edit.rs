@@ -102,8 +102,8 @@ fn splice(text: &str, mut edits: Vec<Splice>) -> String {
 /// `cycle` of thirty does not write back at all: thirty instances share one statement, and there
 /// is no one pose to record.
 ///
-/// A seed the source **never wrote** is the case the clause makes real: a radius and a frame's
-/// rotor are seeds a person may perfectly well omit, and a solve moves them anyway.  There is
+/// A seed the source **never wrote** is the case the clause makes real: a radius is a seed a
+/// person may perfectly well omit, and a solve moves it anyway.  There is
 /// then no span to splice, so the clause is written out whole at the point the parser recorded
 /// for it (`Decl::hint_span`) — one splice, and the statement around it untouched.  Leaving it
 /// alone instead would mean a drawing whose pose its source cannot express. A driving radius
@@ -315,9 +315,9 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             // The clause has a home of its own, and the *list* belongs to the name: written at
             // the clause's position it would land past whatever trailer stands between them,
             // where an argument list is not a thing a declaration can say.  The list is
-            // *replaced* where one stands — a plane that wrote its attitude and no children
-            // has a list none of whose slots is its own, and a second list beside the first
-            // would be two — and inserted at the name's end where none does.
+            // *replaced* where one stands — a list none of whose slots this statement wrote is
+            // still a list, and a second beside the first would be two — and inserted at the
+            // name's end where none does.
             Some(args) => {
                 edits.push(Splice { at: d.list_span, with: args });
                 if !hint.is_empty() {
@@ -821,7 +821,7 @@ pub fn remove(
         }
     }
     // and an `in PLANE { … }` block whose plane goes: the header and its brace come out, and
-    // the statements stay — page geometry now, exactly as a clause's point stays.  The block's
+    // the statements stay — points in space now, exactly as a clause's point stays.  The block's
     // own decls have no clause span, so the pass above never reaches into the header.
     for b in &prog.in_blocks {
         if !names.contains(&b.plane.root.text) {
@@ -1305,7 +1305,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         }
         // a declaration with no clause whose every point is declared elsewhere — `l := line(a, b)`
         // — says nothing about planes; its points' own declarations do.  **Before the straddle
-        // refusal below**: a line drawn between a point in a view and a point on the page is
+        // refusal below**: a line drawn between a point in a view and a point in space is
         // exactly that declaration, and refusing it would stop the source tracking the drawing
         // from then on — `syncSource` only reports a refusal, so the jam is silent.
         let names_all = d.kind != EntKind::Point

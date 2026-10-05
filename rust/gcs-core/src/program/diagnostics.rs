@@ -23,7 +23,8 @@ pub enum Code {
     E004,
     /// type mismatch within an alias class
     E040,
-    /// a cyclic definitional dependency: a plane folded from itself (§6.7)
+    /// a cyclic definitional dependency: a value defined in terms of itself, a group nested in
+    /// itself, a body made of itself (§11)
     E041,
     /// a point given two planes (§6.7)
     E060,
@@ -32,20 +33,12 @@ pub enum Code {
     E061,
     /// a word across views that has no meaning in space (§9.2): `horizontal`, a run or a rise, a
     /// tangency between drawn figures, a curve's contacts; or a relation across views naming a
-    /// point on the page, or a datum point the role rule reads in a view it is not drawn in
+    /// point of a 2D sketch, which has no place in space
     E062,
-    /// a solved view the model cannot hold (§6.7): a fold taken along a line not drawn in the
-    /// view it folds from, a position stated twice (`offset:` or a fold `along` beside
-    /// `offset: free` or `through:`), `through:` a point of the plane itself, or a view derived
-    /// from one whose own origin moves with the solve
-    E064,
-    /// a relation in space that came out degenerate at the solve (§6.7): two solved views a
-    /// `project` relates that came out parallel — they share no fold line — or two lines whose
-    /// skew distance (or a cylinder's tangency) is stated that came out parallel
+    /// a relation in space that came out degenerate at the solve (§6.7): two planes a `project`
+    /// relates that came out parallel — they share no fold line — or two lines whose skew
+    /// distance (or a cylinder's tangency) is stated that came out parallel
     E065,
-    /// `against` between faces whose planes turn apart, one of them a solved view, or a placed
-    /// plane that follows a solved offset and has views derived from it (§6.10)
-    E066,
     /// a `use` nothing resolves (§14.4)
     E070,
     /// a component defined twice, across the document and its modules (§14.4)
@@ -56,8 +49,6 @@ pub enum Code {
     E081,
     /// a face of a body that the body no longer has (§6.9)
     E082,
-    /// a stack that contradicts itself, or a placed plane placed twice or never (§6.10)
-    E083,
     /// a section whose cutting plane is not parallel to the view it is drawn in (§6.11)
     E084,
     /// syntax
@@ -97,15 +88,12 @@ impl Code {
             Code::E060 => "E060",
             Code::E061 => "E061",
             Code::E062 => "E062",
-            Code::E064 => "E064",
             Code::E065 => "E065",
-            Code::E066 => "E066",
             Code::E070 => "E070",
             Code::E071 => "E071",
             Code::E080 => "E080",
             Code::E081 => "E081",
             Code::E082 => "E082",
-            Code::E083 => "E083",
             Code::E084 => "E084",
             Code::E100 => "E100",
             Code::E101 => "E101",

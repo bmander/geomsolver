@@ -224,10 +224,10 @@ pub struct DerivedE {
 
 /// A number a solid is swept or stood off by: the text a person wrote and what it came to.
 ///
-/// The `fold:` bargain exactly (`plane::Basis`): it is settled by the flattener over the
-/// parameters in scope and is **never an unknown**, so a solve moves it no more than it moves a
-/// spline's knots.  The text is kept because a drawing reads better for saying `fw + D / 2` than
-/// `18`, which is the same reason a dimension carries its expression.
+/// It is settled by the flattener over the parameters in scope and is **never an unknown**, so
+/// a solve moves it no more than it moves a spline's knots.  The text is kept because a drawing
+/// reads better for saying `fw + D / 2` than `18`, which is the same reason a dimension carries
+/// its expression.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Extent {
     pub text: String,
@@ -268,8 +268,8 @@ pub enum SolidDef {
     /// A face swept about a line **in its own plane**, through `sweep` (a full turn where the
     /// document writes none), right-handed about the line's own `p1 → p2` unless `sense: cw`.
     Revolve { face: u32, axis: u32, sweep: Extent, sense: Sense },
-    /// **The body rule, and the whole of it**: its stock, plus everything `on` it, minus
-    /// everything that `cut`s it, within everything that `bound`s it.  All three are sets, so
+    /// **The body rule, and the whole of it**: its stock, plus everything in `union` with it,
+    /// minus everything that `cut`s it, within everything that `bound`s it.  All three are sets, so
     /// the statements that fill them may be written anywhere in any order (P2) — which is what
     /// a feature tree, folding a *sequence*, is not.  Difference and intersection commute, so
     /// the last two need no order between them; union comes first.  A design needing the

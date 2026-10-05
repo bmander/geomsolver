@@ -197,7 +197,7 @@ pub(crate) fn entity(
     at: &dyn Fn((f64, f64)) -> (f64, f64),
     polys: &[Vec<(f64, f64)>],
 ) {
-    // resolved inside the arms that read it: a point is drawn in `INK` and a frame not at all,
+    // resolved inside the arms that read it: a point is drawn in `INK` and a plane not at all,
     // and points are the majority of a sketch's entities — every line, circle and arc mints two
     // or three.  Resolving a style for each of them is a sheet cascade and a format for nothing.
     let ink = || stroke(&sk.style_of(e));

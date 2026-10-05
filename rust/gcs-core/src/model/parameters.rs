@@ -25,8 +25,8 @@ impl Sketch {
     /// units does to the figure it carries.
     ///
     /// **Written out by kind, and exhaustively**, because "is this parameter a length?" is not a
-    /// question a `Param` can answer: a frame's rotor is a direction and a curve's parameter is
-    /// a place along it, and scaling either would take the drawing apart.  So each table that
+    /// question a `Param` can answer: a ray's direction is a unit vector and a curve's parameter
+    /// is a place along it, and scaling either would take the drawing apart.  So each table that
     /// knows says — `own_length_params` per entity kind, `CKind::param_dim` per constraint that
     /// owns an unknown — and a new kind stops the build in the first rather than being silently
     /// left unconverted.

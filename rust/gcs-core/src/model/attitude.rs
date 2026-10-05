@@ -28,8 +28,9 @@ impl Sketch {
     }
 
     /// Whether plane `i` is **fixed**: both its rays' directions and where it stands are held, so
-    /// every row reading it may read its basis as constants (the `*Fixed` twins).  What a
-    /// statement asks at the add (`Sketch::add_quiet`); a `fix` is applied before any relation.
+    /// a row reading it may read its basis as constants (`Project`'s fold line, where the
+    /// projection's other plane is fixed too: `CKind::attitude_twin`).  What a statement asks at
+    /// the add (`Sketch::add_quiet`); a `fix` is applied before any relation.
     pub fn plane_fixed(&self, i: usize) -> bool {
         let p = &self.planes[i];
         let held = |q: u32| self.params[q as usize].fixed;
@@ -39,8 +40,9 @@ impl Sketch {
 
     /// The hidden point in space that point `p` stands at, minted once.  A point drawn in a
     /// plane gets three Params seeded where it stands and the intrinsic `lift` row holding them
-    /// there, over the plane's rays and origin.  A **point in space** is its own lift: its three Params, and no row.  `None` for a
-    /// point of a 2D sketch, which has no place in space (`program::reading` refuses one).
+    /// there, over the plane's rays and origin.  A **point in space** is its own lift: its three
+    /// Params, and no row.  `None` for a point of a 2D sketch, which has no place in space
+    /// (`program::reading` refuses one).
     pub fn lift_point(&mut self, p: usize) -> Option<usize> {
         if let Some(k) = self.lift_of(p) {
             return Some(k);

@@ -461,7 +461,8 @@ fn compile_trace(
 }
 
 /// A seed named geometrically, compiled to the tapes a written pair would be: the place a point
-/// already names, or **the point at the edge of a circle** at a bearing from the page's x-axis —
+/// already names, or **the point at the edge of a circle** at a bearing from the x-axis of the
+/// coordinates the circle is drawn in —
 /// `hint(at: c, bearing: u + phase)`, which is what that place is called in this language rather
 /// than the trigonometry it comes to.
 fn at_seed(

@@ -84,8 +84,8 @@ pub enum CKind {
     CurveCurvature,
     /// Two points are images of one point in space, each on the plane it is `in`: their
     /// coordinates along the fold line the two planes share agree (`plane::fold_line`).  One
-    /// row over both points, with the fold line as constants: both planes fixed (a solved one
-    /// makes it `ProjectSolved`).  The plane slots are **inferred** from the
+    /// row over both points, with the fold line as constants: both planes fixed (where either
+    /// moves in the solve it is `ProjectSolved`).  The plane slots are **inferred** from the
     /// points' memberships at `io::seed_omitted`'s seam — the source and the bindings write two
     /// points — and refused when a point is on no plane, both are on one, or the planes are
     /// parallel.  Not commutative: `same_args` swaps only the first two entity slots, so
@@ -160,12 +160,12 @@ pub enum CKind {
     /// Two points each the other's image in a line, in space: the half turn about the line — the
     /// mirror in it, which is what `symmetry` means on a page, read one dimension up.
     Symmetric3,
-    /// **A point on a cone**, `p on k`: the point's distance from the cone's generator in
+    /// **A point on a cone**, `p coincident k`: the point's distance from the cone's generator in
     /// its meridian half-plane, `ρ cos α − h sin α` (ρ its distance from the axis, h its height
     /// along it from the apex) — a length, zero on the nappe the axis points into.
     ConeOn,
-    /// A point on a cylinder, `p on c`: its distance from the axis, stated as the radius column
-    /// (`point_line3`'s free twin at (m, c) = (1, 0), `SphereTangentLine`'s bargain).
+    /// A point on a cylinder, `p coincident c`: its distance from the axis, stated as the radius
+    /// column (`point_line3`'s free twin at (m, c) = (1, 0), `SphereTangentLine`'s bargain).
     CylinderOn,
     /// `angle(θ) k`: a cone's half-angle, the kind's own Param, degree 0.
     ConeAngle,
@@ -176,15 +176,15 @@ pub enum CKind {
     CylinderTangentLine,
     /// `k1 tangent(M) k2`: two cones touching at a point with one tangent plane there — the
     /// second's surface normal at M square to both of the first's tangent directions (its
-    /// generator and its circle), two rows of degree 0.  That M is on each is said by `M on k`
-    /// beside it, as a tangency at a named end leaves the on-circle to its own statement.  What a
-    /// hypoid's pitch cones do at the mean point.
+    /// generator and its circle), two rows of degree 0.  That M is on each is said by
+    /// `M coincident k` beside it, as a tangency at a named end leaves the on-circle to its own
+    /// statement.  What a hypoid's pitch cones do at the mean point.
     ConeTangentCone,
-    /// `project` where either plane is solved: the projector rule in space over both images'
-    /// hidden points and both planes' normals, `(n_A × n_B)·(X_A − X_B) = 0`
+    /// `project` where either plane moves in the solve: the projector rule in space over both
+    /// images' hidden points and both planes' normals, `(n_A × n_B)·(X_A − X_B) = 0`
     /// (`kernels::project_solved_rows`).  The same statement as `Project` — the word, the
     /// operands and the inferred planes — and the twin `Sketch::add` picks when a plane it reads
-    /// is solved.
+    /// is not fixed (`Sketch::plane_fixed`).
     ProjectSolved,
     /// `p distance(d, along: u) P` where `p` is not drawn in `P`: how far it stands along `P`'s
     /// `u` from `P`'s origin, in space (`kernels::ordinate3_u_rows`), and `Ordinate3V` along `v`.
@@ -353,8 +353,8 @@ pub const ALONG: [(&str, CKind); 9] = [
 ///
 /// **The one table that turns a word and a pair of kinds into a constraint.**  It is the inverse
 /// of `CKind::operator`, and it is a table rather than a search because several kinds share a
-/// word and the operand kinds (and one selector) are what tell them apart: `on` is five kinds,
-/// `distance` is six, `tangent` is six.
+/// word and the operand kinds (and one selector) are what tell them apart: `coincident` is
+/// seventeen kinds, `distance` fifteen, `tangent` ten.
 ///
 /// Operand order carries meaning, and that is a change worth seeing: `arc tangent line` is
 /// `TangentArcLine` and `line tangent circle` is `TangentLineCircle`.  Each named itself before
@@ -422,7 +422,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             },
             (Spline, Line) => CKind::SplineTangentLine,
             (Curve, Line) => CKind::CurveTangentLine,
-            // a sphere touches a line or a sphere in space (a circle is `on` one, never tangent)
+            // a sphere touches a line or a sphere in space (a circle is `coincident` with one,
+            // never tangent)
             (Sphere, Line) => CKind::SphereTangentLine,
             (Sphere, Sphere) => CKind::SphereTangentSphere,
             // a line touching a cylinder, and two cones touching at the point in the parentheses
@@ -614,7 +615,7 @@ pub enum SpecKind {
     Spline,
     /// A curve written in the language — see `model::CurveDef`.
     Curve,
-    /// The datum: a plane, whose rotor the two intrinsics read and whose basis `Project` does.
+    /// A plane: its origin and its two rays, read by the relations in space and by `Project`.
     Plane,
     /// A sphere: a centre drawn in a view and a radius, on no sheet.
     Sphere,
@@ -649,8 +650,8 @@ impl SpecKind {
     ///
     /// Exhaustive on purpose, like `own_params` and `free_kernel`: a new slot kind that carries a
     /// number must stop the build here, or it would quietly be dimensionless and accept anything.
-    /// `Param` is the one that is *stated* Scalar rather than being one — a slot's hidden unknown
-    /// is a curve parameter here, but `FrameAlign`'s is a chord length, and nothing yet asks.
+    /// `Param` is stated Scalar: a slot's hidden unknown is a place along a curve
+    /// (`CKind::param_dim`).
     pub fn dim(self) -> crate::units::Dim {
         use crate::units::Dim;
         match self {
@@ -1007,10 +1008,9 @@ impl CKind {
 
     /// What this type's `SpecKind::Param` slot *is* (`units.rs`) — `None` where it owns none.
     ///
-    /// `SpecKind::dim()` cannot answer this, which is why it is asked here: a hidden unknown is
-    /// usually a **place along a curve** and dimensionless, but `FrameAlign`'s is the frame
-    /// chord's **length**, and a paste between documents in different units has to convert one
-    /// and must not touch the other.  `every_param_slot_states_its_dimension` holds every type
+    /// `SpecKind::dim()` cannot answer this, which is why it is asked here: every hidden unknown
+    /// is a **place along a curve**, dimensionless, which a paste between documents in different
+    /// units must not convert.  `every_param_slot_states_its_dimension` holds every type
     /// that owns a Param to naming it here, so a new one cannot arrive unstated.
     pub fn param_dim(self) -> Option<crate::units::Dim> {
         use crate::units::Dim;
@@ -1024,7 +1024,6 @@ impl CKind {
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
             => Some(Dim::SCALAR),
-            // a fold's half-angle rotor: a pair of cosines, not a length
             _ => None,
         }
     }
@@ -1036,11 +1035,12 @@ impl CKind {
     /// `Symmetric` alone.  So "two operands, everything else in the parentheses" is not a rule
     /// imposed on the library; it is a description of it, with one exception the parentheses
     /// absorb.  `None` is a constraint nobody writes: `DragTarget` is internal and `soft`,
-    /// `FrameUnit`/`FrameAlign` are intrinsic and minted by `Sketch::frame`.
+    /// `Lift`, `RayUnit` and `RayFoot` are intrinsic (`Sketch::lift_point`, `Sketch::ray`,
+    /// `Sketch::place_ray`).
     ///
-    /// Several kinds share a word, and that is where the saving is: **`on` is five kinds,
-    /// `distance` is six, `tangent` is six**, and `horizontal`/`vertical` are two each with the
-    /// *fixity* doing the work — a line prefixed, a pair of points infixed, which is exactly the
+    /// Several kinds share a word, and that is where the saving is: **`coincident` is seventeen
+    /// kinds, `distance` fifteen, `tangent` ten**, and `horizontal`/`vertical` are two each with
+    /// the *fixity* doing the work — a line prefixed, a pair of points infixed, which is exactly the
     /// distinction `HorizontalPoints` was added to draw.
     ///
     /// The **surface word and the wire name are different things**: `report::registry_json` goes
@@ -1130,8 +1130,6 @@ impl CKind {
             CKind::CylinderTangentLine | CKind::ConeTangentCone => ("tangent", Infix),
             CKind::DragTarget
             | CKind::Lift
-            // a hinge is a plane's brackets, never a relation anybody writes
-            // nor is a mate's row: the `against` statement is the solids' word
             // a ray's own algebra
             | CKind::RayUnit
             | CKind::RayFoot => return None,
@@ -1362,13 +1360,11 @@ impl CKind {
             | CKind::VerticalPoints
             | CKind::HorizontalDistance
             | CKind::VerticalDistance
-            // a frame's intrinsics are algebra over its own scalars, not a touch between two
-            // figures: there is no contact to double-root
             // a projection is a linear tie between two images: no contact, no double root
             | CKind::Project
             | CKind::CoordinateU
             | CKind::CoordinateV
-            // a view's own algebra, and a hidden point tied to the point it lifts: no contact
+            // a hidden point tied to the point it lifts: no contact
             | CKind::Lift
             // incidence and measure in space: no double root the screen knows how to look for
             | CKind::Coincident3
@@ -1400,7 +1396,7 @@ impl CKind {
             | CKind::CylinderRadius
             | CKind::CylinderTangentLine
             | CKind::ConeTangentCone
-            // a view turned from another, and the projector rule in space: algebra, no contact
+            // the projector rule in space, and a ray's own rows and relations: algebra, no contact
             | CKind::ProjectSolved
             | CKind::RayUnit
             | CKind::RayFoot
@@ -1508,7 +1504,6 @@ impl CKind {
             CKind::PointOnLine3 => K::PointOnLine3,
             CKind::EqualLength3 => K::EqualLength3,
             CKind::PointPlaneDistance => K::PointPlaneDistance,
-            // a stated plane stood off by the number: the incidence kernel, D folded into h
             CKind::SphereOn => K::SphereOn,
             CKind::CircleOnSphere => K::CircleOnSphere,
             CKind::Midpoint3 => K::Midpoint3,
@@ -1528,7 +1523,6 @@ impl CKind {
             // seed's side
             CKind::CylinderTangentLine => K::LineLine3Free,
             CKind::ConeTangentCone => K::ConeCone,
-            // a stood-off plane is a hinge whose turn is the identity
             CKind::ProjectSolved => K::ProjectSolved,
             CKind::RayUnit => K::RayUnit,
             CKind::RayFoot => K::RayFoot,
@@ -1594,7 +1588,6 @@ impl CKind {
             CKind::SphereRadius => K::RadiusFree,
             CKind::CylinderRadius => K::RadiusFree,
             CKind::ConeAngle => K::HalfAngleFree,
-            // `fold: beta`: the fold is the document's free variable
             CKind::Coincident
             | CKind::Midpoint
             | CKind::DragTarget
@@ -2299,7 +2292,7 @@ impl Constraint {
                 // numbers its motion was given, then its tool and motion
                 crate::model::CurveBody::Envelope(g) => g.contact_consts(sk, curve.i()),
             };
-            // a point in space reads the curve's view first: its datum on the sheet and its basis
+            // a point in space reads the curve's plane first: its basis in space, `u`, `v`, `o`
             if self.kind == CKind::PointOnExtrusion {
                 k.splice(0..0, sk.extrusion_frame(curve.i()));
             }
@@ -2772,7 +2765,7 @@ impl Constraint {
     }
 
     /// Every plane whose attitude decides which twin this statement is: `attitude_read`'s one,
-    /// or a projection's two — which is solved when either of them is.
+    /// or a projection's two — which takes the solved twin when either of them is not fixed.
     pub fn attitudes_read(&self, sk: &Sketch) -> Vec<usize> {
         match self.kind {
             CKind::Project | CKind::ProjectSolved => {
@@ -3071,8 +3064,6 @@ pub fn infer_value(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Option<A
     }
 }
 
-/// A stated plane's normal and its origin along it: the constants of every statement that puts a
-/// point on a plane whose attitude is document data.
 /// A plane's columns as every kernel that reads one takes them: its origin, then its two rays'
 /// directions — nine Params, held or not.
 fn plane_columns(sk: &Sketch, p: usize) -> Vec<u32> {

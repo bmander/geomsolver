@@ -214,9 +214,9 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
 /// the prefixes of the instance and the block copy it was elaborated in, which is the name a
 /// diagnostic already uses and a reader already writes.  A formal is not a second key: aliasing
 /// makes one entity of two names, so the entity answers under the name it was *declared* with,
-/// wherever the caller wrote it.  A plane's `.angle` is the one number here the sketch does not
-/// hold: it is derived from the rotor beside it exactly as `Tape::compile` derives it, because
-/// `f.angle` is what a reader asks for and `f.c` is not.
+/// wherever the caller wrote it.  A plane's axes and normal (`f.u.x` … `f.n.z`) are the numbers
+/// here the sketch does not hold as Params: read off its rays by `Sketch::basis`, because how a
+/// plane turns is what a reader asks for, and its rays' Params are another entity's.
 ///
 /// Sorted and deduplicated by name, so a report is stable and a reader can find a name in it.
 pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f64)> {

@@ -133,8 +133,8 @@ pub struct Sketch {
     pub free_dimensions: BTreeMap<String, crate::units::Dim>,
     /// The unknowns the source declared, by name — an input nothing binds (`param beta:
     /// Angle hint(30deg)`), a formal left unbound with a seed — and what each is: read by
-    /// `expr::evaluate` when it allocates the unknown (its seed, its dimension) and by a
-    /// solved fold.  Set by elaboration and never written to a document.
+    /// `expr::evaluate` when it allocates the unknown (its seed, its dimension).  Set by
+    /// elaboration and never written to a document.
     pub declared: BTreeMap<String, Declared>,
     /// Each curve's polyline, remembered against everything it was computed from
     /// (`curve_polyline`).  A pick walks every drawn curve on every pointer move, and a traced

@@ -95,8 +95,6 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         EntKind::Point | EntKind::Circle | EntKind::Spline => {
             point_to(sk, px, py, e)
         }
-        // a plane draws its chord as a datum glyph, and that is where it is taken hold of; its
-        // points still win a pick within tolerance, as every point does
         // a plane is drawn as its glyph at its own origin, which is where it is taken hold of
         EntKind::Plane => px.dhypot(py),
     }

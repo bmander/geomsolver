@@ -825,7 +825,7 @@ fn place(sk: &Sketch, res: &Resolver, r: &crate::syntax::Ref) -> Result<EntRef, 
 
 /// Where point `p`'s seed stands in `view`'s page coordinates (`None`: the page): its own seed
 /// where it is drawn in that view, and otherwise where it stands in space projected into the
-/// view — a pitch-plane point read in a view folded from it is its image there, which is what
+/// view — a point drawn in one plane, read in another, is its image there, which is what
 /// `project` says of the pair.  Before memberships are read every point is on the page, so the
 /// first settle reads every seed as written.
 fn seed_in(sk: &Sketch, p: usize, view: Option<usize>) -> (f64, f64) {

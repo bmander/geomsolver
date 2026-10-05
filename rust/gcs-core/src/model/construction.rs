@@ -427,8 +427,8 @@ impl Sketch {
     /// an unknown the next pass immediately retires.
     pub(crate) fn add_quiet(&mut self, mut c: Constraint) -> u32 {
         // the twin its planes can feed, decided before anything is minted for it: a projection
-        // over a solved view reads both views' quaternions, so a stated one is given held
-        // unknowns first (`Sketch::solve_projection`'s rule, for a statement not yet added)
+        // where either plane moves in the solve reads both images' lifts and both planes' rays,
+        // and over two fixed planes only the two drawn points (`CKind::attitude_twin`)
         let reads = c.attitudes_read(self);
         if !reads.is_empty() {
             let solved = reads.iter().any(|&v| !self.plane_fixed(v));

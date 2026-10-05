@@ -452,9 +452,9 @@ pub unsafe extern "C" fn gcs_plane_basis(h: *mut Sketch, idx: i32, out: *mut f64
     })
 }
 
-/// A plane's whole frame in space: nine doubles, `u`, `v` and then its origin `o` — the solved
-/// one, for a view whose attitude or offset the drawing solves for, where six were not
-/// enough to say where the view stands.  Returns how many were written.
+/// A plane's whole frame in space: nine doubles, `u`, `v` and then its origin `o`, as the solve
+/// left them (`Sketch::basis`) — six say how it turns, not where it stands.  Returns how many
+/// were written.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plane_frame3(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {
     guard(-1, move || {
@@ -466,9 +466,10 @@ pub unsafe extern "C" fn gcs_plane_frame3(h: *mut Sketch, idx: i32, out: *mut f6
     })
 }
 
-/// The datum glyph a plane is drawn as, in world coordinates: eight doubles, two segments as
-/// `x1 y1 x2 y2` each — the chord, then the tick.  Laid out by the core for a callout's reason,
-/// so the canvas and the SVG export stroke one figure and not two.
+/// The datum glyph a plane is drawn as, in the plane's own coordinates: eight doubles, two
+/// segments as `x1 y1 x2 y2` each — the arm along `u`, then the tick along `v` (`plane::glyph`).
+/// Laid out by the core for a callout's reason, so the canvas and the SVG export stroke one
+/// figure and not two.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plane_glyph(
     h: *mut Sketch,

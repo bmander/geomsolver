@@ -18,7 +18,7 @@ impl<'a> Walk<'a> {
         }
         let Some(p) = &scope.in_plane else { return };
         if !d.kind.bears_points() {
-            return; // a datum's points are the datum's, and a curve is its expressions
+            return; // a plane's origin is the plane's, and a curve is its expressions
         }
         if !d.membership.join(&p.plane, crate::syntax::Source::Instance) {
             self.err(Code::E103, d.membership.span(), d.membership.cause().to_string());

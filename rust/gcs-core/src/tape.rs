@@ -161,8 +161,8 @@ impl Tape {
     /// A name the table does not hold and `expr` does not know as a constant is an error here
     /// rather than a free variable: a curve is written over geometry that exists, and a name
     /// nothing declares is a misspelling, not an unknown for the solver to answer.  The one
-    /// exception is `<f>.angle` where the table holds the rotor `<f>.c` / `<f>.s`: a frame's
-    /// angle is derived, not stored, and compiles to its atan2.
+    /// exception is `<f>.angle` where the table holds `<f>.c` and `<f>.s`, which compiles to
+    /// their atan2.
     pub fn compile(ast: &Ast, vars: &[String]) -> Result<Tape, String> {
         if vars.len() > MAX_VARS {
             return Err(format!("a curve may read at most {MAX_VARS} coordinates"));
@@ -204,7 +204,8 @@ impl Tape {
         Ok(self.ops.len() as u32 - 1)
     }
 
-    /// The rotor columns behind a derived `<name>.angle`, when the table holds them.
+    /// The columns `<name>.c`, `<name>.s` behind a derived `<name>.angle`, when the table holds
+    /// them.
     fn rotor_columns(name: &str, index: &BTreeMap<&str, u32>) -> Option<(u32, u32)> {
         let prefix = name.strip_suffix(".angle")?;
         let c = index.get(format!("{prefix}.c").as_str())?;
@@ -221,10 +222,11 @@ impl Tape {
                 Some(&i) => self.push(Op::Var(i))?,
                 None => match crate::expr::CONSTANTS.iter().find(|&&(n, _, _)| n == name) {
                     Some(&(_, v, _)) => self.push(Op::Const(v))?,
-                    // `f.angle` is derived, never stored: a frame keeps its attitude as the
-                    // rotor `(f.c, f.s)`, and the angle a bearing wants is its atan2 (degrees,
-                    // like every trig function here).  The one exception to the misspelling
-                    // rule above, and only where the table really holds a rotor.
+                    // `f.angle` over a table holding `(f.c, f.s)` is their atan2 (degrees, like
+                    // every trig function here).  The one exception to the misspelling rule
+                    // above, and only where the table really holds both.  No entity kind spells
+                    // those scalars since a plane is two rays (`EntKind::scalar_names`), so only
+                    // a table naming them itself reaches this.
                     None => match Tape::rotor_columns(name, index) {
                         Some((ci, si)) => {
                             let s = self.push(Op::Var(si))?;

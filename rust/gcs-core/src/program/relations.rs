@@ -261,9 +261,9 @@ pub(super) fn constrain(
             }
         }
     }
-    // **across views, a word means the relation in space**: the operands' views, read by
-    // the role rule (`reading`), decide it, and the statement is the kind in space from here on —
-    // or refused, where the word has no meaning there or a selector says nothing there
+    // **across views, a word means the relation in space**: the planes its operands' points are
+    // drawn in (`reading`) decide it, and the statement is the kind in space from here on — or
+    // refused, where the word has no meaning there or a selector says nothing there
     // a curve standing for a surface (a prism's side generating, `CurveE::extrusion`) is met in
     // space, by the point's place in the curve's view, whatever view the point is drawn in
     let ckind = match (ckind, args.get(1)) {

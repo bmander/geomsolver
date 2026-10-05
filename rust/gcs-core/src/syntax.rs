@@ -875,14 +875,14 @@ pub enum Sweep {
     /// `sense: cw` the other way round.
     Revolve { axis: Ref, sweep: Option<Arg>, sense: Sense },
     /// `body := solid(block)` — a stock, or a term: what it is made of is in the list, and the
-    /// `on`/`cut` statements say the rest.
+    /// `union`/`cut`/`bound` statements say the rest.
     Body,
 }
 
 impl Sweep {
     /// Every number it was written over, for the flattener to settle a component's parameters
-    /// into — the same walk `Attitude::args_mut` joins, and for the same reason: an extent is
-    /// written in the little language a dimension is, and a `param` is in scope for it.
+    /// into: an extent is written in the little language a dimension is, and a `param` is in
+    /// scope for it.
     pub fn args_mut(&mut self) -> Vec<&mut Arg> {
         match self {
             Sweep::Placed { at, .. } => vec![at],
@@ -938,7 +938,7 @@ pub enum Kid<D = Decl> {
     /// `block := solid(face(a, b, c, -> close), depth: t)` — a private section.
     Face { decl: Box<D>, span: Span },
     /// `tooth := face(root, flank from p to q, tip)` — the stretch of a curve between two points
-    /// held on it (`p on flank`), a face's edge (§6.8).  Only a face's loop holds one.
+    /// held on it (`p coincident flank`), a face's edge (§6.8).  Only a face's loop holds one.
     Trim { curve: Ref, from: Ref, to: Ref, span: Span },
 }
 

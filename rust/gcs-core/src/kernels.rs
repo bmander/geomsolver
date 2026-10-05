@@ -58,11 +58,10 @@ pub enum K {
     PointLineMagnitudeFree,
     ParallelMagnitude,
     ParallelMagnitudeFree,
-    // a solved view's quaternion on the unit sphere, and a hidden point held at the lift of
-    // its view point over a solved view and over a stated one
+    // a hidden point held at the lift of the point it stands for, drawn in a plane
     Lift,
-    // the relations in space, over the hidden points views lift to: each dimension with its
-    // free twin beside it, and the two that read a plane in its solved and stated forms
+    // the relations in space, over the hidden points drawn points lift to: each dimension with
+    // its free twin beside it, and the two that read a plane's rays and origin
     Coincident3,
     Distance3,
     Distance3Free,
@@ -76,12 +75,10 @@ pub enum K {
     Parallel3,
     PointOnPlane,
     PointOnCircle3,
-    // a view folded from a solved one: its quaternion tied to its parent's by a stated
-    // fold, a solved one, or a line drawn in the parent — and a projection between two views
-    // either of which is solved
+    // a projection between two images either of whose planes moves in the solve
     ProjectSolved,
     // a point on a line in space, true lengths equal, a point's signed distance along a
-    // plane's normal (its stated-plane form is `point_on_plane_fixed`), and the sphere's own two
+    // plane's normal, and the sphere's own two
     PointOnLine3,
     EqualLength3,
     PointPlaneDistance,
@@ -89,8 +86,8 @@ pub enum K {
     SphereOn,
     SphereSphere,
     LineOnPlane,
-    // a circle drawn in a view on a sphere, over the view solved and stated, and the
-    // midpoint and the mirror in a line, in space
+    // a circle drawn in a plane on a sphere, and the midpoint and the mirror in a line, in
+    // space
     CircleOnSphere,
     Midpoint3,
     Symmetric3,
@@ -99,7 +96,6 @@ pub enum K {
     HalfAngle,
     HalfAngleFree,
     ConeCone,
-    // a mate between two solved views' offsets
     // two directed angles equal, and an arc's length along itself stated and free
     EqualAngle,
     ArcLength,
@@ -1812,25 +1808,15 @@ fn point_on_extrusion_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// Columns of `frame_align`: (r, ox, oy, tx, ty, c, s).
-pub const N_PAR_FRAME_ALIGN: usize = 7;
-
-// Signed coordinates. Columns: point.xy, origin.xy, rotor.cs, then an optional
-// free dimension. The datum is an ordinary participant in the same solve.
-
-/// Columns of `lift_fixed`: (X, Y, Z, px, py, ox, oy, c, s).  Constants: the stated basis
-/// (u, v, o), nine numbers.
-pub const N_PAR_LIFT_FIXED: usize = 9;
-
 /* -- relations in space ------------------------------------------------------
  *
  * What a relation between two views says (`docs/spatial-constraints-plan.md`).  Every one
  * reads the **hidden points** a view point lifts to (`model::LiftE`), three columns each, and
  * never a view's attitude — the `lift` rows are where a drawn point and its place in space are
- * tied together, so a relation here is plain vector algebra over points in space.  The two that
- * read a *plane* rather than points (a point on a plane, the plane row of a circle) read its
- * quaternion and offset where the view is solved and its normal as constants where it is
- * stated, which is `lift`/`lift_fixed`'s split again.
+ * tied together, so a relation here is plain vector algebra over points in space.  Those that
+ * read a *plane* rather than points (a point or a line on a plane, the plane row of a circle)
+ * read its origin and its two rays' directions (`dframe`), as `lift` does; a plane a `fix`
+ * holds is the same kernel with those columns held.
  */
 
 use crate::space::{cross as cross3, dot as dot3, norm as norm3, sub as sub3};
@@ -2149,23 +2135,6 @@ fn parallel3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// Columns of `point_on_plane`: (X, qw, qx, qy, qz, d) — a hidden point, and a solved plane's
-/// quaternion and offset.  `n(q)·X − d = 0`: every lift of the plane's own points has `n·L = d`
-/// exactly, since L = R(q)·(a, b, d), so this says X is on the plane wherever in it.  Degree 1.
-pub const N_PAR_POINT_ON_PLANE: usize = 8;
-
-/* -- hinges and the projection between solved views ------------------------------------------
- *
- * A view folded from a *solved* view (`docs/spatial-constraints-plan.md`) is not a constant
- * of the document: its attitude follows its parent's, turned by the fold.  `Basis::fold(θ)` is
- * the rotation `Rz(θ)·Rx(−90°)` in the parent's own axes — `u = cos θ·u_P + sin θ·v_P`,
- * `v = −n_P` — so the child's quaternion is the parent's times that one, `q_P ⊗ q_rel(θ)`, and a
- * hinge is the four rows saying so.  No unit row on the child: a product of unit quaternions is
- * one.  The fold is a constant (`hinge`, and the identity for a plane stood off its parent), the
- * document's free variable (`hinge_free`), or the bearing of a line drawn in the parent
- * (`hinge_along`, over a half-angle rotor of its own).
- */
-
 /* -- the rest of the spatial words, and the sphere ---------------------------------------------
  *
  * A point on a line in space, two lines of equal true length, a point's signed distance from a
@@ -2174,7 +2143,7 @@ pub const N_PAR_POINT_ON_PLANE: usize = 8;
  * `point_line3_free` (the line's distance from the centre, stated as the radius column). */
 
 /// Columns of `ray_unit`: (dx, dy, dz).  `|d|² − 1`: a direction held to the unit sphere,
-/// dimensionless, degree 0 — `quat_unit` one dimension down.
+/// dimensionless, degree 0.
 fn ray_unit_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let d = at3(v, 3 * i);
@@ -2971,7 +2940,7 @@ fn cone_cone_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
-/* -- a mate between solved views ----------------------------------------------------------- */
+/* -- two directed angles equal, and an arc's length --------------------------------------- */
 
 /// (l1, l2, l3, l4 — each a line's four coordinates), K = (s): `wrap(∠(l1→l2) − s·∠(l3→l4))`.
 ///

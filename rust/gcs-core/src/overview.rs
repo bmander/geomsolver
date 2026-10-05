@@ -1,16 +1,15 @@
 //! The drawing as the box it was unfolded from.
 //!
-//! A multiview document (§6.7) is several 2D pictures on one sheet, each on a stated plane in
-//! space.  This folds them back up: every view stands on its own plane, and the object the views
-//! are *of* is reconstructed in the middle.
+//! A multiview document (§6.7) is several 2D pictures, each drawn in a plane in space.  This
+//! folds them back up: every view stands on its own plane, and the object the views are *of* is
+//! reconstructed in the middle.
 //!
 //! **Nothing here is solved for, and nothing is stored.**  The whole scene is arithmetic over
 //! what the document already says:
 //!
 //! * a point drawn in view P has view coordinates `(a, b)`, its own coordinates in P — the
 //!   reading `project`'s residual takes;
-//! * every plane's origin is the image of one shared origin in space, so the point sits at
-//!   `a·u_P + b·v_P` (`Basis::lift`);
+//! * the point sits at `o_P + a·u_P + b·v_P` (`Basis::lift`);
 //! * a corner tied by `project` into two non-parallel views is **over-determined and exact**:
 //!   each image contributes `u_P·X = a` and `v_P·X = b`, so two views give four rows in three
 //!   unknowns, consistent precisely *because* the projection holds.  The rank tells a corner
@@ -146,10 +145,9 @@ pub struct Corner {
 /// sufficient one.  Kept at **rank 3**, which is "two views that are not parallel"; `validate`
 /// refuses the parallel pair at the add, so a rank-2 answer here means the drawing moved since.
 ///
-/// The **plane origins are corners too**, with no projection stated between them: every plane's
-/// origin is the image of one shared origin in space, which is the convention the whole scheme
-/// is written against (`Basis::lift`), so they are paired here rather than left to a document to
-/// say twice.
+/// The rows read an image's coordinates as measured from the world origin: a plane's own `o` is
+/// not added in, so the corner is where `Basis::lift` puts it only for planes whose origins
+/// stand there.
 pub fn corners(sk: &Sketch) -> Vec<Corner> {
     corners_in(sk, &views(sk))
 }
@@ -204,8 +202,8 @@ fn views(sk: &Sketch) -> Vec<Option<usize>> {
 
 
 /// The view an entity stands in: the one every point it is made of stands in, or `None` where
-/// they disagree or it has none — `program::plane_of_entity`'s walk with `view_of`'s reading of
-/// a point in place of bare membership, for the reason given there.
+/// they disagree or it has none — `program::plane_of_entity`'s walk over the `views` table, read
+/// once for every point.
 fn entity_view(sk: &Sketch, e: EntRef, views: &[Option<usize>]) -> Option<usize> {
     crate::program::plane_of_entity_by(sk, e, |p| views[p])
 }
@@ -245,7 +243,7 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         }
         EntKind::Spline => vec![crate::curve::tessellate(sk, i, unit)],
         EntKind::Curve => vec![sk.curve_polyline(i)],
-        // a datum's glyph is already two segments of world geometry
+        // a plane's glyph is already two segments, in its own coordinates
         EntKind::Plane => crate::plane::glyph(unit).iter().map(|(a, b)| vec![*a, *b]).collect(),
     }
 }
@@ -497,9 +495,9 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
             continue;
         }
         let plane = entity_view(sk, e, &views);
-        // a line stands with each end where that end is: a projector between two views, or a
-        // line from a datum's own origin into its view, is neither a stray stroke on the page
-        // nor anyone's — it belongs to a view only when both its ends do
+        // a line stands with each end where that end is: a projector between two views is
+        // neither a stray stroke on the page nor anyone's — it belongs to a view only when both
+        // its ends do
         if e.kind == EntKind::Line {
             let l = &sk.lines[e.i()];
             let end = |q: u32| flat(sk.world_point(q as usize));
