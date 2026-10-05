@@ -16,17 +16,30 @@ has a top-level `.sv`. Source edits add geometry inside the preview, reusable de
 Hosts look for modules beside the model, then its ancestors, then the library.
 `web/tools/copy-examples.js` packages sources for static hosts; live files override them.
 
-**Datum coordinates (0.21):** `p distance(d, along: u) f` / `along: v` are signed ordinates from a
-plane's datum, independent of membership. Hints can read `f.c`/`f.s`/`f.angle`. No
-coordinate-placement helper: model contours with alignments, incidences, symmetry and dimensions.
-Components have no implicit frame; `instance := Part(f) in view` supplies membership. Datum
-intrinsics are reseeded after point hints settle. Aliases keep subentity paths (`f.origin`).
-`use std` gives `std.front` (the page), `std.side`, `std.top`, `std.up` (front turned, u up),
-`std.origin` from `StandardDatums`, fixed at page zero, no implied membership — present whenever
-the document says `use std`, named or not (the workspace offers them as places to draw). Calls
-may omit `name :=`; anonymous keys stay out of user-facing names. E.g. `cyl := Cylinder(std.up,
-fw: components.dims.fwA, dims: components.dims.vtwin_dims)`, with no explicit origin, ground,
-plane or Axes.
+**Points in space, planes from rays (0.42, #81, [plan](docs/planes-plan.md)):** a point no `in`
+reaches stands in space (`PointE.z`, given by `Sketch::give_place` once memberships are in; its
+own lift, no row); a 2D drawing is `use std` + `in std.front { … }`. There is no page: a point
+with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with no lift. A **ray**
+(`t := ray hint(x:, y:, z:)`, `RayE` p[3], d[3]; intrinsics `ray_unit`, `ray_foot` once a point
+reads its place) is a directed line with no start; a drawn line reads as one. A **plane** is
+`P := plane(u: r1, v: r2)` (`PlaneE { u, v, o, origin }`): right u, out u × v, up out × u; it owns
+`o` (three unknowns); members `P.u`, `P.v`, `P.origin` (a point drawn in P held at (0, 0)).
+`P.origin coincident p`, `P coincident p`, `P distance(d) Q`, parallel/perpendicular/angle over
+normals; `fix(x ==, y ==, z ==) P`. W113 warns of two planes lying on one another. `views::place`
+settles rays and plane origins before the solve, round by round with seed settlement; they stay
+unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u`, in space across
+planes (`Ordinate3U`, no callout); `hint(at: P, x:, y:)` seeds in P's coordinates. Circles, arcs,
+splines and traced curves over a point in space are E060, faces E080. `use std` gives rays
+`std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
+back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
+document says `use std` (the workspace offers them as places to draw). `std.Turned(o, t)` is a
+frame turned within a plane (`.axes` the plane, `.u` the line o→t). No coordinate-placement
+helper: model contours with alignments, incidences, symmetry and dimensions. Components have no
+implicit frame; `instance := Part(f) in view` supplies membership. Aliases keep subentity paths
+(`f.origin`). Calls may omit `name :=`; anonymous keys stay out of user-facing names. E.g. `cyl
+:= Cylinder(std.up, fw: components.dims.fwA, dims: components.dims.vtwin_dims)`. Retired: the
+datum rotor, `toward:`, `from:`, `fold:`, `offset:`, `through:`, `attitude: free`, quaternions,
+hinges, `against`, the role rule, page placement, `std.ThreeViews`.
 
 **Nothing is imported bare (Solvent §14.4, [0.30]):** a used module's component, param or group
 is written by full path — `engine.parts.Crank(…)`, `hardware.nut14_af`,
@@ -41,9 +54,7 @@ module path (`relations::unqualified`).
 and `cylinder c(axis: l) hint(r: 10)` stand about a line in a view (cone apex at its start), one
 Param each (half-angle in radians, written in degrees: `Sketch::seed_value`). Words:
 `p coincident k|c`, `angle(θ) k`, `radius(r) c`, `c tangent l`, `k1 tangent(M) k2` (with `M
-coincident` each). Cone kernels use forward-mode `Dual<N>` (`kernels.rs`). `against` with solved
-views needs a shared attitude root (`from:` no fold); a solved datum offset is a `CKind::Mate` row.
-`o:` beside `u:`/`v:` is where a stated basis stands (`to_program` writes it for a stand-off plane).
+coincident` each). Cone kernels use forward-mode `Dual<N>` (`kernels.rs`).
 
 **Rays** (`docs/planes-plan.md`, #81): `t := ray hint(x:, y:, z:)` is a directed line in space,
 `RayE { d, a, placed }`: a unit direction (`ray_unit`, intrinsic, held like `quat_unit` when `fix`
@@ -113,7 +124,7 @@ series); the encoding is `Generated::new` and `view` only.  Kernels are generic 
 **One engine for a prism's side (#70):** `side := surface(prism, edge: e)` names a prism's side
 too; its `envelope` under a motion keeping the prism's view is built with the drawing
 (`generated::extruded_envelopes`, after memberships, before relations) as `e`'s planar envelope
-marked `CurveE::extrusion`, the face in a view that stands where drawn (not the page). `p coincident
+marked `CurveE::extrusion`, the face in a view that stands where drawn. `p coincident
 flank` from any view is `CKind::PointOnExtrusion` (`FamilyKernel::Extrusion`, consts
 `kernels::EXTRUSION_FRAME` then the contact's; `Sketch::extrusion_frame`). The export builds a
 prism cutter's sheet the same way: `brep::sweep::extruded` (edges as lines/arcs, convex corners as
@@ -629,7 +640,7 @@ Conventions:
   drawn.  **The core has no filesystem**: the resolver is the host's — `solventc` reads
   `engine/parts.sv` beside the document, then `library::resolve`; the FFI and `examples::document`
   use `library::parse_linked`, over `library::MODULES`.  **`rust/lib/` is the standard library**
-  (`std`: `std.ThreeViews`), in the Makefile's `RUST_SRC`.  `program::reparse` relinks from the
+  (`std`: `std.StandardDatums`, `std.Turned`), in the Makefile's `RUST_SRC`.  `program::reparse` relinks from the
   texts in hand (`modules::relink`), so an edit never asks the host.  E070 no module, E071 defined
   twice in one file.  `tests/modules.rs` is the gate.
 - **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its dotted
@@ -817,40 +828,23 @@ Conventions:
 - `Horizontal`/`Vertical` level a line; `HorizontalPoints`/`VerticalPoints` level a *pair of
   points* with the same line kernels, and `cgraph` gives them a `virtual_line` in the ground
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.
-- **The datum is a `plane`** (`f := plane(origin: o, toward: q)`, spec §3.2 [0.6]; `frame` is
-  refused by the parser, at a declaration and a formal).  The two points alias, and the attitude
-  is a **unit rotor** `(c, s)` slaved to the chord by two intrinsics minted in `Sketch::plane`
-  and nowhere else (never serialized): `frame_unit` `c² + s² − 1`, **degree 0** (judged
-  absolute), and `frame_align` `(t − o) − r·(c, s)` with `r` a `Param` slot — two rows, net one,
-  *directed*.  Net **0 DOF** beyond the points; `c`,`s` get `Param::scale` = the chord's length.
-  `.angle` is **derived, never stored**: `Tape::compile` turns `f.angle` into `atan2(f.s, f.c)`
-  (degrees), so a traced seed can say `bearing: u + f.angle` (`tests/frame.rs`).  Pass a traced
-  component the datum, not its points and bearing too, to stay under `tape::MAX_VARS`; do not
-  raise that constant (every tape zeroes a `[f64; MAX_VARS]` per operand).  Both intrinsics are
-  `unsupported` in `cgraph`, so a datum drags on the numeric path.  `FrameE` is the datum half of
-  a `PlaneE`; `SpecKind::Plane` is what the intrinsics take.  `io::from_json` reads an old
-  `"frames"` table as page planes and never writes one.
-- A **`plane`** (Solvent §6.7) is also a **view**: the datum plus a constant attitude in space,
-  `plane::Basis` `(u, v)`, `n = u × v` toward the viewer.  **Nothing three-dimensional is solved
-  for** unless the brackets name an unknown (`fold: beta`, `fold: along l`, `attitude: free`,
-  `offset: free`, `through: M` — `program/views.rs` mints the `att` and the `Hinge` rows; see
-  `docs/spatial-constraints-plan.md`); otherwise the basis is document data resolved at
-  elaboration (`program::plane_bases`, memoised over the `from` chain: the page, `from: P,
-  fold: θ` as `Basis::fold`, or `u:`/`v:` by `Basis::explicit`) and stored on `PlaneE`.
+- A **`plane`** (Solvent §6.7) is also a **view**: `Sketch::basis(P)` is `plane::Basis` `(u, v)`
+  over its rays' directions, `n = u × v` toward the viewer, standing at `o`.  A point drawn in
+  it is lifted into space by the intrinsic `lift` row (`kernels::lift`: X, p, o, d_u, d_v;
+  `Sketch::lift_point`, minted on request, never serialized).  `frame` is refused by the parser.
   A point's **membership** is `PointE.plane`, set by `a := point in top` (every point the
   declaration mints or names; filled by `program::memberships` after every kind is built, before
   any constraint); it moves nothing — only `Project` reads it.  `a project b` is one row over 12
-  columns (`kernels::project`) with the shared fold line as consts (`plane::fold_line`).  The two
+  columns (`kernels::project`) with the line the planes share as consts (`plane::fold_line`).  The two
   plane slots are real entity slots and **inferred**: `infers_arg` marks them, the registry
   publishes null, and **`io::seed_omitted` is the one seam** that fills them
   (`constraints::infer_entity`) and refuses (`constraints::validate`: no plane, one plane,
   parallel planes) — so the elaborator (E061), `from_json`, `gcs_constraint_add` and
   `Constraint::project` share one rule.  `operator_text` skips an inferred slot (`a project b`).
-  A plane's minted label starts with `v` (`syntax::kind_initial`).  On paper it draws its chord
-  under the *implicit class* `.plane` (`EntKind::implicit_class`, resolved in `style_of`; JSON
+  A plane's minted label starts with `v` (`syntax::kind_initial`).  Its glyph (`plane::glyph`)
+  is drawn under the *implicit class* `.plane` (`EntKind::implicit_class`, resolved in `style_of`; JSON
   never writes it); in the workspace it is a pane, chosen in the plane chooser rather than picked.
-  Deleting a plane (`edit::remove`) dooms a
-  plane folded from it (`mentions` counts `Attitude::From`), splices the `in` clause out of every
+  Deleting a plane (`edit::remove`) splices the `in` clause out of every
   surviving declaration, and dooms every statement whose *elaborated* constraint named it.
   `commit_seeds` replaces the bracket list at `Decl::list_span`.
   **`in top { … }` is the clause written once**: the parser **hoists** the body into the
@@ -865,16 +859,12 @@ Conventions:
   plane.  Not commutative (`same_args` swaps only the first two entity slots).  `cgraph` leaves it
   unsupported.  `bracket.sv` is the case; `tests/plane.rs` and `tests/plane_lang.rs` the gates.
   **Across views a word means space** (`program/reading.rs`): `in_space` reads each operand's
-  points' views by the **role rule** (a plane's own origin/toward is layout among datum points,
-  its view's beside that view's points, else membership) and where they differ maps the 2D kind
+  points' views by membership (a point in space is its own view) and where they differ maps the 2D kind
   to its twin in space (`Distance3`, `PointLine3`, `LineLine3`, `Angle3`, `PointOnLine3`,
   `EqualLength3`, …) or refuses (E062; E040 for `side:`/`sense:`).  Radii, `along: u`/`v` and
   `project` are view-free; `coincident`/`distance(along: n)` to a plane and the `sphere`, `cone`,
   `cylinder` words are spatial from `infix_op`.  `tests/cross_view_audit.rs` asserts the corpus's
-  cross-membership relations keep their 2D kinds.  **A solved view's page placement is held
-  silently**: `reading::hold_page_placement` fixes a view-with-`att`'s unnamed datum points into
-  `Sketch::page_held` (so `edit::held_refs` writes no `fix`), and a held view's `quat_unit` row
-  with no free column is not hard, so the ledger's equations equal its rank.
+  cross-membership relations keep their 2D kinds.
 - A **`claim`** (Solvent §9.7) is *judged, never solved for*: **no** `System` compiles a row for
   it, and `cgraph`, `io::Part` and the witness's jitter skip it, so it never moves geometry,
   welds drag parts, or paints Over or Conflict.  `Constraint::acts()` is the named half, asked by
@@ -1081,7 +1071,7 @@ Conventions:
   makes it the body over its own sweep (`program/solids.rs`'s body pass) — the name keeps its
   index, and the sweep moves to a stock of the same name (`SourceMap::also_made`), which
   `operand_paths` gives no step, so `plate.near` stays its name.
-  **Nothing three-dimensional is solved for past the sketch** (a view's attitude may be, with the
+  **Nothing three-dimensional is solved for past the sketch** (rays and planes are, with the
   sketch).  `EntKind::Face` and `EntKind::Solid` own no `Param`, and every extent is an `Extent`:
   the text written and the number the *flattener* settled.  The strata run one way: the sketch
   solves, depths are worked out, terms are ordered (`solid::resolve`), outputs are read.  No
@@ -1163,7 +1153,7 @@ Conventions:
   `bore.start` (a revolution), and through operands — `body.bore.wall`, `part.base.pocket.floor`.
   A name whose face a boolean ate is a *fact the report carries*, never an error.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
-  longer has, E083 a stack that contradicts itself, E084 a section cut across its own view.
+  longer has, E084 a section cut across its own view.
 - **A chain is a named traversal** (§6.6; issue #49, item 3). `profile := line -> … -> close`
   records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
   scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the
@@ -1189,21 +1179,10 @@ Conventions:
   close)`; name the corner: `bore_f := face(m0.p, b_br.p, bore_r, hx.p, -> close)`); and the wrap
   is minted only under `-> close`, so "the loop closes" stays something the source states (on a
   loop that already meets it mints nothing).  `tests/solid_lang.rs` is the gate.
-- **`from:` says which plane a plane is derived from, and the clause beside it says how**
-  (§6.7).  `fold:` turns it; **`offset:` stands it off along the normal**.  An omitted fold is
-  *the same plane, moved*, not `fold: 0deg`.  `plane::Basis` carries its origin's point **only
-  along the normal**, so `d·o = 0` and `fold_line` (all `Project` reads) cannot see the move.
-- **Where a part stands is what it bears against** (Solvent §6.10, `program::place`; issue #48).
-  `cylB.block.far against plate.body.near` says the faces touch, and the offset of cylinder B's
-  plane *follows*: `offset(P) = offset(Q) + ord(G) − ord(F)`, worked out in dependency order like
-  `expr::evaluate`, solved for nothing.
-  **A mate is between the caps a sweep makes**: side faces and revolution walls cannot bear (E082,
-  with the reason).  A *placed* plane is `from: P` with neither `fold:` nor `offset:`, recorded in
-  `Sketch::placed_planes`; exactly one `against` places one, none or two is E083.  The delta is
-  computed **when the mate is applied, not when collected** (a washer stands on the first part
-  before the second stands on it).
-  `hardware.Groove` states the O-ring rule once (10–20% squeeze, a groove a third wider), so
-  `dims.sv` derives `grooveb` and `groovew`.
+- **A stack is planes and distances**: parts standing on one another are drawn in parallel
+  planes, `P distance(d) Q` with a ray square to both through both origins (`against`, placed
+  planes and E083 are gone, #81).  `hardware.Groove` states the O-ring rule once (10–20% squeeze,
+  a groove a third wider), so `dims.sv` derives `grooveb` and `groovew`.
   **A component contributes a `cut` to a body it was handed**, which is the body rule being a
   set and not a sequence: the feature owns the void it cuts.
 - **A part carries no views; a sheet asks for them** (§6.11, `hidden.rs`).  `view(body) in
@@ -1215,9 +1194,9 @@ Conventions:
   **Coincident page lines are drawn once, visible winning** — an *interval* rule, not a segment
   one (a rim seen edge-on folds onto itself, splitting at different places): every stroke is laid
   on its line, the visible stretches unioned, the hidden what is left over.
-  Everything comes back in **page coordinates** through `plane::on_page` (beside `in_view`), so a
-  derived view sits at its plane's own origin and rotor, where a hand-drawn one tied by `project`
-  would — `tests/derived.rs`'s strongest gate.  **The core projects and the front end strokes**:
+  Everything comes back in **the plane's own coordinates** (`PageFrame` over `Basis::view_coords`),
+  so a derived view sits where a hand-drawn one tied by `project` would — `tests/derived.rs`'s
+  strongest gate.  **The core projects and the front end strokes**:
   `hidden::layout` resolves the ink through the sheet, `svg::render` and `paint.ts` stroke what
   they are handed, and neither owns 3D arithmetic or a rule about hidden lines.
   Derived views are the `.svd` paper's; the model workspace shows a solid as its mesh.
@@ -1230,17 +1209,19 @@ Conventions:
 - **The workspace** (`overview/workspace.rs`, `app/view.ts`) is the only model canvas: one scene
   in space, every sketch on its own plane, solids and panes drawn beneath by three.js
   (`app/box3d.ts`).  A view's page reaches the eye's picture plane by **one affine map**
-  (`workspace::Projection`: `in_view`, `Basis::lift`, the orthographic `overview::eye`), so
+  (`workspace::Projection`: `Basis::lift`, the orthographic `overview::eye`), so
   `camera.ts` composes it with the eye's similarity (`Camera::through` → `ViewCam`) and no 3D
   arithmetic exists above the ABI.  **What is under the pointer is asked where the eye sees it**
-  (`workspace::pick`, `nearest_point`, `inside`, `callout::pick_seen`): views lying on one another
-  on the page are apart in space, so nothing is picked in page coordinates.  `w2s`/`s2w` read the
+  (`workspace::pick`, `nearest_point`, `inside`, `callout::pick_seen`): two views' coordinates
+  overlap but are apart in space, so nothing is picked in view coordinates.  `w2s`/`s2w` read the
   view being worked in — the painter's (`inView`), else the current plane's; a drag reads the
-  dragged point's view, a callout its dimension's (`calloutView`), the plane tool the page (a
-  plane's two points are layout).  A view seen edge on refuses a press (`ViewCam::readable`).
-  The page is the front plane (`Basis::page`).  `workspace::Views` is what does not depend on the
-  eye — each view's page placed in space, the view each point and entity stands in, and each
-  view's **place** (the first view on the same plane in space: the page, `std.front`, `std.up`)
+  dragged point's view, a callout its dimension's (`calloutView`).  A view seen edge on refuses a
+  press (`ViewCam::readable`).  The plane tool picks two drawn lines and writes `plane(u:, v:)`.
+  Points in space are drawn and picked, never dragged.  A view opens drawing on `std.front`
+  (`drawOnFront`), and File ▸ New is `use std`.  `workspace::Views` is what does not depend on
+  the eye — each view placed in space (slot 0 a 2D sketch's front plane, `Basis::page`), the view
+  each point and entity stands in, and each view's **place** (the first view on the same plane in
+  space: `std.front`, `std.up`)
   — read once an edit (`gcs_workspace_json`); the maps are per frame (`gcs_workspace_maps`, a
   buffer).  The front end compares place ids, never maps.  The chooser in the viewport's upper right (`#plane-select`) lists `std.front`,
   `std.side`, `std.top`, then the document's planes; `choosePlane` sets `v.plane` and swings the
@@ -1253,16 +1234,15 @@ Conventions:
   (never saved, exported, solved or undone).  `tests/workspace.rs` and `app.test.ts` are the gates.
 - The **glass box scene** (`overview.rs`) folds a multiview drawing into space: each view on its
   own plane, the object reconstructed between them.  **Nothing is solved for and nothing is
-  stored** — a point in view P has view coordinates `plane::in_view` (the function `project`'s
-  residual reads), sits at `a·u_P + b·v_P` (`Basis::lift`), and a corner tied by `project` into
+  stored** — a point in view P has view coordinates `(a, b)` (what `project`'s residual reads),
+  sits at `a·u_P + b·v_P` (`Basis::lift`), and a corner tied by `project` into
   two non-parallel views is four rows in three unknowns, exact *because* the projection holds.
   "Non-parallel" is `overview::RCOND`, about a degree (past it 1/σ₃ flings a corner); `validate`
   refuses only the exactly-parallel pair.  A corner is a **pair of images and never a transitive
   class** (merging `Ff project Fa` with `Ff project F2a` collapses the object), its images
   **ordered by plane**, never by the statement.  An object edge is one both views draw, deduped by
   its **3D segment to a tolerance** (`SAME_POINT`).  Where a point *stands* is `overview::view_of`
-  — its membership, or for a datum's own origin and `toward`, that plane: every origin is the one
-  shared origin.  A line stands with each end where that end is.  `overview::drawable` is the
+  — its membership.  A line stands with each end where that end is.  `overview::drawable` is the
   per-kind polyline walk `svg::entity` and the workspace share, refined to `curve::flatness`.
   **Every plane is a pane**, drawn in or not; `overview::pane` is the *one* rule for its reach
   (geometry and origin, grown a little, never thinner than `LEAST_SIDE`), so face and axes agree.
@@ -1376,12 +1356,12 @@ Conventions:
   **unknown**: `flatten::values::params` puts `free(name, ty)` in `vals` (as `bind` does for an
   unbound formal) and records a `model::Declared` (dimension, seed) in `Expansion::unknowns` →
   `Sketch::declared`, which `expr::evaluate` reads (the seed, skipping `settle`; the declared
-  dimension, checked in `check_dim`) and a solved fold reads (`planes::fold_start`).  An unbound
+  dimension, checked in `check_dim`).  An unbound
   `param` states its type (`Length`/`Angle`/`Scalar`), takes the one keyless `hint(E)`; a seed on
   a bound one, an `Int` unknown and a module's unbound `param` are E040; `param` is refused by the
   parser inside a component (formals are its inputs) or block.  A call seeds a formal it leaves
   unbound with `InstVal::Hint` (`Wing(f, beta: hint(15deg))`).  **A name nothing declares is
-  E101** — in a dimension (`settle_text`), a fold, a pin (`settle_arg`), a dotted read nothing made
+  E101** — in a dimension (`settle_text`), a pin (`settle_arg`), a dotted read nothing made
   (`resolve`, unless it is an instance's unbound formal) — and the relation is not emitted
   (`Walk::refused`), so it never reaches the expression graph as an unknown; W111 is gone.  A
   dotted name read in a body is made absolute under `Scope::instance_prefix`.  `t == s` over an

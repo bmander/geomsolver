@@ -20,8 +20,8 @@ The language has **modules** (`use engine.parts`, spec §14.4): `modules.rs` lin
 components and params into a program, the CLI resolves a name against the files beside the
 document and the core's compiled-in library (`library.rs`) resolves it in the browser.
 `rust/examples/engine.sv` — a four-cylinder engine in three views — is written as six modules
-over the standard library's `std` (`rust/lib/std.sv`), whose `ThreeViews` lays out the three
-principal views from one grounded point.
+over the standard library's `std` (`rust/lib/std.sv`), whose standard planes are the three
+principal views, all at the world origin; `engine.svd` places them on paper.
 
 Named chains (issue #49.3, Solvent §6.6) bind `profile = line -> … -> close` as an ordinary
 component member. A closed loop is a sweep section (`body := solid(part.profile, depth: 8mm)`);

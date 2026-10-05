@@ -1,5 +1,11 @@
 # Spatial constraints with solved attitudes: execution plan
 
+**Status (2026-10-05): superseded in part.** The spatial relations, cones, cylinders and spheres
+built here stand. The solved views it built (folds, `attitude: free`, `offset: free`,
+`through:`, quaternion attitudes, hinges, `against` between solved views) were replaced by
+planes over rays, with points in space and no paper placement: [planes-plan.md](planes-plan.md)
+(#81). Read the spellings below as history.
+
 The [spiral-bevel layout plan](spiral-bevel-layout-plan.md) needs a true 90° hypoid: the shaft
 angle and the offset between two skew axes drawn in different views are stated, and the
 pinion's pitch cone is solved to touch the gear's at the mean point. No document can say that

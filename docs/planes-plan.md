@@ -1,7 +1,8 @@
 # Points in space, planes from rays, views off the paper: plan
 
-**Status (2026-10-04): in progress** on branch `planes-from-rays-76`, tracked by #81, for issue
-#76 items 1 and 2. Follow-up spellings are #80.
+**Status (2026-10-05): implemented** on branch `planes-from-rays-76`, tracked by #81, for issue
+#76 items 1 and 2. Follow-up spellings are #80. Where the build departed from this plan, or
+settled what it left open, is [As built](#as-built) at the end.
 
 Today a point is either *on the page* or drawn *in a view*. A point on the page has no place in
 space, and a view is two things at once: a plane in space (its basis) and a picture placed on
@@ -473,6 +474,48 @@ All of these were settled on 2026-10-04. No question is open.
 * **`along: u/v` is measured in space**, across planes too: `p distance(d, along: u) P` is how
   far `p` stands along `P.u` from `P.origin`. Within `P` it is `p`'s own x, the number it has
   always been.
+
+## As built
+
+Decided while building, 2026-10-04 to 2026-10-05:
+
+* **No plane 0.** `Sketch::new()` mints no plane. A point with neither a plane nor a `z` is a
+  *2D sketch's* point (a JSON document, a hand-built test sketch, the bindings' 2D tools),
+  pictured on the front plane but with no lift, so a relation in space refuses it; the language
+  never makes one. `use std` is what gives a document
+  `std.front`, as an ordinary library plane.
+* **The standard datums flatten after the document**, so a document's own points keep their
+  indices; `use std` adds five points (four plane origins and `std.origin`), four planes and four
+  rays (`std.x`, `std.y`, `std.z`, and `std.back`, the x axis reversed, for `std.up`'s v). A plane's
+  origin is minted in the point pass. `std.origin` is a point of its own in `std.front`, fixed at
+  `(0, 0)`, not an alias of `std.front.origin`.
+* **Settling, not freezing.** `views::place` solves the rays, plane origins and the relations
+  among them before the main solve, round by round, alternating with seed settlement while a seed
+  reads across planes. It moves nothing that the main solve then holds: planes and rays stay
+  unknowns of the solve. Rows over parameters all held (`use std`'s axes) are left out of
+  `cgraph`, so plans and drags are unchanged.
+* **A frame turned within a plane is `std.Turned(o, t)`**: the plane through `o` whose u runs
+  toward `t`, drawn in the plane `o` and `t` are in (`axes := std.Turned(o, t) in std.front`).
+  `hint(at: P, x: …, y: …)` seeds a point in plane `P`'s own coordinates, which is how a part
+  turned within its plane is seeded. `std.Square` and `std.Stacked` were not needed by the corpus
+  and are not written.
+* **Across planes `along: u` is `Ordinate3U`/`V`**, in space, and draws no callout.
+* **E060** for a circle, arc or spline over a point in space ("an arc is drawn in a plane, and
+  `x` stands in space: draw it `in` one"), **E080** for a face over one; a traced component
+  refuses a relation in space.
+* **The app**: a new document is `use std`; every view opens drawing on `std.front`, so a press
+  never lands a point in space by accident. The plane tool picks two drawn lines and writes
+  `plane(u: …, v: …)`. A paste reuses the destination's held plane of the same basis and origin,
+  so it draws in the plane the document already has; a drag part brings the planes its points
+  are drawn in, as walls.
+* **The sheet pose is gone** with the identity it had become: `plane::in_view`, `on_page`,
+  `FacePoly::pose` and `PageFrame`'s pose.
+
+**The gate** (every example's DOF and the world position of every named point, against the
+pre-switch baseline) held but for: `square` (its DOF-1 scatter seed shifts), the V-twin's free
+crank angle (stays at its 180° seed, was 195.6°; DOF 1 either way) and the bracket's auxiliary
+view (now unrotated on paper). The hypoid layout decomposes into 115 blocks (was 119), so two
+rescue tests pick new jitter seeds.
 
 ## Appendix: the corpus
 

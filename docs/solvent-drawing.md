@@ -87,8 +87,8 @@ and WebAssembly ABI accept a bundle of source texts and use the same compiler an
 * Stroke widths, dash lengths, and lettering use CSS pixels (96 per inch), independently of
   model scale. Sizes and scales must be finite and positive.
 
-A model plane supplies geometric orientation and origin only. Its old 2D sheet placement is
-not copied into a solid view. Page position and scale come exclusively from the `.svd` file.
+A model plane supplies geometric orientation and origin only; it has no place on paper. Page
+position and scale come exclusively from the `.svd` file.
 
 ## Views and sections
 
@@ -98,6 +98,7 @@ view iso(m.body) from isometric at (150mm, 150mm)
 view auxiliary(m.body) from m.datum at (150mm, 220mm)
 section cutaway(m.body) from front cut m.midplane at (60mm, 240mm)
 sketch construction(m.linkage) at (60mm, 100mm)
+sketch top(m) from m.std.top at (80mm, 90mm)
 ```
 
 A solid view names an explicit solid, including an intermediate or cutter when desired.
@@ -112,7 +113,11 @@ hidden edges, and suppress tessellation seams through the existing renderer.
 model planes for geometric relationships; choose presentation-only orientations in the drawing.
 
 A `sketch` presents the model's existing 2D coordinates. Its target can be a model alias, a
-component/member scope, or an individual entity. It has no arbitrary 3D viewing direction.
+component/member scope, or an individual entity. It draws one plane: `from` names a model plane
+path, and omitted it means the model's `std.front`. Only the target's geometry drawn in that
+plane is shown, in that plane's own coordinates, so each view of a multiview model is its own
+`sketch` placed where the sheet wants it (`bracket.svd`). It has no arbitrary 3D viewing
+direction.
 Points and plane glyphs are hidden by default; styles can show them. A bare `.sv` still gets an
 automatic editor preview without an authored drawing. The model canvas calls out every
 dimensioned constraint, as an editor does (Options ▸ dimensions turns them off; editing one
@@ -185,7 +190,7 @@ Privacy alone does not control display.
 `.sv` rejects `view`, `section`, `dimensions`, `style`, `class` clauses, and callout placements.
 Move output requests and styling to a drawing. Keep model planes needed by geometry, while
 replacing page-spacing constructions with drawing positions. The six `vtwin_*.svd` part sheets
-demonstrate this separation; their models no longer instantiate `ThreeViews` for page layout.
+demonstrate this separation; a model's planes carry no place on paper at all (#81).
 
 Model serialization and editor reconciliation omit styles, classes, and callout placements,
 while preserving semantic geometry roles.
