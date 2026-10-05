@@ -521,6 +521,38 @@ crank angle (stays at its 180° seed, was 195.6°; DOF 1 either way) and the bra
 view (now unrotated on paper). The hypoid layout decomposes into 115 blocks (was 119), so two
 rescue tests pick new jitter seeds.
 
+## Addendum: axes through the origin, and a bare plane (0.43, #84)
+
+Decided 2026-10-05, after the above was built:
+
+* **`ray` is `axis`**: a direction and a place with no start is not a ray. `RayE` is `AxisE`, the
+  kernels `Axis*`, JSON `"axes"`; `ray` no longer parses.
+* **A plane's axes pass through its origin.** `push_plane` mints two intrinsic `PlaneAxis` rows
+  (the `point_on_axis` kernel over `o`), which place both axes; an axis a plane is first to place
+  is stood through the plane's origin seed. The shared-axis stack above is withdrawn: a plane
+  standing off another takes its own axes, held (`fix(…) end.u`) or `parallel` to the other's.
+* **A held place.** `fix(px ==, py ==, pz ==) t` holds an axis's place, placing it first so no
+  later relation frees it. `std`'s axes are held so, and a plane over two wholly held axes has its
+  origin held where they meet (`views::origins_on_axes`, right after the `fix` pass), adding no
+  row; held axes that miss or run alike, or a plane held off its held axes, are **E067**.
+* **A bare plane** mints the axes it is not given (`P.u`, `P.v`), free and seeded as the front's:
+  `p := plane` is seven freedoms. `a coincident b` between axes is `AxisCoincident`, one line
+  either way round (four rows), so two square axes `coincident` with `p.u` and `p.v` make a
+  frame of six freedoms (`tests/bare_plane.rs`).
+* **Deviation: a drawn line as an axis gives its direction only.** The plan stood the hidden axis
+  of `plane(u: hinge, …)` on the line too (the line's `p1` on it). That made the origin rows
+  redundant wherever a document also placed the origin on the line (`std.Turned`), and above
+  `NUMERIC_MAX` the structural count alone then misread the V-twin's crank freedom. The hidden
+  axis stays parallel to the line and passes through the plane's origin; `Turned` keeps
+  `o coincident axes.origin`.
+* **An origin already on an axis is placed in fewer rows.** Over `std.y`, `P.origin coincident M`
+  states three rows for one freedom; `P.origin coincident std.front` (skew_axes, the hypoid
+  fixture) or an ordinate along the shared axis (`front.origin distance(0mm, along: u) view`, the
+  spiral bevel's pitch view) states one, keeping the structural count square.
+
+**The gate** held: every example's DOF and every named point's position are as before. The
+hypoid layout decomposes into 125 blocks, 14 deep (ten plane origins become blocks of three).
+
 ## Appendix: the corpus
 
 The figures come from the 2026-10-04 survey:

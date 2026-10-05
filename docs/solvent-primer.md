@@ -697,43 +697,72 @@ t := axis hint(x: 0.8, y: 0, z: 0.5)   // the seed is a direction, normalised
 t perpendicular std.y
 t angle(30deg) std.x                  // unsigned, in space; 0° or 180° is E040: say `parallel`
 p coincident t                        // a point on it gives it its place
+t coincident s                        // one line, either way round (four rows)
 fix(x == 0, y == 0, z == 1) z_axis    // a direction held outright
+fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x_axis   // and where it stands
 ```
 
 An axis read only as a direction counts two freedoms; `p coincident t` adds the two of its place.
-`parallel`, `perpendicular` and `angle` take an axis beside an axis or a drawn line, and wherever an axis
-is expected a drawn line is read as one, from `p1` toward `p2`.
+`px`, `py`, `pz` are the point on it nearest the world origin. `parallel`, `perpendicular` and
+`angle` take an axis beside an axis or a drawn line, and wherever an axis is expected a drawn line
+is read as one, from `p1` toward `p2` — for its direction only.
 
-**A plane is two axes**: `P := plane(u: r, v: s)`. Right is `u`, out of the plane is `u × v`, and up
-is out × u, so `v` need not be square to `u`: it says which plane, and which side is up. The axes
-give only the attitude; where the plane stands is its own (three unknowns), so two planes may
-share their axes. Every plane has members `P.u` and `P.v` (its axes) and `P.origin` (a point
-drawn in `P`, held at `(0, 0)`). The origin floats until something places it:
+**A plane is two axes through its origin**: `P := plane(u: r, v: s)`. Right is `u`, out of the
+plane is `u × v`, and up is out × u, so `v` need not be square to `u`: it says which plane, and
+which side is up. `P.origin` (a point drawn in `P`, held at `(0, 0)`) lies on both axes, so where
+the axes stand, the plane stands: a plane over `std.x` and `std.z` is the front plane, at the
+world origin, and two held axes that do not meet are E067. `P.u` and `P.v` are the axes in the
+slots. **A bare `P := plane` mints them** (`P.u`, `P.v`), free: three numbers of place and two of
+direction each, seven freedoms; `plane(u: std.x)` mints only `P.v`. A frame of two square axes:
 
-- `P.origin coincident p`: the plane's origin is the point `p`;
+```sv
+u := axis
+v := axis
+u perpendicular v
+p := plane
+u coincident p.u
+v coincident p.v            // DOF 6: p stands where u and v meet, its normal u × v
+```
+
+What else places a plane:
+
+- `P.origin coincident p`: the plane's origin is the point `p` (three rows: with an axis already
+  through it, say less — `P.origin coincident std.front` puts an origin already on `std.y` at the
+  world origin in one);
 - `P coincident p`: the plane passes through `p`; `l coincident P` lays a line in it;
 - `p distance(d, along: n) P`: a point's signed distance along the plane's normal;
-- `P distance(d) Q`: `Q` stands `d` along `P`'s normal (one row); the two are parallel when they
-  share their axes, as a stack does — there is no `parallel` or `angle` between two planes yet:
-  relate their axes;
-- `fix(x == 0, y == 0, z == 0) P` holds where it stands.
+- `P distance(d) Q`: `Q` stands `d` along `P`'s normal (one row); the two are parallel when their
+  axes are — there is no `parallel` or `angle` between two planes yet: relate their axes;
+- `fix(x == 0, y == 0, z == 0) P` holds where it stands, which must be on its axes (E067).
+
+A plane standing off another cannot share its axes, which pass through the other's origin: it
+takes its own. Held outright, the stand-off a section or a loft's end needs:
+
+```sv
+end := plane hint(x: 0mm, y: 40mm, z: 0mm)
+fix(x == 0mm, y == 40mm, z == 0mm) end
+fix(x == 1, y == 0, z == 0) end.u
+fix(x == 0, y == 0, z == 1) end.v
+```
 
 A parallel stack, which is what an offset is:
 
 ```sv
-a := plane(u: std.x, v: std.z)
-b := plane(u: std.x, v: std.z)
+a := plane(u: std.x, v: std.z)       // the front plane, at the world origin
+b := plane hint(x: 0, y: -10, z: 0)
+b.u parallel std.x
+b.v parallel std.z
 a distance(12) b
 n := axis hint(x: 0, y: -1, z: 0)     // square to both, through both origins: stops b sliding
 n perpendicular a
 n coincident a.origin
-n coincident b.origin
-a.origin coincident std.origin       // DOF 0
+n coincident b.origin                 // DOF 0
 ```
 
 Two planes lying on one another are permitted and warned (W113). A free plane reports what is
 still free: `free views: P.attitude, P.origin`. `solventc --where P` lists `P.x`, `P.y`, `P.z`
-(where it stands) and `P.u`, `P.v`, `P.n` (its axes).
+(where it stands) and `P.u`, `P.v`, `P.n` (its axes); a minted axis's numbers are `P.u.x` …
+`P.u.pz`.
 
 **A plane is also a view.** A point drawn `in P` has `P`'s own coordinates, and `a project b` says
 two points drawn in two planes are two images of one corner: their coordinates along the line the
@@ -1660,7 +1689,7 @@ in std.front {
 t := axis hint(x: 0.87, y: 0, z: 0.5)
 t perpendicular std.y
 side := plane(u: t, v: std.y)
-std.origin coincident side.origin
+side.origin coincident std.front     // on std.y already, as its axes pass through it
 in side {
   pax := line(hint(x: 0, y: 10), hint(x: 60, y: 12))
   pax.p1 distance(0, along: u) side
@@ -1675,7 +1704,8 @@ gax distance(offset) pax        // the offset: their common perpendicular, in sp
 `solventc` reports `28 params, 28 equations, structural rank 28; DOF 0`, and `--where pax` gives
 `pax.p1.y = 17.5`, `pax.p2.y = 17.5`. The axes are in different planes, so `angle` and `distance`
 are spatial: the unsigned angle between directions and the common-perpendicular distance. The side
-plane stands on `std.y` and an axis `t` held square to it, so it can only turn about y; the two
+plane stands on `std.y` and an axis `t` held square to it, so it can only turn about y, and its
+origin is on `std.y`, so the front plane puts it at the world origin in one row; the two
 statements settle where `t` points (at 90°, along x: the side plane is the top plane, the pinion
 axis 17.5 behind the gear's, crossing it square) and the pinion axis's height. Without the offset:
 `28 params, 27 equations, structural rank 27; DOF 1` (the pinion axis slides along the common
@@ -1703,11 +1733,12 @@ in std.front {
   horizontal gen_g
 }
 
-// the axial planes, square to P over the generators and through M
+// the axial planes, square to P over the generators and through M: each origin is on its axis
+// std.y, so the front holds it at M
 G := plane(u: gen_g, v: std.y)
-G.origin coincident M
+G.origin coincident std.front
 Q := plane(u: gen_p, v: std.y)
-Q.origin coincident M
+Q.origin coincident std.front
 
 // each axis in its axial plane, from its apex: the apex's image is on P and projects to the apex
 // drawn in P; how long an axis is drawn says nothing about the cone
@@ -1728,7 +1759,7 @@ gax angle(90deg) pax
 gax distance(E) pax
 ```
 
-`51 params, 51 equations, structural rank 51; DOF 0`, with `--where A` at `(95.5837, 18.0989)`.
+`57 params, 57 equations, structural rank 57; DOF 0`, with `--where A` at `(95.5837, 18.0989)`.
 Each axial plane stands on its pitch generator and `std.y`, so it is square to P and holds the
 generator; drawing each axis from its apex's image makes P each cone's tangent plane along its
 generator. Pitch radii, shaft angle and offset are four conditions; the gear's 60° pitch angle is
@@ -1783,7 +1814,7 @@ gax angle(90deg) pax
 gax distance(E) pax
 ```
 
-`37 params, 37 equations, structural rank 37; DOF 0`. Here the contact is stated rather than
+`43 params, 43 equations, structural rank 43; DOF 0`. Here the contact is stated rather than
 constructed: the gear's apex on P makes P the gear cone's tangent plane at M, and
 `gc tangent(M) pc` makes it the pinion's, so the pinion's apex lands on P unasked. The pinion's
 plane stands on two axes the solve turns, held square to each other, with its origin at M;

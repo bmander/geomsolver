@@ -1,6 +1,19 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.42 — October 2026**
+**Specification, Draft 0.43 — October 2026**
+
+**[0.43] A plane's axes pass through its origin, and a bare plane is free.** `P.u` and `P.v` are
+lines through `P.origin`, so where a plane's axes stand, the plane stands: `plane(u: std.x, v:
+std.z)` is the front plane at the world origin, and a plane may no longer share another's axes
+while standing off it — it takes its own, held or `parallel` (§6.7, §6.10). `P := plane` with no
+slot written mints both axes, `P.u` and `P.v`, free: seven freedoms, three of place and two of
+direction each; a slot left out of `plane(u: r)` is minted alone. **`a coincident b` between two
+axes** says they are one line, either way round (four rows), so `u coincident P.u` places a plane
+by its axes. An axis's place is held as its direction is, by `px`, `py`, `pz` — the point on it
+nearest the world origin: `fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x`, which is how
+`std`'s axes are held. A plane over two held axes stands where they meet; held axes that miss,
+that run alike, or a plane held off its held axes, are **E067**. A drawn line serving as an axis
+gives its direction only.
 
 **[0.42] A point stands in space, and a plane is two axes.** A point drawn in no plane stands in
 space, with three coordinates — `hint(x: 1, y: 2, z: 3)`, `fix(x == 1, y == 2, z == 3) p` — and a
@@ -284,7 +297,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Cone` | an axis `Line` drawn in some view — the apex its start, opening toward its end — + a half-angle, on no sheet **[0.26]** | 1 of its own (`half`), beyond its axis's |
 | `Cylinder` | an axis `Line` drawn in some view + a radius, on no sheet **[0.26]** | 1 of its own (`r`), beyond its axis's |
 | `Axis` | a directed line in space with no start, drawn in no view **[0.42]** | 2 (its direction), and 2 more once a relation reads where it is |
-| `Plane` | **[0.42]** a plane in space: its attitude two axes `u`, `v`, and where it stands; a **view**, the points drawn in it having its own coordinates (§6.7) | 3 of its own (where it stands), beyond its axes' |
+| `Plane` | **[0.42]** a plane in space: its attitude two axes `u`, `v` through its origin **[0.43]**, and where it stands; a **view**, the points drawn in it having its own coordinates (§6.7) | 3 of its own (where it stands), beyond its axes'; a bare `plane` is 7 with the axes it mints **[0.43]** |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
 | `Face` | a planar profile (§6.8) or an ordered boundary on an explicit spatial support (§6.20) | 0 — it owns no parameter |
 | `Solid` | a face swept, or a term over other solids **[0.18]** | 0 — it owns no parameter |
@@ -316,7 +329,8 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Cone` | `.half` | `Angle` — written in degrees in `hint(half: …)`, stated by `angle(θ) k` **[0.26]** |
 | `Cylinder` | `.r` | `Length` **[0.26]** |
 | `Axis` | `.x`, `.y`, `.z` | its unit direction — seeded by `hint(x:, y:, z:)` (normalised) and held by `fix(x == …, y == …, z == …)` **[0.42]** |
-| `Plane` | `.u`, `.v` | `Axis` — its axes, through its origin **[0.42]** |
+| `Axis` | `.px`, `.py`, `.pz` | `Length` — where it stands: its point nearest the world origin, held by `fix(px == …, py == …, pz == …)` once a relation reads it **[0.43]** |
+| `Plane` | `.u`, `.v` | `Axis` — its axes, through its origin **[0.42]**; minted where the slot is not written (`P.u`, `P.v`) **[0.43]** |
 | `Plane` | `.origin` | `Point` — drawn in the plane and held at its `(0, 0)` **[0.42]** |
 | `Plane` | `.x`, `.y`, `.z` | `Length` — where it stands in space: read by a seed, held by `fix(x == …, y == …, z == …)` **[0.42]** |
 | `Line` | `.p1`, `.p2` | `Point` **[0.2]** |
@@ -332,10 +346,11 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 drawn lines, each read as the axis from its `p1` toward its `p2`) and owns three numbers of its
 own, where it stands. Its attitude is its axes': right is `u`, out of the plane is `u × v`, toward
 its viewer, and up is out × u, so `v` need not be square to `u` — it says which plane, and which
-side is up. Two planes may share their axes. No plane has a rotor, an angle or a `toward`: 0.6's
-datum `plane(origin: o, toward: q)`, its intrinsic unit rotor `(c, s)` and the derived `.angle`
-are retired, and so is 0.15's reading of a plane with no attitude written as the page's, and
-0.15's `frame`, which names nothing now.
+side is up. **[0.43]** The axes pass through its origin, so two planes share an axis only where
+both stand on it. No plane has a rotor, an angle or a `toward`: 0.6's datum `plane(origin: o,
+toward: q)`, its intrinsic unit rotor `(c, s)` and the derived `.angle` are retired, and so is
+0.15's reading of a plane with no attitude written as the page's, and 0.15's `frame`, which names
+nothing now.
 
 ### 3.3 Dimensional analysis and units **[0.7]**
 
@@ -739,19 +754,24 @@ the one at the world origin with u = x to the right and v = z up, its viewer at 
 seeds its direction, and relations place it: `t parallel s`, `t perpendicular s` and `t angle(θ)
 s` against an axis or a line, `p coincident t` for a point on it, and against a plane `t coincident
 P` (it lies in `P`), `t parallel P` (it runs along `P`) and `t perpendicular P` (it is square to
-`P`); each reads either way round. `fix(x == 0, y == 0, z == 1) t` holds its direction. An axis read
-only as a direction has two freedoms, and one whose place a relation reads has two more. **A drawn
-line is an axis** wherever an axis is asked for, from its `p1` toward its `p2`, as its points stand.
+`P`); each reads either way round. **[0.43]** `t coincident s` between two axes says they are one
+line, either way round: four rows, the seed choosing the sense as it does for `parallel`.
+`fix(x == 0, y == 0, z == 1) t` holds its direction, and **[0.43]** `fix(px == 0, py == 0, pz ==
+0) t` where it stands — `px`, `py`, `pz` are its point nearest the world origin. An axis read only
+as a direction has two freedoms, and one whose place a relation reads has two more. **A drawn line
+is an axis** wherever an axis is asked for, from its `p1` toward its `p2`, as its points stand —
+**[0.43]** for its direction: a plane over a line holds a hidden axis parallel to it.
 There is no vector arithmetic: a direction is a thing constrained, never a value computed.
 
-**A plane is two axes and a place.**
+**A plane is two axes through a place.**
 
 ```
-right := plane(u: std.y, v: std.z)        // looked at from +x: y to the right, z up
-right.origin coincident std.origin
+right := plane(u: std.y, v: std.z)        // looked at from +x: y to the right, z up, at the origin
 t := axis hint(x: 0.87, y: 0, z: 0.5)
 t perpendicular std.y
 side := plane(u: t, v: std.y)             // turns about y as the solve turns t
+side.origin coincident std.front          // on std.y already: at the world origin
+p := plane                                // [0.43] its axes p.u and p.v minted, free
 ```
 
 `plane(u: r1, v: r2)` takes two axes or drawn lines and nothing else; a plane's 0.10–0.41 labels
@@ -759,15 +779,22 @@ side := plane(u: t, v: std.y)             // turns about y as the solve turns t
 as triples of numbers — are refused where written. Its **basis** is read off the axes'
 directions: `û = u/‖u‖`; the normal `n̂` is `u × v` normalised, out of the plane toward its
 viewer; and `v̂ = n̂ × û`. So `v` need not be square to `u`: it says which plane, and which side
-is up. The axes give the attitude and nothing else — where they lie does not matter to the plane,
-and two planes may share them.
+is up. **[0.43]** The axes pass through the plane's origin: each plane carries two rows, its origin
+on each axis, so where the axes stand the plane stands, and `u coincident P.u` places a plane by
+an axis. Two planes share an axis only where both pass through it. A slot left unwritten mints an
+axis, `P.u` or `P.v`, free and seeded as the front's (u along x, v along z): a bare `P := plane`
+has seven freedoms, three of place and two of direction for each axis. 0.42's planes sharing
+axes while standing apart are withdrawn: a plane parallel to another takes its own axes, held or
+`parallel` to the other's.
 
-**Where a plane stands is its own**: three unknowns, its origin's place in space, read by a seed
-as `P.x`, `P.y`, `P.z`, seeded by `hint(x:, y:, z:)` and held by `fix(x == 0, y == 0, z == 0) P`.
-A plane floats until something places it. `P.origin coincident p` puts its origin at `p`, all
-three. `P coincident p` passes it through `p`, and `Q distance(d) P` stands it `d` off `Q`
+**Where a plane stands** is three unknowns, its origin's place in space, read by a seed as `P.x`,
+`P.y`, `P.z`, seeded by `hint(x:, y:, z:)` and held by `fix(x == 0, y == 0, z == 0) P`. A plane
+floats along its axes until something places it. `P.origin coincident p` puts its origin at `p`,
+all three. `P coincident p` passes it through `p`, and `Q distance(d) P` stands it `d` off `Q`
 (§6.10): each takes the one freedom across the plane and leaves it to slide within itself, which
-the rest of the document settles or leaves free.
+the rest of the document settles or leaves free. **[0.43]** A plane over two axes wholly held
+stands where they meet, and adds no row; held axes that do not meet or run alike, and a plane
+held where its held axes are not, are **E067**.
 
 Every plane has three members. `P.u` and `P.v` are its axes, axes through its origin. `P.origin`
 is a point drawn in `P` and held at its `(0, 0)`, which a component may be handed and a relation
@@ -952,13 +979,14 @@ What a report says about a solid (§16.3) is therefore `NAME.volume`, `NAME.area
 
 **`P distance(d) Q` stands `Q` off `P`**: `Q`'s origin is `d` along `P`'s normal, `(o_Q − o_P)·n̂_P
 − d = 0`, signed, positive on `P`'s out side. It is one row, and says nothing of `Q`'s attitude;
-over planes that share their axes it is two parallel planes `d` apart, which is what 0.18's
+over planes whose axes are parallel it is two parallel planes `d` apart, which is what 0.18's
 `offset:` said:
 
 ```
-deck := plane(u: std.x, v: std.y)
-lid := plane(u: std.x, v: std.y)
-deck.origin coincident std.origin
+deck := plane(u: std.x, v: std.y)         // [0.43] at the world origin, where its axes meet
+lid := plane hint(x: 0, y: 0, z: 12mm)
+lid.u parallel std.x
+lid.v parallel std.y
 deck distance(12mm) lid
 n := axis
 n perpendicular deck
@@ -1552,7 +1580,7 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder); **[0.42]** (point, axis), (axis, plane). Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
+| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round. Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
 | `distance` | prefix | on a line: the distance between its own ends |
@@ -2109,6 +2137,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E064 | withdrawn **[0.42]**: was a solved view the model cannot hold (`fold: along`, `through:`) **[0.23]** |
 | E065 | a relation in space degenerate at the solve: views a `project` relates that came out parallel, lines whose skew distance is stated that came out parallel (§6.7) **[0.23]** |
 | E066 | withdrawn **[0.42]**: was `against` between planes that turn apart **[0.23; narrowed 0.26]** |
+| E067 | a plane that cannot stand on its held axes: two wholly held axes that do not meet or run alike, or a plane held where its held axes are not — a plane's axes pass through its origin (§6.7) **[0.43]** |
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
 | E071 | a component defined twice in one file (§14.4) **[0.12]** **[0.30]** |
 | E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc, a circle or a point, a circle standing *in* a loop rather than being one, **[0.19]** an edge that meets neither neighbour and so is walked two ways, a straight loop with fewer than three corners, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body; **[0.42]** a face over a point standing in space, and a prism's side generating in a plane the solve places (§6.15.2) |
