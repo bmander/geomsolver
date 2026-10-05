@@ -505,7 +505,8 @@ Decided while building, 2026-10-04 to 2026-10-05:
   refuses a relation in space. A formula curve over a point in no plane is not refused yet.
 * **`P distance(d) Q` is one row**, `Q`'s origin `d` along `P`'s normal: the planes are parallel
   because a stack shares its rays, not because the word says so (forcing it would make every
-  stack read `over`). `parallel`, `perpendicular` and `angle` between two planes are not built;
+  stack read `over`). `perpendicular` and `angle` between two planes are not built (`parallel`
+  is, 0.43);
   relate their rays.
 * **The app**: a new document is `use std`; every view opens drawing on `std.front`, so a press
   never lands a point in space by accident. The plane tool picks two drawn lines and writes
@@ -520,6 +521,43 @@ pre-switch baseline) held but for: `square` (its DOF-1 scatter seed shifts), the
 crank angle (stays at its 180° seed, was 195.6°; DOF 1 either way) and the bracket's auxiliary
 view (now unrotated on paper). The hypoid layout decomposes into 115 blocks (was 119), so two
 rescue tests pick new jitter seeds.
+
+## Addendum: axes through the origin, and a bare plane (0.43, #84)
+
+Decided 2026-10-05, after the above was built:
+
+* **`ray` is `axis`**: a direction and a place with no start is not a ray. `RayE` is `AxisE`, the
+  kernels `Axis*`, JSON `"axes"`; `ray` no longer parses.
+* **A plane's axes pass through its origin.** `push_plane` mints two intrinsic `PlaneAxis` rows
+  (the `point_on_axis` kernel over `o`), which place both axes; an axis a plane is first to place
+  is stood through the plane's origin seed. The shared-axis stack above is withdrawn: a plane
+  standing off another takes its own axes, held (`fix(…) end.u`) or `parallel` to the other's.
+* **A held place.** `fix(px ==, py ==, pz ==) t` holds an axis's place, placing it first so no
+  later relation frees it. `std`'s axes are held so, and a plane over two wholly held axes has its
+  origin held where they meet (`views::origins_on_axes`, right after the `fix` pass), adding no
+  row; held axes that miss or run alike, or a plane held off its held axes, are **E067**.
+* **A bare plane** mints the axes it is not given (`P.u`, `P.v`), free and seeded as the front's:
+  `p := plane` is seven freedoms. `a coincident b` between axes is `AxisCoincident`, one line
+  either way round (four rows), so two square axes `coincident` with `p.u` and `p.v` make a
+  frame of six freedoms (`tests/bare_plane.rs`).
+* **A drawn line as an axis is the line.** `plane(u: hinge, …)`'s hidden axis is parallel to the
+  line and through its start, so the plane stands on the hinge. Built first with the start
+  alone, `std.Turned`'s two lines from `o` made the plane's four origin rows say three things —
+  a dependency of the figure, not of the columns, so above `NUMERIC_MAX` the structural count let
+  the surplus row "fix" the V-twin's free crank (DOF 1 read as 0, a piston 54 off). So a plane
+  whose two lines share an end stands each axis on that end and the plane at it: three rows,
+  `Coincident3` of its origin and the end, in place of the four `PlaneAxis` rows
+  (`entities::axes_along`), and `Turned` says no `o coincident axes.origin`. A dependency a
+  document states itself stays invisible to the count above `NUMERIC_MAX`: #88 checks rank per
+  block.
+* **An origin already on an axis is placed in fewer rows.** Over `std.y`, `P.origin coincident M`
+  states three rows for one freedom; `P.origin coincident std.front` (skew_axes, the hypoid
+  fixture) or an ordinate along the shared axis (`front.origin distance(0mm, along: u) view`, the
+  spiral bevel's pitch view) states one, keeping the structural count square.
+
+**The gate** held: every example's DOF and every named point's position are as before. The
+hypoid layout decomposes into 123 blocks, 14 deep; its folded views stand on their hinges, so
+`FoldedView` no longer says `parent coincident view.origin` or `hinge.p1 coincident view`.
 
 ## Appendix: the corpus
 

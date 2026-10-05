@@ -174,7 +174,7 @@ fn input_edge_names_cannot_steal_sweep_cap_names() {
     let e = case("cap_collision_control");
     assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
     let src=source("cap_collision_control").replace("bottom","start")
-        .replace("result := solid(f,depth: 2mm)","in std.front {\nax0 := point\nfix(x == -1, y == 0) ax0\nax1 := point\nfix(x == -1, y == 5) ax1\naxis := line(ax0,ax1)\n}\nresult := solid(f,about:axis,sweep:90deg)");
+        .replace("result := solid(f,depth: 2mm)","in std.front {\nax0 := point\nfix(x == -1, y == 0) ax0\nax1 := point\nfix(x == -1, y == 5) ax1\nax := line(ax0,ax1)\n}\nresult := solid(f,about:ax,sweep:90deg)");
     let e = read(&src);
     assert!(!program::solid_diagnostics(&e.sketch, &e.map).is_empty());
 }

@@ -116,7 +116,7 @@ impl<'a> P<'a> {
                 // folded into `plane` (bmander/geomsolver#47, item 6; #81)
                 self.fail(
                     "`frame` is folded into `plane`: write `f := plane(u: r1, v: r2)` over two \
-                     rays or lines, whose origin is `f.origin`, or turn a frame within a plane \
+                     axes or lines, whose origin is `f.origin`, or turn a frame within a plane \
                      with `std.Turned(o, t)`",
                 );
                 None

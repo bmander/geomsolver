@@ -355,7 +355,7 @@ export class Curve extends Styled {
   }
 }
 
-/** A plane: two rays and a place it stands, its basis read off the rays — `u` along the first,
+/** A plane: two axes and a place it stands, its basis read off the axes — `u` along the first,
  *  `v` what is left of the second, the viewer along `u × v` (`docs/planes-plan.md`).  Points
  *  drawn *in* it (`Point.plane`) have its two coordinates, which is what a `project` between two
  *  of them relates.  Its one point is its origin, drawn in it and held at `(0, 0)`. */
@@ -526,14 +526,14 @@ export class Sketch {
     return this.circles[i];
   }
 
-  /** A plane held at the world's origin, looking along `u × v`, over two rays a `fix` would
+  /** A plane held at the world's origin, looking along `u × v`, over two axes a `fix` would
    *  hold, and its origin.  The core orthonormalises the basis and refuses one that spans no
    *  plane. */
   plane(u: readonly [number, number, number], v: readonly [number, number, number], name = ''): Plane {
     const i = withStr(name, (p, n) =>
       core().gcs_sketch_plane(this.handle, u[0], u[1], u[2], v[0], v[1], v[2], p, n));
     if (i < 0) throw new Error(lastError() || 'u and v do not span a plane');
-    this.touch();     // its rays' intrinsic constraints came with it
+    this.touch();     // its axes' intrinsic constraints came with it
     return this.planes[i];
   }
 

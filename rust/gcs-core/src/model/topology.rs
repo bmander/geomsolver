@@ -103,7 +103,7 @@ impl Sketch {
             EntKind::Sphere => vec![EntRef::point(self.spheres[e.i()].center as usize)],
             EntKind::Cone | EntKind::Cylinder => vec![EntRef::line(self.axial(e).axis as usize)],
             // a direction and a place, and nothing drawn
-            EntKind::Ray => Vec::new(),
+            EntKind::Axis => Vec::new(),
             EntKind::Arc => {
                 let a = &self.arcs[e.i()];
                 vec![
@@ -115,12 +115,12 @@ impl Sketch {
             EntKind::Spline => {
                 self.splines[e.i()].ctrl.iter().map(|&c| EntRef::point(c as usize)).collect()
             }
-            // its two rays and its origin, the order its declaration names them
+            // its two axes and its origin, the order its declaration names them
             EntKind::Plane => {
                 let p = &self.planes[e.i()];
                 vec![
-                    EntRef::new(EntKind::Ray, p.u as usize),
-                    EntRef::new(EntKind::Ray, p.v as usize),
+                    EntRef::new(EntKind::Axis, p.u as usize),
+                    EntRef::new(EntKind::Axis, p.v as usize),
                     EntRef::point(p.origin as usize),
                 ]
             }
@@ -143,7 +143,7 @@ impl Sketch {
             // a face is a loop: lose one edge and it is not a loop, so it goes whole.  A solid
             // is its term, and a term missing an operand is not that solid
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Sphere
-            | EntKind::Cone | EntKind::Cylinder | EntKind::Ray
+            | EntKind::Cone | EntKind::Cylinder | EntKind::Axis
             | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => {
                 children.len()
             }
@@ -211,7 +211,7 @@ impl Sketch {
             EntKind::Sphere => self.spheres.len(),
             EntKind::Cone => self.cones.len(),
             EntKind::Cylinder => self.cylinders.len(),
-            EntKind::Ray => self.rays.len(),
+            EntKind::Axis => self.axes.len(),
             EntKind::Arc => self.arcs.len(),
             EntKind::Spline => self.splines.len(),
             EntKind::Plane => self.planes.len(),
@@ -228,8 +228,8 @@ impl Sketch {
             EntKind::Circle,
             EntKind::Arc,
             EntKind::Spline,
-            // a plane is built over its rays
-            EntKind::Ray,
+            // a plane is built over its axes
+            EntKind::Axis,
             EntKind::Plane,
             EntKind::Sphere,
             EntKind::Cone,

@@ -137,8 +137,8 @@ pub struct Diagnosis {
 }
 
 /// **Which freedoms of a plane are left**, by the name the ledger gives them (§16.3):
-/// `Q.attitude` for any of its rays' direction unknowns the diagnosis finds movable, `Q.origin`
-/// for any of the three numbers saying where it stands — a plane's turn is carried by its rays'
+/// `Q.attitude` for any of its axes' direction unknowns the diagnosis finds movable, `Q.origin`
+/// for any of the three numbers saying where it stands — a plane's turn is carried by its axes'
 /// six numbers and their rows, so naming the numbers would name nothing a reader wrote.  Empty
 /// where every plane is held, so what a report says of a drawing with no free plane is what it
 /// said before.
@@ -146,8 +146,8 @@ pub fn view_freedoms(sk: &Sketch, d: &Diagnosis) -> Vec<String> {
     let under: BTreeSet<u32> = d.under_params.iter().copied().collect();
     let mut out = Vec::new();
     for (i, p) in sk.planes.iter().enumerate() {
-        let rays = [p.u, p.v].map(|r| sk.rays[r as usize].d);
-        if rays.iter().flatten().any(|q| under.contains(q)) {
+        let axes = [p.u, p.v].map(|r| sk.axes[r as usize].d);
+        if axes.iter().flatten().any(|q| under.contains(q)) {
             out.push(format!("{}.attitude", sk.plane_name(i)));
         }
         if p.o.iter().any(|q| under.contains(q)) {

@@ -121,7 +121,7 @@ fn vertex_spelling_roundtrips_in_a_flat_program() {
         diameter := line(north,south)\n}}\nball := solid(face(rim,diameter),about: diameter)\n\
         wall := surface(ball,rim)\nboundary := seam(first_envelope,wall)\n\
         construction corner := vertex(shared,boundary)\nother := vertex(shared,boundary)\n\
-        extent := edge(shared,from: corner,to: other,along: axis)\n");
+        extent := edge(shared,from: corner,to: other,along: ax)\n");
     let mut p = solved(&source).program;
     let text = syntax::render_flat(&mut p).unwrap();
     let e = solved(text);

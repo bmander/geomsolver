@@ -417,7 +417,7 @@ pub unsafe extern "C" fn gcs_sketch_arc(
 }
 
 /// A plane fixed where a basis `(u, v)` stands, at the origin, orthonormalised on the way in —
-/// its two rays and its origin held.  -1 and an error when the two do not span a plane.
+/// its two axes and its origin held.  -1 and an error when the two do not span a plane.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn gcs_sketch_plane(
@@ -1097,7 +1097,7 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Sphere => 16,
         EntKind::Cone => 17,
         EntKind::Cylinder => 18,
-        EntKind::Ray => 19,
+        EntKind::Axis => 19,
     }
 }
 
@@ -1121,7 +1121,7 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         16 => EntKind::Sphere,
         17 => EntKind::Cone,
         18 => EntKind::Cylinder,
-        19 => EntKind::Ray,
+        19 => EntKind::Axis,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)
@@ -3984,7 +3984,7 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
             .unwrap_or_default();
         let seed: Vec<f64> =
             v.get("seed").map(|a| a.arr().iter().map(|x| x.as_f64()).collect()).unwrap_or_default();
-        // a plane over two rays or lines, `args` their names, and the name asked for
+        // a plane over two axes or lines, `args` their names, and the name asked for
         if kind == EntKind::Plane {
             let name = v.get("name").map(|n| n.as_str().to_string());
             return out_edit(gcs_core::edit::add_plane(&(*h).program, &args, name.as_deref()));

@@ -1,5 +1,5 @@
-//! A plane over two rays and a place in space (`docs/planes-plan.md`), and the hidden points in
-//! space a spatial relation reads: what a plane's rays and origin cost in freedoms, that none of
+//! A plane over two axes and a place in space (`docs/planes-plan.md`), and the hidden points in
+//! space a spatial relation reads: what a plane's axes and origin cost in freedoms, that none of
 //! it moves a number until a solve moves the plane, and the relations in space over them.
 use gcs_core::constraints::CKind;
 use gcs_core::model::{EntRef, Sketch};
@@ -26,12 +26,12 @@ fn top(h: f64) -> Basis {
     Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0, 0.0, h] }
 }
 
-/// A plane turned off every axis and stood off the origin, over two free rays, with two points
+/// A plane turned off every axis and stood off the origin, over two free axes, with two points
 /// drawn in it.
 fn turned() -> (Sketch, usize, [usize; 2]) {
     let mut sk = Sketch::new();
-    let u = sk.ray([0.8, 0.3, -0.2], "u");
-    let v = sk.ray([-0.1, 0.4, 0.9], "w");
+    let u = sk.axis([0.8, 0.3, -0.2], "u");
+    let v = sk.axis([-0.1, 0.4, 0.9], "w");
     let pl = sk.plane(u, v, [2.0, -1.0, 3.5], "side");
     let a = sk.point(20.0, 3.0, false, "a");
     let c = sk.point(-4.0, 12.0, false, "c");
@@ -45,12 +45,12 @@ fn a_plane_stands_on_its_rays() {
     let (sk, pl, [a, _]) = turned();
     let b = sk.basis(pl);
     let n = |x: [f64; 3]| gcs_core::space::norm(x);
-    // right along the first ray, up what is left of the second, out their cross product
+    // right along the first axis, up what is left of the second, out their cross product
     let du = [0.8, 0.3, -0.2].map(|x: f64| x / n([0.8, 0.3, -0.2]));
     assert!(close3(b.u, du, 1e-15));
     assert!(gcs_core::space::dot(b.u, b.v).abs() < 1e-15 && (n(b.v) - 1.0).abs() < 1e-15);
     let w = [-0.1, 0.4, 0.9];
-    assert!(gcs_core::space::dot(cross(b.u, b.v), w).abs() < 1e-15, "the second ray in it");
+    assert!(gcs_core::space::dot(cross(b.u, b.v), w).abs() < 1e-15, "the second axis in it");
     assert_eq!(b.o, [2.0, -1.0, 3.5]);
     // a point drawn at (20, 3) stands at o + 20u + 3v, and its origin at o
     assert!(close3(sk.world_point(a), b.lift(20.0, 3.0), 1e-12));
@@ -62,7 +62,7 @@ fn a_free_plane_counts_its_freedoms() {
     let (mut sk, _, [a, c]) = turned();
     let dof = |sk: &mut Sketch| diagnose::diagnose(sk, Default::default()).dof;
     // two points in the plane, two directions (each on its sphere), and where the plane stands;
-    // the second ray's lean along the first is no freedom of the plane, but it is a parameter
+    // the second axis's lean along the first is no freedom of the plane, but it is a parameter
     // nothing states
     let stated = dof(&mut sk);
     assert_eq!(stated, 4 + 2 + 2 + 3);
@@ -93,15 +93,15 @@ fn a_lift_follows_its_plane() {
     // a point of a 2D sketch has no lift
     let flat = sk.point(1.0, 1.0, false, "flat");
     assert_eq!(sk.lift_point(flat), None);
-    // turn the first ray by hand, hold everything drawn, and solve: the hidden points follow
-    let u = sk.rays[sk.planes[pl].u as usize].d;
+    // turn the first axis by hand, hold everything drawn, and solve: the hidden points follow
+    let u = sk.axes[sk.planes[pl].u as usize].d;
     let turned = [0.2f64, 0.9, -0.3];
     let n = gcs_core::space::norm(turned);
     for k in 0..3 {
         sk.params[u[k] as usize].value = turned[k] / n;
         sk.params[u[k] as usize].fixed = true;
     }
-    for p in sk.rays[sk.planes[pl].v as usize].d.into_iter().chain(sk.planes[pl].o) {
+    for p in sk.axes[sk.planes[pl].v as usize].d.into_iter().chain(sk.planes[pl].o) {
         sk.params[p as usize].fixed = true;
     }
     sk.fix_point(a, true);
@@ -121,7 +121,7 @@ fn a_plane_round_trips_through_json_and_a_copy() {
     sk.lift_point(a).unwrap();
     let held = sk.fixed_plane(top(1.25), "top");
     let text = io::dumps(&sk, None);
-    assert!(!text.contains("RayUnit") && !text.contains("\"Lift\"") && !text.contains("lift"),
+    assert!(!text.contains("AxisUnit") && !text.contains("\"Lift\"") && !text.contains("lift"),
             "an intrinsic row and a hidden point are never stored");
     let back = io::loads(&text).unwrap();
     assert_eq!(io::dumps(&back, None), text);
@@ -130,9 +130,9 @@ fn a_plane_round_trips_through_json_and_a_copy() {
         assert_eq!(back.plane_fixed(p), sk.plane_fixed(p));
     }
     assert!(back.plane_fixed(held) && !back.plane_fixed(pl));
-    assert_eq!(back.constraints.iter().filter(|c| c.kind == CKind::RayUnit).count(), 4);
+    assert_eq!(back.constraints.iter().filter(|c| c.kind == CKind::AxisUnit).count(), 4);
     assert!(back.lifts.is_empty(), "re-minted by whatever reads it, not by the reader");
-    // a copy carries the plane, its rays and the hidden point
+    // a copy carries the plane, its axes and the hidden point
     let copy = io::copy(&sk, &[EntRef::plane(pl), EntRef::plane(held), EntRef::point(a)]);
     for p in [pl, held] {
         assert_eq!(bits(copy.basis(p)), bits(sk.basis(p)));
@@ -148,12 +148,12 @@ fn a_drag_part_carries_the_plane_and_its_hidden_points() {
     assert_eq!(part.sketch.planes.len(), 1, "the plane came");
     assert_eq!(part.sketch.lifts.len(), 1);
     assert_eq!(bits(part.sketch.basis(0)), bits(sk.basis(pl)));
-    // a move in the part reaches the document's ray
+    // a move in the part reaches the document's axis
     let mut part = part;
-    let u0 = part.sketch.rays[part.sketch.planes[0].u as usize].d[0] as usize;
+    let u0 = part.sketch.axes[part.sketch.planes[0].u as usize].d[0] as usize;
     part.sketch.params[u0].value = 0.25;
     part.write_back(&mut sk);
-    let u = sk.rays[sk.planes[pl].u as usize].d[0] as usize;
+    let u = sk.axes[sk.planes[pl].u as usize].d[0] as usize;
     assert_eq!(sk.params[u].value, 0.25);
 }
 
@@ -181,7 +181,7 @@ fn relation(sk: &Sketch, kind: CKind, ents: &[EntRef], value: Option<f64>) -> Co
 }
 
 /// **A regular tetrahedron.**  The base is an equilateral triangle drawn on the front plane; the
-/// apex is drawn in a second plane over two free rays, standing wherever the solve puts it, and
+/// apex is drawn in a second plane over two free axes, standing wherever the solve puts it, and
 /// stated a true length `a` from each corner.  Nothing says where the apex is in space but those
 /// three lengths, and the height that comes back is the closed form, `a·√(2/3)`.
 #[test]
@@ -200,11 +200,11 @@ fn a_regular_tetrahedron_stands_at_its_height() {
         Arg::Ent(EntRef::point(b0)), Arg::Ent(EntRef::point(b1)),
     ]));
     assert_eq!(ledger(&mut sk).dof, 0, "the base is determined");
-    // the apex's plane: two free rays and a free place
-    let (u, w) = (sk.ray([1.0, 0.3, 0.2], "u"), sk.ray([0.1, -0.6, 0.8], "w"));
+    // the apex's plane: two free axes and a free place
+    let (u, w) = (sk.axis([1.0, 0.3, 0.2], "u"), sk.axis([0.1, -0.6, 0.8], "w"));
     let slant = sk.plane(u, w, [3.0, -4.0, 5.0], "slant");
     let apex = drawn(&mut sk, slant, 10.0, 8.0, "apex");
-    assert_eq!(ledger(&mut sk).dof, 2 + 2 + 2 + 3, "the apex's two, the rays' and the place");
+    assert_eq!(ledger(&mut sk).dof, 2 + 2 + 2 + 3, "the apex's two, the axes' and the place");
     for b in [b0, b1, b2] {
         sk.add(relation(&sk, CKind::Distance3, &[EntRef::point(apex), EntRef::point(b)], Some(a)));
     }
@@ -212,7 +212,7 @@ fn a_regular_tetrahedron_stands_at_its_height() {
     let d = ledger(&mut sk);
     // three lengths place a point in space up to its mirror; the six left are the plane's own
     // gauge about the apex — turning it about the point three ways, sliding the point in it, and
-    // the second ray's lean along the first
+    // the second axis's lean along the first
     assert_eq!(d.dof, 6, "{d:?}");
     assert!(d.over.is_empty() && d.implied.is_empty());
     let r = solve(&mut sk, exact());
@@ -227,8 +227,8 @@ fn a_regular_tetrahedron_stands_at_its_height() {
         assert!((d - a).abs() < 1e-9 * a);
     }
     for r in [u, w] {
-        let d = sk.rays[r].d.map(|k| sk.params[k as usize].value);
-        assert!((gcs_core::space::norm(d) - 1.0).abs() < 1e-12, "a ray stays a direction");
+        let d = sk.axes[r].d.map(|k| sk.params[k as usize].value);
+        assert!((gcs_core::space::norm(d) - 1.0).abs() < 1e-12, "an axis stays a direction");
     }
 }
 
@@ -398,12 +398,17 @@ fn a_point_on_a_plane_in_space() {
     let r = solve(&mut sk, exact());
     assert!(r.success, "{}", r.message);
     assert!((sk.point_xy(p).1 - h).abs() < 1e-10);
-    // now hold the point and let the plane's height go: the plane comes to the point
+    // now hold the point and let the plane's height go, its axes' with it (they pass through its
+    // origin): the plane comes to the point
     sk.fix_point(p, true);
     let py = sk.points[p].y as usize;
     sk.params[py].value = 2.5;
     let oz = sk.planes[top].o[2] as usize;
     sk.params[oz].fixed = false;
+    for r in [sk.planes[top].u, sk.planes[top].v] {
+        let az = sk.axes[r as usize].a[2] as usize;
+        sk.params[az].fixed = false;
+    }
     assert_eq!(ledger(&mut sk).dof, 0);
     let r = solve(&mut sk, exact());
     assert!(r.success, "{}", r.message);

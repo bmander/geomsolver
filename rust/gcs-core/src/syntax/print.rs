@@ -462,31 +462,33 @@ fn hint_of(parts: &[String]) -> String {
 
 /// Print owned scalar seeds using registry field names. Geometric seeds retain
 /// their `at:` spelling; child seeds belong in the argument list.
-fn point_hint(text: [Option<&str>; 2], v: [f64; 2]) -> String {
-    // a child's place in its plane: x and y, never the height a point in space has
-    let parts: Vec<String> = EntKind::Point
-        .fields()
+fn point_hint(text: [Option<&str>; 3], v: [f64; 3], z: bool) -> String {
+    // a child's place in its plane is x and y; an axis's direction has a z as well
+    let parts: Vec<String> = ["x", "y", "z"]
         .iter()
-        .filter(|(_, f)| *f == Field::Scalar)
-        .take(2)
+        .take(if z { 3 } else { 2 })
         .enumerate()
-        .map(|(i, (name, _))| match text.get(i).copied().flatten() {
+        .map(|(i, name)| match text[i] {
             Some(t) => format!("{name}: {t}"),
-            None => format!("{name}: {}", num(v.get(i).copied().unwrap_or(0.0))),
+            None => format!("{name}: {}", num(v[i])),
         })
         .collect();
     hint_of(&parts)
 }
 
-/// The same, for a place a solve arrived at: numbers, and no text anybody wrote.
-pub(crate) fn hint_xy(x: f64, y: f64) -> String {
-    point_hint([None, None], [x, y])
+/// The same, for a place a solve arrived at: numbers, and no text anybody wrote — a point's
+/// two, or an axis's three.
+pub(crate) fn hint_numbers(v: &[f64]) -> String {
+    let w = [0, 1, 2].map(|i| v.get(i).copied().unwrap_or(0.0));
+    point_hint([None, None, None], w, v.len() > 2)
 }
 
 /// Print owned scalar seeds using registry field names. Geometric seeds retain
-/// their `at:` spelling; child seeds belong in the argument list.
+/// their `at:` spelling; child seeds belong in the argument list.  A `z` is printed where one
+/// was written or is not 0.
 pub(crate) fn kid_seed_text(k: &KidSeed) -> String {
-    point_hint([k.text[0].as_deref(), k.text[1].as_deref()], k.v)
+    let z = k.text[2].is_some() || !k.spans[2].is_empty() || k.v[2] != 0.0;
+    point_hint([k.text[0].as_deref(), k.text[1].as_deref(), k.text[2].as_deref()], k.v, z)
 }
 
 /// Print owned scalar seeds using registry field names. Geometric seeds retain
@@ -524,11 +526,11 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
         // a number the source wrote, though it be 0
         let said = written.is_some() || d.seed_spans.get(scalar).is_some_and(|s| !s.is_empty());
         scalar += 1;
-        // a number that is 0 where nobody wrote one says nothing: a point's height, a ray's
+        // a number that is 0 where nobody wrote one says nothing: a point's height, an axis's
         // place, where a plane stands — each 0 unless said
         let optional = matches!(
             (d.kind, *name),
-            (EntKind::Point, "z") | (EntKind::Ray, "px" | "py" | "pz") | (EntKind::Plane, _)
+            (EntKind::Point, "z") | (EntKind::Axis, "px" | "py" | "pz") | (EntKind::Plane, _)
         );
         if optional && !said && v == 0.0 {
             continue;
@@ -620,7 +622,7 @@ fn write_written(out: &mut String, w: &Written) {
 /// the constraint list and the program panel cannot come to spell one constraint three ways.
 pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     let Some((word, fixity)) = kind.operator() else {
-        // nobody writes this one: a drag target, a lift, a ray's intrinsics
+        // nobody writes this one: a drag target, a lift, an axis's intrinsics
         return format!("{}(…)", snake(kind.name()));
     };
     let spec = kind.spec();

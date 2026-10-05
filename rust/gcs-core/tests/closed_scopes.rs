@@ -41,8 +41,8 @@ unit mm
 use std
 component Inner(d: group) {
 tip := point hint(at: d.frame.axes, x: d.sizes.width, y: 0mm)
-axis := line(d.frame.u.p1, d.frame.u.p2)
-tip coincident axis
+ax := line(d.frame.u.p1, d.frame.u.p2)
+tip coincident ax
 d.frame.u.p1 distance(d.sizes.width) tip
 }
 component Outer(d: group) { repeat 2 { Inner(d) } }
@@ -93,7 +93,7 @@ fn components_cannot_capture_global_values_geometry_or_standard_datums() {
     for src in [
         "use std\nlength := 20\ncomponent Bad() { a := point\nb := point\na distance(length) b }\nin std.front {\nb := Bad()\n}\n",
         "use std\nin std.front {\na := point\n}\ncomponent Bad() { fix(x == 0, y == 0) a }\nin std.front {\nb := Bad()\n}\n",
-        "use std\ncomponent Bad() { axis := line(std.origin, hint(x: 0, y: 1)) }\nin std.front {\nb := Bad()\n}\n",
+        "use std\ncomponent Bad() { ax := line(std.origin, hint(x: 0, y: 1)) }\nin std.front {\nb := Bad()\n}\n",
         "use std\ncomponent Inner() { fix(x == 0, y == 0) a }\ncomponent Outer() { a := point\ni := Inner() }\nin std.front {\no := Outer()\n}\n",
         "use std\nlength := 20\ncomponent Bad() { width := length / 2\na := point }\nin std.front {\nb := Bad()\n}\n",
     ] { assert!(!build(src).ok(), "captured ambient value: {src}"); }
@@ -227,7 +227,7 @@ two := Part()
     assert_eq!(e.sketch.free_vars.keys().map(String::as_str).collect::<Vec<_>>(), vec!["one.width", "two.width"]);
     for src in [
         "unit mm\nuse std\ndims := {width: 20mm}\ncomponent Bad(d: group) { a := point\nb := point\na distance(d.width + 1deg) b }\nin std.front {\nb := Bad(dims)\n}\n",
-        "unit mm\nuse std\ndims := {width: -8mm}\nin std.front {\na := point\nb := point\naxis := line(a,b)\n}\ncomponent Bad(ax: line,d: group) { p := point\np distance(d.width) ax }\nin std.front {\nb := Bad(axis,dims)\n}\n",
+        "unit mm\nuse std\ndims := {width: -8mm}\nin std.front {\na := point\nb := point\nax := line(a,b)\n}\ncomponent Bad(ax: line,d: group) { p := point\np distance(d.width) ax }\nin std.front {\nb := Bad(ax,dims)\n}\n",
         "use std\ncomponent Bad(u: Angle) { p := point(x: std.origin.x + cos(u), y: sin(u)) }\nc := Bad().p over u in (0,90)",
     ] { assert!(!build(src).ok(), "accepted invalid component: {src}"); }
 }
@@ -342,7 +342,7 @@ part := Bar(design.bar)
 
 #[test]
 fn a_group_in_place_round_trips_in_source() {
-    let src = "dims := {bore: 16mm, cyl: {axis: datum, wall: {t: 2mm}}}\n";
+    let src = "dims := {bore: 16mm, cyl: {ax: datum, wall: {t: 2mm}}}\n";
     let (p, errors) = crate::common::parse(src);
     assert!(errors.is_empty(), "{errors:?}");
     let mut text = String::new();

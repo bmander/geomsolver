@@ -17,8 +17,10 @@ fn read(src: &str) -> program::Elaborated {
 
 const SECTIONS: &str = "unit mm
 use std
-back := plane(u: std.x, v: std.z)
+back := plane
 fix(x == 0, y == 20, z == 0) back
+fix(x == 1, y == 0, z == 0) back.u
+fix(x == 0, y == 0, z == 1) back.v
 in std.top {
   a := point hint(x: 0, y: 0)
   b := point hint(x: 0, y: 20)
@@ -369,8 +371,10 @@ fn an_opposite_end_plane_normal_does_not_twist_circular_sections() {
 fn an_end_section_written_the_other_way_round_is_refused_by_both_kernels() {
     let square = |order: &str| format!("unit mm
 use std
-back := plane(u: std.x, v: std.z)
+back := plane
 fix(x == 0, y == 20, z == 0) back
+fix(x == 1, y == 0, z == 0) back.u
+fix(x == 0, y == 0, z == 1) back.v
 in std.top {{
   a := point
   b := point

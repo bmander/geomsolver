@@ -307,14 +307,15 @@ a distance(6\") b
 ///
 /// `a_paste_between_units_converts` carries points and one `Distance`; these are the ones that
 /// live somewhere else and were each missed once: where a plane stands, which is no point; and a
-/// free variable a length reads, which is a Param and no argument at all.  A ray is the control:
+/// free variable a length reads, which is a Param and no argument at all.  An axis is the control:
 /// it is a direction, and converting it would only take it off the unit sphere.
 #[test]
 fn a_paste_converts_the_lengths_that_are_not_arguments() {
     let src = "unit in\n\
                use std\n\
-               r := ray hint(x: 0.6, y: 0.8, z: 0)\n\
-               f := plane(u: r, v: std.z) hint(x: 4, y: 0, z: 0)\n\
+               r := axis hint(x: 0.6, y: 0.8, z: 0)\n\
+               f := plane(u: r) hint(x: 4, y: 0, z: 0)\n\
+               fix(x == 0, y == 0, z == 1) f.v\n\
                a := point hint(x: 0, y: 3) in f\n\
                b := point hint(x: 6, y: 3) in f\n\
                param w: Length\n\
@@ -323,17 +324,17 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
     let inches = read(src).expect("elaborates");
     let clip = io::copy(&inches, &inches.primitives());
 
-    // `f`, the one plane over a ray nothing holds — not a standard plane — where it stands and
-    // its first ray
+    // `f`, the one plane over an axis nothing holds — not a standard plane — where it stands and
+    // its first axis
     let f = |sk: &Sketch| -> usize {
         (0..sk.planes.len())
-            .rfind(|&i| sk.rays[sk.planes[i].u as usize].d.iter().all(|&k| !sk.params[k as usize].fixed))
+            .rfind(|&i| sk.axes[sk.planes[i].u as usize].d.iter().all(|&k| !sk.params[k as usize].fixed))
             .expect("f")
     };
     let place = |sk: &Sketch| -> f64 { sk.basis(f(sk)).o[0] };
-    let ray = |sk: &Sketch| -> [f64; 3] {
+    let axis = |sk: &Sketch| -> [f64; 3] {
         let r = sk.planes[f(sk)].u as usize;
-        sk.rays[r].d.map(|k| sk.params[k as usize].value)
+        sk.axes[r].d.map(|k| sk.params[k as usize].value)
     };
     // the free variable `w`, which no argument holds
     let free = |sk: &Sketch| -> f64 {
@@ -349,8 +350,8 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
 
     assert!((place(&mm) - 4.0 * 25.4).abs() < 1e-6, "the place converts: {}", place(&mm));
     assert!((free(&mm) - 6.0 * 25.4).abs() < 1e-6, "`w` converts: {}", free(&mm));
-    let d = ray(&mm);
-    assert!((d[0] - 0.6).abs() < 1e-12 && (d[1] - 0.8).abs() < 1e-12, "the ray stays a direction: {d:?}");
+    let d = axis(&mm);
+    assert!((d[0] - 0.6).abs() < 1e-12 && (d[1] - 0.8).abs() < 1e-12, "the axis stays a direction: {d:?}");
 }
 
 /// A placement is two world lengths, so it converts with the figure it annotates.
@@ -393,14 +394,14 @@ fn a_curve_body_is_read_in_the_documents_units() {
         "\
 unit mm
 use std
-component ray(c: circle, u: Angle) {
+component slide(c: circle, u: Angle) {
   p := point(x: c.center.x + 1in * u, y: c.center.y)
 }
 in std.front {
 o := point hint(x: 0, y: 0)
 c1 := circle(center: o) hint(r: 25)
 }
-w := ray(c1).p over u in (0, 1)
+w := slide(c1).p over u in (0, 1)
 ",
     )
     .expect("a suffix in a curve body is read in the document's own unit");

@@ -18,7 +18,7 @@ use engine.dims
 use engine.parts
 
 component ConRod(end: plane, side: plane, secv: plane,
-                 pin: point, axis: line, pin_s: point, sm_s: point, at: point,
+                 pin: point, ax: line, pin_s: point, sm_s: point, at: point,
                  draw_end: Int, draw_side: Int, draw_sec: Int, dims: group) {
   // the rod's own dimensions
   wB := dims.pinlen - 4mm     // big end, along the crank axis: the pin less 2 of clearance a side
@@ -43,7 +43,7 @@ component ConRod(end: plane, side: plane, secv: plane,
     in end {
       // the small end rides the bore axis one rod length from the pin
       sm := point hint(x: pin.x, y: pin.y + dims.L)
-      sm coincident axis
+      sm coincident ax
       pin distance(dims.L) sm
       cl := line(pin, sm)
       bigbore := circle(center: pin) hint(r: rB)
@@ -52,7 +52,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       radius(rS) smallbore
 
       // the shank's two flanks, each filleted into both eyes.  A fillet is an arc whose centre
-      // is a half-width plus a radius off the rod's axis; it meets the eye on the ray from the
+      // is a half-width plus a radius off the rod's axis; it meets the eye on the axis from the
       // eye's centre (which is what makes the two arcs tangent there, without the double root a
       // bare circle–circle tangency has) and the flank square to it, the tangency stated at
       // that point (§1.5).  The eyes themselves are drawn as the arcs left between the
@@ -61,7 +61,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       cbr := point hint(x: pin.x + (hB + rf), y: pin.y + 31.2mm)
       csl := point hint(x: sm.x - (hS + rf), y: sm.y - 16.1mm)
       csr := point hint(x: sm.x + (hS + rf), y: sm.y - 16.1mm)
-      // (that the centre is `eB + rf` from the pin follows: the contact is on the ray, on the
+      // (that the centre is `eB + rf` from the pin follows: the contact is on the axis, on the
       // eye and on the fillet, so it is not stated a second time)
       cbl distance(hB + rf, side: left) cl
       cbr distance(hB + rf, side: right) cl

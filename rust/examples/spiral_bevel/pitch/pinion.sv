@@ -37,7 +37,7 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
                       y: -r * design.pinion_teeth / design.crown_teeth)
     virtual_tip := point hint(at: tip)
     pitch_line := line(apex, mean)
-    axis := line(apex, tip)
+    ax := line(apex, tip)
     virtual_line := line(virtual, mean)
     virtual_axis := line(virtual, virtual_tip)
     pitch_radius := circle(center: mean) hint(r: r * design.pinion_teeth / design.crown_teeth)
@@ -48,13 +48,13 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
   A project apex
   gear.M project mean
   V project virtual
-  axis equal pitch_line
+  ax equal pitch_line
   virtual_axis equal virtual_line
-  axis tangent(side: right) pitch_radius
+  ax tangent(side: right) pitch_radius
   virtual_axis tangent(side: right) pitch_radius
   // The shafts.
-  gear.axis angle(design.shaft) axis
-  gear.axis distance(design.offset) axis
+  gear.ax angle(design.shaft) ax
+  gear.ax distance(design.offset) ax
   // The bevel pinion's pitch angle, generator to axis: the angle at M in the gear's triangle
   // is the angle at V.
   gear.to_apex angle(pinion_angle, sense: cw) gear.to_foot

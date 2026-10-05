@@ -4,29 +4,26 @@
 // as in the terminal; a `std.sv` beside a document would win over it, as any module does.
 
 // The standard axes and planes, which every document that says `use std` has — as a CAD part
-// has its origin planes — so the workspace can offer them as places to draw.  The axes are rays,
-// each held outright: x right, y away from the front's viewer, z up, and `back` the x axis
-// reversed.  Each plane is two of them and stands at the world origin: front is x right and z up
-// (a document's 2D drawing, `in std.front`), top x right and y away (looked at from above), side
-// y right and z up (looked at from +x), and up the front turned a quarter, z right and x to the
-// left.  `origin` is a point drawn in the front plane at its origin.
+// has its origin planes — so the workspace can offer them as places to draw.  The axes are held
+// outright, each through the world origin: x right, y away from the front's viewer, z up, and
+// `back` the x axis reversed.  Each plane is two of them, and so stands where they meet, at the
+// world origin: front is x right and z up (a document's 2D drawing, `in std.front`), top x right
+// and y away (looked at from above), side y right and z up (looked at from +x), and up the front
+// turned a quarter, z right and x to the left.  `origin` is a point drawn in the front plane at
+// its origin.
 component StandardDatums() {
-  x := ray hint(x: 1, y: 0, z: 0)
-  fix(x == 1, y == 0, z == 0) x
-  y := ray hint(x: 0, y: 1, z: 0)
-  fix(x == 0, y == 1, z == 0) y
-  z := ray hint(x: 0, y: 0, z: 1)
-  fix(x == 0, y == 0, z == 1) z
-  back := ray hint(x: -1, y: 0, z: 0)
-  fix(x == -1, y == 0, z == 0) back
+  x := axis hint(x: 1, y: 0, z: 0)
+  fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x
+  y := axis hint(x: 0, y: 1, z: 0)
+  fix(x == 0, y == 1, z == 0, px == 0, py == 0, pz == 0) y
+  z := axis hint(x: 0, y: 0, z: 1)
+  fix(x == 0, y == 0, z == 1, px == 0, py == 0, pz == 0) z
+  back := axis hint(x: -1, y: 0, z: 0)
+  fix(x == -1, y == 0, z == 0, px == 0, py == 0, pz == 0) back
   front := plane(u: x, v: z)
-  fix(x == 0, y == 0, z == 0) front
   top := plane(u: x, v: y)
-  fix(x == 0, y == 0, z == 0) top
   side := plane(u: y, v: z)
-  fix(x == 0, y == 0, z == 0) side
   up := plane(u: z, v: back)
-  fix(x == 0, y == 0, z == 0) up
   origin := point in front
   fix(x == 0, y == 0) origin
 }
@@ -35,7 +32,7 @@ component StandardDatums() {
 // quarter turn on, in the plane `o` and `t` are drawn in — what a part standing at an angle is
 // measured against (`p distance(d, along: u) axes.axes`) and seeded in (`hint(at: axes.axes,
 // x: 3, y: 4)`).  Draw it in that plane: `axes := std.Turned(o, t) in std.front`; `axes.u` is
-// the line from `o` to `t`.
+// the line from `o` to `t`.  The two lines share `o`, so the plane stands there unsaid.
 component Turned(o: point, t: point) {
   construction u := line(o, t)
   private q := point hint(at: o, toward: t, turn: 90deg)
@@ -43,7 +40,6 @@ component Turned(o: point, t: point) {
   v perpendicular u
   v equal u
   axes := plane(u: u, v: v)
-  o coincident axes.origin
 }
 
 // An axis-aligned rectangle about a supplied center. The public loop is a face boundary;

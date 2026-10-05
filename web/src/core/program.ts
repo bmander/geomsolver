@@ -310,7 +310,7 @@ export class Document {
     return edit(withStr(plane, (p, n) => core().gcs_elab_add_rectangle(this.h, w, h, p, n)));
   }
 
-  /** An entity over names already in the source.  A plane is over the two rays or lines `args`
+  /** An entity over names already in the source.  A plane is over the two axes or lines `args`
    *  names — `plane(u: a, v: b)` — and also takes the `name` the statement is to be given,
    *  refused if taken. */
   addEntity(kind: string, args: string[], seed: number[] = [], name?: string): Edit {

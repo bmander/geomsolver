@@ -20,12 +20,12 @@ fix(x == 0, y == 0) o
 fix(x == 0, y == 1) q
 fix(x == 1, y == 0) x
 fix(x == 3, y == 0) c
-axis := line(o,q)
+ax := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)
 radius(1mm) meridian
 }
-ring := solid(face(meridian),about: axis)
+ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
 roll := motion(about: spin_axis)
 generated := envelope(wall,under: roll,from: -20deg,to: 20deg)

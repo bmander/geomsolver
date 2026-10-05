@@ -43,7 +43,7 @@ in std.front {
   ref := line(O, up)
 }
 
-layout := {front: std.front, origin: O, axis: ref}
+layout := {front: std.front, origin: O, ax: ref}
 plate := components.frame.Frame(layout, dims: components.dims.vtwin_dims)
 crank := components.crank.Crank(O, ref, dims: components.dims.vtwin_dims) in std.front
 bankR := components.bank.Bank(crank.pin, plate.r.piv, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims) in std.front

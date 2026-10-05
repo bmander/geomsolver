@@ -1,7 +1,9 @@
 unit mm
 use std
-front := plane(u: std.x, v: std.z) hint(x: 100000000, y: 0, z: 100000000)
+front := plane hint(x: 100000000, y: 0, z: 100000000)
 fix(x == 100000000, y == 0, z == 100000000) front
+fix(x == 1, y == 0, z == 0) front.u
+fix(x == 0, y == 0, z == 1) front.v
 resultfp0 := point in front
 fix(x == 0, y == 0) resultfp0
 resultfp1 := point in front

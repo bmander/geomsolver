@@ -109,10 +109,10 @@ const MOTIONS: [&str;8] = ["crown_roll","pinion_roll","gear_roll","pinion_genera
 /// Every quantity of one pair; `probe` sizes the points the motions are asked to carry.
 fn read_pair(e: &Elaborated,probe: f64) -> Reading {
     let o = point(e,"gear.O");
-    let (g0,g1) = line(e,"gear.axis");
+    let (g0,g1) = line(e,"gear.ax");
     let (c0,c1) = line(e,"gear.crown_axis");
     let a = point(e,"pinion.A");
-    let (p0,p1) = line(e,"pinion.axis");
+    let (p0,p1) = line(e,"pinion.ax");
     let m = point(e,"gear.M");
     let r = dist(m,o);
     let mut out = Reading { values: Vec::new() };
@@ -133,8 +133,8 @@ fn read_pair(e: &Elaborated,probe: f64) -> Reading {
     let skew = unit(cross(sub(g1,g0),sub(p1,p0)));
     out.push("offset",dot(sub(p0,g0),skew).abs());
     // The cutter: its centre and axes, and the trace through M about it.
-    let (u0,u1) = line(e,"tooth.axis");
-    let (d0,d1) = line(e,"mate.axis");
+    let (u0,u1) = line(e,"tooth.ax");
+    let (d0,d1) = line(e,"mate.ax");
     out.point("C",u0);
     out.point("cutter axis",unit(sub(u1,u0)));
     out.point("mate axis",unit(sub(d1,d0)));
@@ -227,7 +227,7 @@ fn the_layout_reproduces_the_pairs_named_quantities() {
             assert_eq!(name,recorded);
             // a length relative to the cone distance; an angle in degrees, a direction's
             // component, a ratio and a phase in radians as they are
-            let plain = ["angle","ratio","phase","axis."].iter().any(|w| name.contains(w));
+            let plain = ["angle","ratio","phase","ax."].iter().any(|w| name.contains(w));
             let d = (v-values[k]).abs()/if plain { 1. } else { scale };
             // the quantity, whichever of its points or poses
             let key = name.split(['(','.']).next().unwrap().trim().to_string();
@@ -382,8 +382,8 @@ fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ra
         let label = &design.label;
         let [np,ng] = teeth.map(f64::from);
         let (o,m,a) = (point(&e,"gear.O"),point(&e,"gear.M"),point(&e,"pinion.A"));
-        let (g0,g1) = line(&e,"gear.axis");
-        let (p0,p1) = line(&e,"pinion.axis");
+        let (g0,g1) = line(&e,"gear.ax");
+        let (p0,p1) = line(&e,"pinion.ax");
         let (c0,c1) = line(&e,"gear.crown_axis");
         let (g,p,n) = (unit(sub(g1,g0)),unit(sub(p1,p0)),unit(sub(c1,c0)));
         let r = dist(m,o);
@@ -410,7 +410,7 @@ fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ra
         }
         // the equal normal pitch: each member's pitch radius at M times the cosine of its spiral
         // is its teeth times half the normal module
-        let c = point(&e,"tooth.axis.p1");
+        let c = point(&e,"tooth.ax.p1");
         let heading = unit(cross(n,sub(m,c)));
         let normal_module = module*spiral.to_radians().cos();
         for (what,axis,axis_point,apex,teeth) in [("gear",g,g0,o,ng),("pinion",p,p0,a,np)] {
@@ -446,7 +446,7 @@ fn off_recorded(reading: &Reading,rows: &[(String,Vec<f64>)],k: usize) -> (f64,S
     let mut worst = (0.,String::new());
     for ((name,v),(recorded,values)) in reading.values.iter().zip(rows) {
         assert_eq!(name,recorded);
-        let plain = ["angle","ratio","phase","axis."].iter().any(|w| name.contains(w));
+        let plain = ["angle","ratio","phase","ax."].iter().any(|w| name.contains(w));
         let d = (v-values[k]).abs()/if plain { 1. } else { scale };
         if !(d <= worst.0) { worst = (d,name.clone()); }
     }

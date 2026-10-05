@@ -234,20 +234,20 @@ pub fn is_determined(sk: &Sketch) -> bool {
     System::new(sk).block_order().under_cols.is_empty()
 }
 
-/// Stand plane `pi` where `b` says: its rays turned to `b`'s directions and its place moved —
+/// Stand plane `pi` where `b` says: its axes turned to `b`'s directions and its place moved —
 /// for a test that holds a sketch and turns a plane by hand, as a solve would.
 pub fn set_basis(sk: &mut Sketch, pi: usize, b: gcs_core::plane::Basis) {
     let (u, v) = (sk.planes[pi].u as usize, sk.planes[pi].v as usize);
     for (r, d) in [(u, b.u), (v, b.v)] {
         for k in 0..3 {
-            let q = sk.rays[r].d[k] as usize;
+            let q = sk.axes[r].d[k] as usize;
             sk.params[q].value = d[k];
         }
     }
     sk.set_plane_origin(pi, b.o);
 }
 
-/// Move the whole of space rigidly: every ray turned by `turn`, and every plane's place and
+/// Move the whole of space rigidly: every axis turned by `turn`, and every plane's place and
 /// every point in space turned and then shifted by `shift` — what a part looks like picked up
 /// and set down elsewhere.
 pub fn move_space(sk: &mut Sketch, turn: impl Fn([f64; 3]) -> [f64; 3], shift: [f64; 3]) {
@@ -255,10 +255,10 @@ pub fn move_space(sk: &mut Sketch, turn: impl Fn([f64; 3]) -> [f64; 3], shift: [
         let t = turn(x);
         [t[0] + shift[0], t[1] + shift[1], t[2] + shift[2]]
     };
-    for r in 0..sk.rays.len() {
-        let d = sk.rays[r].d.map(|k| sk.params[k as usize].value);
+    for r in 0..sk.axes.len() {
+        let d = sk.axes[r].d.map(|k| sk.params[k as usize].value);
         for (k, x) in turn(d).into_iter().enumerate() {
-            let q = sk.rays[r].d[k] as usize;
+            let q = sk.axes[r].d[k] as usize;
             sk.params[q].value = x;
         }
     }

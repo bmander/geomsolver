@@ -64,7 +64,7 @@ fn declarative_revolution_has_exact_conical_and_toroidal_patches() {
     }
     assert_eq!(torus.at(-0.1,0.).unwrap_err(),Error::OutsideDomain);
     assert!(RevolvedSurface::read(&e.sketch,e.map.ent_named("crown").unwrap().i(),
-        e.map.ent_named("axis").unwrap()).is_err());
+        e.map.ent_named("ax").unwrap()).is_err());
 }
 
 #[test]

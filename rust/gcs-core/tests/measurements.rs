@@ -14,7 +14,7 @@ o := point
 z := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 1) z
-axis := line(o,z)
+ax := line(o,z)
 a := point
 b := point
 c := point
@@ -90,9 +90,9 @@ fn resize_small(e: &mut program::Elaborated,v: f64) {
 #[test]
 fn a_measured_ratio_and_phase_turn_as_the_numbers_they_measure_and_follow_an_edit() {
     let mut e = read(&format!("{DRAWING}\
-        measured := motion(about: axis, ratio: length(big) / length(small), phase: angle(big, slope))\n\
-        plain := motion(about: axis, ratio: 3, phase: 30deg)\n\
-        edited := motion(about: axis, ratio: 2, phase: 30deg)\n"));
+        measured := motion(about: ax, ratio: length(big) / length(small), phase: angle(big, slope))\n\
+        plain := motion(about: ax, ratio: 3, phase: 30deg)\n\
+        edited := motion(about: ax, ratio: 2, phase: 30deg)\n"));
     let m = index(&e,"measured");
     // what is stored is never read: a measured number is worked out when the motion is
     let MotionDef::Rotation {ratio,..} = e.sketch.motions[m].def else { panic!() };
@@ -115,9 +115,9 @@ fn a_measured_ratio_and_phase_turn_as_the_numbers_they_measure_and_follow_an_edi
 #[test]
 fn radius_distance_and_advance_measure_in_space() {
     let e = read(&format!("{DRAWING}\
-        screw := motion(about: axis, ratio: radius(wheel) / distance(o, k1), advance: distance(k0, big))\n\
-        slide := motion(along: axis, advance: length(small) / 2)\n\
-        slide_plain := motion(along: axis, advance: 5mm)\n"));
+        screw := motion(about: ax, ratio: radius(wheel) / distance(o, k1), advance: distance(k0, big))\n\
+        slide := motion(along: ax, advance: length(small) / 2)\n\
+        slide_plain := motion(along: ax, advance: 5mm)\n"));
     let screw = motion::Family::read(&e.sketch,index(&e,"screw")).unwrap();
     let slide = motion::Family::read(&e.sketch,index(&e,"slide")).unwrap();
     let slide_plain = motion::Family::read(&e.sketch,index(&e,"slide_plain")).unwrap();
@@ -125,7 +125,7 @@ fn radius_distance_and_advance_measure_in_space() {
     let expect = 12./0.8660254037844387f64.hypot(7.5);
     let (ratio,_,advance) = e.sketch.motions[index(&e,"screw")].rotation(&e.sketch).unwrap();
     assert!((ratio-expect).abs() < 1e-9 && (advance-4.).abs() < 1e-9,"{ratio} {advance}");
-    let plain_text = format!("{DRAWING}p := motion(about: axis, ratio: {expect}, advance: 4mm)\n");
+    let plain_text = format!("{DRAWING}p := motion(about: ax, ratio: {expect}, advance: 4mm)\n");
     let reference = read(&plain_text);
     let reference = motion::Family::read(&reference.sketch,index(&reference,"p")).unwrap();
     for t in [-1.,0.,0.3,1.7] {
@@ -137,7 +137,7 @@ fn radius_distance_and_advance_measure_in_space() {
 #[test]
 fn a_placed_solid_moves_when_the_geometry_its_motion_measures_does() {
     let mut e = read(&format!("{DRAWING}\
-        turn := motion(about: axis, ratio: length(big) / length(small))\n\
+        turn := motion(about: ax, ratio: length(big) / length(small))\n\
         moved := solid(stock, under: turn, at: 30deg)\n"));
     let moved = index(&e,"moved");
     let stock = e.sketch.evaluated_solid(index(&e,"stock"),Report).unwrap();
@@ -163,7 +163,7 @@ fn a_placed_solid_moves_when_the_geometry_its_motion_measures_does() {
 #[test]
 fn a_measured_motion_is_copied_with_what_it_measures_and_goes_with_it() {
     let e = read(&format!("{DRAWING}\
-        turn := motion(about: axis, ratio: length(big) / length(small))\n\
+        turn := motion(about: ax, ratio: length(big) / length(small))\n\
         moved := solid(stock, under: turn, at: 30deg)\n"));
     // a copy of the placed solid brings the motion, and the motion what it measures
     let copied = io::copy(&e.sketch,&[e.map.ent_named("moved").unwrap()]);
@@ -183,7 +183,7 @@ fn a_measured_motion_is_copied_with_what_it_measures_and_goes_with_it() {
 
 #[test]
 fn the_source_and_the_flat_print_keep_the_measurement_as_written() {
-    let src = format!("{DRAWING}turn := motion(about: axis, ratio: length(big) / length(small), \
+    let src = format!("{DRAWING}turn := motion(about: ax, ratio: length(big) / length(small), \
         phase: angle(big, slope))\n");
     let e = read(&src);
     let mut program = e.program.clone();
@@ -200,7 +200,7 @@ fn a_measurement_inside_a_component_names_the_instance_geometry() {
     let e = read("\
 unit mm
 use std
-component Pair(axis: line, big: Length, small: Length) {
+component Pair(ax: line, big: Length, small: Length) {
   r0 := point
   r1 := point hint(x: 30,y: -4)
   fix(x == 0, y == -4) r0
@@ -211,16 +211,16 @@ component Pair(axis: line, big: Length, small: Length) {
   fix(x == 0, y == -6) s0
   pinion := horizontal line(s0,s1)
   s0 distance(small) s1
-  turn := motion(about: axis, ratio: -length(wheel) / distance(pinion.p1, pinion.p2))
+  turn := motion(about: ax, ratio: -length(wheel) / distance(pinion.p1, pinion.p2))
 }
 in std.front {
 o := point
 z := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 1) z
-axis := line(o,z)
-one := Pair(axis, big: 30mm, small: 10mm)
-two := Pair(axis, big: 12mm, small: 3mm)
+ax := line(o,z)
+one := Pair(ax, big: 30mm, small: 10mm)
+two := Pair(ax, big: 12mm, small: 3mm)
 }
 ");
     // each instance measures its own lines, named under it
@@ -253,7 +253,7 @@ fn a_measurement_read_before_the_solve_is_refused_with_the_stratum() {
     // a solid's extent is settled at elaboration
     refused(&format!("{DRAWING}tall := solid(profile, depth: length(small))\n"),"E107",mark);
     // an attitude and a placement angle are both read before anything measures
-    refused(&format!("{DRAWING}turn := motion(about: axis)\nmoved := solid(stock, under: turn, at: angle(big, slope))\n"),
+    refused(&format!("{DRAWING}turn := motion(about: ax)\nmoved := solid(stock, under: turn, at: angle(big, slope))\n"),
         "E107",mark);
     // one refusal, not one per path that carried it
     let d = diag(&format!("{DRAWING}k := length(big)\n"));
@@ -263,18 +263,18 @@ fn a_measurement_read_before_the_solve_is_refused_with_the_stratum() {
 #[test]
 fn a_measurement_must_come_to_its_slots_dimension_over_geometry_it_can_measure() {
     // a ratio is a plain number: a length over a length is one, a length is not
-    refused(&format!("{DRAWING}turn := motion(about: axis, ratio: length(big))\n"),"E080","ratio");
+    refused(&format!("{DRAWING}turn := motion(about: ax, ratio: length(big))\n"),"E080","ratio");
     // a phase is an angle (a bare ratio would read as degrees, as a bare number does)
-    refused(&format!("{DRAWING}turn := motion(about: axis, phase: length(big))\n"),"E080","phase");
+    refused(&format!("{DRAWING}turn := motion(about: ax, phase: length(big))\n"),"E080","phase");
     // a length is of a line or an arc
-    refused(&format!("{DRAWING}turn := motion(about: axis, ratio: length(o) / length(small))\n"),
+    refused(&format!("{DRAWING}turn := motion(about: ax, ratio: length(o) / length(small))\n"),
         "E080","measures a line or an arc");
-    refused(&format!("{DRAWING}turn := motion(about: axis, ratio: radius(big) / 1mm)\n"),"E080","radius");
+    refused(&format!("{DRAWING}turn := motion(about: ax, ratio: radius(big) / 1mm)\n"),"E080","radius");
     // a name the drawing does not have
-    refused(&format!("{DRAWING}turn := motion(about: axis, ratio: length(nothing) / length(small))\n"),
+    refused(&format!("{DRAWING}turn := motion(about: ax, ratio: length(nothing) / length(small))\n"),
         "E101","nothing");
     // and the arguments are names, not numbers
-    let d = diag(&format!("{DRAWING}turn := motion(about: axis, ratio: length(3))\n"));
+    let d = diag(&format!("{DRAWING}turn := motion(about: ax, ratio: length(3))\n"));
     assert!(d.iter().any(|(_,m)| m.contains("its arguments are names")),"{d:?}");
 }
 
@@ -289,8 +289,8 @@ fn the_spiral_bevel_rolls_measured_off_the_pitch_geometry_are_its_trig_ratios() 
         if name != "generation" { return text; }
         assert!(text.contains(anchor));
         text.replace(anchor,&format!("{anchor}\
-  trig_pinion_roll := motion(about: pinion.axis, ratio: 1 / sin(atan2(24, 48)))\n\
-  trig_gear_roll := motion(about: gear.axis, ratio: -1 / sin(atan2(48, 24)))\n"))
+  trig_pinion_roll := motion(about: pinion.ax, ratio: 1 / sin(atan2(24, 48)))\n\
+  trig_gear_roll := motion(about: gear.ax, ratio: -1 / sin(atan2(48, 24)))\n"))
     });
     let find = |suffix: &str| e.sketch.motions.iter().position(|m| m.name.ends_with(suffix))
         .unwrap_or_else(|| panic!("no motion `{suffix}`"));

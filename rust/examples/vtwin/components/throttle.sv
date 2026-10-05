@@ -101,9 +101,9 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
   }
   // Square to the front along its vertical datum, through its origin: radius runs right, down
   // the front's up, and axial out of the front, into its depth.
-  private down := ray hint(x: 0, y: 0, z: -1)
+  private down := axis hint(x: 0, y: 0, z: -1)
   down parallel front.v
-  private out := ray hint(x: 0, y: 1, z: 0)
+  private out := axis hint(x: 0, y: 1, z: 0)
   out perpendicular front
   longitudinal := plane(u: down, v: out)
   front.origin coincident longitudinal.origin
@@ -131,13 +131,13 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
     hub_back := components.parts.At(section_center, dx: dims.hubr, dy: -dims.bossz / 2)
     hub_front := components.parts.At(section_center, dx: dims.hubr, dy: -(dims.bossz / 2 + dims.levw))
     front_axis := components.parts.At(section_center, dx: 0mm, dy: -(dims.bossz / 2 + dims.levw))
-    axis := line(back_axis.p, front_axis.p)
+    ax := line(back_axis.p, front_axis.p)
     profile := face(back_axis.p, back.p, retain0.p, retain1.p, retain2.p, retain3.p,
                  seal0.p, seal1.p, seal2.p, seal3.p, seal4.p, seal5.p, seal6.p, seal7.p,
-                 shoulder.p, hub_back.p, hub_front.p, front_axis.p, axis)
+                 shoulder.p, hub_back.p, hub_front.p, front_axis.p, ax)
   }
 
-  turned := solid(profile, about: axis)
+  turned := solid(profile, about: ax)
   arm := solid(face(lv_a, lv2, lv_c, lv0), from: dims.bossz / 2, to: dims.bossz / 2 + dims.levw)
   knob_s := solid(face(knob), from: dims.bossz / 2, to: dims.bossz / 2 + dims.levw)
   cross := solid(face(x0, x1, x2, x3, -> close), about: hax)

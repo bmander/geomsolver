@@ -15,7 +15,7 @@ use blank.cone
 // the axis for the gear). Each point meets a line and a circle about the apex whose other
 // crossing is across the apex, so the seeds need only start on the tooth's side of it.
 component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, tip: group,
-                     axis: line, size: Length) {
+                     ax: line, size: Length) {
   private tip_line := line(tip.p, tip.q)
   private to_rim := line(apex, rim)
   private to_rim_in := line(apex, rim_in)
@@ -63,7 +63,7 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   middle midpoint chord
   corner midpoint across
   private section := face(tip_out, end_out, beyond, -> close)
-  construction ring := solid(section, about: axis)
+  construction ring := solid(section, about: ax)
 }
 
 // A member's ends relieved: both rings cut from its body.
@@ -81,16 +81,16 @@ preview {
     std.origin distance(50mm, along: right) mean
     std.origin distance(0mm, along: up) mean
     generator := line(std.origin, mean)
-    axis := line(std.origin, foot)
+    ax := line(std.origin, foot)
     to_foot := line(mean, foot)
-    to_foot perpendicular axis
-    generator angle(30deg) axis
+    to_foot perpendicular ax
+    generator angle(30deg) ax
     span := blank.sphere.FaceSpan(generator, width: 10mm)
     inner := blank.sphere.FaceSpan(generator, width: 9mm)
     toe := blank.sphere.SphericalBoundary(std.origin, generator, span.toe)
     heel := blank.sphere.SphericalBoundary(std.origin, generator, span.heel)
-    tip := blank.cone.ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
-    toe_end := EndChamfer(std.origin, span.toe, inner.toe, generator, tip, axis, size: 0.5mm)
-    heel_end := EndChamfer(std.origin, span.heel, inner.heel, generator, tip, axis, size: 0.5mm)
+    tip := blank.cone.ConeBoundary(generator, ax, offset: 2mm, lean: 180deg)
+    toe_end := EndChamfer(std.origin, span.toe, inner.toe, generator, tip, ax, size: 0.5mm)
+    heel_end := EndChamfer(std.origin, span.heel, inner.heel, generator, tip, ax, size: 0.5mm)
   }
 }

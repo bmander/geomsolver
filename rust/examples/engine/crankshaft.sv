@@ -19,11 +19,11 @@ use engine.parts
 // counterweight rim; the rim an arc about the axis, `hcw` either side of the crank arm.  `crown`
 // and `heel` are where the arm's line crosses the eye and the rim — the throw's extreme points,
 // which the side view reads.
-component Throw(o: point, axis: line, theta: Angle, dims: group, shape: group) {
+component Throw(o: point, ax: line, theta: Angle, dims: group, shape: group) {
   pin := point hint(x: o.x + dims.R * sin(theta), y: o.y + dims.R * cos(theta))
   arm := line(o, pin)
   o distance(dims.R) pin
-  axis angle(theta, sense: cw) arm
+  ax angle(theta, sense: cw) arm
   kp := circle(center: pin) hint(r: dims.rp)
   radius(dims.rp) kp
   // the eye: the arc of the far side, between the two flank tangents
@@ -85,7 +85,7 @@ component WebSide(o: point, x0: Length, x1: Length, top: point, bottom: point) {
   bottom distance(0, along: y) d
 }
 
-component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
+component Crankshaft(end: plane, side: plane, o: point, ax: line, o_s: point,
                      draw_end: Int, draw_side: Int, dims: group) {
   // the shaft's own dimensions
   eP := dims.rp + 12mm        // the pin's eye, outside
@@ -105,8 +105,8 @@ component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
       radius(dims.rj) main
       path := circle(center: o) hint(r: dims.R)
       radius(dims.R) path
-      t1 := Throw(o, axis, theta: dims.theta, dims: dims, shape: throw_dims)
-      t2 := Throw(o, axis, theta: dims.theta + 180deg, dims: dims, shape: throw_dims)
+      t1 := Throw(o, ax, theta: dims.theta, dims: dims, shape: throw_dims)
+      t2 := Throw(o, ax, theta: dims.theta + 180deg, dims: dims, shape: throw_dims)
     }
   }
 

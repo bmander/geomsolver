@@ -7,26 +7,28 @@
 use std
 
 // The pitch plane: square to `front` along its `u`, through its origin, so the gear apex is at
-// both origins and the front plane is the view along the pitch plane's v. `down` is the side
-// of it its normal does not point, for a view standing on it (`FoldedView`). `span` is kept for
-// the callers that name it.
+// both origins and the front plane is the view along the pitch plane's v. A plane's axes pass
+// through its origin, so the view's stands on the front's u, and one ordinate along it puts it
+// at the front's origin. `down` is the side of it its normal does not point, a direction for a
+// view standing on it (`FoldedView`). `span` is kept for the callers that name it.
 component PitchView(front: plane, span: Length) {
-  private up := ray hint(x: 0, y: 1, z: 0)
+  private up := axis hint(x: 0, y: 1, z: 0)
   up perpendicular front
   view := plane(u: front.u, v: up)
-  front.origin coincident view.origin
-  down := ray hint(x: 0, y: 0, z: -1)
+  front.origin distance(0mm, along: u) view
+  down := axis hint(x: 0, y: 0, z: -1)
   down perpendicular view
 }
 
-// A view standing square to `parent` on `hinge`, a line drawn in it: its u runs along the hinge
-// and its v along `up`, square to the parent. Its origin is the parent's, seen in it: on the
-// fold line, where the parent's origin projects.
-component FoldedView(parent: plane, hinge: line, up: ray, span: Length) {
-  view := plane(u: hinge, v: up)
-  parent coincident view.origin
+// A view standing square to `parent` on `hinge`, a line drawn in it: its u is the hinge, so it
+// stands on it, and its v runs along `up`, square to the parent — `up` read as a direction,
+// through an axis of the view's own, since a plane's axes pass through its origin and many views
+// share `up`. Its origin is the parent's, seen in it: on the fold line, where the parent's origin
+// projects.
+component FoldedView(parent: plane, hinge: line, up: axis, span: Length) {
+  view := plane(u: hinge, v: hint(x: 0, y: 0, z: -1))
+  up parallel view.v
   parent.origin project view.origin
-  hinge.p1 coincident view
 }
 
 preview {

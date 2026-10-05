@@ -10,9 +10,9 @@ a := point
 b := point
 fix(x == 0, y == 0) a
 fix(x == 0, y == 1) b
-axis := line(a,b)
+ax := line(a,b)
 }
-turn := motion(about: axis)
+turn := motion(about: ax)
 ");
     assert!(errors.is_empty());
     let mut model = program::elaborate(&source); assert!(model.ok());

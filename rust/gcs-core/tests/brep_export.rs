@@ -145,15 +145,15 @@ fn float32_rounding_is_spent_from_the_tolerance_of_the_written_stl() {
     assert!(one([0.,0.,0.]) < 1e-7);
 }
 
-/// Issue #59's stock: a 10 mm disc 2 mm thick about z, its plane's rays `u`, `v` (turned 11.25°
+/// Issue #59's stock: a 10 mm disc 2 mm thick about z, its plane's axes `u`, `v` (turned 11.25°
 /// where written so), cut by a 2 mm strip swept along x `through:` it — or from −11 to 11 mm.
 fn strip_cut(frame: [[f64; 3]; 2], cutter: &str, cut: bool) -> String {
     let [u, v] = frame;
     format!("unit mm
 use std
-su := ray hint(x: {}, y: {}, z: {})
+su := axis hint(x: {}, y: {}, z: {})
 fix(x == {}, y == {}, z == {}) su
-sv := ray hint(x: {}, y: {}, z: {})
+sv := axis hint(x: {}, y: {}, z: {})
 fix(x == {}, y == {}, z == {}) sv
 stock_plane := plane(u: su, v: sv)
 fix(x == 0, y == 0, z == 0) stock_plane

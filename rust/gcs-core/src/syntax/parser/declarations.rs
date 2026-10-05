@@ -789,8 +789,11 @@ impl<'a> P<'a> {
             let i = match h.key.as_str() {
                 "x" => 0,
                 "y" => 1,
+                // an axis's direction has a third; a point's is refused where it is built
+                "z" => 2,
                 _ => {
-                    let m = format!("an anonymous point has no scalar `{}`; it has x and y", h.key);
+                    let m = format!("a child's seed has no scalar `{}`: a point's are x and y, an \
+                                     axis's x, y and z", h.key);
                     self.fail_at(h.at, &m);
                     return None;
                 }

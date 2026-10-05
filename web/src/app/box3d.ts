@@ -35,7 +35,7 @@ const INK = {
 };
 
 /** The kinds that stand in space and on no one plane, so are this renderer's to draw. */
-const IN_SPACE = new Set(['sphere', 'cone', 'cylinder', 'ray']);
+const IN_SPACE = new Set(['sphere', 'cone', 'cylinder', 'axis']);
 
 /** What the scene was built from, so a repaint that changes nothing rebuilds nothing.  The box is
  *  read-only, so between edits only the camera moves — and rebuilding a mesh on every pointer

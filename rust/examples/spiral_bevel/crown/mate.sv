@@ -16,7 +16,7 @@ component CrownMate(tooth: group, design: group, normal_module: Length) {
   // Seeds: the tooth's pitch points reflected through each other, and its axis turned.
   outer_far := point hint(at: tooth.rack.pitch.p2, toward: tooth.rack.pitch.p1, by: -1)
   inner_far := point hint(at: tooth.rack.pitch.p1, toward: tooth.rack.pitch.p2, by: -1)
-  bottom := point hint(at: tooth.axis.p1, toward: tooth.axis.p2, by: -1)
+  bottom := point hint(at: tooth.ax.p1, toward: tooth.ax.p2, by: -1)
   construction outer_span := line(tooth.rack.pitch.p1, outer_far)
   construction inner_span := line(inner_far, tooth.rack.pitch.p2)
   tooth.rack.pitch.p2 midpoint outer_span
@@ -25,11 +25,11 @@ component CrownMate(tooth: group, design: group, normal_module: Length) {
     tooth.rack.inner, design, normal_module: normal_module)
   inner := crown.mate_section.MateSection(inner_far, tooth.rack.pitch.p1, tooth.rack.outer,
     tooth.rack.inner, design, normal_module: normal_module)
-  axis := line(tooth.axis.p1, bottom)
-  tooth.axis angle(180deg) axis
-  axis equal tooth.axis
-  construction outer_crown := solid(outer.profile, about: axis)
-  construction inner_crown := solid(inner.profile, about: axis)
+  ax := line(tooth.ax.p1, bottom)
+  tooth.ax angle(180deg) ax
+  ax equal tooth.ax
+  construction outer_crown := solid(outer.profile, about: ax)
+  construction inner_crown := solid(inner.profile, about: ax)
 }
 
 preview {

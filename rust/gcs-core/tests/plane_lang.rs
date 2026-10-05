@@ -1,4 +1,4 @@
-//! The language half of multiview sketching (§6.7): `plane` declarations over rays, the `in`
+//! The language half of multiview sketching (§6.7): `plane` declarations over axes, the `in`
 //! clause, the `project` operator, and the writeback of each.
 use gcs_core::constraints::CKind;
 use gcs_core::edit::{self, Kind};
@@ -95,7 +95,7 @@ fix(x == 0, y == 0, z == 0) right
 fn every_spelling_prints_back() {
     let src = "\
 use std
-r := ray hint(x: 0.6, y: 0.8, z: 0)
+r := axis hint(x: 0.6, y: 0.8, z: 0)
 front := plane(u: std.x, v: std.z)
 top := plane(u: std.x, v: std.y)
 p := plane(u: r, v: std.z) hint(x: 1, y: 2, z: 3)
@@ -127,7 +127,7 @@ claim a project b
 
 #[test]
 fn a_plane_reads_its_basis_off_its_rays() {
-    let e = read(&format!("{VIEWS}r := ray hint(x: 0.8660254037844387, y: 0.5, z: 0)\n\
+    let e = read(&format!("{VIEWS}r := axis hint(x: 0.8660254037844387, y: 0.5, z: 0)\n\
                            fix(x == 0.8660254037844387, y == 0.5, z == 0) r\n\
                            aux := plane(u: r, v: std.z)\n"));
     let b = |n: &str| e.sketch.basis(at(&e, n));
@@ -137,19 +137,18 @@ fn a_plane_reads_its_basis_off_its_rays() {
     assert!(near(b("right").u, [0.0, 1.0, 0.0]) && near(b("right").v, [0.0, 0.0, 1.0]));
     let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
     assert!(near(b("aux").u, [c, s, 0.0]) && near(b("aux").v, [0.0, 0.0, 1.0]));
-    // a plane may be declared before the rays it stands on
-    let e = read("aux := plane(u: r, v: w)\nr := ray hint(x: 1, y: 0, z: 0)\nw := ray hint(x: 0, y: 1, z: 0)\n");
+    // a plane may be declared before the axes it stands on
+    let e = read("aux := plane(u: r, v: w)\nr := axis hint(x: 1, y: 0, z: 0)\nw := axis hint(x: 0, y: 1, z: 0)\n");
     assert!(near(e.sketch.basis(at(&e, "aux")).v, [0.0, 1.0, 0.0]));
-    // and its rays need be neither unit nor square: `v` is what is left of the second
-    let e = read("a := ray hint(x: 2, y: 0, z: 0)\nb := ray hint(x: 1, y: 0, z: 3)\np := plane(u: a, v: b)\n");
+    // and its axes need be neither unit nor square: `v` is what is left of the second
+    let e = read("a := axis hint(x: 2, y: 0, z: 0)\nb := axis hint(x: 1, y: 0, z: 3)\np := plane(u: a, v: b)\n");
     assert!(near(e.sketch.basis(at(&e, "p")).v, [0.0, 0.0, 1.0]));
 }
 
 #[test]
 fn plane_refusals_carry_their_codes() {
     refused("use std\np := point hint(x: 1, y: 2, z: 3)\na := plane(u: p, v: std.z)\n", "E103",
-            "a ray or a line");
-    refused("use std\na := plane(u: std.x)\n", "E103", "`v:` is missing");
+            "an axis or a line");
     refused("use std\na := plane(u: nope, v: std.z)\n", "E101", "no such entity");
     refused("use std\na := plane(u: std.x, v: std.z, origin: std.origin)\n", "E103",
             "a plane's origin is its own");
@@ -223,7 +222,7 @@ fn project_settles_refuses_and_claims() {
     assert_eq!(d.span.slice(prog.text()), "a project b");
     refused(&format!("{VIEWS}a := point in front\nb := point in front\na project b\n"), "E061", "itself");
     refused(
-        &format!("{VIEWS}front2 := plane(u: std.x, v: std.z)\nfix(x == 0, y == -5, z == 0) front2\n\
+        &format!("{VIEWS}front2 := plane\nfix(x == 0, y == -5, z == 0) front2\nfix(x == 1, y == 0, z == 0) front2.u\nfix(x == 0, y == 0, z == 1) front2.v\n\
                   a := point in front\nb := point in front2\na project b\n"),
         "E061",
         "parallel",
@@ -261,7 +260,7 @@ fn reconcile_writes_membership_a_plane_and_a_projection() {
     let out = reconciled(&mut e);
     assert!(out.text.contains("\nv0 := plane("), "{}", out.text);
     assert!(out.text.contains(" in v0"), "{}", out.text);
-    // a plane made by a gesture is written over its rays, and a projection with two operands
+    // a plane made by a gesture is written over its axes, and a projection with two operands
     let mut e = read(&format!("{VIEWS}a := point in front\nb := point in top\n"));
     let aux = Basis { u: [0.6, 0.8, 0.0], v: [0.0, 0.0, 1.0], o: [0.0; 3] };
     e.sketch.fixed_plane(aux, "aux");
@@ -269,14 +268,14 @@ fn reconcile_writes_membership_a_plane_and_a_projection() {
     let c = gcs_core::constraints::Constraint::project(&e.sketch, a, b).unwrap();
     e.sketch.add(c);
     let out = reconciled(&mut e);
-    assert!(out.text.contains(" := plane(u: r"), "{}", out.text);
-    assert!(out.text.contains(" := ray hint(x: 0.6, y: 0.8"), "{}", out.text);
+    assert!(out.text.contains(" := plane(u: x"), "{}", out.text);
+    assert!(out.text.contains(" := axis hint(x: 0.6, y: 0.8"), "{}", out.text);
     assert!(out.text.contains("\na project b\n"), "{}", out.text);
     assert!(!out.text.contains("origin :="), "an origin is the plane's: {}", out.text);
     assert!(!out.text.contains("project("), "the planes are never spelled: {}", out.text);
     let back = read(&out.text);
     assert_eq!(back.sketch.planes.len(), e.sketch.planes.len());
-    // a plane made through the edit API, over two rays and given a name
+    // a plane made through the edit API, over two axes and given a name
     let (prog, _, _) = gcs_core::library::parse_linked(VIEWS);
     let out = edit::add_plane(&prog, &["std.y".to_string(), "std.x".to_string()], Some("aux"));
     assert!(out.text.contains("aux := plane(u: std.y, v: std.x)"), "{}", out.text);
@@ -289,19 +288,19 @@ fn reconcile_writes_membership_a_plane_and_a_projection() {
 
 #[test]
 fn commit_seeds_writes_a_rays_direction_and_a_planes_place() {
-    let src = "use std\nr := ray hint(x: 1, y: 0, z: 0)\np := plane(u: r, v: std.z)\n";
+    let src = "use std\nr := axis hint(x: 1, y: 0, z: 0)\np := plane(u: r, v: std.z)\n";
     let e = read(src);
     let mut sk = e.sketch.clone();
     let (r, p) = (at(&e, "r"), at(&e, "p"));
     for (k, x) in [0.6, 0.8, 0.0].iter().enumerate() {
-        sk.params[sk.rays[r].d[k] as usize].value = *x;
+        sk.params[sk.axes[r].d[k] as usize].value = *x;
     }
     for (k, x) in [1.0, 2.0, 3.0].iter().enumerate() {
         sk.params[sk.planes[p].o[k] as usize].value = *x;
     }
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(out.kind, Kind::Numeric);
-    assert!(out.text.contains("r := ray hint(x: 0.6, y: 0.8, z: 0)"), "{}", out.text);
+    assert!(out.text.contains("r := axis hint(x: 0.6, y: 0.8, z: 0)"), "{}", out.text);
     assert!(out.text.contains("p := plane(u: r, v: std.z) hint(x: 1, y: 2, z: 3)"), "{}", out.text);
     read(&out.text);
 }
@@ -439,12 +438,12 @@ fn a_block_over_a_module_plane_is_not_a_membership_to_change() {
 
 #[test]
 fn the_words_are_tinted() {
-    let src = "top := plane(u: r, v: s)\nr := ray\na := point in top hint(x: 3in, y: 0)\na project b\nunit in\n";
+    let src = "top := plane(u: r, v: s)\nr := axis\na := point in top hint(x: 3in, y: 0)\na project b\nunit in\n";
     let tints: Vec<(Tint, &str)> =
         highlight(src).into_iter().map(|(t, s)| (t, s.slice(src))).collect();
     let has = |t: Tint, w: &str| tints.iter().any(|(x, s)| *x == t && *s == w);
     assert!(has(Tint::Word, "plane"), "{tints:?}");
-    assert!(has(Tint::Word, "ray"), "{tints:?}");
+    assert!(has(Tint::Word, "axis"), "{tints:?}");
     assert!(has(Tint::Label, "u"), "{tints:?}");
     assert!(has(Tint::Relation, "project"), "{tints:?}");
     assert!(has(Tint::Type, "in"), "`unit in` names a unit: {tints:?}");
@@ -506,7 +505,7 @@ fn an_instance_in_a_view_refuses_what_it_cannot_mean() {
     refused(
         &format!(
             "{VIEWS}{SLOT}\
-component Two(p: Point, a: ray, b: ray) {{
+component Two(p: Point, a: axis, b: axis) {{
   mine := plane(u: a, v: b)
   inner := Slot(p, w: 4) in mine
 }}
@@ -519,7 +518,7 @@ t := Two(q, std.x, std.y) in front
     );
     // a plane inside is left alone: its origin is its own
     let e = read(&format!(
-        "{VIEWS}component D(a: ray, b: ray) {{\n  f := plane(u: a, v: b)\n  c := point hint(x: 1, y: 2)\n}}\nd1 := D(std.x, std.y) in front\n"
+        "{VIEWS}component D(a: axis, b: axis) {{\n  f := plane(u: a, v: b)\n  c := point hint(x: 1, y: 2)\n}}\nd1 := D(std.x, std.y) in front\n"
     ));
     assert_eq!(e.sketch.plane_of(at(&e, "d1.c")), Some(at(&e, "front")));
     let f = at(&e, "d1.f");
@@ -540,14 +539,14 @@ fn removing_the_plane_takes_an_instances_clause() {
 }
 
 /// A statement expanded by `flatten` keeps the id of the statement it came from, so a plane
-/// declared in a component is several planes from one id — each over the ray *its* copy was
+/// declared in a component is several planes from one id — each over the axis *its* copy was
 /// given.  Keyed by that id, every copy read the first one's basis and came out silently wrong
 /// (no diagnostic, just the wrong geometry).
 #[test]
 fn every_copy_of_a_plane_gets_its_own_basis() {
     let e = read("\
 use std
-component V(r: ray, up: ray) {
+component V(r: axis, up: axis) {
   v := plane(u: r, v: up)
 }
 x1 := V(std.x, std.z)
@@ -556,7 +555,7 @@ x2 := V(std.y, std.z)
     let near = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
     let b = |n: &str| e.sketch.basis(at(&e, n));
     assert!(near(b("x1.v").u, [1.0, 0.0, 0.0]), "{:?}", b("x1.v"));
-    assert!(near(b("x2.v").u, [0.0, 1.0, 0.0]), "the second copy over its own ray: {:?}", b("x2.v"));
+    assert!(near(b("x2.v").u, [0.0, 1.0, 0.0]), "the second copy over its own axis: {:?}", b("x2.v"));
 }
 
 /// A line between a point in a view and a point in space is a declaration that *names* its
@@ -606,12 +605,13 @@ fn an_instance_in_plane_resolves_in_the_callers_scope() {
     );
 }
 
-/// Where a plane stands is document data like its rays, so a record of the sketch carries it:
+/// Where a plane stands is document data like its axes, so a record of the sketch carries it:
 /// a place survives `dumps`/`loads` and the graft.
 #[test]
 fn a_planes_place_survives_json_and_the_graft() {
-    let e = read("unit mm\nuse std\nq := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 12)\n\
-                  a := point hint(x: 5, y: 0) in q\n");
+    let e = read("unit mm\nuse std\nq := plane hint(x: 0, y: 0, z: 12)\n\
+                  fix(x == 0, y == 0, z == 12) q\nfix(x == 1, y == 0, z == 0) q.u\n\
+                  fix(x == 0, y == 1, z == 0) q.v\na := point hint(x: 5, y: 0) in q\n");
     let q = at(&e, "q");
     let b = e.sketch.basis(q);
     assert!((b.along_normal() - 12.0).abs() < 1e-12, "stood off: {b:?}");

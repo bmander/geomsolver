@@ -25,7 +25,7 @@ fix(x == 3, y == 0) b
 fix(x == 3, y == 1) m
 fix(x == 3, y == 2) c
 fix(x == 2, y == 2) d
-axis := line(o,q)
+ax := line(o,q)
 spin_axis := line(o,x)
 bottom := line(a,b)
 low := line(b,m)
@@ -34,7 +34,7 @@ top := line(c,d)
 inner := line(d,a)
 }
 profile := face(bottom,low,high,top,inner)
-body := solid(profile,about: axis)
+body := solid(profile,about: ax)
 first_surface := surface(body,low,from: 0deg,to: 90deg)
 second_surface := surface(body,high,from: 0deg,to: 90deg)
 roll := motion(about: spin_axis)
@@ -130,7 +130,7 @@ fn a_seam_refuses_coincident_lookalikes_nontangent_junctions_and_incompatible_so
     assert!(e.ok(),"{:?}",e.diags);
     assert!(EnvelopeSeam::named(&e.sketch,0,tolerance()).is_err());
     let e = build(&MODEL.replace("roll := motion(about: spin_axis)",
-        "roll := motion(about: spin_axis)\nother := motion(about: axis)")
+        "roll := motion(about: spin_axis)\nother := motion(about: ax)")
         .replace("second_surface,under: roll","second_surface,under: other"));
     assert!(e.errors().any(|d| d.message.contains("same source revolution and motion")));
     let e = solved(&MODEL.replace("second_surface := surface(body,high,from: 0deg,to: 90deg)",

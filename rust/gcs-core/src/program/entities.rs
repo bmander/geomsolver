@@ -30,7 +30,7 @@ fn scatter(i: usize) -> (f64, f64) {
     (r * th.dcos(), r * th.dsin())
 }
 
-/// Where an unseeded ray points: the `i`th of a spiral over the sphere, so two rays a document
+/// Where an unseeded axis points: the `i`th of a spiral over the sphere, so two axes a document
 /// left unseeded neither coincide nor start opposed — either is a stationary point of an angle
 /// between them.  The same irrational steps as `scatter`, one in bearing and one in height.
 fn scatter_direction(i: usize) -> [f64; 3] {
@@ -80,7 +80,7 @@ pub(super) fn build(
     if matches!(d.kind, EntKind::Cone | EntKind::Cylinder) {
         return build_axial(sk, res, d, st, diags);
     }
-    // and a plane's are two rays, and its origin is its own
+    // and a plane's are two axes, and its origin is its own
     if d.kind == EntKind::Plane {
         return build_plane(sk, res, d, st, diags, anon, deferred);
     }
@@ -159,6 +159,18 @@ pub(super) fn build(
                         });
                         return None;
                     };
+                    // a child is drawn where its parent is; a point in space is declared
+                    if !seed.spans[2].is_empty() {
+                        diags.push(Diag {
+                            code: Code::E040,
+                            span: seed.spans[2],
+                            stmt: Some(st.id),
+                            message: "an anonymous point has no `z`: it is drawn where its parent \
+                                      is, and a point in space is declared, `p := point hint(x: …, \
+                                      y: …, z: …)`".to_string(),
+                        });
+                        return None;
+                    }
                     let i = sk.point(seed.v[0], seed.v[1], false, label.get(slot).unwrap_or(name));
                     for (k, t) in seed.text.iter().enumerate() {
                         if let Some(t) = t {
@@ -323,16 +335,16 @@ pub(super) fn build(
             }
         }
         // a direction, seeded where the source wrote one, and a place no relation reads yet
-        EntKind::Ray => {
+        EntKind::Axis => {
             let dir = if (0..3).any(wrote) {
                 [seed(0), seed(1), seed(2)]
             } else {
-                scatter_direction(sk.rays.len())
+                scatter_direction(sk.axes.len())
             };
-            let ri = sk.ray(dir, &show);
+            let ri = sk.axis(dir, &show);
             for k in 0..3 {
                 if wrote(3 + k) {
-                    let p = sk.rays[ri].a[k] as usize;
+                    let p = sk.axes[ri].a[k] as usize;
                     sk.params[p].value = seed(3 + k);
                 }
             }
@@ -380,7 +392,7 @@ pub(super) fn build(
 /// axis is never minted: a line nothing names is a line in no view, and a surface about it would
 /// be nowhere in space.  A half-angle is written in degrees and held in radians, the way every
 /// angle the kernels read is.
-/// A plane: two rays — or drawn lines, each given a hidden ray parallel to it — and an origin of
+/// A plane: two axes — or drawn lines, each given a hidden axis parallel to it — and an origin of
 /// its own, a point drawn in it at `(0, 0)` reached as `P.origin`; where it stands is its `x`,
 /// `y`, `z`, seeded by `hint(x:, y:, z:)`.
 fn build_plane(
@@ -402,14 +414,53 @@ fn build_plane(
             as `P.origin`, and place it with `P.origin coincident p`".to_string());
         return None;
     }
-    let mut rays = [0usize; 2];
+    let mut axes = [0usize; 2];
+    let mut minted: Vec<(&str, usize)> = Vec::new();
     for (k, key) in ["u", "v"].iter().enumerate() {
-        let Some([Kid::Ref(r)]) = d.children.get(k).map(|g| g.as_slice()) else {
-            fail(diags, st.span, format!(
-                "a plane is two rays, right along `u` and out along `u × v`: \
-                 `plane(u: r1, v: r2)`, and `{key}:` is missing"
-            ));
-            return None;
+        let r = match d.children.get(k).map(|g| g.as_slice()) {
+            Some([Kid::Ref(r)]) => r,
+            // a slot left out is an axis of the plane's own, free: `p := plane` is an origin and
+            // two directions, seeded as the front's unless a `hint(x:, y:, z:)` in the slot says
+            // which way it starts
+            None | Some([]) | Some([Kid::Hint(_)]) => {
+                let seed = match d.children.get(k).and_then(|g| g.first()) {
+                    Some(Kid::Hint(s)) => Some(s),
+                    _ => None,
+                };
+                let dir = match seed {
+                    // what an expression comes to is settled later, as a named axis's is
+                    Some(s) if s.v.iter().any(|&x| x != 0.0) || s.text.iter().any(|t| t.is_some()) => s.v,
+                    Some(s) => {
+                        fail(diags, s.span, format!(
+                            "a plane's `{key}` seeds an axis's direction, and one of no length \
+                             points nowhere"
+                        ));
+                        return None;
+                    }
+                    None if k == 0 => [1.0, 0.0, 0.0],
+                    None => [0.0, 0.0, 1.0],
+                };
+                axes[k] = sk.axis(dir, &format!("{show}.{key}"));
+                for (j, t) in seed.iter().flat_map(|s| s.text.iter().enumerate()) {
+                    let (Some(t), Some(s)) = (t, seed) else { continue };
+                    deferred.push(Deferred::Text {
+                        param: sk.axes[axes[k]].d[j],
+                        text: t.clone(),
+                        names: d.seed_names.clone(),
+                        span: s.spans[j],
+                        stmt: st.id,
+                    });
+                }
+                minted.push((key, axes[k]));
+                continue;
+            }
+            Some(_) => {
+                fail(diags, st.span, format!(
+                    "a plane's `{key}` is an axis or a line, named: `plane(u: a1, v: a2)`, or an \
+                     axis of its own, left out or seeded: `plane(u: hint(x: 0, y: 1, z: 0))`"
+                ));
+                return None;
+            }
         };
         let Some(e) = res.lookup(r) else {
             diags.push(Diag {
@@ -427,18 +478,18 @@ fn build_plane(
                 return None;
             }
         };
-        rays[k] = match e.kind {
-            EntKind::Ray => e.i(),
-            // a drawn line is a ray from its start toward its end: a hidden one, held parallel
+        axes[k] = match e.kind {
+            EntKind::Axis => e.i(),
+            // a drawn line is an axis from its start toward its end: a hidden one, held parallel
             // to it once its points stand somewhere
             EntKind::Line => {
-                let ray = sk.ray([1.0, 0.0, 0.0], &format!("{show}.{key}"));
-                deferred.push(Deferred::Along { ray, line: e.i() });
-                ray
+                let axis = sk.axis([1.0, 0.0, 0.0], &format!("{show}.{key}"));
+                deferred.push(Deferred::Along { axis, line: e.i() });
+                axis
             }
             other => {
                 fail(diags, r.span, format!(
-                    "`{}` is a {}, and a plane's `{key}` is a ray or a line",
+                    "`{}` is a {}, and a plane's `{key}` is an axis or a line",
                     r.root.text,
                     other.as_str()
                 ));
@@ -450,11 +501,14 @@ fn build_plane(
     let o = [0, 1, 2].map(|i| if wrote(i) { d.seed.get(i).copied().unwrap_or(0.0) } else { 0.0 });
     // the origin was minted with the points (`Resolver::origins`)
     let Some(&origin) = res.origins.get(&d.name.key().text) else { return None };
-    let pi = sk.plane_over(rays[0], rays[1], o, origin, &show);
+    let pi = sk.plane_over(axes[0], axes[1], o, origin, &show);
     if let Some(n) = d.name.shown() {
         sk.plane_names.insert(pi as u32, n.text.clone());
     }
     anon.push((format!("{}.origin", d.name.key().text), EntRef::point(origin)));
+    for (key, ax) in minted {
+        anon.push((format!("{}.{key}", d.name.key().text), EntRef::new(EntKind::Axis, ax)));
+    }
     let e = EntRef::plane(pi);
     set_class(sk, e, d.class.clone());
     Some(e)
@@ -511,17 +565,68 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
     }
 }
 
-/// The hidden rays planes were written over drawn lines with, each now seeded along its line as
-/// the line stands — its points have their places — and held parallel to it, intrinsically: the
-/// plane's own statement, never a relation of the document's.
-pub(super) fn rays_along(sk: &mut Sketch, deferred: &[Deferred]) {
-    for d in deferred {
-        let &Deferred::Along { ray, line } = d else { continue };
-        sk.turn_ray_along(ray, line);
-        let mut c = crate::constraints::Constraint::two_line(
-            crate::constraints::CKind::Parallel3,
-            EntRef::new(EntKind::Ray, ray),
-            EntRef::line(line),
+/// The hidden axes planes were written over drawn lines with, each now seeded along its line as
+/// the line stands — its points have their places — and held to it, intrinsically: the plane's
+/// own statement, never a relation of the document's.  A hidden axis is the line: parallel to
+/// it, and through one of its ends, the one it shares with the plane's other line where the two
+/// meet at an end (`std.Turned`'s two lines from `o`), else its start.  A plane whose two axes
+/// stand on one point stands there: its origin is that point, three rows in place of the four
+/// `PlaneAxis` rows, which would say one thing twice where no count of columns can see it.
+pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
+    use crate::constraints::{Arg, CKind, Constraint};
+    let along: BTreeMap<usize, usize> = deferred.iter()
+        .filter_map(|d| match *d { Deferred::Along { axis, line } => Some((axis, line)), _ => None })
+        .collect();
+    if along.is_empty() {
+        return;
+    }
+    let ends = |sk: &Sketch, l: usize| [sk.lines[l].p1 as usize, sk.lines[l].p2 as usize];
+    for p in 0..sk.planes.len() {
+        let (u, v) = (sk.planes[p].u as usize, sk.planes[p].v as usize);
+        let (lu, lv) = (along.get(&u).copied(), along.get(&v).copied());
+        // the end the two lines share, if they meet at one
+        let shared = match (lu, lv) {
+            (Some(a), Some(b)) => ends(sk, a).into_iter().find(|x| ends(sk, b).contains(x)),
+            _ => None,
+        };
+        for (axis, line) in [(u, lu), (v, lv)] {
+            let Some(line) = line else { continue };
+            sk.turn_axis_along(axis, line);
+            let mut c = Constraint::two_line(
+                CKind::Parallel3,
+                EntRef::new(EntKind::Axis, axis),
+                EntRef::line(line),
+            );
+            c.intrinsic = true;
+            sk.add(c);
+            let at = shared.unwrap_or(sk.lines[line].p1 as usize);
+            let x = sk.world_point(at);
+            sk.stand_axis_through(axis, x);
+            let mut c = Constraint::new(
+                CKind::PointOnAxis,
+                vec![Arg::Ent(EntRef::point(at)), Arg::Ent(EntRef::new(EntKind::Axis, axis))],
+            );
+            c.intrinsic = true;
+            sk.add(c);
+        }
+        // both axes on one point, which is drawn elsewhere: the plane stands at it
+        let origin = sk.planes[p].origin as usize;
+        let Some(at) = shared.filter(|&x| sk.points[x].plane != Some(p as u32)) else { continue };
+        let rows: Vec<u32> = sk.constraints.iter()
+            .filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis && c.args[0].ent() == EntRef::plane(p))
+            .map(|c| c.id)
+            .collect();
+        for id in rows {
+            sk.remove(id);
+        }
+        let x = sk.world_point(at);
+        for k in 0..3 {
+            let q = sk.planes[p].o[k] as usize;
+            sk.params[q].value = x[k];
+        }
+        let mut c = Constraint::new(
+            CKind::Coincident3,
+            vec![Arg::Ent(EntRef::point(origin)), Arg::Ent(EntRef::point(at))],
         );
         c.intrinsic = true;
         sk.add(c);
@@ -607,9 +712,9 @@ fn build_axial(
 /// These initialize parameters without adding constraints.
 pub(super) enum Deferred {
     Text { param: u32, text: String, names: Vec<(String, String)>, span: Span, stmt: StmtId },
-    /// A plane written over a drawn line: the hidden ray its `u` or `v` is, held parallel to the
-    /// line once the line's points have their places (`rays_along`).
-    Along { ray: usize, line: usize },
+    /// A plane written over a drawn line: the hidden axis its `u` or `v` is, held parallel to the
+    /// line once the line's points have their places (`axes_along`).
+    Along { axis: usize, line: usize },
     /// A point's `hint(z: …)`: its height in space, once memberships say it is in space
     /// (`places`), and refused where they say it is drawn in a plane.
     Height { point: usize, z: f64, span: Span, stmt: StmtId },
@@ -909,7 +1014,7 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Sphere => sk.spheres[e.i()].class = c,
         EntKind::Cone => sk.cones[e.i()].class = c,
         EntKind::Cylinder => sk.cylinders[e.i()].class = c,
-        EntKind::Ray => sk.rays[e.i()].class = c,
+        EntKind::Axis => sk.axes[e.i()].class = c,
         EntKind::Arc => sk.arcs[e.i()].class = c,
         EntKind::Spline => sk.splines[e.i()].class = c,
         EntKind::Plane => sk.planes[e.i()].class = c,

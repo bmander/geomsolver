@@ -616,15 +616,15 @@ fn apply_gauge(
                 bad(Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text));
                 return;
             };
-            // a plane holds where it stands; a ray its direction
+            // a plane holds where it stands; an axis its direction
             let scalars: Vec<&str> = e.kind
                 .fields()
                 .iter()
                 .filter(|(_, f)| *f == Field::Scalar)
                 .map(|(n, _)| *n)
                 .collect();
-            let own = sk.own_params(e);
             let spec = r.kind.spec();
+            let own = sk.own_params(e);
             for (i, a) in r.args.iter().enumerate().skip(1) {
                 let Some(a) = a else { continue };
                 let field = spec[i].0;
@@ -655,6 +655,11 @@ fn apply_gauge(
                 let Arg::Seed { value, .. } = a else { continue };
                 // a cone's half-angle is written in degrees, as its hint is (`Sketch::seed_value`)
                 let v = if e.kind == EntKind::Cone { value.to_radians() } else { *value };
+                // where an axis is (its numbers after the direction's three), held: placed first,
+                // so no later relation reading its place frees what this holds
+                if e.kind == EntKind::Axis && at >= 3 {
+                    sk.place_axis(e.i());
+                }
                 let p = &mut sk.params[own[at] as usize];
                 p.value = v;
                 p.fixed = true;

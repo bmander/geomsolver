@@ -20,9 +20,9 @@ fix(x == 3, y == 1) c3
 private bottom := line(c0, c1)
 private wall := line(c1, c2)
 private top := line(c2, c3)
-private axis := line(c3, c0)
+private ax := line(c3, c0)
 }
-construction tool := solid(face(bottom, wall, top, axis), about: axis)
+construction tool := solid(face(bottom, wall, top, ax), about: ax)
 ";
 
 /// A box x in [2, 4], y in [-3, 0], z in [-1, 1] (a 2 x 3 profile extruded 2).
@@ -86,8 +86,8 @@ fix(x == 3, y == 1) c3
 private bottom := line(c0, c1)
 private wall := line(c1, c2)
 private top := line(c2, c3)
-private axis := line(c3, c0)
-construction bar := solid(face(bottom, wall, top, axis), about: axis)
+private ax := line(c3, c0)
+construction bar := solid(face(bottom, wall, top, ax), about: ax)
 construction tool := solid(bar)
 private ca := point hint(x: 3, y: 1)
 ca distance(3mm, along: u) std.front
@@ -144,9 +144,9 @@ a3 distance({by}mm, along: v) std.front
 private bottom := line(a0, a1)
 private wall := line(a1, a2)
 private top := line(a2, a3)
-private axis := line(a3, a0)
+private ax := line(a3, a0)
 }}
-construction tool := solid(face(bottom, wall, top, axis), about: axis)
+construction tool := solid(face(bottom, wall, top, ax), about: ax)
 ",ax=ax,ay=ay,bx=bx,by=by,a1x=ax+c,a1y=ay-s,a2x=bx+c,a2y=by-s)
 }
 

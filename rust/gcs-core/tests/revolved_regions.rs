@@ -20,11 +20,11 @@ c := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 1) q
 fix(x == 3, y == 0) c
-axis := line(o,q)
+ax := line(o,q)
 rim := circle(center: c)
 radius(1mm) rim
 }
-body := solid(face(rim), about: axis)
+body := solid(face(rim), about: ax)
 ";
 
 const SPHERE: &str = "\
@@ -39,9 +39,9 @@ fix(x == 0, y == -2) a
 fix(x == 0, y == 2) b
 rim := arc(center: o, start: a, end: b)
 radius(2mm) rim
-axis := line(b,a)
+ax := line(b,a)
 }
-body := solid(face(rim,axis), about: axis)
+body := solid(face(rim,ax), about: ax)
 ";
 
 fn check(region: &RevolvedRegion,p: [f64;3],expected: f64) {
@@ -74,7 +74,7 @@ fn torus_membership_and_distance_follow_analytic_circles_including_ray_tangencie
 fn holes_are_voids_and_source_axis_direction_does_not_change_material() {
     let source = RING.replace("body := solid(face(rim)",
         "hole := circle(center: c)\nradius(0.4mm) hole\nbody := solid(face(rim, holes: hole)");
-    for source in [source.clone(),source.replace("axis := line(o,q)","axis := line(q,o)")] {
+    for source in [source.clone(),source.replace("ax := line(o,q)","ax := line(q,o)")] {
         let e = solved(&source);
         let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
         for r in 0..=40 {
@@ -91,7 +91,7 @@ fn holes_are_voids_and_source_axis_direction_does_not_change_material() {
 
 #[test]
 fn a_spheres_diameter_disappears_and_its_center_is_interior_material() {
-    for source in [SPHERE.to_string(),SPHERE.replace("axis := line(b,a)","axis := line(a,b)"),
+    for source in [SPHERE.to_string(),SPHERE.replace("ax := line(b,a)","ax := line(a,b)"),
         SPHERE.replace("fix(x == 0, y == -2) a","fix(x == -2, y == 0) a")
             .replace("fix(x == 0, y == 2) b","fix(x == 2, y == 0) b")] {
         let e = solved(&source);
@@ -121,10 +121,10 @@ fix(x == 0, y == 1) a
 fix(x == 1, y == 1) b
 fix(x == 3, y == 3) c
 fix(x == 0, y == 3) d
-axis := line(a,d)
+ax := line(a,d)
 profile := (ab := line(a,b)) -> (bc := line(b,c)) -> (cd := line(c,d)) -> (da := line(d,a)) -> close
 }
-body := solid(profile,about: axis)
+body := solid(profile,about: ax)
 ");
     let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
     for (p,d) in [([0.,0.,2.],-1.),([1.,0.,2.],-std::f64::consts::FRAC_1_SQRT_2),
@@ -151,6 +151,6 @@ fn material_queries_are_snapshots_and_refuse_unsupported_or_nonfinite_geometry()
     assert_eq!(region.classify([f64::NAN,0.,0.],0.).unwrap_err(),Error::NonFinite);
     assert!(region.classify([0.;3],-1.).is_err());
     assert!(region.classify([0.;3],f64::INFINITY).is_err());
-    let e = solved(&RING.replace("about: axis","depth: 2mm"));
+    let e = solved(&RING.replace("about: ax","depth: 2mm"));
     assert!(RevolvedRegion::read(&e.sketch,0,1e-12).unwrap_err().contains("unmodified revolution"));
 }

@@ -8,7 +8,7 @@ use crate::constraints::{Arg, CKind};
 use crate::model::{EntKind, EntRef, Sketch};
 
 /// The drawn points an operand stands on: a point itself, a line's ends, a round thing's centre
-/// (and an arc's ends), a spline's control points.  A plane, a curve, a ray and the spatial
+/// (and an arc's ends), a spline's control points.  A plane, a curve, an axis and the spatial
 /// kinds stand on none a plane reads.
 fn operand_points(sk: &Sketch, e: EntRef) -> Vec<usize> {
     match e.kind {
@@ -43,8 +43,9 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
                 | CKind::CylinderRadius
                 | CKind::DragTarget
                 | CKind::Lift
-                | CKind::RayUnit
-                | CKind::RayFoot
+                | CKind::AxisUnit
+                | CKind::AxisFoot
+                | CKind::PlaneAxis
         )
     {
         return None;

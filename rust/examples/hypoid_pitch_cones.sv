@@ -3,13 +3,13 @@
 // view that shows both axes in true shape has an attitude that depends on the answer.
 //
 // The pitch plane P, the front plane, holds M.  The gear's axial plane G stands square to P on
-// the vertical line the gear's generator lies on; the pinion's axial plane Q stands on two rays
+// the vertical line the gear's generator lies on; the pinion's axial plane Q stands on two axes
 // the solve turns, square to each other, with its origin at M — its own turn held by drawing the
 // pinion's axis level in it.  Each pitch cone is an entity about
 // its axis: M is on both, and `gc tangent(M) pc` says they touch there with one tangent plane.
 // The gear's apex is on P, which makes P the gear cone's tangent plane at M, and so the pinion's
 // too — its apex comes out on P with nothing saying so.  Two pitch radii, the gear's pitch angle,
-// the shaft angle and the offset settle the rest: 37 unknowns, 37 equations, DOF 0, the pinion's
+// the shaft angle and the offset settle the rest: 43 unknowns, 43 equations, DOF 0, the pinion's
 // pitch angle γ = 29.56° and its offset angle in the pitch plane ε = 10.72°.
 //
 // Open the glass box (⌘B) and orbit: the two cones kiss at M on the pitch plane, their axes
@@ -36,8 +36,8 @@ fix(x == 0, y == 0) M
 // the gear's axial plane, square to P about its vertical axis; the pinion's, solved, through M
 G := plane(u: std.z, v: std.y)
 fix(x == 0, y == 0, z == 0) G
-qu := ray hint(x: 0.1618, y: -0.4935, z: -0.8546)
-qv := ray hint(x: 0.0918, y: 0.8698, z: -0.4847)
+qu := axis hint(x: 0.1618, y: -0.4935, z: -0.8546)
+qv := axis hint(x: 0.0918, y: 0.8698, z: -0.4847)
 qu perpendicular qv
 Q := plane(u: qu, v: qv)
 M coincident Q.origin

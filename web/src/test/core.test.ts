@@ -1780,7 +1780,7 @@ test('an ellipse is a curve of the library, and a point solves onto its rim', ()
   d.dispose();
 });
 
-/* -- planes: two rays and a place, membership, and projection between them ---------------- */
+/* -- planes: two axes and a place, membership, and projection between them ---------------- */
 
 const near3 = (got: readonly number[], want: readonly number[], what: string): void => {
   for (let i = 0; i < 3; i++) {
@@ -1812,7 +1812,7 @@ test('a plane faces the way two directions say, and a point may be drawn in it',
   // its one point is its origin, drawn in it
   assert.ok(pl.origin instanceof Point);
   assert.equal(pl.origin.plane, pl);
-  assert.equal(sk.userConstraints().length, 0, 'its rays\' intrinsics are nothing the user said');
+  assert.equal(sk.userConstraints().length, 0, 'its axes\' intrinsics are nothing the user said');
   assert.throws(() => sk.plane([1, 0, 0], [2, 0, 0]), /span/);
   assert.equal(sk.planes.length, 1, 'and a refused one is not there');
   // membership is the core's: set, read back, and cleared

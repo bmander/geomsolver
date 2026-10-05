@@ -17,7 +17,7 @@ in std.front {
   fix(x == 3, y == 1) m
   fix(x == 3, y == 2) c
   fix(x == 2, y == 2) d
-  axis := line(o,q)
+  ax := line(o,q)
   spin_axis := line(o,x)
   bottom := line(a,b)
   low := line(b,m)
@@ -26,7 +26,7 @@ in std.front {
   inner := line(d,a)
 }
 profile := face(bottom,low,high,top,inner)
-body := solid(profile,about: axis)
+body := solid(profile,about: ax)
 first_surface := surface(body,low,from: 0deg,to: 90deg)
 second_surface := surface(body,high,from: 0deg,to: 90deg)
 roll := motion(about: spin_axis)
@@ -75,13 +75,13 @@ ml := vertex(shared,near_low)
 mr := vertex(shared,far_low)
 tl := vertex(high_cut,near_high)
 tr := vertex(high_cut,far_high)
-bottom_edge := edge(low_cut,from: bl,to: br,along: axis)
-middle_edge := edge(shared,from: ml,to: mr,along: axis)
-top_edge := edge(high_cut,from: tl,to: tr,along: axis)
-left_low := edge(near_low,from: bl,to: ml,along: axis)
-right_low := edge(far_low,from: br,to: mr,along: axis)
-left_high := edge(near_high,from: ml,to: tl,along: axis)
-right_high := edge(far_high,from: mr,to: tr,along: axis)
+bottom_edge := edge(low_cut,from: bl,to: br,along: ax)
+middle_edge := edge(shared,from: ml,to: mr,along: ax)
+top_edge := edge(high_cut,from: tl,to: tr,along: ax)
+left_low := edge(near_low,from: bl,to: ml,along: ax)
+right_low := edge(far_low,from: br,to: mr,along: ax)
+left_high := edge(near_high,from: ml,to: tl,along: ax)
+right_high := edge(far_high,from: mr,to: tr,along: ax)
 
 // Spatial face declarations
 

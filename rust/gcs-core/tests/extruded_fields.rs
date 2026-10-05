@@ -28,9 +28,9 @@ o := point
 z := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 10) z
-axis := line(o, z)
+ax := line(o, z)
 }
-turn := motion(about: axis)
+turn := motion(about: ax)
 moved := solid(block, under: turn, at: 40deg)
 ";
 

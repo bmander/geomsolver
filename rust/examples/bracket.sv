@@ -25,7 +25,7 @@ tilt := atan((rise - toe) / leg)   // the incline's bearing in the front view
 // the auxiliary view's plane: along the incline, and the front's normal the other way, so it
 // looks at the incline square on.  Each view's origin is the part's corner A as that view sees
 // it, so the origins are all images of one point and no projection between them needs stating.
-incline := ray hint(x: cos(tilt), y: 0, z: sin(tilt))
+incline := axis hint(x: cos(tilt), y: 0, z: sin(tilt))
 fix(x == cos(tilt), y == 0, z == sin(tilt)) incline
 aux := plane(u: incline, v: std.y)
 fix(x == 0, y == 0, z == 0) aux

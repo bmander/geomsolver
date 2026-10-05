@@ -147,10 +147,10 @@ o distance(30) l.p2
     assert!(p.keys().all(|k| !k.starts_with("a.")), "{:?}", p.keys());
 }
 
-/// A plane reports which way it faces and where it stands, its rays' directions and its origin.
+/// A plane reports which way it faces and where it stands, its axes' directions and its origin.
 #[test]
 fn a_plane_reports_its_attitude_and_its_place() {
-    let e = read("unit mm\nuse std\nv := plane(u: std.z, v: std.x)\nfix(x == 0, y == 5, z == 0) v\n");
+    let e = read("unit mm\nuse std\nv := plane\nfix(x == 0, y == 5, z == 0) v\nfix(x == 0, y == 0, z == 1) v.u\nfix(x == 1, y == 0, z == 0) v.v\n");
     let mut sk = e.sketch;
     assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
     let p: std::collections::BTreeMap<String, f64> =
@@ -315,12 +315,12 @@ use std
          t := point
          p := point hint(x: 15, y: 5)
          q := point hint(x: -60, y: 0)
-         axis := line(o, t)
+         ax := line(o, t)
          fix(x == 0, y == 0) o
          fix(x == 0, y == 1) t
-         p distance(15, side: right) axis
-         p distance(r, side: right) axis
-         p distance(15, side: left) axis
+         p distance(15, side: right) ax
+         p distance(r, side: right) ax
+         p distance(15, side: left) ax
          o distance(60, along: left) q
          }
 ",

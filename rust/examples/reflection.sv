@@ -1,7 +1,7 @@
-// The law of reflection: a ray leaves a mirror at the angle it arrived at.
+// The law of reflection: an axis leaves a mirror at the angle it arrived at.
 //
 // A source `s` and a target `t` stand above a flat mirror `m`, each at a stated height and
-// station along it.  The ray from `s` strikes the mirror at `p` and goes on to `t`, and the one
+// station along it.  The axis from `s` strikes the mirror at `p` and goes on to `t`, and the one
 // thing said about `p` — besides that it is on the mirror — is that the two angles there are
 // equal:
 //
@@ -36,7 +36,7 @@ in std.front {
   m1 distance(90, along: right) t
   t distance(20, side: left) m
 
-  // the ray, and the one statement that places where it strikes
+  // the axis, and the one statement that places where it strikes
   p := point hint(x: 50, y: 0)
   p coincident m
   incoming := line(s, p)

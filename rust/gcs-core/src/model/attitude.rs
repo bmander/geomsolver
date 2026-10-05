@@ -1,4 +1,4 @@
-//! Where a plane stands in space, read off its rays and its origin, and the hidden points in
+//! Where a plane stands in space, read off its axes and its origin, and the hidden points in
 //! space a spatial relation reads (`docs/planes-plan.md`).
 //!
 //! Nothing here is minted unless asked for: a document that relates no two planes in space has
@@ -11,15 +11,15 @@ use super::*;
 use crate::constraints::CKind;
 
 impl Sketch {
-    /// Plane `i` in space: `u` along its first ray, `v` what is left of its second after its
+    /// Plane `i` in space: `u` along its first axis, `v` what is left of its second after its
     /// component along `u` is removed — so out of the plane is `u × v` and up is `out × u` —
-    /// standing at `o`.  The one reader: every consumer asks here, so a plane whose rays a solve
-    /// turns is read the same way as one whose rays a `fix` holds.  Two rays that name no plane
+    /// standing at `o`.  The one reader: every consumer asks here, so a plane whose axes a solve
+    /// turns is read the same way as one whose axes a `fix` holds.  Two axes that name no plane
     /// (parallel, or one of no length) read as the front plane's attitude at `o`, which a row
     /// over them will not leave standing.
     pub fn basis(&self, i: usize) -> crate::plane::Basis {
         let p = &self.planes[i];
-        let dir = |r: u32| self.rays[r as usize].d.map(|q| self.params[q as usize].value);
+        let dir = |r: u32| self.axes[r as usize].d.map(|q| self.params[q as usize].value);
         let o = p.o.map(|q| self.params[q as usize].value);
         let page = crate::plane::Basis::page();
         let mut b = crate::plane::Basis::explicit(dir(p.u), dir(p.v)).unwrap_or(page);
@@ -27,14 +27,14 @@ impl Sketch {
         b
     }
 
-    /// Whether plane `i` is **fixed**: both its rays' directions and where it stands are held, so
+    /// Whether plane `i` is **fixed**: both its axes' directions and where it stands are held, so
     /// a row reading it may read its basis as constants (`Project`'s fold line, where the
     /// projection's other plane is fixed too: `CKind::attitude_twin`).  What a statement asks at
     /// the add (`Sketch::add_quiet`); a `fix` is applied before any relation.
     pub fn plane_fixed(&self, i: usize) -> bool {
         let p = &self.planes[i];
         let held = |q: u32| self.params[q as usize].fixed;
-        [p.u, p.v].iter().all(|&r| self.rays[r as usize].d.iter().all(|&q| held(q)))
+        [p.u, p.v].iter().all(|&r| self.axes[r as usize].d.iter().all(|&q| held(q)))
             && p.o.iter().all(|&q| held(q))
     }
 
@@ -56,14 +56,15 @@ impl Sketch {
         (self.planes.get(pl)?.origin as usize == p).then_some(pl)
     }
 
-    /// Turn ray `r` to drawn line `l` as it now stands, sense and all: a ray a plane holds along
-    /// a line (`program::entities::rays_along`).  False where the line has no length.
-    pub fn turn_ray_along(&mut self, r: usize, l: usize) -> bool {
+    /// Turn axis `r` to drawn line `l` as it now stands, sense and all: the axis a plane holds
+    /// along a line (`program::entities::axes_along`), which takes the line's direction only (its
+    /// place is the plane's to give).  False where the line has no length.
+    pub fn turn_axis_along(&mut self, r: usize, l: usize) -> bool {
         let ln = &self.lines[l];
         let d = crate::space::sub(self.world_point(ln.p2 as usize), self.world_point(ln.p1 as usize));
         let Some(d) = crate::space::normalised(d) else { return false };
         for k in 0..3 {
-            let q = self.rays[r].d[k] as usize;
+            let q = self.axes[r].d[k] as usize;
             self.params[q].value = d[k];
         }
         true
@@ -71,7 +72,7 @@ impl Sketch {
 
     /// The hidden point in space that point `p` stands at, minted once.  A point drawn in a
     /// plane gets three Params seeded where it stands and the intrinsic `lift` row holding them
-    /// there, over the plane's rays and origin.  A **point in space** is its own lift: its three
+    /// there, over the plane's axes and origin.  A **point in space** is its own lift: its three
     /// Params, and no row.  `None` for a point of a 2D sketch, which has no place in space
     /// (`program::reading` refuses one).
     pub fn lift_point(&mut self, p: usize) -> Option<usize> {

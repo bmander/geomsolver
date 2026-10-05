@@ -16,14 +16,14 @@ use wheel
 use point
 
 // the drill's side datum: u down the drill's axis, v along y, so x is its normal
-down := ray hint(x: 0, y: 0, z: -1)
+down := axis hint(x: 0, y: 0, z: -1)
 fix(x == 0, y == 0, z == -1) down
 side := plane(u: down, v: std.y)
 fix(x == 0, y == 0, z == 0) side
 
 in std.front {
-  construction centerline axis := line(std.origin, hint(x: 0, y: 1))
-  fix(x == 0, y == 1) axis.p2
+  construction centerline ax := line(std.origin, hint(x: 0, y: 1))
+  fix(x == 0, y == 1) ax.p2
 }
 
 // the fluted stock and the shank: rectangles in the front plane (x right, z up), turned about z
@@ -53,8 +53,8 @@ in std.front {
 }
 
 // the screw a wheel rides along, one lead a turn, and the turn from one flute to the next
-grind := motion(about: axis, advance: configuration.lead)
-index := motion(about: axis)
+grind := motion(about: ax, advance: configuration.lead)
+index := motion(about: ax)
 // from a wheel's rim below the stock to past its top
 start := -360deg * configuration.flute_wheel.rim / configuration.lead
 finish := 360deg * (configuration.fluted_length + configuration.flute_wheel.rim) / configuration.lead
@@ -64,7 +64,7 @@ fluted := solid(stock)
 flute_wheel := wheel.GrindingWheel(side, setting: configuration.helix, wheel: configuration.flute_wheel)
 construction flute := solid(flute_wheel.body, under: grind, from: start, to: finish)
 
-clearance_grind := motion(about: axis, advance: configuration.lead, phase: configuration.clearance_phase)
+clearance_grind := motion(about: ax, advance: configuration.lead, phase: configuration.clearance_phase)
 clearance_wheel := wheel.GrindingWheel(side, setting: configuration.helix, wheel: configuration.clearance_wheel)
 construction body_clearance := solid(clearance_wheel.body, under: clearance_grind, from: start, to: finish)
 
@@ -94,5 +94,7 @@ drill := solid(fluted)
 shank union drill
 
 // square to the axis halfway along the flutes: where the drawing cuts its section
-section_plane := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: configuration.fluted_length / 2)
+section_plane := plane hint(x: 0, y: 0, z: configuration.fluted_length / 2)
 fix(x == 0, y == 0, z == configuration.fluted_length / 2) section_plane
+fix(x == 1, y == 0, z == 0) section_plane.u
+fix(x == 0, y == 1, z == 0) section_plane.v

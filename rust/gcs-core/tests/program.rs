@@ -110,9 +110,9 @@ fn every_constraint_type_is_printable() {
             continue;
         }
         let (sk, c) = fixture(kind);
-        // a relation holding a ray is settled as the planes are, before the solve
-        // (`views::place`), so the ray it names comes back where that put it
-        let settles_a_ray = c.args.iter().any(|a| matches!(a, Arg::Ent(e) if e.kind == EntKind::Ray));
+        // a relation holding an axis is settled as the planes are, before the solve
+        // (`views::place`), so the axis it names comes back where that put it
+        let settles_an_axis = c.args.iter().any(|a| matches!(a, Arg::Ent(e) if e.kind == EntKind::Axis));
         let mut sk = sk;
         sk.add(c);
         let p = to_program(&sk);
@@ -133,7 +133,7 @@ fn every_constraint_type_is_printable() {
             kind.name(),
             p.text()
         );
-        if settles_a_ray {
+        if settles_an_axis {
             continue;
         }
         assert_eq!(
@@ -415,8 +415,8 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     // two cones and a cylinder, about the second line and the first
     let (ka, kb) = (sk.cone(l2, 0.5, "ka"), sk.cone(l1, 0.25, "kb"));
     let cy = sk.cylinder(l2, 7.0, "cy");
-    // two rays, one placed through `p` by a relation of its own
-    let (ra, rb) = (sk.ray([1.0, 0.2, 0.3], "ra"), sk.ray([0.1, 1.0, -0.4], "rb"));
+    // two axes, one placed through `p` by a relation of its own
+    let (ra, rb) = (sk.axis([1.0, 0.2, 0.3], "ra"), sk.axis([0.1, 1.0, -0.4], "rb"));
     // a projection over stated views is `Project`, and comes back as the twin its views feed
     if matches!(kind, CKind::Project | CKind::ProjectSolved) {
         sk.set_plane(q, Some(pb));
@@ -467,10 +467,10 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
                 Arg::Ent(EntRef::new(EntKind::Cone, ka))
             }
             SpecKind::Cylinder => Arg::Ent(EntRef::new(EntKind::Cylinder, cy)),
-            // a direction relation over a ray and a line, or two rays
-            SpecKind::Ray | SpecKind::Axis if i == 0 => Arg::Ent(EntRef::new(EntKind::Ray, ra)),
-            SpecKind::Axis if kind == CKind::Parallel3 => Arg::Ent(EntRef::line(l2)),
-            SpecKind::Ray | SpecKind::Axis => Arg::Ent(EntRef::new(EntKind::Ray, rb)),
+            // a direction relation over an axis and a line, or two axes
+            SpecKind::Axis | SpecKind::Direction if i == 0 => Arg::Ent(EntRef::new(EntKind::Axis, ra)),
+            SpecKind::Direction if kind == CKind::Parallel3 => Arg::Ent(EntRef::line(l2)),
+            SpecKind::Axis | SpecKind::Direction => Arg::Ent(EntRef::new(EntKind::Axis, rb)),
             SpecKind::Sphere if used_sphere => Arg::Ent(EntRef::new(EntKind::Sphere, sb)),
             SpecKind::Sphere => {
                 used_sphere = true;

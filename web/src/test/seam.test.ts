@@ -40,7 +40,7 @@ fix(x == 3, y == 0) b
 fix(x == 3, y == 1) m
 fix(x == 3, y == 2) c
 fix(x == 2, y == 2) d
-axis := line(o,q)
+ax := line(o,q)
 spin_axis := line(o,x)
 profile := (bottom := line(a,b)) -> (low := line(b,m)) -> (high := line(m,c)) ->
           (top := line(c,d)) -> (inner := line(d,a)) -> close
@@ -58,7 +58,7 @@ join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
 end_offset := Sphere(shifted,size: sqrt(10.25-cos(0.2rad))*1mm)
 end_join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.2rad))*1mm)
 }
-body := solid(profile,about: axis)
+body := solid(profile,about: ax)
 first_surface := surface(body,low,from: 0deg,to: 90deg)
 second_surface := surface(body,high,from: 0deg,to: 90deg)
 roll := motion(about: spin_axis)
@@ -76,8 +76,8 @@ end_edge := seam(first_envelope,end_offset.wall)
 end_join_edge := seam(second_envelope,end_join_cut.wall)
 finish := vertex(sphere_edge,end_edge)
 finish_join := vertex(shared,end_join_edge)
-bounded := edge(sphere_edge,from: corner,to: finish,along: axis)
-joined := edge(shared,from: junction,to: finish_join,along: axis)
+bounded := edge(sphere_edge,from: corner,to: finish,along: ax)
+joined := edge(shared,from: junction,to: finish_join,along: ax)
 `);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));

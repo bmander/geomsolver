@@ -136,13 +136,13 @@ a := point
 fix(x == 0, y == 0) a
 b := point
 fix(x == 0, y == 1) b
-axis := line(a,b)
+ax := line(a,b)
 c := point
 fix(x == 10, y == 2) c
 ring := circle(center: c)
 radius(2) ring
 }
-tool := solid(face(ring),about: axis)
+tool := solid(face(ring),about: ax)
 ",Path::new("."));
     let cad = native::Session::new().unwrap();
     for (e,is_sphere) in [(&sphere,true),(&torus,false)] {

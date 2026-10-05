@@ -282,10 +282,10 @@ sheet drawing {
   style m.side.boreA.c { display: none }
   style m.side.boreA.d { display: none }
   style m.ref { display: none }
-  style m.plate.r.axis { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.plate.r.ax { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.plate.r.rad_i { display: none }
   style m.plate.r.rad_e { display: none }
-  style m.plate.l.axis { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.plate.l.ax { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.plate.l.rad_i { display: none }
   style m.plate.l.rad_e { display: none }
   style m.plate.ventR.center { color: #7a7a7a; width: 0.6; dash: 4 3 }
@@ -322,7 +322,7 @@ sheet drawing {
   style m.plate.thr.lv_a { color: #2a7ab0; width: 1.4 }
   style m.plate.thr.lv_c { color: #2a7ab0; width: 1.4 }
   style m.plate.thr.datum { display: none }
-  style m.plate.thr.axis { display: none }
+  style m.plate.thr.ax { display: none }
   style m.crank.arm { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.crank.disc.ssa { display: none }
   // Datums place the geometry; the existing centerlines carry its presentation.
@@ -338,12 +338,12 @@ sheet drawing {
   style m.plate.thr.entry { display: none }
   style m.plate.thr.wall { display: none }
   style m.plate.thr.exit { display: none }
-  style m.plate.air.feedR.axis { display: none }
+  style m.plate.air.feedR.ax { display: none }
   style m.plate.air.feedR.ab { display: none }
   style m.plate.air.feedR.bc { display: none }
   style m.plate.air.feedR.cd { display: none }
   style m.plate.air.feedR.da { display: none }
-  style m.plate.air.feedL.axis { display: none }
+  style m.plate.air.feedL.ax { display: none }
   style m.plate.air.feedL.ab { display: none }
   style m.plate.air.feedL.bc { display: none }
   style m.plate.air.feedL.cd { display: none }
@@ -352,11 +352,11 @@ sheet drawing {
   style m.plate.thr.hole_axes { display: none }
   style m.bankR.cylinder_axes { display: none }
   style m.bankR.piston_axes { display: none }
-  style m.bankR.cyl.axis { display: none }
+  style m.bankR.cyl.ax { display: none }
   style m.bankR.pis.rod { display: none }
   style m.bankL.cylinder_axes { display: none }
   style m.bankL.piston_axes { display: none }
-  style m.bankL.cyl.axis { display: none }
+  style m.bankL.cyl.ax { display: none }
   style m.bankL.pis.rod { display: none }
   style m.crank.disc.gs.s0 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
   style m.crank.disc.gs.s1 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }

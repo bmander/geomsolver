@@ -65,7 +65,7 @@ fn projection_inputs_exclude_unrelated_geometry_and_include_solid_extents() {
 #[test]
 fn projection_inputs_follow_view_poses_and_cutting_planes() {
     let mut e = read(&format!("{RECT}block := solid(sec, depth: 30mm)\n\
-        slice := plane(u: std.x, v: std.z)\nfix(x == 0, y == -10, z == 0) slice\n\
+        slice := plane\nfix(x == 0, y == -10, z == 0) slice\nfix(x == 1, y == 0, z == 0) slice.u\nfix(x == 0, y == 0, z == 1) slice.v\n\
         view(block) in std.side\nsection(block, at: slice) in std.front\n"));
     let before = hidden::inputs(&e.sketch);
     let picture = gcs_core::report::derived_json(&e.sketch, UNIT);

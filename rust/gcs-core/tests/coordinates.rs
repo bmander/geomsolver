@@ -78,7 +78,7 @@ use std
 in std.front {
 a := point
 fix(x == 0mm, y == 1mm) a
-axis := line(std.origin, a)
+ax := line(std.origin, a)
 }
 b := point in std.front
 in std.front {
@@ -91,7 +91,7 @@ b distance(3mm, along: v) std.front
     close(e.sketch.point_xy(e.map.ent_named("b").unwrap().i()), (2.0, 3.0));
     let front = e.map.ent_named("std.front").unwrap().i();
     assert_eq!(e.sketch.plane_of(e.map.ent_named("b").unwrap().i()), Some(front));
-    let axis = &e.sketch.lines[e.map.ent_named("axis").unwrap().i()];
+    let axis = &e.sketch.lines[e.map.ent_named("ax").unwrap().i()];
     assert_eq!(axis.p1 as usize, e.map.ent_named("std.origin").unwrap().i());
 }
 
@@ -184,7 +184,7 @@ fn datum_seeds_and_membership_pass_through_nested_instances() {
     let mut e = build(&format!("{AXES}component Probe(f: plane) {{\n\
         p := point hint(at: f, x: -5mm, y: 2mm)\np distance(-5mm, along: u) f\n\
         p distance(2mm, along: v) f\n}}\ncomponent Part(f: plane) {{ probe := Probe(f) }}\n\
-        view := plane(u: std.x, v: std.z)\nfix(x == 0, y == -7, z == 0) view\n\
+        view := plane\nfix(x == 0, y == -7, z == 0) view\nfix(x == 1, y == 0, z == 0) view.u\nfix(x == 0, y == 0, z == 1) view.v\n\
         i := Part(f.axes) in view\n"));
     let p = e.map.ent_named("i.probe.p").unwrap().i();
     close(e.sketch.point_xy(p), (4.8, 18.6));

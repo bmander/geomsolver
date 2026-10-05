@@ -13,7 +13,7 @@
 //! * a corner tied by `project` into two non-parallel views is **over-determined and exact**:
 //!   each image contributes `u_P·X = a` and `v_P·X = b`, so two views give four rows in three
 //!   unknowns, consistent precisely *because* the projection holds.  The rank tells a corner
-//!   that can be placed in space from one seen in a single view, which is a ray and stays on
+//!   that can be placed in space from one seen in a single view, which is an axis and stays on
 //!   its plane.
 //!
 //! The **core projects and the front end strokes**, the seam `callout.rs` and `plane::glyph`
@@ -32,7 +32,7 @@ pub mod workspace;
 /// The rank tolerance a corner is placed at, relative to the largest singular value of its four
 /// rows.  Two views make a corner only if they are *views* — for planes at an angle θ the
 /// smallest singular value is about sin θ / √2, so this says two planes within about a degree
-/// of parallel are one view, and a corner seen in them is a ray.  A looser rule (1e-9, the
+/// of parallel are one view, and a corner seen in them is an axis.  A looser rule (1e-9, the
 /// ordinary dimensionless one) passed such a pair and then amplified whatever residual the
 /// projection carried by 1/σ₃, flinging the corner across the page; `validate` refuses only the
 /// exactly-parallel pair, and an explicit `u:`/`v:` basis can be as close as it likes.
@@ -223,7 +223,7 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         // of a solid is a derived view, which is its own geometry
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
         // nothing on its view's page either: a sphere is in space (`scene3d` draws it there)
-        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => Vec::new(),
+        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Axis => Vec::new(),
         EntKind::Point => vec![vec![sk.point_xy(i)]],
         EntKind::Line => {
             let l = &sk.lines[i];
@@ -341,11 +341,11 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
             }
             continue;
         }
-        // a ray is in space and in no view: its line across the drawing's reach, and a head at
+        // an axis is in space and in no view: its line across the drawing's reach, and a head at
         // the end it points to
-        if e.kind == EntKind::Ray {
+        if e.kind == EntKind::Axis {
             use crate::space::{across, add, normalised, scale};
-            let r = &sk.rays[e.i()];
+            let r = &sk.axes[e.i()];
             let p = r.a.map(|q| sk.params[q as usize].value);
             let Some(d) = normalised(r.d.map(|q| sk.params[q as usize].value)) else { continue };
             let reach = sk.extent().max(1.0);
@@ -730,7 +730,7 @@ pub fn objects(sk: &Sketch) -> Vec<usize> {
 /// it may sit nearer than that middle.  Ordering can only be right between polygons that do not
 /// overlap in the picture, which is exactly the case this is not.
 ///
-/// So a piece is kept when **nothing stands between it and the eye** — a ray from its centroid,
+/// So a piece is kept when **nothing stands between it and the eye** — an axis from its centroid,
 /// against every other piece of the boundary.  That is exact where a whole face is hidden, which
 /// is every void; a face *partly* covered is all-or-nothing, which the depth sort below then
 /// mostly settles, and which is the honest limit of a schematic without a depth buffer.

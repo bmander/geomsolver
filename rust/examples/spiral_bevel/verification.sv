@@ -27,7 +27,7 @@ component BlankEnds(blank: group) {
 // the envelope of the crown's tip, the member's `root`. Their seams with each other, the tip
 // cone and the end spheres meet at six corners; the seven edges between them, sliced along the
 // member's `axis`, close the two faces, which use their join edge in opposite directions.
-component ToothSide(flank: patch, round: patch, root: patch, blank: group, axis: line) {
+component ToothSide(flank: patch, round: patch, root: patch, blank: group, ax: line) {
   join := seam(flank, round)
   root_join := seam(round, root)
   tip_edge := seam(flank, blank.tip.wall)
@@ -43,13 +43,13 @@ component ToothSide(flank: patch, round: patch, root: patch, blank: group, axis:
   join_heel := vertex(join, heel_edge)
   root_heel := vertex(root_join, round_heel_edge)
 
-  tip_span := edge(tip_edge, from: tip_toe, to: tip_heel, along: axis)
-  join_span := edge(join, from: join_toe, to: join_heel, along: axis)
-  root_span := edge(root_join, from: root_toe, to: root_heel, along: axis)
-  toe_span := edge(toe_edge, from: join_toe, to: tip_toe, along: axis)
-  heel_span := edge(heel_edge, from: join_heel, to: tip_heel, along: axis)
-  round_toe_span := edge(round_toe_edge, from: root_toe, to: join_toe, along: axis)
-  round_heel_span := edge(round_heel_edge, from: root_heel, to: join_heel, along: axis)
+  tip_span := edge(tip_edge, from: tip_toe, to: tip_heel, along: ax)
+  join_span := edge(join, from: join_toe, to: join_heel, along: ax)
+  root_span := edge(root_join, from: root_toe, to: root_heel, along: ax)
+  toe_span := edge(toe_edge, from: join_toe, to: tip_toe, along: ax)
+  heel_span := edge(heel_edge, from: join_heel, to: tip_heel, along: ax)
+  round_toe_span := edge(round_toe_edge, from: root_toe, to: join_toe, along: ax)
+  round_heel_span := edge(round_heel_edge, from: root_heel, to: join_heel, along: ax)
 
   working := face(toe_span, tip_span, heel_span, join_span, on: flank)
   transition := face(round_toe_span, join_span, round_heel_span, root_span, on: round)
@@ -96,13 +96,13 @@ component ReferenceFaces(refs: group) {
 
   // The four sides that work: the pinion tooth's two, and the gear's two facing them.
   pinion_outer := ToothSide(pinion_region[first].bounded, pinion_region[first_round].bounded,
-    pinion_region[tip].bounded, refs.pinion_blank, refs.pinion.axis)
+    pinion_region[tip].bounded, refs.pinion_blank, refs.pinion.ax)
   pinion_inner := ToothSide(pinion_region[last].bounded, pinion_region[last_round].bounded,
-    pinion_region[tip].bounded, refs.pinion_blank, refs.pinion.axis)
+    pinion_region[tip].bounded, refs.pinion_blank, refs.pinion.ax)
   gear_outer_inner := ToothSide(gear_outer_region[first].bounded,
     gear_outer_region[first_round].bounded, gear_outer_region[tip].bounded, refs.gear_blank,
-    refs.gear.axis)
+    refs.gear.ax)
   gear_inner_outer := ToothSide(gear_inner_region[last].bounded,
     gear_inner_region[last_round].bounded, gear_inner_region[tip].bounded, refs.gear_blank,
-    refs.gear.axis)
+    refs.gear.ax)
 }

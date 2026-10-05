@@ -583,7 +583,7 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
             // no element here to name the line it is really measured from (one through the
             // first point, along a ground axis) — so it takes the numeric residue below on
             // purpose: an edge claiming "distance" would be a lie the merge ranks believe.
-            // One that reads only held numbers moves nothing — `use std`'s axes, each a ray a
+            // One that reads only held numbers moves nothing — `use std`'s axes, each an axis a
             // `fix` holds — so there is nothing for the residue to do either, and a drag beside
             // it keeps the plan.
             _ if c.reads_only_held(sk) => {}

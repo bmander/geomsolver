@@ -64,7 +64,7 @@ fn what_is_not_one_indexing_is_refused_with_its_reason() {
     refused(&[placements(first,o,a,2)],"three or more");
     refused(&[placements(first,o,a,6),placements(first,o,a,5)],"no one indexing");
     // turned about a line elsewhere
-    refused(&[placements(first,o,a,6),placements(first,[1.,0.,0.],a,6)],"not a turn about the indexing axis");
+    refused(&[placements(first,o,a,6),placements(first,[1.,0.,0.],a,6)],"not a turn about the indexing ax");
     // a turn that also slides along its axis, as a helix's placements do
     let mut slid = placements(first,o,a,6);
     slid[1] = slid[1].then(Motion::translation([0.,0.,0.5],[0.;3]).unwrap());

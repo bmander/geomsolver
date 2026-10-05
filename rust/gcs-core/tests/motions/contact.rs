@@ -7,7 +7,7 @@ fn family(source_rate: f64,observer_rate: f64,source_phase: f64,observer_phase: 
 }
 fn from_axes(axes: &str,source_rate: f64,observer_rate: f64,source_phase: f64,observer_phase: f64) -> motion::Family {
     let e = solved(&format!("{axes}\n\
-        source := motion(about: axis,ratio: {source_rate},phase: {source_phase}deg)\n\
+        source := motion(about: ax,ratio: {source_rate},phase: {source_phase}deg)\n\
         observer := motion(about: other,ratio: {observer_rate},phase: {observer_phase}deg)\n\
         relative := motion(source,relative_to: observer)\n"));
     motion::Family::read(&e.sketch,e.map.ent_named("relative").unwrap().i()).unwrap()
@@ -100,7 +100,7 @@ fn empty_constant_and_double_root_contacts_are_not_confused() {
     let stationary = family(0.,0.5,90.,0.);
     assert_eq!(stationary.normal_velocity(surface(2.)).unwrap().roots([-1.,1.],1e-10,8)
         .unwrap_err(),Error::Degenerate);
-    let e = solved(&format!("{AXES}\nspin := motion(about: axis)\n\
+    let e = solved(&format!("{AXES}\nspin := motion(about: ax)\n\
         identity := motion(spin,relative_to: spin)\n\
         nested := motion(identity,relative_to: spin)\n"));
     let read = |name| motion::Family::read(&e.sketch,e.map.ent_named(name).unwrap().i()).unwrap();
@@ -128,7 +128,7 @@ fn a_racks_contact_equation_is_affine_in_the_roll() {
     for (advance,ratio) in [(5.,0.7),(-3.,-1.5),(12.,2.)] {
         let e = solved(&format!("{AXES}\n\
             slide := motion(along: other,advance: {advance})\n\
-            blank := motion(about: axis,ratio: {ratio},phase: 20deg)\n\
+            blank := motion(about: ax,ratio: {ratio},phase: 20deg)\n\
             rack := motion(slide,relative_to: blank)\n"));
         let family = motion::Family::read(&e.sketch,e.map.ent_named("rack").unwrap().i()).unwrap();
         for surface in surfaces {

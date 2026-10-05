@@ -15,11 +15,11 @@ a := point
 b := point
 fix(x == 2, y == 0) a
 fix(x == 2, y == 1) b
-axis := line(a,b)
+ax := line(a,b)
 }
 relative := motion(turn,relative_to: observer)
-turn := motion(about: axis,ratio: 3,phase: 90deg)
-observer := motion(about: axis,ratio: 1)
+turn := motion(about: ax,ratio: 3,phase: 90deg)
+observer := motion(about: ax,ratio: 1)
 `);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
@@ -45,7 +45,7 @@ a := point
 b := point
 fix(x == 0, y == 0) a
 fix(x == 0, y == 1) b
-axis := line(a,b)
+ax := line(a,b)
 c := point
 d := point hint(x: 25,y: -2)
 fix(x == 0, y == -2) c
@@ -57,7 +57,7 @@ fix(x == 0, y == -4) e
 small := horizontal line(e,f)
 e distance(10mm) f
 }
-turn := motion(about: axis, ratio: length(big) / length(small))
+turn := motion(about: ax, ratio: length(big) / length(small))
 `);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));

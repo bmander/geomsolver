@@ -1,5 +1,5 @@
 //! What is left of the datum a plane once was (issue #47, item 6 folded `frame` into `plane`;
-//! `docs/planes-plan.md` made a plane two rays and a place): a plane is measured where it
+//! `docs/planes-plan.md` made a plane two axes and a place): a plane is measured where it
 //! stands, at its own origin, and the word `frame` is refused with the spelling it became.
 use gcs_core::model::{distance_between, EntRef, Sketch};
 use gcs_core::plane::Basis;

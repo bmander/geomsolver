@@ -131,9 +131,9 @@ private e1 := line(l1, l2)
 private e2 := line(l2, l3)
 private e3 := line(l3, l4)
 private e4 := line(l4, l5)
-private axis := line(l5, l0)
+private ax := line(l5, l0)
 }
-construction tool := solid(face(e0, e1, e2, e3, e4, axis), about: axis)
+construction tool := solid(face(e0, e1, e2, e3, e4, ax), about: ax)
 ";
 
 #[test]
@@ -175,7 +175,7 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
     eprintln!("{} samples, {} contacts, spacing {:.4}, least J {:.3}",s.samples,s.contacts,s.spacing,s.least_area_factor);
     assert_eq!(s.placements.len(),24);
     assert_eq!(s.placements.iter().filter(|p| p.equivalent_to.is_none()).count(),1,
-        "the blank is a revolution about the indexing axis, so one placement's checks serve all");
+        "the blank is a revolution about the indexing ax, so one placement's checks serve all");
     assert!(matches!(s.equivalence,admission::Equivalence::Revolved {..}),"proved by the solid graph: {:?}",s.equivalence);
 }
 

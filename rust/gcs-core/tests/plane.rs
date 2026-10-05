@@ -1,4 +1,4 @@
-//! A plane is two rays and a place in space, a point may be `in` one, and `project` says two
+//! A plane is two axes and a place in space, a point may be `in` one, and `project` says two
 //! such points are images of one point — descriptive geometry (§6.7).
 use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::model::{EntRef, Sketch};
@@ -18,16 +18,20 @@ fn side() -> Basis {
     Basis { u: [0.0, 1.0, 0.0], v: [0.0, 0.0, 1.0], o: [0.0; 3] }
 }
 
-/// A plane over two free rays: no row of its own, its origin a point drawn in it at (0, 0).
+/// A plane over two free axes: its origin a point drawn in it at (0, 0), on each axis — the
+/// basis is read, not solved, and the axes are placed through the origin.
 #[test]
-fn a_plane_is_its_rays_and_its_place() {
+fn a_plane_is_its_axes_and_its_place() {
     let mut sk = Sketch::new();
-    let (u, v) = (sk.ray([4.0, 3.0, 0.0], "u"), sk.ray([0.0, 0.0, 1.0], "v"));
+    let (u, v) = (sk.axis([4.0, 3.0, 0.0], "u"), sk.axis([0.0, 0.0, 1.0], "v"));
     let before = sk.constraints.len();
+    assert_eq!(before, 2, "the axes' unit rows");
     let p = sk.plane(u, v, [1.0, 2.0, 3.0], "front");
-    assert_eq!(sk.constraints.len(), before, "no intrinsic row: the basis is read, not solved");
-    assert_eq!(before, 2, "the rays' unit rows");
-    assert!(sk.constraints.iter().all(|c| c.intrinsic && c.kind == CKind::RayUnit));
+    let kinds: Vec<CKind> = sk.constraints[before..].iter().map(|c| c.kind).collect();
+    assert_eq!(kinds, [CKind::AxisFoot, CKind::PlaneAxis, CKind::AxisFoot, CKind::PlaneAxis],
+        "each axis placed, and the origin on it");
+    assert!(sk.constraints.iter().all(|c| c.intrinsic));
+    assert!(sk.axes.iter().all(|r| r.placed));
     let b = sk.basis(p);
     assert!(near(b.u[0], 0.8) && near(b.u[1], 0.6) && b.v == [0.0, 0.0, 1.0]);
     let o = sk.planes[p].origin as usize;
@@ -36,7 +40,7 @@ fn a_plane_is_its_rays_and_its_place() {
     assert!(sk.point_params(o).iter().all(|&k| sk.params[k as usize].fixed));
     assert_eq!(sk.world_point(o), [1.0, 2.0, 3.0]);
     let d = diagnose::diagnose(&mut sk, Default::default());
-    assert_eq!(d.dof, 2 + 2 + 3, "two directions and a place");
+    assert_eq!(d.dof, 2 + 2 + 3, "two directions and a place: each axis through it");
 }
 
 #[test]
@@ -155,7 +159,7 @@ fn the_refusals() {
         format!(
             "{{\"version\":1,\"points\":[{{\"x\":0,\"y\":0{}}},{{\"x\":1,\"y\":1{}}},\
              {{\"x\":0,\"y\":0,\"fixed\":true}},{{\"x\":0,\"y\":0,\"fixed\":true}}],\
-             \"rays\":[{{\"d\":[1,0,0],\"fixed\":[true,true,true]}},\
+             \"axes\":[{{\"d\":[1,0,0],\"fixed\":[true,true,true]}},\
              {{\"d\":[0,0,1],\"fixed\":[true,true,true]}},\
              {{\"d\":[0,1,0],\"fixed\":[true,true,true]}}],\
              \"planes\":[{planes}],\
@@ -189,7 +193,7 @@ fn round_trips_through_json_and_the_graft() {
     let id = sk.add(c);
     sk.set_class(EntRef::plane(top), "section", true);
     let text = io::dumps(&sk, Some(1));
-    assert!(!text.contains("RayUnit"), "an intrinsic is never stored");
+    assert!(!text.contains("AxisUnit"), "an intrinsic is never stored");
     let back = io::loads(&text).unwrap();
     assert_eq!(back.planes.len(), 3);
     assert_eq!(back.basis(right), sk.basis(right));

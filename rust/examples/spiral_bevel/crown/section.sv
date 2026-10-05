@@ -67,10 +67,10 @@ preview {
     std.origin distance(pitch_radius + 1.3mm, along: right) rp
     std.origin distance(0mm, along: up) rp
     rack := RackSection(lp, rp, proportions, normal_module: 2mm)
-    construction centerline axis := line(std.origin, hint(x: 0, y: 1))
-    fix(x == 0, y == 1) axis.p2
+    construction centerline ax := line(std.origin, hint(x: 0, y: 1))
+    fix(x == 0, y == 1) ax.p2
   }
-  crown := solid(rack.profile, about: axis)
+  crown := solid(rack.profile, about: ax)
   outer := surface(crown, rack.outer)
   outer_round := surface(crown, rack.outer_round)
   inner := surface(crown, rack.inner)
