@@ -566,16 +566,67 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
 }
 
 /// The hidden axes planes were written over drawn lines with, each now seeded along its line as
-/// the line stands — its points have their places — and held parallel to it, intrinsically: the
-/// plane's own statement, never a relation of the document's.
+/// the line stands — its points have their places — and held to it, intrinsically: the plane's
+/// own statement, never a relation of the document's.  A hidden axis is the line: parallel to
+/// it, and through one of its ends, the one it shares with the plane's other line where the two
+/// meet at an end (`std.Turned`'s two lines from `o`), else its start.  A plane whose two axes
+/// stand on one point stands there: its origin is that point, three rows in place of the four
+/// `PlaneAxis` rows, which would say one thing twice where no count of columns can see it.
 pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
-    for d in deferred {
-        let &Deferred::Along { axis, line } = d else { continue };
-        sk.turn_axis_along(axis, line);
-        let mut c = crate::constraints::Constraint::two_line(
-            crate::constraints::CKind::Parallel3,
-            EntRef::new(EntKind::Axis, axis),
-            EntRef::line(line),
+    use crate::constraints::{Arg, CKind, Constraint};
+    let along: BTreeMap<usize, usize> = deferred.iter()
+        .filter_map(|d| match *d { Deferred::Along { axis, line } => Some((axis, line)), _ => None })
+        .collect();
+    if along.is_empty() {
+        return;
+    }
+    let ends = |sk: &Sketch, l: usize| [sk.lines[l].p1 as usize, sk.lines[l].p2 as usize];
+    for p in 0..sk.planes.len() {
+        let (u, v) = (sk.planes[p].u as usize, sk.planes[p].v as usize);
+        let (lu, lv) = (along.get(&u).copied(), along.get(&v).copied());
+        // the end the two lines share, if they meet at one
+        let shared = match (lu, lv) {
+            (Some(a), Some(b)) => ends(sk, a).into_iter().find(|x| ends(sk, b).contains(x)),
+            _ => None,
+        };
+        for (axis, line) in [(u, lu), (v, lv)] {
+            let Some(line) = line else { continue };
+            sk.turn_axis_along(axis, line);
+            let mut c = Constraint::two_line(
+                CKind::Parallel3,
+                EntRef::new(EntKind::Axis, axis),
+                EntRef::line(line),
+            );
+            c.intrinsic = true;
+            sk.add(c);
+            let at = shared.unwrap_or(sk.lines[line].p1 as usize);
+            let x = sk.world_point(at);
+            sk.stand_axis_through(axis, x);
+            let mut c = Constraint::new(
+                CKind::PointOnAxis,
+                vec![Arg::Ent(EntRef::point(at)), Arg::Ent(EntRef::new(EntKind::Axis, axis))],
+            );
+            c.intrinsic = true;
+            sk.add(c);
+        }
+        // both axes on one point, which is drawn elsewhere: the plane stands at it
+        let origin = sk.planes[p].origin as usize;
+        let Some(at) = shared.filter(|&x| sk.points[x].plane != Some(p as u32)) else { continue };
+        let rows: Vec<u32> = sk.constraints.iter()
+            .filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis && c.args[0].ent() == EntRef::plane(p))
+            .map(|c| c.id)
+            .collect();
+        for id in rows {
+            sk.remove(id);
+        }
+        let x = sk.world_point(at);
+        for k in 0..3 {
+            let q = sk.planes[p].o[k] as usize;
+            sk.params[q].value = x[k];
+        }
+        let mut c = Constraint::new(
+            CKind::Coincident3,
+            vec![Arg::Ent(EntRef::point(origin)), Arg::Ent(EntRef::point(at))],
         );
         c.intrinsic = true;
         sk.add(c);

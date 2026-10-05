@@ -12,8 +12,9 @@ axes** says they are one line, either way round (four rows), so `u coincident P.
 by its axes. An axis's place is held as its direction is, by `px`, `py`, `pz` — the point on it
 nearest the world origin: `fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x`, which is how
 `std`'s axes are held. A plane over two held axes stands where they meet; held axes that miss,
-that run alike, or a plane held off its held axes, are **E067**. A drawn line serving as an axis
-gives its direction only. **`P parallel Q`** says two planes face alike, either way round — their
+that run alike, or a plane held off its held axes, are **E067**. A drawn line serving as a
+plane's axis is the line — parallel to it and through its start, or through the end it shares
+with the plane's other line, where the plane then stands. **`P parallel Q`** says two planes face alike, either way round — their
 normals parallel, two rows — and nothing of where either stands or how it turns within itself. A
 child slot of a plane takes a seed, the direction its own axis starts from: `plane(u: hint(x: 0,
 y: 1, z: 0))`.
@@ -762,8 +763,10 @@ line, either way round: four rows, the seed choosing the sense as it does for `p
 `fix(x == 0, y == 0, z == 1) t` holds its direction, and **[0.43]** `fix(px == 0, py == 0, pz ==
 0) t` where it stands — `px`, `py`, `pz` are its point nearest the world origin. An axis read only
 as a direction has two freedoms, and one whose place a relation reads has two more. **A drawn line
-is an axis** wherever an axis is asked for, from its `p1` toward its `p2`, as its points stand —
-**[0.43]** for its direction: a plane over a line holds a hidden axis parallel to it.
+is an axis** wherever an axis is asked for, from its `p1` toward its `p2`, as its points stand.
+**[0.43]** A plane over a line holds a hidden axis that is the line: parallel to it, and through
+its `p1` — or, where the plane's two lines share an end, through that end, the plane's origin
+standing there (three rows, not four). So `plane(u: hinge, v: …)` stands on the hinge.
 There is no vector arithmetic: a direction is a thing constrained, never a value computed.
 
 **A plane is two axes through a place.**

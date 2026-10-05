@@ -21,8 +21,12 @@ reaches stands in space (`PointE.z`, given by `Sketch::give_place` once membersh
 own lift, no row); a 2D drawing is `use std` + `in std.front { … }`. There is no page: a point
 with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with no lift. An **axis**
 (`t := axis hint(x:, y:, z:)`, `AxisE` a[3], d[3]; intrinsics `axis_unit`, `axis_foot` once a
-relation reads its place) is a directed line with no start; a drawn line reads as one, for its
-direction only (a plane over a line holds a hidden axis parallel to it: `entities::axes_along`).
+relation reads its place) is a directed line with no start; a drawn line reads as one. A plane
+over a line holds a hidden axis that is the line (`entities::axes_along`: intrinsic `Parallel3`
+and `PointOnAxis` at its `p1`, or at the end it shares with the plane's other line, where the
+plane's two `PlaneAxis` rows give way to one intrinsic `Coincident3` of origin and end — four
+rows over three unknowns would be a dependency the structural count cannot see, #88). The lift
+writes both rows (`r parallel l`, `p coincident r`).
 A **plane** is `P := plane(u: r1, v: r2)` (`PlaneE { u, v, o, origin }`): right u, out u × v, up
 out × u; it owns `o` (three unknowns); members `P.u`, `P.v`, `P.origin` (a point drawn in P held at
 (0, 0)). **Its axes pass through its origin** (0.43, #84): `push_plane` mints two intrinsic

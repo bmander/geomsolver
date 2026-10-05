@@ -20,17 +20,15 @@ component PitchView(front: plane, span: Length) {
   down perpendicular view
 }
 
-// A view standing square to `parent` on `hinge`, a line drawn in it: its u runs along the hinge
-// and its v along `up`, square to the parent — `up` read as a direction, through an axis of the
-// view's own, since a plane's axes pass through its origin and many views share `up`. Its origin
-// is the parent's, seen in it: on the fold line, where the parent's origin projects.
+// A view standing square to `parent` on `hinge`, a line drawn in it: its u is the hinge, so it
+// stands on it, and its v runs along `up`, square to the parent — `up` read as a direction,
+// through an axis of the view's own, since a plane's axes pass through its origin and many views
+// share `up`. Its origin is the parent's, seen in it: on the fold line, where the parent's origin
+// projects.
 component FoldedView(parent: plane, hinge: line, up: axis, span: Length) {
-  private square := axis hint(x: 0, y: 0, z: -1)
-  square parallel up
-  view := plane(u: hinge, v: square)
-  parent coincident view.origin
+  view := plane(u: hinge, v: hint(x: 0, y: 0, z: -1))
+  up parallel view.v
   parent.origin project view.origin
-  hinge.p1 coincident view
 }
 
 preview {

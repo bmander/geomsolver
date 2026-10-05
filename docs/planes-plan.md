@@ -540,19 +540,24 @@ Decided 2026-10-05, after the above was built:
   `p := plane` is seven freedoms. `a coincident b` between axes is `AxisCoincident`, one line
   either way round (four rows), so two square axes `coincident` with `p.u` and `p.v` make a
   frame of six freedoms (`tests/bare_plane.rs`).
-* **Deviation: a drawn line as an axis gives its direction only.** The plan stood the hidden axis
-  of `plane(u: hinge, …)` on the line too (the line's `p1` on it). That made the origin rows
-  redundant wherever a document also placed the origin on the line (`std.Turned`), and above
-  `NUMERIC_MAX` the structural count alone then misread the V-twin's crank freedom. The hidden
-  axis stays parallel to the line and passes through the plane's origin; `Turned` keeps
-  `o coincident axes.origin`.
+* **A drawn line as an axis is the line.** `plane(u: hinge, …)`'s hidden axis is parallel to the
+  line and through its start, so the plane stands on the hinge. Built first with the start
+  alone, `std.Turned`'s two lines from `o` made the plane's four origin rows say three things —
+  a dependency of the figure, not of the columns, so above `NUMERIC_MAX` the structural count let
+  the surplus row "fix" the V-twin's free crank (DOF 1 read as 0, a piston 54 off). So a plane
+  whose two lines share an end stands each axis on that end and the plane at it: three rows,
+  `Coincident3` of its origin and the end, in place of the four `PlaneAxis` rows
+  (`entities::axes_along`), and `Turned` says no `o coincident axes.origin`. A dependency a
+  document states itself stays invisible to the count above `NUMERIC_MAX`: #88 checks rank per
+  block.
 * **An origin already on an axis is placed in fewer rows.** Over `std.y`, `P.origin coincident M`
   states three rows for one freedom; `P.origin coincident std.front` (skew_axes, the hypoid
   fixture) or an ordinate along the shared axis (`front.origin distance(0mm, along: u) view`, the
   spiral bevel's pitch view) states one, keeping the structural count square.
 
 **The gate** held: every example's DOF and every named point's position are as before. The
-hypoid layout decomposes into 125 blocks, 14 deep (ten plane origins become blocks of three).
+hypoid layout decomposes into 123 blocks, 14 deep; its folded views stand on their hinges, so
+`FoldedView` no longer says `parent coincident view.origin` or `hinge.p1 coincident view`.
 
 ## Appendix: the corpus
 

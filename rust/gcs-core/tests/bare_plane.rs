@@ -211,3 +211,38 @@ fn two_planes_parallel_face_alike_either_way() {
     let e = read("use std\nb := plane\nstd.top parallel b\n");
     assert_eq!(e.sketch.user_constraints()[0].kind, CKind::PlaneParallel);
 }
+
+/// **A plane over a drawn line stands on it**: its axis is the line, parallel to it and through
+/// its start, so the line lies in the plane and the origin slides along it.
+#[test]
+fn a_plane_over_a_line_stands_on_it() {
+    let e = read("use std\nin std.front {\n  h := line(hint(x: 10, y: 5), hint(x: 40, y: 25))\n\
+                  fix(x == 10, y == 5) h.p1\nfix(x == 40, y == 25) h.p2\n}\n\
+                  p := plane(u: h, v: hint(x: 0, y: 1, z: 0))\np.v parallel std.y\n");
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let b = sk.basis(ent(&e, "p").i());
+    let h = &sk.lines[ent(&e, "h").i()];
+    for q in [h.p1, h.p2] {
+        let x = sk.world_point(q as usize);
+        assert!(dot(sub(x, b.o), b.normal()).abs() < 1e-9, "the line lies in the plane: {x:?}");
+    }
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 1, "the origin slides along the line: {}", gcs_core::diagnose::summary(&d));
+    assert_eq!(d.n_equations, d.structural_rank, "{}", gcs_core::diagnose::summary(&d));
+}
+
+/// **Two lines from one end**: a plane over them stands at that end, by three rows and not four
+/// (`std.Turned`), so the count sees no dependency it cannot account for.
+#[test]
+fn a_plane_over_two_lines_from_one_end_stands_there() {
+    let e = read("use std\nin std.front {\n  o := point hint(x: 10, y: 5)\nfix(x == 10, y == 5) o\n\
+                  t := point hint(x: 40, y: 20)\n}\naxes := std.Turned(o, t) in std.front\n");
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let b = sk.basis(ent(&e, "axes.axes").i());
+    assert!(norm(sub(b.o, sk.world_point(ent(&e, "o").i()))) < 1e-9, "{:?}", b.o);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 2, "t, free in the front: {}", gcs_core::diagnose::summary(&d));
+    assert_eq!(d.n_equations, d.structural_rank, "{}", gcs_core::diagnose::summary(&d));
+}

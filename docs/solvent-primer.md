@@ -705,7 +705,9 @@ fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x_axis   // and where it 
 An axis read only as a direction counts two freedoms; `p coincident t` adds the two of its place.
 `px`, `py`, `pz` are the point on it nearest the world origin. `parallel`, `perpendicular` and
 `angle` take an axis beside an axis or a drawn line, and wherever an axis is expected a drawn line
-is read as one, from `p1` toward `p2` — for its direction only.
+is read as one, from `p1` toward `p2`. A plane over a line stands on it: `plane(u: hinge, v: …)`
+lies along the hinge and through it, and a plane over two lines that share an end stands at
+that end (`std.Turned(o, t)` stands at `o`).
 
 **A plane is two axes through its origin**: `P := plane(u: r, v: s)`. Right is `u`, out of the
 plane is `u × v`, and up is out × u, so `v` need not be square to `u`: it says which plane, and
@@ -1739,12 +1741,14 @@ in std.front {
   horizontal gen_g
 }
 
-// the axial planes, square to P over the generators and through M: each origin is on its axis
-// std.y, so the front holds it at M
-G := plane(u: gen_g, v: std.y)
-G.origin coincident std.front
-Q := plane(u: gen_p, v: std.y)
-Q.origin coincident std.front
+// the axial planes, square to P over the generators and through M: each stands on its
+// generator, and its v runs along std.y; its origin is where M is along the generator
+G := plane(u: gen_g, v: hint(x: 0, y: 1, z: 0))
+G.v parallel std.y
+M distance(0mm, along: u) G
+Q := plane(u: gen_p, v: hint(x: 0, y: 1, z: 0))
+Q.v parallel std.y
+M distance(0mm, along: u) Q
 
 // each axis in its axial plane, from its apex: the apex's image is on P and projects to the apex
 // drawn in P; how long an axis is drawn says nothing about the cone
@@ -1765,10 +1769,11 @@ gax angle(90deg) pax
 gax distance(E) pax
 ```
 
-`57 params, 57 equations, structural rank 57; DOF 0`, with `--where A` at `(95.5837, 18.0989)`.
-Each axial plane stands on its pitch generator and `std.y`, so it is square to P and holds the
-generator; drawing each axis from its apex's image makes P each cone's tangent plane along its
-generator. Pitch radii, shaft angle and offset are four conditions; the gear's 60° pitch angle is
+`63 params, 63 equations, structural rank 63; DOF 0`, with `--where A` at `(95.5837, 18.0989)`.
+Each axial plane stands on its pitch generator with its v along `std.y`, so it is square to P and
+holds the generator; one ordinate puts its origin at M (`M coincident G.origin` would say the
+two rows the generator already says again); drawing each axis from its apex's image makes P
+each cone's tangent plane along its generator. Pitch radii, shaft angle and offset are four conditions; the gear's 60° pitch angle is
 the fifth, and the pinion's apex and pitch angle follow (ε = 10.72°, γ = 29.56°).
 
 ### 2.13 The same pitch cones, named: DOF 0, well

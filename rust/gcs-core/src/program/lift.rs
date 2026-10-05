@@ -64,9 +64,13 @@ pub fn to_program(sk: &Sketch) -> Program {
             _ => p.push(StmtKind::Decl(lift_decl(sk, e))),
         };
     }
-    // and a plane written over a drawn line says so with the axis it gave it: `r parallel l`
+    // and a plane written over a drawn line says so with the axis it gave it: `r parallel l`,
+    // and `p coincident r` for the end it stands on (`entities::axes_along`).  Where both of a
+    // plane's axes stand on one point, the plane stands there by its own rows once read back.
     let along = sk.constraints.iter().filter(|c| {
-        c.intrinsic && c.kind == CKind::Parallel3 && c.args[0].ent().kind == EntKind::Axis
+        c.intrinsic
+            && (c.kind == CKind::Parallel3 && c.args[0].ent().kind == EntKind::Axis
+                || c.kind == CKind::PointOnAxis)
     });
     for c in sk.user_constraints().into_iter().chain(along) {
         p.push(StmtKind::Relation(lift_relation(sk, c)));
