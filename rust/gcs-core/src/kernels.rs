@@ -121,9 +121,11 @@ pub enum K {
     PlaneParallel,
     // the soft drag target of a point in space: seen by the eye where the pointer is
     DragSeen,
+    // a line lying on an axis
+    LineOnAxis,
 }
 
-pub const N_KERNELS: usize = 86;
+pub const N_KERNELS: usize = 87;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2853,6 +2855,24 @@ fn axis_coincident_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<12, 4, 7>(n, v, k, j, axis_coincident_rows)
 }
 
+/// Columns of `line_on_axis`: (A, B, a, d), K = (e₁, e₂) — two directions across the axis as it
+/// stood when compiled or refreshed.  Both ends on the axis's line, `point_on_axis`'s two rows
+/// for each: `((X − a) × d̂)·e_k`.  A line of no length is still on it.  Degree 1.
+fn line_on_axis_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 4] {
+    let (p, q, a, d) = (dvec(v, 0), dvec(v, 3), dvec(v, 6), dunit(dvec(v, 9)));
+    let e = |t: usize| dconst3(k, 3 * t);
+    let (wp, wq) = (dcross(dsub(p, a), d), dcross(dsub(q, a), d));
+    [ddot(wp, e(0)), ddot(wp, e(1)), ddot(wq, e(0)), ddot(wq, e(1))]
+}
+
+fn line_on_axis_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<12, 4, 6>(n, v, k, r, line_on_axis_rows)
+}
+
+fn line_on_axis_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<12, 4, 6>(n, v, k, j, line_on_axis_rows)
+}
+
 /// Columns of `axis_parallel_plane`: (d, du, dv).  `d̂·n̂`: square to the plane's normal.  Degree 0.
 fn axis_parallel_plane_rows(v: &[f64], _k: &[f64]) -> [Dual<9>; 1] {
     let (_, _, n) = dframe(dvec(v, 3), dvec(v, 6));
@@ -3194,6 +3214,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "axis_coincident", n_res: 4, n_par: 12, degree: 1, n_const: 7, res: axis_coincident_res, jac: axis_coincident_jac, const_jac: None },
     Kernel { name: "plane_parallel", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: plane_parallel_res, jac: plane_parallel_jac, const_jac: None },
     Kernel { name: "drag_seen", n_res: 2, n_par: 3, degree: 1, n_const: 9, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
+    Kernel { name: "line_on_axis", n_res: 4, n_par: 12, degree: 1, n_const: 6, res: line_on_axis_res, jac: line_on_axis_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

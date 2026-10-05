@@ -2,6 +2,10 @@
 
 **Specification, Draft 0.44 — October 2026**
 
+**[0.44] A line lies on an axis** (`l coincident t`, either way round: both ends on it, four rows,
+placing the axis). `parallel` between a line and an axis was already the direction relation in
+space.
+
 **[0.44] Two shorthands.** `@` is `coincident` and `~` is `hint`: `p @ c` is `p coincident c`, and
 `p := point ~(x: 0, y: 0)` is `p := point hint(x: 0, y: 0)`. Each is read as the word it stands
 for and is that word everywhere the word may stand — an infix `@(t == 0.4)` pins as
@@ -769,6 +773,8 @@ s` against an axis or a line, `p coincident t` for a point on it, and against a 
 P` (it lies in `P`), `t parallel P` (it runs along `P`) and `t perpendicular P` (it is square to
 `P`); each reads either way round. **[0.43]** `t coincident s` between two axes says they are one
 line, either way round: four rows, the seed choosing the sense as it does for `parallel`.
+**[0.44]** `l coincident t` between a drawn line and an axis says the line lies on it, either
+way round: both its ends on the axis's line, four rows, placing the axis as `p coincident t` does.
 `fix(x == 0, y == 0, z == 1) t` holds its direction, and **[0.43]** `fix(px == 0, py == 0, pz ==
 0) t` where it stands — `px`, `py`, `pz` are its point nearest the world origin. An axis read only
 as a direction has two freedoms, and one whose place a relation reads has two more. **A drawn line
@@ -1595,7 +1601,7 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round. Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
+| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it. Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
 | `distance` | prefix | on a line: the distance between its own ends |
@@ -1658,6 +1664,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `distance(p, P, along: u) == e` **[0.21]** **[0.42]** | p.x − e; across planes (X − o_P)·û_P − e | 1 | `along: v` likewise; §6.7 |
 | `distance(P, Q) == e` **[0.42]** | (o_Q − o_P)·n̂_P − e | 1 | signed; parallel only where their axes make them so (§6.10) |
 | `coincident(t: Axis, p)` **[0.42]** | two components of (X − A) × d̂ across the axis | 2 | A the axis's place, d̂ its direction |
+| `coincident(l: Line, t: Axis)` **[0.44]** | two components of (X − A) × d̂ across the axis, for X each of the line's ends | 4 | A the axis's place, d̂ its direction; a line of no length is still on it |
 | `coincident(t: Axis, P: Plane)` **[0.42]** | n̂_P·(A − o_P), n̂_P·(A + L·d̂ − o_P) | 2 | the axis lies in `P`: two of its points, L the drawing's extent apart |
 | `parallel(t: Axis, P: Plane)`, `perpendicular(t, P)` **[0.42]** | n̂_P·d̂; (n̂_P × d̂) across n̂_P | 1; 2 | along `P`, and square to it |
 | `coincident(L, P: Plane)` **[0.24]** | n_P·A − h_P, n_P·B − h_P | 2 | the line's two ends |

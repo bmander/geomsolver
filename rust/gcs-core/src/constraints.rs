@@ -229,6 +229,10 @@ pub enum CKind {
     /// the axis's direction, over the point's lift and the axis's place and direction.  What
     /// gives an axis its place.
     PointOnAxis,
+    /// `l coincident t`: a line lying on an axis, either way round — both its ends on the axis's
+    /// line in space (`kernels::line_on_axis_rows`), so it runs along it too.  Reads where the
+    /// axis is, so it places it.
+    LineOnAxis,
     /// The **gauges** and the **orientation predicates** (spec §9.2, §9.6; issue #47, item 5):
     /// statements written as every other constraint is — an operator, its operands, a class, a
     /// placement — and settled through the same table, but **applied by the elaborator rather
@@ -269,7 +273,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 79] = [
+pub const ALL_KINDS: [CKind; 80] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -340,6 +344,7 @@ pub const ALL_KINDS: [CKind; 79] = [
     CKind::AxisFoot,
     CKind::PlaneAxis,
     CKind::PointOnAxis,
+    CKind::LineOnAxis,
     CKind::Ordinate3U,
     CKind::Ordinate3V,
     CKind::AxisOnPlane,
@@ -407,6 +412,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (k, Sphere) if round(k) => CKind::CircleOnSphere,
             (Line, Plane) => CKind::LineOnPlane,
             (Point, Axis) => CKind::PointOnAxis,
+            // a line lying on an axis
+            (Line, Axis) => CKind::LineOnAxis,
             // an axis lying in a plane
             (Axis, Plane) => CKind::AxisOnPlane,
             // two axes on one line
@@ -848,6 +855,7 @@ impl CKind {
             CKind::AxisFoot => "AxisFoot",
             CKind::PlaneAxis => "PlaneAxis",
             CKind::PointOnAxis => "PointOnAxis",
+            CKind::LineOnAxis => "LineOnAxis",
             CKind::Fix => "Fix",
             CKind::Ccw => "Ccw",
             CKind::Cw => "Cw",
@@ -1020,6 +1028,7 @@ impl CKind {
             CKind::AxisUnit | CKind::AxisFoot => &[("axis", S::Axis)],
             CKind::PlaneAxis => &[("plane", S::Plane), ("axis", S::Axis)],
             CKind::PointOnAxis => &[("p", S::Point), ("axis", S::Axis)],
+            CKind::LineOnAxis => &[("line", S::Line), ("axis", S::Axis)],
             CKind::AxisOnPlane | CKind::AxisParallelPlane | CKind::AxisPerpendicularPlane => {
                 &[("axis", S::Axis), ("plane", S::Plane)]
             }
@@ -1177,7 +1186,9 @@ impl CKind {
             | CKind::AxisUnit
             | CKind::AxisFoot
             | CKind::PlaneAxis => return None,
-            CKind::PointOnAxis | CKind::AxisOnPlane | CKind::AxisCoincident => ("coincident", Infix),
+            CKind::PointOnAxis | CKind::LineOnAxis | CKind::AxisOnPlane | CKind::AxisCoincident => {
+                ("coincident", Infix)
+            }
             CKind::AxisParallelPlane | CKind::PlaneParallel => ("parallel", Infix),
             CKind::AxisPerpendicularPlane => ("perpendicular", Infix),
             CKind::PlaneDistance => ("distance", Infix),
@@ -1234,7 +1245,7 @@ impl CKind {
     /// has a place only while something reads it (`Sketch::place_axis`).
     pub fn place_slots(self) -> &'static [usize] {
         match self {
-            CKind::PointOnAxis | CKind::PlaneAxis => &[1],
+            CKind::PointOnAxis | CKind::LineOnAxis | CKind::PlaneAxis => &[1],
             CKind::AxisOnPlane => &[0],
             CKind::AxisCoincident => &[0, 1],
             _ => &[],
@@ -1458,6 +1469,7 @@ impl CKind {
             | CKind::AxisFoot
             | CKind::PlaneAxis
             | CKind::PointOnAxis
+            | CKind::LineOnAxis
             | CKind::Ordinate3U
             | CKind::Ordinate3V
             | CKind::AxisOnPlane
@@ -1588,6 +1600,7 @@ impl CKind {
             CKind::AxisFoot => K::AxisFoot,
             CKind::PlaneAxis => K::PointOnAxis,
             CKind::PointOnAxis => K::PointOnAxis,
+            CKind::LineOnAxis => K::LineOnAxis,
             CKind::AxisOnPlane => K::AxisOnPlane,
             CKind::AxisCoincident => K::AxisCoincident,
             CKind::AxisParallelPlane => K::AxisParallelPlane,
@@ -1704,6 +1717,7 @@ impl CKind {
             | CKind::AxisFoot
             | CKind::PlaneAxis
             | CKind::PointOnAxis
+            | CKind::LineOnAxis
             | CKind::AxisOnPlane
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
@@ -1746,6 +1760,7 @@ impl CKind {
                 | CKind::ConeTangentCone
                 | CKind::PointOnExtrusion
                 | CKind::PointOnAxis
+                | CKind::LineOnAxis
                 | CKind::Ordinate3U
                 | CKind::Ordinate3V
                 | CKind::AxisOnPlane
@@ -2432,7 +2447,7 @@ impl Constraint {
                 let (e1, e2) = across(self.axis_dir(sk, 0));
                 [e1, e2].concat()
             }
-            CKind::PointOnLine3 | CKind::PointOnAxis | CKind::PlaneAxis => {
+            CKind::PointOnLine3 | CKind::PointOnAxis | CKind::LineOnAxis | CKind::PlaneAxis => {
                 let (e1, e2) = across(self.axis_dir(sk, 1));
                 [e1, e2].concat()
             }
@@ -2688,6 +2703,11 @@ impl Constraint {
                 let r = &sk.axes[e(1).i()];
                 [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
             }
+            // the line's ends lifted, then the axis's place and direction
+            CKind::LineOnAxis => {
+                let r = &sk.axes[e(1).i()];
+                [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
+            }
             // where the plane stands, in the point's place, and the axis's place and direction
             CKind::PlaneAxis => {
                 let r = &sk.axes[e(1).i()];
@@ -2784,7 +2804,7 @@ impl Constraint {
             | CKind::AxisPerpendicularPlane
             | CKind::PlaneParallel
             | CKind::PlaneDistance => Vec::new(),
-            CKind::LineOnPlane => ends(0).to_vec(),
+            CKind::LineOnPlane | CKind::LineOnAxis => ends(0).to_vec(),
             CKind::PointOnCircle3 | CKind::SphereOn => {
                 vec![e(0).i(), sk.round_center(e(1))]
             }

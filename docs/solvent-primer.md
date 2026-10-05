@@ -702,11 +702,13 @@ t perpendicular std.y
 t angle(30deg) std.x                  // unsigned, in space; 0° or 180° is E040: say `parallel`
 p coincident t                        // a point on it gives it its place
 t coincident s                        // one line, either way round (four rows)
+l coincident t                        // a drawn line lying on it: both ends on it (four rows)
 fix(x == 0, y == 0, z == 1) z_axis    // a direction held outright
 fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x_axis   // and where it stands
 ```
 
-An axis read only as a direction counts two freedoms; `p coincident t` adds the two of its place.
+An axis read only as a direction counts two freedoms; `p coincident t` adds the two of its place,
+as does `l coincident t` (either way round), which also lays the line along it.
 `px`, `py`, `pz` are the point on it nearest the world origin. `parallel`, `perpendicular` and
 `angle` take an axis beside an axis or a drawn line, and wherever an axis is expected a drawn line
 is read as one, from `p1` toward `p2`. A plane over a line stands on it: `plane(u: hinge, v: …)`

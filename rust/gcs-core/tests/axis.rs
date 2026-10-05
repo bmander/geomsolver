@@ -182,3 +182,60 @@ fn two_coincident_axes_are_one_line_either_way() {
         assert_eq!(dof(&mut sk), 2, "t is a direction again");
     }
 }
+
+/// A drawn line and an axis are parallel either way round, in whatever view the line is drawn.
+#[test]
+fn an_axis_and_a_line_are_parallel_either_way_round() {
+    for stated in ["t parallel l", "l parallel t"] {
+        let src = format!("{AXES}use std\nin std.front {{\n  a := point hint(x: 0, y: 0)\n  \
+                           b := point hint(x: 10, y: 3)\n  fix(x == 0, y == 0) a\n  l := line(a, b)\n}}\n\
+                           t := axis hint(x: 1, y: 0.2, z: 0)\nfix(x == 0.6, y == 0, z == 0.8) t\n{stated}\n");
+        let e = read(&src);
+        let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+        assert!(kinds.contains(&CKind::Parallel3), "{stated}: {kinds:?}");
+        let sk = solved(&e);
+        let (pa, pb) = (sk.world_point(ent(&e, "a").i()), sk.world_point(ent(&e, "b").i()));
+        let along = unit(sub(pb, pa));
+        assert!(norm(cross(along, [0.6, 0.0, 0.8])) < 1e-9, "{stated}: the line runs {along:?}");
+    }
+}
+
+/// A line lying on an axis, either way round: both its ends on the axis's line, so it runs along
+/// it, and the axis is placed by it.  Over a held axis a line with one end fixed keeps only its
+/// slide along it.
+#[test]
+fn a_line_coincident_an_axis_lies_on_it() {
+    for stated in ["l coincident t", "t coincident l", "l @ t"] {
+        let src = format!("{AXES}use std\nin std.front {{\n  a := point hint(x: 1, y: 4)\n  \
+                           b := point hint(x: 9, y: 7)\n  fix(x == 2, y == 5) a\n  l := line(a, b)\n}}\n\
+                           t := axis hint(x: 1, y: 0.2, z: 0.3)\nfix(x == 0.6, y == 0, z == 0.8) t\n{stated}\n");
+        let e = read(&src);
+        let t = ent(&e, "t");
+        assert!(e.sketch.axes[t.i()].placed, "{stated}: a line on the axis says where it is");
+        let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+        assert_eq!(kinds, [CKind::LineOnAxis], "{stated}");
+        let mut sk = solved(&e);
+        let (d, a) = axis(&sk, t);
+        for p in ["a", "b"] {
+            let x = sk.world_point(ent(&e, p).i());
+            assert!(norm(cross(sub(x, a), unit(d))) < 1e-9, "{stated}: {p} at {x:?} is off the axis");
+        }
+        // the axis passes through a's (2, 0, 5) along (0.6, 0, 0.8): its place is fixed by `a`,
+        // and `b` slides along it, one freedom
+        assert!(dot(sub([2.0, 0.0, 5.0], a), [0.0, 1.0, 0.0]).abs() < 1e-9);
+        assert_eq!(dof(&mut sk), 1, "{stated}: b slides along the axis");
+    }
+}
+
+/// A line in space on a free axis gives the axis both its direction and its place.
+#[test]
+fn a_line_in_space_on_an_axis_gives_it_direction_and_place() {
+    let e = read("use std\np := point hint(x: 1, y: 2, z: 3)\nq := point hint(x: 4, y: 6, z: 3)\n\
+                  fix(x == 1, y == 2, z == 3) p\nfix(x == 4, y == 6, z == 3) q\nl := line(p, q)\n\
+                  t := axis hint(x: 0, y: 0.2, z: 1)\nl coincident t\n");
+    let mut sk = solved(&e);
+    let (d, a) = axis(&sk, ent(&e, "t"));
+    assert!(norm(cross(unit(d), [0.6, 0.8, 0.0])) < 1e-9, "the axis runs {d:?}");
+    assert!(norm(cross(sub([1.0, 2.0, 3.0], a), unit(d))) < 1e-9, "and passes through p");
+    assert_eq!(dof(&mut sk), 0);
+}

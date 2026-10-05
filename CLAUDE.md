@@ -79,7 +79,8 @@ holds all three) and the point nearest the origin, fixed — no freedom — unti
 (`CKind::place_slots`: `PointOnAxis`, `AxisCoincident`, `PlaneAxis`), when `Sketch::place_axis`
 frees it and mints `axis_foot` (`a·d = 0`); `remove` holds it again once nothing reads it. `fix(px
 ==, py ==, pz ==) t` holds a place (placed first, so nothing later frees it); std's axes are held
-so. `t coincident s` between axes is `AxisCoincident` (4 rows, either sense). JSON writes a placed
+so. `t coincident s` between axes is `AxisCoincident` (4 rows, either sense); `l coincident t`, a
+line on an axis, is `LineOnAxis` (both ends, 4 rows, places the axis). JSON writes a placed
 axis's held place as `a_fixed`; a load or `graft` puts places back after the planes
 (`Sketch::place_restored`), elaboration's order. `parallel`/`perpendicular`/`angle` over an axis
 are `Parallel3`/`Perpendicular3`/`Angle3` (slots `SpecKind::Direction`, a line or an axis): an
