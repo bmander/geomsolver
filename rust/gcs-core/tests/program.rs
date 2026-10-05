@@ -112,7 +112,7 @@ fn every_constraint_type_is_printable() {
         let (sk, c) = fixture(kind);
         // a relation holding an axis is settled as the planes are, before the solve
         // (`views::place`), so the axis it names comes back where that put it
-        let settles_a_axis = c.args.iter().any(|a| matches!(a, Arg::Ent(e) if e.kind == EntKind::Axis));
+        let settles_an_axis = c.args.iter().any(|a| matches!(a, Arg::Ent(e) if e.kind == EntKind::Axis));
         let mut sk = sk;
         sk.add(c);
         let p = to_program(&sk);
@@ -133,7 +133,7 @@ fn every_constraint_type_is_printable() {
             kind.name(),
             p.text()
         );
-        if settles_a_axis {
+        if settles_an_axis {
             continue;
         }
         assert_eq!(

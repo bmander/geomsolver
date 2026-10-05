@@ -123,6 +123,7 @@ macro_rules! undrawn {
             | CKind::Ordinate3U
             | CKind::Ordinate3V
             | CKind::AxisOnPlane
+            | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
             | CKind::PlaneDistance

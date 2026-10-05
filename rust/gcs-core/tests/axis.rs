@@ -42,7 +42,7 @@ fix(x == 0, y == 0, z == 1) z_axis
 /// Square to one axis and at a stated angle to another is a direction, and the seed picks which
 /// of the two it could be: here, in the xz-plane 30° from x toward z.
 #[test]
-fn two_relations_give_a_axis_its_direction() {
+fn two_relations_give_an_axis_its_direction() {
     let src = format!("{AXES}y_axis := axis hint(x: 0, y: 1, z: 0)\nfix(x == 0, y == 1, z == 0) y_axis\n\
                        t := axis hint(x: 0.8, y: 0.1, z: 0.5)\nt perpendicular y_axis\nt angle(30deg) x_axis\n");
     let e = read(&src);
@@ -58,7 +58,7 @@ fn two_relations_give_a_axis_its_direction() {
 /// An axis nothing places has a direction and no place: two freedoms, not five — its point is
 /// read by no row, so it is no freedom of the drawing.
 #[test]
-fn a_axis_read_only_as_a_direction_counts_two_freedoms() {
+fn an_axis_read_only_as_a_direction_counts_two_freedoms() {
     let e = read("t := axis\n");
     let mut sk = e.sketch.clone();
     let t = ent(&e, "t");
@@ -76,7 +76,7 @@ fn a_axis_read_only_as_a_direction_counts_two_freedoms() {
 /// from the origin, and the axis passes through the point.  With its direction fixed by
 /// `parallel`, a fixed point leaves it nothing.
 #[test]
-fn a_point_coincident_a_axis_places_it() {
+fn a_point_coincident_an_axis_places_it() {
     let src = format!("{AXES}use std\nin std.front {{\n  p := point hint(x: 10, y: 5)\n  fix(x == 10, y == 5) p\n}}\n\
                        t := axis hint(x: 0.9, y: 0, z: 0.1)\nt parallel x_axis\np coincident t\n");
     let e = read(&src);
@@ -97,7 +97,7 @@ fn a_point_coincident_a_axis_places_it() {
 /// Removing the last relation that reads where an axis is takes its place away again: held, its
 /// foot row gone, two freedoms and not five.  One still reading it keeps it placed.
 #[test]
-fn a_axis_no_relation_places_is_held_again() {
+fn an_axis_no_relation_places_is_held_again() {
     let e = read("use std\nt := axis hint(x: 0, y: 0, z: 1)\np := point hint(x: 1, y: 2, z: 3)\n\
                   q := point hint(x: 1, y: 2, z: 5)\nfix(x == 1, y == 2, z == 3) p\n\
                   fix(x == 1, y == 2, z == 5) q\np coincident t\nq coincident t\n");
@@ -130,7 +130,7 @@ fn an_unsigned_angle_of_zero_or_half_a_turn_is_refused() {
 /// An axis across JSON and a copy: its direction, its fixed flags and its place come with it, and
 /// the relation placing it places it again.
 #[test]
-fn a_axis_survives_json_and_a_copy() {
+fn an_axis_survives_json_and_a_copy() {
     let src = format!("{AXES}use std\nin std.front {{\n  p := point hint(x: 10, y: 5)\n  fix(x == 10, y == 5) p\n}}\n\
                        t := axis hint(x: 0.9, y: 0, z: 0.1)\nt parallel x_axis\np coincident t\n");
     let sk = solved(&read(&src));
@@ -149,7 +149,35 @@ fn a_axis_survives_json_and_a_copy() {
 
 /// `in` has nothing to put on a plane in an axis, and an axis is drawn on no sheet.
 #[test]
-fn a_axis_is_in_no_view() {
+fn an_axis_is_in_no_view() {
     assert!(!EntKind::Axis.bears_points());
     assert!(EntKind::Axis.fields().iter().all(|(_, f)| *f == gcs_core::model::Field::Scalar));
+}
+
+/// Two axes `coincident` are one line, either way round: the second runs along the first and
+/// stands on it, wherever its seed points.  Both are placed by it, and with the first held, the
+/// second keeps one freedom — sliding along the line moves nothing, so none: its foot is fixed by
+/// the line.  Removing the relation takes the second's place away again.
+#[test]
+fn two_coincident_axes_are_one_line_either_way() {
+    for seed in ["0.9, y: 0.1, z: 0.2", "-0.9, y: 0.1, z: -0.2"] {
+        let src = format!("{AXES}p := point hint(x: 3, y: 4, z: 5)\nfix(x == 3, y == 4, z == 5) p\n\
+                           p coincident x_axis\nt := axis hint(x: {seed})\nt coincident x_axis\n");
+        let e = read(&src);
+        let mut sk = solved(&e);
+        let (t, x) = (ent(&e, "t"), ent(&e, "x_axis"));
+        assert!(sk.axes[t.i()].placed && sk.axes[x.i()].placed, "the relation reads both places");
+        let ((dt, at), (dx, ax)) = (axis(&sk, t), axis(&sk, x));
+        assert!(norm(cross(unit(dt), dx)) < 1e-9, "{dt:?} along {dx:?}");
+        assert!(dot(dt, dx).signum() == seed.chars().next().map_or(1.0, |c| if c == '-' { -1.0 } else { 1.0 }),
+            "the seed picks the sense: {dt:?}");
+        assert!(norm(sub(at, ax)) < 1e-9, "one foot, so one line: {at:?} {ax:?}");
+        assert!(norm(sub(ax, [0.0, 4.0, 5.0])) < 1e-9, "the line through p along x: {ax:?}");
+        assert_eq!(dof(&mut sk), 0);
+        let id = sk.user_constraints().iter().find(|c| c.kind == CKind::AxisCoincident).unwrap().id;
+        sk.remove(id);
+        assert!(!sk.axes[t.i()].placed, "nothing reads where t is now");
+        assert!(sk.axes[x.i()].placed, "p still reads where x is");
+        assert_eq!(dof(&mut sk), 2, "t is a direction again");
+    }
 }

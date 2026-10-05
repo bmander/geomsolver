@@ -115,9 +115,11 @@ pub enum K {
     AxisPerpendicularPlane,
     PlaneDistance,
     PlaneDistanceFree,
+    // two axes on one line, either way
+    AxisCoincident,
 }
 
-pub const N_KERNELS: usize = 83;
+pub const N_KERNELS: usize = 84;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2798,6 +2800,27 @@ fn axis_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<15, 2, 1>(n, v, k, j, axis_on_plane_rows)
 }
 
+/// Columns of `axis_coincident`: (a₁, d₁, a₂, d₂), K = (e₁, e₂, L) — two directions across the
+/// first axis's as it stood when compiled or refreshed, and a drawing's extent.  One line, either
+/// way: `L·(d̂₂ × d̂₁)·e_k`, the second running along the first (the sense free, as `parallel3`'s),
+/// and `((a₂ − a₁) × d̂₁)·e_k`, the second's place on the first.  All four lengths.  Degree 1.
+fn axis_coincident_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 4] {
+    let (a1, d1, a2, d2) = (dvec(v, 0), dunit(dvec(v, 3)), dvec(v, 6), dunit(dvec(v, 9)));
+    let e = |t: usize| [dconst(k[3 * t]), dconst(k[3 * t + 1]), dconst(k[3 * t + 2])];
+    let l = dconst(k[6]);
+    let along = dcross(d2, d1);
+    let off = dcross(dsub(a2, a1), d1);
+    [ddot(along, e(0)) * l, ddot(along, e(1)) * l, ddot(off, e(0)), ddot(off, e(1))]
+}
+
+fn axis_coincident_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<12, 4, 7>(n, v, k, r, axis_coincident_rows)
+}
+
+fn axis_coincident_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<12, 4, 7>(n, v, k, j, axis_coincident_rows)
+}
+
 /// Columns of `axis_parallel_plane`: (d, du, dv).  `d̂·n̂`: square to the plane's normal.  Degree 0.
 fn axis_parallel_plane_rows(v: &[f64], _k: &[f64]) -> [Dual<9>; 1] {
     let (_, _, n) = dframe(dvec(v, 3), dvec(v, 6));
@@ -3117,6 +3140,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "axis_perpendicular_plane", n_res: 2, n_par: 9, degree: 0, n_const: 6, res: axis_perpendicular_plane_res, jac: axis_perpendicular_plane_jac, const_jac: None },
     Kernel { name: "plane_distance", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: plane_distance_res, jac: plane_distance_jac, const_jac: None },
     Kernel { name: "plane_distance_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: plane_distance_free_res, jac: plane_distance_free_jac, const_jac: None },
+    Kernel { name: "axis_coincident", n_res: 4, n_par: 12, degree: 1, n_const: 7, res: axis_coincident_res, jac: axis_coincident_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

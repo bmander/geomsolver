@@ -490,9 +490,9 @@ impl Sketch {
             self.lift_point(p);
         }
         // a relation that reads where an axis is gives the axis its place
-        if let Some(Arg::Ent(r)) = c.kind.place_slot().and_then(|i| c.args.get(i)) {
-            if r.kind == EntKind::Axis && r.i() < self.axes.len() {
-                self.place_axis(r.i());
+        for r in c.axes_placed_by() {
+            if r < self.axes.len() {
+                self.place_axis(r);
             }
         }
         for (i, name) in c.kind.param_slots() {
@@ -548,11 +548,11 @@ impl Sketch {
     pub fn remove(&mut self, id: u32) {
         let (expr, own) = self.constraint(id)
             .map_or((false, Vec::new()), |c| (crate::expr::has_expr(&c.args), c.aux_params()));
-        let placed = self.constraint(id).and_then(|c| c.axis_placed_by());
+        let placed = self.constraint(id).map(|c| c.axes_placed_by()).unwrap_or_default();
         self.constraints.retain(|c| c.id != id);
         // an axis whose place nothing reads now is held again: its place is no freedom
-        if let Some(r) = placed {
-            if !self.constraints.iter().any(|c| c.axis_placed_by() == Some(r)) {
+        for r in placed {
+            if !self.constraints.iter().any(|c| c.axes_placed_by().contains(&r)) {
                 self.unplace_axis(r);
             }
         }

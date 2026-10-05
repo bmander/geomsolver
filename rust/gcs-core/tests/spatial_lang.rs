@@ -361,7 +361,7 @@ fn deleting_what_a_plane_stands_on_deletes_the_plane() {
 
 /// An axis inside a component is that instance's own: two instances turn independently.
 #[test]
-fn a_axis_in_a_component_is_the_instances_own() {
+fn an_axis_in_a_component_is_the_instances_own() {
     let e = read("\
 use std
 component Wing(f: plane) {

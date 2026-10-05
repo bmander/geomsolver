@@ -194,6 +194,9 @@ pub enum CKind {
     /// `t coincident P`: an axis lying in a plane — two points on it a drawing's extent apart, each
     /// on the plane (`kernels::axis_on_plane_rows`).  Reads where the axis is, so it places it.
     AxisOnPlane,
+    /// Two axes on one line, either way round (`a coincident b`): the second along the first and
+    /// its place on it (`kernels::axis_coincident_rows`).  Reads where both axes are.
+    AxisCoincident,
     /// `t parallel P`: an axis square to a plane's normal, `d·n̂ = 0`.
     AxisParallelPlane,
     /// `t perpendicular P`: an axis along a plane's normal — two rows across the normal, as
@@ -254,7 +257,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 75] = [
+pub const ALL_KINDS: [CKind; 76] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -327,6 +330,7 @@ pub const ALL_KINDS: [CKind; 75] = [
     CKind::Ordinate3U,
     CKind::Ordinate3V,
     CKind::AxisOnPlane,
+    CKind::AxisCoincident,
     CKind::AxisParallelPlane,
     CKind::AxisPerpendicularPlane,
     CKind::PlaneDistance,
@@ -390,6 +394,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Point, Axis) => CKind::PointOnAxis,
             // an axis lying in a plane
             (Axis, Plane) => CKind::AxisOnPlane,
+            // two axes on one line
+            (Axis, Axis) => CKind::AxisCoincident,
             _ => return None,
         },
         "distance" => match (a, b) {
@@ -787,6 +793,7 @@ impl CKind {
             CKind::Ordinate3U => "Ordinate3U",
             CKind::Ordinate3V => "Ordinate3V",
             CKind::AxisOnPlane => "AxisOnPlane",
+            CKind::AxisCoincident => "AxisCoincident",
             CKind::AxisParallelPlane => "AxisParallelPlane",
             CKind::AxisPerpendicularPlane => "AxisPerpendicularPlane",
             CKind::PlaneDistance => "PlaneDistance",
@@ -988,6 +995,7 @@ impl CKind {
             CKind::AxisOnPlane | CKind::AxisParallelPlane | CKind::AxisPerpendicularPlane => {
                 &[("axis", S::Axis), ("plane", S::Plane)]
             }
+            CKind::AxisCoincident => &[("a", S::Axis), ("b", S::Axis)],
             CKind::PlaneDistance => &[("p1", S::Plane), ("p2", S::Plane), ("d", S::Length)],
             // the entity, and the numbers it holds, each pinned under the name of the field it
             // is (`model::EntKind::fields`): `fix(x == 0, y == 0) p`, `fix(r == 25) c`,
@@ -1134,7 +1142,7 @@ impl CKind {
             // an axis's own algebra
             | CKind::AxisUnit
             | CKind::AxisFoot => return None,
-            CKind::PointOnAxis | CKind::AxisOnPlane => ("coincident", Infix),
+            CKind::PointOnAxis | CKind::AxisOnPlane | CKind::AxisCoincident => ("coincident", Infix),
             CKind::AxisParallelPlane => ("parallel", Infix),
             CKind::AxisPerpendicularPlane => ("perpendicular", Infix),
             CKind::PlaneDistance => ("distance", Infix),
@@ -1187,13 +1195,14 @@ impl CKind {
         })
     }
 
-    /// The slot naming an axis whose place in space this reads, not only its direction: an axis has
-    /// a place only while something reads it (`Sketch::place_axis`).
-    pub fn place_slot(self) -> Option<usize> {
+    /// The slots naming axes whose place in space this reads, not only their direction: an axis
+    /// has a place only while something reads it (`Sketch::place_axis`).
+    pub fn place_slots(self) -> &'static [usize] {
         match self {
-            CKind::PointOnAxis => Some(1),
-            CKind::AxisOnPlane => Some(0),
-            _ => None,
+            CKind::PointOnAxis => &[1],
+            CKind::AxisOnPlane => &[0],
+            CKind::AxisCoincident => &[0, 1],
+            _ => &[],
         }
     }
 
@@ -1415,6 +1424,7 @@ impl CKind {
             | CKind::Ordinate3U
             | CKind::Ordinate3V
             | CKind::AxisOnPlane
+            | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
             | CKind::PlaneDistance
@@ -1539,6 +1549,7 @@ impl CKind {
             CKind::AxisFoot => K::AxisFoot,
             CKind::PointOnAxis => K::PointOnAxis,
             CKind::AxisOnPlane => K::AxisOnPlane,
+            CKind::AxisCoincident => K::AxisCoincident,
             CKind::AxisParallelPlane => K::AxisParallelPlane,
             CKind::AxisPerpendicularPlane => K::AxisPerpendicularPlane,
             CKind::PlaneDistance => K::PlaneDistance,
@@ -1651,6 +1662,7 @@ impl CKind {
             | CKind::AxisFoot
             | CKind::PointOnAxis
             | CKind::AxisOnPlane
+            | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
             | CKind::Fix
@@ -1693,6 +1705,7 @@ impl CKind {
                 | CKind::Ordinate3U
                 | CKind::Ordinate3V
                 | CKind::AxisOnPlane
+                | CKind::AxisCoincident
                 | CKind::AxisParallelPlane
                 | CKind::AxisPerpendicularPlane
                 | CKind::PlaneDistance
@@ -2367,6 +2380,12 @@ impl Constraint {
             }
             // two points on the axis a drawing's extent apart, so its two rows weigh alike
             CKind::AxisOnPlane => vec![sk.extent().max(1.0)],
+            // two directions across the first axis as it stands now, and a drawing's extent, so
+            // its turn and its offset weigh alike
+            CKind::AxisCoincident => {
+                let (e1, e2) = across(self.axis_dir(sk, 0));
+                [e1.to_vec(), e2.to_vec(), vec![sk.extent().max(1.0)]].concat()
+            }
             // two directions across the plane's normal as it stands now
             CKind::AxisPerpendicularPlane => {
                 let (e1, e2) = across(sk.basis(self.args[1].ent().i()).normal());
@@ -2577,6 +2596,11 @@ impl Constraint {
             CKind::AxisParallelPlane | CKind::AxisPerpendicularPlane => {
                 [sk.axes[e(0).i()].d.to_vec(), plane_columns(sk, e(1).i())[3..].to_vec()].concat()
             }
+            // each axis's place and direction
+            CKind::AxisCoincident => {
+                let (a, b) = (&sk.axes[e(0).i()], &sk.axes[e(1).i()]);
+                [a.a.to_vec(), a.d.to_vec(), b.a.to_vec(), b.d.to_vec()].concat()
+            }
             // the first plane's origin and axes, then the second's origin
             CKind::PlaneDistance => {
                 [plane_columns(sk, e(0).i()), sk.planes[e(1).i()].o.to_vec()].concat()
@@ -2676,6 +2700,7 @@ impl Constraint {
             | CKind::Ordinate3V => vec![e(0).i()],
             // an axis and a plane, and two planes: in space already
             CKind::AxisOnPlane
+            | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
             | CKind::PlaneDistance => Vec::new(),
@@ -2725,14 +2750,13 @@ impl Constraint {
         out
     }
 
-    /// Operand `i`'s direction as it stands now, as a direction relation reads it.
-    /// The axis whose place this reads (`CKind::place_slot`), which `Sketch::add` frees and
-    /// `Sketch::remove` holds again once nothing reads it.
-    pub fn axis_placed_by(&self) -> Option<usize> {
-        match self.kind.place_slot().and_then(|i| self.args.get(i))? {
+    /// The axes whose place this reads (`CKind::place_slots`), which `Sketch::add` frees and
+    /// `Sketch::remove` holds again once nothing reads them.
+    pub fn axes_placed_by(&self) -> Vec<usize> {
+        self.kind.place_slots().iter().filter_map(|&i| match self.args.get(i)? {
             Arg::Ent(r) if r.kind == EntKind::Axis => Some(r.i()),
             _ => None,
-        }
+        }).collect()
     }
 
     /// Whether every number this reads is held: then it moves nothing.
@@ -2740,6 +2764,7 @@ impl Constraint {
         self.params(sk).iter().all(|&p| sk.params[p as usize].fixed)
     }
 
+    /// Operand `i`'s direction as it stands now, as a direction relation reads it.
     fn axis_dir(&self, sk: &Sketch, i: usize) -> [f64; 3] {
         let e = self.args[i].ent();
         if e.kind == EntKind::Axis {
