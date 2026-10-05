@@ -2539,6 +2539,11 @@ fn dconst<const N: usize>(v: f64) -> Dual<N> {
     Dual { v, g: [0.0; N] }
 }
 
+/// Three constants from `k[at..at + 3]`, a vector with no gradient.
+fn dconst3<const N: usize>(k: &[f64], at: usize) -> V3<N> {
+    [dconst(k[at]), dconst(k[at + 1]), dconst(k[at + 2])]
+}
+
 /// The values of a kernel written once over `Dual`s, `R` rows of `N` columns and `C` constants
 /// each.
 fn dual_res<const N: usize, const R: usize, const C: usize>(
@@ -2806,7 +2811,7 @@ fn axis_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// and `((a₂ − a₁) × d̂₁)·e_k`, the second's place on the first.  All four lengths.  Degree 1.
 fn axis_coincident_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 4] {
     let (a1, d1, a2, d2) = (dvec(v, 0), dunit(dvec(v, 3)), dvec(v, 6), dunit(dvec(v, 9)));
-    let e = |t: usize| [dconst(k[3 * t]), dconst(k[3 * t + 1]), dconst(k[3 * t + 2])];
+    let e = |t: usize| dconst3(k, 3 * t);
     let l = dconst(k[6]);
     let along = dcross(d2, d1);
     let off = dcross(dsub(a2, a1), d1);
@@ -2841,7 +2846,7 @@ fn axis_parallel_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 fn axis_perpendicular_plane_rows(v: &[f64], k: &[f64]) -> [Dual<9>; 2] {
     let (_, _, n) = dframe(dvec(v, 3), dvec(v, 6));
     let x = dcross(dunit(dvec(v, 0)), n);
-    let e = |t: usize| [dconst(k[3 * t]), dconst(k[3 * t + 1]), dconst(k[3 * t + 2])];
+    let e = |t: usize| dconst3(k, 3 * t);
     [ddot(x, e(0)), ddot(x, e(1))]
 }
 

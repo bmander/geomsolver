@@ -8,6 +8,11 @@ use super::{Code, Diag, SourceMap};
 use crate::constraints::CKind;
 use crate::model::{EntKind, EntRef, Sketch};
 
+/// Whether every one of `ps` is held.
+fn held(sk: &Sketch, ps: &[u32]) -> bool {
+    ps.iter().all(|&q| sk.params[q as usize].fixed)
+}
+
 /// A plane this close to another, in turn and in where it stands, lies on it.
 const ON_PLANE: f64 = 1e-9;
 
@@ -66,20 +71,20 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
 /// refused.  E067 for axes that do not meet (or run alike), and for a plane standing off one.
 /// Held numbers make no equation (`System`'s intrinsic rule), so this is said here or nowhere.
 pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
-    use crate::space::{cross, dot, norm, normalised, sub};
-    let held = |sk: &Sketch, ps: &[u32]| ps.iter().all(|&q| sk.params[q as usize].fixed);
+    use crate::space::{add, cross, dot, lerp, norm, normalised, scale, sub};
     let line = |sk: &Sketch, r: usize| {
         let ax = &sk.axes[r];
-        let held = held(sk, &ax.d) && held(sk, &ax.a);
+        let whole = held(sk, &ax.d) && held(sk, &ax.a);
         let d = normalised(ax.d.map(|q| sk.params[q as usize].value));
-        (held, ax.a.map(|q| sk.params[q as usize].value), d)
+        (whole, ax.a.map(|q| sk.params[q as usize].value), d)
     };
     let tol = ON_PLANE * sk.extent().max(1.0);
     let mut out = Vec::new();
     for p in 0..sk.planes.len() {
         let pl = &sk.planes[p];
         let (o, sides) = (pl.o, [(pl.u as usize, "u"), (pl.v as usize, "v")]);
-        let [(hu, au, du), (hv, av, dv)] = sides.map(|(r, _)| line(sk, r));
+        let lines = sides.map(|(r, _)| line(sk, r));
+        let [(hu, au, du), (hv, av, dv)] = lines;
         let mut refuse = |message: String| {
             let site = map.site_of(EntRef::plane(p));
             out.push(Diag { code: Code::E067, span: site.map(|s| s.span).unwrap_or_default(),
@@ -88,7 +93,7 @@ pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
         let name = sk.plane_name(p);
         if held(sk, &o) {
             let at = o.map(|q| sk.params[q as usize].value);
-            for ((h, a, d), (_, k)) in [(hu, au, du), (hv, av, dv)].into_iter().zip(sides) {
+            for ((h, a, d), (_, k)) in lines.into_iter().zip(sides) {
                 let (true, Some(d)) = (h, d) else { continue };
                 if norm(cross(sub(at, a), d)) > tol {
                     refuse(format!(
@@ -111,16 +116,17 @@ pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
         let nn = dot(n, n);
         let s = dot(cross(w, dv), n) / nn;
         let t = dot(cross(w, du), n) / nn;
-        let (pu, pv) = ([0, 1, 2].map(|k| au[k] + s * du[k]), [0, 1, 2].map(|k| av[k] + t * dv[k]));
+        let (pu, pv) = (add(au, scale(du, s)), add(av, scale(dv, t)));
         if norm(sub(pu, pv)) > tol {
             refuse(format!(
                 "the axes of `{name}` do not meet, and a plane's axes pass through its origin"
             ));
             continue;
         }
+        let at = lerp(pu, pv, 0.5);
         for k in 0..3 {
             let q = &mut sk.params[o[k] as usize];
-            q.value = 0.5 * (pu[k] + pv[k]);
+            q.value = at[k];
             q.fixed = true;
         }
     }
@@ -202,7 +208,6 @@ fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
 pub(crate) fn place(sk: &mut Sketch) {
     use std::collections::BTreeSet;
     align(sk);
-    let held = |sk: &Sketch, ps: &[u32]| ps.iter().all(|&q| sk.params[q as usize].fixed);
     let mut axis_placed: Vec<bool> =
         (0..sk.axes.len()).map(|r| held(sk, &sk.axes[r].d)).collect();
     let mut plane_placed: Vec<bool> = (0..sk.planes.len()).map(|p| sk.plane_fixed(p)).collect();
@@ -327,12 +332,15 @@ pub(crate) fn place(sk: &mut Sketch) {
         for (i, q) in part.params.iter_mut().enumerate() {
             q.fixed = q.fixed || !free.contains(&(i as u32));
         }
-        let free_axis = |r: usize| sk.axes[r].d.iter().any(|q| free.contains(q));
+        // an axis's own rows go with its own numbers: its unit row with a direction solved here,
+        // its foot row with a place
+        let any_free = |ps: &[u32; 3]| ps.iter().any(|q| free.contains(q));
         part.constraints.retain(|c| {
             taken.contains(&c.id)
                 || match c.kind {
                     CKind::Lift => read.contains(&c.args[0].ent().i()),
-                    CKind::AxisUnit | CKind::AxisFoot => free_axis(c.args[0].ent().i()),
+                    CKind::AxisUnit => any_free(&sk.axes[c.args[0].ent().i()].d),
+                    CKind::AxisFoot => any_free(&sk.axes[c.args[0].ent().i()].a),
                     _ => false,
                 }
         });

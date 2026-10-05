@@ -293,15 +293,24 @@ impl Sketch {
     /// elaboration's gauge pass, after the planes, comes to.  Read by a relation and held by
     /// none, it is placed when the relation is added.
     pub fn place_restored(&mut self, r: usize, a: [f64; 3], held: [bool; 3]) {
-        if held.contains(&true) {
-            self.place_axis(r);
-        }
         for k in 0..3 {
             let q = self.axes[r].a[k] as usize;
             self.params[q].value = a[k];
-            if self.axes[r].placed {
-                self.params[q].fixed = held[k];
-            }
+        }
+        self.hold_place(r, held);
+    }
+
+    /// Hold those of axis `r`'s place numbers `held` says, placing it first where any is, so no
+    /// relation added later frees what is held (`place_axis`).  A place nothing holds and
+    /// nothing reads is left as it is: held, and no freedom.
+    pub fn hold_place(&mut self, r: usize, held: [bool; 3]) {
+        if !held.contains(&true) {
+            return;
+        }
+        self.place_axis(r);
+        for k in 0..3 {
+            let q = self.axes[r].a[k] as usize;
+            self.params[q].fixed = held[k];
         }
     }
 
@@ -349,10 +358,10 @@ impl Sketch {
     pub fn stand_axis_through(&mut self, r: usize, x: [f64; 3]) {
         let d = self.axes[r].d.map(|p| self.params[p as usize].value);
         let Some(d) = crate::space::normalised(d) else { return };
-        let along = crate::space::dot(x, d);
+        let foot = crate::space::sub(x, crate::space::scale(d, crate::space::dot(x, d)));
         for k in 0..3 {
             let q = self.axes[r].a[k] as usize;
-            self.params[q].value = x[k] - along * d[k];
+            self.params[q].value = foot[k];
         }
     }
 
@@ -370,12 +379,9 @@ impl Sketch {
         for &p in &self.planes[pi].o {
             self.params[p as usize].fixed = true;
         }
-        // its axes through where it stands, held there
+        // its axes, stood through where it stands, held there
         for r in axes {
-            self.stand_axis_through(r, b.o);
-            for &p in &self.axes[r].a {
-                self.params[p as usize].fixed = true;
-            }
+            self.hold_place(r, [true; 3]);
         }
         pi
     }
@@ -601,11 +607,12 @@ impl Sketch {
     pub fn remove(&mut self, id: u32) {
         let (expr, own) = self.constraint(id)
             .map_or((false, Vec::new()), |c| (crate::expr::has_expr(&c.args), c.aux_params()));
-        let placed = self.constraint(id).map(|c| c.axes_placed_by()).unwrap_or_default();
+        let placed: Vec<usize> =
+            self.constraint(id).map(|c| c.axes_placed_by().collect()).unwrap_or_default();
         self.constraints.retain(|c| c.id != id);
         // an axis whose place nothing reads now is held again: its place is no freedom
         for r in placed {
-            if !self.constraints.iter().any(|c| c.axes_placed_by().contains(&r)) {
+            if !self.constraints.iter().any(|c| c.axes_placed_by().any(|s| s == r)) {
                 self.unplace_axis(r);
             }
         }

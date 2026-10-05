@@ -213,7 +213,7 @@ pub enum CKind {
     /// so it cannot slide along the axis.  Intrinsic, minted by `Sketch::place_axis` once a
     /// relation reads where the axis is.
     AxisFoot,
-    /// A plane's origin on one of its axes: two rows, minted with the plane (`Sketch::plane_over`)
+    /// A plane's origin on one of its axes: two rows, minted with the plane (`Sketch::push_plane`)
     /// and nowhere else, never serialized — a plane's axes pass through its origin.  The
     /// `point_on_axis` kernel over the plane's `o` in the point's place.
     PlaneAxis,
@@ -2772,11 +2772,11 @@ impl Constraint {
 
     /// The axes whose place this reads (`CKind::place_slots`), which `Sketch::add` frees and
     /// `Sketch::remove` holds again once nothing reads them.
-    pub fn axes_placed_by(&self) -> Vec<usize> {
+    pub fn axes_placed_by(&self) -> impl Iterator<Item = usize> + '_ {
         self.kind.place_slots().iter().filter_map(|&i| match self.args.get(i)? {
             Arg::Ent(r) if r.kind == EntKind::Axis => Some(r.i()),
             _ => None,
-        }).collect()
+        })
     }
 
     /// Whether every number this reads is held: then it moves nothing.

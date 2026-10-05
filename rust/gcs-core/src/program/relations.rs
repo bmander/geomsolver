@@ -624,14 +624,6 @@ fn apply_gauge(
                 .map(|(n, _)| *n)
                 .collect();
             let spec = r.kind.spec();
-            // where an axis is, held: placed first, so no later relation reading its place frees
-            // what this holds (`Sketch::place_axis`)
-            if e.kind == EntKind::Axis
-                && r.args.iter().enumerate().skip(1)
-                    .any(|(i, a)| a.is_some() && matches!(spec[i].0, "px" | "py" | "pz"))
-            {
-                sk.place_axis(e.i());
-            }
             let own = sk.own_params(e);
             for (i, a) in r.args.iter().enumerate().skip(1) {
                 let Some(a) = a else { continue };
@@ -663,6 +655,11 @@ fn apply_gauge(
                 let Arg::Seed { value, .. } = a else { continue };
                 // a cone's half-angle is written in degrees, as its hint is (`Sketch::seed_value`)
                 let v = if e.kind == EntKind::Cone { value.to_radians() } else { *value };
+                // where an axis is (its numbers after the direction's three), held: placed first,
+                // so no later relation reading its place frees what this holds
+                if e.kind == EntKind::Axis && at >= 3 {
+                    sk.place_axis(e.i());
+                }
                 let p = &mut sk.params[own[at] as usize];
                 p.value = v;
                 p.fixed = true;

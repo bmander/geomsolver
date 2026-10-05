@@ -495,12 +495,12 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             let v = r.get(key).map(|v| v.arr()).unwrap_or_default();
             [0, 1, 2].map(|k| v.get(k).map(|x| x.as_f64()).unwrap_or(0.0))
         };
-        let fixed = r.get("fixed").map(|v| v.arr()).unwrap_or_default();
-        let held = [0, 1, 2].map(|k| fixed.get(k).map(|v| v.as_bool()).unwrap_or(false));
-        let place = r.get("a_fixed").map(|v| v.arr()).unwrap_or_default();
-        let place = [0, 1, 2].map(|k| place.get(k).is_some_and(|x| x.as_bool()));
-        let ri = sk.axis_restored(three("d"), held, read_class(r));
-        places.push((ri, three("a"), place));
+        let flags = |key: &str| -> [bool; 3] {
+            let v = r.get(key).map(|v| v.arr()).unwrap_or_default();
+            [0, 1, 2].map(|k| v.get(k).is_some_and(|x| x.as_bool()))
+        };
+        let ri = sk.axis_restored(three("d"), flags("fixed"), read_class(r));
+        places.push((ri, three("a"), flags("a_fixed")));
     }
     // the planes over their axes, each with its origin a point already read
     let nr = sk.axes.len();
