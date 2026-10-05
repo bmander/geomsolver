@@ -2275,6 +2275,22 @@ pub unsafe extern "C" fn gcs_workspace_pick(h: *mut Sketch, unit: f64, az: f64, 
     })
 }
 
+/// The planes whose panes (x, y) on the eye's picture plane falls inside, nearest the eye first:
+/// writes up to `cap` plane indices and returns how many there are.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_panes_at(h: *mut Sketch, az: f64, el: f64, x: f64, y: f64,
+                                                out: *mut f64, cap: usize) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        let hits = gcs_core::overview::workspace::panes_at(s, &proj, (x, y));
+        for (k, &i) in hits.iter().take(cap).enumerate() {
+            write(out.add(k), &[i as f64]);
+        }
+        hits.len() as i32
+    })
+}
+
 /// The point nearest (x, y) on the eye's picture plane and how far it is (-1 when there is none).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_nearest_point(h: *mut Sketch, az: f64, el: f64,
@@ -3557,6 +3573,26 @@ pub unsafe extern "C" fn gcs_plan_drag_new(
         } else {
             PlanDrag::on(sk(h), &mut *ps, point as usize, x, y, g, max_step_rel)
         };
+        Box::into_raw(Box::new(PlanDragH { d, ps }))
+    })
+}
+
+/// A drag of a point in space, read where the eye at bearing `az` and elevation `el` (radians)
+/// sees the pointer: (`x`, `y`) and every later move are on its picture plane.  `ps` as above.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn gcs_plan_drag_seen(
+    h: *mut Sketch,
+    ps: *mut PlanSolver,
+    point: i32,
+    x: f64,
+    y: f64,
+    az: f64,
+    el: f64,
+    max_step_rel: f64,
+) -> *mut PlanDragH {
+    guard(std::ptr::null_mut(), move || {
+        let d = PlanDrag::seen(sk(h), ps.as_mut(), point as usize, x, y, (az, el), max_step_rel);
         Box::into_raw(Box::new(PlanDragH { d, ps }))
     })
 }

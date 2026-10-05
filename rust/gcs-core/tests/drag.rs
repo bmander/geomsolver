@@ -525,3 +525,67 @@ fn pull_polish_frames_are_the_bits_they_were() {
     println!("pull/polish hash {h:#018x}");
     assert_eq!(h, 0x5c0d42ac9b59af67);
 }
+
+/// Where the eye at bearing `az` and elevation `el` sees a place in space, and the way it looks.
+fn seen_by((az, el): (f64, f64), x: [f64; 3]) -> ((f64, f64), [f64; 3]) {
+    let (right, up) = ([-az.sin(), az.cos(), 0.0], [-az.cos() * el.sin(), -az.sin() * el.sin(), el.cos()]);
+    let dot = |a: [f64; 3]| a[0] * x[0] + a[1] * x[1] + a[2] * x[2];
+    let toward = [az.cos() * el.cos(), az.sin() * el.cos(), el.sin()];
+    ((dot(right), dot(up)), toward)
+}
+
+/// **A point in space is dragged where the eye sees it** (`PlanDrag::seen`): a lone `line`'s end
+/// follows the pointer across a three-quarter view, keeps its depth along the line of sight (a
+/// free point's step is minimum-norm), and the other end stays put.
+#[test]
+fn a_point_in_space_follows_the_pointer_where_the_eye_sees_it() {
+    let e = crate::common::read("l := line\n");
+    let mut sk = e.sketch.clone();
+    let l = &sk.lines[crate::common::ent(&e, "l").i()];
+    let (p, q) = (l.p2 as usize, l.p1 as usize);
+    assert!(sk.points[p].z.is_some(), "a line no `in` reaches stands in space");
+    let eye = (0.6, 0.4);
+    let (start, toward) = seen_by(eye, sk.world_point(p));
+    let depth = |x: [f64; 3]| toward.iter().zip(x).map(|(a, b)| a * b).sum::<f64>();
+    let d0 = depth(sk.world_point(p));
+    let q0 = sk.world_point(q);
+    let mut ps = PlanSolver::new(&sk, true);
+    let mut d = PlanDrag::seen(&mut sk, Some(&mut ps), p, start.0, start.1, eye, 0.05);
+    for &(x, y) in &circle_path(start.0 + 3.0, start.1, 3.0, 12) {
+        let r = d.move_to(&mut sk, Some(&ps.plan), x, y);
+        assert!(r.success, "{r:?}");
+        let (at, _) = seen_by(eye, sk.world_point(p));
+        assert!((at.0 - x).abs() < 1e-6 && (at.1 - y).abs() < 1e-6, "seen at {at:?}, not ({x}, {y})");
+        assert!((depth(sk.world_point(p)) - d0).abs() < 1e-6, "the drag moved the point in depth");
+        assert_eq!(sk.world_point(q), q0, "the other end moved");
+    }
+    d.end();
+    assert!(sk.constraints.iter().all(|c| !c.soft), "the drag target left behind");
+}
+
+/// A point in space held to a sphere about a fixed one slides over it, read where the eye sees
+/// the pointer: the distance holds every frame, and the pointer is met wherever the sphere's
+/// outline reaches it.
+#[test]
+fn a_point_in_space_dragged_on_a_sphere_keeps_its_distance() {
+    let e = crate::common::read(
+        "a := point hint(x: 0, y: 0, z: 0)\nfix(x == 0, y == 0, z == 0) a\n\
+         b := point hint(x: 10, y: 0, z: 0)\na distance(10) b\n",
+    );
+    let mut sk = e.sketch.clone();
+    solve(&mut sk, SolveOpts::default());
+    let b = crate::common::ent(&e, "b").i();
+    let eye = (0.6, 0.4);
+    let (start, _) = seen_by(eye, sk.world_point(b));
+    let mut d = PlanDrag::seen(&mut sk, None, b, start.0, start.1, eye, 0.05);
+    for &(x, y) in &circle_path(0.0, 0.0, 6.0, 12) {
+        let r = d.move_to(&mut sk, None, x, y);
+        assert!(r.success, "{r:?}");
+        let w = sk.world_point(b);
+        let len = (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]).sqrt();
+        assert!((len - 10.0).abs() < 1e-6, "off the sphere: {len}");
+        let (at, _) = seen_by(eye, w);
+        assert!((at.0 - x).hypot(at.1 - y) < 1e-3, "seen at {at:?}, not ({x}, {y})");
+    }
+    d.end();
+}

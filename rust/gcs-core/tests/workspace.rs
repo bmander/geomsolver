@@ -2,7 +2,7 @@
 //! orthographic eye, with what is under the pointer asked where the eye sees it — because views
 //! that lie on top of one another on the page are nowhere near one another in space.
 use gcs_core::model::{EntKind, EntRef, Sketch};
-use gcs_core::overview::workspace::{apply, inside, look_at, nearest_point, pick, Projection};
+use gcs_core::overview::workspace::{apply, inside, look_at, nearest_point, panes_at, pick, Projection};
 use gcs_core::{callout, library, program};
 use std::f64::consts::{FRAC_PI_2, PI};
 
@@ -123,6 +123,29 @@ fn a_pick_tells_apart_views_that_overlap_on_the_page() {
     let (cx, cy) = seen([0.0, 10.0, 4.0], az, el);
     let held = inside(sk, &proj, (cx - 0.5, cy - 0.5), (cx + 0.5, cy + 0.5), 0.01);
     assert_eq!(held, vec![named("s")]);
+}
+
+/// A pane answers over its whole face, the nearest the eye first: seen from above and in front,
+/// a place on the top pane in front of the front pane is the top's, with the front's behind it.
+#[test]
+fn a_pane_is_found_where_the_eye_sees_it_nearest_first() {
+    let e = build(VIEWS);
+    let sk = &e.sketch;
+    let (top, front, side) = (plane(&e, "std.top"), plane(&e, "std.front"), plane(&e, "std.side"));
+    let (az, el) = (-FRAC_PI_2, 0.5);
+    let proj = Projection::new(sk, az, el);
+    // the top pane in front of the front: (5, -0.3) lies off the front plane's y = 0, toward the eye
+    let hits = panes_at(sk, &proj, seen([5.0, -0.3, 0.0], az, el));
+    assert_eq!(hits.first(), Some(&top), "{hits:?}");
+    assert!(hits.contains(&front), "the front behind it: {hits:?}");
+    // a place on the front above the top: the front's place first (std.up stands there too)
+    let hits = panes_at(sk, &proj, seen([5.0, 0.0, 3.0], az, el));
+    let place = |i: usize| proj.views.place(Some(i));
+    assert_eq!(place(hits[0]), place(front), "{hits:?}");
+    // the side is seen edge on from the front, and is no place to land
+    assert!(!hits.contains(&side), "{hits:?}");
+    // far off every pane
+    assert!(panes_at(sk, &proj, (1e4, 1e4)).is_empty());
 }
 
 /// A line drawn on a plane is picked along its figure there, and a projector between two views

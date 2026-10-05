@@ -1241,7 +1241,9 @@ Conventions:
   press (`ViewCam::readable`).  The plane tool picks two drawn lines and writes `plane(u:, v:)`.
   Points in space stand in no view: seen where they are (`Projection::point`; per frame
   `workspace::space_points`, `gcs_workspace_space_points`, stroked through the eye's own
-  camera), drawn and picked, never dragged.  A view opens drawing on `std.front`
+  camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:
+  `CKind::DragSeen`, two soft rows across the picture plane, so depth is the constraints' and a
+  free point keeps its own).  A view opens drawing on `std.front`
   (`drawOnFront`), and File ▸ New is `use std`.  `workspace::Views` is what does not depend on
   the eye — each view placed in space (slot 0 a 2D sketch's front plane, `Basis::page`), the view
   each point and entity stands in, and each view's **place** (the first view on the same plane in
@@ -1251,11 +1253,14 @@ Conventions:
   `std.side`, `std.top`, then the document's planes; `choosePlane` sets `v.plane` and swings the
   eye square on (`workspace::look_at`).  A standard plane the document lacks is `pendingPlane`
   until a tool's first press adds `use std` (`edit::add_use`, `ensurePlane`) — choosing writes
-  nothing.  Callouts are drawn for the current plane's place only (`showsCallouts`), and the one
-  being written or focused.  Right-drag orbits, middle or ⇧right-drag pans, the wheel zooms.  A
-  flat document opens square on to the front, one with a solid or off-front geometry from three
-  quarters (`homeOrbit`); `workspace::bounds` frames figures and solids.  The orbit is view state
-  (never saved, exported, solved or undone).  `tests/workspace.rs` and `app.test.ts` are the gates.
+  nothing.  A double-click on a pane (select tool, nothing drawn under the pointer) chooses its
+  plane without turning the eye (`choosePlane(name, false)`): `workspace::panes_at` lists them
+  nearest the eye first, `paneAt` takes the first the chooser offers.  Callouts are drawn for the
+  current plane's place only (`showsCallouts`), and the one being written or focused.  Right-drag
+  orbits, middle or ⇧right-drag pans, the wheel zooms.  A flat document opens square on to the
+  front, one with a solid or off-front geometry from three quarters (`homeOrbit`);
+  `workspace::bounds` frames figures and solids.  The orbit is view state (never saved, exported,
+  solved or undone).  `tests/workspace.rs` and `app.test.ts` are the gates.
 - The **glass box scene** (`overview.rs`) folds a multiview drawing into space: each view on its
   own plane, the object reconstructed between them.  **Nothing is solved for and nothing is
   stored** — a point in view P has view coordinates `(a, b)` (what `project`'s residual reads),

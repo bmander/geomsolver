@@ -61,6 +61,7 @@ macro_rules! undrawn {
         CKind::Coincident
             | CKind::Midpoint
             | CKind::DragTarget
+            | CKind::DragSeen
             | CKind::Horizontal
             | CKind::Vertical
             | CKind::Parallel

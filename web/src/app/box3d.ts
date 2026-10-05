@@ -15,6 +15,9 @@
  * thing is on screen.
  */
 import * as THREE from 'three';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
 import { mesh, objects } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
@@ -33,6 +36,10 @@ const INK = {
   edge: 0x3a3f45,
   solid: 0xb0b3b8,
 };
+
+/** A pane's frame, in screen pixels: the plane being drawn on is bold.  WebGL draws every
+ *  `LineBasicMaterial` one pixel wide whatever it is asked, so a frame is a fat line. */
+const FRAME_PX = { plain: 1, current: 2.5 };
 
 /** The kinds that stand in space and on no one plane, so are this renderer's to draw. */
 const IN_SPACE = new Set(['sphere', 'cone', 'cylinder', 'axis']);
@@ -57,6 +64,8 @@ export class Box3D {
    *  the cursor is on, and what is selected.  A material is written per frame; a rebuild is not,
    *  which is what keeps a mesh off the hover path. */
   private readonly frames: { it: Item3; line: THREE.LineSegments }[] = [];
+  /** Each pane's frame, apart from `frames` because it is a fat line with a width to write. */
+  private readonly panes: { it: Item3; line: LineSegments2 }[] = [];
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
@@ -169,7 +178,7 @@ export class Box3D {
       })));
       // its frame, separately, because the frame is what is picked and what bolds under the
       // cursor — the rule everything on this canvas is picked by, and the wash is never it
-      this.frames.push({ it, line: this.lines([it], INK.pane, 0.35, true)! });
+      this.panes.push({ it, line: this.frame(it) });
     }
     this.lines(items.filter((i) => i.part === 'axis'), INK.axis, 0.55);
     // of what is drawn, only what stands in space: a sketch on a plane is stroked on the canvas
@@ -220,23 +229,48 @@ export class Box3D {
     const hl = new Set(v.highlight);
     for (const { it, line } of this.frames) {
       const m = line.material as THREE.LineBasicMaterial;
-      const base = it.part === 'face' ? INK.pane : INK.drawn;
       const ent = v.entityOf(it);
       const chrome = ent ? chromeOf(sel, hl, ent) : null;
-      m.color.set(chrome ? chrome[0] : base);
-      if (it.part !== 'face') continue;
+      m.color.set(chrome ? chrome[0] : INK.drawn);
+    }
+    for (const { it, line } of this.panes) {
+      const m = line.material;
+      const ent = v.entityOf(it);
+      const chrome = ent ? chromeOf(sel, hl, ent) : null;
+      m.color.set(chrome ? chrome[0] : INK.pane);
       // the plane being drawn on: its frame bolds, so where the next thing goes is in sight
-      m.opacity = v.planeOf(it) === v.plane ? 0.8 : 0.35;
+      const current = v.planeOf(it) === v.plane;
+      m.opacity = current ? 0.8 : 0.35;
+      m.linewidth = current ? FRAME_PX.current : FRAME_PX.plain;
+      m.resolution.set(v.width, v.height);
     }
   }
 
-  private lines(items: Item3[], color: number, opacity: number,
-                loop = false): THREE.LineSegments | null {
+  /** A pane's frame as a closed fat line; `chrome` writes its colour, opacity and width. */
+  private frame(it: Item3): LineSegments2 {
+    const pts: number[] = [];
+    const n = it.pts.length;
+    for (let i = 0; i + 1 < n; i++) pts.push(...it.pts[i], ...it.pts[i + 1]);
+    // the core's face comes back to its first corner; closed here should one not
+    const [a, b] = [it.pts[0], it.pts[n - 1]];
+    if (n > 2 && a.some((x, k) => x !== b[k])) pts.push(...b, ...a);
+    const g = new LineSegmentsGeometry();
+    g.setPositions(pts);
+    const line = new LineSegments2(g, new LineMaterial({
+      color: INK.pane,
+      linewidth: FRAME_PX.plain,
+      transparent: true,
+      opacity: 0.35,
+    }));
+    this.content.add(line);
+    return line;
+  }
+
+  private lines(items: Item3[], color: number, opacity: number): THREE.LineSegments | null {
     const pts: number[] = [];
     for (const it of items) {
       const n = it.pts.length;
       for (let i = 0; i + 1 < n; i++) pts.push(...it.pts[i], ...it.pts[i + 1]);
-      if (loop && n > 2) pts.push(...it.pts[n - 1], ...it.pts[0]);
     }
     if (pts.length === 0) return null;
     const g = new THREE.BufferGeometry();
@@ -254,6 +288,7 @@ export class Box3D {
    *  released: WebGL resources outlive the tree that named them. */
   private dispose(): void {
     this.frames.length = 0;
+    this.panes.length = 0;
     for (const o of [...this.content.children]) {
       this.content.remove(o);
       const any = o as THREE.Mesh;

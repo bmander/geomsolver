@@ -1849,6 +1849,9 @@ pub struct PlanDrag {
     wave: Wave,
     max_step: f64,
     guards: Option<Vec<Triangle>>,
+    /// The eye (bearing, elevation) a point in space is dragged as seen by (`seen`): the
+    /// pointer is on its picture plane, which no plan's wave reads, so the drag is numeric.
+    eye: Option<(f64, f64)>,
 }
 
 impl PlanDrag {
@@ -1861,32 +1864,7 @@ impl PlanDrag {
         guards: Option<Vec<Triangle>>,
         max_step_rel: f64,
     ) -> PlanDrag {
-        // continuation increments are cursor motion relative to the drawing, so the document's
-        // extent sets them, whatever the part's own size
-        let max_step = max_step_rel * doc.extent().max(1.0);
-        let (mut part, point) = part_around(doc, point);
-        // `None` still means "not computed": the numeric fallback derives them if it is reached
-        let guards = guards.map(|g| part.triangles_in(&g));
-        let sk = &mut part.sketch;
-        let mut solver = PlanSolver::new(sk, true);
-        let usable = solver.ensure_solved(sk, 1e-9, Method::DogLeg)
-            && solver.plan.graph.unsupported.is_empty();
-        let wave = Wave::new(&solver.plan, solver.plan.graph.point_el(point), sk.extent());
-        let shape = solver.plan.shape();
-        let mut d = PlanDrag {
-            part: Some(part),
-            solver: Some(solver),
-            shape,
-            numeric: None,
-            point,
-            wave,
-            max_step,
-            guards,
-        };
-        if !usable {
-            d.hand_over(doc, None, x, y);
-        }
-        d
+        PlanDrag::own(doc, point, x, y, guards, max_step_rel, None)
     }
 
     /// A drag on the document's own plan, which must be the plan of the document as it is — the
@@ -1900,8 +1878,80 @@ impl PlanDrag {
         guards: Option<Vec<Triangle>>,
         max_step_rel: f64,
     ) -> PlanDrag {
+        PlanDrag::given(doc, plan, point, x, y, guards, max_step_rel, None)
+    }
+
+    /// A drag of a **point in space**, which stands in no view: (`x`, `y`) and every `move_to`
+    /// are where the eye at bearing `az` and elevation `el` sees the pointer (`Drag::seen`).  On
+    /// the document's plan where one is given (`on`), else one of its own (`new`).
+    pub fn seen(
+        doc: &mut Sketch,
+        plan: Option<&mut PlanSolver>,
+        point: usize,
+        x: f64,
+        y: f64,
+        eye: (f64, f64),
+        max_step_rel: f64,
+    ) -> PlanDrag {
+        match plan {
+            Some(plan) => PlanDrag::given(doc, plan, point, x, y, None, max_step_rel, Some(eye)),
+            None => PlanDrag::own(doc, point, x, y, None, max_step_rel, Some(eye)),
+        }
+    }
+
+    fn own(
+        doc: &Sketch,
+        point: usize,
+        x: f64,
+        y: f64,
+        guards: Option<Vec<Triangle>>,
+        max_step_rel: f64,
+        eye: Option<(f64, f64)>,
+    ) -> PlanDrag {
+        // continuation increments are cursor motion relative to the drawing, so the document's
+        // extent sets them, whatever the part's own size
         let max_step = max_step_rel * doc.extent().max(1.0);
-        let usable = plan.ensure_solved(doc, 1e-9, Method::DogLeg)
+        let (mut part, point) = part_around(doc, point);
+        // `None` still means "not computed": the numeric fallback derives them if it is reached
+        let guards = guards.map(|g| part.triangles_in(&g));
+        let sk = &mut part.sketch;
+        let mut solver = PlanSolver::new(sk, true);
+        let usable = eye.is_none()
+            && solver.ensure_solved(sk, 1e-9, Method::DogLeg)
+            && solver.plan.graph.unsupported.is_empty();
+        let wave = Wave::new(&solver.plan, solver.plan.graph.point_el(point), sk.extent());
+        let shape = solver.plan.shape();
+        let mut d = PlanDrag {
+            part: Some(part),
+            solver: Some(solver),
+            shape,
+            numeric: None,
+            point,
+            wave,
+            max_step,
+            guards,
+            eye,
+        };
+        if !usable {
+            d.hand_over(doc, None, x, y);
+        }
+        d
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn given(
+        doc: &mut Sketch,
+        plan: &mut PlanSolver,
+        point: usize,
+        x: f64,
+        y: f64,
+        guards: Option<Vec<Triangle>>,
+        max_step_rel: f64,
+        eye: Option<(f64, f64)>,
+    ) -> PlanDrag {
+        let max_step = max_step_rel * doc.extent().max(1.0);
+        let usable = eye.is_none()
+            && plan.ensure_solved(doc, 1e-9, Method::DogLeg)
             && plan.plan.graph.unsupported.is_empty();
         let wave = Wave::new(&plan.plan, plan.plan.graph.point_el(point), doc.extent());
         let mut d = PlanDrag {
@@ -1913,6 +1963,7 @@ impl PlanDrag {
             wave,
             max_step,
             guards,
+            eye,
         };
         if !usable {
             d.hand_over(doc, Some(&plan.plan), x, y);
@@ -1984,7 +2035,12 @@ impl PlanDrag {
         }
         let guards = self.guards.clone().expect("guard_triangles filled them in");
         let sketch = &mut self.part.as_mut().expect("a numeric drag runs on a part").sketch;
-        let mut drag = Drag::new(sketch, self.point, x, y, Method::DogLeg, 1.0, guards, 0.05);
+        let mut drag = match self.eye {
+            Some(eye) => {
+                Drag::seen(sketch, self.point, x, y, eye, Method::DogLeg, 1.0, guards, 0.05)
+            }
+            None => Drag::new(sketch, self.point, x, y, Method::DogLeg, 1.0, guards, 0.05),
+        };
         drag.max_step = self.max_step;
         self.numeric = Some(drag);
     }

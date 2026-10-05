@@ -216,6 +216,8 @@ export interface Abi {
   gcs_workspace_bounds(h: number, unit: number, az: number, el: number, out: number): number;
   gcs_workspace_pick(h: number, unit: number, az: number, el: number, x: number, y: number,
                      tol: number, out: number): number;
+  gcs_workspace_panes_at(h: number, az: number, el: number, x: number, y: number,
+                         out: number, cap: number): number;
   gcs_workspace_nearest_point(h: number, az: number, el: number, x: number, y: number,
                               outDist: number): number;
   gcs_workspace_inside_json(h: number, unit: number, az: number, el: number,
@@ -323,6 +325,8 @@ export interface Abi {
   gcs_radius_drag_free(d: number): void;
   gcs_plan_drag_new(h: number, ps: number, point: number, x: number, y: number, guards: number,
                     nGuards: number, maxStepRel: number): number;
+  gcs_plan_drag_seen(h: number, ps: number, point: number, x: number, y: number, az: number,
+                     el: number, maxStepRel: number): number;
   gcs_plan_drag_move(d: number, h: number, x: number, y: number, out: number): number;
   gcs_plan_drag_usable(d: number): number;
   gcs_plan_drag_flips(d: number): number;

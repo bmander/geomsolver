@@ -40,8 +40,8 @@ import * as tools from './tools.js';
 import * as underlay from './underlay.js';
 import type { Bitmap, Underlay } from './underlay.js';
 import {
-  NOWHERE, PAGE, boundsSeen, calloutSeen, lookOf, maps, nearestSeen, ofView, pickSeen, placeOf,
-  spacePoints, workspace,
+  NOWHERE, PAGE, boundsSeen, calloutSeen, lookOf, maps, nearestSeen, ofView, panesSeen, pickSeen,
+  placeOf, spacePoints, workspace,
 } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
 
@@ -401,8 +401,14 @@ export class SketchView {
     }
   }
 
+  /** Whether a point stands in space, in no view: seen where it is, dragged where it is seen. */
+  inSpace(p: Point): boolean {
+    this.cams();
+    return this.camCache!.space[p.index] != null;
+  }
+
   /** A canvas point on the eye's picture plane, which is where the core asks what is there. */
-  private eye(sx: number, sy: number): [number, number] {
+  eye(sx: number, sy: number): [number, number] {
     return this.cam.s2w(sx, sy);
   }
 
@@ -908,6 +914,19 @@ export class SketchView {
     return pickSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), this.world(PICK_PX));
   }
 
+  /** The plane whose pane is under the canvas point, nearest the eye, as the chooser names it — a
+   *  pane is the plane, so double-clicking one is choosing it.  Of panes standing in one place
+   *  (`std.up` on `std.front`), the one the chooser offers. */
+  paneAt(sx: number, sy: number): string | null {
+    const { az, el } = this.orbit;
+    const offered = this.planeChoices();
+    for (const pl of panesSeen(this.sketch, az, el, ...this.eye(sx, sy))) {
+      const name = this.doc.nameOf(pl);
+      if (name && offered.includes(name)) return name;
+    }
+    return null;
+  }
+
   // -- painting ------------------------------------------------------------
 
   draw(): void {
@@ -1056,9 +1075,10 @@ export class SketchView {
   }
 
   /** **Sketch on a plane**: make it the one the next thing is drawn in, and turn the eye square
-   *  on to it.  A standard plane the document does not have yet is remembered by name and brought
-   *  in by the first press of a tool (`ensurePlane`), so choosing one writes nothing. */
-  choosePlane(name: string): void {
+   *  on to it unless `look` is false (a double-click on its pane leaves the eye where it is).  A
+   *  standard plane the document does not have yet is remembered by name and brought in by the
+   *  first press of a tool (`ensurePlane`), so choosing one writes nothing. */
+  choosePlane(name: string, look = true): void {
     const found = this.doc.entity(name);
     if (found instanceof Plane) {
       this.plane = found;
@@ -1074,7 +1094,7 @@ export class SketchView {
     if (this.selected.some((e) => e instanceof Plane)) {
       this.selected = this.selected.filter((e) => !(e instanceof Plane));
     }
-    this.lookAt(this.lookFor(name));
+    if (look) this.lookAt(this.lookFor(name));
     this.onStatus(`drawing on ${name}`);
     this.onChanged();
   }
