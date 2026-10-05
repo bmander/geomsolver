@@ -17,6 +17,7 @@ mod accuracy;
 mod angle_and_arc_words;
 mod anonymous;
 mod axis;
+mod bare_plane;
 mod callout;
 mod chain;
 mod chain_edges;

@@ -1,0 +1,128 @@
+//! A bare `p := plane` (#84): its origin and two axes it mints, `p.u` and `p.v`, all free — three
+//! numbers of place and two of direction each, seven in all — placed by the relations every
+//! other entity takes.  A plane's axes pass through its origin, so two axes `coincident` with
+//! `p.u` and `p.v` hold the plane where they meet; two held axes that do not meet are refused.
+use gcs_core::constraints::CKind;
+use gcs_core::diagnose::{diagnose, DiagnoseOptions};
+use gcs_core::model::{EntKind, Sketch};
+use gcs_core::program::Elaborated;
+use gcs_core::solve::{solve, SolveOpts};
+use gcs_core::space::{cross, dot, norm, sub};
+
+use crate::common::{ent, read, refused, unit};
+
+fn dof(sk: &mut Sketch) -> i64 {
+    diagnose(sk, DiagnoseOptions::default()).dof
+}
+
+/// Axis `n` where it stands: a point on it and its direction.
+fn line(e: &Elaborated, sk: &Sketch, n: &str) -> ([f64; 3], [f64; 3]) {
+    let r = &sk.axes[ent(e, n).i()];
+    (r.a.map(|q| sk.params[q as usize].value), unit(r.d.map(|q| sk.params[q as usize].value)))
+}
+
+/// How far `x` stands off the line through `a` along unit `d`.
+fn off(x: [f64; 3], (a, d): ([f64; 3], [f64; 3])) -> f64 {
+    norm(cross(sub(x, a), d))
+}
+
+#[test]
+fn a_bare_plane_is_seven_freedoms() {
+    let e = read("use std\np := plane\n");
+    let mut sk = e.sketch.clone();
+    assert_eq!(dof(&mut sk), 3 + 2 + 2, "a place, and a direction for each axis");
+    for n in ["p.u", "p.v"] {
+        assert_eq!(ent(&e, n).kind, EntKind::Axis, "{n} is an axis the plane minted");
+    }
+    // seeded as the front plane is: u right and v up
+    let b = sk.basis(ent(&e, "p").i());
+    assert_eq!((b.u, b.v), ([1.0, 0.0, 0.0], [0.0, 0.0, 1.0]));
+    // where the numbers landed is reported under the axes' dotted names
+    let names: Vec<String> =
+        gcs_core::report::positions(&sk, &e.map).into_iter().map(|(n, _)| n).collect();
+    for n in ["p.u.x", "p.u.px", "p.v.z"] {
+        assert!(names.iter().any(|m| m == n), "`{n}` in {names:?}");
+    }
+}
+
+/// One slot written and the other minted: `plane(u: std.x)` takes its u and makes its v.
+#[test]
+fn a_plane_mints_only_the_axis_it_is_not_given() {
+    let e = read("use std\np := plane(u: std.x)\n");
+    assert_eq!(e.sketch.planes[ent(&e, "p").i()].u as usize, ent(&e, "std.x").i());
+    assert_eq!(ent(&e, "p.v").kind, EntKind::Axis);
+    let mut sk = e.sketch.clone();
+    // the origin slides along std.x, and v turns about it
+    assert_eq!(dof(&mut sk), 1 + 2);
+}
+
+const FRAME: &str = "\
+u := axis
+v := axis
+u perpendicular v
+p := plane
+u coincident p.u
+v coincident p.v
+";
+
+/// Two square axes `coincident` with a bare plane's: the plane is the frame they make, standing
+/// where they meet — a rigid body in space, six freedoms, and no row the others imply.
+#[test]
+fn two_square_axes_make_a_frame() {
+    let e = read(FRAME);
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 6, "{}", gcs_core::diagnose::summary(&d));
+    assert_eq!(d.n_equations, d.structural_rank, "{}", gcs_core::diagnose::summary(&d));
+    let b = sk.basis(ent(&e, "p").i());
+    let (u, v) = (line(&e, &sk, "u"), line(&e, &sk, "v"));
+    assert!(off(b.o, u) < 1e-9 && off(b.o, v) < 1e-9, "the origin is where u and v meet");
+    assert!(norm(cross(b.normal(), cross(u.1, v.1))) < 1e-9, "its normal is u × v");
+    assert!(dot(u.1, v.1).abs() < 1e-9);
+}
+
+/// Held, the two axes hold the plane: it stands where they meet, with nothing left to solve.
+#[test]
+fn two_held_axes_hold_the_plane_where_they_meet() {
+    let e = read(&format!("{FRAME}fix(x == 0, y == 1, z == 0, px == 3, py == 0, pz == 4) u\n\
+                           fix(x == 0, y == 0, z == 1, px == 3, py == 0, pz == 0) v\n"));
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
+    let b = sk.basis(ent(&e, "p").i());
+    assert!(norm(sub(b.o, [3.0, 0.0, 4.0])) < 1e-9, "{:?}", b.o);
+    assert!(norm(sub(b.normal(), [1.0, 0.0, 0.0])) < 1e-9, "y × z: {:?}", b.normal());
+}
+
+/// Held axes a plane cannot stand on: two that miss each other, two that run alike, and a plane
+/// held off its own held axes.
+#[test]
+fn a_plane_over_held_axes_that_do_not_meet_is_refused() {
+    let held = "use std\na := axis\nfix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) a\nb := axis\n";
+    refused(&format!("{held}fix(x == 0, y == 1, z == 0, px == 0, py == 0, pz == 5) b\n\
+                      p := plane(u: a, v: b)\n"),
+            "E067", "do not meet", "p := plane(u: a, v: b)");
+    refused(&format!("{held}fix(x == 1, y == 0, z == 0, px == 0, py == 2, pz == 0) b\n\
+                      p := plane(u: a, v: b)\n"),
+            "E067", "run alike", "p := plane(u: a, v: b)");
+    refused("use std\np := plane(u: std.x, v: std.z)\nfix(x == 0, y == -5, z == 0) p\n",
+            "E067", "is held where its axis `p.u` is not", "p := plane(u: std.x, v: std.z)");
+}
+
+/// A relation that read an axis's place, removed, leaves the place held again: no freedom stays
+/// behind for a place nothing reads.
+#[test]
+fn removing_what_placed_an_axis_holds_its_place_again() {
+    let e = read(FRAME);
+    let mut sk = e.sketch.clone();
+    let before = dof(&mut sk);
+    let u = ent(&e, "u");
+    let c = sk.user_constraints().iter()
+        .find(|c| c.kind == CKind::AxisCoincident && c.entities().contains(&u)).unwrap().id;
+    sk.remove(c);
+    assert!(!sk.axes[u.i()].placed);
+    // four rows gone, and with them the two freedoms of where u stood
+    assert_eq!(dof(&mut sk), before + 4 - 2);
+}
