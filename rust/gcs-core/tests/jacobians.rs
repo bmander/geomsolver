@@ -249,6 +249,9 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::AxisPerpendicularPlane, vec![e(axis_b), e(pbe)]),
         Constraint::new(CKind::AxisPerpendicularPlane, vec![e(axis_a), e(pae)]),
         Constraint::new(CKind::PlaneDistance, vec![e(pbe), e(pce), Arg::Num(2.0)]),
+        // two planes facing alike, over free planes and a held one
+        Constraint::new(CKind::PlaneParallel, vec![e(pbe), e(pce)]),
+        Constraint::new(CKind::PlaneParallel, vec![e(pae), e(pce)]),
         // a projection over a free plane
         Constraint::project(&sk, pe, qe).expect("two images on two planes that fold"),
         Constraint::new(CKind::ProjectSolved, vec![e(EntRef::point(dp)), e(EntRef::point(lc)), e(EntRef::plane(pd)), e(pce)]),

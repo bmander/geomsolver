@@ -117,9 +117,11 @@ pub enum K {
     PlaneDistanceFree,
     // two axes on one line, either way
     AxisCoincident,
+    // two planes facing alike, either way
+    PlaneParallel,
 }
 
-pub const N_KERNELS: usize = 84;
+pub const N_KERNELS: usize = 85;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2858,6 +2860,25 @@ fn axis_perpendicular_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<9, 2, 6>(n, v, k, j, axis_perpendicular_plane_rows)
 }
 
+/// Columns of `plane_parallel`: (du_P, dv_P, du_Q, dv_Q), K = (e₁, e₂), two directions across
+/// `P`'s normal as it stood when compiled or refreshed.  `(n̂_Q × n̂_P)·e_k`: the normals alike,
+/// either way.  Degree 0.
+fn plane_parallel_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 2] {
+    let (_, _, np) = dframe(dvec(v, 0), dvec(v, 3));
+    let (_, _, nq) = dframe(dvec(v, 6), dvec(v, 9));
+    let x = dcross(nq, np);
+    let e = |t: usize| dconst3(k, 3 * t);
+    [ddot(x, e(0)), ddot(x, e(1))]
+}
+
+fn plane_parallel_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<12, 2, 6>(n, v, k, r, plane_parallel_rows)
+}
+
+fn plane_parallel_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<12, 2, 6>(n, v, k, j, plane_parallel_rows)
+}
+
 /// Columns of `plane_distance`: (o_P, du_P, dv_P, o_Q), K = (D).  `(o_Q − o_P)·n̂_P − D`: how far
 /// `Q`'s origin stands along `P`'s normal.  Degree 1.
 fn plane_distance_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
@@ -3146,6 +3167,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "plane_distance", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: plane_distance_res, jac: plane_distance_jac, const_jac: None },
     Kernel { name: "plane_distance_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: plane_distance_free_res, jac: plane_distance_free_jac, const_jac: None },
     Kernel { name: "axis_coincident", n_res: 4, n_par: 12, degree: 1, n_const: 7, res: axis_coincident_res, jac: axis_coincident_jac, const_jac: None },
+    Kernel { name: "plane_parallel", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: plane_parallel_res, jac: plane_parallel_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

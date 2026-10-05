@@ -32,7 +32,10 @@ DOF. `views::origins_on_axes` (right after the `fix` pass) holds `o` where two w
 meet, so std's planes add no row; held axes that miss or run alike, or a plane held off its held
 axes, are E067. A plane standing off another takes its own axes (held, or `parallel`): with
 shared axes it would sit on them. `P.origin coincident p`, `P coincident p`, `P distance(d) Q`
-(one row along P's normal; no plane–plane parallel/angle words yet); `fix(x ==, y ==, z ==) P`.
+(one row along P's normal); `P parallel Q` (`PlaneParallel`, normals alike either way, two
+rows; no plane–plane angle yet); `fix(x ==, y ==, z ==) P`. A plane's child slot takes a seed,
+`plane(u: hint(x:, y:, z:))` (`KidSeed` carries x, y, z; a point's refuses z), and
+`commit_seeds` writes a minted axis's direction back there.
 An origin already on one axis is placed in fewer rows than three (`P.origin coincident
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
 another. `views::place`

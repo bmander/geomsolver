@@ -713,7 +713,10 @@ which side is up. `P.origin` (a point drawn in `P`, held at `(0, 0)`) lies on bo
 the axes stand, the plane stands: a plane over `std.x` and `std.z` is the front plane, at the
 world origin, and two held axes that do not meet are E067. `P.u` and `P.v` are the axes in the
 slots. **A bare `P := plane` mints them** (`P.u`, `P.v`), free: three numbers of place and two of
-direction each, seven freedoms; `plane(u: std.x)` mints only `P.v`. A frame of two square axes:
+direction each, seven freedoms; `plane(u: std.x)` mints only `P.v`. A minted axis starts as the
+front's (`u` along x, `v` along z) unless its slot seeds it: `plane(v: hint(x: 0, y: -1, z: 0))`
+— a relation that turns it from square to where it ends (`P.v parallel std.y` from z) starts
+where it cannot move, so seed it. A frame of two square axes:
 
 ```sv
 u := axis
@@ -732,7 +735,10 @@ What else places a plane:
 - `P coincident p`: the plane passes through `p`; `l coincident P` lays a line in it;
 - `p distance(d, along: n) P`: a point's signed distance along the plane's normal;
 - `P distance(d) Q`: `Q` stands `d` along `P`'s normal (one row); the two are parallel when their
-  axes are — there is no `parallel` or `angle` between two planes yet: relate their axes;
+  axes are, or when `P parallel Q` says so;
+- `P parallel Q`: the two face alike, either way (two rows over their normals). Neither's place
+  nor its turn within itself: a plane held parallel to the top still turns about its normal, and
+  its `v` still leans; there is no `angle` between two planes yet;
 - `fix(x == 0, y == 0, z == 0) P` holds where it stands, which must be on its axes (E067).
 
 A plane standing off another cannot share its axes, which pass through the other's origin: it

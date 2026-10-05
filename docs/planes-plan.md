@@ -505,7 +505,8 @@ Decided while building, 2026-10-04 to 2026-10-05:
   refuses a relation in space. A formula curve over a point in no plane is not refused yet.
 * **`P distance(d) Q` is one row**, `Q`'s origin `d` along `P`'s normal: the planes are parallel
   because a stack shares its rays, not because the word says so (forcing it would make every
-  stack read `over`). `parallel`, `perpendicular` and `angle` between two planes are not built;
+  stack read `over`). `perpendicular` and `angle` between two planes are not built (`parallel`
+  is, 0.43);
   relate their rays.
 * **The app**: a new document is `use std`; every view opens drawing on `std.front`, so a press
   never lands a point in space by accident. The plane tool picks two drawn lines and writes

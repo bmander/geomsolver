@@ -13,7 +13,10 @@ by its axes. An axis's place is held as its direction is, by `px`, `py`, `pz` �
 nearest the world origin: `fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x`, which is how
 `std`'s axes are held. A plane over two held axes stands where they meet; held axes that miss,
 that run alike, or a plane held off its held axes, are **E067**. A drawn line serving as an axis
-gives its direction only.
+gives its direction only. **`P parallel Q`** says two planes face alike, either way round — their
+normals parallel, two rows — and nothing of where either stands or how it turns within itself. A
+child slot of a plane takes a seed, the direction its own axis starts from: `plane(u: hint(x: 0,
+y: 1, z: 0))`.
 
 **[0.42] A point stands in space, and a plane is two axes.** A point drawn in no plane stands in
 space, with three coordinates — `hint(x: 1, y: 2, z: 3)`, `fix(x == 1, y == 2, z == 3) p` — and a
@@ -1591,7 +1594,7 @@ What goes in the parentheses is a short list:
 | `angle` | infix | (line, line); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc; **[0.24]** a sphere; **[0.26]** a cylinder |
 | `angle` | prefix | **[0.26]** a cone: its half-angle (between two lines `angle` is infix) |
-| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round |
+| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers each pinned by its field — `fix(x == 0, y == 0) p`, `fix(r == 25) c` **[0.34]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |

@@ -202,6 +202,10 @@ pub enum CKind {
     /// `t perpendicular P`: an axis along a plane's normal — two rows across the normal, as
     /// `parallel3` states two lines parallel.
     AxisPerpendicularPlane,
+    /// `P parallel Q`: two planes facing alike, either way — their normals parallel, two rows
+    /// across the first's, as `parallel3` states two lines parallel.  Says nothing of where
+    /// either stands, or of how either is turned within itself.
+    PlaneParallel,
     /// `P distance(d) Q`: how far `Q`'s origin stands along `P`'s normal from `P`'s origin —
     /// for parallel planes, the gap between them.  One row; that the two are parallel is said
     /// by their axes.
@@ -261,7 +265,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 77] = [
+pub const ALL_KINDS: [CKind; 78] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -338,6 +342,7 @@ pub const ALL_KINDS: [CKind; 77] = [
     CKind::AxisCoincident,
     CKind::AxisParallelPlane,
     CKind::AxisPerpendicularPlane,
+    CKind::PlaneParallel,
     CKind::PlaneDistance,
 ];
 
@@ -479,6 +484,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Line, Line) => CKind::Parallel,
             (x, y) if axes(x, y) => CKind::Parallel3,
             (Axis, Plane) => CKind::AxisParallelPlane,
+            (Plane, Plane) => CKind::PlaneParallel,
             _ => return None,
         },
         "perpendicular" => match (a, b) {
@@ -801,6 +807,7 @@ impl CKind {
             CKind::AxisCoincident => "AxisCoincident",
             CKind::AxisParallelPlane => "AxisParallelPlane",
             CKind::AxisPerpendicularPlane => "AxisPerpendicularPlane",
+            CKind::PlaneParallel => "PlaneParallel",
             CKind::PlaneDistance => "PlaneDistance",
             CKind::CoordinateV => "CoordinateV",
             CKind::Lift => "Lift",
@@ -1003,6 +1010,7 @@ impl CKind {
                 &[("axis", S::Axis), ("plane", S::Plane)]
             }
             CKind::AxisCoincident => &[("a", S::Axis), ("b", S::Axis)],
+            CKind::PlaneParallel => &[("p1", S::Plane), ("p2", S::Plane)],
             CKind::PlaneDistance => &[("p1", S::Plane), ("p2", S::Plane), ("d", S::Length)],
             // the entity, and the numbers it holds, each pinned under the name of the field it
             // is (`model::EntKind::fields`): `fix(x == 0, y == 0) p`, `fix(r == 25) c`,
@@ -1155,7 +1163,7 @@ impl CKind {
             | CKind::AxisFoot
             | CKind::PlaneAxis => return None,
             CKind::PointOnAxis | CKind::AxisOnPlane | CKind::AxisCoincident => ("coincident", Infix),
-            CKind::AxisParallelPlane => ("parallel", Infix),
+            CKind::AxisParallelPlane | CKind::PlaneParallel => ("parallel", Infix),
             CKind::AxisPerpendicularPlane => ("perpendicular", Infix),
             CKind::PlaneDistance => ("distance", Infix),
         })
@@ -1440,6 +1448,7 @@ impl CKind {
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
+            | CKind::PlaneParallel
             | CKind::PlaneDistance
             | CKind::Fix
             | CKind::Ccw
@@ -1566,6 +1575,7 @@ impl CKind {
             CKind::AxisCoincident => K::AxisCoincident,
             CKind::AxisParallelPlane => K::AxisParallelPlane,
             CKind::AxisPerpendicularPlane => K::AxisPerpendicularPlane,
+            CKind::PlaneParallel => K::PlaneParallel,
             CKind::PlaneDistance => K::PlaneDistance,
             CKind::Fix | CKind::Ccw | CKind::Cw => {
                 panic!("{:?} is a gauge: applied by the elaborator, it has no kernel", self)
@@ -1680,6 +1690,7 @@ impl CKind {
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
+            | CKind::PlaneParallel
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw => return None,
@@ -1723,6 +1734,7 @@ impl CKind {
                 | CKind::AxisCoincident
                 | CKind::AxisParallelPlane
                 | CKind::AxisPerpendicularPlane
+                | CKind::PlaneParallel
                 | CKind::PlaneDistance
         )
     }
@@ -2406,6 +2418,10 @@ impl Constraint {
                 let (e1, e2) = across(sk.basis(self.args[1].ent().i()).normal());
                 [e1, e2].concat()
             }
+            CKind::PlaneParallel => {
+                let (e1, e2) = across(sk.basis(self.args[0].ent().i()).normal());
+                [e1, e2].concat()
+            }
             CKind::SphereRadius => vec![self.args[1].num()],
             // `point_line3_free` at (m, c) = (1, 0): the stated number is the radius column
             CKind::SphereTangentLine | CKind::CylinderOn => vec![1.0, 0.0],
@@ -2611,6 +2627,10 @@ impl Constraint {
             CKind::AxisParallelPlane | CKind::AxisPerpendicularPlane => {
                 [sk.axes[e(0).i()].d.to_vec(), plane_columns(sk, e(1).i())[3..].to_vec()].concat()
             }
+            // each plane's two axis directions
+            CKind::PlaneParallel => {
+                [plane_columns(sk, e(0).i())[3..].to_vec(), plane_columns(sk, e(1).i())[3..].to_vec()].concat()
+            }
             // each axis's place and direction
             CKind::AxisCoincident => {
                 let (a, b) = (&sk.axes[e(0).i()], &sk.axes[e(1).i()]);
@@ -2723,6 +2743,7 @@ impl Constraint {
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
+            | CKind::PlaneParallel
             | CKind::PlaneDistance => Vec::new(),
             CKind::LineOnPlane => ends(0).to_vec(),
             CKind::PointOnCircle3 | CKind::SphereOn => {

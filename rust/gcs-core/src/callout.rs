@@ -127,6 +127,7 @@ macro_rules! undrawn {
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
+            | CKind::PlaneParallel
             | CKind::PlaneDistance
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved

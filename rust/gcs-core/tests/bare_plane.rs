@@ -187,3 +187,27 @@ fn a_solve_writes_a_plane_s_own_axes_back() {
     let (_, u) = line(&back, &back.sketch, "p.u");
     assert!(norm(cross(u, [0.0, 1.0, 0.0])) < 1e-9, "spliced in place: {}", out.text);
 }
+
+/// **`P parallel Q`**: two planes facing alike, either way — their normals parallel, two rows.
+/// It says nothing of where either stands or how either turns within itself, so a plane held
+/// parallel to the top and standing where it is held still turns about its normal, and its `v`
+/// still leans within it.
+#[test]
+fn two_planes_parallel_face_alike_either_way() {
+    let e = read("use std\nb := plane(u: hint(x: 1, y: 0.2, z: 0.3), v: hint(x: 0.1, y: -1, z: 0.2)) \
+                  hint(x: 0, y: 0, z: 12)\nb parallel std.top\nfix(x == 0, y == 0, z == 12) b\n");
+    let mut sk = e.sketch.clone();
+    let kinds: Vec<CKind> = sk.user_constraints().iter().map(|c| c.kind).collect();
+    assert_eq!(kinds, [CKind::PlaneParallel]);
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let n = sk.basis(ent(&e, "b").i()).normal();
+    assert!(norm(cross(n, [0.0, 0.0, 1.0])) < 1e-9, "{n:?}");
+    // the seed's sense: u × v points down
+    assert!(n[2] < 0.0, "{n:?}");
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 2, "a turn about its normal and v's lean: {}", gcs_core::diagnose::summary(&d));
+    assert_eq!(d.n_equations, d.structural_rank, "{}", gcs_core::diagnose::summary(&d));
+    // and read either way round
+    let e = read("use std\nb := plane\nstd.top parallel b\n");
+    assert_eq!(e.sketch.user_constraints()[0].kind, CKind::PlaneParallel);
+}
