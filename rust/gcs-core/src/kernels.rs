@@ -119,9 +119,11 @@ pub enum K {
     AxisCoincident,
     // two planes facing alike, either way
     PlaneParallel,
+    // the soft drag target of a point in space: seen by the eye where the pointer is
+    DragSeen,
 }
 
-pub const N_KERNELS: usize = 85;
+pub const N_KERNELS: usize = 86;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -421,6 +423,29 @@ fn drag_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
         j[o + 1] = 0.0;
         j[o + 2] = 0.0;
         j[o + 3] = w;
+    }
+}
+
+/// (x,y,z), K = (tx,ty,w, right, up): the soft drag target of a point in space, which the eye sees
+/// at (right·X, up·X).  Two rows, so the depth along the eye's line of sight is left to whatever
+/// else holds the point: a free one keeps it (the step is minimum-norm), one on a line slides.
+fn drag_seen_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let (x, k) = (&v[3 * i..3 * i + 3], &k[9 * i..9 * i + 9]);
+        let (right, up) = (&k[3..6], &k[6..9]);
+        let dot = |d: &[f64]| d[0] * x[0] + d[1] * x[1] + d[2] * x[2];
+        r[2 * i] = k[2] * (dot(right) - k[0]);
+        r[2 * i + 1] = k[2] * (dot(up) - k[1]);
+    }
+}
+
+fn drag_seen_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let k = &k[9 * i..9 * i + 9];
+        for c in 0..3 {
+            j[6 * i + c] = k[2] * k[3 + c];
+            j[6 * i + 3 + c] = k[2] * k[6 + c];
+        }
     }
 }
 
@@ -3168,6 +3193,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "plane_distance_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: plane_distance_free_res, jac: plane_distance_free_jac, const_jac: None },
     Kernel { name: "axis_coincident", n_res: 4, n_par: 12, degree: 1, n_const: 7, res: axis_coincident_res, jac: axis_coincident_jac, const_jac: None },
     Kernel { name: "plane_parallel", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: plane_parallel_res, jac: plane_parallel_jac, const_jac: None },
+    Kernel { name: "drag_seen", n_res: 2, n_par: 3, degree: 1, n_const: 9, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

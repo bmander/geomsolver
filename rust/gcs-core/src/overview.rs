@@ -822,7 +822,7 @@ fn lambert(n: [f64; 3], eye: &([f64; 3], [f64; 3])) -> f64 {
     crate::plane::dot(n, l).clamp(0.0, 1.0)
 }
 
-fn eye(az: f64, el: f64) -> ([f64; 3], [f64; 3]) {
+pub(crate) fn eye(az: f64, el: f64) -> ([f64; 3], [f64; 3]) {
     let (sa, ca) = az.dsin_cos();
     let (se, ce) = el.dsin_cos();
     // the viewer stands at (ca·ce, sa·ce, se) and looks back at the origin

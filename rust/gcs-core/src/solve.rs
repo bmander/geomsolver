@@ -576,6 +576,9 @@ pub struct Drag {
     /// Continuation increment; `PlanDrag` sets it from the document rather than the part.
     pub(crate) max_step: f64,
     last_good: Vec<f64>,
+    /// The eye's picture plane (right, up), for a point in space dragged where it is seen
+    /// (`Drag::seen`); `None` for a point dragged on its own page.
+    eye: Option<([f64; 3], [f64; 3])>,
 }
 
 impl Drag {
@@ -590,11 +593,54 @@ impl Drag {
         max_step_rel: f64,
     ) -> Drag {
         let target = Constraint::drag_target(EntRef::point(point), x, y, weight);
+        Drag::with(sk, point, target, None, method, guards, max_step_rel)
+    }
+
+    /// A drag of a point in space, read where the eye at bearing `az` and elevation `el` sees it:
+    /// (`x`, `y`) and every later target are on the eye's picture plane, and how deep the point
+    /// stands along the line of sight is the constraints' to say (`CKind::DragSeen`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn seen(
+        sk: &mut Sketch,
+        point: usize,
+        x: f64,
+        y: f64,
+        (az, el): (f64, f64),
+        method: Method,
+        weight: f64,
+        guards: Vec<Triangle>,
+        max_step_rel: f64,
+    ) -> Drag {
+        let target = Constraint::drag_seen(EntRef::point(point), x, y, weight, az, el);
+        let eye = Some(crate::overview::eye(az, el));
+        Drag::with(sk, point, target, eye, method, guards, max_step_rel)
+    }
+
+    fn with(
+        sk: &mut Sketch,
+        point: usize,
+        target: Constraint,
+        eye: Option<([f64; 3], [f64; 3])>,
+        method: Method,
+        guards: Vec<Triangle>,
+        max_step_rel: f64,
+    ) -> Drag {
         let max_step = max_step_rel * sk.extent().max(1.0);
         let signs = guards.iter().map(|t| orientation(sk, t.0, t.1, t.2) >= 0.0).collect();
         let last_good = sk.get_x();
         let pp = PullPolish::new(sk, target, method);
-        Drag { pp, point, guards, flips: Vec::new(), signs, max_step, last_good }
+        Drag { pp, point, guards, flips: Vec::new(), signs, max_step, last_good, eye }
+    }
+
+    /// Where the dragged point is, as the targets read it: on its page, or where the eye sees it.
+    pub fn at(&self, sk: &Sketch) -> (f64, f64) {
+        match self.eye {
+            Some((right, up)) => {
+                let x = sk.world_point(self.point);
+                (crate::space::dot(right, x), crate::space::dot(up, x))
+            }
+            None => sk.point_xy(self.point),
+        }
     }
 
     fn step(&mut self, sk: &mut Sketch, x: f64, y: f64) -> SolveResult {
@@ -624,7 +670,7 @@ impl Drag {
         while !self.flipped(sk).is_empty() && budget > 0 {
             let lg = self.last_good.clone();
             sk.set_x(&lg);
-            let (bx, by) = sk.point_xy(self.point);
+            let (bx, by) = self.at(sk);
             let (mx, my) = ((bx + fx) / 2.0, (by + fy) / 2.0);
             res = self.step(sk, mx, my);
             budget -= 1;
@@ -643,7 +689,7 @@ impl Drag {
     pub fn move_to(&mut self, sk: &mut Sketch, x: f64, y: f64) -> SolveResult {
         let n_flips = self.flips.len();
         let mut budget = 12; // cap the sub-steps a single frame may spend
-        let (px, py) = sk.point_xy(self.point);
+        let (px, py) = self.at(sk);
         self.last_good = sk.get_x();
         let mut res = self.step(sk, px, py);
         for (tx, ty) in increments(px, py, x, y, self.max_step) {

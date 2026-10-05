@@ -325,6 +325,8 @@ export interface Abi {
   gcs_radius_drag_free(d: number): void;
   gcs_plan_drag_new(h: number, ps: number, point: number, x: number, y: number, guards: number,
                     nGuards: number, maxStepRel: number): number;
+  gcs_plan_drag_seen(h: number, ps: number, point: number, x: number, y: number, az: number,
+                     el: number, maxStepRel: number): number;
   gcs_plan_drag_move(d: number, h: number, x: number, y: number, out: number): number;
   gcs_plan_drag_usable(d: number): number;
   gcs_plan_drag_flips(d: number): number;

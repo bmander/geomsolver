@@ -220,7 +220,8 @@ pub(crate) fn place(sk: &mut Sketch) {
     struct Reads { id: u32, axes: Vec<usize>, planes: Vec<usize>, through: Vec<usize>, pts: Vec<usize> }
     let mut reads: Vec<Reads> = Vec::new();
     for c in sk.constraints.iter().filter(|c| c.acts()) {
-        if matches!(c.kind, CKind::Lift | CKind::AxisUnit | CKind::AxisFoot | CKind::DragTarget) {
+        if matches!(c.kind, CKind::Lift | CKind::AxisUnit | CKind::AxisFoot | CKind::DragTarget
+            | CKind::DragSeen) {
             continue;
         }
         // a point measured in a plane — an ordinate, a height off it — is the drawing placed by

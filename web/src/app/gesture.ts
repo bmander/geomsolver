@@ -181,14 +181,22 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     else v.selected.push(ent);
   } else {
     if (!v.selected.includes(ent)) v.selected = [ent];
+    // a point in space stands in no view, so it is dragged **where the eye sees it**: across the
+    // picture plane, its depth along the line of sight left to what else holds it
+    if (ent instanceof Point && v.inSpace(ent)) {
+      if (canMove(v, ent)) {
+        v.pushUndo();
+        const drag = new PlanDrag(v.sketch, ent, ...v.eye(...sp), null, 0.05, v.plan(), v.orbit);
+        v.gesture = pointGesture(v, drag, (at) => v.eye(...at));
+      }
     // a drag moves a thing **in its own plane**: the pointer is read off the view it stands in,
     // so a point on the side plane slides along the side plane however the eye is turned
-    if (ent instanceof Point && canMove(v, ent) && readable(v, v.viewOf(ent))) {
+    } else if (ent instanceof Point && canMove(v, ent) && readable(v, v.viewOf(ent))) {
       v.pushUndo();
       const view = v.viewOf(ent);
       // on the sketch's own plan, compiled once per topology: the drag starts at once
       const drag = new PlanDrag(v.sketch, ent, ...v.s2wIn(view, ...sp), null, 0.05, v.plan());
-      v.gesture = pointGesture(v, drag, view);
+      v.gesture = pointGesture(v, drag, (at) => v.s2wIn(view, ...at));
     } else if (isResizable(v, ent) && readable(v, v.viewOf(ent.center))) {
       v.pushUndo();
       v.gesture = radiusGesture(v, new RadiusDrag(v.sketch, ent, Math.abs(scalarOf(ent).value)),
@@ -284,12 +292,15 @@ export function panGesture(v: SketchView, from: [number, number]): Gesture {
   };
 }
 
-export function pointGesture(v: SketchView, drag: PlanDrag, view: View): Gesture {
+/** Drag a point, `read` turning a canvas point into what the drag is handed: a place on the
+ *  point's view, or on the eye's picture plane for a point in space. */
+export function pointGesture(v: SketchView, drag: PlanDrag,
+                             read: (sp: [number, number]) => [number, number]): Gesture {
   let reported = 0;
   return {
     movedGeometry: true,
     move: (sp) => {
-      v.lastResult = drag.move(...v.s2wIn(view, ...sp));
+      v.lastResult = drag.move(...read(sp));
       if (drag.flips.length > reported) {          // only announce new ones
         reported = drag.flips.length;
         v.onStatus(`⚠ solution branch flipped in ${reported} triangle(s) during this drag`);

@@ -22,6 +22,10 @@ pub enum CKind {
     Distance,
     Midpoint,
     DragTarget,
+    /// **A point in space seen where the pointer is**: the soft target of a drag in the workspace,
+    /// two rows over the point's three numbers, read along the eye's picture plane (`az`, `el`,
+    /// radians, as `overview::eye` reads them).  Internal and `soft`, as `DragTarget` is.
+    DragSeen,
     Horizontal,
     Vertical,
     Parallel,
@@ -265,7 +269,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 78] = [
+pub const ALL_KINDS: [CKind; 79] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -344,6 +348,7 @@ pub const ALL_KINDS: [CKind; 78] = [
     CKind::AxisPerpendicularPlane,
     CKind::PlaneParallel,
     CKind::PlaneDistance,
+    CKind::DragSeen,
 ];
 
 /// `along:` says which axis a run or a rise is measured on.  It is the one selector that fills no
@@ -768,6 +773,7 @@ impl CKind {
             CKind::Distance => "Distance",
             CKind::Midpoint => "Midpoint",
             CKind::DragTarget => "DragTarget",
+            CKind::DragSeen => "DragSeen",
             CKind::Horizontal => "Horizontal",
             CKind::Vertical => "Vertical",
             CKind::Parallel => "Parallel",
@@ -866,6 +872,14 @@ impl CKind {
             CKind::DragTarget => {
                 &[("p", S::Point), ("tx", S::Float), ("ty", S::Float), ("weight", S::Float)]
             }
+            CKind::DragSeen => &[
+                ("p", S::Point),
+                ("tx", S::Float),
+                ("ty", S::Float),
+                ("weight", S::Float),
+                ("az", S::Float),
+                ("el", S::Float),
+            ],
             CKind::Horizontal | CKind::Vertical => &[("line", S::Line)],
             // the same statement about the segment between two points, with no line drawn there
             CKind::HorizontalPoints | CKind::VerticalPoints => {
@@ -1157,6 +1171,7 @@ impl CKind {
             CKind::CylinderRadius => ("radius", Prefix),
             CKind::CylinderTangentLine | CKind::ConeTangentCone => ("tangent", Infix),
             CKind::DragTarget
+            | CKind::DragSeen
             | CKind::Lift
             // an axis's own algebra
             | CKind::AxisUnit
@@ -1173,7 +1188,7 @@ impl CKind {
     /// bindings, so a default can never drift between them.
     pub fn default_arg(self, i: usize) -> Arg {
         match (self, i) {
-            (CKind::DragTarget, 3) => Arg::Num(1.0),
+            (CKind::DragTarget | CKind::DragSeen, 3) => Arg::Num(1.0),
             (CKind::TangentCircleCircle, 2) => Arg::Bool(true),
             (CKind::TangentArcLine, 2) => Arg::Str("start".to_string()),
             (CKind::TangentLineCircleAt, 2) => Arg::Str("p1".to_string()),
@@ -1375,6 +1390,7 @@ impl CKind {
             | CKind::Distance
             | CKind::Midpoint
             | CKind::DragTarget
+            | CKind::DragSeen
             | CKind::Horizontal
             | CKind::Vertical
             | CKind::Parallel
@@ -1458,7 +1474,7 @@ impl CKind {
 
     /// Types that do not have to be satisfied — a drag target compromises, it does not hold.
     pub fn soft_by_default(self) -> bool {
-        self == CKind::DragTarget
+        matches!(self, CKind::DragTarget | CKind::DragSeen)
     }
 
     /// The first two spec entities may be swapped without changing the relation.
@@ -1499,6 +1515,7 @@ impl CKind {
             CKind::Distance => K::Distance,
             CKind::Midpoint => K::Midpoint,
             CKind::DragTarget => K::Drag,
+            CKind::DragSeen => K::DragSeen,
             CKind::Horizontal => K::Horizontal,
             CKind::Vertical => K::Vertical,
             CKind::Parallel => K::Parallel,
@@ -1637,6 +1654,7 @@ impl CKind {
             CKind::Coincident
             | CKind::Midpoint
             | CKind::DragTarget
+            | CKind::DragSeen
             | CKind::Horizontal
             | CKind::Vertical
             | CKind::Parallel
@@ -1959,6 +1977,17 @@ impl Constraint {
         c
     }
 
+    /// The soft target of a drag of a point in space, seen by the eye at bearing `az` and
+    /// elevation `el` at (`tx`, `ty`) on its picture plane.
+    pub fn drag_seen(p: EntRef, tx: f64, ty: f64, weight: f64, az: f64, el: f64) -> Constraint {
+        let mut c = Constraint::new(
+            CKind::DragSeen,
+            vec![Arg::Ent(p), Arg::Num(tx), Arg::Num(ty), Arg::Num(weight), Arg::Num(az), Arg::Num(el)],
+        );
+        c.soft = true;
+        c
+    }
+
     /// `TangentLineCircle` with the chirality flag read off the current geometry when `side` is
     /// `None`, so the solver keeps the circle on the side it already is.
     pub fn tangent_line_circle(
@@ -2257,10 +2286,10 @@ impl Constraint {
         true
     }
 
-    /// Move a `DragTarget`'s target point.  No other kind has one, and several are shorter than
+    /// Move a drag target's target point.  No other kind has one, and several are shorter than
     /// three arguments, so the kind is checked rather than the write being attempted blind.
     pub fn set_target(&mut self, tx: f64, ty: f64) -> bool {
-        if self.kind != CKind::DragTarget {
+        if !matches!(self.kind, CKind::DragTarget | CKind::DragSeen) {
             return false;
         }
         self.args[1] = Arg::Num(tx);
@@ -2358,6 +2387,11 @@ impl Constraint {
             }
             CKind::DragTarget => {
                 vec![self.args[1].num(), self.args[2].num(), self.args[3].num()]
+            }
+            CKind::DragSeen => {
+                let (right, up) = crate::overview::eye(self.args[4].num(), self.args[5].num());
+                [&[self.args[1].num(), self.args[2].num(), self.args[3].num()][..], &right, &up]
+                    .concat()
             }
             // the number is a magnitude and the word is its sign: `side: right` is the same
             // statement as the negative used to be, said in a word a reader can check (§9.2)
@@ -2542,6 +2576,11 @@ impl Constraint {
                 [pt(0), ln(1)].concat()
             }
             CKind::DragTarget => pt(0),
+            // a point in space: its own three numbers, which are where it stands
+            CKind::DragSeen => {
+                let p = &sk.points[e(0).i()];
+                vec![p.x, p.y, p.z.expect("a point seen in space has its own z")]
+            }
             CKind::Horizontal | CKind::Vertical => ln(0),
             CKind::Parallel
             | CKind::Perpendicular

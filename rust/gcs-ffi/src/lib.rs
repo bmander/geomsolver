@@ -3577,6 +3577,26 @@ pub unsafe extern "C" fn gcs_plan_drag_new(
     })
 }
 
+/// A drag of a point in space, read where the eye at bearing `az` and elevation `el` (radians)
+/// sees the pointer: (`x`, `y`) and every later move are on its picture plane.  `ps` as above.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn gcs_plan_drag_seen(
+    h: *mut Sketch,
+    ps: *mut PlanSolver,
+    point: i32,
+    x: f64,
+    y: f64,
+    az: f64,
+    el: f64,
+    max_step_rel: f64,
+) -> *mut PlanDragH {
+    guard(std::ptr::null_mut(), move || {
+        let d = PlanDrag::seen(sk(h), ps.as_mut(), point as usize, x, y, (az, el), max_step_rel);
+        Box::into_raw(Box::new(PlanDragH { d, ps }))
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plan_drag_move(
     d: *mut PlanDragH,

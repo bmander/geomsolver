@@ -1241,7 +1241,9 @@ Conventions:
   press (`ViewCam::readable`).  The plane tool picks two drawn lines and writes `plane(u:, v:)`.
   Points in space stand in no view: seen where they are (`Projection::point`; per frame
   `workspace::space_points`, `gcs_workspace_space_points`, stroked through the eye's own
-  camera), drawn and picked, never dragged.  A view opens drawing on `std.front`
+  camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:
+  `CKind::DragSeen`, two soft rows across the picture plane, so depth is the constraints' and a
+  free point keeps its own).  A view opens drawing on `std.front`
   (`drawOnFront`), and File ▸ New is `use std`.  `workspace::Views` is what does not depend on
   the eye — each view placed in space (slot 0 a 2D sketch's front plane, `Basis::page`), the view
   each point and entity stands in, and each view's **place** (the first view on the same plane in

@@ -179,12 +179,17 @@ export class PlanDrag {
    *  drag has to keep the plan from being collected or disposed under it. */
   readonly plan: PlanSolver | null;
 
+  /** `eye` drags a point in space where the eye at that bearing and elevation sees it: `x`, `y`
+   *  and every `move` are then on the eye's picture plane, and `guards` are not asked. */
   constructor(readonly sketch: Sketch, readonly point: Point, x: number, y: number,
-              guards: Triangle[] | null = null, maxStepRel = 0.05, plan: PlanSolver | null = null) {
+              guards: Triangle[] | null = null, maxStepRel = 0.05, plan: PlanSolver | null = null,
+              eye: { az: number; el: number } | null = null) {
     this.plan = plan;
-    this.handle = guardBuffer(guards, (ptr, n) =>
-      core().gcs_plan_drag_new(sketch.handle, plan ? plan.handle : 0, point.index, x, y, ptr, n,
-                               maxStepRel));
+    const ps = plan ? plan.handle : 0;
+    this.handle = eye
+      ? core().gcs_plan_drag_seen(sketch.handle, ps, point.index, x, y, eye.az, eye.el, maxStepRel)
+      : guardBuffer(guards, (ptr, n) =>
+          core().gcs_plan_drag_new(sketch.handle, ps, point.index, x, y, ptr, n, maxStepRel));
     PlanDrag.live += 1;
   }
 

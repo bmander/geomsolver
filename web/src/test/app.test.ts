@@ -155,6 +155,28 @@ test('losing pointer capture ends the drag too', () => {
   assert.equal(PlanDrag.live, 0);
 });
 
+test('a point in space is dragged where the eye sees it', (t) => {
+  const view = new SketchView(fakeCanvas(), Document.read('l := line\n'));
+  t.after(() => { view.doc.dispose(); });
+  view.orbit = { az: 0.6, el: 0.4 };                   // three quarters: depth is not the page's y
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const end = view.sketch.points[1];
+  assert.ok(view.inSpace(end), 'a line no `in` reaches stands in space');
+  const [sx, sy] = view.seen(end);
+  const before = view.source;
+
+  cv.fire('pointerdown', pointer(sx, sy, { pointerId: 1 }));
+  assert.equal(PlanDrag.live, 1, 'a press on a point in space starts a drag');
+  cv.fire('pointermove', pointer(sx + 40, sy + 25, { pointerId: 1 }));
+  const [ex, ey] = view.seen(end);
+  assert.ok(Math.hypot(ex - sx - 40, ey - sy - 25) < 1e-6, `seen at (${ex}, ${ey})`);
+  cv.fire('pointerup', pointer(sx + 40, sy + 25, { pointerId: 1 }));
+  assert.equal(PlanDrag.live, 0);
+  assert.notEqual(view.source, before, 'the drag is written back as the end\'s seeds');
+  const [fx, fy] = view.seen(view.sketch.points[1]);
+  assert.ok(Math.hypot(fx - sx - 40, fy - sy - 25) < 1e-6, 'and the source says where it went');
+});
+
 /* -- dimension callouts ---------------------------------------------------------------- */
 
 /** A dimensioned span, drawn: two points 60 apart with a Distance on them. */

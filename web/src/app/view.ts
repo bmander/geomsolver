@@ -401,8 +401,14 @@ export class SketchView {
     }
   }
 
+  /** Whether a point stands in space, in no view: seen where it is, dragged where it is seen. */
+  inSpace(p: Point): boolean {
+    this.cams();
+    return this.camCache!.space[p.index] != null;
+  }
+
   /** A canvas point on the eye's picture plane, which is where the core asks what is there. */
-  private eye(sx: number, sy: number): [number, number] {
+  eye(sx: number, sy: number): [number, number] {
     return this.cam.s2w(sx, sy);
   }
 

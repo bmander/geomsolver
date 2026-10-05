@@ -99,7 +99,7 @@ fn elaboration_lays_out_its_parameters_like_a_load() {
 #[test]
 fn every_constraint_type_is_printable() {
     for kind in ALL_KINDS {
-        if kind == CKind::DragTarget {
+        if kind.soft_by_default() {
             continue; // soft, and never in a document — `user_constraints` filters it
         }
         if matches!(kind, CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveCurvature) {
