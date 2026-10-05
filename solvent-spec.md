@@ -1,6 +1,14 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.43 — October 2026**
+**Specification, Draft 0.44 — October 2026**
+
+**[0.44] Two shorthands.** `@` is `coincident` and `~` is `hint`: `p @ c` is `p coincident c`, and
+`p := point ~(x: 0, y: 0)` is `p := point hint(x: 0, y: 0)`. Each is read as the word it stands
+for and is that word everywhere the word may stand — an infix `@(t == 0.4)` pins as
+`coincident(t == 0.4)` does, and a number inside `~(…)` is a seed (§4.3). Neither is a name. A
+solve writes its seeds back inside the clause as written, so `~` stays `~`. The unimplemented path
+grammar's arc segment, `a ~C~ b` (§11), loses its delimiter and wants another spelling when it
+lands.
 
 **[0.43] A plane's axes pass through its origin, and a bare plane is free.** `P.u` and `P.v` are
 lines through `P.origin`, so where a plane's axes stand, the plane stands: `plane(u: std.x, v:
@@ -278,7 +286,8 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 - **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. The seven labels a solid's brackets take — `from`, `to`, `depth`, `through`, `about`, `sweep`, `sense` — and `offset` (§6.10) and `at` (§6.11) are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
-- **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
+- **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~ @`
+- **Shorthands [0.44]:** `@` is the word `coincident` and `~` the word `hint`, read as those words wherever they may stand.
 - Whitespace and newlines are insignificant except as token separators. Statements are newline- or `;`-terminated; implementations MUST accept either.
 
 ---
@@ -2341,7 +2350,7 @@ binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer } ;
 trailer        = hint_clause
                | "knots" "[" number { "," number } "]"
                | "in" ref ;                                (* membership of a plane, §6.7 *)
-hint_clause    = "hint" "(" hint_item { "," hint_item } ")" ;   (* SEEDS, §4.3 *)
+hint_clause    = ( "hint" | "~" ) "(" hint_item { "," hint_item } ")" ;   (* SEEDS, §4.3 *)
 hint_item      = IDENT ":" expr | "at" ":" ref | "bearing" ":" expr     (* a place, §6.4 [0.14] *)
                | ( "toward" | "along" ) ":" ref | ( "by" | "turn" ) ":" expr ;   (* a step [0.33] *)
 ctor_arg       = [ IDENT ":" ] ( ref | hint_clause )       (* what the thing is made of, §6.2;
@@ -2388,7 +2397,7 @@ arg            = [ IDENT ":" ] expr ;
 constraint     = [ "claim" ] ( prefix_form | infix_form )
                  [ hint_clause ] ;  (* §4.3; presentation placement belongs to .svd *)
 prefix_form    = IDENT [ op_args ] ref ;
-infix_form     = ref IDENT [ op_args ] ref ;
+infix_form     = ref ( IDENT | "@" ) [ op_args ] ref ;   (* `@` is `coincident` [0.44] *)
 op_args        = "(" op_arg { "," op_arg } ")" ;
 op_arg         = expr                                      (* the number it states *)
                | ref                                       (* a third entity: `symmetry` *)
@@ -2404,7 +2413,7 @@ path_decl      = "path" IDENT ":" orient "=" path_expr ;
 frag           = path_expr ;                               (* statement-level fragment *)
 orient         = "ccw" | "cw" ;
 path_expr      = ref seg ref { seg ref } ;
-seg            = "->" | "~" ref [ "rev" ] "~" ;
+seg            = "->" | "~" ref [ "rev" ] "~" ;           (* `~` is `hint` since [0.44]: to respell *)
 
 hint           = "hint" ref hint_clause ;                  (* §11; unimplemented *)
 gauge          = "fix" "(" pin { "," pin } ")" ref ;       (* §13 [0.34] *)

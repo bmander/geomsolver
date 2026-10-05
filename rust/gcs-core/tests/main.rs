@@ -67,6 +67,7 @@ mod frame;
 mod gauges;
 mod gear_crowns;
 mod highlight;
+mod shorthand;
 mod homotopy;
 mod hypoid_layout;
 mod io;

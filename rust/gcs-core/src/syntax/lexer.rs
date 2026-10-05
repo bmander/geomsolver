@@ -87,6 +87,14 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                 i += 2;
                 toks.push((Tok::Arrow, Span::new(lo, i)));
             }
+            // Shorthands, read as the word they stand for: `@` is `coincident` (`p @ c`) and `~`
+            // is `hint` (`point ~(x: 0, y: 0)`).  The token's span is the one character, so a
+            // splice edits what was written and the parser never knows.
+            '@' | '~' => {
+                i += 1;
+                let word = if c == '@' { "coincident" } else { "hint" };
+                toks.push((Tok::Ident(word.to_string()), Span::new(lo, i)));
+            }
             // `'` and `"` are the foot and inch marks (spec §3.3), and `|` is what a raw
             // branch key separates its points with.  The language has **no string literal**:
             // a quote after a number is a unit, and there is nothing else for one to be.

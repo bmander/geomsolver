@@ -54,6 +54,10 @@ number      ::= decimal, exponent form allowed; `3 1/2` is a mixed fraction;
 A newline ends a statement, except inside brackets, after a trailing chain joint (1.7), and at a
 `}` closing a block.
 
+Two shorthands are read as the words they stand for, wherever those words may stand: `@` is
+`coincident` (`p @ c`, `a @(t == 0.4) s`) and `~` is `hint` (`p := point ~(x: 0, y: 0)`). A solve
+writes seeds back inside `~(…)` as written.
+
 ### 1.2 Three kinds of number
 
 | written | kind | meaning |
