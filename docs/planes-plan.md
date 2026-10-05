@@ -502,7 +502,11 @@ Decided while building, 2026-10-04 to 2026-10-05:
 * **Across planes `along: u` is `Ordinate3U`/`V`**, in space, and draws no callout.
 * **E060** for a circle, arc or spline over a point in space ("an arc is drawn in a plane, and
   `x` stands in space: draw it `in` one"), **E080** for a face over one; a traced component
-  refuses a relation in space.
+  refuses a relation in space. A formula curve over a point in no plane is not refused yet.
+* **`P distance(d) Q` is one row**, `Q`'s origin `d` along `P`'s normal: the planes are parallel
+  because a stack shares its rays, not because the word says so (forcing it would make every
+  stack read `over`). `parallel`, `perpendicular` and `angle` between two planes are not built;
+  relate their rays.
 * **The app**: a new document is `use std`; every view opens drawing on `std.front`, so a press
   never lands a point in space by accident. The plane tool picks two drawn lines and writes
   `plane(u: …, v: …)`. A paste reuses the destination's held plane of the same basis and origin,

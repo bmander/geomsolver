@@ -82,6 +82,7 @@ mod overview;
 mod par;
 mod pick;
 mod plane_lang;
+mod points_in_space;
 mod plane;
 mod program;
 mod refine;

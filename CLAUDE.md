@@ -24,12 +24,12 @@ with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with 
 reads its place) is a directed line with no start; a drawn line reads as one. A **plane** is
 `P := plane(u: r1, v: r2)` (`PlaneE { u, v, o, origin }`): right u, out u × v, up out × u; it owns
 `o` (three unknowns); members `P.u`, `P.v`, `P.origin` (a point drawn in P held at (0, 0)).
-`P.origin coincident p`, `P coincident p`, `P distance(d) Q`, parallel/perpendicular/angle over
-normals; `fix(x ==, y ==, z ==) P`. W113 warns of two planes lying on one another. `views::place`
+`P.origin coincident p`, `P coincident p`, `P distance(d) Q` (one row along P's normal; parallel
+only by shared rays; no plane–plane parallel/angle words yet); `fix(x ==, y ==, z ==) P`. W113 warns of two planes lying on one another. `views::place`
 settles rays and plane origins before the solve, round by round with seed settlement; they stay
 unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u`, in space across
-planes (`Ordinate3U`, no callout); `hint(at: P, x:, y:)` seeds in P's coordinates. Circles, arcs,
-splines and traced curves over a point in space are E060, faces E080. `use std` gives rays
+planes (`Ordinate3U`, no callout); `hint(at: P, x:, y:)` seeds in P's coordinates. Circles, arcs
+and splines over a point in space are E060, faces E080. `use std` gives rays
 `std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
 back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
 document says `use std` (the workspace offers them as places to draw). `std.Turned(o, t)` is a

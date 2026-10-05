@@ -685,8 +685,8 @@ unnamed, but keep `cyl :=` when a drawing or another statement references its me
 
 **Space is where a point stands unless it is drawn in a plane.** A point no `in` reaches has three
 coordinates, seeded `hint(x:, y:, z:)` and held `fix(x == …, y == …, z == …) p`; a line between two
-such points is a line in space. A circle, arc, spline or traced curve over a point in space is
-E060, and a face over one E080: those are drawn in a plane. Points in space are shown and
+such points is a line in space. A circle, arc or spline over a point in space is E060, and a face
+over one E080: those are drawn in a plane. Points in space are shown and
 selectable in the workspace, but not dragged.
 
 **A ray** is a directed line in space with no start, drawn in no plane: a direction, and a place
@@ -713,8 +713,9 @@ drawn in `P`, held at `(0, 0)`). The origin floats until something places it:
 - `P.origin coincident p`: the plane's origin is the point `p`;
 - `P coincident p`: the plane passes through `p`; `l coincident P` lays a line in it;
 - `p distance(d, along: n) P`: a point's signed distance along the plane's normal;
-- `P distance(d) Q`: parallel planes, `d` apart; `parallel`, `perpendicular` and `angle`
-  between two planes read their normals;
+- `P distance(d) Q`: `Q` stands `d` along `P`'s normal (one row); the two are parallel when they
+  share their rays, as a stack does — there is no `parallel` or `angle` between two planes yet:
+  relate their rays;
 - `fix(x == 0, y == 0, z == 0) P` holds where it stands.
 
 A parallel stack, which is what an offset is:

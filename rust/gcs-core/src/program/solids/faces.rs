@@ -393,10 +393,13 @@ fn build_loop(
                 continue;
             }
             let p = sk.plane_of(c.i()).map(|x| x as u32);
-            // a point in no plane stands in space, where a loop bounds nothing
+            // a point in no plane stands in space, where a loop bounds nothing: named as the
+            // point, since an edge the face minted is no name the source wrote
             if p.is_none() {
+                let x = &sk.params[sk.points[c.i()].x as usize].name;
+                let point = x.strip_suffix(".x").unwrap_or(x);
                 report(Code::E080, span,
-                    format!("a face lies in one plane, and `{n}` stands in space: draw it `in` one"));
+                    format!("a face lies in one plane, and `{point}` stands in space: draw it `in` one"));
                 return None;
             }
             match plane {
