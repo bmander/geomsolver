@@ -1545,3 +1545,20 @@ test('a dimension over a param opens as written, and an edit of it goes into the
   assert.match(v.source, /l1 distance\(w\) r2/);
   v.endDimension(false);
 });
+
+test('a point in space is drawn and picked where it stands, whichever way the eye looks', () => {
+  const view = docView('use std\np := point hint(x: 10, y: 20, z: 30)\n'
+    + 'in std.front {\n  f := point\n  fix(x == 10, y == 30) f\n}\n'
+    + 'in std.top {\n  t := point\n  fix(x == 10, y == 20) t\n}\n');
+  const named = (n: string) => view.doc.entity(n) as Point;
+  const [p, f, t] = [named('p'), named('f'), named('t')];
+  // square on to the front, p is seen where its x and z are; from above, where its x and y are
+  view.choosePlane('std.front');
+  assert.ok(closeTo(view.seen(p), view.seen(f)), `${view.seen(p)} vs ${view.seen(f)}`);
+  view.choosePlane('std.top');
+  assert.ok(closeTo(view.seen(p), view.seen(t)), `${view.seen(p)} vs ${view.seen(t)}`);
+  // from the side the three stand apart, and a click on p picks p
+  view.choosePlane('std.side');
+  assert.equal(view.pick(...view.seen(p)), p, 'a click on it picks it');
+  view.doc.dispose();
+});

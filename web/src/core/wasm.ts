@@ -212,6 +212,7 @@ export interface Abi {
   gcs_solid_exact(h: number, idx: number, kind: number, tolerance: number): number;
   gcs_workspace_json(h: number): number;
   gcs_workspace_maps(h: number, az: number, el: number, out: number, cap: number): number;
+  gcs_workspace_space_points(h: number, az: number, el: number, out: number, cap: number): number;
   gcs_workspace_bounds(h: number, unit: number, az: number, el: number, out: number): number;
   gcs_workspace_pick(h: number, unit: number, az: number, el: number, x: number, y: number,
                      tol: number, out: number): number;

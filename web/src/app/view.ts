@@ -41,7 +41,7 @@ import * as underlay from './underlay.js';
 import type { Bitmap, Underlay } from './underlay.js';
 import {
   NOWHERE, PAGE, boundsSeen, calloutSeen, lookOf, maps, nearestSeen, ofView, pickSeen, placeOf,
-  workspace,
+  spacePoints, workspace,
 } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
 
@@ -325,11 +325,14 @@ export class SketchView {
     if (c && c.sketch === this.sketch && c.az === az && c.el === el && c.scale === k.scale
         && c.x === k.originX && c.y === k.originY) return c.cams;
     const cams = maps(this.sketch, az, el).map((m) => k.through(m));
-    this.camCache = { sketch: this.sketch, az, el, scale: k.scale, x: k.originX, y: k.originY, cams };
+    const space = spacePoints(this.sketch, az, el);
+    const eye = k.through([1, 0, 0, 0, 1, 0]);
+    this.camCache = { sketch: this.sketch, az, el, scale: k.scale, x: k.originX, y: k.originY, cams,
+                      space, eye };
     return cams;
   }
   private camCache: { sketch: Sketch; az: number; el: number; scale: number; x: number; y: number;
-                      cams: ViewCam[] } | null = null;
+                      cams: ViewCam[]; space: ([number, number] | null)[]; eye: ViewCam } | null = null;
 
   /** The view the painter is drawing in, while it is — see `inView`. */
   private drawing: ViewCam | null = null;
@@ -366,8 +369,12 @@ export class SketchView {
     return table?.[e.index] ?? PAGE;
   }
 
-  /** Where a point is seen, whichever view it stands in. */
+  /** Where a point is seen, whichever view it stands in — a point in space where the core says the
+   *  eye sees it, through the eye's own camera. */
   seen(p: Point): [number, number] {
+    this.cams();
+    const at = this.camCache!.space[p.index];
+    if (at) return this.camCache!.eye.w2s(...at);
     return (this.camOf(this.viewOf(p)) ?? this.viewCam()).w2s(...p.xy);
   }
 

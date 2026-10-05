@@ -2241,6 +2241,22 @@ pub unsafe extern "C" fn gcs_workspace_maps(h: *mut Sketch, az: f64, el: f64, ou
     })
 }
 
+/// Where the eye at `az`, `el` sees each point in space: [x, y] per point, by index, NaN for a
+/// point drawn in a plane (its view's map places it).  Returns the point count; writes at most
+/// `cap` points.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_space_points(h: *mut Sketch, az: f64, el: f64, out: *mut f64,
+                                                    cap: usize) -> i32 {
+    guard(-1, move || {
+        let seen = gcs_core::overview::workspace::space_points(sk(h), az, el);
+        for (k, s) in seen.iter().take(cap).enumerate() {
+            let (x, y) = s.unwrap_or((f64::NAN, f64::NAN));
+            write(out.add(2 * k), &[x, y]);
+        }
+        seen.len() as i32
+    })
+}
+
 /// What a click at (x, y) on the eye's picture plane picks within `tol` (an eye length): writes
 /// [kind, index] and returns 1, or returns 0.  `unit` is the eye length of one screen pixel.
 #[no_mangle]

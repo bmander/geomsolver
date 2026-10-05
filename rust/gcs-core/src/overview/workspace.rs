@@ -81,6 +81,8 @@ pub struct Views {
     placements: Vec<Placement>,
     /// `overview::view_of` for each point: its membership.
     points: Vec<Option<usize>>,
+    /// Which points stand in space: in no view, seen where they are (`Projection::point`).
+    space: Vec<bool>,
     /// The first view standing on the same plane in space as each view (`Placement::coplanar`).
     places: Vec<Option<usize>>,
     /// A length below which two places in space are one, scaled to the drawing.
@@ -111,6 +113,19 @@ pub fn maps(sk: &Sketch, az: f64, el: f64) -> Vec<Map> {
     placements(sk).iter().map(|p| p.seen(right, up)).collect()
 }
 
+/// Where the eye at `az`, `el` (radians) sees each point in space, by point index — `None` for a
+/// point drawn in a plane, which its view's map places.  Per frame, beside `maps`, so a front end
+/// draws a point in space without any arithmetic in three dimensions.
+pub fn space_points(sk: &Sketch, az: f64, el: f64) -> Vec<Option<(f64, f64)>> {
+    let (right, up) = eye(az, el);
+    (0..sk.points.len())
+        .map(|p| sk.points[p].z.is_some().then(|| {
+            let x = sk.world_point(p);
+            (dot(right, x), dot(up, x))
+        }))
+        .collect()
+}
+
 impl Views {
     pub fn new(sk: &Sketch) -> Views {
         let placements = placements(sk);
@@ -121,7 +136,8 @@ impl Views {
                 view_at(first)
             })
             .collect();
-        Views { placements, points: views(sk), places, tol }
+        let space = sk.points.iter().map(|p| p.z.is_some()).collect();
+        Views { placements, points: views(sk), space, tol, places }
     }
 
     /// The view point `p` stands in.
@@ -143,14 +159,19 @@ impl Views {
     /// Views standing in the same place — the page and `std.front` — are one, so a figure with a
     /// point in each is still drawn in one.
     pub fn entity_view(&self, sk: &Sketch, e: EntRef) -> Result<Option<usize>, ()> {
+        // a point in space stands in no view: it is seen where it is, and nothing is laid out
+        // on a page for it
         if e.kind == EntKind::Point {
-            return Ok(self.points[e.i()]);
+            return if self.space[e.i()] { Err(()) } else { Ok(self.points[e.i()]) };
         }
         if !e.kind.bears_points() {
             return Ok(None);
         }
         let mut first: Option<Option<usize>> = None;
         for k in sk.children(e).into_iter().filter(|k| k.kind == EntKind::Point) {
+            if self.space[k.i()] {
+                return Err(());
+            }
             let v = self.points[k.i()];
             match first {
                 None => first = Some(v),
@@ -219,8 +240,11 @@ impl Projection {
         self.views.of_point(p)
     }
 
-    /// Where point `p` is seen.
+    /// Where point `p` is seen: through its view's map, or where it stands for a point in space.
     pub fn point(&self, sk: &Sketch, p: usize) -> (f64, f64) {
+        if self.views.space[p] {
+            return self.seen(sk.world_point(p));
+        }
         apply(self.map(self.view_of(p)), sk.point_xy(p))
     }
 
@@ -255,7 +279,7 @@ impl Projection {
     /// How near an entity's figure comes to `at`, or infinity — the box round it on its page,
     /// seen, is asked first, so a figure out of reach is never tessellated.
     fn reach(&self, sk: &Sketch, e: EntRef, at: (f64, f64), tol: f64, unit: f64) -> f64 {
-        if e.kind != EntKind::Line {
+        if !matches!(e.kind, EntKind::Line | EntKind::Point) {
             let Ok(view) = self.views.entity_view(sk, e) else { return f64::INFINITY };
             let (x0, y0, x1, y1) = sk.bounds(e);
             if !(x0 <= x1 && y0 <= y1) {
