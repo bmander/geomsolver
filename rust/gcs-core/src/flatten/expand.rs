@@ -345,7 +345,7 @@ impl<'a> Walk<'a> {
         // level down, and is written over the same parameters
         for kid in d.children.iter_mut().flatten() {
             let crate::syntax::Kid::Hint(ks) = kid else { continue };
-            for i in 0..2 {
+            for i in 0..3 {
                 let Some(t) = ks.text[i].take() else { continue };
                 if let Some(v) = self.settle_seed(t, &mut ks.text[i], vals, scope, span) {
                     ks.v[i] = v;

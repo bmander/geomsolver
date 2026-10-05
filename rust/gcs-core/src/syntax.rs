@@ -21,7 +21,7 @@ use crate::constraints::{CKind, Fixity};
 use crate::model::EntKind;
 use crate::style::{Classes, Style};
 pub(crate) use names::{build_rank, decl_head, ref_text, under_root};
-pub(crate) use print::{decl_args, hint_clause, hint_xy};
+pub(crate) use print::{decl_args, hint_clause, hint_numbers};
 
 /// A component point traced over a numeric formal, with domain endpoints kept as expressions.
 #[derive(Clone, Debug)]
@@ -968,16 +968,17 @@ impl<D> Kid<D> {
     }
 }
 
-/// The seed inside a child slot: an anonymous point's `x` and `y`, carried exactly as
-/// `Decl::seed` / `seed_text` / `seed_spans` carry an entity's own scalars, and for the same
-/// reasons — a solve splices the numbers and never the words around them.
+/// The seed inside a child slot: an anonymous point's `x` and `y`, or an axis's direction `x`,
+/// `y`, `z` (a plane's `u:` and `v:`), carried exactly as `Decl::seed` / `seed_text` /
+/// `seed_spans` carry an entity's own scalars, and for the same reasons — a solve splices the
+/// numbers and never the words around them.  An unwritten key is an empty span and reads as 0.
 #[derive(Clone, Debug, Default)]
 pub struct KidSeed {
-    pub v: [f64; 2],
+    pub v: [f64; 3],
     /// As written, where it was written as an expression over the parameters in scope.
-    pub text: [Option<String>; 2],
+    pub text: [Option<String>; 3],
     /// Where each number sits in the source.
-    pub spans: [Span; 2],
+    pub spans: [Span; 3],
     /// The whole `hint(…)`, so a writeback that has to add a key can rewrite it.
     pub span: Span,
 }

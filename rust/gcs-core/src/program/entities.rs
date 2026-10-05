@@ -159,6 +159,18 @@ pub(super) fn build(
                         });
                         return None;
                     };
+                    // a child is drawn where its parent is; a point in space is declared
+                    if !seed.spans[2].is_empty() {
+                        diags.push(Diag {
+                            code: Code::E040,
+                            span: seed.spans[2],
+                            stmt: Some(st.id),
+                            message: "an anonymous point has no `z`: it is drawn where its parent \
+                                      is, and a point in space is declared, `p := point hint(x: …, \
+                                      y: …, z: …)`".to_string(),
+                        });
+                        return None;
+                    }
                     let i = sk.point(seed.v[0], seed.v[1], false, label.get(slot).unwrap_or(name));
                     for (k, t) in seed.text.iter().enumerate() {
                         if let Some(t) = t {
@@ -408,17 +420,44 @@ fn build_plane(
         let r = match d.children.get(k).map(|g| g.as_slice()) {
             Some([Kid::Ref(r)]) => r,
             // a slot left out is an axis of the plane's own, free: `p := plane` is an origin and
-            // two directions, seeded as the front's
-            None | Some([]) => {
-                let dir = if k == 0 { [1.0, 0.0, 0.0] } else { [0.0, 0.0, 1.0] };
+            // two directions, seeded as the front's unless a `hint(x:, y:, z:)` in the slot says
+            // which way it starts
+            None | Some([]) | Some([Kid::Hint(_)]) => {
+                let seed = match d.children.get(k).and_then(|g| g.first()) {
+                    Some(Kid::Hint(s)) => Some(s),
+                    _ => None,
+                };
+                let dir = match seed {
+                    // what an expression comes to is settled later, as a named axis's is
+                    Some(s) if s.v.iter().any(|&x| x != 0.0) || s.text.iter().any(|t| t.is_some()) => s.v,
+                    Some(s) => {
+                        fail(diags, s.span, format!(
+                            "a plane's `{key}` seeds an axis's direction, and one of no length \
+                             points nowhere"
+                        ));
+                        return None;
+                    }
+                    None if k == 0 => [1.0, 0.0, 0.0],
+                    None => [0.0, 0.0, 1.0],
+                };
                 axes[k] = sk.axis(dir, &format!("{show}.{key}"));
+                for (j, t) in seed.iter().flat_map(|s| s.text.iter().enumerate()) {
+                    let (Some(t), Some(s)) = (t, seed) else { continue };
+                    deferred.push(Deferred::Text {
+                        param: sk.axes[axes[k]].d[j],
+                        text: t.clone(),
+                        names: d.seed_names.clone(),
+                        span: s.spans[j],
+                        stmt: st.id,
+                    });
+                }
                 minted.push((key, axes[k]));
                 continue;
             }
             Some(_) => {
                 fail(diags, st.span, format!(
-                    "a plane's `{key}` is an axis or a line, named: `plane(u: a1, v: a2)`, or left \
-                     out for an axis of its own"
+                    "a plane's `{key}` is an axis or a line, named: `plane(u: a1, v: a2)`, or an \
+                     axis of its own, left out or seeded: `plane(u: hint(x: 0, y: 1, z: 0))`"
                 ));
                 return None;
             }

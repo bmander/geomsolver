@@ -24,7 +24,7 @@ fn rescope_seeds(
     }
     for kid in d.children.iter().flatten() {
         if let crate::syntax::Kid::Hint(ks) = kid {
-            for i in 0..2 {
+            for i in 0..3 {
                 if let Some(t) = ks.text[i].as_deref() {
                     rescope_text(t, ks.spans[i], sc, names_seen, alias, units, &mut names, bad);
                 }

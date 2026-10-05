@@ -187,9 +187,17 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // An anonymous child's seed lives in the parent's statement, in a slot of its own — and
         // the slots stand in the order `sk.children` hands the children back in, so the two walk
         // together.  A slot the source wrote a *name* in is a point declared elsewhere, and is
-        // written back where it was declared; one it wrote nothing for at all was minted.
+        // written back where it was declared; one it wrote nothing for at all was minted.  A
+        // child's seed is a point's place, or an axis's direction (a plane's `u:` and `v:`).
+        let seeded = |k: EntRef| -> Vec<u32> {
+            match k.kind {
+                EntKind::Point => sk.point_params(k.i()).to_vec(),
+                EntKind::Axis => sk.axes[k.i()].d.to_vec(),
+                _ => Vec::new(),
+            }
+        };
         for (j, &k) in kids.iter().enumerate() {
-            if sk.point_params(k.i()).iter().all(|&p| held(p)) {
+            if seeded(k).iter().all(|&p| held(p)) {
                 continue;
             }
             let seed = match slot_kid(j) {
@@ -197,7 +205,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
                 Some(syntax::Kid::Hint(s)) => Some(s),
                 None => None,
             };
-            let v = sk.point_params(k.i()).map(|p| sk.params[p as usize].value);
+            let v: Vec<f64> = seeded(k).iter().map(|&p| sk.params[p as usize].value).collect();
             match seed {
                 // A slot that keyed one coordinate and left the other out has nowhere to splice
                 // the one it left out, and the clause it is written in is the smallest thing
@@ -207,13 +215,13 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
                     if s.spans.iter().any(|sp| sp.is_empty())
                         && s.text.iter().all(|t| t.is_none()) =>
                 {
-                    let now = syntax::hint_xy(v[0], v[1]);
+                    let now = syntax::hint_numbers(&v);
                     if s.span.slice(prog.text()) != now {
                         mine.push(Splice { at: s.span, with: now });
                     }
                 }
                 Some(s) => {
-                    for i in 0..2 {
+                    for i in 0..v.len() {
                         let (sp, miss) = one(v[i], s.text[i].as_ref(), s.spans[i]);
                         mine.extend(sp);
                         missing |= miss;
@@ -285,10 +293,13 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             let mut filled = kids.iter().enumerate().map(|(j, k)| match slot_kid(j) {
                 Some(syntax::Kid::Ref(r)) if syntax::hidden(&r.root.text) => None,
                 // a child a `fix` holds is placed there, and its slot is left empty
-                None if sk.point_params(k.i()).iter().all(|&p| held(p)) => None,
+                None if seeded(*k).iter().all(|&p| held(p)) => None,
                 Some(syntax::Kid::Ref(r)) => Some(syntax::Kid::Ref(r.clone())),
                 _ => {
-                    let v = sk.point_params(k.i()).map(|p| sk.params[p as usize].value);
+                    let mut v = [0.0; 3];
+                    for (x, p) in v.iter_mut().zip(seeded(*k)) {
+                        *x = sk.params[p as usize].value;
+                    }
                     Some(syntax::Kid::Hint(syntax::KidSeed { v, ..Default::default() }))
                 }
             });

@@ -8,6 +8,7 @@ use gcs_core::model::{EntKind, Sketch};
 use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot, norm, sub};
+use gcs_core::syntax::write_stmt_to;
 
 use crate::common::{ent, read, refused, unit};
 
@@ -125,4 +126,64 @@ fn removing_what_placed_an_axis_holds_its_place_again() {
     assert!(!sk.axes[u.i()].placed);
     // four rows gone, and with them the two freedoms of where u stood
     assert_eq!(dof(&mut sk), before + 4 - 2);
+}
+
+/// **A plane's own axis takes a seed** in its slot, as a line's own point does: the direction
+/// it starts from, so `parallel` begins where it should and picks the sense written.
+#[test]
+fn a_plane_slot_seeds_the_axis_it_mints() {
+    let e = read("use std\nb := plane(v: hint(x: 0, y: -1, z: 0)) hint(x: 0, y: 0, z: 12)\n\
+                  b.u parallel std.x\nb.v parallel std.y\n");
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let (_, v) = line(&e, &sk, "b.v");
+    assert!(norm(sub(v, [0.0, -1.0, 0.0])) < 1e-9, "the sense written: {v:?}");
+    let b = sk.basis(ent(&e, "b").i());
+    assert!(norm(sub(b.normal(), [0.0, 0.0, -1.0])) < 1e-9, "x × -y looks down: {:?}", b.normal());
+}
+
+/// A child's seed prints back as written, and a point's takes no `z`.
+#[test]
+fn a_plane_slot_seed_prints_back_and_a_point_refuses_z() {
+    let decl = "p := plane(u: hint(x: 0, y: 1, z: 0), v: hint(x: 0, y: 0, z: 1))";
+    let (prog, errs, _) = gcs_core::library::parse_linked(&format!("use std\n{decl}\n"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let printed: Vec<String> = prog.root().body.iter().map(|st| {
+        let mut out = String::new();
+        write_stmt_to(&mut out, &st.kind).unwrap();
+        out
+    }).collect();
+    assert!(printed.iter().any(|p| p == decl), "{printed:?}");
+    let e = read(&format!("use std\n{decl}\n"));
+    let (_, u) = line(&e, &e.sketch, "p.u");
+    assert!(norm(sub(u, [0.0, 1.0, 0.0])) < 1e-12);
+    refused("use std\nin std.front {\n  l := line(hint(x: 1, y: 2, z: 3), hint(x: 4, y: 5))\n}\n",
+            "E040", "an anonymous point has no `z`", "3");
+    refused("use std\np := plane(u: hint(x: 0, y: 0, z: 0))\n",
+            "E103", "points nowhere", "hint(x: 0, y: 0, z: 0)");
+}
+
+/// **A solve that turns a plane's own axes writes where they point** into its slots — the
+/// list where the source wrote none, the numbers in place where it wrote a seed — and the text
+/// written reads back to the same plane.
+#[test]
+fn a_solve_writes_a_plane_s_own_axes_back() {
+    let e = read("use std\nw := axis hint(x: 0.6, y: 0.8, z: 0)\nfix(x == 0.6, y == 0.8, z == 0) w\n\
+                  p := plane\np.u parallel w\n");
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let out = gcs_core::edit::commit_seeds(&e, &sk, &e.program);
+    assert!(out.text.contains("p := plane(u: hint("), "{}", out.text);
+    let back = read(&out.text);
+    let (_, u) = line(&back, &back.sketch, "p.u");
+    let (_, was) = line(&e, &sk, "p.u");
+    assert!(norm(sub(u, was)) < 1e-9, "{u:?} against {was:?}\n{}", out.text);
+
+    let e = read("use std\np := plane(u: hint(x: 1, y: 0.1, z: 0))\np.u parallel std.y\n");
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let out = gcs_core::edit::commit_seeds(&e, &sk, &e.program);
+    let back = read(&out.text);
+    let (_, u) = line(&back, &back.sketch, "p.u");
+    assert!(norm(cross(u, [0.0, 1.0, 0.0])) < 1e-9, "spliced in place: {}", out.text);
 }
