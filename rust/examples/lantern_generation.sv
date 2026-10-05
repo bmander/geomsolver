@@ -42,7 +42,7 @@ private b2 := point hint(x: 18.5, y: 2)
 private b3 := point hint(x: 0, y: 2)
 blank_section := horizontal (bb := line(b0, b1)) -> vertical (bo := line(b1, b2)) ->
                 horizontal (bt := line(b2, b3)) -> (ba := line(b3, b0)) -> close
-b0 on spindle
+b0 coincident spindle
 std.origin midpoint ba
 b1 distance(wheel_pitch + addendum, side: right) spindle
 distance(thickness) bo
@@ -50,7 +50,7 @@ construction blank := solid(blank_section, about: spindle)
 
 // The pin: a short cylinder on the pinion's radius, taller than the blank is thick.
 private pin_at := point hint(x: 18, y: 0)
-pin_at on pinion_radius
+pin_at coincident pinion_radius
 hub distance(pin_throw) pin_at
 private q0 := point hint(x: 18, y: -3)
 private q1 := point hint(x: 19.5, y: -3)

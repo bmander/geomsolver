@@ -18,8 +18,8 @@ component ConeSpan(generator: line, axis: line) {
   far_rib := line(far, far_cross)
   near_rib perpendicular generator
   far_rib perpendicular generator
-  near_cross on axis
-  far_cross on axis
+  near_cross coincident axis
+  far_cross coincident axis
 }
 
 // The meridian stands `offset` off `generator` along each rib, turned `lean` from the direction
@@ -39,8 +39,8 @@ component ConeBoundary(generator: line, axis: line, offset: Length, lean: Angle)
   span.far_rib angle(lean) far_lift
   distance(offset) near_lift
   distance(offset) far_lift
-  a on axis
-  b on axis
+  a coincident axis
+  b coincident axis
   private profile := (near_cap := line(a, p)) -> (meridian := line(p, q)) ->
                      (far_cap := line(q, b)) -> (spine := line(b, a)) -> close
   near_cap perpendicular axis

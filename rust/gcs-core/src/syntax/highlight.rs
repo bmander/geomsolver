@@ -236,7 +236,7 @@ fn tint_word(
             if w == "claim" {
                 return (Some(Tint::Word), Next::Start);
             }
-            // the operator table, not the registry's names: `on` and `equal` are constraints
+            // the operator table, not the registry's names: `coincident` and `equal` are constraints
             // the language writes and are not any `CKind`'s name, and `point_on_circle` is a
             // name no document writes any more (spec §9.1)
             (is_operator(w).then_some(Tint::Relation), Next::Word)

@@ -98,8 +98,8 @@ g := Gear(N: 30, m: 3)  // one wheel
 /// number inside a `hint(…)` is a seed, and every other number is not.
 #[test]
 fn a_seed_and_a_claim_are_told_apart() {
-    let src = "lo on e hint(t: 3)\ns on(t == 4) k\nw := 100";
-    assert_eq!(tint_of(src, "on e"), Some(Tint::Relation));
+    let src = "lo coincident e hint(t: 3)\ns coincident(t == 4) k\nw := 100";
+    assert_eq!(tint_of(src, "coincident e"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "hint("), Some(Tint::Word));
     assert_eq!(tint_of(src, "t: 3"), Some(Tint::Label));
     assert_eq!(tint_of(src, "3)"), Some(Tint::Seed));
@@ -123,12 +123,12 @@ fn a_computed_point_is_arithmetic() {
 /// and the component's statements colour like any other statements.
 #[test]
 fn a_curve_is_coloured() {
-    let src = "component unwind(c: circle, u: Angle) {\n  p := point\n  p on c\n}\n\
+    let src = "component unwind(c: circle, u: Angle) {\n  p := point\n  p coincident c\n}\n\
                w := unwind(c).p over u in (0, 1)";
     assert_eq!(tint_of(src, "w :="), Some(Tint::Def));
     assert_eq!(tint_of(src, "over"), Some(Tint::Word));
     assert_eq!(tint_of(src, "in ("), Some(Tint::Word));
-    assert_eq!(tint_of(src, "on c"), Some(Tint::Relation));
+    assert_eq!(tint_of(src, "coincident c"), Some(Tint::Relation));
 }
 
 /// The reference document, coloured.  A cheap guard that the rules above reach the real thing:

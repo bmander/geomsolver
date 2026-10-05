@@ -260,7 +260,7 @@ fn chain_blocks_nest() {
 repeat e in square as i {{
   repeat 2 as j {{
     m := point
-    m on e
+    m coincident e
   }}
 }}
 repeat 2 as k {{
@@ -341,7 +341,7 @@ fn the_block_is_kept_as_written() {
 /// one pose to write, and a gesture on one copy is refused with the cause.
 #[test]
 fn edits_inside_the_body_behave_as_in_a_repeat() {
-    let src = format!("{SQUARE}repeat e in square {{\n  m := point hint(x: 1, y: 1)\n  m on e\n}}\n");
+    let src = format!("{SQUARE}repeat e in square {{\n  m := point hint(x: 1, y: 1)\n  m coincident e\n}}\n");
     let (prog, _) = parse(&src);
     let mut e = elaborate(&prog);
     assert!(solve::solve(&mut e.sketch, SolveOpts::default()).success);

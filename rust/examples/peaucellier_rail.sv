@@ -8,7 +8,7 @@ arm := 100       // the long arms, o–c and o–d
 side := 60       // the four sides of the kite, b–c–pen–d
 crank := 40      // the crank q–b, and the orbit its pin rides
 
-// The fixed frame.  `o on orbit` is the theorem's whole hypothesis — the pin's
+// The fixed frame.  `o coincident orbit` is the theorem's whole hypothesis — the pin's
 // circle passes through the centre of inversion — and it places `q` too, so no dimension between
 // the pivots is ever stated.
 o := point
@@ -18,7 +18,7 @@ orbit := circle(center: q) hint(r: crank)
 
 horizontal datum
 radius(crank) orbit
-o on orbit
+o coincident orbit
 fix(x == 0, y == 0) o
 
 // the machine itself, at one pose; the crank is the one freedom left
@@ -28,7 +28,7 @@ d := point   hint(x: 99.9, y: 4.8)
 pen := point hint(x: 80.0, y: 61.4)
 
 swing := line(q, b)
-b on orbit
+b coincident orbit
 
 oc := line(o, c)
 od := line(o, d)

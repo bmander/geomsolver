@@ -50,7 +50,7 @@ Q := plane(origin: oq, toward: tq, attitude: free, through: M) hint(u: (0.1618, 
 // drawn level in its view, which is where the view's own turn is held
 gax := line(hint(x: 110.85, y: 200), hint(x: 50.85, y: 303.9)) in G
 pax := line(hint(x: -84.62, y: -248), hint(x: -4.62, y: -248)) in Q
-gax.p1 on P
+gax.p1 coincident P
 gax.p1 distance(120) gax.p2
 pax.p1 distance(80) pax.p2
 horizontal pax
@@ -59,8 +59,8 @@ horizontal pax
 gc := cone(axis: gax) hint(half: 60deg)
 pc := cone(axis: pax) hint(half: 30deg)
 angle(60deg) gc
-M on gc
-M on pc
+M coincident gc
+M coincident pc
 gc tangent(M) pc
 
 // the two pitch radii at M, and the shafts: square, and E apart

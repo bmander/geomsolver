@@ -17,10 +17,10 @@ use crown.reach
 component FlankSection(base: line, flank: line, corner: arc, tip: line, cap: line) {
   private base_end := point
   private tip_end := point
-  base_end on base
-  base_end on cap
-  tip_end on tip
-  tip_end on cap
+  base_end coincident base
+  base_end coincident cap
+  tip_end coincident tip
+  tip_end coincident cap
   profile := face(base_end, flank, corner, tip_end, -> close)
 }
 

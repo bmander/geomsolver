@@ -38,7 +38,7 @@ body := solid(profile, about: spindle)
 lo := point hint(x: rim_radius + 1mm, y: -groove_half_width)
 root := point hint(x: rim_radius - groove_depth, y: 0mm)
 hi := point hint(x: rim_radius + 1mm, y: groove_half_width)
-root on mid_axis
+root coincident mid_axis
 root distance(groove_depth, side: left) de
 lo distance(1mm, side: right) de
 lo symmetry(mid_axis) hi

@@ -767,7 +767,7 @@ test('redundancy the matching cannot see is counted and named as implied', () =>
     // `P3` is the concurrency point: `altitudes.sv` writes the three feet *in* the lines they
     // slide along (`line alt_a(A, hint(x: 15, y: 5))`), so those points are minted with the
     // lines and come after it
-    'P3 on L3', 'P3 on L4', 'P3 on L5',
+    'P3 coincident L3', 'P3 coincident L4', 'P3 coincident L5',
   ]);
   assert.ok([...d.entityState.values()].every((s) => s !== 'over'));
 });
@@ -1765,7 +1765,7 @@ test('an ellipse is a curve of the library, and a point solves onto its rim', ()
   const d = Document.read(
     'use std\no := point\nq := point\n'
     + 'f := plane(origin: o, toward: q)\ne := std.Ellipse(f, a: 8, b: 3).p over u in (0, 360)\n'
-    + 'fix(x == 10, y == 5) o\nfix(x == 18, y == 5) q\np := point hint(x: 11, y: 9)\np on e hint(t: 80)\n');
+    + 'fix(x == 10, y == 5) o\nfix(x == 18, y == 5) q\np := point hint(x: 11, y: 9)\np coincident e hint(t: 80)\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   const sk = d.sketch;
   assert.equal(sk.curves.length, 1);

@@ -239,7 +239,7 @@ base := circle(center: o) hint(r: 20)
 flank := Involute(base, phase: 0).p over u in (0, 60)
 
 p := point hint(x: 40, y: 40)
-p on flank
+p coincident flank
 radius(20) base
 fix(x == 0, y == 0) o
 ";

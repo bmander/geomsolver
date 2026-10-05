@@ -20,7 +20,7 @@ component Ngon(n: Int, side: Length) {
   c := circle hint(r: r0)
   cycle n as i {
     p := point hint(at: c, bearing: tau * i / n)
-    p on c
+    p coincident c
     (s := line(p)) -> equal
   }
   // one side sized, and the radius follows — a dimensioned radius would let the sides collapse

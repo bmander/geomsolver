@@ -40,9 +40,9 @@ Q := plane(origin: oq, toward: tq, from: P, fold: along gen_p)
 // projects to the apex drawn in P; how long an axis is drawn says nothing about the cone
 gax := line(hint(x: -110, y: 200), hint(x: -50, y: 304)) in G
 pax := line(hint(x: -97, y: -200), hint(x: -28, y: -239)) in Q
-gax.p1 on P
+gax.p1 coincident P
 O project gax.p1
-pax.p1 on P
+pax.p1 coincident P
 A project pax.p1
 gax.p1 distance(120) gax.p2
 pax.p1 distance(80) pax.p2

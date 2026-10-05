@@ -32,10 +32,10 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
     e1 := point hint(x: c.x - dhole / 2 * cos(phi) - hd * sin(phi), y: c.y + dhole / 2 * sin(phi) - hd * cos(phi))
     e2 := point hint(x: c.x + dhole / 2 * cos(phi) + hd * sin(phi), y: c.y - dhole / 2 * sin(phi) + hd * cos(phi))
     e3 := point hint(x: c.x + dhole / 2 * cos(phi) - hd * sin(phi), y: c.y - dhole / 2 * sin(phi) - hd * cos(phi))
-    e0 on barrel
-    e1 on barrel
-    e2 on barrel
-    e3 on barrel
+    e0 coincident barrel
+    e1 coincident barrel
+    e2 coincident barrel
+    e3 coincident barrel
     e0 distance(dhole / 2, side: left) lever
     e1 distance(dhole / 2, side: left) lever
     e2 distance(dhole / 2, side: right) lever
@@ -107,7 +107,7 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
     front_u := line(front.origin, front.toward)
     datum perpendicular front_u
     front.origin distance(1mm) datum_up
-    claim c on datum
+    claim c coincident datum
   }
   // Share the front view's upright page frame: radius runs right, axial z down.
   longitudinal := plane(origin: front.origin, toward: front.toward, from: front, fold: -90deg)
@@ -116,7 +116,7 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
   zkeep := -(dims.bossz / 2 + dims.tretain)
   in longitudinal {
     section_center := point hint(x: front.origin.x - (c.y - front.origin.y), y: front.origin.y)
-    section_center on fold
+    section_center coincident fold
     section_center project c
     back_axis := components.parts.At(section_center, dx: 0mm, dy: -zback)
     back := components.parts.At(section_center, dx: dims.rbar, dy: -zback)

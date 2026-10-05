@@ -35,7 +35,7 @@ t distance(20, side: left) m
 
 // the ray, and the one statement that places where it strikes
 p := point hint(x: 50, y: 0)
-p on m
+p coincident m
 incoming := line(s, p)
 outgoing := line(p, t)
 incoming angle(m, outgoing) m
@@ -44,4 +44,4 @@ incoming angle(m, outgoing) m
 image := point hint(x: 10, y: -40)
 s symmetry(m) image
 sight := line(image, t)
-claim p on sight
+claim p coincident sight

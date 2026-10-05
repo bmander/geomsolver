@@ -161,7 +161,7 @@ fn a_contact_seeded_off_its_curve_still_solves() {
         format!(
             "a := point\nb := point\nc := point\n\
              d := point\ns := spline(a, b, c, d)\nfix(x == 0, y == 0) a\nfix(x == 10, y == 20) b\nfix(x == 30, y == 20) c\nfix(x == 40, y == 0) d\n\
-             p := point hint(x: 20, y: 14)\np on s hint(t: {t})\np vertical b\n"
+             p := point hint(x: 20, y: 14)\np coincident s hint(t: {t})\np vertical b\n"
         )
     };
     let mut want = None;
@@ -186,7 +186,7 @@ fn a_contact_seeded_off_its_curve_still_solves() {
     for u in ["900", "-100"] {
         let (e, d) = read(&format!(
             "component spiral(o: point, k: Length, u: Angle) {{\n  p := point(x: o.x + k * u / 360 * cos(u), y: o.y + k * u / 360 * sin(u))\n}}\n\
-             o := point\nf := spiral(o, k: 10).p over u in (0, 720)\nt := point hint(x: 12, y: 3)\nt on f hint(t: {u})\nfix(x == 0, y == 0) o\n"
+             o := point\nf := spiral(o, k: 10).p over u in (0, 720)\nt := point hint(x: 12, y: 3)\nt coincident f hint(t: {u})\nfix(x == 0, y == 0) o\n"
         ));
         assert!(d.is_empty(), "{d:?}");
         let mut sk = e.sketch;
@@ -229,7 +229,7 @@ fn a_curve_family_contact_stays_inside_its_domain() {
          fix(x == 0, y == 0) o
          fix(r == 20) c
          p := point hint(x: 0, y: -20)
-         p on f
+         p coincident f
          p distance(20, along: y) o",
     );
     assert!(d.is_empty(), "{d:?}");
@@ -543,8 +543,8 @@ fn what_a_cone_or_a_cylinder_cannot_say_is_refused() {
                  k := cone(axis: la) hint(half: 30deg)\nk2 := cone(axis: lb) hint(half: 20deg)\n\
                  c := cylinder(axis: la) hint(r: 5)\n";
     for (stmt, code, needle) in [
-        ("lb on k", "E040", "a line on a cone or a cylinder"),
-        ("lb on c", "E040", "a line on a cone or a cylinder"),
+        ("lb coincident k", "E040", "a line on a cone or a cylinder"),
+        ("lb coincident c", "E040", "a line on a cone or a cylinder"),
         ("k tangent lb", "E040", "a line touches a cylinder"),
         ("lb tangent c", "E040", "the cylinder first"),
         ("k tangent k2", "E040", "names it"),
@@ -556,7 +556,7 @@ fn what_a_cone_or_a_cylinder_cannot_say_is_refused() {
         let (_, d) = read(&format!("{views}{stmt}\n"));
         assert!(d.iter().any(|m| m.starts_with(code) && m.contains(needle)), "{stmt}: {d:?}");
     }
-    for stmt in ["a on k", "a on c", "radius(4) c", "angle(25deg) k", "c tangent lb",
+    for stmt in ["a coincident k", "a coincident c", "radius(4) c", "angle(25deg) k", "c tangent lb",
                  "m := point hint(x: 3, y: 3) in front\nk tangent(m) k2"] {
         let (_, d) = read(&format!("{views}{stmt}\n"));
         assert!(d.is_empty(), "{stmt}: {d:?}");

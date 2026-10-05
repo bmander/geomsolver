@@ -32,8 +32,8 @@ preview {
              (inner := line(ij, bi)) -> close
   base angle(110deg) outer
   base angle(250deg) inner
-  std.origin on inner
-  pitch.p2 on outer
+  std.origin coincident inner
+  pitch.p2 coincident outer
   rounding := TipRounding(pitch, base, tip, outer_round, inner_round, proportions,
     normal_module: 2mm)
 }

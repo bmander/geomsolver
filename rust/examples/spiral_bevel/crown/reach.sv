@@ -32,7 +32,7 @@ component CutterReach(p: plane, n: plane, apex: point, normal: line, axis: line,
     end := point hint(at: foot, along: axis)
     cap := line(foot, end)
   }
-  foot on p
+  foot coincident p
   radial project foot
   axis angle(0deg) cap
   cap equal axis

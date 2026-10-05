@@ -123,10 +123,10 @@ component IntakeManifold(o: point, right: line, left: line, dims: group) {
   ch_out := arc(center: o, start: co1, end: co0) hint(r: dims.rman + dims.wch / 2)
   radius(dims.rman - dims.wch / 2) ch_in
   radius(dims.rman + dims.wch / 2) ch_out
-  ci0 on left
-  ci1 on right
-  co0 on left
-  co1 on right
+  ci0 coincident left
+  ci1 coincident right
+  co0 coincident left
+  co1 coincident right
   claim radius(dims.rman + dims.wch / 2) ch_out
   plenum := solid(face(ch_in, co1, ch_out, ci0), from: -dims.wch / 2, to: dims.wch / 2)
 }
@@ -134,7 +134,7 @@ component IntakeManifold(o: point, right: line, left: line, dims: group) {
 // A square exhaust passage from a port to its nearest plate edge.
 component ExhaustPassage(opening: point, boundary: line, dims: group) {
   outlet := point hint(x: (boundary.p1.x + boundary.p2.x) / 2, y: opening.y)
-  outlet on boundary
+  outlet coincident boundary
   opening distance(0mm, along: y) outlet
   center := line(opening, outlet)
   a := components.parts.At(opening, dx: 0mm, dy: dims.wch / 2)

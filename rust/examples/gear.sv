@@ -40,10 +40,10 @@ component Flank(base: circle, root: circle, tip: circle,
   lo := point hint(x: 0, y: 0)
   hi := point hint(x: 0, y: 0)
 
-  lo on e hint(t: u0)
-  hi on e hint(t: u1)
-  lo on root
-  hi on tip
+  lo coincident e hint(t: u0)
+  hi coincident e hint(t: u1)
+  lo coincident root
+  hi coincident tip
 }
 
 component Tooth(base: circle, root: circle, tip: circle,

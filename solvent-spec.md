@@ -1,6 +1,12 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.41 — October 2026**
+**Specification, Draft 0.42 — October 2026**
+
+**[0.42] Incidence is `coincident`.** `on` is retired: `coincident` relates two points, and a
+point or a line to whatever `on` related it to — a line, a circle or arc, a spline, a curve, a
+plane, a sphere, a cone, a cylinder — and a circle to a sphere (§9.2). What it means is the kinds
+of its operands, as before; one word fewer, and no idea spelled twice. `on(t == 20)` is
+`coincident(t == 20)`.
 
 **[0.41] An unknown is declared.** `param` marks one of the document's inputs (§6.3): `param bore:
 Length := 50mm` is a value a host may give another, and `param beta: Angle hint(30deg)`, with no
@@ -219,7 +225,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. The seven labels a solid's brackets take — `from`, `to`, `depth`, `through`, `about`, `sweep`, `sense` — and `offset` (§6.10) and `at` (§6.11) are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
+- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. The seven labels a solid's brackets take — `from`, `to`, `depth`, `through`, `about`, `sweep`, `sense` — and `offset` (§6.10) and `at` (§6.11) are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -582,7 +588,7 @@ NAME := REF over FORMAL in ( A, B )                    an instance's point
 NAME := Component(ARGS).REF over FORMAL in ( A, B )    an instance written in place
 ```
 
-`REF` names a point the component places — a declaration of its body or a nested instance's; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve, each owning the curve's parameter — spelled `t`, as a spline's is, whatever the swept formal is called **[0.15]** (0.2–0.14 spelled it `u`, which an implementation SHOULD name when refusing the old key): `p on e hint(t: …)` says `p − C(t) = 0`, two residuals and one new unknown; `e tangent l` holds the line through `C(u)` along `C'(u)`, two residuals against the one unknown; `e curvature k` makes the circle the curve's osculating circle at `u`, three residuals against it. **[0.39]** Each contact owns its own parameter unless it is pinned to a name nothing defines (`e tangent(t == s) l`, `e curvature(t == s) k`, §9.2): then every contact on the curve pinned to that name owns the one unknown, so a line and a circle touching the curve *at the same place* are five residuals against one parameter. Stated instead as two contacts tied through other geometry — the circle tangent to the line — the condition holds to third order in the distance between their two parameters, and the solve is a degenerate root. A tangency needs `C'` and its derivatives in the geometry — second order — and a curvature `C''` and `C'''`: a computed point supplies them exactly from its expressions, and a locus supplies `C'` exactly (the implicit function theorem) and `C''`, `C'''` exactly as the implicit function's Taylor orders — each one more linear solve with the same Jacobian of the body, its rows read in truncated Taylor arithmetic — with their derivatives in the geometry by difference **[0.37]**. A body is read that way only through relations whose kernels an implementation has written in Taylor arithmetic; a curvature stated against a locus with any other relation in its body is an error (**E103**) naming the relation, since a residual by difference would solve to a slightly wrong circle and call it right. There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
+`REF` names a point the component places — a declaration of its body or a nested instance's; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve, each owning the curve's parameter — spelled `t`, as a spline's is, whatever the swept formal is called **[0.15]** (0.2–0.14 spelled it `u`, which an implementation SHOULD name when refusing the old key): `p coincident e hint(t: …)` says `p − C(t) = 0`, two residuals and one new unknown; `e tangent l` holds the line through `C(u)` along `C'(u)`, two residuals against the one unknown; `e curvature k` makes the circle the curve's osculating circle at `u`, three residuals against it. **[0.39]** Each contact owns its own parameter unless it is pinned to a name nothing defines (`e tangent(t == s) l`, `e curvature(t == s) k`, §9.2): then every contact on the curve pinned to that name owns the one unknown, so a line and a circle touching the curve *at the same place* are five residuals against one parameter. Stated instead as two contacts tied through other geometry — the circle tangent to the line — the condition holds to third order in the distance between their two parameters, and the solve is a degenerate root. A tangency needs `C'` and its derivatives in the geometry — second order — and a curvature `C''` and `C'''`: a computed point supplies them exactly from its expressions, and a locus supplies `C'` exactly (the implicit function theorem) and `C''`, `C'''` exactly as the implicit function's Taylor orders — each one more linear solve with the same Jacobian of the body, its rows read in truncated Taylor arithmetic — with their derivatives in the geometry by difference **[0.37]**. A body is read that way only through relations whose kernels an implementation has written in Taylor arithmetic; a curvature stated against a locus with any other relation in its body is an error (**E103**) naming the relation, since a residual by difference would solve to a slightly wrong circle and call it right. There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
 
 **Two ways a component places the point.** A **computed** point, `p := point(x: XEXPR, y: YEXPR)` **[0.13]** (`port p = …` in 0.12), gives the coordinates as expressions over the formals and the params; a component with one is drawn only as a curve, and an instance of it on the sheet is an error (**E103**), since nothing on the sheet holds a point to a formula. Any **other** point is placed by the body's statements — the locus form: `C(u)` is where the constraints put the point, given the formal's value and the geometry the component is written over. Traced, the body MUST determine its own coordinates — as many equations as coordinates of its own — or the curve is an error (**E103**): an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Drawn, the same component may be closed from outside like any other.
 
@@ -592,7 +598,7 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
   p := point
   rad := line(c.center, t)
   s := line(t, p)
-  t on c                                       // the string leaves the circle...
+  t coincident c                                       // the string leaves the circle...
   datum angle(u + phase) rad                   // ...at bearing u — directed, so this side
   rad perpendicular s                          // perpendicular to the radius there,
   p distance(-(c.r * u / 1rad)) rad            // and taut: let out == arc unwound
@@ -777,7 +783,7 @@ A face is a **Declaration** (§4.2). It adds no coordinate, unknown, equation or
 
 **A face has one closed outer loop.** Consecutive edges — and the last with the first — MUST share an endpoint, and sharing is asked of the **points**, which is aliasing and cannot be argued with: two neighbours that share none are **E080** naming both. The loop is walked in the order it is written. A `circle` is a whole loop by itself and MUST stand alone in one (E080); an edge that is neither a line, an arc, a circle, a spline whose knots are clamped (its ends are its first and last control points), a stretch of a curve nor a point is E080 at the edge.
 
-**A stretch of a curve [0.28].** A curve (§6.5) has no end points of its own for a walk to meet, so it stands in a face as the stretch between two points: `flank from p to q`, each point held on the curve by a contact (`p on flank`), whose parameter is where the stretch ends. The stretch follows the solve, as the contacts do; it is walked from `p` to `q`, against the curve's own sense where `q` comes first. A curve named without `from … to …` is E080, as is a point not held on it, a stretch from a point to itself, or one curve bounding one face twice. The implementation mints the stretch as a curve of its own carrying `.closure` (it is the curve already drawn), and it names a face of whatever is swept from the loop by the curve's name.
+**A stretch of a curve [0.28].** A curve (§6.5) has no end points of its own for a walk to meet, so it stands in a face as the stretch between two points: `flank from p to q`, each point held on the curve by a contact (`p coincident flank`), whose parameter is where the stretch ends. The stretch follows the solve, as the contacts do; it is walked from `p` to `q`, against the curve's own sense where `q` comes first. A curve named without `from … to …` is E080, as is a point not held on it, a stretch from a point to itself, or one curve bounding one face twice. The implementation mints the stretch as a curve of its own carrying `.closure` (it is the curve already drawn), and it names a face of whatever is swept from the loop by the curve's name.
 
 ```
 tooth := face(t.r.e from t.r.lo to t.r.hi, t.crown, t.l.e from t.l.hi to t.l.lo, -> close)
@@ -843,10 +849,10 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
 
 > **A solid is its stock, plus everything in `union` with it, minus everything that `cut`s it, within everything that `bound`s it.**
 
-As a point set, with `on(s)`, `cut(s)` and **[0.22]** `bound(s)` the three **sets** of statements naming `s`, and `S(s)` its stock:
+As a point set, with `union(s)`, `cut(s)` and **[0.22]** `bound(s)` the three **sets** of statements naming `s`, and `S(s)` its stock:
 
 ```
-B(s) = ( S(s) ∪ ⋃ { B(x) : x on s } ) ∖ ⋃ { B(y) : y cut s } ∩ ⋂ { B(z) : z bound s }
+B(s) = ( S(s) ∪ ⋃ { B(x) : x union s } ) ∖ ⋃ { B(y) : y cut s } ∩ ⋂ { B(z) : z bound s }
 ```
 
 Union first, and none of the three groups is ordered; difference and intersection commute, so the last two need no order between them either. `tip bound blank` keeps of the blank what lies within the tip cone, which is what a rim inside a cone is, and what `blank ∖ (blank ∖ tip)` used to spell in two statements and an intermediate. `union`, `cut` and `bound` are Declaration-class (§4.2, §9.2): each says what its right operand *is*, contributes no residual, and enters no solve. A solid that reaches itself through its operands is **E041** — "made of itself", the words a plane folded from itself is refused in.
@@ -1090,7 +1096,7 @@ The same word over a **tool of the sheet** — a point, line, circle, arc, a cur
 point, or a profile itself generated by a point, line, circle or arc — and a planar motion (built from turns about points, `along:` slides and `relative_to:`)
 is a **curve of the drawing**, not a spatial envelope: the profile the tool cuts in the moving
 frame, as the roll runs over `[from, to]`. It is a curve like any other (§6.5): it is drawn, and
-`p on f`, `f tangent l` and `f curvature k` hold against it, each owning the roll at its contact
+`p coincident f`, `f tangent l` and `f curvature k` hold against it, each owning the roll at its contact
 (`hint(t: …)`, degrees). The tool is drawn where it stands at roll 0. At roll `t` its point `T(s)`
 stands at `X(s, t) = M(t)·T(s)`, and the cutting point is where `F(s, t) = X_s × X_t = 0`: the
 tool's tangent runs along the velocity of the material under it, which in the plane says the
@@ -1130,7 +1136,7 @@ over whole turns that comes back is closed (§6.5) **[0.40]**, and stands alone 
 side := surface(rack_tooth, edge: rack_flank)
 flank := envelope(side, under: cutting, from: -30deg, to: 30deg)
 p := point in cut
-p on flank
+p coincident flank
 ```
 
 `surface(S, edge: e)` names a side of a prism `S` (a face swept by `depth:` or `from:`/`to:`) as it
@@ -1144,7 +1150,7 @@ m, …)` would be, standing for the surface. Every point the curve is written ov
 the motion's — is drawn in one view, and that view stands where it is drawn (a view the solve
 places, or the page, which has no place in space, is **E080**).
 
-`p on flank` holds a point drawn in **any** view to the surface: its lift, read into the prism's
+`p coincident flank` holds a point drawn in **any** view to the surface: its lift, read into the prism's
 view and put on that view's sheet, lies on the curve at the contact's roll — two rows against the
 roll it owns (`hint(t: …)`, degrees), the one equation a point on a surface is worth. The rows are
 the planar contact's, with the point's place for its coordinates, so the tool's and the motion's
@@ -1481,7 +1487,7 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `on` | infix | (point, line \| circle \| arc \| spline \| curve) — **four** constraints; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder). **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
+| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder). **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed local ordinates, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space |
 | `distance` | prefix | on a line: the distance between its own ends |
@@ -1492,12 +1498,12 @@ What goes in the parentheses is a short list:
 | `angle` | infix | (line, line) |
 | `radius` | prefix | a circle or an arc; **[0.24]** a sphere; **[0.26]** a cylinder |
 | `angle` | prefix | **[0.26]** a cone: its half-angle (between two lines `angle` is infix) |
-| `coincident`, `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each |
+| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers each pinned by its field — `fix(x == 0, y == 0) p`, `fix(r == 25) c` **[0.34]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |
 
-The collapses are where the saving is: **`on` is five constraints, `distance` is six, `tangent` is six**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, which is exactly the distinction the point-pair forms were added to draw. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
+The collapses are where the saving is: **`coincident` is eleven constraints, `distance` is six, `tangent` is six**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, which is exactly the distinction the point-pair forms were added to draw. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
 
 **Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end; `line tangent circle` is the ordinary one. Each named itself before and the order was decoration; as an operator, which side the arc is written on picks the constraint.
 
@@ -1507,9 +1513,9 @@ The collapses are where the saving is: **`on` is five constraints, `distance` is
 
 **`ccw` and `cw` keep a call.** Under the general rule they would be `a ccw(c) b`, which reorders three points that are symmetric: the predicate is about the *triangle*, not about a pair with a decoration. The call is a third fixity of the same table — every operand in the parentheses — and not a statement kind of its own. **[0.15]** The gauges and the orientation predicates are entries of the operator table like every other constraint: read by the one relation grammar, so a class, a placement and the chain's lookahead treat them as any other word, and settled by the word alone, since `fix c.r` names a number and `ccw(a, b, c)` has no operand outside its parentheses. They hold parameters or record a root choice rather than adding an equation, so a `claim` on one is refused (E040): a claim is judged by rank, and they add no row.
 
-**[0.18] The body rule is written in this grammar and is not a constraint.** **[0.32]** `boss union cyl`, `bore cut cyl` and **[0.22]** `tip bound cyl` are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. None relates geometry or has a residual to be settled into, so each is read by the word alone. None is in the constraint library of §9.3, and none may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a cut b` and `claim a union b` are refused where they are written, neither being a constraint word. (0.18–0.31 spelled the union `on`, settled by the kinds of its operands; `on` between two solids is now refused as any constraint word is over operands it does not relate.)
+**[0.18] The body rule is written in this grammar and is not a constraint.** **[0.32]** `boss union cyl`, `bore cut cyl` and **[0.22]** `tip bound cyl` are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. None relates geometry or has a residual to be settled into, so each is read by the word alone. None is in the constraint library of §9.3, and none may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a cut b` and `claim a union b` are refused where they are written, neither being a constraint word. (0.18–0.31 spelled the union `on`, settled by the kinds of its operands; `coincident` between two solids is now refused as any constraint word is over operands it does not relate.)
 
-**[0.24] Across views, the same word is the relation in space.** A relation's operands are read in the views their points are drawn in (§6.7), and when those differ the word means its relation between the points' lifts: `coincident`, `distance` between two points (the true length), a point and a line (to the infinite line) or two lines (the common perpendicular — a magnitude, its side the seed's), `on` a line or a circle, `angle` (unsigned, 0 to 180°), `parallel`, `perpendicular` and `equal` (true lengths), and **[0.25]** `midpoint` (of the line in space) and `symmetry` (the half turn about the line in space, which on the line's own plane is the mirror). No selector says so. `sense:` and `side:` name a turn and a side *on a page* and are **E040** there; a word that has no meaning in space — `horizontal`, `vertical`, a run or a rise, `tangent` between drawn figures, a curve's contacts — is **E062**, as is a relation across views that names a point on the page (the page has no place in space) or a datum point read in a view it is not drawn in. A radius and a ring's width read only radii, which the lift carries unchanged, so they mean the same in any view; `along: u`/`v` measure against a datum as it stands on the sheet, wherever the point is drawn; and `project` relates two views by definition. Within one view nothing changes: the lift is rigid, so the 2D relation *is* the relation in space.
+**[0.24] Across views, the same word is the relation in space.** A relation's operands are read in the views their points are drawn in (§6.7), and when those differ the word means its relation between the points' lifts: `coincident`, `distance` between two points (the true length), a point and a line (to the infinite line) or two lines (the common perpendicular — a magnitude, its side the seed's), `coincident` a line or a circle, `angle` (unsigned, 0 to 180°), `parallel`, `perpendicular` and `equal` (true lengths), and **[0.25]** `midpoint` (of the line in space) and `symmetry` (the half turn about the line in space, which on the line's own plane is the mirror). No selector says so. `sense:` and `side:` name a turn and a side *on a page* and are **E040** there; a word that has no meaning in space — `horizontal`, `vertical`, a run or a rise, `tangent` between drawn figures, a curve's contacts — is **E062**, as is a relation across views that names a point on the page (the page has no place in space) or a datum point read in a view it is not drawn in. A radius and a ring's width read only radii, which the lift carries unchanged, so they mean the same in any view; `along: u`/`v` measure against a datum as it stands on the sheet, wherever the point is drawn; and `project` relates two views by definition. Within one view nothing changes: the lift is rigid, so the 2D relation *is* the relation in space.
 
 **The role rule.** A plane's datum points — its origin and its toward — place the view on the sheet, and their membership says nothing about what they mean in a statement. A datum point is therefore read by what it is related to: beside only other datum points it is sheet **layout**, on the page; beside points of a view it is the datum of, it is that view's (an ordinate from the datum the view is drawn from); otherwise, where its membership puts it. Read this way no statement written before 0.24 changes its meaning.
 
@@ -1521,8 +1527,8 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 
 | Predicate | Residual(s) | Eq. count | Notes |
 |---|---|---|---|
-| `on(C: Circle, p: Point)` | ‖p − C.center‖ − C.r | 1 | |
-| `on(L: Line, p: Point)` | n(L)·p − d(L) | 1 | |
+| `coincident(C: Circle, p: Point)` | ‖p − C.center‖ − C.r | 1 | |
+| `coincident(L: Line, p: Point)` | n(L)·p − d(L) | 1 | |
 | `coincident(p, q)` | p − q | 2 | for *distinct* entities; see **W100** |
 | `distance(p, q) == e` | ‖p − q‖ − e | 1 | |
 | `angle(a, b, c) == e` | ∠(a−b, c−b) − e | 1 | signed; see §9.4 |
@@ -1539,20 +1545,20 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `cw(a, b, c)` | (b−a) × (c−a) < 0 | 0 | |
 | `revolute(f1: Frame, f2: Frame)` | f1.origin − f2.origin | 2 | relative angle free |
 | `weld(f1: Frame, f2: Frame)` | f1.origin − f2.origin, f1.angle − f2.angle | 3 | triggers **W101** |
-| `on(p, P: Plane)` **[0.24]** | n_P·X − h_P | 1 | X the point's lift; in space whatever view `p` is in; `p` drawn in `P` is E061 |
+| `coincident(p, P: Plane)` **[0.24]** | n_P·X − h_P | 1 | X the point's lift; in space whatever view `p` is in; `p` drawn in `P` is E061 |
 | `distance(p, P, along: n) == e` **[0.24]** | n_P·X − h_P − e | 1 | signed along `P`'s normal |
-| `on(L, P: Plane)` **[0.24]** | n_P·A − h_P, n_P·B − h_P | 2 | the line's two ends |
-| `on(p, S: Sphere)` **[0.24]** | ‖X − C‖ − S.r | 1 | C the centre's lift |
+| `coincident(L, P: Plane)` **[0.24]** | n_P·A − h_P, n_P·B − h_P | 2 | the line's two ends |
+| `coincident(p, S: Sphere)` **[0.24]** | ‖X − C‖ − S.r | 1 | C the centre's lift |
 | `tangent(S, L)` **[0.24]** | ‖(C − A) × (B − A)‖ / ‖B − A‖ − S.r | 1 | the line's distance from the centre, in space |
-| `on(c, S: Sphere)` **[0.25]** | u·(S − C), v·(S − C), √(‖S − C‖² + r²) − S.r | 3 | C the circle's centre lifted, (u, v) its view's axes; `S tangent c` is refused (a point or a whole circle of contact) |
-| `on(p, K: Cone)` **[0.26]** | ρ cos α − h sin α | 1 | X the point's lift, A the apex and ê the axis (both lifted), h = (X − A)·ê, ρ = ‖(X − A) − h ê‖: X's distance from the generator in its meridian half-plane, zero on the nappe ê points into |
-| `on(p, C: Cylinder)` **[0.26]** | ‖(X − A) × (B − A)‖ / ‖B − A‖ − C.r | 1 | the axis A → B lifted |
+| `coincident(c, S: Sphere)` **[0.25]** | u·(S − C), v·(S − C), √(‖S − C‖² + r²) − S.r | 3 | C the circle's centre lifted, (u, v) its view's axes; `S tangent c` is refused (a point or a whole circle of contact) |
+| `coincident(p, K: Cone)` **[0.26]** | ρ cos α − h sin α | 1 | X the point's lift, A the apex and ê the axis (both lifted), h = (X − A)·ê, ρ = ‖(X − A) − h ê‖: X's distance from the generator in its meridian half-plane, zero on the nappe ê points into |
+| `coincident(p, C: Cylinder)` **[0.26]** | ‖(X − A) × (B − A)‖ / ‖B − A‖ − C.r | 1 | the axis A → B lifted |
 | `angle(K: Cone) == θ` **[0.26]** | K.half − θ | 1 | degree 0 |
 | `tangent(C: Cylinder, L)` **[0.26]** | the signed common perpendicular of the axis and L − s·C.r | 1 | s the side the seed stands on, as a skew distance's; parallel lines are refused |
-| `tangent(K1, K2, at: M)` **[0.26]** | n₂·g₁, n₂·c₁ | 2 | at M, a cone's normal is n = û cos α − ê sin α, its generator g = ê cos α + û sin α and its circle c = ê × û (û the unit radial direction); one tangent plane at M. That M is on each is `M on K` beside it |
+| `tangent(K1, K2, at: M)` **[0.26]** | n₂·g₁, n₂·c₁ | 2 | at M, a cone's normal is n = û cos α − ê sin α, its generator g = ê cos α + û sin α and its circle c = ê × û (û the unit radial direction); one tangent plane at M. That M is on each is `M coincident K` beside it |
 | `against(F, G)` with a solved view **[0.26]** | d_F − d_G − (ord_G − ord_F) | 1 | where the datum's offset is solved; the planes share an attitude (§6.10) |
 | `tangent(S1, S2)` **[0.24]** | ‖C1 − C2‖ − (r1 + r2) *or* ‖C1 − C2‖ − \|r1 − r2\| | 1 | `external:` inferred from the seed, as two circles' is |
-| *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `on` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `on` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
+| *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `coincident` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `on` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
 | `project(p, q)` **[0.10]** | d_A·Rᵀ(c_A, s_A)(p − o_A) − d_B·Rᵀ(c_B, s_B)(q − o_B) | 1 | the planes A, B inferred from `p`, `q`'s memberships; d the fold line they share, §6.7 |
 
 Implementations MAY extend this library. Extensions MUST document residuals and equation counts, and MUST classify each decoration as hint or constraint per P3.
@@ -1682,7 +1688,7 @@ In a `ccw` path, `a ~C~ b` is the counterclockwise arc on `C` from `a` to `b`; i
 
 ### 10.4 Derived constraints
 
-An arc segment `a ~C~ b` implies `on(C, a)` and `on(C, b)`. These derived incidences enter the constraint store subject to deduplication (§14.3), so restating them explicitly is legal and free.
+An arc segment `a ~C~ b` implies `coincident(C, a)` and `coincident(C, b)`. These derived incidences enter the constraint store subject to deduplication (§14.3), so restating them explicitly is legal and free.
 
 ### 10.5 Fragment composition
 
@@ -2155,7 +2161,7 @@ component Gear(N: Int, m: Length) {
 - **Aliasing:** `pitch.center`, `tip.center`, `root.center`, `f0.origin`, and `center` form one class. `Tooth`'s formals `root`, `tip` alias the gear's circles (entity-typed arguments). The three circles' radii are definitional (`R`, `R+m`, `R−1.25m` substitute out).
 - **Ring lowering:** group G = C_N about `center`. Ring-local free entities: one representative each of `t.lead`, `t.trail`, `t.tl`, `t.tr` (orbit size N). `center` and the circles pass the §12.5 invariance criterion (`Fixed`). The gap constraints reference `(t.lead, +1)`.
 - **Paths:** each Tooth contributes `lead → tl ⌒tip tr → trail` (ccw); the ring body contributes `t.trail ⌒root (t.lead,+1)`, inheriting ccw. Composition closes after N teeth and N gaps: one closed ccw boundary. All arcs take the default branch (ccw on their circles) — zero `rev` decorations, per §10.3.
-- **Deduplication:** the arc-derived incidences `on(tip, tl)`, `on(tip, tr)`, `on(root, trail)`, `on(root, (lead,+1))` duplicate the explicit `on` constraints (the last after symmetry transport) and merge in the store.
+- **Deduplication:** the arc-derived incidences `coincident(tip, tl)`, `coincident(tip, tr)`, `coincident(root, trail)`, `coincident(root, (lead,+1))` duplicate the explicit `coincident` constraints (the last after symmetry transport) and merge in the store.
 
 ### 18.3 DOF ledger (quotient system)
 
@@ -2165,8 +2171,8 @@ component Gear(N: Int, m: Length) {
 | circle radii | 0 (definitional) |
 | `t.lead`, `t.trail`, `t.tl`, `t.tr` (representatives) | +8 |
 | **Unknowns** | **10** |
-| `on(root, lead)`, `on(root, trail)` | −2 |
-| `on(tip, tl)`, `on(tip, tr)` | −2 |
+| `coincident(root, lead)`, `coincident(root, trail)` | −2 |
+| `coincident(tip, tl)`, `coincident(tip, tr)` | −2 |
 | tooth span angle `== slot/2` | −1 |
 | flank symmetry angle equality | −1 |
 | gap angle `== tau/(2N)` | −1 |

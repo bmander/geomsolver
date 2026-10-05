@@ -20,9 +20,9 @@ component CrownTooth(p: plane, normal: line, inner: point, outer: point, design:
   lp := point hint(at: inner)
   rp := point hint(at: outer)
   top := point hint(at: center, along: normal, turn: -90deg)
-  center on p
-  lp on p
-  rp on p
+  center coincident p
+  lp coincident p
+  rp coincident p
   normal.p1 project center
   inner project lp
   outer project rp

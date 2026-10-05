@@ -79,7 +79,7 @@ fix(x == 10, y == -40) b1
 cut := plane(origin: b0, toward: b1, u: (1, 0, 0), v: (0, 1, 0), o: (0, 0, 1.9))
 p := point in cut hint(x: 20, y: {})
 fix(y == {}) p
-p on flank
+p coincident flank
 ", rack(true), -40. + along, -40. + along)
 }
 

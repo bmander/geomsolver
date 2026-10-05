@@ -19,7 +19,7 @@ component Cell(orbit: circle, datum: line, arm: Length, side: Length, u: Angle) 
   d := point   hint(x: 99.9, y: 4.8)
   pen := point hint(x: 80.0, y: 61.4)
   swing := line(datum.p2, b)
-  b on orbit                         // the crank pin on its circle...
+  b coincident orbit                         // the crank pin on its circle...
   datum angle(u) swing               // ...posed at bearing u; directed, so this side up
   oc := line(datum.p1, c)
   od := line(datum.p1, d)
@@ -35,9 +35,9 @@ component Cell(orbit: circle, datum: line, arm: Length, side: Length, u: Angle) 
   ccw(c, d, pen)                     // and pen on the far side of the kite from b
 }
 
-// The fixed frame: the datum the crank angle is read from, and the orbit.  `o on orbit` is the
-// theorem's whole hypothesis — the pin's circle passes through the centre of inversion — and it
-// places `q` too, so no dimension between the pivots is ever stated.
+// The fixed frame: the datum the crank angle is read from, and the orbit.  `o coincident orbit` is
+// the theorem's whole hypothesis — the pin's circle passes through the centre of inversion — and
+// it places `q` too, so no dimension between the pivots is ever stated.
 o := point
 q := point hint(x: crank, y: 0)
 datum := line(o, q)
@@ -45,7 +45,7 @@ orbit := circle(center: q) hint(r: crank)
 
 horizontal datum
 radius(crank) orbit
-o on orbit
+o coincident orbit
 fix(x == 0, y == 0) o
 
 // the machine itself, at one pose — `u` unbound, so the crank angle is an unknown of the
@@ -61,8 +61,8 @@ path := cell.pen over u in (60, 115)
 
 g1 := point hint(x: 80, y: 51)
 g2 := point hint(x: 80, y: 114)
-g1 on(t == 65) path
-g2 on(t == 110) path
+g1 coincident(t == 65) path
+g2 coincident(t == 110) path
 rail := line(g1, g2)
 
 claim vertical rail

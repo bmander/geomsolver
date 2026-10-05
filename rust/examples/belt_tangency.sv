@@ -29,8 +29,8 @@ p := point hint(x: 0, y: 10)
 q := point hint(x: 50, y: 10)
 belt := line(p, q)
 
-p on k1
-q on k2
+p coincident k1
+q coincident k2
 belt tangent(side: right) k1
 belt tangent(side: right) k2
 

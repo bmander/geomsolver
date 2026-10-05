@@ -95,13 +95,13 @@ component Piston(f: plane, dims: group) {
                     y: f.origin.y + (dims.ph) * f.s + (dims.rt / 2) * f.c)
   rb := point hint(at: eye, bearing: f.angle + 180deg)
   rd := point hint(at: eye, bearing: f.angle + 180deg)
-  rb on eye
-  rd on eye
+  rb coincident eye
+  rd coincident eye
   fl parallel rod
   fr parallel rod
   fl := line(ra, rb)
   fr := line(rc, rd)
-  ra on skirt
+  ra coincident skirt
   ra distance(dims.rt / 2, side: left) rod
   ra symmetry(rod) rc
   // -- what the solid is made of, and nothing a view reads ---------------------------------

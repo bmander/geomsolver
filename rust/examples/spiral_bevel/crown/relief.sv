@@ -28,11 +28,11 @@ component Kink(flank: line, base: line, design: group, normal_module: Length) {
   along := point hint(at: mark, along: base)
   kink := point hint(at: mark)
   level := line(mark, along)
-  mark on flank
+  mark coincident flank
   mark distance((design.base - design.addendum) * normal_module, side: left) base
   base angle(0deg) level
   mark distance(design.tip_relief) along
-  kink on flank
+  kink coincident flank
   kink distance(design.tip_relief, side: left) level
 }
 
@@ -59,8 +59,8 @@ component LeavingChamfer(flank: line, base: line, design: group, normal_module: 
   (slope := line(foot, slope_end)) -> tangent
     (round := arc(center: rc) hint(r: design.rounding * normal_module)) -> tangent
     (top := line(top_start, top_end))
-  foot on base
-  at.kink on slope
+  foot coincident base
+  at.kink coincident slope
   flank angle(design.relief_angle) slope
   radius(design.rounding * normal_module) round
   base angle(180deg) top
@@ -80,8 +80,8 @@ component ArrivingChamfer(flank: line, base: line, design: group, normal_module:
   (top := line(top_start, top_end)) -> tangent
     (round := arc(center: rc) hint(r: design.rounding * normal_module)) -> tangent
     (slope := line(slope_start, foot))
-  foot on base
-  at.kink on slope
+  foot coincident base
+  at.kink coincident slope
   flank angle(design.relief_angle, sense: cw) slope
   radius(design.rounding * normal_module) round
   base angle(180deg) top

@@ -35,7 +35,7 @@ f0 := point hint(x: 20, y: 2)
 f1 := point hint(x: 29.4, y: 5.4)
 radial := line(o1, p0)
 flank := line(f0, f1)
-f0 on pitch_line
+f0 coincident pitch_line
 f0 distance(10) f1
 radial angle(alpha) flank
 
@@ -56,4 +56,4 @@ osc := circle(center: k) hint(r: 6)
 mate curvature(t == 0) osc
 base2 := circle(center: o2) hint(r: 28.2)
 radius(r2 * cos(alpha)) base2
-claim k on base2
+claim k coincident base2

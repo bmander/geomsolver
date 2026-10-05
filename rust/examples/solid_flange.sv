@@ -29,7 +29,7 @@ in std.front {
 }
 a horizontal std.origin
 top horizontal f
-deck on spindle
+deck coincident spindle
 deck horizontal c
 a distance(bore_radius, side: right) spindle
 b distance(outer_radius, side: right) spindle

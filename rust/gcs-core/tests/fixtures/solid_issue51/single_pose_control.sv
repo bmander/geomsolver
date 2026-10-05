@@ -5,7 +5,7 @@ fix(x == 0, y == 0) o
 c := circle(center:o) hint(r:1)
 radius(1mm) c
 p := point hint(x:0.5,y:0.8660254037844386)
-p on c
+p coincident c
 o distance(reach,along:x) p
 resultfp0 := point
 fix(x == 0, y == 0) resultfp0

@@ -35,7 +35,7 @@ cam tangent flat
 // and a point riding on the curve, held off a grounded anchor above it
 rider := point hint(x: 60, y: 8.666667)
 anchor := point
-rider on cam
+rider coincident cam
 anchor distance(60) rider
 
 fix(x == 0, y == 26) k0

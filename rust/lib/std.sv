@@ -82,8 +82,9 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
 
 // An ellipse, as a curve: the point at eccentric angle `u` on the ellipse of semi-axes `a` and
 // `b` standing on the datum `f` — its centre at `f.origin`, its major axis along the datum's
-// bearing.  A computed point, so every contact is exact to third order: `p on e` holds a point
-// to the rim, `e tangent l` a line to it, `e curvature k` makes `k` the rim's osculating circle.
+// bearing.  A computed point, so every contact is exact to third order: `p coincident e` holds a
+// point to the rim, `e tangent l` a line to it, `e curvature k` makes `k` the rim's osculating
+// circle.
 //
 //   use std
 //   point o hint(x: 0, y: 0)

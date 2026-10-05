@@ -1106,10 +1106,10 @@ fn a_prefix_distance_is_the_distance_between_the_ends() {
     );
 }
 
-/// **`on` is five constraints and one word**, told apart by the right operand's kind — including
+/// **`coincident` is many constraints and one word**, told apart by the operands' kinds — including
 /// a name that comes from a component, which is the case deferred settling exists for.
 #[test]
-fn on_resolves_across_every_kind_it_reaches() {
+fn coincident_resolves_across_every_kind_it_reaches() {
     let src = "\
 component Holder() {
   hub := point
@@ -1118,12 +1118,12 @@ component Holder() {
 }
 g := Holder()
 p := point hint(x: 20, y: 0)
-p on g.k
+p coincident g.k
 q := point hint(x: 5, y: 0)
 r := point hint(x: 30, y: 0)
 l := line(q, r)
 s := point hint(x: 10, y: 1)
-s on l
+s coincident l
 ";
     let e = read(src);
     let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
@@ -1219,7 +1219,7 @@ fn a_parenthesised_prefix_opens_a_chain() {
 fn a_slot_keeps_the_name_and_the_number_it_was_written_with() {
     // a pin written over a component's parameters, settled by `flatten` and *pinned*
     let e = read(&format!(
-        "component C(t0: Scalar) {{\n{}  a on(t == t0) s\n}}\nc := C(t0: 0.25)\n",
+        "component C(t0: Scalar) {{\n{}  a coincident(t == t0) s\n}}\nc := C(t0: 0.25)\n",
         SPLINE.replace('\n', "\n  ").trim_end_matches(' ')
     ));
     let cs = e.sketch.user_constraints();
@@ -1231,12 +1231,12 @@ fn a_slot_keeps_the_name_and_the_number_it_was_written_with() {
 
     // a key the kind has no slot for is a typo, not something to fill the first slot with —
     // reported on the key, which is what it is about, and in the word the writer typed
-    refuses_later(&format!("{SPLINE}a on s hint(bogus: 0.4)\n"), "`on` has no slot `bogus`");
+    refuses_later(&format!("{SPLINE}a coincident s hint(bogus: 0.4)\n"), "`coincident` has no slot `bogus`");
 
     // and the printer writes the name that was written, off the key and never off the kind: the
     // retired hard-code printed `hint(t: …)` for a statement that said `u`, when a curve's slot
     // was still called that (issue #47, item 6 made every contact's `t`)
-    for stated in ["p on flank hint(t: 20)", "p on(t == 20) flank"] {
+    for stated in ["p coincident flank hint(t: 20)", "p coincident(t == 20) flank"] {
         let src = format!("{CURVE}{stated}\n");
         let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{stated} parses: {errs:?}");

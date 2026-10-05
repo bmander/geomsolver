@@ -99,10 +99,10 @@ fn a_claim_may_not_own_an_unknown() {
 o := point hint(x: 0, y: 0)
 k := circle(center: o) hint(r: 20)
 p := point hint(x: 20, y: 0)
-claim p on k
+claim p coincident k
 q := point hint(x: 25, y: 8)
 s := spline(o, p, q, o, p, q, o)
-claim q on s
+claim q coincident s
 ";
     let (prog, errs) = gcs_core::syntax::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
@@ -210,7 +210,7 @@ o := point
 p := point hint(x: 20, y: 0)
 q := point hint(x: 25, y: 8)
 s := spline(o, p, q, o, p, q, o)
-q on s
+q coincident s
 fix(x == 0, y == 0) o
 ",
     );

@@ -14,9 +14,9 @@
 //
 // The gauge is such a point.  It is drawn in a view square to the page, standing on the line
 // 1.9 mm above the gear's centre, measured 20.58 mm across and 3 mm deep into the face: a point
-// off the page, which `gauge on flank` puts on the flank in space.  That is the one equation that
-// fixes the free corner, so the rack's pressure angle comes out of the solve (20 degrees, to the
-// gauge's two places).  Drag the gauge across and the rack leans to follow.
+// off the page, which `gauge coincident flank` puts on the flank in space.  That is the one
+// equation that fixes the free corner, so the rack's pressure angle comes out of the solve (20
+// degrees, to the gauge's two places).  Drag the gauge across and the rack leans to follow.
 //
 // `solventc --step` and `--stl` build the gear exactly; the tooth space's boundary is that same
 // envelope extruded (`brep::sweep::extruded`), not a traced sheet.
@@ -89,7 +89,7 @@ gauge_view := plane(origin: g0, toward: g1, u: (1, 0, 0), v: (0, 1, 0), o: (0, 0
 gauge := point in gauge_view hint(x: 20.6, y: -37)
 gauge distance(20.58mm, along: u) gauge_view
 gauge distance(3mm, along: v) gauge_view
-gauge on flank
+gauge coincident flank
 
 gear := solid(blank)
 bore cut gear

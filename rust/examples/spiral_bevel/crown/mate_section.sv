@@ -42,8 +42,8 @@ component MateSection(lp: point, rp: point, inner_along: line, outer_along: line
     rp distance(design.backlash / 4, side: left) outer
   }
   repeat 1 - design.lashed {
-    lp on inner
-    rp on outer
+    lp coincident inner
+    rp coincident outer
   }
   rounding := crown.rounding.TipRounding(pitch, base, tip, inner_round, outer_round, design,
     normal_module: normal_module)

@@ -36,7 +36,7 @@ component Leg(axle: point, pivot: point, theta: Angle, h: Length) {
   datum := line(pivot, axle)
   pin := point hint(x: 15, y: 0)
   crank := line(axle, pin)
-  pin on orbit
+  pin coincident orbit
   datum angle(theta) crank
 
   top := point  hint(x: -24, y: 31)

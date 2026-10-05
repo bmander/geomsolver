@@ -26,7 +26,7 @@ radius(r2) pitch2
 
 // one pin, at the pitch point where the pitch circles touch
 pc := point hint(x: 10, y: 0)
-pc on pitch1
+pc coincident pitch1
 o1 distance(0, along: y) pc
 pin := circle(center: pc) hint(r: 2)
 radius(rp) pin

@@ -97,19 +97,19 @@ fn a_cone_and_a_cylinder_are_entities_about_a_drawn_axis() {
 
 #[test]
 fn the_words_a_cone_and_a_cylinder_take() {
-    assert_eq!(settles("a on c"), CKind::CylinderOn);
-    assert_eq!(settles("a on k"), CKind::ConeOn);
+    assert_eq!(settles("a coincident c"), CKind::CylinderOn);
+    assert_eq!(settles("a coincident k"), CKind::ConeOn);
     assert_eq!(settles("radius(15) c"), CKind::CylinderRadius);
     assert_eq!(settles("angle(25deg) k"), CKind::ConeAngle);
     assert_eq!(settles("c tangent l"), CKind::CylinderTangentLine);
     // a point of the axis's own view is on a cylinder in space too
-    assert_eq!(settles("b := point hint(x: 4, y: 4) in front\nb on c"), CKind::CylinderOn);
+    assert_eq!(settles("b := point hint(x: 4, y: 4) in front\nb coincident c"), CKind::CylinderOn);
 }
 
 /// A point on a cylinder stands its radius off the axis, and `radius` states it.
 #[test]
 fn a_point_on_a_cylinder_is_its_radius_off_the_axis() {
-    let src = format!("{VIEWS}radius(15) c\na on c\n");
+    let src = format!("{VIEWS}radius(15) c\na coincident c\n");
     let e = read(&src);
     let sk = solved(&e);
     let (p, d, r) = axial(&sk, ent(&e, "c"));
@@ -124,7 +124,7 @@ fn a_point_on_a_cylinder_is_its_radius_off_the_axis() {
 /// points into.
 #[test]
 fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
-    let src = format!("{VIEWS}angle(25deg) k\na on k\n");
+    let src = format!("{VIEWS}angle(25deg) k\na coincident k\n");
     let e = read(&src);
     let sk = solved(&e);
     let (apex, d, half) = axial(&sk, ent(&e, "k"));
@@ -134,7 +134,7 @@ fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
     assert!(dot(w, d) > 0.0, "on the nappe the axis points into");
     assert_eq!(dof(&format!("{VIEWS}angle(25deg) k\n")) - dof(&src), 1);
     // and a free half-angle is found by the point
-    let e = read(&format!("{VIEWS}fix(x == 130, y == 20) a\na on k\n"));
+    let e = read(&format!("{VIEWS}fix(x == 130, y == 20) a\na coincident k\n"));
     let sk = solved(&e);
     let (apex, d, half) = axial(&sk, ent(&e, "k"));
     assert!((half.to_degrees() - angle(sub(at(&sk, &e, "a"), apex), d)).abs() < 1e-9);
@@ -275,8 +275,8 @@ fn the_glass_box_draws_them() {
 #[test]
 fn what_a_cone_or_a_cylinder_does_not_take_is_refused() {
     let with = |s: &str| format!("{VIEWS}k2 := cone(axis: l) hint(half: 20deg)\n{s}\n");
-    refused(&with("l on k"), "E040", "a line on a cone or a cylinder", "on");
-    refused(&with("l on c"), "E040", "a line on a cone or a cylinder", "on");
+    refused(&with("l coincident k"), "E040", "a line on a cone or a cylinder", "coincident");
+    refused(&with("l coincident c"), "E040", "a line on a cone or a cylinder", "coincident");
     refused(&with("k tangent l"), "E040", "a line touches a cylinder", "tangent");
     refused(&with("k tangent k2"), "E040", "names it", "tangent");
     refused(&with("angle(20deg) c"), "E040", "does not apply to a cylinder", "angle");

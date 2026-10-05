@@ -69,7 +69,7 @@ fn standard_datums_work_in_hints_children_and_explicit_membership() {
 fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
     let src = "unit mm\nuse std\ncomponent Spoke(f: plane) {\n\
         tip := point hint(x: f.origin.x + 5mm * f.c, y: f.origin.y + 5mm * f.s)\n\
-        axis := line(f.origin, f.toward)\ntip on axis\nf.origin distance(5mm) tip\n}\n\
+        axis := line(f.origin, f.toward)\ntip coincident axis\nf.origin distance(5mm) tip\n}\n\
         preview {\nSpoke(std.front)\nSpoke(std.up)\n}\n";
     let mut e = build(src);
     solved(&mut e.sketch);

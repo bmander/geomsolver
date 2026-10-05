@@ -32,7 +32,7 @@ component Disc(f: plane, dims: group) {
                     y: f.origin.y + (0mm) * f.s + (-dims.rdisc) * f.c)
   ssa := line(f.origin, se)
   reference := line(f.origin, f.toward)
-  se on rim
+  se coincident rim
   ssa perpendicular reference
   screw_axes := plane(origin: f.origin, toward: se)
   gs := components.parts.Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rdisc, dims: dims)

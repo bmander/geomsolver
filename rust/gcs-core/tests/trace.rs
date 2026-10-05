@@ -28,7 +28,7 @@ component unwind(c: circle, datum: line, phase: Angle, u: Angle) {
                y: c.center.y + c.r * (sin(u + phase) - 3 * u * pi / 180 * cos(u + phase)))
   rad := line(c.center, t)
   s := line(t, p)
-  t on c
+  t coincident c
   rad perpendicular s
   datum angle(u + phase) rad
   t distance(c.r * u * pi / 180) p
@@ -89,7 +89,7 @@ fn the_taut_string_traces_the_involute() {
 /// perpendicular to the radius at the tangent point, as long as the arc unwound.
 #[test]
 fn a_point_lands_on_a_traced_curve() {
-    let src = format!("{DOC}q := point hint(x: 28, y: 22)\nq on string hint(t: 30)\n");
+    let src = format!("{DOC}q := point hint(x: 28, y: 22)\nq coincident string hint(t: 30)\n");
     let mut e = build(&src);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -118,7 +118,7 @@ fn a_point_lands_on_a_traced_curve() {
 /// checked at once.
 #[test]
 fn the_trace_jacobian_matches_a_finite_difference() {
-    let src = format!("{DOC}q := point hint(x: 28, y: 22)\nq on string hint(t: 30)\n");
+    let src = format!("{DOC}q := point hint(x: 28, y: 22)\nq coincident string hint(t: 30)\n");
     let e = build(&src);
     assert!(e.ok());
     fd_jacobian(&e.sketch, 1e-4);
@@ -130,7 +130,7 @@ fn the_trace_jacobian_matches_a_finite_difference() {
 #[test]
 fn moving_the_circle_carries_the_traced_curve() {
     let doc = DOC.replace("radius(20) base", "radius(26) base");
-    let src = format!("{doc}q := point hint(x: 28, y: 22)\nq on string hint(t: 30)\n");
+    let src = format!("{doc}q := point hint(x: 28, y: 22)\nq coincident string hint(t: 30)\n");
     let mut e = build(&src);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -154,7 +154,7 @@ fn an_underconstrained_block_is_refused() {
 component wander(c: circle, u: Angle) {
   t := point
   p := point
-  t on c
+  t coincident c
   t distance(c.r * u * pi / 180) p
 }
 o := point hint(x: 0, y: 0)
@@ -307,7 +307,7 @@ component involute(c: circle, datum: line, phase: Angle, u: Angle) {
   p := point
   rad := line(c.center, t)
   s := line(t, p)
-  t on c
+  t coincident c
   datum angle(u + phase) rad
   rad perpendicular s
   p distance(-(c.r * u * pi / 180)) rad
@@ -323,7 +323,7 @@ radius(20) base
 fix(x == 0, y == 0) o
 fix(x == 1, y == 0) ax
 q := point hint(x: 28, y: 22)
-q on w hint(t: 30)
+q coincident w hint(t: 30)
 ";
     let e = build(src);
     assert!(
@@ -398,7 +398,7 @@ component limp(c: circle, datum: line, phase: Angle, u: Angle) {
                y: c.center.y + c.r * (sin(u + phase) - u * pi / 90) * max(0, 1 - u / 30))
   rad := line(c.center, t)
   s := line(t, p)
-  t on c
+  t coincident c
   rad perpendicular s
   datum angle(u + phase) rad
   t distance(c.r * u * pi / 180) p
@@ -442,7 +442,7 @@ fn a_malformed_flat_is_nan_not_a_curve() {
 fn an_overconstrained_block_is_refused() {
     let doc = DOC.replace(
         "  t distance(c.r * u * pi / 180) p",
-        "  t distance(c.r * u * pi / 180) p\n  p on datum",
+        "  t distance(c.r * u * pi / 180) p\n  p coincident datum",
     );
     let (prog, errs) = parse(&doc);
     assert!(errs.is_empty());
@@ -523,7 +523,7 @@ component rim(c: circle, datum: line, u: Angle) {
   t := point hint(at: c, bearing: u)
   p := point hint(at: t)
   rad := line(c.center, t)
-  t on c
+  t coincident c
   datum angle(u) rad
   p coincident t
 }
@@ -621,7 +621,7 @@ fn a_branch_is_a_stated_fact() {
     let family = "\
 component rim(c: circle, datum: line, u: Angle) {
   t := point
-  t on c
+  t coincident c
   c.center distance(c.r * cos(u), along: x) t
   ccw(datum.p1, datum.p2, t)
 }

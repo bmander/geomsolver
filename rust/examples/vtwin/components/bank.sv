@@ -23,7 +23,7 @@ component Bank(pin: point, piv: point, fw: Length, dim: Int, dims: group) {
   crown := point hint(x: pin.x + dims.L * cos(atan2(piv.y - pin.y, piv.x - pin.x)),
                    y: pin.y + dims.L * sin(atan2(piv.y - pin.y, piv.x - pin.x)))
   rod := line(pin, crown)
-  piv on rod
+  piv coincident rod
   pin distance(dims.L) crown
 
   // Explicit moving datums: the cylinder points up from its pivot, the piston down

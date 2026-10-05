@@ -69,22 +69,22 @@ pub(crate) fn settle(
                     {
                         m.push_str(". A circle and a sphere may touch at a point or all the \
                                     way round, so the word does not say which: a circle lying \
-                                    on the sphere is `c on s`");
+                                    on the sphere is `c coincident s`");
                     }
                 }
                 // a cone or a cylinder takes the words it has kernels for, and says so
                 let axial = |k: EntKind| matches!(k, EntKind::Cone | EntKind::Cylinder);
                 if axial(a) || axial(b) {
                     m.push_str(match word {
-                        "on" if a == EntKind::Line => ": a line on a cone or a cylinder (a \
+                        "coincident" if a == EntKind::Line => ": a line on a cone or a cylinder (a \
                             generator) is not a relation yet; say it of the line's points — its \
-                            start at the apex and its end `on` the cone, or both ends `on` the \
-                            cylinder and the line `parallel` to the axis",
-                        "on" => ": a point is `on` a cone or a cylinder",
+                            start at the apex and its end `coincident` the cone, or both ends \
+                            `coincident` the cylinder and the line `parallel` to the axis",
+                        "coincident" => ": a point is `coincident` a cone or a cylinder",
                         "tangent" => ": a line touches a cylinder (`c tangent l`, the cylinder \
                             first), and two cones touch at a point (`k1 tangent(M) k2`)",
-                        _ => ": a cone takes `on`, `angle` and `tangent`, and a cylinder `on`, \
-                            `radius` and `tangent`",
+                        _ => ": a cone takes `coincident`, `angle` and `tangent`, and a cylinder \
+                            `coincident`, `radius` and `tangent`",
                     });
                 }
                 (w.word.span, m)
@@ -109,7 +109,7 @@ pub(crate) fn settle(
         && !w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Ent(_)))
     {
         return Err((w.word.span, "two cones touch at a point, and the statement names it: \
-                                  `k1 tangent(M) k2`, with `M on k1` and `M on k2` beside it"
+                                  `k1 tangent(M) k2`, with `M coincident k1` and `M coincident k2` beside it"
             .to_string()));
     }
     Ok((kind, w.assemble(kind)?))

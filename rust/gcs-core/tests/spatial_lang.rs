@@ -565,17 +565,17 @@ fn each_word_across_views_is_the_relation_in_space() {
         ("la perpendicular lb", CKind::Perpendicular3),
         ("la parallel lb", CKind::Parallel3),
         ("la equal lb", CKind::EqualLength3),
-        ("a on lb", CKind::PointOnLine3),
+        ("a coincident lb", CKind::PointOnLine3),
         ("a midpoint lb", CKind::Midpoint3),
         ("a symmetry(lb) la.p1", CKind::Symmetric3),
-        ("a on cb", CKind::PointOnCircle3Fixed),
+        ("a coincident cb", CKind::PointOnCircle3Fixed),
         // a plane is a place in space whatever view the point is drawn in
-        ("a on side", CKind::PointOnPlaneFixed),
-        ("la on side", CKind::LineOnPlaneFixed),
+        ("a coincident side", CKind::PointOnPlaneFixed),
+        ("la coincident side", CKind::LineOnPlaneFixed),
         ("a distance(5, along: n) side", CKind::PointPlaneDistanceFixed),
         // within one view, the page's words
         ("a distance(30) la.p1", CKind::Distance),
-        ("b on lb", CKind::PointOnLine),
+        ("b coincident lb", CKind::PointOnLine),
         ("la angle(60deg) la", CKind::Angle),
     ] {
         assert_eq!(settles(stmt), kind, "{stmt}");
@@ -622,7 +622,7 @@ fn a_word_with_no_meaning_in_space_is_refused_across_views() {
     refused_as("pg := point hint(x: 1, y: 1)\npg distance(5) b", "E062", "on the page", "pg distance(5) b");
     refused_as("o2 distance(5) a", "E062", "on the page", "o2 distance(5) a");
     // a point on its own view
-    refused_as("b on side", "E061", "every point of a view is on it", "b on side");
+    refused_as("b coincident side", "E061", "every point of a view is on it", "b coincident side");
 }
 
 /// The gate's view points left ungrounded: a solved view's place on the sheet is held silently,
@@ -677,15 +677,15 @@ fn a_sphere_takes_its_words_in_space() {
         "{TWO_VIEWS}s := sphere(hint(x: 140, y: 10)) hint(r: 12) in side\n\
          s2 := sphere(hint(x: 10, y: 40)) hint(r: 5) in front\n{stmt}\n");
     let kind = |stmt: &str| read(&with(stmt)).sketch.user_constraints()[0].kind;
-    assert_eq!(kind("a on s"), CKind::SphereOn);
+    assert_eq!(kind("a coincident s"), CKind::SphereOn);
     assert_eq!(kind("radius(12) s"), CKind::SphereRadius);
     assert_eq!(kind("s tangent la"), CKind::SphereTangentLine);
     assert_eq!(kind("s tangent s2"), CKind::SphereTangentSphere);
     refused(&with("s tangent cb"), "E040", "a sphere is tangent to a line or to another sphere", "tangent");
-    refused(&with("s tangent cb"), "E040", "a circle lying on the sphere is `c on s`", "tangent");
-    assert_eq!(kind("cb on s2"), CKind::CircleOnSphereFixed);
+    refused(&with("s tangent cb"), "E040", "a circle lying on the sphere is `c coincident s`", "tangent");
+    assert_eq!(kind("cb coincident s2"), CKind::CircleOnSphereFixed);
     // and solved: the centre held, a point of the other view on it, and a line tangent to it
-    let e = read(&with("fix(x == 140, y == 10) s.center\na on s\nfix(x == 0, y == 0) la.p1\n\
+    let e = read(&with("fix(x == 140, y == 10) s.center\na coincident s\nfix(x == 0, y == 0) la.p1\n\
                             fix(x == 30, y == 10) la.p2\ns tangent la"));
     let mut sk = e.sketch.clone();
     let r = solve(&mut sk, SolveOpts::default());
@@ -707,7 +707,7 @@ fn a_sphere_takes_its_words_in_space() {
     };
     let tied = "fix(x == 140, y == 10) s.center\nfix(x == 0, y == 0) la.p1\n\
                  fix(x == 30, y == 10) la.p2\ns tangent la";
-    assert_eq!(dof(with(tied)) - dof(with(&format!("{tied}\na on s"))), 1);
+    assert_eq!(dof(with(tied)) - dof(with(&format!("{tied}\na coincident s"))), 1);
 }
 
 /* -- the hypoid's pitch cones, and the rest of the words in space -------------------------- */
@@ -878,7 +878,7 @@ r := plane(origin: o4, toward: t4, from: w, offset: 7)
     let dof = diagnose(&mut sk, DiagnoseOptions::default()).dof;
     let (text, again) = relift(&sk);
     for clause in ["attitude: free", "offset: free", "u: (0, 1, 0), v: (0, 0, 1), offset: 5)",
-                   "offset: 7", " on v"] {
+                   "offset: 7", " coincident v"] {
         assert!(text.contains(clause), "`{clause}` is not in\n{text}");
     }
     let mut back = again.sketch.clone();
@@ -925,7 +925,7 @@ fn the_page_gauge_is_kept_by_a_document() {
     assert!(!io::dumps(&read(AXES).sketch, None).contains("page_held"));
 }
 
-/// **A circle on a sphere**: `c on s` puts every point of a circle drawn in one view on a
+/// **A circle on a sphere**: `c coincident s` puts every point of a circle drawn in one view on a
 /// sphere about a centre drawn in another — the sphere's centre on the circle's axis, and the
 /// radii and the gap a right triangle.  The toe or heel circle of a gear blank on its end sphere.
 #[test]
@@ -952,7 +952,7 @@ s := sphere(hint(x: 10, y: 20)) hint(r: 30) in front
 radius(30) s
 k := circle(hint(x: 135, y: 12)) hint(r: 15) in side
 radius(18) k
-k on s
+k coincident s
 "));
         let mut sk = e.sketch.clone();
         let want = if free { CKind::CircleOnSphere } else { CKind::CircleOnSphereFixed };

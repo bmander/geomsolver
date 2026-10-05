@@ -2166,7 +2166,7 @@ fn distance3_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// How far the hidden point X stands from the infinite line through A and B, and its gradient in
 /// (X, A, B): `|(X − A) × (B − A)| / |B − A|`.  A magnitude — in space a point has no side of a
 /// line to be on — so the gradient is taken as zero exactly on the line, where the norm has none:
-/// "on the line" is two equations, and one row cannot say it (that is `on`'s business).
+/// "on the line" is two equations, and one row cannot say it (that is `coincident`'s business).
 fn point_line3_gap(v: &[f64], j: &mut [f64]) -> f64 {
     let (x, a, b) = (at3(v, 0), at3(v, 3), at3(v, 6));
     let (w, e) = (sub3(x, a), sub3(b, a));

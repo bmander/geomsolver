@@ -27,8 +27,8 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
     V := point hint(x: -0.75 * d, y: 1.25 * d)
     hinge := line(gear.M, A)
   }
-  V on hinge
-  V on foot
+  V coincident hinge
+  V coincident foot
   in q {
     apex := point hint(x: d, y: 0)
     mean := point hint(x: -r, y: 0)
@@ -42,9 +42,9 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
     virtual_axis := line(virtual, virtual_tip)
     pitch_radius := circle(center: mean) hint(r: r * design.pinion_teeth / design.crown_teeth)
   }
-  apex on p
-  mean on p
-  virtual on p
+  apex coincident p
+  mean coincident p
+  virtual coincident p
   A project apex
   gear.M project mean
   V project virtual

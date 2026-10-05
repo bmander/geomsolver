@@ -84,11 +84,11 @@ component Cylinder(f: plane, fw: Length, dims: group) {
   distance(2 * hw) mouth
   distance(top_u - mouth_u) side_l
   m0 midpoint mouth
-  m0 on axis
+  m0 coincident axis
   m0 distance(mouth_u, along: u) f
   // The bore opens at that mouth and leaves the specified side and head walls.
-  b_bl on mouth
-  b_br on mouth
+  b_bl coincident mouth
+  b_br coincident mouth
   bore_l parallel axis
   bore_r parallel axis
   hd perpendicular axis
@@ -96,19 +96,19 @@ component Cylinder(f: plane, fw: Length, dims: group) {
   k_br distance(dims.wall) b_br
   b_tl distance(dims.wall) lid
   hx midpoint hd
-  pt on axis
+  pt coincident axis
   f.origin distance(dims.a) pt
   // The head slot is rectangular and opens on the left body wall.
   trap0 perpendicular axis
   trap1 parallel axis
   trap2 perpendicular axis
-  t0 on side_l
-  t3 on side_l
+  t0 coincident side_l
+  t3 coincident side_l
   distance(trapw) trap1
   t1 distance(trapd, side: right) axis
   t0 distance(trapw / 2, along: u) f
-  h0 on lid
-  h0 on bore_l
+  h0 coincident lid
+  h0 coincident bore_l
 
   claim k_bl distance(top_u - mouth_u) k_tl
   claim b_br distance(head_u - mouth_u) b_tr

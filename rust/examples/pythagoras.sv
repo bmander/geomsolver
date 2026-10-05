@@ -39,10 +39,10 @@ P2 := point hint(x: s, y: a)
 P3 := point hint(x: b, y: s)
 P4 := point hint(x: 0, y: b)
 
-P1 on bottom
-P2 on right
-P3 on top
-P4 on left
+P1 coincident bottom
+P2 coincident right
+P3 coincident top
+P4 coincident left
 
 // the legs, each stated by the name it is drawn under
 O distance(a) P1

@@ -12,8 +12,8 @@ component Span(k1: circle, k2: circle, side: Scalar) {
   a := point hint(at: k1, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
   b := point hint(at: k2, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
   s := line(a, b)
-  a on k1
-  b on k2
+  a coincident k1
+  b coincident k2
   s tangent(at: p1) k1
   s tangent(at: p2) k2
 }
@@ -24,7 +24,7 @@ component Span(k1: circle, k2: circle, side: Scalar) {
 component Rod(pin: point, axis: line, dims: group) {
   small := point hint(x: pin.x, y: pin.y + dims.L)
   cl := line(pin, small)
-  small on axis
+  small coincident axis
   pin distance(dims.L) small
   big := circle(center: pin) hint(r: dims.rbig)
   sm := circle(center: small) hint(r: dims.rsmall)
@@ -56,10 +56,10 @@ component Piston(small: point, pin: Int, dims: group) {
   }
   r1 := line(hint(x: small.x - w / 2, y: small.y + dims.ch - 6mm), hint(x: small.x + w / 2, y: small.y + dims.ch - 6mm))
   r2 := line(hint(x: small.x - w / 2, y: small.y + dims.ch - 12mm), hint(x: small.x + w / 2, y: small.y + dims.ch - 12mm))
-  r1.p1 on ls
-  r1.p2 on rs
-  r2.p1 on ls
-  r2.p2 on rs
+  r1.p1 coincident ls
+  r1.p2 coincident rs
+  r2.p1 coincident ls
+  r2.p2 coincident rs
   cl distance(6, along: down) r1.p1
   cl distance(6, along: down) r1.p2
   cl distance(12, along: down) r2.p1

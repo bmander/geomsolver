@@ -22,9 +22,9 @@ component SphericalBoundary(apex: point, generator: line, rim: point) {
   private top := point hint(at: apex, toward: rim, turn: 90deg)
   private meridian := arc(center: apex, start: bottom, end: top)
   private diameter := line(top, bottom)
-  apex on diameter
+  apex coincident diameter
   generator angle(90deg, sense: cw) diameter
-  rim on meridian
+  rim coincident meridian
   private profile := face(meridian, diameter)
   private construction carrier := solid(profile, about: diameter)
   wall := surface(carrier, meridian)

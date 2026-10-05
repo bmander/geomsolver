@@ -45,8 +45,8 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     // the valve axes: through the seat centres, square to the roof, up to the cam centres
     seat_i := point hint(x: o.x + dims.vs, y: o.y + dims.deck + dims.gasket + (dims.D / 2 - dims.vs) * tan(dims.va))
     seat_e := point hint(x: o.x - dims.vs, y: o.y + dims.deck + dims.gasket + (dims.D / 2 - dims.vs) * tan(dims.va))
-    seat_i on roof_r
-    seat_e on roof_l
+    seat_i coincident roof_r
+    seat_e coincident roof_l
     o distance(dims.vs, along: x) seat_i
     o distance(-dims.vs, along: x) seat_e
     cam_i := point hint(x: o.x + dims.camx, y: o.y + dims.camh + dims.gasket)

@@ -34,9 +34,9 @@ alt_c perpendicular ab
 
 // two of these place P; the third is the theorem
 P := point hint(x: 15, y: 8)
-P on alt_a
-P on alt_b
-P on alt_c
+P coincident alt_a
+P coincident alt_b
+P coincident alt_c
 
 fix(x == 0, y == 0) A
 fix(x == 40, y == 0) B

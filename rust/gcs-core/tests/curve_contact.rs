@@ -28,7 +28,7 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
                y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
   rad := line(c.center, t)
   s := line(t, p)
-  t on c
+  t coincident c
   rad perpendicular s
   datum angle(u + phase) rad
   t distance(c.r * u * pi / 180) p

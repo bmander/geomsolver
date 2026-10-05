@@ -29,8 +29,8 @@ component GearCone(p: plane, g: plane, design: group) {
     crown_axis := line(apex, top)
     opposite := line(apex, mirror)
   }
-  apex on p
-  mean on p
+  apex coincident p
+  mean coincident p
   O project apex
   M project mean
   to_foot perpendicular axis

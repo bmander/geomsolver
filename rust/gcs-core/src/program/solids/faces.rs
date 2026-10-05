@@ -161,7 +161,7 @@ fn build_loop(
                 }
                 if sk.contact_param(x.idx, e.idx).is_none() {
                     report(Code::E080, xr.span, format!("`{}` is not held on `{}`: a face runs along a curve \
-                        between points on it, so write `{} on {}`", xr.root.text, r.root.text,
+                        between points on it, so write `{} coincident {}`", xr.root.text, r.root.text,
                         xr.root.text, r.root.text));
                     return None;
                 }

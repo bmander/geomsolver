@@ -107,7 +107,7 @@ impl<'a> P<'a> {
                 self.fail(
                     "`ellipse` is a library component now: `use std`, then \
                      `e := Ellipse(f, a: …, b: …).p over u in (0, 360)` over a datum \
-                     `f := plane(origin: c, toward: m)` — `p on e`, `e tangent l` and \
+                     `f := plane(origin: c, toward: m)` — `p coincident e`, `e tangent l` and \
                      `e curvature k` are the curve's contacts",
                 );
                 None

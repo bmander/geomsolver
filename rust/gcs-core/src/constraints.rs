@@ -391,7 +391,9 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         return None;
     }
     Some(match word {
-        "on" => match (a, b) {
+        // incidence, and two points being one: what it means is the kinds of its operands
+        "coincident" => match (a, b) {
+            (Point, Point) => CKind::Coincident,
             (Point, Line) => CKind::PointOnLine,
             (Point, k) if round(k) => CKind::PointOnCircle,
             (Point, Spline) => CKind::PointOnSpline,
@@ -464,10 +466,6 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Line, Line) => CKind::Angle,
             _ => return None,
         },
-        "coincident" => match (a, b) {
-            (Point, Point) => CKind::Coincident,
-            _ => return None,
-        },
         "midpoint" => match (a, b) {
             (Point, Line) => CKind::Midpoint,
             _ => return None,
@@ -517,8 +515,8 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 22] = [
-    "on", "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "angle",
+pub const OPERATORS: [&str; 21] = [
+    "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "fix", "ccw", "cw",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement
@@ -1066,7 +1064,7 @@ impl CKind {
             | CKind::PointOnCircle
             | CKind::PointOnSpline
             | CKind::PointOnCurve
-            | CKind::PointOnExtrusion => ("on", Infix),
+            | CKind::PointOnExtrusion => ("coincident", Infix),
             CKind::CurveTangentLine => ("tangent", Infix),
             CKind::CurveCurvature => ("curvature", Infix),
             // a measured separation: six kinds, told apart by the pair and by `along:`
@@ -1124,16 +1122,16 @@ impl CKind {
             CKind::Perpendicular3 => ("perpendicular", Infix),
             CKind::Parallel3 => ("parallel", Infix),
             CKind::EqualLength3 => ("equal", Infix),
-            CKind::PointOnPlane | CKind::PointOnPlaneFixed => ("on", Infix),
-            CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed => ("on", Infix),
-            CKind::PointOnLine3 | CKind::SphereOn => ("on", Infix),
-            CKind::CircleOnSphere | CKind::CircleOnSphereFixed => ("on", Infix),
+            CKind::PointOnPlane | CKind::PointOnPlaneFixed => ("coincident", Infix),
+            CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed => ("coincident", Infix),
+            CKind::PointOnLine3 | CKind::SphereOn => ("coincident", Infix),
+            CKind::CircleOnSphere | CKind::CircleOnSphereFixed => ("coincident", Infix),
             CKind::Midpoint3 => ("midpoint", Infix),
             CKind::Symmetric3 => ("symmetry", Infix),
-            CKind::LineOnPlane | CKind::LineOnPlaneFixed => ("on", Infix),
+            CKind::LineOnPlane | CKind::LineOnPlaneFixed => ("coincident", Infix),
             CKind::SphereRadius => ("radius", Prefix),
             CKind::SphereTangentLine | CKind::SphereTangentSphere => ("tangent", Infix),
-            CKind::ConeOn | CKind::CylinderOn => ("on", Infix),
+            CKind::ConeOn | CKind::CylinderOn => ("coincident", Infix),
             CKind::ConeAngle => ("angle", Prefix),
             CKind::CylinderRadius => ("radius", Prefix),
             CKind::CylinderTangentLine | CKind::ConeTangentCone => ("tangent", Infix),

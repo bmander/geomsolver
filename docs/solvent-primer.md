@@ -200,7 +200,7 @@ stands in the parentheses:
 
 | word | fixity | operands and options |
 |---|---|---|
-| `on` | infix | a point to a line, circle, arc, spline or curve. In space (1.13): a point or line to a **plane**; a point or circle to a **sphere**; a point to a **cone** or **cylinder**. Not between two **solids**: material is added with `union` (1.14) |
+| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve. In space (1.13): a point or line to a **plane**; a point or circle to a **sphere**; a point to a **cone** or **cylinder**. Not between two **solids**: material is added with `union` (1.14) |
 | `distance` | infix | two points (length; `along: x`/`y` or `right`/`left`/`up`/`down` for a signed run or rise); a point and a line, or two lines (a magnitude; `side:` picks the side); two concentric circles or arcs (radial gap); a point and a datum (`along: u`/`v` signed ordinates, `along: n` signed distance along the normal, in space) |
 | `distance` | prefix | a line: its length |
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; in space, sphere–line, sphere–sphere, cylinder–line (round thing first); two cones at a point, `k1 tangent(M) k2` |
@@ -211,7 +211,7 @@ stands in the parentheses:
 | `angle` | prefix | a cone: its half-angle |
 | `radius` | prefix | a circle, arc, sphere or cylinder |
 | `length` | prefix | an arc: radius × sweep, counter-clockwise from `start` to `end` (a magnitude) |
-| `coincident`, `symmetry(line)` | infix | two points |
+| `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines |
 | `project` | infix | two points, each `in` a plane: two images of one point in space (1.13) |
@@ -256,14 +256,14 @@ stands in the parentheses:
   counter-clockwise. It may read an unknown and is drawn with a `⌒` mark.
 
 **Slots a constraint owns** (a contact's curve parameter, always called `t`) are normally omitted.
-Seed one with `p on s hint(t: 0.4)`; pin one with `p on(t == 0.4) s`.
+Seed one with `p coincident s hint(t: 0.4)`; pin one with `p coincident(t == 0.4) s`.
 Pin one to an unknown and contacts on the same curve share it: with `param s: Angle hint(318)`,
 `path tangent(t == s) ground` and `path curvature(t == s) osc` state the circle osculating the
 path *where* it touches the ground — one place, one parameter, seeded where it is declared (a
 `hint(t: …)` beside the pin is E040). A contact on another curve pinned to `s` is refused (E040).
 
 **Tangency trap.** If the contact point is already held on the circle, state the tangency *at*
-it: `line tangent(at: p2) circle`, `arc tangent(at: start) line`. `p on circle` plus a bare
+it: `line tangent(at: p2) circle`, `arc tangent(at: start) line`. `p coincident circle` plus a bare
 `line tangent circle` is rank-deficient at every solution; the diagnosis reports a motion "blocked
 at second order" rather than a DOF, but the at-form is the one to write.
 
@@ -277,7 +277,7 @@ no selector is needed:
 | `a coincident b` | the same point in space |
 | `a distance(30) b` | the true length |
 | `a distance(5) l`, `l1 distance(17.5) l2` | to the infinite line; along the common perpendicular (magnitudes) |
-| `a on l`, `a on c` | on the line's extension; on the circle in its own view |
+| `a coincident l`, `a coincident c` | on the line's extension; on the circle in its own view |
 | `l1 angle(90deg) l2` | the **unsigned** angle between directions, 0–180° |
 | `parallel`, `perpendicular`, `equal` | directions, and true lengths |
 | `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line |
@@ -576,7 +576,7 @@ constraint (a point-to-line distance's sign chooses a winding); an **orientation
 `ccw`/`cw` (no equation; read at the anchor and carried by continuity); a **seed**.
 
 **The ellipse** is `std.Ellipse(f: plane, a: Length, b: Length, u: Angle)`:
-`e := std.Ellipse(f, a: 40, b: 25).p over u in (0, 360)` is the rim, and `p on e`,
+`e := std.Ellipse(f, a: 40, b: 25).p over u in (0, 360)` is the rim, and `p coincident e`,
 `e tangent l` and `e curvature k` are exact. There is no `ellipse` element.
 
 ### 1.10 Claims
@@ -693,9 +693,9 @@ images of one corner — their coordinates along the shared fold line agree (one
 **The workplane rule.** A point drawn `in` a view is that view's lift into space; a point with no
 membership is on the page and has no place in space. Within one view a relation is the 2D one;
 across views it is the relation in space (1.5), and naming a page point there is E062. `project`
-ties two drawn images of an undrawn point. `p on P`, `l on P` and `p distance(d, along: n) P` put a
-point or line on a plane in space whatever view it is drawn in (a view's own points are on it
-already: E061).
+ties two drawn images of an undrawn point. `p coincident P`, `l coincident P` and
+`p distance(d, along: n) P` put a point or line on a plane in space whatever view it is drawn in
+(a view's own points are on it already: E061).
 
 **The role rule.** A plane's own `origin` and `toward` place the view on the sheet. Beside only
 other datum points they are sheet layout (`o distance(120) o2`); beside points of their own view
@@ -733,16 +733,16 @@ q := plane(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 
 **Spheres, cones and cylinders** live in space, on no sheet (the glass box draws them).
 
 - `s := sphere(center: p) hint(r: 12)` (or `sphere(p)`): the centre is drawn in some view.
-  `radius(12) s`, `a on s`, `s tangent l` and `s tangent s2` are spatial. `k on s` puts a whole
-  circle `k` on the sphere (a gear blank's toe circle on its end sphere); `s tangent k` is refused,
-  since a circle and sphere may touch at a point or all round.
+  `radius(12) s`, `a coincident s`, `s tangent l` and `s tangent s2` are spatial. `k coincident s`
+  puts a whole circle `k` on the sphere (a gear blank's toe circle on its end sphere); `s tangent k`
+  is refused, since a circle and sphere may touch at a point or all round.
 - `gc := cone(axis: gax) hint(half: 60deg)`: the apex is the axis's start, opening toward its end;
-  the half-angle is written in degrees. `angle(60deg) gc` states it; `p on gc` puts a point on the
-  nappe the axis points into.
-- `bore := cylinder(axis: ax) hint(r: 8)`: `radius(8) bore`, `p on bore`, and `bore tangent l`
-  (the side read from the seed).
-- `gc tangent(M) pc`: two cones share one tangent plane at M. State `M on gc` and `M on pc` beside
-  it, as an on-circle stands beside a tangency at a named end.
+  the half-angle is written in degrees. `angle(60deg) gc` states it; `p coincident gc` puts a point
+  on the nappe the axis points into.
+- `bore := cylinder(axis: ax) hint(r: 8)`: `radius(8) bore`, `p coincident bore`, and
+  `bore tangent l` (the side read from the seed).
+- `gc tangent(M) pc`: two cones share one tangent plane at M. State `M coincident gc` and
+  `M coincident pc` beside it, as an on-circle stands beside a tangency at a named end.
 - A line lying on a cone or cylinder is not yet a relation; state it of the line's points.
 
 `sphere_cone_cylinder.sv` shows one of each; `hypoid_pitch_cones.sv` is 2.13.
@@ -825,16 +825,16 @@ fix(x == 0mm, y == 0mm) o
 k := Par(o).p over u in (-2mm, 2mm)
 a := point hint(y: 1mm)
 b := point hint(y: 1mm)
-a on k hint(t: -1)
-b on k hint(t: 1)
+a coincident k hint(t: -1)
+b coincident k hint(t: 1)
 fix(x == -1mm) a
 fix(x == 1mm) b
 cap := solid(face(k from a to b, -> close), depth: 3mm)
 ```
 
 `4 params, 4 equations; DOF 0`, and `cap` is the parabolic cap, 4/3 mm² × 3 mm = 4 mm³. A curve
-without `from … to …`, a point not held `on` the curve, and a stretch from a point to itself are
-refused. `examples/solid_tooth.sv` is an involute tooth written this way.
+without `from … to …`, a point not held `coincident` the curve, and a stretch from a point to itself
+are refused. `examples/solid_tooth.sv` is an involute tooth written this way.
 
 - **A face may be written inline** where one sweep uses it:
   `block := solid(face(ab, bc, cd, da), depth: 30mm)` or
@@ -1136,7 +1136,7 @@ arc or formula curve — and a planar motion (`motion(about: o, …)` is a *turn
 same word is a curve the solve sees: the profile the tool cuts in the moving frame.
 `flank := envelope(rack_flank, under: motion(rack, relative_to: blank), from: -25deg, to: 25deg)`
 cuts an involute; `profile := envelope(roller, under: rel, from: 0deg, to: 360deg, side: near)` a
-cam (`side: near|far` of the instant centre, where a circle cuts twice). `on`, `tangent` and
+cam (`side: near|far` of the instant centre, where a circle cuts twice). `coincident`, `tangent` and
 `curvature` hold against it, and the tool's and the motion's geometry are its columns, so they
 solve to suit — a conjugate is synthesised, not stated. See 2.9.2.
 
@@ -1160,7 +1160,8 @@ crossing, a gap and a roll short of a period are refused by name.
 surface(rack_tooth, edge: rack_flank)` names a prism's side (as it names a revolution's), and under
 a motion keeping the prism's view `flank := envelope(side, under: cutting, from: -30deg, to: 30deg)`
 is `rack_flank`'s planar envelope extruded square to the view, built with the drawing. A point drawn
-in any view is `on` it by its place in that view (`p on flank`: one equation, the roll its own).
+in any view is `coincident` it by its place in that view (`p coincident flank`: one equation, the
+roll its own).
 Draw the prism's face `in` a view (not the page, which has no place in space); the face must name
 the edge (`face(t0, t1, rack_flank, t3, -> close)`). `tests/extruded_envelope.rs`.
 
@@ -1416,14 +1417,14 @@ base := circle(center: o) hint(r: 20)
 f := Involute(base, phase: 0).p over u in (0, 90)
 
 t := point hint(x: 25, y: 8)
-t on f
+t coincident f
 fix(x == 0, y == 0) o
 fix(r == 20) base
 ```
 
 The remaining freedom is how far along `f` the point `t` sits — which is why a contact slides
-rather than breaks when the geometry beneath it moves. Seed it with `t on f hint(t: 30)`, or pin it
-with `t on(t == 30) f` (DOF 0).
+rather than breaks when the geometry beneath it moves. Seed it with `t coincident f hint(t: 30)`, or
+pin it with `t coincident(t == 30) f` (DOF 0).
 
 ### 2.9 A curve stated as a locus: DOF 1, under
 
@@ -1433,7 +1434,7 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
   p := point
   rad := line(c.center, t)
   s := line(t, p)
-  t on c                                                 // the string leaves the circle...
+  t coincident c                                                 // the string leaves the circle...
   datum angle(u + phase) rad                             // ...at bearing u from the datum,
   rad perpendicular s                                    // square to the radius there,
   p distance(-(c.r * u / 1rad)) rad                      // and taut: as long as the arc
@@ -1447,7 +1448,7 @@ datum := line(o, x)
 f := Unwind(base, datum, phase: 0).p over u in (0, 90)
 
 g := point hint(x: 25, y: 8)
-g on f
+g coincident f
 
 fix(x == 0, y == 0) o
 fix(r == 20) base
@@ -1518,12 +1519,12 @@ f0 distance(10) f1
 cut := envelope(flank, under: cutting, from: -25deg, to: 25deg)
 g := point
 fix(x == 31.5, y == -3) g
-g on cut hint(t: 5)                                     // the cut must pass through g
+g coincident cut hint(t: 5)                                     // the cut must pass through g
 ```
 
-The flank's slope is left free, and `g on cut` decides it: the solve turns the rack's flank until
-the involute it cuts passes through `g`. Nothing states an involute; the cut point at each roll
-is where the flank's normal passes through the instant centre (the pitch point), and that is
+The flank's slope is left free, and `g coincident cut` decides it: the solve turns the rack's flank
+until the involute it cuts passes through `g`. Nothing states an involute; the cut point at each
+roll is where the flank's normal passes through the instant centre (the pitch point), and that is
 enough. `cut curvature k` and `cut tangent l` work the same way, exactly (`C''` from the roll's
 Taylor orders). A roller (`circle`) cuts a cam, a formula curve cuts its conjugate tooth.
 
@@ -1634,9 +1635,9 @@ Q := plane(origin: oq, toward: tq, from: P, fold: along gen_p)
 // projects to the apex drawn in P; how long an axis is drawn says nothing about the cone
 gax := line(hint(x: -110, y: 200), hint(x: -50, y: 304)) in G
 pax := line(hint(x: -97, y: -200), hint(x: -28, y: -239)) in Q
-gax.p1 on P
+gax.p1 coincident P
 O project gax.p1
-pax.p1 on P
+pax.p1 coincident P
 A project pax.p1
 gax.p1 distance(120) gax.p2
 pax.p1 distance(80) pax.p2
@@ -1684,7 +1685,7 @@ Q := plane(origin: oq, toward: tq, attitude: free, through: M) hint(u: (0.1618, 
 
 gax := line(hint(x: 110.85, y: 200), hint(x: 50.85, y: 303.9)) in G
 pax := line(hint(x: -84.62, y: -248), hint(x: -4.62, y: -248)) in Q
-gax.p1 on P
+gax.p1 coincident P
 gax.p1 distance(120) gax.p2
 pax.p1 distance(80) pax.p2
 horizontal pax
@@ -1692,8 +1693,8 @@ horizontal pax
 gc := cone(axis: gax) hint(half: 60deg)
 pc := cone(axis: pax) hint(half: 30deg)
 angle(60deg) gc
-M on gc
-M on pc
+M coincident gc
+M coincident pc
 gc tangent(M) pc
 
 M distance(Rg) gax

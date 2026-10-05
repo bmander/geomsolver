@@ -222,7 +222,7 @@ pub enum StmtKind {
     Block(Block),
     /// Parse a style block, retaining property spans for diagnostics.
     Style(StyleRule),
-    /// A body operation (§6.9): `cut` subtracts, `on` unites, `with` intersects.
+    /// A body operation (§6.9): `cut` subtracts, `union` unites, `bound` intersects.
     /// Relations are folded into the stock body after declarations are built.
     SolidRel(SolidRel),
     /// `claim over crank.theta in (0deg, 360deg) { … }` — the claims in the body, judged as the

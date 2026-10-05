@@ -26,10 +26,10 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
   }
   generator.p2 distance(design.cutter_radius) C
   generator angle(90deg - design.spiral, sense: cw) normal
-  generator.p2 on trace
+  generator.p2 coincident trace
   heading perpendicular normal
   foot perpendicular heading
-  K on generator
+  K coincident generator
   generator.p2 distance(design.module) K
   K distance(normal_module) normal
 }

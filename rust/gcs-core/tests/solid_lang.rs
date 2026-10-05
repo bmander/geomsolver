@@ -303,7 +303,7 @@ fn a_boss_is_united_with_its_body() {
     let e = read(&src);
     let want = 60.0 * 40.0 * 30.0 + 20.0 * 20.0 * 10.0;
     assert!((volume(&e, "body") - want).abs() < 1e-6, "a boss adds: {}", volume(&e, "body"));
-    refused(&src.replace("boss union body", "boss on body"), Code::E040, "does not relate a solid to a solid");
+    refused(&src.replace("boss union body", "boss coincident body"), Code::E040, "does not relate a solid to a solid");
 }
 
 #[test]
@@ -1219,8 +1219,8 @@ a := point hint(y: 1mm)
 b := point hint(y: 1mm)
 c := point
 fix(x == 0mm, y == 3mm) c
-a on k hint(t: -1)
-b on k hint(t: 1)
+a coincident k hint(t: -1)
+b coincident k hint(t: 1)
 fix(x == -1mm) a
 fix(x == 1mm) b
 ";

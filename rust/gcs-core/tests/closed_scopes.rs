@@ -26,7 +26,7 @@ fn groups_pass_units_and_geometry_without_copying_it() {
 #[test]
 fn nested_groups_forward_through_components_and_repetitions() {
     let e = solved("unit mm\nuse std\n\
-        component Inner(d: group) {\ntip := point hint(x: d.frame.origin.x + d.sizes.width * d.frame.c, y: d.frame.origin.y + d.sizes.width * d.frame.s)\naxis := line(d.frame.origin, d.frame.toward)\ntip on axis\nd.frame.origin distance(d.sizes.width) tip\n}\n\
+        component Inner(d: group) {\ntip := point hint(x: d.frame.origin.x + d.sizes.width * d.frame.c, y: d.frame.origin.y + d.sizes.width * d.frame.s)\naxis := line(d.frame.origin, d.frame.toward)\ntip coincident axis\nd.frame.origin distance(d.sizes.width) tip\n}\n\
         component Outer(d: group) { repeat 2 { Inner(d) } }\n\
         Outer(design)\ndesign := {frame: std.front, sizes: sizes}\n\
         sizes := {width: 12mm}\n");

@@ -23,8 +23,8 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   // `rim_in`.
   corner := point hint(at: tip.p, toward: tip.q, by: 0.5)
   along_tip := point hint(at: corner)
-  corner on tip_line
-  along_tip on tip_line
+  corner coincident tip_line
+  along_tip coincident tip_line
   private to_corner := line(apex, corner)
   private to_along := line(apex, along_tip)
   to_corner equal to_rim
@@ -34,7 +34,7 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   private foot := point hint(at: cone_line.p2)
   private mark := point hint(at: corner, toward: foot, by: 0.5)
   private level := point hint(at: tip.q)
-  foot on cone_line
+  foot coincident cone_line
   private drop := line(corner, foot)
   drop perpendicular cone_line
   private down := line(corner, mark)
@@ -44,7 +44,7 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   below parallel tip_line
   distance(size) below
   down_end := point hint(at: mark)
-  down_end on below
+  down_end coincident below
   private to_down := line(apex, down_end)
   to_down equal to_rim
   // The ring's section: the chamfer extended its own length past each end, and the point as far

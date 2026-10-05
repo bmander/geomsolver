@@ -45,8 +45,8 @@ component RackSection(lp: point, rp: point, design: group, normal_module: Length
     rp distance(design.backlash / 4, side: left) outer
   }
   repeat 1 - design.lashed {
-    lp on inner
-    rp on outer
+    lp coincident inner
+    rp coincident outer
   }
   rounding := crown.rounding.TipRounding(pitch, base, tip, outer_round, inner_round, design,
     normal_module: normal_module)

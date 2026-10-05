@@ -43,18 +43,18 @@ component RackFlank(pitch: circle, datum: line, alpha: Angle, s0: Length, u: Ang
   tl := line(P, Q)
   fl := line(T, q)
   nl := line(P, N)
-  P on pitch                                  // the pitch point, on the pitch circle...
+  P coincident pitch                                  // the pitch point, on the pitch circle...
   datum angle(u) rad                          // ...at the roll
   P distance(10) Q
   rad perpendicular tl                        // the rack's pitch line, tangent there
-  T on tl
+  T coincident tl
   T distance(s0 - pitch.r * u * pi / 180) rad // rolled without slipping
   T distance(10) q
   rad angle(alpha) fl                         // the flank, at the pressure angle
   P distance(10) N
   nl perpendicular fl                         // the normal from the instant centre...
-  p on nl
-  p on fl                                     // ...meets the flank where it cuts
+  p coincident nl
+  p coincident fl                                     // ...meets the flank where it cuts
 }
 o := point
 x := point
@@ -140,15 +140,15 @@ component RackTip(pitch: circle, datum: line, st: Length, ht: Length, rf: Length
   tl := line(P, Q)
   round := circle(center: C) hint(r: rf)
   cut := line(P, C)
-  P on pitch
+  P coincident pitch
   datum angle(u) rad
   P distance(10) Q
   rad perpendicular tl
   C distance(st - pitch.r * u * pi / 180) rad // along the pitch line, rolled without slipping
   C distance(ht) tl                           // and below it: the left of P to Q is the centre
   radius(rf) round
-  p on round
-  p on cut                                    // the normal from the instant centre
+  p coincident round
+  p coincident cut                                    // the normal from the instant centre
 }
 ";
 
@@ -258,7 +258,7 @@ fn a_contact_on_the_cut_solves_the_tool() {
     let src = format!("{RACK}{RACK_MOTION}")
         .replace("fix(x == 39.396926207859084, y == 8.420201433256687) f1\n", "f0 distance(10) f1\n")
         + "cut := envelope(flank, under: rel, from: -25deg, to: 25deg)\n\
-           g := point hint(x: 31, y: -3)\nfix(x == 31.5, y == -3) g\ng on cut hint(t: 5)\n";
+           g := point hint(x: 31, y: -3)\nfix(x == 31.5, y == -3) g\ng coincident cut hint(t: 5)\n";
     let mut e = build(&src);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);

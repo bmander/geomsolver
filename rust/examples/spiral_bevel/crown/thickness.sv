@@ -32,12 +32,12 @@ component CrownThickness(p: plane, generator: line, normal: line, design: group)
   }
   length(pi * design.module / 4) ahead
   length(pi * design.module / 4) behind
-  ahead_end on inner
-  behind_end on outer
+  ahead_end coincident inner
+  behind_end coincident outer
   normal angle(180deg) to_inner
   normal angle(180deg) to_outer
-  inner_pitch on inner
-  outer_pitch on outer
+  inner_pitch coincident inner
+  outer_pitch coincident outer
 }
 
 preview {

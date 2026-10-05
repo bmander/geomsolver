@@ -751,7 +751,7 @@ fn an_unwritten_radius_starts_off_zero_and_a_conflict_names_no_intrinsic() {
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.arcs[0].radius as usize].value;
     assert!((r - 10.0).abs() < 1e-9, "r := {r}");
-    let mut sk = read("o := point\nc := circle(center: o)\np := point\np on c\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) p\n").sketch;
+    let mut sk = read("o := point\nc := circle(center: o)\np := point\np coincident c\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) p\n").sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.circles[0].radius as usize].value;
     assert!((r - 10.0).abs() < 1e-9, "r := {r}");
@@ -759,7 +759,7 @@ fn an_unwritten_radius_starts_off_zero_and_a_conflict_names_no_intrinsic() {
     let e = read("c := point hint(x: 0, y: 0)\nk := arc(center: c) hint(r: 0)\n");
     assert_eq!(e.sketch.params[e.sketch.arcs[0].radius as usize].value, 0.0);
     // the conflict: a point on the arc at the wrong distance from its centre
-    let e = read(&format!("{arc}p := point hint(x: 7, y: 7)\np on k\np distance(5) c\n"));
+    let e = read(&format!("{arc}p := point hint(x: 7, y: 7)\np coincident k\np distance(5) c\n"));
     let mut sk = e.sketch;
     assert!(!solve(&mut sk, SolveOpts::default()).success);
     let d = diagnose(&mut sk, DiagnoseOptions::default());

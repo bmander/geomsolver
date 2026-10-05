@@ -64,7 +64,7 @@ fn rim_at(u: f64, a: f64, b: f64) -> ((f64, f64), f64) {
 
 #[test]
 fn a_point_solves_onto_the_rim_at_its_eccentric_angle() {
-    let mut e = build(&format!("{ELLIPSE}p := point hint(x: 11, y: 9)\np on e hint(t: 80)\n"));
+    let mut e = build(&format!("{ELLIPSE}p := point hint(x: 11, y: 9)\np coincident e hint(t: 80)\n"));
     fd_jacobian(&e.sketch, 1e-5);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
@@ -137,7 +137,7 @@ fn a_circle_solves_onto_the_osculating_circle() {
 /// solved back onto the turned rim.
 #[test]
 fn the_rim_turns_with_its_datum() {
-    let mut e = build(&format!("{ELLIPSE}p := point hint(x: 11, y: 9)\np on e hint(t: 80)\n"));
+    let mut e = build(&format!("{ELLIPSE}p := point hint(x: 11, y: 9)\np coincident e hint(t: 80)\n"));
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     // the datum swings to 90°: q goes from (18, 5) to (10, 13)

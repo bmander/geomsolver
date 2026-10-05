@@ -9,8 +9,9 @@
 //
 // - A shaft runs square through the side view.  A line drawn there from a grounded end, 50 long,
 //   is `tangent` to it: in space, their common perpendicular is the shaft's radius.
-// - A ball is centred in the front view.  A point of the side view is `on` it — one equation for
-//   two coordinates, so the point keeps one freedom: the circle the side view cuts from the ball.
+// - A ball is centred in the front view.  A point of the side view is `coincident` it — one
+//   equation for two coordinates, so the point keeps one freedom: the circle the side view cuts
+//   from the ball.
 // - Two cones: one about a vertical axis, its half-angle stated; the other about a level axis
 //   whose apex may slide along it and whose half-angle is not stated.  A point M of the side view
 //   is on both, and `k1 tangent(M) k2` says they touch there with one tangent plane — two
@@ -50,7 +51,7 @@ fix(x == -8, y == 38) bc
 ball := sphere(center: bc) hint(r: 12)
 radius(12) ball
 pb := point hint(x: 155, y: 45) in side
-pb on ball
+pb coincident ball
 
 // two cones touching at a point
 kax := line in front
@@ -63,6 +64,6 @@ fix(x == 18, y == 82) jax.p2
 horizontal jax
 k2 := cone(axis: jax) hint(half: 38deg)
 M := point hint(x: 125, y: 61) in side
-M on k1
-M on k2
+M coincident k1
+M coincident k2
 k1 tangent(M) k2

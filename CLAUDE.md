@@ -39,11 +39,11 @@ module path (`relations::unqualified`).
 
 **Cones and cylinders** (`docs/spatial-constraints-plan.md`): `cone k(axis: l) hint(half: 30deg)`
 and `cylinder c(axis: l) hint(r: 10)` stand about a line in a view (cone apex at its start), one
-Param each (half-angle in radians, written in degrees: `Sketch::seed_value`). Words: `p on k|c`,
-`angle(θ) k`, `radius(r) c`, `c tangent l`, `k1 tangent(M) k2` (with `M on` each). Cone kernels
-use forward-mode `Dual<N>` (`kernels.rs`). `against` with solved views needs a shared attitude
-root (`from:` no fold); a solved datum offset is a `CKind::Mate` row. `o:` beside `u:`/`v:` is
-where a stated basis stands (`to_program` writes it for a stand-off plane).
+Param each (half-angle in radians, written in degrees: `Sketch::seed_value`). Words:
+`p coincident k|c`, `angle(θ) k`, `radius(r) c`, `c tangent l`, `k1 tangent(M) k2` (with `M
+coincident` each). Cone kernels use forward-mode `Dual<N>` (`kernels.rs`). `against` with solved
+views needs a shared attitude root (`from:` no fold); a solved datum offset is a `CKind::Mate` row.
+`o:` beside `u:`/`v:` is where a stated basis stands (`to_program` writes it for a stand-off plane).
 
 **Closed components:** model dependencies enter through arguments, standard datums included.
 Definitions and built-ins stay callable. A component scope holds only its formals and
@@ -104,7 +104,7 @@ series); the encoding is `Generated::new` and `view` only.  Kernels are generic 
 **One engine for a prism's side (#70):** `side := surface(prism, edge: e)` names a prism's side
 too; its `envelope` under a motion keeping the prism's view is built with the drawing
 (`generated::extruded_envelopes`, after memberships, before relations) as `e`'s planar envelope
-marked `CurveE::extrusion`, the face in a view that stands where drawn (not the page). `p on
+marked `CurveE::extrusion`, the face in a view that stands where drawn (not the page). `p coincident
 flank` from any view is `CKind::PointOnExtrusion` (`FamilyKernel::Extrusion`, consts
 `kernels::EXTRUSION_FRAME` then the contact's; `Sketch::extrusion_frame`). The export builds a
 prism cutter's sheet the same way: `brep::sweep::extruded` (edges as lines/arcs, convex corners as
@@ -156,8 +156,8 @@ sectors, others `Node::Profile` (ray-parity sign only when the box clears every 
 stock, plus `union`, minus what `cut`s it, within what `bound`s it. `SolidDef::Body` carries
 `bound`; `Term::Inter`; facets, fields and the CAD recipe (`"bound"`, `BRepAlgoAPI_Common`) all
 evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `cut`. `bound` and
-`union` (0.32) are body words, not names; `on` between two solids is refused. Spiral bevel: blank
-`heel` bound by `tip`; modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
+`union` (0.32) are body words, not names; `coincident` between two solids is refused. Spiral bevel:
+blank `heel` bound by `tip`; modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
 `generation.sv`, `layout.sv` (`HypoidLayout`), `members.sv` (`HypoidPair`) (README walks them).
 `gears.sv` is the pair; `pair.sv` adds faces for checks (`verification.sv`, `ReferenceFaces`).
 `configuration.sv` states `shaft_angle`, `offset` (E = 0 is bevel); the pinion's cone solves
@@ -429,7 +429,7 @@ outward orientation or deviation error. See `docs/shell-topology.md` before conn
 **Spatial face boundaries:** `working := face(toe,tip,heel,join,on: region)` binds an ordered
 finite-edge loop to an exact named surface/envelope/patch. `FaceSupport` distinguishes inherited
 planes from spatial supports; `FaceE::plane()` refuses the latter, never treating them as page
-profiles. Spatial faces build/copy after edges, `on` an ordinary dependency.
+profiles. Spatial faces build/copy after edges, `on:` an ordinary dependency.
 `spatial_face::SpatialFaceBoundary` validates shared vertex identity and maps junction parameters
 to this face's chart; samples keep edge xyz and check this support's incidence. No holes or
 repeated vertices/edges yet; solid assembly still needs an interior/embedding certificate. Browser
@@ -860,7 +860,7 @@ Conventions:
   its view's beside that view's points, else membership) and where they differ maps the 2D kind
   to its twin in space (`Distance3`, `PointLine3`, `LineLine3`, `Angle3`, `PointOnLine3`,
   `EqualLength3`, …) or refuses (E062; E040 for `side:`/`sense:`).  Radii, `along: u`/`v` and
-  `project` are view-free; `on`/`distance(along: n)` to a plane and the `sphere`, `cone`,
+  `project` are view-free; `coincident`/`distance(along: n)` to a plane and the `sphere`, `cone`,
   `cylinder` words are spatial from `infix_op`.  `tests/cross_view_audit.rs` asserts the corpus's
   cross-membership relations keep their 2D kinds.  **A solved view's page placement is held
   silently**: `reading::hold_page_placement` fixes a view-with-`att`'s unnamed datum points into
@@ -957,8 +957,8 @@ Conventions:
   place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
-  **`on` is five, `distance` is six, `tangent` is six** — and `horizontal`/`vertical` are two each
-  with the *fixity* doing the work.
+  **`coincident` is eleven, `distance` is six, `tangent` is six** — and `horizontal`/`vertical` are
+  two each with the *fixity* doing the work.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
   `program::settle` turns it into a `CKind` plus arguments in spec order, through
@@ -1466,9 +1466,9 @@ Conventions:
   asserting `rank <= bound` across the cases.
 - **The ellipse is a library component** (issue #47, item 4): `Ellipse(f: plane, a, b, u)` in
   `rust/lib/std.sv`, a computed point at eccentric angle `u` on a datum, traced as a curve — so
-  `p on e`, `e tangent l` and `e curvature k` are the curve contacts, exact to third order; the
-  entity kind, its kernels and `CKind`s are gone from every arm, the FFI, the binding and the app
-  (an ellipse *tool* is a follow-up).  The parser keeps the word only to refuse it, naming the
+  `p coincident e`, `e tangent l` and `e curvature k` are the curve contacts, exact to third order;
+  the entity kind, its kernels and `CKind`s are gone from every arm, the FFI, the binding and the
+  app (an ellipse *tool* is a follow-up).  The parser keeps the word only to refuse it, naming the
   spelling; `io::from_json` refuses a document carrying the old `"ellipses"` table.
   `tests/ellipse.rs` holds the rim, the tangent and the osculating circle against closed forms,
   and the rim turning with its datum.  An axis is a value the curve takes — stated or a `param` —

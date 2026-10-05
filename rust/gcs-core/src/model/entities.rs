@@ -48,8 +48,8 @@ pub enum EntKind {
     /// its edges, so `sec.mouth` and `mouth` are one line.  What a solid is swept from.
     Face,
     /// **A solid** (Solvent §6.9): a face swept along its plane's normal or about a line in its
-    /// plane, or a term over other solids — its stock, plus everything `on` it, minus everything
-    /// that `cut`s it.
+    /// plane, or a term over other solids — its stock, plus everything in `union` with it, minus
+    /// everything that `cut`s it.
     ///
     /// It is an entity because a document *names* it and reaches its faces by path
     /// (`body.bore.axis`), and it is like `Curve` in owning no coordinates: it is the term plus
