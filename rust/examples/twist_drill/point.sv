@@ -7,8 +7,14 @@ use std
 
 component PointCone(side: plane, top: Length, cone: Angle, tilt: Angle, height: Length,
                     offset: Length, reach: Length) {
-  // the plane through the apex holding the cone's axis: the side datum's axes, stood off along x
-  axial := plane(u: side.u, v: side.v)
+  // the plane through the apex holding the cone's axis: the side datum's directions, stood off
+  // along x — through axes of its own, since a plane's axes pass through its origin; seeded as the
+  // datum points (u down the drill, v along y), since `parallel` leaves the sense to the seed
+  private au := axis hint(x: 0, y: 0, z: -1)
+  private av := axis hint(x: 0, y: 1, z: 0)
+  au parallel side.u
+  av parallel side.v
+  axial := plane(u: au, v: av)
   axial.origin distance(0mm, along: u) side
   axial.origin distance(0mm, along: v) side
   axial.origin distance(offset, along: n) side

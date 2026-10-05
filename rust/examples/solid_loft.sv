@@ -12,8 +12,10 @@ component Section(c: point, size: Length, wall: Length) {
   profile := face(outer.loop, holes: inner.loop)
 }
 
-end_plane := plane(u: std.x, v: std.z) hint(x: 0mm, y: length, z: 0mm)
+end_plane := plane hint(x: 0mm, y: length, z: 0mm)
 fix(x == 0mm, y == length, z == 0mm) end_plane
+fix(x == 1, y == 0, z == 0) end_plane.u
+fix(x == 0, y == 0, z == 1) end_plane.v
 in std.front {
   inlet_center := point hint(x: 0mm, y: 0mm)
   inlet_center coincident std.origin

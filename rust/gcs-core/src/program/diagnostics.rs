@@ -39,6 +39,9 @@ pub enum Code {
     /// relates that came out parallel — they share no fold line — or two lines whose skew
     /// distance (or a cylinder's tangency) is stated that came out parallel
     E065,
+    /// a plane whose axes cannot pass through its origin (§6.7): held axes that do not meet, or
+    /// a plane held where its held axes are not
+    E067,
     /// a `use` nothing resolves (§14.4)
     E070,
     /// a component defined twice, across the document and its modules (§14.4)
@@ -89,6 +92,7 @@ impl Code {
             Code::E061 => "E061",
             Code::E062 => "E062",
             Code::E065 => "E065",
+            Code::E067 => "E067",
             Code::E070 => "E070",
             Code::E071 => "E071",
             Code::E080 => "E080",

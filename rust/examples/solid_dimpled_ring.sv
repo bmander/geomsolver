@@ -26,8 +26,10 @@ ring := solid(face(section), about: spindle)
 
 // The ball, drawn in a plane standing off the front as far as it stands round the ring. It is half a
 // disc turned about a level diameter: the upper half, so the ball's seam stays above the ring.
-beside := plane(u: std.x, v: std.z) hint(x: 0mm, y: -ring_r * sin(around), z: 0mm)
+beside := plane hint(x: 0mm, y: -ring_r * sin(around), z: 0mm)
 fix(x == 0mm, y == -ring_r * sin(around), z == 0mm) beside
+fix(x == 1, y == 0, z == 0) beside.u
+fix(x == 0, y == 0, z == 1) beside.v
 in beside {
   c := point hint(x: ring_r * cos(around), y: tube_r + ball_r - sunk)
   beside.origin distance(ring_r * cos(around), along: right) c

@@ -383,6 +383,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
             constrain(&mut sk, &res, r, st, p, &mut diags);
         }
     }
+    // a plane whose axes are held stands where they meet (#84)
+    diags.extend(views::origins_on_axes(&mut sk, &map));
 
     // seeds named by geometry, once every entity has a seed to be read: in statement order, so
     // a seed that reads a seed read from a third is settled after both (§6.4)

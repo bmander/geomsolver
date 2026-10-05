@@ -214,7 +214,7 @@ fn the_report_says_each_view() {
 #[test]
 fn a_place_is_a_plane_in_space() {
     // the front stood off along its normal, which is -y
-    let e = build("unit mm\nuse std\nback := plane(u: std.x, v: std.z)\nfix(x == 0, y == -10, z == 0) back\n");
+    let e = build("unit mm\nuse std\nback := plane\nfix(x == 0, y == -10, z == 0) back\nfix(x == 1, y == 0, z == 0) back.u\nfix(x == 0, y == 0, z == 1) back.v\n");
     let views = gcs_core::overview::workspace::Views::new(&e.sketch);
     let (front, up, back) = (plane(&e, "std.front"), plane(&e, "std.up"), plane(&e, "back"));
     assert_eq!(views.place(None), None, "the page is its own first place");

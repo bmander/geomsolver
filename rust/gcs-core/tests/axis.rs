@@ -111,7 +111,8 @@ fn an_axis_no_relation_places_is_held_again() {
     sk.remove(on[1]);
     assert!(!sk.axes[t].placed);
     assert!(sk.axes[t].a.iter().all(|&q| sk.params[q as usize].fixed));
-    assert!(!sk.constraints.iter().any(|c| c.kind == CKind::AxisFoot));
+    let foot = EntRef::new(EntKind::Axis, t);
+    assert!(!sk.constraints.iter().any(|c| c.kind == CKind::AxisFoot && c.entities().contains(&foot)));
     assert_eq!(dof(&mut sk), 2, "a direction, and no place");
 }
 

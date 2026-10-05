@@ -69,8 +69,10 @@ fn rack() -> String {
 /// its `v` the front's normal reversed), and a point drawn in it at `along` along the extrusion.
 fn across(along: f64) -> String {
     format!("{}\
-cut := plane(u: std.x, v: std.y)
+cut := plane
 fix(x == 0, y == 0, z == 1.9) cut
+fix(x == 1, y == 0, z == 0) cut.u
+fix(x == 0, y == 1, z == 0) cut.v
 p := point in cut hint(x: 20, y: {along})
 fix(y == {along}) p
 p coincident flank

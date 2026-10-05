@@ -275,17 +275,34 @@ impl Sketch {
         self.push_plane(u, v, op, origin)
     }
 
-    /// An axis as a document or another sketch carries it: its direction, which of the three are
-    /// held, and where it stands (`a`, fixed until a relation reads it).
-    pub fn axis_restored(&mut self, d: [f64; 3], held: [bool; 3], a: [f64; 3], class: Classes) -> usize {
+    /// An axis as a document or another sketch carries it: its direction and which of the three
+    /// are held.  Where it stands is put back by `place_restored`, once the planes over it are.
+    pub fn axis_restored(&mut self, d: [f64; 3], held: [bool; 3], class: Classes) -> usize {
         let ri = self.axis(d, "");
         for k in 0..3 {
-            let (dp, ap) = (self.axes[ri].d[k] as usize, self.axes[ri].a[k] as usize);
+            let dp = self.axes[ri].d[k] as usize;
             self.params[dp].fixed = held[k];
-            self.params[ap].value = a[k];
         }
         self.axes[ri].class = class;
         ri
+    }
+
+    /// Where axis `r` stands, as a document or another sketch carries it, put back after the
+    /// planes over it are built (a plane stands an axis it is first to place through its own
+    /// origin): its numbers, and where any is held, placed and those held — the order an
+    /// elaboration's gauge pass, after the planes, comes to.  Read by a relation and held by
+    /// none, it is placed when the relation is added.
+    pub fn place_restored(&mut self, r: usize, a: [f64; 3], held: [bool; 3]) {
+        if held.contains(&true) {
+            self.place_axis(r);
+        }
+        for k in 0..3 {
+            let q = self.axes[r].a[k] as usize;
+            self.params[q].value = a[k];
+            if self.axes[r].placed {
+                self.params[q].fixed = held[k];
+            }
+        }
     }
 
     /// A plane as a document or another sketch carries it: over axes `u`, `v`, standing at `o`
@@ -307,11 +324,36 @@ impl Sketch {
     }
 
     /// A plane over axes `u`, `v`, standing at `op`, its origin drawn in it.
+    /// Its axes pass through its origin: the intrinsic `PlaneAxis` rows, which read (and so place)
+    /// both axes.
     fn push_plane(&mut self, u: usize, v: usize, op: [u32; 3], origin: usize) -> usize {
         let pi = self.planes.len();
         self.points[origin].plane = Some(pi as u32);
         self.planes.push(PlaneE { u: u as u32, v: v as u32, o: op, origin: origin as u32, class: Classes::default() });
+        let o = op.map(|q| self.params[q as usize].value);
+        for ax in [u, v] {
+            // an axis this plane is the first to place starts through where the plane does
+            if !self.axes[ax].placed {
+                self.stand_axis_through(ax, o);
+            }
+            let mut c = Constraint::new(crate::constraints::CKind::PlaneAxis,
+                vec![Arg::Ent(EntRef::plane(pi)), Arg::Ent(EntRef::new(EntKind::Axis, ax))]);
+            c.intrinsic = true;
+            self.add_quiet(c);
+        }
         pi
+    }
+
+    /// Stand axis `r`'s line through `x`, its direction kept: its place is the foot of the
+    /// perpendicular from the world origin to that line.
+    pub fn stand_axis_through(&mut self, r: usize, x: [f64; 3]) {
+        let d = self.axes[r].d.map(|p| self.params[p as usize].value);
+        let Some(d) = crate::space::normalised(d) else { return };
+        let along = crate::space::dot(x, d);
+        for k in 0..3 {
+            let q = self.axes[r].a[k] as usize;
+            self.params[q].value = x[k] - along * d[k];
+        }
     }
 
     /// A plane fixed where `b` stands — its axes and its origin held — for a caller that has a
@@ -328,16 +370,27 @@ impl Sketch {
         for &p in &self.planes[pi].o {
             self.params[p as usize].fixed = true;
         }
+        // its axes through where it stands, held there
+        for r in axes {
+            self.stand_axis_through(r, b.o);
+            for &p in &self.axes[r].a {
+                self.params[p as usize].fixed = true;
+            }
+        }
         pi
     }
 
-    /// Stand plane `i` at `o`, its axes untouched — for a caller that holds a sketch and moves a
-    /// part rigidly, never for a solve.
+    /// Stand plane `i` at `o`, its axes turned no way and moved with it, so they still pass
+    /// through its origin — for a caller that holds a sketch and moves a part rigidly, never for
+    /// a solve.
     pub fn set_plane_origin(&mut self, i: usize, o: [f64; 3]) {
         for k in 0..3 {
             let p = self.planes[i].o[k] as usize;
             self.params[p].value = o[k];
         }
+        let (u, v) = (self.planes[i].u as usize, self.planes[i].v as usize);
+        self.stand_axis_through(u, o);
+        self.stand_axis_through(v, o);
     }
 
     /// A cubic B-spline over `ctrl`, with the clamped uniform knot vector.  `None` if there are

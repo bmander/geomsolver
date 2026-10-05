@@ -28,11 +28,12 @@ in std.front {
   horizontal gen_g
 }
 
-// the axial planes, square to P over the generators and through M
+// the axial planes, square to P over the generators and through M: each origin is on its axis
+// std.y, so the front holds it at M
 G := plane(u: gen_g, v: std.y)
-G.origin coincident M
+G.origin coincident std.front
 Q := plane(u: gen_p, v: std.y)
-Q.origin coincident M
+Q.origin coincident std.front
 
 // each axis in its axial plane, from its apex: the apex's image is on P and projects to the apex
 // drawn in P; how long an axis is drawn says nothing about the cone

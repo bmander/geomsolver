@@ -387,12 +387,17 @@ pub fn to_json(sk: &Sketch) -> Json {
         .iter()
         .map(|r| {
             let nums = |ps: &[u32; 3]| Json::Arr(ps.iter().map(|&p| sk.params[p as usize].value.into()).collect());
-            object([
+            let mut o = object([
                 ("d", nums(&r.d)),
                 ("a", nums(&r.a)),
                 ("fixed", Json::Arr(r.d.iter().map(|&p| sk.params[p as usize].fixed.into()).collect())),
                 ("class", class_json(&r.class)),
-            ])
+            ]);
+            // which numbers of where it stands are held, once something reads it
+            if r.placed {
+                o.set("a_fixed", Json::Arr(r.a.iter().map(|&p| sk.params[p as usize].fixed.into()).collect()));
+            }
+            o
         })
         .collect();
     if !axes.is_empty() {
@@ -484,6 +489,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         );
     }
     // the axes before the planes built over them, `primitives()`'s order
+    let mut places = Vec::new();
     for r in d.get("axes").unwrap_or(&empty).arr() {
         let three = |key: &str| -> [f64; 3] {
             let v = r.get(key).map(|v| v.arr()).unwrap_or_default();
@@ -491,7 +497,10 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         };
         let fixed = r.get("fixed").map(|v| v.arr()).unwrap_or_default();
         let held = [0, 1, 2].map(|k| fixed.get(k).map(|v| v.as_bool()).unwrap_or(false));
-        sk.axis_restored(three("d"), held, three("a"), read_class(r));
+        let place = r.get("a_fixed").map(|v| v.arr()).unwrap_or_default();
+        let place = [0, 1, 2].map(|k| place.get(k).is_some_and(|x| x.as_bool()));
+        let ri = sk.axis_restored(three("d"), held, read_class(r));
+        places.push((ri, three("a"), place));
     }
     // the planes over their axes, each with its origin a point already read
     let nr = sk.axes.len();
@@ -501,6 +510,9 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let fixed = p.get("fixed").map(|v| v.arr()).unwrap_or_default();
         let held = [0, 1, 2].map(|k| fixed.get(k).map(|v| v.as_bool()).unwrap_or(false));
         sk.plane_restored(g("u", nr)?, g("v", nr)?, o, held, g("origin", np)?, read_class(p));
+    }
+    for (ri, a, held) in places {
+        sk.place_restored(ri, a, held);
     }
     // the spheres after the planes, `primitives()`'s order, so a sphere's radius is where an
     // elaboration puts it
@@ -791,6 +803,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             axis_map[src.planes[i].v as usize] = Some(dst.planes[*j].v as usize);
         }
     }
+    let mut places = Vec::new();
     for i in 0..src.axes.len() {
         if !keep(EntRef::new(EntKind::Axis, i)) || axis_map[i].is_some() {
             continue;
@@ -798,7 +811,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let r = &src.axes[i];
         let value = |q: u32| src.params[q as usize].value;
         let ni = dst.axis_restored(r.d.map(value), r.d.map(|q| src.params[q as usize].fixed),
-                                  r.a.map(value), r.class.clone());
+                                  r.class.clone());
+        // a place held while nothing reads it is no `fix`'s (`Sketch::place_axis`)
+        places.push((ni, r.a.map(value), r.a.map(|q| r.placed && src.params[q as usize].fixed)));
         axis_map[i] = Some(ni);
         made.push(EntRef::new(EntKind::Axis, ni));
     }
@@ -822,6 +837,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                                     p.class.clone());
         plane_map[i] = Some(ni);
         made.push(EntRef::plane(ni));
+    }
+    for (ni, a, held) in places {
+        dst.place_restored(ni, a, held);
     }
     let mut sphere_map: Vec<Option<usize>> = vec![None; src.spheres.len()];
     for i in 0..src.spheres.len() {

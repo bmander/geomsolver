@@ -314,7 +314,8 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
     let src = "unit in\n\
                use std\n\
                r := axis hint(x: 0.6, y: 0.8, z: 0)\n\
-               f := plane(u: r, v: std.z) hint(x: 4, y: 0, z: 0)\n\
+               f := plane(u: r) hint(x: 4, y: 0, z: 0)\n\
+               fix(x == 0, y == 0, z == 1) f.v\n\
                a := point hint(x: 0, y: 3) in f\n\
                b := point hint(x: 6, y: 3) in f\n\
                param w: Length\n\

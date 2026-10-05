@@ -179,7 +179,7 @@ fn inline_sections_resolve_component_formals_and_repeated_instances() {
 #[test]
 fn inline_sections_inherit_the_boundary_plane_and_coexist_with_forward_faces() {
     let src = "unit mm\nuse std\n\
-        back := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 12)\nfix(x == 0, y == 0, z == 12) back\n\
+        back := plane hint(x: 0, y: 0, z: 12)\nfix(x == 0, y == 0, z == 12) back\nfix(x == 1, y == 0, z == 0) back.u\nfix(x == 0, y == 1, z == 0) back.v\n\
         in back {\na := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\n\
         c := point hint(x: 60, y: 40)\nd := point hint(x: 0, y: 40)\n}\n\
         slab := solid(face(a, b, c, d, -> close), from: 0mm, to: 2mm)\n\
@@ -608,20 +608,21 @@ fn what_is_written_wrong_is_refused_where_it_is_written() {
 
 #[test]
 fn a_plane_may_be_stood_off_another() {
-    // a plane over the same two axes is parallel, and a distance between the two stands one
-    // off the other along its normal
+    // a plane over axes parallel to another's is parallel to it, and a distance between the two
+    // stands one off the other along its normal
     let mut e = read("\
 unit mm
 use std
 front := plane(u: std.x, v: std.z)
-fix(x == 0, y == 0, z == 0) front
-back := plane(u: std.x, v: std.z) hint(x: 0, y: -12, z: 0)
+back := plane hint(x: 0, y: -12, z: 0)
+back.u parallel std.x
+back.v parallel std.z
 front distance(12mm) back
 ");
     assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
     let b = |n: &str| e.sketch.basis(e.map.ent_named(n).unwrap().i());
-    assert_eq!(b("front").u, b("back").u, "parallel");
-    assert_eq!(b("front").v, b("back").v);
+    let near = |x: [f64; 3], y: [f64; 3]| (0..3).all(|k| (x[k] - y[k]).abs() < 1e-12);
+    assert!(near(b("front").u, b("back").u) && near(b("front").v, b("back").v), "parallel");
     assert!((b("back").along_normal() - 12.0).abs() < 1e-9, "twelve along its own normal: {}",
         b("back").along_normal());
     assert_eq!(b("front").o, [0.0; 3], "and the plane it stands off stands where it did");
@@ -759,7 +760,7 @@ fn named_open_chains_can_be_closed_explicitly_but_cannot_be_swept_directly() {
 #[test]
 fn named_chains_inherit_planes_and_revolve_with_arcs() {
     let src = "unit mm\nuse std\n\
-        back := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 12)\nfix(x == 0, y == 0, z == 12) back\n\
+        back := plane hint(x: 0, y: 0, z: 12)\nfix(x == 0, y == 0, z == 12) back\nfix(x == 1, y == 0, z == 0) back.u\nfix(x == 0, y == 1, z == 0) back.v\n\
         in back {\na := point hint(x: 0, y: -5)\nb := point hint(x: 0, y: 5)\n\
           c := point hint(x: 0, y: 0)\n\
           profile := (rim := arc(center: c, start: a, end: b) hint(r: 5)) -> (ax := line(b, a)) -> close\n\
@@ -946,7 +947,7 @@ fn through_extent_refuses_mixed_labels_bad_targets_and_real_cycles() {
 fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
     let src = format!("unit mm\nuse std\n\
         front := plane(u: std.x, v: std.y)\nfix(x == 0, y == 0, z == 0) front\n\
-        side := plane(u: std.x, v: std.z) hint(x: 0, y: -80, z: 0)\nfix(x == 0, y == -80, z == 0) side\n\
+        side := plane hint(x: 0, y: -80, z: 0)\nfix(x == 0, y == -80, z == 0) side\nfix(x == 1, y == 0, z == 0) side.u\nfix(x == 0, y == 0, z == 1) side.v\n\
         {}\n\
         in side {{\nhc := point hint(x: 30, y: -5)\nh := circle(center: hc) hint(r: 2)\nhf := face(h)\n}}\n\
         stock := solid(sec, depth: 10mm)\nbody := solid(stock)\n\
@@ -1094,7 +1095,7 @@ fn section_holes_check_source_arc_and_line_tangencies_on_a_placed_plane() {
     use gcs_core::solid::ApproximationPolicy::Report;
     for (x, valid) in [(1, false), (2, true), (4, false)] {
         let src = format!("unit mm\nuse std\n\
-            back := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 12)\nfix(x == 0, y == 0, z == 12) back\n\
+            back := plane hint(x: 0, y: 0, z: 12)\nfix(x == 0, y == 0, z == 12) back\nfix(x == 1, y == 0, z == 0) back.u\nfix(x == 0, y == 1, z == 0) back.v\n\
             in back {{\nc := point hint(x: 0, y: 0)\n\
             a := point hint(x: 0, y: -5)\nb := point hint(x: 0, y: 5)\n\
             outline := (rim := arc(center: c, start: a, end: b) hint(r: 5)) -> (side := line(b,a)) -> close\n\
@@ -1232,8 +1233,10 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
         let src = format!("unit mm\nuse std\nuse hardware\nuse components.dims\nuse components.parts\nuse components.throttle\n\
             torgb := 2 * components.dims.rbar - 2 * (1 - hardware.oring_squeeze) * components.dims.tor\n\
             torw := hardware.oring_groove_w * components.dims.tor\n\
-            front := plane(u: std.x, v: std.z) hint(x: {page_x}, y: {back}, z: {page_y})\n\
+            front := plane hint(x: {page_x}, y: {back}, z: {page_y})\n\
             fix(x == {page_x}, y == {back}, z == {page_y}) front\n\
+            fix(x == 1, y == 0, z == 0) front.u\n\
+            fix(x == 0, y == 0, z == 1) front.v\n\
             in front {{\nO := point\nfix(x == 0, y == 0) O\nc := components.parts.At(O, dx: 0mm, dy: {height}mm)\naxes := components.parts.Axes(O)\n\
             core := circle(center: c.p) hint(r: torgb / 2)\nradius(torgb / 2) core\n}}\n\
             thr := components.throttle.Throttle(front, c.p, axes.ax, phi: {phi}deg, dims: components.dims.vtwin_dims)\n\

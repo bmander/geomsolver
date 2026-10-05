@@ -28,7 +28,7 @@ in std.front {
 t := axis hint(x: 0.87, y: 0, z: 0.5)
 t perpendicular std.y
 side := plane(u: t, v: std.y)
-side.origin coincident std.origin
+side.origin coincident std.front
 in side {
   pax := line(hint(x: 0, y: 10), hint(x: 60, y: 12))
   pax.p1 distance(0, along: u) side
@@ -140,6 +140,7 @@ m := point hint(x: 5, y: 7) in side
 
 /// A plane over a drawn line holds the line's direction — a hidden axis kept parallel to it — so
 /// it follows the line when the line moves; it adds no freedom of its own beyond where it stands.
+/// Its other axis is minted (`side.v`) and held square to the front.
 #[test]
 fn a_plane_over_a_drawn_line_follows_the_line() {
     let doc = |deg: f64| format!("\
@@ -154,7 +155,8 @@ in std.front {{
   l.p1 distance(40) l.p2
   base angle({deg}deg) l
 }}
-side := plane(u: l, v: std.y)
+side := plane(u: l)
+fix(x == 0, y == 1, z == 0) side.v
 side.origin coincident l.p1
 ");
     for deg in [30.0, 55.0] {
@@ -190,7 +192,9 @@ in std.front {{
   std.origin distance(12, along: x) m
   std.origin distance({h}, along: y) m
 }}
-top := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 30)
+top := plane hint(x: 0, y: 0, z: 30)
+fix(x == 1, y == 0, z == 0) top.u
+fix(x == 0, y == 1, z == 0) top.v
 top coincident m
 ");
     for h in [8.0, -3.5] {
@@ -243,7 +247,7 @@ use std
 t := axis hint(x: 0.94, y: 0, z: 0.34)
 t perpendicular std.y
 side := plane(u: t, v: std.y)
-side.origin coincident std.origin
+side.origin coincident std.front
 in std.front {
   a := point hint(x: 30, y: 40)
   fix(x == 30, y == 40) a
@@ -299,7 +303,6 @@ a distance(5) b
 fn a_plane_is_refused_what_it_cannot_stand_on() {
     refused("use std\np := point hint(x: 1, y: 2, z: 3)\nq := plane(u: std.x, v: p)\n",
             "E103", "an axis or a line", "p");
-    refused("use std\nq := plane(u: std.x)\n", "E103", "two axes", "q := plane(u: std.x)");
     refused("use std\nq := plane(u: std.x, v: std.y, origin: std.origin)\n",
             "E103", "origin is its own", "q := plane(u: std.x, v: std.y, origin: std.origin)");
     refused("use std\nm := point hint(x: 1, y: 2, z: 3) in std.front\n", "E040", "no `z`", "3");

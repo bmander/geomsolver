@@ -403,13 +403,25 @@ fn build_plane(
         return None;
     }
     let mut axes = [0usize; 2];
+    let mut minted: Vec<(&str, usize)> = Vec::new();
     for (k, key) in ["u", "v"].iter().enumerate() {
-        let Some([Kid::Ref(r)]) = d.children.get(k).map(|g| g.as_slice()) else {
-            fail(diags, st.span, format!(
-                "a plane is two axes, right along `u` and out along `u × v`: \
-                 `plane(u: r1, v: r2)`, and `{key}:` is missing"
-            ));
-            return None;
+        let r = match d.children.get(k).map(|g| g.as_slice()) {
+            Some([Kid::Ref(r)]) => r,
+            // a slot left out is an axis of the plane's own, free: `p := plane` is an origin and
+            // two directions, seeded as the front's
+            None | Some([]) => {
+                let dir = if k == 0 { [1.0, 0.0, 0.0] } else { [0.0, 0.0, 1.0] };
+                axes[k] = sk.axis(dir, &format!("{show}.{key}"));
+                minted.push((key, axes[k]));
+                continue;
+            }
+            Some(_) => {
+                fail(diags, st.span, format!(
+                    "a plane's `{key}` is an axis or a line, named: `plane(u: a1, v: a2)`, or left \
+                     out for an axis of its own"
+                ));
+                return None;
+            }
         };
         let Some(e) = res.lookup(r) else {
             diags.push(Diag {
@@ -455,6 +467,9 @@ fn build_plane(
         sk.plane_names.insert(pi as u32, n.text.clone());
     }
     anon.push((format!("{}.origin", d.name.key().text), EntRef::point(origin)));
+    for (key, ax) in minted {
+        anon.push((format!("{}.{key}", d.name.key().text), EntRef::new(EntKind::Axis, ax)));
+    }
     let e = EntRef::plane(pi);
     set_class(sk, e, d.class.clone());
     Some(e)

@@ -149,7 +149,7 @@ fn the_spatial_demos_are_what_they_say() {
         (
             "hypoid_pitch_cones",
             include_str!("../../examples/hypoid_pitch_cones.sv"),
-            (37, 37),
+            (43, 43),
             0,
             State::Well,
         ),

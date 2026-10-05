@@ -26,6 +26,8 @@ bossf := face(bossfp0, bossfp1, bossfp2, bossfp3, -> close)
 boss := solid(bossf, from: 1mm, to: 2mm)
 result := solid(stock)
 boss union result
-slice := plane(u: std.x, v: std.z) hint(x: 0, y: -0.5mm, z: 0)
+slice := plane hint(x: 0, y: -0.5mm, z: 0)
 fix(x == 0, y == -0.5mm, z == 0) slice
+fix(x == 1, y == 0, z == 0) slice.u
+fix(x == 0, y == 0, z == 1) slice.v
 section(result,at:slice) in std.front

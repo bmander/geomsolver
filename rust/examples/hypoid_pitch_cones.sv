@@ -9,7 +9,7 @@
 // its axis: M is on both, and `gc tangent(M) pc` says they touch there with one tangent plane.
 // The gear's apex is on P, which makes P the gear cone's tangent plane at M, and so the pinion's
 // too — its apex comes out on P with nothing saying so.  Two pitch radii, the gear's pitch angle,
-// the shaft angle and the offset settle the rest: 37 unknowns, 37 equations, DOF 0, the pinion's
+// the shaft angle and the offset settle the rest: 43 unknowns, 43 equations, DOF 0, the pinion's
 // pitch angle γ = 29.56° and its offset angle in the pitch plane ε = 10.72°.
 //
 // Open the glass box (⌘B) and orbit: the two cones kiss at M on the pitch plane, their axes

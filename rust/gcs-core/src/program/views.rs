@@ -61,6 +61,72 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     out
 }
 
+/// **A plane's axes pass through its origin** (#84), and where its axes are held, so is that: two
+/// held axes hold the origin where they meet, and a plane held where its held axes are not is
+/// refused.  E067 for axes that do not meet (or run alike), and for a plane standing off one.
+/// Held numbers make no equation (`System`'s intrinsic rule), so this is said here or nowhere.
+pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
+    use crate::space::{cross, dot, norm, normalised, sub};
+    let held = |sk: &Sketch, ps: &[u32]| ps.iter().all(|&q| sk.params[q as usize].fixed);
+    let line = |sk: &Sketch, r: usize| {
+        let ax = &sk.axes[r];
+        let held = held(sk, &ax.d) && held(sk, &ax.a);
+        let d = normalised(ax.d.map(|q| sk.params[q as usize].value));
+        (held, ax.a.map(|q| sk.params[q as usize].value), d)
+    };
+    let tol = ON_PLANE * sk.extent().max(1.0);
+    let mut out = Vec::new();
+    for p in 0..sk.planes.len() {
+        let pl = &sk.planes[p];
+        let (o, sides) = (pl.o, [(pl.u as usize, "u"), (pl.v as usize, "v")]);
+        let [(hu, au, du), (hv, av, dv)] = sides.map(|(r, _)| line(sk, r));
+        let mut refuse = |message: String| {
+            let site = map.site_of(EntRef::plane(p));
+            out.push(Diag { code: Code::E067, span: site.map(|s| s.span).unwrap_or_default(),
+                            stmt: site.map(|s| s.stmt), message });
+        };
+        let name = sk.plane_name(p);
+        if held(sk, &o) {
+            let at = o.map(|q| sk.params[q as usize].value);
+            for ((h, a, d), (_, k)) in [(hu, au, du), (hv, av, dv)].into_iter().zip(sides) {
+                let (true, Some(d)) = (h, d) else { continue };
+                if norm(cross(sub(at, a), d)) > tol {
+                    refuse(format!(
+                        "`{name}` is held where its axis `{name}.{k}` is not, and a plane's axes \
+                         pass through its origin: a plane parallel to another says so with \
+                         `parallel` (`{name}.{k} parallel ….{k}`)"
+                    ));
+                }
+            }
+            continue;
+        }
+        let (true, true, Some(du), Some(dv)) = (hu, hv, du, dv) else { continue };
+        // the two lines' nearest points: a + s·d for each
+        let n = cross(du, dv);
+        if norm(n) <= crate::plane::PARALLEL_TOL {
+            refuse(format!("the axes of `{name}` run alike, and a plane needs two directions"));
+            continue;
+        }
+        let w = sub(av, au);
+        let nn = dot(n, n);
+        let s = dot(cross(w, dv), n) / nn;
+        let t = dot(cross(w, du), n) / nn;
+        let (pu, pv) = ([0, 1, 2].map(|k| au[k] + s * du[k]), [0, 1, 2].map(|k| av[k] + t * dv[k]));
+        if norm(sub(pu, pv)) > tol {
+            refuse(format!(
+                "the axes of `{name}` do not meet, and a plane's axes pass through its origin"
+            ));
+            continue;
+        }
+        for k in 0..3 {
+            let q = &mut sk.params[o[k] as usize];
+            q.value = 0.5 * (pu[k] + pv[k]);
+            q.fixed = true;
+        }
+    }
+    out
+}
+
 /// W113 for two planes that lie on one another — turned alike up to a turn in themselves and
 /// standing in one place — where a relation reads points drawn in each: one plane in space, read
 /// twice, and the relation is read in space where the plane would do.  Permitted (a part's plane
@@ -237,8 +303,12 @@ pub(crate) fn place(sk: &mut Sketch) {
         let mut read: BTreeSet<usize> = BTreeSet::new();
         for r in reads.iter().filter(|r| taken.contains(&r.id)) {
             read.extend(&r.pts);
-            for &k in r.axes.iter().filter(|&&k| !axis_placed[k]) {
-                free.extend(sk.axes[k].d);
+            for &k in &r.axes {
+                if !axis_placed[k] {
+                    free.extend(sk.axes[k].d);
+                }
+                // where an axis stands follows what is solved here whatever placed its direction
+                // (a line it is held along, say): a plane's axes pass through its origin
                 if sk.axes[k].placed {
                     free.extend(sk.axes[k].a);
                 }

@@ -149,7 +149,6 @@ fn a_plane_reads_its_basis_off_its_rays() {
 fn plane_refusals_carry_their_codes() {
     refused("use std\np := point hint(x: 1, y: 2, z: 3)\na := plane(u: p, v: std.z)\n", "E103",
             "an axis or a line");
-    refused("use std\na := plane(u: std.x)\n", "E103", "`v:` is missing");
     refused("use std\na := plane(u: nope, v: std.z)\n", "E101", "no such entity");
     refused("use std\na := plane(u: std.x, v: std.z, origin: std.origin)\n", "E103",
             "a plane's origin is its own");
@@ -223,7 +222,7 @@ fn project_settles_refuses_and_claims() {
     assert_eq!(d.span.slice(prog.text()), "a project b");
     refused(&format!("{VIEWS}a := point in front\nb := point in front\na project b\n"), "E061", "itself");
     refused(
-        &format!("{VIEWS}front2 := plane(u: std.x, v: std.z)\nfix(x == 0, y == -5, z == 0) front2\n\
+        &format!("{VIEWS}front2 := plane\nfix(x == 0, y == -5, z == 0) front2\nfix(x == 1, y == 0, z == 0) front2.u\nfix(x == 0, y == 0, z == 1) front2.v\n\
                   a := point in front\nb := point in front2\na project b\n"),
         "E061",
         "parallel",
@@ -610,8 +609,9 @@ fn an_instance_in_plane_resolves_in_the_callers_scope() {
 /// a place survives `dumps`/`loads` and the graft.
 #[test]
 fn a_planes_place_survives_json_and_the_graft() {
-    let e = read("unit mm\nuse std\nq := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 12)\n\
-                  a := point hint(x: 5, y: 0) in q\n");
+    let e = read("unit mm\nuse std\nq := plane hint(x: 0, y: 0, z: 12)\n\
+                  fix(x == 0, y == 0, z == 12) q\nfix(x == 1, y == 0, z == 0) q.u\n\
+                  fix(x == 0, y == 1, z == 0) q.v\na := point hint(x: 5, y: 0) in q\n");
     let q = at(&e, "q");
     let b = e.sketch.basis(q);
     assert!((b.along_normal() - 12.0).abs() < 1e-12, "stood off: {b:?}");

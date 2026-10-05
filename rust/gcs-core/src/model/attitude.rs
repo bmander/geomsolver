@@ -56,8 +56,9 @@ impl Sketch {
         (self.planes.get(pl)?.origin as usize == p).then_some(pl)
     }
 
-    /// Turn axis `r` to drawn line `l` as it now stands, sense and all: an axis a plane holds along
-    /// a line (`program::entities::axes_along`).  False where the line has no length.
+    /// Turn axis `r` to drawn line `l` as it now stands, sense and all: the axis a plane holds
+    /// along a line (`program::entities::axes_along`), which takes the line's direction and stands
+    /// through the plane's origin.  False where the line has no length.
     pub fn turn_axis_along(&mut self, r: usize, l: usize) -> bool {
         let ln = &self.lines[l];
         let d = crate::space::sub(self.world_point(ln.p2 as usize), self.world_point(ln.p1 as usize));

@@ -213,6 +213,10 @@ pub enum CKind {
     /// so it cannot slide along the axis.  Intrinsic, minted by `Sketch::place_axis` once a
     /// relation reads where the axis is.
     AxisFoot,
+    /// A plane's origin on one of its axes: two rows, minted with the plane (`Sketch::plane_over`)
+    /// and nowhere else, never serialized — a plane's axes pass through its origin.  The
+    /// `point_on_axis` kernel over the plane's `o` in the point's place.
+    PlaneAxis,
     /// `p coincident t`: a point on an axis's line in space — `point_on_line3`'s two rows across
     /// the axis's direction, over the point's lift and the axis's place and direction.  What
     /// gives an axis its place.
@@ -257,7 +261,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 76] = [
+pub const ALL_KINDS: [CKind; 77] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -326,6 +330,7 @@ pub const ALL_KINDS: [CKind; 76] = [
     CKind::ArcLength,
     CKind::AxisUnit,
     CKind::AxisFoot,
+    CKind::PlaneAxis,
     CKind::PointOnAxis,
     CKind::Ordinate3U,
     CKind::Ordinate3V,
@@ -828,6 +833,7 @@ impl CKind {
             CKind::ProjectSolved => "ProjectSolved",
             CKind::AxisUnit => "AxisUnit",
             CKind::AxisFoot => "AxisFoot",
+            CKind::PlaneAxis => "PlaneAxis",
             CKind::PointOnAxis => "PointOnAxis",
             CKind::Fix => "Fix",
             CKind::Ccw => "Ccw",
@@ -991,6 +997,7 @@ impl CKind {
                 &[("a", S::Point), ("b", S::Point), ("pa", S::Plane), ("pb", S::Plane)]
             }
             CKind::AxisUnit | CKind::AxisFoot => &[("axis", S::Axis)],
+            CKind::PlaneAxis => &[("plane", S::Plane), ("axis", S::Axis)],
             CKind::PointOnAxis => &[("p", S::Point), ("axis", S::Axis)],
             CKind::AxisOnPlane | CKind::AxisParallelPlane | CKind::AxisPerpendicularPlane => {
                 &[("axis", S::Axis), ("plane", S::Plane)]
@@ -1009,6 +1016,10 @@ impl CKind {
                 ("z", S::Param),
                 ("r", S::Param),
                 ("half", S::Param),
+                // where an axis is: the point on it nearest the origin
+                ("px", S::Param),
+                ("py", S::Param),
+                ("pz", S::Param),
             ],
             // the predicate is about the triangle, so all three stand in the parentheses
             CKind::Ccw | CKind::Cw => &[("a", S::Point), ("b", S::Point), ("c", S::Point)],
@@ -1141,7 +1152,8 @@ impl CKind {
             | CKind::Lift
             // an axis's own algebra
             | CKind::AxisUnit
-            | CKind::AxisFoot => return None,
+            | CKind::AxisFoot
+            | CKind::PlaneAxis => return None,
             CKind::PointOnAxis | CKind::AxisOnPlane | CKind::AxisCoincident => ("coincident", Infix),
             CKind::AxisParallelPlane => ("parallel", Infix),
             CKind::AxisPerpendicularPlane => ("perpendicular", Infix),
@@ -1199,7 +1211,7 @@ impl CKind {
     /// has a place only while something reads it (`Sketch::place_axis`).
     pub fn place_slots(self) -> &'static [usize] {
         match self {
-            CKind::PointOnAxis => &[1],
+            CKind::PointOnAxis | CKind::PlaneAxis => &[1],
             CKind::AxisOnPlane => &[0],
             CKind::AxisCoincident => &[0, 1],
             _ => &[],
@@ -1420,6 +1432,7 @@ impl CKind {
             | CKind::ProjectSolved
             | CKind::AxisUnit
             | CKind::AxisFoot
+            | CKind::PlaneAxis
             | CKind::PointOnAxis
             | CKind::Ordinate3U
             | CKind::Ordinate3V
@@ -1547,6 +1560,7 @@ impl CKind {
             CKind::ProjectSolved => K::ProjectSolved,
             CKind::AxisUnit => K::AxisUnit,
             CKind::AxisFoot => K::AxisFoot,
+            CKind::PlaneAxis => K::PointOnAxis,
             CKind::PointOnAxis => K::PointOnAxis,
             CKind::AxisOnPlane => K::AxisOnPlane,
             CKind::AxisCoincident => K::AxisCoincident,
@@ -1660,6 +1674,7 @@ impl CKind {
             | CKind::ProjectSolved
             | CKind::AxisUnit
             | CKind::AxisFoot
+            | CKind::PlaneAxis
             | CKind::PointOnAxis
             | CKind::AxisOnPlane
             | CKind::AxisCoincident
@@ -2371,7 +2386,7 @@ impl Constraint {
                 let (e1, e2) = across(self.axis_dir(sk, 0));
                 [e1, e2].concat()
             }
-            CKind::PointOnLine3 | CKind::PointOnAxis => {
+            CKind::PointOnLine3 | CKind::PointOnAxis | CKind::PlaneAxis => {
                 let (e1, e2) = across(self.axis_dir(sk, 1));
                 [e1, e2].concat()
             }
@@ -2613,6 +2628,11 @@ impl Constraint {
             CKind::PointOnAxis => {
                 let r = &sk.axes[e(1).i()];
                 [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
+            }
+            // where the plane stands, in the point's place, and the axis's place and direction
+            CKind::PlaneAxis => {
+                let r = &sk.axes[e(1).i()];
+                [sk.planes[e(0).i()].o.to_vec(), r.a.to_vec(), r.d.to_vec()].concat()
             }
             // the hidden point, the point as drawn, and its plane's origin and axes
             CKind::Lift => {

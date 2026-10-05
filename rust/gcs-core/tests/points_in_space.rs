@@ -50,9 +50,9 @@ fn a_face_over_a_point_in_space_is_refused() {
 
 #[test]
 fn planes_stacked_by_a_distance_stand_apart_along_their_normal() {
-    let mut e = read("use std\nunit mm\na := plane(u: std.x, v: std.z)\nb := plane(u: std.x, v: std.z)\n\
-        a distance(12) b\nn := axis hint(x: 0, y: -1, z: 0)\nn perpendicular a\n\
-        n coincident a.origin\nn coincident b.origin\na.origin coincident std.origin\n");
+    let mut e = read("use std\nunit mm\na := plane(u: std.x, v: std.z)\nb := plane hint(x: 0, y: -10, z: 0)\n\
+        b.u parallel std.x\nb.v parallel std.z\na distance(12) b\nn := axis hint(x: 0, y: -1, z: 0)\n\
+        n perpendicular a\nn coincident a.origin\nn coincident b.origin\n");
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
     assert!(solve(&mut e.sketch, Default::default()).success);

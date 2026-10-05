@@ -398,12 +398,17 @@ fn a_point_on_a_plane_in_space() {
     let r = solve(&mut sk, exact());
     assert!(r.success, "{}", r.message);
     assert!((sk.point_xy(p).1 - h).abs() < 1e-10);
-    // now hold the point and let the plane's height go: the plane comes to the point
+    // now hold the point and let the plane's height go, its axes' with it (they pass through its
+    // origin): the plane comes to the point
     sk.fix_point(p, true);
     let py = sk.points[p].y as usize;
     sk.params[py].value = 2.5;
     let oz = sk.planes[top].o[2] as usize;
     sk.params[oz].fixed = false;
+    for r in [sk.planes[top].u, sk.planes[top].v] {
+        let az = sk.axes[r as usize].a[2] as usize;
+        sk.params[az].fixed = false;
+    }
     assert_eq!(ledger(&mut sk).dof, 0);
     let r = solve(&mut sk, exact());
     assert!(r.success, "{}", r.message);

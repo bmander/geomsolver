@@ -30,7 +30,7 @@ in std.front {
 t := axis hint(x: 0.87, y: 0, z: 0.5)
 t perpendicular std.y
 side := plane(u: t, v: std.y)
-std.origin coincident side.origin
+side.origin coincident std.front     // on std.y already, as its axes pass through it
 in side {
   pax := line(hint(x: 0, y: 10), hint(x: 60, y: 12))
   pax.p1 distance(0, along: u) side

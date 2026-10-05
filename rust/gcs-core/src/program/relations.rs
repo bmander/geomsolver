@@ -623,8 +623,16 @@ fn apply_gauge(
                 .filter(|(_, f)| *f == Field::Scalar)
                 .map(|(n, _)| *n)
                 .collect();
-            let own = sk.own_params(e);
             let spec = r.kind.spec();
+            // where an axis is, held: placed first, so no later relation reading its place frees
+            // what this holds (`Sketch::place_axis`)
+            if e.kind == EntKind::Axis
+                && r.args.iter().enumerate().skip(1)
+                    .any(|(i, a)| a.is_some() && matches!(spec[i].0, "px" | "py" | "pz"))
+            {
+                sk.place_axis(e.i());
+            }
+            let own = sk.own_params(e);
             for (i, a) in r.args.iter().enumerate().skip(1) {
                 let Some(a) = a else { continue };
                 let field = spec[i].0;

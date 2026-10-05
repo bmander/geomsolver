@@ -40,11 +40,14 @@ flange := solid(profile, about: spindle)
 
 // The bolt circle is drawn on the top of the plate: a plane square to the section over a
 // reference running out along that face from the axis, standing at the axis, so it looks down
-// on the face.  The pattern is measured in it, from its origin along its own `x`.
+// on the face.  Its other axis runs the way `std.y` does, through its own origin (a plane's axes
+// pass through its origin).  The pattern is measured in it, from its origin along its own `x`.
 in std.front {
   construction centerline reference := line(deck, c)
 }
-plate_top := plane(u: reference, v: std.y)
+square := axis hint(x: 0, y: 1, z: 0)
+square parallel std.y
+plate_top := plane(u: reference, v: square)
 deck coincident plate_top.origin
 in plate_top {
   construction centerline across := horizontal line(plate_top.origin, hint(x: 10mm, y: 0mm))

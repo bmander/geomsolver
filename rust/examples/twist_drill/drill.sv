@@ -94,5 +94,7 @@ drill := solid(fluted)
 shank union drill
 
 // square to the axis halfway along the flutes: where the drawing cuts its section
-section_plane := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: configuration.fluted_length / 2)
+section_plane := plane hint(x: 0, y: 0, z: configuration.fluted_length / 2)
 fix(x == 0, y == 0, z == configuration.fluted_length / 2) section_plane
+fix(x == 1, y == 0, z == 0) section_plane.u
+fix(x == 0, y == 1, z == 0) section_plane.v
