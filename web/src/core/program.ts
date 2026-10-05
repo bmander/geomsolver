@@ -52,14 +52,6 @@ export interface SourceMap {
 /** What an edit costs. */
 export type EditKind = 'structural' | 'numeric' | 'none';
 
-/** A plane's attitude, as the statement will spell it: folded from another view by an angle
- *  (`from: front, fold: -90deg`), or an explicit basis.  Every number is **text** — what a
- *  person wrote, spliced into the source as written and read by the elaboration like any
- *  other; nothing here evaluates one. */
-export type Attitude =
-  | { from: string; fold?: string }
-  | { u: [string, string, string]; v: [string, string, string] };
-
 /** A proposed new source.  Nothing has happened yet: `text` is what the document would say. */
 export interface Edit {
   text: string;
@@ -318,16 +310,12 @@ export class Document {
     return edit(withStr(plane, (p, n) => core().gcs_elab_add_rectangle(this.h, w, h, p, n)));
   }
 
-  /** An entity over names already in the source.  A plane also takes its `attitude` (null for
-   *  the page), optionally the `name` the statement is to be given — refused if taken — and
-   *  `places`, where its origin and toward point go, **seeded in the statement**: a plane is a
-   *  frame, and its rotor and chord length are read off the chord when the statement is
-   *  elaborated, so a pose written into the two points afterwards would leave both stale. */
-  addEntity(kind: string, args: string[], seed: number[] = [], attitude: Attitude | null = null,
-            name?: string, places?: [number, number][]): Edit {
+  /** An entity over names already in the source.  A plane is over the two rays or lines `args`
+   *  names — `plane(u: a, v: b)` — and also takes the `name` the statement is to be given,
+   *  refused if taken. */
+  addEntity(kind: string, args: string[], seed: number[] = [], name?: string): Edit {
     return edit(
-      withJson({ kind, args, seed, attitude, name, places },
-               (p, n) => core().gcs_elab_add_entity(this.h, p, n)),
+      withJson({ kind, args, seed, name }, (p, n) => core().gcs_elab_add_entity(this.h, p, n)),
     );
   }
 

@@ -5,8 +5,8 @@ import * as drawing from '../core/drawing.js';
 
 await initCore();
 
-const model = 'unit mm\na := point\nfix(x == 0, y == 0) a\n'
-  + 'b := point\nfix(x == 20, y == 0) b\nbar := line(a,b)\n';
+const model = 'unit mm\nuse std\nin std.front {\na := point\nfix(x == 0, y == 0) a\n'
+  + 'b := point\nfix(x == 20, y == 0) b\nbar := line(a,b)\n}\n';
 const source = 'model m from "../models/part.sv" use "../styles/ink.svd"\n'
   + 'sheet front { size A4 sketch v(m) at (40mm,50mm) '
   + 'measure distance(m.bar.p1,m.b) in v offset 6mm }\n'
@@ -37,7 +37,7 @@ test('drawing WASM binding resolves relative files and renders selected sheets',
 
 test('a drawing renders only the dimensions it explicitly requests', () => {
   const part = `${model}param width := 20mm\na distance(width) b\n`
-    + 'c := circle(center: a) hint(r: 5)\nparam r := 5mm\nradius(r) c\n';
+    + 'in std.front {\nc := circle(center: a) hint(r: 5)\n}\nparam r := 5mm\nradius(r) c\n';
   const render = (request: string) => drawing.render('model m from "part.sv" '
     + `sheet s { sketch v(m) at (30mm,40mm) ${request} }`,
     'part.svd', {'part.sv': part});

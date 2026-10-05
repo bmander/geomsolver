@@ -679,10 +679,32 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.sheet = src.sheet.clone();
     }
     let mut made = Vec::new();
+    // a paste onto a plane the document already has: one held where the clipboard's is held and
+    // facing the same way *is* that plane, so what was drawn in it is drawn in it again and no
+    // second plane stands on the first; its rays and its origin are the document's
+    let mut reuse: Vec<Option<usize>> = vec![None; src.planes.len()];
+    if !fresh {
+        let same = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-9);
+        for (i, r) in reuse.iter_mut().enumerate() {
+            if !keep(EntRef::plane(i)) || !src.plane_fixed(i) {
+                continue;
+            }
+            let b = src.basis(i);
+            *r = (0..dst.planes.len()).find(|&j| {
+                let c = dst.basis(j);
+                dst.plane_fixed(j) && same(b.u, c.u) && same(b.v, c.v) && same(b.o, c.o)
+            });
+        }
+    }
+    let reused_origin: BTreeMap<usize, usize> = reuse.iter().enumerate()
+        .filter_map(|(i, r)| r.map(|j| (src.planes[i].origin as usize, dst.planes[j].origin as usize)))
+        .collect();
     let mut keep_pts = Vec::new();
     let mut pt_map: Vec<Option<usize>> = vec![None; src.points.len()];
     for i in 0..src.points.len() {
-        if keep(EntRef::point(i)) {
+        if let Some(&o) = reused_origin.get(&i) {
+            pt_map[i] = Some(o);
+        } else if keep(EntRef::point(i)) {
             pt_map[i] = Some(base + keep_pts.len());
             keep_pts.push(i);
         }
@@ -770,10 +792,17 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         spline_map[i] = Some(ni);
         made.push(EntRef::spline(ni));
     }
-    // the rays, each its own: a direction, its fixed flags and its place
+    // the rays, each its own: a direction, its fixed flags and its place — but a reused plane's,
+    // which are the document's plane's
     let mut ray_map: Vec<Option<usize>> = vec![None; src.rays.len()];
+    for (i, r) in reuse.iter().enumerate() {
+        if let Some(j) = r {
+            ray_map[src.planes[i].u as usize] = Some(dst.planes[*j].u as usize);
+            ray_map[src.planes[i].v as usize] = Some(dst.planes[*j].v as usize);
+        }
+    }
     for i in 0..src.rays.len() {
-        if !keep(EntRef::new(EntKind::Ray, i)) {
+        if !keep(EntRef::new(EntKind::Ray, i)) || ray_map[i].is_some() {
             continue;
         }
         let r = &src.rays[i];
@@ -789,6 +818,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     }
     let mut plane_map: Vec<Option<usize>> = vec![None; src.planes.len()];
     for i in 0..src.planes.len() {
+        if let Some(j) = reuse[i] {
+            plane_map[i] = Some(j);
+            continue;
+        }
         if !keep(EntRef::plane(i)) {
             continue;
         }
@@ -1500,6 +1533,13 @@ impl Part {
                 }
             }
         }
+        // a point comes with the plane it is drawn in, whose place in space is its own — a wall
+        // like any held entity, brought along and never walked through
+        let drawn_in: Vec<usize> = keep.iter()
+            .filter(|e| e.kind == EntKind::Point)
+            .filter_map(|e| sk.plane_of(e.i()))
+            .collect();
+        keep.extend(drawn_in.into_iter().map(EntRef::plane));
         // a plane is rebuilt over its rays and its origin, wherever the walk stopped at it
         for i in 0..sk.planes.len() {
             if keep.contains(&EntRef::plane(i)) {

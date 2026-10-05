@@ -340,7 +340,8 @@ fn a_drag_costs_the_figure_not_the_document() {
     let before = three.get_x();
     let mut d1 = PlanDrag::new(&one, p1, x0, y0, None, 0.05);
     let mut d3 = PlanDrag::new(&three, p3, x0 + dx, y0, None, 0.05);
-    assert_eq!(d3.part().unwrap().sketch.points.len(), n);
+    // the chain's points, and the origin of the plane they are drawn in, which comes with them
+    assert_eq!(d3.part().unwrap().sketch.points.len(), n + 1);
     assert_eq!(d3.own_plan().unwrap().system.n_free, d1.own_plan().unwrap().system.n_free);
     assert_eq!(d3.own_plan().unwrap().plan.steps.len(), d1.own_plan().unwrap().plan.steps.len());
     for i in 1..=12 {

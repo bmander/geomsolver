@@ -9,11 +9,14 @@ await initCore();
 
 test('a named relative motion returns world position and exact velocity through the ABI', () => {
   const doc = Document.read(`unit mm
+use std
+in std.front {
 a := point
 b := point
 fix(x == 2, y == 0) a
 fix(x == 2, y == 1) b
 axis := line(a,b)
+}
 relative := motion(turn,relative_to: observer)
 turn := motion(about: axis,ratio: 3,phase: 90deg)
 observer := motion(about: axis,ratio: 1)
@@ -36,6 +39,8 @@ observer := motion(about: axis,ratio: 1)
 
 test('a ratio measured off the drawing is read through the ABI once the drawing is solved', () => {
   const doc = Document.read(`unit mm
+use std
+in std.front {
 a := point
 b := point
 fix(x == 0, y == 0) a
@@ -51,6 +56,7 @@ f := point hint(x: 12,y: -4)
 fix(x == 0, y == -4) e
 small := horizontal line(e,f)
 e distance(10mm) f
+}
 turn := motion(about: axis, ratio: length(big) / length(small))
 `);
   try {

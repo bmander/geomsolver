@@ -306,3 +306,24 @@ fn a_lifted_plane_keeps_its_origin() {
         assert!(norm(sub(sk.world_point(i), again.sketch.world_point(i))) < 1e-9, "p{i}");
     }
 }
+
+/// A drag is built on the dragged point's part, and a point drawn in a plane brings that plane
+/// with it, held: the part's relations in space have a place to read it from.  `pb`, drawn in
+/// `std.side` and held to a ball centred in `std.front`, drags round its circle on the ball.
+#[test]
+fn a_point_on_a_ball_drags_on_its_own_part() {
+    let e = read(include_str!("../../examples/sphere_cone_cylinder.sv"));
+    let mut sk = e.sketch.clone();
+    assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+    let (pb, bc) = (ent(&e, "pb").i(), ent(&e, "bc").i());
+    let (x, y) = sk.point_xy(pb);
+    let mut d = gcs_core::decompose::PlanDrag::new(&sk, pb, x, y, None, 0.05);
+    assert!(d.part().unwrap().sketch.planes.len() >= 2, "the planes its points are drawn in");
+    for k in 1..10 {
+        let r = d.move_to(&mut sk, None, x + 0.5 * k as f64, y - k as f64);
+        assert!(r.success, "{k}: {r:?}");
+        let gap = norm(sub(sk.world_point(pb), sk.world_point(bc)));
+        assert!((gap - 12.0).abs() < 1e-6, "{k}: {gap} from the ball's centre");
+    }
+    d.end();
+}

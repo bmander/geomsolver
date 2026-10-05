@@ -4,7 +4,7 @@
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import { Constraint, sameConstraint } from '../core/constraints.js';
-import { Arc, Circle, Line, Point, Spline } from '../core/model.js';
+import { Arc, Circle, Line, Plane, Point, Primitive, Sketch, Spline } from '../core/model.js';
 import { SolveResult } from '../core/system.js';
 import type { SketchView } from './view.js';
 
@@ -142,7 +142,7 @@ export function toggleConstructionSelected(v: SketchView): void {
 export function copySelected(v: SketchView): number {
   if (!v.selected.length) return 0;
   const clip = io.copy(v.sketch, v.selected);
-  const n = clip.primitives().length;
+  const n = drawn(clip, clip.primitives()).length;
   if (!n) {
     clip.dispose();
     return 0;
@@ -151,6 +151,12 @@ export function copySelected(v: SketchView): number {
   v.clipboard = clip;
   v.pastes = 0;
   return n;
+}
+
+/** What was picked and what it is made of: the plane it is drawn in rides along on a copy, origin
+ *  and all, and is no part of what the person copied or pasted. */
+function drawn(sk: Sketch, es: Primitive[]): Primitive[] {
+  return es.filter((e) => !(e instanceof Plane) && !sk.planes.some((pl) => pl.origin === e));
 }
 
 /** Copy the selection and take it out of the sketch. */
@@ -168,7 +174,7 @@ export function pasteClipboard(v: SketchView): number {
   if (!clip?.primitives().length) return 0;
   v.pushUndo();
   const d = v.world(PASTE_PX * ++v.pastes);
-  const made = io.paste(v.sketch, clip, d, -d);
+  const made = drawn(v.sketch, io.paste(v.sketch, clip, d, -d));
   v.selected = made;
   v.litConstraint = null;
   v.highlight = [];

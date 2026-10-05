@@ -52,7 +52,6 @@ import {
   about, alternatives, doOpen, flipBranch, insertPlane, leaveExample, openCase, openExample, options,
   report, reportSolve, showDiagnosis,
 } from './dialogs.js';
-import { threeViews } from './tools.js';
 import { editValue, onDimension } from './dimbox.js';
 import { bindProgramPanel, openDrawing, refreshProgram, resetProgramFiles, saveProjectFile,
   showStatementFor, toggleProgramPanel } from './program.js';
@@ -376,10 +375,8 @@ const MENUS: [string, (MenuItem | null)[]][] = [
   ]],
   ['Insert', [
     { label: 'Plane…', onClick: () => void insertPlane(),
-      title: 'A view of space to draw in: the page, one folded from another view, or an '
-        + 'explicit basis.  Two clicks then say where it sits' },
-    { label: 'Three views', onClick: () => threeViews(view),
-      title: 'Front, top and right views in the standard third-angle layout, aligned' },
+      title: 'A plane to draw in, over two lines: the one it runs along, then the one that says '
+        + 'which way is up in it' },
   ]],
   ['Solution', [
     { label: 'Solve', onClick: () => { view.solveNow(); reportSolve(); } },

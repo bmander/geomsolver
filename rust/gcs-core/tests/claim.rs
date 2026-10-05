@@ -172,7 +172,10 @@ claim ab equal cd
 ",
     );
     let part = gcs_core::io::Part::around(&sk, gcs_core::model::EntRef::point(1));
-    assert_eq!(part.sketch.points.len(), 2, "the claim welded two figures into one part");
+    // the part brings the plane its points are drawn in, and the plane its origin, as a wall
+    let origins: Vec<u32> = part.sketch.planes.iter().map(|q| q.origin).collect();
+    let drawn = (0..part.sketch.points.len() as u32).filter(|i| !origins.contains(i)).count();
+    assert_eq!(drawn, 2, "the claim welded two figures into one part");
 }
 
 #[test]

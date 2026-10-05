@@ -25,7 +25,7 @@ import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import { Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
-import { Attitude, Document, Edit, fromSketch } from '../core/program.js';
+import { Document, Edit, fromSketch } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
 import type { Item } from '../core/overview.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
@@ -97,12 +97,10 @@ export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
   | 'plane';
 
-/** What the plane tool is armed with: the name the statement is to be given, if any, and the
- *  attitude — as text, since the statement spells it and the core reads it.  Where the plane
- *  sits on the page is the two clicks' business. */
+/** What the plane tool is armed with: the name the statement is to be given, if any.  Which way
+ *  the plane faces is the two lines its clicks pick. */
 export interface PlaneSpec {
   name?: string;
-  attitude: Attitude | null;
 }
 
 
@@ -158,6 +156,8 @@ export class SketchView {
   pendingPlane: string | null = null;
   /** What the plane tool will write when its two clicks land. */
   planeSpec: PlaneSpec | null = null;
+  /** The line the plane tool's first click picked, by name: the one the plane runs along. */
+  planeAxis: string | null = null;
   highlight: Primitive[] = [];
   pending: Point[] = [];
   /** Where the fit tool has been told the curve must pass, before there is a curve.  Places
@@ -257,7 +257,17 @@ export class SketchView {
     this.doc = doc;
     this.box3d = new Box3D(boxCanvas);
     this.ctx = canvas.getContext('2d')!;
+    this.drawOnFront();
     bindEvents(this);
+  }
+
+  /** There is no page: a document nothing has been chosen on is drawn on the front, brought in by
+   *  the first press of a tool where the document does not say `use std` yet (`ensurePlane`). */
+  private drawOnFront(): void {
+    if (this.plane || this.pendingPlane) return;
+    const front = this.doc.entity('std.front');
+    if (front instanceof Plane) this.plane = front;
+    else this.pendingPlane = 'std.front';
   }
 
   /** The drawing the source came to.  Read everywhere and written nowhere: a new drawing is a
@@ -329,10 +339,9 @@ export class SketchView {
     return this.plane ? this.plane.index : PAGE;
   }
 
-  /** The view a tool reads its clicks off: the plane being drawn on — except the plane tool, whose
-   *  two points are where a view sits on the page, layout and in no view. */
+  /** The view a tool reads its clicks off: the plane being drawn on. */
   get toolView(): View {
-    return this.tool === 'plane' ? PAGE : this.activeView;
+    return this.activeView;
   }
 
   /** A view's camera, or null for a figure that stands in no one view. */
@@ -439,6 +448,7 @@ export class SketchView {
     this.pending = [];
     this.pendingFit = [];
     this.planeSpec = null;
+    this.planeAxis = null;
   }
 
   /** Frame everything the workspace shows — figures and solids, as the eye now sees them. */
@@ -494,12 +504,10 @@ export class SketchView {
     return true;
   }
 
-  /** File ▸ New: a fresh sheet with one grounded point at the origin, so the first thing drawn
-   *  has something to be placed against. */
+  /** File ▸ New: a fresh sheet that says `use std`, so the first thing drawn is drawn on the
+   *  front and has `std.origin` to be placed against. */
   newDocument(): void {
-    const sk = new Sketch();
-    sk.point(0, 0, true);
-    this.setSketch(sk);
+    this.load('use std\n');
   }
 
   /** Read a source afresh and make it the document — the one place `Document.read` is called, so
@@ -549,6 +557,7 @@ export class SketchView {
     this.selected = carry ? this.rebind(held) : [];
     const again = heldPlane ? this.doc.entity(heldPlane) : undefined;
     this.plane = again instanceof Plane ? again : null;
+    this.drawOnFront();
     // a standard plane chosen before the document had it: brought in by the edit just taken
     if (this.pendingPlane) {
       const wanted = this.doc.entity(this.pendingPlane);
@@ -1040,16 +1049,12 @@ export class SketchView {
   }
 
   /** **Sketch on a plane**: make it the one the next thing is drawn in, and turn the eye square
-   *  on to it.  The front is the page itself where the document has no `std.front`; a standard
-   *  plane the document does not have yet is remembered by name and brought in by the first press
-   *  of a tool (`ensurePlane`), so choosing one writes nothing. */
+   *  on to it.  A standard plane the document does not have yet is remembered by name and brought
+   *  in by the first press of a tool (`ensurePlane`), so choosing one writes nothing. */
   choosePlane(name: string): void {
     const found = this.doc.entity(name);
     if (found instanceof Plane) {
       this.plane = found;
-      this.pendingPlane = null;
-    } else if (name === 'std.front') {
-      this.plane = null;
       this.pendingPlane = null;
     } else if ((STANDARD_PLANES as readonly string[]).includes(name)) {
       this.plane = null;
@@ -1128,8 +1133,11 @@ export class SketchView {
    *  quarters when it has a solid or anything stands on another plane. */
   private homeOrbit(): { az: number; el: number } {
     const ws = this.workspace();
-    // anything standing elsewhere than the page's place — or across places, a projector
-    const off = Object.values(ws.views).some((vs) => vs.some((v) => placeOf(ws, v) !== PAGE));
+    // anything standing elsewhere than the page's place — or across places, a projector — but a
+    // plane's own origin, which stands wherever its plane does whether or not it is drawn on
+    const origins = new Set(this.sketch.planes.map((pl) => pl.origin.index));
+    const off = Object.entries(ws.views).some(([kind, vs]) =>
+      (vs as View[]).some((v, i) => !(kind === 'point' && origins.has(i)) && placeOf(ws, v) !== PAGE));
     return off || objects(this.sketch).length ? { ...THREE_QUARTER } : { ...FRONT };
   }
 
