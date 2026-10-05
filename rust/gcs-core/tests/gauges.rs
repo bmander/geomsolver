@@ -119,7 +119,8 @@ fn a_fix_that_does_not_state_its_numbers_is_refused() {
         ("fix a", "`fix` states the numbers it holds"),
         ("fix(x: 0) a", "`fix` pins a number with `==`"),
         ("fix(5) k", "`fix(r == 5) k`"),
-        ("fix(z == 1) a", "`fix` holds `x`, `y`, `r` or `half`, not `z`"),
+        ("fix(w == 1) a", "`fix` holds `x`, `y`, `z`, `r` or `half`, not `w`"),
+        ("fix(z == 1) a", "a point has x and y, not `z`"),
         ("fix(x == 1) k", "a circle has r, not `x`"),
         ("fix(r == 1) a", "a point has x and y, not `r`"),
     ] {

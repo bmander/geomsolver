@@ -485,8 +485,10 @@ impl System {
                 // one reads is given such unknowns (`Sketch::hold_attitude`), and counted, its row
                 // would stand in the ledger as an equation over the rank.  Not hard, so no count
                 // or rank sees it.
+                // A ray whose direction is fixed outright (`std.x`) is the same: its unit row is
+                // a fact about the numbers a `fix` wrote, not an equation of the drawing.
                 let held = c.intrinsic
-                    && c.kind == crate::constraints::CKind::QuatUnit
+                    && matches!(c.kind, crate::constraints::CKind::QuatUnit | crate::constraints::CKind::RayUnit)
                     && ps.iter().all(|&p| col_of[p as usize] < 0);
                 for p in ps {
                     gidx.push(p as i32);

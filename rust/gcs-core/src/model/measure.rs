@@ -28,7 +28,7 @@ fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
         // a sphere is on no sheet: its centre is what is picked of it (a cone or a cylinder: its
         // axis)
-        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => f64::MAX,
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => f64::MAX,
         // a curve has no idealised form a dimension could mean beyond the curve itself, so this
         // measurement and `point_to_drawn`'s are the same one
         EntKind::Curve => polyline_distance(&sk.curve_polyline(e.i()), px, py),
@@ -68,7 +68,7 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
         // a sphere is on no sheet: its centre is what is picked of it (a cone or a cylinder: its
         // axis)
-        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => f64::MAX,
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => f64::MAX,
         EntKind::Curve => polyline_distance(&sk.curve_polyline(e.i()), px, py),
         EntKind::Line => {
             let l = &sk.lines[e.i()];
@@ -167,7 +167,7 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Curve => 4,
         // never measured against anything: a face and a solid are not on the sheet
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
-        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => 5,
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => 5,
         // last, so any pair with a datum in it puts the datum second and one arm catches it
         EntKind::Plane => 6,
     }

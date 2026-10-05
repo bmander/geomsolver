@@ -7,6 +7,7 @@ use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::syntax::{Arg, Ref, RelationForm, Span, StmtId};
 use std::collections::BTreeSet;
+use crate::fmath::Det;
 use crate::{decompose, expr, io};
 
 /// Resolve an operator to its constraint kind and registry-ordered arguments.
@@ -322,6 +323,34 @@ pub(super) fn constrain(
                         "a {} is a magnitude and cannot be negative{fix}",
                         crate::syntax::snake(ckind.name())
                     ),
+                });
+                return None;
+            }
+        }
+    }
+    // **an angle in space at 0 or half a turn** is parallel said by a cosine, which does not move
+    // there: the row is a double root, and the regular statement is `parallel`, its sense the
+    // seed's.  Refused by value as a negative magnitude is — a stated number; one an unknown
+    // moves is read where it is, never here
+    if ckind == CKind::Angle3 {
+        if let Some(i) = spec.iter().position(|(_, k)| *k == SpecKind::Angle) {
+            let cos = match &args[i] {
+                // the text as written, in the document's degrees
+                CArg::Expr(e) => expr::parse_in(&e.text, sk.units).ok()
+                    .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
+                    .and_then(|a| a.number()).map(|deg| deg.to_radians().dcos()),
+                // a number already in the kernels' radians
+                a => Some(a.num().dcos()),
+            };
+            if cos.is_some_and(|c| c.abs() > 1.0 - 1e-12) {
+                diags.push(Diag {
+                    code: Code::E040,
+                    span: r.args.get(i).and_then(|a| a.as_ref()).and_then(arg_span).unwrap_or(st.span),
+                    stmt: Some(st.id),
+                    message: "an angle in space of 0 or 180 degrees says the two are parallel, and \
+                              is read by a cosine that does not move there: write `parallel`, \
+                              and the seed says which way"
+                        .to_string(),
                 });
                 return None;
             }

@@ -1097,6 +1097,7 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Sphere => 16,
         EntKind::Cone => 17,
         EntKind::Cylinder => 18,
+        EntKind::Ray => 19,
     }
 }
 
@@ -1120,6 +1121,7 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         16 => EntKind::Sphere,
         17 => EntKind::Cone,
         18 => EntKind::Cylinder,
+        19 => EntKind::Ray,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)

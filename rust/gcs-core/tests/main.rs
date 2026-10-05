@@ -88,6 +88,7 @@ mod program;
 mod refine;
 mod crease;
 mod rack_cut;
+mod ray;
 mod refusals;
 mod roots;
 mod ring;

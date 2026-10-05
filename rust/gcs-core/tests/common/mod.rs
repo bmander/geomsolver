@@ -67,8 +67,8 @@ pub fn fd_jacobian(sk: &Sketch, tol: f64) {
 
 /// `src` parsed and elaborated with no error, or the test fails with every diagnostic.
 pub fn read(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
+    let (prog, errs, linked) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty() && linked.is_empty(), "does not parse: {errs:?} {linked:?}\n{src}");
     let e = elaborate(&prog);
     assert!(
         e.ok(),
@@ -80,8 +80,8 @@ pub fn read(src: &str) -> Elaborated {
 
 /// `src` is refused with `code` and a message holding `needle`, shown at `at`.
 pub fn refused(src: &str, code: &str, needle: &str, at: &str) {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "{errs:?}");
+    let (prog, errs, linked) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");
     let e = elaborate(&prog);
     let saw: Vec<String> =
         e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect();

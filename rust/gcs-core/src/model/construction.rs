@@ -121,6 +121,66 @@ impl Sketch {
         self.cylinders.len() - 1
     }
 
+    /// A ray: its direction `d` (normalised here, so a seed need not be a unit vector) and the
+    /// point on it nearest the origin, `a`, which stays fixed — no freedom of the drawing's —
+    /// until a relation reads where the ray is (`place_ray`).  The intrinsic `ray_unit` row is
+    /// minted here and nowhere else, since intrinsics are never serialized.
+    pub fn ray(&mut self, d: [f64; 3], name: &str) -> usize {
+        self.origin_param();
+        // normalised only when it is not unit already, so a direction read back is the bits
+        // that were written
+        let n = crate::space::norm(d);
+        let d = if n <= 0.0 {
+            [0.0, 0.0, 1.0]
+        } else if (n - 1.0).abs() > 1e-12 {
+            d.map(|x| x / n)
+        } else {
+            d
+        };
+        // a direction is worth the drawing's size: its error moves a far point that much
+        let scale = self.extent().max(1.0);
+        let dp = ["x", "y", "z"].map(|k| self.param_scaled(0.0, false, &format!("{name}.{k}"), scale) as u32);
+        for k in 0..3 {
+            self.params[dp[k] as usize].value = d[k];
+        }
+        let ap = ["px", "py", "pz"].map(|k| self.param(0.0, true, &format!("{name}.{k}")) as u32);
+        self.rays.push(RayE { d: dp, a: ap, placed: false, class: Classes::default() });
+        let ri = self.rays.len() - 1;
+        let mut c = Constraint::new(crate::constraints::CKind::RayUnit, vec![crate::constraints::Arg::Ent(EntRef::new(EntKind::Ray, ri))]);
+        c.intrinsic = true;
+        self.add_quiet(c);
+        ri
+    }
+
+    /// Free ray `i`'s place and hold it to the foot of the perpendicular from the origin (the
+    /// intrinsic `ray_foot` row) — once a relation reads where the ray is, and not before: a ray
+    /// read only as a direction has a place no equation mentions, which would be counted as two
+    /// freedoms of a drawing that has none.
+    pub fn place_ray(&mut self, i: usize) {
+        if self.rays[i].placed {
+            return;
+        }
+        self.rays[i].placed = true;
+        for p in self.rays[i].a {
+            self.params[p as usize].fixed = false;
+        }
+        let mut c = Constraint::new(crate::constraints::CKind::RayFoot, vec![crate::constraints::Arg::Ent(EntRef::new(EntKind::Ray, i))]);
+        c.intrinsic = true;
+        self.add_quiet(c);
+    }
+
+    /// A fixed Param holding 0, shared by every ray: the kernels that read a line's direction as
+    /// `B − A` read a ray's as the segment `(0, d)`, so a ray needs no kernels of its own for
+    /// `parallel`, `perpendicular` and `angle`.
+    pub fn origin_param(&mut self) -> u32 {
+        if let Some(z) = self.zero {
+            return z;
+        }
+        let z = self.param(0.0, true, "#origin") as u32;
+        self.zero = Some(z);
+        z
+    }
+
     /// An arc plus its two intrinsic `PointOnCircle` constraints.
     pub fn arc(&mut self, center: usize, start: usize, end: usize, name: &str) -> usize {
         let (cx, cy) = self.point_xy(center);
@@ -406,6 +466,14 @@ impl Sketch {
         // `constraints::validate` is where that is refused
         for p in c.lifted_points(self) {
             self.lift_point(p);
+        }
+        // a relation that reads where a ray is gives the ray its place
+        if c.kind == crate::constraints::CKind::PointOnRay {
+            if let Some(Arg::Ent(r)) = c.args.get(1) {
+                if r.kind == EntKind::Ray && r.i() < self.rays.len() {
+                    self.place_ray(r.i());
+                }
+            }
         }
         for (i, name) in c.kind.param_slots() {
             if matches!(c.args[i], Arg::Param(_)) {

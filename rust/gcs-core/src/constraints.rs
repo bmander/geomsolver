@@ -230,6 +230,17 @@ pub enum CKind {
     /// datum's plus the gap between the faces' ordinates, `d_f − d_g − gap = 0`.  Stated by the
     /// elaborator from the `against` statement and never written as a relation, as a hinge is.
     Mate,
+    /// **A ray's direction held to the unit sphere**: `|d|² = 1`, dimensionless, degree 0.
+    /// Intrinsic, minted by `Sketch::ray` and nowhere else.
+    RayUnit,
+    /// **A placed ray's point held at the foot of the perpendicular from the origin**: `a·d = 0`,
+    /// so it cannot slide along the ray.  Intrinsic, minted by `Sketch::place_ray` once a
+    /// relation reads where the ray is.
+    RayFoot,
+    /// `p coincident t`: a point on a ray's line in space — `point_on_line3`'s two rows across
+    /// the ray's direction, over the point's lift and the ray's place and direction.  What
+    /// gives a ray its place.
+    PointOnRay,
     /// The **gauges** and the **orientation predicates** (spec §9.2, §9.6; issue #47, item 5):
     /// statements written as every other constraint is — an operator, its operands, a class, a
     /// placement — and settled through the same table, but **applied by the elaborator rather
@@ -270,7 +281,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 79] = [
+pub const ALL_KINDS: [CKind; 82] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -350,6 +361,9 @@ pub const ALL_KINDS: [CKind; 79] = [
     CKind::Mate,
     CKind::EqualAngle,
     CKind::ArcLength,
+    CKind::RayUnit,
+    CKind::RayFoot,
+    CKind::PointOnRay,
 ];
 
 /// `along:` says which axis a run or a rise is measured on.  It is the one selector that fills no
@@ -385,8 +399,10 @@ pub const ALONG: [(&str, CKind); 9] = [
 /// cannot be made from the kinds alone.  `None` is "this word does not relate those two", which
 /// the caller reports with the kinds in it.
 pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option<String>) -> Option<CKind> {
-    use EntKind::{Arc, Circle, Cone, Curve, Cylinder, Line, Plane, Point, Sphere, Spline};
+    use EntKind::{Arc, Circle, Cone, Curve, Cylinder, Line, Plane, Point, Ray, Sphere, Spline};
     let round = |k: EntKind| matches!(k, Circle | Arc);
+    // a ray is in space, so a direction relation naming one is the relation in space
+    let rays = |a: EntKind, b: EntKind| matches!((a, b), (Ray, Ray | Line) | (Line, Ray));
     if matches!(sel("along").as_deref(), Some("u" | "v" | "n")) && (word != "distance" || (a, b) != (Point, Plane)) {
         return None;
     }
@@ -405,6 +421,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Point, Cylinder) => CKind::CylinderOn,
             (k, Sphere) if round(k) => CKind::CircleOnSphere,
             (Line, Plane) => CKind::LineOnPlane,
+            (Point, Ray) => CKind::PointOnRay,
             _ => return None,
         },
         "distance" => match (a, b) {
@@ -464,6 +481,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         },
         "angle" => match (a, b) {
             (Line, Line) => CKind::Angle,
+            (x, y) if rays(x, y) => CKind::Angle3,
             _ => return None,
         },
         "midpoint" => match (a, b) {
@@ -477,10 +495,12 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         },
         "parallel" => match (a, b) {
             (Line, Line) => CKind::Parallel,
+            (x, y) if rays(x, y) => CKind::Parallel3,
             _ => return None,
         },
         "perpendicular" => match (a, b) {
             (Line, Line) => CKind::Perpendicular,
+            (x, y) if rays(x, y) => CKind::Perpendicular3,
             _ => return None,
         },
         "symmetry" => match (a, b) {
@@ -629,6 +649,11 @@ pub enum SpecKind {
     /// A cone and a cylinder: an axis drawn in a view and a number each owns.
     Cone,
     Cylinder,
+    /// A ray: a directed line in space, in no view.
+    Ray,
+    /// A direction in space: a line drawn in some view, or a ray — what `parallel`,
+    /// `perpendicular` and `angle` read across views and between rays.
+    Axis,
     /// The operand of `fix`: an entity of any kind whose own numbers the statement holds
     /// (`fix(r == 25) c`).  Filled from a reference like an entity slot; which numbers that
     /// kind has is the gauge's own check.
@@ -670,6 +695,8 @@ impl SpecKind {
             | SpecKind::Sphere
             | SpecKind::Cone
             | SpecKind::Cylinder
+            | SpecKind::Ray
+            | SpecKind::Axis
             | SpecKind::Scalar
             | SpecKind::Float
             | SpecKind::Int
@@ -693,6 +720,8 @@ impl SpecKind {
                 | SpecKind::Sphere
                 | SpecKind::Cone
                 | SpecKind::Cylinder
+                | SpecKind::Ray
+                | SpecKind::Axis
         )
     }
 
@@ -723,6 +752,8 @@ impl SpecKind {
             SpecKind::Sphere => "sphere",
             SpecKind::Cone => "cone",
             SpecKind::Cylinder => "cylinder",
+            SpecKind::Ray => "ray",
+            SpecKind::Axis => "axis",
             SpecKind::Scalar => "scalar",
             SpecKind::Length => "length",
             SpecKind::Angle => "angle",
@@ -821,6 +852,9 @@ impl CKind {
             CKind::HingeAlong => "HingeAlong",
             CKind::ProjectSolved => "ProjectSolved",
             CKind::Mate => "Mate",
+            CKind::RayUnit => "RayUnit",
+            CKind::RayFoot => "RayFoot",
+            CKind::PointOnRay => "PointOnRay",
             CKind::Fix => "Fix",
             CKind::Ccw => "Ccw",
             CKind::Cw => "Cw",
@@ -942,8 +976,8 @@ impl CKind {
             CKind::LineLine3 => {
                 &[("l1", S::Line), ("l2", S::Line), ("d", S::Length), ("sign", S::Int)]
             }
-            CKind::Angle3 => &[("l1", S::Line), ("l2", S::Line), ("theta", S::Angle)],
-            CKind::Perpendicular3 | CKind::Parallel3 => &[("l1", S::Line), ("l2", S::Line)],
+            CKind::Angle3 => &[("l1", S::Axis), ("l2", S::Axis), ("theta", S::Angle)],
+            CKind::Perpendicular3 | CKind::Parallel3 => &[("l1", S::Axis), ("l2", S::Axis)],
             CKind::PointOnPlane | CKind::PointOnPlaneFixed => {
                 &[("p", S::Point), ("plane", S::Plane)]
             }
@@ -996,6 +1030,8 @@ impl CKind {
             }
             // the plane a mate places, the one it bears on, and the faces' ordinates' difference
             CKind::Mate => &[("plane", S::Plane), ("datum", S::Plane), ("gap", S::Float)],
+            CKind::RayUnit | CKind::RayFoot => &[("ray", S::Ray)],
+            CKind::PointOnRay => &[("p", S::Point), ("ray", S::Ray)],
             // the entity, and the numbers it holds, each pinned under the name of the field it
             // is (`model::EntKind::fields`): `fix(x == 0, y == 0) p`, `fix(r == 25) c`,
             // `fix(half == 30deg) k`.  Every scalar field a kind owns is a slot here, and which
@@ -1004,6 +1040,8 @@ impl CKind {
                 ("of", S::Scalar),
                 ("x", S::Param),
                 ("y", S::Param),
+                // a ray's direction (and, from #81, a point in space)
+                ("z", S::Param),
                 ("r", S::Param),
                 ("half", S::Param),
             ],
@@ -1146,7 +1184,11 @@ impl CKind {
             | CKind::HingeParallel
             | CKind::HingeAlong
             // nor is a mate's row: the `against` statement is the solids' word
-            | CKind::Mate => return None,
+            | CKind::Mate
+            // a ray's own algebra
+            | CKind::RayUnit
+            | CKind::RayFoot => return None,
+            CKind::PointOnRay => ("coincident", Infix),
         })
     }
 
@@ -1423,6 +1465,9 @@ impl CKind {
             | CKind::HingeAlong
             | CKind::ProjectSolved
             | CKind::Mate
+            | CKind::RayUnit
+            | CKind::RayFoot
+            | CKind::PointOnRay
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw => false,
@@ -1552,6 +1597,9 @@ impl CKind {
             CKind::HingeAlong => K::HingeAlong,
             CKind::ProjectSolved => K::ProjectFree,
             CKind::Mate => K::Mate,
+            CKind::RayUnit => K::RayUnit,
+            CKind::RayFoot => K::RayFoot,
+            CKind::PointOnRay => K::PointOnRay,
             CKind::Fix | CKind::Ccw | CKind::Cw => {
                 panic!("{:?} is a gauge: applied by the elaborator, it has no kernel", self)
             }
@@ -1669,6 +1717,9 @@ impl CKind {
             | CKind::HingeAlong
             | CKind::ProjectSolved
             | CKind::Mate
+            | CKind::RayUnit
+            | CKind::RayFoot
+            | CKind::PointOnRay
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw => return None,
@@ -1717,6 +1768,7 @@ impl CKind {
                 | CKind::CylinderTangentLine
                 | CKind::ConeTangentCone
                 | CKind::PointOnExtrusion
+                | CKind::PointOnRay
         )
     }
 
@@ -2413,9 +2465,12 @@ impl Constraint {
             // two directions across a line as its hidden points stand now — the first line of a
             // parallel, the line a point is on — refreshed with every `refresh_consts`, so they
             // follow the line between solves
-            CKind::Parallel3 | CKind::PointOnLine3 => {
-                let i = if self.kind == CKind::Parallel3 { 0 } else { 1 };
-                let l = &sk.lines[self.args[i].ent().i()];
+            CKind::Parallel3 => {
+                let (e1, e2) = across(self.axis_dir(sk, 0));
+                [e1, e2].concat()
+            }
+            CKind::PointOnLine3 => {
+                let l = &sk.lines[self.args[1].ent().i()];
                 let a = crate::space::sub(sk.lifted(l.p2 as usize), sk.lifted(l.p1 as usize));
                 let (e1, e2) = across(a);
                 [e1, e2].concat()
@@ -2436,6 +2491,13 @@ impl Constraint {
             CKind::ConeAngle | CKind::CylinderRadius => vec![self.args[1].num()],
             // the gap between the two faces' ordinates along the planes' shared normal
             CKind::Mate => vec![self.args[2].num()],
+            // two directions across the ray's, as `point_on_line3` takes them across its line
+            CKind::PointOnRay => {
+                let r = &sk.rays[self.args[1].ent().i()];
+                let d = r.d.map(|p| sk.params[p as usize].value);
+                let (e1, e2) = across(d);
+                [e1, e2].concat()
+            }
             // `line_line3_free` at (m, c) = (±1, 0): the radius, turned to the seed's side
             CKind::CylinderTangentLine => vec![self.skew_sign(), 0.0],
             // outside, or inside with the larger radius positive as the radii stand now
@@ -2658,6 +2720,16 @@ impl Constraint {
             }
             // both images' hidden points, then both views' quaternions
             CKind::ProjectSolved => [self.lifted_columns(sk), att_q(2), att_q(3)].concat(),
+            CKind::RayUnit => sk.rays[e(0).i()].d.to_vec(),
+            CKind::RayFoot => {
+                let r = &sk.rays[e(0).i()];
+                [r.a, r.d].concat()
+            }
+            // the point's lift, then the ray's place and direction
+            CKind::PointOnRay => {
+                let r = &sk.rays[e(1).i()];
+                [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
+            }
             // the two planes' offsets along their shared normal
             CKind::Mate => {
                 let d = |i: usize| {
@@ -2684,9 +2756,6 @@ impl Constraint {
             | CKind::Distance3
             | CKind::PointLine3
             | CKind::LineLine3
-            | CKind::Angle3
-            | CKind::Perpendicular3
-            | CKind::Parallel3
             | CKind::PointOnPlaneFixed
             | CKind::PointOnLine3
             | CKind::EqualLength3
@@ -2694,6 +2763,7 @@ impl Constraint {
             | CKind::LineOnPlaneFixed
             | CKind::Midpoint3
             | CKind::Symmetric3 => self.lifted_columns(sk),
+            CKind::Angle3 | CKind::Perpendicular3 | CKind::Parallel3 => self.axis_columns(sk),
             // and a solved plane's quaternion and offset after them
             CKind::PointOnPlane | CKind::PointPlaneDistance | CKind::LineOnPlane => {
                 let a = sk.planes[e(1).i()].att.as_ref().expect("a solved view");
@@ -2782,12 +2852,50 @@ impl Constraint {
             }
             // a cone's or a cylinder's axis, apex first
             CKind::ConeOn | CKind::CylinderOn => [vec![e(0).i()], axis(1).to_vec()].concat(),
-            CKind::PointOnExtrusion => vec![e(0).i()],
+            CKind::PointOnExtrusion | CKind::PointOnRay => vec![e(0).i()],
             CKind::CylinderTangentLine => [axis(0), ends(1)].concat(),
             CKind::ConeTangentCone => [vec![e(2).i()], axis(0).to_vec(), axis(1).to_vec()].concat(),
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
+            // a direction's operands: a line's ends are lifted, and a ray is in space already
+            CKind::Angle3 | CKind::Perpendicular3 | CKind::Parallel3 => (0..2)
+                .filter(|&i| e(i).kind == EntKind::Line)
+                .flat_map(ends)
+                .collect(),
             _ => [ends(0), ends(1)].concat(),
         }
+    }
+
+    /// The columns of a direction relation's two operands, six each as the kernels read a line
+    /// (`B − A`): a line's two hidden points, or a ray's direction as the segment from the
+    /// origin, `(0, d)` — so a ray needs no kernels of its own for `parallel`, `perpendicular`
+    /// and `angle` (`Sketch::origin_param`).
+    fn axis_columns(&self, sk: &Sketch) -> Vec<u32> {
+        let mut out = Vec::with_capacity(12);
+        for a in &self.args[..2] {
+            let e = a.ent();
+            if e.kind == EntKind::Ray {
+                let z = sk.zero.expect("a ray mints the origin's Param");
+                out.extend([z, z, z]);
+                out.extend(sk.rays[e.i()].d);
+            } else {
+                let l = &sk.lines[e.i()];
+                for p in [l.p1, l.p2] {
+                    let k = sk.lift_of(p as usize).expect("a relation in space is lifted at the add");
+                    out.extend(sk.lifts[k].x);
+                }
+            }
+        }
+        out
+    }
+
+    /// Operand `i`'s direction as it stands now, as a direction relation reads it.
+    fn axis_dir(&self, sk: &Sketch, i: usize) -> [f64; 3] {
+        let e = self.args[i].ent();
+        if e.kind == EntKind::Ray {
+            return sk.rays[e.i()].d.map(|p| sk.params[p as usize].value);
+        }
+        let l = &sk.lines[e.i()];
+        crate::space::sub(sk.lifted(l.p2 as usize), sk.lifted(l.p1 as usize))
     }
 
     /// Those hidden points' Params, three a point.
@@ -3239,6 +3347,8 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::Sphere => ent == EntKind::Sphere,
         SpecKind::Cone => ent == EntKind::Cone,
         SpecKind::Cylinder => ent == EntKind::Cylinder,
+        SpecKind::Ray => ent == EntKind::Ray,
+        SpecKind::Axis => ent == EntKind::Line || ent == EntKind::Ray,
         _ => false,
     }
 }

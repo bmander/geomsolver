@@ -121,9 +121,13 @@ pub enum K {
     EqualAngle,
     ArcLength,
     ArcLengthFree,
+    // a ray's own two rows, and a point on one
+    RayUnit,
+    RayFoot,
+    PointOnRay,
 }
 
-pub const N_KERNELS: usize = 88;
+pub const N_KERNELS: usize = 91;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2729,6 +2733,78 @@ fn project_free_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
  * spheres touching.  A sphere's radius and its tangency to a line reuse `radius` and
  * `point_line3_free` (the line's distance from the centre, stated as the radius column). */
 
+/// Columns of `ray_unit`: (dx, dy, dz).  `|d|² − 1`: a direction held to the unit sphere,
+/// dimensionless, degree 0 — `quat_unit` one dimension down.
+fn ray_unit_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let d = at3(v, 3 * i);
+        r[i] = dot3(d, d) - 1.0;
+    }
+}
+
+fn ray_unit_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 3 * i;
+        for t in 0..3 {
+            j[o + t] = 2.0 * v[o + t];
+        }
+    }
+}
+
+/// Columns of `ray_foot`: (a, d).  `a·d`: the ray's point is the foot of the perpendicular from
+/// the origin, so it cannot slide along the ray.  A length, degree 1.
+fn ray_foot_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        r[i] = dot3(at3(v, 6 * i), at3(v, 6 * i + 3));
+    }
+}
+
+fn ray_foot_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 6 * i;
+        for t in 0..3 {
+            j[o + t] = v[o + 3 + t];
+            j[o + 3 + t] = v[o + t];
+        }
+    }
+}
+
+/// Columns of `point_on_ray`: (X, a, d), K = (e₁, e₂) — `point_on_line3` over a ray, whose
+/// direction is `d` itself rather than `B − A`: `((X − a) × d)·e_k / |d| = 0`.  Degree 1.
+fn point_on_ray_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let (w, e) = (sub3(at3(v, o), at3(v, o + 3)), at3(v, o + 6));
+        let le = norm3(e).max(MIN_LINE_LEN);
+        let c = cross3(w, e);
+        for t in 0..2 {
+            r[2 * i + t] = dot3(c, at3(k, 6 * i + 3 * t)) / le;
+        }
+    }
+}
+
+fn point_on_ray_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let (w, e) = (sub3(at3(v, o), at3(v, o + 3)), at3(v, o + 6));
+        let le = norm3(e).max(MIN_LINE_LEN);
+        let c = cross3(w, e);
+        for t in 0..2 {
+            let kk = at3(k, 6 * i + 3 * t);
+            let r = dot3(c, kk) / le;
+            // N = (w × e)·k = w·(e × k) = e·(k × w)
+            let (gw, ge) = (cross3(e, kk), cross3(kk, w));
+            let row = &mut j[18 * i + 9 * t..18 * i + 9 * (t + 1)];
+            for s in 0..3 {
+                let gw = gw[s] / le;
+                row[s] = gw;
+                row[3 + s] = -gw;
+                row[6 + s] = ge[s] / le - r * e[s] / (le * le);
+            }
+        }
+    }
+}
+
 /// Columns of `point_on_line3`: (X, A, B), K = (e₁, e₂) — two unit vectors across the line as it
 /// stood when the system was compiled or last refreshed (`parallel3`'s device).  "On the line"
 /// is two equations, and the magnitude `|w × e|/|e|` has no gradient where it holds, so the two
@@ -3524,6 +3600,9 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "equal_angle", n_res: 1, n_par: 16, degree: 0, n_const: 1, res: equal_angle_res, jac: equal_angle_jac, const_jac: None },
     Kernel { name: "arc_length", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: arc_length_res, jac: arc_length_jac, const_jac: None },
     Kernel { name: "arc_length_free", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: arc_length_free_res, jac: arc_length_free_jac, const_jac: None },
+    Kernel { name: "ray_unit", n_res: 1, n_par: 3, degree: 0, n_const: 0, res: ray_unit_res, jac: ray_unit_jac, const_jac: None },
+    Kernel { name: "ray_foot", n_res: 1, n_par: 6, degree: 1, n_const: 0, res: ray_foot_res, jac: ray_foot_jac, const_jac: None },
+    Kernel { name: "point_on_ray", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_ray_res, jac: point_on_ray_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

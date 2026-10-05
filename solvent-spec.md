@@ -2,6 +2,15 @@
 
 **Specification, Draft 0.42 — October 2026**
 
+**[0.42] A ray is a directed line in space.** `t := ray hint(x: 0, y: 0, z: 1)` declares one:
+a direction and a place, with no start, drawn in no view (§3.1). It is placed by the relations
+every entity takes — `t parallel s`, `t perpendicular s` and `t angle(θ) s` against a ray or a
+line, `p coincident t` for a point on it — and a direction is held by
+`fix(x == 0, y == 0, z == 1) t`. A ray read only as a direction has two freedoms; a relation that
+reads where it is gives it two more. An angle in space of 0° or 180° is **E040**, by value: it is
+`parallel` read by a cosine that does not move there, and `parallel` with the seed picking the
+sense is the regular statement.
+
 **[0.42] Incidence is `coincident`.** `on` is retired: `coincident` relates two points, and a
 point or a line to whatever `on` related it to — a line, a circle or arc, a spline, a curve, a
 plane, a sphere, a cone, a cylinder — and a circle to a sphere (§9.2). What it means is the kinds
@@ -250,6 +259,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Sphere` | a center drawn in some view + a radius, on no sheet **[0.24]** | 3 (the center's 2 in its view, and `r`) |
 | `Cone` | an axis `Line` drawn in some view — the apex its start, opening toward its end — + a half-angle, on no sheet **[0.26]** | 1 of its own (`half`), beyond its axis's |
 | `Cylinder` | an axis `Line` drawn in some view + a radius, on no sheet **[0.26]** | 1 of its own (`r`), beyond its axis's |
+| `Ray` | a directed line in space with no start, drawn in no view **[0.42]** | 2 (its direction), and 2 more once a relation reads where it is |
 | `Plane` | the datum: origin + orientation **[0.6]**, and a **view** — a plane in space, given as a constant orthonormal basis `(u, v)` **[0.10]**; one with no attitude written is the page's **[0.15]** | 0 beyond its two points (§6.7) |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
 | `Face` | a planar profile (§6.8) or an ordered boundary on an explicit spatial support (§6.20) | 0 — it owns no parameter |
@@ -281,6 +291,7 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Cone`, `Cylinder` | `.axis` | `Line` — named in the brackets, never minted: it is what places the surface in space **[0.26]** |
 | `Cone` | `.half` | `Angle` — written in degrees in `hint(half: …)`, stated by `angle(θ) k` **[0.26]** |
 | `Cylinder` | `.r` | `Length` **[0.26]** |
+| `Ray` | `.x`, `.y`, `.z` | its unit direction — seeded by `hint(x:, y:, z:)` (normalised) and held by `fix(x == …, y == …, z == …)` **[0.42]** |
 | `Plane` | `.origin`, `.toward` | `Point` **[0.6]** |
 | `Plane` | `.c`, `.s` | `Scalar` **[0.6]** — the unit rotor |
 | `Plane` | `.angle` | `Angle` — derived, `atan2(s, c)`; readable in trace-block expressions **[0.6]** |
@@ -1495,10 +1506,10 @@ What goes in the parentheses is a short list:
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
 | `curvature` | infix | (spline, circle), (curve, circle) |
 | `horizontal`, `vertical` | prefix / infix | a line; or a pair of points |
-| `angle` | infix | (line, line) |
+| `angle` | infix | (line, line); **[0.42]** (ray, ray \| line), (line, ray), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc; **[0.24]** a sphere; **[0.26]** a cylinder |
 | `angle` | prefix | **[0.26]** a cone: its half-angle (between two lines `angle` is infix) |
-| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each |
+| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take a ray beside a ray or a line, in space |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers each pinned by its field — `fix(x == 0, y == 0) p`, `fix(r == 25) c` **[0.34]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |

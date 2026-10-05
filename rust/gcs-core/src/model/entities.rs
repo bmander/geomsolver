@@ -83,6 +83,10 @@ pub enum EntKind {
     Cone,
     /// **A cylinder**: an axis line drawn in some view and a radius it owns.
     Cylinder,
+    /// **A ray** (`docs/planes-plan.md`): a directed line in space, with no start — a direction
+    /// and a place, placed by relations like any other entity and drawn on no sheet.  Its
+    /// relations (`parallel`, `perpendicular`, `angle`, `p coincident t`) are in space.
+    Ray,
 }
 
 impl EntKind {
@@ -107,6 +111,7 @@ impl EntKind {
             EntKind::Sphere => "sphere",
             EntKind::Cone => "cone",
             EntKind::Cylinder => "cylinder",
+            EntKind::Ray => "ray",
         }
     }
 
@@ -131,6 +136,7 @@ impl EntKind {
             "sphere" => EntKind::Sphere,
             "cone" => EntKind::Cone,
             "cylinder" => EntKind::Cylinder,
+            "ray" => EntKind::Ray,
             _ => return None,
         })
     }
@@ -151,6 +157,9 @@ impl EntKind {
             // the axis is a line, the one child that is not a point: the apex is its start
             EntKind::Cone => &[("axis", C), ("half", S)],
             EntKind::Cylinder => &[("axis", C), ("r", S)],
+            // its direction, which a seed and a `fix` name, and then the point on it nearest the
+            // origin, which only a relation that reads where the ray is moves
+            EntKind::Ray => &[("x", S), ("y", S), ("z", S), ("px", S), ("py", S), ("pz", S)],
             EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
             EntKind::Spline => &[("ctrl", L)],
             // a plane's attitude is not a field: a Scalar is a number a solve may write back,
@@ -197,6 +206,7 @@ impl EntKind {
             | EntKind::Sphere
             | EntKind::Cone
             | EntKind::Cylinder
+            | EntKind::Ray
             | EntKind::Spline
             | EntKind::Plane
             | EntKind::Curve
@@ -229,6 +239,7 @@ impl EntKind {
             }
             // a surface in space is no formal a curve is written over
             EntKind::Cone | EntKind::Cylinder => return None,
+            EntKind::Ray => ["x", "y", "z", "px", "py", "pz"].iter().map(|f| format!("{n}.{f}")).collect(),
             EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => return None,
         })
     }
@@ -257,6 +268,8 @@ impl EntKind {
             => true,
             // built over a line already drawn in its view, as a face is over its edges
             EntKind::Cone | EntKind::Cylinder => false,
+            // in space, in no view
+            EntKind::Ray => false,
         }
     }
 
@@ -279,6 +292,7 @@ impl EntKind {
             | EntKind::Sphere
             | EntKind::Cone
             | EntKind::Cylinder
+            | EntKind::Ray
             | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => None,
         }
     }
@@ -302,7 +316,8 @@ impl EntKind {
             // solved, owning its radius — a figure of the drawing stratum, not a reading of one
             | EntKind::Sphere
             | EntKind::Cone
-            | EntKind::Cylinder => false,
+            | EntKind::Cylinder
+            | EntKind::Ray => false,
         }
     }
 
@@ -405,6 +420,18 @@ pub struct SphereE {
 pub struct AxialE {
     pub axis: u32,
     pub param: u32,
+    pub class: Classes,
+}
+
+/// A ray: a unit direction `d` and the point `a` on it nearest the world origin, six Params.
+/// `|d| = 1` is an intrinsic row (`Sketch::ray`); `a·d = 0` is another, minted only once a
+/// relation reads where the ray is (`placed`) — a ray read only as a direction leaves `a` fixed
+/// and no freedom of it counted.
+#[derive(Clone, Debug)]
+pub struct RayE {
+    pub d: [u32; 3],
+    pub a: [u32; 3],
+    pub placed: bool,
     pub class: Classes,
 }
 

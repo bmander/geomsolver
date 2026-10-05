@@ -25,7 +25,7 @@ mod topology;
 mod attitude;
 
 pub use entities::{
-    Param, EntKind, Field, EntRef, PointE, LineE, CircleE, SphereE, AxialE, ArcE, SplineE, FrameE,
+    Param, EntKind, Field, EntRef, PointE, LineE, CircleE, SphereE, AxialE, RayE, ArcE, SplineE, FrameE,
     PlaneE, Att,
     LiftE,
 };
@@ -72,6 +72,10 @@ pub struct Sketch {
     /// The cones and cylinders, after the spheres; likewise.
     pub cones: Vec<AxialE>,
     pub cylinders: Vec<AxialE>,
+    /// The rays: directed lines in space, drawn in no view.
+    pub rays: Vec<RayE>,
+    /// A fixed Param holding 0 that a ray's direction is read against (`Sketch::origin_param`).
+    pub zero: Option<u32>,
     pub arcs: Vec<ArcE>,
     pub splines: Vec<SplineE>,
     pub planes: Vec<PlaneE>,
@@ -205,6 +209,7 @@ impl Sketch {
             EntKind::Sphere => self.spheres[e.i()].class.clone(),
             EntKind::Cone => self.cones[e.i()].class.clone(),
             EntKind::Cylinder => self.cylinders[e.i()].class.clone(),
+            EntKind::Ray => self.rays[e.i()].class.clone(),
             EntKind::Arc => self.arcs[e.i()].class.clone(),
             EntKind::Spline => self.splines[e.i()].class.clone(),
             EntKind::Plane => self.planes[e.i()].frame.class.clone(),
@@ -232,6 +237,7 @@ impl Sketch {
             EntKind::Sphere => self.spheres.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Cone => self.cones.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Cylinder => self.cylinders.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Ray => self.rays.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Arc => self.arcs.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Spline => self.splines.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Plane => self.planes.get_mut(e.i()).map(|x| &mut x.frame.class),

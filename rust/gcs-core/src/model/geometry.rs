@@ -158,7 +158,9 @@ impl Sketch {
                 }
                 b
             }
-            EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => {
+            // a ray is in space, on no sheet, with nothing drawn of it
+            EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
+            | EntKind::Ray => {
                 (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY)
             }
             EntKind::Curve => {

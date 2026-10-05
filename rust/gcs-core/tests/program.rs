@@ -401,6 +401,8 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     // two cones and a cylinder, about the second line and the first
     let (ka, kb) = (sk.cone(l2, 0.5, "ka"), sk.cone(l1, 0.25, "kb"));
     let cy = sk.cylinder(l2, 7.0, "cy");
+    // two rays, one placed through `p` by a relation of its own
+    let (ra, rb) = (sk.ray([1.0, 0.2, 0.3], "ra"), sk.ray([0.1, 1.0, -0.4], "rb"));
     // a projection over stated views is `Project`, and comes back as the twin its views feed
     if matches!(kind, CKind::Project | CKind::ProjectSolved) {
         sk.set_plane(p, Some(pa));
@@ -446,6 +448,10 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
                 Arg::Ent(EntRef::new(EntKind::Cone, ka))
             }
             SpecKind::Cylinder => Arg::Ent(EntRef::new(EntKind::Cylinder, cy)),
+            // a direction relation over a ray and a line, or two rays
+            SpecKind::Ray | SpecKind::Axis if i == 0 => Arg::Ent(EntRef::new(EntKind::Ray, ra)),
+            SpecKind::Axis if kind == CKind::Parallel3 => Arg::Ent(EntRef::line(l2)),
+            SpecKind::Ray | SpecKind::Axis => Arg::Ent(EntRef::new(EntKind::Ray, rb)),
             SpecKind::Sphere if used_sphere => Arg::Ent(EntRef::new(EntKind::Sphere, sb)),
             SpecKind::Sphere => {
                 used_sphere = true;

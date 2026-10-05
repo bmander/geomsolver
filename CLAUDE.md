@@ -45,6 +45,15 @@ coincident` each). Cone kernels use forward-mode `Dual<N>` (`kernels.rs`). `agai
 views needs a shared attitude root (`from:` no fold); a solved datum offset is a `CKind::Mate` row.
 `o:` beside `u:`/`v:` is where a stated basis stands (`to_program` writes it for a stand-off plane).
 
+**Rays** (`docs/planes-plan.md`, #81): `t := ray hint(x:, y:, z:)` is a directed line in space,
+`RayE { d, a, placed }`: a unit direction (`ray_unit`, intrinsic, held like `quat_unit` when `fix`
+holds all three) and the point nearest the origin, fixed — no freedom — until a relation reads it
+(`PointOnRay`, `p coincident t`), when `Sketch::place_ray` frees it and mints `ray_foot` (`a·d =
+0`). `parallel`/`perpendicular`/`angle` over a ray are `Parallel3`/`Perpendicular3`/`Angle3`
+(slots `SpecKind::Axis`, a line or a ray): a ray is handed to the line kernels as the segment
+`(0, d)` from `Sketch::origin_param`, a fixed 0 (`Constraint::axis_columns`). An unsigned angle
+of 0°/180° is E040 by value (`program/relations.rs`). `tests/ray.rs` is the gate.
+
 **Closed components:** model dependencies enter through arguments, standard datums included.
 Definitions and built-ins stay callable. A component scope holds only its formals and
 declarations; repetitions share it. `dims := {width: 20mm, origin: o}` bundles values and

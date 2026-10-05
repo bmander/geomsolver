@@ -126,6 +126,9 @@ macro_rules! undrawn {
             | CKind::CylinderTangentLine
             | CKind::ConeTangentCone
             | CKind::Mate
+            | CKind::RayUnit
+            | CKind::RayFoot
+            | CKind::PointOnRay
             // a view's hinge is its declaration's, and a projection in space draws what
             // `project` draws: nothing
             | CKind::Hinge

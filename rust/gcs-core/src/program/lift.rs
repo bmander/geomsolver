@@ -338,8 +338,12 @@ pub(crate) fn holds(sk: &Sketch, e: EntRef) -> Vec<(&'static str, f64)> {
         return Vec::new();
     }
     let scalars = e.kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n);
+    // a ray's place is held while nothing reads it (`Sketch::place_ray`), which is no gauge of
+    // the document's: only its direction is ever stated held
+    let own = sk.own_params(e);
+    let own = if e.kind == EntKind::Ray { &own[..3] } else { &own[..] };
     scalars
-        .zip(sk.own_params(e))
+        .zip(own.iter().copied())
         .filter(|&(_, p)| sk.params[p as usize].fixed)
         .map(|(n, p)| (n, sk.seed_value(e, p)))
         .collect()

@@ -30,6 +30,17 @@ fn scatter(i: usize) -> (f64, f64) {
     (r * th.dcos(), r * th.dsin())
 }
 
+/// Where an unseeded ray points: the `i`th of a spiral over the sphere, so two rays a document
+/// left unseeded neither coincide nor start opposed — either is a stationary point of an angle
+/// between them.  The same irrational steps as `scatter`, one in bearing and one in height.
+fn scatter_direction(i: usize) -> [f64; 3] {
+    const STEP: f64 = 2.399963;
+    let z = ((i as f64 * 0.618034 + 0.31) % 1.0) * 1.6 - 0.8;
+    let th = i as f64 * STEP + 0.4;
+    let r = (1.0 - z * z).sqrt();
+    [r * th.dcos(), r * th.dsin(), z]
+}
+
 /// Child display names under `base`, such as `l.p1` and `a.center`.
 /// Anonymous declarations use their generated display name as the base.
 pub(crate) fn child_names(kind: EntKind, base: &str) -> Vec<String> {
@@ -329,6 +340,22 @@ pub(super) fn build(
                 sk.params[sp].value = s;
             }
             pi
+        }
+        // a direction, seeded where the source wrote one, and a place no relation reads yet
+        EntKind::Ray => {
+            let dir = if (0..3).any(wrote) {
+                [seed(0), seed(1), seed(2)]
+            } else {
+                scatter_direction(sk.rays.len())
+            };
+            let ri = sk.ray(dir, &show);
+            for k in 0..3 {
+                if wrote(3 + k) {
+                    let p = sk.rays[ri].a[k] as usize;
+                    sk.params[p].value = seed(3 + k);
+                }
+            }
+            ri
         }
         EntKind::Curve => unreachable!("a curve is built before this walk"),
         EntKind::Cone | EntKind::Cylinder => unreachable!("built by `build_axial`"),
@@ -696,6 +723,7 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Sphere => sk.spheres[e.i()].class = c,
         EntKind::Cone => sk.cones[e.i()].class = c,
         EntKind::Cylinder => sk.cylinders[e.i()].class = c,
+        EntKind::Ray => sk.rays[e.i()].class = c,
         EntKind::Arc => sk.arcs[e.i()].class = c,
         EntKind::Spline => sk.splines[e.i()].class = c,
         EntKind::Plane => sk.planes[e.i()].frame.class = c,

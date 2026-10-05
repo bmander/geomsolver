@@ -215,7 +215,7 @@ fn remap_early(
         // face and a solid are built after every curve, so neither is one either
         // nor a sphere: a curve is written over drawn figures, and a sphere is on no sheet
         EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
-        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => None,
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => None,
     }
 }
 
@@ -404,6 +404,24 @@ pub fn to_json(sk: &Sketch) -> Json {
             doc.set(key, Json::Arr(v));
         }
     }
+    // the rays, only when there is one: a direction and its fixed flags, and where it is (read
+    // back, since a relation placing it is re-added on load and frees the place again)
+    let rays: Vec<Json> = sk
+        .rays
+        .iter()
+        .map(|r| {
+            let nums = |ps: &[u32; 3]| Json::Arr(ps.iter().map(|&p| sk.params[p as usize].value.into()).collect());
+            object([
+                ("d", nums(&r.d)),
+                ("a", nums(&r.a)),
+                ("fixed", Json::Arr(r.d.iter().map(|&p| sk.params[p as usize].fixed.into()).collect())),
+                ("class", class_json(&r.class)),
+            ])
+        })
+        .collect();
+    if !rays.is_empty() {
+        doc.set("rays", Json::Arr(rays));
+    }
     // the page-placement gauge's holds, by point index — only when there is one, and
     // derived again by an elaboration, but a document loaded from this has no source to derive
     // them from: without it a writeback would read the hold as a `fix`
@@ -563,6 +581,22 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
                 _ => sk.cylinders[ci].class = class,
             }
         }
+    }
+    // the rays after the cylinders, `primitives()`'s order
+    for r in d.get("rays").unwrap_or(&empty).arr() {
+        let three = |key: &str| -> [f64; 3] {
+            let v = r.get(key).map(|v| v.arr()).unwrap_or_default();
+            [0, 1, 2].map(|k| v.get(k).map(|x| x.as_f64()).unwrap_or(0.0))
+        };
+        let ri = sk.ray(three("d"), "");
+        let a = three("a");
+        let fixed = r.get("fixed").map(|v| v.arr()).unwrap_or_default();
+        for k in 0..3 {
+            let (dp, ap) = (sk.rays[ri].d[k] as usize, sk.rays[ri].a[k] as usize);
+            sk.params[dp].fixed = fixed.get(k).map(|v| v.as_bool()).unwrap_or(false);
+            sk.params[ap].value = a[k];
+        }
+        sk.rays[ri].class = read_class(r);
     }
     // memberships once the planes exist to be members of: a point's `"plane"` names one by
     // index, and the point was read before any plane was
@@ -883,6 +917,23 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         }
     }
     let [cone_map, cylinder_map] = axial_maps;
+    // the rays, each its own: a direction, its fixed flags and its place
+    let mut ray_map: Vec<Option<usize>> = vec![None; src.rays.len()];
+    for i in 0..src.rays.len() {
+        if !keep(EntRef::new(EntKind::Ray, i)) {
+            continue;
+        }
+        let r = &src.rays[i];
+        let ni = dst.ray(r.d.map(|p| src.params[p as usize].value), "");
+        for k in 0..3 {
+            let (dp, ap) = (dst.rays[ni].d[k] as usize, dst.rays[ni].a[k] as usize);
+            dst.params[dp].fixed = src.params[r.d[k] as usize].fixed;
+            dst.params[ap].value = src.params[r.a[k] as usize].value;
+        }
+        dst.rays[ni].class = r.class.clone();
+        ray_map[i] = Some(ni);
+        made.push(EntRef::new(EntKind::Ray, ni));
+    }
     // a membership follows its plane across, and a plane that did not come — deleted, or
     // missing a point — takes the memberships that named it with it
     for i in 0..src.points.len() {
@@ -1285,6 +1336,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Sphere => sphere_map[e.i()].map(|i| EntRef::new(EntKind::Sphere, i)),
             EntKind::Cone => cone_map[e.i()].map(|i| EntRef::new(EntKind::Cone, i)),
             EntKind::Cylinder => cylinder_map[e.i()].map(|i| EntRef::new(EntKind::Cylinder, i)),
+            EntKind::Ray => ray_map[e.i()].map(|i| EntRef::new(EntKind::Ray, i)),
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
             EntKind::Plane => plane_map[e.i()].map(EntRef::plane),

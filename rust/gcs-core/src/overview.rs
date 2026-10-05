@@ -263,7 +263,7 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         // of a solid is a derived view, which is its own geometry
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
         // nothing on its view's page either: a sphere is in space (`scene3d` draws it there)
-        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => Vec::new(),
+        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => Vec::new(),
         EntKind::Point => vec![vec![sk.point_xy(i)]],
         EntKind::Line => {
             let l = &sk.lines[i];
@@ -378,6 +378,31 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
                     p
                 }).collect();
                 items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
+            }
+            continue;
+        }
+        // a ray is in space and in no view: its line across the drawing's reach, and a head at
+        // the end it points to
+        if e.kind == EntKind::Ray {
+            use crate::space::{add, cross, norm, scale};
+            let r = &sk.rays[e.i()];
+            let (p, d) = (r.a.map(|q| sk.params[q as usize].value), r.d.map(|q| sk.params[q as usize].value));
+            let len = norm(d);
+            if len <= 0.0 {
+                continue;
+            }
+            let d = scale(d, 1.0 / len);
+            let reach = sk.extent().max(1.0);
+            let tip = add(p, scale(d, reach));
+            items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn,
+                pts: vec![add(p, scale(d, -reach)), tip] });
+            let pick = if d[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+            let u = cross(d, pick);
+            let u = scale(u, 1.0 / norm(u));
+            let head = reach * 0.04;
+            for sgn in [1.0, -1.0] {
+                let back = add(tip, add(scale(d, -head), scale(u, sgn * head * 0.5)));
+                items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts: vec![tip, back] });
             }
             continue;
         }

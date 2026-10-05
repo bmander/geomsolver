@@ -747,6 +747,20 @@ q := plane(origin: o5, toward: t5, attitude: free, offset: free) hint(u: (0, 1, 
 
 `sphere_cone_cylinder.sv` shows one of each; `hypoid_pitch_cones.sv` is 2.13.
 
+**A ray** is a directed line in space with no start, drawn in no view: a direction, and a place
+once something reads it.
+
+```sv
+t := ray hint(x: 0.8, y: 0, z: 0.5)   // the seed is a direction, normalised
+t perpendicular y_axis
+t angle(30deg) x_axis                 // unsigned, in space; 0° or 180° is E040: say `parallel`
+p coincident t                        // a point on it gives it its place
+fix(x == 0, y == 0, z == 1) z_axis    // a direction held outright
+```
+
+A ray read only as a direction counts two freedoms; `p coincident t` adds the two of its place.
+`parallel`, `perpendicular` and `angle` take a ray beside a ray or a drawn line.
+
 ### 1.14 Faces and solids
 
 **A solid is a term, never a step.** A feature tree is a history: step *n* acts on the anonymous

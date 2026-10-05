@@ -124,6 +124,8 @@ impl Sketch {
             EntKind::Cylinder => vec![self.cylinders[e.i()].param],
             // a half-angle is an angle, and a unit's conversion leaves it alone
             EntKind::Cone => Vec::new(),
+            // the direction is a unit vector and the place a length
+            EntKind::Ray => self.rays[e.i()].a.to_vec(),
             EntKind::Arc => vec![self.arcs[e.i()].radius],
             // the rotor `(c, s)` is a unit vector — a direction, and scaling it would only
             // break `frame_unit`.  A frame's one length is `frame_align`'s chord, which is a
@@ -218,6 +220,11 @@ impl Sketch {
                 let p = &self.points[c.center as usize];
                 vec![p.x, p.y, c.radius]
             }
+            // its direction, then where it is
+            EntKind::Ray => {
+                let r = &self.rays[e.i()];
+                [r.d, r.a].concat()
+            }
             // the axis's ends, then the number the kind owns
             EntKind::Cone | EntKind::Cylinder => {
                 let a = self.axial(e);
@@ -284,6 +291,10 @@ impl Sketch {
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Sphere => vec![self.spheres[e.i()].radius],
             EntKind::Cone | EntKind::Cylinder => vec![self.axial(e).param],
+            EntKind::Ray => {
+                let r = &self.rays[e.i()];
+                [r.d, r.a].concat()
+            }
             EntKind::Arc => vec![self.arcs[e.i()].radius],
             EntKind::Plane => {
                 let f = self.frame_of(e);

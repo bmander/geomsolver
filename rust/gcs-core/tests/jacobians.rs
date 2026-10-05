@@ -76,6 +76,16 @@ fn all_constraints(seed: u32) -> Sketch {
     let kn1 = EntRef::new(Cone, sk.cone(m1, rng.uniform(0.3, 1.2), "kn1"));
     let kn2 = EntRef::new(Cone, sk.cone(m2, rng.uniform(0.3, 1.2), "kn2"));
     let cy = EntRef::new(Cylinder, sk.cylinder(m1, rng.uniform(1.0, 11.0), "cy"));
+    // and two rays, their directions knocked off the unit sphere — the first placed, so its
+    // point is free and read, the second read only as a direction
+    let dir = |rng: &mut Rng| [rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)];
+    let ra = sk.ray(dir(&mut rng), "ra");
+    let rb = sk.ray(dir(&mut rng), "rb");
+    sk.place_ray(ra);
+    for k in sk.rays[ra].d.into_iter().chain(sk.rays[ra].a).chain(sk.rays[rb].d) {
+        sk.params[k as usize].value = rng.uniform(-1.5, 1.5);
+    }
+    let (ray_a, ray_b) = (EntRef::new(gcs_core::model::EntKind::Ray, ra), EntRef::new(gcs_core::model::EntKind::Ray, rb));
     // a view hinged to the solved one, its quaternion knocked about too, and a line drawn in the
     // solved view for a fold to be taken along
     let (ho, ht) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
@@ -225,6 +235,15 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::CylinderTangentLine, vec![e(cy), e(me2), Arg::Int(-1)]),
         Constraint::new(CKind::ConeTangentCone, vec![e(kn1), e(kn2), e(EntRef::point(dp))]),
         Constraint::new(CKind::Mate, vec![e(EntRef::plane(pc)), e(hpe), Arg::Num(1.5)]),
+        // a ray's own two rows, a point on one, and the direction words over a ray and a ray or
+        // a line, the ray handed to the line's kernels as the segment from the origin
+        Constraint::new(CKind::RayUnit, vec![e(ray_b)]),
+        Constraint::new(CKind::RayFoot, vec![e(ray_a)]),
+        Constraint::new(CKind::PointOnRay, vec![e(qe), e(ray_a)]),
+        Constraint::new(CKind::Angle3, vec![e(ray_a), e(me1), Arg::Num(0.9)]),
+        Constraint::two_line(CKind::Perpendicular3, ray_a, ray_b),
+        Constraint::two_line(CKind::Parallel3, ray_b, me2),
+        Constraint::two_line(CKind::Parallel3, me1, ray_a),
         // the hinges, and a projection over a solved view — its stated partner given held
         // unknowns at the add
         Constraint::new(CKind::Hinge, vec![e(hpe), e(phe), Arg::Num(0.8)]),
@@ -260,6 +279,7 @@ fn all_constraints(seed: u32) -> Sketch {
             c
         },
         fx(CKind::Angle3, vec![e(me1), e(me2)], "t3 + 0.5", 0.9),
+        fx(CKind::Angle3, vec![e(ray_b), e(me2)], "t3r + 0.5", 0.9),
         fx(CKind::Hinge, vec![e(hpe), e(phe)], "2 * f3 - 10", 0.4),
         fx(CKind::PointPlaneDistance, vec![e(qe), e(EntRef::plane(pc))], "n3 + 1", 1.2),
         fx(CKind::PointPlaneDistance, vec![e(EntRef::point(lc)), e(EntRef::plane(pb))], "-2 * n4", 0.5),

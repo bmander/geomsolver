@@ -102,6 +102,8 @@ impl Sketch {
             EntKind::Circle => vec![EntRef::point(self.circles[e.i()].center as usize)],
             EntKind::Sphere => vec![EntRef::point(self.spheres[e.i()].center as usize)],
             EntKind::Cone | EntKind::Cylinder => vec![EntRef::line(self.axial(e).axis as usize)],
+            // a direction and a place, and nothing drawn
+            EntKind::Ray => Vec::new(),
             EntKind::Arc => {
                 let a = &self.arcs[e.i()];
                 vec![
@@ -136,7 +138,7 @@ impl Sketch {
             // a face is a loop: lose one edge and it is not a loop, so it goes whole.  A solid
             // is its term, and a term missing an operand is not that solid
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Sphere
-            | EntKind::Cone | EntKind::Cylinder
+            | EntKind::Cone | EntKind::Cylinder | EntKind::Ray
             | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => {
                 children.len()
             }
@@ -204,6 +206,7 @@ impl Sketch {
             EntKind::Sphere => self.spheres.len(),
             EntKind::Cone => self.cones.len(),
             EntKind::Cylinder => self.cylinders.len(),
+            EntKind::Ray => self.rays.len(),
             EntKind::Arc => self.arcs.len(),
             EntKind::Spline => self.splines.len(),
             EntKind::Plane => self.planes.len(),
@@ -224,6 +227,7 @@ impl Sketch {
             EntKind::Sphere,
             EntKind::Cone,
             EntKind::Cylinder,
+            EntKind::Ray,
         ] {
             for i in 0..self.count(kind) {
                 out.push(EntRef::new(kind, i));
