@@ -56,16 +56,22 @@ fn the_page_seen_from_the_front_is_the_picture() {
 fn a_map_is_the_lift_seen_by_the_eye() {
     let e = build(VIEWS);
     let sk = &e.sketch;
-    // side: page x runs along +y and page y up +z; top: page x along +x and page y along +y
+    // side: page x runs along +y and page y up +z; top: page x along +x and page y along +y;
+    // `p` stands in space where its three numbers say, in no view
     let space = [("f", [10.0, 0.0, 4.0]), ("s", [0.0, 10.0, 4.0]), ("t", [10.0, 4.0, 0.0]),
-                 ("p", [10.0, 0.0, 4.0])];
+                 ("p", [10.0, 4.0, 0.0])];
     for (az, el) in [(-FRAC_PI_2, 0.0), (0.3, 0.4), (-2.0, -0.7), (1.0, 1.2)] {
         let proj = Projection::new(sk, az, el);
         for (name, x) in space {
             let i = e.map.ent_named(name).unwrap().i();
             close(proj.point(sk, i), seen(x, az, el));
-            close(apply(proj.map(proj.view_of(i)), sk.point_xy(i)), seen(x, az, el));
+            if name != "p" {
+                close(apply(proj.map(proj.view_of(i)), sk.point_xy(i)), seen(x, az, el));
+            }
         }
+        let p = e.map.ent_named("p").unwrap().i();
+        let (x, y) = gcs_core::overview::workspace::space_points(sk, az, el)[p].unwrap();
+        close((x, y), seen([10.0, 4.0, 0.0], az, el));
     }
 }
 
@@ -196,8 +202,9 @@ fn the_report_says_each_view() {
     let points = parsed.get("views").unwrap().get("point").unwrap().arr();
     let s = e.map.ent_named("s").unwrap();
     assert_eq!(points[s.i()].as_i64(), plane(&e, "std.side") as i64);
+    // a point in space stands in no view: it is seen where it is (`space_points`)
     let p = e.map.ent_named("p").unwrap();
-    assert_eq!(points[p.i()].as_i64(), -1);
+    assert_eq!(points[p.i()].as_i64(), -2);
     let _ = EntRef::point(0);
 }
 

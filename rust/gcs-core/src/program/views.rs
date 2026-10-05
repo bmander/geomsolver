@@ -143,18 +143,14 @@ pub(crate) fn place(sk: &mut Sketch) {
     let held = |sk: &Sketch, ps: &[u32]| ps.iter().all(|&q| sk.params[q as usize].fixed);
     let mut ray_placed: Vec<bool> =
         (0..sk.rays.len()).map(|r| held(sk, &sk.rays[r].d)).collect();
-    let mut plane_placed: Vec<bool> = (0..sk.planes.len())
-        .map(|p| held(sk, &sk.planes[p].o)
-            && ray_placed[sk.planes[p].u as usize] && ray_placed[sk.planes[p].v as usize])
-        .collect();
+    let mut plane_placed: Vec<bool> = (0..sk.planes.len()).map(|p| sk.plane_fixed(p)).collect();
     if ray_placed.iter().all(|&b| b) && plane_placed.iter().all(|&b| b) {
         return;
     }
-    let origin_of: std::collections::BTreeMap<usize, usize> =
-        sk.planes.iter().enumerate().map(|(i, p)| (p.origin as usize, i)).collect();
     // what each statement reads: its rays and planes, a plane's origin standing for its plane,
-    // and the planes of the other points it reads (`None`: a point in space, or held)
-    struct Reads { id: u32, rays: Vec<usize>, planes: Vec<usize>, through: Vec<Option<usize>> }
+    // the planes the other points it reads are drawn in (a held point waits for none), and every
+    // point, whose hidden point follows the planes while it is solved
+    struct Reads { id: u32, rays: Vec<usize>, planes: Vec<usize>, through: Vec<usize>, pts: Vec<usize> }
     let mut reads: Vec<Reads> = Vec::new();
     for c in sk.constraints.iter().filter(|c| c.acts()) {
         if matches!(c.kind, CKind::Lift | CKind::RayUnit | CKind::RayFoot | CKind::DragTarget) {
@@ -164,8 +160,7 @@ pub(crate) fn place(sk: &mut Sketch) {
         // the plane, not the plane by the drawing, unless the point is where a plane stands
         if matches!(c.kind, CKind::Ordinate3U | CKind::Ordinate3V | CKind::PointPlaneDistance) {
             let p = c.args[0].ent().i();
-            let held = sk.point_all_params(p).iter().all(|&q| sk.params[q as usize].fixed);
-            if !origin_of.contains_key(&p) && !held {
+            if sk.plane_of_origin(p).is_none() && !sk.point_held(p) {
                 continue;
             }
         }
@@ -178,24 +173,26 @@ pub(crate) fn place(sk: &mut Sketch) {
             }
         }
         let mut through = Vec::new();
+        let mut drawing = false;
         for &p in &pts {
-            if let Some(&pl) = origin_of.get(&p) {
+            if let Some(pl) = sk.plane_of_origin(p) {
                 planes.push(pl);
-            } else if sk.point_all_params(p).iter().all(|&q| sk.params[q as usize].fixed) {
+            } else if sk.point_held(p) {
                 // held: wherever its plane stands, it is where it is said to be
-                through.push(sk.plane_of(p).filter(|_| false));
+            } else if let Some(pl) = sk.plane_of(p) {
+                through.push(pl);
             } else {
                 // a point in space that is not held is the drawing's to place, never a plane's
-                through.push(Some(sk.plane_of(p).unwrap_or(usize::MAX)));
+                drawing = true;
             }
         }
         for &pl in &planes {
             rays.extend([sk.planes[pl].u as usize, sk.planes[pl].v as usize]);
         }
-        if rays.is_empty() && planes.is_empty() {
+        if drawing || rays.is_empty() && planes.is_empty() {
             continue;
         }
-        reads.push(Reads { id: c.id, rays, planes, through });
+        reads.push(Reads { id: c.id, rays, planes, through, pts });
     }
     let mut taken: BTreeSet<u32> = BTreeSet::new();
     let along = along(sk);
@@ -206,21 +203,13 @@ pub(crate) fn place(sk: &mut Sketch) {
         for &(r, l) in &along {
             let ends = [sk.lines[l].p1 as usize, sk.lines[l].p2 as usize];
             let fine = ends.iter().all(|&p| {
-                origin_of.contains_key(&p)
+                sk.plane_of_origin(p).is_some()
                     || sk.plane_of(p).is_some_and(|pl| plane_placed[pl])
-                    || sk.point_all_params(p).iter().all(|&q| sk.params[q as usize].fixed)
+                    || sk.point_held(p)
             });
-            if fine && !ray_placed[r] {
-                let ln = &sk.lines[l];
-                let d = crate::space::sub(sk.world_point(ln.p2 as usize), sk.world_point(ln.p1 as usize));
-                if let Some(d) = crate::space::normalised(d) {
-                    for k in 0..3 {
-                        let q = sk.rays[r].d[k] as usize;
-                        sk.params[q].value = d[k];
-                    }
-                    ray_placed[r] = true;
-                    newly = true;
-                }
+            if fine && !ray_placed[r] && sk.turn_ray_along(r, l) {
+                ray_placed[r] = true;
+                newly = true;
             }
         }
         for p in 0..sk.planes.len() {
@@ -234,7 +223,7 @@ pub(crate) fn place(sk: &mut Sketch) {
         for r in &reads {
             let unplaced = r.rays.iter().any(|&k| !ray_placed[k])
                 || r.planes.iter().any(|&p| !plane_placed[p]);
-            let ready = r.through.iter().all(|t| t.map_or(true, |p| p != usize::MAX && plane_placed[p]));
+            let ready = r.through.iter().all(|&p| plane_placed[p]);
             if unplaced && ready {
                 taken.insert(r.id);
             }
@@ -249,7 +238,9 @@ pub(crate) fn place(sk: &mut Sketch) {
         // else held, the hidden points free to follow
         let mut part = sk.clone();
         let mut free: BTreeSet<u32> = BTreeSet::new();
+        let mut read: BTreeSet<usize> = BTreeSet::new();
         for r in reads.iter().filter(|r| taken.contains(&r.id)) {
+            read.extend(&r.pts);
             for &k in r.rays.iter().filter(|&&k| !ray_placed[k]) {
                 free.extend(sk.rays[k].d);
                 if sk.rays[k].placed {
@@ -261,16 +252,23 @@ pub(crate) fn place(sk: &mut Sketch) {
             }
         }
         let item: BTreeSet<u32> = free.clone();
+        // the hidden points of the points read follow their planes; no other is in the part
         for l in &sk.lifts {
-            if sk.points[l.point as usize].z.is_none() {
+            if sk.points[l.point as usize].z.is_none() && read.contains(&(l.point as usize)) {
                 free.extend(l.x);
             }
         }
         for (i, q) in part.params.iter_mut().enumerate() {
             q.fixed = q.fixed || !free.contains(&(i as u32));
         }
+        let free_ray = |r: usize| sk.rays[r].d.iter().any(|q| free.contains(q));
         part.constraints.retain(|c| {
-            taken.contains(&c.id) || matches!(c.kind, CKind::Lift | CKind::RayUnit | CKind::RayFoot)
+            taken.contains(&c.id)
+                || match c.kind {
+                    CKind::Lift => read.contains(&c.args[0].ent().i()),
+                    CKind::RayUnit | CKind::RayFoot => free_ray(c.args[0].ent().i()),
+                    _ => false,
+                }
         });
         crate::solve::solve(&mut part, crate::solve::SolveOpts::default());
         for &q in &item {
@@ -303,15 +301,8 @@ pub(crate) fn place(sk: &mut Sketch) {
 /// its back.
 fn align(sk: &mut Sketch) {
     for (r, l) in along(sk) {
-        if sk.rays[r].d.iter().any(|&q| sk.params[q as usize].fixed) {
-            continue;
-        }
-        let ln = &sk.lines[l];
-        let d = crate::space::sub(sk.world_point(ln.p2 as usize), sk.world_point(ln.p1 as usize));
-        let Some(d) = crate::space::normalised(d) else { continue };
-        for k in 0..3 {
-            let q = sk.rays[r].d[k] as usize;
-            sk.params[q].value = d[k];
+        if !sk.rays[r].d.iter().any(|&q| sk.params[q as usize].fixed) {
+            sk.turn_ray_along(r, l);
         }
     }
 }

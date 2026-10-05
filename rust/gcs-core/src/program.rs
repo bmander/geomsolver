@@ -66,7 +66,6 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
     diags
 }
 pub use lift::{dumps, to_program};
-pub use reading::reading_views;
 pub use source_map::{public_path, Elaborated, InstPath, Made, Site, SourceMap};
 
 use crate::expr;

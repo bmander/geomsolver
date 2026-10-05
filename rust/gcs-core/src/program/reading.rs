@@ -23,12 +23,6 @@ fn operand_points(sk: &Sketch, e: EntRef) -> Vec<usize> {
     }
 }
 
-/// Where each of a relation's points is read: `Some(plane)` for a point drawn in a plane, and
-/// `None` for one that is not — a point in space, or a point of a 2D sketch.
-pub fn reading_views(sk: &Sketch, pts: &[usize]) -> Vec<Option<usize>> {
-    pts.iter().map(|&p| sk.plane_of(p)).collect()
-}
-
 /// The points a relation of this kind reads in a plane, and whether it is a kind whose operands'
 /// planes decide what it means.  A radius, two equal radii and a ring's width read only radii,
 /// which the lift carries unchanged, and a projection relates two planes by definition; a
@@ -81,20 +75,19 @@ pub(super) fn in_space(
         if sk.plane_of(p) == Some(plane) {
             return Ok(None);
         }
-        refuse_flat(sk, &[p])?;
         let k3 = if kind == CKind::CoordinateU { CKind::Ordinate3U } else { CKind::Ordinate3V };
         return Ok(Some((k3, args.to_vec(), vec![false; args.len()])));
     }
     let Some(pts) = view_points(sk, kind, args) else { return Ok(None) };
-    let views = reading_views(sk, &pts);
-    // one plane, the 2D relation; a 2D sketch, which has no planes, likewise
+    // where each point is read: its plane, or `None` for a point in space (a document gives
+    // every point one or the other before a relation is read: `entities::places`)
+    let views: Vec<Option<usize>> = pts.iter().map(|&p| sk.plane_of(p)).collect();
+    // one plane, the 2D relation
     let one_plane =
         views.first().is_some_and(|v| v.is_some()) && views.iter().all(|v| *v == views[0]);
-    let flat = pts.iter().all(|&p| sk.plane_of(p).is_none() && sk.points[p].z.is_none());
-    if pts.is_empty() || one_plane || flat {
+    if pts.is_empty() || one_plane {
         return Ok(None);
     }
-    refuse_flat(sk, &pts)?;
     let word = kind.operator().map(|(w, _)| w).unwrap_or("this");
     let chosen = |i: usize| matches!(args.get(i), Some(Arg::Str(w)) if !w.is_empty());
     let k3 = match kind {
@@ -150,16 +143,4 @@ pub(super) fn in_space(
         }
     }
     Ok(Some((k3, out, left_out)))
-}
-
-/// A point of a 2D sketch — one a program built with no planes — has no place in space, so a
-/// relation reading it there is refused.  A document never makes one.
-fn refuse_flat(sk: &Sketch, pts: &[usize]) -> Result<(), (bool, String)> {
-    match pts.iter().find(|&&p| sk.plane_of(p).is_none() && sk.points[p].z.is_none()) {
-        Some(&p) => Err((false, format!(
-            "{} is a point of a 2D sketch, with no place in space to relate",
-            crate::io::entity_name(EntRef::point(p))
-        ))),
-        None => Ok(()),
-    }
 }

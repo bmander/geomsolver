@@ -678,7 +678,7 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
 }
 
 /// **A stop the rescue cannot settle keeps its pose**: the six-millimetre hypoid solved and then
-/// shrunk to two fifths about its centroid succeeds on its iteration limit, and the block pass
+/// shrunk to 0.35 about its centroid succeeds on its iteration limit, and the block pass
 /// from there does not settle
 /// (its polish stops on the limit too, far off), so the default solve returns the stop exactly as
 /// a solve without the rescue does — the same bits, status, success, residual, counts and method.
@@ -686,7 +686,7 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
 fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,reference) = solved_design("hypoid6");
-    let start = crate::common::scaled(&reference.sketch,0.4);
+    let start = crate::common::scaled(&reference.sketch,0.35);
     let (mut off,mut on) = (start.clone(),start);
     let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
     let b = solve::solve(&mut on,SolveOpts::default());
@@ -751,7 +751,3 @@ fn design_sweep() {
     }}}}}
     println!("{bad} of {n} designs");
 }
-
-
-
-

@@ -38,6 +38,31 @@ impl Sketch {
             && p.o.iter().all(|&q| held(q))
     }
 
+    /// Whether every number of point `p` is held: two in its plane, three in space.
+    pub fn point_held(&self, p: usize) -> bool {
+        let pt = &self.points[p];
+        [pt.x, pt.y].into_iter().chain(pt.z).all(|q| self.params[q as usize].fixed)
+    }
+
+    /// The plane point `p` is the origin of, if any: an origin is drawn in its own plane.
+    pub fn plane_of_origin(&self, p: usize) -> Option<usize> {
+        let pl = self.points[p].plane? as usize;
+        (self.planes.get(pl)?.origin as usize == p).then_some(pl)
+    }
+
+    /// Turn ray `r` to drawn line `l` as it now stands, sense and all: a ray a plane holds along
+    /// a line (`program::entities::rays_along`).  False where the line has no length.
+    pub fn turn_ray_along(&mut self, r: usize, l: usize) -> bool {
+        let ln = &self.lines[l];
+        let d = crate::space::sub(self.world_point(ln.p2 as usize), self.world_point(ln.p1 as usize));
+        let Some(d) = crate::space::normalised(d) else { return false };
+        for k in 0..3 {
+            let q = self.rays[r].d[k] as usize;
+            self.params[q].value = d[k];
+        }
+        true
+    }
+
     /// The hidden point in space that point `p` stands at, minted once.  A point drawn in a
     /// plane gets three Params seeded where it stands and the intrinsic `lift` row holding them
     /// there, over the plane's rays and origin.  A **point in space** is its own lift: its three

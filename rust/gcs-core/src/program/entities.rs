@@ -517,14 +517,7 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
 pub(super) fn rays_along(sk: &mut Sketch, deferred: &[Deferred]) {
     for d in deferred {
         let &Deferred::Along { ray, line } = d else { continue };
-        let l = &sk.lines[line];
-        let dir = crate::space::sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize));
-        if let Some(u) = crate::space::normalised(dir) {
-            for k in 0..3 {
-                let p = sk.rays[ray].d[k] as usize;
-                sk.params[p].value = u[k];
-            }
-        }
+        sk.turn_ray_along(ray, line);
         let mut c = crate::constraints::Constraint::two_line(
             crate::constraints::CKind::Parallel3,
             EntRef::new(EntKind::Ray, ray),

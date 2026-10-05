@@ -491,7 +491,7 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
         // `u` or `v` for a coordinate in it, since its point is drawn in that plane's terms.
         CKind::HorizontalDistance | CKind::VerticalDistance | CKind::CoordinateU | CKind::CoordinateV => {
             let (a, b) = ends(sk, c)?;
-            let d = dimension_axis(sk, c);
+            let d = dimension_axis(c);
             Some(Frame::Linear { o: mid(a, b), d, n: perp(d) })
         }
         CKind::Radius | CKind::AnnularDistance => {
@@ -518,7 +518,7 @@ fn axis_of(k: CKind) -> P {
 
 /// An ordinate along a plane's axis is drawn in that plane, along its own `x` or `y`; a run or a
 /// rise along the plane's axes as well.
-fn dimension_axis(_sk: &Sketch, c: &Constraint) -> P {
+fn dimension_axis(c: &Constraint) -> P {
     match c.kind {
         CKind::CoordinateU => (1.0, 0.0),
         CKind::CoordinateV => (0.0, 1.0),
@@ -993,7 +993,7 @@ impl Pen<'_> {
     fn axis_distance(&mut self, c: &Constraint) -> Option<Callout> {
         let (a, b) = ends(self.sk, c)?;
         let text = claimed(c, dimension_text(c)?);
-        let d = dimension_axis(self.sk, c);
+        let d = dimension_axis(c);
         let n = perp(d);
         let place = self.placed(c).unwrap_or_else(|| {
             let s = if dot(n, sub(mid(a, b), self.hub)) < 0.0 { -1.0 } else { 1.0 };

@@ -240,20 +240,20 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // the clause, as the pose the solve arrived at; empty when the kind owns no scalar at
         // all — a line's numbers are its two points', and they are written in the slots
         let own = sk.own_params(parent);
-        let hint = match () {
-            _ if omit_radius => String::new(),
+        let hint = if omit_radius {
+            String::new()
+        } else if own.iter().any(|&p| held(p)) {
             // only the numbers no `fix` holds: `hint(y: 7)` beside `fix(x == 3) p`, and none at
             // all where every one is held
-            _ if own.iter().any(|&p| held(p)) => {
-                let fields = parent.kind.fields().iter()
-                    .filter(|(_, f)| *f == crate::model::Field::Scalar);
-                let free: Vec<String> = fields.zip(&own).zip(&pose)
-                    .filter(|((_, &p), _)| !held(p))
-                    .map(|(((n, _), _), v)| format!("{n}: {}", num(*v)))
-                    .collect();
-                if free.is_empty() { String::new() } else { format!("hint({})", free.join(", ")) }
-            }
-            _ => syntax::hint_clause(d, &pose),
+            let fields = parent.kind.fields().iter()
+                .filter(|(_, f)| *f == crate::model::Field::Scalar);
+            let free: Vec<String> = fields.zip(&own).zip(&pose)
+                .filter(|((_, &p), _)| !held(p))
+                .map(|(((n, _), _), v)| format!("{n}: {}", num(*v)))
+                .collect();
+            if free.is_empty() { String::new() } else { format!("hint({})", free.join(", ")) }
+        } else {
+            syntax::hint_clause(d, &pose)
         };
         // No slot of this list is the source's own text, so the list has to be written too —
         // a chain's thread fills slots with references written in *another* link, or written
@@ -615,14 +615,14 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
 
 /// An entity built from names that already exist — a line from two points, a circle from a centre.
 pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) -> Edit {
-    add_entity_with(prog, kind, args, seed, None, &[])
+    add_entity_with(prog, kind, args, seed, None)
 }
 
 /// A plane over two rays or drawn lines, `args` their names — `plane(u: a, v: b)` — and, when
 /// the caller has one, the name it asked for.  A name already in use is refused rather than
 /// silently renamed: the caller is about to refer to it.
 pub fn add_plane(prog: &Program, args: &[String], name: Option<&str>) -> Edit {
-    add_entity_with(prog, EntKind::Plane, args, &[], name, &[])
+    add_entity_with(prog, EntKind::Plane, args, &[], name)
 }
 
 fn add_entity_with(
@@ -631,7 +631,6 @@ fn add_entity_with(
     args: &[String],
     seed: &[f64],
     name: Option<&str>,
-    places: &[(f64, f64)],
 ) -> Edit {
     if kind == EntKind::Point || kind == EntKind::Curve {
         return Edit::none(prog, Some(format!("a {} is not built this way", kind.as_str())));
@@ -668,12 +667,6 @@ fn add_entity_with(
                 taken = args.len();
             }
             crate::model::Field::Scalar => {}
-        }
-    }
-    // a place seeds a child slot nothing named — the same `hint(…)` clause, one level down
-    for (g, &(x, y)) in children.iter_mut().zip(places) {
-        if g.is_empty() {
-            g.push(syntax::Kid::Hint(syntax::KidSeed { v: [x, y], ..Default::default() }));
         }
     }
     let n_scalar = kind.fields().iter().filter(|(_, f)| *f == crate::model::Field::Scalar).count();
